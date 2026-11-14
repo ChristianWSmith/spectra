@@ -852,13 +852,25 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
     [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
   );
   {
-    const fixed = sec('match')?.querySelector('.mo-fixed');
+    // The section's ARIA structure (2026-11-14 a11y fix): the fixed
+    // context is a READ-ONLY list — role=list cannot carry
+    // aria-readonly, so the read-only statement is the list's
+    // accessible NAME, the visible caption "… not reorderable" — and
+    // the reorderable half is the listbox/option pair that makes the
+    // row's tabindex, keydown and drag handlers valid (role=listitem
+    // is non-interactive and would flag all three).
+    const secEl = sec('match');
+    const fixed = secEl?.querySelector('.mo-fixed');
+    const cap = secEl?.querySelector('.mo-fixed-cap');
+    const list = secEl?.querySelector('.mo-list');
+    const rows = [...(list?.querySelectorAll('.mo-row') || [])];
     const items = fixed ? [...fixed.querySelectorAll('.mo-fixed-item')].map((x) => x.textContent) : [];
     check(
-      'fixed block: read-only context (role=list, aria-readonly, no controls, not draggable) — Go stats only',
+      'fixed block: read-only context (role=list, named "not reorderable", no controls, not draggable) — Go stats only; the reorderable half is a listbox of unselected options',
       !!fixed &&
         fixed.getAttribute('role') === 'list' &&
-        fixed.getAttribute('aria-readonly') === 'true' &&
+        fixed.getAttribute('aria-labelledby') === cap?.id &&
+        /not reorderable/.test(cap?.textContent || '') &&
         items[0] === 'Name' &&
         items[items.length - 1] === 'Score' &&
         items.includes('KDA') &&
@@ -866,8 +878,14 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
         !items.includes('KAST%') &&
         !fixed.querySelector('button') &&
         !fixed.hasAttribute('draggable') &&
-        !fixed.querySelector('[draggable]'),
-      fixed ? JSON.stringify(items) : 'no fixed block',
+        !fixed.querySelector('[draggable]') &&
+        list?.getAttribute('role') === 'listbox' &&
+        list?.getAttribute('aria-labelledby') === secEl?.querySelector('.mo-sec-title')?.id &&
+        rows.length > 0 &&
+        rows.every((r) => r.getAttribute('role') === 'option' && r.getAttribute('aria-selected') === 'false'),
+      fixed && list
+        ? `${JSON.stringify(items)} list=${list.getAttribute('role')} rows=${rows.map((r) => r.getAttribute('role')).join(',')}`
+        : 'no fixed block',
     );
   }
   check(
