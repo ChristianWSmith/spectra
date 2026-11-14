@@ -327,6 +327,124 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	}
 }
 
+// TestStoredColumnSeedsEquivalence: the eleven stored-column seeds the
+// W2a scoreboard swap converts equal, subject for subject, the
+// GetScoreboard field every converted cell served (design §6.3 tier 1 —
+// the semantic proof that no displayed number moves): A, 2K–5K, Entry,
+// Trade and Streak left SCORE_COLS for metric columns over these very
+// columns, and the store keeps serving them as passthroughs (design
+// §5.2 — the sort contract, the top-stats argmax and the roster's raw
+// halves still read them).
+func TestStoredColumnSeedsEquivalence(t *testing.T) {
+	st := seededStore(t)
+	cols := []struct {
+		seed  string
+		field func(models.PlayerStatsRow) float64
+	}{
+		{"assists", func(r models.PlayerStatsRow) float64 { return float64(r.Assists) }},
+		{"flash_assists", func(r models.PlayerStatsRow) float64 { return float64(r.FlashAssists) }},
+		{"enemies_flashed", func(r models.PlayerStatsRow) float64 { return float64(r.EnemiesFlashed) }},
+		{"entry_kills", func(r models.PlayerStatsRow) float64 { return float64(r.EntryKills) }},
+		{"entry_deaths", func(r models.PlayerStatsRow) float64 { return float64(r.EntryDeaths) }},
+		{"best_streak", func(r models.PlayerStatsRow) float64 { return float64(r.BestStreak) }},
+		{"two_k", func(r models.PlayerStatsRow) float64 { return float64(r.TwoK) }},
+		{"three_k", func(r models.PlayerStatsRow) float64 { return float64(r.ThreeK) }},
+		{"four_k", func(r models.PlayerStatsRow) float64 { return float64(r.FourK) }},
+		{"five_k", func(r models.PlayerStatsRow) float64 { return float64(r.FiveK) }},
+		{"trade_kills", func(r models.PlayerStatsRow) float64 { return float64(r.TradeKills) }},
+	}
+	for _, matchID := range []int64{1, 2, 3} {
+		scope := "match:" + itoa(matchID)
+		t.Run(scope, func(t *testing.T) {
+			board, err := st.GetScoreboard(matchID, "kills", true)
+			if err != nil {
+				t.Fatalf("GetScoreboard: %v", err)
+			}
+			if len(board) == 0 {
+				t.Fatal("scoreboard is empty")
+			}
+			for _, col := range cols {
+				got := previewAt(t, st, seedExpr(t, st, col.seed), scope)
+				for _, row := range board {
+					want := col.field(row)
+					v, ok := got[row.SteamID]
+					if !ok {
+						t.Errorf("%s: subject %s missing from the preview", col.seed, row.SteamID)
+						continue
+					}
+					if v != want {
+						t.Errorf("%s[%s] = %v, want the stored column %v (the scoreboard cell it converts)",
+							col.seed, row.SteamID, v, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestMissedTradesEquivalence is the W2a acceptance oracle for the
+// Combat "Missed trades" column's seed (design §6.3): missed_trades ==
+// GetCombatStats' TradeOppMissed rule — the stored per-match counts
+// folded over the match's human roster, a missing row reading 0
+// (analytics.go: SELECT steam_id, missed FROM match_trade_opps, then
+// tradeOpp[sid] with the absent→0 fold). Two layers, both pinned while
+// the Go side still exists (W2b removes it with the column's switch):
+// the plain-SQL spelling of the rule (which outlives the Go code) and
+// the Go fold itself — W2b drops the second layer's block when
+// TradeOppMissed leaves models.CombatStat.
+func TestMissedTradesEquivalence(t *testing.T) {
+	st := seededStore(t)
+	expr := seedExpr(t, st, "missed_trades")
+	for _, matchID := range []int64{1, 2, 3} {
+		scope := "match:" + itoa(matchID)
+		t.Run(scope, func(t *testing.T) {
+			got := previewAt(t, st, expr, scope)
+			// GetCombatStats' rule spelled in plain SQL: the human
+			// roster (base query's INNER players join + is_bot = 0)
+			// LEFT JOINed to the stored counts, missing → 0.
+			want := oracle(t, st,
+				`SELECT ps.steam_id, COALESCE(mo.missed, 0)
+				 FROM player_stats ps
+				 JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id
+				 LEFT JOIN match_trade_opps mo ON mo.match_id = ps.match_id AND mo.steam_id = ps.steam_id
+				 WHERE ps.match_id = ? AND p.is_bot = 0`,
+				matchID)
+			if len(want) == 0 {
+				t.Fatal("oracle returned no roster rows")
+			}
+			if len(got) != len(want) {
+				t.Errorf("preview rows = %d, roster rows = %d", len(got), len(want))
+			}
+			for sid, v := range want {
+				gotV, ok := got[sid]
+				if !ok {
+					t.Errorf("missed_trades: subject %s missing from the preview", sid)
+					continue
+				}
+				if gotV != v {
+					t.Errorf("missed_trades[%s] = %v, want GetCombatStats' TradeOppMissed rule %v", sid, gotV, v)
+				}
+			}
+
+			// Layer 2 — the Go fold itself, while it exists (W2b):
+			// every roster player's TradeOppMissed equals the seed.
+			stats, err := st.GetCombatStats(matchID)
+			if err != nil {
+				t.Fatalf("GetCombatStats: %v", err)
+			}
+			if len(stats) != len(want) {
+				t.Fatalf("GetCombatStats rows = %d, roster rows = %d", len(stats), len(want))
+			}
+			for _, cs := range stats {
+				if got[cs.SteamID] != float64(cs.TradeOppMissed) {
+					t.Errorf("missed_trades[%s] = %v, want the Go TradeOppMissed %d",
+						cs.SteamID, got[cs.SteamID], cs.TradeOppMissed)
+				}
+			}
+		})
+	}
+}
+
 // itoa formats a match id for a scope string.
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 
