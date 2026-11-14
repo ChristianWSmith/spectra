@@ -122,6 +122,19 @@ const EXPECTED = {
   'combat.dom.mjs': 86,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
+  // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the
+  // sidebar Help button's chrome/position/never-active pins, the sheet
+  // opening at the guide top with the full TOC and no switcher yet, the
+  // Close leg + focus return), B (the Builder `?` deep target: header
+  // position, aria-current on metric-language, the composed anchor +
+  // scrollTop formula, the Builder still mounted), C (Escape and bare-
+  // backdrop dismissal, each with focus return), D (TOC navigation,
+  // Back to top, the repeated-openDocs token re-target), E (placeholder
+  // sections carry ONLY the coming-soon note; the metric chapter is
+  // real prose), F (four rendered-text accuracy pins from the manual)
+  // and G (a live-registered second manual flips the switcher and swaps
+  // the TOC/body — run last so it cannot leak into earlier pins).
+  'docs.dom.mjs': 41,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
