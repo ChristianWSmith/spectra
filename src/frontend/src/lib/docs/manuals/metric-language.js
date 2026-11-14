@@ -12,6 +12,16 @@
 // `###` subsections are `# here` (the section title owns the popup's
 // <h2>, so content headings start at <h3> — no heading-level skips),
 // and the draft's own TOC was dropped (the popup renders its own).
+//
+// RECONCILED 2026-11-14 (manual-content reconciliation, after W1's
+// merge): the `sources` and `player-anchor` sections re-based on the
+// 14-source whitelist (four new sources — round_classifications,
+// round_side_classes, round_player_sides, engagements_victim — and the
+// grown playerSources anchor list, whose verbatim refusal message is
+// re-quoted below), and `built-in-metrics` went COUNT-FREE (the seed
+// catalogue grew 16 → 58 in that wave and is owner-growable; prose
+// never hard-codes a count — names stay listed instead). Re-verify
+// against whitelist.go / doc.go before touching those three sections.
 export const metricLanguageSections = [
   {
     id: 'metric-language',
@@ -52,7 +62,7 @@ from player_stats: ratio(sum(kills), sum(deaths))
   {
     id: 'sources',
     title: 'Sources',
-    blocks: `Ten sources are available. A **source** is one of the bodies of stored data a formula may count and add up over; each has a fixed set of columns you may mention.
+    blocks: `A **source** is one of the bodies of stored data a formula may count and add up over; each has a fixed set of columns you may mention. Every source the language offers is listed below.
 
 | Source | One row is … | Anchors on (the player column) |
 |---|---|---|
@@ -66,6 +76,10 @@ from player_stats: ratio(sum(kills), sum(deaths))
 | \`utility_events\` | one grenade throw paired with its detonation | \`thrower\` |
 | \`chat\` | one chat line | \`steam_id\` |
 | \`match_trade_opps\` | the trade opportunities analytics recorded for one player in one match | \`steam_id\` |
+| \`round_classifications\` | one round's buy-type label as the analysis decided it, with how sure the decision is | — none |
+| \`round_side_classes\` | one side's buy type in one round, with the reason behind it | — none |
+| \`round_player_sides\` | which side a player was on in one round | \`steam_id\` |
+| \`engagements_victim\` | the same duel records as \`engagements\`, anchored on the player who died | \`b_steam\` |
 
 # events
 
@@ -127,6 +141,30 @@ One row per player per match with the trade opportunities the analysis recorded 
 
 **Columns:** \`match_id\`, \`steam_id\`, \`opps\`, \`missed\`
 
+# round_classifications
+
+One row per round: the round's buy-type label as the analysis decided it (\`label\`), how sure that decision is (\`confidence\`), the rules version it was decided under, and the reason in words (\`explanation\`). The label describes the whole round, not one player, so this source can never lead a formula — it can only join a player-anchored one (see [Player anchor](#player-anchor)). The label and the reason exist for **filtering** in a joined formula (\`from player_round_stats, round_classifications: count(where label = 'full')\`), never as values to add up.
+
+**Columns:** \`match_id\`, \`round\`, \`label\`, \`confidence\`, \`rule_version\`, \`explanation\`
+
+# round_side_classes
+
+One row per round **per side**: that side's buy type for the round (\`class\`) and the reason it was classified that way (\`why\`) — what the Economy view's per-side chips show. A side belongs to no single player, so this source cannot lead a formula either.
+
+**Columns:** \`match_id\`, \`round\`, \`side\`, \`class\`, \`why\`
+
+# round_player_sides
+
+One row per player per round: which side (\`ct\` or \`t\`) they were on in that round — a freeze-time-end sample for every counted round, so a player's side stays right across the halftime switch. It names a player in every row, so it can lead a formula, and it is the player-side key the per-side classes pair with.
+
+**Columns:** \`match_id\`, \`round\`, \`steam_id\`, \`side\`
+
+# engagements_victim
+
+The same duel records as \`engagements\` — one row per duel — but anchored on the player who **died** (\`b_steam\`): the victim's side of every duel. Count how often a player dropped first in the round (an opening), fell to a trade kill, or died with their death answered (\`traded\`) or not (\`untraded\`). Exactly the same columns as its twin; what differs is which player each row is about.
+
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`a_steam\`, \`a_name\`, \`b_steam\`, \`b_name\`, \`distance\`, \`won_by\`
+
 > **Not available as columns:** payload columns that hold JSON or lists (for example the per-weapon damage breakdowns) are deliberately excluded; a metric is a single number, and there is no way to break a value down by category inside the language.`,
   },
   {
@@ -134,7 +172,7 @@ One row per player per match with the trade opportunities the analysis recorded 
     title: 'Player anchor',
     blocks: `Every metric answers a question about **one player**, so the source that *leads* your formula must identify a player.
 
-\`rounds\` and \`round_economy\` describe rounds and sides, not people, so they can never lead. Starting with one of them is refused immediately:
+\`rounds\`, \`round_economy\`, \`round_classifications\` and \`round_side_classes\` describe rounds and sides, not people, so they can never lead. Starting with one of them is refused immediately:
 
 \`\`\`
 from rounds: count()
@@ -144,11 +182,12 @@ from rounds: count()
 expression is not player-anchored: primary source "rounds" has no player
 subject — a metric's value must be per player (player sources: events,
 engagements, player_stats, player_round_stats, clutches, chat,
-utility_events, match_trade_opps; round-grain sources can only join a
+utility_events, match_trade_opps, round_player_sides,
+engagements_victim; round-grain sources can only join a
 player-anchored expression)
 \`\`\`
 
-The eight sources that **can** lead are \`events\`, \`engagements\`, \`player_stats\`, \`player_round_stats\`, \`clutches\`, \`chat\`, \`utility_events\` and \`match_trade_opps\` — each one names a player in every row (\`attacker\`, \`a_steam\`, \`thrower\` or \`steam_id\`).
+The sources that **can** lead are \`events\`, \`engagements\`, \`player_stats\`, \`player_round_stats\`, \`clutches\`, \`chat\`, \`utility_events\`, \`match_trade_opps\`, \`round_player_sides\` and \`engagements_victim\` — each one names a player in every row (\`attacker\`, \`a_steam\`, \`b_steam\`, \`thrower\` or \`steam_id\`).
 
 The rule is about the *first* source only. Round-level sources remain perfectly usable as extra sources behind an anchored lead:
 
@@ -404,7 +443,7 @@ Notes on how they behave:
   {
     id: 'built-in-metrics',
     title: 'Built-in metrics',
-    blocks: `Spectra ships **sixteen** built-in metrics — seven scoped to a match (\`trade_rate\`, \`adr\`, \`entry_rate\`, \`hs_pct\`, \`kast\`, \`kd\`, \`trade_rate_deaths\`) and nine for a career (\`career_adr\`, \`career_adr_sigma\`, \`career_avg_enemies_flashed\`, \`career_avg_util_damage\`, \`career_clutch_win_rate\`, \`career_hs_pct\`, \`career_kast\`, \`career_kd\`, \`career_trade_rate\`). Those names are what you use in a \`metric('…')\` reference.
+    blocks: `Spectra ships **built-in metrics** for the common numbers — some scoped to a match (\`trade_rate\`, \`adr\`, \`kast\`, \`kd\`), others for a career (\`career_adr\`, \`career_kast\`, \`career_kd\`). The full list is the **Builtins** group at the top of the builder's left column; a built-in's name is what you use in a \`metric('…')\` reference.
 
 They are **read-only**:
 
