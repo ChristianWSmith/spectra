@@ -4,9 +4,10 @@
 // Section labels below match the run's console.log letters:
 //   A. the sidebar Help icon — nav-chrome chrome between the spacer and
 //      Settings, never active/aria-current across routes, the popup
-//      opens at the guide top with the full TOC and no manual switcher
-//      (only one manual ships), and the Close button dismisses with
-//      focus returned to the opener;
+//      opens at the guide top with the full TOC (26 sections since the
+//      2026-11-14 content onboarding — Introduction leads) and no manual
+//      switcher (only one manual ships), and the Close button dismisses
+//      with focus returned to the opener;
 //   B. the Builder `?` — top-right of .view-header, opens the popup at
 //      the metric-language section (aria-current + the composed anchor
 //      + the scrollTop formula), with the Builder still mounted and the
@@ -16,15 +17,22 @@
 //   D. TOC navigation — aria-current moves, the section takes focus,
 //      Back to top resets scroll + current, and a repeated openDocs
 //      (sidebar Help while open) re-targets through the token;
-//   E. placeholders render ONLY the fixed "coming soon" note; the
-//      metric-language sections render real prose and no note;
-//   F. accuracy pins from the manual (rendered text): the subject-anchor
-//      rule, metric()'s two legal positions + denials, the sum(a + b)
-//      additive chain with avg/min/max single-column, the denominator
-//      units;
+//   E. the onboarding reality: NO guide section is a placeholder (every
+//      one carries cited prose and none renders the coming-soon note);
+//      the sources section re-pinned to its count-free opener and the
+//      metric-language intro still renders real prose. (The placeholder
+//      RENDER path itself is pinned in G, on the throwaway manual.)
+//   F. accuracy pins from the manual AND from the newly written guide
+//      sections (rendered text): the subject-anchor rule, metric()'s two
+//      legal positions + denials, the sum(a + b) additive chain with
+//      avg/min/max single-column, the denominator units — plus the
+//      guide's originals-untouched promise (importing demos), the
+//      honest dash (the Library) and the SQL console's read-only
+//      construction, each cited to the 2026-11-14 draft appendix;
 //   G. a throwaway second manual registered into the LIVE registry makes
-//      the switcher appear on the next open, and switching changes the
-//      TOC + body (run last so it cannot leak into earlier pins).
+//      the switcher appear on the next open, switching changes the TOC +
+//      body, and its placeholder section still renders ONLY the
+//      coming-soon note (run last so it cannot leak into earlier pins).
 //
 // Known jsdom limits (the standard caveats, stated where they bite):
 // there is no layout, so section offsetTop reads 0 — section D pins the
@@ -368,8 +376,10 @@ check(
   `${document.querySelector('.doc-head h1')?.textContent} / ${panel()?.getAttribute('aria-label')}`,
 );
 check(
-  'the full TOC renders (22 section entries, the guide opens at its first section)',
-  tocItems().length === 22 && tocCurrent()?.textContent.trim() === 'Getting started',
+  // Re-pinned 2026-11-14 (user-manual content onboarding): 22 → 26
+  // entries; the researched draft's Introduction now leads the guide.
+  'the full TOC renders (26 section entries, the guide opens at its first section)',
+  tocItems().length === 26 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -478,8 +488,9 @@ click(document.querySelector('.doc-toc-top'));
 await sleep();
 check('Back to top resets the scroll', docBody().scrollTop === 0, `scrollTop=${docBody().scrollTop}`);
 check(
+  // First section re-pinned 2026-11-14: Introduction leads the guide.
   'Back to top returns current to the first section',
-  tocCurrent()?.textContent.trim() === 'Getting started',
+  tocCurrent()?.textContent.trim() === 'Introduction',
   tocCurrent()?.textContent.trim(),
 );
 // The token leg: re-requesting a target while already open re-runs the
@@ -492,24 +503,37 @@ click(hb); // sidebar Help while the sheet is up (keyboard-reachable; no focus t
 await sleep();
 check(
   'a repeated openDocs re-targets to the guide top even while open (token)',
-  tocCurrent()?.textContent.trim() === 'Getting started' && docBody().scrollTop === 0,
+  tocCurrent()?.textContent.trim() === 'Introduction' && docBody().scrollTop === 0,
   `${tocCurrent()?.textContent.trim()} / scrollTop=${docBody().scrollTop}`,
 );
 
-console.log('E. placeholders are placeholders; the metric chapter is real prose');
+console.log('E. every guide section is written — nothing ships as a placeholder (2026-11-14 re-pin)');
 const soonNote = "Coming soon — this part of the guide isn't written yet.";
-const soonEl = sectionOf('getting-started');
+// The same copied-tree registry instance the popup renders (DocsPopup
+// links this URL; section G registers into it below) — so E reads the
+// guide's real section flags, not a second copy of the data.
+const docsRegistry = await import(libURL('docs/registry.js'));
+const guideDoc = docsRegistry.getDoc('user-guide');
 check(
-  'a placeholder section renders ONLY its title and the fixed coming-soon note',
-  normalized(soonEl).includes(soonNote) &&
-    soonEl.querySelectorAll('p').length === 1 &&
-    soonEl.querySelectorAll('pre, table, ul, ol').length === 0,
-  normalized(soonEl),
+  'no guide section is a placeholder and every one carries blocks (the researched draft replaced them all)',
+  guideDoc.sections.every((s) => !s.placeholder && s.blocks.length > 0),
+  guideDoc.sections.filter((s) => s.placeholder).map((s) => s.id).join(', ') ||
+    guideDoc.sections.filter((s) => !s.blocks.length).map((s) => s.id).join(', '),
+);
+check(
+  'every section renders its own body and none shows the coming-soon note',
+  guideDoc.sections.every((s) => {
+    const el = sectionOf(s.id);
+    return !!el && !normalized(el).includes(soonNote);
+  }),
+  guideDoc.sections.filter((s) => !sectionOf(s.id)).map((s) => s.id).join(', '),
 );
 const sourcesSec = sectionOf('sources');
 check(
-  'the sources section renders real prose and no placeholder note',
-  normalized(sourcesSec).includes('Ten sources are available') &&
+  // Re-pinned with the reconciliation edit (2026-11-14): the section's
+  // opener went count-free ("Ten sources …" died with W1's 14 sources).
+  'the sources section renders real prose (its count-free opener) and no placeholder note',
+  normalized(sourcesSec).includes('Every source the language offers is listed below') &&
     !normalized(sourcesSec).includes('Coming soon'),
   normalized(sourcesSec).slice(0, 80),
 );
@@ -521,7 +545,7 @@ check(
   normalized(introSec).slice(0, 80),
 );
 
-console.log('F. accuracy pins — rendered text from the engine-verified manual');
+console.log('F. accuracy pins — rendered text from the manual AND the newly written guide sections');
 const bodyText = normalized(docBody());
 check(
   'subject-anchor rule: a round source may not lead, with the verbatim refusal',
@@ -547,6 +571,30 @@ check(
   bodyText.includes('exactly two choices, rounds and matches') &&
     bodyText.includes('the denominator always counts the units of the scope'),
   '',
+);
+// Guide-section accuracy pins (2026-11-14 content onboarding), each
+// cited to the research draft's accuracy appendix: importing demos —
+// originals untouched (`Library.svelte:1049-1072`, "Copy demos" copy);
+// the Library — dashes never zeros (`Library.svelte:894-943`); the SQL
+// console — read-only by construction (`SqlConsole.svelte:351-353`).
+const importingText = normalized(sectionOf('importing-demos'));
+check(
+  'guide/importing demos: original files are never moved, modified or deleted',
+  importingText.includes('never moved, modified or deleted'),
+  importingText.slice(0, 100),
+);
+const libraryText = normalized(sectionOf('library'));
+check(
+  'guide/the Library: an unfinished row shows dashes — never a made-up 0',
+  libraryText.includes('never a made-up 0'),
+  libraryText.slice(0, 100),
+);
+const sqlText = normalized(sectionOf('sql-console'));
+check(
+  'guide/SQL console: read-only by construction — writes rejected before they run',
+  sqlText.includes('read-only by construction') &&
+    sqlText.includes('writes and multi-statement scripts are rejected before they run'),
+  sqlText.slice(0, 100),
 );
 
 console.log('G. a second manual makes the switcher appear (live registry, last section)');
@@ -581,6 +629,20 @@ check(
   'and its body renders that manual’s content',
   normalized(docBody()).includes('Hello from the second manual.'),
   normalized(docBody()).slice(0, 80),
+);
+// The placeholder RENDER path lives here since the 2026-11-14 content
+// onboarding (the guide itself no longer ships a placeholder): the fixed
+// note beside the title, and nothing else in the section.
+const phSec = document
+  .getElementById(registry.sectionAnchor('zz-second-manual', 'second'))
+  ?.closest('section');
+check(
+  'a placeholder section renders ONLY its title and the fixed coming-soon note',
+  !!phSec &&
+    normalized(phSec).includes(soonNote) &&
+    phSec.querySelectorAll('p').length === 1 &&
+    phSec.querySelectorAll('pre, table, ul, ol').length === 0,
+  phSec ? normalized(phSec) : 'no placeholder section element',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

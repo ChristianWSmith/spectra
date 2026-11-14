@@ -134,7 +134,16 @@ const EXPECTED = {
   // real prose), F (four rendered-text accuracy pins from the manual)
   // and G (a live-registered second manual flips the switcher and swaps
   // the TOC/body — run last so it cannot leak into earlier pins).
-  'docs.dom.mjs': 41,
+  // docs 41 → 46 (2026-11-14, user-manual content onboarding + the W1
+  // manual reconciliation): A/D re-pinned in place (26 TOC entries,
+  // Introduction leads — same check counts), E became the no-placeholder
+  // reality (4 checks: registry flags+blocks, rendered bodies without
+  // the note, the sources section's NEW count-free opener, the
+  // metric-language intro) for E's old 3, F +3 (guide accuracy pins:
+  // importing demos' originals-untouched promise, the Library's honest
+  // dash, the SQL console's read-only construction), G +1 (the
+  // placeholder render path moved here — the guide no longer ships one).
+  'docs.dom.mjs': 46,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
