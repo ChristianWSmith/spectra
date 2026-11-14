@@ -122,8 +122,11 @@ func exprErrorErr(perr *metrics.ParseError) error {
 	return fmt.Errorf("metrics: %s (at byte %d)", perr.Message, perr.Pos)
 }
 
-// metricFormats are the accepted Format values (contract).
-var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "percent": true, "currency": true}
+// metricFormats are the accepted Format values (contract). float2 keeps
+// a two-decimal tail unconditionally (Q6 — the K/D seeds render2.00,
+// never the auto-format's "2"); it is a display tag only, no DDL and no
+// grammar change.
+var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true}
 
 // ListMetrics returns all definitions (builtin first).
 func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
@@ -309,7 +312,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	m.ShortName = strings.TrimSpace(m.ShortName)
 	m.Format = strings.TrimSpace(m.Format)
 	if !metricFormats[m.Format] {
-		return models.MetricRow{}, fmt.Errorf("metrics: unknown format %q (valid: int, float1, percent, currency)", m.Format)
+		return models.MetricRow{}, fmt.Errorf("metrics: unknown format %q (valid: int, float1, float2, percent, currency)", m.Format)
 	}
 	// Scope is a REAL field since W2: the DDL CHECK admits exactly these
 	// two values, so anything else (including an omitted "") is rejected

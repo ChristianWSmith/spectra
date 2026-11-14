@@ -95,6 +95,48 @@ func TestSaveMetricScope(t *testing.T) {
 	}
 }
 
+// TestSaveMetricFormatEnum pins the Format contract (the Format pattern
+// TestSaveMetricScope cites): every tag the Builder select offers —
+// including float2 (Q6, the K/D seeds' two-decimal tag) — round-trips
+// through SaveMetric, and an unknown tag is the friendly pre-write
+// rejection listing the valid set.
+func TestSaveMetricFormatEnum(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "format-enum.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	for _, format := range []string{"", "int", "float1", "float2", "percent", "currency"} {
+		saved, err := svc.SaveMetric(models.MetricRow{
+			Name: "fmt_" + orName(format), Expr: "from events: count()",
+			Format: format, Scope: "match", Origin: "user",
+		})
+		if err != nil {
+			t.Errorf("SaveMetric(format=%q): %v (every enum tag must save)", format, err)
+			continue
+		}
+		if saved.Format != format {
+			t.Errorf("format %q round-tripped as %q", format, saved.Format)
+		}
+	}
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "fmt_bad", Expr: "from events: count()", Format: "float3", Scope: "match",
+	}); err == nil || !strings.Contains(err.Error(), "unknown format") ||
+		!strings.Contains(err.Error(), "float2") {
+		t.Errorf("float3 err = %v, want the friendly unknown-format copy naming float2", err)
+	}
+}
+
+// orName makes a stable metric name for an enum tag ("" → auto).
+func orName(format string) string {
+	if format == "" {
+		return "auto"
+	}
+	return format
+}
+
 // TestSaveMetricBuiltinGuards pins the service-level built-in
 // immutability (owner wave): an EXISTING builtin row can be neither
 // edited nor deleted through the API, judged by the STORED row's origin
