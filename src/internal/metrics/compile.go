@@ -474,8 +474,14 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 	if p := checkCond(a.Count); p != nil {
 		return p
 	}
-	if a.Col != "" {
-		if perr := res.resolveValue(a.Col, a.ColPos); perr != nil {
+	if a.Col != "" || a.Terms != nil {
+		if a.Terms != nil {
+			for i, tm := range a.Terms {
+				if perr := res.resolveValue(tm, a.TermPos[i]); perr != nil {
+					return perr
+				}
+			}
+		} else if perr := res.resolveValue(a.Col, a.ColPos); perr != nil {
 			return perr
 		}
 	}
@@ -745,7 +751,7 @@ func (e *emitter) emitValue(a *Agg) {
 		if a.Where == nil {
 			e.sb.WriteString(fn)
 			e.sb.WriteString("(")
-			e.sb.WriteString(e.res.qualify(a.Col))
+			e.emitTerms(a)
 			e.sb.WriteString(")")
 			return
 		}
@@ -753,7 +759,7 @@ func (e *emitter) emitValue(a *Agg) {
 		e.sb.WriteString("(CASE WHEN ")
 		e.emitCond(a.Where)
 		e.sb.WriteString(" THEN ")
-		e.sb.WriteString(e.res.qualify(a.Col))
+		e.emitTerms(a)
 		e.sb.WriteString(" END)")
 	case "stddev":
 		// sqrt(max(avg(x²) - avg(x)², 0)) — population σ, clamped so
@@ -783,6 +789,22 @@ func (e *emitter) emitValue(a *Agg) {
 	default:
 		// percentile never reaches SQL (phase2 fetches raw values).
 		e.sb.WriteString("NULL")
+	}
+}
+
+// emitTerms writes the value term(s): the single qualified column (the
+// byte-stable form — Terms == nil, which every pre-chain expression
+// parses with) or sum()'s additive column chain `q1 + q2 + …`.
+func (e *emitter) emitTerms(a *Agg) {
+	if a.Terms == nil {
+		e.sb.WriteString(e.res.qualify(a.Col))
+		return
+	}
+	for i, tm := range a.Terms {
+		if i > 0 {
+			e.sb.WriteString(" + ")
+		}
+		e.sb.WriteString(e.res.qualify(tm))
 	}
 }
 

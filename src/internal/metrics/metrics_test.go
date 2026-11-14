@@ -472,3 +472,132 @@ func TestJoinedSQLIsParameterized(t *testing.T) {
 		}
 	}
 }
+
+// ---- W0: the sum() additive column chain (spec addendum A.1) ----
+
+// TestSumChainCompileShapes pins the I9 unlock's compile surface — spec
+// A.1.3 row 1's 5/5 run: the three owner-greenlit seed shapes plus the
+// N1 (KDA) and N3 (opening-rate) capability shapes, each at BOTH scopes.
+// The seed ROWS themselves ship in W1; this pins the grammar they will
+// need (the emitted SQL carries `SUM(q1 + q2 …)` — asserted on the two
+// chain-bearing shapes).
+func TestSumChainCompileShapes(t *testing.T) {
+	cases := []struct {
+		name, expr string
+		wantSQL    string // "" = no SQL assertion
+	}{
+		{"career_openings", "from player_stats: sum(opening_kills + opening_deaths)",
+			"SUM(opening_kills + opening_deaths)"},
+		{"career_opener_wins", "from player_stats: sum(opening_kills)", ""},
+		{"career_opening_rate", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
+			"1.0*(SUM(opening_kills)) / NULLIF((SUM(opening_kills + opening_deaths)), 0)"},
+		// Capability proofs for the shared two-column wall (audit N1/N3
+		// shapes) — NOT seeded (outside the owner greenlight).
+		{"n1_kda_shape", "from player_stats: ratio(sum(kills + assists), sum(deaths))",
+			"SUM(kills + assists)"},
+		{"n3_rate_shape", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if perr := Validate(c.expr); perr != nil {
+				t.Fatalf("Validate(%q): %v", c.expr, perr)
+			}
+			for _, scope := range []string{"", "match:3"} {
+				plan, perr := Compile(c.expr, "", scope)
+				if perr != nil {
+					t.Fatalf("Compile(%q, scope %q): %v", c.expr, scope, perr)
+				}
+				if c.wantSQL != "" && !strings.Contains(plan.SQL, c.wantSQL) {
+					t.Errorf("scope %q SQL missing %q:\n%s", scope, c.wantSQL, plan.SQL)
+				}
+			}
+		})
+	}
+}
+
+// TestSumChainGrammarMatrix is THE W0 accept/reject matrix — spec A.1.3
+// rows 2–3's executed grammar run, reproduced EXACTLY (6 accepts, 9
+// rejects): every unlock-widened chain shape compiles, every shape
+// outside the widening fails with its intended POSITIONED error. This is
+// regression pin (1) of spec A.4: a regression that quietly accepts more
+// (avg(a+b), condition arithmetic, refs-in-chain, literals, `*`) fails
+// here.
+func TestSumChainGrammarMatrix(t *testing.T) {
+	accept := []struct{ name, expr string }{
+		{"sum chain", "from player_stats: sum(opening_kills + opening_deaths)"},
+		{"sum chain with filter", "from player_stats: sum(where side='ct', opening_kills + opening_deaths)"},
+		{"n-ary chain", "from player_stats: sum(kills + assists + opening_kills)"},
+		{"chain inside ratio numerator", "from player_stats: ratio(sum(kills + assists), sum(deaths))"},
+		{"chain inside ratio denominator", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))"},
+		{"chain over a join (qualified)", "from player_stats, match_trade_opps: sum(opening_kills + opening_deaths)"},
+	}
+	for _, c := range accept {
+		t.Run("accept "+c.name, func(t *testing.T) {
+			if perr := Validate(c.expr); perr != nil {
+				t.Fatalf("Validate(%q): %v", c.expr, perr)
+			}
+			if _, perr := Compile(c.expr, "", ""); perr != nil {
+				t.Fatalf("Compile(%q): %v", c.expr, perr)
+			}
+		})
+	}
+	reject := []struct{ name, expr, want string }{
+		{"avg chain", "from player_stats: avg(opening_kills + opening_deaths)", "single column"},
+		{"stddev chain", "from player_stats: stddev(kills + assists)", "single column"},
+		{"min chain", "from player_stats: min(kills + assists)", "single column"},
+		{"ref inside chain", "from player_stats: sum(kills + metric('x'))", "value reference"},
+		{"keyword inside chain", "from player_stats: sum(kills + and)", "keyword"},
+		{"literal in chain", "from player_stats: sum(kills + 1)", "column name"},
+		{"unknown column in chain", "from player_stats: sum(kills + nope)", "unknown column"},
+		{"condition arithmetic still banned", "from player_stats: count(where opening_kills + opening_deaths > 0)", ""},
+		{"multiplication not part of the node", "from player_stats: sum(kills * assists)", ""},
+	}
+	for _, c := range reject {
+		t.Run("reject "+c.name, func(t *testing.T) {
+			// A compile-level rejection (unknown column resolves in
+			// Compile, not Parse) counts too — Validate runs Compile.
+			perr := Validate(c.expr)
+			if perr == nil {
+				if _, cerr := Compile(c.expr, "", ""); cerr == nil {
+					t.Fatalf("Compile(%q) unexpectedly accepted", c.expr)
+				} else {
+					perr = cerr
+				}
+			}
+			if c.want != "" && !strings.Contains(perr.Message, c.want) {
+				t.Errorf("message = %q, want substring %q", perr.Message, c.want)
+			}
+			if perr.Pos <= 0 {
+				t.Errorf("Pos = %d, want a positioned error", perr.Pos)
+			}
+		})
+	}
+}
+
+// TestAggLevelArithmeticDenied pins the three shapes spec A.1.1(a) rules
+// OUT of the unlock (sum is the one linear aggregate INSIDE sum()'s
+// argument — nothing wider): agg-level `sum(a) + sum(b)`, arithmetic
+// inside ratio() operands, and metric() as an addend all stay denied by
+// the unchanged outer grammar. Kept as a separate table so the executed
+// A.1.3 matrix above stays exactly 6 accepts / 9 rejects.
+func TestAggLevelArithmeticDenied(t *testing.T) {
+	cases := []struct{ name, expr, want string }{
+		{"agg-level sum addition", "from player_stats: sum(kills) + sum(deaths)", "or end of expression"},
+		{"ratio-operand arithmetic", "from player_stats: ratio(sum(kills) + sum(deaths), sum(assists))", "expected \",\" (got"},
+		{"metric() as an addend", "from player_stats: sum(kills) + metric('x')", "or end of expression"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			perr := Validate(c.expr)
+			if perr == nil {
+				t.Fatalf("Validate(%q) unexpectedly accepted", c.expr)
+			}
+			if !strings.Contains(perr.Message, c.want) {
+				t.Errorf("message = %q, want substring %q", perr.Message, c.want)
+			}
+			if perr.Pos <= 0 {
+				t.Errorf("Pos = %d, want a positioned error", perr.Pos)
+			}
+		})
+	}
+}
