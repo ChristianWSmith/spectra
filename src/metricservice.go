@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -31,9 +34,15 @@ import (
 // catalog (metrics.name is UNIQUE across origins, so name→id is total),
 // enforces existence / cross-scope / acyclicity, and persists the edges
 // wholesale into metric_deps inside the save transaction — with the
-// rename splice re-validated before anything is written. The compute
-// pass, the cascade version bumps and the metric_values writers are
-// deliberately NOT here (design §6 wave 3).
+// rename splice re-validated before anything is written.
+//
+// W3 (the compute pass — design §4) is DONE here too: a semantic save
+// bumps the metric's version AND every transitive dependent's inside the
+// same tx (SaveMetricWithDeps' semanticBump), then schedules the sweep;
+// metriccompute.go owns the scheduler, spectra:metric-progress /
+// spectra:metric-done, the transient processing/failed records and
+// GetMetricComputeState; the pass itself (behind-set, topo order,
+// two-phase unit) is metrics.Sweep in internal/metrics.
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
@@ -71,10 +80,36 @@ type ExprError struct {
 // ParseError onto the ExprError binding shape — no grammar knowledge of
 // its own, so the two can never drift.
 
-// MetricsService — see doc comment above.
+// MetricsService — see doc comment above. The W3 compute machinery
+// (scheduler, events, transient state) lives in metriccompute.go; the
+// pass itself in internal/metrics.
 type MetricsService struct {
 	st  *store.Store
 	app *application.App
+
+	// --- W3 compute machinery (stored-metrics design §4) — see
+	// metriccompute.go for each field's contract ---
+	mu sync.Mutex
+	// computeLock is the shared ONE-COMPUTE-AT-A-TIME lock (main wires
+	// the same mutex into AnalyticsService and library.Options): a
+	// background sweep, an import-body sweep and an analytics recompute
+	// never overlap. Unwired ⇒ a private slot on first use (package
+	// tests: still serialized, just not cross-service).
+	computeLock *sync.Mutex
+	// budget is the machine-wide work-token pool: the BACKGROUND sweep
+	// takes ONE token for its whole body BEFORE the compute lock (token
+	// → lock, never reversed). The import body already holds its job's
+	// token and never takes a second. nil = unbudgeted no-op seam.
+	budget *budget.Budget
+	// sweepsOn gates scheduleSweep (main wires useSweeps; package tests
+	// construct the service bare and drive runSweep synchronously).
+	sweepsOn     bool
+	sweepRunning bool
+	sweepWanted  bool
+	inflight     map[int64]bool   // metrics a live sweep is computing
+	errs         map[int64]string // last failure per metric (cleared on success)
+	progMu       sync.Mutex       // guards the 100 ms progress throttle
+	progLast     time.Time
 }
 
 // exprError converts a metrics.ParseError into the ExprError contract and
@@ -251,9 +286,15 @@ func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string
 // full Compile, the cycle check, the rename splice — and only THEN one
 // transaction writes the metric, its metric_deps edges (re-derived
 // wholesale from the CURRENT expression) and any dependents' splices.
-// Nothing is written until every check passes; no version is bumped
-// (the cascade bumps are wave 3 — a rename changes no semantics, so
-// there is deliberately nothing to bump).
+// Nothing is written until every check passes.
+//
+// W3 (design §4): a SEMANTIC edit (expr / scope / denominator — the
+// three fields the bump answers, compared against the stored row like
+// analyticservice.go's SetConfig no-op) bumps this metric's version AND
+// every transitive dependent's inside that same transaction, then
+// schedules the sweep. A display-only edit (title / shortName / format /
+// doc), a no-op save and a rename bump nothing and schedule nothing — a
+// rename changes no semantics (W2b's pin, kept).
 func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error) {
 	m.Name = strings.TrimSpace(m.Name)
 	if m.Name == "" {
@@ -403,8 +444,18 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if strings.TrimSpace(m.Doc) == "" {
 		m.Doc = "Formula: " + m.Expr // PRD §5.16: formula documentation on every metric
 	}
-	// ONE transaction: the metric row, its edges wholesale, the splices.
-	saved, err := s.st.SaveMetricWithDeps(m, depNames, rewrites)
+	// Design §4's semantic test — exactly the three fields the version
+	// bump answers (expr, scope, denominator), read off the STORED row
+	// before anything is written (the analyticservice.go SetConfig
+	// no-op pattern). A create never bumps (the INSERT default starts
+	// the counter at 1 and a new metric has no rows — absent → behind
+	// already).
+	semantic := m.ID > 0 && (m.Expr != existing.Expr ||
+		m.Scope != existing.Scope || m.Denominator != existing.Denominator)
+	// ONE transaction: the metric row, its edges wholesale, the splices,
+	// and (semantic) the version bump for this metric + every transitive
+	// dependent — atomic, so nothing is partially behind after commit.
+	saved, err := s.st.SaveMetricWithDeps(m, depNames, rewrites, semantic)
 	if err != nil {
 		return models.MetricRow{}, err
 	}

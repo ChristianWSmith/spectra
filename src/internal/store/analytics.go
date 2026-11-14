@@ -1118,6 +1118,19 @@ func (s *Store) RebuildCareer() error {
 	if _, err := tx.Exec(`DELETE FROM player_career`); err != nil {
 		return fmt.Errorf("store: rebuild career: %w", err)
 	}
+	// Source-data axis for the stored metrics (design §4): the career
+	// rollup regenerating means every PROFILE-grain metric value (the
+	// match_id = 0 career bucket, all metrics) was computed over inputs
+	// that just changed — clear them in the SAME transaction, so a crash
+	// can never leave fresh-looking career values built from pre-rebuild
+	// data. The sweep (which runs right after analyze) re-derives them:
+	// absent → behind. This is input regeneration, NOT the version axis —
+	// no metric's version moves here, and per-match metric rows are
+	// untouched (their inputs are this match's rows, cleared through
+	// childTables on reprocess instead).
+	if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
+		return fmt.Errorf("store: rebuild career: %w", err)
+	}
 	_, err = tx.Exec(
 		`INSERT INTO player_career (`+playerCareerCols+`)
 		SELECT ps.steam_id,

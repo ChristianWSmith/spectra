@@ -38,7 +38,7 @@ func TestSaveMetricScope(t *testing.T) {
 		t.Errorf("saved scope = %q, want profile (the API writes the real scope)", saved.Scope)
 	}
 	if saved.Version != 1 {
-		t.Errorf("saved version = %d, want 1 (INSERT default — no bump logic until a later wave)", saved.Version)
+		t.Errorf("saved version = %d, want 1 (INSERT default — a create never bumps; W3 bumps semantic EDITS only)", saved.Version)
 	}
 	if saved.Origin != "user" || saved.Doc == "" {
 		t.Errorf("saved row = %+v, want origin user + formula doc", saved)

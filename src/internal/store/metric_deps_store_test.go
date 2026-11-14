@@ -15,7 +15,7 @@ import (
 // mustSaveMetricDeps runs SaveMetricWithDeps, failing the test on error.
 func mustSaveMetricDeps(t *testing.T, s *Store, m models.MetricRow, deps []string) models.MetricRow {
 	t.Helper()
-	saved, err := s.SaveMetricWithDeps(m, deps, nil)
+	saved, err := s.SaveMetricWithDeps(m, deps, nil, false)
 	if err != nil {
 		t.Fatalf("SaveMetricWithDeps(%q): %v", m.Name, err)
 	}
@@ -49,7 +49,7 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: dep.ID, Name: dep.Name, Title: dep.Title, Expr: "from events: count()",
 		Scope: "match", Origin: "user",
-	}, nil, nil); err != nil {
+	}, nil, nil, false); err != nil {
 		t.Fatalf("SaveMetricWithDeps(update): %v", err)
 	}
 	if got, err := s.MetricDeps(dep.ID); err != nil || len(got) != 0 {
@@ -61,7 +61,7 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: dep.ID, Name: dep.Name, Title: dep.Title, Expr: "from events: metric('deps_up')",
 		Scope: "match", Origin: "user",
-	}, []string{"deps_up"}, nil); err != nil {
+	}, []string{"deps_up"}, nil, false); err != nil {
 		t.Fatalf("SaveMetricWithDeps(restore edges): %v", err)
 	}
 
@@ -134,7 +134,7 @@ func TestSaveMetricWithDepsRollsBackAtomically(t *testing.T) {
 	}, nil, []DependentRewrite{
 		{ID: other.ID, Expr: "from events: sum(dmg)", Deps: nil},
 		{ID: 999999, Expr: "from events: count()", Deps: nil},
-	})
+	}, false)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want store.ErrNotFound (the failing rewrite)", err)
 	}
@@ -159,7 +159,7 @@ func TestSaveMetricWithDepsRollsBackAtomically(t *testing.T) {
 		Scope: "match", Origin: "user",
 	}, []string{"atomic_up"}, []DependentRewrite{
 		{ID: 999999, Expr: "from events: count()", Deps: nil},
-	})
+	}, false)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("create+bad rewrite err = %v, want store.ErrNotFound", err)
 	}
