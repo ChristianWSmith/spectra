@@ -113,24 +113,18 @@ func CompilePassMatch(expr, denominator string, refs map[string]RefTarget) (Plan
 	return compileRefs(expr, denominator, "", refs, true)
 }
 
-// sourceTable resolves a source name to the physical store table at the
-// FROM/JOIN position — the curated-alias design (spec addendum I20): a
-// second source over the SAME table under its own subject
-// (`engagements_victim` = the engagements table anchored on b_steam),
-// emitted as `<table> AS <source>`.
+// tableFor (whitelist.go) resolves a source name to the physical store
+// table at the FROM/JOIN position — the curated-alias design (spec
+// addendum I20): a second source over the SAME table under its own
+// subject (`engagements_victim` = the engagements table anchored on
+// b_steam) is emitted as `<table> AS <source>`. Every source not
+// declared in whitelist.go's sourceTable map resolves to itself, so
+// identity sources keep byte-stable `FROM`/`JOIN` text and the `AS`
+// branches below fire ONLY for a declared alias. Only the table
+// position resolves through it: scope binding, subject/humans-only,
+// join keys and column qualification all key off the SOURCE NAME
+// (which the AS clause makes the table's alias).
 //
-// W0 ships this IDENTITY: no aliased source is whitelisted yet (the
-// alias source and its source→table map entry are W1's whitelist.go
-// addition — spec A.2.1), so `sourceTable(name) != name` never holds and
-// the `AS` branches below are DEAD CODE until then — the engine unlock
-// is inert alone. Only the table position resolves through this: scope
-// binding, subject/humans-only, join keys and column qualification all
-// key off the SOURCE NAME (which the AS clause makes the table's alias),
-// which is also what keeps identity sources' emission byte-stable.
-func sourceTable(name string) string {
-	return name
-}
-
 // compileRefs is the one implementation CompileRefs and CompilePassMatch
 // share (batched selects the pass-only address mode above).
 func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, batched bool) (Plan, *ParseError) {
@@ -181,7 +175,7 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 	// scope below binds on the PRIMARY only (a scope predicate landing on
 	// a LEFT-joined secondary would silently convert the join to INNER).
 	from := primary
-	if t := sourceTable(primary); t != primary {
+	if t := tableFor(primary); t != primary {
 		from = t + " AS " + primary
 	}
 	oneToOne := map[string]bool{}
@@ -192,7 +186,7 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 				"cannot join source %q to %q: secondary %q is not unique on the shared dimensions (its primary key/unique key must consist entirely of join dimensions: match, round, player, side)",
 				s.Name, primary, s.Name)
 		}
-		if t := sourceTable(s.Name); t != s.Name {
+		if t := tableFor(s.Name); t != s.Name {
 			from += " LEFT JOIN " + t + " AS " + s.Name + " ON "
 		} else {
 			from += " LEFT JOIN " + s.Name + " ON "

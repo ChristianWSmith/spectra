@@ -143,7 +143,7 @@ func TestParseAndCompileInvalid(t *testing.T) {
 // list in it is the literal the design carries (TestSchemaConsistency
 // pins that list to sourceSubject's keys).
 func TestAnchorValidation(t *testing.T) {
-	const wantList = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps"
+	const wantList = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps, round_player_sides, engagements_victim"
 	cases := []struct{ name, expr, primary string }{
 		{"rounds primary", "from rounds: count()", "rounds"},
 		{"round_economy primary", "from round_economy: sum(equip_value)", "round_economy"},

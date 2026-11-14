@@ -19,6 +19,8 @@ import "strings"
 var sources = []string{
 	"events", "engagements", "rounds", "player_stats", "player_round_stats",
 	"round_economy", "clutches", "utility_events", "chat", "match_trade_opps",
+	"round_classifications", "round_side_classes", "round_player_sides",
+	"engagements_victim",
 }
 
 // sourceColumns is the per-source column whitelist. JSON/blob payload
@@ -80,6 +82,54 @@ var sourceColumns = map[string]map[string]bool{
 	"match_trade_opps": colSet(
 		"match_id", "steam_id", "opps", "missed",
 	),
+	// The three analysis-output sources (no DDL — the tables exist):
+	// counts/keys yes; label/class/why/explanation are filter columns,
+	// never values (a metric is one number per subject — a round-grain
+	// string never becomes a value; doc.go's VALUE-COLUMN RULE).
+	"round_classifications": colSet(
+		"match_id", "round", "label", "confidence", "rule_version", "explanation",
+	),
+	"round_side_classes": colSet(
+		"match_id", "round", "side", "class", "why",
+	),
+	"round_player_sides": colSet(
+		"match_id", "round", "steam_id", "side",
+	),
+	// engagements_victim is the engagements table under a SECOND,
+	// victim-anchored subject (the curated-alias design — sourceTable
+	// below maps it to its physical table): identical column set to the
+	// twin, different subject.
+	"engagements_victim": colSet(
+		"match_id", "seq", "tick", "round", "kind", "a_steam", "a_name",
+		"b_steam", "b_name", "distance", "won_by",
+	),
+}
+
+// sourceTable maps a source name to the PHYSICAL store table at the
+// FROM/JOIN position — the curated-alias design: a second source over
+// the SAME table under its own subject (`engagements_victim` = the
+// engagements table anchored on b_steam) is emitted as
+// `<table> AS <source>`. Only the table position resolves through it
+// (table existence, declared keys, schema-browser notes); scope
+// binding, subject/humans-only, join keys and column qualification all
+// key off the SOURCE NAME (which the AS clause makes the table's
+// alias), which is also what keeps identity sources' emission
+// byte-stable. Identity default — a source absent here IS its own
+// table (tableFor).
+var sourceTable = map[string]string{
+	"engagements_victim": "engagements",
+}
+
+// tableFor resolves a source name to its physical store table:
+// sourceTable's alias when one is declared, the name itself otherwise.
+// This is THE spelling compile and the schema-pin tests share, so
+// "source" and "store table" can never drift apart at a resolution
+// site.
+func tableFor(src string) string {
+	if t, ok := sourceTable[src]; ok {
+		return t
+	}
+	return src
 }
 
 func colSet(cols ...string) map[string]bool {
@@ -98,10 +148,14 @@ func colSet(cols ...string) map[string]bool {
 // expression's output must be player-addressed, so the PRIMARY's player
 // mapping must be a SUBJECT column; primary-owns, like scope binding
 // and the population anchor). A source ABSENT from this map has no
-// subject — rounds (mvp is an attribute of a won round) and
-// round_economy (side-grained) — so it can never be a primary; it may
+// subject — rounds (mvp is an attribute of a won round),
+// round_classifications (the label is the whole round's) and
+// round_side_classes (round×side-grained), plus round_economy
+// (side-grained) — so it can never be a primary; it may
 // still join an anchored primary wherever joinKey allows (the rule
 // partitions by what the OUTPUT is, not by a source whitelist).
+// engagements_victim is the one ALIASED member: the engagements table
+// anchored on its victim column (sourceTable).
 var sourceSubject = map[string]string{
 	"events":             "attacker", // the acting player of the event
 	"engagements":        "a_steam",  // the A-side actor (every kind)
@@ -111,13 +165,15 @@ var sourceSubject = map[string]string{
 	"clutches":           "steam_id",
 	"chat":               "steam_id",
 	"match_trade_opps":   "steam_id",
+	"round_player_sides": "steam_id", // freeze-end side sample, per round
+	"engagements_victim": "b_steam",  // the engagement's VICTIM (I20 route A)
 }
 
 // playerSources is the anchored-source list the anchor error renders
 // VERBATIM (the design's order — deliberately not the `sources` order).
 // Its set is pinned to sourceSubject's keys by TestSchemaConsistency
 // (schema_consistency_test.go), so the two cannot drift.
-const playerSources = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps"
+const playerSources = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps, round_player_sides, engagements_victim"
 
 // sourceDims maps source → join dimension → the fixed column that
 // carries it (round and side only — `match` is every source's match_id
@@ -125,21 +181,26 @@ const playerSources = "events, engagements, player_stats, player_round_stats, cl
 // derived in sourceDimsOf). Anything unmapped is not a dimension of that
 // source (no ambiguous joins: the engagements player ambiguity is
 // resolved by fixing its player dimension to the A-side actor through
-// sourceSubject; victim-side rates use player_round_stats.traded
-// instead). This is what remains of the groupBy token mapping after W2:
-// the player token became sourceSubject's anchor, and the team/weapon/
-// map tokens retired with the parameter — round/side are the entries
-// joinKey still reads.
+// sourceSubject; victim-side RATES use player_round_stats.traded — the
+// victim-side COUNT ships as the engagements_victim source instead, its
+// player dimension b_steam). This is what remains of the groupBy token
+// mapping after W2: the player token became sourceSubject's anchor,
+// and the team/weapon/map tokens retired with the parameter — round/side
+// are the entries joinKey still reads.
 var sourceDims = map[string]map[string]string{
-	"events":             {"round": "round"},
-	"engagements":        {"round": "round"},
-	"rounds":             {"round": "number"},
-	"player_stats":       {"side": "side"},
-	"player_round_stats": {"round": "round"},
-	"round_economy":      {"round": "round", "side": "side"},
-	"clutches":           {"round": "round"},
-	"utility_events":     {"round": "round"},
-	"chat":               {"round": "round"},
+	"events":                {"round": "round"},
+	"engagements":           {"round": "round"},
+	"rounds":                {"round": "number"},
+	"player_stats":          {"side": "side"},
+	"player_round_stats":    {"round": "round"},
+	"round_economy":         {"round": "round", "side": "side"},
+	"clutches":              {"round": "round"},
+	"utility_events":        {"round": "round"},
+	"chat":                  {"round": "round"},
+	"round_classifications": {"round": "round"},
+	"round_side_classes":    {"round": "round", "side": "side"},
+	"round_player_sides":    {"round": "round", "side": "side"},
+	"engagements_victim":    {"round": "round"},
 	// match_trade_opps carries only match + player (both derived).
 }
 
@@ -205,6 +266,11 @@ func knownSourcesMsg() string { return strings.Join(sources, ", ") }
 //	utility_events     (match_id, seq)        match round player(thrower)
 //	chat               (id)                   match round player(steam_id)
 //	match_trade_opps   (match_id, steam_id)   match player
+//	round_classifications (match_id, round)    match round (no subject)
+//	round_side_classes (match_id, round, side) match round side (no subject)
+//	round_player_sides (match_id, round, steam_id)  match round side player
+//	engagements_victim (match_id, seq)         match round player(b_steam)
+//	                                 [the engagements table — sourceTable]
 
 // population is the row population a source's rows represent — the
 // bot-exclusion dimension of the source list. Declared and pinned
@@ -225,16 +291,20 @@ const (
 
 // sourcePopulation maps every source to its population.
 var sourcePopulation = map[string]population{
-	"events":             popAllPlayers,
-	"engagements":        popAllPlayers,
-	"rounds":             popAllPlayers,
-	"player_stats":       popAllPlayers,
-	"player_round_stats": popAllPlayers,
-	"round_economy":      popAllPlayers,
-	"clutches":           popAllPlayers,
-	"utility_events":     popAllPlayers,
-	"chat":               popAllPlayers,
-	"match_trade_opps":   popHumansOnly,
+	"events":                popAllPlayers,
+	"engagements":           popAllPlayers,
+	"rounds":                popAllPlayers,
+	"player_stats":          popAllPlayers,
+	"player_round_stats":    popAllPlayers,
+	"round_economy":         popAllPlayers,
+	"clutches":              popAllPlayers,
+	"utility_events":        popAllPlayers,
+	"chat":                  popAllPlayers,
+	"match_trade_opps":      popHumansOnly,
+	"round_classifications": popAllPlayers,
+	"round_side_classes":    popAllPlayers,
+	"round_player_sides":    popAllPlayers,
+	"engagements_victim":    popAllPlayers,
 }
 
 // sourceUniqueKeys maps every source to its join-relevant uniqueness key
@@ -242,16 +312,20 @@ var sourcePopulation = map[string]population{
 // id PK is not join-shaped, so its UNIQUE(match_id, seq) is declared).
 // The join criterion and the 1:1 value-column rule read ONLY this table.
 var sourceUniqueKeys = map[string][]string{
-	"events":             {"match_id", "seq"},
-	"engagements":        {"match_id", "seq"},
-	"rounds":             {"match_id", "number"},
-	"player_stats":       {"match_id", "steam_id"},
-	"player_round_stats": {"match_id", "round", "steam_id"},
-	"round_economy":      {"match_id", "round", "side"},
-	"clutches":           {"match_id", "round", "steam_id", "start_tick"},
-	"utility_events":     {"match_id", "seq"},
-	"chat":               {"id"},
-	"match_trade_opps":   {"match_id", "steam_id"},
+	"events":                {"match_id", "seq"},
+	"engagements":           {"match_id", "seq"},
+	"rounds":                {"match_id", "number"},
+	"player_stats":          {"match_id", "steam_id"},
+	"player_round_stats":    {"match_id", "round", "steam_id"},
+	"round_economy":         {"match_id", "round", "side"},
+	"clutches":              {"match_id", "round", "steam_id", "start_tick"},
+	"utility_events":        {"match_id", "seq"},
+	"chat":                  {"id"},
+	"match_trade_opps":      {"match_id", "steam_id"},
+	"round_classifications": {"match_id", "round"},
+	"round_side_classes":    {"match_id", "round", "side"},
+	"round_player_sides":    {"match_id", "round", "steam_id"},
+	"engagements_victim":    {"match_id", "seq"},
 }
 
 // sourceDimsOf returns the join dimensions a source carries: `match`
