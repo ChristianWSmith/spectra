@@ -53,11 +53,17 @@ export function errText(e) {
 //   spectra:job-progress    - parse/store progress (data lands mid-stream)
 //   spectra:files-dropped   - import kickoff (its own events may lag the
 //                             call site's refetch)
+//   spectra:metric-done     - the metric sweep's DATA change (stored
+//                             metric_values rows were replaced — design
+//                             §5's flush, the listener beside
+//                             analysis-done: one listener set, no second
+//                             cache)
 // The progress-only exceptions: spectra:asset-progress (Settings' CS2-asset
-// extraction), spectra:heatmap-progress (Heatmaps' generate) and
-// spectra:analysis-progress (a re-run's start note) change no row — they
-// are NOT in the listener list below and never flush; each reaches only
-// its own chip.
+// extraction), spectra:heatmap-progress (Heatmaps' generate),
+// spectra:analysis-progress (a re-run's start note) and
+// spectra:metric-progress (the sweep's k/N — it changes no row; the rows
+// land at metric-done) change no row — they are NOT in the listener list
+// below and never flush; each reaches only its own chip.
 // Mutating wrappers (deleteMatch/importPaths/reprocess/setAnalysisConfig)
 // also invalidate on success: DeleteMatch emits no event at all, and the
 // event round-trip for the others can land AFTER the call site's own
@@ -108,6 +114,7 @@ for (const evt of [
   'spectra:job-done',
   'spectra:job-progress',
   'spectra:files-dropped',
+  'spectra:metric-done',
 ]) {
   Events.On(evt, () => invalidate());
 }
@@ -786,10 +793,114 @@ export function deleteMetric(id) {
 // scope: "" = whole library, "match:<id>" = one match. There is no
 // groupBy argument (retired with the W2 grammar wave) — the engine
 // addresses every preview row by its subject.
+// DESIGN §5 PREVIEW CRITERION: this is the ON-DEMAND CALCULATOR for
+// unsaved/dirty drafts (authoring state has no stored rows). A saved +
+// unmodified definition must instead read its stored rows through
+// getMetricValuesForMatch/getMetricValuesForPlayer below — never this.
 export function previewMetric(id, expr, scope, limit) {
   return MetricsService.PreviewMetric(id, expr || '', scope || '', limit || 200);
 }
 export function validateExpr(expr) { return MetricsService.ValidateExpr(expr); }
+
+// --- Stored metric values + compute state (design §5) ----------------------
+// THE canonical reads: fresh stored rows only (the store applies the
+// same behind predicate the sweep selects with, so a stale row never
+// leaves it), canonical metric order, DTO exactly
+// {metricId, steamId, value, n} — no stamp field exists to render.
+// Read-cached through the SAME cachedRead as every other read here
+// (keyed (method, args), flushed by the spectra:* listeners above —
+// metric-done joins them precisely because these rows are what it
+// replaces). metricIDs = the view's pin/checkbox set (empty = every
+// metric). Match grain vs career grain: steamID "" reads the whole
+// career bucket (the value slot's unit coverage + Builder's
+// all-players preview), non-empty narrows to one player.
+export function getMetricValuesForMatch(matchID, metricIDs) {
+  return cachedRead('GetMetricValuesForMatch', [matchID, metricIDs || []], () =>
+    MetricsService.GetMetricValuesForMatch(matchID, metricIDs || []),
+  );
+}
+export function getMetricValuesForPlayer(steamID, metricIDs) {
+  return cachedRead('GetMetricValuesForPlayer', [steamID || '', metricIDs || []], () =>
+    MetricsService.GetMetricValuesForPlayer(steamID || '', metricIDs || []),
+  );
+}
+// getPlayerRefs is one match's roster (identity + final side + bot
+// flag) — Reports' appendix labels the stored rows with it (the value
+// read carries steam ids only; names stay a roster concern). Read-
+// cached like the other single-match reads.
+export function getPlayerRefs(matchID) {
+  return cachedRead('GetPlayerRefs', [matchID], () => MatchService.GetPlayerRefs(matchID));
+}
+
+// getMetricComputeState is DELIBERATELY NOT cached (design §5): the
+// transient processing/failed words live in Go memory and change
+// without a data event — a cache would serve them stale. Every view
+// refetches it on mount and on spectra:metric-done (the completion
+// that moved fresh/behind), which is exactly when it changes.
+export function getMetricComputeState() {
+  return MetricsService.GetMetricComputeState();
+}
+
+// compileMetric is the no-execution Compile (design §5): the
+// provenance SQL a clean-saved preview shows beside its stored rows,
+// without calculating a value. expr "" uses the saved definition by id.
+export function compileMetric(id, expr, scope) {
+  return MetricsService.CompileMetric(id, expr || '', scope || '');
+}
+
+// --- Metric compute progress store -----------------------------------------
+// spectra:metric-progress {metricId, stage, done, total} — the ONE feed
+// of the sweep's honest k/N (throttled 100 ms Go-side; progress-only,
+// so it never flushes the read cache above). Mirrors the jobProgress
+// store: keyed by metricId, subscribed by every value slot so a cell
+// flips to processing the moment a sweep starts on its metric (and its
+// bar quantifies when the feed carries done/total). Cleared on
+// spectra:metric-done — the sweep is over, the refetch carries the
+// outcome. Listeners register lazily on the first subscription
+// (services.js is a singleton; nothing subscribes before a view
+// mounts).
+const metricProgress = new Map(); // metricId -> {metricId, stage, done, total}
+const metricProgressSubs = new Set();
+let metricProgressOn = false;
+
+function emitMetricProgress() {
+  const snapshot = new Map(metricProgress);
+  for (const fn of metricProgressSubs) fn(snapshot);
+}
+
+function ensureMetricProgressEvents() {
+  if (metricProgressOn) return;
+  metricProgressOn = true;
+  Events.On('spectra:metric-progress', (ev) => {
+    const d = ev && ev.data;
+    if (d && d.metricId != null) {
+      metricProgress.set(d.metricId, d);
+      emitMetricProgress();
+    }
+  });
+  Events.On('spectra:metric-done', () => {
+    if (metricProgress.size === 0) return;
+    metricProgress.clear();
+    emitMetricProgress();
+  });
+}
+
+// subscribeMetricProgress hands cb the current snapshot (Map metricId →
+// payload) synchronously and on every tick; returns an unsubscribe fn
+// ($effect cleanup). See lib/metricstate.js for the display helpers.
+export function subscribeMetricProgress(cb) {
+  ensureMetricProgressEvents();
+  metricProgressSubs.add(cb);
+  cb(new Map(metricProgress));
+  return () => metricProgressSubs.delete(cb);
+}
+
+// onMetricDone is the completion trigger: the stored rows (and the
+// compute state) changed, so a view refetches — the read cache already
+// flushed through the listener set at the top of this file.
+export function onMetricDone(callback) {
+  return onEvent('spectra:metric-done', callback);
+}
 
 // --- QueryService (M5) -------------------------------------------------------
 

@@ -1,13 +1,28 @@
 <script>
   import {
     listMetricsPage,
+    listMatches,
+    listPlayers,
+    getMetric,
     saveMetric,
     deleteMetric,
     previewMetric,
+    compileMetric,
+    getMetricValuesForMatch,
+    getMetricValuesForPlayer,
+    getMetricComputeState,
+    subscribeMetricProgress,
+    onMetricDone,
     validateExpr,
     listPlugins,
     errText,
   } from '../services.js';
+  import {
+    liveMetricState,
+    metricStateTitle,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -15,12 +30,17 @@
 
   let { nav = () => {} } = $props();
 
-  // localStorage contract (M5 §2.1): 'spectra:pinned-metrics' is a JSON
-  // array of metric ids. Builder owns every write (the pin toggles below);
-  // Match.svelte reads it when a scoreboard renders and resolves the ids
-  // through listMetrics() — ids that no longer resolve are ignored there,
-  // and deleteMetric drops its own id here so the array stays canonical.
+  // localStorage contract (M5 §2.1): TWO keys, one mechanism, routed by
+  // the metric's scope (stored-metrics design §3) —
+  //   'spectra:pinned-metrics'           match scope  → Match scoreboard
+  //   'spectra:pinned-profile-metrics'   profile scope → PlayerProfile's
+  //                                              Career metrics panel
+  // Builder owns every write (the pin toggles below); the views read
+  // their own key and resolve ids through listMetrics() (a deleted
+  // metric drops out there), and deleteMetric drops its id from BOTH
+  // keys so an array can never keep a ghost.
   const PINS_KEY = 'spectra:pinned-metrics';
+  const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
 
   const PREVIEW_LIMIT = 200;
   // Placeholder shows the current grammar: a single source, or a comma
@@ -44,9 +64,61 @@
   // still empty).
   let loading = $state(true);
   let loadingMore = $state(false);
-  let pins = $state([]);
+  let pins = $state([]); // match-scope pin ids (PINS_KEY)
+  let profilePins = $state([]); // profile-scope pin ids (PROFILE_PINS_KEY)
   let disabledPlugins = $state(new Set());
   let listError = $state('');
+
+  // --- Compute state + progress (design §4/§5) -----------------------------
+  // The Builder is THE compute-state surface: every list item and the
+  // editor card wear the state chip (all five words), and processing
+  // quantifies with the live k/N feed. The state map is fetched on mount
+  // and refetched on every spectra:metric-done (the sweep's outcome —
+  // the transient words plus fresh/behind both move there); the
+  // progress map is the live feed (a sweep starting mid-session flips
+  // the chips without a refetch).
+  let computeStates = $state(new Map()); // metricId → {state, error}
+  let metricProgress = $state(new Map()); // metricId → {stage, done, total}
+
+  function loadComputeState() {
+    getMetricComputeState()
+      .then((rows) => {
+        computeStates = new Map((rows || []).map((s) => [s.metricId, s]));
+      })
+      .catch(() => {
+        // A failed state read leaves the map as it was — a chip is
+        // never GUESSED; the list's own error slot covers the reads
+        // that gate this view (both come from the same backend).
+      });
+  }
+
+  $effect(() => {
+    loadComputeState();
+    return onMetricDone(() => {
+      loadComputeState();
+      reloadPreview(); // a clean-saved preview re-reads its replaced rows
+    });
+  });
+  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
+
+  // stateOf/stateErrorOf: the LIVE word (progress feed wins over the
+  // refetch-time state — lib/metricstate.js) and the failed metric's
+  // engine error (the chip's tooltip; never a stamp).
+  function stateOf(id) {
+    return liveMetricState(metricProgress, computeStates, id);
+  }
+  function stateErrorOf(id) {
+    const s = computeStates.get(id);
+    return (s && s.error) || '';
+  }
+  // The editor card's honest k/N detail (design §4: "k/N detail
+  // underneath"); falls back to the plain word while the feed carries
+  // no denominator for this metric yet (never a fabricated 0 of 0).
+  function computeDetail(id) {
+    const p = metricProgress.get(id);
+    if (p && p.total > 0) return `computing ${p.done} of ${p.total} metrics`;
+    return 'recomputing';
+  }
 
   // The editor form (fields + the dirty-check baseline), the list's
   // search text and the two source toggles are view-local state: they
@@ -79,17 +151,21 @@
   let exprCheck = $state({ state: 'idle' });
   let exprSeq = 0;
 
-  let preview = $state(null);
+  let preview = $state(null); // {rows, format, sql, ms?, truncated?, match?, scope?}
   let previewAdhoc = $state(false);
+  // previewKey identifies the SAVED definition a clean-saved preview
+  // read ({id, scope}; null for an ad-hoc draft) — what a completed
+  // sweep reloads and what pins the draft-vs-saved criterion.
+  let previewKey = $state(null);
   let previewError = $state('');
   let previewBusy = $state(false);
-  // The format the preview's value column renders with: an AD-HOC
-  // preview echoes no stored row (its format is the form's — the
-  // definition being edited), a SAVED preview formats from the echoed
-  // stored row (preview.metric). The distinction matters because the
-  // row play can preview a BUILT-IN without loading it, so the form may
-  // hold a different metric (or none) than the one on screen.
-  const previewFormat = $derived(previewAdhoc ? form.format : preview?.metric?.format || '');
+  // The format the preview's value column renders with: every preview
+  // carries the format it was rendered for — an AD-HOC preview echoes
+  // the FORM's (the definition being edited), a SAVED preview the stored
+  // definition's. The distinction matters because the row play can
+  // preview a BUILT-IN without loading it, so the form may hold a
+  // different metric (or none) than the one on screen.
+  const previewFormat = $derived(preview ? preview.format || '' : '');
 
   function newForm() {
     return {
@@ -120,9 +196,9 @@
     });
   }
 
-  function readPins() {
+  function readPins(key) {
     try {
-      const raw = localStorage.getItem(PINS_KEY);
+      const raw = localStorage.getItem(key);
       const arr = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(arr)) return [];
       return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
@@ -131,12 +207,30 @@
     }
   }
 
-  function writePins(ids) {
+  function writePins(key, ids) {
     try {
-      localStorage.setItem(PINS_KEY, JSON.stringify(ids));
+      localStorage.setItem(key, JSON.stringify(ids));
     } catch {
       /* storage unavailable — pins stay session-local */
     }
+  }
+
+  // pinnedIn reports which key owns the id ("" = unpinned): a metric
+  // lives in exactly ONE key, so the icon/label never has to guess a
+  // surface.
+  function pinnedIn(id) {
+    if (pins.includes(id)) return 'match';
+    if (profilePins.includes(id)) return 'profile';
+    return '';
+  }
+
+  // The pin button's label: the scope names the SURFACE the metric
+  // reaches (design §3 — match → a scoreboard column, profile → the
+  // player's Career metrics panel).
+  function pinTitle(m) {
+    const on = pinnedIn(m.id) !== '';
+    if (m.scope === 'profile') return on ? 'Unpin from player profile' : 'Pin to player profile';
+    return on ? 'Unpin from scoreboard' : 'Pin as scoreboard column';
   }
 
   // The left list's group runs: the paged read is origin-contiguous
@@ -201,7 +295,8 @@
   // localStorage once per mount (a retry must not re-derive them over the
   // session's toggles) plus the plugin states.
   $effect(() => {
-    pins = readPins();
+    pins = readPins(PINS_KEY);
+    profilePins = readPins(PROFILE_PINS_KEY);
     loadPluginStates();
   });
 
@@ -337,22 +432,55 @@
 
   // Id-based (not row-based): the edit card's Pin acts on form.id, which
   // may sit beyond the windows fetched so far — a paged list must not
-  // make the toggle silently no-op.
-  function togglePin(id) {
-    pins = pins.includes(id) ? pins.filter((x) => x !== id) : [...pins, id];
-    writePins(pins);
+  // make the toggle silently no-op. Scope-routed (design §3): an
+  // already-pinned id toggles OFF wherever it lives; an unpinned one
+  // lands in the key its SCOPE owns — a list row passes its saved
+  // scope, the editor resolves the SAVED scope through getMetric (so a
+  // dirty scope select can never mis-file the pin), and a metric is
+  // always moved OUT of the other key (one mechanism, one home).
+  async function togglePin(id, scope) {
+    let s = pinnedIn(id) || scope;
+    if (!s) {
+      try {
+        s = (await getMetric(id)).scope || 'match';
+      } catch {
+        s = 'match';
+      }
+    }
+    const key = s === 'profile' ? PROFILE_PINS_KEY : PINS_KEY;
+    const otherKey = key === PROFILE_PINS_KEY ? PINS_KEY : PROFILE_PINS_KEY;
+    const cur = readPins(key);
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    const other = readPins(otherKey).filter((x) => x !== id);
+    writePins(key, next);
+    writePins(otherKey, other);
+    if (key === PROFILE_PINS_KEY) {
+      profilePins = next;
+      pins = other;
+    } else {
+      pins = next;
+      profilePins = other;
+    }
   }
 
   async function removeMetric(m) {
     saveError = '';
     try {
       await deleteMetric(m.id);
-      if (pins.includes(m.id)) {
+      if (pins.includes(m.id) || profilePins.includes(m.id)) {
+        // Both keys: the id must leave EVERY array (a scope-routed pin
+        // lives in exactly one, but a stale array must not keep a
+        // ghost either).
         pins = pins.filter((x) => x !== m.id);
-        writePins(pins);
+        profilePins = profilePins.filter((x) => x !== m.id);
+        writePins(PINS_KEY, pins);
+        writePins(PROFILE_PINS_KEY, profilePins);
       }
       if (form.id === m.id) newMetric();
-      if (preview && preview.metric && preview.metric.id === m.id) preview = null;
+      if (previewKey && previewKey.id === m.id) {
+        preview = null;
+        previewKey = null;
+      }
       await refreshList(appliedQuery, appliedFilter);
     } catch (e) {
       saveError = errText(e);
@@ -415,34 +543,134 @@
   // runPreview() previews the FORM (the panel's Preview button);
   // runPreview(row) previews that STORED definition straight off its id
   // — the row play's path for a BUILT-IN, which never loads into the
-  // form. Saved-definition previews ride the id (expr "") so the
-  // denominator applies; edited/unsaved expressions are ad-hoc (no
-  // denominator).
+  // form.
+  //
+  // DESIGN §5 PREVIEW CRITERION (THE saved-form criterion): a metric
+  // VALUE is read from stored rows iff it is addressed by a SAVED
+  // definition whose form is unmodified — `adhoc = dirty || id === 0`
+  // is exactly that predicate. A clean-saved preview reads the
+  // canonical stored rows (profile → every player's career rows; match
+  // → the NEWEST READY MATCH's per-player rows, the match named in the
+  // panel) and shows the no-execution Compile as provenance beside a
+  // plain state indicator — no `ms`, because it timed nothing. A dirty
+  // or unsaved draft is authoring state with NO rows: it stays an
+  // on-demand calculation through PreviewMetric (timing included — it
+  // genuinely computed), enforcing player-relativity like any invalid
+  // expression.
   async function runPreview(target) {
     previewError = '';
     const id = target ? target.id : form.id;
     const expr = target ? '' : form.expr;
     if (!target && !expr.trim()) {
       preview = null;
+      previewKey = null;
       previewError = 'Enter an expression to preview.';
       return;
     }
-    previewBusy = true;
     const adhoc = !target && (dirty || form.id === 0);
-    previewAdhoc = adhoc;
+    await doPreview({
+      id,
+      expr: adhoc ? expr : '',
+      adhoc,
+      scope: target ? target.scope || 'match' : form.scope,
+      format: target ? target.format || '' : form.format,
+    });
+  }
+
+  // doPreview runs one preview leg (shared by the button, the row play
+  // and the metric-done reload below).
+  async function doPreview(spec) {
+    previewBusy = true;
+    previewAdhoc = spec.adhoc;
     try {
-      preview = await previewMetric(
-        id,
-        adhoc ? expr : '',
-        '', // whole library: the builder has no scope selector
-        PREVIEW_LIMIT,
-      );
+      if (spec.adhoc) {
+        const pv = await previewMetric(spec.id, spec.expr, '', PREVIEW_LIMIT);
+        preview = {
+          rows: (pv && pv.rows) || [],
+          format: spec.format,
+          sql: (pv && pv.sql) || '',
+          ms: pv ? pv.ms : 0,
+          truncated: pv ? !!pv.truncated : false,
+        };
+        previewKey = null;
+      } else {
+        preview = await storedPreview(spec.id, spec.scope, spec.format);
+        previewKey = { id: spec.id, scope: spec.scope };
+      }
     } catch (e) {
       preview = null;
+      previewKey = null;
       previewError = errText(e);
     } finally {
       previewBusy = false;
     }
+  }
+
+  // reloadPreview re-reads a clean-saved preview after spectra:metric-
+  // done replaced its rows (the read cache already flushed through
+  // services' listener). Ad-hoc previews are never reloaded — they
+  // calculated once, on demand.
+  function reloadPreview() {
+    if (!previewKey || previewBusy || !preview) return;
+    void doPreview({
+      id: previewKey.id,
+      expr: '',
+      adhoc: false,
+      scope: previewKey.scope,
+      format: preview.format,
+    });
+  }
+
+  // storedPreview is the SAVED-form read: rows from the canonical read
+  // (never calculated) plus the no-execution Compile of the SAME
+  // addressing for the provenance block.
+  async function storedPreview(id, scope, format) {
+    if (scope === 'profile') {
+      const [values, names, sql] = await Promise.all([
+        getMetricValuesForPlayer('', [id]),
+        playerNameMap(),
+        compileMetric(id, '', ''),
+      ]);
+      return { rows: toPreviewRows(values, names), format, sql, scope };
+    }
+    const match = await newestReadyMatch();
+    const sql = await compileMetric(id, '', match ? `match:${match.id}` : '');
+    if (!match) return { rows: [], format, sql, scope, match: null };
+    const [values, names] = await Promise.all([
+      getMetricValuesForMatch(match.id, [id]),
+      playerNameMap(),
+    ]);
+    return { rows: toPreviewRows(values, names), format, sql, scope, match };
+  }
+
+  // toPreviewRows shapes stored rows exactly like a preview's (group =
+  // the subject SteamID, label = the player's name) so the SAME table
+  // renders both — names come from the library-wide player list (one
+  // cached read, shared with the palette/profile finder).
+  function toPreviewRows(values, names) {
+    return (values || []).map((v) => ({
+      group: v.steamId,
+      label: names.get(v.steamId) || v.steamId,
+      value: v.value,
+      n: v.n,
+    }));
+  }
+
+  async function playerNameMap() {
+    const rows = await listPlayers('');
+    const m = new Map();
+    for (const r of rows || []) if (r.steamId) m.set(r.steamId, r.name || '');
+    return m;
+  }
+
+  // newestReadyMatch resolves the match-scope saved preview's unit —
+  // the NEWEST READY match (design §5), from the same list and
+  // ordering Reports' target defaults to (listMatches extracted_at
+  // DESC, first ready row), so the two views never disagree about
+  // "newest". null = no ready match yet (the panel says so).
+  async function newestReadyMatch() {
+    const rows = await listMatches('', 'extracted_at', true);
+    return (rows || []).find((r) => r.status === 'ready' || r.status === '') || null;
   }
 
   // The row play control: preview THIS row. Non-builtin rows load into
@@ -471,6 +699,19 @@
     <span class="mono">{m.name}</span>
     <span class="chip">{m.scope || 'match'}</span>
     <span class="chip">{m.format || 'raw'}</span>
+    <!-- The compute-state surface (design §4/§5): EVERY list item wears
+         its state chip through StatusChip — processing quantifies with
+         the live k/N feed, failed carries the engine error as its
+         tooltip. Absent until the state read lands (a chip is never
+         guessed). -->
+    {#if stateOf(m.id)}
+      <StatusChip
+        status={stateOf(m.id)}
+        title={metricStateTitle(stateOf(m.id), stateErrorOf(m.id))}
+        progress={metricProgressFrac(metricProgress, m.id)}
+        stage={metricProgressStage(metricProgress, m.id)}
+      />
+    {/if}
     {#if m.origin === 'plugin'}
       <span class="chip bld-plugin">plugin</span>
       {#if disabledPlugins.has(m.pluginId)}
@@ -499,10 +740,10 @@
       >
       <button
         class="btn small ghost"
-        class:bld-pin-on={pins.includes(m.id)}
-        title={pins.includes(m.id) ? 'Unpin from scoreboard' : 'Pin as scoreboard column'}
+        class:bld-pin-on={pinnedIn(m.id) !== ''}
+        title={pinTitle(m)}
         aria-label="Toggle pin for {m.name}"
-        onclick={() => togglePin(m.id)}><span class="codicon codicon-pin"></span></button
+        onclick={() => togglePin(m.id, m.scope)}><span class="codicon codicon-pin"></span></button
       >
       <!-- Delete is the user-row control: built-ins are guarded
            server-side (SaveMetric/DeleteMetric) and plugins are the
@@ -525,7 +766,8 @@
       <h1>Metric builder</h1>
       <p class="muted bld-head-note">
         Saved metrics are appended to match reports in Reports · pinned (<span class="codicon codicon-pin"></span>)
-        metrics show as scoreboard columns on every match.
+        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as Career
+        metrics on a player profile.
       </p>
     </div>
   </header>
@@ -624,6 +866,28 @@
           {/if}
         </div>
 
+        <!-- The editor card's compute state (design §4): processing is
+             the BLOCK form — centered indicator with the honest k/N
+             underneath (PRODUCT.md "Progress presentation": outside a
+             table cell) — every other state is the compact chip. Never
+             both: one progress widget. -->
+        {#if form.id > 0 && stateOf(form.id)}
+          {#if stateOf(form.id) === 'processing'}
+            <div class="bld-card-prog">
+              <StatusChip
+                block
+                progress={metricProgressFrac(metricProgress, form.id)}
+                detail={computeDetail(form.id)}
+              />
+            </div>
+          {:else}
+            <StatusChip
+              status={stateOf(form.id)}
+              title={metricStateTitle(stateOf(form.id), stateErrorOf(form.id))}
+            />
+          {/if}
+        {/if}
+
         <div class="bld-fields">
           <div class="bld-field">
             <label class="field-label" for="bld-name">Name</label>
@@ -705,12 +969,12 @@
           </button>
           <button
             class="btn"
-            class:bld-pin-on={form.id > 0 && pins.includes(form.id)}
+            class:bld-pin-on={form.id > 0 && pinnedIn(form.id) !== ''}
             disabled={form.id === 0}
             onclick={() => togglePin(form.id)}
           >
             <span class="codicon codicon-pin"></span>
-            {form.id > 0 && pins.includes(form.id) ? 'Pinned' : 'Pin'}
+            {form.id > 0 && pinnedIn(form.id) !== '' ? 'Pinned' : 'Pin'}
           </button>
           <span class="muted bld-note">
             Saved metrics are appended to match reports in Reports.
@@ -725,11 +989,22 @@
             <button class="btn primary" onclick={() => runPreview()} disabled={previewBusy}>
               {previewBusy ? 'Running…' : 'Preview'}
             </button>
-            {#if preview}
+            <!-- Timing is provenance ONLY for an ad-hoc run (it genuinely
+                 computed — design §5). A clean-saved preview shows the
+                 STATE instead: it read stored rows and timed nothing. -->
+            {#if preview && previewAdhoc && preview.ms != null}
               <span class="chip">{preview.ms} ms</span>
             {/if}
             {#if preview && preview.truncated}
               <span class="chip">truncated</span>
+            {/if}
+            {#if preview && !previewAdhoc && previewKey}
+              <StatusChip
+                status={stateOf(previewKey.id)}
+                title={metricStateTitle(stateOf(previewKey.id), stateErrorOf(previewKey.id))}
+                progress={metricProgressFrac(metricProgress, previewKey.id)}
+                stage={metricProgressStage(metricProgress, previewKey.id)}
+              />
             {/if}
           </div>
         </div>
@@ -742,8 +1017,27 @@
               Ad-hoc preview — the denominator ({form.denominator}) applies after save.
             </p>
           {/if}
+          {#if !previewAdhoc}
+            <!-- Which unit the stored rows came from (design §5: the
+                 match is stated in the panel; profile reads every
+                 player's career rows). -->
+            <p class="muted bld-note">
+              Stored values ·
+              {#if preview.scope === 'profile'}
+                career (every player)
+              {:else if preview.match}
+                newest ready match #{preview.match.id}{preview.match.map
+                  ? ` (${preview.match.map})`
+                  : ''}
+              {:else}
+                no ready match to read from yet
+              {/if}
+            </p>
+          {/if}
           {#if preview.rows.length === 0}
-            <p class="muted" role="status">No groups — empty result.</p>
+            <p class="muted" role="status">
+              {previewAdhoc ? 'No groups — empty result.' : 'No stored values for this metric yet.'}
+            </p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">

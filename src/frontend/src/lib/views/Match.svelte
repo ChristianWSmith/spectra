@@ -17,10 +17,20 @@
     getMatchSummary,
     evictDemoCopy,
     listMetrics,
-    previewMetric,
+    getMetricValuesForMatch,
+    getMetricComputeState,
     subscribeJobProgress,
+    subscribeMetricProgress,
+    onMetricDone,
     errText,
   } from '../services.js';
+  import {
+    metricPresentation,
+    metricStateTitle,
+    liveMetricState,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import {
     fmtDuration,
     fmtBytes,
@@ -196,14 +206,32 @@
   // never carry a trailing one.
   const sepFlags = $derived(separatorFlags(rounds));
 
-  // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON array
-  // of metric ids — written by Builder's pin toggles, read here when a
-  // scoreboard renders. Ids are resolved through listMetrics() on load (a
-  // deleted metric simply drops out) and each pin is previewed grouped by
-  // player, scoped to this match; preview rows map group (SteamID64) → value.
+  // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON
+  // array of metric ids — written by Builder's scope-routed pin toggles
+  // (match scope only; profile-scope pins live under
+  // 'spectra:pinned-profile-metrics' and surface on PlayerProfile), read
+  // here when a scoreboard renders. Ids resolve through listMetrics() on
+  // load (a deleted metric drops out, and only scope='match' metrics
+  // ever become a column — design §5's pin-picker filter). The VALUES
+  // come from the ONE canonical read (getMetricValuesForMatch — stored
+  // rows, never a query-time calculation); the compute state and the
+  // live progress feed decide whether a cell shows the number or the
+  // state chip (lib/metricstate.js — design §5's state machine).
   let pins = $state([]);
   let metricCols = $state([]);
   let metricError = $state('');
+  // metricId → {state, error} from GetMetricComputeState (refetched on
+  // mount and on every spectra:metric-done — the sweep's outcome);
+  // metricProgress is the LIVE k/N feed (subscribeMetricProgress), so a
+  // sweep that starts after this view mounted still flips its cells to
+  // processing without a refetch. metricReload re-runs the pins effect
+  // at completion (the cache already flushed — this is the refetch).
+  let metricStates = $state(new Map());
+  let metricProgress = $state(new Map());
+  let metricReload = $state(0);
+
+  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
+  $effect(() => onMetricDone(() => (metricReload += 1)));
 
   // Match header + rounds + summary. Scoreboard has its own effect below
   // (sort changes must not re-trigger this one). The summary row is the
@@ -443,15 +471,27 @@
     return r && Number.isFinite(r.value) ? r.value : null;
   }
 
-  function columnOf(def, pv) {
-    const rows = (pv && pv.rows) || [];
+  function columnOf(def, rows, st) {
+    // rows: the canonical read's stored values for THIS match (fresh
+    // only), keyed by steam id; st: the metric's compute-state entry.
     let totalN = 0;
     for (const r of rows) totalN += r.n || 0;
-    return { def, rows, map: new Map(rows.map((r) => [r.group, r])), error: '', totalN };
+    return {
+      def,
+      rows,
+      map: new Map(rows.map((r) => [r.steamId, r])),
+      // The unit's sibling coverage: at least one fresh row for this
+      // metric in THIS match — what separates no-data ('—') from the
+      // behind chip (design §5 states 4/5).
+      unitHasRows: rows.length > 0,
+      error: (st && st.error) || '',
+      totalN,
+    };
   }
 
   $effect(() => {
     id;
+    metricReload; // spectra:metric-done → refetch (the cache flushed)
     let live = true;
     // Read localStorage directly — reading the `pins` state here would make
     // it a dependency of this effect and re-trigger it on every pin write.
@@ -463,19 +503,29 @@
     listMetrics()
       .then((defs) => {
         const byId = new Map((defs || []).map((d) => [d.id, d]));
-        const picked = pinIds.map((pid) => byId.get(pid)).filter(Boolean);
-        return Promise.all(
-          picked.map((def) =>
-            previewMetric(def.id, '', `match:${id}`, 200)
-              .then((pv) => columnOf(def, pv))
-              .catch((e) => ({
-                def,
-                rows: [],
-                map: new Map(),
-                error: errText(e),
-                totalN: 0,
-              })),
-          ),
+        // The pin picker filters scope='match' (design §5): a
+        // profile-scope metric's surface is PlayerProfile's career
+        // panel, never a scoreboard column.
+        const picked = pinIds
+          .map((pid) => byId.get(pid))
+          .filter((d) => d && (d.scope || 'match') === 'match');
+        if (picked.length === 0) return [];
+        const ids = picked.map((d) => d.id);
+        // ONE stored read for every pin (design §5: N previewMetric
+        // calls → one stored read) beside the one compute-state read.
+        return Promise.all([getMetricValuesForMatch(id, ids), getMetricComputeState()]).then(
+          ([values, states]) => {
+            const byMetric = new Map();
+            for (const v of values || []) {
+              if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
+              byMetric.get(v.metricId).push(v);
+            }
+            const stateById = new Map((states || []).map((s) => [s.metricId, s]));
+            if (live) metricStates = stateById;
+            return picked.map((def) =>
+              columnOf(def, byMetric.get(def.id) || [], stateById.get(def.id)),
+            );
+          },
         );
       })
       .then((cols) => {
@@ -502,21 +552,25 @@
   }
 
   function metricCell(mc, p) {
-    if (mc.error) return null;
     return mc.map.get(p.steamId) || null;
   }
 
-  function metricCellText(mc, p) {
-    const r = metricCell(mc, p);
-    if (!r) return '—';
-    return fmtMetric(r.value, mc.def.format);
+  // THE state machine (lib/metricstate.js, design §5): the live
+  // progress feed wins over the refetch-time state word, then the
+  // precedence picks value / '—' / chip. Every metric cell renders
+  // through this — no view spells the rule itself.
+  function metricCellPres(mc, p) {
+    const st = liveMetricState(metricProgress, metricStates, mc.def.id);
+    return metricPresentation(st, metricCell(mc, p), mc.unitHasRows);
   }
 
-  function metricCellTitle(mc, p) {
-    if (mc.error) return mc.error;
-    const r = metricCell(mc, p);
-    if (!r) return 'no data for this player';
-    return `${mc.def.title || mc.def.name} — sample size n=${r.n}`;
+  // The cell's tooltip: fresh → formula + sample size n (never a
+  // stamp); '—' → the no-data copy; a chip → the state title (failed
+  // carries the engine's error text).
+  function metricCellTitle(mc, pres) {
+    if (pres.kind === 'value') return `${mc.def.title || mc.def.name} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, mc.error);
   }
 
   function toggleSort(key) {
@@ -1079,9 +1133,24 @@
                   {/if}
                 {/each}
                 {#each metricCols as mc (mc.def.id)}
-                  <td class="num m5-cell" title={metricCellTitle(mc, p)}
-                    >{metricCellText(mc, p)}</td
-                  >
+                  {@const pres = metricCellPres(mc, p)}
+                  <td class="num m5-cell" title={metricCellTitle(mc, pres)}>
+                    {#if pres.kind === 'value'}
+                      {fmtMetric(pres.value, mc.def.format)}
+                    {:else if pres.kind === 'nodata'}
+                      —
+                    {:else}
+                      <!-- State chip in lieu of a number (design §5):
+                           processing / failed / behind. The bar
+                           quantifies when the live feed carries k/N. -->
+                      <StatusChip
+                        status={pres.state}
+                        title={metricCellTitle(mc, pres)}
+                        progress={metricProgressFrac(metricProgress, mc.def.id)}
+                        stage={metricProgressStage(metricProgress, mc.def.id)}
+                      />
+                    {/if}
+                  </td>
                 {/each}
               </tr>
               {#if expanded === p.steamId}
