@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,6 +90,55 @@ const (
 	ListMetricsPageMaxRows = 500
 )
 
+// metricFormatTokens is the CANONICAL metric-format vocabulary in enum
+// order — the tokens ListMetricsPage's format filter accepts, with
+// "auto" naming the format column's ” value (the form's own Auto /
+// Int / Float1 / Float2 / Percent / Currency — the editor's format
+// select). It is the store-side twin of the service's metricFormats
+// contract (metricservice.go — same vocabulary, one order): the filter
+// word is a comma-subset of THESE tokens in THIS order, which is what
+// makes the subset word canonical instead of merely valid.
+var metricFormatTokens = []string{"auto", "int", "float1", "float2", "percent", "currency"}
+
+// formatFilterPredicate renders ListMetricsPage's format-subset
+// predicate for a word that is neither "" (all-on) nor "none" (all-off,
+// the caller's switch): `(format = ? OR format IN (?, …))` — the
+// canonical comma-subset with "auto" (the column's ” format) spelled
+// as its own equality beside the literal tokens' single IN — plus its
+// bound arguments. Every token must be known, DISTINCT and in
+// metricFormatTokens order (a known-but-reordered word is a non-
+// canonical word, and an empty segment is an unknown token), so
+// anything else is the pre-SQL rejection `unknown format filter %q`
+// (the origin/scope/denominator copy) and NO SQL ever runs.
+func formatFilterPredicate(word string) (string, []any, error) {
+	var (
+		preds    []string
+		args     []any
+		literals []string
+		lastRank = -1
+	)
+	for _, tok := range strings.Split(word, ",") {
+		rank := slices.Index(metricFormatTokens, tok)
+		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
+			return "", nil, fmt.Errorf("store: list metrics page: unknown format filter %q", word)
+		}
+		lastRank = rank
+		if tok == "auto" {
+			preds = append(preds, `format = ?`)
+			args = append(args, "")
+			continue
+		}
+		literals = append(literals, tok)
+	}
+	if len(literals) > 0 {
+		preds = append(preds, `format IN (`+strings.TrimSuffix(strings.Repeat("?,", len(literals)), ",")+`)`)
+		for _, lit := range literals {
+			args = append(args, lit)
+		}
+	}
+	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
+}
+
 // ListMetricsPage returns ONE keyset window of the metric-definition
 // list ListMetrics returns: the rows strictly after the cursor row
 // (afterID — 0 starts the first window) in ListMetrics' exact order,
@@ -131,6 +181,20 @@ const (
 // the empty set the origin/scope "none" spells, because the ” rows
 // still pass. An unknown value is rejected before any SQL.
 //
+// FORMAT FILTER: formatFilter narrows the window to a SUBSET of the
+// format column — the Builder Filters popover's fourth group (Type).
+// Unlike the three pairs it is not a pair but a six-way checkbox set,
+// so the word is the CHECKED SET in metricFormatTokens' canonical order:
+// "" = every box checked (no predicate — the other groups' all-on),
+// "none" = no box checked (the empty set, the same spelling origin
+// uses), and any other word is a CANONICAL COMMA-SUBSET
+// ("auto,int,float1"): every token known, distinct, in enum order — and
+// the "auto" token names the column's ” format, bound as its own
+// `format = ?` equality beside the literal tokens' single
+// `format IN (?, …)`. The whole disjunction is parameterized — no
+// token ever reaches the SQL text. An unknown token or an unknown word
+// shape is rejected before any SQL.
+//
 // CURSOR: the caller passes the last window's row id, and the store
 // resolves it to that row's stored (origin rank, name) — the same
 // in-store resolution ListMatchesPage does (one driver path, and a
@@ -147,7 +211,7 @@ const (
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
 // view renders its Builtins/Yours/Plugins headers from those runs.
-func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize
 	}
@@ -160,8 +224,8 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	)
 	// addWhere appends ONE ANDed predicate to the shared WHERE — every
 	// narrowing (origin filter, scope filter, denominator filter,
-	// search, cursor) rides the same clause, so they compose in any
-	// order and none can silently bypass another.
+	// format filter, search, cursor) rides the same clause, so they
+	// compose in any order and none can silently bypass another.
 	addWhere := func(pred string, a ...any) {
 		if where.Len() == 0 {
 			where.WriteString(" WHERE ")
@@ -213,6 +277,21 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 		addWhere(`denominator = ''`)
 	default:
 		return nil, fmt.Errorf("store: list metrics page: unknown denominator filter %q", denomFilter)
+	}
+	// The format subset (see the FORMAT FILTER note above): "none" is
+	// the empty set like origin's, and every other non-empty word is
+	// the canonical comma-subset formatFilterPredicate renders — its
+	// rejection happens there, before any SQL.
+	switch formatFilter {
+	case "": // no predicate — every format
+	case "none":
+		addWhere(`0 = 1`)
+	default:
+		pred, a, err := formatFilterPredicate(formatFilter)
+		if err != nil {
+			return nil, err
+		}
+		addWhere(pred, a...)
 	}
 	if qq := scrub(query); qq != "" {
 		addWhere(`(name LIKE ? OR title LIKE ?)`, "%"+qq+"%", "%"+qq+"%")
