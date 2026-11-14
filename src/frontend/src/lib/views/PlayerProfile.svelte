@@ -30,6 +30,7 @@
   } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
+  import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -156,13 +157,17 @@
   let careerReload = $state(0);
 
   function readProfilePins() {
+    // The RAW stored selection — null when the key is ABSENT (the
+    // absent-vs-present rule lives in metricorder.resolvePinIds:
+    // absent ⇒ DEFAULT_PINS through the catalog, present ⇒ verbatim).
     try {
       const raw = localStorage.getItem(PROFILE_PINS_KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(arr)) return [];
+      if (raw == null) return null;
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return null;
       return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -173,16 +178,26 @@
     careerReload; // spectra:metric-done → refetch (the cache flushed)
     const sid = steamId;
     let live = true;
-    const pinIds = readProfilePins();
-    careerPins = pinIds;
+    const stored = readProfilePins(); // null = ABSENT → DEFAULT_PINS below
+    careerPins = stored || [];
     careerCols = [];
     careerError = '';
-    if (!sid || pinIds.length === 0) return;
-    listMetrics()
-      .then((defs) => {
-        const byId = new Map((defs || []).map((d) => [d.id, d]));
-        const picked = pinIds.map((p) => byId.get(p)).filter((d) => d && d.scope === 'profile');
-        if (picked.length === 0) return [];
+    if (!sid) return;
+    if (stored && stored.length === 0) return; // present-empty: nothing pinned
+    Promise.all([listMetrics(), readOrder('profile')])
+      .then(([defs, order]) => {
+        if (!live) return;
+        const rows = defs || [];
+        // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
+        // (design §1.6); present ⇒ the stored selection verbatim.
+        const pinIds = resolvePinIds('profile', stored, rows);
+        careerPins = pinIds;
+        if (pinIds.length === 0) return;
+        // THE composition (lib/metricorder.js — the ONE site): the
+        // profile sequence filtered to the pinned set — the pins array
+        // orders nothing.
+        const picked = pinnedInSequence('profile', order, rows, pinIds);
+        if (picked.length === 0) return;
         const ids = picked.map((d) => d.id);
         // ONE stored read for every profile pin (the whole career bucket
         // — rows for other players are this unit's coverage, never
@@ -209,7 +224,7 @@
         );
       })
       .then((cols) => {
-        if (live) careerCols = cols;
+        if (live && cols) careerCols = cols;
       })
       .catch((e) => {
         if (live) careerError = errText(e);
