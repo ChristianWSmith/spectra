@@ -347,6 +347,17 @@ const ROUND_ROWS = [
 // A round_starts CATEGORY therefore does not surface the kit fixture's
 // round_start row: that row exists for the kit evidence's round scoping,
 // not as a feed row this harness lists.
+// AUDIT (2026-11-14, the kill-feed disconnect line): 'player_disconnect'
+// joined DRAW_KINDS, so this ANY-KIND matcher now flows the two
+// player_disconnect CONN_ROWS into the WORLD read too. Nothing else
+// changed: the world consumers are all kind-scoped (kit evidence reads
+// weapon_pickup/round_start, the death/decoy/bullet layers kind-switch,
+// sfx never constructs under the empty manifest) or key-gated (the
+// scrubber's marker set comes from the LIST filters — 'connects' is
+// never enabled here — and these rows carry no id at all), and no
+// section asserts a world ROW COUNT (only the one-push-per-load pin in
+// section O). So the group stays whole and replay.dom.mjs keeps its 450
+// checks — no split, no liveness re-pin.
 const GROUPS = [
   { rows: CONN_ROWS, kinds: ['player_connect', 'player_disconnect'] },
   { rows: KIT_ROWS, kinds: ['weapon_pickup'] },

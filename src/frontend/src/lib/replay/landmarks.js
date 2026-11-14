@@ -110,7 +110,9 @@ export const LANDMARK_KINDS = [
 // it; no scrubber marker either); `grenade_bounce` rides it because a
 // bounce is a VERTEX of the renderer's throw→bounce→det path — the world
 // layer needs those rows whether or not the 'Bounce' feed category is
-// on (bucket 'bounce', no scrubber marker either).
+// on (bucket 'bounce', no scrubber marker either); `player_disconnect`
+// rides it for the kill feed's glyph+name line (bucket 'disconnect' —
+// the renderer's disconnect branch; no scrubber marker, no round rule).
 export const DRAW_KINDS = [
   'kill',
   'damage',
@@ -155,6 +157,15 @@ export const DRAW_KINDS = [
   'extinguish',
   'start_failed',
   'fade_out',
+  // The canvas kill feed's DISCONNECT line: glyph + the leaver's name
+  // (renderer.js's disconnect branch — no killer/victim cells, mirroring
+  // the C4 row). Rides the draw fetch ONLY for that row: NO scrubber
+  // marker (scrubberMarkerClass) and NO round rule (roundcut's
+  // ROUND_POLICY), exactly like 'damage'/'land'; the feed LIST's claim
+  // stays the default-OFF 'connects' category (unchanged), and the
+  // world row carries the leaver's roster name (event-shaped reads keep
+  // bot names — a bot disconnects like any player).
+  'player_disconnect',
   'round_end',
   'round_start',
 ];
@@ -388,7 +399,8 @@ export function scrubberMarkerClass(bucket) {
   //             marker), 'damage' and 'land' (a grenade ACTIVATION — the
   //             real explosion carries the det marker) and 'bounce' (the
   //             vertices of a flight — its detonation carries the det
-  //             marker) — no marker
+  //             marker) and 'disconnect' (the kill feed's glyph+name
+  //             line — a leaver gets no tick either) — no marker
 }
 
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
@@ -425,6 +437,11 @@ export function scrubberMarkerClass(bucket) {
 export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
+  // The kill feed's disconnect line (renderer.js's disconnect branch) —
+  // its OWN bucket, NEVER 'kill': that bucket also feeds the death-X
+  // world markers, and a leaver never had a body to mark. Explicit-first
+  // like every named kind above the substring branches.
+  if (k === 'player_disconnect') return 'disconnect';
   if (k === 'grenade_throw') return 'throw';
   if (k === 'grenade_land') return 'land';
   // A projectile BOUNCE: a vertex of the renderer's flight path (not a
