@@ -986,6 +986,26 @@ at the end of the section.
   CS2's death notices ("The bomb's kill shows the C4 and the victim",
   https://github.com/sidcarrollworks/CSGODOT/pull/138, 2026-11-12).
 
+- **The disconnect symbol in a CS2 install (kill-feed line)** — the game
+  ships THREE `disconnect` assets in `pak01_dir.vpk`:
+  `panorama/images/icons/equipment/disconnect.vsvg_c` (the dir the
+  kill-feed weapon glyphs live in — spectra extracts THIS one, as
+  manifest key `disconnect`), `panorama/images/icons/ui/disconnect.vsvg_c`
+  and the top-level `panorama/images/icons/disconnect.vsvg_c` (likely
+  settings/UI glyphs — deliberately not extracted; one glyph, one key).
+  `panorama/images/hud/deathnotice/` has NO disconnect glyph (12 files,
+  local probe). **Unverified:** whether the in-game death notice renders a
+  disconnect line at all, and which of the three assets it binds — public
+  sources (the killfeed-icons README's equipment name list,
+  `huddeathnotice.vxml_c` condition listings) do not settle it, so
+  spectra's canvas line (disconnect glyph + the leaver's name, outline in
+  the leaver's side) is a design choice, NOT documented game behavior.
+  The glyph reaches an existing install only through icon re-extraction;
+  until then the line draws the name alone (no gap).
+  **Source** — local probe of pak01_dir.vpk (2026-11-14);
+  https://github.com/exkludera/cs2-killfeed-icons (equipment-dir icon
+  name list incl. `disconnect`, 2026-11-14).
+
 - **`player_death` kill flags (what the death notice can show)** —
   every indicator the feed needs is game-computed on the event:
   `noscope` ("kill happened without a scope, used for death notice
