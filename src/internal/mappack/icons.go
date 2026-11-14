@@ -21,7 +21,8 @@ import (
 // the game's own death-notice glyphs under panorama/images/hud/deathnotice/
 // (noticeIconTable), keyed the way renderer.js drawKillFeed asks for them
 // ('blind_kill'/'headshot' plus the round-4 indicator keys 'noscope',
-// 'throughsmoke', 'wallbang', 'airborne', 'suicide', 'explosion') —
+// 'throughsmoke', 'wallbang', 'airborne', 'suicide', 'explosion', plus
+// the kill feed's 'disconnect' line glyph) —
 // non-equipment keys, so they live in their
 // own table and never join iconTable (TestIconTableCanonicalNames pins
 // that one to the demoinfocs enum). Assets the UI needs but has no
@@ -122,7 +123,12 @@ var iconTable = map[string]string{
 // the killer, 'suicide' on the suicide row). 'explosion' (the hud blast
 // pip) is still extracted but NO LONGER drawn: since 2026-11-12 the
 // feed's C4 row shows the shared 'C4' weapon image beside the victim
-// instead (see renderer.js's C4 branch). The values are
+// instead (see renderer.js's C4 branch). 'disconnect' is the kill feed's
+// glyph for a player_disconnect row (renderer.js's disconnect branch —
+// the glyph + leaver's name line): NOT a deathnotice-dir file — the game
+// ships it in the EQUIPMENT dir (iconPrefix), where the feed's weapon
+// glyphs live, because hud/deathnotice/ has no disconnect glyph at all
+// (verified 2026-11-14, see noticePrefixes). The values are
 // the .vsvg_c basenames — same container format as the equipment set,
 // verified to decode with decodeVSVG on a real install (2026-11-07).
 //
@@ -143,20 +149,32 @@ var noticeIconTable = map[string]string{
 	"airborne":     "inairkill",      // panorama/images/hud/deathnotice/inairkill.vsvg_c
 	"suicide":      "icon_suicide",   // panorama/images/hud/deathnotice/icon_suicide.vsvg_c
 	"explosion":    "kill_pip_blast", // panorama/images/hud/kill_pip_blast.vsvg_c (see noticePrefixes)
+	"disconnect":   "disconnect",     // panorama/images/icons/equipment/disconnect.vsvg_c (see noticePrefixes)
 }
 
 // noticePrefixes overrides the VPK directory for noticeIconTable keys that
-// do NOT live under noticePrefix. Only 'explosion': the deathnotice dir has
-// no explosion glyph (huddeathnotice.vxml_c binds bomb deaths to Suicide +
-// the weapon slot — CS2.md "Kill-feed indicator glyphs"), so the hud
-// kill-context "blast" pip — panorama/images/hud/kill_pip_blast.vsvg_c
-// (decodes with decodeVSVG, verified 2026-11-07) — is what got extracted
-// here. It stays in the manifest even though the feed stopped drawing it
-// (2026-11-12: the C4 row shows the shared 'C4' weapon image instead).
-// Swap point: a true deathnotice explosion glyph would replace this entry
-// wholesale.
+// do NOT live under noticePrefix. Two keys:
+//   - 'explosion': the deathnotice dir has no explosion glyph
+//     (huddeathnotice.vxml_c binds bomb deaths to Suicide + the weapon
+//     slot — CS2.md "Kill-feed indicator glyphs"), so the hud
+//     kill-context "blast" pip — panorama/images/hud/kill_pip_blast.vsvg_c
+//     (decodes with decodeVSVG, verified 2026-11-07) — is what got extracted
+//     here. It stays in the manifest even though the feed stopped drawing it
+//     (2026-11-12: the C4 row shows the shared 'C4' weapon image instead).
+//     Swap point: a true deathnotice explosion glyph would replace this entry
+//     wholesale.
+//   - 'disconnect': the feed's glyph+name line for a player_disconnect row
+//     (renderer.js's disconnect branch). hud/deathnotice/ ships NO
+//     disconnect glyph (find --prefix, 12 files, verified 2026-11-14); the
+//     game's symbol lives in the EQUIPMENT dir beside the kill-feed weapon
+//     glyphs — panorama/images/icons/equipment/disconnect.vsvg_c (one of
+//     three disconnect assets in the install; CS2.md "Disconnect glyph
+//     assets"). The two other candidates are the UI/top-level
+//     panoramas/icons/{ui/,}disconnect.vsvg_c, likely a settings glyph —
+//     deliberately NOT extracted (one glyph, one key).
 var noticePrefixes = map[string]string{
-	"explosion": hudPrefix,
+	"explosion":  hudPrefix,
+	"disconnect": iconPrefix,
 }
 
 // extractTable is BOTH families merged — the one map ExtractIcons walks

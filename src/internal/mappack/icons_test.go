@@ -119,7 +119,9 @@ func TestIconTableCanonicalNames(t *testing.T) {
 // round-4 indicators 'noscope'/'throughsmoke'/'wallbang' after the
 // weapon, 'airborne' after the killer, and the icon-only 'suicide' row
 // — plus 'explosion', the hud blast pip the feed's C4 row stopped
-// drawing on 2026-11-12 but which stays extracted). Every entry must
+// drawing on 2026-11-12 but which stays extracted, and 'disconnect', the
+// equipment-dir glyph the feed's player_disconnect line draws beside the
+// leaver's name). Every entry must
 // decode-ready through the shared
 // pipeline (its exact VPK path → <base>.svg written and re-manifested by
 // TestExtractIconsSynthetic), keep safe file stems for the /api/icons
@@ -129,7 +131,9 @@ func TestIconTableCanonicalNames(t *testing.T) {
 func TestNoticeIconTable(t *testing.T) {
 	// Exact VPK paths (verified against a real install 2026-11-07: every
 	// file decodes with decodeVSVG). 'explosion' is the one key outside
-	// the deathnotice dir (hud kill-context blast pip — noticePrefixes).
+	// the deathnotice dir (hud kill-context blast pip — noticePrefixes);
+	// 'disconnect' is the other (the equipment dir — the game ships no
+	// deathnotice disconnect glyph, verified 2026-11-14).
 	wantPaths := map[string]string{
 		"headshot":     noticePrefix + "icon_headshot" + iconSuffix,
 		"blind_kill":   noticePrefix + "blind_kill" + iconSuffix,
@@ -139,6 +143,7 @@ func TestNoticeIconTable(t *testing.T) {
 		"airborne":     noticePrefix + "inairkill" + iconSuffix,
 		"suicide":      noticePrefix + "icon_suicide" + iconSuffix,
 		"explosion":    hudPrefix + "kill_pip_blast" + iconSuffix,
+		"disconnect":   iconPrefix + "disconnect" + iconSuffix,
 	}
 	if len(noticeIconTable) != len(wantPaths) {
 		t.Errorf("noticeIconTable has %d entries, want %d", len(noticeIconTable), len(wantPaths))
@@ -188,10 +193,14 @@ func TestNoticeIconTable(t *testing.T) {
 	if got := iconFileToName["blind_kill.svg"]; got != "blind_kill" {
 		t.Errorf(`iconFileToName["blind_kill.svg"] = %q, want "blind_kill"`, got)
 	}
-	// the one glyph OUTSIDE the deathnotice dir resolves through the same
-	// single reverse map (noticePrefixes override).
+	// the glyphs OUTSIDE the deathnotice dir resolve through the same
+	// single reverse map (noticePrefixes overrides): the hud blast pip…
 	if got := iconFileToName["kill_pip_blast.svg"]; got != "explosion" {
 		t.Errorf(`iconFileToName["kill_pip_blast.svg"] = %q, want "explosion"`, got)
+	}
+	// …and the equipment-dir disconnect symbol (the feed's glyph+name line).
+	if got := iconFileToName["disconnect.svg"]; got != "disconnect" {
+		t.Errorf(`iconFileToName["disconnect.svg"] = %q, want "disconnect"`, got)
 	}
 }
 
