@@ -81,20 +81,29 @@ test('the placeholder flag survives the round-trip as a boolean', () => {
   assert.equal(sections[1].blocks, '', 'a placeholder carries no blocks');
 });
 
-test('the shipped user guide: exact section order, the metric chapter is the only real content', () => {
+test('the shipped user guide: exact section order, every section is real content', () => {
   const guide = getDoc('user-guide');
   assert.ok(guide, 'manuals/index.js must have registered the guide');
   assert.equal(guide.title, 'Spectra guide');
+  // Re-pinned 2026-11-14 (user-manual content onboarding): 22 → 26
+  // entries — the researched draft replaced all eight placeholders and
+  // added its four derived sections (lead rulings 2026-11-14: accept all
+  // four), so the guide is now 12 written guide sections + the 14
+  // metric-language chapter. The draft's ids won where the old shipped
+  // placeholders differed (import → importing-demos, match →
+  // understanding-a-match; the titles followed), and Introduction leads.
   assert.deepEqual(
     guide.sections.map((s) => s.id),
     [
+      'introduction',
       'getting-started',
-      'import',
+      'importing-demos',
       'library',
-      'match',
+      'understanding-a-match',
+      'match-analysis',
       'replay',
-      'reports',
-      'sql-console',
+      'profiles',
+      'metric-builder',
       'metric-language',
       'writing-an-expression',
       'sources',
@@ -109,15 +118,23 @@ test('the shipped user guide: exact section order, the metric chapter is the onl
       'built-in-metrics',
       'worked-examples',
       'common-errors',
+      'reports',
+      'sql-console',
       'settings',
     ],
-    'the TOC order the popup renders (placeholders bracketing the metric chapter)',
+    'the TOC order the popup renders (the researched guide sections bracketing the metric chapter)',
   );
   const real = guide.sections.filter((s) => !s.placeholder);
-  assert.equal(real.length, 14, 'exactly the metric-language chapter is written');
-  assert.equal(real[0].id, 'metric-language', 'the Builder ? deep target');
+  assert.equal(real.length, 26, 'every section is written since the content onboarding');
+  // The Builder `?` deep target must exist as a section (App's
+  // openDocs('metric-language') composes its anchor from this id).
+  assert.ok(
+    guide.sections.some((s) => s.id === 'metric-language'),
+    'the metric-language section (Builder ? deep target) must keep its id',
+  );
   // Every placeholder section carries NO prose — only the fixed note
-  // the renderer prints lives beside its title.
+  // the renderer prints lives beside its title (the guide ships none
+  // today; this stays the invariant for any section that falls back).
   for (const s of guide.sections.filter((p) => p.placeholder)) {
     assert.equal(s.blocks, '', `${s.id} must not smuggle content`);
   }
