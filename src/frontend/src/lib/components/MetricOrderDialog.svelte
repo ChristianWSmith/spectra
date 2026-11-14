@@ -1,34 +1,51 @@
 <script>
   // The metric ORDER preference UI (dogfooding design §2): ONE dialog,
   // TWO stacked sections — Scoreboard (match metrics) then Player
-  // profile (profile metrics) — not tabs: both orders are short, and
-  // the whole point is showing "fixed block first, then metrics" for
-  // each surface at a glance.
+  // profile (profile metrics) — not tabs: both lists are short, and
+  // the whole point is showing "fixed block first, then your pinned
+  // metrics" for each surface at a glance.
   //
-  // Every move is WRITE-THROUGH: one move(id, from, to) rewrites the
-  // scope's full resolved sequence and persists it immediately
-  // (kvstore AutoSave — no unsaved-order state exists, so the dialog is
-  // `dismissable` with no dirty/cancel gate). Reset deletes both pref
-  // keys; Close just closes (dialog open state is transient — never
-  // seeded, never remembered, never in the URL).
+  // Pins-only (metrics UI wave B): a section lists ONLY its surface's
+  // pinned metrics, in sequence order — `pinnedInSequence` is THE
+  // composition and is consumed here, never re-spelled — and unpinned
+  // metrics appear nowhere in the dialog (so there is no pin indicator
+  // to show either). Pin TOGGLING stays with Builder's rows (the single
+  // pins writer), so this dialog can never fork the pins contract: the
+  // help line points the user at the metric list's pin buttons, and a
+  // surface with nothing pinned says so instead of rendering an empty
+  // box.
   //
-  // Pins: the indicator is READ-ONLY here — pin TOGGLING stays with
-  // Builder's rows (the single pins writer), so this dialog can never
-  // fork the pins contract. Reordering an unpinned metric is legal and
-  // meaningful: the order pref covers the scope's WHOLE catalog, pins
-  // only select what renders, the sequence decides where the selection
-  // renders.
+  // Every move is WRITE-THROUGH: one move rewrites the scope's full
+  // resolved sequence and persists it immediately (kvstore AutoSave —
+  // no unsaved-order state exists, so the dialog is `dismissable` with
+  // no dirty/cancel gate). Gestures index the PINNED list the user
+  // sees, but the persisted value is always the WHOLE sequence —
+  // unpinned entries keep their relative slots (see move). Reset
+  // deletes both pref keys; Close just closes (dialog open state is
+  // transient — never seeded, never remembered, never in the URL).
   //
   // Drag: no reorder-dnd exists anywhere else in the frontend, so the
-  // dialog ships its own deliberately-dual-path one — HTML5 drag AND
+  // dialog ships its own deliberately-dual-path one — HTML5 drag
+  // starting at each row's GRABBER handle (the only draggable element;
+  // the handlers stay on the row, where role=option makes them
+  // ARIA-valid, and dragstart/dragend bubble up from the handle) AND
   // first-class keyboard (row focus + ArrowUp/ArrowDown) plus per-row
   // move buttons, ALL of it routed through the same write-through
-  // move(). Escape/outside-click/focus-return come from Dialog (never
-  // re-implemented here).
+  // move(). The handle is aria-hidden on purpose: it is a pointer
+  // affordance that duplicates the named ↑/↓ buttons, which stay the
+  // accessible path. Escape/outside-click/focus-return come from
+  // Dialog (never re-implemented here).
   import { tick } from 'svelte';
   import Dialog from './Dialog.svelte';
   import { listMetrics, errText } from '../services.js';
-  import { inSequence, readOrder, writeOrder, resetOrder, fixedBlock } from '../metricorder.js';
+  import {
+    inSequence,
+    pinnedInSequence,
+    readOrder,
+    writeOrder,
+    resetOrder,
+    fixedBlock,
+  } from '../metricorder.js';
 
   let {
     open = false,
@@ -62,27 +79,41 @@
   function pinnedIds(scope) {
     return scope === 'match' ? pinnedMatch : pinnedProfile;
   }
-  function isPinned(scope, id) {
-    return pinnedIds(scope).includes(id);
+
+  // fullOf — the scope's WHOLE catalog in sequence order: what a move
+  // PERSISTS, and what decides "the surface has no metrics yet" below.
+  function fullOf(scope) {
+    return inSequence(scope, orders[scope], defs);
   }
 
+  // seqOf — WHAT THE DIALOG SHOWS: the surface's pinned metrics in
+  // sequence order (the metricorder.js composition, consumed as-is).
+  // Every gesture index — keyboard, ↑/↓ buttons, drag — is an index
+  // into THIS list, not into the catalog.
   function seqOf(scope) {
-    return inSequence(scope, orders[scope], defs).map((d) => d.name);
+    return pinnedInSequence(scope, orders[scope], defs, pinnedIds(scope));
   }
 
-  // THE one move: splice the full sequence, update the local view,
-  // persist immediately (write-through). A failed write snaps the
-  // section back to the previous sequence — an order that did not save
-  // is never shown as saved.
+  // THE one move: splice the PINNED order the user sees, then re-apply
+  // it to the scope's full sequence — the pinned slots take the new
+  // order in place while unpinned entries keep their relative
+  // positions — update the local view, and persist the FULL sequence
+  // immediately (write-through: the pref is never written as a
+  // pins-filtered view). A failed write snaps the section back to the
+  // previous sequence — an order that did not save is never shown as
+  // saved.
   async function move(scope, from, to) {
-    const seq = seqOf(scope);
-    if (from < 0 || from >= seq.length) return;
-    const t = Math.max(0, Math.min(seq.length - 1, to));
+    const shown = seqOf(scope);
+    if (from < 0 || from >= shown.length) return;
+    const t = Math.max(0, Math.min(shown.length - 1, to));
     if (t === from) return;
     const prev = orders[scope];
-    const next = seq.slice();
-    next.splice(from, 1);
-    next.splice(t, 0, seq[from]);
+    const reordered = shown.slice();
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(t, 0, moved);
+    const queue = reordered.map((d) => d.name);
+    const pinnedNames = new Set(shown.map((d) => d.name));
+    const next = fullOf(scope).map((d) => (pinnedNames.has(d.name) ? queue.shift() : d.name));
     orders = { ...orders, [scope]: next };
     try {
       await writeOrder(scope, next);
@@ -92,7 +123,7 @@
       return;
     }
     await tick();
-    focusRow(scope, next[t]);
+    focusRow(scope, moved.name);
   }
 
   // Focus follows the moved row (house a11y: the keyboard gesture keeps
@@ -117,9 +148,11 @@
     }
   }
 
-  // HTML5 DnD — thin handlers only: every gesture ends in the same
-  // move the keyboard uses (jsdom cannot fire drag events, so DOM tests
-  // drive the buttons/keys).
+  // HTML5 DnD — thin handlers only: dragstart/dragend bubble up from
+  // the row's grabber handle (the only draggable element), every
+  // gesture ends in the same move the keyboard uses (jsdom has no
+  // DragEvent/DataTransfer, so the DOM tests dispatch plain bubbling
+  // Events on the handle and pin the handle markup).
   let dragFrom = null; // {scope, index}
   let dropAt = null; // insertion index under the pointer
   function dragStart(scope, i, e) {
@@ -163,7 +196,8 @@
 </script>
 
 {#snippet section(scope, title)}
-  {@const seq = inSequence(scope, orders[scope], defs)}
+  {@const all = fullOf(scope)}
+  {@const seq = seqOf(scope)}
   <section class="mo-sec" data-mo-scope={scope}>
     <h3 class="mo-sec-title" id="mo-sec-title-{scope}">{title}</h3>
     <p class="mo-fixed-cap muted" id="mo-fixed-cap-{scope}">
@@ -180,10 +214,17 @@
         <span class="mo-fixed-item" role="listitem">{label}</span>
       {/each}
     </div>
-    {#if seq.length === 0}
+    {#if all.length === 0}
+      <!-- The surface has no metrics at all yet — nothing exists to
+           pin or order. -->
       <p class="muted" role="status">
         {scope === 'profile' ? 'No profile metrics yet.' : 'No match metrics yet.'}
       </p>
+    {:else if seq.length === 0}
+      <!-- Pins-only empty state: metrics exist but none are pinned —
+           say so and point at the pin buttons (the help line above
+           repeats the where-to-pin guidance). -->
+      <p class="muted" role="status">Nothing to order yet — pin metrics from the metric list.</p>
     {:else}
       <!-- The reorderable half is a real listbox/option pair: option is
            the ARIA construct that legitimately carries tabindex, a
@@ -192,7 +233,8 @@
            aria-selected is required on option and is statically false:
            this dialog never selects anything (pinning stays with
            Builder's rows). The listbox takes its name from the section
-           heading. -->
+           heading and lists ONLY the surface's pinned metrics, in
+           sequence order. -->
       <div class="mo-list" role="listbox" aria-labelledby="mo-sec-title-{scope}">
         {#each seq as m, i (m.name)}
           <div
@@ -201,7 +243,6 @@
             aria-selected="false"
             data-mo-scope={scope}
             data-mo-name={m.name}
-            draggable="true"
             tabindex="0"
             ondragstart={(e) => dragStart(scope, i, e)}
             ondragover={(e) => dragOver(scope, i, e)}
@@ -209,19 +250,20 @@
             ondragend={dragEnd}
             onkeydown={(e) => onRowKey(scope, i, e)}
           >
-            <span class="mo-grip codicon codicon-grabber" aria-hidden="true"></span>
+            <!-- The GRABBER is the drag source: `draggable` lives here
+                 (never on the row — grabbing text must not start a
+                 drag) while the handlers above catch it bubbling up.
+                 aria-hidden on purpose: it is a pointer affordance that
+                 duplicates the named ↑/↓ buttons, which stay the
+                 accessible path. -->
+            <span
+              class="mo-grip codicon codicon-grabber"
+              draggable="true"
+              aria-hidden="true"
+              title="Drag to reorder"
+            ></span>
             <span class="mo-title">{m.title || m.name}</span>
             <span class="mono mo-name">{m.name}</span>
-            <!-- Pin indicator: READ-ONLY (the single pins writer stays
-                 with Builder's rows) — an unpinned row is simply
-                 repositioned for when it gets pinned. -->
-            <span
-              class="mo-pin"
-              class:mo-pin-on={isPinned(scope, m.id)}
-              title={isPinned(scope, m.id) ? 'Pinned' : 'Not pinned'}
-            >
-              <span class="codicon codicon-pin" aria-hidden="true"></span>
-            </span>
             <span class="mo-moves">
               <button
                 class="btn small ghost"
@@ -248,7 +290,8 @@
 <Dialog {open} label="Metric order" panelClass="mo-prompt" {onClose}>
   <div class="mo-body" bind:this={bodyEl}>
     <p class="muted mo-note">
-      Order of the metric columns and career rows — the fixed Go stats always stay first.
+      Only your pinned metrics are listed here, in the order they'll appear — pin more from the pin
+      buttons in the metric list.
     </p>
     {#if error}
       <p class="error" role="alert">{error}</p>
@@ -257,7 +300,7 @@
     {@render section('profile', 'Player profile (profile metrics)')}
     <div class="toolbar mo-foot">
       <span class="muted mo-hint"
-        >drag · <span class="codicon codicon-arrow-up"></span><span
+        >drag the handle · <span class="codicon codicon-arrow-up"></span><span
           class="codicon codicon-arrow-down"></span
         > move · Esc close</span
       >
@@ -341,6 +384,9 @@
     opacity: 0.55;
     cursor: grab;
   }
+  .mo-grip:active {
+    cursor: grabbing;
+  }
   .mo-title {
     white-space: nowrap;
     overflow: hidden;
@@ -350,13 +396,6 @@
   .mo-name {
     font-size: 0.85em;
     opacity: 0.75;
-  }
-  .mo-pin {
-    opacity: 0.35;
-  }
-  .mo-pin-on {
-    opacity: 1;
-    color: var(--accent);
   }
   .mo-moves {
     margin-left: auto;
