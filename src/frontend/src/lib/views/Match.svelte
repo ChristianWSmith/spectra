@@ -84,10 +84,15 @@
   // GetScoreboard sort whitelist (mirror of the Go store's map).
   // Combined columns sort by their primary key.
   // ADR / KAST% / HS% / K/D left SCORE_COLS with the dogfooding
-  // conversion (W2): they render as PINNED METRIC columns at the tail
-  // (metricCols below — sourced from the stored metric rows through the
-  // five-state machine), in today's relative order once the default
-  // pins/sequence land (W1's metricorder.js). Every remaining key here
+  // conversion (W2); A, 2K–5K, Entry, Trade and Streak left with the
+  // inferred-conversion swap (W2a): all twelve render as PINNED METRIC
+  // columns at the tail (metricCols below — sourced from the stored
+  // metric rows through the five-state machine), in today's relative
+  // order once the default pins/sequence land (metricorder.js).
+  // Opening K/D keeps its fixed position AND its sort key (server
+  // ordering over opening_kills is value-identical to the entry_kills
+  // metric) — only its cell changed: it composes the entry_kills /
+  // entry_deaths metric halves (design Q2). Every remaining key here
   // is a store column, so the server sort applies verbatim.
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
@@ -97,35 +102,14 @@
     { key: 'side', label: 'Team' },
     { key: 'kills', label: 'K' },
     { key: 'deaths', label: 'D' },
-    { key: 'assists', label: 'A' },
     { key: 'kda', label: 'KDA' },
     { key: 'total_damage', label: 'DMG' },
     { key: 'rounds_played', label: 'Rnds' },
-    // Multi-kill tiers, ascending 2K → 5K (a round counts at exactly one
-    // tier — CS2.md "Multi-kill columns"). Keys are the snake_case store
-    // sort keys ("two_k" is whitelisted in the Go scoreboardSort map); the
-    // row field is the camelCase JSON tag (cellText: two_k → twoK).
-    { key: 'two_k', label: '2K' },
-    {
-      key: 'three_k',
-      label: '3K',
-    },
-    {
-      key: 'four_k',
-      label: '4K',
-    },
-    {
-      key: 'five_k',
-      label: '5K',
-    },
-    { key: 'entry_kills', label: 'Entry' },
-    { key: 'trade_kills', label: 'Trade' },
-    {
-      key: 'opening_kills',
-      label: 'Opening K/D',
-      fmt: (p) => `${p.openingKills}/${p.openingDeaths}`,
-    },
-    { key: 'best_streak', label: 'Streak' },
+    // Fixed position, metric-composed cell (design Q2): both halves
+    // read the fixed named slots entry_kills / entry_deaths — the
+    // identical stored columns this cell used to render raw. The body
+    // branch below owns the cell (value-or-dash halves, never a chip).
+    { key: 'opening_kills', label: 'Opening K/D' },
     { key: 'utility_damage', label: 'Util' },
     { key: 'mvps', label: 'MVPs' },
     { key: 'score', label: 'Score' },
@@ -217,6 +201,21 @@
   // state chip (lib/metricstate.js — design §5's state machine).
   let pins = $state([]);
   let metricCols = $state([]);
+  // The W2a fixed named slots (design §6.1): the compound cells'
+  // halves and the expanded row's two stat lines read these metrics BY
+  // NAME — pins-independent, unioned into the ONE stored read below (an
+  // unpinned metric still fills its cell — the kast precedent).
+  const FIXED_SLOTS = [
+    'assists',
+    'entry_kills',
+    'entry_deaths',
+    'flash_assists',
+    'enemies_flashed',
+  ];
+  // name → columnOf() data for each fixed slot the catalog carried
+  // (empty until the read lands; a name the catalog lacks stays absent
+  // → the honest dash, never a guessed number).
+  let fixedCols = $state(new Map());
   let metricError = $state('');
   // metricId → {state, error} from GetMetricComputeState (refetched on
   // mount and on every spectra:metric-done — the sweep's outcome);
@@ -481,27 +480,38 @@
     const stored = readPins(); // null = ABSENT → metricorder resolves DEFAULT_PINS
     pins = stored || [];
     metricCols = [];
+    fixedCols = new Map();
     metricError = '';
-    if (stored && stored.length === 0) return; // present-empty: nothing pinned
+    // The catalog read ALWAYS runs (never gated on the pins): the fixed
+    // named slots above need it even when a stored selection says "pin
+    // nothing" — the selection governs the COLUMNS, not these cells.
     Promise.all([listMetrics(), readOrder('match')])
       .then(([defs, order]) => {
         if (!live) return;
         const rows = defs || [];
         // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
-        // (design §1.6 — nothing resolves before the seeds land, so this
-        // equals today's "absent ⇒ []"); present ⇒ verbatim.
+        // (design §1.6); present ⇒ verbatim, even '[]' — a stored "pin
+        // nothing" is never overridden (and never silences the fixed
+        // slots either — they are not a selection).
         const pinIds = resolvePinIds('match', stored, rows);
         pins = pinIds;
-        if (pinIds.length === 0) return;
         // THE composition (lib/metricorder.js — the ONE site): the
         // sequence filtered to the pinned set. The pins array orders
         // nothing; a newly pinned metric appears where the sequence
         // puts it, never appended.
         const picked = pinnedInSequence('match', order, rows, pinIds);
-        if (picked.length === 0) return;
-        const ids = picked.map((d) => d.id);
-        // ONE stored read for every pin (design §5: N previewMetric
-        // calls → one stored read) beside the one compute-state read.
+        // THE one stored read: the pinned column ids UNIONED with the
+        // fixed named slots' ids (design §6.1). An empty id list would
+        // mean "every metric" on the wire — never send one; with
+        // nothing to read both outputs stay empty (columns and fixed
+        // cells render their honest gaps).
+        const byName = new Map(rows.map((d) => [d.name, d]));
+        const fixed = FIXED_SLOTS.map((n) => byName.get(n)).filter(Boolean);
+        const ids = [...new Set([...picked.map((d) => d.id), ...fixed.map((d) => d.id)])];
+        if (ids.length === 0) return;
+        // ONE stored read for every pin and every fixed slot (design §5:
+        // N previewMetric calls → one stored read) beside the one
+        // compute-state read.
         return Promise.all([getMetricValuesForMatch(id, ids), getMetricComputeState()]).then(
           ([values, states]) => {
             const byMetric = new Map();
@@ -511,14 +521,20 @@
             }
             const stateById = new Map((states || []).map((s) => [s.metricId, s]));
             if (live) metricStates = stateById;
-            return picked.map((def) =>
-              columnOf(def, byMetric.get(def.id) || [], stateById.get(def.id)),
-            );
+            const colFor = (def) =>
+              columnOf(def, byMetric.get(def.id) || [], stateById.get(def.id));
+            return {
+              cols: picked.map(colFor),
+              fixed: new Map(fixed.map((d) => [d.name, colFor(d)])),
+            };
           },
         );
       })
-      .then((cols) => {
-        if (live && cols) metricCols = cols;
+      .then((res) => {
+        if (live && res) {
+          metricCols = res.cols;
+          fixedCols = res.fixed;
+        }
       })
       .catch((e) => {
         if (live) metricError = errText(e);
@@ -562,6 +578,97 @@
     return metricStateTitle(pres.state, mc.error);
   }
 
+  // --- W2a fixed named slots (design §6.1) --------------------------------
+  // The compound cells (Opening K/D pair, Overview roster K/D/A
+  // triples) and the expanded row's two stat lines read their metrics
+  // BY NAME from `fixedCols` — pins-independent (an unpinned metric
+  // still fills its cell), resolved from the SAME catalog read and
+  // served by the SAME ONE stored read as the pinned columns.
+  function fixedPres(name, p) {
+    const mc = fixedCols.get(name);
+    // Slot not resolved yet (read in flight / name absent from the
+    // catalog): the neutral dash — never a guessed chip, never a number.
+    if (!mc) return metricPresentation('', null, false);
+    const st = liveMetricState(metricProgress, metricStates, mc.def.id);
+    return metricPresentation(st, mc.map.get(p.steamId) || null, mc.unitHasRows);
+  }
+
+  // fixedTitle — one fixed slot's tooltip (the Combat slot pattern):
+  // fresh → title + sample size, dash → the no-data copy, a state →
+  // its state title (failed carries the engine's error text).
+  function fixedTitle(name, pres) {
+    const mc = fixedCols.get(name);
+    const label = mc ? mc.def.title || mc.def.name : name;
+    if (pres.kind === 'value') return `${label} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, (mc && mc.error) || '');
+  }
+
+  // halfText — one COMPOUND half's rendered number: the fresh value
+  // through the metric's format tag, the honest dash otherwise. A
+  // non-value half never renders a number or a chip inside a compound
+  // cell (invariant 9) — its state reaches the cell via compoundTitle.
+  function halfText(name, pres) {
+    if (pres.kind !== 'value') return '—';
+    const mc = fixedCols.get(name);
+    return fmtMetric(pres.value, (mc && mc.def.format) || '');
+  }
+
+  // compoundTitle — a value pair/triple's tooltip: EMPTY while every
+  // half shows its number (these cells carried no tooltip before the
+  // conversion, so the rendered output stays byte-identical), otherwise
+  // the first non-value half's state title (invariant 9 — the state
+  // lives in the title, never a second chip).
+  function compoundTitle(halves) {
+    for (const h of halves) {
+      if (h.pres.kind !== 'value') return fixedTitle(h.name, h.pres);
+    }
+    return '';
+  }
+
+  // The Opening K/D cell (fixed SCORE_COLS position — design Q2): the
+  // entry_kills / entry_deaths halves — the identical stored columns
+  // the cell used to render raw — in the unchanged ${k}/${d} format.
+  function openingKd(p) {
+    const halves = [
+      { name: 'entry_kills', pres: fixedPres('entry_kills', p) },
+      { name: 'entry_deaths', pres: fixedPres('entry_deaths', p) },
+    ];
+    return {
+      text: halves.map((h) => halfText(h.name, h.pres)).join('/'),
+      title: compoundTitle(halves),
+    };
+  }
+
+  // The roster K/D/A line (design Q2): raw K + raw D + the assists
+  // metric half, read by NAME so an unpinned assists still fills it.
+  function rosterKda(p) {
+    const a = { name: 'assists', pres: fixedPres('assists', p) };
+    return {
+      text: `${p.kills}/${p.deaths}/${halfText(a.name, a.pres)}`,
+      title: compoundTitle([a]),
+    };
+  }
+
+  // slotText — one STANDALONE fixed slot's text half (the expanded
+  // row, the Combat pattern): the stored number through the metric's
+  // format, the honest dash for no-data, and NOTHING for a state — the
+  // chip renders instead. (Compound halves use halfText above, which
+  // never renders a chip inside a pair/triple — invariant 9.)
+  function slotText(name, pres) {
+    if (pres.kind === 'nodata') return '—';
+    if (pres.kind !== 'value') return '';
+    const mc = fixedCols.get(name);
+    return fmtMetric(pres.value, (mc && mc.def.format) || '');
+  }
+
+  // fixedId — one resolved slot's metric id (the live-progress feed's
+  // key); undefined until the read lands.
+  function fixedId(name) {
+    const mc = fixedCols.get(name);
+    return mc && mc.def.id;
+  }
+
   function toggleSort(key) {
     if (sortKey === key) desc = !desc;
     else {
@@ -571,12 +678,13 @@
     expanded = 0;
   }
 
-  // Cell display for a scoreboard column: custom fmt wins, else map the
-  // snake_case sort key onto the row's camelCase field with formatting.
-  // ADR/KAST%/HS%/K/D have no cases left — they are metric columns
-  // (rendered through fmtMetric below); kda stays Go (inexpressible, N1).
+  // Cell display for a scoreboard column: map the snake_case sort key
+  // onto the row's camelCase field. Every column that carried its own
+  // display (the converted metrics, incl. Opening K/D's ${k}/${d}) left
+  // SCORE_COLS with the conversions — those cells render through the
+  // metric machinery above; kda keeps its case (Go-computed,
+  // inexpressible, N1).
   function cellText(col, p) {
-    if (col.fmt) return col.fmt(p);
     const field = col.key.replace(/_(\w)/g, (_, c) => c.toUpperCase());
     switch (col.key) {
       case 'kda':
@@ -875,10 +983,13 @@
         {/each}
       </div>
 
-      <!-- Roster rows: K/D/A and ADR are event-derived for EVERY player
-           (extract's applyFinal never overwrites them — one convention per
-           player, see internal/extract/agg.go), so there is no
-           snapshot-vs-events distinction left to mark on this tab. The old
+      <!-- Roster rows: K, D and the ADR chip are event-derived for EVERY
+           player (extract's applyFinal never overwrites them — one
+           convention per player, see internal/extract/agg.go); the
+           K/D/A line's A half reads the assists metric instead (design
+           Q2 — a value triple composes each half from its own source),
+           so there is no snapshot-vs-events distinction left to mark on
+           this tab. The old
            "derived" chip + row dim keyed on finalStatePresent advertised a
            retired M1 assumption and mislabeled exact event counts as
            guesses; finalStatePresent stays in the data model as provenance
@@ -896,6 +1007,7 @@
             </thead>
             <tbody>
               {#each rosters.ct as p (p.steamId)}
+                {@const kda = rosterKda(p)}
                 <tr
                   class="clickable"
                   onclick={(e) => {
@@ -917,7 +1029,7 @@
                       title="Open {p.name} profile"
                     />
                   </td>
-                  <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
+                  <td class="num" title={kda.title || undefined}>{kda.text}</td>
                   <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
                 </tr>
               {/each}
@@ -936,6 +1048,7 @@
             </thead>
             <tbody>
               {#each rosters.t as p (p.steamId)}
+                {@const kda = rosterKda(p)}
                 <tr
                   class="clickable"
                   onclick={(e) => {
@@ -957,7 +1070,7 @@
                       title="Open {p.name} profile"
                     />
                   </td>
-                  <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
+                  <td class="num" title={kda.title || undefined}>{kda.text}</td>
                   <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
                 </tr>
               {/each}
@@ -968,6 +1081,7 @@
             <table class="data-table">
               <tbody>
                 {#each rosters.other as p (p.steamId)}
+                  {@const kda = rosterKda(p)}
                   <tr
                     class="clickable"
                     onclick={(e) => {
@@ -979,7 +1093,7 @@
                     <td>
                       <ProfileLink steam={p.steamId} name={p.name} {nav} title="Open {p.name} profile" />
                     </td>
-                    <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
+                    <td class="num" title={kda.title || undefined}>{kda.text}</td>
                     <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
                   </tr>
                 {/each}
@@ -1044,6 +1158,7 @@
           <tbody>
             {#each viewRows as p (p.steamId)}
               {@const nameCls = teamCls(p.side)}
+              {@const kdCell = openingKd(p)}
               <tr
                 class="clickable"
                 onclick={(e) => {
@@ -1101,6 +1216,14 @@
                         >{p.side === 'ct' ? teams.ct : p.side === 't' ? teams.t : '—'}</span
                       ></td
                     >
+                  {:else if col.key === 'opening_kills'}
+                    <!-- Opening K/D: fixed position, metric-composed
+                         cell (design Q2) — each half is the fresh
+                         entry_kills / entry_deaths number in the
+                         unchanged ${k}/${d} format, or the honest dash
+                         with that half's state in the title (never a
+                         chip inside a compound cell — invariant 9). -->
+                    <td class="num" title={kdCell.title || undefined}>{kdCell.text}</td>
                   {:else}
                     <td class="num">{cellText(col, p)}</td>
                   {/if}
@@ -1127,6 +1250,8 @@
                 {/each}
               </tr>
               {#if expanded === p.steamId}
+                {@const flashed = fixedPres('enemies_flashed', p)}
+                {@const flashAssists = fixedPres('flash_assists', p)}
                 <tr class="expand-row">
                   <td colspan={SCORE_COLS.length + 1 + metricCols.length}>
                     <div class="weapon-grid util-grid">
@@ -1160,8 +1285,14 @@
                           </tbody>
                         </table>
                       </div>
-                      <!-- Utility usage: read-only columns the scoreboard
-                           row already carries (store GetScoreboard SELECT). -->
+                      <!-- Utility usage: Utility damage and Times
+                           flashed are read-only columns the scoreboard
+                           row already carries (store GetScoreboard
+                           SELECT); Enemies flashed and Flash assists
+                           are fixed metric slots (design §6.1 — the
+                           Combat pattern: value / honest dash / state
+                           chip, read by NAME from the pins-independent
+                           fixed set). -->
                       <div>
                         <h3>Utility</h3>
                         <table class="data-table mini">
@@ -1170,8 +1301,32 @@
                           </thead>
                           <tbody>
                             <tr><td>Utility damage</td><td class="num">{p.utilityDamage}</td></tr>
-                            <tr><td>Enemies flashed</td><td class="num">{p.enemiesFlashed}</td></tr>
-                            <tr><td>Flash assists</td><td class="num">{p.flashAssists}</td></tr>
+                            <tr>
+                              <td>Enemies flashed</td>
+                              <td class="num" title={fixedTitle('enemies_flashed', flashed)}
+                                >{slotText('enemies_flashed', flashed)}{#if flashed.kind === 'chip'}
+                                  <StatusChip
+                                    status={flashed.state}
+                                    title={fixedTitle('enemies_flashed', flashed)}
+                                    progress={metricProgressFrac(metricProgress, fixedId('enemies_flashed'))}
+                                    stage={metricProgressStage(metricProgress, fixedId('enemies_flashed'))}
+                                  />
+                                {/if}</td
+                              >
+                            </tr>
+                            <tr>
+                              <td>Flash assists</td>
+                              <td class="num" title={fixedTitle('flash_assists', flashAssists)}
+                                >{slotText('flash_assists', flashAssists)}{#if flashAssists.kind === 'chip'}
+                                  <StatusChip
+                                    status={flashAssists.state}
+                                    title={fixedTitle('flash_assists', flashAssists)}
+                                    progress={metricProgressFrac(metricProgress, fixedId('flash_assists'))}
+                                    stage={metricProgressStage(metricProgress, fixedId('flash_assists'))}
+                                  />
+                                {/if}</td
+                              >
+                            </tr>
                             <tr><td>Times flashed</td><td class="num">{p.flashedTimes}</td></tr>
                           </tbody>
                         </table>

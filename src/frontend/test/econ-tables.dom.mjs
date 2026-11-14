@@ -317,8 +317,20 @@ const match = {
   encryptedMessages: 0,
 };
 const scoreboard = [
-  { steamId: 'A', name: 'alice', side: 'ct', kills: 20, deaths: 12, assists: 4, adr: 90, mvps: 3 },
-  { steamId: 'B', name: 'bob', side: 't', kills: 18, deaths: 13, assists: 5, adr: 85, mvps: 2 },
+  // The raw fields the Q2 conversions must NOT read anymore sit beside
+  // their metric twins on purpose: Enemies flashed / Flash assists show
+  // the METRIC numbers (999/888 never render), and bob's raw assists=5
+  // renders as the honest dash because no assists row exists for him.
+  // Opening K/D renders from the metrics with no openingKills/
+  // openingDeaths fields on the row at all.
+  {
+    steamId: 'A', name: 'alice', side: 'ct', kills: 20, deaths: 12, assists: 4,
+    adr: 90, mvps: 3, utilityDamage: 150, flashedTimes: 6, enemiesFlashed: 999, flashAssists: 888,
+  },
+  {
+    steamId: 'B', name: 'bob', side: 't', kills: 18, deaths: 13, assists: 5,
+    adr: 85, mvps: 2, utilityDamage: 120, flashedTimes: 4, enemiesFlashed: 777, flashAssists: 666,
+  },
 ];
 const summary = { id: 3, ctName: 'Alpha', tName: 'Beta' };
 
@@ -1234,73 +1246,189 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-console.log('K. Scoreboard order: the fixed Go block first, then ADR · KAST% · HS% · K/D as metric columns');
+console.log('K. Scoreboard order: the fixed Go block first, then the twelve converted metric columns (W2a)');
 {
-  // The four converted columns (design §3.4): they left SCORE_COLS and
-  // arrive as PINNED METRIC columns at the tail, in today's relative
-  // order. Pins are set EXPLICITLY here (a present key renders the
-  // stored selection verbatim — W1's absent→DEFAULT_PINS rule resolves
-  // a fresh install to these same four ids in this same order, pinned
-  // in metricorder.test.js); the fixed block is code and no pref can
-  // reorder or preempt it.
-  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4]');
-  const mk = (id, name, format) => ({
-    id, name, title: name, shortName: name, scope: 'match', format,
+  // The twelve converted columns (design §4.2/§4.3): they left
+  // SCORE_COLS and arrive as PINNED METRIC columns at the tail, in
+  // today's relative order. Pins are set EXPLICITLY here (a present key
+  // renders the stored selection verbatim — the absent→DEFAULT_PINS
+  // rule resolves a fresh install to these same twelve ids in this same
+  // order, pinned in metricorder.test.js); the fixed block is code and
+  // no pref can reorder or preempt it. The catalog also carries the
+  // fixed named slots the compound/expanded cells read PINS-INDEPENDENT
+  // (design §6.1): entry_deaths for the Opening K/D halves, flash_
+  // assists/enemies_flashed for the expanded row, assists for the
+  // roster triples — none of them pinned, none of them columns.
+  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4,5,6,7,8,9,10,11,12]');
+  const mk = (id, name, label, format) => ({
+    id, name, title: label, shortName: label, scope: 'match', format,
     doc: `Formula: ${name}`,
   });
   const d = {
     ...dataFor(13),
     listMetrics: [
-      mk(1, 'ADR', 'float1'),
-      mk(2, 'KAST%', 'percent'),
-      mk(3, 'HS%', 'percent'),
-      mk(4, 'K/D', 'float2'),
+      mk(1, 'assists', 'A', 'int'),
+      mk(2, 'adr', 'ADR', 'float1'),
+      mk(3, 'kast', 'KAST%', 'percent'),
+      mk(4, 'hs_pct', 'HS%', 'percent'),
+      mk(5, 'kd', 'K/D', 'float2'),
+      mk(6, 'two_k', '2K', 'int'),
+      mk(7, 'three_k', '3K', 'int'),
+      mk(8, 'four_k', '4K', 'int'),
+      mk(9, 'five_k', '5K', 'int'),
+      mk(10, 'entry_kills', 'Entry', 'int'),
+      mk(11, 'trade_kills', 'Trade', 'int'),
+      mk(12, 'best_streak', 'Streak', 'int'),
+      // The fixed named slots (never pinned → never columns).
+      mk(13, 'entry_deaths', 'Entry deaths', 'int'),
+      mk(14, 'flash_assists', 'Flash assists', 'int'),
+      mk(15, 'enemies_flashed', 'Enemies flashed', 'int'),
     ],
     // Fresh rows for alice only — bob's metric cells render the honest
     // dash (the unit IS covered, he just has no row).
     getMetricValuesForMatch: [
-      { metricId: 1, steamId: 'A', value: 90, n: 13 },
-      { metricId: 2, steamId: 'A', value: 0.71, n: 13 },
-      { metricId: 3, steamId: 'A', value: 0.5, n: 13 },
-      { metricId: 4, steamId: 'A', value: 1.67, n: 13 },
+      { metricId: 1, steamId: 'A', value: 4, n: 13 },
+      { metricId: 2, steamId: 'A', value: 90, n: 13 },
+      { metricId: 3, steamId: 'A', value: 0.71, n: 13 },
+      { metricId: 4, steamId: 'A', value: 0.5, n: 13 },
+      { metricId: 5, steamId: 'A', value: 1.67, n: 13 },
+      { metricId: 6, steamId: 'A', value: 3, n: 13 },
+      { metricId: 7, steamId: 'A', value: 1, n: 13 },
+      { metricId: 8, steamId: 'A', value: 0, n: 13 },
+      { metricId: 9, steamId: 'A', value: 0, n: 13 },
+      { metricId: 10, steamId: 'A', value: 12, n: 13 },
+      { metricId: 11, steamId: 'A', value: 5, n: 13 },
+      { metricId: 12, steamId: 'A', value: 7, n: 13 },
+      // The fixed named slots' rows (the ONE unioned stored read).
+      { metricId: 13, steamId: 'A', value: 9, n: 13 },
+      { metricId: 14, steamId: 'A', value: 2, n: 13 },
+      { metricId: 15, steamId: 'A', value: 33, n: 13 },
     ],
-    getMetricComputeState: [1, 2, 3, 4].map((metricId) => ({ metricId, state: 'fresh' })),
+    getMetricComputeState: Array.from({ length: 15 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
   const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
   const labelOf = (th) => (th.querySelector('.th-sort')?.textContent || th.textContent || '').trim();
   const labels = ths.map(labelOf);
-  const fixed = ['Name', 'Team', 'K', 'D', 'A', 'KDA', 'DMG', 'Rnds', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Opening K/D', 'Streak', 'Util', 'MVPs', 'Score'];
-  const converted = ['ADR', 'KAST%', 'HS%', 'K/D'];
+  const fixed = ['Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Rnds', 'Opening K/D', 'Util', 'MVPs', 'Score'];
+  const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Streak'];
   check(
     'the fixed block leads in store order (no converted column inside it)',
     JSON.stringify(labels.slice(1, 1 + fixed.length)) === JSON.stringify(fixed),
     JSON.stringify(labels),
   );
   check(
-    'the four converted columns follow, in today’s relative order',
+    'the twelve converted columns follow, in today’s relative order',
     JSON.stringify(labels.slice(1 + fixed.length)) === JSON.stringify(converted),
     JSON.stringify(labels.slice(1 + fixed.length)),
   );
   check(
-    'exactly those four headers wear m5-mth (fixed ones never do)',
-    ths.filter((t) => t.classList.contains('m5-mth')).length === 4 &&
+    'exactly those twelve headers wear m5-mth (fixed ones never do)',
+    ths.filter((t) => t.classList.contains('m5-mth')).length === 12 &&
       ths.slice(1, 1 + fixed.length).every((t) => !t.classList.contains('m5-mth')),
     String(ths.filter((t) => t.classList.contains('m5-mth')).length),
   );
-  const alice = [...root.querySelectorAll('.data-table.scoreboard tbody tr')].find(
-    (r) => (r.querySelector('.name-cell')?.textContent || '').includes('alice'),
-  );
+  const rowsOfSb = [...root.querySelectorAll('.data-table.scoreboard tbody tr')];
+  const alice = rowsOfSb.find((r) => (r.querySelector('.name-cell')?.textContent || '').includes('alice'));
+  const bob = rowsOfSb.find((r) => (r.querySelector('.name-cell')?.textContent || '').includes('bob'));
   const cellAt = (i) => (alice ? alice.children[i].textContent.trim() : 'no alice row');
   const first = 1 + fixed.length;
   check(
-    'the metric cells render through fmtMetric (90.0 / 71% / 50% / 1.67)',
-    cellAt(first) === '90.0' &&
-      cellAt(first + 1) === '71%' &&
-      cellAt(first + 2) === '50%' &&
-      cellAt(first + 3) === '1.67',
-    [cellAt(first), cellAt(first + 1), cellAt(first + 2), cellAt(first + 3)].join(' | '),
+    'the metric cells render through fmtMetric (4 / 90.0 / 71% / 50% / 1.67 / 3 / 1 / 0 / 0 / 12 / 5 / 7)',
+    cellAt(first) === '4' &&
+      cellAt(first + 1) === '90.0' &&
+      cellAt(first + 2) === '71%' &&
+      cellAt(first + 3) === '50%' &&
+      cellAt(first + 4) === '1.67' &&
+      cellAt(first + 5) === '3' &&
+      cellAt(first + 6) === '1' &&
+      cellAt(first + 7) === '0' &&
+      cellAt(first + 8) === '0' &&
+      cellAt(first + 9) === '12' &&
+      cellAt(first + 10) === '5' &&
+      cellAt(first + 11) === '7',
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => cellAt(first + i)).join(' | '),
+  );
+
+  // Q2 compound cell #1 — Opening K/D keeps its fixed SCORE_COLS
+  // position while both halves render the entry_kills / entry_deaths
+  // metrics (the row carries NO openingKills/openingDeaths fields, so
+  // '12/9' can only come from the metric read) in the unchanged
+  // ${k}/${d} format, with no tooltip while every half is fresh.
+  const kdIdx = labels.indexOf('Opening K/D');
+  check(
+    'Opening K/D composes the entry_kills/entry_deaths halves (12/9), fixed position, no tooltip',
+    kdIdx > 0 && alice.children[kdIdx].textContent.trim() === '12/9' &&
+      !alice.children[kdIdx].hasAttribute('title'),
+    alice && kdIdx > 0 ? alice.children[kdIdx].textContent.trim() : 'no cell',
+  );
+  check(
+    'a covered player with no metric rows gets the honest dash in both halves (—/—) with the state in the title',
+    bob.children[kdIdx].textContent.trim() === '—/—' &&
+      bob.children[kdIdx].getAttribute('title') === 'no data for this player',
+    bob.children[kdIdx].textContent.trim() + ' title=' + bob.children[kdIdx].getAttribute('title'),
+  );
+
+  // The expanded row's two FIXED metric slots (the Combat pattern):
+  // the metric numbers win over the raw fields the row still carries
+  // (999/888 never render), each with its sample-size tooltip, while
+  // Utility damage and Times flashed stay raw.
+  const expandBtn = alice.querySelector('button[aria-label="Breakdown for alice"]');
+  check('the expand toggle renders for alice', !!expandBtn);
+  clickEl(expandBtn);
+  await sleep();
+  const expRow = root.querySelector('tr.expand-row');
+  const utilTbl = [...(expRow?.querySelectorAll('table.data-table.mini') || [])].find((t) =>
+    (t.querySelector('thead')?.textContent || '').includes('Stat'),
+  );
+  const statRow = (label) =>
+    [...(utilTbl?.querySelectorAll('tbody tr') || [])].find((r) => r.children[0]?.textContent.trim() === label);
+  const flashedCell = statRow('Enemies flashed')?.children[1];
+  const flashAssistCell = statRow('Flash assists')?.children[1];
+  check(
+    'the expanded row renders the enemies-flashed / flash-assists METRIC values (raw 999/888 never render)',
+    flashedCell?.textContent.trim() === '33' && flashAssistCell?.textContent.trim() === '2',
+    `${flashedCell?.textContent.trim()} / ${flashAssistCell?.textContent.trim()}`,
+  );
+  check(
+    'both fixed slots carry the sample-size tooltip (n=13)',
+    flashedCell?.getAttribute('title') === 'Enemies flashed — sample size n=13' &&
+      flashAssistCell?.getAttribute('title') === 'Flash assists — sample size n=13',
+    `${flashedCell?.getAttribute('title')} / ${flashAssistCell?.getAttribute('title')}`,
+  );
+  check(
+    'Utility damage and Times flashed stay raw stored columns',
+    statRow('Utility damage')?.children[1].textContent.trim() === '150' &&
+      statRow('Times flashed')?.children[1].textContent.trim() === '6',
+    `${statRow('Utility damage')?.children[1].textContent.trim()} / ${statRow('Times flashed')?.children[1].textContent.trim()}`,
+  );
+  clickEl(expandBtn);
+  await sleep();
+
+  // Q2 compound cell #2 — the Overview roster triples: raw K + raw D
+  // + the assists METRIC half (bob's raw assists=5 renders as the dash
+  // because no metric row exists for him — the source switch, pinned).
+  root = await showMatch(d, { routeTab: 'Overview' });
+  await sleep();
+  const rosterSections = [...root.querySelectorAll('.roster-grid section')];
+  const rosterCell = (sectionIdx, name) => {
+    const rows = [...(rosterSections[sectionIdx]?.querySelectorAll('tbody tr') || [])];
+    const tr = rows.find((r) => r.textContent.includes(name));
+    return tr ? tr.children[1] : null;
+  };
+  const aliceKda = rosterCell(0, 'alice');
+  const bobKda = rosterCell(1, 'bob');
+  check(
+    'the roster triple renders raw K/D + the metric A half (20/12/4), no tooltip while fresh',
+    aliceKda?.textContent.trim() === '20/12/4' && !aliceKda.hasAttribute('title'),
+    aliceKda ? aliceKda.textContent.trim() : 'no cell',
+  );
+  check(
+    'a roster player with no assists row gets the honest A dash with the state title (raw 5 ignored)',
+    bobKda?.textContent.trim() === '18/13/—' &&
+      bobKda?.getAttribute('title') === 'no data for this player',
+    bobKda ? `${bobKda.textContent.trim()} title=${bobKda.getAttribute('title')}` : 'no cell',
   );
   localStorage.removeItem('spectra:pinned-metrics');
 }

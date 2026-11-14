@@ -140,7 +140,12 @@ const EXPECTED = {
   // column), +4 the new section K (fixed block first, the four
   // converted metric columns after it, the m5-mth cap scope, the
   // fmtMetric cell values).
-  'econ-tables.dom.mjs': 108,
+  // econ-tables 108 → 116 (2026-11-14, inferred-conversion W2a): section
+  // K re-pinned for the twelve-column swap (+8: the Opening K/D
+  // metric-composed pair both ways, the expand toggle, the expanded
+  // row's fixed metric slots raw-vs-metric + tooltips + raw survivors,
+  // the roster triple's metric A half both ways).
+  'econ-tables.dom.mjs': 116,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,
