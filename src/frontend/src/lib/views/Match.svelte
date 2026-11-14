@@ -1,6 +1,5 @@
 <script>
   import { isSteam, replayHash } from '../nav.js';
-  import { KAST_DEF } from '../definitions.js';
   import { listedPlayers } from '../players.js';
   import {
     getMatch,
@@ -37,7 +36,6 @@
     fmtDate,
     fmt1,
     fmt2,
-    fmtPercent,
     fmtInt,
     fmtMetric,
     fmtPatch,
@@ -84,8 +82,12 @@
 
   // GetScoreboard sort whitelist (mirror of the Go store's map).
   // Combined columns sort by their primary key.
-  // KAST% lives in the analytics pass (getCombatStats → kastPct), not the
-  // scoreboard store — its sort is applied client-side (see viewRows).
+  // ADR / KAST% / HS% / K/D left SCORE_COLS with the dogfooding
+  // conversion (W2): they render as PINNED METRIC columns at the tail
+  // (metricCols below — sourced from the stored metric rows through the
+  // five-state machine), in today's relative order once the default
+  // pins/sequence land (W1's metricorder.js). Every remaining key here
+  // is a store column, so the server sort applies verbatim.
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
     // "Team" column: the key stays `side` (the store's sort whitelist is
@@ -95,10 +97,6 @@
     { key: 'kills', label: 'K' },
     { key: 'deaths', label: 'D' },
     { key: 'assists', label: 'A' },
-    { key: 'adr', label: 'ADR' },
-    { key: 'kast', label: 'KAST%', title: KAST_DEF },
-    { key: 'hs_pct', label: 'HS%' },
-    { key: 'kd', label: 'K/D' },
     { key: 'kda', label: 'KDA' },
     { key: 'total_damage', label: 'DMG' },
     { key: 'rounds_played', label: 'Rnds' },
@@ -169,11 +167,10 @@
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
 
-  // Analytics (M3): per-player KAST for the scoreboard column + per-round
-  // classification chips for the Rounds tab. Both are optional — failures
-  // surface inline per section instead of breaking the whole match view.
-  let combatBySteam = $state(new Map());
-  let combatError = $state('');
+  // Analytics (M3): per-round classification chips for the Rounds tab.
+  // The per-player KAST path (combatBySteam + its fetch + the combatError
+  // panel) died with the dogfooding conversion (W2) — KAST% is a pinned
+  // metric column now (the Combat tab still warms getCombatStats below).
   let classByRound = $state(new Map());
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4).
@@ -367,16 +364,16 @@
     if (routeTab) tab = routeTab;
   });
 
-  // Scoreboard fetch: initial load + every sort change. KAST% is not a
-  // store column — when it is the sort key we keep the current rows and
-  // sort them client-side against combatBySteam (viewRows).
+  // Scoreboard fetch: initial load + every sort change. The four
+  // converted columns (ADR/KAST%/HS%/K/D) sort as m:* metric keys —
+  // never a store sort — so server ordering for the remaining SCORE_COLS
+  // stays exactly as GetScoreboard returns it.
   $effect(() => {
     sortKey;
     desc;
-    // kast + m:* metric columns sort client-side (viewRows) — the store
-    // sort only ever runs for SCORE_COLS keys, so server ordering for
-    // K/D/ADR/… stays exactly as GetScoreboard returns it.
-    if (sortKey === 'kast' || sortKey.startsWith('m:')) return;
+    // m:* metric columns sort client-side (viewRows) — the store sort
+    // only ever runs for SCORE_COLS keys.
+    if (sortKey.startsWith('m:')) return;
     let live = true;
     getScoreboard(id, sortKey, desc)
       .then((sb) => {
@@ -389,22 +386,6 @@
       })
       .catch((e) => {
         if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  // Per-player KAST% (models.CombatStat.kastPct) for the scoreboard column.
-  $effect(() => {
-    let live = true;
-    combatError = '';
-    getCombatStats(id)
-      .then((rows) => {
-        if (live) {
-          combatBySteam = new Map((rows || []).map((r) => [r.steamId, r]));
-        }
-      })
-      .catch((e) => {
-        if (live) combatError = errText(e);
       });
     return () => (live = false);
   });
@@ -424,7 +405,6 @@
   });
 
   const viewRows = $derived.by(() => {
-    if (sortKey === 'kast') return scoreboard;
     if (sortKey.startsWith('m:')) {
       const col = metricCols.find((c) => metricSortKey(c.def.id) === sortKey);
       if (!col) return scoreboard;
@@ -439,11 +419,6 @@
     }
     return scoreboard;
   });
-
-  function kastPct(p) {
-    const row = combatBySteam.get(p.steamId);
-    return row && Number.isFinite(row.kastPct) ? row.kastPct : null;
-  }
 
   // --- M5 pinned metric columns ---------------------------------------------
   // Column-merge: SCORE_COLS stays a pure store-driven set; pinned metrics
@@ -584,20 +559,12 @@
 
   // Cell display for a scoreboard column: custom fmt wins, else map the
   // snake_case sort key onto the row's camelCase field with formatting.
+  // ADR/KAST%/HS%/K/D have no cases left — they are metric columns
+  // (rendered through fmtMetric below); kda stays Go (inexpressible, N1).
   function cellText(col, p) {
     if (col.fmt) return col.fmt(p);
     const field = col.key.replace(/_(\w)/g, (_, c) => c.toUpperCase());
     switch (col.key) {
-      case 'adr':
-        return fmt1(p.adr);
-      case 'kast': {
-        const v = kastPct(p);
-        return v == null ? '—' : fmtPercent(v);
-      }
-      case 'hs_pct':
-        return fmtPercent(p.hsPct);
-      case 'kd':
-        return fmt2(p.kd);
       case 'kda':
         return fmt2(p.kda);
       default:
@@ -1008,14 +975,6 @@
         </section>
       </div>
     {:else if tab === 'Scoreboard'}
-      {#if combatError}
-        <p class="error" role="alert">
-          KAST% unavailable: {combatError}
-          <button class="btn small" aria-label="Dismiss KAST% error" onclick={() => (combatError = '')}>
-            <span class="codicon codicon-close"></span>
-          </button>
-        </p>
-      {/if}
       {#if metricError}
         <p class="error" role="alert">
           Pinned stats unavailable: {metricError}

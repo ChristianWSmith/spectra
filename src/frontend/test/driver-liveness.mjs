@@ -86,7 +86,12 @@ const EXPECTED = {
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
-  'econ-tables.dom.mjs': 107,
+  // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
+  // error-dismissal sub-checks (combatError died with the KAST% metric
+  // column), +4 the new section K (fixed block first, the four
+  // converted metric columns after it, the m5-mth cap scope, the
+  // fmtMetric cell values).
+  'econ-tables.dom.mjs': 108,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,
