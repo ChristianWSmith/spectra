@@ -25,6 +25,15 @@ import (
 // engine, and SaveMetric validates + writes the real scope — the W1
 // ignored-arg shims and the forced scope 'match' are retired with the
 // frontend form change that ships in the same wave.
+//
+// W2b (composability save-side) adds metric('name') references as a
+// save-time graph: the service RESOLVES each reference against the
+// catalog (metrics.name is UNIQUE across origins, so name→id is total),
+// enforces existence / cross-scope / acyclicity, and persists the edges
+// wholesale into metric_deps inside the save transaction — with the
+// rename splice re-validated before anything is written. The compute
+// pass, the cascade version bumps and the metric_values writers are
+// deliberately NOT here (design §6 wave 3).
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
@@ -116,12 +125,135 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 	return r, nil
 }
 
+// resolveRefs resolves an expression's metric() references against the
+// SAVED catalog (design §2): metrics.name is UNIQUE across every origin,
+// so name→id resolution is total. Every referenced name must exist (the
+// missing-name failure is the positioned "unknown metric reference" —
+// the SAME copy CompileRefs spells, so a draft, a preview and a save can
+// never disagree) and each target carries the grain + live stamps the
+// ref join binds.
+//
+// dependentScope is the DEPENDENT definition's stored scope and drives
+// the cross-scope rule (key containment: a ref resolves iff the
+// dependent's row key contains every key column of the dependency's
+// grain). "" means the caller has no stored scope — ValidateExpr's
+// drafts and ad-hoc previews are authoring state, and a definition's
+// scope only exists once it is saved, so those paths resolve existence
+// only and leave the rule to the save (which always has a scope).
+//
+// `known` pre-resolves names the catalog does not carry YET: the rename
+// splice re-validates dependents against the metric's NEW name while its
+// row still carries the old one (the collision pre-check guarantees the
+// new name is otherwise free).
+//
+// Returns (*ParseError, nil) for parse/resolution failures (the ExprError
+// contract — positioned) and (nil, err) for store failures.
+func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, known map[string]metrics.RefTarget) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
+	found := metrics.MetricRefs(spec)
+	if len(found) == 0 {
+		return map[string]metrics.RefTarget{}, nil, nil
+	}
+	// Live rule stamp: one indexed read of the single-row config — the
+	// exact value W3's compute pass stamps fresh metric_values rows with,
+	// so a ref join only ever reads rows built under it.
+	cfg, err := s.st.GetConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make(map[string]metrics.RefTarget, len(known)+len(found))
+	for name, t := range known {
+		t.RuleVersion = cfg.RuleVersion
+		out[name] = t
+	}
+	for _, r := range found {
+		t, resolved := out[r.Name]
+		if !resolved {
+			row, err := s.st.GetMetricByName(r.Name)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, &metrics.ParseError{
+					Message: fmt.Sprintf("unknown metric reference %q", r.Name),
+					Pos:     r.Pos,
+				}, nil
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			t = metrics.RefTarget{ID: row.ID, Scope: row.Scope, Version: row.Version}
+			out[r.Name] = t
+		}
+		// Cross-scope rule (design §2): a PROFILE metric may read a
+		// profile ref (and a match metric either grain — the row's player
+		// key carries the career scalar), but a career value cannot read
+		// a per-match value: the profile row key (steam_id) contains no
+		// match_id to correlate on. Applied to EVERY resolved ref,
+		// `known` entries included — the rename splice re-validation runs
+		// through here with the same rule.
+		if dependentScope == "profile" && t.Scope == "match" {
+			return nil, nil, fmt.Errorf(
+				"metrics: metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
+				r.Name)
+		}
+		t.RuleVersion = cfg.RuleVersion
+		out[r.Name] = t
+	}
+	return out, nil, nil
+}
+
+// resolveRefsExpr is resolveRefs over an expression string (parse first)
+// — the shape PreviewMetric and ValidateExpr need.
+func (s *MetricsService) resolveRefsExpr(expr, dependentScope string) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
+	spec, perr := metrics.Parse(expr)
+	if perr != nil {
+		return nil, perr, nil
+	}
+	return s.resolveRefs(spec, dependentScope, nil)
+}
+
+// checkMetricCycle walks {existing metric_deps edges} ∪ {the saved
+// metric's new refs} from the metric being saved (design §2) and rejects
+// anything cyclic BEFORE any write — a self-reference is an immediate
+// cycle. The walk itself is pure (metrics.FindCycle, no DB); only the
+// edge loading happens here, and the graph it walks is the POST-save
+// one: a rename's dependents are spliced in the same transaction, so
+// their edges to the old name already count as edges to the new one.
+func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string) error {
+	edges, err := s.st.ListMetricEdges()
+	if err != nil {
+		return err
+	}
+	if oldName != "" && oldName != newName {
+		for node, deps := range edges {
+			for i, d := range deps {
+				if d == oldName {
+					deps[i] = newName // the splice rewrites these literals in the same tx
+				}
+			}
+			edges[node] = deps // same backing array — spelled out so the graph edit is visible
+		}
+		delete(edges, oldName)
+	}
+	edges[newName] = refs // {existing} with the saved metric's own out-edges replaced by {new}
+	if cycle := metrics.FindCycle(newName, edges); cycle != nil {
+		return fmt.Errorf("metrics: cyclic metric reference: %s", strings.Join(cycle, " → "))
+	}
+	return nil
+}
+
 // SaveMetric validates + upserts (origin forced to user for API saves;
 // plugin metrics are written by the plugin loader; an EXISTING built-in
 // row is rejected below — built-ins are immutable through this API).
 // Duplicate name → error.
 // The frontend echoes rows back as-is; CreatedAt is store-owned (stamped
 // on create, untouched on update).
+//
+// W2b: the validation block below runs in the design's order — guards,
+// grammar (Parse), reference resolution (existence → cross-scope), the
+// full Compile, the cycle check, the rename splice — and only THEN one
+// transaction writes the metric, its metric_deps edges (re-derived
+// wholesale from the CURRENT expression) and any dependents' splices.
+// Nothing is written until every check passes; no version is bumped
+// (the cascade bumps are wave 3 — a rename changes no semantics, so
+// there is deliberately nothing to bump).
 func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error) {
 	m.Name = strings.TrimSpace(m.Name)
 	if m.Name == "" {
@@ -161,8 +293,10 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// cannot touch a builtin, it can only COLLIDE with one, which stays
 	// CreateMetric's uniqueness error (the distinct path, pinned by
 	// TestSaveMetricBuiltinGuards).
+	var existing models.MetricRow
 	if m.ID > 0 {
-		existing, err := s.st.GetMetric(m.ID)
+		var err error
+		existing, err = s.st.GetMetric(m.ID)
 		if err != nil {
 			return models.MetricRow{}, err // unknown id: the store's ErrNotFound, as before
 		}
@@ -170,24 +304,107 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 			return models.MetricRow{}, errors.New("metrics: built-in metrics can't be edited")
 		}
 	}
-	// Validate expression (+denominator) BEFORE any write. Compile also
-	// enforces the player anchor (a primary without a subject is
-	// rejected), so a player-less definition never lands.
-	if _, perr := metrics.Compile(m.Expr, m.Denominator, ""); perr != nil {
+	// Grammar first (the compile's own first step — ref-free expressions
+	// report exactly what they did before W2b): the parse carries the
+	// metric() reference spans every later step works from.
+	spec, perr := metrics.Parse(m.Expr)
+	if perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
+	}
+	// A rename onto a name that already exists must fail HERE, before the
+	// cycle graph is built: that graph describes the POST-save catalog,
+	// and a collision would merge two metrics' edges into one node.
+	if m.ID > 0 && m.Name != existing.Name {
+		_, err := s.st.GetMetricByName(m.Name)
+		if err == nil {
+			return models.MetricRow{}, fmt.Errorf("metrics: a metric named %q already exists", m.Name)
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return models.MetricRow{}, err
+		}
+	}
+	// The metric resolves its OWN name: it IS the row being written (its
+	// grain and — on an edit — its id/version do not change with the
+	// name), so a self-reference reaches the CYCLE check below, where it
+	// belongs, instead of reporting itself as an unknown name. The
+	// create-path version is the INSERT default and is never bound: a
+	// self-reference is rejected before any write.
+	ownVersion := 1
+	if m.ID > 0 {
+		ownVersion = existing.Version
+	}
+	known := map[string]metrics.RefTarget{
+		m.Name: {ID: m.ID, Scope: m.Scope, Version: ownVersion},
+	}
+	// Reference resolution: existence + the cross-scope rule, and the
+	// targets Compile binds into the ref joins.
+	refs, perr, err := s.resolveRefs(spec, m.Scope, known)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	if perr != nil {
+		return models.MetricRow{}, exprErrorErr(perr)
+	}
+	// Validate expression (+denominator) BEFORE any write. CompileRefs
+	// also enforces the player anchor (a primary without a subject is
+	// rejected), so a player-less definition never lands.
+	if _, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", refs); perr != nil {
+		return models.MetricRow{}, exprErrorErr(perr)
+	}
+	depNames := metrics.DistinctNames(metrics.MetricRefs(spec))
+	// Cycle rejection: pure walk over {existing edges} ∪ {new refs}.
+	if err := s.checkMetricCycle(m.Name, existing.Name, depNames); err != nil {
+		return models.MetricRow{}, err
+	}
+	// Rename splice (design §2): a changed name with dependents > 0
+	// rewrites each dependent's metric('old') literals with the parse's
+	// own spans, re-parses, re-resolves and re-Compile-validates the
+	// result, and hands the store a prepared rewrite for the SAME
+	// transaction. Any failure errors the save with nothing written.
+	// No bump, no recompute: a rename changes no semantics.
+	var rewrites []store.DependentRewrite
+	if m.ID > 0 && m.Name != existing.Name {
+		dependents, err := s.st.MetricDependents(existing.Name)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		if len(dependents) > 0 {
+			// `known` already resolves the metric's NEW name (the row
+			// still carries the old one until the tx commits) with the
+			// post-save grain — dependents' re-validation reads through
+			// it with the same rule.
+			for _, dep := range dependents {
+				newExpr, perr := metrics.RenameRefs(dep.Expr, existing.Name, m.Name)
+				if perr != nil {
+					return models.MetricRow{}, exprErrorErr(perr)
+				}
+				depSpec, perr := metrics.Parse(newExpr)
+				if perr != nil {
+					return models.MetricRow{}, exprErrorErr(perr)
+				}
+				depRefs, perr, err := s.resolveRefs(depSpec, dep.Scope, known)
+				if err != nil {
+					return models.MetricRow{}, err
+				}
+				if perr != nil {
+					return models.MetricRow{}, exprErrorErr(perr)
+				}
+				if _, perr := metrics.CompileRefs(newExpr, dep.Denominator, "", depRefs); perr != nil {
+					return models.MetricRow{}, exprErrorErr(perr)
+				}
+				rewrites = append(rewrites, store.DependentRewrite{
+					ID:   dep.ID,
+					Expr: newExpr,
+					Deps: metrics.DistinctNames(metrics.MetricRefs(depSpec)),
+				})
+			}
+		}
 	}
 	if strings.TrimSpace(m.Doc) == "" {
 		m.Doc = "Formula: " + m.Expr // PRD §5.16: formula documentation on every metric
 	}
-	var (
-		saved models.MetricRow
-		err   error
-	)
-	if m.ID > 0 {
-		saved, err = s.st.UpdateMetric(m)
-	} else {
-		saved, err = s.st.CreateMetric(m)
-	}
+	// ONE transaction: the metric row, its edges wholesale, the splices.
+	saved, err := s.st.SaveMetricWithDeps(m, depNames, rewrites)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
@@ -200,6 +417,16 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 // so an unknown id still reports the store's ErrNotFound exactly as
 // before. Plugin rows stay deletable (the plugin host re-seeds them on
 // enable) and user rows pass straight through.
+//
+// AFTER the builtin guard: a metric that other expressions still
+// reference is blocked (design §2 — preventable user graph surgery is
+// blocked; the copy follows the friendly-uniqueness precedent). The
+// system paths never route through here: ReplacePluginMetrics and
+// DeletePluginMetrics issue their own `DELETE FROM metrics WHERE
+// plugin_id = ?` (platform_store.go) and never call this method, so the
+// block can never block a plugin replace — and metric_deps.dep_name has
+// NO foreign key precisely so a system-removed upstream leaves its edge
+// for the compute pass to resolve-or-fail honestly.
 func (s *MetricsService) DeleteMetric(id int64) error {
 	existing, err := s.st.GetMetric(id)
 	if err != nil {
@@ -208,6 +435,18 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 	if existing.Origin == "builtin" {
 		return errors.New("metrics: built-in metrics can't be deleted")
 	}
+	dependents, err := s.st.MetricDependents(existing.Name)
+	if err != nil {
+		return err
+	}
+	if len(dependents) > 0 {
+		names := make([]string, len(dependents))
+		for i, d := range dependents {
+			names[i] = d.Name
+		}
+		return fmt.Errorf("metrics: cannot delete metric %q: referenced by %s — edit or delete those first",
+			existing.Name, strings.Join(names, ", "))
+	}
 	return s.st.DeleteMetric(id)
 }
 
@@ -215,10 +454,16 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 // scope: "" = whole library; scope="match:<id>" limits single-match
 // sources. The engine addresses every preview row by its subject — there
 // is no groupBy argument any more (retired with W2).
+//
+// W2b: every metric() reference in the expression is resolved against
+// the saved catalog first (drafts are CALCULATED — a ref resolves
+// against saved metrics, never against other drafts), so a draft with
+// refs previews exactly like the save would validate it.
 func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limit int) (MetricPreview, error) {
 	var (
-		def  metrics.Def
-		echo models.MetricRow
+		def      metrics.Def
+		echo     models.MetricRow
+		depScope string // the dependent's stored scope ("" for a draft)
 	)
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
@@ -227,12 +472,21 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 		}
 		def = metrics.Def{Expr: full.Expr, Denominator: full.Denominator}
 		echo = full
+		depScope = full.Scope
 	} else {
 		// Ad-hoc expression: no denominator (rates are a property of the
 		// saved definition); the subject addressing is the engine's.
 		def = metrics.Def{Expr: expr}
 		echo = models.MetricRow{ID: id, Expr: expr}
 	}
+	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope)
+	if err != nil {
+		return MetricPreview{}, err
+	}
+	if perr != nil {
+		return MetricPreview{}, exprErrorErr(perr)
+	}
+	def.Refs = refs
 	// limit ≤0 is normalized inside metrics.RunPreview — the one canonical
 	// default (PreviewDefaultRow), never here.
 	pv, perr, err := metrics.RunPreview(s.st, def, scope, limit)
@@ -254,8 +508,21 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 // ValidateExpr parses without executing (builder live-check). The
 // grammar check is Compile's — the player anchor included, so a
 // player-less draft reports the same positioned error a save would.
+// W2b: a draft carrying metric() references is resolved against the
+// SAVED catalog first (drafts are calculated; a ref to an unsaved name
+// reports the positioned unknown-reference error a save would report).
+// The cross-scope rule is deliberately NOT enforced here: ValidateExpr
+// carries no scope argument (a draft's scope is authoring state), so
+// that definition-level rule stays with the save.
 func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
-	if perr := metrics.Validate(expr); perr != nil {
+	refs, perr, err := s.resolveRefsExpr(expr, "")
+	if err != nil {
+		return false, ExprError{}, err
+	}
+	if perr != nil {
+		return false, exprError(perr), nil
+	}
+	if _, perr := metrics.CompileRefs(expr, "", "", refs); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil
