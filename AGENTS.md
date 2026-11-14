@@ -239,6 +239,18 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **Metrics carry their formula and their N:** every metric documents its
   formula (fallback `Formula: <expr>`), and missing data surfaces as
   value 0 beside `N` (the sample size) — never a fabricated number.
+- **New metrics are onboarded through the metrics system, never
+  hand-rolled in Go (owner, 2026-11-14):** adding a stat/metric = a
+  seeded built-in (or saved user metric) with an expression. A hardcoded
+  calculation in a service, store query, or view duplicates what the
+  metrics system already provides — storage with the formula/N honesty
+  contract (bullet above), ordering, the state vocabulary, the Builder —
+  and would only need migrating later (adoption means migration).
+  Provenance still decides what is NOT a metric: raw event reads stay in
+  `internal/extract`, analysis-rule stored outputs stay in
+  `internal/analytics` Compute (canonical row below), and the narrow
+  view-level-aggregate exception (below) still applies — stats *derived
+  from* those inputs become expressions.
 - **`PRD §X.Y` citations in comments are historical:** the product spec
   is retrievable from git history only (it left the tree with the
   reference docs); leave the comments as-is — when a citation encodes a
