@@ -3,8 +3,10 @@
 // denominator chip).
 // Section labels below match the run's console.log letters:
 //   A. the three toggle PAIRS (Built-in|My metrics, Match|Profile,
-//      Rounds|Matches — one pair per line, all six ON by default: the
-//      first window is the whole catalog) and the SERVER-side
+//      Rounds|Matches — one pair per line; defaults: the source pair
+//      Built-in OFF / My metrics ON (the owner's standing ruling), both
+//      new pairs ON (the owner's addendum) — the first window is the
+//      mine partition) and the SERVER-side
 //      narrowings they drive: the scripted backend below applies
 //      store.ListMetricsPage's exact predicates to the fixture, so a
 //      view that filtered client-side, passed the wrong partition word,
@@ -389,11 +391,11 @@ const formChip = (r) => r.querySelector('.bld-readonly');
 
 viewstate.resetViewState();
 
-console.log('A. defaults: all six toggles ON, one pair per line — the first window is the whole catalog');
+console.log('A. defaults: Built-in OFF / My metrics ON (owner ruling) + both new pairs ON — the first window is the mine partition');
 let r = await mountBuilder();
 check(
-  'first list call = (query "", origin "", scope "", denominator "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]),
+  'first list call = (query "", origin "mine", scope "", denominator "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 const tgBuiltin = toggle(r, 'Built-in');
@@ -403,8 +405,10 @@ const tgProfile = toggle(r, 'Profile');
 const tgRounds = toggle(r, 'Rounds');
 const tgMatches = toggle(r, 'Matches');
 check(
-  'every toggle starts pressed — all three pairs default ON',
-  [tgBuiltin, tgMine, tgMatch, tgProfile, tgRounds, tgMatches].every((b) => b && pressed(b)),
+  'the source pair keeps its owner default (Built-in OFF, My metrics ON); both new pairs start ON',
+  JSON.stringify(
+    [tgBuiltin, tgMine, tgMatch, tgProfile, tgRounds, tgMatches].map((b) => b && pressed(b)),
+  ) === JSON.stringify([false, true, true, true, true, true]),
   JSON.stringify([tgBuiltin, tgMine, tgMatch, tgProfile, tgRounds, tgMatches].map((b) => b && pressed(b))),
 );
 check(
@@ -419,16 +423,15 @@ check(
   ),
 );
 check(
-  'the whole catalog renders, byte-identical to the unfiltered list',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Yours', 'Plugins']),
+  'the default view is the mine partition (Yours + Plugins headers, no builtin row)',
+  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Yours', 'Plugins']),
   JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
 );
 check(
   'the denominator chip rides beside the scope chip when a metric carries one',
-  JSON.stringify(chipsOf(r, 'trade_rate')) === JSON.stringify(['match', 'rounds', 'percent']) &&
-    JSON.stringify(chipsOf(r, 'my_kd')) === JSON.stringify(['match', 'matches', 'float1']),
-  JSON.stringify(chipsOf(r, 'trade_rate')) + ' / ' + JSON.stringify(chipsOf(r, 'my_kd')),
+  JSON.stringify(chipsOf(r, 'my_kd')) === JSON.stringify(['match', 'matches', 'float1']),
+  JSON.stringify(chipsOf(r, 'my_kd')),
 );
 check(
   'a denominator-less metric shows NO denominator chip (absence is honest)',
@@ -444,22 +447,34 @@ check(
 console.log('B. the source pair narrows server-side (cursor 0) and both-off is a legal empty read');
 services.invalidate(); // same-key windows are cached — record this window fresh
 pageCalls.length = 0;
-setToggle(tgBuiltin, false);
+setToggle(tgBuiltin, true); // from the default: the mine partition → the whole catalog
 await sleep(DEBOUNCE);
 check(
-  'Built-in OFF → (query "", origin "mine", scope "", denominator "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]),
-  JSON.stringify(pageCalls[0]),
-);
-check(
-  'the mine partition renders (Yours + Plugins headers, no Builtins)',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Yours', 'Plugins']),
-  JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
+  'Built-in ON → (query "", origin "", scope "", denominator "", cursor 0, 100) — all four rows with the Builtins header',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Yours', 'Plugins']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
 setToggle(tgMine, false);
+await sleep(DEBOUNCE);
+check(
+  'My metrics OFF → origin "builtin": only the builtin row renders, and its rounds chip rides beside its scope chip',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', '', '', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']) &&
+    !headersOf(r).includes('Yours') &&
+    JSON.stringify(chipsOf(r, 'trade_rate')) === JSON.stringify(['match', 'rounds', 'percent']),
+  JSON.stringify(pageCalls[0]) +
+    ' rows=' +
+    JSON.stringify(namesOf(r)) +
+    ' trade_rate=' +
+    JSON.stringify(chipsOf(r, 'trade_rate')),
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgBuiltin, false);
 await sleep(DEBOUNCE);
 check(
   'both source toggles off → origin "none" — a legal empty read',
@@ -475,17 +490,17 @@ check(
 );
 services.invalidate();
 pageCalls.length = 0;
-setToggle(tgBuiltin, true);
+setToggle(tgMine, true);
 await sleep(DEBOUNCE);
 check(
-  'Built-in back ON (My metrics still off) → origin "builtin" — the built-in partition',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', '', '', 0, 100]) &&
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+  'My metrics back ON → origin "mine" — cursor reset again, mine rows render',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
-setToggle(tgMine, true);
+setToggle(tgBuiltin, true);
 await sleep(DEBOUNCE);
 check(
   'both source toggles back on → the whole catalog window again',
@@ -900,13 +915,13 @@ console.log('H. the toggles are view-local registry state (restore all six, then
     matches: toggle(r, 'Matches'),
   };
   check(
-    'resetViewState() → the next mount is back to the defaults (all six ON)',
-    JSON.stringify(six(t3)) === JSON.stringify([true, true, true, true, true, true]),
+    'resetViewState() → the next mount is back to the defaults (Built-in OFF / My metrics ON, both new pairs ON)',
+    JSON.stringify(six(t3)) === JSON.stringify([false, true, true, true, true, true]),
     JSON.stringify(six(t3)),
   );
   check(
-    '…and the default view is the whole catalog again',
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
+    '…and the default view is the mine partition again',
+    JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(namesOf(r)),
   );
 }

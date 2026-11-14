@@ -149,13 +149,15 @@
     form: newForm(),
     baseline: '',
     query: '',
-    // Every pair starts BOTH ON (owner wave): the first render is the
-    // whole catalog — byte-identical to the unfiltered list the source
-    // pair alone produced when both of its toggles were on. Each pair
-    // narrows SERVER-side only when a toggle goes off (originFilter /
-    // scopeFilter / denomFilter below), and both-off is legal in every
+    // Source pair: the owner's STANDING default — Built-in OFF, My
+    // metrics ON — so the initial view lists the user's own metrics
+    // (user + plugin). The two NEW pairs start BOTH ON (the owner's
+    // addendum: "both scopes and both denominators toggled on"), so the
+    // scope/denominator filters narrow nothing on first render. Each
+    // pair narrows SERVER-side only when a toggle goes off (originFilter
+    // / scopeFilter / denomFilter below), and both-off is legal in every
     // pair.
-    builtin: true,
+    builtin: false,
     mine: true,
     scopeMatch: true,
     scopeProfile: true,
@@ -943,11 +945,14 @@
         placeholder="Search metrics…"
         bind:value={query}
       />
-      <!-- Toggle lines: THREE pairs, ONE PAIR PER LINE (owner verbatim),
-           every pair starting BOTH ON — the first render is the whole
-           catalog, byte-identical to the unfiltered list. Each pair
-           drives one SERVER-side narrowing (originFilter / scopeFilter
-           / denomFilter below) on the same debounced restart as the
+      <!-- Toggle lines: THREE pairs, ONE PAIR PER LINE (owner verbatim).
+           The source pair keeps its standing default — Built-in OFF,
+           My metrics ON (owner ruling: the initial view lists the user's
+           own metrics); the two NEW pairs start BOTH ON (owner
+           addendum: both scopes and both denominators toggled on), so
+           neither narrows the first render. Each pair drives one
+           SERVER-side narrowing (originFilter / scopeFilter /
+           denomFilter below) on the same debounced restart as the
            search; both off is legal in every pair and leaves the empty
            state below. Toggle BUTTONS — the Combat Clutches won/lost
            pattern (btn small + aria-pressed, class:active paints the on
