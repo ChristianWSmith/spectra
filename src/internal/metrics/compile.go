@@ -113,6 +113,24 @@ func CompilePassMatch(expr, denominator string, refs map[string]RefTarget) (Plan
 	return compileRefs(expr, denominator, "", refs, true)
 }
 
+// sourceTable resolves a source name to the physical store table at the
+// FROM/JOIN position — the curated-alias design (spec addendum I20): a
+// second source over the SAME table under its own subject
+// (`engagements_victim` = the engagements table anchored on b_steam),
+// emitted as `<table> AS <source>`.
+//
+// W0 ships this IDENTITY: no aliased source is whitelisted yet (the
+// alias source and its source→table map entry are W1's whitelist.go
+// addition — spec A.2.1), so `sourceTable(name) != name` never holds and
+// the `AS` branches below are DEAD CODE until then — the engine unlock
+// is inert alone. Only the table position resolves through this: scope
+// binding, subject/humans-only, join keys and column qualification all
+// key off the SOURCE NAME (which the AS clause makes the table's alias),
+// which is also what keeps identity sources' emission byte-stable.
+func sourceTable(name string) string {
+	return name
+}
+
 // compileRefs is the one implementation CompileRefs and CompilePassMatch
 // share (batched selects the pass-only address mode above).
 func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, batched bool) (Plan, *ParseError) {
@@ -163,6 +181,9 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 	// scope below binds on the PRIMARY only (a scope predicate landing on
 	// a LEFT-joined secondary would silently convert the join to INNER).
 	from := primary
+	if t := sourceTable(primary); t != primary {
+		from = t + " AS " + primary
+	}
 	oneToOne := map[string]bool{}
 	for _, s := range srcs[1:] {
 		key, ok := joinKey(primary, s.Name)
@@ -171,7 +192,11 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 				"cannot join source %q to %q: secondary %q is not unique on the shared dimensions (its primary key/unique key must consist entirely of join dimensions: match, round, player, side)",
 				s.Name, primary, s.Name)
 		}
-		from += " LEFT JOIN " + s.Name + " ON "
+		if t := sourceTable(s.Name); t != s.Name {
+			from += " LEFT JOIN " + t + " AS " + s.Name + " ON "
+		} else {
+			from += " LEFT JOIN " + s.Name + " ON "
+		}
 		for i, d := range key {
 			if i > 0 {
 				from += " AND "
@@ -474,8 +499,14 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 	if p := checkCond(a.Count); p != nil {
 		return p
 	}
-	if a.Col != "" {
-		if perr := res.resolveValue(a.Col, a.ColPos); perr != nil {
+	if a.Col != "" || a.Terms != nil {
+		if a.Terms != nil {
+			for i, tm := range a.Terms {
+				if perr := res.resolveValue(tm, a.TermPos[i]); perr != nil {
+					return perr
+				}
+			}
+		} else if perr := res.resolveValue(a.Col, a.ColPos); perr != nil {
 			return perr
 		}
 	}
@@ -745,7 +776,7 @@ func (e *emitter) emitValue(a *Agg) {
 		if a.Where == nil {
 			e.sb.WriteString(fn)
 			e.sb.WriteString("(")
-			e.sb.WriteString(e.res.qualify(a.Col))
+			e.emitTerms(a)
 			e.sb.WriteString(")")
 			return
 		}
@@ -753,7 +784,7 @@ func (e *emitter) emitValue(a *Agg) {
 		e.sb.WriteString("(CASE WHEN ")
 		e.emitCond(a.Where)
 		e.sb.WriteString(" THEN ")
-		e.sb.WriteString(e.res.qualify(a.Col))
+		e.emitTerms(a)
 		e.sb.WriteString(" END)")
 	case "stddev":
 		// sqrt(max(avg(x²) - avg(x)², 0)) — population σ, clamped so
@@ -783,6 +814,22 @@ func (e *emitter) emitValue(a *Agg) {
 	default:
 		// percentile never reaches SQL (phase2 fetches raw values).
 		e.sb.WriteString("NULL")
+	}
+}
+
+// emitTerms writes the value term(s): the single qualified column (the
+// byte-stable form — Terms == nil, which every pre-chain expression
+// parses with) or sum()'s additive column chain `q1 + q2 + …`.
+func (e *emitter) emitTerms(a *Agg) {
+	if a.Terms == nil {
+		e.sb.WriteString(e.res.qualify(a.Col))
+		return
+	}
+	for i, tm := range a.Terms {
+		if i > 0 {
+			e.sb.WriteString(" + ")
+		}
+		e.sb.WriteString(e.res.qualify(tm))
 	}
 }
 

@@ -34,7 +34,13 @@
 //	count()                        rows in scope
 //	count(<cond>)                  rows where <cond> is truthy
 //	count(where <cond>)            same (filter form)
-//	sum|avg|min|max(<col>)         aggregate over a whitelisted column
+//	sum|avg|min/max(<col>)         aggregate over a whitelisted column;
+//	                               sum() ALONE also takes the additive
+//	                               column chain sum(<col> + <col> …) — the
+//	                               one linear aggregate (sum(a + b) ==
+//	                               sum(a) + sum(b); avg/min/max keep a
+//	                               single column — min(a+b) ≠ min(a)+min(b),
+//	                               and no other op accepts `+`)
 //	[where <cond>,] as first args  optional per-agg filter on any of the above,
 //	                               e.g. sum(where kind='kill', dmg) or
 //	                                    count(where kind='kill' and headshot)
@@ -46,6 +52,14 @@
 //	median(<col>)                  sugar for percentile(0.5, <col>)
 //	ratio(<a1>, <a2>)              1.0*a1 / NULLIF(a2, 0); a1/a2 are value
 //	                               aggregations (no nested ratio/percentile).
+//	                               Arithmetic boundary (re-scoped for the
+//	                               sum chain): columns may add ONLY inside
+//	                               sum()'s additive chain; value
+//	                               aggregations never combine arithmetically
+//	                               — `sum(a) + sum(b)` and ratio-operand
+//	                               arithmetic are not grammar, and metric()
+//	                               as an addend stays denied (its two legal
+//	                               positions, below).
 //	                               Spelling note: the store's career K/D
 //	                               rollup floors instead (MAX(SUM(deaths),
 //	                               1), internal/store kdCareerSQL) — a

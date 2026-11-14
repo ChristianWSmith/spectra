@@ -82,11 +82,19 @@ type Agg struct {
 	Where  *condNode
 	Col    string // value column (sum/avg/min/max/stddev/percentile)
 	ColPos int
-	Count  *condNode // count(): condition; nil = count(*)
-	P      float64   // percentile fraction (median → 0.5)
-	Num    *Agg      // ratio numerator
-	Den    *Agg      // ratio denominator
-	Pos    int       // byte offset of the op name
+	// Terms/TermPos: sum()'s ADDITIVE column expression — `sum(a + b …)`.
+	// nil = the single-column form (every other op always nil; sum without
+	// a `+` also stays nil, so single-column emission is byte-stable).
+	// Columns only: no literals, no parens, no refs, no nested aggregates —
+	// the condition grammar never sees `+`. In a chain Col/ColPos keep the
+	// FIRST term (validation and emission prefer Terms when present).
+	Terms   []string
+	TermPos []int
+	Count   *condNode // count(): condition; nil = count(*)
+	P       float64   // percentile fraction (median → 0.5)
+	Num     *Agg      // ratio numerator
+	Den     *Agg      // ratio denominator
+	Pos     int       // byte offset of the op name
 	// Op == "metric": the referenced metric's name and the byte span of
 	// its '...' literal (RefPos inclusive, RefEnd exclusive). The span is
 	// what the rename splice rewrites in place (design §2 identity rule:
@@ -552,6 +560,46 @@ func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 		return Agg{}, errf(t.pos, "expected a column name, got keyword %q", t.text)
 	}
 	agg.Col, agg.ColPos = t.text, t.pos
+	// Additive column expression — sum() ONLY (the criterion: sum is the
+	// one LINEAR aggregate — sum(a + b) == sum(a) + sum(b), exactly the
+	// rollup shape the two-column wall (audit N1/N3, feasibility I9)
+	// existed for; avg/min/max/stddev/median/percentile keep
+	// single-column arguments — min(a+b) is not min(a)+min(b)).
+	// NOT agg-level `sum(a) + sum(b)`, NOT ratio-operand arithmetic, NOT
+	// metric()-as-addend: those positions parse whole aggregations, so a
+	// `+` there never reaches this production and stays denied (the
+	// accept/reject matrix in metrics_test.go pins all three shapes).
+	// Columns only; the denials above repeat per term, so a ref, keyword
+	// or literal inside the chain is the same positioned error as in the
+	// single-column form — and the condition grammar never sees `+`
+	// (`count(where a + b > 0)` remains a syntax error).
+	if nx, ok := p.peek(); ok && nx.kind == tPunct && nx.text == "+" {
+		if op != "sum" {
+			return Agg{}, errf(nx.pos,
+				"%s() takes a single column — only sum() accepts an additive column expression (sum(col + col …))", op)
+		}
+		agg.Terms = []string{t.text}
+		agg.TermPos = []int{t.pos}
+		for {
+			nx, ok := p.peek()
+			if !ok || nx.kind != tPunct || nx.text != "+" {
+				break
+			}
+			p.i++
+			c, ok := p.next()
+			if !ok || c.kind != tIdent {
+				return Agg{}, p.errHere("expected a column name after +")
+			}
+			if strings.EqualFold(c.text, "metric") {
+				return Agg{}, errf(c.pos, "metric() is a value reference — it cannot appear inside %s()", op)
+			}
+			if exprKeywords[c.text] {
+				return Agg{}, errf(c.pos, "expected a column name, got keyword %q", c.text)
+			}
+			agg.Terms = append(agg.Terms, c.text)
+			agg.TermPos = append(agg.TermPos, c.pos)
+		}
+	}
 	return agg, nil
 }
 

@@ -131,3 +131,60 @@ func TestAggregationIdentities(t *testing.T) {
 		}
 	})
 }
+
+// TestSumChainLinearity is the SEMANTIC law behind the W0 sum unlock
+// (spec A.4 regression pin (2) — the grammar matrix pins the syntax,
+// this pins the values): sum is the one linear aggregate, so a chain
+// equals the sum of its terms computed separately, per subject, over the
+// fixture corpus — `sum(a + b) == sum(a) + sum(b)`.
+func TestSumChainLinearity(t *testing.T) {
+	st := seededStore(t)
+	cases := []struct{ name, chain, lhs, rhs string }{
+		{
+			name:  "two-term chain",
+			chain: "from player_stats: sum(kills + deaths)",
+			lhs:   "from player_stats: sum(kills)",
+			rhs:   "from player_stats: sum(deaths)",
+		},
+		{
+			// The identity composes: a chain equals a chain plus the
+			// remaining term (n-ary linearity, not just the binary case).
+			name:  "n-ary chain",
+			chain: "from player_stats: sum(kills + deaths + headshots)",
+			lhs:   "from player_stats: sum(kills + deaths)",
+			rhs:   "from player_stats: sum(headshots)",
+		},
+		{
+			// Linearity under the per-agg filter: the SAME filter on both
+			// sides (the filter partitions rows; it does not break the law).
+			name:  "filtered chain",
+			chain: "from events: sum(where kind='damage', dmg + distance)",
+			lhs:   "from events: sum(where kind='damage', dmg)",
+			rhs:   "from events: sum(where kind='damage', distance)",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			chain := runValues(t, st, c.chain)
+			lhs := runValues(t, st, c.lhs)
+			rhs := runValues(t, st, c.rhs)
+			if len(chain) != 8 {
+				t.Fatalf("chain subjects = %d, want 8 (the corpus roster)", len(chain))
+			}
+			nonzero := false
+			for g, v := range chain {
+				want := lhs[g] + rhs[g]
+				if v != want {
+					t.Errorf("subject %q: sum(a+b) = %v, want sum(a) + sum(b) = %v + %v = %v",
+						g, v, lhs[g], rhs[g], want)
+				}
+				if want != 0 {
+					nonzero = true
+				}
+			}
+			if !nonzero {
+				t.Error("identity held vacuously (every expected value 0)")
+			}
+		})
+	}
+}
