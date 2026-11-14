@@ -292,6 +292,17 @@ recoverable from the working doc alone. If a worker reports its
 worktree is missing or wrong, the lead fixes it; the worker does not
 create its own.
 
+**The lead cleans up integrated work.** When a wave's changes are
+merged into the session's starting branch, retiring its worktree and
+branch is part of integration, not a follow-up chore: remove the
+worktree first (a branch checked out somewhere cannot be deleted),
+then delete the branch — only after verifying its content is in the
+starting branch (a two-dot tree diff, or `git cherry` for the patch
+equivalence; content landed by another path counts as merged).
+Stale worktrees and branches are disk noise and a recovery trap —
+the same failure mode as stale working-doc sections. Never touch a
+worktree whose row is still live in the working doc's registry.
+
 Before integrating changes:
 - Inspect the diff and confirm that it matches the assignment.
 - Check for unrelated modifications and potential conflicts.
