@@ -28,10 +28,12 @@ import (
 //   - TestExtractShapedScoreboardEquivalence builds the corpus extract
 //     actually writes (ADR = total_damage/rounds_played — extract/
 //     build.go:117-119; HSPct = 100·hs/k — extract/helpers.go pct) and
-//     proves all three scoreboard seeds (adr, hs_pct, kast) equal the
-//     stored columns GetScoreboard serves, plus Q1's one deliberate kd
-//     divergence (zero deaths: ratio's NULLIF → value 0 beside N, where
-//     kdPerMatchSQL floors MAX(deaths, 1) → the kill count).
+//     proves the stored-column seeds (adr, hs_pct, kast) equal the
+//     columns GetScoreboard serves — plus the kd seed against the
+//     store's FLOORED per-match spelling (kdPerMatchSQL, test-only since
+//     dogfooding W4 removed the scoreboard's kd column), where Q1's one
+//     deliberate divergence lives (zero deaths: ratio's NULLIF → value 0
+//     beside N, where the floor MAX(deaths, 1) → the kill count).
 
 // seedExpr reads a schema-seeded builtin's expression from the store —
 // the SEED is what these tests prove, never a test-local copy of it.
@@ -298,20 +300,29 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 		}
 	}
 
-	// kd: equal wherever deaths > 0 (the metric's ratio and
-	// kdPerMatchSQL agree exactly), and Q1's RULED divergence on the
-	// zero-death subject — the metric shows value 0 beside N (ratio's
-	// NULLIF, the honest no-denominator) where the store's floor shows
-	// the kill count (7 / MAX(0,1) = 7). Both spellings are deliberate;
-	// this pin keeps them from silently converging.
+	// kd: equal wherever deaths > 0 (the metric's ratio and the store's
+	// floored per-match spelling agree exactly), and Q1's RULED
+	// divergence on the zero-death subject — the metric shows value 0
+	// beside N (ratio's NULLIF, the honest no-denominator) where the
+	// floor shows the kill count (7 / MAX(0,1) = 7). Both spellings are
+	// deliberate; this pin keeps them from silently converging. The
+	// floored spelling IS store.kdPerMatchSQL (unexported): it left
+	// production with the report read-back in dogfooding W4 and is
+	// spelled inline here the same way the kast oracle above is — the
+	// const itself survives as the store package tests' reference
+	// oracle (metric_series_read_test.go).
 	kd := previewAt(t, st, seedExpr(t, st, "kd"), scope)
-	if kd["100"] != byID["100"].KD || kd["200"] != byID["200"].KD {
-		t.Errorf("kd = %v/%v, want the scoreboard's floored kd %v/%v (deaths > 0 must agree)",
-			kd["100"], kd["200"], byID["100"].KD, byID["200"].KD)
+	floored := oracle(t, st,
+		`SELECT steam_id, CAST(kills AS REAL) / MAX(deaths, 1)
+		 FROM player_stats WHERE match_id = ?`,
+		id)
+	if kd["100"] != floored["100"] || kd["200"] != floored["200"] {
+		t.Errorf("kd = %v/%v, want the floored spelling %v/%v (deaths > 0 must agree)",
+			kd["100"], kd["200"], floored["100"], floored["200"])
 	}
-	if kd["300"] != 0 || byID["300"].KD != 7 {
-		t.Errorf("zero-death kd = metric %v vs scoreboard %v, want 0 (NULLIF) vs 7 (MAX(deaths,1)) — Q1's ruled edge",
-			kd["300"], byID["300"].KD)
+	if kd["300"] != 0 || floored["300"] != 7 {
+		t.Errorf("zero-death kd = metric %v vs floored %v, want 0 (NULLIF) vs 7 (MAX(deaths,1)) — Q1's ruled edge",
+			kd["300"], floored["300"])
 	}
 }
 

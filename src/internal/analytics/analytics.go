@@ -8,7 +8,7 @@
 // derived here: store.GetCombatStats is their read implementation (see
 // the authoritative-SQL notes there) — with ONE stored exception: the
 // trade-opportunity counts (tradeopps.go) are derived here at analyze
-// time and read back by GetCombatStats / CountPlayerTradeOpportunities.
+// time and read back by GetCombatStats.
 //
 // # Documented v1 limitations (heuristics need UI badges)
 //

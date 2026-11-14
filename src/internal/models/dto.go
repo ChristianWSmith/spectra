@@ -47,6 +47,12 @@ type MatchListPage struct {
 // PlayerStatsRow is scoreboard output: stats joined with identity + the
 // player's final-side. SortKey addresses either table's columns (the store
 // whitelists it — never interpolate user input).
+//
+// K/D is deliberately NOT here: the stored `kd` metric row is THE K/D
+// value every surface renders (dogfooding W4 — reports read it back,
+// the scoreboard columns are metric-backed), so a Go-computed copy
+// would be a second presentation of the same number. KDA stays (N1: the
+// grammar cannot express (kills+assists)/deaths).
 type PlayerStatsRow struct {
 	SteamID           string  `json:"steamId"`
 	Name              string  `json:"name"`
@@ -61,7 +67,6 @@ type PlayerStatsRow struct {
 	Headshots         int     `json:"headshots"`
 	HSPct             float64 `json:"hsPct"`
 	ADR               float64 `json:"adr"`
-	KD                float64 `json:"kd"`
 	KDA               float64 `json:"kda"`
 	TotalDamage       int     `json:"totalDamage"`
 	DamageTaken       int     `json:"damageTaken"`

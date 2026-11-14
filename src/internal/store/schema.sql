@@ -480,12 +480,16 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 -- now stored in match_trade_opps); the index stays for the other
 -- library-wide kind-filtered reads (the builtin metric expressions).
 --
--- idx_match_trade_opps_steam serves the profile's stored trade-
--- opportunity denominator: CountPlayerTradeOpportunities is now one
--- `SUM(opps) WHERE steam_id = ?` seek per profile open (the O(library)
--- query it replaces is deleted, so no events victim index is added for
--- it). Leading-column mirror of the match_id-first primary key, like
--- the three above.
+-- idx_match_trade_opps_steam was the profile's stored trade-
+-- opportunity denominator: one `SUM(opps) WHERE steam_id = ?` seek per
+-- profile open. That reader (store.CountPlayerTradeOpportunities) left
+-- with the profile Trade rate card's metric conversion (dogfooding W3/W4
+-- — no production reader of the library-wide SUM remains), and the
+-- metric expressions join match_trade_opps through its (match_id,
+-- steam_id) primary key instead. The index STAYS: dropping it is DDL,
+-- which the pre-release no-DDL rule forbids — it remains the
+-- leading-column mirror of the match_id-first primary key above, ready
+-- for the next library-wide steam_id read.
 --
 -- The jobs indexes cover the pending-job lookups (FindPendingJobByPath /
 -- FindPendingJobByMatch — path/match_id + non-terminal status, newest

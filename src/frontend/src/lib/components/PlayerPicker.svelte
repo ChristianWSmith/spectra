@@ -3,7 +3,8 @@
   // ("rep-player") replacement, styled to MatchPicker: the trigger shows
   // the current selection, the popover lists players the way the app
   // presents them elsewhere (name, side + scoreboard line when the player
-  // appears in the selected match, career totals from the profile list)
+  // appears in the selected match, career matches from the profile list
+  // and the stored career ADR metric row)
   // behind a filter box.
   //
   // Keyboard follows MatchPicker/CommandPalette: the filter input owns
@@ -11,10 +12,13 @@
   // focus to the trigger); clicking outside closes. Rows are real buttons;
   // aria-activedescendant on the combobox points at the highlighted option.
   import { fmt1 } from '../fmt.js';
+  import { careerAdrRows, onMetricDone } from '../services.js';
 
   // players: ProfileSummary rows (ProfileService.ListPlayers) — steamId,
-  // name, matches, adrAvg, lastSeen. stats: steamId → PlayerStatsRow from
-  // MatchService.GetScoreboard for the report's match (may be empty).
+  // name, matches, lastSeen (no ADR: the Go DTO dropped adrAvg in
+  // dogfooding W4 — this picker's career line reads the stored
+  // `career_adr` metric row instead). stats: steamId → PlayerStatsRow
+  // from MatchService.GetScoreboard for the report's match (may be empty).
   let { players = [], stats = {}, value = '', onselect = () => {}, id = '' } = $props();
 
   let open = $state(false);
@@ -27,6 +31,32 @@
 
   const cur = $derived(players.find((p) => p.steamId === value) || null);
   const curRow = $derived(stats[value] || null);
+
+  // The career ADR line reads the STORED `career_adr` metric rows (the
+  // one canonical career read — services.careerAdrRows), never a
+  // Go-computed field on the summary row: ProfileSummary dropped adrAvg
+  // in dogfooding W4 and this was its other last reader. No fresh row →
+  // the honest dash (absent or behind alike — never a fabricated 0).
+  let adrRows = $state(new Map());
+  let adrReload = $state(0);
+  $effect(() => onMetricDone(() => (adrReload += 1)));
+  $effect(() => {
+    players; // refetch when the caller's list changes
+    adrReload; // …and when a sweep replaces the stored rows
+    let live = true;
+    careerAdrRows()
+      .then((rows) => {
+        if (live) adrRows = rows;
+      })
+      .catch(() => {
+        if (live) adrRows = new Map();
+      });
+    return () => (live = false);
+  });
+  function adrText(p) {
+    const row = adrRows.get(p.steamId);
+    return row ? fmt1(row.value) : '—';
+  }
 
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -197,7 +227,7 @@
                     >{p.matches ?? 0} matches</span
                   >
                   {#if p.matches > 0}
-                    <span class="muted num" title="Career ADR">{fmt1(p.adrAvg)} ADR</span>
+                    <span class="muted num" title="Career ADR">{adrText(p)} ADR</span>
                   {/if}
                 {/if}
               </span>

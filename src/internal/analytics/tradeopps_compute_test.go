@@ -8,6 +8,7 @@ package analytics
 // no stale count behind).
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -54,8 +55,8 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	if err := Compute(st, id, tradeOppCfg(1000)); err != nil {
 		t.Fatalf("Compute: %v", err)
 	}
-	if n, err := st.CountPlayerTradeOpportunities("100"); err != nil || n != 8 {
-		t.Errorf("alice opps after fresh Compute = %d, %v, want 8", n, err)
+	if n := storedOpps(t, st, "100"); n != 8 {
+		t.Errorf("alice opps after fresh Compute = %d, want 8", n)
 	}
 	if missed := combatMissed(t, st, id); missed["300"] != 3 {
 		t.Errorf("carl missed = %d, want 3 (duplicate t=100 rows pair to the first kill + round 3)", missed["300"])
@@ -66,8 +67,8 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	if err := ComputeForBatch(st, id, tradeOppCfg(1000)); err != nil {
 		t.Fatalf("ComputeForBatch: %v", err)
 	}
-	if n, err := st.CountPlayerTradeOpportunities("100"); err != nil || n != 8 {
-		t.Errorf("alice opps after batch Compute = %d, %v, want 8 (same write path)", n, err)
+	if n := storedOpps(t, st, "100"); n != 8 {
+		t.Errorf("alice opps after batch Compute = %d, want 8 (same write path)", n)
 	}
 	if missed := combatMissed(t, st, id); missed["300"] != 3 {
 		t.Errorf("carl missed after batch Compute = %d, want 3", missed["300"])
@@ -83,8 +84,8 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	if err := Compute(st, bare, tradeOppCfg(1000)); err != nil {
 		t.Fatalf("Compute(zero rounds): %v", err)
 	}
-	if n, err := st.CountPlayerTradeOpportunities("100"); err != nil || n != 8 {
-		t.Errorf("alice opps after zero-round compute = %d, %v, want 8 (the bare match added no rows)", n, err)
+	if n := storedOpps(t, st, "100"); n != 8 {
+		t.Errorf("alice opps after zero-round compute = %d, want 8 (the bare match added no rows)", n)
 	}
 	rows, err := st.GetCombatStats(bare)
 	if err != nil {
@@ -112,9 +113,9 @@ func TestComputeTradeOppsFollowRadius(t *testing.T) {
 		if err := Compute(st, id, tradeOppCfg(tc.distance)); err != nil {
 			t.Fatalf("Compute(@%d): %v", tc.distance, err)
 		}
-		if n, err := st.CountPlayerTradeOpportunities("100"); err != nil || n != tc.wantAlice {
-			t.Errorf("alice opps @%du = %d, %v, want %d (stored rows must follow the radius)",
-				tc.distance, n, err, tc.wantAlice)
+		if n := storedOpps(t, st, "100"); n != tc.wantAlice {
+			t.Errorf("alice opps @%du = %d, want %d (stored rows must follow the radius)",
+				tc.distance, n, tc.wantAlice)
 		}
 	}
 }
@@ -132,4 +133,37 @@ func combatMissed(t *testing.T, st *store.Store, matchID int64) map[string]int {
 		out[r.SteamID] = r.TradeOppMissed
 	}
 	return out
+}
+
+// storedOpps reads one player's stored trade-opportunity count — the
+// library-wide SUM(opps) over match_trade_opps that
+// store.CountPlayerTradeOpportunities used to serve, spelled inline
+// here now that dogfooding W4 removed that reader (its last consumer,
+// the profile Trade rate card, converted in W3; no production reader of
+// the aggregate remains). The WRITE path is what these tests pin — the
+// read is one index seek through QueryWrite (the write handle, which —
+// unlike RunReadOnly — also serves a :memory: fixture; the same
+// ValidateReadOnlySQL gate applies).
+func storedOpps(t *testing.T, st *store.Store, sid string) int {
+	t.Helper()
+	res, err := st.QueryWrite(context.Background(),
+		`SELECT COALESCE(SUM(opps), 0) FROM match_trade_opps WHERE steam_id = ?`,
+		[]any{sid}, 1)
+	if err != nil {
+		t.Fatalf("stored opps(%s): %v", sid, err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("stored opps(%s): %d rows, want 1", sid, len(res.Rows))
+	}
+	switch v := res.Rows[0][0].(type) {
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case int:
+		return v
+	default:
+		t.Fatalf("stored opps(%s): unexpected value %T (%v)", sid, v, v)
+		return 0
+	}
 }

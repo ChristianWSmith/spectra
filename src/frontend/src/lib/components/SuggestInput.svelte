@@ -25,6 +25,7 @@
   // passing its own placeholder as before.
   import Popover from './Popover.svelte';
   import { fmt1 } from '../fmt.js';
+  import { careerAdrRows, onMetricDone } from '../services.js';
 
   const PLAYER_SEARCH_HINT = 'Search players...';
 
@@ -72,6 +73,36 @@
     if (!q) return items.slice(0, cap);
     return items.filter((it) => searchText(it).toLowerCase().includes(q)).slice(0, cap);
   });
+
+  // The player row's career ADR reads the STORED `career_adr` metric
+  // rows through the one canonical career read (services.careerAdrRows
+  // — the same bucket Profiles' ADR column uses), never the ListPlayers
+  // row: ProfileSummary stopped carrying a Go-computed ADR in
+  // dogfooding W4 (adoption-means-migration — this was its last
+  // reader). No fresh row (absent or behind) renders the honest dash,
+  // the missing marker every metric value slot uses; a failed read
+  // lands on the same dash instead of a stale number.
+  let adrRows = $state(new Map());
+  let adrReload = $state(0);
+  $effect(() => onMetricDone(() => (adrReload += 1)));
+  $effect(() => {
+    if (kind !== 'player') return;
+    items; // refetch when the caller's list changes
+    adrReload; // …and when a sweep replaces the stored rows
+    let live = true;
+    careerAdrRows()
+      .then((rows) => {
+        if (live) adrRows = rows;
+      })
+      .catch(() => {
+        if (live) adrRows = new Map();
+      });
+    return () => (live = false);
+  });
+  function adrText(item) {
+    const row = adrRows.get(item.steamId);
+    return row ? fmt1(row.value) : '—';
+  }
 
   // Nothing to show → the panel (and its dismissal listeners) are gone;
   // `open` survives so typing a match again reopens without a refocus.
@@ -162,7 +193,7 @@
             <strong title={item.name || item.steamId}>{item.name || item.steamId}</strong>
             <span class="muted">{item.matches ?? 0} match{item.matches === 1 ? '' : 'es'}</span>
             <span class="spacer"></span>
-            <span class="num muted">ADR {fmt1(item.adrAvg)}</span>
+            <span class="num muted">ADR {adrText(item)}</span>
           {:else}
             {searchText(item)}
           {/if}

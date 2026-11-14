@@ -117,15 +117,15 @@ const bindings = await import('./stubs/bindings.mjs');
 // silently rendered the service order (or a filter that reordered
 // `players`) fails the checks below.
 const PLAYERS = [
-  { steamId: '76561198000000001', name: 'amy', matches: 1, adrAvg: 40.5, lastSeen: '2026-03-03' },
-  { steamId: '76561198000000002', name: 'zoe', matches: 5, adrAvg: 81.25, lastSeen: '2026-03-02' },
-  { steamId: '76561198000000003', name: 'bob', matches: 5, adrAvg: 60, lastSeen: '2026-03-01' },
+  { steamId: '76561198000000001', name: 'amy', matches: 1, lastSeen: '2026-03-03' },
+  { steamId: '76561198000000002', name: 'zoe', matches: 5, lastSeen: '2026-03-02' },
+  { steamId: '76561198000000003', name: 'bob', matches: 5, lastSeen: '2026-03-01' },
   // No import date at all → the cell renders the '—' fallback and the
   // column's ascending sort puts '' first.
-  { steamId: '76561198000000004', name: 'dan', matches: 3, adrAvg: 0, lastSeen: '' },
+  { steamId: '76561198000000004', name: 'dan', matches: 3, lastSeen: '' },
   // The pre-rule bot shape: 9 matches would win every default sort if
   // the canonical client-side filter (lib/players.js) ever leaked it.
-  { steamId: '18374686479671623692', name: 'Crew', matches: 9, adrAvg: 99, lastSeen: '2026-03-04' },
+  { steamId: '18374686479671623692', name: 'Crew', matches: 9, lastSeen: '2026-03-04' },
 ];
 bindings.ProfileService.ListPlayers = () => Promise.resolve(PLAYERS);
 
@@ -198,12 +198,13 @@ for (const name of ['SortTh', 'Popover', 'StatCard', 'StatusChip']) {
   );
 }
 
-// SuggestInput imports Popover + the plain-ESM fmt helper → local bundle
-// + absolute module URL (its compiled file sits in dir/, not in
-// src/lib/components/).
+// SuggestInput imports Popover, the plain-ESM fmt helper and services
+// (the career ADR metric read) → local bundle + absolute module URLs
+// (its compiled file sits in dir/, not in src/lib/components/).
 const siSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
   .replace("from './Popover.svelte'", "from './Popover.js'")
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`);
+  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
 svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'SuggestInput.js'));
 
 // The views: plain-ESM imports resolve from their real module locations

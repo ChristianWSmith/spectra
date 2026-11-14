@@ -291,6 +291,117 @@ func TestRenderPlayerAndRound(t *testing.T) {
 	}
 }
 
+// TestReportMetricReadBack pins the design §3.6 Go read-back end to end:
+// the builtin match/player templates render ADR / HS% / KD from the
+// STORED fresh metric rows (one canonical read — never a recomputation),
+// formatted through the format convention the trend/history series read
+// established (percent stores a 0..1 fraction and renders ×100 — the
+// same numbers today's printf "%.0f"/"%.1f"/"%.2f" spelled over
+// GetScoreboard's Go columns), and an ABSENT or BEHIND row renders the
+// honest dash — never a recomputed number, never a fabricated 0 (Q8).
+func TestReportMetricReadBack(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	id := seedMatch(t, st)
+	cfg, err := st.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	def := func(name string) models.MetricRow {
+		t.Helper()
+		d, err := st.GetMetricByName(name)
+		if err != nil {
+			t.Fatalf("GetMetricByName(%s): %v", name, err)
+		}
+		return d
+	}
+	adrDef, hsDef, kdDef := def("adr"), def("hs_pct"), def("kd")
+
+	render := func(t *testing.T) string {
+		t.Helper()
+		data, err := BuildMatchData(st, id)
+		if err != nil {
+			t.Fatalf("BuildMatchData: %v", err)
+		}
+		tpl, err := Find(Builtins(), "match.md")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		out, err := Render(tpl.ID, tpl.Body, data)
+		if err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		return out
+	}
+	insert := func(d models.MetricRow, version int, steamID string, v float64) {
+		t.Helper()
+		if err := st.InsertMetricValues(d.ID, version, cfg.RuleVersion, []store.MetricValueRow{
+			{MatchID: id, SteamID: steamID, Value: v, N: 5},
+		}); err != nil {
+			t.Fatalf("InsertMetricValues(%s): %v", d.Name, err)
+		}
+	}
+
+	// 1) No stored rows at all → every metric cell is the honest dash
+	// (the unanalyzed fixture — nothing has been swept yet).
+	if out := render(t); !strings.Contains(out, "| — | — | — |") {
+		t.Errorf("match.md without metric rows lost the dash cells:\n%s", out)
+	}
+
+	// 2) Fresh rows → the formatted numbers: adr float1 (42.5), hs_pct
+	// percent (0.2 ×100 → 20), kd float2 (2.5 → 2.50). A subject with no
+	// row keeps the dash beside them.
+	insert(adrDef, adrDef.Version, "A00", 42.5)
+	insert(hsDef, hsDef.Version, "A00", 0.2)
+	insert(kdDef, kdDef.Version, "A00", 2.5)
+	out := render(t)
+	if !strings.Contains(out, "| 42.5 | 20 | 2.50 |") {
+		t.Errorf("match.md fresh metric cells missing \"| 42.5 | 20 | 2.50 |\":\n%s", out)
+	}
+	if !strings.Contains(out, "| — | — | — |") {
+		t.Errorf("match.md subject without rows must keep the dash cells:\n%s", out)
+	}
+
+	// The player scope reads the SAME cells (one read, both documents).
+	pdata, err := BuildPlayerData(st, id, "A00")
+	if err != nil {
+		t.Fatalf("BuildPlayerData: %v", err)
+	}
+	ptpl, err := Find(Builtins(), "player.md")
+	if err != nil {
+		t.Fatalf("Find player.md: %v", err)
+	}
+	pout, err := Render(ptpl.ID, ptpl.Body, pdata)
+	if err != nil {
+		t.Fatalf("Render player.md: %v", err)
+	}
+	for _, want := range []string{"KD 2.50, KDA", "ADR 42.5 · HS% 20"} {
+		if !strings.Contains(pout, want) {
+			t.Errorf("player.md missing %q\n---\n%s", want, pout)
+		}
+	}
+	if strings.Contains(pout, "KD —, KDA") {
+		t.Errorf("player.md rendered the dash despite fresh rows:\n%s", pout)
+	}
+
+	// 3) A BEHIND row (stale metric_version — the read serves fresh rows
+	// only) drops back to the dash: never the old number (§3.7.4).
+	if err := st.ClearMetricValues(kdDef.ID); err != nil {
+		t.Fatalf("ClearMetricValues: %v", err)
+	}
+	insert(kdDef, kdDef.Version-1, "A00", 99)
+	out = render(t)
+	if !strings.Contains(out, "| 42.5 | 20 | — |") {
+		t.Errorf("match.md behind kd did not render the dash:\n%s", out)
+	}
+	if strings.Contains(out, "99.00") {
+		t.Errorf("match.md leaked a behind value:\n%s", out)
+	}
+}
+
 func TestRenderPluginTemplate(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {

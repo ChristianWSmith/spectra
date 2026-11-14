@@ -281,7 +281,7 @@ Canonical homes (extend these, don't fork them):
 | Concern | Canonical home |
 |---|---|
 | Negative-round filter semantics | `store.queryEvents` — `exactRound` for round detail; `RoundFrom`/`RoundTo` inclusive range with 0 = open bound |
-| KAST / K-D expressions | `store/queries.go` consts `kastPerMatchSQL`/`kastCareerSQL`/`kdPerMatchSQL`/`kdCareerSQL` — per-match vs career are deliberate scope variants |
+| KAST / K-D expressions | `store/queries.go` consts — `kastCareerSQL`/`kdCareerSQL` are the career rollup's production spellings (RebuildCareer — Q4's dual-write exception); `kastPerMatchSQL`/`kdPerMatchSQL` are RETIRED from production (W3/W4: trend, history and the report read-back serve stored metric rows) and survive only as the reference oracles in `metric_series_read_test.go` — per-match vs career stay deliberate scope variants |
 | Player-name joins | `store.playersJoin` — builds the join fragments; LEFT joins carry the empty-steam guard, INNER deliberately do not |
 | Column lists | one `<table>Cols` const per table in `internal/store`, pinned to the DDL by `TestColumnListConstsMatchSchema` |
 | Delete-then-insert writers | `store.replaceMatchRows` — voice/plugin/`SaveExtracted` keep bespoke tx (atomicity/upsert reasons in code) |
@@ -309,6 +309,7 @@ Canonical homes (extend these, don't fork them):
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
 | Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12); a rules change bumps `analyzed_rule_version` → behind set → `RecomputeAll` |
 | Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump |
+| Metric ordering (columns, cards, appendix) | `frontend/src/lib/metricorder.js` — THE sequence: kvstore pref keys `metric_order_match`/`metric_order_profile` (registered in `prefs.go`; frontend-written, Go never consumes) + `resolveOrder`/`inSequence`/`pinnedInSequence` over `DEFAULT_RANKS`/`DEFAULT_PINS`/`FIXED_BLOCK` — pins select, sequence orders (the pins array's own order orders nothing); the scoreboard columns, the profile career rows, the Reports checkbox list AND its exported document all compose through it, never a view-local sort |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to

@@ -122,7 +122,11 @@ const EXPECTED = {
   'profiles.dom.mjs': 67,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
-  'reports.dom.mjs': 18,
+  // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
+  // two EXPORTED-document order pins (the appendix sections follow the
+  // match sequence with the pref, and return to the default order when
+  // the key is gone — design §2.5's addendum).
+  'reports.dom.mjs': 20,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   'settings.dom.mjs': 74,

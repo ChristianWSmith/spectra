@@ -22,7 +22,7 @@
 <h2>Scoreboard</h2>
 <table>
 <tr><th>Player</th><th>Side</th><th>K</th><th>D</th><th>A</th><th>ADR</th><th>HS%</th><th>KD</th><th>Openings</th><th>Trades</th><th>MVPs</th></tr>
-{{range .Scoreboard}}<tr><td>{{.Name}}</td><td>{{.Side}}</td><td>{{.Kills}}</td><td>{{.Deaths}}</td><td>{{.Assists}}</td><td>{{printf "%.1f" .ADR}}</td><td>{{printf "%.0f" .HSPct}}</td><td>{{printf "%.2f" .KD}}</td><td>{{.OpeningKills}}/{{.OpeningDeaths}}</td><td>{{.TradeKills}}</td><td>{{.MVPs}}</td></tr>
+{{range .Scoreboard}}<tr><td>{{.Name}}</td><td>{{.Side}}</td><td>{{.Kills}}</td><td>{{.Deaths}}</td><td>{{.Assists}}</td><td>{{(index $.Metrics .SteamID).ADR}}</td><td>{{(index $.Metrics .SteamID).HSPct}}</td><td>{{(index $.Metrics .SteamID).KD}}</td><td>{{.OpeningKills}}/{{.OpeningDeaths}}</td><td>{{.TradeKills}}</td><td>{{.MVPs}}</td></tr>
 {{end}}
 </table>
 

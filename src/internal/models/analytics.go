@@ -274,7 +274,6 @@ type CareerSummary struct {
 	Name     string    `json:"name"`
 	Matches  int       `json:"matches"`
 	LastSeen time.Time `json:"lastSeen"`
-	ADRAvg   float64   `json:"adrAvg"`
 }
 
 // ProfileHistoryRow is one match-history entry for a player profile.
@@ -357,12 +356,6 @@ type SavedFilterRow struct {
 	Scope      string    `json:"scope"` // "library" | "match"
 	FilterJSON string    `json:"filterJson"`
 	CreatedAt  time.Time `json:"createdAt"`
-}
-
-// ProfileClutchCounts aggregates one player's clutch records (played/won).
-type ProfileClutchCounts struct {
-	Played int `json:"played"`
-	Won    int `json:"won"`
 }
 
 // ProfileWeaponJSONs is one match's weapon breakdown JSON triplet (merge

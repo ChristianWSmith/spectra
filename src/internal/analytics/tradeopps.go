@@ -10,16 +10,18 @@ import (
 // 2026-11-12 — AGENTS.md "Analysis-rule derived values": every
 // rules-derived value is STORED at analyze time; read-time thresholding
 // of rule outputs is forbidden). This file is the ONE implementation of
-// both predicates; store.GetCombatStats and
-// store.CountPlayerTradeOpportunities only read the stored numbers.
+// both predicates; store.GetCombatStats reads the stored numbers back
+// (the library-wide SUM the profile's Trade rate card used to need left
+// with that card's metric conversion in dogfooding W4).
 //
 // Both counts replicate, exactly, the two query-time SQL derivations
 // retired on 2026-11-12 — kept verbatim as reference oracles in
 // tradeopps_equivalence_test.go, which pins stored == oracle on
 // synthetic fixtures:
 //
-//   - opps (was store.CountPlayerTradeOpportunities — an O(library)
-//     scan per profile open, 8.16 s @1k / 77.9 s @10k matches): for
+//   - opps (the retired store.CountPlayerTradeOpportunities — an
+//     O(library) scan per profile open, 8.16 s @1k / 77.9 s @10k
+//     matches): for
 //     each kill d of the match where
 //       · d.kind = 'kill', attacker <> '' and attacker <> victim
 //         (world kills and suicides excluded);
