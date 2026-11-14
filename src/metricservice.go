@@ -449,15 +449,23 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// before anything is written (the analyticservice.go SetConfig
 	// no-op pattern). A create never bumps (the INSERT default starts
 	// the counter at 1 and a new metric has no rows — absent → behind
-	// already).
+	// already) but DOES schedule the sweep: its rows must be computed.
 	semantic := m.ID > 0 && (m.Expr != existing.Expr ||
 		m.Scope != existing.Scope || m.Denominator != existing.Denominator)
+	created := m.ID == 0
 	// ONE transaction: the metric row, its edges wholesale, the splices,
 	// and (semantic) the version bump for this metric + every transitive
 	// dependent — atomic, so nothing is partially behind after commit.
 	saved, err := s.st.SaveMetricWithDeps(m, depNames, rewrites, semantic)
 	if err != nil {
 		return models.MetricRow{}, err
+	}
+	// Invalidation trigger (design §4): behind work exists → sweep now
+	// (coalesced — a sweep already running re-resolves the behind set on
+	// its follow-up run). Display-only/rename saves deliberately do not
+	// schedule: no bump, no recompute.
+	if created || semantic {
+		s.scheduleSweep()
 	}
 	return saved, nil
 }

@@ -182,6 +182,16 @@ func main() {
 	// every token is acquired BEFORE the compute lock, never after.
 	computeLock := &sync.Mutex{}
 	b := budget.New(parallelWorkPref(kvs))
+
+	// Metric compute pass (stored-metrics design §4): constructed BEFORE
+	// the importer and AnalyticsService so their hooks can reach it —
+	// ONE shared compute lock + ONE shared budget token pool beside
+	// AnalyticsService's (token → lock, never reversed), the
+	// AfterAnalyze import-body hook, the RecomputeAll-completion
+	// trigger, and the deferred startup sweep below.
+	metricsSvc := &MetricsService{st: st, app: app}
+	metricsSvc.useSweeps(b, computeLock)
+
 	imp := library.New(library.Options{
 		Store: st,
 		Parse: extract.Parse,
@@ -193,6 +203,10 @@ func main() {
 		Concurrency:   b.Size,
 		ComputeLock:   computeLock,
 		Budget:        b,
+		// The post-import sweep rides the job's held token (see
+		// Options.AfterAnalyze); progress funnels into the job's own
+		// job-progress; a metric failure never fails the job.
+		AfterAnalyze: metricsSvc.sweepForJob,
 	})
 	defer imp.Shutdown()
 
@@ -210,10 +224,10 @@ func main() {
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app, budget: b}))
 	app.RegisterService(application.NewService(&MatchService{st: st, imp: imp}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
-	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app, computeLock: computeLock, budget: b}))
+	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app, computeLock: computeLock, budget: b, afterRecompute: metricsSvc.scheduleSweep}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
 	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
-	app.RegisterService(application.NewService(&MetricsService{st: st, app: app}))
+	app.RegisterService(application.NewService(metricsSvc))
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app, budget: b}))
@@ -251,6 +265,14 @@ func main() {
 	// AppService.CheckForUpdateNow.
 
 	svc.maybeCheckForUpdates()
+
+	// Startup sweep (stored-metrics design §4's trigger list): ONE
+	// deferred pass that self-heals every crash window (a bump before
+	// phase 1, an interrupted phase 2, a cancelled import-body run) and
+	// fills never-computed values. Goroutine + background scheduling, so
+	// boot never waits on it; it takes its budget token and the compute
+	// lock exactly like any other background run.
+	go metricsSvc.scheduleSweep()
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
@@ -310,6 +332,12 @@ func runImport(path string) {
 	}
 
 	b := budget.New(parallelWorkPref(kvs))
+	// Headless import runs the same post-analyze metric pass as the GUI
+	// (design §4 — the pass runs in the job body): no app handle, so the
+	// sweep emits no events, and a nil compute lock means a private slot
+	// (this process is the only compute in it).
+	metricsSvc := &MetricsService{st: st}
+	metricsSvc.useSweeps(b, nil)
 	imp := library.New(library.Options{
 		Store:         st,
 		Parse:         extract.Parse,
@@ -317,6 +345,7 @@ func runImport(path string) {
 		CopyEnabled:   copyOnImportPref(kvs),
 		Concurrency:   b.Size,
 		Budget:        b,
+		AfterAnalyze:  metricsSvc.sweepForJob,
 	})
 	defer imp.Shutdown()
 

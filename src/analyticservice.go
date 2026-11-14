@@ -180,6 +180,18 @@ type AnalyticsService struct {
 	// without wiring gets); main hands ONE shared budget in beside
 	// computeLock (useBudget, before any submit).
 	budget *budget.Budget
+	// afterRecompute, when set (main wires the metrics sweep — see
+	// metriccompute.go), runs when a RecomputeAll batch DRAINS: the last
+	// member's deferred career rebuild has run (still inside its slot
+	// hold — the hook only schedules, it never blocks), or immediately
+	// when the batch resolved to nothing at all. This is design §4's
+	// "RecomputeAll completion spawns the sweep" trigger: a rules bump
+	// wrote nothing into metric data, so every metric row fails
+	// rule_version < live and the sweep IS the recomputation. Nil in
+	// package tests. Deliberately NOT fired by a single
+	// RecomputeAnalysis submit: a sweep could grab the compute lock
+	// BETWEEN batch members and stamp values fresh from mid-batch data.
+	afterRecompute func()
 }
 
 // Event names emitted by AnalyticsService. Deliberately NOT
@@ -710,12 +722,30 @@ func (s *AnalyticsService) RecomputeAll() (RecomputeAllResult, error) {
 	}
 	cfg := analytics.ConfigFrom(c, 0)
 	st := s.st
+	// The sweep trigger (design §4): it fires when this batch DRAINS —
+	// via the rebuild closure the last member runs, or right here when
+	// there was nothing to queue (and nothing else in flight: a queued
+	// batch from an earlier submit owns its own completion). Scheduling
+	// only spawns a goroutine, so calling it inside the slot hold cannot
+	// deadlock — the sweep waits for its token/lock until the member
+	// releases them.
+	hook := s.afterRecompute
+	rebuild := func() error {
+		err := st.RebuildCareer()
+		if hook != nil {
+			hook()
+		}
+		return err
+	}
 	s.rc.useComputeLock(s.computeLock) // share the ONE lock with the importer
 	s.rc.useBudget(s.budget)           // + ONE machine work token per run (beside the lock)
 	submitted, skipped := s.rc.submitBatch(ids, s.emitEvent,
 		func(id int64) error { return analytics.ComputeForBatch(st, id, cfg) },
-		func() error { return st.RebuildCareer() },
+		rebuild,
 	)
+	if hook != nil && submitted == 0 && skipped == 0 {
+		hook() // nothing queued and nothing in flight: behind metrics recompute now
+	}
 	return RecomputeAllResult{Submitted: submitted, Skipped: skipped, Total: len(ids)}, nil
 }
 
