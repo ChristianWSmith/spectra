@@ -104,7 +104,15 @@ const EXPECTED = {
   // rest checked — and the three labelled groups, then closes it both
   // by click and by Escape); B/C/G/H kept their check counts and only
   // swapped toggle flips for checkbox flips; D/E/F/I/J untouched.
-  'builder.dom.mjs': 99,
+  // builder 99 → 107 (2026-11-14, the Type group = the format filter):
+  // +1 section A (all six Type boxes checked by default beside the
+  // twelve-box/four-group panel pin), +4 section C (the canonical
+  // subset word per flip — Auto off, "auto,percent", all-off → "none",
+  // restore), +3 section G (format composing with origin and the search
+  // in ONE call, plus the restore); B/H kept their counts and only
+  // gained the format arg slot / the twelve-check restore pins;
+  // D/E/F/I/J untouched.
+  'builder.dom.mjs': 107,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

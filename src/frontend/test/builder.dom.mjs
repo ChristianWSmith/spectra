@@ -1,14 +1,17 @@
 // jsdom driver for the metrics Builder's list UX (owner wave A: the
 // built-in editor load + the scope/denominator filter pairs + the
-// denominator chip; the filter UI is now ONE multi-select).
+// denominator chip; the filter UI is now ONE multi-select; the Type
+// group = the format filter).
 // Section labels below match the run's console.log letters:
 //   A. the ONE filter multi-select (a Filters trigger opens the
-//      canonical Popover's checkbox panel with three labelled groups —
+//      canonical Popover's checkbox panel with four labelled groups —
 //      Origin (Built-in|My metrics), Scope (Match|Profile),
-//      Denominator (Rounds|Matches); defaults: Built-in OFF / My
-//      metrics ON (the owner's standing ruling), both other groups ON
-//      (the owner's addendum) — the first window is the mine
-//      partition) — the trigger opens and closes it — and the
+//      Denominator (Rounds|Matches), Type (Auto|Int|Float1|Float2|
+//      Percent|Currency); defaults: Built-in OFF / My metrics ON (the
+//      owner's standing ruling), every OTHER option ON — the owner's
+//      addendum and Type ruling ("all six checked except Built-in") —
+//      so the first window is the mine partition and format "" (no
+//      predicate)) — the trigger opens and closes it — and the
 //      SERVER-side narrowings the checked sets drive: the scripted
 //      backend below applies store.ListMetricsPage's exact predicates
 //      to the fixture, so a view that filtered client-side, passed the
@@ -17,13 +20,15 @@
 //      chip;
 //   B. an Origin checked-set change restarts the keyset window at
 //      cursor 0 — the same path as a search change (one debounced
-//      effect reads query + originFilter + scopeFilter + denomFilter)
-//      — the group headers follow the partition, and both Origin
-//      options off is a legal empty read;
-//   C. the Scope group and the Denominator group narrow the SAME
-//      server call (exact args + cursor reset), both-off in a group is
-//      the empty state, and the lead's denominator-less rule holds:
-//      a metric with no denominator passes whatever the group says;
+//      effect reads query + originFilter + scopeFilter + denomFilter +
+//      formatFilter) — the group headers follow the partition, and
+//      both Origin options off is a legal empty read;
+//   C. the Scope group, the Denominator group and the Type group
+//      narrow the SAME server call (exact args + cursor reset), both-off
+//      in a pair group is the empty state, the lead's denominator-less
+//      rule holds (a metric with no denominator passes whatever the
+//      group says), and the Type group's canonical subset word drives
+//      the auto bucket (format '' rows), subsets and all-off;
 //   D. the built-in EDITOR load: a builtin row is a button like every
 //      other and fills the form read-only — Save disabled with the
 //      end-user reason, chip present, delete absent, pin/preview live —
@@ -36,9 +41,10 @@
 //      and never loads the form (design §5's saved-form criterion —
 //      PreviewMetric stays the on-demand calculator for dirty drafts);
 //   F. a user row still loads the form for editing (unaffected);
-//   G. the search composes with the filters in ONE server call;
+//   G. the search composes with the filters (all four groups) in ONE
+//      server call;
 //   H. the filter checks are view-local registry state
-//      (viewstate.svelte.js): all six restore across unmount →
+//      (viewstate.svelte.js): all twelve restore across unmount →
 //      remount, and resetViewState() returns the next mount to the
 //      defaults;
 //   I. the compute-state surface (design §4/§5): every list item and
@@ -59,10 +65,11 @@
 //
 // Backend semantics — the SQL partitions + keyset tiling
 // (store.TestListMetricsPageOriginFilter*,
-// TestListMetricsPageScopeFilter/DenominatorFilter/AllFiltersCompose)
-// and the SaveMetric/DeleteMetric guards (TestSaveMetricBuiltinGuards)
-// — live in the Go tests; the read-cache key carries all three filter
-// words via services-cache.test.js. This pins the VIEW wiring only.
+// TestListMetricsPageScopeFilter/DenominatorFilter/FormatFilter/
+// AllFiltersCompose) and the SaveMetric/DeleteMetric guards
+// (TestSaveMetricBuiltinGuards) — live in the Go tests; the
+// read-cache key carries all four filter words via
+// services-cache.test.js. This pins the VIEW wiring only.
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
 // there provides it (never `npm i --no-save`, which makes the next
@@ -158,7 +165,10 @@ bindings.MetricsService.ListMetrics = () => Promise.resolve(METRICS);
 // plugin, name ASC within each origin) — the order the paged read and
 // the view's group headers are built on. Denominators: one 'rounds', one
 // 'matches', two denominator-less — the chip presence/absence and the
-// denominator-less rule both read these.
+// denominator-less rule both read these. Formats: adr_avg is the AUTO
+// bucket (format '' — what the Type group's Auto selects), then float1,
+// float1, int beside the builtins' percent/float1 — the auto-bucket and
+// subset flips read these.
 const METRICS = [
   {
     id: 1, name: 'trade_rate', title: 'Trade rate', shortName: '',
@@ -168,7 +178,7 @@ const METRICS = [
   },
   {
     id: 2, name: 'adr_avg', title: 'ADR average', shortName: 'ADR',
-    expr: 'from player_stats: avg(adr)', scope: 'match', format: 'float1',
+    expr: 'from player_stats: avg(adr)', scope: 'match', format: '',
     doc: 'Formula: average ADR', origin: 'user', pluginId: '', denominator: '',
   },
   {
@@ -185,12 +195,21 @@ const METRICS = [
 ];
 
 // The scripted paged read: the SAME partitions + LIKE the store applies
-// (store.ListMetricsPage — including the denominator-less rule), recorded
-// so the checks can assert the exact args the view sent —
-// (query, originFilter, scopeFilter, denomFilter, afterID, limit).
+// (store.ListMetricsPage — including the denominator-less rule and the
+// format subset), recorded so the checks can assert the exact args the
+// view sent — (query, originFilter, scopeFilter, denomFilter,
+// formatFilter, afterID, limit).
 const pageCalls = [];
-bindings.handlers.ListMetricsPage = (q, originFilter, scopeFilter, denomFilter, afterID, limit) => {
-  pageCalls.push([q, originFilter, scopeFilter, denomFilter, afterID, limit]);
+bindings.handlers.ListMetricsPage = (
+  q,
+  originFilter,
+  scopeFilter,
+  denomFilter,
+  formatFilter,
+  afterID,
+  limit,
+) => {
+  pageCalls.push([q, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit]);
   let rows = METRICS.slice();
   if (originFilter === 'builtin') rows = rows.filter((m) => m.origin === 'builtin');
   else if (originFilter === 'mine') rows = rows.filter((m) => m.origin !== 'builtin');
@@ -204,6 +223,14 @@ bindings.handlers.ListMetricsPage = (q, originFilter, scopeFilter, denomFilter, 
   if (denomFilter === 'rounds') rows = rows.filter((m) => !m.denominator || m.denominator === 'rounds');
   else if (denomFilter === 'matches') rows = rows.filter((m) => !m.denominator || m.denominator === 'matches');
   else if (denomFilter === 'none') rows = rows.filter((m) => !m.denominator);
+  // The format subset (the Type group's word): "none" is the empty set
+  // like origin's; any other word is the checked tokens, "auto" naming
+  // the '' rows (the store's FORMAT FILTER).
+  if (formatFilter === 'none') rows = [];
+  else if (formatFilter) {
+    const fmts = new Set(formatFilter.split(','));
+    rows = rows.filter((m) => fmts.has(m.format || 'auto'));
+  }
   if (q) {
     const needle = String(q).toLowerCase();
     rows = rows.filter((m) => `${m.name} ${m.title}`.toLowerCase().includes(needle));
@@ -323,6 +350,7 @@ svelteCompile(
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
+  .replace("from '../metricformats.js'", `from '${fileURL('src/lib/metricformats.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
@@ -383,8 +411,9 @@ const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubb
 // pointerdown, so the panel only closes when a test clicks the trigger
 // or sends Escape). setBox flips ONE option to the requested state
 // through the same DOM path (the panel stays open — it is a
-// multi-select), and sixOf reads all six in panel order (null when a
-// box is missing, which fails every expectation below).
+// multi-select), and sixOf/typeOf read the first six (the three pairs)
+// and the Type six in panel order (null when a box is missing, which
+// fails every expectation below); twelveOf is the whole panel.
 const filterTrigger = (r) => r.querySelector('.bld-filter-host > button');
 const panelOf = (r) => r.querySelector('.bld-filter-pop');
 const boxesOf = (r) => [...(panelOf(r)?.querySelectorAll('input[type="checkbox"]') || [])];
@@ -409,9 +438,14 @@ const sixOf = (r) =>
   ['Built-in', 'My metrics', 'Match', 'Profile', 'Rounds', 'Matches'].map(
     (l) => boxNamed(r, l)?.checked ?? null,
   );
+// The Type group's six format boxes in panel order — the canonical
+// enum order the subset word composes in (lib/metricformats.js).
+const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency'];
+const typeOf = (r) => FMT_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
+const twelveOf = (r) => [...sixOf(r), ...typeOf(r)];
 // The panel's group names in DOM order (the panel itself first, then
-// its three labelled groups).
-const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator'];
+// its four labelled groups).
+const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator', 'Type'];
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -431,11 +465,11 @@ const formChip = (r) => r.querySelector('.bld-readonly');
 
 viewstate.resetViewState();
 
-console.log('A. ONE multi-select for the three groups — defaults Built-in OFF / My metrics ON (owner ruling), both other groups ON; the trigger opens and closes the panel');
+console.log('A. ONE multi-select for the four groups — defaults Built-in OFF / My metrics ON, every other option ON (Type: all six checked); the trigger opens and closes the panel');
 let r = await mountBuilder();
 check(
-  'first list call = (query "", origin "mine", scope "", denominator "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]),
+  'first list call = (query "", origin "mine", scope "", denominator "", format "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 const trig = filterTrigger(r);
@@ -451,21 +485,26 @@ check(
 await openFilters(r);
 const panel = panelOf(r);
 check(
-  'the trigger opens the checkbox panel (aria-expanded + six options)',
-  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 6,
+  'the trigger opens the checkbox panel (aria-expanded + twelve options)',
+  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 12,
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
-  'defaults render with Built-in unchecked and every other option checked (owner ruling)',
+  'defaults render with Built-in unchecked and every other pair option checked (owner ruling)',
   JSON.stringify(sixOf(r)) === JSON.stringify([false, true, true, true, true, true]),
   JSON.stringify(sixOf(r)),
+);
+check(
+  'the Type group defaults to ALL SIX format boxes checked (owner: "all six checked except Built-in")',
+  JSON.stringify(typeOf(r)) === JSON.stringify([true, true, true, true, true, true]),
+  JSON.stringify(typeOf(r)),
 );
 {
   const names = panel
     ? [...panel.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))
     : [];
   check(
-    'the panel is ONE named group holding three labelled groups (Origin, Scope, Denominator)',
+    'the panel is ONE named group holding four labelled groups (Origin, Scope, Denominator, Type)',
     panel?.getAttribute('aria-label') === 'Metric filters' &&
       JSON.stringify(names) === JSON.stringify(GROUP_LABELS.slice(1)),
     JSON.stringify([panel?.getAttribute('aria-label'), ...names]),
@@ -497,8 +536,8 @@ check(
   JSON.stringify(chipsOf(r, 'my_kd')),
 );
 check(
-  'a denominator-less metric shows NO denominator chip (absence is honest)',
-  JSON.stringify(chipsOf(r, 'adr_avg')) === JSON.stringify(['match', 'float1']) &&
+  'a denominator-less metric shows NO denominator chip (absence is honest) — the auto-format row wears its raw format chip',
+  JSON.stringify(chipsOf(r, 'adr_avg')) === JSON.stringify(['match', 'raw']) &&
     JSON.stringify(chipsOf(r, 'plug_stat')) === JSON.stringify(['match', 'int', 'plugin']),
   JSON.stringify(chipsOf(r, 'adr_avg')) + ' / ' + JSON.stringify(chipsOf(r, 'plug_stat')),
 );
@@ -513,8 +552,8 @@ pageCalls.length = 0;
 await setBox(r, 'Built-in', true); // from the default: the mine partition → the whole catalog
 await sleep(DEBOUNCE);
 check(
-  'Built-in checked → (query "", origin "", scope "", denominator "", cursor 0, 100) — all four rows with the Builtins header',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) &&
+  'Built-in checked → (query "", origin "", scope "", denominator "", format "", cursor 0, 100) — all four rows with the Builtins header',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Yours', 'Plugins']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
@@ -525,7 +564,7 @@ await setBox(r, 'My metrics', false);
 await sleep(DEBOUNCE);
 check(
   'My metrics unchecked → origin "builtin": only the builtin row renders, and its rounds chip rides beside its scope chip',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']) &&
     !headersOf(r).includes('Yours') &&
     JSON.stringify(chipsOf(r, 'trade_rate')) === JSON.stringify(['match', 'rounds', 'percent']),
@@ -541,7 +580,7 @@ await setBox(r, 'Built-in', false);
 await sleep(DEBOUNCE);
 check(
   'both Origin options off → origin "none" — a legal empty read',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', '', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -557,7 +596,7 @@ await setBox(r, 'My metrics', true);
 await sleep(DEBOUNCE);
 check(
   'My metrics back checked → origin "mine" — cursor reset again, mine rows render',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -567,19 +606,19 @@ await setBox(r, 'Built-in', true);
 await sleep(DEBOUNCE);
 check(
   'both Origin options back on → the whole catalog window again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) &&
     rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 
-console.log('C. the Scope and Denominator groups narrow the same server call (the denominator-less rule holds)');
+console.log('C. the Scope, Denominator and Type groups narrow the same server call (the denominator-less rule and the format subset hold)');
 services.invalidate();
 pageCalls.length = 0;
 await setBox(r, 'Match', false); // Profile only
 await sleep(DEBOUNCE);
 check(
-  'Match unchecked → (query "", origin "", scope "profile", denominator "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'profile', '', 0, 100]),
+  'Match unchecked → (query "", origin "", scope "profile", denominator "", format "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'profile', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -593,7 +632,7 @@ await setBox(r, 'Profile', false); // both Scope options off
 await sleep(DEBOUNCE);
 check(
   'both Scope options off → scope "none" — the same legal empty read as origin',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'none', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'none', '', '', 0, 100]) &&
     rowsOf(r).length === 0 &&
     r.textContent.includes('No metrics to show.'),
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
@@ -604,7 +643,7 @@ await setBox(r, 'Match', true); // Match only
 await sleep(DEBOUNCE);
 check(
   'Match back checked (Profile still off) → scope "match" — cursor reset again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'match', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'match', '', '', 0, 100]) &&
     rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
@@ -614,7 +653,7 @@ await setBox(r, 'Profile', true);
 await sleep(DEBOUNCE);
 check(
   'both Scope options on → scope "" — no narrowing',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 services.invalidate();
@@ -623,7 +662,7 @@ await setBox(r, 'Rounds', false); // Matches only
 await sleep(DEBOUNCE);
 check(
   'Rounds unchecked → (…, denominator "matches", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -637,7 +676,7 @@ await setBox(r, 'Matches', false); // both Denominator options off
 await sleep(DEBOUNCE);
 check(
   'both Denominator options off → denominator "none"',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'none', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'none', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -651,7 +690,7 @@ await setBox(r, 'Rounds', true); // Rounds only
 await sleep(DEBOUNCE);
 check(
   'Rounds back checked (Matches off) → the rounds metric + the denominator-less rows',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -661,7 +700,54 @@ await setBox(r, 'Matches', true);
 await sleep(DEBOUNCE);
 check(
   'both Denominator options on → denominator "" — all four rows again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+// The Type group narrows the SAME call (origin is the whole catalog
+// here): the word is the CHECKED set in canonical enum order, "auto"
+// being the '' rows — unchecking Auto hands the five literal tokens to
+// the store and the auto-format row drops out.
+services.invalidate();
+pageCalls.length = 0;
+await setBox(r, 'Auto', false); // every format but the '' rows
+await sleep(DEBOUNCE);
+check(
+  'Auto unchecked → format "int,float1,float2,percent,currency" — the canonical subset, the auto-format row gone',
+  JSON.stringify(pageCalls[0]) ===
+    JSON.stringify(['', '', '', '', 'int,float1,float2,percent,currency', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd', 'plug_stat']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
+await setBox(r, 'Auto', true);
+for (const l of ['Int', 'Float1', 'Float2', 'Currency']) await setBox(r, l, false);
+await sleep(DEBOUNCE);
+check(
+  'Auto + Percent only → format "auto,percent" — the auto bucket and the percent rows in one window',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'auto,percent', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
+await setBox(r, 'Auto', false);
+await setBox(r, 'Percent', false);
+await sleep(DEBOUNCE);
+check(
+  'every Type box off → format "none" — the same legal empty read as the pair groups',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'none', 0, 100]) &&
+    rowsOf(r).length === 0 &&
+    r.textContent.includes('No metrics to show.'),
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+services.invalidate();
+pageCalls.length = 0;
+for (const l of FMT_LABELS) await setBox(r, l, true);
+await sleep(DEBOUNCE);
+check(
+  'all six Type boxes back on → format "" — the whole catalog window again',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 // Hand a CLOSED panel to the untouched sections below (D/E/F open
@@ -900,8 +986,8 @@ console.log('G. the search composes with the filters in ONE server call');
   type(search, 'adr');
   await sleep(DEBOUNCE);
   check(
-    'typing restarts the window with BOTH narrowings: (query "adr", origin "mine", scope "", denominator "", cursor 0, 100)',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'mine', '', '', 0, 100]),
+    'typing restarts the window with BOTH narrowings: (query "adr", origin "mine", scope "", denominator "", format "", cursor 0, 100)',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'mine', '', '', '', 0, 100]),
     JSON.stringify(pageCalls[0]),
   );
   check(
@@ -915,7 +1001,41 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'clearing the query restores the mine partition window',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', '', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
+    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  // The Type group composes in the SAME call: formats narrowed to Auto
+  // alone (the other five off), then the search on top — one window,
+  // three narrowings, the format word riding the same args as the rest.
+  services.invalidate();
+  pageCalls.length = 0;
+  for (const l of ['Int', 'Float1', 'Float2', 'Percent', 'Currency']) await setBox(r, l, false);
+  await sleep(DEBOUNCE);
+  check(
+    'formats narrowed to Auto alone → format "auto" — only the auto-format row survives in the mine partition',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 'auto', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg']),
+    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  services.invalidate();
+  pageCalls.length = 0;
+  type(search, 'adr');
+  await sleep(DEBOUNCE);
+  check(
+    'the search composes with origin AND format in ONE call: (query "adr", origin "mine", format "auto", …)',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'mine', '', '', 'auto', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg']),
+    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  services.invalidate();
+  pageCalls.length = 0;
+  type(search, '');
+  for (const l of FMT_LABELS) await setBox(r, l, true);
+  await sleep(DEBOUNCE);
+  check(
+    'clearing the query AND re-checking every Type box → the mine partition window again (format word back to "")',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', '', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -925,16 +1045,16 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'Built-in back checked → the whole catalog window again',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
     JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
   );
 }
 
-console.log('H. the filter checks are view-local registry state (restore all six, then reset to defaults)');
+console.log('H. the filter checks are view-local registry state (restore all twelve, then reset to defaults)');
 {
   // Leave a DISTINCT state behind — one option off in EACH of the
-  // Origin and Denominator groups, so the restore proves every one of
-  // the six keys round-trips.
+  // Origin, Denominator and Type groups, so the restore proves every
+  // one of the twelve keys round-trips.
   services.invalidate();
   pageCalls.length = 0;
   await setBox(r, 'Built-in', false);
@@ -943,19 +1063,24 @@ console.log('H. the filter checks are view-local registry state (restore all six
   pageCalls.length = 0;
   await setBox(r, 'Matches', false);
   await sleep(DEBOUNCE);
+  services.invalidate();
+  pageCalls.length = 0;
+  await setBox(r, 'Currency', false); // no currency row in the fixture — the rows below stand
+  await sleep(DEBOUNCE);
   check(
-    'the parting state is mine + Rounds (Built-in off, Matches off)',
+    'the parting state is mine + Rounds minus Currency (Built-in, Matches and Currency off)',
     JSON.stringify(pageCalls[pageCalls.length - 1]) ===
-      JSON.stringify(['', 'mine', '', 'rounds', 0, 100]) &&
+      JSON.stringify(['', 'mine', '', 'rounds', 'auto,int,float1,float2,percent', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
   await openFilters(r);
   check(
-    'unmount → remount restores ALL six checks (only Built-in + Matches off)',
-    JSON.stringify(sixOf(r)) === JSON.stringify([false, true, true, true, true, false]),
-    JSON.stringify(sixOf(r)),
+    'unmount → remount restores ALL twelve checks (only Built-in, Matches and Currency off)',
+    JSON.stringify(twelveOf(r)) ===
+      JSON.stringify([false, true, true, true, true, false, true, true, true, true, true, false]),
+    JSON.stringify(twelveOf(r)),
   );
   check(
     '…and the restored view shows the restored rows',
@@ -966,9 +1091,10 @@ console.log('H. the filter checks are view-local registry state (restore all six
   r = await mountBuilder();
   await openFilters(r);
   check(
-    'resetViewState() → the next mount is back to the defaults (Built-in OFF / My metrics ON, both other groups ON)',
-    JSON.stringify(sixOf(r)) === JSON.stringify([false, true, true, true, true, true]),
-    JSON.stringify(sixOf(r)),
+    'resetViewState() → the next mount is back to the defaults (Built-in OFF / My metrics ON, every other option ON — Type all six checked)',
+    JSON.stringify(twelveOf(r)) ===
+      JSON.stringify([false, true, true, true, true, true, true, true, true, true, true, true]),
+    JSON.stringify(twelveOf(r)),
   );
   check(
     '…and the default view is the mine partition again',
