@@ -119,7 +119,11 @@ const EXPECTED = {
   // +2 section L (a dead backend now surfaces the metric-slot alert too
   // — two dismissals), +7 the new section M (header positions, the
   // default KAST-metric order, value/dash cells, the behind chip).
-  'combat.dom.mjs': 86,
+  // combat 86 → 87 (2026-11-14, inferred W2b): +1 section M (the two
+  // W2b slots — Untraded deaths / Missed trades — render their metric
+  // values, a stored 0 and the honest dash); the behind check widened in
+  // place to all five slots (no count change).
+  'combat.dom.mjs': 87,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the

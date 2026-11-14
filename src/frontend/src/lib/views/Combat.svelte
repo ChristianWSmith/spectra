@@ -52,12 +52,16 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  // The three converted stats are FIXED-SLOT metric columns (design §1.3:
+  // The five converted stats are FIXED-SLOT metric columns (design §1.3:
   // this view is NOT sequenced — the owner named scoreboard and profile
   // only): same positions as before, values from the ONE canonical
   // stored read. Their keys are `m:<metric name>` — the metric's STABLE
   // identity (ids churn on plugin replace) — which also lets the default
-  // statSort below name the KAST slot statically.
+  // statSort below name the KAST slot statically. Missed trades (I14) and
+  // Untraded deaths (I20) joined the set in W2b: both now read the
+  // `missed_trades` / `untraded_deaths` builtin rows (their Go
+  // computation left GetCombatStats with the switch); the header badges
+  // and provenance chips are unchanged — provenance did not move.
   const STAT_COLS = [
     { key: 'name', label: 'Player', fmt: (r) => r.name },
     { key: 'dmgNoKill', label: 'Damage (no kill)', fmt: (r) => fmtInt(r.dmgNoKill) },
@@ -70,16 +74,11 @@
     { key: 'ffDamage', label: 'FF', fmt: (r) => fmtInt(r.ffDamage) },
     { key: 'm:entry_rate', metric: 'entry_rate', label: 'Entry%', title: ENTRY_DEF },
     { key: 'm:trade_rate_deaths', metric: 'trade_rate_deaths', label: 'Trade%', title: TRADE_DEF },
+    { key: 'm:untraded_deaths', metric: 'untraded_deaths', label: 'Untraded deaths', title: UNTRADED_DEF },
     {
-      key: 'untradedDeaths',
-      label: 'Untraded deaths',
-      fmt: (r) => String(r.untradedDeaths ?? 0),
-      title: UNTRADED_DEF,
-    },
-    {
-      key: 'tradeOppMissed',
+      key: 'm:missed_trades',
+      metric: 'missed_trades',
       label: 'Missed trades',
-      fmt: (r) => String(r.tradeOppMissed ?? 0),
       title: TRADE_OPP_MISSED_DEF,
       badge: TRADE_OPP_MISSED_DEF,
       inferred: true,
@@ -90,7 +89,7 @@
   // The KAST slot's column — the drill-down button and its dialog read
   // the same fixed entry.
   const kastCol = STAT_COLS.find((c) => c.kast);
-  // The metric names the three slots resolve through (the catalog lookup
+  // The metric names the five slots resolve through (the catalog lookup
   // keys the read below).
   const metricSlots = new Set(STAT_COLS.filter((c) => c.metric).map((c) => c.metric));
 
@@ -236,8 +235,8 @@
     return () => (live = false);
   });
 
-  // --- the three converted stat slots: metric-value-backed (W2) --------
-  // ONE listMetrics → ONE getMetricValuesForMatch for the three seeds →
+  // --- the five converted stat slots: metric-value-backed (W2/W2b) ----
+  // ONE listMetrics → ONE getMetricValuesForMatch for the five seeds →
   // the compute-state read, composed through THE state machine
   // (lib/metricstate.js) exactly like Match's scoreboard cells. The
   // slots are fixed (this view is not sequenced), so a failed read keeps
@@ -574,7 +573,7 @@
     <p class="muted" role="status"><StatusChip block detail="Loading combat data…" /></p>
   {:else}
     {#if metricError}
-      <!-- The metric read failed: the three fixed slots keep rendering
+      <!-- The metric read failed: the five fixed slots keep rendering
            the honest dash behind it (never a fabricated number), and the
            failure itself is dismissible in place (house rule). -->
       <p class="error" role="alert">
