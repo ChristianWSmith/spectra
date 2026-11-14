@@ -86,6 +86,11 @@ const PROBE_POOL = 4;
 // read-only pin indicator, Close) and reports 16 → 18 (section G — the
 // appendix list follows the match order pref: saved order re-sequences,
 // key gone → default sequence).
+// Dogfooding W3 (profile surface, 2026-11-14): profiles 51 → 67 (section
+// J — the converted card set is 4 fixed cards, the Career metrics panel
+// renders the nine DEFAULT pins in DEFAULT order over a reversed
+// catalog, and the Profiles ADR column is metric-backed: stored value,
+// honest gap, behind chip, metric-value sort with gaps last).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
   'builder.dom.mjs': 72,
@@ -112,7 +117,9 @@ const EXPECTED = {
   'payload-tree.dom.mjs': 21,
   'player-card.dom.mjs': 174,
   'player-search-hint.dom.mjs': 21,
-  'profiles.dom.mjs': 51,
+  // profiles 45 → 51 (section I — PlayerProfile's Career metrics panel),
+  // then 51 → 67 for dogfooding W3 (section J — see the header note).
+  'profiles.dom.mjs': 67,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
   'reports.dom.mjs': 18,

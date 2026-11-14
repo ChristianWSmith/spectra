@@ -10,10 +10,27 @@
   // 17-digit Steam id (isSteam — bots/rows without one are inert).
   // The TABLE is sortable on every column and defaults to matches DESC
   // (owner ruling: a player seen in many matches is the common case in a
-  // single-player import list, so they sit on top).
-  import { listPlayers, errText } from '../services.js';
+  // single-player import list, so they sit on top). The ADR column is
+  // metric-backed (dogfooding W3): it reads the stored `career_adr`
+  // career-bucket rows, never ListPlayers' adr_avg.
+  import {
+    listPlayers,
+    listMetrics,
+    getMetricValuesForPlayer,
+    getMetricComputeState,
+    subscribeMetricProgress,
+    onMetricDone,
+    errText,
+  } from '../services.js';
+  import {
+    metricPresentation,
+    metricStateTitle,
+    liveMetricState,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import { isSteam, openProfile } from '../nav.js';
-  import { fmt1 } from '../fmt.js';
+  import { fmtMetric } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
   import SortTh from '../components/SortTh.svelte';
@@ -59,6 +76,83 @@
     loadPlayers();
   });
 
+  // --- The ADR column reads the STORED career metric row --------------
+  // dogfooding design §3.5: the list's ADR is the `career_adr` metric
+  // (D2), not ListPlayers' adr_avg — ONE batched
+  // getMetricValuesForPlayer('', [career_adr]) read for the WHOLE list
+  // (the career bucket returns every player's row; never per-player
+  // calls), merged into a steamId → row map. Every cell then renders
+  // through lib/metricstate.js — the same five-word state machine every
+  // other metric value slot uses: fresh → the value, no fresh row → '—'
+  // (a gap is never a fabricated 0), anything else → the state chip.
+  // Refetched on spectra:metric-done (the sweep's outcome replaced the
+  // rows the read cache already flushed).
+  let adrMetric = $state(null); // the resolved definition (null = not in the catalog)
+  let adrRows = $state(new Map()); // steamId → the fresh stored row
+  let adrHasRows = $state(false); // unit coverage: does this metric have ANY row?
+  let adrStates = $state(new Map()); // metricId → {state, error}
+  let adrProgress = $state(new Map()); // metricId → the live k/N feed
+  let adrError = $state('');
+  let adrReload = $state(0);
+
+  $effect(() => subscribeMetricProgress((snap) => (adrProgress = snap)));
+  $effect(() => onMetricDone(() => (adrReload += 1)));
+
+  $effect(() => {
+    adrReload; // spectra:metric-done → refetch (the cache flushed)
+    let live = true;
+    adrMetric = null;
+    adrRows = new Map();
+    adrHasRows = false;
+    adrStates = new Map();
+    adrError = '';
+    Promise.all([listMetrics(), getMetricComputeState()])
+      .then(([defs, states]) => {
+        if (!live) return null;
+        const rows = defs || [];
+        const def = rows.find((d) => d && d.name === 'career_adr' && (d.scope || 'match') === 'profile');
+        adrStates = new Map((states || []).map((s) => [s.metricId, s]));
+        if (!def) return null; // definition gone → every cell renders '—'
+        return getMetricValuesForPlayer('', [def.id]).then((values) => ({ def, values }));
+      })
+      .then((res) => {
+        if (!live || !res) return;
+        // Key by steam id but keep only THIS metric's rows: the read is
+        // already narrowed server-side, and filtering here keeps the
+        // map honest if a read ever returns a wider set.
+        const bySteam = new Map();
+        for (const v of res.values || []) {
+          if (v.metricId === res.def.id) bySteam.set(v.steamId, v);
+        }
+        adrMetric = res.def;
+        adrRows = bySteam;
+        adrHasRows = bySteam.size > 0;
+      })
+      .catch((e) => {
+        if (live) adrError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  // The ADR sort key: the stored metric value, or null for a gap (the
+  // sort below keeps nulls last in both directions).
+  function adrValue(p) {
+    const row = adrRows.get(p.steamId);
+    return row ? row.value : null;
+  }
+
+  // THE state machine for one ADR cell (lib/metricstate.js — design §5).
+  function adrPres(p) {
+    const st = liveMetricState(adrProgress, adrStates, adrMetric ? adrMetric.id : undefined);
+    return metricPresentation(st, adrRows.get(p.steamId) || null, adrHasRows);
+  }
+
+  function adrTitle(pres) {
+    if (pres.kind === 'value') return `${(adrMetric && adrMetric.title) || 'ADR'} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, adrError);
+  }
+
   // Client-side name filter (case-insensitive; an empty query keeps the
   // fetched list as-is). The order here is only the FILTER's — the table
   // renders `sorted` below (matches DESC by default), while the search
@@ -77,7 +171,7 @@
   const SORT_DEFAULT_DESC = {
     name: false,
     matches: true,
-    adrAvg: true,
+    adr: true,
     lastSeen: true,
   };
   let sortKey = $state('matches');
@@ -86,11 +180,17 @@
   // Search first, THEN sort: `filtered` narrows the fetched list and the
   // sort orders what survives it. Sort semantics per column — Player →
   // p.name (localeCompare; an empty name '' sorts first ascending and
-  // renders '—'), Matches → p.matches numeric, ADR → the RAW p.adrAvg
-  // numeric (never the fmt1 string in the cell), the import-date column
+  // renders '—'), Matches → p.matches numeric, ADR → the STORED
+  // `career_adr` metric value for that player (adrValue — never the
+  // fmt1 string in the cell, and never ListPlayers' adr_avg, which this
+  // column stopped reading in dogfooding W3), the import-date column
   // (field `lastSeen`, header "Last import") → p.lastSeen string compare
   // (zero-padded YYYY-MM-DD, so lexicographic = chronological; '' renders
   // '—').
+  //
+  // A player with NO fresh ADR row sorts LAST in both directions: a gap
+  // is not a zero, so it must not win the ascending sort by pretending
+  // to be the smallest value.
   //
   // Ties are the SERVICE's order: Array#sort is stable (ES2019) over a
   // copy of the service-ordered array, so equal values fall back to
@@ -104,13 +204,16 @@
     const direction = desc;
     const rows = [...filtered];
     rows.sort((a, b) => {
-      const av = a[key];
-      const bv = b[key];
+      const av = key === 'adr' ? adrValue(a) : a[key];
+      const bv = key === 'adr' ? adrValue(b) : b[key];
       let c;
       if (typeof av === 'string' || typeof bv === 'string') {
         c = String(av ?? '').localeCompare(String(bv ?? ''));
+      } else if (av == null || bv == null) {
+        if (av == null && bv == null) return 0; // both gaps: keep the service order
+        return av == null ? 1 : -1; // gaps last, whichever way the sort points
       } else {
-        c = (av ?? 0) - (bv ?? 0);
+        c = av - bv;
       }
       return direction ? -c : c;
     });
@@ -171,6 +274,17 @@
     </p>
   {/if}
 
+  {#if adrError}
+    <!-- The metric read failing is UNKNOWN, not "no data": the alert
+         carries it (the cells keep rendering their honest state). -->
+    <p class="error" role="alert">
+      ADR unavailable: {adrError}
+      <button class="btn small" aria-label="Dismiss ADR error" onclick={() => (adrError = '')}>
+        <span class="codicon codicon-close"></span>
+      </button>
+    </p>
+  {/if}
+
   <section class="panel">
     {#if loading}
       <p class="muted" role="status"><StatusChip block detail="Loading players…" /></p>
@@ -195,7 +309,7 @@
             <tr>
               <SortTh label="Player" active={sortKey === 'name'} {desc} onclick={() => toggleSort('name')} />
               <SortTh label="Matches" cls="num" active={sortKey === 'matches'} {desc} onclick={() => toggleSort('matches')} />
-              <SortTh label="ADR" cls="num" active={sortKey === 'adrAvg'} {desc} onclick={() => toggleSort('adrAvg')} />
+              <SortTh label="ADR" cls="num" active={sortKey === 'adr'} {desc} onclick={() => toggleSort('adr')} />
               <SortTh
                 label="Last import"
                 title={LAST_IMPORT_TITLE}
@@ -207,6 +321,7 @@
           </thead>
           <tbody>
             {#each sorted as p (p.steamId)}
+              {@const pres = adrPres(p)}
               <tr
                 class:clickable={isSteam(p.steamId)}
                 title={isSteam(p.steamId) ? `Open ${p.name || p.steamId}’s profile` : p.steamId}
@@ -221,7 +336,23 @@
                   <span class="muted mono pf-steam">{p.steamId}</span>
                 </td>
                 <td class="num">{p.matches}</td>
-                <td class="num">{fmt1(p.adrAvg)}</td>
+                <!-- The stored `career_adr` metric row, through the one
+                     state machine: fresh → the value, no fresh row → '—',
+                     otherwise the state chip (never a fabricated 0). -->
+                <td class="num" title={adrTitle(pres)}>
+                  {#if pres.kind === 'value'}
+                    {fmtMetric(pres.value, adrMetric ? adrMetric.format : 'float1')}
+                  {:else if pres.kind === 'nodata'}
+                    —
+                  {:else}
+                    <StatusChip
+                      status={pres.state}
+                      title={adrTitle(pres)}
+                      progress={metricProgressFrac(adrProgress, adrMetric ? adrMetric.id : undefined)}
+                      stage={metricProgressStage(adrProgress, adrMetric ? adrMetric.id : undefined)}
+                    />
+                  {/if}
+                </td>
                 <td>{fmtLastSeen(p)}</td>
               </tr>
             {/each}

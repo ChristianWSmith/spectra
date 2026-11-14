@@ -28,6 +28,12 @@
 //      renders the value with its n, a non-fresh state renders the chip
 //      and never a number, a match-scope metric never surfaces here, and
 //      no rendered output carries a version number.
+//   J. dogfooding W3: the profile surface after the card conversion —
+//      exactly 4 fixed cards (Matches, Win%, Opening duels, Clutches
+//      count) followed by the Career metrics panel rendering the nine
+//      DEFAULT pins in DEFAULT order over a reversed catalog, and the
+//      Profiles list's ADR column reading the stored `career_adr` bucket
+//      row (value, honest gap, behind chip, metric-value sort).
 //
 // Backend semantics are out of scope here: ListPlayers' ORDER BY
 // (last-seen DESC, steam_id ASC) lives in store.ListPlayers
@@ -683,6 +689,240 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
 
   localStorage.removeItem('spectra:pinned-profile-metrics');
   document.body.removeChild(iTarget);
+}
+
+console.log(
+  'J. dogfooding W3: 4 fixed cards + the nine default-pinned metric rows, and the Profiles ADR column is metric-backed',
+);
+{
+  // The profile-scope catalog in REVERSE default order (plus an
+  // unpinned profile metric and a match-scope one): the rendered row
+  // order must come from metricorder's DEFAULT sequence under the
+  // ABSENT pins key — never from the catalog order, never from an id
+  // list. Titles/short_name/format mirror the real builtin seeds.
+  const CATALOG = [
+    {
+      id: 69, name: 'career_avg_util_damage', title: 'Avg util damage', scope: 'profile',
+      format: 'float1', doc: 'Formula: avg(player_stats.utility_damage)', origin: 'builtin',
+    },
+    {
+      id: 68, name: 'career_avg_enemies_flashed', title: 'Avg enemies flashed', scope: 'profile',
+      format: 'float1', doc: 'Formula: avg(player_stats.enemies_flashed)', origin: 'builtin',
+    },
+    {
+      id: 67, name: 'career_clutch_win_rate', title: 'Clutch win %', scope: 'profile',
+      format: 'percent', doc: 'Formula: avg(clutches.won)', origin: 'builtin',
+    },
+    {
+      id: 66, name: 'career_trade_rate', title: 'Trade rate', scope: 'profile',
+      format: 'percent', doc: 'Formula: ratio(sum(trade_kills), sum(opps))', origin: 'builtin',
+    },
+    {
+      id: 65, name: 'career_kast', title: 'KAST%', scope: 'profile',
+      format: 'percent', doc: 'Formula: avg(player_round_stats.kast)', origin: 'builtin',
+    },
+    {
+      id: 64, name: 'career_hs_pct', title: 'HS%', scope: 'profile',
+      format: 'percent', doc: 'Formula: ratio(sum(headshots), sum(kills))', origin: 'builtin',
+    },
+    {
+      id: 63, name: 'career_kd', title: 'K/D', scope: 'profile',
+      format: 'float2', doc: 'Formula: ratio(sum(kills), sum(deaths))', origin: 'builtin',
+    },
+    {
+      id: 62, name: 'career_adr_sigma', title: 'ADR σ', scope: 'profile',
+      format: 'float1', doc: 'Formula: stddev(player_stats.adr)', origin: 'builtin',
+    },
+    {
+      id: 61, name: 'career_adr', title: 'ADR', scope: 'profile',
+      format: 'float1', doc: 'Formula: avg(player_stats.adr)', origin: 'builtin',
+    },
+    // NOT in DEFAULT_PINS → an absent pins key must never render it.
+    {
+      id: 60, name: 'career_bonus', title: 'Career bonus', scope: 'profile',
+      format: 'float1', doc: 'Formula: avg(player_stats.score)', origin: 'user',
+    },
+    // Wrong scope → never on the profile surface.
+    {
+      id: 59, name: 'adr', title: 'ADR', scope: 'match',
+      format: 'float1', doc: 'Formula: ratio(sum(total_damage), sum(rounds_played))', origin: 'builtin',
+    },
+  ];
+  const NINE = [69, 68, 67, 66, 65, 64, 63, 62, 61]; // CATALOG order
+  // amy's career rows for all nine (the profile under test), plus bob's
+  // and zoe's `career_adr` for the Profiles list column — dan gets NO
+  // row, which is the honest gap that must render '—'.
+  const ROWS = [
+    { metricId: 61, steamId: '76561198000000001', value: 63.5, n: 42 },
+    { metricId: 61, steamId: '76561198000000002', value: 55, n: 7 },
+    { metricId: 61, steamId: '76561198000000003', value: 40, n: 9 },
+    { metricId: 62, steamId: '76561198000000001', value: 12.5, n: 42 },
+    { metricId: 63, steamId: '76561198000000001', value: 1.42, n: 42 },
+    { metricId: 64, steamId: '76561198000000001', value: 0.41, n: 42 },
+    { metricId: 65, steamId: '76561198000000001', value: 0.7, n: 42 },
+    { metricId: 66, steamId: '76561198000000001', value: 0.666, n: 42 },
+    { metricId: 67, steamId: '76561198000000001', value: 0.5, n: 42 },
+    { metricId: 68, steamId: '76561198000000001', value: 3.2, n: 42 },
+    { metricId: 69, steamId: '76561198000000001', value: 88.9, n: 42 },
+  ];
+  bindings.MetricsService.ListMetrics = () => Promise.resolve(CATALOG);
+  // Deliberately WIDER than asked: the real read narrows server-side,
+  // but a stub that honours the id filter would hide a view that forgot
+  // to key its rows by metric. Both views must filter to their own
+  // metric before rendering.
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(ROWS);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve(NINE.map((id) => ({ metricId: id, state: 'fresh' })));
+
+  // --- J1: the profile surface = 4 fixed cards + 9 default-pinned rows
+  invalidate(); // flush section I's stubs (same read-cache keys)
+  const j1 = document.createElement('div');
+  document.body.appendChild(j1);
+  mount(profileMod.default, {
+    target: j1,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(140); // mount + getProfile + listMetrics + the career read
+
+  const grid = j1.querySelector('.stat-grid');
+  const cardLabels = grid
+    ? [...grid.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
+    : [];
+  check(
+    'the fixed block is exactly Matches, Win%, Opening duels, Clutches (the nine converted cards left it)',
+    JSON.stringify(cardLabels) ===
+      JSON.stringify(['Matches', 'Win%', 'Opening duels', 'Clutches']),
+    JSON.stringify(cardLabels),
+  );
+  {
+    const cells = grid ? [...grid.querySelectorAll('.stat-cell')] : [];
+    const clutches = cells.find((c) => c.querySelector('.field-label')?.textContent.trim() === 'Clutches');
+    check(
+      'the Clutches card keeps its COUNT and lost "and the share won"',
+      !!clutches &&
+        clutches.querySelector('.stat-value')?.textContent.trim() === '1' &&
+        /1vN/.test(clutches.getAttribute('title') || '') &&
+        !/share won/.test(clutches.getAttribute('title') || ''),
+      clutches ? `value=${clutches.querySelector('.stat-value')?.textContent} title=${clutches.getAttribute('title')}` : 'no card',
+    );
+    for (const gone of ['ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage']) {
+      check(`the converted card "${gone}" is gone from the grid`, !cardLabels.includes(gone));
+    }
+  }
+
+  const j1Panel = [...j1.querySelectorAll('section.panel')].find((s) =>
+    s.textContent.includes('Career metrics'),
+  );
+  const j1Rows = j1Panel ? [...j1Panel.querySelectorAll('tbody tr')] : [];
+  const j1Titles = j1Rows.map(
+    (r) => r.children[0]?.textContent.trim(),
+  );
+  check(
+    'the Career metrics panel renders the nine default pins in DEFAULT order (catalog order is reversed above)',
+    JSON.stringify(j1Titles) ===
+      JSON.stringify([
+        'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Trade rate',
+        'Clutch win %', 'Avg enemies flashed', 'Avg util damage',
+      ]),
+    JSON.stringify(j1Titles),
+  );
+  check(
+    'the unpinned profile metric and the match-scope metric never render',
+    !j1Panel?.textContent.includes('Career bonus'),
+    j1Panel?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no panel',
+  );
+  {
+    const cell = j1Rows[0]?.children[1];
+    check(
+      'the ADR row renders amy\'s STORED value with n in the tooltip',
+      !!cell && cell.textContent.trim() === '63.5' &&
+        (cell.getAttribute('title') || '').includes('sample size n=42'),
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+    check(
+      "another player's bucket row never renders on this profile",
+      !j1Panel?.textContent.includes('55.0') && !j1Panel?.textContent.includes('40.0'),
+      j1Panel?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no panel',
+    );
+  }
+  document.body.removeChild(j1);
+
+  // --- J2: the Profiles ADR column reads the career bucket row --------
+  const j2 = document.createElement('div');
+  document.body.appendChild(j2);
+  mount(profilesMod.default, { target: j2, props: { nav: () => {} } });
+  await sleep(120); // mount + listPlayers + the metric read
+
+  const j2Cells = () => {
+    const rows = [...j2.querySelectorAll('table.data-table tbody tr')];
+    return new Map(
+      rows.map((tr) => [
+        tr.querySelector('.pf-name')?.textContent.trim(),
+        tr.children[2]?.textContent.trim() ?? '',
+      ]),
+    );
+  };
+  {
+    const cells = j2Cells();
+    check(
+      'the ADR cell renders the STORED metric value, never ListPlayers\' adrAvg',
+      cells.get('amy') === '63.5' && cells.get('zoe') === '55.0' && cells.get('bob') === '40.0',
+      JSON.stringify([...cells]),
+    );
+    check(
+      'a player with no fresh row renders the honest dash (never a fabricated 0)',
+      cells.get('dan') === '—',
+      JSON.stringify([...cells]),
+    );
+    check(
+      'a fresh cell never wears a state chip',
+      ![...j2.querySelectorAll('table.data-table tbody tr')].some((tr) =>
+        tr.children[2]?.querySelector('.chip.status'),
+      ),
+      'a chip appeared beside a fresh value',
+    );
+  }
+  // ADR sorts on the METRIC value, gaps last in both directions.
+  click(headerBtn(j2, 'ADR'));
+  await sleep(40);
+  check(
+    'first click on ADR sorts the stored values DESC with the gap last',
+    JSON.stringify(rowNames(j2)) === JSON.stringify(['amy', 'zoe', 'bob', 'dan']),
+    JSON.stringify(rowNames(j2)),
+  );
+  click(headerBtn(j2, 'ADR'));
+  await sleep(40);
+  check(
+    'second click sorts ASC and the gap STILL sorts last (a gap is not a zero)',
+    JSON.stringify(rowNames(j2)) === JSON.stringify(['bob', 'zoe', 'amy', 'dan']),
+    JSON.stringify(rowNames(j2)),
+  );
+  document.body.removeChild(j2);
+
+  // --- J3: a BEHIND metric renders the state chip, never a number -----
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve([]);
+  // No rows at all → behind wins over the absent row (design §5).
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([{ metricId: 61, state: 'behind' }]);
+  invalidate();
+  const j3 = document.createElement('div');
+  document.body.appendChild(j3);
+  mount(profilesMod.default, { target: j3, props: { nav: () => {} } });
+  await sleep(120);
+  {
+    const cells = [...j3.querySelectorAll('table.data-table tbody tr')].map(
+      (tr) => tr.children[2],
+    );
+    const chips = cells.map((c) => c?.querySelector('.chip.status'));
+    check(
+      'a BEHIND career_adr renders the state chip in every ADR cell, never a number',
+      cells.length === 4 &&
+        chips.every((c) => c && c.textContent.trim() === 'behind') &&
+        cells.every((c) => !/\d/.test(c.textContent)),
+      JSON.stringify(cells.map((c) => c?.textContent.trim())),
+    );
+  }
+  document.body.removeChild(j3);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
