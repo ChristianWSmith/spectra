@@ -1,7 +1,7 @@
-// strings-audit.test.js — the mechanical pin for the queued principle
-// "User-facing text is for end users, not for developers"
-// (queue-user-text-philosophy.md; design: /tmp/opencode/strings-centralization.md
-// §4). It scans every app-rendered string medium and fails on implementation
+// strings-audit.test.js — the mechanical pin for the criterion in
+// AGENTS.md: "user-facing text speaks the user's domain — never
+// implementation language" (owner, 2026-11-14). It scans every app-rendered
+// string medium and fails on implementation
 // language, with the criterion's exemptions in ONE block below
 // (the webstorage.test.js:1-40 pattern: rule → failing test, comment-stripped
 // scan, exemptions in one const).
@@ -36,7 +36,7 @@ const FE = path.join(SRC, 'frontend/src');
 // ---------------------------------------------------------------------------
 
 // class 4 — deliberate developer-facing surfaces, exempt by construction
-// (queue-user-text-philosophy.md:38-41).
+// (AGENTS.md criterion bullet, "Exempt power surfaces").
 const POWER_SURFACES = new Set([
   'frontend/src/lib/views/SqlConsole.svelte', // the SQL console (named product feature)
   'internal/metrics/doc.go', // the expression grammar reference
@@ -49,11 +49,11 @@ const POWER_PREFIXES = [
 // class 3 — long-form prose with its own content model. Scanned (the sweep
 // enumerates them via the content test below) but their rewording is Sweep-A's
 // job (design §5.2), so they never fail this test. `lib/docs/` covers the
-// docs manual as it lands (it does not exist yet — directory prefix, because
-// content modules arrive with their waves).
+// docs manual (it exists — markdown.js, registry.js and the manuals/
+// modules; the directory prefix covers its content modules).
 const CONTENT_FILES = [
   'frontend/src/lib/definitions.js', // glossary (AGENTS canonical home)
-  'frontend/src/lib/docs/', // the upcoming docs manual (content model)
+  'frontend/src/lib/docs/', // the docs manual (content model)
   'internal/store/schema.sql', // seed `doc` column (metrics tooltips)
   'internal/report/templates/match.md',
   'internal/report/templates/match.html',
@@ -273,7 +273,8 @@ function denyHits(text, { expression = true } = {}) {
 
 // Content prose (class 3): seed docs are scanned as prose units with the
 // `Formula: <expr>` segment cut out (the expression itself is exempt —
-// queue-user-text-philosophy.md:47-49; the prose around it is not, e.g.
+// AGENTS.md criterion bullet, "expressions exempt"; the prose around it is
+// not, e.g.
 // "N is the player_stats rows…"). The segment runs to the em-dash that
 // follows it (or the end of the doc).
 const contentProse = (doc) => doc.replace(/Formula:[^—]*(?:—|$)/g, ' ');
@@ -548,7 +549,7 @@ test('Check A — denylist over every app-rendered literal (svelte markup, JS, G
   assert.deepEqual(
     violations,
     [],
-    'implementation language in user-facing text (criterion: queue-user-text-philosophy.md). ' +
+    'implementation language in user-facing text (criterion: AGENTS.md — user-facing text speaks the user\'s domain). ' +
       'User copy goes in lib/strings/<area>.js; existing hits are sweep scope and belong in PENDING_DENYLIST only if they predate this test:\n' +
       violations.map(([f, t]) => `  ${f} :: ${JSON.stringify(t.slice(0, 160))}`).join('\n'),
   );
