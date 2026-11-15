@@ -129,4 +129,19 @@ export const common = {
     'Spectra can read the official radar images, the equipment icons and\n        the replay sounds from your local Counter-Strike 2 installation —\n        authentic map backgrounds, inventory silhouettes and in-replay audio.',
   mapPackFoundFine:
     'Assets are read from your game files and stored in Spectra\'s data\n        folder on this machine. Nothing is uploaded, and nothing from\n        Counter-Strike ships with the app.',
+
+  // match picker (MatchPicker.svelte — the Explorer/Reports match selector)
+  matchPickerTriggerLabel: 'Match', // the trigger button's aria-label
+  matchPickerFilterLabel: 'Filter matches', // the filter input's aria-label
+  matchPickerListLabel: 'Matches', // the listbox's aria-label
+  matchPickerRoundsTitle: 'Rounds', // the rounds-count cell's tooltip
+  matchPickerDurationTitle: 'Duration', // the duration cell's tooltip
+  matchPickerShowing: 'Showing {cap} of {n} — type more to narrow.', // the render-cap hint (fill: cap = the render cap, n = matches after filtering)
+  matchPickerNoMatch: 'No matches match “{q}.”', // empty state under a typed query (fill: q = the query)
+  matchPickerEmpty: 'No matches yet — import one in the Library.', // empty state with no query
+
+  // picker popover footers (MatchPicker + PlayerPicker share the ↑↓/Enter/Esc row)
+  pickerMoveHint: ' move', // after the ↑↓ arrow glyphs
+  pickerEnterSelect: 'Enter select',
+  pickerEscClose: 'Esc close',
 };
