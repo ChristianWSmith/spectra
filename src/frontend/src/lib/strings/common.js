@@ -199,4 +199,18 @@ export const common = {
   playerPickerSeenPrefix: 'seen ', // before the last-seen date
   playerPickerNoMatch: 'No players match “{q}.”', // empty state under a typed query (fill: q = the query)
   playerPickerEmpty: 'No players yet — import a match in the Library.', // empty state with no query
+
+  // round progression strip (RoundStrip.svelte — one cell per round)
+  roundStripLabel: 'Round progression', // the strip's aria-label
+
+  // sortable table header (SortTh.svelte — label + direction caret)
+  sortThSortByPrefix: 'Sort by ', // the sort button's aria-label, before the column label
+
+  // suggestion dropdown (SuggestInput.svelte — the one suggest panel)
+  suggestInputSuggestions: 'Suggestions', // the listbox's fallback aria-label
+  suggestInputMatchWord: ' match', // the player row's count word, before the plural morpheme
+  suggestInputAdrPrefix: 'ADR ', // the player row's career ADR prefix
+
+  // team column (TeamColumn.svelte — one team's card stack)
+  teamColumnMuteLabel: 'Mute {name} voice', // the team mute button's aria-label (fill: name = the team)
 };

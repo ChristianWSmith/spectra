@@ -31,6 +31,7 @@
   // (a rewrap cascade is exactly the card jitter this stack must not
   // have).
   import PlayerCard from './PlayerCard.svelte';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let {
     teamName = '',
@@ -58,7 +59,7 @@
       class="btn small ghost tc-mute"
       class:warn={teamMuted}
       aria-pressed={teamMuted}
-      aria-label="Mute {teamName} voice"
+      aria-label={S.fill(S.common.teamColumnMuteLabel, { name: teamName })}
       title={teamMuted ? `Unmute ${teamName} voice` : `Mute ${teamName} voice`}
       onclick={onToggleTeamMute}
     ><span class="codicon {teamMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button>

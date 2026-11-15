@@ -65,12 +65,7 @@ const CONTENT_FILES = [
 // Seeded 2026-11-14 with every .svelte file that carries class-1 literals
 // today; shrinks to zero as Sweep-B extracts each file into lib/strings/,
 // after which Check B is unconditional (design §5.2 Stage 3 gate).
-const PENDING_INLINE = new Set([
-  'frontend/src/lib/components/RoundStrip.svelte',
-  'frontend/src/lib/components/SortTh.svelte',
-  'frontend/src/lib/components/SuggestInput.svelte',
-  'frontend/src/lib/components/TeamColumn.svelte',
-]);
+const PENDING_INLINE = new Set([]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal
 // text. Seeded 2026-11-14 with 42 entries across 11 files (30 bound-service

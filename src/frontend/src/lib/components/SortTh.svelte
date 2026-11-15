@@ -7,6 +7,8 @@
   //
   // `title` defaults to "Sort by <label>"; a definition tooltip passes its
   // own (and puts the dotted `.def` class in `cls` — the view owns that).
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
+
   let {
     label,
     cls = '',
@@ -19,7 +21,7 @@
 </script>
 
 <th scope="col" class={cls} title={title ?? `Sort by ${label}`}>
-  <button class="th-sort" class:sorted={active} aria-label="Sort by {label}" {onclick}>
+  <button class="th-sort" class:sorted={active} aria-label="{S.common.sortThSortByPrefix}{label}" {onclick}>
     {label}{#if active}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
   </button>
   {@render children?.()}
