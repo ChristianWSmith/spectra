@@ -6,8 +6,9 @@
 // (the webstorage.test.js:1-40 pattern: rule → failing test, comment-stripped
 // scan, exemptions in one const).
 //
-// The criterion partitions user-facing text into four classes (design §3.1):
-//   class 1 — free chrome copy (markup text/attrs)  → catalog or PENDING_INLINE
+// The criterion partitions user-facing text into four classes (this test's
+// own four-way reading of it):
+//   class 1 — free chrome copy (markup text/attrs)  → catalog (lib/strings/)
 //   class 2 — domain-keyed table values             → stay with their table; scanned
 //   class 3 — content prose (glossary/seed docs/templates/docs manual)
 //                                                    → CONTENT_FILES; scanned, sweep scope
@@ -16,6 +17,8 @@
 // pre-existing ones sit in the dated PENDING_DENYLIST ledger and are removed
 // as the sweep rewords them (a stale entry fails too — the ledger is a
 // contract, webstorage's PREF_SITES liveness pin pattern).
+// Check B (the class-1 ratchet) is unconditional: every non-power-surfaced
+// Svelte file that carries free chrome copy must import the catalog.
 //
 // Run: node --test src/lib/strings-audit.test.js   (from frontend/)
 import test from 'node:test';
@@ -31,8 +34,8 @@ const FE = path.join(SRC, 'frontend/src');
 
 // ---------------------------------------------------------------------------
 // Exemptions — ONE dated block. Power surfaces are exempt outright; content
-// files are scanned (content-shaped, for the sweep) but never fail; the two
-// ledgers are the migration ratchet (they only ever shrink).
+// files are scanned (content-shaped) but never fail; the denylist ledger is
+// the migration ratchet (it only ever shrinks).
 // ---------------------------------------------------------------------------
 
 // class 4 — deliberate developer-facing surfaces, exempt by construction
@@ -43,14 +46,15 @@ const POWER_SURFACES = new Set([
   'internal/mappack/devtool.go', // cs2find internals — a developer CLI
 ]);
 const POWER_PREFIXES = [
-  'cmd/cs2find/', // cs2find help text (design §3.3: a developer tool)
+  'cmd/cs2find/', // cs2find help text — a developer tool (AGENTS.md criterion bullet, "Exempt power surfaces")
 ];
 
-// class 3 — long-form prose with its own content model. Scanned (the sweep
-// enumerates them via the content test below) but their rewording is Sweep-A's
-// job (design §5.2), so they never fail this test. `lib/docs/` covers the
-// docs manual (it exists — markdown.js, registry.js and the manuals/
-// modules; the directory prefix covers its content modules).
+// class 3 — long-form prose with its own content model. Scanned (the content
+// test below enumerates them) but never failing: class 3 is content prose,
+// reported as sweep scope rather than blocked — chrome copy is class 1's
+// job. `lib/docs/` covers the docs manual (it exists — markdown.js,
+// registry.js and the manuals/ modules; the directory prefix covers its
+// content modules).
 const CONTENT_FILES = [
   'frontend/src/lib/definitions.js', // glossary (AGENTS canonical home)
   'frontend/src/lib/docs/', // the docs manual (content model)
@@ -60,12 +64,6 @@ const CONTENT_FILES = [
   'internal/report/templates/player.md',
   'internal/report/templates/round.md',
 ];
-
-// class 1 ratchet — files whose inline chrome copy predates the catalog.
-// Seeded 2026-11-14 with every .svelte file that carries class-1 literals
-// today; shrinks to zero as Sweep-B extracts each file into lib/strings/,
-// after which Check B is unconditional (design §5.2 Stage 3 gate).
-const PENDING_INLINE = new Set([]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal
 // text. Seeded 2026-11-14 with 42 entries across 11 files (30 bound-service
@@ -92,8 +90,9 @@ const DENYLIST_EXEMPT = {
 
 // ---------------------------------------------------------------------------
 // The denylist — terms that are never the user's business (implementation
-// language, browser chrome), with the reason attached
-// (queue-user-text-philosophy.md:33-36). Case-sensitive unless noted.
+// language, browser chrome), with the reason attached (AGENTS.md criterion
+// bullet, "Must NOT name" — each term's `why` below states its own reason).
+// Case-sensitive unless noted.
 // ---------------------------------------------------------------------------
 const DENYLIST = [
   { term: 'Go stats', re: /Go stats/, why: 'fixed Go stats — the owner-reported violation class' },
@@ -125,15 +124,16 @@ const TABLE_TERMS = (() => {
     .map((m) => m[1]).filter((n) => n.includes('_')))];
 })();
 
-// Expression/SQL context exemption (design §4.1: table names are denied
-// "only outside Formula:/expression/SQL contexts"). A literal that IS
+// Expression/SQL context exemption (AGENTS.md criterion bullet: table names
+// are denied in prose only — "expressions exempt"). A literal that IS
 // expression content — starts with `Formula:` or with the expression
 // grammar’s `from <table>…` shape — is exempt as a whole; prose around a
 // Formula: segment inside a longer sentence is not.
 const EXPRESSION_CONTEXT = /^\s*(?:Formula:|from\s+[<&])/;
 
-// Package prefixes on Go errors that surface through errText verbatim
-// (design §4.1). Checked only at error-construction positions.
+// Package prefixes on Go errors that surface through errText verbatim —
+// implementation artifacts the user never asked for (AGENTS.md criterion
+// bullet, "Must NOT name"). Checked only at error-construction positions.
 const PREFIX_RE = /^(store|metrics|query|dialogs|platform|analytics|plugin|library): /;
 
 const SRC_EXT = new Set(['.js', '.svelte']);
@@ -530,29 +530,28 @@ test('Check A ledger — every PENDING_DENYLIST/DENYLIST_EXEMPT entry is a live 
 });
 
 test('Check A (content) — seed docs / templates / glossary prose are scanned for the sweep (non-blocking)', () => {
-  // Class 3 never fails this test (Sweep-A rewords it); this enumerates the
-  // sweep's scope and pins that extraction keeps working.
+  // Class 3 never fails this test (content prose is reported, not
+  // blocked); this enumerates the content scope and pins that extraction
+  // keeps working.
   assert.ok(seed.rows >= 16, `extracted only ${seed.rows} seed-doc rows — the schema.sql extractor is broken`);
-  console.log(`content hits (Sweep-A scope, ${contentHits.length}):\n  ${contentHits.join('\n  ')}`);
+  console.log(`content hits (class-3 scope, ${contentHits.length}):\n  ${contentHits.join('\n  ')}`);
 });
 
-test('Check B — inline chrome copy is catalog-referenced or in PENDING_INLINE (the ratchet)', () => {
-  const violationsB = inlineFiles.filter(
-    (file) => !isPower(file) && !PENDING_INLINE.has(file) && !importsCatalog(file),
-  );
+// Check B — the ratchet, UNCONDITIONAL since 2026-11-15 (Stage 3 closing):
+// the class-1 inline ledger (PENDING_INLINE, seeded 2026-11-14) drained to
+// empty with S3-C2, so its bypass is gone. Every non-power-surfaced Svelte
+// file that still carries class-1 literals must import the catalog; power
+// surfaces (class 4) stay exempt.
+test('Check B — every inline-bearing Svelte file imports the catalog (unconditional)', () => {
+  const violationsB = inlineFiles.filter((file) => !isPower(file) && !importsCatalog(file));
+  console.log(`check B scope: ${inlineFiles.length} inline-bearing svelte file(s)`);
   assert.deepEqual(
     violationsB,
     [],
-    'these files carry free chrome copy outside the catalog — route new copy through lib/strings/index.js ' +
-      'or, for pre-migration files, seed PENDING_INLINE with a dated entry:\n  ' +
+    'these files carry free chrome copy outside the catalog — move the copy into ' +
+      'lib/strings/<area>.js and import it from strings/index.js:\n  ' +
       violationsB.join('\n  '),
   );
-  // Ledger liveness: a file with no class-1 literals left must leave the
-  // ledger (the drain is the gate; an undrained ledger forgets the rule).
-  const staleFiles = [...PENDING_INLINE].filter(
-    (file) => !svelteLits.has(file) || svelteLits.get(file).length === 0,
-  );
-  assert.deepEqual(staleFiles, [], `no longer inline-bearing — drop from PENDING_INLINE: ${staleFiles.join(', ')}`);
 });
 
 test('Check C — catalog hygiene: plain-string values, denylist-clean, barrel intact', async () => {
@@ -560,7 +559,8 @@ test('Check C — catalog hygiene: plain-string values, denylist-clean, barrel i
   const entries = Object.entries(S);
   const areas = entries.filter(([, v]) => v !== null && typeof v === 'object');
   const helpers = entries.filter(([, v]) => typeof v === 'function');
-  // The barrel shape (design §3.2): every area exported, fill() the one helper.
+  // The barrel shape (AGENTS.md canonical table, "User-facing chrome copy"):
+  // every area exported, fill() the one helper.
   assert.ok(areas.length >= 10, `only ${areas.length} area exports in strings/index.js — the barrel is incomplete`);
   assert.strictEqual(typeof S.fill, 'function', 'fill() must be exported from strings/index.js');
   assert.strictEqual(S.fill('a {x} b', { x: 1 }), 'a 1 b', 'fill() must substitute {arg} placeholders');
@@ -572,7 +572,7 @@ test('Check C — catalog hygiene: plain-string values, denylist-clean, barrel i
       leaves.push([trail, v]);
       return;
     }
-    assert.ok(v !== null && typeof v === 'object', `catalog entry ${trail} must be a plain string (design §3.2: no functions, no concatenation)`);
+    assert.ok(v !== null && typeof v === 'object', `catalog entry ${trail} must be a plain string (no functions, no concatenation — the audit test reads values as data)`);
     for (const [k, child] of Object.entries(v)) walkArea(name, child, `${trail}.${k}`);
   };
   for (const [name, area] of areas) walkArea(name, area, name);
@@ -585,7 +585,8 @@ test('Check C — catalog hygiene: plain-string values, denylist-clean, barrel i
     );
   }
 
-  // Duplicates are a warning for now — collapsing them is Sweep-B's job.
+  // Duplicates are a warning for now — collapsing them is a later cleanup,
+  // never a gate (the values themselves are already denylist-pinned above).
   const byValue = new Map();
   for (const [trail, value] of leaves) {
     if (!byValue.has(value)) byValue.set(value, []);
@@ -594,4 +595,41 @@ test('Check C — catalog hygiene: plain-string values, denylist-clean, barrel i
   for (const [value, trails] of byValue) {
     if (trails.length > 1) console.warn(`duplicate catalog value ${JSON.stringify(value)}: ${trails.join(', ')}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// TestServiceErrorsAreUserFacing — added 2026-11-15, Stage 3 closing
+// (HANDOFF's optional Stage-4 pin, adopted). A ZERO-BYPASS assertion for the
+// service error layer: literals constructed at fmt.Errorf/errors.New
+// positions in the service files must (a) carry no PREFIX_RE package prefix
+// and (b) pass the DENYLIST — asserted directly against those files' scan
+// results, WITHOUT consulting PENDING_DENYLIST or DENYLIST_EXEMPT. That is
+// the point: Check A would forgive a service-error hit a ledger entry or an
+// exemption could hide, but a service error surfaces through errText
+// verbatim, so it may never be ledgered into visibility.
+// ---------------------------------------------------------------------------
+test('TestServiceErrorsAreUserFacing — service error literals: no package prefix, denylist-clean', () => {
+  const svcFiles = goFiles.map(rel).filter((f) => SVC_FILE.test(f));
+  // Sanity: the walk must see the service layer (a broken walk would pass
+  // vacuously — webstorage.test.js:95 pattern).
+  assert.ok(svcFiles.length >= 5, `walked only ${svcFiles.length} service files — the scan is broken`);
+  const scans = svcFiles.map((file) => ({ file, errors: goScan(path.join(SRC, file)).errors }));
+  const errTotal = scans.reduce((n, s) => n + s.errors.length, 0);
+  assert.ok(errTotal > 0, 'the service scan extracted no error literals — goScan is broken');
+  console.log(`service pin scope: ${svcFiles.length} files, ${errTotal} error literals`);
+  const bad = [];
+  for (const { file, errors } of scans) {
+    for (const text of errors) {
+      if (PREFIX_RE.test(text)) bad.push(`${file} :: package prefix :: ${JSON.stringify(text)}`);
+      const hits = DENYLIST.filter((d) => d.re.test(text)).map((d) => d.term);
+      if (hits.length) bad.push(`${file} :: denylist (${hits.join(', ')}) :: ${JSON.stringify(text)}`);
+    }
+  }
+  assert.deepEqual(
+    bad,
+    [],
+    'service errors are user-facing copy (they reach errText verbatim): no package prefix, no implementation ' +
+      'language — reword at the construction site (AGENTS.md criterion bullet), never ledgered here:\n  ' +
+      bad.join('\n  '),
+  );
 });
