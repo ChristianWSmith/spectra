@@ -215,6 +215,9 @@ svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'SuggestInput.js'));
 // .svelte imports point at the local bundles.
 const bundleView = (name, out) => {
   const src = readFileSync(`src/lib/views/${name}.svelte`, 'utf8')
+    // plumbing (Strings Stage 3): the strings catalog resolves from the
+    // real tree (the generic ../ rewrite below does not match its slash).
+    .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`)
     .replace(/from '\.\.\/components\/(\w+)\.svelte'/g, "from './$1.js'")
     .replace(/from '\.\.\/([\w.]+)'/g, (_m, p) => `from '${fileURL(`src/lib/${p}`)}'`);
   svelteCompile(src, `${name}.svelte`, join(dir, out));

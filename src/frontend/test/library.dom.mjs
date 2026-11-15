@@ -294,7 +294,10 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/ConfirmDialog.svelte'", "from './confirmdialog.js'")
-  .replace("from '../components/SuggestInput.svelte'", "from './suggestinput.js'");
+  .replace("from '../components/SuggestInput.svelte'", "from './suggestinput.js'")
+  // plumbing (Strings Stage 3): the view imports the strings catalog —
+  // resolve it from the real tree, like every other ../ module above.
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(libSrc, 'Library.svelte', join(dir, 'library-bundle.js'));
 
 // Harness: the Library with the profile → library deep-link query. nav

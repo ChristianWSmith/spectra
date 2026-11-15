@@ -133,10 +133,17 @@ for (const name of ['ProfileLink', 'StatusChip']) {
 // fmt/nav/rounds/sideparity/teams/players/replay-landmarks are copied
 // there); only the .svelte component imports need rewriting to their
 // compiled .js.
-const utilSrc = readFileSync('src/lib/views/Utility.svelte', 'utf8').replace(
-  /from '\.\.\/components\/(\w+)\.svelte'/g,
-  "from '../components/$1.js'",
-);
+const utilSrc = readFileSync('src/lib/views/Utility.svelte', 'utf8')
+  .replace(
+    /from '\.\.\/components\/(\w+)\.svelte'/g,
+    "from '../components/$1.js'",
+  )
+  // plumbing (Strings Stage 3): the view imports the strings catalog —
+  // resolve it from the real tree, like every other ../ module here.
+  .replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  );
 svelteCompile(utilSrc, 'Utility.svelte', join(dir, 'views', 'Utility.js'));
 
 const harnessSrc = `<script>

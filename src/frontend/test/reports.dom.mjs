@@ -139,7 +139,10 @@ const repSrc = readFileSync('src/lib/views/Reports.svelte', 'utf8')
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/MatchPicker.svelte'", "from './matchpicker.js'")
   .replace("from '../components/PlayerPicker.svelte'", "from './playerpicker.js'")
-  .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'");
+  .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
+  // plumbing (Strings Stage 3): the view imports the strings catalog —
+  // resolve it from the real tree, like every other ../ module above.
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(repSrc, 'Reports.svelte', join(dir, 'reports-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
