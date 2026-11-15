@@ -181,4 +181,22 @@ export const common = {
   playerCardC4Title: 'C4 bomb', // the bomb badge's tooltip
   playerCardKitTitle: 'Defuse kit', // the kit badge's tooltip
   playerCardKitLabel: 'Kit', // the kit badge's icon alt + its mandatory text fallback
+
+  // player picker (PlayerPicker.svelte — the Reports target selector)
+  playerPickerTriggerLabel: 'Player', // the trigger button's aria-label
+  playerPickerSelectPlayer: 'Select player…', // the trigger's empty-selection text
+  playerPickerFilterLabel: 'Filter players', // the filter input's aria-label
+  playerPickerListLabel: 'Players', // the listbox's aria-label
+  playerPickerKdaTitle: 'K / D / A in this match', // the K/D/A cell's tooltip
+  playerPickerAdrTitle: 'ADR in this match', // the match ADR cell's tooltip
+  playerPickerRoundsTitle: 'Rounds played', // the rounds cell's tooltip
+  playerPickerMatchesTitle: 'Matches in the library', // the career-matches cell's tooltip
+  playerPickerMatchesSuffix: ' matches', // after the career-matches count
+  playerPickerCareerAdrTitle: 'Career ADR', // the career ADR cell's tooltip
+  playerPickerAdrSuffix: ' ADR', // after the career ADR value
+  playerPickerInMatch: 'in this match', // the line-2 state, player appears in the selected match
+  playerPickerNotInMatch: 'not in this match', // the line-2 state, player absent from the match
+  playerPickerSeenPrefix: 'seen ', // before the last-seen date
+  playerPickerNoMatch: 'No players match “{q}.”', // empty state under a typed query (fill: q = the query)
+  playerPickerEmpty: 'No players yet — import a match in the Library.', // empty state with no query
 };
