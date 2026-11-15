@@ -93,7 +93,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/views/Library.svelte',
   'frontend/src/lib/views/PlayerProfile.svelte',
   'frontend/src/lib/views/Profiles.svelte',
-  'frontend/src/lib/views/Replay.svelte',
   'frontend/src/lib/views/Reports.svelte',
   'frontend/src/lib/views/Utility.svelte',
 ]);

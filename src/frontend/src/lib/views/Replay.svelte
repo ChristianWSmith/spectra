@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   // Replay — the tactical replay AND the app's ONE canonical raw-event
   // browser per match: event discovery, filtering, inspection and
   // navigation all happen here, in the side
@@ -3073,17 +3074,17 @@
            stage's .rp-theater-exit stays the way out, because theater
            hides this whole bar). Icon-only .btn cells like their
            neighbors; the ribbon and the rail toggle keep their places. -->
-      <button class="btn rp-close" aria-label="Close" title="Close" onclick={closeInstance}>
+      <button class="btn rp-close" aria-label={S.replay.closeLabel} title={S.replay.closeLabel} onclick={closeInstance}>
         <span class="codicon codicon-close" aria-hidden="true"></span>
       </button>
-      <button class="btn rp-minimize" aria-label="Minimize" title="Minimize" onclick={goBack}>
+      <button class="btn rp-minimize" aria-label={S.replay.minimizeLabel} title={S.replay.minimizeLabel} onclick={goBack}>
         <span class="codicon codicon-chrome-minimize" aria-hidden="true"></span>
       </button>
       <button
         class="btn rp-theater"
         id="rp-theater"
-        aria-label="Theater mode"
-        title="Theater mode — hide the top bar and controls"
+        aria-label={S.replay.theaterModeAria}
+        title={S.replay.theaterModeTitle}
         onclick={enterTheater}
         ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
       >
@@ -3109,8 +3110,8 @@
         <button
           class="side-toggle rp-rail-toggle"
           aria-expanded="false"
-          aria-label="Events ({feedCountLabel} events)"
-          title="Events ({feedCountLabel} events)"
+          aria-label={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
+          title={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
           onclick={() => (eventsOpen = true)}
         >
           <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
@@ -3136,13 +3137,12 @@
       </p>
     {:else if noSidecar}
       <div class="panel empty">
-        <p class="empty-title" role="status">No replay data for this match</p>
+        <p class="empty-title" role="status">{S.replay.noReplayData}</p>
         <p class="muted">
-          This match was imported without position data — run Re-parse on it in
-          the Library, then come back.
+          {S.replay.noSidecarNote}
         </p>
         <button class="btn primary" onclick={() => nav('/library')}>
-          Go to Library
+          {S.replay.goToLibrary}
         </button>
       </div>
     {:else if data}
@@ -3159,7 +3159,7 @@
       {/if}
       {#if active && meta && data.frames !== meta.frames}
         <p class="note-amber" role="status">
-          frame count mismatch: stream has {data.frames}, meta says {meta.frames}
+          {S.replay.frameMismatchLead} {data.frames}{S.replay.frameMismatchMid} {meta.frames}
         </p>
       {/if}
       <div class="replay-body">
@@ -3183,7 +3183,7 @@
         />
         {/if}
         <div class="replay-stage" bind:this={stageEl}>
-          <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
+          <canvas bind:this={canvasEl} aria-label={S.replay.canvasAria}></canvas>
           <!-- Theater mode's way OUT: rendered only while theater is on,
                a SIBLING of the canvas (outside .rp-ctrl-list and outside
                every overlay-gated block — the one element neither the
@@ -3199,8 +3199,8 @@
           {#if theater && active}
             <button
               class="btn rp-theater-exit"
-              aria-label="Exit theater mode"
-              title="Exit theater mode"
+              aria-label={S.replay.exitTheaterLabel}
+              title={S.replay.exitTheaterLabel}
               onclick={() => (theater = false)}
             >
               <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
@@ -3236,7 +3236,7 @@
                 {#if row.kind === 'follow'}
                   <div class="rp-ctrl-row">
                     <span class="codicon codicon-eye" aria-hidden="true"></span>
-                    <span class="rp-ctrl-text">Following {row.name}</span>
+                    <span class="rp-ctrl-text">{S.fill(S.replay.followingRow, { name: row.name })}</span>
                   </div>
                 {:else}
                   <div class="rp-ctrl-row" class:rp-ctrl-warn={row.kind === 'note'}>{row.text}</div>
@@ -3265,7 +3265,7 @@
       <!-- Two lines: the scrubber owns the FULL-WIDTH line (round
            markers + the game-time readout ride with it), the centered
            button/control cluster keeps the ONE .toolbar row below it. -->
-      <div class="replay-transport" role="group" aria-label="Replay transport">
+      <div class="replay-transport" role="group" aria-label={S.replay.transportAria}>
         <div class="replay-scrub">
           <div class="scrubber-wrap">
             <input
@@ -3275,7 +3275,7 @@
               max={Math.max(0, frames - 1)}
               value={uiFrame}
               oninput={onScrub}
-              aria-label="Frame"
+              aria-label={S.replay.frameAria}
             />
             {#each markers as m, i (i)}
               <!-- data-round rides ONLY the pass-1 round-start ticks
@@ -3284,7 +3284,7 @@
               <span class="scrub-marker {m.cls}" data-round={m.round} style="left:{m.pct}%"></span>
             {/each}
           </div>
-          <span class="mono replay-readout" title="frame {uiFrame + 1}/{frames} · tick {uiTick}"
+          <span class="mono replay-readout" title={S.fill(S.replay.readoutTitle, { frame: uiFrame + 1, frames, tick: uiTick })}
             >{scrubTime}</span
           >
         </div>
@@ -3308,8 +3308,8 @@
           <button
             class="btn"
             id="rp-round-prev"
-            aria-label="Previous round"
-            title="Previous round"
+            aria-label={S.replay.prevRoundLabel}
+            title={S.replay.prevRoundLabel}
             disabled={!ready || roundNav.prev == null}
             onclick={() => onRibbonRound(roundNav.prev)}
             ><span class="codicon codicon-chevron-left" aria-hidden="true"></span></button
@@ -3317,23 +3317,23 @@
           <button
             class="btn"
             id="rp-seek-back"
-            aria-label="Seek −15 seconds"
-            title="Seek −15 seconds"
+            aria-label={S.replay.seekBackLabel}
+            title={S.replay.seekBackLabel}
             disabled={!ready}
             onclick={() => seekBySeconds(-1)}
             ><span class="codicon codicon-arrow-small-left" aria-hidden="true"></span></button
           >
           <button
             class="btn primary"
-            aria-label={uiPlaying ? 'Pause' : 'Play'}
-            title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            aria-label={uiPlaying ? S.replay.pause : S.replay.play}
+            title={uiPlaying ? S.replay.pauseSpace : S.replay.playSpace}
             onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
           >
           <button
             class="btn"
             id="rp-seek-fwd"
-            aria-label="Seek +15 seconds"
-            title="Seek +15 seconds"
+            aria-label={S.replay.seekFwdLabel}
+            title={S.replay.seekFwdLabel}
             disabled={!ready}
             onclick={() => seekBySeconds(1)}
             ><span class="codicon codicon-arrow-small-right" aria-hidden="true"></span></button
@@ -3341,8 +3341,8 @@
           <button
             class="btn"
             id="rp-round-next"
-            aria-label="Next round"
-            title="Next round"
+            aria-label={S.replay.nextRoundLabel}
+            title={S.replay.nextRoundLabel}
             disabled={!ready || roundNav.next == null}
             onclick={() => onRibbonRound(roundNav.next)}
             ><span class="codicon codicon-chevron-right" aria-hidden="true"></span></button
@@ -3358,12 +3358,12 @@
             <button
               class="btn"
               aria-label={`Speed ${uiSpeed}×`}
-              title="Playback speed (, / .)"
+              title={S.replay.speedTriggerTitle}
               aria-expanded={speedOpen}
               onclick={() => (speedOpen = !speedOpen)}>{uiSpeed}×</button
             >
             <Popover open={speedOpen} anchor={speedAnchor} onClose={() => (speedOpen = false)}>
-              <div class="rp-pop rp-speed-pop" role="group" aria-label="Playback speed">
+              <div class="rp-pop rp-speed-pop" role="group" aria-label={S.replay.speedAria}>
                 {#each SPEEDS as s (s)}
                   <button
                     class="btn small"
@@ -3392,8 +3392,8 @@
             id="rp-skip-freeze"
             class:warn={uiSkipFreeze}
             aria-pressed={uiSkipFreeze}
-            aria-label="Skip freeze time"
-            title="Skip freeze time — auto-jump the pre-round freeze during playback (X)"
+            aria-label={S.replay.skipFreezeAria}
+            title={S.replay.skipFreezeTitle}
             onclick={toggleSkipFreeze}
             ><span class="codicon codicon-skip" aria-hidden="true"></span></button
           >
@@ -3411,37 +3411,37 @@
               class:warn={uiLoopOn}
               aria-pressed={uiLoopOn}
               aria-expanded={loopOpen}
-              aria-label="Loop range"
-              title="Loop range (L) — set the from/to times and toggle the loop"
+              aria-label={S.replay.loopRangeAria}
+              title={S.replay.loopRangeTitle}
               onclick={() => (loopOpen = !loopOpen)}
               ><span class="codicon codicon-sync" aria-hidden="true"></span></button
             >
             <Popover open={loopOpen} anchor={loopAnchor} onClose={() => (loopOpen = false)}>
-              <div class="rp-pop rp-loop-pop loop-group" role="group" aria-label="Loop range">
-                <label class="sr-only" for="rp-loop-from">Loop start time</label>
+              <div class="rp-pop rp-loop-pop loop-group" role="group" aria-label={S.replay.loopRangeAria}>
+                <label class="sr-only" for="rp-loop-from">{S.replay.loopStartTime}</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-from"
                   type="text"
-                  placeholder="start"
+                  placeholder={S.replay.loopStartPlaceholder}
                   value={loopFromText}
                   onchange={(e) => onLoopTime('from', e)}
                 />
                 <span class="muted">–</span>
-                <label class="sr-only" for="rp-loop-to">Loop stop time</label>
+                <label class="sr-only" for="rp-loop-to">{S.replay.loopStopTime}</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-to"
                   type="text"
-                  placeholder="stop"
+                  placeholder={S.replay.loopStopPlaceholder}
                   value={loopToText}
                   onchange={(e) => onLoopTime('to', e)}
                 />
                 <button
                   class="btn small"
                   class:warn={uiLoopOn}
-                  title="Toggle loop (L)"
-                  onclick={toggleLoop}>Loop</button
+                  title={S.replay.toggleLoopTitle}
+                  onclick={toggleLoop}>{S.replay.loopBtnLabel}</button
                 >
                 <!-- Quick range: ±10 s AROUND the playhead, clamped at
                      the stream edges (never wraps) — bounds then arm,
@@ -3449,7 +3449,7 @@
                      edit): the window is the point of the click. -->
                 <button
                   class="btn small"
-                  title="Loop ±10 s around the playhead"
+                  title={S.replay.loop10Title}
                   disabled={!ready}
                   onclick={loop10}>±10 s</button
                 >
@@ -3478,11 +3478,11 @@
               class="btn"
               aria-label={`Camera mode: ${camLabel}`}
               aria-expanded={camOpen}
-              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it (F to follow, 1-9 to pick)"
+              title={S.replay.cameraHelpTitle}
               onclick={() => (camOpen = !camOpen)}>{camLabel}</button
             >
             <Popover open={camOpen} anchor={camAnchor} onClose={() => (camOpen = false)}>
-              <div class="rp-pop rp-cam-pop" role="group" aria-label="Camera mode">
+              <div class="rp-pop rp-cam-pop" role="group" aria-label={S.replay.cameraModeAria}>
                 {#each CAM_MODES as m (m.value)}
                   <button
                     class="btn small"
@@ -3512,12 +3512,12 @@
                 class="btn"
                 aria-expanded={followOpen}
                 aria-haspopup="true"
-                aria-label="Follow player"
-                title="The player the camera follows — 1-9, 0 picks one, F toggles follow, dragging releases"
+                aria-label={S.replay.followPlayerAria}
+                title={S.replay.followPlayerTitle}
                 onclick={() => (followOpen = !followOpen)}>{followLabel}</button
               >
               <Popover open={followOpen} anchor={followAnchor} onClose={() => (followOpen = false)}>
-                <div class="rp-pop rp-follow-pop" role="group" aria-label="Follow player">
+                <div class="rp-pop rp-follow-pop" role="group" aria-label={S.replay.followPlayerAria}>
                   {#each players as p, i (i)}
                     <!-- Only players IN the match at the playhead are followable —
                          a disconnected slot has no position for the camera to
@@ -3562,28 +3562,28 @@
               class:warn={uiAnyHidden}
               aria-expanded={uiOpen}
               aria-haspopup="true"
-              aria-label="UI overlays"
-              title="Show/hide individual overlays — score/timer, kill feed, chat and stage indicators (never hides the theater-exit button)"
+              aria-label={S.replay.uiOverlaysAria}
+              title={S.replay.uiOverlaysTitle}
               onclick={() => (uiOpen = !uiOpen)}
               ><span class="codicon {uiAnyHidden ? 'codicon-eye-closed' : 'codicon-eye'}" aria-hidden="true"></span></button
             >
             <Popover open={uiOpen} anchor={uiAnchor} onClose={() => (uiOpen = false)}>
-              <div class="rp-pop rp-ui-pop" role="group" aria-label="UI overlays">
-                <label class="rp-drop-item" title="Show the team score and round clock">
+              <div class="rp-pop rp-ui-pop" role="group" aria-label={S.replay.uiOverlaysAria}>
+                <label class="rp-drop-item" title={S.replay.overlayScoreTitle}>
                   <input type="checkbox" checked={uiHud.score} onchange={() => setUiLayer('score')} />
-                  Score/timer
+                  {S.replay.overlayScore}
                 </label>
-                <label class="rp-drop-item" title="Show the kill feed">
+                <label class="rp-drop-item" title={S.replay.overlayFeedTitle}>
                   <input type="checkbox" checked={uiHud.feed} onchange={() => setUiLayer('feed')} />
-                  Kill feed
+                  {S.replay.overlayFeed}
                 </label>
-                <label class="rp-drop-item" title="Show the in-game chat">
+                <label class="rp-drop-item" title={S.replay.overlayChatTitle}>
                   <input type="checkbox" checked={uiHud.chat} onchange={() => setUiLayer('chat')} />
-                  Chat
+                  {S.replay.overlayChat}
                 </label>
-                <label class="rp-drop-item" title="Show the stage's status rows (following, loop, map-pack note)">
+                <label class="rp-drop-item" title={S.replay.overlayStageTitle}>
                   <input type="checkbox" checked={uiHud.ctrl} onchange={() => setUiLayer('ctrl')} />
-                  Stage indicators
+                  {S.replay.overlayStage}
                 </label>
               </div>
             </Popover>
@@ -3602,16 +3602,16 @@
               class="btn"
               aria-expanded={dropsOpen}
               aria-haspopup="true"
-              aria-label="Drop markers"
-              title="Show dropped guns, utility and defuse kits on the map (off by default)"
+              aria-label={S.replay.dropMarkersAria}
+              title={S.replay.dropMarkersTitle}
               onclick={() => (dropsOpen = !dropsOpen)}
             >
-              Drops
+              {S.replay.dropsLabel}
               <span class="muted rp-drops-count">{dropLayerCount}</span>
               <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
             </button>
             <Popover open={dropsOpen} anchor={dropsAnchor} onClose={() => (dropsOpen = false)}>
-              <div class="rp-pop rp-drops-pop" role="group" aria-label="Drop markers">
+              <div class="rp-pop rp-drops-pop" role="group" aria-label={S.replay.dropMarkersAria}>
                 {#each DROP_LAYERS as l (l.key)}
                   <label class="rp-drop-item" title={`Show dropped ${l.label.toLowerCase()} on the map`}>
                     <input
@@ -3643,15 +3643,15 @@
               class="btn"
               class:warn={audioAllMuted}
               aria-expanded={volOpen}
-              aria-label="Volume"
-              title="Volume — voice, guns, utility, C4, announcer and footsteps"
+              aria-label={S.replay.volumeAria}
+              title={S.replay.volumeTitle}
               onclick={() => (volOpen = !volOpen)}
               ><span class="codicon codicon-unmute" aria-hidden="true"></span></button
             >
             <Popover open={volOpen} anchor={volAnchor} onClose={() => (volOpen = false)}>
-              <div class="rp-pop rp-vol-pop" role="group" aria-label="Volume">
+              <div class="rp-pop rp-vol-pop" role="group" aria-label={S.replay.volumeAria}>
                 <div class="rp-vol-row">
-                  <label class="field-label" for="rp-vol-voice">Voice</label>
+                  <label class="field-label" for="rp-vol-voice">{S.replay.volVoiceLabel}</label>
                   <input
                     class="rp-vol-range"
                     id="rp-vol-voice"
@@ -3662,21 +3662,21 @@
                     disabled={!voicePresence || !voicePresence.hasVoice}
                     oninput={(e) => onVolInput('voice', e)}
                     onchange={() => onVolChange('voice')}
-                    aria-label="Voice volume"
+                    aria-label={S.replay.volVoiceAria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiVoiceMutedAll}
                     aria-pressed={uiVoiceMutedAll}
-                    aria-label="Mute voice"
-                    title={uiVoiceMutedAll ? 'Unmute voice' : 'Mute voice'}
+                    aria-label={S.replay.muteVoice}
+                    title={uiVoiceMutedAll ? S.replay.unmuteVoice : S.replay.muteVoice}
                     disabled={!voicePresence || !voicePresence.hasVoice}
                     onclick={toggleVoiceMuteAll}
                     ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
                 <div class="rp-vol-row">
-                  <label class="field-label" for="rp-vol-guns">Guns</label>
+                  <label class="field-label" for="rp-vol-guns">{S.replay.volGunsLabel}</label>
                   <input
                     class="rp-vol-range"
                     id="rp-vol-guns"
@@ -3686,20 +3686,20 @@
                     value={Math.round(uiGunsVol * 100)}
                     oninput={(e) => onVolInput('guns', e)}
                     onchange={() => onVolChange('guns')}
-                    aria-label="Guns volume"
+                    aria-label={S.replay.volGunsAria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiGunsMuted}
                     aria-pressed={uiGunsMuted}
-                    aria-label="Mute guns"
-                    title={uiGunsMuted ? 'Unmute guns' : 'Mute guns'}
+                    aria-label={S.replay.muteGuns}
+                    title={uiGunsMuted ? S.replay.unmuteGuns : S.replay.muteGuns}
                     onclick={toggleGunsMute}
                     ><span class="codicon {uiGunsMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
                 <div class="rp-vol-row">
-                  <label class="field-label" for="rp-vol-utility">Utility</label>
+                  <label class="field-label" for="rp-vol-utility">{S.replay.volUtilityLabel}</label>
                   <input
                     class="rp-vol-range"
                     id="rp-vol-utility"
@@ -3709,14 +3709,14 @@
                     value={Math.round(uiUtilVol * 100)}
                     oninput={(e) => onVolInput('utility', e)}
                     onchange={() => onVolChange('utility')}
-                    aria-label="Utility volume"
+                    aria-label={S.replay.volUtilityAria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiUtilMuted}
                     aria-pressed={uiUtilMuted}
-                    aria-label="Mute utility"
-                    title={uiUtilMuted ? 'Unmute utility' : 'Mute utility'}
+                    aria-label={S.replay.muteUtility}
+                    title={uiUtilMuted ? S.replay.unmuteUtility : S.replay.muteUtility}
                     onclick={toggleUtilMute}
                     ><span class="codicon {uiUtilMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
@@ -3732,20 +3732,20 @@
                     value={Math.round(uiC4Vol * 100)}
                     oninput={(e) => onVolInput('c4', e)}
                     onchange={() => onVolChange('c4')}
-                    aria-label="C4 volume"
+                    aria-label={S.replay.volC4Aria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiC4Muted}
                     aria-pressed={uiC4Muted}
-                    aria-label="Mute c4"
-                    title={uiC4Muted ? 'Unmute C4' : 'Mute C4'}
+                    aria-label={S.replay.muteC4Aria}
+                    title={uiC4Muted ? S.replay.unmuteC4 : S.replay.muteC4}
                     onclick={toggleC4Mute}
                     ><span class="codicon {uiC4Muted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
                 <div class="rp-vol-row">
-                  <label class="field-label" for="rp-vol-announcer">Announcer</label>
+                  <label class="field-label" for="rp-vol-announcer">{S.replay.volAnnouncerLabel}</label>
                   <input
                     class="rp-vol-range"
                     id="rp-vol-announcer"
@@ -3755,20 +3755,20 @@
                     value={Math.round(uiAnnouncerVol * 100)}
                     oninput={(e) => onVolInput('announcer', e)}
                     onchange={() => onVolChange('announcer')}
-                    aria-label="Announcer volume"
+                    aria-label={S.replay.volAnnouncerAria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiAnnouncerMuted}
                     aria-pressed={uiAnnouncerMuted}
-                    aria-label="Mute announcer"
-                    title={uiAnnouncerMuted ? 'Unmute announcer' : 'Mute announcer'}
+                    aria-label={S.replay.muteAnnouncer}
+                    title={uiAnnouncerMuted ? S.replay.unmuteAnnouncer : S.replay.muteAnnouncer}
                     onclick={toggleAnnouncerMute}
                     ><span class="codicon {uiAnnouncerMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
                 <div class="rp-vol-row">
-                  <label class="field-label" for="rp-vol-footsteps">Footsteps</label>
+                  <label class="field-label" for="rp-vol-footsteps">{S.replay.volFootstepsLabel}</label>
                   <input
                     class="rp-vol-range"
                     id="rp-vol-footsteps"
@@ -3778,14 +3778,14 @@
                     value={Math.round(uiStepsVol * 100)}
                     oninput={(e) => onVolInput('footsteps', e)}
                     onchange={() => onVolChange('footsteps')}
-                    aria-label="Footsteps volume"
+                    aria-label={S.replay.volFootstepsAria}
                   />
                   <button
                     class="btn small"
                     class:warn={uiStepsMuted}
                     aria-pressed={uiStepsMuted}
-                    aria-label="Mute footsteps"
-                    title={uiStepsMuted ? 'Unmute footsteps' : 'Mute footsteps'}
+                    aria-label={S.replay.muteFootsteps}
+                    title={uiStepsMuted ? S.replay.unmuteFootsteps : S.replay.muteFootsteps}
                     onclick={toggleStepsMute}
                     ><span class="codicon {uiStepsMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
@@ -3798,7 +3798,7 @@
 
           {#if uiVoiceErr}
             <span class="error rp-voice-hint" role="alert"
-              >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
+              >{uiVoiceErr} {S.replay.voiceErrLead} <span class="mono">{S.replay.gstPluginsGood}</span> {S.replay.voiceErrTail}</span
             >
           {:else if sfxErr}
             <!-- The sound-effect engine's own device failure (its message
@@ -3809,8 +3809,8 @@
           {#if ready && data}
             <button
               class="btn"
-              aria-label="Snapshot"
-              title="Save a PNG snapshot of the current frame (S)"
+              aria-label={S.replay.snapshotAria}
+              title={S.replay.snapshotTitle}
               onclick={doSnapshot}
               ><span class="codicon codicon-device-camera" aria-hidden="true"></span></button
             >
@@ -3822,8 +3822,8 @@
               <span class="chip bad" role="alert" title={snapError}>{snapError}</span>
               <button
                 class="btn small ghost"
-                aria-label="Dismiss snapshot error"
-                title="Dismiss"
+                aria-label={S.replay.dismissSnapshotErrorAria}
+                title={S.replay.dismissLabel}
                 onclick={() => (snapError = '')}
                 ><span class="codicon codicon-close" aria-hidden="true"></span></button
               >
@@ -3833,8 +3833,8 @@
               class:primary={recState === 'recording'}
               disabled={recState === 'encoding'}
               onclick={toggleRecord}
-              aria-label={recState === 'recording' ? 'Stop clip' : 'Record clip'}
-              title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
+              aria-label={recState === 'recording' ? S.replay.stopClip : S.replay.recordClip}
+              title={S.replay.recordClipTitle}
               ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}" aria-hidden="true"></span></button
             >
             {#if recState !== 'idle'}
@@ -3851,13 +3851,13 @@
                 >{recState === 'recording'
                   ? `recording · ${recNote}`
                   : recState === 'encoding'
-                    ? 'encoding…'
+                    ? S.replay.encodingState
                     : recState === 'saved'
                       ? `saved · ${recNote}`
                       : recNote}</span
               >
               {#if recState === 'saved' || recState === 'error'}
-                <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
+                <button class="btn small ghost" onclick={discardClip} title={S.replay.dismissLabel}><span class="codicon codicon-close"></span></button>
               {/if}
             {/if}
           {/if}
@@ -3889,11 +3889,11 @@
          (setOverlaysVisible) stays until expand. -->
     {#if !active}
       <div class="rp-mini-bar">
-        <span class="mono rp-mini-time" title="Playhead">{scrubTime}</span>
+        <span class="mono rp-mini-time" title={S.replay.playheadTitle}>{scrubTime}</span>
         <button
           class="btn primary rp-mini-toggle"
-          aria-label={uiPlaying ? 'Pause' : 'Play'}
-          title={uiPlaying ? 'Pause' : 'Play'}
+          aria-label={uiPlaying ? S.replay.pause : S.replay.play}
+          title={uiPlaying ? S.replay.pause : S.replay.play}
           onclick={onMiniToggle}
           onkeydown={onMiniToggleKey}
           ><span
@@ -3901,20 +3901,20 @@
             aria-hidden="true"
           ></span></button
         >
-        <span class="rp-mini-hint">Click to expand</span>
+        <span class="rp-mini-hint">{S.replay.clickToExpand}</span>
       </div>
     {/if}
   </div>
   {#if railVisible && eventsOpen && !theater && active}
-  <aside class="replay-side" aria-label="Event feed">
+  <aside class="replay-side" aria-label={S.replay.eventFeedAria}>
     <button
       class="side-toggle"
       aria-expanded="true"
-      aria-label="Events ({feedCountLabel} events)"
-      title="Events ({feedCountLabel} events)"
+      aria-label={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
+      title={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
       onclick={() => (eventsOpen = false)}
     >
-      <h2>Events</h2>
+      <h2>{S.replay.eventsHeading}</h2>
       <span class="spacer"></span>
       <span class="muted num">{feedCountLabel}</span>
       <!-- Hiding the panel points right — matching the collapsed
@@ -3929,23 +3929,23 @@
            surface below it — the category dropdown, name picker, scope
            bar and presets/Reset all show/hide TOGETHER (filtersOpen);
            export is not a filter and stays in this row. -->
-      <div class="lm-toolbar" role="group" aria-label="Feed controls">
+      <div class="lm-toolbar" role="group" aria-label={S.replay.feedControlsAria}>
         <button
           class="btn small"
           class:primary={filtersOpen}
           aria-expanded={filtersOpen}
           onclick={() => (filtersOpen = !filtersOpen)}
-          title="Show/hide the category dropdown and every filter control"
+          title={S.replay.filtersToggleTitle}
         >
-          <span class="codicon codicon-filter" aria-hidden="true"></span> Filters
+          <span class="codicon codicon-filter" aria-hidden="true"></span> {S.replay.filtersLabel}
           <span class="muted lm-filter-count">{filter.cats.length}</span>
         </button>
         <span class="spacer"></span>
         <details class="lm-export" bind:this={exportEl}>
           <summary
             class="btn small"
-            aria-label="Export the loaded feed"
-            title="Export the loaded feed — CSV or JSON"
+            aria-label={S.replay.exportFeedAria}
+            title={S.replay.exportFeedTitle}
             ><span class="codicon codicon-export" aria-hidden="true"></span></summary
           >
           <div class="lm-export-menu" role="menu">
@@ -3954,14 +3954,14 @@
               role="menuitem"
               class="lm-export-item"
               disabled={!feedRows.length}
-              onclick={exportCSV}>CSV</button
+              onclick={exportCSV}>{S.replay.exportCsvLabel}</button
             >
             <button
               type="button"
               role="menuitem"
               class="lm-export-item"
               disabled={!feedRows.length}
-              onclick={exportJSON}>JSON</button
+              onclick={exportJSON}>{S.replay.exportJsonLabel}</button
             >
           </div>
         </details>
@@ -3980,15 +3980,15 @@
               class="btn small"
               aria-expanded={catsOpen}
               aria-haspopup="true"
-              title="Choose which event categories the feed shows"
+              title={S.replay.categoriesTitle}
               onclick={() => (catsOpen = !catsOpen)}
             >
-              Categories
+              {S.replay.categoriesLabel}
               <span class="muted lm-filter-count">{filter.cats.length}</span>
               <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
             </button>
             <Popover open={catsOpen} anchor={catsAnchor} onClose={() => (catsOpen = false)}>
-              <div class="lm-cat-menu" role="group" aria-label="Event categories">
+              <div class="lm-cat-menu" role="group" aria-label={S.replay.eventCategoriesAria}>
                 {#each CATEGORIES as c (c.id)}
                   <label
                     class="lm-cat-item"
@@ -4016,18 +4016,18 @@
                and the four actions ride ONE flex item on the next, so
                Apply/Save/×/Reset can never split across lines and Reset
                is never orphaned alone. -->
-          <div class="lm-toolbar" role="group" aria-label="Saved filter presets">
-            <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
-              <option value="">Saved filters…</option>
+          <div class="lm-toolbar" role="group" aria-label={S.replay.savedPresetsAria}>
+            <select class="input lm-saved" aria-label={S.replay.savedFiltersAria} value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
+              <option value="">{S.replay.savedFiltersOption}</option>
               {#each saved as s (s.id)}
                 <option value={String(s.id)}>{s.name}</option>
               {/each}
             </select>
             <div class="lm-saved-actions">
-              <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
-              <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
-              <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
-              <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+              <button class="btn small" disabled={!savedSel} onclick={applySaved}>{S.replay.applyBtn}</button>>
+              <button class="btn small" onclick={saveCurrent} title={S.replay.saveFilterTitle}>{S.replay.saveBtn}</button>
+              <button class="btn small" disabled={!savedSel} title={S.replay.deleteFilterTitle} onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+              <button class="btn small" onclick={resetFilters} title={S.replay.resetFiltersTitle}>{S.replay.resetBtn}</button>
             </div>
           </div>
         </div>
@@ -4044,8 +4044,8 @@
           {feedError}
           <button
             class="btn small ghost"
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label={S.replay.dismissLabel}
+            title={S.replay.dismissLabel}
             onclick={() => (feedError = '')}
             ><span class="codicon codicon-close" aria-hidden="true"></span></button
           >
@@ -4053,7 +4053,7 @@
       {/if}
 
       {#if !selected}
-      <ul class="landmark-list" aria-label="Events">
+      <ul class="landmark-list" aria-label={S.replay.eventsListAria}>
         {#each feedRows as row (row.key)}
           <LandmarkRow
             {row}
@@ -4071,11 +4071,11 @@
         {:else}
           <li class="muted lm-empty" role="status">
             {#if filter.cats.length === 0}
-              No categories enabled — turn some on in Filters.
+              {S.replay.noCategoriesEnabled}
             {:else if feedLoading}
               <StatusChip block detail="Loading events…" />
             {:else}
-              No events match these filters.
+              {S.replay.noEventsMatch}
             {/if}
           </li>
         {/each}
@@ -4090,23 +4090,23 @@
       {/if}
       {/if}
       {#if selected}
-        <div class="lm-detail" aria-label="Selected event">
+        <div class="lm-detail" aria-label={S.replay.selectedEventAria}>
           <div class="lm-detail-head">
             <span class="chip kind">{categoryById(selected.category)?.label || selected.category}</span>
             {#if selected.source === 'event'}
               <span class="mono">#{selected.seq}</span>
             {/if}
-            <span class="mono muted">tick {selected.tick}</span>
+            <span class="mono muted">{S.fill(S.replay.tickLabel, { tick: selected.tick })}</span>
             <span class="chip round-chip">{selected.round >= 1 ? `R${selected.round}` : roundIndexLabel(rbn.get(selected.round) ?? selected.round)}</span>
             <div class="spacer"></div>
             {#if voicePresence && voicePresence.hasVoice}
               <button
                 class="btn small"
-                title="Open playback at this event with voice on — hear comms around it"
-                onclick={() => hearTick(selected.tick)}>Hear ±10s <span class="codicon codicon-play"></span></button
+                title={S.replay.hearVoiceTitle}
+                onclick={() => hearTick(selected.tick)}>{S.replay.hearBtn} <span class="codicon codicon-play"></span></button
               >
             {/if}
-            <button class="btn small ghost" aria-label="Close detail" title="Close detail — back to the list" onclick={closeDetail}><span class="codicon codicon-close"></span></button>
+            <button class="btn small ghost" aria-label={S.replay.closeDetailAria} title={S.replay.closeDetailTitle} onclick={closeDetail}><span class="codicon codicon-close"></span></button>
           </div>
           {#if detailError}
             <p class="error" role="alert">{detailError}</p>
@@ -4114,77 +4114,77 @@
           {#if selected.source === 'event'}
             <dl class="facts lm-facts">
               <div>
-                <dt>Attacker</dt>
-                <dd><ProfileLink steam={selected.attacker} name={selected.attackerName || '—'} {nav} title="Open {selected.attackerName} profile" /></dd>
+                <dt>{S.replay.factAttacker}</dt>
+                <dd><ProfileLink steam={selected.attacker} name={selected.attackerName || '—'} {nav} title={S.fill(S.replay.openProfile, { name: selected.attackerName })} /></dd>
               </div>
               <div>
-                <dt>Victim</dt>
-                <dd><ProfileLink steam={selected.victim} name={selected.victimName || '—'} {nav} title="Open {selected.victimName} profile" /></dd>
+                <dt>{S.replay.factVictim}</dt>
+                <dd><ProfileLink steam={selected.victim} name={selected.victimName || '—'} {nav} title={S.fill(S.replay.openProfile, { name: selected.victimName })} /></dd>
               </div>
               <div>
-                <dt>Assister</dt>
+                <dt>{S.replay.factAssister}</dt>
                 <dd>
                   <ProfileLink
                     steam={selected.assister}
                     name={selected.assisterName || '—'}
                     {nav}
-                    title="Open {selected.assisterName} profile"
+                    title={S.fill(S.replay.openProfile, { name: selected.assisterName })}
                   />
                 </dd>
               </div>
               <div>
-                <dt>Weapon</dt>
+                <dt>{S.replay.factWeapon}</dt>
                 <dd class="mono">{selected.weapon || '—'}</dd>
               </div>
               <div>
-                <dt>Damage</dt>
+                <dt>{S.replay.factDamage}</dt>
                 <dd class="num">{selected.dmg}</dd>
               </div>
               <div>
-                <dt>Distance</dt>
+                <dt>{S.replay.factDistance}</dt>
                 <dd class="num">{selected.distance ? Math.round(selected.distance) : '—'}</dd>
               </div>
               <div>
-                <dt>Hitgroup</dt>
+                <dt>{S.replay.factHitgroup}</dt>
                 <dd>{selected.hitgroup || '—'}</dd>
               </div>
               <div>
-                <dt>Site</dt>
+                <dt>{S.replay.factSite}</dt>
                 <dd>{selected.site || '—'}</dd>
               </div>
               <div class="fact-wide">
-                <dt>Flags</dt>
+                <dt>{S.replay.factFlags}</dt>
                 <dd><EventFlags event={selected} none /></dd>
               </div>
             </dl>
             {#if detail}
               <details class="json-block" open>
-                <summary>detail.json</summary>
+                <summary>{S.replay.detailJsonSummary}</summary>
                 <pre class="mono">{prettyJson(detail.detailJson)}</pre>
               </details>
               <details class="json-block">
-                <summary>raw.json</summary>
+                <summary>{S.replay.rawJsonSummary}</summary>
                 <pre class="mono">{prettyJson(detail.rawJson)}</pre>
               </details>
-              <button class="btn small" onclick={copyDetail}>{copied ? 'Copied' : 'Copy payloads'}</button>
+              <button class="btn small" onclick={copyDetail}>{copied ? S.replay.copied : S.replay.copyPayloads}</button>
             {:else if !detailError}
               <p class="muted" role="status"><StatusChip block detail="Loading payloads…" /></p>
             {/if}
           {:else if selected.source === 'chat'}
             <dl class="facts lm-facts">
               <div>
-                <dt>Time</dt>
-                <dd title="tick {selected.tick}">{chatClock(selected, rbn, meta?.tickRate)}</dd>
+                <dt>{S.replay.factTime}</dt>
+                <dd title={S.fill(S.replay.tickLabel, { tick: selected.tick })}>{chatClock(selected, rbn, meta?.tickRate)}</dd>
               </div>
               <div>
-                <dt>From</dt>
-                <dd><ProfileLink steam={selected.steamId} name={selected.who || '—'} {nav} title="Open {selected.who} profile" /></dd>
+                <dt>{S.replay.factFrom}</dt>
+                <dd><ProfileLink steam={selected.steamId} name={selected.who || '—'} {nav} title={S.fill(S.replay.openProfile, { name: selected.who })} /></dd>
               </div>
               <div>
-                <dt>Kind</dt>
+                <dt>{S.replay.factKind}</dt>
                 <dd
                   >{selected.kind || 'chat'}{selectedChatChannel ? ` · ${selectedChatChannel}` : ''}{selected.decrypted
-                    ? ' · decrypted'
+                    ? S.replay.decryptedSuffix
                     : ''}</dd
                 >
               </div>
@@ -4193,20 +4193,20 @@
           {:else}
             <dl class="facts lm-facts">
               <div>
-                <dt>Event</dt>
+                <dt>{S.replay.factEvent}</dt>
                 <dd class="mono">{selected.name}</dd>
               </div>
               <div>
-                <dt>Tick</dt>
+                <dt>{S.replay.factTick}</dt>
                 <dd class="num mono">{selected.tick}</dd>
               </div>
               <div>
-                <dt>Round</dt>
+                <dt>{S.replay.factRound}</dt>
                 <dd class="num">{roundIndexLabel(rbn.get(selected.round) ?? selected.round)}</dd>
               </div>
               {#if selected.who}
                 <div>
-                  <dt>Player</dt>
+                  <dt>{S.replay.factPlayer}</dt>
                   <dd>
                     <!-- Generic rows carry only a display name — resolve
                          it through the replay meta's player list on an
@@ -4215,14 +4215,14 @@
                       steam={resolveWho(selected.who)}
                       name={selected.who}
                       {nav}
-                      title="Open {selected.who} profile"
+                      title={S.fill(S.replay.openProfile, { name: selected.who })}
                     />
                   </dd>
                 </div>
               {/if}
               {#if selected.label}
                 <div class="fact-wide">
-                  <dt>Detail</dt>
+                  <dt>{S.replay.factDetail}</dt>
                   <dd>{selected.label}</dd>
                 </div>
               {/if}
@@ -4232,14 +4232,14 @@
                 <span class="spacer"></span>
                 <input
                   class="input"
-                  placeholder="Filter keys…"
+                  placeholder={S.replay.filterKeysPlaceholder}
                   bind:value={payloadQuery}
-                  aria-label="Filter payload keys"
+                  aria-label={S.replay.filterPayloadKeysAria}
                 />
                 <button
                   class="btn small ghost"
                   aria-pressed={payloadRaw}
-                  title="Toggle raw JSON"
+                  title={S.replay.toggleRawJsonTitle}
                   onclick={() => (payloadRaw = !payloadRaw)}>{payloadRaw ? 'tree' : 'raw'}</button
                 >
               </div>
@@ -4248,12 +4248,12 @@
               {:else}
                 <PayloadTree json={selected.payloadJson} query={payloadQuery.trim()} />
               {/if}
-              <button class="btn small" onclick={copyPayload}>{copied ? 'Copied' : 'Copy'}</button>
+              <button class="btn small" onclick={copyPayload}>{copied ? S.replay.copied : S.replay.copyLabel}</button>
             </div>
           {/if}
           <div class="lm-detail-actions">
             <button class="btn small primary" onclick={() => seekTo(selected.tick)}>
-              <span class="codicon codicon-play"></span> Seek to event
+              <span class="codicon codicon-play"></span> {S.replay.seekToEvent}
             </button>
           </div>
         </div>
