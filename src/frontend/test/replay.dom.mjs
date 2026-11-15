@@ -891,10 +891,12 @@ for (const name of [
 // Replay.svelte → its ../ imports land in dir/ (services.js above, engine/
 // renderer/input/audio stubs, replay/landmarks copied); only the
 // .svelte component imports need rewriting to their compiled .js.
-const replaySrc = readFileSync('src/lib/views/Replay.svelte', 'utf8').replace(
-  /from '\.\.\/components\/(\w+)\.svelte'/g,
-  "from '../components/$1.js'",
-);
+const replaySrc = readFileSync('src/lib/views/Replay.svelte', 'utf8')
+  .replace(
+    /from '\.\.\/components\/(\w+)\.svelte'/g,
+    "from '../components/$1.js'",
+  )
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(replaySrc, 'Replay.svelte', join(dir, 'views', 'Replay.js'));
 
 const harnessSrc = `<script>
