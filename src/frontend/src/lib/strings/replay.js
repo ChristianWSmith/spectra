@@ -1,10 +1,10 @@
 // strings/replay.js — Replay view chrome (views/Replay.svelte): top bar,
 // stage, transport, camera/UI/drops/volume popovers, mini dock, event feed
 // and the detail pane.
-// Values are plain strings with {arg} placeholders (design §3.2); the view
-// composes them with S.fill at the call site. The four StatusChip detail
-// literals and the feed busy ternary stay inline (source-pinned by
-// progress-presentation.dom.mjs).
+// Values are plain strings with {arg} placeholders (the catalog contract,
+// strings/index.js); the view composes them with S.fill at the call site.
+// The four StatusChip detail literals and the feed busy ternary stay
+// inline (source-pinned by progress-presentation.dom.mjs).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const replay = {

@@ -1,7 +1,7 @@
 // strings/heatmaps.js — Heatmaps view chrome (controls, legend, hints)
 // Extracted from views/Heatmaps.svelte (Strings Stage 3, Sweep-B); values
-// are plain strings with {arg} placeholders (design §3.2) — compose at the
-// call site with fill() from strings/index.js.
+// are plain strings with {arg} placeholders — compose at the call site with
+// fill() from strings/index.js (the catalog contract).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const heatmaps = {

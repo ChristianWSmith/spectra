@@ -1,8 +1,8 @@
 // strings/match.js — Match view chrome (views/Match.svelte): header meta
 // line, import-warnings panel, tab bar + rosters, scoreboard, expanded-row
 // tables, Rounds-tab table and the Details key-facts list.
-// Values are plain strings with {arg} placeholders (design §3.2); the view
-// composes them with S.fill at the call site.
+// Values are plain strings with {arg} placeholders (the catalog contract,
+// strings/index.js); the view composes them with S.fill at the call site.
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const match = {

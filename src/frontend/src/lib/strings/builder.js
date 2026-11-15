@@ -1,8 +1,8 @@
 // strings/builder.js — Builder view chrome (views/Builder.svelte): list rows,
 // header note, toolbar + filters, empty states, the metric form and the
 // preview panel.
-// Values are plain strings with {arg} placeholders (design §3.2); the view
-// composes them with S.fill at the call site.
+// Values are plain strings with {arg} placeholders (the catalog contract,
+// strings/index.js); the view composes them with S.fill at the call site.
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const builder = {
