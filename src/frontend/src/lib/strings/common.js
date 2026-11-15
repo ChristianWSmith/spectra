@@ -101,4 +101,10 @@ export const common = {
   heatmapLayerLabel: 'Heatmap over the map grid', // the canvas aria-label
   heatmapLayerDrillTitle: 'Click a region to open the replay events for that position', // drillable kind: the canvas tooltip
   heatmapLayerNoDrillTitle: 'No region drill for this heatmap kind — its raster has no event rows behind it', // non-drillable kind: the canvas tooltip
+
+  // landmark row (LandmarkRow.svelte — the shared event presentation)
+  landmarkRowRoundPrefix: 'Round ', // the round label cell + its tooltip prefix
+  landmarkRowSiteInfix: ' · site ', // between a site event's kind and its site
+  landmarkRowTitleInfix: ' — tick ', // between the row title and its tick
+  landmarkRowTickTitle: 'tick ', // the match-clock tooltip prefix
 };
