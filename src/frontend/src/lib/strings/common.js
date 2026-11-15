@@ -18,4 +18,14 @@ export const common = {
   appExpandReplayLabel: 'Expand replay', // collapsed dock wrapper: title + aria-label
   appCloseReplayLabel: 'Close replay', // dock close X: aria-label
   appCloseReplayTitle: 'Close the replay — it reloads when reopened', // dock close X: title
+
+  // command palette (CommandPalette.svelte — Ctrl/Cmd-K overlay)
+  commandPaletteLabel: 'Command palette', // Dialog accessible name
+  commandPalettePlaceholder: 'Type a command or search…', // search input placeholder
+  commandPaletteSearchLabel: 'Command palette search', // search input aria-label
+  commandPaletteNoResultsPrefix: 'No results for “', // empty state, before the echoed {query}
+  commandPaletteMoveHint: ' move', // footer: after the ↑↓ arrow glyphs
+  commandPaletteRunHint: 'Enter run', // footer
+  commandPaletteCloseHint: 'Esc close', // footer
+  commandPaletteToggleHint: 'Ctrl/⌘K toggle', // footer
 };
