@@ -147,7 +147,21 @@ const EXPECTED = {
   // importing demos' originals-untouched promise, the Library's honest
   // dash, the SQL console's read-only construction), G +1 (the
   // placeholder render path moved here — the guide no longer ships one).
-  'docs.dom.mjs': 46,
+  // docs 46 → 60 (2026-11-14, docs popup UX wave): +3 section A (the
+  // near-fullscreen geometry as computed styles — centred backdrop with
+  // its uniform 16px margin, panel = viewport − 2×16px, no modal cap —
+  // plus the header order title → search input → Close), +2 section C
+  // (the search input's Escape contract: a non-empty query clears
+  // first, the next Escape closes), +3 section D (the two Back-to-top
+  // pins died with the button; +5 scroll-spy pins — goTo agreement, a
+  // manual scroll → .active/aria-current, the threshold holding the
+  // previous section, the handover, the bottom-of-doc rule — driven by
+  // dispatched scroll events over a 500px-per-section offsetTop model),
+  // +6 the NEW section G (TOC-only search: case-insensitive title
+  // match, body untouched, transient-state pin, rendered-text-only
+  // match, the catalog no-match line, clearing restores), old G
+  // re-lettered H with its check count unchanged.
+  'docs.dom.mjs': 60,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
