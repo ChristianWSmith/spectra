@@ -176,7 +176,11 @@ const EXPECTED = {
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
   // the key is gone — design §2.5's addendum).
-  'reports.dom.mjs': 20,
+  // reports 20 → 22 (2026-11-14, inferred-conversion W3b): +2 section H
+  // (the player picker's K/D/A triple composes per half — the stored
+  // assists METRIC half renders, and an absent row dashes it to
+  // 20/5/— while K/D keep their stored fields).
+  'reports.dom.mjs': 22,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   'settings.dom.mjs': 74,

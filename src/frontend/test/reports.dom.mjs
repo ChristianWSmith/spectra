@@ -22,6 +22,12 @@
 //      re-sequences the list and the generated document, and a deleted
 //      key (reset) returns both to the default — the pins array never
 //      orders this list.
+//   H. the player picker's K/D/A triple composes per half (inferred
+//      conversion design §3.1/Q2): K and D are the raw scoreboard
+//      fields, the A half is the match-scope `assists` METRIC row
+//      Reports fetches beside sbBySteam — its stored value renders
+//      (never the raw `assists` column), and with no fresh row the
+//      half is the honest dash (`20/5/—`), never a fabricated number.
 //
 // services.js runs against the shared TEST STUBS (no live Wails
 // backend), 'svelte' is pinned to the CLIENT entry so plain `node --test`
@@ -434,6 +440,71 @@ console.log('G. the checkbox list follows the match ORDER pref (metricorder — 
       doc3.replace(/\s+/g, ' ').slice(0, 300),
     );
   }
+}
+
+console.log('H. the player picker triple composes per half — raw K/D + the assists metric half (absent → —)');
+{
+  // Re-script the backend for a PLAYER-scoped target: one roster player,
+  // one scoreboard row whose raw `assists` column is 9 (it must NEVER
+  // render), and the seeded match-scope `assists` definition. The picker
+  // reads the metric row Reports fetches beside sbBySteam — value 7
+  // renders in the A half; with no fresh row the half is the dash.
+  const ASSISTS_METRIC = {
+    id: 4, name: 'assists', title: 'Assists', scope: 'match',
+    format: 'int', doc: 'Formula: sum(player_stats.assists)', origin: 'builtin',
+    expr: 'from player_stats: sum(assists)', shortName: 'A', denominator: '', pluginId: '',
+  };
+  bindings.handlers.ListReportTemplates = () => [
+    { id: 't2', title: 'Player summary', scope: 'player', format: 'md', origin: 'builtin' },
+  ];
+  bindings.handlers.ListPlayers = () => [
+    { steamId: '76561198000000001', name: 'amy', matches: 3, lastSeen: '2026-11-01' },
+  ];
+  bindings.handlers.GetScoreboard = () => [
+    {
+      steamId: '76561198000000001', name: 'amy', side: 'ct', isBot: false,
+      kills: 20, deaths: 5, assists: 9, adr: 70.5, roundsPlayed: 24,
+    },
+  ];
+  bindings.handlers.ListMetrics = () => [ASSISTS_METRIC];
+  bindings.handlers.GetMetricComputeState = () => [{ metricId: 4, state: 'fresh' }];
+  let assistsRow = { value: 7, n: 24 };
+  bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) =>
+    assistsRow && (metricIDs || []).includes(4)
+      ? [{ metricId: 4, steamId: '76561198000000001', value: assistsRow.value, n: assistsRow.n }]
+      : [];
+  // The read-through cache holds the previous handlers' answers — flush
+  // it so this section's re-scripted reads are the ones the view gets.
+  services.invalidate();
+  viewstate.resetViewState();
+
+  const openTriple = async (root) => {
+    const trigger = root.querySelector('#rep-player');
+    if (!trigger) return null;
+    trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await sleep(60);
+    return root.querySelector('.pp-opt [title="K / D / A in this match"]');
+  };
+
+  const r4 = await mountReports();
+  const kda = await openTriple(r4);
+  check(
+    'the triple renders raw K/D with the assists METRIC half (the stored column never renders)',
+    !!kda && kda.textContent === '20/5/7',
+    kda ? kda.textContent : 'no triple cell',
+  );
+
+  // No fresh row for this match (absent or behind alike — the canonical
+  // read serves fresh rows only): the A half dashes, K/D keep stored.
+  assistsRow = null;
+  services.invalidate();
+  const r5 = await mountReports();
+  const kda2 = await openTriple(r5);
+  check(
+    'an absent assists row renders 20/5/— — never the stored 9, never a 0',
+    !!kda2 && kda2.textContent === '20/5/—',
+    kda2 ? kda2.textContent : 'no triple cell',
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

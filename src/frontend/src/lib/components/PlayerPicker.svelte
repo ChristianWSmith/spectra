@@ -11,7 +11,7 @@
   // focus, ↑↓ move the highlight, Enter selects, Esc closes (and returns
   // focus to the trigger); clicking outside closes. Rows are real buttons;
   // aria-activedescendant on the combobox points at the highlighted option.
-  import { fmt1 } from '../fmt.js';
+  import { fmt1, fmtMetric } from '../fmt.js';
   import { careerAdrRows, onMetricDone } from '../services.js';
 
   // players: ProfileSummary rows (ProfileService.ListPlayers) — steamId,
@@ -19,7 +19,13 @@
   // dogfooding W4 — this picker's career line reads the stored
   // `career_adr` metric row instead). stats: steamId → PlayerStatsRow
   // from MatchService.GetScoreboard for the report's match (may be empty).
-  let { players = [], stats = {}, value = '', onselect = () => {}, id = '' } = $props();
+  // assists: steamId → {value, format} — the match-scope `assists`
+  // METRIC row Reports fetches beside stats (design §3.1/Q2): the
+  // K/D/A triple composes per half — K and D stay the raw scoreboard
+  // fields, the A half reads this stored row, and no fresh row → the
+  // honest dash, never the stored column, never a fabricated 0 (the
+  // same rule as the career-ADR line below).
+  let { players = [], stats = {}, assists = new Map(), value = '', onselect = () => {}, id = '' } = $props();
 
   let open = $state(false);
   let query = $state('');
@@ -56,6 +62,15 @@
   function adrText(p) {
     const row = adrRows.get(p.steamId);
     return row ? fmt1(row.value) : '—';
+  }
+
+  // The triple's A half (design §3.1/Q2 — compound cells compose per
+  // half): the stored assists row's value through the metric's OWN
+  // format tag. No fresh row (absent or behind — the read serves fresh
+  // rows only) → the honest dash, never the raw stored column.
+  function assistText(p) {
+    const row = assists.get(p.steamId);
+    return row ? fmtMetric(row.value, row.format) : '—';
   }
 
   const filtered = $derived.by(() => {
@@ -218,7 +233,7 @@
                 <span class="spacer"></span>
                 {#if row}
                   <span class="muted num" title="K / D / A in this match"
-                    >{row.kills}/{row.deaths}/{row.assists}</span
+                    >{row.kills}/{row.deaths}/{assistText(p)}</span
                   >
                   <span class="num" title="ADR in this match">{fmt1(row.adr)}</span>
                   <span class="muted num" title="Rounds played">{row.roundsPlayed}r</span>
