@@ -164,4 +164,7 @@ export const common = {
   metricOrderHintKeys: ' move · Esc close',
   metricOrderNote:
     'Only your pinned metrics are listed here, in the order they\'ll appear — pin more from the pin\n      buttons in the metric list.',
+
+  // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
+  payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)
 };

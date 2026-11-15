@@ -27,6 +27,7 @@
     isObj,
     matchPaths,
   } from '../payloadTree.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import { untrack } from 'svelte';
 
   let { json = '{}', query = '' } = $props();
@@ -65,7 +66,7 @@
 </script>
 
 {#if payload === null}
-  <pre class="mono expl-kv-err">This payload isn't valid JSON — use the Raw view.</pre>
+  <pre class="mono expl-kv-err">{S.errors.payloadInvalidJson}</pre>
 {:else}
   <div class="expl-kv">
     {#each entries(payload) as [k, v] (k)}
@@ -102,7 +103,7 @@
       {/if}
     {/each}
     {#if matches && matches.size === 0}
-      <p class="muted" role="status">No keys match “{query}”.</p>
+      <p class="muted" role="status">{S.fill(S.common.payloadTreeNoKeys, { query })}</p>
     {/if}
   </div>
 {/if}
