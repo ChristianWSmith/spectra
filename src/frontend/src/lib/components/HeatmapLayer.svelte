@@ -2,6 +2,7 @@
   import { makeTransform } from './mapxform.js';
   import { renderHeatField } from '../heatramp.js';
   import { heatRegionTakesBBox } from '../heatkinds.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
   // overlay. All world→image math goes through mapxform's transform — the
@@ -320,10 +321,10 @@
     width={bw}
     height={bh}
     title={drillable
-      ? 'Click a region to open the replay events for that position'
-      : 'No region drill for this heatmap kind — its raster has no event rows behind it'}
+      ? S.common.heatmapLayerDrillTitle
+      : S.common.heatmapLayerNoDrillTitle}
     style={drillable ? undefined : 'cursor: default'}
     onclick={onClick}
-    aria-label="Heatmap over the map grid"
+    aria-label={S.common.heatmapLayerLabel}
   ></canvas>
 </div>

@@ -40,6 +40,7 @@
   import { roundIndexLabel } from '../rounds.js';
   import { chatTag, fmtClock, tickSeconds } from '../fmt.js';
   import { playerSideAt } from '../teams.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import ProfileLink from './ProfileLink.svelte';
 
   let {
@@ -134,9 +135,9 @@
     {:else if row.victimName || row.victim}
       {@render person(row.victim, row.victimName || row.victim)}
     {:else if row.kind === 'round_end' || row.kind === 'round_start'}
-      Round {roundIndexLabel(roundRow ?? row.round)}
+      {S.common.landmarkRowRoundPrefix}{roundIndexLabel(roundRow ?? row.round)}
     {:else if row.site}
-      {row.kind} · site {row.site}
+      {row.kind}{S.common.landmarkRowSiteInfix}{row.site}
     {:else}
       {row.kind}
     {/if}
@@ -166,7 +167,7 @@
     class="lm-main"
     role="button"
     tabindex="0"
-    title="{cat?.label || row.category} — tick {row.tick}"
+    title="{cat?.label || row.category}{S.common.landmarkRowTitleInfix}{row.tick}"
     onclick={onMainClick}
     onkeydown={onMainKey}
   >
@@ -178,8 +179,8 @@
            round_start row (tick === its round's startTick) never reads
            0:00 and no row silently changes shape by kind. The raw tick
            stays in the tooltip. -->
-      <span class="chip round-chip lm-round" title="Round {roundIndexLabel(roundRow ?? row.round)}">{roundIndexLabel(roundRow ?? row.round)}</span>
-      <span class="mono lm-time" title="tick {row.tick}">{fmtClock(tickSeconds(row.tick, tickRate))}</span>
+      <span class="chip round-chip lm-round" title="{S.common.landmarkRowRoundPrefix}{roundIndexLabel(roundRow ?? row.round)}">{roundIndexLabel(roundRow ?? row.round)}</span>
+      <span class="mono lm-time" title="{S.common.landmarkRowTickTitle}{row.tick}">{fmtClock(tickSeconds(row.tick, tickRate))}</span>
     {:else}
       <!-- Legacy cell (CompareRounds' compact sequence — no round
            lookup passed): tick + raw round chip, the round prefix

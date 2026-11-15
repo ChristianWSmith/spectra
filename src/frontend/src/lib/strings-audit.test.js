@@ -65,24 +65,7 @@ const CONTENT_FILES = [
 // Seeded 2026-11-14 with every .svelte file that carries class-1 literals
 // today; shrinks to zero as Sweep-B extracts each file into lib/strings/,
 // after which Check B is unconditional (design §5.2 Stage 3 gate).
-const PENDING_INLINE = new Set([
-  'frontend/src/lib/components/ConfirmDialog.svelte',
-  'frontend/src/lib/components/EventFlags.svelte',
-  'frontend/src/lib/components/FilterBar.svelte',
-  'frontend/src/lib/components/HeatmapLayer.svelte',
-  'frontend/src/lib/components/LandmarkRow.svelte',
-  'frontend/src/lib/components/MapPackPrompt.svelte',
-  'frontend/src/lib/components/MatchPicker.svelte',
-  'frontend/src/lib/components/MetricOrderDialog.svelte',
-  'frontend/src/lib/components/PayloadTree.svelte',
-  'frontend/src/lib/components/PlayerCard.svelte',
-  'frontend/src/lib/components/PlayerPicker.svelte',
-  'frontend/src/lib/components/RoundStrip.svelte',
-  'frontend/src/lib/components/SortTh.svelte',
-  'frontend/src/lib/components/StatusChip.svelte',
-  'frontend/src/lib/components/SuggestInput.svelte',
-  'frontend/src/lib/components/TeamColumn.svelte',
-]);
+const PENDING_INLINE = new Set([]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal
 // text. Seeded 2026-11-14 with 42 entries across 11 files (30 bound-service
@@ -222,7 +205,13 @@ const contentProse = (doc) => doc.replace(/Formula:[^—]*(?:—|$)/g, ' ');
 // One shared extractor feeds both Check A (denylist) and Check B (ratchet).
 // ---------------------------------------------------------------------------
 const USER_ATTRS = new Set(['title', 'aria-label', 'placeholder', 'alt', 'label', 'heading', 'message', 'confirmLabel', 'cancelLabel']);
-const SKIP_ATTRS = new Set(['class', 'style', 'href', 'src', 'd', 'viewBox', 'fill', 'stroke', 'id', 'role', 'tabindex', 'type', 'width', 'height', 'min', 'max', 'step', 'for', 'name', 'value', 'key', 'ref', 'target', 'rel', 'datetime']);
+// SKIP_ATTRS — attribute values that are never free copy: styling/routing/
+// wiring tokens. `transform` joined 2026-11-15 (S3-C2): its value is an
+// SVG geometry token (`rotate(-90 14 14)`), the same criterion as the
+// existing d/fill/stroke entries. Blast radius = the three ring-geometry
+// sites in the tree (StatusChip ×1, PlayerCard ×2) — StatusChip's ONLY
+// counted literal, which is what lets it drain to 0 with no extraction.
+const SKIP_ATTRS = new Set(['class', 'style', 'href', 'src', 'd', 'viewBox', 'fill', 'stroke', 'id', 'role', 'tabindex', 'type', 'width', 'height', 'min', 'max', 'step', 'for', 'name', 'value', 'key', 'ref', 'target', 'rel', 'datetime', 'transform']);
 const isCopy = (s) => /[A-Za-z]{3}/.test(s) && s.trim().length > 0;
 
 function collectSvelte(file) {

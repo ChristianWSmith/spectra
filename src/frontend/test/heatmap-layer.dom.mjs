@@ -192,7 +192,12 @@ writeFileSync(
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 compileTo(
-  readFileSync('src/lib/components/HeatmapLayer.svelte', 'utf8'),
+  // plumbing (Strings Stage 3): the component imports the strings catalog
+  // — resolve it from the real tree (the compiled file sits in components/).
+  readFileSync('src/lib/components/HeatmapLayer.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  ),
   'HeatmapLayer.svelte',
   join(dir, 'components', 'HeatmapLayer.js'),
 );

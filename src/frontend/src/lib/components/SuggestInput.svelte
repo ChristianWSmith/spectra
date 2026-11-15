@@ -26,6 +26,7 @@
   import Popover from './Popover.svelte';
   import { fmt1 } from '../fmt.js';
   import { careerAdrRows, onMetricDone } from '../services.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   const PLAYER_SEARCH_HINT = 'Search players...';
 
@@ -177,7 +178,7 @@
     onfocusout={onFocusOut}
   />
   <Popover open={shown} anchor={root} onClose={dismiss}>
-    <div class="sg-pop sg-pop-{align}" id={listId} role="listbox" aria-label={ariaLabel || 'Suggestions'}>
+    <div class="sg-pop sg-pop-{align}" id={listId} role="listbox" aria-label={ariaLabel || S.common.suggestInputSuggestions}>
       {#each matches as item, i (i)}
         <button
           type="button"
@@ -191,9 +192,9 @@
         >
           {#if kind === 'player'}
             <strong title={item.name || item.steamId}>{item.name || item.steamId}</strong>
-            <span class="muted">{item.matches ?? 0} match{item.matches === 1 ? '' : 'es'}</span>
+            <span class="muted">{item.matches ?? 0}{S.common.suggestInputMatchWord}{item.matches === 1 ? '' : 'es'}</span>
             <span class="spacer"></span>
-            <span class="num muted">ADR {adrText(item)}</span>
+            <span class="num muted">{S.common.suggestInputAdrPrefix}{adrText(item)}</span>
           {:else}
             {searchText(item)}
           {/if}

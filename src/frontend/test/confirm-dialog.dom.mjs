@@ -85,10 +85,11 @@ svelteCompile(
   'Dialog.svelte',
   join(dir, 'dialog.js'),
 );
-const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8').replace(
-  "import Dialog from './Dialog.svelte';",
-  "import Dialog from './dialog.js';",
-);
+// ConfirmDialog imports Dialog → point at the local bundle; its strings
+// catalog import resolves from the real tree (Strings Stage 3 plumbing).
+const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8')
+  .replace("import Dialog from './Dialog.svelte';", "import Dialog from './dialog.js';")
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(cdSrc, 'ConfirmDialog.svelte', join(dir, 'confirmdialog-bundle.js'));
 svelteCompile(
   readFileSync('test/confirm-dialog.harness.svelte', 'utf8'),

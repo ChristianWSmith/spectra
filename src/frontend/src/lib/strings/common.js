@@ -60,4 +60,157 @@ export const common = {
   econCurveStripUpset: ' upset (lower buy type\n      won) · ',
   econCurveStripEven: ' even buy (toss-up) · ',
   econCurveStripNoVerdict: ' no verdict · click a round to open\n      it',
+
+  // confirmation dialog (ConfirmDialog.svelte — the one window.confirm replacement)
+  confirmDialogCancel: 'Cancel', // the cancel button label (the confirm button's label is the caller's confirmLabel prop)
+
+  // kill-event flag chips (EventFlags.svelte — the "no flags apply" fallback)
+  eventFlagsNone: 'none', // rendered when the none prop is set and no flag chip applies
+
+  // event-filter bar (FilterBar.svelte — the Replay feed's advanced filter)
+  filterBarLabel: 'Event filters', // the group aria-label
+  filterBarRound: 'Round', // the round row's label cell
+  filterBarFrom: 'from', // round-from input placeholder
+  filterBarTo: 'to', // round-to input placeholder
+  filterBarFirstRound: 'First round', // round-from input aria-label
+  filterBarLastRound: 'Last round', // round-to input aria-label
+  filterBarPlayer: 'Player', // the player facet's label cell
+  filterBarAll: 'All', // every unconstrained <select>'s option text
+  filterBarSide: 'Side', // the side facet's label cell
+  filterBarTeam: 'Team', // the team facet's label cell
+  filterBarStartedCt: 'Started CT', // team option — the start-side identity spelled out
+  filterBarStartedT: 'Started T', // team option — the start-side identity spelled out
+  filterBarWeapon: 'Weapon', // the weapon facet's label cell
+  filterBarDist: 'Dist', // the distance row's label cell
+  filterBarMin: 'min', // distance-min input placeholder
+  filterBarMax: 'max', // distance-max input placeholder
+  filterBarMinDist: 'Minimum distance', // distance-min input aria-label
+  filterBarMaxDist: 'Maximum distance', // distance-max input aria-label
+  filterBarHeadshotsOnly: 'Headshots only', // the headshot facet's label cell
+  // The bbox chip: one fill for the tooltip (numbers are Math.round'ed at
+  // the call site) and one for the chip's readable line — the line keeps
+  // the exact spacing the compiler renders the static text with (edge
+  // whitespace trimmed, the run's trailing space before the clear button
+  // lives in the markup beside the expression).
+  filterBarBboxTitle: 'Position filter: x {minX}…{maxX}, y {minY}…{maxY} (world units)',
+  filterBarBboxLine: 'bbox {minX},{minY}–{maxX},{maxY}',
+  filterBarClearBbox: 'Clear position filter', // the clear × button's aria-label
+  filterBarReset: 'Reset', // the local reset button
+
+  // canvas heatmap layer (HeatmapLayer.svelte — the radar/raster overlay)
+  heatmapLayerLabel: 'Heatmap over the map grid', // the canvas aria-label
+  heatmapLayerDrillTitle: 'Click a region to open the replay events for that position', // drillable kind: the canvas tooltip
+  heatmapLayerNoDrillTitle: 'No region drill for this heatmap kind — its raster has no event rows behind it', // non-drillable kind: the canvas tooltip
+
+  // landmark row (LandmarkRow.svelte — the shared event presentation)
+  landmarkRowRoundPrefix: 'Round ', // the round label cell + its tooltip prefix
+  landmarkRowSiteInfix: ' · site ', // between a site event's kind and its site
+  landmarkRowTitleInfix: ' — tick ', // between the row title and its tick
+  landmarkRowTickTitle: 'tick ', // the match-clock tooltip prefix
+
+  // launch asset prompt (MapPackPrompt.svelte — the presence-driven dialog)
+  mapPackNotFoundTitle: 'Counter-Strike 2 not found', // not-found variant: dialog label + heading
+  mapPackExtractTitle: 'Extract CS2 assets', // found variant: dialog label
+  mapPackFoundTitle: 'Found Counter-Strike 2', // found variant: heading
+  mapPackInstallFallback: 'CS2 install', // the path line's fallback when no path is known yet
+  mapPackChooseFolder: 'Choose folder…', // the manual-install button label
+  mapPackNotNow: 'Not now', // the session-only dismissal button label
+  mapPackExtracting: 'Extracting…', // the extract button, busy
+  mapPackExtractAll: 'Extract all CS2 assets', // the extract button, idle
+  // Body paragraphs — the values carry the exact spacing the compiler
+  // renders the static text with (edge whitespace trimmed, the internal
+  // line breaks and their indentation preserved), so the rendered text
+  // stays byte-identical.
+  mapPackNotFoundIntro:
+    'Spectra reads the official radar images from a local Counter-Strike 2\n        installation for authentic map backgrounds in replay and heatmaps.\n        Without one, maps render as a plain grid.',
+  mapPackNotFoundFine:
+    'Nothing from Counter-Strike ships with the app, and nothing is\n        uploaded — your game files are read locally and the extracted packs\n        are stored in Spectra\'s data folder on this machine.',
+  mapPackFoundIntro:
+    'Spectra can read the official radar images, the equipment icons and\n        the replay sounds from your local Counter-Strike 2 installation —\n        authentic map backgrounds, inventory silhouettes and in-replay audio.',
+  mapPackFoundFine:
+    'Assets are read from your game files and stored in Spectra\'s data\n        folder on this machine. Nothing is uploaded, and nothing from\n        Counter-Strike ships with the app.',
+
+  // match picker (MatchPicker.svelte — the Explorer/Reports match selector)
+  matchPickerTriggerLabel: 'Match', // the trigger button's aria-label
+  matchPickerFilterLabel: 'Filter matches', // the filter input's aria-label
+  matchPickerListLabel: 'Matches', // the listbox's aria-label
+  matchPickerRoundsTitle: 'Rounds', // the rounds-count cell's tooltip
+  matchPickerDurationTitle: 'Duration', // the duration cell's tooltip
+  matchPickerShowing: 'Showing {cap} of {n} — type more to narrow.', // the render-cap hint (fill: cap = the render cap, n = matches after filtering)
+  matchPickerNoMatch: 'No matches match “{q}.”', // empty state under a typed query (fill: q = the query)
+  matchPickerEmpty: 'No matches yet — import one in the Library.', // empty state with no query
+
+  // picker popover footers (MatchPicker + PlayerPicker share the ↑↓/Enter/Esc row)
+  pickerMoveHint: ' move', // after the ↑↓ arrow glyphs
+  pickerEnterSelect: 'Enter select',
+  pickerEscClose: 'Esc close',
+
+  // metric order dialog (MetricOrderDialog.svelte — the pin-order UI)
+  metricOrderDialogLabel: 'Metric order', // the Dialog accessible name
+  metricOrderFixedCaption: 'Fixed stats — always first, not reorderable', // the read-only fixed block's caption
+  metricOrderNoProfileMetrics: 'No profile metrics yet.', // empty state, profile section
+  metricOrderNoMatchMetrics: 'No match metrics yet.', // empty state, match section
+  metricOrderNothingToOrder: 'Nothing to order yet — pin metrics from the metric list.', // pins-only empty state
+  metricOrderDragTitle: 'Drag to reorder', // the grabber handle's tooltip
+  metricOrderMoveUp: 'Move {name} up', // per-row move button aria-label (fill: name = the metric)
+  metricOrderMoveDown: 'Move {name} down', // per-row move button aria-label (fill: name = the metric)
+  metricOrderScoreboardSection: 'Scoreboard (match metrics)', // the match section's heading
+  metricOrderProfileSection: 'Player profile (profile metrics)', // the profile section's heading
+  metricOrderReset: 'Reset order', // the reset button label
+  metricOrderClose: 'Close', // the close button label
+  // Help line: the two text runs around the ↑↓ glyphs (the values carry
+  // the exact spacing the static text rendered with).
+  metricOrderHintDrag: 'drag the handle · ',
+  metricOrderHintKeys: ' move · Esc close',
+  metricOrderNote:
+    'Only your pinned metrics are listed here, in the order they\'ll appear — pin more from the pin\n      buttons in the metric list.',
+
+  // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
+  payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)
+
+  // player card (PlayerCard.svelte — one player's live replay card)
+  playerCardNoStateTitle: 'No player state for this match', // the whole-card tooltip when no state stream exists
+  playerCardFollowTitle: 'Camera follows this player', // the follow marker's tooltip
+  playerCardDeadTitle: 'Dead — showing last-known state', // the DEAD chip's tooltip
+  playerCardDeadLabel: 'DEAD', // the DEAD chip's text
+  playerCardNoStreamTitle: 'This replay has no player state stream', // the "no state" marker's tooltip
+  playerCardNoStateLabel: 'no state', // the "no state" marker's text
+  playerCardMuteLabel: 'Mute {name}', // the mute button's aria-label (fill: name = the player)
+  playerCardReloadingTitle: 'Reloading', // the reload ring's tooltip
+  playerCardMoneyTitle: 'Unspent money', // the money cell's tooltip
+  playerCardC4Title: 'C4 bomb', // the bomb badge's tooltip
+  playerCardKitTitle: 'Defuse kit', // the kit badge's tooltip
+  playerCardKitLabel: 'Kit', // the kit badge's icon alt + its mandatory text fallback
+
+  // player picker (PlayerPicker.svelte — the Reports target selector)
+  playerPickerTriggerLabel: 'Player', // the trigger button's aria-label
+  playerPickerSelectPlayer: 'Select player…', // the trigger's empty-selection text
+  playerPickerFilterLabel: 'Filter players', // the filter input's aria-label
+  playerPickerListLabel: 'Players', // the listbox's aria-label
+  playerPickerKdaTitle: 'K / D / A in this match', // the K/D/A cell's tooltip
+  playerPickerAdrTitle: 'ADR in this match', // the match ADR cell's tooltip
+  playerPickerRoundsTitle: 'Rounds played', // the rounds cell's tooltip
+  playerPickerMatchesTitle: 'Matches in the library', // the career-matches cell's tooltip
+  playerPickerMatchesSuffix: ' matches', // after the career-matches count
+  playerPickerCareerAdrTitle: 'Career ADR', // the career ADR cell's tooltip
+  playerPickerAdrSuffix: ' ADR', // after the career ADR value
+  playerPickerInMatch: 'in this match', // the line-2 state, player appears in the selected match
+  playerPickerNotInMatch: 'not in this match', // the line-2 state, player absent from the match
+  playerPickerSeenPrefix: 'seen ', // before the last-seen date
+  playerPickerNoMatch: 'No players match “{q}.”', // empty state under a typed query (fill: q = the query)
+  playerPickerEmpty: 'No players yet — import a match in the Library.', // empty state with no query
+
+  // round progression strip (RoundStrip.svelte — one cell per round)
+  roundStripLabel: 'Round progression', // the strip's aria-label
+
+  // sortable table header (SortTh.svelte — label + direction caret)
+  sortThSortByPrefix: 'Sort by ', // the sort button's aria-label, before the column label
+
+  // suggestion dropdown (SuggestInput.svelte — the one suggest panel)
+  suggestInputSuggestions: 'Suggestions', // the listbox's fallback aria-label
+  suggestInputMatchWord: ' match', // the player row's count word, before the plural morpheme
+  suggestInputAdrPrefix: 'ADR ', // the player row's career ADR prefix
+
+  // team column (TeamColumn.svelte — one team's card stack)
+  teamColumnMuteLabel: 'Mute {name} voice', // the team mute button's aria-label (fill: name = the team)
 };

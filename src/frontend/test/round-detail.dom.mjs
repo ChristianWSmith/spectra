@@ -124,7 +124,12 @@ export const warmProfile = () => {};
 );
 
 for (const name of ['EventFlags', 'ProfileLink', 'RoundStrip', 'StatusChip']) {
-  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8');
+  // plumbing (Strings Stage 3): EventFlags/RoundStrip import the strings
+  // catalog — resolve it from the real tree (no-op for the others).
+  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  );
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }
 

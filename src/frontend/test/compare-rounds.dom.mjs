@@ -124,7 +124,13 @@ for (const name of ['LandmarkRow', 'ProfileLink', 'StatusChip']) {
     // LandmarkRow imports its sibling ProfileLink as .svelte — at dir/
     // the compiled copy is a .js (the view's own imports are rewritten
     // below).
-    .replace(/from '\.\/ProfileLink\.svelte'/g, "from './ProfileLink.js'");
+    .replace(/from '\.\/ProfileLink\.svelte'/g, "from './ProfileLink.js'")
+    // plumbing (Strings Stage 3): LandmarkRow imports the strings
+    // catalog — resolve it from the real tree (no-op for the rest).
+    .replace(
+      "from '../strings/index.js'",
+      `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+    );
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }
 

@@ -11,6 +11,7 @@
   // buttons; aria-activedescendant on the combobox points at the
   // highlighted option.
   import { fmtDate, fmtDuration } from '../fmt.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import StatusChip from './StatusChip.svelte';
   import Popover from './Popover.svelte';
 
@@ -140,7 +141,7 @@
     aria-haspopup="listbox"
     aria-expanded={open}
     aria-controls={open ? 'mp-list' : null}
-    aria-label="Match"
+    aria-label={S.common.matchPickerTriggerLabel}
     onclick={togglePop}
   >
     {#if cur}
@@ -161,7 +162,7 @@
         class="input mp-search"
         type="search"
         placeholder="Filter matches…"
-        aria-label="Filter matches"
+        aria-label={S.common.matchPickerFilterLabel}
         role="combobox"
         aria-expanded="true"
         aria-controls={filtered.length > 0 ? 'mp-list' : null}
@@ -172,7 +173,7 @@
         onkeydown={onInputKey}
       />
       {#if filtered.length > 0}
-        <div class="mp-list" id="mp-list" role="listbox" aria-label="Matches" bind:this={listEl}>
+        <div class="mp-list" id="mp-list" role="listbox" aria-label={S.common.matchPickerListLabel} bind:this={listEl}>
           {#each shown as m, i (m.id)}
             <button
               type="button"
@@ -191,8 +192,8 @@
                   ><span class="ct">{m.scoreCT}</span>–<span class="t">{m.scoreT}</span></span
                 >
                 <span class="spacer"></span>
-                <span class="chip round-chip" title="Rounds">{m.realRounds}</span>
-                <span class="muted num" title="Duration">{fmtDuration(m.durationS)}</span>
+                <span class="chip round-chip" title={S.common.matchPickerRoundsTitle}>{m.realRounds}</span>
+                <span class="muted num" title={S.common.matchPickerDurationTitle}>{fmtDuration(m.durationS)}</span>
                 <StatusChip status={m.status} title={m.error || ''} />
               </span>
               <span class="mp-line2 muted">
@@ -207,18 +208,18 @@
         </div>
         {#if capped}
           <p class="mp-empty muted" role="status">
-            Showing {RENDER_CAP} of {filtered.length} — type more to narrow.
+            {S.fill(S.common.matchPickerShowing, { cap: RENDER_CAP, n: filtered.length })}
           </p>
         {/if}
       {:else}
         <p class="mp-empty muted" role="status">
           {query.trim()
-            ? `No matches match “${query.trim()}”.`
-            : 'No matches yet — import one in the Library.'}
+            ? S.fill(S.common.matchPickerNoMatch, { q: query.trim() })
+            : S.common.matchPickerEmpty}
         </p>
       {/if}
       <div class="mp-foot muted">
-        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter select</span><span>Esc close</span>
+        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span>{S.common.pickerMoveHint}</span><span>{S.common.pickerEnterSelect}</span><span>{S.common.pickerEscClose}</span>
         <span class="spacer"></span>
         <span class="num">{filtered.length}/{matches.length}</span>
       </div>

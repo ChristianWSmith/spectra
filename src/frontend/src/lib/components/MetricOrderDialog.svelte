@@ -46,6 +46,7 @@
     resetOrder,
     fixedBlock,
   } from '../metricorder.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let {
     open = false,
@@ -201,7 +202,7 @@
   <section class="mo-sec" data-mo-scope={scope}>
     <h3 class="mo-sec-title" id="mo-sec-title-{scope}">{title}</h3>
     <p class="mo-fixed-cap muted" id="mo-fixed-cap-{scope}">
-      Fixed stats — always first, not reorderable
+      {S.common.metricOrderFixedCaption}
     </p>
     <!-- The fixed block as READ-ONLY context (never draggable, no
          buttons, no state — values do not render in this dialog).
@@ -218,13 +219,15 @@
       <!-- The surface has no metrics at all yet — nothing exists to
            pin or order. -->
       <p class="muted" role="status">
-        {scope === 'profile' ? 'No profile metrics yet.' : 'No match metrics yet.'}
+        {scope === 'profile'
+          ? S.common.metricOrderNoProfileMetrics
+          : S.common.metricOrderNoMatchMetrics}
       </p>
     {:else if seq.length === 0}
       <!-- Pins-only empty state: metrics exist but none are pinned —
            say so and point at the pin buttons (the help line above
            repeats the where-to-pin guidance). -->
-      <p class="muted" role="status">Nothing to order yet — pin metrics from the metric list.</p>
+      <p class="muted" role="status">{S.common.metricOrderNothingToOrder}</p>
     {:else}
       <!-- The reorderable half is a real listbox/option pair: option is
            the ARIA construct that legitimately carries tabindex, a
@@ -260,21 +263,21 @@
               class="mo-grip codicon codicon-grabber"
               draggable="true"
               aria-hidden="true"
-              title="Drag to reorder"
+              title={S.common.metricOrderDragTitle}
             ></span>
             <span class="mo-title">{m.title || m.name}</span>
             <span class="mono mo-name">{m.name}</span>
             <span class="mo-moves">
               <button
                 class="btn small ghost"
-                aria-label="Move {m.name} up"
+                aria-label={S.fill(S.common.metricOrderMoveUp, { name: m.name })}
                 disabled={i === 0}
                 onclick={() => move(scope, i, i - 1)}
                 ><span class="codicon codicon-arrow-up"></span></button
               >
               <button
                 class="btn small ghost"
-                aria-label="Move {m.name} down"
+                aria-label={S.fill(S.common.metricOrderMoveDown, { name: m.name })}
                 disabled={i === seq.length - 1}
                 onclick={() => move(scope, i, i + 1)}
                 ><span class="codicon codicon-arrow-down"></span></button
@@ -287,26 +290,25 @@
   </section>
 {/snippet}
 
-<Dialog {open} label="Metric order" panelClass="mo-prompt" {onClose}>
+<Dialog {open} label={S.common.metricOrderDialogLabel} panelClass="mo-prompt" {onClose}>
   <div class="mo-body" bind:this={bodyEl}>
     <p class="muted mo-note">
-      Only your pinned metrics are listed here, in the order they'll appear — pin more from the pin
-      buttons in the metric list.
+      {S.common.metricOrderNote}
     </p>
     {#if error}
       <p class="error" role="alert">{error}</p>
     {/if}
-    {@render section('match', 'Scoreboard (match metrics)')}
-    {@render section('profile', 'Player profile (profile metrics)')}
+    {@render section('match', S.common.metricOrderScoreboardSection)}
+    {@render section('profile', S.common.metricOrderProfileSection)}
     <div class="toolbar mo-foot">
       <span class="muted mo-hint"
-        >drag the handle · <span class="codicon codicon-arrow-up"></span><span
+        >{S.common.metricOrderHintDrag}<span class="codicon codicon-arrow-up"></span><span
           class="codicon codicon-arrow-down"></span
-        > move · Esc close</span
+        >{S.common.metricOrderHintKeys}</span
       >
       <span class="spacer"></span>
-      <button class="btn ghost" onclick={resetAll}>Reset order</button>
-      <button class="btn primary" onclick={onClose}>Close</button>
+      <button class="btn ghost" onclick={resetAll}>{S.common.metricOrderReset}</button>
+      <button class="btn primary" onclick={onClose}>{S.common.metricOrderClose}</button>
     </div>
   </div>
 </Dialog>

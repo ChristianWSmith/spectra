@@ -127,17 +127,21 @@ for (const rel of ['landmarks.js', 'playercard.js', 'loadout.js', 'bullets.js', 
 }
 
 svelteCompile(
-  readFileSync('src/lib/components/PlayerCard.svelte', 'utf8'),
+  // plumbing (Strings Stage 3): the card imports the strings catalog —
+  // resolve it from the real tree.
+  readFileSync('src/lib/components/PlayerCard.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  ),
   'PlayerCard.svelte',
   join(dir, 'components', 'PlayerCard.js'),
   { css: 'injected' },
 );
 // TeamColumn imports its sibling as ./PlayerCard.svelte — rewrite to the
 // compiled output (same trick as the combat driver's component imports).
-const tcSrc = readFileSync('src/lib/components/TeamColumn.svelte', 'utf8').replace(
-  "from './PlayerCard.svelte'",
-  "from './PlayerCard.js'",
-);
+const tcSrc = readFileSync('src/lib/components/TeamColumn.svelte', 'utf8')
+  .replace("from './PlayerCard.svelte'", "from './PlayerCard.js'")
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(tcSrc, 'TeamColumn.svelte', join(dir, 'components', 'TeamColumn.js'), {
   css: 'injected',
 });

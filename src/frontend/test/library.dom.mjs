@@ -258,26 +258,32 @@ for (const [name, out] of [
   ['Popover', 'popover.js'],
 ]) {
   svelteCompile(
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
+    // plumbing (Strings Stage 3): SortTh imports the strings catalog —
+    // resolve it from the real tree (no-op for the import-less leaves).
+    readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+      "from '../strings/index.js'",
+      `from '${fileURL('src/lib/strings/index.js')}'`,
+    ),
     `${name}.svelte`,
     join(dir, out),
   );
 }
 
-// ConfirmDialog imports Dialog → point at the local bundle.
-const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8').replace(
-  "import Dialog from './Dialog.svelte';",
-  "import Dialog from './dialog.js';",
-);
+// ConfirmDialog imports Dialog → point at the local bundle; its strings
+// catalog import resolves from the real tree (Strings Stage 3 plumbing).
+const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8')
+  .replace("import Dialog from './Dialog.svelte';", "import Dialog from './dialog.js';")
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(cdSrc, 'ConfirmDialog.svelte', join(dir, 'confirmdialog.js'));
 
 // SuggestInput (the shared suggestion dropdown) imports Popover, the
 // plain-ESM fmt helper and services (the career ADR metric read) →
-// local bundle + absolute module URLs.
+// local bundle + absolute module URLs; the strings catalog likewise.
 const siSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
   .replace("from './Popover.svelte'", "from './popover.js'")
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'suggestinput.js'));
 
 // Library → its plain-ESM imports (services/fmt/teams) resolve from the

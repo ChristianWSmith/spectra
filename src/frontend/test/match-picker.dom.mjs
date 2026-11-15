@@ -100,7 +100,9 @@ svelteCompile(popSrc, 'Popover.svelte', join(dir, 'popover.js'));
 const mpSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
   .replace("import { fmtDate, fmtDuration } from '../fmt.js';", "import { fmtDate, fmtDuration } from './fmt.js';")
   .replace("import StatusChip from './StatusChip.svelte';", "import StatusChip from './statuschip.js';")
-  .replace("import Popover from './Popover.svelte';", "import Popover from './popover.js';");
+  .replace("import Popover from './Popover.svelte';", "import Popover from './popover.js';")
+  // plumbing (Strings Stage 3): the picker imports the strings catalog.
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(mpSrc, 'MatchPicker.svelte', join(dir, 'matchpicker-bundle.js'));
 
 // Harness.

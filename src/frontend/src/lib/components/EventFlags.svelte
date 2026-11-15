@@ -3,6 +3,8 @@
   // share (Replay's landmark detail pane). The canonical flag list +
   // code/title pairs live here; `none` renders the detail pane's "no
   // flags" fallback when no chip applies.
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
+
   let { event: e = {}, none = false } = $props();
 
   // [event field, chip code, tooltip title] — keep the codes/titles in
@@ -21,4 +23,4 @@
 {#each FLAGS as [key, code, title] (code)}
   {#if e[key]}<span class="chip flag" {title}>{code}</span>{/if}
 {/each}
-{#if none && !FLAGS.some(([key]) => e[key])}<span class="muted">none</span>{/if}
+{#if none && !FLAGS.some(([key]) => e[key])}<span class="muted">{S.common.eventFlagsNone}</span>{/if}

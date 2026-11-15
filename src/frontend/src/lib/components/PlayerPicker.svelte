@@ -13,6 +13,7 @@
   // aria-activedescendant on the combobox points at the highlighted option.
   import { fmt1, fmtMetric } from '../fmt.js';
   import { careerAdrRows, onMetricDone } from '../services.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   // players: ProfileSummary rows (ProfileService.ListPlayers) — steamId,
   // name, matches, lastSeen (no ADR: the Go DTO dropped adrAvg in
@@ -179,7 +180,7 @@
     aria-haspopup="listbox"
     aria-expanded={open}
     aria-controls={open ? 'pp-list' : null}
-    aria-label="Player"
+    aria-label={S.common.playerPickerTriggerLabel}
     onclick={togglePop}
   >
     {#if cur}
@@ -189,7 +190,7 @@
       {/if}
       <span class="pp-trigger-id mono muted">{cur.steamId}</span>
     {:else}
-      <span class="muted">Select player…</span>
+      <span class="muted">{S.common.playerPickerSelectPlayer}</span>
     {/if}
     <span class="pp-caret" aria-hidden="true"><span class="codicon {open ? 'codicon-chevron-up' : 'codicon-chevron-down'}"></span></span>
   </button>
@@ -200,7 +201,7 @@
         class="input pp-search"
         type="search"
         placeholder="Filter players…"
-        aria-label="Filter players"
+        aria-label={S.common.playerPickerFilterLabel}
         role="combobox"
         aria-expanded="true"
         aria-controls={filtered.length > 0 ? 'pp-list' : null}
@@ -211,7 +212,7 @@
         onkeydown={onInputKey}
       />
       {#if filtered.length > 0}
-        <div class="pp-list" id="pp-list" role="listbox" aria-label="Players" bind:this={listEl}>
+        <div class="pp-list" id="pp-list" role="listbox" aria-label={S.common.playerPickerListLabel} bind:this={listEl}>
           {#each filtered as p, i (p.steamId)}
             {@const row = stats[p.steamId]}
             <button
@@ -232,25 +233,25 @@
                 {/if}
                 <span class="spacer"></span>
                 {#if row}
-                  <span class="muted num" title="K / D / A in this match"
+                  <span class="muted num" title={S.common.playerPickerKdaTitle}
                     >{row.kills}/{row.deaths}/{assistText(p)}</span
                   >
-                  <span class="num" title="ADR in this match">{fmt1(row.adr)}</span>
-                  <span class="muted num" title="Rounds played">{row.roundsPlayed}r</span>
+                  <span class="num" title={S.common.playerPickerAdrTitle}>{fmt1(row.adr)}</span>
+                  <span class="muted num" title={S.common.playerPickerRoundsTitle}>{row.roundsPlayed}r</span>
                 {:else}
-                  <span class="muted num" title="Matches in the library"
-                    >{p.matches ?? 0} matches</span
+                  <span class="muted num" title={S.common.playerPickerMatchesTitle}
+                    >{p.matches ?? 0}{S.common.playerPickerMatchesSuffix}</span
                   >
                   {#if p.matches > 0}
-                    <span class="muted num" title="Career ADR">{adrText(p)} ADR</span>
+                    <span class="muted num" title={S.common.playerPickerCareerAdrTitle}>{adrText(p)}{S.common.playerPickerAdrSuffix}</span>
                   {/if}
                 {/if}
               </span>
               <span class="pp-line2 muted">
                 <span class="mono">{p.steamId}</span>
-                <span>{row ? 'in this match' : 'not in this match'}</span>
+                <span>{row ? S.common.playerPickerInMatch : S.common.playerPickerNotInMatch}</span>
                 {#if p.lastSeen}
-                  <span>seen {p.lastSeen}</span>
+                  <span>{S.common.playerPickerSeenPrefix}{p.lastSeen}</span>
                 {/if}
               </span>
             </button>
@@ -259,12 +260,12 @@
       {:else}
         <p class="pp-empty muted" role="status">
           {query.trim()
-            ? `No players match “${query.trim()}”.`
-            : 'No players yet — import a match in the Library.'}
+            ? S.fill(S.common.playerPickerNoMatch, { q: query.trim() })
+            : S.common.playerPickerEmpty}
         </p>
       {/if}
       <div class="pp-foot muted">
-        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter select</span><span>Esc close</span>
+        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span>{S.common.pickerMoveHint}</span><span>{S.common.pickerEnterSelect}</span><span>{S.common.pickerEscClose}</span>
         <span class="spacer"></span>
         <span class="num">{filtered.length}/{players.length}</span>
       </div>

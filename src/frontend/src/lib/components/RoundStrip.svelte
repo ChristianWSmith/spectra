@@ -25,6 +25,7 @@ import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { roundIndexLabel, separatorFlags } from '../rounds.js';
 import { buildHash } from '../router.js';
+import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
 let {
   rounds = [],
@@ -91,7 +92,7 @@ const cells = $derived.by(() => {
          flips them to their start sides. -->
     <div class="round-strip-team above {teamStartClass('ct', sideSwitches)}">{teamAbove}</div>
   {/if}
-  <div class="round-strip" aria-label="Round progression">
+  <div class="round-strip" aria-label={S.common.roundStripLabel}>
     {#each cells as { r, after, aboveSide, label, kind } (r.number)}
       <button
         class="round-cell"

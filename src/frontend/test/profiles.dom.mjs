@@ -195,19 +195,26 @@ const svelteCompile = (src, filename, out) => {
 // below, so the bundles keep their component names.
 for (const name of ['SortTh', 'Popover', 'StatCard', 'StatusChip']) {
   svelteCompile(
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
+    // plumbing (Strings Stage 3): SortTh imports the strings catalog —
+    // resolve it from the real tree (no-op for the import-less leaves).
+    readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+      "from '../strings/index.js'",
+      `from '${fileURL('src/lib/strings/index.js')}'`,
+    ),
     `${name}.svelte`,
     join(dir, `${name}.js`),
   );
 }
 
 // SuggestInput imports Popover, the plain-ESM fmt helper and services
-// (the career ADR metric read) → local bundle + absolute module URLs
-// (its compiled file sits in dir/, not in src/lib/components/).
+// (the career ADR metric read) → local bundle + absolute module URLs;
+// the strings catalog likewise (its compiled file sits in dir/, not in
+// src/lib/components/).
 const siSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
   .replace("from './Popover.svelte'", "from './Popover.js'")
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'SuggestInput.js'));
 
 // The views: plain-ESM imports resolve from their real module locations

@@ -884,6 +884,12 @@ for (const name of [
   const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
     "from './$1.js'",
+  ).replace(
+    // plumbing (Strings Stage 3): FilterBar/EventFlags/PayloadTree/
+    // LandmarkRow/RoundStrip/PlayerCard/TeamColumn import the strings
+    // catalog — resolve it from the real tree (no-op for the rest).
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
   );
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }

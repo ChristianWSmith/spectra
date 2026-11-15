@@ -19,6 +19,7 @@
     errText,
   } from '../services.js';
   import { extractAllAssets, assetFamilyForStep } from '../assets.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import Dialog from './Dialog.svelte';
   import StatusChip from './StatusChip.svelte';
 
@@ -185,38 +186,30 @@
   open={open}
   backClass="top"
   panelClass="pk-prompt"
-  label={notFound ? 'Counter-Strike 2 not found' : 'Extract CS2 assets'}
+  label={notFound ? S.common.mapPackNotFoundTitle : S.common.mapPackExtractTitle}
   dismissable={!busy}
   onClose={close}
 >
   <div class="pk-body">
     {#if notFound}
-      <h2 class="pk-title">Counter-Strike 2 not found</h2>
+      <h2 class="pk-title">{S.common.mapPackNotFoundTitle}</h2>
       <p class="muted">
-        Spectra reads the official radar images from a local Counter-Strike 2
-        installation for authentic map backgrounds in replay and heatmaps.
-        Without one, maps render as a plain grid.
+        {S.common.mapPackNotFoundIntro}
       </p>
       <p class="muted pk-fine">
-        Nothing from Counter-Strike ships with the app, and nothing is
-        uploaded — your game files are read locally and the extracted packs
-        are stored in Spectra's data folder on this machine.
+        {S.common.mapPackNotFoundFine}
       </p>
       {#if error}
         <p class="error" role="alert">{error}</p>
       {/if}
     {:else}
-      <h2 class="pk-title">Found Counter-Strike 2</h2>
+      <h2 class="pk-title">{S.common.mapPackFoundTitle}</h2>
       <p class="muted">
-        Spectra can read the official radar images, the equipment icons and
-        the replay sounds from your local Counter-Strike 2 installation —
-        authentic map backgrounds, inventory silhouettes and in-replay audio.
+        {S.common.mapPackFoundIntro}
       </p>
-      <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
+      <p class="muted pk-path mono">{pickedDir || status?.path || S.common.mapPackInstallFallback}</p>
       <p class="muted pk-fine">
-        Assets are read from your game files and stored in Spectra's data
-        folder on this machine. Nothing is uploaded, and nothing from
-        Counter-Strike ships with the app.
+        {S.common.mapPackFoundFine}
       </p>
       <!-- Live extraction progress: the app's ONE progress widget
            (StatusChip) in BLOCK mode — the centered ring/spinner with
@@ -240,16 +233,16 @@
   </div>
   <div class="toolbar pk-actions">
     <button class="btn" disabled={busy} onclick={pickFolder}>
-      Choose folder…
+      {S.common.mapPackChooseFolder}
     </button>
     <span class="spacer"></span>
     <!-- Session-only dismissal: no suppression pref exists any more, so
          "Not now" closes this launch and the prompt returns on the next
          one while assets are still missing. -->
-    <button class="btn" disabled={busy} onclick={close}>Not now</button>
+    <button class="btn" disabled={busy} onclick={close}>{S.common.mapPackNotNow}</button>
     {#if !notFound}
       <button class="btn primary" disabled={busy} onclick={accept}>
-        {busy ? 'Extracting…' : 'Extract all CS2 assets'}
+        {busy ? S.common.mapPackExtracting : S.common.mapPackExtractAll}
       </button>
     {/if}
   </div>
