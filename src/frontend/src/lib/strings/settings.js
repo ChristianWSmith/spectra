@@ -13,8 +13,7 @@ export const settings = {
   settingsHeading: 'Settings',
   dismissAria: 'Dismiss',
   spectraName: 'Spectra',
-  aboutTagline:
-    '— an offline CS2 demo\n      viewer and match analysis toolkit. Everything runs on your machine;\n      nothing is uploaded anywhere.',
+  aboutTagline: '— an offline CS2 demo viewer and match analysis toolkit.',
   updateCheckHint:
     'Checks GitHub Releases for a newer version and offers to install it\n        when one exists (it also tells you when you\'re already up to date).',
   checking: 'Checking…',
@@ -26,7 +25,7 @@ export const settings = {
   factDemoCopies: 'Demo copies',
   factParserVersion: 'Parser version',
   demoCopyHint:
-    'Spectra keeps its own copy of each imported demo so Re-parse works after your\n          original file moves or disappears. Freeing them reclaims the space — matches keep\n          everything they saved and replay instantly; Re-parse then needs your original\n          file.',
+    'Spectra keeps a copy of each imported demo so Re-parse works after your original moves or disappears. Freeing copies reclaims space — matches keep their data, but Re-parse needs the original.',
   freeCopiesBusyTitle: 'An import is still running — try again once it finishes',
   freeCopiesEmptyTitle: 'No demo copies to free',
   freeCopiesTitle: 'Delete every demo copy from Spectra’s data folder',
@@ -38,7 +37,7 @@ export const settings = {
   extDem: '.dem',
   extDemZst: '.dem.zst',
   importDirsNote:
-    'files found in these import dirs and imports\n      them with one click — your original files are never moved, modified or deleted.\n      Subfolders are scanned up to four levels deep; hidden folders are skipped.\n      Demos already in the Library are left out of the list.',
+    'files found in these import dirs and imports them with one click — originals are never moved, modified or deleted. Subfolders are scanned four levels deep; demos already in the Library are left out.',
   noImportDirs: 'No import dirs — the Library won’t offer any demos to import.',
   remove: 'Remove',
   retry: 'Retry',
@@ -49,14 +48,14 @@ export const settings = {
   resetDefaults: 'Reset to defaults',
   copyOnImportLabel: 'Copy demos into Spectra’s data folder',
   copyOnImportHint:
-    'On (the default): every import keeps its own copy of the demo, so Re-parse works\n        even after your original file is moved or deleted. Off: imports only reference your\n        original file — nothing is duplicated, and Re-parse needs that file to still exist.\n        Stored copies stay evictable either way (Data below, or Free copy in the Library).',
+    'On (the default): every import keeps its own copy, so Re-parse works\n        after your original moves or is deleted. Off: nothing is duplicated —\n        Re-parse then needs that file to still exist.',
 
   // Background work panel
   backgroundWorkNote:
     'Heavy background tasks — demo imports, rules re-runs and asset extraction — share one\n      budget of parallel work on this machine, so they never stack on top of each other.',
   parallelWorkLabel: 'Parallel work',
   parallelWorkHint:
-    'How many heavy background tasks — demo imports, rules re-runs and asset extraction —\n        run at the same time. 1 = one at a time; the default and the maximum are this\n        machine’s parallelism ({max}), so Spectra never runs more at once than your\n        hardware can handle. A change applies to work already queued or waiting.',
+    'How many heavy background tasks run at once: 1 = one at a time; default and maximum = this machine’s parallelism ({max}), so Spectra never runs more at once than your hardware can handle.',
 
   // CS2 assets panel
   cs2AssetsNote:
@@ -137,7 +136,7 @@ export const settings = {
   fullBuyLabel: 'Full-buy threshold (equip $)',
   fullBuyHint: 'Team equipment ≥ this = full buy (default 20000).',
   tradeOppTitle:
-    'A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The raw distance is measured for each kill when the demo is imported; this setting is applied when matches are analyzed — saving recomputes the matches already in your library in the background. Deaths with no nearby teammate or no position data never count.',
+    'A death is a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick. Measured at import; saving recomputes analyzed matches.',
   tradeOppLabel: 'Trade-opportunity distance (units)',
   tradeOppHint:
     '“Missed trades” counts a death nobody answered only when a living teammate of the victim was within this distance of the killer (default 1000).',
@@ -146,6 +145,5 @@ export const settings = {
   saveRules: 'Save rules',
   noChanges: 'No changes — the rules above are already saved.',
   saveNoChanges: 'No changes — the rules were already saved with these values.',
-  saveRecomputing:
-    'Saved. Matches behind the new rules are recomputing in the background — their numbers refresh as each match finishes.',
+  saveRecomputing: 'Saved — matches behind the new rules recompute in the background.',
 };

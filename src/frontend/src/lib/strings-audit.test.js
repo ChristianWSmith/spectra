@@ -19,6 +19,10 @@
 // contract, webstorage's PREF_SITES liveness pin pattern).
 // Check B (the class-1 ratchet) is unconditional: every non-power-surfaced
 // Svelte file that carries free chrome copy must import the catalog.
+// Check D (length tiers, owner 2026-11-15) is the character-budget pin:
+// tier 1 ≤70 chars, tier 2 ≤200 chars over the same media, default-tight
+// classification (unknown ⇒ tier 1) — its inputs, declarations and rule
+// live beside HINT_KEYS below.
 //
 // Check A also pins the layering-prefix rule: a `pkg: `-prefixed string in
 // non-test Go is package vocabulary that reaches errText verbatim. Since
@@ -122,6 +126,84 @@ const PREFIX_EXEMPT = {
     },
   ],
 };
+
+// ---------------------------------------------------------------------------
+// Check D — length tiers (owner's three answers, 2026-11-15): tier 1 common
+// locations ≤70 characters, tier 2 hints ≤200 characters, tier 3 anything
+// longer must be a help affordance to the user guide (guide prose itself is
+// never capped — it IS the destination).
+//
+// Classification rule (2026-11-15, DEFAULT-TIGHT): unclassified copy is
+// tier 1 — new copy must fit 70 characters unless deliberately declared a
+// hint. A catalog key is tier 2 only when (a) the markup references it from
+// a `title=` attribute (a tooltip is a hint; derived mechanically below) or
+// (b) it is declared in HINT_KEYS here. Wholesale tier 2 by medium, per the
+// owner's rulings: seed `doc` values (measured whole — Formula included,
+// what the user hovers is what counts), definitions.js strings (measured as
+// exported — the derived *_DEF constants carry their "Term — " prefix, which
+// is exactly the hovered text) and Go error format strings that surface
+// through errText. Inline literals are tier 2 only at a `title=` position or
+// via HINT_INLINE. Counts are of the static string: catalog templates keep
+// their {arg} placeholders. Exempt, never measured: lib/docs/ guide prose
+// (the tier-3 destination), the report templates (exported documents, not
+// chrome), class-4 power surfaces (POWER_SURFACES/POWER_PREFIXES), test
+// files.
+// ---------------------------------------------------------------------------
+
+// Tier-2 catalog declarations — key path → why it is a hint (mandatory,
+// asserted in Check D; a declared key that leaves the catalog fails as
+// stale, the PENDING_DENYLIST liveness contract). Every entry renders as a
+// tooltip, footnote or in-place explanatory note, never as a label.
+const HINT_KEYS = {
+  'builder.headNoteScopes': 'in-form note under the scope picker — a footnote explaining scope granularity',
+  'combat.noteTail': 'footnote tail under the calculated-badges legend',
+  'common.mapPackNotFoundIntro': 'asset-prompt explanatory copy — the paragraph guiding the no-radar decision',
+  'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
+  'common.mapPackFoundIntro': 'asset-prompt explanatory copy — the paragraph listing what extraction reads',
+  'common.mapPackFoundFine': 'asset-prompt explanatory copy — the local-storage assurance',
+  'common.metricOrderNote': 'footnote under the metric-order list (pin-more pointer)',
+  'economy.tableNote': 'footnote defining the table headers (Equip / Net worth / Loss)',
+  'economy.tableNoteTail': 'footnote tail for the Loss-header inferred marker',
+  'heatmaps.bboxHint': 'click-hint under the map — how the region click behaves',
+  'library.encKeyStatus': 'in-place note pointing at the per-match key status',
+  'library.importDirsNote': 'footnote under the import listing (scan depth + copy semantics)',
+  'profiles.sparkFootnote': 'footnote under the match-history sparkline',
+  'replay.noSidecarNote': 'in-place note explaining missing position data',
+  'reports.appendixHint': 'picker hint under the appendix stats dropdown',
+  'settings.updateCheckHint': 'hint beside the update check (what it contacts / reports)',
+  'settings.demoCopyHint': 'hint under the demo-copies setting (what keeping a copy buys)',
+  'settings.importDirsNote': 'footnote under the import-dirs list (scan depth + copy semantics)',
+  'settings.defaultsEffect': 'footnote naming the default import dirs',
+  'settings.copyOnImportHint': 'hint under the copy-on-import switch (on/off consequences)',
+  'settings.backgroundWorkNote': 'footnote under the parallel-work setting (what shares the budget)',
+  'settings.parallelWorkHint': 'hint beside the parallel-work stepper (units, default, ceiling)',
+  'settings.cs2AssetsNote': 'footnote under CS2 assets (where they are read from)',
+  'settings.extractHint': 'hint under the asset-extraction button (what it extracts)',
+  'settings.themeHint': 'hint under the theme picker (default + persistence)',
+  'settings.fontSizeHint': 'hint under the font-size picker (scale + persistence)',
+  'settings.pluginsNoteTail': 'footnote tail for the plugin formats line',
+  'settings.trustModelNote': 'footnote stating the trust model (no auto-update)',
+  'settings.volAnnouncerHint': 'hint under the announcer-volume slider (which lines)',
+  'settings.volFootstepsHint': 'hint under the footsteps-volume slider (default state)',
+  'settings.soundEffectsNote': 'footnote under sound effects (provenance + playback)',
+  'settings.voiceDecodeNote': 'footnote under voice decode (streaming behaviour)',
+  'settings.tradeOppHint': 'hint beside the trade-opportunity distance field (what counts)',
+};
+
+// Tier-2 inline declarations — same contract as HINT_KEYS (why mandatory,
+// prefix liveness asserted in Check D): a class-1 inline literal whose
+// rendered role is a hint rather than a label. Matched by trimmed prefix so
+// a reword of the body does not silently orphan the declaration.
+const HINT_INLINE = [
+  {
+    file: 'frontend/src/lib/views/Builder.svelte',
+    prefix: 'from <table>',
+    why: 'the expression editor’s grammar hint under the expression field — a footnote over the expression grammar (tables and full rules live in the metric guide)',
+  },
+];
+
+const TIER1_MAX = 70;
+const TIER2_MAX = 200;
 
 // ---------------------------------------------------------------------------
 // The denylist — terms that are never the user's business (implementation
@@ -476,6 +558,65 @@ const goFiles = walk(SRC, (n) => n.endsWith('.go') && !n.endsWith('_test.go'), n
 const svelteLits = new Map(); // rel file → [{attr,text}]
 for (const f of svelteFiles) svelteLits.set(rel(f), collectSvelte(f));
 
+// Check D — the mechanical tier-2 derivation: catalog keys referenced from a
+// `title=` attribute anywhere in the markup (a tooltip is a hint, owner
+// 2026-11-15). Title position only — every other reference position stays
+// tier 1 by default (unknown ⇒ tier 1, the default-tight rule).
+function titleHintKeyScan() {
+  const keys = new Set();
+  const chains = (n, out = [], seen = new Set()) => {
+    if (!n || typeof n !== 'object' || seen.has(n)) return out;
+    if (Array.isArray(n)) {
+      for (const c of n) chains(c, out, seen);
+      return out;
+    }
+    if (typeof n.type === 'string') seen.add(n);
+    if (n.type === 'MemberExpression' || n.type === 'Identifier') {
+      const parts = [];
+      let cur = n;
+      for (;;) {
+        if (!cur || cur.type !== 'MemberExpression') {
+          if (cur && cur.type === 'Identifier') parts.unshift(cur.name);
+          break;
+        }
+        if (!cur.property || cur.property.type !== 'Identifier' || cur.computed) break;
+        parts.unshift(cur.property.name);
+        cur = cur.object;
+      }
+      if (parts[0] === 'S' && parts.length > 1) out.push(parts.slice(1).join('.'));
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'type' || k === 'parent' || k === 'start' || k === 'end' || k === 'loc' || k === 'name') continue;
+      if (n[k] && typeof n[k] === 'object') chains(n[k], out, seen);
+    }
+    return out;
+  };
+  for (const f of svelteFiles) {
+    const ast = parse(readFileSync(f, 'utf8'));
+    const seen = new Set();
+    const visit = (n) => {
+      if (!n || typeof n !== 'object' || seen.has(n)) return;
+      if (Array.isArray(n)) {
+        for (const c of n) visit(c);
+        return;
+      }
+      if (typeof n.type === 'string') seen.add(n);
+      if (n.type === 'Script' || n.type === 'Style') return; // markup only
+      if (n.type === 'Attribute' && typeof n.name === 'string' && n.name === 'title') {
+        for (const c of chains(n.value)) keys.add(c);
+        return; // a title value is fully handled here
+      }
+      for (const k of Object.keys(n)) {
+        if (k === 'type' || k === 'parent' || k === 'start' || k === 'end' || k === 'loc' || k === 'name') continue;
+        if (n[k] && typeof n[k] === 'object') visit(n[k]);
+      }
+    };
+    visit(ast);
+  }
+  return keys;
+}
+const titleHintKeys = titleHintKeyScan();
+
 // candidates: pre-suppression denylist hits, keyed `file\0text`
 const candidates = new Set();
 const add = (file, text) => candidates.add(`${file}\u0000${text}`);
@@ -705,5 +846,130 @@ test('TestServiceErrorsAreUserFacing — service error literals: no package pref
     'service errors are user-facing copy (they reach errText verbatim): no package prefix, no implementation ' +
       'language — reword at the construction site (AGENTS.md criterion bullet), never ledgered here:\n  ' +
       bad.join('\n  '),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Check D — length tiers (added 2026-11-15, the owner's three answers). The
+// character-budget pin over every user-read medium: catalog values, inline
+// class-1 literals, seed `doc` values, definitions.js strings and Go error
+// format strings (the two helper-label shapes included — they reach errText
+// like errors do). Classification is default-tight — see the dated block
+// beside HINT_KEYS above; the media-level exemptions (guide prose, report
+// templates, class-4 power surfaces, tests) hold by construction: none of
+// those media are walked into the scope below (power surfaces are filtered
+// per file, the rest are different files entirely).
+// ---------------------------------------------------------------------------
+test('Check D — length tiers: common copy ≤70, hints ≤200 (owner, 2026-11-15)', async () => {
+  const S = await import('./strings/index.js');
+  const leaves = [];
+  const walkArea = (v, trail) => {
+    if (typeof v === 'string') {
+      leaves.push([trail, v]);
+      return;
+    }
+    assert.ok(v !== null && typeof v === 'object', `catalog entry ${trail} must be a plain string`);
+    for (const [k, child] of Object.entries(v)) walkArea(child, `${trail}.${k}`);
+  };
+  for (const [name, area] of Object.entries(S)) {
+    if (area !== null && typeof area === 'object') walkArea(area, name);
+  }
+  const leafPaths = new Set(leaves.map(([t]) => t));
+
+  // definitions.js as exported — the derived *_DEF constants measure with
+  // their "Term — " prefix (that is exactly what the user hovers), glossary
+  // bodies and chip titles as-is.
+  const D = await import('./definitions.js');
+  const defs = [];
+  const collectDefs = (v) => {
+    if (typeof v === 'string') {
+      defs.push(v);
+      return;
+    }
+    if (Array.isArray(v)) {
+      for (const x of v) collectDefs(x);
+      return;
+    }
+    if (v !== null && typeof v === 'object') for (const x of Object.values(v)) collectDefs(x);
+  };
+  for (const v of Object.values(D)) if (typeof v !== 'function') collectDefs(v);
+
+  const inline = [];
+  for (const [file, lits] of svelteLits) {
+    if (isPower(file)) continue;
+    for (const l of lits) inline.push({ file, ...l });
+  }
+
+  const goErrs = [];
+  for (const f of goFiles) {
+    const file = rel(f);
+    if (isPower(file)) continue;
+    const { errors, labels } = goScan(f);
+    for (const text of errors) goErrs.push({ file, text });
+    for (const text of labels) goErrs.push({ file, text });
+  }
+
+  // Anti-vacuity — every medium must have been seen (webstorage.test.js:95
+  // pattern: a broken walk would pass vacuously).
+  assert.ok(leaves.length > 800, `extracted only ${leaves.length} catalog leaves — the scan is broken`);
+  assert.ok(titleHintKeys.size > 100, `title derivation found only ${titleHintKeys.size} keys — the scan is broken`);
+  assert.ok(inline.length > 100, `extracted only ${inline.length} inline literals — the scan is broken`);
+  assert.ok(seed.docs.length >= 50, `extracted only ${seed.docs.length} seed docs — the schema.sql extractor is broken`);
+  assert.ok(defs.length >= 20, `extracted only ${defs.length} definitions.js strings — the scan is broken`);
+  assert.ok(goErrs.length > 400, `extracted only ${goErrs.length} Go error literals — the scan is broken`);
+
+  // Declaration liveness — `why` mandatory, nothing stale (the ledger
+  // contract the denylist exemptions already run).
+  const stale = [];
+  for (const [key, why] of Object.entries(HINT_KEYS)) {
+    if (!why || !why.trim()) stale.push(`HINT_KEYS ${key} is missing its mandatory why`);
+    if (!leafPaths.has(key)) stale.push(`HINT_KEYS ${key} is not a catalog key — drop the stale declaration`);
+  }
+  for (const e of HINT_INLINE) {
+    if (!e.why || !e.why.trim()) stale.push(`HINT_INLINE ${JSON.stringify(e.prefix)} is missing its mandatory why`);
+    const lits = svelteLits.get(e.file) ?? [];
+    if (!lits.some((l) => l.text.trimStart().startsWith(e.prefix))) {
+      stale.push(`HINT_INLINE ${e.file} :: ${JSON.stringify(e.prefix)} matches no inline literal — drop the stale declaration`);
+    }
+  }
+  assert.deepEqual(stale, [], `stale or undescribed length-tier declarations:\n  ${stale.join('\n  ')}`);
+
+  const bad = [];
+  // Medium 1 — catalog values: tier 2 only via title= derivation or HINT_KEYS.
+  for (const [trail, value] of leaves) {
+    const max = titleHintKeys.has(trail) || Object.hasOwn(HINT_KEYS, trail) ? TIER2_MAX : TIER1_MAX;
+    if (value.length > max) bad.push(`catalog :: ${trail} (${value.length} > ${max}) :: ${JSON.stringify(value)}`);
+  }
+  // Medium 2 — inline class-1 literals: title position or HINT_INLINE, else tier 1.
+  for (const l of inline) {
+    const atTitle = l.attr === 'title' || l.attr === '(expr title)';
+    const declared = HINT_INLINE.some((e) => e.file === l.file && l.text.trimStart().startsWith(e.prefix));
+    const max = atTitle || declared ? TIER2_MAX : TIER1_MAX;
+    if (l.text.length > max) bad.push(`inline :: ${l.file} [${l.attr}] (${l.text.length} > ${max}) :: ${JSON.stringify(l.text)}`);
+  }
+  // Medium 3 — seed docs: tier 2 wholesale (measured whole, Formula included).
+  for (const { name, doc } of seed.docs) {
+    if (doc.length > TIER2_MAX) bad.push(`seed doc :: ${name} (${doc.length} > ${TIER2_MAX}) :: ${JSON.stringify(doc)}`);
+  }
+  // Medium 4 — definitions.js: tier 2 wholesale (glossary paragraphs, owner ruling 2).
+  for (const text of defs) {
+    if (text.length > TIER2_MAX) bad.push(`definitions.js (${text.length} > ${TIER2_MAX}) :: ${JSON.stringify(text)}`);
+  }
+  // Medium 5 — Go errors: tier 2 wholesale (error details, owner ruling 3).
+  for (const { file, text } of goErrs) {
+    if (text.length > TIER2_MAX) bad.push(`go error :: ${file} (${text.length} > ${TIER2_MAX}) :: ${JSON.stringify(text)}`);
+  }
+
+  console.log(
+    `check D scope: ${leaves.length} catalog leaves (${leaves.filter(([t]) => titleHintKeys.has(t) || Object.hasOwn(HINT_KEYS, t)).length} tier-2), ` +
+      `${inline.length} inline literals, ${seed.docs.length} seed docs, ${defs.length} definition strings, ` +
+      `${goErrs.length} go error literals — ${bad.length} over budget`,
+  );
+  assert.deepEqual(
+    bad,
+    [],
+    'user-facing text over its length tier (AGENTS.md length-tiers bullet; owner, 2026-11-15): tier 1 ≤70, ' +
+      'tier 2 ≤200 — shorten without lying (detail that does not fit belongs in the user guide), or declare a ' +
+      'genuine hint in HINT_KEYS/HINT_INLINE:\n  ' + bad.join('\n  '),
   );
 });

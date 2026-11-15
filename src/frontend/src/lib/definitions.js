@@ -28,23 +28,23 @@
 export const GLOSSARY = [
   {
     term: 'KAST%',
-    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Counted per round; the “traded” part follows the configured trade window (Settings → Analysis rules).',
+    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after death, or Survived the round. The “traded” part follows the configured trade window (Settings → Analysis rules).',
   },
   {
     term: 'Equipment value',
-    text: 'Freeze-time-end value of the gear a side actually holds: every weapon — including ones picked up and carried over from earlier rounds — plus armor, grenades and the defuse kit, as recorded by the game’s own per-player equipment value. It is never this round’s spend, so a team that survives with a stolen rifle shows that rifle’s value next round.',
+    text: 'Freeze-time-end value of the gear a side actually holds — every weapon (picked up and carried over included), armor, grenades and the defuse kit. Never this round’s spend.',
   },
   {
     term: 'Net worth',
-    text: 'Equipment value plus that team’s unspent money at freeze time end: the total value the team holds at that instant — every weapon, armor, grenade and defuse kit its players carry (the free spawn-issued default sidearms included, since the game counts them at $200 each — see Equipment value) plus the cash it can still spend. It can never be below equipment value, because unspent money is never negative. The economy chart’s Net worth plots this per team per round — on a pistol round each side reads its starting money ($4000 = 5 × $800) plus the free default sidearms it still holds, so a side that dropped or upgraded some of them reads less than an opponent that kept all five.',
+    text: 'Equipment value plus the team’s unspent money at freeze time end — the total the team holds then. Never below equipment value: unspent money never goes negative.',
   },
   {
     term: 'Trade opportunities missed (inferred)',
-    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. The distance is measured for each kill when the demo is imported (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 1000 units ≈ 25 m — the ground a player covers inside the default 5 s trade window, and the range trades actually happen at): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths reads the same engagement rows without the distance gate.',
+    text: 'A death nobody answered: no teammate kill inside the trade window, and at the death tick a living teammate stood within the trade-opportunity distance of the killer.',
   },
   {
     term: 'Damage conversion',
-    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), counted from the demo’s events rather than reported by the game.',
+    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), from the demo’s events.',
   },
 ];
 
@@ -114,7 +114,7 @@ export const ENTRY_DEF =
 // career_trade_rate metric's doc); the two are deliberately no longer
 // the same card.
 export const TRADE_DEF =
-  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the deaths counted are this player’s own, so it’s a ratio, not a share — it can top 100%.';
+  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the deaths are this player’s own, so it’s a ratio, not a share — it can top 100%.';
 
 // Untraded deaths (Combat): engagement rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer

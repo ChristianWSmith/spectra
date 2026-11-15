@@ -234,7 +234,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 - **The curve** — *Equip value per round* or *Team net worth per round*, one line per team, with a legend and a round strip under it. Hover for values; click a column to open that round.
 - **Four summary cards** — *Pistol → next round* (pistol wins held the next round), *Force-buy win rate*, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* (marked **inferred**). Each card's tooltip states the exact formula, and clicking it watches the relevant round in the replay.
-- **Buy types** — one row per round with both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus. The footnote spells out that equipment value is the gear a side *holds* at freeze time end — never that round's spend — and how the loss-bonus ladder works.
+- **Buy types** — one row per round with both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus. The footnote names what the columns mean: equipment value is the gear a side *holds* at freeze time end — never that round's spend — and the loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
 
 # Utility
 

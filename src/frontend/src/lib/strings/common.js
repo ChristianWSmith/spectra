@@ -44,7 +44,7 @@ export const common = {
   econCurveTeamLinesLabel: 'Team lines', // legend aria-label
   econCurveEquipAria: 'equipment value', // chart aria-label, equip metric
   econCurveNetWorthAria: 'net worth', // chart aria-label, net-worth metric
-  econCurveChartAriaSuffix: ' per round, one line per team — hover for values, click a column to open the round', // chart aria-label, after the metric name
+  econCurveChartAriaSuffix: ' per round, one line per team — click a column to open the round', // chart aria-label, after the metric name
   econCurveOpenRoundAria: 'Open round ', // hit-area aria-label prefix, before {r.round}
   econCurveRoundTitle: 'Round ', // round number prefix (<title> + tooltip <strong>)
   econCurvePistolChip: 'pistol', // hover tooltip's pistol-round chip
@@ -126,7 +126,7 @@ export const common = {
   mapPackNotFoundFine:
     'Nothing from Counter-Strike ships with the app, and nothing is\n        uploaded — your game files are read locally and the extracted packs\n        are stored in Spectra\'s data folder on this machine.',
   mapPackFoundIntro:
-    'Spectra can read the official radar images, the equipment icons and\n        the replay sounds from your local Counter-Strike 2 installation —\n        authentic map backgrounds, inventory silhouettes and in-replay audio.',
+    'Spectra can read the official radar images, equipment icons and replay sounds from your local Counter-Strike 2 installation — authentic map backgrounds, inventory silhouettes and in-replay audio.',
   mapPackFoundFine:
     'Assets are read from your game files and stored in Spectra\'s data\n        folder on this machine. Nothing is uploaded, and nothing from\n        Counter-Strike ships with the app.',
 

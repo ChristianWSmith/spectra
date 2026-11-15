@@ -56,7 +56,7 @@ export const replay = {
 
   // camera / follow / UI overlays / drop markers
   cameraHelpTitle:
-    'Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it (F to follow, 1-9 to pick)',
+    'Smart keeps every player and the bomb on screen — drag or wheel takes over → Free; Free is manual; Follow locks onto a player (1-9, F toggles) — dragging releases.',
   cameraModeAria: 'Camera mode',
   followPlayerAria: 'Follow player',
   followPlayerTitle:

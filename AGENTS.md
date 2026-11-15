@@ -510,6 +510,26 @@ Canonical homes (extend these, don't fork them):
   2026-11-14 together with its sweep — statement and migration ship as
   one change (see "Adopting principles (meta)" above), so the pre-existing
   copy was reworded in the same wave this rule landed.
+- **User-facing text is tiered by length** (owner, 2026-11-15): **tier 1 —
+  common locations** (labels, buttons, chips, titles, empty states, status
+  copy) ≤ **70 characters**; **tier 2 — hints** (tooltips, footnotes,
+  in-place explanatory notes) ≤ **200 characters**; **tier 3 — anything
+  longer** must be a help affordance linking to the user guide. Classification
+  is mechanical and default-tight: **unclassified copy is tier 1** — a catalog
+  key becomes tier 2 only by being referenced from a `title=` attribute in the
+  markup or by an explicit `HINT_KEYS` entry (the pin's declaration, each entry
+  carrying its `why`); wholesale tier 2 by medium: glossary (`definitions.js`)
+  values, seed `doc` tooltips (measured whole, `Formula:` segment included —
+  what the user hovers is what counts) and Go error strings surfaced through
+  `errText` (measured as their format string). Counts are of the static string:
+  templates keep their `{arg}` placeholders. **Exempt:** guide prose in
+  `lib/docs/` (the tier-3 destination — never length-capped), exported report
+  templates (documents, not chrome), class-4 power surfaces, test files.
+  Shortening never lies or misleads — drop redundancy, keep the truth; detail
+  that no longer fits belongs in the guide, never dropped silently. Mechanical
+  pin: the length test in `frontend/src/lib/strings-audit.test.js`. Adopted
+  2026-11-15 together with its sweep — statement, sweep and pin ship as one
+  change (see "Adopting principles (meta)" above).
 - **View-level aggregates are allowed** only when they are pure functions
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without
