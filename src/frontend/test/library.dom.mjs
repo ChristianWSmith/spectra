@@ -375,7 +375,7 @@ check(
   playerInput().placeholder === 'Search players...',
   playerInput().placeholder,
 );
-check('map facet keeps its own hint', mapInput().placeholder === 'e.g. de_mirage', mapInput().placeholder);
+check('map facet keeps its own hint', mapInput().placeholder === 'Filter by map (e.g. de_mirage)…', mapInput().placeholder);
 check('map facet marked active', mapInput().classList.contains('active'));
 check('player facet marked active', playerInput().classList.contains('active'));
 check('clear button present', clearBtn().length === 1, String(clearBtn().length));

@@ -530,6 +530,29 @@ Canonical homes (extend these, don't fork them):
   pin: the length test in `frontend/src/lib/strings-audit.test.js`. Adopted
   2026-11-15 together with its sweep — statement, sweep and pin ship as one
   change (see "Adopting principles (meta)" above).
+- **Input hints are verb-like** (owner, 2026-11-15): scope = `placeholder=`
+  attributes in markup — an input hint. An `aria-label`, a `title` tooltip and
+  a select option are other media (labels, tooltips, choices), never checked
+  here. The rule: the first whitespace-separated word of the resolved hint text
+  must be a member of the pin's closed `VERB_ALLOWLIST` (Search / Filter / Type
+  / Enter / Select / Describe / Name / Document — every entry declared with its
+  own `why`), and it fails closed: a first word nobody declared is a violation,
+  never an implicit pass. Exempt classes live in ONE `HINT_*` block in the pin
+  with their criteria (never scattered whitelisting): **power surfaces** — the
+  SQL console's placeholders (via `POWER_SURFACES`) and the expression editor's
+  `EXAMPLE` (an explicit `HINT_EXEMPT` entry, Builder being outside
+  `POWER_SURFACES`); **endpoint markers** — `from`, `to`, `min`, `max`,
+  `start`, `stop` (`HINT_NONVERB`), criterion: the placeholder IS the field's
+  only visible per-field label (a mini-label, not a hint) — the full name lives
+  in the aria-label/sr-only label. `HINT_PASSTHROUGH` holds an unresolvable
+  expression; `HINT_SOURCES` holds a hint const that renders as a hint without
+  sitting on a placeholder attribute (the owner's own `Search players...`).
+  Every `HINT_*`/`HINT_SOURCES` entry must still match a live site and carry a
+  non-empty `why`. Length tiers apply independently — a verb-like hint is
+  still measured. Mechanical pin: Check E in
+  `frontend/src/lib/strings-audit.test.js`. Adopted 2026-11-15 together with
+  its sweep — statement, sweep and pin ship as one change (see "Adopting
+  principles (meta)" above).
 - **View-level aggregates are allowed** only when they are pure functions
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without

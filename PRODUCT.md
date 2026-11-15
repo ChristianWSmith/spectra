@@ -73,6 +73,9 @@ differentiators:
   short, but never lying or misleading; hints may run a little longer;
   anything longer than that demands a help button linking to the user
   guide, which carries the full detailed explanation.
+- **Input hints speak in actions:** an input's placeholder tells the user
+  what to do — an imperative ("Search players…"), never a bare example
+  ("e.g. de_mirage").
 - **Feature-parity with competitors is evidence, never justification.**
 - **Never present a feature the app cannot fully support offline.**
 - **Valve IP never ships:** extracted CS2 assets are re-extractable

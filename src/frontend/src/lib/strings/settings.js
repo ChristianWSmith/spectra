@@ -86,7 +86,7 @@ export const settings = {
   pluginManifestName: 'spectra-plugin.json',
   pluginsNoteTail:
     '(plus optional metric /\n      report-template definitions) or a single manifest JSON. Enabled plugins\n      contribute metrics and report templates on the next list — no restart.',
-  pluginPathPlaceholder: '/path/to/plugin-dir or manifest.json',
+  pluginPathPlaceholder: 'Enter a plugin path or manifest.json…',
   pluginPathAria: 'Plugin source path',
   installing: 'Installing…',
   installFromPath: 'Install from path',
