@@ -464,9 +464,8 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 --
 -- The original three steam_id-leading indexes kill correlated full-table
 -- scans on library-wide `WHERE steam_id = ?` reads: RebuildCareer's
--- per-group subqueries (player_stats p2 / clutches c in RebuildCareer,
--- analytics.go) and ListPlayers' HumanOnlyBySteamID bot check (players).
--- Those are
+-- per-group name subquery (player_stats p2, analytics.go) and
+-- ListPlayers' HumanOnlyBySteamID bot check (players). Those are
 -- O(library)-per-import and quadratic over a bulk import — measured 16-34 s
 -- per RebuildCareer at 1,000 matches / 500-1,000 distinct players without
 -- them (linear in the distinct-player count: minutes per import at
@@ -568,22 +567,15 @@ CREATE TABLE IF NOT EXISTS utility_events (
 CREATE INDEX IF NOT EXISTS idx_utility_events_player ON utility_events(match_id, thrower);
 
 -- Cross-match career rollup: NOT per-match (no match_id, no FK) — rebuilt
--- in full from player_stats/player_round_stats/clutches; steam_id (the
--- SteamID64 string) is the stable identity key (plan M1 identity notes).
+-- in full from player_stats ⋈ matches; raw counts only (identity, name,
+-- match and win counts — every derived career number is a stored metric
+-- row). steam_id (the SteamID64 string) is the stable identity key (plan
+-- M1 identity notes).
 CREATE TABLE IF NOT EXISTS player_career (
 	steam_id TEXT PRIMARY KEY,
 	name TEXT NOT NULL DEFAULT '',
 	matches INTEGER NOT NULL DEFAULT 0,
 	wins INTEGER NOT NULL DEFAULT 0,
-	adr_avg REAL NOT NULL DEFAULT 0,
-	adr_std REAL NOT NULL DEFAULT 0,
-	kd REAL NOT NULL DEFAULT 0,
-	hs_pct REAL NOT NULL DEFAULT 0,
-	kast_pct REAL NOT NULL DEFAULT 0,
-	openings INTEGER NOT NULL DEFAULT 0,
-	opener_wins INTEGER NOT NULL DEFAULT 0,
-	trades INTEGER NOT NULL DEFAULT 0,
-	clutches INTEGER NOT NULL DEFAULT 0,
 	updated_at DATETIME NOT NULL
 );
 
@@ -773,7 +765,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 ('career_adr_sigma', 'ADR σ', 'ADR σ',
  'from player_stats: stddev(adr)',
  'profile', 'float1',
- 'Formula: stddev(player_stats.adr) — the population standard deviation (σ) of the player''s per-match ADR across their career, addressed per player (one value per player: that player''s own per-match adr rows). The grammar''s population idiom sqrt(max(avg(x²) − avg(x)², 0)) is byte-for-byte RebuildCareer''s stored adr_std computation, so the two agree (clamped at 0 for float noise). N is the player_stats rows behind the value.',
+ 'Formula: stddev(player_stats.adr) — the population standard deviation (σ) of the player''s per-match ADR across their career, addressed per player (one value per player: that player''s own per-match adr rows). The grammar''s population idiom sqrt(max(avg(x²) − avg(x)², 0)) is the σ over those same rows (clamped at 0 for float noise). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_avg_enemies_flashed', 'Avg enemies flashed', 'Avg enemies flashed',
  'from player_stats: avg(enemies_flashed)',
@@ -793,17 +785,17 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 ('career_hs_pct', 'HS%', 'HS%',
  'from player_stats: ratio(sum(headshots), sum(kills))',
  'profile', 'percent',
- 'Formula: sum(player_stats.headshots) / sum(player_stats.kills) — headshots as a share of the player''s kills pooled over their whole career, addressed per player (one value per player: that player''s own headshots over that player''s own kills). The pooled shape is identical to the stored career hs_pct (SUM(headshots) / SUM(kills)). A 0..1 fraction rendered as percent (×100); a subject with no kills yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
+ 'Formula: sum(player_stats.headshots) / sum(player_stats.kills) — headshots as a share of the player''s kills pooled over their whole career, addressed per player (one value per player: that player''s own headshots over that player''s own kills). The pooled shape counts the career totals (SUM(headshots) / SUM(kills)) rather than averaging per-match percentages, which would over-weight short matches. A 0..1 fraction rendered as percent (×100); a subject with no kills yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_kast', 'KAST%', 'KAST%',
  'from player_round_stats: avg(kast)',
  'profile', 'percent',
- 'Formula: avg(player_round_stats.kast) — the mean KAST flag over every stored round of the player''s career, addressed per player (one value per player: that player''s own rounds). Identical shape to the career rollup''s kastCareerSQL (100 × AVG over all of the player''s player_round_stats rows); a 0..1 fraction rendered as percent (×100). A subject with no stored rounds has no rows (renders —), never a fabricated 0. N is the player_round_stats rows behind the value.',
+ 'Formula: avg(player_round_stats.kast) — the mean KAST flag over every stored round of the player''s career, addressed per player (one value per player: that player''s own rounds). The career KAST% the profile always showed: 100 × AVG over all of the player''s player_round_stats rows; a 0..1 fraction rendered as percent (×100). A subject with no stored rounds has no rows (renders —), never a fabricated 0. N is the player_round_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_kd', 'K/D', 'K/D',
  'from player_stats: ratio(sum(kills), sum(deaths))',
  'profile', 'float2',
- 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s whole career, addressed per player (one value per player: that player''s own kills over that player''s own deaths). Same shape as the career rollup''s kdCareerSQL (sums across every match, never an average of per-match ratios). DIVERGENCE (deliberate — internal/metrics/doc.go ratio note): the metric divides by NULLIF(deaths, 0), so a player with NO deaths shows value 0 beside N (the honest no-denominator), where kdCareerSQL floors the denominator (MAX(SUM(deaths), 1)). N is the player_stats rows behind the value.',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s whole career, addressed per player (one value per player: that player''s own kills over that player''s own deaths). Pooled across every match, never an average of per-match ratios. DIVERGENCE (deliberate — internal/metrics/doc.go ratio note): the metric divides by NULLIF(deaths, 0), so a player with NO deaths shows value 0 beside N (the honest no-denominator), where a floored denominator (MAX(SUM(deaths), 1)) would show the kill count instead. N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_trade_rate', 'Trade rate', 'Trade rate',
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
