@@ -37,12 +37,11 @@ const (
 	// image/draw) followed by a modest unsharp mask (unsharpMask) —
 	// deterministic, offline, no AI model, so extraction stays portable.
 	//
-	// 2× (2048²), per the product owner's upscale comparison matrix
-	// (reviewed 2026-11-09, /tmp/opencode/radar-upscale-review — {2,3,4}×
-	// × box/triangle/catmullrom/mitchell/lanczos2/lanczos3 ± unsharp,
-	// plus ImageMagick filters): the winner was exactly this recipe at
-	// factor 2 — 2x_lanczos3_unsharp-a0.5-r1.png — chosen over the
-	// previously shipped 3×, whose extra detail only the deepest zooms
+	// 2× (2048²), from the product owner's upscale comparison matrix
+	// (reviewed 2026-11-09: {2,3,4}× × box/triangle/catmullrom/mitchell/
+	// lanczos2/lanczos3 ± unsharp, plus ImageMagick filters): this recipe
+	// won at factor 2, chosen over the previously shipped 3×, whose extra
+	// detail only the deepest zooms
 	// show was not worth its file/texture cost. Measured per-map total
 	// written bytes (radar.png + layer PNGs) over the extracted packs on
 	// a real CS2 install (2026-11-09): 2× → 16.66 MB total, largest map

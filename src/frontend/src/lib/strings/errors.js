@@ -1,6 +1,6 @@
 // strings/errors.js — error phrasing templates rendered through errText (services.js) — {err} = underlying error text, {what} = operation noun
-// Populated by Sweep-B extraction (design §5.2); values are plain strings
-// with {arg} placeholders (design §3.2).
+// Populated by Sweep-B extraction; values are plain strings with {arg}
+// placeholders — compose at the call site with fill() (strings/index.js).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const errors = {

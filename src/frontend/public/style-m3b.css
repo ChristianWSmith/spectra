@@ -35,8 +35,9 @@
    0.76em uppercase-muted for grouped controls vs .filt-check 0.82em
    normal-case for the checkbox) is gone: ROUND/PLAYER/SIDE/TEAM/WEAPON/
    DIST/HEADSHOTS ONLY all read as this. .filt-grp/.filt-line died with
-   the inline layout; .filt-check itself STAYS below for Reports/Settings
-   (FilterBar no longer renders through it). */
+   the inline layout; .filt-check itself STAYS below for Builder's filter
+   checkboxes and Settings' copy-on-import row (FilterBar no longer renders
+   through it). */
 .filt-lab {
   font-size: 0.76em;
   text-transform: uppercase;
@@ -76,8 +77,9 @@ label.filt-lab {
   opacity: 0.55;
 }
 
-/* Shared with Reports/Settings (their checkbox rows render through this
-   class); FilterBar's own headshot row is now .filt-lab + a bare input. */
+/* Shared by Builder's filter checkboxes and Settings' copy-on-import row
+   (their checkbox rows render through this class); FilterBar's own
+   headshot row is now .filt-lab + a bare input. */
 .filt-check {
   display: inline-flex;
   align-items: center;
@@ -487,29 +489,6 @@ label.filt-lab {
   font-size: 0.88em;
 }
 
-/* Spacing only — the typography comes from .section-title (style.css). */
-.sett-sub {
-  margin-top: 6px;
-}
-
-.sett-matches {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.sett-match-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--divider);
-  padding: 5px 0;
-  font-size: 0.9em;
-}
-
 /* Import dirs (Settings → Import dirs). */
 .sett-dirs {
   display: flex;
@@ -533,39 +512,6 @@ label.filt-lab {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sett-defs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sett-defs details {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 10px;
-  background: var(--inset);
-}
-
-.sett-defs summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.92em;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sett-defs summary:hover {
-  color: var(--accent);
-}
-
-.sett-defs p {
-  font-size: 0.9em;
-  color: var(--muted);
-  padding: 6px 0 2px;
-  line-height: 1.5;
 }
 
 /* M4 voice — Communications: match header badges, the transport's

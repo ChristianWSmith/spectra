@@ -1,10 +1,11 @@
 // strings/settings.js — Settings view chrome (views/Settings.svelte): About,
 // Data, Import dirs, Background work, CS2 assets, Appearance, Plugins, Audio
 // & voice and Analysis rules panels.
-// Values are plain strings with {arg} placeholders (design §3.2); the view
-// composes them with S.fill at the call site. The nine <h2> panel headings and
-// the pinned loading-chip copy stay inline (source-pinned by
-// docslockstep.test.js's panel census and progress-presentation.dom.mjs).
+// Values are plain strings with {arg} placeholders (the catalog contract,
+// strings/index.js); the view composes them with S.fill at the call site.
+// The nine <h2> panel headings and the pinned loading-chip copy stay
+// inline (source-pinned by docslockstep.test.js's panel census and
+// progress-presentation.dom.mjs).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const settings = {

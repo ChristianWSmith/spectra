@@ -947,8 +947,8 @@ canvas.heat-canvas {
    canonical Popover's anchor (position: relative so the panel attaches
    — the .lm-cats / .rp-pop-host spelling) and the panel is the
    checkbox stack. Group labels render through .filt-lab and option
-   rows through .filt-check — the shared filter-label / checkbox-row
-   classes Reports and Settings already render through, never a bld-
+   rows through .filt-check — the shared filter-label (FilterBar) /
+   checkbox-row (Settings) classes already in use, never a bld-
    synonym for either. */
 .bld-filter-host {
   position: relative;
