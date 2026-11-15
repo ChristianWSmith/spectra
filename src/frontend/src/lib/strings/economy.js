@@ -18,12 +18,12 @@ export const economy = {
   pistolTitle: 'Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: watch round {round} in the replay (the round\'s own span, start→end).',
   forceLabel: 'Force-buy win rate',
   noForceBuys: 'no force buys',
-  forceTitle: 'Formula: force-buy rounds won by the force-buying TEAM ÷ that team\'s own force-buy rounds, attributed per team across the halftime side switch (a round both teams force-bought counts once for each). Click: watch round {round} in the replay (the round\'s own span, start→end).',
+  forceTitle: 'Formula: force-buy rounds won by a team ÷ that team\'s own force-buy rounds, attributed per team across the halftime side switch. Click: watch round {round} in the replay (start→end).',
   gapLabel: 'Winner equipment value advantage',
   gapSub: 'avg winner − loser equip per round',
-  gapTitle: 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round\'s spend. Click: watch round {round} (largest gap) in the replay (the round\'s own span, start→end).',
+  gapTitle: 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — never this round\'s spend. Click: watch round {round} (largest gap) in the replay.',
   lostLabel: 'Lost equipment',
-  lostTitle: 'Formula: total across decided rounds of the losing team\'s freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: watch round {round} (largest loss) in the replay (the round\'s own span, start→end).',
+  lostTitle: 'Formula: total across decided rounds of the losing team\'s freeze-end equipment value — inferred: assumes the losing side\'s gear was destroyed. Click: watch round {round} in the replay.',
 
   // provenance chips
   badgeComputed: 'computed',
@@ -45,7 +45,7 @@ export const economy = {
   noExplanation: 'no explanation recorded',
   rulesV: 'rules v',
   closeExplanation: 'Close explanation',
-  tableNote: 'Equip CT/T = that side\'s equipment value at freeze time end — the\n          value of the gear its players actually hold (weapons picked up and\n          carried over from earlier rounds included), never this round\'s\n          spend; the chart\'s Net worth = that equipment value + the side\'s\n          unspent money at the same instant, so it is never below equipment\n          value (the Net worth tooltip has the full rule); Loss CT/T =\n          the round loss bonus that side would collect by losing\n          this round — CS2\'s ladder runs $1400 → $3400 in $500 steps: a loss\n          steps it up, a win steps it down (never a full reset), and every\n          half starts one level up (a pistol loss pays $1900);',
+  tableNote: 'Equip CT/T = freeze-end gear held (never this round\'s spend); Net worth = that plus unspent money; Loss CT/T = the bonus that side would collect for losing ($1400→$3400 by $500, half +1).',
   tableNoteTail:
     'on the Loss headers\n          marks those values as calculated from the round results rather than\n          recorded.',
 };

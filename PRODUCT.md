@@ -69,6 +69,10 @@ differentiators:
   programming language, no database table or column, no developer
   shorthand. Metric expression text, the expression editor and the SQL
   console are power surfaces: they speak developer by design.
+- **User-facing text is tiered by length:** common locations stay terse —
+  short, but never lying or misleading; hints may run a little longer;
+  anything longer than that demands a help button linking to the user
+  guide, which carries the full detailed explanation.
 - **Feature-parity with competitors is evidence, never justification.**
 - **Never present a feature the app cannot fully support offline.**
 - **Valve IP never ships:** extracted CS2 assets are re-extractable

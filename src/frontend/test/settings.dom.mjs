@@ -316,7 +316,7 @@ console.log('C. save = recompute: a bumped rules save kicks RecomputeAll in the 
   );
   check(
     'confirmation says the matches are recomputing in the background',
-    body().includes('Matches behind the new rules are recomputing in the background'),
+    body().includes('matches behind the new rules recompute in the background'),
   );
   check(
     'never the no-changes claim after a bump',
@@ -343,7 +343,7 @@ console.log('D. save honesty: a no-bump save says "No changes" and kicks no reco
   check(
     'no-bump save says "No changes", never the recompute note',
     body().includes('No changes — the rules were already saved with these values.') &&
-      !body().includes('recomputing in the background'),
+      !body().includes('recompute in the background'),
   );
   check(
     'no recompute kicked on a no-bump save',

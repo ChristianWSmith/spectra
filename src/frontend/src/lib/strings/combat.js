@@ -35,7 +35,7 @@ export const combat = {
   engagementsUnavailable: 'Engagements unavailable.',
   noEngagements: 'No engagements match this filter.',
   clutchesPrefix: 'Clutches ',
-  clutchTitle: 'Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).',
+  clutchTitle: 'Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Toggle: won on, lost off by default.',
   clutchChipLabel: 'alive-count · won/lost toggle',
   filterClutchesLabel: 'Filter clutches by outcome',
   wonToggle: 'won',

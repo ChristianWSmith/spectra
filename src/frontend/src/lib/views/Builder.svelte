@@ -1334,13 +1334,7 @@
               placeholder={EXAMPLE}
               readonly={builtinLoaded}
             ></textarea>
-            <p class="bld-hint mono">
-              from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
-              percentile(p, col) — tables: events, engagements, rounds, player_stats, player_round_stats,
-              round_economy, clutches, utility_events, chat, match_trade_opps, round_classifications,
-              round_side_classes, round_player_sides, engagements_victim — a comma list LEFT JOINs the
-              sources engine-side (no user ON/join syntax); denominator: rounds | matches
-            </p>
+            <p class="bld-hint mono">from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) | percentile(p, col) — a comma list LEFT JOINs the sources (no ON/join syntax); denominator: rounds | matches</p>
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">{S.builder.exprChecking}</p>
             {:else if exprCheck.state === 'valid'}
