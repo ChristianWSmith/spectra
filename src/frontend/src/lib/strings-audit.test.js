@@ -66,7 +66,6 @@ const CONTENT_FILES = [
 // today; shrinks to zero as Sweep-B extracts each file into lib/strings/,
 // after which Check B is unconditional (design §5.2 Stage 3 gate).
 const PENDING_INLINE = new Set([
-  'frontend/src/App.svelte',
   'frontend/src/lib/components/CommandPalette.svelte',
   'frontend/src/lib/components/ConfirmDialog.svelte',
   'frontend/src/lib/components/EconCurve.svelte',

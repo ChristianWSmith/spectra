@@ -10,4 +10,12 @@ export const common = {
   searchSections: 'Search sections', // header input: placeholder + aria-label
   noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter
   guideComingSoon: 'Coming soon — this part of the guide isn\'t written yet.',
+
+  // App shell (App.svelte — the sidebar rail and the replay dock)
+  appSidebarLabel: 'Main', // <nav class="sidebar"> accessible name
+  appMarkAlt: 'Spectra', // the sidebar app-mark image (favicon) alt text
+  appHelpLabel: 'Help', // sidebar Help button: title + aria-label
+  appExpandReplayLabel: 'Expand replay', // collapsed dock wrapper: title + aria-label
+  appCloseReplayLabel: 'Close replay', // dock close X: aria-label
+  appCloseReplayTitle: 'Close the replay — it reloads when reopened', // dock close X: title
 };
