@@ -167,4 +167,18 @@ export const common = {
 
   // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
   payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)
+
+  // player card (PlayerCard.svelte — one player's live replay card)
+  playerCardNoStateTitle: 'No player state for this match', // the whole-card tooltip when no state stream exists
+  playerCardFollowTitle: 'Camera follows this player', // the follow marker's tooltip
+  playerCardDeadTitle: 'Dead — showing last-known state', // the DEAD chip's tooltip
+  playerCardDeadLabel: 'DEAD', // the DEAD chip's text
+  playerCardNoStreamTitle: 'This replay has no player state stream', // the "no state" marker's tooltip
+  playerCardNoStateLabel: 'no state', // the "no state" marker's text
+  playerCardMuteLabel: 'Mute {name}', // the mute button's aria-label (fill: name = the player)
+  playerCardReloadingTitle: 'Reloading', // the reload ring's tooltip
+  playerCardMoneyTitle: 'Unspent money', // the money cell's tooltip
+  playerCardC4Title: 'C4 bomb', // the bomb badge's tooltip
+  playerCardKitTitle: 'Defuse kit', // the kit badge's tooltip
+  playerCardKitLabel: 'Kit', // the kit badge's icon alt + its mandatory text fallback
 };

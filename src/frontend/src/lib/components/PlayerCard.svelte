@@ -88,6 +88,7 @@
     utilityOf,
     weaponName as weaponNameOf,
   } from '../replay/playercard.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let {
     player = {},
@@ -228,7 +229,7 @@
   class:pc-follow={follow}
   class:pc-color={!!playerColor}
   style:--pc-color={playerColor || null}
-  title={hasState ? undefined : 'No player state for this match'}
+  title={hasState ? undefined : S.common.playerCardNoStateTitle}
   role="button"
   tabindex="0"
   onclick={onCardClick}
@@ -242,19 +243,19 @@
       <span class="pc-live" aria-hidden="true"></span>
     {/if}
     {#if follow}
-      <span class="pc-mark codicon codicon-person-follow" title="Camera follows this player" aria-hidden="true"></span>
+      <span class="pc-mark codicon codicon-person-follow" title={S.common.playerCardFollowTitle} aria-hidden="true"></span>
     {/if}
     {#if isDead}
-      <span class="chip bad pc-dead-mark" title="Dead — showing last-known state">DEAD</span>
+      <span class="chip bad pc-dead-mark" title={S.common.playerCardDeadTitle}>{S.common.playerCardDeadLabel}</span>
     {:else if !hasState}
-      <span class="pc-nostate" title="This replay has no player state stream">no state</span>
+      <span class="pc-nostate" title={S.common.playerCardNoStreamTitle}>{S.common.playerCardNoStateLabel}</span>
     {/if}
     <button
       type="button"
       class="btn small ghost pc-mute"
       class:warn={muted}
       aria-pressed={muted}
-      aria-label="Mute {name}"
+      aria-label={S.fill(S.common.playerCardMuteLabel, { name })}
       title={muted ? `Unmute ${name}'s voice` : `Mute ${name}'s voice`}
       onclick={onToggleMute}
     ><span class="codicon {muted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button>
@@ -308,7 +309,7 @@
        instead. -->
   {#snippet reloadRing()}
     {#if reloadProgress != null}
-      <span class="pc-reload" aria-hidden="true" title="Reloading">
+      <span class="pc-reload" aria-hidden="true" title={S.common.playerCardReloadingTitle}>
         <svg viewBox="0 0 12 12" width="12" height="12" focusable="false">
           <circle class="pc-reload-track" cx="6" cy="6" r="5" transform="rotate(-90 6 6)" />
           {#if reloadProgress > 0}
@@ -366,7 +367,7 @@
   </div>
 
   <div class="pc-econ">
-    <span class="pc-num pc-money" title="Unspent money">{money}</span>
+    <span class="pc-num pc-money" title={S.common.playerCardMoneyTitle}>{money}</span>
     <span class="pc-util" title={utilTitle}>
       {#if util == null}
         <span class="pc-fallback">—</span>
@@ -390,7 +391,7 @@
     <!-- The bomb rides beside the util (checked separately — utilityOf
          deliberately excludes 'C4', see carriesC4). -->
     {#if hasC4}
-      <span class="pc-c4" title="C4 bomb">
+      <span class="pc-c4" title={S.common.playerCardC4Title}>
         {#if iconSrc('C4')}
           <img class="pc-ico" src={iconSrc('C4')} alt="C4" />
         {:else}
@@ -405,11 +406,11 @@
          stream carries no kit flag. null/false → no badge, same
          false-on-unknown rule as carriesC4. -->
     {#if hasKit}
-      <span class="pc-kit" title="Defuse kit">
+      <span class="pc-kit" title={S.common.playerCardKitTitle}>
         {#if iconSrc('Defuse Kit')}
-          <img class="pc-ico" src={iconSrc('Defuse Kit')} alt="Kit" />
+          <img class="pc-ico" src={iconSrc('Defuse Kit')} alt={S.common.playerCardKitLabel} />
         {:else}
-          <span class="pc-fallback">Kit</span>
+          <span class="pc-fallback">{S.common.playerCardKitLabel}</span>
         {/if}
       </span>
     {/if}
