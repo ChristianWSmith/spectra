@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import {
     listMetricsPage,
     listMetrics,
@@ -917,9 +918,9 @@
       />
     {/if}
     {#if m.origin === 'plugin'}
-      <span class="chip bld-plugin">plugin</span>
+      <span class="chip bld-plugin">{S.builder.originPlugin}</span>
       {#if disabledPlugins.has(m.pluginId)}
-        <span class="chip bld-disabled">disabled</span>
+        <span class="chip bld-disabled">{S.builder.pluginDisabled}</span>
       {/if}
     {/if}
   </span>
@@ -935,15 +936,15 @@
     <span class="bld-row-acts">
       <button
         class="btn small ghost"
-        title="Preview this metric"
-        aria-label="Preview {m.name}"
+        title={S.builder.previewThisMetric}
+        aria-label={S.fill(S.builder.previewAria, { name: m.name })}
         onclick={() => previewRow(m)}><span class="codicon codicon-play"></span></button
       >
       <button
         class="btn small ghost"
         class:bld-pin-on={pinnedIn(m.id) !== ''}
         title={pinTitle(m)}
-        aria-label="Toggle pin for {m.name}"
+        aria-label={S.fill(S.builder.togglePinAria, { name: m.name })}
         onclick={() => togglePin(m.id, m.scope)}><span class="codicon codicon-pin"></span></button
       >
       <!-- Delete is the user-row control: built-ins are guarded
@@ -952,8 +953,8 @@
       {#if m.origin === 'user'}
         <button
           class="btn small ghost"
-          title="Delete metric"
-          aria-label="Delete {m.name}"
+          title={S.builder.deleteMetric}
+          aria-label={S.fill(S.builder.deleteAria, { name: m.name })}
           onclick={() => removeMetric(m)}><span class="codicon codicon-close"></span></button
         >
       {/if}
@@ -964,11 +965,9 @@
 <div class="view bld-view">
   <header class="view-header">
     <div>
-      <h1>Metric builder</h1>
+      <h1>{S.builder.heading}</h1>
       <p class="muted bld-head-note">
-        Saved metrics are appended to match reports in Reports · pinned (<span class="codicon codicon-pin"></span>)
-        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as Career
-        metrics on a player profile.
+        {S.builder.headNotePinned}<span class="codicon codicon-pin"></span>{S.builder.headNoteScopes}
       </p>
     </div>
     <!-- Metric-language help: opens the docs popup AT the
@@ -980,8 +979,8 @@
     <button
       class="btn"
       type="button"
-      title="Metric language help"
-      aria-label="Metric language help"
+      title={S.builder.metricLanguageHelp}
+      aria-label={S.builder.metricLanguageHelp}
       onclick={() => openDocs('metric-language')}
     >
       <span class="codicon codicon-question" aria-hidden="true"></span>
@@ -991,7 +990,7 @@
   {#if listError}
     <p class="error" role="alert">
       {listError}
-      <button class="btn small" onclick={loadLists}>Retry</button>
+      <button class="btn small" onclick={loadLists}>{S.builder.retry}</button>
     </p>
   {/if}
   {#if saveError}
@@ -1001,7 +1000,7 @@
   <div class="bld-grid">
     <section class="panel bld-list">
       <div class="row-between">
-        <h2>Metrics</h2>
+        <h2>{S.builder.metricsHeading}</h2>
         <div class="toolbar">
           <!-- The order is a property of the metric SET across both
                surfaces (not of one metric's editor), so it sits beside
@@ -1011,13 +1010,13 @@
           <button
             class="btn small"
             onclick={openOrder}
-            title="Set the order of scoreboard columns and profile cards"
+            title={S.builder.orderDialogTitle}
             ><span class="codicon codicon-arrow-up"></span><span
               class="codicon codicon-arrow-down"></span
-            > Order…</button
+            > {S.builder.orderLabel}</button
           >
           <button class="btn small" onclick={newMetric}
-            ><span class="codicon codicon-add"></span> New</button
+            ><span class="codicon codicon-add"></span> {S.builder.newLabel}</button
           >
         </div>
       </div>
@@ -1026,8 +1025,8 @@
       <input
         class="input"
         type="search"
-        aria-label="Search metrics"
-        placeholder="Search metrics…"
+        aria-label={S.builder.searchAria}
+        placeholder={S.builder.searchPlaceholder}
         bind:value={query}
       />
       <!-- ONE multi-select for every list filter (owner ruling:
@@ -1050,9 +1049,9 @@
             aria-haspopup="true"
             aria-expanded={filterOpen}
             aria-controls={filterOpen ? 'bld-filter-pop' : null}
-            title="Choose which metrics the list shows"
+            title={S.builder.filtersTitle}
             onclick={() => (filterOpen = !filterOpen)}
-            ><span class="codicon codicon-filter" aria-hidden="true"></span> Filters
+            ><span class="codicon codicon-filter" aria-hidden="true"></span> {S.builder.filtersLabel}
             <span class="codicon codicon-chevron-down" aria-hidden="true"></span></button
           >
           <Popover
@@ -1065,57 +1064,57 @@
               class="bld-filter-pop"
               id="bld-filter-pop"
               role="group"
-              aria-label="Metric filters"
+              aria-label={S.builder.metricFiltersAria}
             >
-              <div class="bld-filter-group" role="group" aria-label="Origin">
-                <span class="filt-lab">Origin</span>
+              <div class="bld-filter-group" role="group" aria-label={S.builder.originLabel}>
+                <span class="filt-lab">{S.builder.originLabel}</span>
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={builtin}
                     onchange={(e) => (builtin = e.currentTarget.checked)}
-                  /> Built-in</label
+                  /> {S.builder.filterBuiltIn}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={mine}
                     onchange={(e) => (mine = e.currentTarget.checked)}
-                  /> My metrics</label
+                  /> {S.builder.filterMyMetrics}</label
                 >
               </div>
-              <div class="bld-filter-group" role="group" aria-label="Scope">
-                <span class="filt-lab">Scope</span>
+              <div class="bld-filter-group" role="group" aria-label={S.builder.scopeLabel}>
+                <span class="filt-lab">{S.builder.scopeLabel}</span>
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={scopeMatch}
                     onchange={(e) => (scopeMatch = e.currentTarget.checked)}
-                  /> Match</label
+                  /> {S.builder.filterMatch}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={scopeProfile}
                     onchange={(e) => (scopeProfile = e.currentTarget.checked)}
-                  /> Profile</label
+                  /> {S.builder.filterProfile}</label
                 >
               </div>
-              <div class="bld-filter-group" role="group" aria-label="Denominator">
-                <span class="filt-lab">Denominator</span>
+              <div class="bld-filter-group" role="group" aria-label={S.builder.denominatorLabel}>
+                <span class="filt-lab">{S.builder.denominatorLabel}</span>
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={denomRounds}
                     onchange={(e) => (denomRounds = e.currentTarget.checked)}
-                  /> Rounds</label
+                  /> {S.builder.filterRounds}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={denomMatches}
                     onchange={(e) => (denomMatches = e.currentTarget.checked)}
-                  /> Matches</label
+                  /> {S.builder.filterMatches}</label>
                 >
               </div>
               <!-- Type = the metric's format (the editor's Format
@@ -1123,49 +1122,49 @@
                    option its own checkbox, ALL six checked by default
                    (the owner's ruling) — only Built-in starts off — so
                    the first render carries format '' (no predicate). -->
-              <div class="bld-filter-group" role="group" aria-label="Type">
-                <span class="filt-lab">Type</span>
+              <div class="bld-filter-group" role="group" aria-label={S.builder.typeLabel}>
+                <span class="filt-lab">{S.builder.typeLabel}</span>
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatAuto}
                     onchange={(e) => (formatAuto = e.currentTarget.checked)}
-                  /> Auto</label
+                  /> {S.builder.filterAuto}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatInt}
                     onchange={(e) => (formatInt = e.currentTarget.checked)}
-                  /> Int</label
+                  /> {S.builder.filterInt}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatFloat1}
                     onchange={(e) => (formatFloat1 = e.currentTarget.checked)}
-                  /> Float1</label
+                  /> {S.builder.filterFloat1}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatFloat2}
                     onchange={(e) => (formatFloat2 = e.currentTarget.checked)}
-                  /> Float2</label
+                  /> {S.builder.filterFloat2}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatPercent}
                     onchange={(e) => (formatPercent = e.currentTarget.checked)}
-                  /> Percent</label
+                  /> {S.builder.filterPercent}</label
                 >
                 <label class="filt-check"
                   ><input
                     type="checkbox"
                     checked={formatCurrency}
                     onchange={(e) => (formatCurrency = e.currentTarget.checked)}
-                  /> Currency</label
+                  /> {S.builder.filterCurrency}</label>
                 >
               </div>
             </div>
@@ -1176,13 +1175,13 @@
         {#if loading}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if appliedQuery}
-          <p class="muted" role="status">No metrics match “{appliedQuery}”.</p>
+          <p class="muted" role="status">{S.fill(S.builder.noMetricsMatch, { q: appliedQuery })}</p>
         {:else}
           <!-- Query-less empty: a filter group narrowed the window to
                nothing (an empty My-metrics side, both origin options
                off, Match+Profile off, every Type box off) — legal, and
                said so here instead of leaving a blank panel. -->
-          <p class="muted" role="status">No metrics to show.</p>
+          <p class="muted" role="status">{S.builder.noMetricsToShow}</p>
         {/if}
       {:else}
         <!-- One header per contiguous origin run (runs above): a window
@@ -1197,9 +1196,9 @@
         {/each}
         {#if hasNext}
           <div class="row-between">
-            <span class="muted" role="status">Showing {metrics.length} metrics</span>
+            <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: metrics.length })}</span>
             <button class="btn" disabled={loadingMore} onclick={loadMore}>
-              {loadingMore ? 'Loading…' : 'Load more'}
+              {loadingMore ? S.builder.loadingMore : S.builder.loadMore}
             </button>
           </div>
         {/if}
@@ -1209,18 +1208,18 @@
     <div class="bld-right">
       <section class="panel">
         <div class="row-between">
-          <h2>{form.id ? 'Edit metric' : 'New metric'}</h2>
+          <h2>{form.id ? S.builder.editMetric : S.builder.newMetric}</h2>
           {#if builtinLoaded}
             <!-- A built-in loads read-only (owner wave): the chip names
                  it in the user's words, mirroring the plugin chip. -->
-            <span class="chip bld-readonly" title="Built-in metrics can't be edited"
-              >built-in</span
+            <span class="chip bld-readonly" title={S.builder.builtinReadOnly}
+              >{S.builder.builtinChip}</span>
             >
           {:else if readOnly}
             <!-- Plugin rows: immutable through Save — saving stores a
                  copy of this definition as your own metric. -->
-            <span class="chip bld-readonly" title="Plugin metrics are immutable — saving stores a copy of this definition as your own metric."
-              >read-only source</span
+            <span class="chip bld-readonly" title={S.builder.pluginImmutable}
+              >{S.builder.pluginReadOnlyChip}</span>
             >
           {/if}
         </div>
@@ -1249,31 +1248,31 @@
 
         <div class="bld-fields">
           <div class="bld-field">
-            <label class="field-label" for="bld-name">Name</label>
-            <input id="bld-name" class="input mono" bind:value={form.name} placeholder="slug_name" />
+            <label class="field-label" for="bld-name">{S.builder.fieldName}</label>
+            <input id="bld-name" class="input mono" bind:value={form.name} placeholder={S.builder.namePlaceholder} />
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-title">Title</label>
-            <input id="bld-title" class="input" bind:value={form.title} placeholder="Display label" />
+            <label class="field-label" for="bld-title">{S.builder.fieldTitle}</label>
+            <input id="bld-title" class="input" bind:value={form.title} placeholder={S.builder.titlePlaceholder} />
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-short">Short name (optional)</label>
+            <label class="field-label" for="bld-short">{S.builder.fieldShortName}</label>
             <input
               id="bld-short"
               class="input"
               bind:value={form.shortName}
-              placeholder="Short label for narrow column headers"
+              placeholder={S.builder.shortNamePlaceholder}
             />
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-scope">Scope</label>
+            <label class="field-label" for="bld-scope">{S.builder.scopeLabel}</label>
             <select id="bld-scope" class="input" bind:value={form.scope}>
-              <option value="match">match — this player in this match</option>
-              <option value="profile">profile — this player's career</option>
+              <option value="match">{S.builder.scopeMatchOption}</option>
+              <option value="profile">{S.builder.scopeProfileOption}</option>
             </select>
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-format">Format</label>
+            <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
                  Type filter's options; auto's value is the '' format). -->
@@ -1284,19 +1283,19 @@
             </select>
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-denom">Denominator</label>
+            <label class="field-label" for="bld-denom">{S.builder.denominatorLabel}</label>
             <select id="bld-denom" class="input" bind:value={form.denominator}>
-              <option value="">none</option>
-              <option value="rounds">rounds</option>
-              <option value="matches">matches</option>
+              <option value="">{S.builder.denomNone}</option>
+              <option value="rounds">{S.builder.denomRounds}</option>
+              <option value="matches">{S.builder.denomMatches}</option>
             </select>
           </div>
           <div class="bld-field wide">
-            <label class="field-label" for="bld-doc">Doc (formula, required)</label>
-            <textarea id="bld-doc" class="input" rows="3" bind:value={form.doc} placeholder="Formula: … — what this counts, over what, and any proxy/deviation."></textarea>
+            <label class="field-label" for="bld-doc">{S.builder.fieldDoc}</label>
+            <textarea id="bld-doc" class="input" rows="3" bind:value={form.doc} placeholder={S.builder.docPlaceholder}></textarea>
           </div>
           <div class="bld-field wide">
-            <label class="field-label" for="bld-expr">Expression</label>
+            <label class="field-label" for="bld-expr">{S.builder.fieldExpression}</label>
             <textarea
               id="bld-expr"
               class="input mono bld-expr"
@@ -1313,9 +1312,9 @@
               sources engine-side (no user ON/join syntax); denominator: rounds | matches
             </p>
             {#if exprCheck.state === 'pending'}
-              <p class="bld-expr-state muted">checking…</p>
+              <p class="bld-expr-state muted">{S.builder.exprChecking}</p>
             {:else if exprCheck.state === 'valid'}
-              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> valid</p>
+              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</p>>
             {:else if exprCheck.state === 'error'}
               <p class="bld-expr-state bad">
                 <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
@@ -1329,13 +1328,13 @@
             class="btn primary"
             onclick={save}
             disabled={saveDisabled}
-            title={builtinLoaded ? 'Built-in metrics can\'t be edited' : undefined}
+            title={builtinLoaded ? S.builder.builtinReadOnly : undefined}
           >
             {saving
-              ? 'Saving…'
+              ? S.builder.saving
               : !builtinLoaded && form.id && !dirty
-                ? 'Saved'
-                : 'Save metric'}
+                ? S.builder.saved
+                : S.builder.saveMetric}
           </button>
           <button
             class="btn"
@@ -1344,24 +1343,24 @@
             onclick={() => togglePin(form.id)}
           >
             <span class="codicon codicon-pin"></span>
-            {form.id > 0 && pinnedIn(form.id) !== '' ? 'Pinned' : 'Pin'}
+            {form.id > 0 && pinnedIn(form.id) !== '' ? S.builder.pinned : S.builder.pin}
           </button>
           <span class="muted bld-note">
             <!-- The disabled Save's reason, in the user's words (the
                  button carries the same string as its tooltip). -->
             {builtinLoaded
-              ? 'Built-in metrics can\'t be edited'
-              : 'Saved metrics are appended to match reports in Reports.'}
+              ? S.builder.builtinReadOnly
+              : S.builder.saveNoteDefault}
           </span>
         </div>
       </section>
 
       <section class="panel bld-preview">
         <div class="row-between">
-          <h2>Preview</h2>
+          <h2>{S.builder.previewHeading}</h2>
           <div class="toolbar">
             <button class="btn primary" onclick={() => runPreview()} disabled={previewBusy}>
-              {previewBusy ? 'Running…' : 'Preview'}
+              {previewBusy ? S.builder.running : S.builder.preview}
             </button>
             <!-- Timing is provenance ONLY for an ad-hoc run (it genuinely
                  computed — design §5). A clean-saved preview shows the
@@ -1370,7 +1369,7 @@
               <span class="chip">{preview.ms} ms</span>
             {/if}
             {#if preview && preview.truncated}
-              <span class="chip">truncated</span>
+              <span class="chip">{S.builder.previewTruncated}</span>
             {/if}
             {#if preview && !previewAdhoc && previewKey}
               <StatusChip
@@ -1388,7 +1387,7 @@
         {:else if preview}
           {#if previewAdhoc && form.denominator}
             <p class="muted bld-note">
-              Ad-hoc preview — the denominator ({form.denominator}) applies after save.
+              {S.fill(S.builder.adhocNote, { denominator: form.denominator })}
             </p>
           {/if}
           {#if !previewAdhoc}
@@ -1396,31 +1395,31 @@
                  match is stated in the panel; profile reads every
                  player's career rows). -->
             <p class="muted bld-note">
-              Stored values ·
+              {S.builder.storedValuesLabel}
               {#if preview.scope === 'profile'}
-                career (every player)
+                {S.builder.storedProfileScope}
               {:else if preview.match}
-                newest ready match #{preview.match.id}{preview.match.map
+                {S.builder.storedMatchScope}{preview.match.id}{preview.match.map
                   ? ` (${preview.match.map})`
                   : ''}
               {:else}
-                no ready match to read from yet
+                {S.builder.storedNoMatch}
               {/if}
             </p>
           {/if}
           {#if preview.rows.length === 0}
             <p class="muted" role="status">
-              {previewAdhoc ? 'No groups — empty result.' : 'No stored values for this metric yet.'}
+              {previewAdhoc ? S.builder.noGroups : S.builder.noStoredValues}
             </p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Group</th>
-                    <th scope="col">Label</th>
-                    <th scope="col" class="num">Value</th>
-                    <th scope="col" class="num" title="Sample size behind the value">N</th>
+                    <th scope="col">{S.builder.colGroup}</th>
+                    <th scope="col">{S.builder.colLabel}</th>
+                    <th scope="col" class="num">{S.builder.colValue}</th>
+                    <th scope="col" class="num" title={S.builder.sampleSizeTitle}>N</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1428,7 +1427,7 @@
                     <tr
                       class:bld-missing={r.n === 0}
                       class:bld-egroup={!r.group}
-                      title={r.n === 0 ? 'no data behind this value' : ''}
+                      title={r.n === 0 ? S.builder.noDataBehind : ''}
                     >
                       <td class="mono">{r.group || '—'}</td>
                       <td>
@@ -1447,12 +1446,12 @@
             </div>
           {/if}
           <details class="bld-sql">
-            <summary>compiled SQL (provenance)</summary>
+            <summary>{S.builder.compiledSql}</summary>
             <pre class="mono">{preview.sql}</pre>
           </details>
         {:else}
           <p class="muted" role="status">
-            Nothing previewed yet — press Preview (or <span class="codicon codicon-play"></span> on a metric).
+            {S.builder.noPreviewYetLead} <span class="codicon codicon-play"></span> {S.builder.noPreviewYetTail}
           </p>
         {/if}
       </section>

@@ -85,7 +85,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/components/StatusChip.svelte',
   'frontend/src/lib/components/SuggestInput.svelte',
   'frontend/src/lib/components/TeamColumn.svelte',
-  'frontend/src/lib/views/Builder.svelte',
   'frontend/src/lib/views/Combat.svelte',
   'frontend/src/lib/views/CompareRounds.svelte',
   'frontend/src/lib/views/Economy.svelte',
