@@ -161,7 +161,18 @@ const EXPECTED = {
   // match, body untouched, transient-state pin, rendered-text-only
   // match, the catalog no-match line, clearing restores), old G
   // re-lettered H with its check count unchanged.
-  'docs.dom.mjs': 60,
+  // docs 60 → 69 (2026-11-14, N3+N4 manual wave): +9 the NEW section H
+  // (the two-tier contents list — the ONE subsection toggle on the
+  // metric-language row with its default-expanded + catalog-label pins,
+  // fold → 13 entries + aria-expanded false, unfold → 26, the dual
+  // highlight on a current MINOR (.active + aria-current vs the major's
+  // .parent-active, exactly one aria-current) and on a current MAJOR
+  // (no .parent-active anywhere), a query expanding a FOLDED chapter so
+  // its marked match stays listed, the fold state surviving the query,
+  // <mark> in a TOC label AND a body section heading with byte-identical
+  // text, clearing removing every mark); the second-manual section
+  // re-lettered H → I with its 4 checks unchanged.
+  'docs.dom.mjs': 69,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four

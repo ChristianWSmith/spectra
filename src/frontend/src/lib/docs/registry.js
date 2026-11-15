@@ -15,6 +15,15 @@
 // `doc-<docId>-<sectionId>` composes from ids only, never from titles,
 // so rewording a section title can never break the Builder `?` deep
 // target (metric-language) or any future link.
+//
+// Sections carry an OPTIONAL `parent` — the tier field (N3, 2026-11-14):
+// absent → a MAJOR (a top-level contents entry), set to a sibling
+// section's id → a MINOR (an entry nested under that major in the TOC).
+// Depth is capped at TWO by registration (a parent must itself be a
+// major), and the field is TOC-only — the body renderer is deliberately
+// tier-agnostic: every section keeps its own <section><h2>, whatever
+// tier it is (rendering minors as <h3> would collide with the markdown
+// headings inside their own content).
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const docs = new Map(); // registration order — powers listDocs()
@@ -55,10 +64,35 @@ export function registerDoc(doc) {
     if (typeof s.title !== 'string' || !s.title.trim()) {
       throw new Error(`registerDoc: section "${s.id}" in "${doc.id}" needs a title`);
     }
+    // The optional tier field: a parent must be a kebab id of a SIBLING
+    // section (validated against the finished list below) — pass the
+    // value through unchanged so the TOC can nest this section under it.
+    if (s.parent !== undefined && (typeof s.parent !== 'string' || !KEBAB.test(s.parent))) {
+      throw new Error(
+        `registerDoc: section "${s.id}" parent must be kebab-case (got ${JSON.stringify(s.parent)} in "${doc.id}")`,
+      );
+    }
     // Normalize: every section carries a boolean placeholder and a
     // string blocks (placeholder sections skip their blocks at render).
     return { ...s, placeholder: s.placeholder === true, blocks: typeof s.blocks === 'string' ? s.blocks : '' };
   });
+  // The two-tier contract, enforced at registration (the shipped guide's
+  // shape is pinned in docsregistry.test.js): a parent must EXIST as a
+  // section of this same document and must itself be a major — so no
+  // section ever nests deeper than the TOC's two tiers.
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  for (const s of sections) {
+    if (s.parent === undefined) continue;
+    const parent = byId.get(s.parent);
+    if (!parent) {
+      throw new Error(`registerDoc: section "${s.id}" parent "${s.parent}" is not a section of "${doc.id}"`);
+    }
+    if (parent.parent !== undefined) {
+      throw new Error(
+        `registerDoc: section "${s.id}" parent "${s.parent}" is not a major — the contents list is two tiers`,
+      );
+    }
+  }
   docs.set(doc.id, { ...doc, sections });
 }
 

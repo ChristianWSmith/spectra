@@ -35,6 +35,40 @@ test('registerDoc rejects malformed documents (throws on every violation)', () =
   // Duplicate document id: the same id registered twice.
   registerDoc(doc('dup-doc'));
   assert.throws(() => registerDoc(doc('dup-doc')), /duplicate document id "dup-doc"/);
+  // N3 tier validation: `parent` must be a kebab id of a SIBLING section
+  // that is itself a major (the contents list is two tiers, no deeper).
+  assert.throws(
+    () => registerDoc({ id: 'bad-parent', title: 'x', sections: [{ id: 'a', title: 'A', parent: 'Not Kebab' }] }),
+    /parent must be kebab-case/,
+  );
+  assert.throws(
+    () => registerDoc({ id: 'ghost-parent', title: 'x', sections: [{ id: 'a', title: 'A', parent: 'missing' }] }),
+    /is not a section/,
+  );
+  assert.throws(
+    () =>
+      registerDoc({
+        id: 'deep-parent',
+        title: 'x',
+        sections: [
+          { id: 'top', title: 'Top' },
+          { id: 'mid', title: 'Mid', parent: 'top' },
+          { id: 'deep', title: 'Deep', parent: 'mid' },
+        ],
+      }),
+    /is not a major/,
+  );
+  // …and a well-formed two-tier document registers (its tiers pass
+  // through untouched — a minor's parent survives normalization).
+  registerDoc({
+    id: 'tiered-doc',
+    title: 'Tiers',
+    sections: [
+      { id: 'chapter', title: 'Chapter' },
+      { id: 'leaf', title: 'Leaf', parent: 'chapter' },
+    ],
+  });
+  assert.equal(getDoc('tiered-doc').sections[1].parent, 'chapter');
 });
 
 test('getDoc returns the registered document and undefined on a miss', () => {
@@ -142,4 +176,40 @@ test('the shipped user guide: exact section order, every section is real content
   for (const s of real) {
     assert.ok(s.blocks.length > 0, `${s.id} has no content`);
   }
+});
+
+test('the shipped guide is exactly two tiers: majors/minors partition it, every minor hangs off a major', () => {
+  // N3 (2026-11-14): the contents list is TWO levels deep — the owner's
+  // model: the twelve guide sections plus `metric-language` are MAJORS,
+  // the metric chapter's other sections are MINORS under it (so
+  // Denominators is a subheading of Metric language, not a peer of The
+  // replay). The body renderer is deliberately tier-agnostic (every
+  // section keeps its <h2>), so THIS is the pin on the tier data.
+  const guide = getDoc('user-guide');
+  const majors = guide.sections.filter((s) => s.parent === undefined);
+  const minors = guide.sections.filter((s) => s.parent !== undefined);
+  // Partition: the two classes cover the set exactly, at the model's
+  // counts (13 + 13 = the 26 the order pin above lists).
+  assert.equal(majors.length + minors.length, guide.sections.length, 'no section is unclassified or double-counted');
+  assert.equal(majors.length, 13, 'the 12 guide sections + Metric language');
+  assert.equal(minors.length, 13, "the metric chapter's other sections");
+  // Every minor's parent exists, IS a major, precedes it in document
+  // order (TOC order must stay body order — the driver's index pins
+  // line the two lists up), and every minor hangs off the SAME chapter.
+  for (const m of minors) {
+    const idx = guide.sections.findIndex((s) => s.id === m.parent);
+    assert.ok(idx >= 0, `${m.id}: parent "${m.parent}" exists`);
+    assert.equal(guide.sections[idx].parent, undefined, `${m.parent} is a major`);
+    assert.ok(idx < guide.sections.indexOf(m), `${m.id} follows its parent`);
+    assert.equal(m.parent, 'metric-language', `${m.id} hangs off the metric chapter`);
+  }
+  // No depth beyond two: no minor's parent may itself be a minor
+  // (registration enforces this too — registerDoc rejects a nested
+  // parent, this pins the shipped data against the same rule).
+  const minorIds = new Set(minors.map((s) => s.id));
+  for (const m of minors) {
+    assert.equal(minorIds.has(m.parent), false, `${m.parent} must not itself be a minor`);
+  }
+  // The owner's worked example, pinned literally.
+  assert.equal(guide.sections.find((s) => s.id === 'denominators').parent, 'metric-language');
 });
