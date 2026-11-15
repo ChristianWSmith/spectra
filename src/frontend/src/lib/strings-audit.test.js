@@ -171,7 +171,8 @@ const PENDING_DENYLIST = {
 };
 
 // ---------------------------------------------------------------------------
-// The denylist — implementation language, with the reason attached
+// The denylist — terms that are never the user's business (implementation
+// language, browser chrome), with the reason attached
 // (queue-user-text-philosophy.md:33-36). Case-sensitive unless noted.
 // ---------------------------------------------------------------------------
 const DENYLIST = [
@@ -187,6 +188,10 @@ const DENYLIST = [
   { term: 'refactor', re: /\brefactor/i, why: 'dev-process verb' },
   { term: 'backfill', re: /\bbackfill/i, why: 'dev-process verb' },
   { term: 'migration(s)', re: /\bmigrations?\b/i, why: 'dev-process noun' },
+  // Browser chrome (owner, 2026-11-14): "though this project leverages
+  // web technology, it is not a web app, it is a desktop app" — the
+  // guide's "address bar … copied link" line was the second sighting.
+  { term: 'address bar', re: /address bar/i, why: 'browser chrome — Spectra is a desktop app, not a web app' },
 ];
 
 // DB table names in prose. The table set is read from schema.sql DDL at test

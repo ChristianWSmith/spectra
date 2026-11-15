@@ -66,6 +66,9 @@ differentiators:
   from the user's install, never bundled.
 - **Breaking changes:** at-will before the first release; after 1.0,
   major versions only.
+- **The manual stays in lockstep:** any change that alters user-visible
+  behavior, surfaces, or wording updates the user guide in the SAME
+  change — the manual is never a follow-up.
 
 ### Defaults (violate only with strong reason)
 
