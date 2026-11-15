@@ -1078,9 +1078,17 @@ canvas.heat-canvas {
   margin: 2px 0 10px;
 }
 
+/* Two FIXED rows (owner wave) — three columns, never auto-fit: the DOM
+   order (Name / Title / Short name, then Scope / Denominator / Format)
+   IS the row order, so each trio lands on its own line at every panel
+   width instead of re-wrapping as the window resizes. minmax(0, 1fr)
+   keeps the shrink honest at the 900px minimum window width (the right
+   column bottoms out near 460px, ~140px a field once the panel padding
+   is paid); .bld-field and .input both carry min-width: 0, so nothing
+   overflows. */
 .bld-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 

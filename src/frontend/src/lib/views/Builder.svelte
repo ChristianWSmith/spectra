@@ -1214,13 +1214,11 @@
                  it in the user's words, mirroring the plugin chip. -->
             <span class="chip bld-readonly" title={S.builder.builtinReadOnly}
               >{S.builder.builtinChip}</span>
-            >
           {:else if readOnly}
             <!-- Plugin rows: immutable through Save — saving stores a
                  copy of this definition as your own metric. -->
             <span class="chip bld-readonly" title={S.builder.pluginImmutable}
               >{S.builder.pluginReadOnlyChip}</span>
-            >
           {/if}
         </div>
 
@@ -1246,14 +1244,37 @@
           {/if}
         {/if}
 
+        <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
+             name, row 2 = Scope / Denominator / Format — the grid below
+             is a fixed three columns, so the DOM order IS the row order
+             (Denominator therefore precedes Format). Doc and Expression
+             keep their full-width rows underneath. -->
         <div class="bld-fields">
+          <!-- readonly, never disabled, on the text fields (owner wave):
+               a built-in's contents stay selectable and copyable while
+               backspace/delete/caret editing are blocked — WebKit greys
+               a disabled input out and forbids selection, which is
+               exactly what the owner ruled out. The selects take
+               disabled instead: a dropdown is not a copy surface. -->
           <div class="bld-field">
             <label class="field-label" for="bld-name">{S.builder.fieldName}</label>
-            <input id="bld-name" class="input mono" bind:value={form.name} placeholder={S.builder.namePlaceholder} />
+            <input
+              id="bld-name"
+              class="input mono"
+              bind:value={form.name}
+              placeholder={S.builder.namePlaceholder}
+              readonly={builtinLoaded}
+            />
           </div>
           <div class="bld-field">
             <label class="field-label" for="bld-title">{S.builder.fieldTitle}</label>
-            <input id="bld-title" class="input" bind:value={form.title} placeholder={S.builder.titlePlaceholder} />
+            <input
+              id="bld-title"
+              class="input"
+              bind:value={form.title}
+              placeholder={S.builder.titlePlaceholder}
+              readonly={builtinLoaded}
+            />
           </div>
           <div class="bld-field">
             <label class="field-label" for="bld-short">{S.builder.fieldShortName}</label>
@@ -1262,13 +1283,22 @@
               class="input"
               bind:value={form.shortName}
               placeholder={S.builder.shortNamePlaceholder}
+              readonly={builtinLoaded}
             />
           </div>
           <div class="bld-field">
             <label class="field-label" for="bld-scope">{S.builder.scopeLabel}</label>
-            <select id="bld-scope" class="input" bind:value={form.scope}>
+            <select id="bld-scope" class="input" bind:value={form.scope} disabled={builtinLoaded}>
               <option value="match">{S.builder.scopeMatchOption}</option>
               <option value="profile">{S.builder.scopeProfileOption}</option>
+            </select>
+          </div>
+          <div class="bld-field">
+            <label class="field-label" for="bld-denom">{S.builder.denominatorLabel}</label>
+            <select id="bld-denom" class="input" bind:value={form.denominator} disabled={builtinLoaded}>
+              <option value="">{S.builder.denomNone}</option>
+              <option value="rounds">{S.builder.denomRounds}</option>
+              <option value="matches">{S.builder.denomMatches}</option>
             </select>
           </div>
           <div class="bld-field">
@@ -1276,23 +1306,22 @@
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
                  Type filter's options; auto's value is the '' format). -->
-            <select id="bld-format" class="input" bind:value={form.format}>
+            <select id="bld-format" class="input" bind:value={form.format} disabled={builtinLoaded}>
               {#each METRIC_FORMATS as f (f.token)}
                 <option value={f.value}>{f.token}</option>
               {/each}
             </select>
           </div>
-          <div class="bld-field">
-            <label class="field-label" for="bld-denom">{S.builder.denominatorLabel}</label>
-            <select id="bld-denom" class="input" bind:value={form.denominator}>
-              <option value="">{S.builder.denomNone}</option>
-              <option value="rounds">{S.builder.denomRounds}</option>
-              <option value="matches">{S.builder.denomMatches}</option>
-            </select>
-          </div>
           <div class="bld-field wide">
             <label class="field-label" for="bld-doc">{S.builder.fieldDoc}</label>
-            <textarea id="bld-doc" class="input" rows="3" bind:value={form.doc} placeholder={S.builder.docPlaceholder}></textarea>
+            <textarea
+              id="bld-doc"
+              class="input"
+              rows="3"
+              bind:value={form.doc}
+              placeholder={S.builder.docPlaceholder}
+              readonly={builtinLoaded}
+            ></textarea>
           </div>
           <div class="bld-field wide">
             <label class="field-label" for="bld-expr">{S.builder.fieldExpression}</label>
@@ -1303,6 +1332,7 @@
               spellcheck="false"
               bind:value={form.expr}
               placeholder={EXAMPLE}
+              readonly={builtinLoaded}
             ></textarea>
             <p class="bld-hint mono">
               from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |

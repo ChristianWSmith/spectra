@@ -820,6 +820,73 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       (r.querySelector('#bld-doc')?.value || '').includes('trade successes'),
     `title=${r.querySelector('#bld-title')?.value} denom=${r.querySelector('#bld-denom')?.value}`,
   );
+  // The built-in's contents are READ-ONLY but not DISABLED (owner
+  // wave): readonly blocks backspace/delete/caret editing while the
+  // text stays selectable and copyable — a disabled input would be
+  // greyed out and unselectable in WebKit. The three selects take
+  // disabled instead (a dropdown is not a copy surface).
+  check(
+    'the three text inputs are readonly for a built-in (never disabled — selection/copy stays live)',
+    ['bld-name', 'bld-title', 'bld-short'].every((id) => {
+      const el = r.querySelector('#' + id);
+      return el && el.readOnly === true && el.disabled === false;
+    }),
+    ['bld-name', 'bld-title', 'bld-short']
+      .map((id) => {
+        const el = r.querySelector('#' + id);
+        return `${id}:readOnly=${el?.readOnly} disabled=${el?.disabled}`;
+      })
+      .join(' '),
+  );
+  check(
+    'the two textareas (Doc, Expression) are readonly for a built-in, not disabled',
+    ['bld-doc', 'bld-expr'].every((id) => {
+      const el = r.querySelector('#' + id);
+      return el && el.readOnly === true && el.disabled === false;
+    }),
+    ['bld-doc', 'bld-expr']
+      .map((id) => {
+        const el = r.querySelector('#' + id);
+        return `${id}:readOnly=${el?.readOnly} disabled=${el?.disabled}`;
+      })
+      .join(' '),
+  );
+  check(
+    'the three selects (Scope, Denominator, Format) are disabled for a built-in',
+    ['bld-scope', 'bld-denom', 'bld-format'].every((id) => {
+      const el = r.querySelector('#' + id);
+      return el && el.disabled === true;
+    }),
+    ['bld-scope', 'bld-denom', 'bld-format']
+      .map((id) => `${id}:disabled=${r.querySelector('#' + id)?.disabled}`)
+      .join(' '),
+  );
+  // The form's TWO FIXED ROWS (owner ruling, origin-independent — it
+  // pins .bld-fields markup, not the built-in state): row 1 Name /
+  // Title / Short name, row 2 Scope / Denominator / Format, then the
+  // full-width Doc and Expression rows underneath. ALL eight fields in
+  // DOM order, deep-equalled: a reorder, a dropped field or a new one
+  // spliced in anywhere fails loudly. The wide pair is included on
+  // purpose — "Doc/Expression last and full-width" is part of the same
+  // ruling, so their position is worth the same pin.
+  const fieldIds = [...r.querySelectorAll('.bld-fields .bld-field')].map(
+    (f) => f.querySelector('[id]')?.id ?? '',
+  );
+  check(
+    'the form fields sit in the two fixed rows (Name/Title/Short · Scope/Denominator/Format, then Doc/Expression)',
+    JSON.stringify(fieldIds) ===
+      JSON.stringify([
+        'bld-name',
+        'bld-title',
+        'bld-short',
+        'bld-scope',
+        'bld-denom',
+        'bld-format',
+        'bld-doc',
+        'bld-expr',
+      ]),
+    JSON.stringify(fieldIds),
+  );
   check(
     'the read-only chip is present, worded for the user',
     !!chip() && chip().textContent.trim() === 'built-in' && chip().getAttribute('title') === REASON,
@@ -860,6 +927,19 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       !saveBtn().disabled &&
       !chip(),
     `name=${r.querySelector('#bld-name')?.value} disabled=${saveBtn().disabled} chip=${!!chip()}`,
+  );
+  check(
+    'the user metric lifts every readonly/disabled gate off the fields',
+    ['bld-name', 'bld-title', 'bld-short', 'bld-doc', 'bld-expr'].every(
+      (id) => r.querySelector('#' + id)?.readOnly === false,
+    ) &&
+      ['bld-scope', 'bld-denom', 'bld-format'].every((id) => r.querySelector('#' + id)?.disabled === false),
+    ['bld-name', 'bld-doc', 'bld-scope', 'bld-format']
+      .map((id) => {
+        const el = r.querySelector('#' + id);
+        return `${id}:readOnly=${el?.readOnly} disabled=${el?.disabled}`;
+      })
+      .join(' '),
   );
 
   // → back to the built-in: read-only again.

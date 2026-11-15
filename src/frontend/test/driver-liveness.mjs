@@ -112,7 +112,19 @@ const EXPECTED = {
   // in ONE call, plus the restore); B/H kept their counts and only
   // gained the format arg slot / the twelve-check restore pins;
   // D/E/F/I/J untouched.
-  'builder.dom.mjs': 107,
+  // builder 107 → 111 (2026-11-15, built-in read-only inputs + the
+  // two-row form): +4 section D — the three text inputs and the two
+  // textareas are readonly (never disabled, so selection/copy stays
+  // live), the three selects are disabled, and a loaded user metric
+  // lifts every gate again. The row reorder (Denominator before
+  // Format) moves no check: fields are addressed by id.
+  // builder 111 → 112 (2026-11-15, row-order pin): +1 section D — the
+  // eight #bld-* fields in DOM order deep-equal the two fixed rows
+  // (Name/Title/Short · Scope/Denominator/Format, then Doc/Expression),
+  // so the owner's row ruling is mechanical. The stray ">" text nodes
+  // beside the two read-only chips were deleted the same day — the
+  // chip assertions read the <span> only, so they moved no count.
+  'builder.dom.mjs': 112,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
