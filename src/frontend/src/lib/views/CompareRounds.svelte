@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   // Side-by-side round comparison — a distinct analytical view (not an
   // event browser): its bounded event sequence renders through the shared
   // LandmarkRow and links into Replay at that tick, following the row's
@@ -207,18 +208,18 @@
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span> Back</button>
-    <h1>Compare rounds</h1>
+    <button class="btn" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span>{S.compare.back}</button>
+    <h1>{S.compare.title}</h1>
     <div class="spacer"></div>
     {#if sel}
-      <span class="muted">{sel.rounds.length} rounds selected</span>
+      <span class="muted">{sel.rounds.length}{S.compare.roundsSelected}</span>
     {/if}
   </header>
 
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.compare.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
@@ -227,24 +228,23 @@
   {#if !sel}
     <section class="panel">
       <p class="muted" role="status">
-        No rounds selected. Open the match's <strong>Rounds</strong> tab, tick
-        two to four rounds (max 4), then press <strong>Compare</strong>.
+        {S.compare.emptyLead}<strong>{S.compare.emptyRounds}</strong>{S.compare.emptyMid}<strong>{S.compare.emptyCompare}</strong>.
       </p>
       <div>
-        <button class="btn primary" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span> Back to match</button>
+        <button class="btn primary" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span>{S.compare.backToMatch}</button>
       </div>
     </section>
   {:else if loading}
     <!-- The round reads are still in flight: without this the selection
          renders as empty column shells (rung 3 — the bare fallback's
          centered spinner + details underneath, transient). -->
-    <p class="muted" role="status"><StatusChip block detail="Loading rounds…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.compare.loadingRounds} /></p>
   {:else}
     <div class="cmp-grid" style={gridStyle}>
       {#each cols as col (col.round)}
         <section class="cmp-col">
           <h3>
-            Round {roundIndexLabel(col.detail ? col.detail.round : col.round)}
+            {S.compare.roundLabel}{roundIndexLabel(col.detail ? col.detail.round : col.round)}
             {#if col.detail}
               <span class="chip side {col.detail.round.winner || 'none'}">
                 {col.detail.round.winner ? col.detail.round.winner.toUpperCase() : '—'}
@@ -252,31 +252,31 @@
               <!-- Win reason: models.RoundRow.reason (the roundRowSelect
                    projection — the same raw value the Rounds tab's
                    Reason column and Round detail show). -->
-              <span class="muted" title="Round win reason"
+              <span class="muted" title={S.compare.winReasonTitle}
                 >{col.detail.round.reason || '—'}</span
               >
             {/if}
             {#if col.cls}
               <span
                 class="chip cmp-class {col.cls.label || 'unknown'}"
-                title="{col.cls.explanation || 'classified'} (rules v{col.cls.ruleVersion})"
+                title={S.fill(S.compare.classTitle, { explanation: col.cls.explanation || 'classified', ruleVersion: col.cls.ruleVersion })}
                 >{col.cls.label || 'unknown'}</span
               >
             {/if}
           </h3>
 
           {#if !col.detail}
-            <p class="muted" role="status">Round not found.</p>
+            <p class="muted" role="status">{S.compare.roundNotFound}</p>
           {:else}
             <div>
-              <p class="section-title cmp-sec-t">Economy</p>
+              <p class="section-title cmp-sec-t">{S.compare.economyHeading}</p>
               <table class="data-table mini">
                 <thead>
                   <tr>
                     <th scope="col"></th>
-                    <th scope="col" class="num">Equip</th>
-                    <th scope="col" class="num">Money</th>
-                    <th scope="col" class="num">Spent</th>
+                    <th scope="col" class="num">{S.compare.thEquip}</th>
+                    <th scope="col" class="num">{S.compare.thMoney}</th>
+                    <th scope="col" class="num">{S.compare.thSpent}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -296,7 +296,7 @@
               </table>
               {#if col.econ}
                 <p class="muted cmp-note">
-                  buy CT <span class="chip cmp-class {col.econ.classCT || 'unknown'}">{col.econ.classCT || 'unknown'}</span>
+                  {S.compare.buyCT}<span class="chip cmp-class {col.econ.classCT || 'unknown'}">{col.econ.classCT || 'unknown'}</span>
                   · T <span class="chip cmp-class {col.econ.classT || 'unknown'}">{col.econ.classT || 'unknown'}</span>
                   · {fmtDuration(col.detail.round.durationS)}
                 </p>
@@ -306,11 +306,11 @@
             </div>
 
             <div>
-              <p class="section-title cmp-sec-t">Loadout summary</p>
+              <p class="section-title cmp-sec-t">{S.compare.loadoutHeading}</p>
               <ul class="cmp-list">
-                <li><span class="muted">Kills</span> <strong>{col.detail.round.kills}</strong></li>
+                <li><span class="muted">{S.compare.killsLabel}</span> <strong>{col.detail.round.kills}</strong></li>
                 <li>
-                  <span class="muted">First blood</span>
+                  <span class="muted">{S.compare.firstBloodLabel}</span>
                   <span>
                     {#if col.firstBlood}
                       <ProfileLink
@@ -322,9 +322,9 @@
                           col.firstBlood.killSteam,
                           col.firstBlood.kill,
                         )}
-                        title="Open {col.firstBlood.kill} profile"
+                        title={S.fill(S.compare.openProfile, { name: col.firstBlood.kill })}
                       />
-                      killed
+                      {S.compare.killed}
                       <ProfileLink
                         steam={col.firstBlood.deathSteam}
                         name={col.firstBlood.death}
@@ -334,7 +334,7 @@
                           col.firstBlood.deathSteam,
                           col.firstBlood.death,
                         )}
-                        title="Open {col.firstBlood.death} profile"
+                        title={S.fill(S.compare.openProfile, { name: col.firstBlood.death })}
                       />
                     {:else}
                       —
@@ -342,11 +342,11 @@
                   </span>
                 </li>
                 <li>
-                  <span class="muted">Bomb site</span>
+                  <span class="muted">{S.compare.bombSiteLabel}</span>
                   <strong>{col.detail.round.bombSite || '—'}</strong>
                 </li>
                 <li>
-                  <span class="muted">MVP</span>
+                  <span class="muted">{S.compare.mvpLabel}</span>
                   {#if col.detail.round.mvpName}
                     <ProfileLink
                       steam={col.detail.round.mvp}
@@ -357,7 +357,7 @@
                         col.detail.round.mvp,
                         col.detail.round.mvpName,
                       )}
-                      title="Open {col.detail.round.mvpName} profile"
+                      title={S.fill(S.compare.openProfile, { name: col.detail.round.mvpName })}
                     />
                   {:else}
                     —
@@ -367,7 +367,7 @@
             </div>
 
             <div>
-              <p class="section-title cmp-sec-t">Utility</p>
+              <p class="section-title cmp-sec-t">{S.compare.utilityHeading}</p>
               <p class="muted cmp-note">{utilSummary(col)}</p>
               {#if col.utils.length > 0}
                 <ul class="cmp-list">
@@ -379,7 +379,7 @@
                         name={u.throwerName || u.thrower}
                         {nav}
                         cls={playerRoundCls(col.round, u.thrower, u.throwerName)}
-                        title="Open {u.throwerName || u.thrower} profile"
+                        title={S.fill(S.compare.openProfile, { name: u.throwerName || u.thrower })}
                       />
                       <span class="muted">
                         {u.damage > 0 ? `${u.damage} dmg` : ''}
@@ -392,7 +392,7 @@
             </div>
 
             <div>
-              <p class="section-title cmp-sec-t">Event sequence {col.seq.length >= SEQ_LIMIT ? `(first ${SEQ_LIMIT})` : ''}</p>
+              <p class="section-title cmp-sec-t">{S.compare.eventSequence}{col.seq.length >= SEQ_LIMIT ? `(first ${SEQ_LIMIT})` : ''}</p>
               <ol class="cmp-events">
                 {#each col.seq.map(toLandmark).filter(Boolean) as row (row.key)}
                   <LandmarkRow
@@ -405,7 +405,7 @@
                     onseek={openEvent}
                   />
                 {:else}
-                  <li class="muted">No events.</li>
+                  <li class="muted">{S.compare.noEvents}</li>
                 {/each}
               </ol>
             </div>
@@ -416,11 +416,11 @@
                    control never follows a player). -->
               <button
                 class="btn small"
-                title="Replay from the round start ({fmtTickSeconds(col.detail.round.startTick, tickRate)})"
-                aria-label="Replay from the round start"
+                title={S.fill(S.compare.replayStartTitle, { tick: fmtTickSeconds(col.detail.round.startTick, tickRate) })}
+                aria-label={S.compare.replayStartLabel}
                 onclick={() => replayStart(col)}
               ><span class="codicon codicon-play" aria-hidden="true"></span></button>
-              <button class="btn small" onclick={() => openRound(col)}>Round detail</button>
+              <button class="btn small" onclick={() => openRound(col)}>{S.compare.roundDetail}</button>
             </div>
           {/if}
         </section>
