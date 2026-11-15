@@ -39,6 +39,7 @@ A saved metric also carries a written explanation of its own formula — one is 
   {
     id: 'writing-an-expression',
     title: 'Writing an expression',
+    parent: 'metric-language',
     blocks: `The whole language is one shape:
 
 \`\`\`
@@ -62,6 +63,7 @@ from player_stats: ratio(sum(kills), sum(deaths))
   {
     id: 'sources',
     title: 'Sources',
+    parent: 'metric-language',
     blocks: `A **source** is one of the bodies of stored data a formula may count and add up over; each has a fixed set of columns you may mention. Every source the language offers is listed below.
 
 | Source | One row is … | Anchors on (the player column) |
@@ -170,6 +172,7 @@ The same duel records as \`engagements\` — one row per duel — but anchored o
   {
     id: 'player-anchor',
     title: 'Player anchor',
+    parent: 'metric-language',
     blocks: `Every metric answers a question about **one player**, so the source that *leads* your formula must identify a player.
 
 \`rounds\`, \`round_economy\`, \`round_classifications\` and \`round_side_classes\` describe rounds and sides, not people, so they can never lead. Starting with one of them is refused immediately:
@@ -199,6 +202,7 @@ from rounds, events: count()               -- refused: rounds leads
   {
     id: 'operators',
     title: 'Operators',
+    parent: 'metric-language',
     blocks: `| Operator | What it produces |
 |---|---|
 | \`count()\` | the number of rows in scope |
@@ -288,6 +292,7 @@ Conditions are row-by-row tests over the source's own columns, so **arithmetic a
   {
     id: 'combining-sources',
     title: 'Combining sources',
+    parent: 'metric-language',
     blocks: `A comma list after \`from\` brings a second (or third) source into the same formula:
 
 \`\`\`
@@ -321,6 +326,7 @@ from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))
   {
     id: 'scope',
     title: 'Scope',
+    parent: 'metric-language',
     blocks: `A metric is computed either for one match or for a whole career:
 
 | Scope | Means | Shown as |
@@ -333,6 +339,7 @@ Both are computed per player; the scope only decides **how much of the library**
   {
     id: 'denominators',
     title: 'Denominators',
+    parent: 'metric-language',
     blocks: `A metric may optionally divide itself by a count of rounds or matches — that is what turns a total into a *rate* ("per round", "per match"). There are exactly two choices, \`rounds\` and \`matches\`; anything else is refused.
 
 **One rule, two readings — the denominator always counts the units of the scope, for that player:**
@@ -358,6 +365,7 @@ In an ad-hoc preview of an unsaved expression, the denominator applies once the 
   {
     id: 'metric-references',
     title: 'Metric references',
+    parent: 'metric-language',
     blocks: `\`metric('name')\` reads **another saved metric's value for the same player**:
 
 \`\`\`
@@ -403,6 +411,7 @@ You also cannot build a loop (\`a\` reading \`b\` reading \`a\`, or a metric rea
   {
     id: 'missing-data',
     title: 'Missing data',
+    parent: 'metric-language',
     blocks: `Every value slot shows one of three things: **a number**, **a dash**, or **a state chip**.
 
 # N and the honest zero
@@ -432,6 +441,7 @@ Notes on how they behave:
   {
     id: 'previewing',
     title: 'Previewing',
+    parent: 'metric-language',
     blocks: `You can run any expression before saving it:
 
 - As you type, the expression is checked continuously and reported as **valid** or as an error at a byte position in your text.
@@ -443,6 +453,7 @@ Notes on how they behave:
   {
     id: 'built-in-metrics',
     title: 'Built-in metrics',
+    parent: 'metric-language',
     blocks: `Spectra ships **built-in metrics** for the common numbers — some scoped to a match (\`trade_rate\`, \`adr\`, \`kast\`, \`kd\`), others for a career (\`career_adr\`, \`career_kast\`, \`career_kd\`). The full list is the **Builtins** group at the top of the builder's left column; a built-in's name is what you use in a \`metric('…')\` reference.
 
 They are **read-only**:
@@ -454,6 +465,7 @@ They are **read-only**:
   {
     id: 'worked-examples',
     title: 'Worked examples',
+    parent: 'metric-language',
     blocks: `Every expression below was accepted exactly as written when checked against the app's own expression checker.
 
 **Counts and totals**
@@ -555,6 +567,7 @@ from player_stats: percentile(1.5, adr)
   {
     id: 'common-errors',
     title: 'Common errors',
+    parent: 'metric-language',
     blocks: `| Message | What it means |
 |---|---|
 | \`empty expression: expected "from <table>: <aggregations>"\` | nothing was typed yet |

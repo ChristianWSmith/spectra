@@ -8,6 +8,12 @@
 // and its first section id (`metric-language`) is the Builder `?` deep
 // target (App's openDocs('metric-language') — untouched).
 //
+// TIERS (N3, 2026-11-14): the contents list is exactly two levels —
+// MAJORS are the twelve guide sections plus `metric-language`, MINORS
+// are the metric chapter's other sections, each carrying
+// `parent: 'metric-language'` in metric-language.js. The field is
+// TOC-only: every section still renders its own <section><h2> below.
+//
 // The guide ships no placeholders today (the draft covered every
 // section; its thin `metric-language` pointer could not ship — its id
 // would collide with the manual's first section and its "second

@@ -38,7 +38,7 @@ The bar on the left edge is the way around:
 Two more things are worth knowing on day one:
 
 - **Ctrl+K opens the command palette.** Jump to any of those views, or search matches, players, saved filters, metrics and saved queries in one box.
-- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference.
+- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference. The contents list on the left groups every section under its chapter: a chapter that has subsections carries a chevron to fold them away, the header search narrows the list and marks the matching text in it and in the section headings, and the list always shows the chapter and the section you are reading.
 
 Nothing in Spectra needs the network to work. The one thing it will reach out for, on its own and
 silently, is a newer version of itself (see **Getting started**); you can also ask it to check

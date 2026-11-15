@@ -32,7 +32,7 @@
 //      one carries cited prose and none renders the coming-soon note);
 //      the sources section re-pinned to its count-free opener and the
 //      metric-language intro still renders real prose. (The placeholder
-//      RENDER path itself is pinned in H, on the throwaway manual.)
+//      RENDER path itself is pinned in I, on the throwaway manual.)
 //   F. accuracy pins from the manual AND from the newly written guide
 //      sections (rendered text): the subject-anchor rule, metric()'s two
 //      legal positions + denials, the sum(a + b) additive chain with
@@ -45,7 +45,16 @@
 //      no-match line straight from the strings catalog, clearing
 //      restores the full TOC, and the query being transient (no URL,
 //      no storage);
-//   H. a throwaway second manual registered into the LIVE registry makes
+//   H. the two-tier contents list (N3/N4): the ONE subsection toggle on
+//      the metric-language row (children visible by default, folding
+//      opt-in, no toggle on a childless major), the dual highlight (the
+//      current minor .active + aria-current, its major .parent-active,
+//      aria-current on exactly one entry, a current MAJOR never wearing
+//      the parent style), a query expanding a FOLDED chapter so its
+//      match stays listed, the fold state surviving the query, and
+//      <mark> hits in a TOC label AND a body section heading with the
+//      text byte-identical (clearing removes every mark);
+//   I. a throwaway second manual registered into the LIVE registry makes
 //      the switcher appear on the next open, switching changes the TOC +
 //      body, and its placeholder section still renders ONLY the
 //      coming-soon note (run last so it cannot leak into earlier pins).
@@ -221,7 +230,7 @@ writeStub(
 // Dialog is a leaf; DocBlocks is a leaf; DocsPopup links Dialog +
 // DocBlocks locally and the docs layer through the COPIED tree (one
 // module instance each — the registry the checks import is this same
-// copied URL, which is what makes section H's live registration
+// copied URL, which is what makes section I's live registration
 // visible to the popup). DocsPopup alone compiles with css:'injected'
 // — its :global() doc-back/doc-panel shape rules must reach
 // document.head so section A can pin the near-fullscreen geometry as
@@ -329,7 +338,7 @@ const helpBtn = () =>
 const panel = () => document.querySelector('.dlg-panel.doc-panel');
 const backdrop = () => document.querySelector('.dlg-back.doc-back');
 const docBody = () => document.querySelector('.doc-body');
-const tocItems = () => [...document.querySelectorAll('.doc-toc-item')]; // section entries (filtered by the header search)
+const tocItems = () => [...document.querySelectorAll('.doc-toc-item')]; // section entries, both tiers (filtered by the header search; the fold toggles are separate buttons)
 const tocCurrent = () => tocItems().find((b) => b.getAttribute('aria-current') === 'true');
 const searchBox = () => document.querySelector('.doc-head input[type="search"]');
 const emptyTocLine = () => document.querySelector('.doc-toc-empty');
@@ -649,7 +658,7 @@ check(
 console.log('E. every guide section is written — nothing ships as a placeholder (2026-11-14 re-pin)');
 const soonNote = "Coming soon — this part of the guide isn't written yet.";
 // The same copied-tree registry instance the popup renders (DocsPopup
-// links this URL; section H registers into it below) — so E reads the
+// links this URL; section I registers into it below) — so E reads the
 // guide's real section flags, not a second copy of the data.
 const docsRegistry = await import(libURL('docs/registry.js'));
 const guideDoc = docsRegistry.getDoc('user-guide');
@@ -782,7 +791,111 @@ check(
   `${tocItems().length} entries`,
 );
 
-console.log('H. a second manual makes the switcher appear (live registry, last section)');
+console.log('H. two tiers: the subsection toggle, the dual highlight, and <mark> search hits');
+// The contents list is two tiers (N3): the metric chapter's minors are
+// indented entries under their major, and ONLY a major that HAS
+// children carries the fold toggle — children are visible by default
+// (the full-TOC pins in A/G depend on it), folding is opt-in, and an
+// active query overrides the fold so a match never hides.
+const rowOf = (majorText) =>
+  [...document.querySelectorAll('.doc-toc-row')].find(
+    (r) => r.querySelector('.doc-toc-item')?.textContent.trim() === majorText,
+  );
+const toggleOf = (majorText) => rowOf(majorText)?.querySelector('.doc-toc-toggle') ?? null;
+const minorEntries = () => [...document.querySelectorAll('.doc-toc-children .doc-toc-item')];
+check(
+  'the ONE subsection toggle sits on the metric-language row (expanded by default, catalog label) — no toggle on a childless major',
+  document.querySelectorAll('.doc-toc-toggle').length === 1 &&
+    minorEntries().length === 13 &&
+    toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true' &&
+    toggleOf('Metric language')?.getAttribute('aria-label') === stringsCommon.collapseSubsections &&
+    toggleOf('Introduction') === null,
+  `${document.querySelectorAll('.doc-toc-toggle').length} toggles / ${minorEntries().length} minors / label=${toggleOf('Metric language')?.getAttribute('aria-label')}`,
+);
+click(toggleOf('Metric language'));
+await sleep();
+check(
+  'folding the chapter hides its minors (13 entries remain) and flips aria-expanded to false',
+  tocItems().length === 13 &&
+    toggleOf('Metric language')?.getAttribute('aria-expanded') === 'false' &&
+    document.querySelectorAll('.doc-toc-children').length === 0,
+  `${tocItems().length} entries / children containers ${document.querySelectorAll('.doc-toc-children').length}`,
+);
+click(toggleOf('Metric language'));
+await sleep();
+check(
+  'unfolding restores every entry (26) and aria-expanded back to true',
+  tocItems().length === 26 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
+);
+click(tocItems().find((b) => b.textContent.trim() === 'Denominators'));
+await sleep();
+const denEntry = tocItems().find((b) => b.textContent.trim() === 'Denominators');
+const mlEntry = tocItems().find((b) => b.textContent.trim() === 'Metric language');
+check(
+  'dual highlight: the current minor wears .active + aria-current, its major .parent-active — aria-current sits on exactly one entry (the true current)',
+  !!denEntry &&
+    denEntry.classList.contains('active') &&
+    denEntry.getAttribute('aria-current') === 'true' &&
+    !!mlEntry &&
+    mlEntry.classList.contains('parent-active') &&
+    !mlEntry.classList.contains('active') &&
+    document.querySelectorAll('.doc-toc-item[aria-current]').length === 1,
+  `${denEntry?.className} / ${mlEntry?.className} / aria-currents=${document.querySelectorAll('.doc-toc-item[aria-current]').length}`,
+);
+click(tocItems().find((b) => b.textContent.trim() === 'Settings'));
+await sleep();
+check(
+  'a major that is ITSELF current wears .active and nothing wears .parent-active (the parent style only ever marks a containing chapter)',
+  tocCurrent()?.textContent.trim() === 'Settings' &&
+    document.querySelectorAll('.doc-toc-item.parent-active').length === 0 &&
+    tocItems().find((b) => b.textContent.trim() === 'Settings')?.classList.contains('active'),
+  `parent-active count ${document.querySelectorAll('.doc-toc-item.parent-active').length} / current=${tocCurrent()?.textContent.trim()}`,
+);
+click(toggleOf('Metric language')); // fold the chapter, then search into it
+await sleep();
+await typeQuery('denominators');
+const denUnderQuery = tocItems().find((b) => b.textContent.trim() === 'Denominators');
+check(
+  'a query expands a FOLDED chapter: its matching minor stays listed, marked, beneath the visible major',
+  !!denUnderQuery &&
+    !!tocItems().find((b) => b.textContent.trim() === 'Metric language') &&
+    !!denUnderQuery.querySelector('mark') &&
+    denUnderQuery.querySelector('mark').textContent === 'Denominators',
+  tocItems().map((b) => b.textContent.trim()).join(', '),
+);
+await typeQuery('');
+check(
+  'clearing the query keeps the user’s fold state (the chapter stays folded: 13 entries)',
+  tocItems().length === 13,
+  `${tocItems().length} entries`,
+);
+await typeQuery('INTRODUCTION');
+const introEntry = tocItems()[0];
+const introHeading = headingEl('introduction');
+check(
+  'search marks the hit in the TOC label AND the body section heading, the text byte-identical inside the <mark>',
+  tocItems().length === 1 &&
+    !!introEntry &&
+    introEntry.textContent === 'Introduction' &&
+    introEntry.querySelectorAll('mark').length === 1 &&
+    introEntry.querySelector('mark').textContent === 'Introduction' &&
+    !!introHeading &&
+    introHeading.querySelectorAll('mark').length === 1 &&
+    introHeading.querySelector('mark').textContent === 'Introduction',
+  `toc=${JSON.stringify(introEntry?.textContent)} / heading marks=${introHeading?.querySelectorAll('mark').length}`,
+);
+await typeQuery('');
+check(
+  'clearing removes every <mark> from the TOC and the body',
+  document.querySelectorAll('.doc-toc mark').length === 0 &&
+    docBody().querySelectorAll('mark').length === 0,
+  `toc marks ${document.querySelectorAll('.doc-toc mark').length} / body marks ${docBody().querySelectorAll('mark').length}`,
+);
+click(toggleOf('Metric language')); // unfold — leave the guide as section I found it
+await sleep();
+
+console.log('I. a second manual makes the switcher appear (live registry, last section)');
 click(closeBtn());
 await sleep();
 const registry = await import(libURL('docs/registry.js'));

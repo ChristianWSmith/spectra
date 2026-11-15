@@ -21,7 +21,8 @@
   // `current` is component-local SCROLL-SPY state — syncCurrent()
   // re-derives it from the body's scroll events, TOC/switcher
   // navigation writes the same one variable (one source of truth) —
-  // and the search query is component-local transient state too.
+  // and the search query and the per-major subsection collapse are
+  // component-local transient state too.
   //
   // Content is generic: any number of manuals from the registry
   // (docs/manuals/index.js self-registers them), the switcher renders
@@ -44,7 +45,8 @@
   // re-derives it from the body's scroll events, and goTo()/switchTo()
   // write it directly for programmatic navigation (the scroll those
   // cause re-derives the same value from the layout — agreement, never
-  // a flicker back).
+  // a flicker back). Its PARENT major is derived from that one id (see
+  // currentMajor) — the dual highlight never tracks a second section.
   let current = $state('');
   // The header search — transient component state (never restored):
   // it filters the TOC list only; the body always renders every
@@ -52,17 +54,79 @@
   // "where is X?" without hiding content the reader may already be
   // reading).
   let query = $state('');
+  // Per-major subsection collapse (N3): children are VISIBLE by default
+  // and folding them away is opt-in per major (majors without children
+  // never render a toggle). Transient like `query` — it never restores,
+  // and an active search overrides it (see showingChildren).
+  let collapsed = $state({});
 
   const doc = $derived(docs.length ? docs[Math.min(docIdx, docs.length - 1)] : null);
 
   // The filter: trimmed, case-insensitive substring over a section's
   // TITLE + its rendered block text — the same markdown AST DocBlocks
   // renders, flattened to plain text here (no DOM, no layout). Empty
-  // needle → every section (today's behaviour).
+  // needle → every section (today's behaviour). While a query is active
+  // a matching MINOR keeps its major visible too (the nested list is
+  // never headless) — the ancestor rule; expansion is forced open by
+  // showingChildren so a match never hides behind a collapsed parent.
   const needle = $derived(query.trim().toLowerCase());
-  const visibleSections = $derived(
-    !doc ? [] : !needle ? doc.sections : doc.sections.filter((s) => searchTextOf(s).includes(needle)),
-  );
+  const visibleSections = $derived.by(() => {
+    if (!doc) return [];
+    if (!needle) return doc.sections;
+    const keep = new Set();
+    for (const s of doc.sections) {
+      if (searchTextOf(s).includes(needle)) {
+        keep.add(s.id);
+        if (s.parent) keep.add(s.parent); // a minor never appears without its major
+      }
+    }
+    return doc.sections.filter((s) => keep.has(s.id));
+  });
+
+  // --- Two-tier contents helpers (N3) ---------------------------------------
+  // `current` stays ONE section — the scroll-spy model below is
+  // untouched; the tier above it is DERIVED from the registry data so
+  // the nav can light up BOTH entries: the current one wears .active +
+  // aria-current (the TRUE current, never the parent), its major wears
+  // .parent-active.
+  const currentSection = $derived(doc ? doc.sections.find((s) => s.id === current) : undefined);
+  const currentMajor = $derived(currentSection ? currentSection.parent || currentSection.id : '');
+  const parentActive = (id) => currentMajor === id && current !== id;
+  // Children of a major, in document order: `childrenOf` is the full
+  // list (does this major render a toggle at all?), `shownChildren` is
+  // what the filter currently lets through.
+  const childrenOf = (id) => (doc ? doc.sections.filter((s) => s.parent === id) : []);
+  const shownChildren = (id) => visibleSections.filter((s) => s.parent === id);
+  // A folded major hides its children — UNLESS a query is active, when
+  // expansion is forced so a match is never buried under a collapsed
+  // parent.
+  const showingChildren = (id) => needle !== '' || !collapsed[id];
+  function toggleChildren(id) {
+    collapsed = { ...collapsed, [id]: !collapsed[id] };
+  }
+
+  // --- Search highlighting (N4) ----------------------------------------------
+  // Split a label into plain/matched segments for the `marked` snippet
+  // below: case-insensitive substring over the SAME needle the filter
+  // uses, each matched slice keeping the ORIGINAL casing so every
+  // textContent pin stays byte-identical. Segments are plain objects —
+  // never an HTML string ({@html} is forbidden in both docs components,
+  // docsmd.test.js); the template builds the <mark> elements itself.
+  function markSegments(text, q) {
+    if (!q) return [{ text, hit: false }];
+    const lower = text.toLowerCase();
+    const out = [];
+    let from = 0;
+    for (;;) {
+      const at = lower.indexOf(q, from);
+      if (at < 0) break;
+      if (at > from) out.push({ text: text.slice(from, at), hit: false });
+      out.push({ text: text.slice(at, at + q.length), hit: true });
+      from = at + q.length;
+    }
+    if (from < text.length) out.push({ text: text.slice(from), hit: false });
+    return out;
+  }
 
   // Refresh the registry view on every open: manuals register as an
   // import side effect, and one registered after first paint must show
@@ -201,9 +265,17 @@
     docIdx = i;
     const d = docs[i];
     current = d.sections[0].id;
+    collapsed = {}; // fold state is per-document (ids may repeat across manuals)
     if (bodyEl) bodyEl.scrollTop = 0;
   }
 </script>
+
+<!-- Search-hit rendering (N4) — the ONE way a label reaches the DOM with
+     matches marked: plain segments render as text, matched segments as
+     <mark>. Defined at the template root so the TOC entries (both tiers)
+     and the body's section headings share it; textContent is unchanged
+     either way (the segments concatenate back to the original string). -->
+{#snippet marked(text)}{#each markSegments(text, needle) as seg, i (i)}{#if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{/snippet}
 
 {#if doc}
   <Dialog open={open} label={doc.title} backClass="doc-back" panelClass="doc-panel" {onClose}>
@@ -237,13 +309,49 @@
           </div>
         {/if}
         {#each visibleSections as s (s.id)}
-          <button
-            type="button"
-            class="doc-toc-item"
-            class:active={current === s.id}
-            aria-current={current === s.id ? 'true' : undefined}
-            onclick={() => goTo(s.id, true)}>{s.title}</button
-          >
+          {#if !s.parent}
+            <!-- A MAJOR row: the nav button plus — only for a major
+                 that HAS children — its subsection toggle as a SIBLING
+                 button (nested buttons are invalid HTML). -->
+            <div class="doc-toc-row">
+              <button
+                type="button"
+                class="doc-toc-item"
+                class:active={current === s.id}
+                class:parent-active={parentActive(s.id)}
+                aria-current={current === s.id ? 'true' : undefined}
+                onclick={() => goTo(s.id, true)}>{@render marked(s.title)}</button
+              >
+              {#if !needle && childrenOf(s.id).length > 0}
+                <button
+                  type="button"
+                  class="doc-toc-toggle"
+                  aria-expanded={String(!collapsed[s.id])}
+                  title={collapsed[s.id] ? S.common.expandSubsections : S.common.collapseSubsections}
+                  aria-label={collapsed[s.id] ? S.common.expandSubsections : S.common.collapseSubsections}
+                  onclick={() => toggleChildren(s.id)}
+                >
+                  <span
+                    class="codicon {collapsed[s.id] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"
+                    aria-hidden="true"
+                  ></span>
+                </button>
+              {/if}
+            </div>
+            {#if showingChildren(s.id) && shownChildren(s.id).length > 0}
+              <div class="doc-toc-children">
+                {#each shownChildren(s.id) as c (c.id)}
+                  <button
+                    type="button"
+                    class="doc-toc-item"
+                    class:active={current === c.id}
+                    aria-current={current === c.id ? 'true' : undefined}
+                    onclick={() => goTo(c.id, true)}>{@render marked(c.title)}</button
+                  >
+                {/each}
+              </div>
+            {/if}
+          {/if}
         {/each}
         {#if visibleSections.length === 0}
           <p class="doc-toc-empty">{S.common.noSectionsMatch}</p>
@@ -255,7 +363,7 @@
             <!-- The anchor is composed from HAND-AUTHORED ids
                  (registry.sectionAnchor) — stable across rewording, and
                  tabindex -1 lets goTo() land focus on user navigation. -->
-            <h2 id={sectionAnchor(doc.id, s.id)} tabindex="-1">{s.title}</h2>
+            <h2 id={sectionAnchor(doc.id, s.id)} tabindex="-1">{@render marked(s.title)}</h2>
             {#if s.placeholder}
               <p class="doc-placeholder">{S.common.guideComingSoon}</p>
             {:else}
@@ -349,6 +457,43 @@
   .doc-toc button.active {
     background: var(--btn-hover-bg);
     font-weight: 600;
+  }
+  /* --- Two-tier contents list (N3) ---------------------------------------
+     A major's row is its nav button plus the subsection toggle (a
+     sibling — nested buttons are invalid HTML); its minors sit in an
+     indented column beneath. The toggle inherits .doc-toc button's
+     reset, so it only needs to size itself and mute its glyph. */
+  .doc-toc-row {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .doc-toc-row .doc-toc-item {
+    flex: 1;
+    min-width: 0;
+  }
+  .doc-toc button.doc-toc-toggle {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 4px; /* tighter than a nav entry — it is a glyph, not a label */
+    color: var(--muted);
+  }
+  .doc-toc-children {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 14px; /* the tier indent: minor under its major */
+  }
+  /* Dual highlight: the entry in view wears .active (unchanged — the
+     wash PLUS the weight); the major CONTAINING it wears
+     .parent-active — the same wash without the weight, plus an accent
+     rail — so the nav reads "chapter + section" at a glance, and only
+     ONE entry (the true current) ever carries aria-current. */
+  .doc-toc button.doc-toc-item.parent-active {
+    background: var(--btn-hover-bg);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   /* The honest empty state when the search filter leaves nothing. */
   .doc-toc-empty {

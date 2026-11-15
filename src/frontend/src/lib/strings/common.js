@@ -10,4 +10,9 @@ export const common = {
   searchSections: 'Search sections', // header input: placeholder + aria-label
   noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter
   guideComingSoon: 'Coming soon — this part of the guide isn\'t written yet.',
+  // manual TOC subsection toggle (manual-console wave, 2026-11-14) — the
+  // one per-major fold button; the label reads from the EXPANDED state
+  // (aria-expanded carries the state too)
+  collapseSubsections: 'Collapse subsections',
+  expandSubsections: 'Expand subsections',
 };

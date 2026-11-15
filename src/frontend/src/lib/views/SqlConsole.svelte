@@ -335,10 +335,10 @@
       <h1>SQL console</h1>
       <p class="muted sql-head-note">{DEFAULTS} · read-only</p>
     </div>
+    <!-- The header's own Run button was removed (N8, 2026-11-14): it was
+         redundant with the editor card's Run below. The spacer stays —
+         it still right-aligns the slow chip. -->
     <div class="spacer"></div>
-    <button class="btn primary" onclick={run} disabled={running || !sql.trim()}>
-      Run <span class="codicon codicon-play"></span> Ctrl+Enter
-    </button>
     {#if slow}
       <span class="chip sql-running">running…</span>
     {/if}

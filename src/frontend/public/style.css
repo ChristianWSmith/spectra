@@ -660,6 +660,20 @@ input[type='checkbox']:focus-visible {
   box-shadow: 0 12px 40px var(--overlay-60);
 }
 
+/* --- Search-hit marking (<mark>) -------------------------------------------
+   The docs popup's header search marks matching text in the contents
+   entries and the section headings (DocsPopup's `marked` snippet) — no
+   other surface marks text today. Subtle by design: the brand-amber wash
+   at "selected row" strength reads as a hit without shouting, and
+   `color: inherit` beats the UA stylesheet's black-on-yellow so the text
+   keeps the colour the surrounding surface already gave it. */
+mark {
+  background: var(--accent-40);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 /* --- Chips ----------------------------------------------------------------- */
 
 .chip {
