@@ -60,6 +60,15 @@ differentiators:
   formula. A computed metric is shown as its stored value — while a
   recompute is pending the slot shows a processing/behind state, never
   a stale number.
+- **User-facing text speaks the user's domain — never implementation
+  language:** every string the UI or an export renders (labels, titles,
+  tooltips, empty states, chips, placeholder/help copy, glossary and
+  seed-doc prose, exported report prose, surfaced errors) names what the
+  user knows — matches, players, rounds, stats, metrics, pins, built-ins,
+  processing/behind states — and never an implementation artifact: no
+  programming language, no database table or column, no developer
+  shorthand. Metric expression text, the expression editor and the SQL
+  console are power surfaces: they speak developer by design.
 - **Feature-parity with competitors is evidence, never justification.**
 - **Never present a feature the app cannot fully support offline.**
 - **Valve IP never ships:** extracted CS2 assets are re-extractable

@@ -1,5 +1,5 @@
 // frontend/src/lib/strings/ — THE catalog for free chrome copy (class 1 of
-// the user-text criterion, queue-user-text-philosophy.md): text the markup
+// the user-text criterion in AGENTS.md): text the markup
 // renders directly — text nodes, title/aria-label/placeholder, button labels,
 // empty states, dialog and error phrasing. Domain-keyed label tables stay
 // with their tables; content prose stays in its content module.

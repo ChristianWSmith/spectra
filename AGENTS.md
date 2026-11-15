@@ -314,6 +314,7 @@ Canonical homes (extend these, don't fork them):
 | Read-side cache | `lib/services.js` `cachedRead` — keyed `(method, args)`, flushed on every `spectra:*` event and on mutating wrappers |
 | View-local state (non-nav) | `frontend/src/lib/viewstate.svelte.js` `seed`/`remember` — THE process-scoped registry (process-lifetime only; never web storage, never URL state); match-scoped keys `matchKey`, navigation arbitration `arbitrate` (pure, `(prev, route) → next`), test hook `resetViewState()` |
 | Generic-payload labels | `eventlabels.go` — THE one labeler (Go only; the JS copy died with Context) |
+| User-facing chrome copy | `frontend/src/lib/strings/` — THE catalog (free chrome copy; `index.js` is the only import path, `fill()` the only composer) + mechanical pin `frontend/src/lib/strings-audit.test.js` |
 | Event-row renderer | `lib/components/LandmarkRow.svelte` — the one row for the Replay feed AND CompareRounds' compact sequence |
 | Dialogs / popovers | `lib/components/Dialog.svelte`, `lib/components/Popover.svelte` — Escape/outside-click/focus-return; busy-gating stays with the consumer |
 | Search suggestions | `lib/components/SuggestInput.svelte` — the ONE suggestion dropdown; sources `store.ListMapNames` + `ProfileService.ListPlayers` |
@@ -490,6 +491,25 @@ Canonical homes (extend these, don't fork them):
   copy never describes it with browser chrome (address bars, copied links,
   bookmarks) or as a website. External links (e.g. Steam profiles) open in
   the system browser and may be described as such.
+- **User-facing text speaks the user's domain — never implementation
+  language** (owner, 2026-11-14): **user-facing** = anything the UI or an
+  export renders — labels, titles, tooltips, aria-labels, empty states,
+  chips, placeholder/help copy, glossary/definitions prose, seed-doc
+  tooltips (metric `doc`), exported report/template prose, and Go error
+  strings surfaced through `errText`. **May name:** the user's domain
+  (matches, players, rounds, stats, metrics, pins, built-ins,
+  processing/behind states) and product vocabulary. **Must NOT name:**
+  implementation artifacts — programming languages (Go/golang), database
+  tables/columns in prose (expressions exempt), code-level nouns (seeds,
+  bindings, stubs, sweeps, commits, worktrees), developer shorthand.
+  **Exempt power surfaces:** metric expression text / `Formula:` content,
+  the expression editor, the SQL console, test names/comments,
+  AGENTS/doc.go/code comments. Mechanical pin:
+  `frontend/src/lib/strings-audit.test.js` (denylist + table terms +
+  catalog hygiene), catalog home in the canonical table above. Adopted
+  2026-11-14 together with its sweep — statement and migration ship as
+  one change (see "Adopting principles (meta)" above), so the pre-existing
+  copy was reworded in the same wave this rule landed.
 - **View-level aggregates are allowed** only when they are pure functions
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without
