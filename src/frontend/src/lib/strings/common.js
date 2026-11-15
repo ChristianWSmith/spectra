@@ -7,6 +7,7 @@ export const common = {
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',
-  backToTop: 'Back to top',
+  searchSections: 'Search sections', // header input: placeholder + aria-label
+  noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter
   guideComingSoon: 'Coming soon — this part of the guide isn\'t written yet.',
 };
