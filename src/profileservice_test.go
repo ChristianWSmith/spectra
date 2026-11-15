@@ -179,7 +179,8 @@ func TestGetProfileSidesKD(t *testing.T) {
 // TestGetProfileDesignedHybrid pins the DTO contract dogfooding design
 // §3.5 leaves behind — the audit's §5.2.5 prediction made literal: the
 // raw/inferred and non-expressible stats (N2–N6) STAY on the Go DTO and
-// the nine converted stats are GONE from it. The profile reads those as
+// every converted stat is GONE from it (the dogfood nine plus W3a's
+// Clutches count and Opening-duels rate). The profile reads those as
 // stored metric rows through the canonical career read (the "Career
 // metrics" panel), so a reintroduced field here would be exactly the
 // second presentation path the conversion removes — the JSON key SET is
@@ -199,13 +200,18 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 		t.Fatalf("unmarshal profile: %v", err)
 	}
 	staying := []string{
-		"steamId", "name", "matches", "wins", "winPct", "openingRate",
-		"clutches", "sides", "maps", "weapons", "history",
+		"steamId", "name", "matches", "wins", "winPct", "sides", "maps",
+		"weapons", "history",
 	}
 	converted := []string{
 		"adrAvg", "adrStd", "kd", "hsPct", "kastPct", "tradeRate",
 		"trades", "tradeOpps", "clutchWinPct", "avgEnemiesFlashed",
 		"avgUtilDamage",
+		// W3a: the last two presentation paths — the Clutches count and
+		// the Opening-duels rate — became career_clutches /
+		// career_opening_rate metric rows, so their JSON keys die here
+		// exactly like the eleven above.
+		"clutches", "openingRate",
 	}
 	for _, k := range staying {
 		if _, ok := got[k]; !ok {
@@ -220,6 +226,34 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 	if len(got) != len(staying) {
 		t.Errorf("Profile DTO carries %d fields, want exactly the %d staying ones: %s",
 			len(got), len(staying), raw)
+	}
+	// W3a's history half rides the same key-set pin: the A half of the
+	// K/D/A triple is the STORED `assists` metric row now, so the history
+	// row keeps its `assists` key but it goes NULLABLE (nil → JSON null
+	// → the profile's "—"), never the raw integer the select used to
+	// carry. This fixture runs no metric sweep, so every row is null.
+	if len(p.History) == 0 {
+		t.Fatalf("history = %+v, want the fixture's 2 rows", p.History)
+	}
+	var histRows []map[string]any
+	histJSON, err := json.Marshal(p.History)
+	if err != nil {
+		t.Fatalf("marshal history: %v", err)
+	}
+	if err := json.Unmarshal(histJSON, &histRows); err != nil {
+		t.Fatalf("unmarshal history: %v", err)
+	}
+	for i, r := range histRows {
+		v, ok := r["assists"]
+		if !ok {
+			t.Errorf("history[%d] carries no %q key (the metric-backed A half): %s", i, "assists", r)
+		}
+		if v != nil {
+			t.Errorf("history[%d] assists = %v, want null with no stored metric rows (nil → the profile's —)", i, v)
+		}
+		if _, raw := r["kills"]; !raw {
+			t.Errorf("history[%d] lost its raw K/D columns: %s", i, r)
+		}
 	}
 	// The staying Go stats are still REAL values, not zeros: two
 	// matches, one win (alice's ct match), 50%.
@@ -250,13 +284,14 @@ func TestGetProfileHistoryStartingSide(t *testing.T) {
 	if p.History[0].Win || !p.History[1].Win {
 		t.Errorf("win = %v/%v, want false/true (final side vs 13–10)", p.History[0].Win, p.History[1].Win)
 	}
-	// The ADR/KAST cells read STORED metric rows (D13). This fixture
-	// never runs the metric sweep, so both are absent — the honest nil
-	// the profile renders as "—", never a fabricated 0.
+	// The Assists/ADR/KAST cells read STORED metric rows (D13 for
+	// ADR/KAST, W3a for the triple's A half). This fixture never runs the
+	// metric sweep, so all three are absent — the honest nil the profile
+	// renders as "—", never a fabricated 0.
 	for i, h := range p.History {
-		if h.ADR != nil || h.KASTPct != nil {
-			t.Errorf("history[%d] adr/kast = %v/%v, want nil with no stored metric rows",
-				i, h.ADR, h.KASTPct)
+		if h.Assists != nil || h.ADR != nil || h.KASTPct != nil {
+			t.Errorf("history[%d] assists/adr/kast = %v/%v/%v, want nil/nil/nil with no stored metric rows",
+				i, h.Assists, h.ADR, h.KASTPct)
 		}
 	}
 }

@@ -62,21 +62,24 @@ export const DEFAULT_RANKS = Object.freeze({
     trade_kills: 11,
     best_streak: 12,
   }),
-  // Profile: today's StatCards grid order (PlayerProfile.svelte :342-374)
-  // minus the cards that stay Go — Matches, Win%, Opening duels and the
-  // Clutches COUNT are fixed-block, never ranked. The σ half of
-  // "ADR ± σ" (:345) follows its mean; the clutch-win% follows the
-  // Clutches card's old position (:359); Trade rate is :350.
+  // Profile: today's StatCards grid order (PlayerProfile.svelte) minus
+  // the cards that stay Go — Matches and Win% are fixed-block, never
+  // ranked. The σ half of "ADR ± σ" follows its mean; the Opening-duels
+  // rate takes the Opening duels card's position and the Clutches card
+  // splits into its count then its win-% sub (inferred-conversion W3a,
+  // Addendum A/I9 — both cards left the grid for these rows).
   profile: Object.freeze({
     career_adr: 1,
     career_adr_sigma: 2,
     career_kd: 3,
     career_hs_pct: 4,
     career_kast: 5,
-    career_trade_rate: 6,
-    career_clutch_win_rate: 7,
-    career_avg_enemies_flashed: 8,
-    career_avg_util_damage: 9,
+    career_opening_rate: 6,
+    career_trade_rate: 7,
+    career_clutches: 8,
+    career_clutch_win_rate: 9,
+    career_avg_enemies_flashed: 10,
+    career_avg_util_damage: 11,
   }),
 });
 
@@ -93,8 +96,9 @@ export const DEFAULT_RANKS = Object.freeze({
 // converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
 // moved (NOT trade_rate — today it is not a scoreboard column;
 // entry_deaths stays unpinned because it only ever renders inside the
-// Opening K/D pair cell's fixed named slot). profile = the nine
-// rank-1..9 names above.
+// Opening K/D pair cell's fixed named slot). profile = the eleven
+// rank-1..11 names above (the always-on card set: the nine dogfood
+// cards plus W3a's Opening-duels rate and Clutches count).
 export const DEFAULT_PINS = Object.freeze({
   match: Object.freeze([
     'assists',
@@ -116,7 +120,9 @@ export const DEFAULT_PINS = Object.freeze({
     'career_kd',
     'career_hs_pct',
     'career_kast',
+    'career_opening_rate',
     'career_trade_rate',
+    'career_clutches',
     'career_clutch_win_rate',
     'career_avg_enemies_flashed',
     'career_avg_util_damage',
@@ -135,10 +141,13 @@ export const DEFAULT_PINS = Object.freeze({
 // Rnds, Opening K/D, Util, MVPs, Score. Opening K/D STAYS fixed: it
 // keeps its fixed position (design Q2) while its cell composes the
 // entry_kills / entry_deaths metric halves.
-// profile: the StatCards grid (PlayerProfile.svelte :342-374) minus
-// ADR ± σ, K/D, HS%, KAST%, Trade rate, the Clutches win-% sub, Avg
-// enemies flashed and Avg util damage (→ metrics) — Matches, Win%,
-// Opening duels, Clutches (count only).
+// profile: the StatCards grid (PlayerProfile.svelte) minus every card
+// that renders as a metric — ADR ± σ, K/D, HS%, KAST%, Trade rate, the
+// Clutches win-% sub, Avg enemies flashed and Avg util damage (the
+// dogfood swap) plus, in the inferred-conversion W3a swap, the
+// Opening-duels card and the Clutches COUNT (both became Career
+// metrics rows: career_opening_rate / career_clutches) — leaving
+// Matches and Win% (raw / N2).
 export const FIXED_BLOCK = Object.freeze({
   match: Object.freeze([
     'Name',
@@ -153,7 +162,7 @@ export const FIXED_BLOCK = Object.freeze({
     'MVPs',
     'Score',
   ]),
-  profile: Object.freeze(['Matches', 'Win%', 'Opening duels', 'Clutches']),
+  profile: Object.freeze(['Matches', 'Win%']),
 });
 
 // fixedBlock(scope) — the read-only label list for the dialog.

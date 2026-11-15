@@ -412,12 +412,15 @@ func TestGetTrendPercentScaleAndQ1Divergences(t *testing.T) {
 	}
 }
 
-// TestGetPlayerHistoryReadsStoredMetricRows pins the history table's two
-// metric-backed cells (design §3.5's D13): ADR and KAST% come from the
-// stored match-scope `adr`/`kast` rows — ADR in the metric's own units,
-// KAST% scaled ×100 for the 0..100 cell — and a match with no fresh row
+// TestGetPlayerHistoryReadsStoredMetricRows pins the history table's three
+// metric-backed cells (design §3.5's D13 for ADR/KAST, the inferred-
+// conversion W3a swap for the K/D/A triple's A half): Assists, ADR and
+// KAST% come from the stored match-scope `assists`/`adr`/`kast` rows —
+// ADR in the metric's own units, KAST% scaled ×100 for the 0..100 cell,
+// Assists as the count it is (scale 1) — and a match with no fresh row
 // leaves the cell NIL (the profile's honest "—"), never the retired
-// query-time ps.adr / kastPerMatchSQL arithmetic and never a 0.
+// query-time ps.adr / ps.assists / kastPerMatchSQL arithmetic and never
+// a 0.
 func TestGetPlayerHistoryReadsStoredMetricRows(t *testing.T) {
 	s := openMem(t)
 	base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -436,6 +439,7 @@ func TestGetPlayerHistoryReadsStoredMetricRows(t *testing.T) {
 	newer := save("hist-newer", base.Add(time.Hour))
 
 	// Only the NEWER match carries fresh rows.
+	seedFreshMetricValue(t, s, "assists", "100", newer, 2)
 	seedFreshMetricValue(t, s, "adr", "100", newer, 63.5)
 	seedFreshMetricValue(t, s, "kast", "100", newer, 0.75)
 
@@ -450,17 +454,22 @@ func TestGetPlayerHistoryReadsStoredMetricRows(t *testing.T) {
 		t.Fatalf("history order = %d, %d; want most-recent-first (%d, %d)",
 			rows[0].MatchID, rows[1].MatchID, newer, older)
 	}
+	if rows[0].Assists == nil || *rows[0].Assists != 2 {
+		t.Errorf("newer Assists = %v, want 2 (the stored `assists` row, count units)", rows[0].Assists)
+	}
 	if rows[0].ADR == nil || *rows[0].ADR != 63.5 {
 		t.Errorf("newer ADR = %v, want 63.5 (the stored `adr` row, own units)", rows[0].ADR)
 	}
 	if rows[0].KASTPct == nil || *rows[0].KASTPct != 75 {
 		t.Errorf("newer KASTPct = %v, want 75 (the stored 0.75 fraction ×100 for the 0..100 cell)", rows[0].KASTPct)
 	}
-	if rows[1].ADR != nil || rows[1].KASTPct != nil {
-		t.Errorf("older adr/kast = %v/%v, want nil/nil (no fresh rows → honest gap)",
-			rows[1].ADR, rows[1].KASTPct)
+	if rows[1].Assists != nil || rows[1].ADR != nil || rows[1].KASTPct != nil {
+		t.Errorf("older assists/adr/kast = %v/%v/%v, want nil/nil/nil (no fresh rows → honest gap)",
+			rows[1].Assists, rows[1].ADR, rows[1].KASTPct)
 	}
-	// The raw/inferred cells the history keeps are untouched.
+	// The raw/inferred cells the history keeps are untouched — K and D
+	// stay stored columns (Q2: the triple composes per half, so the
+	// retired ps.assists select is the only assist source that died).
 	if rows[0].Kills != 10 || rows[0].Deaths != 0 || rows[0].Map == "" {
 		t.Errorf("newer row lost its raw columns: %+v", rows[0])
 	}

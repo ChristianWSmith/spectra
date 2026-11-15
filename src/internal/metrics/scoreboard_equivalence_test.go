@@ -433,14 +433,80 @@ func TestMissedTradesEquivalence(t *testing.T) {
 // itoa formats a match id for a scope string.
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 
+// TestCareerClutchesEquivalence is the profile Clutches card's
+// acceptance oracle (design §6.3): career_clutches == player_career.
+// clutches — RebuildCareer's humans-only clutch COUNT, the exact number
+// the card rendered — subject for subject at the profile grain. The
+// committed corpus is clutchless (an empty primary table yields no
+// preview rows, the same treatment the fixtures give
+// career_clutch_win_rate), so this one INSERTS clutches first: a player
+// with clutches gets the same count from both sides, and a player
+// without them keeps career 0 AND no metric row — the profile's honest
+// "—", never a fabricated 0.
+func TestCareerClutchesEquivalence(t *testing.T) {
+	st := seededStore(t)
+	inserted := map[int64][]models.Clutch{
+		1: {
+			{Round: 5, Size: 1, SteamID: "76561198000000001", Name: "Alice", StartTick: 100, Won: true},
+			{Round: 9, Size: 2, SteamID: "76561198000000001", Name: "Alice", StartTick: 200, Won: false},
+		},
+		2: {
+			{Round: 3, Size: 1, SteamID: "76561198000000003", Name: "Carol", StartTick: 300, Won: true},
+		},
+		3: {
+			{Round: 12, Size: 3, SteamID: "76561198000000005", Name: "Eve", StartTick: 400, Won: true},
+			{Round: 16, Size: 1, SteamID: "76561198000000008", Name: "Heidi", StartTick: 500, Won: false},
+		},
+	}
+	for matchID, rows := range inserted {
+		if err := st.ReplaceClutches(matchID, rows); err != nil {
+			t.Fatalf("ReplaceClutches(%d): %v", matchID, err)
+		}
+	}
+	if err := st.RebuildCareer(); err != nil {
+		t.Fatalf("RebuildCareer: %v", err)
+	}
+
+	got := previewAt(t, st, seedExpr(t, st, "career_clutches"), "")
+	withClutches := map[string]int{
+		"76561198000000001": 2, // both of Alice's, across two matches
+		"76561198000000003": 1,
+		"76561198000000005": 1,
+		"76561198000000008": 1,
+	}
+	for i := 1; i <= 8; i++ {
+		sid := fmt.Sprintf("7656119800000000%d", i)
+		career, err := st.GetCareer(sid)
+		if err != nil {
+			t.Fatalf("GetCareer(%s): %v", sid, err)
+		}
+		if career.Clutches != withClutches[sid] {
+			t.Errorf("player_career.clutches[%s] = %d, want %d (RebuildCareer's humans-only COUNT)",
+				sid, career.Clutches, withClutches[sid])
+		}
+		if got[sid] != float64(career.Clutches) {
+			t.Errorf("career_clutches[%s] = %v, want the card's %d", sid, got[sid], career.Clutches)
+		}
+		if withClutches[sid] == 0 {
+			if _, ok := got[sid]; ok {
+				t.Errorf("career_clutches[%s] = %v, want NO row (a clutchless player renders —)",
+					sid, got[sid])
+			}
+		} else if _, ok := got[sid]; !ok {
+			t.Errorf("career_clutches: subject %s missing from the preview", sid)
+		}
+	}
+}
+
 // TestCareerOpeningEquivalence is the opening-duel trio's acceptance
 // oracle (design addendum I9): the three profile seeds equal the career
 // rollup the store keeps (RebuildCareer → GetCareer: openings =
 // Σ(opening_kills + opening_deaths), opener_wins = Σ(opening_kills)),
 // and the rate equals the EXACT percentage the Opening duels card
-// computes (profileservice: 100 × opener_wins / openings, guarded to
-// plain 0 when a career has no duels) — the number the conversion must
-// not move.
+// computed (profileservice's 100 × opener_wins / openings, guarded to
+// plain 0 when a career has no duels — that field died with the card in
+// W3a, which is why the formula is spelled here) — the number the
+// conversion must not move.
 func TestCareerOpeningEquivalence(t *testing.T) {
 	st := seededStore(t)
 	if err := st.RebuildCareer(); err != nil {

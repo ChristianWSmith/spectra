@@ -275,12 +275,14 @@ type CareerSummary struct {
 }
 
 // ProfileHistoryRow is one match-history entry for a player profile.
-// ADR and KASTPct are the STORED match-scope metric values (design
-// §3.5's D13 — the same `adr`/`kast` rows the profile's trend reads,
-// never the query-time SQL arithmetic they replaced): nil means the
-// match has no FRESH row for that metric, and the profile renders the
-// honest "—" in that cell (never a fabricated 0, never a
-// fallback-to-Go recomputation).
+// Assists, ADR and KASTPct are the STORED match-scope metric values
+// (design §3.5's D13 for ADR/KAST, the inferred-conversion W3a swap for
+// the K/D/A triple's A half — the same `assists`/`adr`/`kast` rows the
+// profile's trend reads, never the query-time SQL arithmetic or the raw
+// ps.assists select they replaced): nil means the match has no FRESH row
+// for that metric, and the profile renders the honest "—" in that cell
+// (never a fabricated 0, never a fallback-to-Go recomputation). Kills and
+// Deaths stay raw stored columns (Q2: a triple composes per half).
 //
 // Side is the player's FINAL side (player_stats.side — the side the
 // end-of-demo roster shows, and the input WinFor needs: the final score
@@ -300,7 +302,7 @@ type ProfileHistoryRow struct {
 	StartSide   string    `json:"startSide"` // starting side ("" = unknown)
 	Kills       int       `json:"kills"`
 	Deaths      int       `json:"deaths"`
-	Assists     int       `json:"assists"`
+	Assists     *float64  `json:"assists"` // stored `assists` metric row; nil = no fresh row
 	ADR         *float64  `json:"adr"`     // stored `adr` metric row; nil = no fresh row
 	KASTPct     *float64  `json:"kastPct"` // stored `kast` metric row (0..100); nil = no fresh row
 }
