@@ -1,6 +1,100 @@
-// strings/match.js — Match + RoundDetail + CompareRounds chrome (tabs, scoreboard, round header)
-// Skeleton (Stage 1): empty until Sweep-B extracts the area's copy (design
-// §5.2); values are plain strings with {arg} placeholders (design §3.2).
+// strings/match.js — Match view chrome (views/Match.svelte): header meta
+// line, import-warnings panel, tab bar + rosters, scoreboard, expanded-row
+// tables, Rounds-tab table and the Details key-facts list.
+// Values are plain strings with {arg} placeholders (design §3.2); the view
+// composes them with S.fill at the call site.
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
-export const match = {};
+export const match = {
+  // header + meta line (watch action, patch/status, chat-key badge)
+  dismissError: 'Dismiss error',
+  replayReturnTitle: 'Return to the replay (resumes where you left it)',
+  replayWatchTitle: 'Watch this match in the replay view',
+  watchReplay: 'Watch replay',
+  patchLabel: '· patch',
+  encryptedChatTitle: 'Encrypted chat present — needs the matching .dem.info file to read it',
+
+  // import-warnings panel
+  importWarnings: 'Import warnings',
+  dismissWarnings: 'Dismiss warnings',
+  warningsNone: 'None — this demo imported cleanly.',
+
+  // tab bar + Overview rosters
+  matchSectionsAria: 'Match sections',
+  followReplayTitle: 'Open the replay following {name}',
+  openProfile: 'Open {name} profile',
+  rosterSuffix: 'roster',
+  colPlayer: 'Player',
+  colAdr: 'ADR',
+  rosterOther: 'Other',
+
+  // Scoreboard tab
+  pinnedStatsUnavailable: 'Pinned stats unavailable:',
+  dismissPinnedStatsError: 'Dismiss pinned stats error',
+  expandLabel: 'Expand',
+  metricBasisTitle: 'based on {n} rounds across {count} players',
+  unpinTitle: 'Unpin from scoreboard',
+  unpinAria: 'Unpin {name}',
+  breakdownAria: 'Breakdown for {name}',
+  openProfilePossessive: "Open {name}'s profile",
+
+  // expanded scoreboard row — weapon / utility mini tables
+  killsByWeapon: 'Kills by weapon',
+  colWeapon: 'Weapon',
+  colKills: 'Kills',
+  noneRecorded: 'None recorded',
+  damageByWeapon: 'Damage by weapon',
+  colDamage: 'Damage',
+  utilStatsHeading: 'Utility',
+  colStat: 'Stat',
+  colValue: 'Value',
+  statUtilityDamage: 'Utility damage',
+  statEnemiesFlashed: 'Enemies flashed',
+  statFlashAssists: 'Flash assists',
+  statTimesFlashed: 'Times flashed',
+
+  // Rounds tab
+  roundTypesUnavailable: 'Round types unavailable:',
+  dismissRoundTypesError: 'Dismiss round types error',
+  compareSelectTitle: 'Select rounds to compare (up to 4)',
+  colCmp: 'Cmp',
+  colWinner: 'Winner',
+  buyClassTitle:
+    'Buy type (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip',
+  colClass: 'Class',
+  colReason: 'Reason',
+  colDuration: 'Duration',
+  colSite: 'Site',
+  colMvp: 'MVP',
+  colEquipCt: 'Equip CT',
+  colEquipT: 'Equip T',
+  firstBloodLabel: 'First blood',
+  compareRoundAria: 'Compare round {round}',
+  classChipTitle: '{what} (rules v{v} — {pct}% sure)',
+  killedVerb: 'killed',
+  roundsSelected: '{n} of 4 rounds selected.',
+  compareBtn: 'Compare {n} rounds',
+
+  // Details tab — key facts
+  keyFacts: 'Key facts',
+  factServer: 'Server',
+  factTickrate: 'Tickrate',
+  factFrames: 'Frames',
+  factSize: 'Size',
+  factImported: 'Imported',
+  factParser: 'Parser',
+  factVoice: 'Voice',
+  voiceRecordedTitle: 'Voice recorded for {n} players — Opus, played back live',
+  voiceRecordedBadge: '{n} players · voice recorded',
+  voiceNoneTitle: 'This demo source does not record voice (e.g. Valve MM) — normal, not broken',
+  voiceNoneBadge: 'no voice',
+  factWarnings: 'Warnings',
+  factSource: 'Source',
+  factDemoCopy: 'Demo copy',
+  copyPrefix: 'copy ·',
+  freeCopyTitle: 'Free the disk space Spectra’s copy uses — your original file is not touched',
+  freeing: 'Freeing…',
+  freeCopy: 'Free copy',
+  copyExternal: 'no copy — using your file',
+  copyMissing: 'file not found',
+};

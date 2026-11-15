@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import { isSteam, replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import {
@@ -863,7 +864,7 @@
          id-keyed effect below re-arms it on the next match load). -->
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.match.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
@@ -892,20 +893,20 @@
           <button
             class="btn primary match-replay"
             title={expandReplay
-              ? 'Return to the replay (resumes where you left it)'
-              : 'Watch this match in the replay view'}
+              ? S.match.replayReturnTitle
+              : S.match.replayWatchTitle}
             onclick={openReplay}
           >
-            <span class="codicon codicon-play" aria-hidden="true"></span> Watch replay
+            <span class="codicon codicon-play" aria-hidden="true"></span> {S.match.watchReplay}
           </button>
           {match.map || '—'}
           · {fmtDuration(match.playbackTimeS)}
-          · patch {fmtPatch(match.patchVersion)}
+          {S.match.patchLabel} {fmtPatch(match.patchVersion)}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
           {#if voice && !voice.keyFound && (match.encryptedMessages || 0) > 0}
             <span
               class="chip voice-badge idle"
-              title="Encrypted chat present — needs the matching .dem.info file to read it"
+              title={S.match.encryptedChatTitle}
               ><span class="codicon codicon-lock"></span></span
             >
           {/if}
@@ -918,15 +919,15 @@
     {#if match.warningsCount > 0 && !warningsDismissed}
       <div class="panel warnings-panel">
         <div class="row-between">
-          <h2>Import warnings</h2>
-          <button class="btn small" aria-label="Dismiss warnings" onclick={() => (warningsDismissed = true)}>
+          <h2>{S.match.importWarnings}</h2>
+          <button class="btn small" aria-label={S.match.dismissWarnings} onclick={() => (warningsDismissed = true)}>
             <span class="codicon codicon-close"></span>
           </button>
         </div>
         {#if warnings == null}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if warnings.length === 0}
-          <p class="muted" role="status">None — this demo imported cleanly.</p>
+          <p class="muted" role="status">{S.match.warningsNone}</p>
         {:else}
           <ul class="warning-list">
             {#each warnings as w, i (i)}
@@ -947,7 +948,7 @@
       {nav}
     />
 
-    <nav class="tabs" aria-label="Match sections">
+    <nav class="tabs" aria-label={S.match.matchSectionsAria}>
       {#each TABS as t (t)}
         <button class="tab" class:active={tab === t} onclick={() => selectTab(t)}>
           {t}
@@ -963,7 +964,7 @@
             value={s.value}
             sub={s.p.name}
             subCls={teamCls(s.p.side)}
-            title="Open the replay following {s.p.name}"
+            title={S.fill(S.match.followReplayTitle, { name: s.p.name })}
             onclick={() => openPlayerEvents(s.p.steamId, { follow: true })}
           >
             <!-- Aggregate (per-match) surface: the name keeps the TEAM
@@ -976,7 +977,7 @@
                 name={s.p.name}
                 {nav}
                 cls={teamCls(s.p.side)}
-                title="Open {s.p.name} profile"
+                title={S.fill(S.match.openProfile, { name: s.p.name })}
               />
             {/snippet}
           </StatCard>
@@ -996,13 +997,13 @@
            for the snapshot-only identity fields (score, ping, crosshair…). -->
       <div class="roster-grid">
         <section class="panel">
-          <h2 class={teamCls('ct')}>{teams.ct} roster</h2>
+          <h2 class={teamCls('ct')}>{teams.ct} {S.match.rosterSuffix}</h2>
           <table class="data-table">
             <thead>
               <tr>
-                <th scope="col">Player</th>
+                <th scope="col">{S.match.colPlayer}</th>
                 <th scope="col" class="num">K/D/A</th>
-                <th scope="col" class="num">ADR</th>
+                <th scope="col" class="num">{S.match.colAdr}</th>
               </tr>
             </thead>
             <tbody>
@@ -1026,7 +1027,7 @@
                       name={p.name}
                       {nav}
                       cls={teamCls(p.side)}
-                      title="Open {p.name} profile"
+                      title={S.fill(S.match.openProfile, { name: p.name })}
                     />
                   </td>
                   <td class="num" title={kda.title || undefined}>{kda.text}</td>
@@ -1037,13 +1038,13 @@
           </table>
         </section>
         <section class="panel">
-          <h2 class={teamCls('t')}>{teams.t} roster</h2>
+          <h2 class={teamCls('t')}>{teams.t} {S.match.rosterSuffix}</h2>
           <table class="data-table">
             <thead>
               <tr>
-                <th scope="col">Player</th>
+                <th scope="col">{S.match.colPlayer}</th>
                 <th scope="col" class="num">K/D/A</th>
-                <th scope="col" class="num">ADR</th>
+                <th scope="col" class="num">{S.match.colAdr}</th>
               </tr>
             </thead>
             <tbody>
@@ -1067,7 +1068,7 @@
                       name={p.name}
                       {nav}
                       cls={teamCls(p.side)}
-                      title="Open {p.name} profile"
+                      title={S.fill(S.match.openProfile, { name: p.name })}
                     />
                   </td>
                   <td class="num" title={kda.title || undefined}>{kda.text}</td>
@@ -1077,7 +1078,7 @@
             </tbody>
           </table>
           {#if rosters.other.length > 0}
-            <h2>Other</h2>
+            <h2>{S.match.rosterOther}</h2>
             <table class="data-table">
               <tbody>
                 {#each rosters.other as p (p.steamId)}
@@ -1091,7 +1092,7 @@
                     }}
                   >
                     <td>
-                      <ProfileLink steam={p.steamId} name={p.name} {nav} title="Open {p.name} profile" />
+                      <ProfileLink steam={p.steamId} name={p.name} {nav} title={S.fill(S.match.openProfile, { name: p.name })} />
                     </td>
                     <td class="num" title={kda.title || undefined}>{kda.text}</td>
                     <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
@@ -1105,8 +1106,8 @@
     {:else if tab === 'Scoreboard'}
       {#if metricError}
         <p class="error" role="alert">
-          Pinned stats unavailable: {metricError}
-          <button class="btn small" aria-label="Dismiss pinned stats error" onclick={() => (metricError = '')}>
+          {S.match.pinnedStatsUnavailable} {metricError}
+          <button class="btn small" aria-label={S.match.dismissPinnedStatsError} onclick={() => (metricError = '')}>
             <span class="codicon codicon-close"></span>
           </button>
         </p>
@@ -1115,7 +1116,7 @@
         <table class="data-table scoreboard">
           <thead>
             <tr>
-              <th scope="col"><span class="sr-only">Expand</span></th>
+              <th scope="col"><span class="sr-only">{S.match.expandLabel}</span></th>
               {#each SCORE_COLS as col (col.key)}
                 <SortTh
                   label={col.label}
@@ -1142,13 +1143,13 @@
                   <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
                   <span
                     class="m5-n"
-                    title="based on {mc.totalN} rounds across {mc.rows.length} players"
+                    title={S.fill(S.match.metricBasisTitle, { n: mc.totalN, count: mc.rows.length })}
                     >({fmtInt(mc.totalN)})</span
                   >
                   <button
                     class="m5-unpin"
-                    title="Unpin from scoreboard"
-                    aria-label="Unpin {mc.def.title || mc.def.name}"
+                    title={S.match.unpinTitle}
+                    aria-label={S.fill(S.match.unpinAria, { name: mc.def.title || mc.def.name })}
                     onclick={() => unpin(mc.def.id)}><span class="codicon codicon-close"></span></button
                   >
                 </SortTh>
@@ -1175,7 +1176,7 @@
                 <td class="expand-cell" onclick={(e) => e.stopPropagation()}>
                   <button
                     class="btn small ghost"
-                    aria-label="Breakdown for {p.name}"
+                    aria-label={S.fill(S.match.breakdownAria, { name: p.name })}
                     aria-expanded={expanded === p.steamId}
                     onclick={() => (expanded = expanded === p.steamId ? 0 : p.steamId)}
                   >
@@ -1188,7 +1189,7 @@
                       >{#if isSteam(p.steamId)}
                         <button
                           class="btn ghost small name-link {nameCls}"
-                          title="Open {p.name}'s profile"
+                          title={S.fill(S.match.openProfilePossessive, { name: p.name })}
                           onclick={(e) => {
                             e.stopPropagation();
                             nav(`/player/${p.steamId}`);
@@ -1256,31 +1257,31 @@
                   <td colspan={SCORE_COLS.length + 1 + metricCols.length}>
                     <div class="weapon-grid util-grid">
                       <div>
-                        <h3>Kills by weapon</h3>
+                        <h3>{S.match.killsByWeapon}</h3>
                         <table class="data-table mini">
                           <thead>
-                            <tr><th scope="col">Weapon</th><th scope="col" class="num">Kills</th></tr>
+                            <tr><th scope="col">{S.match.colWeapon}</th><th scope="col" class="num">{S.match.colKills}</th></tr>
                           </thead>
                           <tbody>
                             {#each weaponEntries(p.killsByWeapon) as [w, n] (w)}
                               <tr><td>{w}</td><td class="num">{n}</td></tr>
                             {:else}
-                              <tr><td colspan="2" class="muted">None recorded</td></tr>
+                              <tr><td colspan="2" class="muted">{S.match.noneRecorded}</td></tr>
                             {/each}
                           </tbody>
                         </table>
                       </div>
                       <div>
-                        <h3>Damage by weapon</h3>
+                        <h3>{S.match.damageByWeapon}</h3>
                         <table class="data-table mini">
                           <thead>
-                            <tr><th scope="col">Weapon</th><th scope="col" class="num">Damage</th></tr>
+                            <tr><th scope="col">{S.match.colWeapon}</th><th scope="col" class="num">{S.match.colDamage}</th></tr>
                           </thead>
                           <tbody>
                             {#each weaponEntries(p.damageByWeapon) as [w, n] (w)}
                               <tr><td>{w}</td><td class="num">{n}</td></tr>
                             {:else}
-                              <tr><td colspan="2" class="muted">None recorded</td></tr>
+                              <tr><td colspan="2" class="muted">{S.match.noneRecorded}</td></tr>
                             {/each}
                           </tbody>
                         </table>
@@ -1294,15 +1295,15 @@
                            chip, read by NAME from the pins-independent
                            fixed set). -->
                       <div>
-                        <h3>Utility</h3>
+                        <h3>{S.match.utilStatsHeading}</h3>
                         <table class="data-table mini">
                           <thead>
-                            <tr><th scope="col">Stat</th><th scope="col" class="num">Value</th></tr>
+                            <tr><th scope="col">{S.match.colStat}</th><th scope="col" class="num">{S.match.colValue}</th></tr>
                           </thead>
                           <tbody>
-                            <tr><td>Utility damage</td><td class="num">{p.utilityDamage}</td></tr>
+                            <tr><td>{S.match.statUtilityDamage}</td><td class="num">{p.utilityDamage}</td></tr>
                             <tr>
-                              <td>Enemies flashed</td>
+                              <td>{S.match.statEnemiesFlashed}</td>
                               <td class="num" title={fixedTitle('enemies_flashed', flashed)}
                                 >{slotText('enemies_flashed', flashed)}{#if flashed.kind === 'chip'}
                                   <StatusChip
@@ -1315,7 +1316,7 @@
                               >
                             </tr>
                             <tr>
-                              <td>Flash assists</td>
+                              <td>{S.match.statFlashAssists}</td>
                               <td class="num" title={fixedTitle('flash_assists', flashAssists)}
                                 >{slotText('flash_assists', flashAssists)}{#if flashAssists.kind === 'chip'}
                                   <StatusChip
@@ -1327,7 +1328,7 @@
                                 {/if}</td
                               >
                             </tr>
-                            <tr><td>Times flashed</td><td class="num">{p.flashedTimes}</td></tr>
+                            <tr><td>{S.match.statTimesFlashed}</td><td class="num">{p.flashedTimes}</td></tr>
                           </tbody>
                         </table>
                       </div>
@@ -1342,8 +1343,8 @@
     {:else if tab === 'Rounds'}
       {#if classError}
         <p class="error" role="alert">
-          Round types unavailable: {classError}
-          <button class="btn small" aria-label="Dismiss round types error" onclick={() => (classError = '')}>
+          {S.match.roundTypesUnavailable} {classError}
+          <button class="btn small" aria-label={S.match.dismissRoundTypesError} onclick={() => (classError = '')}>
             <span class="codicon codicon-close"></span>
           </button>
         </p>
@@ -1355,23 +1356,23 @@
               <th
                 scope="col"
                 class="num cmp-cmp-col"
-                title="Select rounds to compare (up to 4)"
-              >Cmp</th>
+                title={S.match.compareSelectTitle}
+              >{S.match.colCmp}</th>
               <th scope="col" class="num">RD</th>
-              <th scope="col">Winner</th>
+              <th scope="col">{S.match.colWinner}</th>
               <th
                 scope="col"
                 class="def"
-                title="Buy type (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip"
-              >Class</th>
-              <th scope="col">Reason</th>
-              <th scope="col" class="num">Duration</th>
-              <th scope="col">Site</th>
-              <th scope="col">MVP</th>
-              <th scope="col" class="num">Equip CT</th>
-              <th scope="col" class="num">Equip T</th>
-              <th scope="col">First blood</th>
-              <th scope="col" class="num">Kills</th>
+                title={S.match.buyClassTitle}
+              >{S.match.colClass}</th>
+              <th scope="col">{S.match.colReason}</th>
+              <th scope="col" class="num">{S.match.colDuration}</th>
+              <th scope="col">{S.match.colSite}</th>
+              <th scope="col">{S.match.colMvp}</th>
+              <th scope="col" class="num">{S.match.colEquipCt}</th>
+              <th scope="col" class="num">{S.match.colEquipT}</th>
+              <th scope="col">{S.match.firstBloodLabel}</th>
+              <th scope="col" class="num">{S.match.colKills}</th>
             </tr>
           </thead>
           <tbody>
@@ -1395,7 +1396,7 @@
                     class="cmp-cb"
                     checked={compareSel.includes(r.number)}
                     disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
-                    aria-label="Compare round {roundIndexLabel(r)}"
+                    aria-label={S.fill(S.match.compareRoundAria, { round: roundIndexLabel(r) })}
                     onchange={() => toggleCompare(r.number)}
                   />
                 </td>
@@ -1407,7 +1408,7 @@
                   {#if cls}
                     <span
                       class="chip cmp-class {cls.label || 'unknown'}"
-                      title="{cls.explanation || 'classified'} (rules v{cls.ruleVersion} — {Math.round((cls.confidence || 0) * 100)}% sure)"
+                      title={S.fill(S.match.classChipTitle, { what: cls.explanation || 'classified', v: cls.ruleVersion, pct: Math.round((cls.confidence || 0) * 100) })}
                       >{cls.label || 'unknown'}</span
                     >
                   {:else}
@@ -1424,7 +1425,7 @@
                       name={r.mvpName}
                       {nav}
                       cls={playerRoundCls(r.number, r.mvp, r.mvpName)}
-                      title="Open {r.mvpName} profile"
+                      title={S.fill(S.match.openProfile, { name: r.mvpName })}
                     />
                   {:else}
                     —
@@ -1439,15 +1440,15 @@
                       name={r.firstKillName}
                       {nav}
                       cls={playerRoundCls(r.number, r.firstKillSteam, r.firstKillName)}
-                      title="Open {r.firstKillName} profile"
+                      title={S.fill(S.match.openProfile, { name: r.firstKillName })}
                     />
-                    killed
+                    {S.match.killedVerb}
                     <ProfileLink
                       steam={r.firstDeathSteam}
                       name={r.firstDeathName}
                       {nav}
                       cls={playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName)}
-                      title="Open {r.firstDeathName} profile"
+                      title={S.fill(S.match.openProfile, { name: r.firstDeathName })}
                     />
                   {:else}
                     —
@@ -1461,12 +1462,12 @@
       </div>
       {#if compareSel.length > 0}
         <p class="cmp-hint">
-          {compareSel.length} of 4 rounds selected.
+          {S.fill(S.match.roundsSelected, { n: compareSel.length })}
         </p>
       {/if}
       {#if compareSel.length >= 2}
         <button class="btn primary cmp-float" onclick={goCompare}>
-          Compare {compareSel.length} rounds <span class="codicon codicon-chevron-right"></span>
+          {S.fill(S.match.compareBtn, { n: compareSel.length })} <span class="codicon codicon-chevron-right"></span>
         </button>
       {/if}
     {:else if tab === 'Economy'}
@@ -1484,78 +1485,78 @@
            Entity summary, Network message census), embedded and fixed to
            THIS match. Map/Duration live in the match header. -->
       <section class="panel">
-        <h2>Key facts</h2>
+        <h2>{S.match.keyFacts}</h2>
         <dl class="facts">
-          <div><dt>Server</dt><dd>{match.serverName || '—'}</dd></div>
-          <div><dt>Tickrate</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
-          <div><dt>Frames</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
-          <div><dt>Size</dt><dd>{fmtBytes(match.size)}</dd></div>
-          <div><dt>Imported</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
-          <div><dt>Parser</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
+          <div><dt>{S.match.factServer}</dt><dd>{match.serverName || '—'}</dd></div>
+          <div><dt>{S.match.factTickrate}</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
+          <div><dt>{S.match.factFrames}</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
+          <div><dt>{S.match.factSize}</dt><dd>{fmtBytes(match.size)}</dd></div>
+          <div><dt>{S.match.factImported}</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
+          <div><dt>{S.match.factParser}</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
           <div>
-            <dt>Voice</dt>
+            <dt>{S.match.factVoice}</dt>
             <dd>
               {#if !voice}
                 <span class="muted">—</span>
               {:else if voice.hasVoice}
                 <span
                   class="chip voice-badge busy"
-                  title="Voice recorded for {voice.playerCount} players — Opus, played back live"
+                  title={S.fill(S.match.voiceRecordedTitle, { n: voice.playerCount })}
                   ><span class="codicon codicon-unmute"></span>
-                  {voice.playerCount} players · voice recorded</span
+                  {S.fill(S.match.voiceRecordedBadge, { n: voice.playerCount })}</span
                 >
               {:else}
                 <span
                   class="chip voice-badge idle"
-                  title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
-                  >no voice</span
+                  title={S.match.voiceNoneTitle}
+                  >{S.match.voiceNoneBadge}</span
                 >
               {/if}
             </dd>
           </div>
-          <div><dt>Warnings</dt><dd>{match.warningsCount}</dd></div>
+          <div><dt>{S.match.factWarnings}</dt><dd>{match.warningsCount}</dd></div>
           {#if firstBlood}
             <div>
-              <dt>First blood</dt>
+              <dt>{S.match.firstBloodLabel}</dt>
               <dd>
                 <ProfileLink
                   steam={firstBlood.killSteam}
                   name={firstBlood.kill}
                   {nav}
                   cls={playerRoundCls(firstBlood.number, firstBlood.killSteam, firstBlood.kill)}
-                  title="Open {firstBlood.kill} profile"
+                  title={S.fill(S.match.openProfile, { name: firstBlood.kill })}
                 />
-                killed
+                {S.match.killedVerb}
                 <ProfileLink
                   steam={firstBlood.deathSteam}
                   name={firstBlood.death}
                   {nav}
                   cls={playerRoundCls(firstBlood.number, firstBlood.deathSteam, firstBlood.death)}
-                  title="Open {firstBlood.death} profile"
+                  title={S.fill(S.match.openProfile, { name: firstBlood.death })}
                 />
                 ({firstBlood.number >= 1 ? `RD${firstBlood.number}` : roundIndexLabel(firstBlood.number)})
               </dd>
             </div>
           {/if}
-          <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
+          <div class="fact-wide"><dt>{S.match.factSource}</dt><dd class="mono">{match.path}</dd></div>
           <!-- State line under Source: which demo file Re-parse would read
                right now (copyState is fs-derived by Go on this read —
                store never fills it). -->
           <div class="fact-wide">
-            <dt>Demo copy</dt>
+            <dt>{S.match.factDemoCopy}</dt>
             <dd>
               {#if match.copyState === 'copied'}
-                <span>copy · {fmtBytes(match.size)}</span>
+                <span>{S.match.copyPrefix} {fmtBytes(match.size)}</span>
                 <button
                   class="btn small"
                   disabled={copyBusy}
-                  title="Free the disk space Spectra’s copy uses — your original file is not touched"
-                  onclick={onFreeCopy}>{copyBusy ? 'Freeing…' : 'Free copy'}</button
+                  title={S.match.freeCopyTitle}
+                  onclick={onFreeCopy}>{copyBusy ? S.match.freeing : S.match.freeCopy}</button
                 >
               {:else if match.copyState === 'external'}
-                <span class="muted">no copy — using your file</span>
+                <span class="muted">{S.match.copyExternal}</span>
               {:else if match.copyState === 'missing'}
-                <span class="muted">file not found</span>
+                <span class="muted">{S.match.copyMissing}</span>
               {:else}
                 <!-- Unstamped (never in production — Go always derives one
                      of the three states): a placeholder, never a claim. -->
