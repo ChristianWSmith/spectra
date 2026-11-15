@@ -15,7 +15,6 @@ export const library = {
   dtParserVersion: 'Parser version',
   dtImported: 'Imported',
   dtParseTime: 'Parse time',
-  notAnalyzed: 'not analyzed',
   dtVoiceSampleRate: 'Voice sample rate',
   dtVoiceChunks: 'Voice chunks',
   dtWarnings: 'Warnings',

@@ -206,8 +206,8 @@ count. Click a row for the round page. Tick the **Cmp** boxes on up to four roun
 **Compare N rounds** button appears.
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
-warning count, the first blood of the match, the source file and whether a managed copy exists)
-followed by the demo's import diagnostics: import details (parse time, rules version, notes),
+warning count, the source file and whether a managed copy exists)
+followed by the demo's import diagnostics: import details (parse time, notes),
 advanced diagnostics, and the network-message reference.
 
 # Round detail

@@ -181,10 +181,14 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
       !/role="status">Loading…<\/p>/.test(expl),
     String((expl.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
   );
+  // The two borderline provenance cells (Rules version / Trade window)
+  // left Explorer with the details-technicals rework (owner ruling,
+  // 2026-11-15): this check flipped IN PLACE from a copy-preservation pin
+  // to an ABSENCE pin — same check count, so EXPECTED stays 19.
   check(
-    'Explorer: the provenance labels stay untouched (match stamp vs current rules)',
-    expl.includes('<dt>Rules version (match stamp)</dt>') &&
-      expl.includes('<dt>Trade window (current rules)</dt>'),
+    'Explorer: the rules-version / trade-window facts are gone (technicals only)',
+    !expl.includes('<dt>Rules version (match stamp)</dt>') &&
+      !expl.includes('<dt>Trade window (current rules)</dt>'),
     '',
   );
 }
