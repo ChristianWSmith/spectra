@@ -58,25 +58,25 @@ type Writer struct {
 // called with tickRate <= 0.
 func NewWriter(dir string, tickRate float64) (*Writer, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("sidecar: create directory: %w", err)
+		return nil, fmt.Errorf("couldn't create the match data folder: %w", err)
 	}
 	bin, err := os.Create(filepath.Join(dir, BinName))
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: create %s: %w", BinName, err)
+		return nil, fmt.Errorf("couldn't create the positions file: %w", err)
 	}
 	// Truncate a stale index too — it is only rewritten at Close, and a
 	// half-written sidecar must never keep old index bytes.
 	if idx, err := os.Create(filepath.Join(dir, IdxName)); err != nil {
 		_ = bin.Close()
-		return nil, fmt.Errorf("sidecar: create %s: %w", IdxName, err)
+		return nil, fmt.Errorf("couldn't create the positions index: %w", err)
 	} else if err := idx.Close(); err != nil {
 		_ = bin.Close()
-		return nil, fmt.Errorf("sidecar: close %s: %w", IdxName, err)
+		return nil, fmt.Errorf("couldn't close the positions index: %w", err)
 	}
 	enc, err := zstd.NewWriter(nil)
 	if err != nil {
 		_ = bin.Close()
-		return nil, fmt.Errorf("sidecar: zstd writer: %w", err)
+		return nil, fmt.Errorf("couldn't compress the positions data: %w", err)
 	}
 	// Remove any stale state files: reprocessing replaces the sidecar in
 	// place, and the state stream is recreated lazily (a reprocess whose
@@ -111,7 +111,7 @@ func NewWriter(dir string, tickRate float64) (*Writer, error) {
 // read here.
 func (w *Writer) AddFrame(tick int32, players []extract.PositionPlayer) error {
 	if w.closed {
-		return errors.New("sidecar: add frame after close")
+		return errors.New("cannot add a frame after the writer is closed")
 	}
 	if !w.slotsLocked && len(players) > 0 {
 		for _, p := range players {
@@ -187,7 +187,7 @@ func (w *Writer) flushBlock() error {
 	n, err := w.bin.Write(w.comp)
 	w.offset += int64(n)
 	if err != nil {
-		return fmt.Errorf("sidecar: write block: %w", err)
+		return fmt.Errorf("couldn't write the positions data: %w", err)
 	}
 	w.idx = append(w.idx, idxEntry{
 		firstFrame: uint32(w.blockFirst),
@@ -206,7 +206,7 @@ func (w *Writer) flushBlock() error {
 func (w *Writer) Close(tickRate float64) (Meta, error) {
 	var meta Meta
 	if w.closed {
-		return meta, errors.New("sidecar: writer already closed")
+		return meta, errors.New("the writer is already closed")
 	}
 	w.closed = true
 	if err := w.flushBlock(); err != nil {
@@ -219,15 +219,15 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		return meta, err
 	}
 	if err := w.bin.Close(); err != nil {
-		return meta, fmt.Errorf("sidecar: close %s: %w", BinName, err)
+		return meta, fmt.Errorf("couldn't close the positions file: %w", err)
 	}
 	if w.st.bin != nil {
 		if err := w.st.bin.Close(); err != nil {
-			return meta, fmt.Errorf("sidecar: close %s: %w", StateBinName, err)
+			return meta, fmt.Errorf("couldn't close the state file: %w", err)
 		}
 	}
 	if err := w.enc.Close(); err != nil {
-		return meta, fmt.Errorf("sidecar: close encoder: %w", err)
+		return meta, fmt.Errorf("couldn't close the compressor: %w", err)
 	}
 
 	var idxRaw []byte
@@ -235,7 +235,7 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		idxRaw = appendIdxEntry(idxRaw, e)
 	}
 	if err := os.WriteFile(filepath.Join(w.dir, IdxName), idxRaw, 0o644); err != nil {
-		return meta, fmt.Errorf("sidecar: write %s: %w", IdxName, err)
+		return meta, fmt.Errorf("couldn't write the positions index: %w", err)
 	}
 
 	tr := tickRate
@@ -273,10 +273,10 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 	}
 	raw, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
-		return Meta{}, fmt.Errorf("sidecar: marshal meta: %w", err)
+		return Meta{}, fmt.Errorf("couldn't write the match metadata: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(w.dir, MetaName), append(raw, '\n'), 0o644); err != nil {
-		return Meta{}, fmt.Errorf("sidecar: write %s: %w", MetaName, err)
+		return Meta{}, fmt.Errorf("couldn't write the match metadata: %w", err)
 	}
 	return meta, nil
 }

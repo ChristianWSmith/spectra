@@ -179,7 +179,7 @@ const (
 // written — a parse with no State sink — or its files are absent) —
 // callers treat it as "absent", not as a failure, exactly like
 // ErrNoSidecar.
-var ErrNoState = errors.New("sidecar: no state stream")
+var ErrNoState = errors.New("this match has no state data")
 
 // StateRecord is one decoded sparse change record. Mask says which fields
 // are present (State* bits); absent fields keep their previous value —
@@ -403,7 +403,7 @@ func (st *stateStream) ensureOpen(dir string) error {
 	}
 	bin, err := os.Create(filepath.Join(dir, StateBinName))
 	if err != nil {
-		return fmt.Errorf("sidecar: create %s: %w", StateBinName, err)
+		return fmt.Errorf("couldn't create the state file: %w", err)
 	}
 	st.bin = bin
 	return nil
@@ -417,7 +417,7 @@ func (st *stateStream) ensureOpen(dir string) error {
 // players must not be retained by the caller side — only read here.
 func (w *Writer) AddState(seed bool, players []extract.StatePlayer) error {
 	if w.closed {
-		return errors.New("sidecar: add state after close")
+		return errors.New("cannot add state after the writer is closed")
 	}
 	st := &w.st
 	if err := st.ensureOpen(w.dir); err != nil {
@@ -584,7 +584,7 @@ func (st *stateStream) flushBlock() error {
 	n, err := st.bin.Write(st.comp)
 	st.offset += int64(n)
 	if err != nil {
-		return fmt.Errorf("sidecar: write state block: %w", err)
+		return fmt.Errorf("couldn't write the state data: %w", err)
 	}
 	st.idx = append(st.idx, idxEntry{
 		firstFrame: uint32(st.blockFirst),
@@ -611,7 +611,7 @@ func (st *stateStream) close() error {
 		raw = appendIdxEntry(raw, e)
 	}
 	if err := os.WriteFile(filepath.Join(st.dir, StateIdxName), raw, 0o644); err != nil {
-		return fmt.Errorf("sidecar: write %s: %w", StateIdxName, err)
+		return fmt.Errorf("couldn't write the state index: %w", err)
 	}
 	return nil
 }

@@ -66,20 +66,20 @@ func Open(path string) (*Store, error) {
 	if path != ":memory:" {
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return nil, fmt.Errorf("store: create database directory: %w", err)
+				return nil, fmt.Errorf("couldn't create the database folder: %w", err)
 			}
 		}
 	}
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("store: open: %w", err)
+		return nil, fmt.Errorf("couldn't open the library: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("store: open: %w", err)
+		return nil, fmt.Errorf("couldn't open the library: %w", err)
 	}
 	s := &Store{db: db}
 	if err := s.applySchema(); err != nil {
@@ -91,7 +91,7 @@ func Open(path string) (*Store, error) {
 		models.JobFailed, interruptedJobErr, time.Now(), models.JobQueued, models.JobRunning,
 	); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("store: mark interrupted jobs: %w", err)
+		return nil, fmt.Errorf("couldn't restore the interrupted jobs: %w", err)
 	}
 	// Match rows stuck mid-lifecycle with no live job own them: the jobs
 	// repair above just failed every non-terminal job, so a row still
@@ -110,7 +110,7 @@ func Open(path string) (*Store, error) {
 		models.JobQueued, models.JobRunning,
 	); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("store: mark interrupted matches: %w", err)
+		return nil, fmt.Errorf("couldn't restore the interrupted matches: %w", err)
 	}
 	return s, nil
 }

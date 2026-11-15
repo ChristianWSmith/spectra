@@ -184,7 +184,7 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 			continue // definition gone → the cells stay at the dash
 		}
 		if err != nil {
-			return nil, fmt.Errorf("report: metric %s: %w", sc.seed, err)
+			return nil, err
 		}
 		want = append(want, resolved{id: def.ID, format: def.Format, scale: store.MetricDisplayScale(def.Format), fill: sc.fill})
 	}
@@ -199,7 +199,7 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 	}
 	values, err := st.GetMetricValuesForMatch(matchID, ids)
 	if err != nil {
-		return nil, fmt.Errorf("report: metric values: %w", err)
+		return nil, err
 	}
 	for _, v := range values {
 		w, ok := byID[v.MetricID]
@@ -231,15 +231,15 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	}
 	sb, err := st.GetScoreboard(matchID, "", false)
 	if err != nil {
-		return nil, fmt.Errorf("report: scoreboard: %w", err)
+		return nil, err
 	}
 	rounds, err := st.GetRounds(matchID)
 	if err != nil {
-		return nil, fmt.Errorf("report: rounds: %w", err)
+		return nil, err
 	}
 	econ, err := st.GetEconomy(matchID)
 	if err != nil {
-		return nil, fmt.Errorf("report: economy: %w", err)
+		return nil, err
 	}
 	// No read-time enrichment here: store.GetEconomy already returns the
 	// STORED per-side buy classes (round_side_classes — written by
@@ -249,11 +249,11 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	// under older rules shows the same honestly-stale classes in both.
 	clutches, err := st.GetClutches(matchID)
 	if err != nil {
-		return nil, fmt.Errorf("report: clutches: %w", err)
+		return nil, err
 	}
 	utility, err := st.GetUtility(matchID)
 	if err != nil {
-		return nil, fmt.Errorf("report: utility: %w", err)
+		return nil, err
 	}
 	ctName, tName := teamNames(st, matchID, sb)
 	// The metric-backed display cells (design §3.6's Go read-back, Q2's
@@ -331,7 +331,7 @@ func synthTeamNames(sb []models.PlayerStatsRow) (ctName, tName string) {
 // the match scoreboard + the per-round rows.
 func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerReport, error) {
 	if steamID == "" {
-		return nil, fmt.Errorf("report: player scope needs a steamId")
+		return nil, fmt.Errorf("no player was selected for this report")
 	}
 	m, err := st.GetMatch(matchID)
 	if err != nil {
@@ -339,7 +339,7 @@ func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerRep
 	}
 	sb, err := st.GetScoreboard(matchID, "", false)
 	if err != nil {
-		return nil, fmt.Errorf("report: scoreboard: %w", err)
+		return nil, err
 	}
 	var agg models.PlayerStatsRow
 	found := false
@@ -350,11 +350,11 @@ func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerRep
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("report: player %s not in match %d", steamID, matchID)
+		return nil, fmt.Errorf("player %s is not in match %d", steamID, matchID)
 	}
 	prs, err := st.GetPlayerRounds(matchID, steamID)
 	if err != nil {
-		return nil, fmt.Errorf("report: player rounds: %w", err)
+		return nil, err
 	}
 	// Same read-back as the match scope (design §3.6 + Q2): the player's
 	// metric cells (ADR/HS%/KD and the converting K/D/A, Openings,
@@ -388,17 +388,17 @@ func BuildRoundData(st *store.Store, matchID int64, round int) (*RoundReport, er
 func Render(id, body string, data any) (string, error) {
 	tpl, err := template.New(id).Parse(body)
 	if err != nil {
-		return "", fmt.Errorf("report: parse template %s: %w", id, err)
+		return "", fmt.Errorf("couldn't parse the report template %s: %w", id, err)
 	}
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("report: render %s: %w", id, err)
+		return "", fmt.Errorf("couldn't render the report template %s: %w", id, err)
 	}
 	return buf.String(), nil
 }
 
 // ErrNotFound is returned by Find when no template carries the id.
-var ErrNotFound = errors.New("report: template not found")
+var ErrNotFound = errors.New("template not found")
 
 // Find returns the template with the given id from ts.
 func Find(ts []Template, id string) (Template, error) {

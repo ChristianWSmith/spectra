@@ -94,24 +94,24 @@ func (s *Store) roDB() (*sql.DB, error) {
 		file string
 	)
 	if err := s.db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &file); err != nil {
-		return nil, fmt.Errorf("store: read-only open (database_list): %w", err)
+		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
 	if file == "" {
-		return nil, errors.New("store: read-only session requires a file-backed database")
+		return nil, errors.New("a read-only session requires a file-backed database")
 	}
 	abs, err := filepath.Abs(file)
 	if err != nil {
-		return nil, fmt.Errorf("store: read-only open (abs path): %w", err)
+		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
 	db, err := sql.Open("sqlite", roDSN(abs))
 	if err != nil {
-		return nil, fmt.Errorf("store: read-only open: %w", err)
+		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("store: read-only open: %w", err)
+		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
 	if actual, loaded := roHandles.LoadOrStore(s, db); loaded {
 		_ = db.Close() // lost the race; the stored handle wins
@@ -194,7 +194,7 @@ func (s *Store) RunReadOnly(q string, args []any, limit, timeoutMS int) (ROResul
 
 // timeoutErr formats a deadline/ interrupt failure.
 func timeoutErr(err error, timeoutMS int) error {
-	return fmt.Errorf("store: query exceeded the %d ms timeout: %w", timeoutMS, err)
+	return fmt.Errorf("the query exceeded the %d ms timeout: %w", timeoutMS, err)
 }
 
 // roErr distinguishes deadline/interrupt failures from SQL failures.
@@ -202,7 +202,7 @@ func roErr(err error, ctx context.Context, timeoutMS int) error {
 	if ctx.Err() != nil {
 		return timeoutErr(ctx.Err(), timeoutMS)
 	}
-	return fmt.Errorf("store: query: %w", err)
+	return fmt.Errorf("couldn't run the query: %w", err)
 }
 
 // normValue converts driver values to JSON scalars: []byte → string,
@@ -284,7 +284,7 @@ func lexSQL(q string) ([]sqlTok, error) {
 		case c == '/' && i+1 < len(q) && q[i+1] == '*':
 			j := strings.Index(q[i+2:], "*/")
 			if j < 0 {
-				return nil, errors.New("store: unterminated block comment")
+				return nil, errors.New("unterminated block comment")
 			}
 			i += 2 + j + 2
 		case c == '\'' || c == '"':
@@ -300,7 +300,7 @@ func lexSQL(q string) ([]sqlTok, error) {
 				j++
 			}
 			if j >= len(q) {
-				return nil, errors.New("store: unterminated quoted string")
+				return nil, errors.New("unterminated quoted string")
 			}
 			kind := 's'
 			if c == '"' {
@@ -364,10 +364,10 @@ func lexSQL(q string) ([]sqlTok, error) {
 func ValidateReadOnlySQL(q string) error {
 	toks, err := lexSQL(q)
 	if err != nil {
-		return fmt.Errorf("store: read-only validation: %w", err)
+		return err
 	}
 	if len(toks) == 0 {
-		return errors.New("store: read-only validation: empty statement")
+		return errors.New("empty statement")
 	}
 	// Single statement: at most one ';', allowed only as the final token
 	// (a trailing terminator), never between statements.
@@ -375,7 +375,7 @@ func ValidateReadOnlySQL(q string) error {
 	for i, t := range toks {
 		if t.text == ";" {
 			if semi >= 0 || i != len(toks)-1 {
-				return errors.New("store: read-only validation: only a single statement is allowed")
+				return errors.New("only a single statement is allowed")
 			}
 			semi = i
 		}
@@ -393,7 +393,7 @@ func ValidateReadOnlySQL(q string) error {
 			}
 		}
 		if readOnlyForbidden[word] {
-			return fmt.Errorf("store: read-only validation: %s statements are not allowed", word)
+			return fmt.Errorf("%s statements are not allowed", word)
 		}
 	}
 	// Leading keyword (skip parenthesized selects).
@@ -402,7 +402,7 @@ func ValidateReadOnlySQL(q string) error {
 		first++
 	}
 	if first >= len(toks) || toks[first].kind != 'i' || !readOnlyLeading[strings.ToLower(toks[first].text)] {
-		return fmt.Errorf("store: read-only validation: expected SELECT/WITH/EXPLAIN/PRAGMA, got %q", toks[first%len(toks)].text)
+		return fmt.Errorf("expected SELECT/WITH/EXPLAIN/PRAGMA, got %q", toks[first%len(toks)].text)
 	}
 	if strings.EqualFold(toks[first].text, "pragma") {
 		if first+1 >= len(toks) || toks[first+1].kind != 'i' || !readOnlyPragmas[strings.ToLower(toks[first+1].text)] {
@@ -410,7 +410,7 @@ func ValidateReadOnlySQL(q string) error {
 			if first+1 < len(toks) {
 				name = toks[first+1].text
 			}
-			return fmt.Errorf("store: read-only validation: PRAGMA %s is not allowed", name)
+			return fmt.Errorf("PRAGMA %s is not allowed", name)
 		}
 	}
 	return nil
@@ -427,20 +427,20 @@ func (s *Store) Schema() ([]models.SchemaTableRow, error) {
 		 ORDER BY name ASC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: schema: %w", err)
+		return nil, fmt.Errorf("couldn't load the schema: %w", err)
 	}
 	var names []string
 	for rows.Next() {
 		var n string
 		if err := rows.Scan(&n); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("store: schema: %w", err)
+			return nil, fmt.Errorf("couldn't load the schema: %w", err)
 		}
 		names = append(names, n)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, fmt.Errorf("store: schema: %w", err)
+		return nil, fmt.Errorf("couldn't load the schema: %w", err)
 	}
 	rows.Close()
 
@@ -458,19 +458,19 @@ func (s *Store) Schema() ([]models.SchemaTableRow, error) {
 func (s *Store) schemaColumns(table string) ([]models.SchemaColumnRow, error) {
 	rows, err := s.db.Query(`SELECT name, type FROM pragma_table_info(?)`, table)
 	if err != nil {
-		return nil, fmt.Errorf("store: schema columns for %s: %w", table, err)
+		return nil, fmt.Errorf("couldn't load the schema columns for %s: %w", table, err)
 	}
 	defer rows.Close()
 	var out []models.SchemaColumnRow
 	for rows.Next() {
 		var c models.SchemaColumnRow
 		if err := rows.Scan(&c.Name, &c.Type); err != nil {
-			return nil, fmt.Errorf("store: schema columns for %s: %w", table, err)
+			return nil, fmt.Errorf("couldn't load the schema columns for %s: %w", table, err)
 		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: schema columns for %s: %w", table, err)
+		return nil, fmt.Errorf("couldn't load the schema columns for %s: %w", table, err)
 	}
 	return out, nil
 }
@@ -495,14 +495,14 @@ func (s *Store) AppendQueryHistory(e models.QueryHistoryRow) error {
 		`INSERT INTO query_history (`+queryHistoryCols+`) VALUES (?, ?, ?, ?, ?)`,
 		scrub(e.SQL), e.MS, e.Rows, b2i(e.OK), e.RanAt,
 	); err != nil {
-		return fmt.Errorf("store: append query history: %w", err)
+		return fmt.Errorf("couldn't save the query history: %w", err)
 	}
 	if _, err := s.db.Exec(
 		`DELETE FROM query_history WHERE id NOT IN
 			(SELECT id FROM query_history ORDER BY id DESC LIMIT ?)`,
 		QueryHistoryCap,
 	); err != nil {
-		return fmt.Errorf("store: trim query history: %w", err)
+		return fmt.Errorf("couldn't trim the query history: %w", err)
 	}
 	return nil
 }
@@ -517,7 +517,7 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 		 ORDER BY id DESC LIMIT ?`, limit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list query history: %w", err)
+		return nil, fmt.Errorf("couldn't load the query history: %w", err)
 	}
 	defer rows.Close()
 	var out []models.QueryHistoryRow
@@ -527,13 +527,13 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 			ok int64
 		)
 		if err := rows.Scan(&r.ID, &r.SQL, &r.MS, &r.Rows, &ok, &r.RanAt); err != nil {
-			return nil, fmt.Errorf("store: list query history: %w", err)
+			return nil, fmt.Errorf("couldn't load the query history: %w", err)
 		}
 		r.OK = i2b(ok)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list query history: %w", err)
+		return nil, fmt.Errorf("couldn't load the query history: %w", err)
 	}
 	return out, nil
 }
@@ -541,7 +541,7 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 // ClearHistory wipes the console history.
 func (s *Store) ClearHistory() error {
 	if _, err := s.db.Exec(`DELETE FROM query_history`); err != nil {
-		return fmt.Errorf("store: clear query history: %w", err)
+		return fmt.Errorf("couldn't clear the query history: %w", err)
 	}
 	return nil
 }
@@ -554,19 +554,19 @@ func (s *Store) ListSavedQueries() ([]models.SavedQueryRow, error) {
 		`SELECT id, ` + savedQueryCols + ` FROM saved_queries ORDER BY name ASC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list saved queries: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 	}
 	defer rows.Close()
 	var out []models.SavedQueryRow
 	for rows.Next() {
 		var r models.SavedQueryRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
-			return nil, fmt.Errorf("store: list saved queries: %w", err)
+			return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list saved queries: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 	}
 	return out, nil
 }
@@ -620,19 +620,19 @@ func (s *Store) ListSavedQueriesPage(afterName string, limit int) (*models.Saved
 
 	rows, err := s.db.Query(b.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: list saved queries page: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 	}
 	defer rows.Close()
 	page := &models.SavedQueryPage{Rows: []models.SavedQueryRow{}}
 	for rows.Next() {
 		var r models.SavedQueryRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
-			return nil, fmt.Errorf("store: list saved queries page: %w", err)
+			return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 		}
 		page.Rows = append(page.Rows, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list saved queries page: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved queries: %w", err)
 	}
 	if len(page.Rows) > limit {
 		page.Rows = page.Rows[:limit]
@@ -654,17 +654,17 @@ func (s *Store) SaveQuery(name, query, description string) (models.SavedQueryRow
 		if isUniqueErr(err) {
 			return models.SavedQueryRow{}, fmt.Errorf("a query named %q already exists", scrub(name))
 		}
-		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
+		return models.SavedQueryRow{}, fmt.Errorf("couldn't save the query: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
+		return models.SavedQueryRow{}, fmt.Errorf("couldn't save the query: %w", err)
 	}
 	var r models.SavedQueryRow
 	if err := s.db.QueryRow(
 		`SELECT id, `+savedQueryCols+` FROM saved_queries WHERE id = ?`, id,
 	).Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
-		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
+		return models.SavedQueryRow{}, fmt.Errorf("couldn't save the query: %w", err)
 	}
 	return r, nil
 }
@@ -683,7 +683,7 @@ func (s *Store) UpdateQuery(q models.SavedQueryRow) (models.SavedQueryRow, error
 		if isUniqueErr(err) {
 			return models.SavedQueryRow{}, fmt.Errorf("a query named %q already exists", scrub(q.Name))
 		}
-		return models.SavedQueryRow{}, fmt.Errorf("store: update query: %w", err)
+		return models.SavedQueryRow{}, fmt.Errorf("couldn't update the query: %w", err)
 	}
 	if err := affectedOrNotFound(res, "updating the saved query"); err != nil {
 		return models.SavedQueryRow{}, err
@@ -692,7 +692,7 @@ func (s *Store) UpdateQuery(q models.SavedQueryRow) (models.SavedQueryRow, error
 	if err := s.db.QueryRow(
 		`SELECT id, `+savedQueryCols+` FROM saved_queries WHERE id = ?`, q.ID,
 	).Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
-		return models.SavedQueryRow{}, fmt.Errorf("store: update query: %w", err)
+		return models.SavedQueryRow{}, fmt.Errorf("couldn't update the query: %w", err)
 	}
 	return r, nil
 }
@@ -701,7 +701,7 @@ func (s *Store) UpdateQuery(q models.SavedQueryRow) (models.SavedQueryRow, error
 func (s *Store) DeleteQuery(id int64) error {
 	res, err := s.db.Exec(`DELETE FROM saved_queries WHERE id = ?`, id)
 	if err != nil {
-		return fmt.Errorf("store: delete query: %w", err)
+		return fmt.Errorf("couldn't delete the query: %w", err)
 	}
 	return affectedOrNotFound(res, "deleting the saved query")
 }

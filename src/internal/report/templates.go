@@ -27,7 +27,7 @@ func init() {
 	for id, meta := range builtinMeta {
 		body, err := templatesFS.ReadFile("templates/" + id)
 		if err != nil {
-			panic(fmt.Sprintf("report: embedded template %s: %v", id, err))
+			panic(fmt.Sprintf("embedded report template %s: %v", id, err))
 		}
 		builtins = append(builtins, Template{
 			ID: id, Title: meta.title, Scope: meta.scope,

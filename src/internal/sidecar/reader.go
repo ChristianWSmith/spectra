@@ -15,7 +15,7 @@ import (
 // ErrNoSidecar reports that a match directory does not hold a sidecar
 // (missing directory or files) — callers treat it as "no replay data",
 // not as a failure (HasSidecar=false is not an error).
-var ErrNoSidecar = errors.New("sidecar: not present")
+var ErrNoSidecar = errors.New("this match has no replay data")
 
 // Reader serves meta lookups and decompressed frame ranges from a match's
 // sidecar. The frontend never decodes zstd: ranges come back as the raw
@@ -42,18 +42,18 @@ func Open(dir string) (*Reader, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNoSidecar
 		}
-		return nil, fmt.Errorf("sidecar: read %s: %w", MetaName, err)
+		return nil, fmt.Errorf("couldn't read the match metadata: %w", err)
 	}
 	var meta Meta
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
-		return nil, fmt.Errorf("sidecar: parse %s: %w", MetaName, err)
+		return nil, fmt.Errorf("couldn't read the match metadata: %w", err)
 	}
 	idxRaw, err := os.ReadFile(filepath.Join(dir, IdxName))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNoSidecar
 		}
-		return nil, fmt.Errorf("sidecar: read %s: %w", IdxName, err)
+		return nil, fmt.Errorf("couldn't read the positions index: %w", err)
 	}
 	blocks, err := parseIdxEntries(idxRaw)
 	if err != nil {
@@ -64,7 +64,7 @@ func Open(dir string) (*Reader, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNoSidecar
 		}
-		return nil, fmt.Errorf("sidecar: stat %s: %w", BinName, err)
+		return nil, fmt.Errorf("couldn't read the positions file: %w", err)
 	}
 	r := &Reader{dir: dir, meta: meta, blocks: blocks, binSize: binInfo.Size()}
 	if err := r.openState(); err != nil {
@@ -81,7 +81,7 @@ func (r *Reader) openState() error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil // no stream — absent
 		}
-		return fmt.Errorf("sidecar: read %s: %w", StateIdxName, err)
+		return fmt.Errorf("couldn't read the state index: %w", err)
 	}
 	stateBlocks, err := parseIdxEntries(stateIdx)
 	if err != nil {
@@ -92,7 +92,7 @@ func (r *Reader) openState() error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil // torn pair — absent beats serving half a stream
 		}
-		return fmt.Errorf("sidecar: stat %s: %w", StateBinName, err)
+		return fmt.Errorf("couldn't read the state file: %w", err)
 	}
 	r.stateBlocks = stateBlocks
 	r.stateSize = stateInfo.Size()
@@ -145,12 +145,12 @@ func (r *Reader) visitRangeStream(fromFrame, toFrame int, visit func(delivered i
 
 	f, err := os.Open(filepath.Join(r.dir, BinName))
 	if err != nil {
-		return fmt.Errorf("sidecar: open %s: %w", BinName, err)
+		return fmt.Errorf("couldn't open the positions file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	dec, err := zstd.NewReader(nil)
 	if err != nil {
-		return fmt.Errorf("sidecar: zstd reader: %w", err)
+		return fmt.Errorf("couldn't decompress the positions data: %w", err)
 	}
 	defer dec.Close()
 
@@ -174,11 +174,11 @@ func (r *Reader) visitRangeStream(fromFrame, toFrame int, visit func(delivered i
 		}
 		raw := make([]byte, size)
 		if _, err := f.ReadAt(raw, int64(b.byteOffset)); err != nil {
-			return fmt.Errorf("sidecar: read block: %w", err)
+			return fmt.Errorf("couldn't read the positions data: %w", err)
 		}
 		data, err := dec.DecodeAll(raw, nil)
 		if err != nil {
-			return fmt.Errorf("sidecar: decompress block at frame %d: %w", blockStart, err)
+			return fmt.Errorf("couldn't decompress the positions data: %w", err)
 		}
 		var chunk []byte
 		off, walked, inRange := 0, 0, 0
@@ -196,7 +196,7 @@ func (r *Reader) visitRangeStream(fromFrame, toFrame int, visit func(delivered i
 			walked++
 		}
 		if walked != int(b.frameCount) {
-			return fmt.Errorf("sidecar: block at frame %d holds %d frames, index says %d",
+			return fmt.Errorf("the block at frame %d holds %d frames, but the index says %d",
 				blockStart, walked, b.frameCount)
 		}
 		if inRange == 0 {
@@ -248,12 +248,12 @@ func (r *Reader) ReadStateRange(fromFrame, toFrame int) ([]byte, error) {
 
 	f, err := os.Open(filepath.Join(r.dir, StateBinName))
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: open %s: %w", StateBinName, err)
+		return nil, fmt.Errorf("couldn't open the state file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	dec, err := zstd.NewReader(nil)
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: zstd reader: %w", err)
+		return nil, fmt.Errorf("couldn't decompress the state data: %w", err)
 	}
 	defer dec.Close()
 
@@ -285,11 +285,11 @@ func (r *Reader) ReadStateRange(fromFrame, toFrame int) ([]byte, error) {
 		}
 		raw := make([]byte, size)
 		if _, err := f.ReadAt(raw, int64(b.byteOffset)); err != nil {
-			return nil, fmt.Errorf("sidecar: read state block: %w", err)
+			return nil, fmt.Errorf("couldn't read the state data: %w", err)
 		}
 		data, err := dec.DecodeAll(raw, nil)
 		if err != nil {
-			return nil, fmt.Errorf("sidecar: decompress state block at frame %d: %w", start, err)
+			return nil, fmt.Errorf("couldn't decompress the state data: %w", err)
 		}
 		off, walked, prev := 0, 0, -1
 		for off < len(data) {
@@ -308,7 +308,7 @@ func (r *Reader) ReadStateRange(fromFrame, toFrame int) ([]byte, error) {
 			walked++
 		}
 		if walked != int(b.frameCount) {
-			return nil, fmt.Errorf("sidecar: state block at frame %d holds %d records, index says %d",
+			return nil, fmt.Errorf("the state block at frame %d holds %d records, but the index says %d",
 				start, walked, b.frameCount)
 		}
 	}

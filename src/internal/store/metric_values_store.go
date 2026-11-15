@@ -96,7 +96,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric coverage: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
 	defer rows.Close()
 	var out []MetricCoverage
@@ -104,13 +104,13 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		var c MetricCoverage
 		var behind int
 		if err := rows.Scan(&c.MetricID, &behind, &c.FreshRows); err != nil {
-			return nil, fmt.Errorf("store: metric coverage: %w", err)
+			return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 		}
 		c.Behind = behind != 0
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: metric coverage: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
 	return out, nil
 }
@@ -145,7 +145,7 @@ type MetricValueRow struct {
 // reader can see them.
 func (s *Store) ClearMetricValues(metricID int64) error {
 	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ?`, metricID); err != nil {
-		return fmt.Errorf("store: clear metric values: %w", err)
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: insert metric values: %w", err)
+		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(
@@ -171,17 +171,17 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: insert metric values: %w", err)
+		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
 	defer stmt.Close()
 	now := time.Now()
 	for _, r := range rows {
 		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SteamID), r.Value, r.N, metricVersion, ruleVersion, now); err != nil {
-			return fmt.Errorf("store: insert metric values: %w", err)
+			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: insert metric values: %w", err)
+		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
 	return nil
 }
@@ -254,11 +254,11 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 // not produce — the view renders the state instead.
 func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]models.MetricValue, error) {
 	if matchID <= 0 {
-		return nil, errors.New("store: metric values for match: match id is required")
+		return nil, errors.New("a match id is required")
 	}
 	cfg, err := s.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for match: %w", err)
+		return nil, fmt.Errorf("couldn't load the match metric values: %w", err)
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
 	q := metricValueFreshSQL + ` AND v.match_id = ?` + idCond + `
@@ -266,12 +266,12 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 	args := append([]any{cfg.RuleVersion, matchID}, idArgs...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for match: %w", err)
+		return nil, fmt.Errorf("couldn't load the match metric values: %w", err)
 	}
 	defer rows.Close()
 	out, err := scanMetricValues(rows)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for match: %w", err)
+		return nil, fmt.Errorf("couldn't load the match metric values: %w", err)
 	}
 	return out, nil
 }
@@ -287,7 +287,7 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]models.MetricValue, error) {
 	cfg, err := s.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for player: %w", err)
+		return nil, fmt.Errorf("couldn't load the player metric values: %w", err)
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
 	steamCond := ""
@@ -301,12 +301,12 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 	args = append(append([]any{cfg.RuleVersion}, args...), idArgs...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for player: %w", err)
+		return nil, fmt.Errorf("couldn't load the player metric values: %w", err)
 	}
 	defer rows.Close()
 	out, err := scanMetricValues(rows)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values for player: %w", err)
+		return nil, fmt.Errorf("couldn't load the player metric values: %w", err)
 	}
 	return out, nil
 }
@@ -382,7 +382,7 @@ func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {
 func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]models.MetricSeriesPoint, error) {
 	cfg, err := s.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values series: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
 	q := `SELECT v.metric_id, v.match_id, v.value, v.n, mt.patch_version, mt.extracted_at
@@ -397,7 +397,7 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 	args := append([]any{cfg.RuleVersion, scrub(steamID)}, idArgs...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric values series: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 	}
 	defer rows.Close()
 	var out []models.MetricSeriesPoint
@@ -405,13 +405,13 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 		var p models.MetricSeriesPoint
 		var extracted sql.NullTime
 		if err := rows.Scan(&p.MetricID, &p.MatchID, &p.Value, &p.N, &p.Patch, &extracted); err != nil {
-			return nil, fmt.Errorf("store: metric values series: %w", err)
+			return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 		}
 		p.ExtractedAt = nullTime(extracted)
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: metric values series: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 	}
 	return out, nil
 }
@@ -438,12 +438,12 @@ func (s *Store) QueryWrite(ctx context.Context, q string, args []any, limit int)
 	elapsed := func() int64 { return time.Since(start).Milliseconds() }
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return ROResult{MS: elapsed()}, fmt.Errorf("store: query (write handle): %w", err)
+		return ROResult{MS: elapsed()}, fmt.Errorf("couldn't run the query: %w", err)
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
-		return ROResult{MS: elapsed()}, fmt.Errorf("store: query (write handle): %w", err)
+		return ROResult{MS: elapsed()}, fmt.Errorf("couldn't run the query: %w", err)
 	}
 	out := ROResult{Columns: cols}
 	for rows.Next() {
@@ -460,7 +460,7 @@ func (s *Store) QueryWrite(ctx context.Context, q string, args []any, limit int)
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return ROResult{MS: elapsed()}, fmt.Errorf("store: query (write handle): %w", err)
+			return ROResult{MS: elapsed()}, fmt.Errorf("couldn't run the query: %w", err)
 		}
 		for i, v := range vals {
 			vals[i] = normValue(v)
@@ -468,7 +468,7 @@ func (s *Store) QueryWrite(ctx context.Context, q string, args []any, limit int)
 		out.Rows = append(out.Rows, vals)
 	}
 	if err := rows.Err(); err != nil {
-		return ROResult{MS: elapsed()}, fmt.Errorf("store: query (write handle): %w", err)
+		return ROResult{MS: elapsed()}, fmt.Errorf("couldn't run the query: %w", err)
 	}
 	out.MS = elapsed()
 	return out, nil
@@ -511,19 +511,19 @@ func bumpMetricAndDependents(tx *sql.Tx, id int64) error {
 		var nodes []node
 		rows, err := tx.Query(`SELECT id, name FROM metrics WHERE id IN (`+strings.Join(ph, ",")+`)`, ids...)
 		if err != nil {
-			return fmt.Errorf("store: bump metric versions: %w", err)
+			return fmt.Errorf("couldn't update the metric versions: %w", err)
 		}
 		for rows.Next() {
 			var n node
 			if err := rows.Scan(&n.id, &n.name); err != nil {
 				rows.Close()
-				return fmt.Errorf("store: bump metric versions: %w", err)
+				return fmt.Errorf("couldn't update the metric versions: %w", err)
 			}
 			nodes = append(nodes, n)
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return fmt.Errorf("store: bump metric versions: %w", err)
+			return fmt.Errorf("couldn't update the metric versions: %w", err)
 		}
 		rows.Close()
 		if len(nodes) == 0 {
@@ -533,7 +533,7 @@ func bumpMetricAndDependents(tx *sql.Tx, id int64) error {
 		var namePh []string
 		for _, n := range nodes {
 			if _, err := tx.Exec(`UPDATE metrics SET version = version + 1 WHERE id = ?`, n.id); err != nil {
-				return fmt.Errorf("store: bump metric versions: %w", err)
+				return fmt.Errorf("couldn't update the metric versions: %w", err)
 			}
 			seen[n.id] = true
 			names = append(names, n.name)
@@ -546,14 +546,14 @@ func bumpMetricAndDependents(tx *sql.Tx, id int64) error {
 			names...,
 		)
 		if err != nil {
-			return fmt.Errorf("store: bump metric versions: %w", err)
+			return fmt.Errorf("couldn't update the metric versions: %w", err)
 		}
 		var f2 []int64
 		for next.Next() {
 			var nid int64
 			if err := next.Scan(&nid); err != nil {
 				next.Close()
-				return fmt.Errorf("store: bump metric versions: %w", err)
+				return fmt.Errorf("couldn't update the metric versions: %w", err)
 			}
 			if !seen[nid] {
 				f2 = append(f2, nid)
@@ -561,7 +561,7 @@ func bumpMetricAndDependents(tx *sql.Tx, id int64) error {
 		}
 		if err := next.Err(); err != nil {
 			next.Close()
-			return fmt.Errorf("store: bump metric versions: %w", err)
+			return fmt.Errorf("couldn't update the metric versions: %w", err)
 		}
 		next.Close()
 		frontier = f2

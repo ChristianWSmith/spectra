@@ -17,12 +17,12 @@ import (
 // demo without voice — or a match imported before the index moved out of
 // the database — yields it, and callers treat it as "no voice", exactly
 // like ErrNoSidecar ("no replay data" is not a failure).
-var ErrNoVoiceIndex = errors.New("sidecar: no voice index")
+var ErrNoVoiceIndex = errors.New("this match has no voice data")
 
 // errNoVoicePlayer reports that one player has no index file inside a match
 // that does have one. Absent per player = no chunks for that player (the
 // silence a non-speaking player already gets), never an error.
-var errNoVoicePlayer = errors.New("sidecar: no voice index for player")
+var errNoVoicePlayer = errors.New("this player has no voice data")
 
 // VoicePlayerStat is one speaking player's summary (VoiceReader.Players).
 type VoicePlayerStat struct {
@@ -63,7 +63,7 @@ func OpenVoice(dir string) (*VoiceReader, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNoVoiceIndex
 		}
-		return nil, fmt.Errorf("sidecar: read voice directory: %w", err)
+		return nil, fmt.Errorf("couldn't read the voice folder: %w", err)
 	}
 	players := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -178,12 +178,12 @@ func (r *VoiceReader) Chunks(steamID string, from, to int) ([]models.VoiceIndexR
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("sidecar: read voice index %s: %w", steamID, err)
+		return nil, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: stat voice index %s: %w", steamID, err)
+		return nil, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	size := fi.Size()
 	if size%voiceIdxRecordSize != 0 {
@@ -195,25 +195,25 @@ func (r *VoiceReader) Chunks(steamID string, from, to int) ([]models.VoiceIndexR
 	// like readPlayer (corrupt ≠ absent: the index exists).
 	payload, err := os.Stat(filepath.Join(r.dir, steamID+voicePayloadExt)) //nolint:gosec // stem is decimal-checked above
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: voice index %s has no payload: %w", steamID, err)
+		return nil, fmt.Errorf("the voice index has no data: %w", err)
 	}
 	paySize := payload.Size()
 	// First record with tick >= from, then the first with tick > to — both
 	// probes read only 4 bytes per step off disk (log2 of the record count).
 	lo, err := searchIndexTick(f, int(size/voiceIdxRecordSize), func(t int) bool { return t >= from })
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: search voice index %s: %w", steamID, err)
+		return nil, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	hi, err := searchIndexTick(f, int(size/voiceIdxRecordSize), func(t int) bool { return t > to })
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: search voice index %s: %w", steamID, err)
+		return nil, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	if lo >= hi {
 		return nil, nil
 	}
 	raw := make([]byte, (hi-lo)*voiceIdxRecordSize)
 	if _, err := f.ReadAt(raw, int64(lo)*voiceIdxRecordSize); err != nil {
-		return nil, fmt.Errorf("sidecar: read voice index %s records [%d,%d): %w", steamID, lo, hi, err)
+		return nil, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	out := make([]models.VoiceIndexRow, 0, hi-lo)
 	for off := 0; off < len(raw); off += voiceIdxRecordSize {
@@ -296,7 +296,7 @@ func (r *VoiceReader) readPlayer(steamID string) ([]voiceIdxRecord, int64, error
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, 0, errNoVoicePlayer
 		}
-		return nil, 0, fmt.Errorf("sidecar: read voice index %s: %w", steamID, err)
+		return nil, 0, fmt.Errorf("couldn't read the voice index: %w", err)
 	}
 	if len(raw)%voiceIdxRecordSize != 0 {
 		return nil, 0, errCorrupt(fmt.Sprintf(
@@ -306,7 +306,7 @@ func (r *VoiceReader) readPlayer(steamID string) ([]voiceIdxRecord, int64, error
 	if err != nil {
 		// An index without its payload is a torn pair, not a match
 		// without voice — the index exists, so fail loud.
-		return nil, 0, fmt.Errorf("sidecar: voice index %s has no payload: %w", steamID, err)
+		return nil, 0, fmt.Errorf("the voice index has no data: %w", err)
 	}
 	size := payload.Size()
 	recs := make([]voiceIdxRecord, 0, len(raw)/voiceIdxRecordSize)
