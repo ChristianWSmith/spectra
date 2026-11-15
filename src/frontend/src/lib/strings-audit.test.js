@@ -94,7 +94,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/views/Replay.svelte',
   'frontend/src/lib/views/RoundDetail.svelte',
   'frontend/src/lib/views/Settings.svelte',
-  'frontend/src/lib/views/Utility.svelte',
 ]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal
