@@ -63,4 +63,7 @@ export const common = {
 
   // confirmation dialog (ConfirmDialog.svelte — the one window.confirm replacement)
   confirmDialogCancel: 'Cancel', // the cancel button label (the confirm button's label is the caller's confirmLabel prop)
+
+  // kill-event flag chips (EventFlags.svelte — the "no flags apply" fallback)
+  eventFlagsNone: 'none', // rendered when the none prop is set and no flag chip applies
 };
