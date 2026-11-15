@@ -4024,7 +4024,7 @@
               {/each}
             </select>
             <div class="lm-saved-actions">
-              <button class="btn small" disabled={!savedSel} onclick={applySaved}>{S.replay.applyBtn}</button>>
+              <button class="btn small" disabled={!savedSel} onclick={applySaved}>{S.replay.applyBtn}</button>
               <button class="btn small" onclick={saveCurrent} title={S.replay.saveFilterTitle}>{S.replay.saveBtn}</button>
               <button class="btn small" disabled={!savedSel} title={S.replay.deleteFilterTitle} onclick={removeSaved}><span class="codicon codicon-close"></span></button>
               <button class="btn small" onclick={resetFilters} title={S.replay.resetFiltersTitle}>{S.replay.resetBtn}</button>

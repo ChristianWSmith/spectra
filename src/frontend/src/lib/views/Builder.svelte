@@ -1115,7 +1115,6 @@
                     checked={denomMatches}
                     onchange={(e) => (denomMatches = e.currentTarget.checked)}
                   /> {S.builder.filterMatches}</label>
-                >
               </div>
               <!-- Type = the metric's format (the editor's Format
                    select vocabulary, lib/metricformats.js): every
@@ -1165,7 +1164,6 @@
                     checked={formatCurrency}
                     onchange={(e) => (formatCurrency = e.currentTarget.checked)}
                   /> {S.builder.filterCurrency}</label>
-                >
               </div>
             </div>
           </Popover>
@@ -1338,7 +1336,7 @@
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">{S.builder.exprChecking}</p>
             {:else if exprCheck.state === 'valid'}
-              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</p>>
+              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</p>
             {:else if exprCheck.state === 'error'}
               <p class="bld-expr-state bad">
                 <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
