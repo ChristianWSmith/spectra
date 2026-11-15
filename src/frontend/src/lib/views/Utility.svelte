@@ -429,12 +429,12 @@
       <section class="panel">
         <h2>{S.utility.flashHeading}</h2>
         <div class="util-flash-grid">
-          <div class="util-flash-cell">
+          <div class="util-flash-cell" title={S.utility.flashCellTitle}>
             <span class="field-label {clsCT}">{names.ct}{S.utility.blindsSuffix}</span>
             <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
             <span class="muted">{flash.ctAff}{S.utility.affectedSuffix}</span>
           </div>
-          <div class="util-flash-cell">
+          <div class="util-flash-cell" title={S.utility.flashCellTitle}>
             <span class="field-label {clsT}">{names.t}{S.utility.blindsSuffix}</span>
             <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
             <span class="muted">{flash.tAff}{S.utility.affectedSuffix}</span>
@@ -474,7 +474,11 @@
             >
               <span class="util-group-title">{S.utility.groupTitlePrefix}{roundIndexLabel(rbn.get(round) ?? round)}</span>
               <span class="chip round-chip">{list.length}</span>
-              <span class="muted mono">{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)}{S.utility.dmgSuffix}</span>
+              <span
+                class="muted mono"
+                title={S.utility.roundDamageTitle}
+                >{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)}{S.utility.dmgSuffix}</span
+              >
               <span class="spacer"></span>
               <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
             </button>

@@ -316,6 +316,14 @@ check(
   JSON.stringify(headers) === JSON.stringify(['Alpha 40 · Beta — dmg', 'Alpha — · Beta 30 dmg']),
   JSON.stringify(headers),
 );
+// I30 (view-aggregate rule): the per-round team-damage line documents
+// its own formula in a tooltip — it had no documentation anywhere.
+const headTips = $$('.util-group-head .mono').map((el) => el.getAttribute('title') || '');
+check(
+  'the per-round team-damage line carries a formula tooltip (this round, current filter)',
+  headTips.length === 2 && headTips.every((t) => t.includes('team damage in this round') && t.includes('current filter')),
+  headTips.join(' | '),
+);
 check(
   'the blind-time precedent still dashes its own 0s',
   nadeCells('[title="total blind time"]').some((t) => t === '—') &&
@@ -329,6 +337,15 @@ check(
   'flash card stays numeric at 0 affected (out of scope, by the owner)',
   flashText.some((t) => t.includes('0 affected')) && flashText.every((t) => !t.includes('— affected')),
   flashText.join(' | '),
+);
+// I30 (view-aggregate rule): each flash cell documents its composition
+// in a CARD tooltip — the section footnote alone is section level.
+const flashTips = [...root.querySelectorAll('.util-flash-cell')].map((c) => c.getAttribute('title') || '');
+check(
+  'flash cards carry a formula tooltip (blind time + affected players, current filter)',
+  flashTips.length === 2 &&
+    flashTips.every((t) => t.includes('blind time') && t.includes('affected players') && t.includes('current filter')),
+  flashTips.join(' | '),
 );
 
 console.log('E. coordinates: dash ONLY when both components are 0');

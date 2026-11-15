@@ -223,7 +223,13 @@ const EXPECTED = {
   // (the player picker's K/D/A triple composes per half — the stored
   // assists METRIC half renders, and an absent row dashes it to
   // 20/5/— while K/D keep their stored fields).
-  'reports.dom.mjs': 22,
+  // reports 22 → 24 (2026-11-15, N7 appendix metric picker): A/B/D/E/G
+  // rewrote from checkbox clicks to the dropdown row interaction (+ adds
+  // a row, a SuggestInput suggestion picks, − removes) — +1 section D
+  // (the new row offers only the stats no other row holds) and +1
+  // section G (no rows → no appendix: the − sweep drops the preview's
+  // "+ appendix" suffix with only the add button left); C/F/H unchanged.
+  'reports.dom.mjs': 24,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
@@ -236,7 +242,11 @@ const EXPECTED = {
   // runtime-error tail.
   'settings.dom.mjs': 49,
   'stat-card.dom.mjs': 12,
-  'utility.dom.mjs': 39,
+  // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
+  // flash-effectiveness cells' card tooltip and the per-round team-damage
+  // line's formula tooltip (the AGENTS view-aggregate rule: the formula
+  // lives in the card title or tooltip, not only in the section note).
+  'utility.dom.mjs': 41,
   'voice-engine.dom.mjs': 7,
 };
 
