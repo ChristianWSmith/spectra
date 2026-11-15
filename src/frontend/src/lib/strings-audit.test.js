@@ -22,7 +22,8 @@
 // Check D (length tiers, owner 2026-11-15) is the character-budget pin:
 // tier 1 ≤70 chars, tier 2 ≤200 chars over the same media, default-tight
 // classification (unknown ⇒ tier 1) — its inputs, declarations and rule
-// live beside HINT_KEYS below.
+// live beside HINT_KEYS below. Check E (verb-like input hints, same owner,
+// same day) has its own dated block after TIER2_MAX — it reads no budgets.
 //
 // Check A also pins the layering-prefix rule: a `pkg: `-prefixed string in
 // non-test Go is package vocabulary that reaches errText verbatim. Since
@@ -204,6 +205,103 @@ const HINT_INLINE = [
 
 const TIER1_MAX = 70;
 const TIER2_MAX = 200;
+
+// ---------------------------------------------------------------------------
+// Check E — input hints speak in actions (owner, 2026-11-15: "all input hints
+// should be verb-like — 'Search players...' is good, while 'e.g. de_mirage'
+// is bad").
+//
+// Scope = `placeholder=` attributes in markup: an INPUT HINT. An aria-label, a
+// `title` tooltip and a select option are other media (label, tooltip,
+// choice) and are deliberately not checked here.
+//
+// Rule: the first whitespace-separated word of the RESOLVED hint text must be
+// a member of the closed VERB_ALLOWLIST below. FAIL-CLOSED — a first word
+// nobody declared is a violation, never an implicit pass, so a new hint verb
+// is a declared change (each entry carries its `why`).
+//
+// Exemptions are ONE dated HINT_* block below (never scattered whitelisting),
+// each entry with a non-empty `why` AND a liveness contract (an entry whose
+// site disappeared fails Check E's declaration assertions, like the
+// PENDING_DENYLIST ledger):
+//   • power surfaces — the SQL console's three placeholders go through
+//     POWER_SURFACES (class 4, checked by the isPower() filter); the
+//     expression editor's EXAMPLE sits in HINT_EXEMPT explicitly because
+//     Builder is not itself a POWER_SURFACES file (AGENTS.md exempts "metric
+//     expression text / Formula: content, the expression editor").
+//   • endpoint markers — from / to / min / max / start / stop (HINT_NONVERB),
+//     owner ruling: the placeholder IS the field's only visible per-field
+//     label (a mini-label, not a hint) — the full name lives in the
+//     aria-label or sr-only label (FilterBar, Replay's loop inputs).
+//   • unresolvable expressions — HINT_PASSTHROUGH (the rendered text resolves
+//     at another site, which is checked there).
+//   • hint consts — HINT_SOURCES: text that renders as a hint without sitting
+//     on a placeholder attribute of its own (SuggestInput's PLAYER_SEARCH_HINT,
+//     the owner's own canonical example — 'Search players...').
+//
+// Orthogonal to Check D: this check never reads a length budget, and every
+// length tier still applies to the reworded hints independently.
+// ---------------------------------------------------------------------------
+
+// Closed verb allowlist — first whitespace token only. Each entry declares WHY
+// the verb belongs (mandatory, asserted in Check E-decls); unused-but-declared
+// verbs are allowed (they are the vocabulary a future hint may reach for),
+// stale EXEMPTIONS are not (they must match a live site).
+const VERB_ALLOWLIST = {
+  Search: 'the search idiom — the box finds rows the library already has (Search players…, Search metrics…, Search sections)',
+  Filter: 'the facet idiom — narrows an already-listed set (Filter matches…, Filter by map (e.g. de_mirage)…)',
+  Type: 'free-text entry that is neither a path nor a value (Type a command or search…)',
+  Enter: 'typed-value entry fields — paths, names and labels the user supplies (Enter a plugin path or manifest.json…)',
+  Select: 'pickers asking for a choice among offered options (Select match… — MatchPicker’s own default hint)',
+  Describe: 'prose fields whose content is user-authored explanation (Describe what this counts…)',
+  Name: 'fields whose whole job is naming an entity (Name this saved query…)',
+  Document: 'the metric Doc field, which points at the Formula: convention (Document the formula — …)',
+};
+
+// Exempt class 1 — endpoint markers (owner ruling, 2026-11-15). Keyed by the
+// catalog key (the site's id); criterion repeated in every entry's why so no
+// one can extend the class without restating it.
+const HINT_NONVERB = {
+  'common.filterBarFrom':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the round-from field’s only visible per-field label (mini-label); the full name is its aria-label "First round"',
+  'common.filterBarTo':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the round-to field’s only visible per-field label (mini-label); the full name is its aria-label "Last round"',
+  'common.filterBarMin':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the distance-min field’s only visible per-field label (mini-label); the full name is its aria-label "Minimum distance"',
+  'common.filterBarMax':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the distance-max field’s only visible per-field label (mini-label); the full name is its aria-label "Maximum distance"',
+  'replay.loopStartPlaceholder':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the loop-from field’s only visible per-field label (mini-label); the full name is its sr-only label "Loop start time"',
+  'replay.loopStopPlaceholder':
+    'endpoint marker (ruling 2026-11-15) — the placeholder IS the loop-to field’s only visible per-field label (mini-label); the full name is its sr-only label "Loop stop time"',
+};
+
+// Exempt class 2 — power surfaces that are NOT a POWER_SURFACES file: the
+// expression editor's example script (AGENTS.md criterion bullet, "Exempt
+// power surfaces"). Keyed `<rel file>#<site id>`.
+const HINT_EXEMPT = {
+  'frontend/src/lib/views/Builder.svelte#const:EXAMPLE':
+    'the expression editor’s EXAMPLE script — power-surface content (metric expression text / the expression editor); Builder is outside POWER_SURFACES, so the exemption is declared here',
+};
+
+// Exempt class 3 — placeholder values that cannot be resolved statically; the
+// text they render is checked at the site that owns it (the caller's own
+// placeholder, or an HINT_SOURCES const below). Same `<rel file>#<site id>` key.
+const HINT_PASSTHROUGH = {
+  'frontend/src/lib/components/SuggestInput.svelte#expr:hint':
+    'the $derived `hint` expression — resolves to the caller’s placeholder (checked at its own site) or to PLAYER_SEARCH_HINT (checked via HINT_SOURCES); no literal to classify here',
+};
+
+// Not exemptions but declaration inputs: consts whose text renders as an input
+// hint WITHOUT sitting on a placeholder attribute — they must still pass the
+// verb rule (the owner’s canonical 'Search players...' lives here). Keyed by
+// file; `name` is the same-file const the extractor resolves.
+const HINT_SOURCES = {
+  'frontend/src/lib/components/SuggestInput.svelte': {
+    name: 'PLAYER_SEARCH_HINT',
+    why: 'the owner’s canonical hint — rendered into placeholder={hint} by SuggestInput’s player kind without a placeholder attribute of its own',
+  },
+};
 
 // ---------------------------------------------------------------------------
 // The denylist — terms that are never the user's business (implementation
@@ -558,39 +656,44 @@ const goFiles = walk(SRC, (n) => n.endsWith('.go') && !n.endsWith('_test.go'), n
 const svelteLits = new Map(); // rel file → [{attr,text}]
 for (const f of svelteFiles) svelteLits.set(rel(f), collectSvelte(f));
 
-// Check D — the mechanical tier-2 derivation: catalog keys referenced from a
-// `title=` attribute anywhere in the markup (a tooltip is a hint, owner
-// 2026-11-15). Title position only — every other reference position stays
-// tier 1 by default (unknown ⇒ tier 1, the default-tight rule).
+// chains — the one member-chain reader: collects `S.<a>.<b>…` paths from any
+// AST node/value (string paths without the leading `S`). Shared by Check D's
+// `title=` derivation and Check E's `placeholder=` resolution — refactor out of
+// titleHintKeyScan 2026-11-15 (verb-hints) so neither check owns a copy.
+const chains = (n, out = [], seen = new Set()) => {
+  if (!n || typeof n !== 'object' || seen.has(n)) return out;
+  if (Array.isArray(n)) {
+    for (const c of n) chains(c, out, seen);
+    return out;
+  }
+  if (typeof n.type === 'string') seen.add(n);
+  if (n.type === 'MemberExpression' || n.type === 'Identifier') {
+    const parts = [];
+    let cur = n;
+    for (;;) {
+      if (!cur || cur.type !== 'MemberExpression') {
+        if (cur && cur.type === 'Identifier') parts.unshift(cur.name);
+        break;
+      }
+      if (!cur.property || cur.property.type !== 'Identifier' || cur.computed) break;
+      parts.unshift(cur.property.name);
+      cur = cur.object;
+    }
+    if (parts[0] === 'S' && parts.length > 1) out.push(parts.slice(1).join('.'));
+  }
+  for (const k of Object.keys(n)) {
+    if (k === 'type' || k === 'parent' || k === 'start' || k === 'end' || k === 'loc' || k === 'name') continue;
+    if (n[k] && typeof n[k] === 'object') chains(n[k], out, seen);
+  }
+  return out;
+};
+
+// Check D inputs — which catalog keys are referenced from a `title=` attribute
+// anywhere in the markup (a tooltip is a hint, owner 2026-11-15). Title
+// position only — every other reference position stays tier 1 by default
+// (unknown ⇒ tier 1, the default-tight rule).
 function titleHintKeyScan() {
   const keys = new Set();
-  const chains = (n, out = [], seen = new Set()) => {
-    if (!n || typeof n !== 'object' || seen.has(n)) return out;
-    if (Array.isArray(n)) {
-      for (const c of n) chains(c, out, seen);
-      return out;
-    }
-    if (typeof n.type === 'string') seen.add(n);
-    if (n.type === 'MemberExpression' || n.type === 'Identifier') {
-      const parts = [];
-      let cur = n;
-      for (;;) {
-        if (!cur || cur.type !== 'MemberExpression') {
-          if (cur && cur.type === 'Identifier') parts.unshift(cur.name);
-          break;
-        }
-        if (!cur.property || cur.property.type !== 'Identifier' || cur.computed) break;
-        parts.unshift(cur.property.name);
-        cur = cur.object;
-      }
-      if (parts[0] === 'S' && parts.length > 1) out.push(parts.slice(1).join('.'));
-    }
-    for (const k of Object.keys(n)) {
-      if (k === 'type' || k === 'parent' || k === 'start' || k === 'end' || k === 'loc' || k === 'name') continue;
-      if (n[k] && typeof n[k] === 'object') chains(n[k], out, seen);
-    }
-    return out;
-  };
   for (const f of svelteFiles) {
     const ast = parse(readFileSync(f, 'utf8'));
     const seen = new Set();
@@ -971,5 +1074,230 @@ test('Check D — length tiers: common copy ≤70, hints ≤200 (owner, 2026-11-
     'user-facing text over its length tier (AGENTS.md length-tiers bullet; owner, 2026-11-15): tier 1 ≤70, ' +
       'tier 2 ≤200 — shorten without lying (detail that does not fit belongs in the user guide), or declare a ' +
       'genuine hint in HINT_KEYS/HINT_INLINE:\n  ' + bad.join('\n  '),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Check E — input hints are verb-like (owner, 2026-11-15). Extraction and
+// classification; the rule statement and its declarations live in the dated
+// block beside TIER2_MAX above.
+//
+// Extraction is its own `placeholder` attribute scan — deliberately NOT
+// collectSvelte: that extractor skips <script> for markup-copy reasons and
+// drops short hints behind isCopy (a `[A-Za-z]{3}` test would swallow 'min'
+// and 'max'), while Check E must see EVERY placeholder attribute, inline and
+// endpoint markers included. It DOES share the `chains()` member-chain reader
+// with Check D's title= derivation (refactored out of titleHintKeyScan for
+// exactly this — one chain reader, never two).
+//
+// Resolution ladder, per attribute value:
+//   Text/Literal only        → inline text        (source 'inline')
+//   single `{S.a.b}` chain   → the strings barrel (source 'catalog')
+//   single `{NAME}`          → same-file `const NAME = '…'`, comments
+//                              stripped           (source 'script')
+//   anything else            → no text            (source 'unresolved');
+//                              must be declared in HINT_PASSTHROUGH
+// plus the HINT_SOURCES consts injected per file (source 'source').
+// ---------------------------------------------------------------------------
+const catalogValue = (root, dotted) =>
+  dotted.split('.').reduce((o, k) => (o == null ? o : o[k]), root);
+
+const exprId = (e) => {
+  if (!e) return '?';
+  if (e.type === 'Identifier') return e.name;
+  if (e.type === 'CallExpression' && e.callee && e.callee.type === 'Identifier') return e.callee.name;
+  return e.type;
+};
+
+function placeholderHintSites(S) {
+  const sites = [];
+  for (const f of svelteFiles) {
+    const file = rel(f);
+    const src = readFileSync(f, 'utf8');
+    const ast = parse(src);
+    // Same-file string consts, comments stripped — a commented-out copy can
+    // never satisfy a lookup (webstorage stripComments contract).
+    const consts = new Map();
+    for (const m of stripComments(src).matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*'((?:[^'\\]|\\.)*)'/g)) {
+      consts.set(m[1], m[2]);
+    }
+    const seen = new Set();
+    const visit = (n) => {
+      if (!n || typeof n !== 'object' || seen.has(n)) return;
+      if (Array.isArray(n)) {
+        for (const c of n) visit(c);
+        return;
+      }
+      if (typeof n.type === 'string') seen.add(n);
+      if (n.type === 'Script' || n.type === 'Style') return; // sites are markup attributes
+      if (n.type === 'Attribute' && n.name === 'placeholder') {
+        const vals = Array.isArray(n.value) ? n.value : [];
+        const inline = vals
+          .filter(
+            (v) =>
+              (v.type === 'Text' && typeof v.data === 'string') ||
+              (v.type === 'Literal' && typeof v.value === 'string'),
+          )
+          .map((v) => (v.type === 'Text' ? v.data : v.value))
+          .join('');
+        // `{…}` value nodes: MustacheTag in Svelte 5's AST (Expression in
+        // older shapes) — both carry `.expression`.
+        const exprs = vals.filter((v) => v && v.expression);
+        if (exprs.length === 0 && vals.length > 0) {
+          sites.push({ file, id: `inline:${inline}`, text: inline, source: 'inline' });
+        } else if (exprs.length === 1 && vals.length === 1) {
+          const e = exprs[0].expression;
+          // chains() yields every prefix too (`S.a.b` → 'a.b' and 'a'), so the
+          // resolution target is the LONGEST chain in the value.
+          const keys = chains(e);
+          const key = keys.length
+            ? keys.reduce((a, b) => (b.split('.').length > a.split('.').length ? b : a))
+            : null;
+          const text = key ? catalogValue(S, key) : undefined;
+          if (typeof text === 'string') {
+            sites.push({ file, id: key, text, source: 'catalog' });
+          } else if (e.type === 'Identifier' && consts.has(e.name)) {
+            sites.push({ file, id: `const:${e.name}`, text: consts.get(e.name), source: 'script' });
+          } else {
+            sites.push({ file, id: `expr:${exprId(e)}`, text: null, source: 'unresolved' });
+          }
+        } else {
+          sites.push({ file, id: `attr:${inline}`, text: null, source: 'unresolved' });
+        }
+        return;
+      }
+      for (const k of Object.keys(n)) {
+        if (k === 'type' || k === 'parent' || k === 'start' || k === 'end' || k === 'loc' || k === 'name') continue;
+        if (n[k] && typeof n[k] === 'object') visit(n[k]);
+      }
+    };
+    visit(ast);
+    for (const [declFile, decl] of Object.entries(HINT_SOURCES)) {
+      if (declFile !== file) continue;
+      sites.push({
+        file,
+        id: `const:${decl.name}`,
+        text: consts.has(decl.name) ? consts.get(decl.name) : null,
+        source: 'source',
+      });
+    }
+  }
+  return sites;
+}
+
+test('Check E — input hints are verb-like: every placeholder’s first word is a declared verb (owner, 2026-11-15)', async () => {
+  const S = await import('./strings/index.js');
+  const sites = placeholderHintSites(S);
+  // `sites` is 24 placeholder attributes + the injected HINT_SOURCES consts.
+  const placeholderSites = sites.filter((s) => s.source !== 'source');
+  const bySource = (src) => sites.filter((s) => s.source === src);
+  const catalog = bySource('catalog');
+  const inline = bySource('inline');
+  const script = bySource('script');
+  const sources = bySource('source');
+  const resolved = sites.filter((s) => s.text);
+  const distinctTexts = new Set(resolved.map((s) => s.text));
+  // The rule's own scope: every resolved, non-power PLACEHOLDER site — power
+  // surfaces are filtered by construction (class 4), and an unresolvable site
+  // has no text to classify (it must be declared in HINT_PASSTHROUGH below).
+  const classified = placeholderSites.filter((s) => s.text && !isPower(s.file));
+  const declaredRefs = new Set(sites.map((s) => `${s.file}#${s.id}`));
+
+  // Anti-vacuity floors — real numbers from the 2026-11-15 inventory (24
+  // placeholder sites across 12 files; 17 resolve through the barrel, 5 are
+  // inline, 1 is a same-file const, 1 cannot resolve, and 1 HINT_SOURCES
+  // const renders a hint with no placeholder attribute of its own). A broken
+  // walk or a silently-skipped medium drops under these instead of passing
+  // green.
+  assert.ok(placeholderSites.length >= 20, `extracted only ${placeholderSites.length} placeholder sites — the scan is broken`);
+  assert.ok(distinctTexts.size >= 20, `only ${distinctTexts.size} distinct hint texts — the scan is broken`);
+  assert.ok(catalog.length >= 15, `only ${catalog.length} barrel-resolved hints — the scan is broken`);
+  assert.ok(inline.length >= 4, `only ${inline.length} inline hints — the scan is broken`);
+  assert.ok(script.length >= 1, `only ${script.length} script-const hints — the scan is broken`);
+  assert.ok(
+    sources.length >= 1 && Object.keys(HINT_SOURCES).length >= 1,
+    `only ${sources.length} HINT_SOURCES consts — the owner's canonical hint is unchecked`,
+  );
+  assert.ok(
+    classified.length >= 15,
+    `only ${classified.length} classified hints (resolved + non-power) — the rule's scope collapsed`,
+  );
+  assert.ok(
+    Object.keys(VERB_ALLOWLIST).length >= 6,
+    `only ${Object.keys(VERB_ALLOWLIST).length} verbs in VERB_ALLOWLIST — a fail-closed rule needs a real vocabulary`,
+  );
+
+  // Declaration hygiene: every verb and every exemption is justified, and no
+  // exemption is stale (the PENDING_DENYLIST liveness contract: an entry whose
+  // site disappeared must be deleted, never left to rot).
+  const stale = [];
+  const requireWhy = (what, why) => {
+    if (!why || !why.trim()) stale.push(`${what} is missing its mandatory why`);
+  };
+  for (const [key, why] of Object.entries(VERB_ALLOWLIST)) requireWhy(`VERB_ALLOWLIST ${key}`, why);
+  for (const [key, why] of Object.entries(HINT_NONVERB)) {
+    requireWhy(`HINT_NONVERB ${key}`, why);
+    if (!sites.some((s) => s.source === 'catalog' && s.id === key)) {
+      stale.push(`HINT_NONVERB ${key} matches no live placeholder — drop the stale exemption`);
+    }
+  }
+  for (const [ref, why] of Object.entries(HINT_EXEMPT)) {
+    requireWhy(`HINT_EXEMPT ${ref}`, why);
+    if (!declaredRefs.has(ref)) stale.push(`HINT_EXEMPT ${ref} matches no live site — drop the stale exemption`);
+  }
+  for (const [ref, why] of Object.entries(HINT_PASSTHROUGH)) {
+    requireWhy(`HINT_PASSTHROUGH ${ref}`, why);
+    if (!declaredRefs.has(ref)) stale.push(`HINT_PASSTHROUGH ${ref} matches no live site — drop the stale exemption`);
+  }
+  for (const [file, decl] of Object.entries(HINT_SOURCES)) {
+    requireWhy(`HINT_SOURCES ${file}#${decl.name}`, decl.why);
+    if (!declaredRefs.has(`${file}#const:${decl.name}`)) {
+      stale.push(`HINT_SOURCES ${file}#${decl.name} matches no live site — drop the stale declaration`);
+    }
+  }
+  assert.deepEqual(stale, [], `stale or undescribed input-hint declarations:\n  ${stale.join('\n  ')}`);
+
+  // The rule — fail-closed: a first word that is not declared is a violation.
+  const bad = [];
+  const exempted = [];
+  for (const s of sites) {
+    const ref = `${s.file}#${s.id}`;
+    if (isPower(s.file)) continue; // class 4 — the SQL console's own placeholders
+    if (Object.hasOwn(HINT_PASSTHROUGH, ref)) continue;
+    if (Object.hasOwn(HINT_EXEMPT, ref)) {
+      exempted.push(ref);
+      continue;
+    }
+    if (Object.hasOwn(HINT_NONVERB, s.id)) {
+      exempted.push(ref);
+      continue;
+    }
+    if (!s.text) {
+      bad.push(`${ref} :: unresolvable placeholder text — resolve it, or declare it in HINT_PASSTHROUGH with its why`);
+      continue;
+    }
+    const first = s.text.trim().split(/\s+/)[0];
+    if (!Object.hasOwn(VERB_ALLOWLIST, first)) {
+      bad.push(
+        `${ref} :: ${JSON.stringify(s.text)} starts with ${JSON.stringify(first)} — not in VERB_ALLOWLIST ` +
+          '(reword the hint, or declare the verb/exempt class with its why)',
+      );
+    }
+  }
+
+  console.log(
+    `check E scope: ${placeholderSites.length} placeholder sites + ${sources.length} HINT_SOURCES ` +
+      `(${catalog.length} catalog, ${inline.length} inline, ${script.length} script-const, ` +
+      `${placeholderSites.filter((s) => !s.text).length} unresolved), ` +
+      `${distinctTexts.size} distinct texts, ${classified.length} classified, ${exempted.length} exempt, ` +
+      `${bad.length} not verb-like`,
+  );
+  assert.deepEqual(
+    bad,
+    [],
+    'input hints must be verb-like (AGENTS.md input-hints bullet; owner, 2026-11-15): the first word of every ' +
+      'placeholder is an imperative — "Search players…", never "e.g. de_mirage". Reword it in ' +
+      'lib/strings/<area>.js (or inline), or declare the verb / exempt class in VERB_ALLOWLIST / ' +
+      'HINT_NONVERB / HINT_EXEMPT / HINT_PASSTHROUGH with its why:\n  ' + bad.join('\n  '),
   );
 });
