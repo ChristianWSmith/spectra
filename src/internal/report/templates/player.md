@@ -2,10 +2,10 @@
 
 - Match: {{.Match.Map}} {{.Match.ScoreCT}}–{{.Match.ScoreT}} ({{.Match.Path}})
 - Side: {{.Player.Side}} · Rounds played: {{.Player.RoundsPlayed}}
-- K/D/A: **{{.Player.Kills}}/{{.Player.Deaths}}/{{.Player.Assists}}** (KD {{(index .Metrics .SteamID).KD}}, KDA {{printf "%.2f" .Player.KDA}})
+- K/D/A: **{{.Player.Kills}}/{{.Player.Deaths}}/{{(index .Metrics .SteamID).Assists}}** (KD {{(index .Metrics .SteamID).KD}}, KDA {{printf "%.2f" .Player.KDA}})
 - ADR {{(index .Metrics .SteamID).ADR}} · HS% {{(index .Metrics .SteamID).HSPct}} · Damage {{.Player.TotalDamage}} taken {{.Player.DamageTaken}}
-- Openings {{.Player.OpeningKills}}/{{.Player.OpeningDeaths}} · Entry {{.Player.EntryKills}}/{{.Player.EntryDeaths}} · Trades {{.Player.TradeKills}} · Best streak {{.Player.BestStreak}}
-- Utility damage {{.Player.UtilityDamage}} · Enemies flashed {{.Player.EnemiesFlashed}} · Plants {{.Player.BombPlants}} · Defuses {{.Player.BombDefuses}} · MVPs {{.Player.MVPs}} · Money {{.Player.MoneySpent}}
+- Openings {{(index .Metrics .SteamID).EntryKills}}/{{(index .Metrics .SteamID).EntryDeaths}} · Entry {{(index .Metrics .SteamID).EntryKills}}/{{(index .Metrics .SteamID).EntryDeaths}} · Trades {{(index .Metrics .SteamID).TradeKills}} · Best streak {{(index .Metrics .SteamID).BestStreak}}
+- Utility damage {{.Player.UtilityDamage}} · Enemies flashed {{(index .Metrics .SteamID).EnemiesFlashed}} · Plants {{.Player.BombPlants}} · Defuses {{.Player.BombDefuses}} · MVPs {{.Player.MVPs}} · Money {{.Player.MoneySpent}}
 
 ## Per-round
 

@@ -402,6 +402,210 @@ func TestReportMetricReadBack(t *testing.T) {
 	}
 }
 
+// TestReportCompoundCellsComposePerHalf pins the inferred-conversion
+// W3b read-back (design §3.1 / Q2, invariant 9): every converting
+// report cell composes each half from ITS OWN source. The metric
+// halves — the match tables' A / Openings / Trades, the player
+// report's K/D/A A-half, both opening pairs, Trades, Best streak and
+// Enemies flashed — read the STORED fresh rows through the SAME
+// canonical read as ADR/HS%/KD (store.GetMetricValuesForMatch); the
+// raw halves (K, D, Rounds, MVPs, Utility damage…) keep the stored
+// fields; and a metric half with no fresh row — absent OR behind —
+// renders the honest dash: never the stored column, never a fabricated
+// 0, never a chip inside the cell.
+func TestReportCompoundCellsComposePerHalf(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	id := seedMatch(t, st)
+	cfg, err := st.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	def := func(name string) models.MetricRow {
+		t.Helper()
+		d, err := st.GetMetricByName(name)
+		if err != nil {
+			t.Fatalf("GetMetricByName(%s): %v", name, err)
+		}
+		return d
+	}
+	assistsDef := def("assists")
+	ekDef, edDef := def("entry_kills"), def("entry_deaths")
+	tradeDef := def("trade_kills")
+	streakDef, flashDef := def("best_streak"), def("enemies_flashed")
+	adrDef, hsDef, kdDef := def("adr"), def("hs_pct"), def("kd")
+
+	insert := func(d models.MetricRow, version int, steamID string, v float64) {
+		t.Helper()
+		if err := st.InsertMetricValues(d.ID, version, cfg.RuleVersion, []store.MetricValueRow{
+			{MatchID: id, SteamID: steamID, Value: v, N: 5},
+		}); err != nil {
+			t.Fatalf("InsertMetricValues(%s): %v", d.Name, err)
+		}
+	}
+	matchDoc := func(t *testing.T) string {
+		t.Helper()
+		data, err := BuildMatchData(st, id)
+		if err != nil {
+			t.Fatalf("BuildMatchData: %v", err)
+		}
+		tpl, err := Find(Builtins(), "match.md")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		out, err := Render(tpl.ID, tpl.Body, data)
+		if err != nil {
+			t.Fatalf("Render match.md: %v", err)
+		}
+		return out
+	}
+	htmlDoc := func(t *testing.T) string {
+		t.Helper()
+		data, err := BuildMatchData(st, id)
+		if err != nil {
+			t.Fatalf("BuildMatchData: %v", err)
+		}
+		tpl, err := Find(Builtins(), "match.html")
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		out, err := Render(tpl.ID, tpl.Body, data)
+		if err != nil {
+			t.Fatalf("Render match.html: %v", err)
+		}
+		return out
+	}
+	playerDoc := func(t *testing.T) string {
+		t.Helper()
+		data, err := BuildPlayerData(st, id, "A00")
+		if err != nil {
+			t.Fatalf("BuildPlayerData: %v", err)
+		}
+		tpl, err := Find(Builtins(), "player.md")
+		if err != nil {
+			t.Fatalf("Find player.md: %v", err)
+		}
+		out, err := Render(tpl.ID, tpl.Body, data)
+		if err != nil {
+			t.Fatalf("Render player.md: %v", err)
+		}
+		return out
+	}
+
+	// 1) No stored rows at all (the unanalyzed fixture): every metric
+	// half is the honest dash while the raw halves still render the
+	// stored fields — player0 is K 10 / D 0 with 5 rounds and 1 MVP.
+	const noRows = "| player0 | ct | 10 | 0 | — | — | — | — | 5 | —/— | — | 1 |"
+	if out := matchDoc(t); !strings.Contains(out, noRows) {
+		t.Errorf("match.md without rows lost the per-half dashes:\n%s", out)
+	}
+	pout := playerDoc(t)
+	for _, want := range []string{
+		"K/D/A: **10/0/—**",
+		"Openings —/— · Entry —/— · Trades — · Best streak —",
+		"Enemies flashed —",
+	} {
+		if !strings.Contains(pout, want) {
+			t.Errorf("player.md without rows missing %q\n---\n%s", want, pout)
+		}
+	}
+
+	// 2) Fresh rows → every metric half renders its formatted number
+	// (the int seeds render the plain count) and the raw halves keep
+	// their stored fields byte-for-byte. A second subject with no rows
+	// keeps every dash beside theirs.
+	for _, in := range []struct {
+		d models.MetricRow
+		v float64
+	}{
+		{assistsDef, 7}, {ekDef, 3}, {edDef, 4}, {tradeDef, 9},
+		{streakDef, 6}, {flashDef, 8}, {adrDef, 42.5}, {hsDef, 0.2}, {kdDef, 2.5},
+	} {
+		insert(in.d, in.d.Version, "A00", in.v)
+	}
+	out := matchDoc(t)
+	const freshRow = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20 | 2.50 | 5 | 3/4 | 9 | 1 |"
+	if !strings.Contains(out, freshRow) {
+		t.Errorf("match.md fresh converting cells missing %q:\n%s", freshRow, out)
+	}
+	const otherRow = "| player1 | ct | 9 | 1 | — | — | — | — | 5 | —/— | — | 1 |"
+	if !strings.Contains(out, otherRow) {
+		t.Errorf("match.md subject without rows lost its dashes:\n%s", out)
+	}
+	pout = playerDoc(t)
+	for _, want := range []string{
+		"K/D/A: **10/0/7**",
+		"Openings 3/4 · Entry 3/4 · Trades 9 · Best streak 6",
+		"Enemies flashed 8",
+		// Raw line members stay raw (not converting cells).
+		"Utility damage 30",
+	} {
+		if !strings.Contains(pout, want) {
+			t.Errorf("player.md missing %q\n---\n%s", want, pout)
+		}
+	}
+	// The HTML export renders the SAME cells (design §3.2: the md/html
+	// exports follow the template dispositions — one presentation path
+	// per value).
+	hout := htmlDoc(t)
+	for _, want := range []string{
+		"<td>player0</td><td>ct</td><td>10</td><td>0</td><td>7</td><td>42.5</td><td>20</td><td>2.50</td>",
+		"<td>3/4</td>",
+	} {
+		if !strings.Contains(hout, want) {
+			t.Errorf("match.html missing %q:\n%s", want, hout)
+		}
+	}
+
+	// 3) Per-half independence inside the PAIR: entry_kills stays fresh
+	// while entry_deaths goes behind → each half renders from ITS OWN
+	// source (3/—), never the stored column, never a fabricated 0.
+	if err := st.ClearMetricValues(edDef.ID); err != nil {
+		t.Fatalf("ClearMetricValues: %v", err)
+	}
+	insert(edDef, edDef.Version-1, "A00", 888)
+	out = matchDoc(t)
+	const pairBehind = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20 | 2.50 | 5 | 3/— | 9 | 1 |"
+	if !strings.Contains(out, pairBehind) {
+		t.Errorf("match.md behind entry_deaths did not dash ONLY its half:\n%s", out)
+	}
+	if strings.Contains(out, "888") {
+		t.Errorf("match.md leaked the behind entry_deaths value:\n%s", out)
+	}
+	pout = playerDoc(t)
+	if !strings.Contains(pout, "Openings 3/— · Entry 3/— · Trades 9 · Best streak 6") {
+		t.Errorf("player.md pairs not composed per half:\n%s", pout)
+	}
+	if strings.Contains(pout, "888") {
+		t.Errorf("player.md leaked the behind entry_deaths value:\n%s", pout)
+	}
+
+	// 4) The triple's A half behind → 10/0/— : raw K/D keep their
+	// stored fields, the metric half dashes, and the behind number
+	// never reaches either document (Q8's 20/5/— semantics).
+	if err := st.ClearMetricValues(assistsDef.ID); err != nil {
+		t.Fatalf("ClearMetricValues: %v", err)
+	}
+	insert(assistsDef, assistsDef.Version-1, "A00", 999)
+	out = matchDoc(t)
+	if !strings.Contains(out, "| player0 | ct | 10 | 0 | — | 42.5 | 20 | 2.50 | 5 | 3/— | 9 | 1 |") {
+		t.Errorf("match.md behind assists did not dash ONLY the A half:\n%s", out)
+	}
+	if strings.Contains(out, "999") {
+		t.Errorf("match.md leaked the behind assists value:\n%s", out)
+	}
+	pout = playerDoc(t)
+	if !strings.Contains(pout, "K/D/A: **10/0/—**") {
+		t.Errorf("player.md behind assists did not dash the A half:\n%s", pout)
+	}
+	if strings.Contains(pout, "**10/0/999**") {
+		t.Errorf("player.md leaked the behind assists value:\n%s", pout)
+	}
+}
+
 func TestRenderPluginTemplate(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
