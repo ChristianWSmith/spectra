@@ -28,4 +28,31 @@ export const common = {
   commandPaletteRunHint: 'Enter run', // footer
   commandPaletteCloseHint: 'Esc close', // footer
   commandPaletteToggleHint: 'Ctrl/⌘K toggle', // footer
+
+  // economy curve panel (EconCurve.svelte — the hand-rolled SVG chart)
+  econCurveEquipHeading: 'Equip value per round', // panel heading, equip metric
+  econCurveNetWorthHeading: 'Team net worth per round', // panel heading, net-worth metric
+  econCurveMetricGroupLabel: 'Curve metric', // toggle group aria-label
+  econCurveEquipToggle: 'Equip value', // toggle button label
+  econCurveNetWorthToggle: 'Net worth', // toggle button label
+  econCurveNoRows: 'No economy rows for this match.', // empty state
+  econCurveTeamLinesLabel: 'Team lines', // legend aria-label
+  econCurveEquipAria: 'equipment value', // chart aria-label, equip metric
+  econCurveNetWorthAria: 'net worth', // chart aria-label, net-worth metric
+  econCurveChartAriaSuffix: ' per round, one line per team — hover for values, click a column to open the round', // chart aria-label, after the metric name
+  econCurveOpenRoundAria: 'Open round ', // hit-area aria-label prefix, before {r.round}
+  econCurveRoundTitle: 'Round ', // round number prefix (<title> + tooltip <strong>)
+  econCurvePistolChip: 'pistol', // hover tooltip's pistol-round chip
+  econCurveTooltipEquip: 'equip', // hover tooltip column label
+  econCurveTooltipNetWorth: 'net worth', // hover tooltip column label
+  econCurveStripLabel: 'Round strip', // winner-strip aria-label
+  // Strip legend (the <p> under the strip): each phrase runs up to the
+  // next codicon glyph; the values carry the exact spacing the static
+  // text rendered with (edge whitespace the compiler trimmed is already
+  // trimmed here — rendered text stays byte-identical).
+  econCurveStripPistol: ' pistol round · ',
+  econCurveStripFavorite: ' favorite (higher buy\n      type) held · ',
+  econCurveStripUpset: ' upset (lower buy type\n      won) · ',
+  econCurveStripEven: ' even buy (toss-up) · ',
+  econCurveStripNoVerdict: ' no verdict · click a round to open\n      it',
 };

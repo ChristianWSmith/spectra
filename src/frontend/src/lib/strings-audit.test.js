@@ -67,7 +67,6 @@ const CONTENT_FILES = [
 // after which Check B is unconditional (design §5.2 Stage 3 gate).
 const PENDING_INLINE = new Set([
   'frontend/src/lib/components/ConfirmDialog.svelte',
-  'frontend/src/lib/components/EconCurve.svelte',
   'frontend/src/lib/components/EventFlags.svelte',
   'frontend/src/lib/components/FilterBar.svelte',
   'frontend/src/lib/components/HeatmapLayer.svelte',

@@ -25,6 +25,7 @@
   import { teamStartClass } from '../teams.js';
   import { econColumns, econValue } from '../econ.js';
   import { EQUIP_DEF, NETWORTH_DEF } from '../definitions.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let {
     rows = [],
@@ -234,35 +235,35 @@
 <section class="panel econ-curve-panel">
   <div class="row-between econ-curve-head">
     <h2>
-      {metric === 'equip' ? 'Equip value per round' : 'Team net worth per round'}
+      {metric === 'equip' ? S.common.econCurveEquipHeading : S.common.econCurveNetWorthHeading}
     </h2>
     <div class="econ-curve-meta">
       {#if n > 0}
         <span class="econ-axis-note mono">0 – {fmtMoney(series.max)}</span>
       {/if}
-      <div class="econ-toggle" role="group" aria-label="Curve metric">
+      <div class="econ-toggle" role="group" aria-label={S.common.econCurveMetricGroupLabel}>
         <button
           class="econ-toggle-btn"
           class:active={metric === 'equip'}
           aria-pressed={metric === 'equip'}
           title={EQUIP_DEF}
-          onclick={() => (metric = 'equip')}>Equip value</button
+          onclick={() => (metric = 'equip')}>{S.common.econCurveEquipToggle}</button
         >
         <button
           class="econ-toggle-btn"
           class:active={metric === 'networth'}
           aria-pressed={metric === 'networth'}
           title={NETWORTH_DEF}
-          onclick={() => (metric = 'networth')}>Net worth</button
+          onclick={() => (metric = 'networth')}>{S.common.econCurveNetWorthToggle}</button
         >
       </div>
     </div>
   </div>
 
   {#if n === 0}
-    <p class="muted" role="status">No economy rows for this match.</p>
+    <p class="muted" role="status">{S.common.econCurveNoRows}</p>
   {:else}
-    <div class="econ-legend" aria-label="Team lines">
+    <div class="econ-legend" aria-label={S.common.econCurveTeamLinesLabel}>
       <span class="econ-legend-item {clsCT}">
         <span class="econ-legend-line" class:loser={loserCT} aria-hidden="true"></span>
         {nameCT}
@@ -278,7 +279,7 @@
       onmousemove={onMove}
       onmouseleave={() => (hover = -1)}
       role="img"
-      aria-label="{metric === 'equip' ? 'equipment value' : 'net worth'} per round, one line per team — hover for values, click a column to open the round"
+      aria-label="{metric === 'equip' ? S.common.econCurveEquipAria : S.common.econCurveNetWorthAria}{S.common.econCurveChartAriaSuffix}"
     >
       <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
         {#each rows as r, i (r.round)}
@@ -316,13 +317,13 @@
             height={H}
             role="button"
             tabindex="0"
-            aria-label="Open round {r.round}"
+            aria-label="{S.common.econCurveOpenRoundAria}{r.round}"
             onclick={() => nav(`/match/${id}/round/${r.round}`)}
             onkeydown={(e) =>
               (e.key === 'Enter' || e.key === ' ') &&
               nav(`/match/${id}/round/${r.round}`)}
           >
-            <title>Round {r.round}</title>
+            <title>{S.common.econCurveRoundTitle}{r.round}</title>
           </rect>
         {/each}
       </svg>
@@ -332,17 +333,17 @@
         {@const tCols = columns(hoverRow, 't')}
         <div class="econ-tooltip" style="left:{hoverPct}%">
           <div class="econ-tip-head">
-            <strong>Round {hoverRow.round}</strong>
+            <strong>{S.common.econCurveRoundTitle}{hoverRow.round}</strong>
             <span class="chip side {hoverRow.winner || 'none'}">
               {hoverRow.winner ? hoverRow.winner.toUpperCase() : '—'}
             </span>
             {#if hoverRow.pistolRound}
-              <span class="chip econ-cls pistol">pistol</span>
+              <span class="chip econ-cls pistol">{S.common.econCurvePistolChip}</span>
             {/if}
           </div>
           <div class="econ-tip-cols" aria-hidden="true">
-            <span class:active={metric === 'equip'}>equip</span>
-            <span class:active={metric === 'networth'}>net worth</span>
+            <span class:active={metric === 'equip'}>{S.common.econCurveTooltipEquip}</span>
+            <span class:active={metric === 'networth'}>{S.common.econCurveTooltipNetWorth}</span>
           </div>
           <div class="econ-tip-row">
             <span class={clsCT}>{nameCT}</span>
@@ -358,7 +359,7 @@
       {/if}
     </div>
 
-    <div class="econ-strip" aria-label="Round strip">
+    <div class="econ-strip" aria-label={S.common.econCurveStripLabel}>
       {#each rows as r (r.round)}
         <button
           class="econ-strip-cell"
@@ -366,7 +367,7 @@
           class:t={r.winner === 't'}
           class:pistol={r.pistolRound}
           title={cellTitle(r)}
-          aria-label="Open round {r.round}"
+          aria-label="{S.common.econCurveOpenRoundAria}{r.round}"
           onclick={() => nav(`/match/${id}/round/${r.round}`)}
         >
           <span class="econ-strip-num">{r.round}</span>
@@ -380,12 +381,8 @@
       {/each}
     </div>
     <p class="econ-strip-note muted">
-      <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
-      pistol round · <span class="codicon codicon-check"></span> favorite (higher buy
-      type) held · <span class="codicon codicon-error"></span> upset (lower buy type
-      won) · <span class="codicon codicon-grabber"></span> even buy (toss-up) · <span
-        class="codicon codicon-circle-small"></span> no verdict · click a round to open
-      it
+      <span class="econ-strip-swatch pistol" aria-hidden="true"></span>{S.common.econCurveStripPistol}<span class="codicon codicon-check"></span>{S.common.econCurveStripFavorite}<span class="codicon codicon-error"></span>{S.common.econCurveStripUpset}<span class="codicon codicon-grabber"></span>{S.common.econCurveStripEven}<span
+        class="codicon codicon-circle-small"></span>{S.common.econCurveStripNoVerdict}
     </p>
   {/if}
 </section>
