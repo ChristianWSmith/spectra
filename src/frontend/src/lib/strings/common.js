@@ -107,4 +107,26 @@ export const common = {
   landmarkRowSiteInfix: ' · site ', // between a site event's kind and its site
   landmarkRowTitleInfix: ' — tick ', // between the row title and its tick
   landmarkRowTickTitle: 'tick ', // the match-clock tooltip prefix
+
+  // launch asset prompt (MapPackPrompt.svelte — the presence-driven dialog)
+  mapPackNotFoundTitle: 'Counter-Strike 2 not found', // not-found variant: dialog label + heading
+  mapPackExtractTitle: 'Extract CS2 assets', // found variant: dialog label
+  mapPackFoundTitle: 'Found Counter-Strike 2', // found variant: heading
+  mapPackInstallFallback: 'CS2 install', // the path line's fallback when no path is known yet
+  mapPackChooseFolder: 'Choose folder…', // the manual-install button label
+  mapPackNotNow: 'Not now', // the session-only dismissal button label
+  mapPackExtracting: 'Extracting…', // the extract button, busy
+  mapPackExtractAll: 'Extract all CS2 assets', // the extract button, idle
+  // Body paragraphs — the values carry the exact spacing the compiler
+  // renders the static text with (edge whitespace trimmed, the internal
+  // line breaks and their indentation preserved), so the rendered text
+  // stays byte-identical.
+  mapPackNotFoundIntro:
+    'Spectra reads the official radar images from a local Counter-Strike 2\n        installation for authentic map backgrounds in replay and heatmaps.\n        Without one, maps render as a plain grid.',
+  mapPackNotFoundFine:
+    'Nothing from Counter-Strike ships with the app, and nothing is\n        uploaded — your game files are read locally and the extracted packs\n        are stored in Spectra\'s data folder on this machine.',
+  mapPackFoundIntro:
+    'Spectra can read the official radar images, the equipment icons and\n        the replay sounds from your local Counter-Strike 2 installation —\n        authentic map backgrounds, inventory silhouettes and in-replay audio.',
+  mapPackFoundFine:
+    'Assets are read from your game files and stored in Spectra\'s data\n        folder on this machine. Nothing is uploaded, and nothing from\n        Counter-Strike ships with the app.',
 };
