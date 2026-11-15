@@ -396,7 +396,7 @@ Everything else is refused, each with its own message:
 - A career metric may **not** read a match metric — a career number has no single match to read it from:
 
   \`\`\`
-  metrics: metric 'trade_rate' is match-scoped and cannot be used inside a
+  metric 'trade_rate' is match-scoped and cannot be used inside a
   profile-scoped metric (a career value cannot read a per-match value)
   \`\`\`
 
@@ -587,6 +587,6 @@ from player_stats: percentile(1.5, adr)
 | \`unknown denominator "x" (valid: rounds, matches)\` | only \`rounds\` and \`matches\` exist |
 | \`invalid scope "x": expected "match:<id>" or "" (whole library)\` | scope is either one match or the whole library |
 
-_The live check under the expression box reports each message exactly as written above. The same expression failure raised while **saving** appears as \`metrics: … (at byte N)\`; the other save-time refusals (references, cycles, built-ins, scope rules) also carry a \`metrics: \` prefix._`,
+_The live check under the expression box reports each message exactly as written above. The same expression failure raised while **saving** appears as \`invalid metric expression: …\`; the other save-time refusals (references, cycles, built-ins, scope rules) surface the same way, as plain messages._`,
   },
 ];

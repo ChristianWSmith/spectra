@@ -25,7 +25,7 @@ func SeedSQL() string { return seedSQL }
 // store handle, which WAL tolerates.
 func LoadSeed(db *sql.DB) error {
 	if _, err := db.Exec(seedSQL); err != nil {
-		return fmt.Errorf("metrics: load seed: %w", err)
+		return fmt.Errorf("couldn't load the sample match data: %w", err)
 	}
 	return nil
 }

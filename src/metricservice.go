@@ -119,7 +119,7 @@ func exprError(perr *metrics.ParseError) ExprError {
 }
 
 func exprErrorErr(perr *metrics.ParseError) error {
-	return fmt.Errorf("metrics: %s (at byte %d)", perr.Message, perr.Pos)
+	return fmt.Errorf("invalid metric expression: %s", perr.Message)
 }
 
 // metricFormats are the accepted Format values (contract). float2 keeps
@@ -158,11 +158,11 @@ func (s *MetricsService) ListMetricsPage(query string, originFilter string, scop
 // GetMetric returns one by id (or name).
 func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 	if id <= 0 {
-		return models.MetricRow{}, errors.New("metrics: metric id is required")
+		return models.MetricRow{}, errors.New("metric id is required")
 	}
 	r, err := s.st.GetMetric(id)
 	if errors.Is(err, store.ErrNotFound) {
-		return models.MetricRow{}, fmt.Errorf("metrics: no metric with id %d", id)
+		return models.MetricRow{}, fmt.Errorf("no metric with id %d", id)
 	}
 	if err != nil {
 		return models.MetricRow{}, err
@@ -235,7 +235,7 @@ func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, k
 		// through here with the same rule.
 		if dependentScope == "profile" && t.Scope == "match" {
 			return nil, nil, fmt.Errorf(
-				"metrics: metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
+				"metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
 				r.Name)
 		}
 		t.RuleVersion = cfg.RuleVersion
@@ -279,7 +279,7 @@ func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string
 	}
 	edges[newName] = refs // {existing} with the saved metric's own out-edges replaced by {new}
 	if cycle := metrics.FindCycle(newName, edges); cycle != nil {
-		return fmt.Errorf("metrics: cyclic metric reference: %s", strings.Join(cycle, " → "))
+		return fmt.Errorf("circular metric reference: %s", strings.Join(cycle, " → "))
 	}
 	return nil
 }
@@ -308,7 +308,7 @@ func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string
 func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error) {
 	m.Name = strings.TrimSpace(m.Name)
 	if m.Name == "" {
-		return models.MetricRow{}, errors.New("metrics: metric name is required")
+		return models.MetricRow{}, errors.New("metric name is required")
 	}
 	m.Title = strings.TrimSpace(m.Title)
 	if m.Title == "" {
@@ -319,7 +319,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	m.ShortName = strings.TrimSpace(m.ShortName)
 	m.Format = strings.TrimSpace(m.Format)
 	if !metricFormats[m.Format] {
-		return models.MetricRow{}, fmt.Errorf("metrics: unknown format %q (valid: int, float1, float2, percent, currency)", m.Format)
+		return models.MetricRow{}, fmt.Errorf("unknown format %q (valid: int, float1, float2, percent, currency)", m.Format)
 	}
 	// Scope is a REAL field since W2: the DDL CHECK admits exactly these
 	// two values, so anything else (including an omitted "") is rejected
@@ -328,7 +328,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// CreateMetric/UpdateMetric callers).
 	m.Scope = strings.TrimSpace(m.Scope)
 	if m.Scope != "match" && m.Scope != "profile" {
-		return models.MetricRow{}, fmt.Errorf("metrics: unknown scope %q (valid: match, profile)", m.Scope)
+		return models.MetricRow{}, fmt.Errorf("unknown scope %q (valid: match, profile)", m.Scope)
 	}
 	// API path: origin forced to user; plugin rows are the loader's
 	// territory (platform_store.ReplacePluginMetrics) and cannot be
@@ -352,7 +352,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 			return models.MetricRow{}, err // unknown id: the store's ErrNotFound, as before
 		}
 		if existing.Origin == "builtin" {
-			return models.MetricRow{}, errors.New("metrics: built-in metrics can't be edited")
+			return models.MetricRow{}, errors.New("built-in metrics can't be edited")
 		}
 	}
 	// Grammar first (the compile's own first step — ref-free expressions
@@ -368,7 +368,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if m.ID > 0 && m.Name != existing.Name {
 		_, err := s.st.GetMetricByName(m.Name)
 		if err == nil {
-			return models.MetricRow{}, fmt.Errorf("metrics: a metric named %q already exists", m.Name)
+			return models.MetricRow{}, fmt.Errorf("a metric named %q already exists", m.Name)
 		}
 		if !errors.Is(err, store.ErrNotFound) {
 			return models.MetricRow{}, err
@@ -502,7 +502,7 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 		return err
 	}
 	if existing.Origin == "builtin" {
-		return errors.New("metrics: built-in metrics can't be deleted")
+		return errors.New("built-in metrics can't be deleted")
 	}
 	dependents, err := s.st.MetricDependents(existing.Name)
 	if err != nil {
@@ -513,7 +513,7 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 		for i, d := range dependents {
 			names[i] = d.Name
 		}
-		return fmt.Errorf("metrics: cannot delete metric %q: referenced by %s — edit or delete those first",
+		return fmt.Errorf("cannot delete metric %q: referenced by %s — edit or delete those first",
 			existing.Name, strings.Join(names, ", "))
 	}
 	return s.st.DeleteMetric(id)

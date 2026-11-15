@@ -49,7 +49,7 @@ func serveHandler(h http.Handler) exportServe {
 	return func(urlPath string) (int, []byte, error) {
 		u, err := url.Parse(urlPath)
 		if err != nil || u.Path == "" || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
-			return 0, nil, fmt.Errorf("dialogs: serve %q: not an absolute URL path", urlPath)
+			return 0, nil, fmt.Errorf("invalid export path %q", urlPath)
 		}
 		rec := &responseBuffer{header: make(http.Header)}
 		h.ServeHTTP(rec, &http.Request{
@@ -114,7 +114,7 @@ func (s *DialogService) SaveFile(defaultName string, extensions []string) (strin
 	}
 	path, err := dlg.PromptForSingleSelection()
 	if err != nil {
-		return "", fmt.Errorf("dialogs: save file: %w", err)
+		return "", fmt.Errorf("couldn't open the save dialog: %w", err)
 	}
 	// Cancel: the platform dialog yields "" (or, on some backends, a
 	// closed channel read) — the contract is "" + nil, never an error.
@@ -138,10 +138,10 @@ func (s *DialogService) SaveFile(defaultName string, extensions []string) (strin
 // decodes a JSON string into []byte that way).
 func (s *DialogService) WriteFile(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
-		return fmt.Errorf("dialogs: write file: empty path")
+		return fmt.Errorf("couldn't save the file: no path was given")
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("dialogs: write file %s: %w", filepath.Base(path), err)
+		return fmt.Errorf("couldn't save %s: %w", filepath.Base(path), err)
 	}
 	return nil
 }
@@ -158,7 +158,7 @@ func (s *DialogService) WriteFile(path string, data []byte) error {
 // fetch failure or a write failure is an error and writes nothing.
 func (s *DialogService) SaveExport(urlPath, defaultName string, extensions []string) (string, error) {
 	if s.serve == nil {
-		return "", fmt.Errorf("dialogs: save export: no exporter wired")
+		return "", fmt.Errorf("couldn't export: no exporter is available")
 	}
 	choose := s.promptSave
 	if choose == nil {
@@ -174,13 +174,13 @@ func (s *DialogService) SaveExport(urlPath, defaultName string, extensions []str
 	}
 	status, body, err := s.serve(urlPath)
 	if err != nil {
-		return "", fmt.Errorf("dialogs: save export %s: %w", urlPath, err)
+		return "", fmt.Errorf("couldn't export: %w", err)
 	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("dialogs: save export %s: unexpected status %d", urlPath, status)
+		return "", fmt.Errorf("couldn't export: unexpected status %d", status)
 	}
 	if err := s.WriteFile(path, body); err != nil {
-		return "", fmt.Errorf("dialogs: save export: %w", err)
+		return "", fmt.Errorf("couldn't export: %w", err)
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -202,7 +202,7 @@ func chooseDirectory(app *application.App, title string) (string, error) {
 		SetTitle(title).
 		PromptForSingleSelection()
 	if err != nil {
-		return "", fmt.Errorf("dialogs: choose directory: %w", err)
+		return "", fmt.Errorf("couldn't open the folder picker: %w", err)
 	}
 	if dir == "" {
 		return "", nil

@@ -1,5 +1,5 @@
 {
-  "parserVersion": "demoinfocs-golang/v6@v6.0.0-rc.1",
+  "parserVersion": "demoinfocs/v6@v6.0.0-rc.1",
   "map": "de_cache",
   "tickRate": 64,
   "frames": 136948,

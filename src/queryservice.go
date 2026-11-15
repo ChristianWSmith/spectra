@@ -70,13 +70,13 @@ func (s *QueryService) SaveQuery(name, sql, description string) (models.SavedQue
 	name = strings.TrimSpace(name)
 	description = strings.TrimSpace(description)
 	if name == "" {
-		return models.SavedQueryRow{}, errors.New("query: query name is required")
+		return models.SavedQueryRow{}, errors.New("query name is required")
 	}
 	if description == "" {
-		return models.SavedQueryRow{}, errors.New("query: query description is required")
+		return models.SavedQueryRow{}, errors.New("query description is required")
 	}
 	if strings.TrimSpace(sql) == "" {
-		return models.SavedQueryRow{}, errors.New("query: SQL is required")
+		return models.SavedQueryRow{}, errors.New("SQL is required")
 	}
 	return s.st.SaveQuery(name, sql, description)
 }
@@ -90,20 +90,20 @@ func (s *QueryService) UpdateQuery(id int64, name, sql, description string) (mod
 	name = strings.TrimSpace(name)
 	description = strings.TrimSpace(description)
 	if name == "" {
-		return models.SavedQueryRow{}, errors.New("query: query name is required")
+		return models.SavedQueryRow{}, errors.New("query name is required")
 	}
 	if description == "" {
-		return models.SavedQueryRow{}, errors.New("query: query description is required")
+		return models.SavedQueryRow{}, errors.New("query description is required")
 	}
 	if strings.TrimSpace(sql) == "" {
-		return models.SavedQueryRow{}, errors.New("query: SQL is required")
+		return models.SavedQueryRow{}, errors.New("SQL is required")
 	}
 	row, err := s.st.UpdateQuery(models.SavedQueryRow{
 		ID: id, Name: name, Description: description, SQL: sql,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return models.SavedQueryRow{}, fmt.Errorf("query: no saved query with id %d", id)
+			return models.SavedQueryRow{}, fmt.Errorf("no saved query with id %d", id)
 		}
 		return models.SavedQueryRow{}, err
 	}
@@ -113,7 +113,7 @@ func (s *QueryService) UpdateQuery(id int64, name, sql, description string) (mod
 func (s *QueryService) DeleteQuery(id int64) error {
 	if err := s.st.DeleteQuery(id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("query: no saved query with id %d", id)
+			return fmt.Errorf("no saved query with id %d", id)
 		}
 		return err
 	}

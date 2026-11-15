@@ -295,13 +295,13 @@ const (
 func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	for _, table := range childTables {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, matchID); err != nil {
-			return fmt.Errorf("store: save extracted: clear %s: %w", table, err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -310,12 +310,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer teamsStmt.Close()
 	for _, t := range em.Teams {
 		if _, err := teamsStmt.Exec(matchID, scrub(t.Side), scrub(t.Name), scrub(t.Flag), t.Score, t.MoneySpent, t.EquipTotal); err != nil {
-			return fmt.Errorf("store: save extracted: teams: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -325,7 +325,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer playersStmt.Close()
 	for _, p := range em.Players {
@@ -333,7 +333,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			matchID, scrub(p.SteamID), scrub(p.Name), b2i(p.IsBot), scrub(p.Side), scrub(p.ClanTag),
 			scrub(p.CrosshairCode), p.Rank, p.RankType, p.Wins, p.Ping, b2i(p.FinalAlive), b2i(p.FinalStatePresent),
 		); err != nil {
-			return fmt.Errorf("store: save extracted: players: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -342,7 +342,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer statsStmt.Close()
 	for _, ps := range em.PlayerStats {
@@ -354,7 +354,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			ps.ThreeK, ps.FourK, ps.FiveK, ps.UtilityDamage, ps.EnemiesFlashed, ps.FlashedTimes, ps.BombPlants,
 			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
 		); err != nil {
-			return fmt.Errorf("store: save extracted: player_stats: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -363,7 +363,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer roundsStmt.Close()
 	for _, r := range em.Rounds {
@@ -372,7 +372,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT,
 			scrub(r.BombSite), r.FreezeEndTick, scrub(r.FirstKillSteam), scrub(r.FirstDeathSteam),
 		); err != nil {
-			return fmt.Errorf("store: save extracted: rounds: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -380,12 +380,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES (?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer sidesStmt.Close()
 	for _, rs := range em.RoundSides {
 		if _, err := sidesStmt.Exec(matchID, rs.Round, scrub(rs.SteamID), scrub(rs.Side)); err != nil {
-			return fmt.Errorf("store: save extracted: round_player_sides: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -394,12 +394,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer econStmt.Close()
 	for _, e := range em.RoundEconomy {
 		if _, err := econStmt.Exec(matchID, e.Round, scrub(e.Side), e.EquipValue, e.MoneySampledSum, e.MoneySamples, e.Spent, e.FreePistolValue); err != nil {
-			return fmt.Errorf("store: save extracted: round_economy: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -408,7 +408,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer eventsStmt.Close()
 	for i, e := range em.Events {
@@ -420,7 +420,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
 			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ),
 		); err != nil {
-			return fmt.Errorf("store: save extracted: events: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -428,12 +428,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`INSERT INTO generic_events (match_id, name, tick, round, payload_json) VALUES (?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer genericStmt.Close()
 	for _, g := range em.GenericEvents {
 		if _, err := genericStmt.Exec(matchID, scrub(g.Name), g.Tick, g.Round, scrub(g.PayloadJSON)); err != nil {
-			return fmt.Errorf("store: save extracted: generic_events: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -441,12 +441,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`INSERT INTO chat (match_id, ` + chatCols + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer chatStmt.Close()
 	for _, c := range em.Chat {
 		if _, err := chatStmt.Exec(matchID, c.Tick, c.Round, scrub(c.SteamID), scrub(c.Name), scrub(c.Text), scrub(c.Kind), scrub(c.Channel)); err != nil {
-			return fmt.Errorf("store: save extracted: chat: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -454,23 +454,23 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`INSERT INTO sound_events (match_id, ` + soundEventsCols + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer soundStmt.Close()
 	for _, se := range em.SoundEvents {
 		if _, err := soundStmt.Exec(matchID, se.Tick, se.Round, scrub(se.SteamID), scrub(se.Kind), scrub(se.Material), scrub(se.TeamPrefix), scrub(se.SOSName)); err != nil {
-			return fmt.Errorf("store: save extracted: sound_events: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
 	warnStmt, err := tx.Prepare(`INSERT INTO warnings (match_id, seq, message) VALUES (?, ?, ?)`)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer warnStmt.Close()
 	for i, w := range em.Warnings {
 		if _, err := warnStmt.Exec(matchID, i, scrub(w)); err != nil {
-			return fmt.Errorf("store: save extracted: warnings: %w", err)
+			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
@@ -495,13 +495,13 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		m.WarningsCount, models.StatusReady, "", m.EncryptedMessages, matchID,
 	)
 	if err != nil {
-		return fmt.Errorf("store: save extracted: update match: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
-	if err := affectedOrNotFound(res, "store: save extracted: update match"); err != nil {
+	if err := affectedOrNotFound(res, "saving the match data"); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: save extracted: %w", err)
+		return fmt.Errorf("saving the match data: %w", err)
 	}
 	return nil
 }
