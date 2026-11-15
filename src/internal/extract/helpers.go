@@ -376,8 +376,8 @@ func livingTeammatePos(gs *demoinfocs.GameState, killer, victim *common.Player) 
 // killer. The zero vector means "no position known" (the posPtrs
 // convention), so an unknown killer position or teammates without
 // positions yield -1: the sentinel the trade-opportunity counts treat
-// as "not countable" (analytics.tradeOppCounts — see the TradeOppMissed
-// gate). Rounded to one decimal — the
+// as "not countable" (analytics.tradeOppCounts — its in-range gate in
+// tradeopps.go). Rounded to one decimal — the
 // value rides in the kill event's detail_json, which the Replay detail
 // pane renders.
 func nearTeammateDist(killer r3.Vector, mates []r3.Vector) float64 {
