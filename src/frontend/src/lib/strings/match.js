@@ -32,7 +32,6 @@ export const match = {
   pinnedStatsUnavailable: 'Pinned stats unavailable:',
   dismissPinnedStatsError: 'Dismiss pinned stats error',
   expandLabel: 'Expand',
-  metricBasisTitle: 'based on {n} rounds across {count} players',
   unpinTitle: 'Unpin from scoreboard',
   unpinAria: 'Unpin {name}',
   breakdownAria: 'Breakdown for {name}',

@@ -870,13 +870,6 @@ canvas.heat-canvas {
   color: var(--accent);
 }
 
-.m5-n {
-  color: var(--muted);
-  font-size: 0.8em;
-  font-weight: 400;
-  margin-left: 4px;
-}
-
 /* Unpin only reveals on header hover (focus keeps it reachable). */
 .m5-unpin {
   background: none;
@@ -903,7 +896,7 @@ canvas.heat-canvas {
    never widen its scoreboard column without bound; the header's full
    tooltip is the th's title, untouched. Scope is m5-mth, the class
    Match puts on the METRIC SortTh only — static SCORE_COLS don't wear
-   it — and the ⓘ / (n) / unpin widgets sit OUTSIDE .th-sort, so the
+   it — and the ⓘ / unpin widgets sit OUTSIDE .th-sort, so the
    cap applies to the label text alone. */
 .m5-mth .th-sort {
   display: inline-block;
