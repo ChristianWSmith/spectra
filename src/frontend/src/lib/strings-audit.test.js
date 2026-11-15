@@ -313,7 +313,13 @@ function goScan(file) {
   for (const m of code.matchAll(/"((?:[^"\\\n]|\\.)*)"|`([^`]*)`/g)) all.push(m[1] ?? m[2] ?? '');
   const errors = [];
   for (const m of code.matchAll(/\b(?:fmt\.Errorf|errors\.New)\(\s*"((?:[^"\\\n]|\\.)*)"/g)) errors.push(m[1]);
-  return { all, errors };
+  // The two helper-label shapes — string literals that reach the user
+  // WITHOUT passing through fmt.Errorf/errors.New at their own site
+  // (see the dated note where they become candidates below).
+  const labels = [];
+  for (const m of code.matchAll(/\bconst\s+op\s*=\s*"((?:[^"\\\n]|\\.)*)"/g)) labels.push(m[1]);
+  for (const m of code.matchAll(/\baffectedOrNotFound\([^,)]*,\s*"((?:[^"\\\n]|\\.)*)"/g)) labels.push(m[1]);
+  return { all, errors, labels };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,12 +440,29 @@ for (const f of jsFiles) {
 for (const f of goFiles) {
   const file = rel(f);
   if (isPower(file)) continue;
-  const { all, errors } = goScan(f);
+  const { all, errors, labels } = goScan(f);
   for (const text of all) if (DENYLIST.some((d) => d.re.test(text))) add(file, text);
   for (const text of errors) {
     const svc = SVC_FILE.test(file);
     const tableHit = TABLE_TERMS.some((t) => new RegExp(`\\b${t}\\b`).test(text)) && !EXPRESSION_CONTEXT.test(text);
     if (tableHit || (svc && PREFIX_RE.test(text))) add(file, text);
+  }
+  // Two helper-label shapes, candidates under the SAME pipeline (prefix +
+  // denylist → ledger/exempt → violations), 2026-11-15, store-A. Why they
+  // need their own shapes: neither literal sits at a fmt.Errorf/errors.New
+  // call site, so the position scan above never sees them — yet both reach
+  // errText verbatim. (a) `const op = "…"` is rendered by
+  // `fmt.Errorf("%s: %w", op, err)` (store's replaceMatchRows and friends),
+  // so it appears as `<op>: <err>` in the Settings analysis-failure
+  // tooltip; (b) the `affectedOrNotFound(res, "…")` label is rendered by
+  // that helper's own `fmt.Errorf("%s: %w", op, err)`. Both are operation
+  // labels a player reads on failure, so they carry the same prefix rule
+  // the service-file gate applies elsewhere — checked here WITHOUT the
+  // SVC_FILE gate on purpose (these shapes live in internal/store, which
+  // is not a *service.go file; widening PREFIX_RE's own gate is store-B's).
+  // Scope is exactly these two shapes: no other helper is scanned.
+  for (const text of labels) {
+    if (PREFIX_RE.test(text) || DENYLIST.some((d) => d.re.test(text))) add(file, text);
   }
 }
 

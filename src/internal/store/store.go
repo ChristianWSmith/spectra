@@ -17,8 +17,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// ErrNotFound is returned when a requested row does not exist.
-var ErrNotFound = errors.New("store: not found")
+// ErrNotFound is returned when a requested row does not exist. Its message
+// is the bare "not found": the sentinel reaches errText verbatim on stale
+// deep links and deleted rows, so it speaks the user's domain (reworded
+// 2026-11-15, store-A); identity is all callers rely on (errors.Is).
+var ErrNotFound = errors.New("not found")
 
 // interruptedJobErr is stamped into jobs.error (and matches.error, for a
 // match row left lifecycle-pending by a dead process) when Open finds rows

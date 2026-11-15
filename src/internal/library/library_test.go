@@ -119,7 +119,8 @@ func waitStatus(t *testing.T, st *store.Store, jobID int64, want string) models.
 // jobs.match_id only after the hash+copy stages — so a JobRunning (or a
 // cancel-announced JobCancelled, which Cancel writes synchronously)
 // snapshot can read match_id = 0. Snapshotting MatchID off such a row and
-// feeding it to GetMatch yields a spurious "store: not found". Only for
+// feeding it to GetMatch yields a spurious "not found" — ErrNotFound's
+// message (reworded 2026-11-15, store-A). Only for
 // jobs whose pipeline reaches CreateMatchRow (a claimed import or
 // reprocess): a dequeued queued import never links a row by design.
 func waitJobMatch(t *testing.T, st *store.Store, jobID int64) int64 {

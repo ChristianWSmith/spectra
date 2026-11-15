@@ -417,7 +417,7 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 	)
 	if err != nil {
 		if isUniqueErr(err) {
-			return 0, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
+			return 0, fmt.Errorf("a metric named %q already exists", scrub(m.Name))
 		}
 		return 0, fmt.Errorf("store: create metric: %w", err)
 	}
@@ -452,7 +452,7 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {
-			return fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
+			return fmt.Errorf("a metric named %q already exists", scrub(m.Name))
 		}
 		return fmt.Errorf("store: update metric: %w", err)
 	}
@@ -503,7 +503,7 @@ func (s *Store) DeleteMetric(id int64) error {
 	if err != nil {
 		return fmt.Errorf("store: delete metric: %w", err)
 	}
-	return affectedOrNotFound(res, "store: delete metric")
+	return affectedOrNotFound(res, "deleting the metric")
 }
 
 // DependentRewrite is ONE dependent metric's rename splice (design §2):
@@ -573,7 +573,7 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 		if err != nil {
 			return models.MetricRow{}, fmt.Errorf("store: rewrite dependent metric: %w", err)
 		}
-		if err := affectedOrNotFound(res, "store: rewrite dependent metric"); err != nil {
+		if err := affectedOrNotFound(res, "updating the dependent metric"); err != nil {
 			return models.MetricRow{}, err
 		}
 		if err := replaceMetricDeps(tx, r.ID, r.Deps); err != nil {

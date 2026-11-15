@@ -652,7 +652,7 @@ func (s *Store) SaveQuery(name, query, description string) (models.SavedQueryRow
 	)
 	if err != nil {
 		if isUniqueErr(err) {
-			return models.SavedQueryRow{}, fmt.Errorf("store: a query named %q already exists", scrub(name))
+			return models.SavedQueryRow{}, fmt.Errorf("a query named %q already exists", scrub(name))
 		}
 		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
 	}
@@ -681,11 +681,11 @@ func (s *Store) UpdateQuery(q models.SavedQueryRow) (models.SavedQueryRow, error
 	)
 	if err != nil {
 		if isUniqueErr(err) {
-			return models.SavedQueryRow{}, fmt.Errorf("store: a query named %q already exists", scrub(q.Name))
+			return models.SavedQueryRow{}, fmt.Errorf("a query named %q already exists", scrub(q.Name))
 		}
 		return models.SavedQueryRow{}, fmt.Errorf("store: update query: %w", err)
 	}
-	if err := affectedOrNotFound(res, "store: update query"); err != nil {
+	if err := affectedOrNotFound(res, "updating the saved query"); err != nil {
 		return models.SavedQueryRow{}, err
 	}
 	var r models.SavedQueryRow
@@ -703,5 +703,5 @@ func (s *Store) DeleteQuery(id int64) error {
 	if err != nil {
 		return fmt.Errorf("store: delete query: %w", err)
 	}
-	return affectedOrNotFound(res, "store: delete query")
+	return affectedOrNotFound(res, "deleting the saved query")
 }

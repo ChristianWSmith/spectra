@@ -93,7 +93,7 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 // the baseline schema already created it).
 func (s *Store) ensureMetricsTable() error {
 	if _, err := s.db.Exec(metricsTableDDL); err != nil {
-		return fmt.Errorf("store: ensure metrics table: %w", err)
+		return fmt.Errorf("couldn't prepare the metrics table: %w", err)
 	}
 	return nil
 }
@@ -116,7 +116,7 @@ func (s *Store) UpsertPlugin(row PluginRow) error {
 		scrub(row.Hash), b2i(row.Enabled), scrub(row.Error), time.Now(),
 	)
 	if err != nil {
-		return fmt.Errorf("store: upsert plugin: %w", err)
+		return fmt.Errorf("couldn't save the plugin: %w", err)
 	}
 	return nil
 }
@@ -136,7 +136,7 @@ func (s *Store) GetPluginRow(id string) (PluginRow, error) {
 		return PluginRow{}, ErrNotFound
 	}
 	if err != nil {
-		return PluginRow{}, fmt.Errorf("store: get plugin: %w", err)
+		return PluginRow{}, fmt.Errorf("couldn't load the plugin: %w", err)
 	}
 	row.Enabled = i2b(enabled)
 	row.InstalledAt = installed
@@ -150,7 +150,7 @@ func (s *Store) ListPluginRows() ([]PluginRow, error) {
 		 FROM plugins ORDER BY id ASC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list plugins: %w", err)
+		return nil, fmt.Errorf("couldn't load the plugins: %w", err)
 	}
 	defer rows.Close()
 	var out []PluginRow
@@ -161,14 +161,14 @@ func (s *Store) ListPluginRows() ([]PluginRow, error) {
 			installed time.Time
 		)
 		if err := rows.Scan(&row.ID, &row.Name, &row.Version, &row.Path, &row.Hash, &enabled, &row.Error, &installed); err != nil {
-			return nil, fmt.Errorf("store: list plugins: %w", err)
+			return nil, fmt.Errorf("couldn't load the plugins: %w", err)
 		}
 		row.Enabled = i2b(enabled)
 		row.InstalledAt = installed
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list plugins: %w", err)
+		return nil, fmt.Errorf("couldn't load the plugins: %w", err)
 	}
 	return out, nil
 }
@@ -177,18 +177,18 @@ func (s *Store) ListPluginRows() ([]PluginRow, error) {
 func (s *Store) SetPluginEnabledRow(id string, enabled bool) error {
 	res, err := s.db.Exec(`UPDATE plugins SET enabled = ? WHERE id = ?`, b2i(enabled), scrub(id))
 	if err != nil {
-		return fmt.Errorf("store: set plugin enabled: %w", err)
+		return fmt.Errorf("couldn't enable or disable the plugin: %w", err)
 	}
-	return affectedOrNotFound(res, "store: set plugin enabled")
+	return affectedOrNotFound(res, "enabling or disabling the plugin")
 }
 
 // DeletePluginRow removes one registry row (ErrNotFound when absent).
 func (s *Store) DeletePluginRow(id string) error {
 	res, err := s.db.Exec(`DELETE FROM plugins WHERE id = ?`, scrub(id))
 	if err != nil {
-		return fmt.Errorf("store: delete plugin: %w", err)
+		return fmt.Errorf("couldn't delete the plugin: %w", err)
 	}
-	return affectedOrNotFound(res, "store: delete plugin")
+	return affectedOrNotFound(res, "deleting the plugin")
 }
 
 // ReplacePluginMetrics swaps one plugin's metrics rows: deletes every row
@@ -211,11 +211,11 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: replace plugin metrics: %w", err)
+		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM metrics WHERE plugin_id = ?`, scrub(pluginID)); err != nil {
-		return fmt.Errorf("store: replace plugin metrics: %w", err)
+		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
 		`INSERT INTO metrics (name, title, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
@@ -226,7 +226,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 			plugin_id = excluded.plugin_id, denominator = excluded.denominator`,
 	)
 	if err != nil {
-		return fmt.Errorf("store: replace plugin metrics: %w", err)
+		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	defer stmt.Close()
 	for _, d := range defs {
@@ -238,11 +238,11 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(scope),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), scrub(d.Denominator), time.Now(),
 		); err != nil {
-			return fmt.Errorf("store: replace plugin metrics: %w", err)
+			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace plugin metrics: %w", err)
+		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	return nil
 }
@@ -251,7 +251,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 func (s *Store) DeletePluginMetrics(pluginID string) error {
 	_, err := s.db.Exec(`DELETE FROM metrics WHERE plugin_id = ?`, scrub(pluginID))
 	if err != nil {
-		return fmt.Errorf("store: delete plugin metrics: %w", err)
+		return fmt.Errorf("couldn't delete the plugin's metrics: %w", err)
 	}
 	return nil
 }
@@ -261,7 +261,7 @@ func (s *Store) DeletePluginMetrics(pluginID string) error {
 func (s *Store) CountPluginMetrics(pluginID string) (int, error) {
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM metrics WHERE plugin_id = ?`, scrub(pluginID)).Scan(&n); err != nil {
-		return 0, fmt.Errorf("store: count plugin metrics: %w", err)
+		return 0, fmt.Errorf("couldn't load the plugin's metrics: %w", err)
 	}
 	return n, nil
 }

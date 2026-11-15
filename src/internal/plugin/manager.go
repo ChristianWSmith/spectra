@@ -70,7 +70,7 @@ func (m *Manager) List() ([]State, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return out, nil
 		}
-		return nil, fmt.Errorf("plugin: scan %s: %w", m.dir, err)
+		return nil, fmt.Errorf("couldn't read the plugin folder %s: %w", m.dir, err)
 	}
 	var orphanIDs []string
 	for _, e := range entries {
@@ -183,7 +183,7 @@ func (m *Manager) Install(sourcePath string) (State, error) {
 
 	dest := filepath.Join(m.dir, man.ID)
 	if err := os.RemoveAll(dest); err != nil {
-		return State{}, fmt.Errorf("plugin: clear previous bundle: %w", err)
+		return State{}, fmt.Errorf("couldn't remove the previous plugin files: %w", err)
 	}
 	if err := copyBundle(sourcePath, dest); err != nil {
 		return State{}, err
@@ -250,7 +250,7 @@ func (m *Manager) Remove(id string) error {
 	}
 	if row.Path != "" {
 		if err := os.RemoveAll(row.Path); err != nil {
-			return fmt.Errorf("plugin: remove bundle: %w", err)
+			return fmt.Errorf("couldn't remove the plugin files: %w", err)
 		}
 	}
 	return nil
@@ -277,18 +277,18 @@ func metricDefs(man Manifest) []store.PluginMetricDef {
 func copyBundle(sourcePath, dest string) error {
 	st, err := os.Stat(sourcePath)
 	if err != nil {
-		return fmt.Errorf("plugin: stat source: %w", err)
+		return fmt.Errorf("couldn't read the plugin file: %w", err)
 	}
 	if !st.IsDir() {
 		if err := os.MkdirAll(dest, 0o755); err != nil {
-			return fmt.Errorf("plugin: create bundle dir: %w", err)
+			return fmt.Errorf("couldn't create the plugin folder: %w", err)
 		}
 		data, err := os.ReadFile(sourcePath)
 		if err != nil {
-			return fmt.Errorf("plugin: read manifest: %w", err)
+			return fmt.Errorf("couldn't read the plugin manifest: %w", err)
 		}
 		if err := os.WriteFile(filepath.Join(dest, ManifestName), data, 0o644); err != nil {
-			return fmt.Errorf("plugin: write manifest: %w", err)
+			return fmt.Errorf("couldn't write the plugin manifest: %w", err)
 		}
 		return nil
 	}
@@ -321,7 +321,7 @@ func copyBundle(sourcePath, dest string) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("plugin: copy bundle: %w", err)
+		return fmt.Errorf("couldn't copy the plugin files: %w", err)
 	}
 	return nil
 }
