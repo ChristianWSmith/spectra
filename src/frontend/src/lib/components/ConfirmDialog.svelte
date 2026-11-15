@@ -11,6 +11,7 @@
   // Cancel, Escape, a backdrop click or a superseding ask — dismissal is
   // always cancel, never confirm.
   import Dialog from './Dialog.svelte';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let open = $state(false);
   let title = $state('');
@@ -65,7 +66,7 @@
     <p class="muted cf-msg">{message}</p>
     <div class="toolbar cf-actions">
       <span class="spacer"></span>
-      <button class="btn" onclick={() => done(false)}>Cancel</button>
+      <button class="btn" onclick={() => done(false)}>{S.common.confirmDialogCancel}</button>
       <button class="btn {danger ? 'danger' : 'primary'}" onclick={() => done(true)}>
         {confirmLabel}
       </button>

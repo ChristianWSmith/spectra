@@ -60,4 +60,7 @@ export const common = {
   econCurveStripUpset: ' upset (lower buy type\n      won) · ',
   econCurveStripEven: ' even buy (toss-up) · ',
   econCurveStripNoVerdict: ' no verdict · click a round to open\n      it',
+
+  // confirmation dialog (ConfirmDialog.svelte — the one window.confirm replacement)
+  confirmDialogCancel: 'Cancel', // the cancel button label (the confirm button's label is the caller's confirmLabel prop)
 };
