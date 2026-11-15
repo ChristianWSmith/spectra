@@ -29,6 +29,7 @@
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {}, routeId = 0, embedded = false } = $props();
@@ -497,25 +498,25 @@
 <div class="view">
   {#if !embedded}
     <header class="view-header">
-      <h1>Reports</h1>
-      <span class="muted">Templated match / player / round reports.</span>
+      <h1>{S.reports.title}</h1>
+      <span class="muted">{S.reports.subtitle}</span>
     </header>
   {/if}
 
   {#if tplError}
     <p class="error" role="alert">
       {tplError}
-      <button class="btn small" onclick={loadTemplates}>Retry</button>
+      <button class="btn small" onclick={loadTemplates}>{S.reports.retry}</button>
     </p>
   {/if}
 
   <section class="panel">
     <div class="row-between">
-      <h2>Template &amp; target</h2>
+      <h2>{S.reports.templateAndTarget}</h2>
       <!-- Render lives with its inputs: template + target pick the scope,
            this button produces the document they both address. -->
       <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
-        {#if rendering}Generating…{:else}Generate report <span class="codicon codicon-play"></span>{/if}
+        {#if rendering}Generating…{:else}{S.reports.generateReport}<span class="codicon codicon-play"></span>{/if}
       </button>
     </div>
     <div class="rep-tpl-grid">
@@ -533,28 +534,28 @@
           <span class="rep-tpl-meta">
             <span class="chip">{t.scope}</span>
             <span class="chip">{t.format}</span>
-            <span class="chip flag" title="Origin">{t.origin || 'builtin'}</span>
+            <span class="chip flag" title={S.reports.originTitle}>{t.origin || 'builtin'}</span>
           </span>
         </button>
       {:else}
         {#if !tplError}
           <!-- Gated on tplError: a failed template/match read is UNKNOWN,
                never "no templates" — the alert above carries it. -->
-          <p class="muted" role="status">No report templates available.</p>
+          <p class="muted" role="status">{S.reports.noTemplates}</p>
         {/if}
       {/each}
     </div>
     {#if tpl}
       <div class="rep-targets">
         {#if !embedded && matches.length === 0 && !tplError}
-          <p class="muted" role="status">No matches in the library yet.</p>
+          <p class="muted" role="status">{S.reports.noMatches}</p>
         {/if}
         {#if embedded}
-          <p class="muted" role="status">Report target: this match.</p>
+          <p class="muted" role="status">{S.reports.targetThisMatch}</p>
         {/if}
         {#if !embedded}
           <div class="rep-field">
-            <label class="field-label" for="rep-match">Match</label>
+            <label class="field-label" for="rep-match">{S.reports.matchLabel}</label>
             <MatchPicker
               {matches}
               value={matchId}
@@ -565,7 +566,7 @@
         {/if}
         {#if tpl.scope === 'player'}
           <div class="rep-field">
-            <label class="field-label" for="rep-player">Player</label>
+            <label class="field-label" for="rep-player">{S.reports.playerLabel}</label>
             <PlayerPicker
               {players}
               stats={sbBySteam}
@@ -578,7 +579,7 @@
         {/if}
         {#if tpl.scope === 'round'}
           <div class="rep-field">
-            <label class="field-label" for="rep-round">Round</label>
+            <label class="field-label" for="rep-round">{S.reports.roundLabel}</label>
             <input
               class="input"
               id="rep-round"
@@ -597,17 +598,15 @@
   {#if tpl}
     <!-- Stats appendix (acceptance #1: checked metric → table under the report). -->
     <section class="panel">
-      <h2>Stats appendix</h2>
+      <h2>{S.reports.statsAppendix}</h2>
       {#if metricsError}
         <p class="error" role="alert">
           {metricsError}
-          <button class="btn small" onclick={loadMetricsList}>Retry</button>
+          <button class="btn small" onclick={loadMetricsList}>{S.reports.retry}</button>
         </p>
       {/if}
       <p class="muted">
-        Check stats to append their tables under the report (scoped to this
-        match). They are composed with the rendered document and shown in the
-        Preview below.
+        {S.reports.appendixHint}
       </p>
       {#each matchMetrics as m (m.id)}
         <label class="filt-check rep-metric">
@@ -621,11 +620,11 @@
           {#if appendix[m.id] && appendix[m.id].loading}
             <span class="muted">…</span>
           {:else if appendix[m.id] && appendix[m.id].error}
-            <span class="error-text" title={appendix[m.id].error}>failed</span>
+            <span class="error-text" title={appendix[m.id].error}>{S.reports.failedLabel}</span>
           {:else}
             {@const chip = appendixChip(m.id)}
             {#if chip && chip.kind === 'rows'}
-              <span class="chip">{chip.n} rows</span>
+              <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
             {:else if chip}
               <!-- State in lieu of rows (design §5): processing /
                    failed / behind / no-data through StatusChip. -->
@@ -644,17 +643,17 @@
                never "no custom stats" — the alert above carries it. -->
           <p class="muted" role="status">
             {metrics.length
-              ? 'No match-scoped stats yet — profile-scoped stats surface on the player profile.'
-              : 'No custom stats yet — build one in the Builder.'}
+              ? S.reports.noMatchScopedStats
+              : S.reports.noCustomStats}
           </p>
         {/if}
       {/each}
     </section>
 
     <section class="panel">
-      <h2>Preview</h2>
+      <h2>{S.reports.previewHeading}</h2>
       <p class="muted">
-        {tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? ' + appendix' : ''}
+        {tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? S.reports.appendixSuffix : ''}
       </p>
       {#if docError}
         <p class="error" role="alert">{docError}</p>
@@ -667,7 +666,7 @@
           <pre class="rep-md">{compositeText()}</pre>
         {/if}
       {:else if !rendering}
-        <p class="muted" role="status">Press Generate report to create the report.</p>
+        <p class="muted" role="status">{S.reports.pressGenerate}</p>
       {/if}
     </section>
   {/if}
