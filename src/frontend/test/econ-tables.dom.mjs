@@ -994,7 +994,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 {
   // One pinned metric so the METRIC SortTh actually renders: the width
   // cap is a class Match puts on the metric header only (static
-  // SCORE_COLS must never wear it), the ⓘ / (n) / unpin widgets must
+  // SCORE_COLS must never wear it), the ⓘ / unpin widgets must
   // stay OUTSIDE the capped .th-sort button (the cap bounds the label
   // text alone), and the th's title tooltip must survive untouched.
   // jsdom has no layout, so the cap RULE itself is pinned from the
@@ -1031,13 +1031,13 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
       ? `metric=${metricTh.className} static=${staticTh ? staticTh.className : 'no K header'}`
       : 'no metric header rendered',
   );
-  const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib, .th-sort .m5-n, .th-sort .m5-unpin');
+  const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib, .th-sort .m5-unpin');
   const widgetCount = metricTh
-    ? metricTh.querySelectorAll(':scope > .m5-ib, :scope > .m5-n, :scope > .m5-unpin').length
+    ? metricTh.querySelectorAll(':scope > .m5-ib, :scope > .m5-unpin').length
     : -1;
   check(
-    'the cap covers the label button only — ⓘ / (n) / unpin stay outside it',
-    !!metricTh && !widgetsInButton && widgetCount === 3,
+    'the cap covers the label button only — ⓘ / unpin stay outside it',
+    !!metricTh && !widgetsInButton && widgetCount === 2,
     `outside-widgets=${widgetCount} inside-button=${!!widgetsInButton}`,
   );
   check(
@@ -1223,7 +1223,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   for (const th of metricThs) {
     const tip = th.getAttribute('title') || '';
     if (leakRe.test(tip)) leaks.push(`th: ${tip}`);
-    for (const w of th.querySelectorAll('.m5-ib, .m5-n')) {
+    for (const w of th.querySelectorAll('.m5-ib')) {
       const t = w.getAttribute('title') || '';
       if (leakRe.test(t)) leaks.push(`th widget: ${t}`);
     }

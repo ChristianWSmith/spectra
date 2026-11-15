@@ -457,8 +457,6 @@
   function columnOf(def, rows, st) {
     // rows: the canonical read's stored values for THIS match (fresh
     // only), keyed by steam id; st: the metric's compute-state entry.
-    let totalN = 0;
-    for (const r of rows) totalN += r.n || 0;
     return {
       def,
       rows,
@@ -468,7 +466,6 @@
       // behind chip (design §5 states 4/5).
       unitHasRows: rows.length > 0,
       error: (st && st.error) || '',
-      totalN,
     };
   }
 
@@ -1141,11 +1138,6 @@
                   onclick={() => toggleSort(metricSortKey(mc.def.id))}
                 >
                   <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
-                  <span
-                    class="m5-n"
-                    title={S.fill(S.match.metricBasisTitle, { n: mc.totalN, count: mc.rows.length })}
-                    >({fmtInt(mc.totalN)})</span
-                  >
                   <button
                     class="m5-unpin"
                     title={S.match.unpinTitle}
