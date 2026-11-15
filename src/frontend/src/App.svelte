@@ -21,6 +21,7 @@
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
   import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
+  import * as S from './lib/strings/index.js'; // chrome copy (strings-audit Check B)
   // The ?probe=1 operator readout (frameprobe.js — its entry comment is
   // THE 60-second collection procedure). Same module instance the
   // engine/renderer record into; probeEnabled is the ONE gate.
@@ -341,13 +342,13 @@
 </script>
 
 <div class="shell">
-  <nav class="sidebar" aria-label="Main">
+  <nav class="sidebar" aria-label={S.common.appSidebarLabel}>
     <!-- App mark: branding, not a nav action — it never takes the rail's
          hover/active treatment and is inert to the pointer (see
          .sidebar-mark), so it can never be mistaken for a button. The
          asset is the favicon (/wails.png): the same bracket mark as the
          window icon (build/appicon.png). -->
-    <img class="sidebar-mark" src="/wails.png" alt="Spectra" width="30" height="30" />
+    <img class="sidebar-mark" src="/wails.png" alt={S.common.appMarkAlt} width="30" height="30" />
     <!-- One action list, shared with CommandPalette's Actions section
          (lib/nav.js NAV_ACTIONS) — membership, order, labels and icons
          live there; active(route) drives the highlight here. The button
@@ -376,7 +377,7 @@
       class="nav-item"
       type="button"
       title="Help"
-      aria-label="Help"
+      aria-label={S.common.appHelpLabel}
       aria-haspopup="dialog"
       aria-expanded={docsOpen}
       onclick={() => openDocs(null)}
@@ -429,8 +430,8 @@
         bind:this={keepAliveEl}
         role={!replayActive ? 'button' : undefined}
         tabindex={replayActive ? -1 : 0}
-        aria-label={!replayActive ? 'Expand replay' : undefined}
-        title={!replayActive ? 'Expand replay' : undefined}
+        aria-label={!replayActive ? S.common.appExpandReplayLabel : undefined}
+        title={!replayActive ? S.common.appExpandReplayLabel : undefined}
         onclick={replayActive ? null : expandReplay}
         onkeydown={replayActive ? null : onDockKey}
       >
@@ -447,8 +448,8 @@
           <button
             type="button"
             class="btn rp-keepalive-close"
-            aria-label="Close replay"
-            title="Close the replay — it reloads when reopened"
+            aria-label={S.common.appCloseReplayLabel}
+            title={S.common.appCloseReplayTitle}
             onclick={closeReplay}
             onkeydown={onDockCloseKey}
           >

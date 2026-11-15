@@ -16,6 +16,7 @@
   import { parseLandmarkFilter } from '../replay/landmarks.js';
   import Dialog from './Dialog.svelte';
   import StatusChip from './StatusChip.svelte';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let { nav = () => {} } = $props();
 
@@ -337,13 +338,13 @@
   }
 </script>
 
-<Dialog open={open} backClass="top" label="Command palette" onClose={close}>
+<Dialog open={open} backClass="top" label={S.common.commandPaletteLabel} onClose={close}>
   <input
     class="input cp-input"
     bind:this={inputEl}
     bind:value={query}
-    placeholder="Type a command or search…"
-    aria-label="Command palette search"
+    placeholder={S.common.commandPalettePlaceholder}
+    aria-label={S.common.commandPaletteSearchLabel}
   />
   <div class="cp-body">
     {#each sections as s (s.header)}
@@ -372,12 +373,12 @@
         <StatusChip block detail="Searching…" />
       </div>
     {:else if query.trim() && flat.length === 0}
-      <div class="cp-empty muted" role="status">No results for “{query.trim()}”.</div>
+      <div class="cp-empty muted" role="status">{S.common.commandPaletteNoResultsPrefix}{query.trim()}”.</div>
     {/if}
   </div>
   <div class="cp-foot muted">
-    <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter run</span><span>Esc close</span>
+    <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span>{S.common.commandPaletteMoveHint}</span><span>{S.common.commandPaletteRunHint}</span><span>{S.common.commandPaletteCloseHint}</span>
     <span class="spacer"></span>
-    <span>Ctrl/⌘K toggle</span>
+    <span>{S.common.commandPaletteToggleHint}</span>
   </div>
 </Dialog>
