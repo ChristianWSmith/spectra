@@ -92,7 +92,7 @@ type Manifest struct {
 func ValidateManifest(data []byte) (Manifest, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return Manifest{}, fmt.Errorf("plugin: manifest is not valid JSON: %w", err)
+		return Manifest{}, fmt.Errorf("plugin manifest is not valid JSON: %w", err)
 	}
 	// Capability validation (§2.7): the optional "capabilities" object may
 	// only name whitelisted keys. Parsed as a raw map first so unknown
@@ -100,20 +100,20 @@ func ValidateManifest(data []byte) (Manifest, error) {
 	if capRaw, ok := raw["capabilities"]; ok {
 		var caps map[string]json.RawMessage
 		if err := json.Unmarshal(capRaw, &caps); err != nil {
-			return Manifest{}, fmt.Errorf("plugin: capabilities must be an object: %w", err)
+			return Manifest{}, fmt.Errorf("plugin capabilities must be an object: %w", err)
 		}
 		for k := range caps {
 			if !allowedCapabilities[k] {
-				return Manifest{}, fmt.Errorf("plugin: unknown capability %q (only metrics and report_templates are supported)", k)
+				return Manifest{}, fmt.Errorf("unknown capability %q (only metrics and report_templates are supported)", k)
 			}
 		}
 	}
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return Manifest{}, fmt.Errorf("plugin: parse manifest: %w", err)
+		return Manifest{}, fmt.Errorf("couldn't read the plugin manifest: %w", err)
 	}
 	if !slugRe.MatchString(m.ID) {
-		return Manifest{}, fmt.Errorf("plugin: id %q must match %s", m.ID, slugRe.String())
+		return Manifest{}, fmt.Errorf("plugin id %q must match %s", m.ID, slugRe.String())
 	}
 	if strings.TrimSpace(m.Name) == "" {
 		return Manifest{}, fmt.Errorf("plugin %q: name is required", m.ID)
@@ -164,17 +164,17 @@ func ValidateManifest(data []byte) (Manifest, error) {
 func ComputeBundleHash(sourcePath string) (string, error) {
 	st, err := os.Stat(sourcePath)
 	if err != nil {
-		return "", fmt.Errorf("plugin: stat %s: %w", sourcePath, err)
+		return "", fmt.Errorf("couldn't read %s: %w", sourcePath, err)
 	}
 	h := sha256.New()
 	if !st.IsDir() {
 		f, err := os.Open(sourcePath)
 		if err != nil {
-			return "", fmt.Errorf("plugin: open %s: %w", sourcePath, err)
+			return "", fmt.Errorf("couldn't open %s: %w", sourcePath, err)
 		}
 		defer func() { _ = f.Close() }()
 		if _, err := io.Copy(h, f); err != nil {
-			return "", fmt.Errorf("plugin: hash %s: %w", sourcePath, err)
+			return "", fmt.Errorf("couldn't read %s: %w", sourcePath, err)
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil
 	}
@@ -207,7 +207,7 @@ func ComputeBundleHash(sourcePath string) (string, error) {
 		return err
 	})
 	if err != nil {
-		return "", fmt.Errorf("plugin: hash bundle %s: %w", sourcePath, err)
+		return "", fmt.Errorf("couldn't hash the plugin bundle at %s: %w", sourcePath, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -217,7 +217,7 @@ func ComputeBundleHash(sourcePath string) (string, error) {
 func LoadManifest(sourcePath string) (Manifest, error) {
 	st, err := os.Stat(sourcePath)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("plugin: stat %s: %w", sourcePath, err)
+		return Manifest{}, fmt.Errorf("couldn't read %s: %w", sourcePath, err)
 	}
 	mp := sourcePath
 	if st.IsDir() {
@@ -225,7 +225,7 @@ func LoadManifest(sourcePath string) (Manifest, error) {
 	}
 	data, err := os.ReadFile(mp)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("plugin: read manifest: %w", err)
+		return Manifest{}, fmt.Errorf("couldn't read the plugin manifest: %w", err)
 	}
 	return ValidateManifest(data)
 }

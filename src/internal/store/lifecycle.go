@@ -50,7 +50,7 @@ func (s *Store) SetMatchStatus(id int64, status, errMsg string) error {
 	if err != nil {
 		return fmt.Errorf("store: set match status: %w", err)
 	}
-	return affectedOrNotFound(res, "store: set match status")
+	return affectedOrNotFound(res, "updating the match status")
 }
 
 // CreateJob inserts a queued job for path and returns its id.
@@ -76,7 +76,7 @@ func (s *Store) SetJobMatch(jobID, matchID int64) error {
 	if err != nil {
 		return fmt.Errorf("store: set job match: %w", err)
 	}
-	return affectedOrNotFound(res, "store: set job match")
+	return affectedOrNotFound(res, "linking the job to the match")
 }
 
 // UpdateJob stamps a job's status/stage/progress/error. Transitioning to
@@ -518,7 +518,7 @@ func (s *Store) SetPositionMeta(matchID int64, sampleRate, frames int) error {
 	if err != nil {
 		return fmt.Errorf("store: set position meta: %w", err)
 	}
-	return affectedOrNotFound(res, "store: set position meta")
+	return affectedOrNotFound(res, "recording the position data")
 }
 
 // DeleteMatchData removes a match row and all of its child data in one

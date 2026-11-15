@@ -92,10 +92,11 @@ const (
 	progressMetricsEnd   = 0.99
 )
 
-// errShuttingDown is the refusal Enqueue/Reprocess surface once Shutdown
-// has begun: no worker will ever claim anything new, so a job created
-// now would sit queued forever without it.
-var errShuttingDown = errors.New("library: importer is shutting down")
+// errShuttingDown is the refusal Reprocess surfaces once Shutdown has
+// begun: no worker will ever claim anything new, so a job created now
+// would sit queued forever without it. It reaches errText verbatim, so it
+// speaks the user's domain (reworded 2026-11-15, store-A).
+var errShuttingDown = errors.New("the importer is shutting down — try again once it finishes")
 
 // shuttingDownErr is the jobs.error text for such a job (user-facing —
 // it lands in the Library's "recent import problems" list).

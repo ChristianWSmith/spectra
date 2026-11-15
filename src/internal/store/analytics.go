@@ -132,7 +132,7 @@ func (s *Store) SetMatchRuleVersion(matchID int64, ruleVersion int) error {
 	if err != nil {
 		return fmt.Errorf("store: set analyzed rule version: %w", err)
 	}
-	return affectedOrNotFound(res, "store: set analyzed rule version")
+	return affectedOrNotFound(res, "recording the analysis version")
 }
 
 // GetMatchRuleVersion returns the match's rule stamp: the rule_version
@@ -156,7 +156,7 @@ func (s *Store) GetMatchRuleVersion(matchID int64) (int, error) {
 // ReplaceRoundClassifications swaps a match's round_classifications rows in
 // one transaction (delete-then-insert).
 func (s *Store) ReplaceRoundClassifications(matchID int64, rows []models.RoundClassification) error {
-	const op = "store: replace round classifications"
+	const op = "couldn't save the round classifications"
 	return s.replaceMatchRows(op, "round_classifications", "match_id, "+roundClassCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -170,7 +170,7 @@ func (s *Store) ReplaceRoundClassifications(matchID int64, rows []models.RoundCl
 // ReplacePlayerRounds swaps a match's player_round_stats rows in one
 // transaction.
 func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat) error {
-	const op = "store: replace player rounds"
+	const op = "couldn't save the per-round player stats"
 	return s.replaceMatchRows(op, "player_round_stats", "match_id, "+playerRoundCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -187,7 +187,7 @@ func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat
 
 // ReplaceClutches swaps a match's clutches rows in one transaction.
 func (s *Store) ReplaceClutches(matchID int64, rows []models.Clutch) error {
-	const op = "store: replace clutches"
+	const op = "couldn't save the clutches"
 	return s.replaceMatchRows(op, "clutches", "match_id, "+clutchCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -204,7 +204,7 @@ func (s *Store) ReplaceClutches(matchID int64, rows []models.Clutch) error {
 // ReplaceEngagements swaps a match's engagements rows in one transaction
 // (seq is rewritten 0..n-1 in slice order so the PK stays dense).
 func (s *Store) ReplaceEngagements(matchID int64, rows []models.Engagement) error {
-	const op = "store: replace engagements"
+	const op = "couldn't save the engagements"
 	return s.replaceMatchRows(op, "engagements", "match_id, "+engagementCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -221,7 +221,7 @@ func (s *Store) ReplaceEngagements(matchID int64, rows []models.Engagement) erro
 // ReplaceUtility swaps a match's utility_events rows in one transaction
 // (seq rewritten 0..n-1 in slice order).
 func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error {
-	const op = "store: replace utility"
+	const op = "couldn't save the utility events"
 	return s.replaceMatchRows(op, "utility_events", "match_id, "+utilityCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -246,7 +246,7 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 // and trade_rate_deaths builtin metrics) — follow
 // analysis_config.TradeWindowS.
 func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
-	const op = "store: replace trade kills"
+	const op = "couldn't save the trade kills"
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -292,7 +292,7 @@ func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
 // the pass never stamps (compute.go's RULE STAMP note), so the match
 // stays behind and the next run rewrites every table.
 func (s *Store) ReplaceTradeOpps(matchID int64, opps, missed map[string]int) error {
-	const op = "store: replace trade opps"
+	const op = "couldn't save the trade opportunities"
 	set := map[string]bool{}
 	for sid, n := range opps {
 		if n > 0 {
@@ -336,7 +336,7 @@ func (s *Store) ReplaceTradeOpps(matchID int64, opps, missed map[string]int) err
 // pass never stamps (compute.go's RULE STAMP note), so the match stays
 // behind and the next run rewrites every table.
 func (s *Store) ReplaceRoundSideClasses(matchID int64, rows []models.RoundSideClass) error {
-	const op = "store: replace round side classes"
+	const op = "couldn't save the round eco classes"
 	return s.replaceMatchRows(op, "round_side_classes", "match_id, "+roundSideClassCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -961,7 +961,7 @@ func (s *Store) CreateSavedFilter(name, scope, filterJSON string) (models.SavedF
 	)
 	if err != nil {
 		if isUniqueErr(err) {
-			return models.SavedFilterRow{}, fmt.Errorf("store: a filter named %q already exists in this scope", scrub(name))
+			return models.SavedFilterRow{}, fmt.Errorf("a filter named %q already exists in this scope", scrub(name))
 		}
 		return models.SavedFilterRow{}, fmt.Errorf("store: create saved filter: %w", err)
 	}
@@ -987,7 +987,7 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 	if err != nil {
 		return fmt.Errorf("store: delete saved filter: %w", err)
 	}
-	return affectedOrNotFound(res, "store: delete saved filter")
+	return affectedOrNotFound(res, "deleting the saved filter")
 }
 
 // ---- career rollup ----
