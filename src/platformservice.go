@@ -237,7 +237,7 @@ func (s *PlatformService) GetSpatialSeries(matchID int64, kind string, buckets i
 		kind, buckets, m.DurationTicks, sides,
 	)
 	if err != nil {
-		return SpatialSeries{}, fmt.Errorf("platform: spatial series: %w", err)
+		return SpatialSeries{}, fmt.Errorf("couldn't compute the spatial series: %w", err)
 	}
 	return SpatialSeries{
 		Kind: ser.Kind, Buckets: ser.Buckets, FromTick: ser.FromTick,
@@ -351,7 +351,7 @@ func (s *PlatformService) ListReportTemplates() ([]ReportTemplate, error) {
 	}
 	states, err := s.pluginManager().List()
 	if err != nil {
-		return out, fmt.Errorf("platform: list plugin templates: %w", err)
+		return out, fmt.Errorf("couldn't load the report templates: %w", err)
 	}
 	for _, st := range states {
 		if !st.Enabled || st.Error != "" {
@@ -380,7 +380,7 @@ func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID 
 	mgr := plugin.NewManager(st, plugin.DefaultDir())
 	states, err := mgr.List()
 	if err != nil {
-		return "", "", fmt.Errorf("platform: list plugin templates: %w", err)
+		return "", "", fmt.Errorf("couldn't load the report templates: %w", err)
 	}
 	for _, ps := range states {
 		if !ps.Enabled || ps.Error != "" {
@@ -420,6 +420,6 @@ func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID 
 		out, err := report.Render(tpl.ID, tpl.Body, data)
 		return out, tpl.Format, err
 	default:
-		return "", "", fmt.Errorf("platform: template %q has unknown scope %q", tpl.ID, tpl.Scope)
+		return "", "", fmt.Errorf("template %q has an unknown scope %q", tpl.ID, tpl.Scope)
 	}
 }

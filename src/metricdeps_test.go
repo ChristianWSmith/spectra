@@ -311,7 +311,7 @@ func TestCycleRejectedOnSave(t *testing.T) {
 	_, err := f.svc.SaveMetric(models.MetricRow{
 		Name: "selfy", Expr: "from events: metric('selfy')", Scope: "match", Format: "int", Doc: "d",
 	})
-	if err == nil || !strings.Contains(err.Error(), "cyclic metric reference: selfy → selfy") {
+	if err == nil || !strings.Contains(err.Error(), "circular metric reference: selfy → selfy") { // reworded 2026-11-14, Stage 3
 		t.Fatalf("self-reference err = %v, want the cycle copy", err)
 	}
 	if _, gerr := f.st.GetMetricByName("selfy"); !errors.Is(gerr, store.ErrNotFound) {
@@ -326,7 +326,7 @@ func TestCycleRejectedOnSave(t *testing.T) {
 		ID: a.ID, Name: a.Name, Title: a.Title, Expr: "from events: metric('node_b')",
 		Scope: "match", Format: "int", Doc: "d",
 	})
-	if err == nil || !strings.Contains(err.Error(), "cyclic metric reference: node_a → node_b → node_a") {
+	if err == nil || !strings.Contains(err.Error(), "circular metric reference: node_a → node_b → node_a") { // reworded 2026-11-14, Stage 3
 		t.Fatalf("pair cycle err = %v, want node_a → node_b → node_a", err)
 	}
 	// Nothing written: row and edges both untouched.
@@ -348,7 +348,7 @@ func TestCycleRejectedOnSave(t *testing.T) {
 		ID: b.ID, Name: b.Name, Title: b.Title, Expr: "from events: metric('node_c')",
 		Scope: "match", Format: "int", Doc: "d",
 	})
-	if err == nil || !strings.Contains(err.Error(), "cyclic metric reference: node_b → node_c → node_b") {
+	if err == nil || !strings.Contains(err.Error(), "circular metric reference: node_b → node_c → node_b") { // reworded 2026-11-14, Stage 3
 		t.Fatalf("chain cycle err = %v, want node_b → node_c → node_b", err)
 	}
 	// A non-cyclic edit to the same metric still lands (the check rejects

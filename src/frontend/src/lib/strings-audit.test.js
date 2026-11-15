@@ -103,71 +103,26 @@ const PENDING_INLINE = new Set([
 ]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal
-// text. 2026-11-14 seed (35 entries): the bound-service package prefixes
-// (34 of 42 service-layer literals per design §1.4; reworded by Stage 4 /
-// Sweep-A), the three dev-speak error literals the design's Go scan found
-// (seed.go / schema.go / analytics.go), five propagated store errors whose
-// text names a table (they surface through MatchService raw), the SQL
-// keyword table of the read-only console validator, and the demoinfocs
-// parser-version constant recorded as provenance. NEW strings matching the
-// denylist fail anywhere; an entry that stops matching must be deleted here.
-const PENDING_DENYLIST = {
-  'analyticservice.go': [
-    'analytics: unknown heatmap kind %q',
-    'analytics: heatmap presence: %w',
+// text. Seeded 2026-11-14 with 42 entries across 11 files (30 bound-service
+// entries covering 35 construction sites + 12 store/extract/seed literals),
+// then drained the SAME day by Strings Stage 3 / Sweep-A: every entry was
+// reworded at emit in Go and deleted here in the same commit. Empty today —
+// and that is the contract: NEW strings matching the denylist fail anywhere,
+// an entry that stops matching must be deleted here, and a reword must take
+// its entry with it (a stale entry fails Check A-ledger below).
+const PENDING_DENYLIST = {};
+
+// Check A exemptions — denylist hits that are NOT user copy at all: their
+// context is code the user never reads, so they are not sweep scope and never
+// belong in the ledger. Same `file` → literal keying as PENDING_DENYLIST and
+// the same liveness contract (Check A-ledger); `why` is mandatory.
+const DENYLIST_EXEMPT = {
+  'internal/store/query_store.go': [
+    {
+      text: 'commit',
+      why: 'SQL keyword context — the read-only console validator rejects the SQLite identifier `commit`; it is SQL, not git tooling',
+    },
   ],
-  'dialogs.go': [
-    'dialogs: serve %q: not an absolute URL path',
-    'dialogs: save file: %w',
-    'dialogs: write file: empty path',
-    'dialogs: write file %s: %w',
-    'dialogs: save export: no exporter wired',
-    'dialogs: save export %s: %w',
-    'dialogs: save export %s: unexpected status %d',
-    'dialogs: save export: %w',
-    'dialogs: choose directory: %w',
-  ],
-  'metricservice.go': [
-    'metrics: %s (at byte %d)',
-    'metrics: metric id is required',
-    'metrics: no metric with id %d',
-    "metrics: metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
-    'metrics: cyclic metric reference: %s',
-    'metrics: metric name is required',
-    'metrics: unknown format %q (valid: int, float1, float2, percent, currency)',
-    'metrics: unknown scope %q (valid: match, profile)',
-    "metrics: built-in metrics can't be edited",
-    'metrics: a metric named %q already exists',
-    "metrics: built-in metrics can't be deleted",
-    'metrics: cannot delete metric %q: referenced by %s — edit or delete those first',
-  ],
-  'platformservice.go': [
-    'platform: spatial series: %w',
-    'platform: list plugin templates: %w',
-    'platform: template %q has unknown scope %q',
-  ],
-  'queryservice.go': [
-    'query: query name is required',
-    'query: query description is required',
-    'query: SQL is required',
-    'query: no saved query with id %d',
-  ],
-  'internal/extract/extract.go': ['demoinfocs-golang/v6@v6.0.0-rc.1'],
-  'internal/metrics/seed.go': ['metrics: load seed: %w'],
-  'internal/store/analytics.go': [
-    'store: seed analysis_config: %w',
-    'store: get analysis_config: %w',
-    'store: set analysis_config: %w',
-  ],
-  'internal/store/lifecycle.go': [
-    'store: save extracted: player_stats: %w',
-    'store: save extracted: round_player_sides: %w',
-    'store: save extracted: round_economy: %w',
-    'store: save extracted: generic_events: %w',
-    'store: save extracted: sound_events: %w',
-  ],
-  'internal/store/query_store.go': ['commit'],
-  'internal/store/schema.go': ['store: commit schema: %w'],
 };
 
 // ---------------------------------------------------------------------------
@@ -508,8 +463,18 @@ for (const f of goFiles) {
 const pendingKeys = new Set(
   Object.entries(PENDING_DENYLIST).flatMap(([file, texts]) => texts.map((t) => `${file}\u0000${t}`)),
 );
-const violations = [...candidates].filter((k) => !pendingKeys.has(k)).map((k) => k.split('\u0000'));
+// Exemptions are consulted by Check A alongside the ledger: an exempt key is
+// never a violation (its denylist hit is deliberate, in a context the user
+// never reads) and, like a ledger entry, must stay live — an exemption whose
+// literal stopped matching is dead weight and fails Check A-ledger below.
+const exemptKeys = new Set(
+  Object.entries(DENYLIST_EXEMPT).flatMap(([file, items]) => items.map((i) => `${file}\u0000${i.text}`)),
+);
+const violations = [...candidates]
+  .filter((k) => !pendingKeys.has(k) && !exemptKeys.has(k))
+  .map((k) => k.split('\u0000'));
 const staleLedger = [...pendingKeys].filter((k) => !candidates.has(k)).map((k) => k.split('\u0000'));
+const staleExempt = [...exemptKeys].filter((k) => !candidates.has(k)).map((k) => k.split('\u0000'));
 
 // Check B inputs: which svelte files still carry class-1 literals
 const inlineFiles = [...svelteLits].filter(([, lits]) => lits.length > 0).map(([file]) => file);
@@ -554,12 +519,18 @@ test('Check A — denylist over every app-rendered literal (svelte markup, JS, G
   );
 });
 
-test('Check A ledger — every PENDING_DENYLIST entry is a live hit (drop reworded entries)', () => {
+test('Check A ledger — every PENDING_DENYLIST/DENYLIST_EXEMPT entry is a live hit (drop reworded entries)', () => {
   assert.deepEqual(
     staleLedger,
     [],
     'stale PENDING_DENYLIST entries — these literals no longer hit the denylist; remove them from the ledger:\n' +
       staleLedger.map(([f, t]) => `  ${f} :: ${JSON.stringify(t)}`).join('\n'),
+  );
+  assert.deepEqual(
+    staleExempt,
+    [],
+    'stale DENYLIST_EXEMPT entries — these literals no longer hit the denylist; remove them from the exemptions:\n' +
+      staleExempt.map(([f, t]) => `  ${f} :: ${JSON.stringify(t)}`).join('\n'),
   );
 });
 

@@ -86,19 +86,19 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 			DefaultConfig.TradeWindowS, DefaultConfig.EcoFullBuy, DefaultConfig.EcoForce,
 			DefaultConfig.TradeOppDistance, DefaultConfig.RuleVersion,
 		); err != nil {
-			return models.AnalysisConfig{}, fmt.Errorf("store: seed analysis_config: %w", err)
+			return models.AnalysisConfig{}, fmt.Errorf("couldn't load the analysis rules: %w", err)
 		}
 		// Re-read whatever row is there now: mine (defaults), or a
 		// concurrent seeder's / SetConfig's that won the race.
 		if err := s.db.QueryRow(
 			`SELECT `+analysisConfigCols+` FROM analysis_config WHERE id = 1`,
 		).Scan(&c.TradeWindowS, &c.EcoFullBuy, &c.EcoForce, &c.TradeOppDistance, &c.RuleVersion); err != nil {
-			return models.AnalysisConfig{}, fmt.Errorf("store: get analysis_config: %w", err)
+			return models.AnalysisConfig{}, fmt.Errorf("couldn't load the analysis rules: %w", err)
 		}
 		return c, nil
 	}
 	if err != nil {
-		return models.AnalysisConfig{}, fmt.Errorf("store: get analysis_config: %w", err)
+		return models.AnalysisConfig{}, fmt.Errorf("couldn't load the analysis rules: %w", err)
 	}
 	return c, nil
 }
@@ -114,7 +114,7 @@ func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error
 			rule_version = excluded.rule_version`,
 		c.TradeWindowS, c.EcoFullBuy, c.EcoForce, c.TradeOppDistance, c.RuleVersion,
 	); err != nil {
-		return models.AnalysisConfig{}, fmt.Errorf("store: set analysis_config: %w", err)
+		return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
 	}
 	return s.GetConfig()
 }

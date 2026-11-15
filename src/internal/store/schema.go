@@ -18,14 +18,14 @@ var schemaSQL string
 func (s *Store) applySchema() error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: begin schema: %w", err)
+		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
 	if _, err := tx.Exec(schemaSQL); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("store: apply schema: %w", err)
+		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: commit schema: %w", err)
+		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
 	return nil
 }

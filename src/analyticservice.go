@@ -863,7 +863,7 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	case "presence", "kills", "deaths", "damage":
 	default:
 		if _, ok := grenadeHeatmapKinds[kind]; !ok {
-			return HeatmapGrid{}, fmt.Errorf("analytics: unknown heatmap kind %q", kind)
+			return HeatmapGrid{}, fmt.Errorf("unknown heatmap type %q", kind)
 		}
 	}
 	// ONE round read feeds both shapes the heatmap needs: the canonical
@@ -970,7 +970,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	stream, err := sidecar.LoadProgress(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0,
 		func(done, total int) { emit(heatmapStageLoad, done, total) })
 	if err != nil {
-		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
+		return HeatmapGrid{}, fmt.Errorf("couldn't load the heatmap: %w", err)
 	}
 	frames := stream.Frames
 	sampleRate := stream.Meta.SampleRate
