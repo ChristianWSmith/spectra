@@ -1,6 +1,63 @@
-// strings/combat.js — Combat view chrome
-// Skeleton (Stage 1): empty until Sweep-B extracts the area's copy (design
-// §5.2); values are plain strings with {arg} placeholders (design §3.2).
+// strings/combat.js — Combat view chrome (stats table, engagements,
+// clutches, the KAST drill dialog)
+// Extracted from views/Combat.svelte (Strings Stage 3, Sweep-B); values
+// are plain strings with {arg} placeholders — compose at the call site
+// with S.fill(S.combat.slot, { arg }).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
-export const combat = {};
+export const combat = {
+  dismissError: 'Dismiss error',
+  loadingDetail: 'Loading combat data…',
+  metricErrorLead: 'Metric-backed stats unavailable: ',
+  dismissMetricError: 'Dismiss metric stats error',
+  combatStatsHeading: 'Combat stats',
+  badgeInferred: 'inferred',
+  openPlayerProfile: 'Open player profile',
+  kastCellTitle: '{def} — click for the per-round K/A/T/S grid',
+  noCombatStats: 'No combat stats.',
+  noteLead: 'Dotted headers and ',
+  noteTail: ' badges\n        mark stats Spectra calculates rather than reads from the demo — hover for\n        the rule.',
+  engagementsHeading: 'Engagements',
+  filterEngagementsLabel: 'Filter engagements by kind',
+  thReplay: 'Replay',
+  thRound: 'Round',
+  thTime: 'Time',
+  timeTitle: 'Time into the round — how far past the round\'s start tick the engagement happened (exact tick in the tooltip)',
+  thKind: 'Kind',
+  thKiller: 'Killer',
+  thVersus: 'versus',
+  thVictim: 'Victim',
+  thDist: 'Dist (m)',
+  watchEngagement: 'Watch this engagement in the replay',
+  tickTitle: 'tick {tick}',
+  oneKillPrefix: 'One kill — ',
+  openProfileName: 'Open profile — {name}',
+  engagementsUnavailable: 'Engagements unavailable.',
+  noEngagements: 'No engagements match this filter.',
+  clutchesPrefix: 'Clutches ',
+  clutchTitle: 'Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).',
+  clutchChipLabel: 'alive-count · won/lost toggle',
+  filterClutchesLabel: 'Filter clutches by outcome',
+  wonToggle: 'won',
+  lostToggle: 'lost',
+  noClutches: 'No clutches detected in this match.',
+  thSize: 'Size',
+  thPlayer: 'Player',
+  thOutcome: 'Outcome',
+  thBomb: 'Bomb',
+  thHpLeft: 'HP left',
+  hpTitle: 'Remaining HP of the solo player when the clutch resolved: the last recorded health before the round ended (rows without that detail fall back to damage arithmetic, and a dead solo reads 0)',
+  watchClutch: 'Watch this clutch in the replay',
+  bombPrefix: 'bomb ',
+  kastDialogTitle: 'KAST rounds for {name}',
+  kastHeading: 'KAST rounds —',
+  openProfile: 'Open {name} profile',
+  closeLabel: 'Close',
+  kastOverPrefix: 'KAST over ',
+  kastSuffix: ' rounds —',
+  kastElsePrefix: '— KAST over ',
+  kastLegend: 'dots = K kill · A assist · T traded · S survived (filled = applied).',
+  loading: 'Loading…',
+  kastDotAll: 'all parts',
+  noKastRows: 'No per-round rows for this player.',
+};
