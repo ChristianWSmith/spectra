@@ -214,11 +214,12 @@ func hasCareerSteam(rows []models.CareerSummary, sid string) bool {
 func TestCareerRebuildDropsBotRowsFromExistingData(t *testing.T) {
 	s := openMem(t)
 	seedBotMatch(t, s)
-	// Simulate pre-rule data: a bot row already in player_career.
+	// Simulate pre-rule data: a bot row already in player_career (the
+	// raw-count shape — derived columns are gone with the dual-write
+	// removal).
 	if _, err := s.db.Exec(
-		`INSERT INTO player_career (steam_id, name, matches, wins, adr_avg, adr_std, kd,
-			hs_pct, kast_pct, openings, opener_wins, trades, clutches, updated_at)
-		 VALUES (?, 'Crew', 1, 0, 40, 0, 3, 33, 50, 0, 0, 0, 0, ?)`,
+		`INSERT INTO player_career (steam_id, name, matches, wins, updated_at)
+		 VALUES (?, 'Crew', 1, 0, ?)`,
 		botSteamID, time.Now(),
 	); err != nil {
 		t.Fatalf("seed stale bot career row: %v", err)

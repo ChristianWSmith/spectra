@@ -58,8 +58,7 @@ const (
 	utilityCols = `seq, tick, round, thrower, thrower_name, kind, det_x, det_y, damage,
 		flash_ms, affected, site, trajectory_ref`
 
-	playerCareerCols = `steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct,
-		kast_pct, openings, opener_wins, trades, clutches, updated_at`
+	playerCareerCols = `steam_id, name, matches, wins, updated_at`
 
 	matchTradeOppsCols = `steam_id, opps, missed`
 
@@ -993,11 +992,15 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 
 // ---- career rollup ----
 
-// RebuildCareer recomputes the whole player_career table from player_stats
-// ⋈ matches (wins/ADR/KD/HS/openings/trades), player_round_stats (KAST)
-// and clutches (record count). Full rebuild in one transaction — at the
-// practice scale (100 matches) this is well under the 5 s budget and is the
-// only writer of the table, so it cannot drift.
+// RebuildCareer recomputes the whole player_career table — raw counts
+// only: identity, name, match and win counts, all from player_stats ⋈
+// matches. Full rebuild in one transaction — at the practice scale (100
+// matches) this is well under the 5 s budget and is the only writer of
+// the table, so it cannot drift. Every DERIVED career number (ADR, K/D,
+// HS%, KAST%, openings, trades, clutches) is a stored metric row, never
+// a column here: clearing the career metric bucket below (the same
+// transaction) is what makes the sweep re-derive them from the rows this
+// rebuild just refreshed.
 //
 // HUMANS ONLY (HumanOnly): the rollup also joins players, so a rebuild
 // purges bot rows — including rows a pre-rule rebuild already wrote into
@@ -1011,16 +1014,9 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 //
 //   - wins: the SUM(CASE WHEN …) below is the SQL twin of models.WinFor
 //     (the Go helper GetPlayerHistory uses for its per-match Win flag).
-//   - HS%: player_stats.hs_pct is the PER-MATCH rate (extract stamps it as
-//     headshots/kills of that match); the career column pools the counts —
-//     SUM(headshots)/SUM(kills) — because an average of per-match
-//     percentages would over-weight short matches (same pooled shape the
-//     metrics layer's ratio() emits).
-//   - ADRStd: population stddev of the per-match player_stats.adr values,
-//     sqrt(avg(x²) − avg(x)²), computed in SQL here because those are the
-//     same rows this statement already aggregates; no Go code computes it
-//     (internal/metrics' stddev() is a separate generic query layer over
-//     arbitrary columns, not a second implementation of this one).
+//   - name: the correlated subquery takes the player's LATEST name
+//     (latest match by extracted_at, then id), so a rename lands on the
+//     newest import — the name ListPlayers shows for the same id.
 func (s *Store) RebuildCareer() error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -1053,15 +1049,6 @@ func (s *Store) RebuildCareer() error {
 			COUNT(*),
 			SUM(CASE WHEN (ps.side = 'ct' AND m.score_ct > m.score_t)
 				OR (ps.side = 't' AND m.score_t > m.score_ct) THEN 1 ELSE 0 END),
-			AVG(ps.adr),
-			sqrt(MAX(AVG(ps.adr * ps.adr) - AVG(ps.adr) * AVG(ps.adr), 0)),
-			`+kdCareerSQL+`,
-			CASE WHEN SUM(ps.kills) > 0 THEN 100.0 * SUM(ps.headshots) / SUM(ps.kills) ELSE 0 END,
-			`+kastCareerSQL+`,
-			SUM(ps.opening_kills + ps.opening_deaths),
-			SUM(ps.opening_kills),
-			SUM(ps.trade_kills),
-			COALESCE((SELECT COUNT(*) FROM clutches c WHERE c.steam_id = ps.steam_id), 0),
 			?
 		FROM player_stats ps
 		JOIN matches m ON m.id = ps.match_id
@@ -1091,10 +1078,7 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 		`SELECT `+playerCareerCols+`
 		 FROM player_career pc WHERE pc.steam_id = ? AND `+HumanOnlyBySteamID("pc.steam_id", ""),
 		scrub(steamID),
-	).Scan(
-		&c.SteamID, &c.Name, &c.Matches, &c.Wins, &c.ADRAvg, &c.ADRStd, &c.KD,
-		&c.HSPct, &c.KASTPct, &c.Openings, &c.OpenerWins, &c.Trades, &c.Clutches, &updated,
-	)
+	).Scan(&c.SteamID, &c.Name, &c.Matches, &c.Wins, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -1112,11 +1096,10 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 // and Library's player facet, so a bot is unselectable even on a database
 // whose player_career still carries pre-rule bot rows.
 //
-// This read no longer selects `c.adr_avg` (dogfooding W4): the picker's
-// ADR cell reads the stored `career_adr` metric rows through the
-// frontend's canonical career read, and player_career's derived columns
-// are written-only from here on (RebuildCareer's Q4 dual-write — no
-// production reader remains).
+// This read selects raw counts only (dogfooding W4): the picker's ADR
+// cell reads the stored `career_adr` metric rows through the frontend's
+// canonical career read, and player_career carries no derived columns
+// at all (RebuildCareer's dual-write removal).
 func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	// MAX(extracted_at) is formatted via strftime: the scalar subquery's
 	// result loses the DATETIME declared type (the driver would hand back

@@ -60,12 +60,13 @@
 //	                               arithmetic are not grammar, and metric()
 //	                               as an addend stays denied (its two legal
 //	                               positions, below).
-//	                               Spelling note: the store's career K/D
-//	                               rollup floors instead (MAX(SUM(deaths),
-//	                               1), internal/store kdCareerSQL) — a
-//	                               stored rollup column with no NULL state
-//	                               vs this generic compiler over
-//	                               user-chosen columns; both are
+//	                               Spelling note: the store's fixed K/D
+//	                               spelling floors instead (MAX(deaths,
+//	                               1), internal/store kdPerMatchSQL —
+//	                               retired from production, kept as a
+//	                               test oracle) — a typed value with no
+//	                               NULL state vs this generic compiler
+//	                               over user-chosen columns; both are
 //	                               deliberate.
 //	metric('<name>')               another SAVED metric's value — see
 //	                               "Metric references" below (exactly two

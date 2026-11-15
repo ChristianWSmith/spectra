@@ -192,8 +192,8 @@ var builtinSeed = []struct {
 		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
 	},
 	{
-		// D5p: pooled kills/deaths over the whole career — 2, the same
-		// shape as kdCareerSQL (sums, never a mean of ratios).
+		// D5p: pooled kills/deaths over the whole career — 2 (sums,
+		// never a mean of ratios).
 		name: "career_kd", expr: "from player_stats: ratio(sum(kills), sum(deaths))",
 		scope: "profile", format: "float2", shortName: "K/D", denominator: "",
 		interpretation: "career pooled kills per death (6i/3i = 2)",
@@ -483,14 +483,14 @@ var builtinSeed = []struct {
 	{
 		name: "career_openings", expr: "from player_stats: sum(opening_kills + opening_deaths)",
 		scope: "profile", format: "int", shortName: "", denominator: "",
-		interpretation: "career opening duels = RebuildCareer's openings (corpus: 3i)",
+		interpretation: "career opening duels (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
 		wantLabels: eightLabels,
 	},
 	{
 		name: "career_opener_wins", expr: "from player_stats: sum(opening_kills)",
 		scope: "profile", format: "int", shortName: "", denominator: "",
-		interpretation: "career opening kills = RebuildCareer's opener_wins (corpus: 3i)",
+		interpretation: "career opening kills (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
 		wantLabels: eightLabels,
 	},

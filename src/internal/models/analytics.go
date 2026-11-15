@@ -247,23 +247,16 @@ type EconomyRow struct {
 	Explanation string `json:"explanation"`
 }
 
-// CareerRow is one player_career rollup — rebuildable from
-// player_stats ⋈ matches + player_round_stats + clutches.
+// CareerRow is one player_career rollup — raw counts only (identity,
+// matches, wins), rebuildable from player_stats ⋈ matches. Every
+// derived career number (ADR, K/D, HS%, KAST%, openings, trades,
+// clutches) is a stored metric row, never a column here.
 type CareerRow struct {
-	SteamID    string    `json:"steamId"`
-	Name       string    `json:"name"`
-	Matches    int       `json:"matches"`
-	Wins       int       `json:"wins"`
-	ADRAvg     float64   `json:"adrAvg"`
-	ADRStd     float64   `json:"adrStd"` // population stddev of per-match ADR
-	KD         float64   `json:"kd"`
-	HSPct      float64   `json:"hsPct"`
-	KASTPct    float64   `json:"kastPct"`
-	Openings   int       `json:"openings"`   // opening duels participated
-	OpenerWins int       `json:"openerWins"` // opening kills
-	Trades     int       `json:"trades"`
-	Clutches   int       `json:"clutches"` // clutch records (any outcome)
-	UpdatedAt  time.Time `json:"updatedAt"`
+	SteamID   string    `json:"steamId"`
+	Name      string    `json:"name"`
+	Matches   int       `json:"matches"`
+	Wins      int       `json:"wins"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // CareerSummary is one player-picker row (ListPlayers).

@@ -56,22 +56,21 @@ const (
 	MaxEventLimit     = 100000
 )
 
-// Shared SQL expressions — ONE definition per scope. K/D and KAST% are the
-// two metrics that exist at both the per-match layer (one player_stats row
-// of one match) and the career layer (a player's whole history, GROUP BY
-// steam_id); the two shapes are genuinely different SQL, so they stay
-// separate consts instead of one parameterized string. Keep them here,
-// next to each other: the career rollup and the per-match spellings must
-// never drift from each other.
+// Shared SQL expressions — the per-match K/D and KAST% spellings, kept
+// next to each other. Both are RETIRED from production: the career-layer
+// twins they were paired with died with the career dual-write removal
+// (RebuildCareer writes raw counts only — career K/D and KAST% are
+// stored metric rows), so what remains here is the reference-oracle pair
+// the metric tests compare against.
 //
-// Zero-denominator spelling, deliberate scope variants (do NOT unify):
-// the store floors the denominator — `MAX(deaths, 1)` — so a player with no
-// deaths reports K/D 0 instead of NULL, because this is a typed float with
-// no "missing" state. The display surfaces moved to stored metric rows
-// (dogfooding W3/W4): the trend, history and report read-backs render the
-// metric's generic `ratio()` spelling (a NULL denominator is the honest
-// "no rows to divide by", shown as value 0 with N or as "—"). Same
-// intent, two scopes, two spellings.
+// Zero-denominator spelling, deliberate against the metric's (do NOT
+// unify): the store floors the denominator — `MAX(deaths, 1)` — so a
+// player with no deaths reports K/D 0 instead of NULL, because this is a
+// typed float with no "missing" state. The display surfaces read stored
+// metric rows (dogfooding W3/W4): the trend, history and report
+// read-backs render the metric's generic `ratio()` spelling (a NULL
+// denominator is the honest "no rows to divide by", shown as value 0
+// with N or as "—"). Same intent, two spellings.
 const (
 	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1.
 	// RETIRED as a production read by dogfooding W4 — GetScoreboard's
@@ -82,10 +81,6 @@ const (
 	// outer query.
 	kdPerMatchSQL = `CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)`
 
-	// kdCareerSQL is the career rollup's K/D (RebuildCareer): sums across
-	// every match, not the average of the per-match ratios.
-	kdCareerSQL = `CAST(SUM(ps.kills) AS REAL) / MAX(SUM(ps.deaths), 1)`
-
 	// kastPerMatchSQL is a player's KAST% WITHIN one match, correlated
 	// from the outer row to that match's player_round_stats rows (0 when
 	// the match has no analytics rows). RETIRED as a production read by
@@ -95,11 +90,6 @@ const (
 	// query.
 	kastPerMatchSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
 		WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)`
-
-	// kastCareerSQL is the career rollup's KAST% (RebuildCareer): averaged
-	// over ALL of the player's player_round_stats rows (alias ps only).
-	kastCareerSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
-		WHERE prs.steam_id = ps.steam_id), 0)`
 )
 
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
