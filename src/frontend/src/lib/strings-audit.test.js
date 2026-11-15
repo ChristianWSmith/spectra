@@ -87,7 +87,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/components/TeamColumn.svelte',
   'frontend/src/lib/views/Builder.svelte',
   'frontend/src/lib/views/Match.svelte',
-  'frontend/src/lib/views/PlayerProfile.svelte',
   'frontend/src/lib/views/Replay.svelte',
   'frontend/src/lib/views/RoundDetail.svelte',
   'frontend/src/lib/views/Settings.svelte',

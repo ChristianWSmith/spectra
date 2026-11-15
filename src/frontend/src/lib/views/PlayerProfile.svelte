@@ -20,6 +20,7 @@
     metricProgressFrac,
     metricProgressStage,
   } from '../metricstate.js';
+  import * as S from '../strings/index.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
   import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
@@ -322,7 +323,7 @@
       <h1 class="prof-name">{profile.name || '—'}</h1>
       <span class="mono muted">{profile.steamId}</span>
     {:else}
-      <h1>Player</h1>
+      <h1>{S.profiles.h1Player}</h1>
     {/if}
     <div class="spacer"></div>
     <label class="sr-only" for="prof-q">Search players</label>
@@ -341,7 +342,7 @@
   {#if profileError}
     <p class="error" role="alert">
       {profileError}
-      <button class="btn small" onclick={loadProfile}>Retry</button>
+      <button class="btn small" onclick={loadProfile}>{S.profiles.retry}</button>
     </p>
   {/if}
 
@@ -354,8 +355,8 @@
          with W3a's default pins it re-expresses today's eleven cards as
          these 2 fixed cards followed by 11 metric rows. -->
     <div class="stat-grid">
-      <StatCard label="Matches" value={profile.matches} sub={`${profile.wins} wins`} title="Matches in the library for this player" />
-      <StatCard label="Win%" value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title="Share of matches won" />
+      <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
+      <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
     </div>
 
     <!-- Career metrics — the METRIC half of the profile surface
@@ -370,11 +371,11 @@
          alert. -->
     {#if careerCols.length > 0 || careerError}
       <section class="panel">
-        <h2>Career metrics</h2>
+        <h2>{S.profiles.careerHeading}</h2>
         {#if careerError}
           <p class="error" role="alert">
-            Career metrics unavailable: {careerError}
-            <button class="btn small" onclick={() => (careerReload += 1)}>Retry</button>
+            {S.profiles.careerErrorLead}{careerError}
+            <button class="btn small" onclick={() => (careerReload += 1)}>{S.profiles.retry}</button>
           </p>
         {/if}
         {#if careerCols.length > 0}
@@ -382,8 +383,8 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Metric</th>
-                  <th scope="col" class="num">Value</th>
+                  <th scope="col">{S.profiles.thMetric}</th>
+                  <th scope="col" class="num">{S.profiles.thValue}</th>
                 </tr>
               </thead>
               <tbody>
@@ -418,8 +419,8 @@
 
     <section class="panel">
       <div class="row-between">
-        <h2>Trend</h2>
-        <div class="prof-metrics" role="group" aria-label="Trend stat">
+        <h2>{S.profiles.trendHeading}</h2>
+        <div class="prof-metrics" role="group" aria-label={S.profiles.trendGroupLabel}>
           {#each METRICS as m (m.key)}
             <button
               class="btn small prof-metric"
@@ -432,14 +433,14 @@
       {#if trendError}
         <p class="error" role="alert">
           {trendError}
-          <button class="btn small" onclick={loadTrend}>Retry</button>
+          <button class="btn small" onclick={loadTrend}>{S.profiles.retry}</button>
         </p>
       {:else if spark}
         <svg
           class="prof-spark"
           viewBox="0 0 {spark.W} {spark.H}"
           role="img"
-          aria-label="{metric} trend across {trend.length} matches"
+          aria-label="{metric}{S.profiles.trendAriaLead}{trend.length}{S.profiles.trendAriaTail}"
         >
           <polyline points={spark.line} fill="none" stroke="var(--accent)" stroke-width="2" />
           {#each spark.dots as d, i (i)}
@@ -449,7 +450,7 @@
               r="3.5"
               role="button"
               tabindex="0"
-              aria-label="Open match — {d.title}"
+              aria-label={S.fill(S.profiles.openMatchDot, { title: d.title })}
               onclick={() => d.matchId && nav(`/match/${d.matchId}`)}
               onkeydown={(e) =>
                 (e.key === 'Enter' || e.key === ' ') &&
@@ -460,27 +461,27 @@
           {/each}
         </svg>
         <p class="muted prof-spark-cap">
-          {trend.length} matches · min {fmtProfileMetric(spark.min, metric)} · max {fmtProfileMetric(spark.max, metric)}
-          · x = sequence (patch order → import order within a patch) · click a dot to open the match
+          {trend.length}{S.profiles.sparkMinLead}{fmtProfileMetric(spark.min, metric)}{S.profiles.sparkMaxLead}{fmtProfileMetric(spark.max, metric)}
+          {S.profiles.sparkFootnote}
         </p>
       {:else if trend.length === 1}
-        <p class="muted" role="status">Only one match so far — the trend line needs at least two.</p>
+        <p class="muted" role="status">{S.profiles.onlyOneMatch}</p>
       {:else}
-        <p class="muted" role="status">No trend data for this stat yet.</p>
+        <p class="muted" role="status">{S.profiles.noTrendData}</p>
       {/if}
     </section>
 
     <div class="prof-splits">
       <section class="panel prof-sides">
-        <h2>Sides</h2>
+        <h2>{S.profiles.sidesHeading}</h2>
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Side</th>
-              <th scope="col" class="num">Rounds</th>
-              <th scope="col" class="num">Win%</th>
-              <th scope="col" class="num">ADR</th>
-              <th scope="col" class="num">KAST</th>
+              <th scope="col">{S.profiles.thSide}</th>
+              <th scope="col" class="num">{S.profiles.thRounds}</th>
+              <th scope="col" class="num">{S.profiles.thWinPct}</th>
+              <th scope="col" class="num">{S.profiles.thAdr}</th>
+              <th scope="col" class="num">{S.profiles.thKast}</th>
               <th scope="col" class="num">K/D</th>
             </tr>
           </thead>
@@ -495,21 +496,21 @@
                 <td class="num">{fmt2(s.kd)}</td>
               </tr>
             {:else}
-              <tr><td colspan="6" class="muted">No CT/T breakdown yet.</td></tr>
+              <tr><td colspan="6" class="muted">{S.profiles.noSides}</td></tr>
             {/each}
           </tbody>
         </table>
       </section>
 
       <section class="panel">
-        <h2>Maps</h2>
+        <h2>{S.profiles.mapsHeading}</h2>
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Map</th>
-              <th scope="col" class="num">Matches</th>
-              <th scope="col" class="num">Wins</th>
-              <th scope="col" class="num">ADR</th>
+              <th scope="col">{S.profiles.thMap}</th>
+              <th scope="col" class="num">{S.profiles.thMatches}</th>
+              <th scope="col" class="num">{S.profiles.thWins}</th>
+              <th scope="col" class="num">{S.profiles.thAdr}</th>
             </tr>
           </thead>
           <tbody>
@@ -517,7 +518,7 @@
               <tr
                 class="clickable"
                 tabindex="0"
-                title="Open {m.map || '—'} matches for this player in the Library"
+                title={S.fill(S.profiles.openMapTitle, { map: m.map || '—' })}
                 onclick={() => openMapInLibrary(m.map)}
                 onkeydown={(e) =>
                   (e.key === 'Enter' || e.key === ' ') &&
@@ -529,20 +530,20 @@
                 <td class="num">{fmt1(m.adr)}</td>
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">No per-map breakdown yet.</td></tr>
+              <tr><td colspan="4" class="muted">{S.profiles.noMaps}</td></tr>
             {/each}
           </tbody>
         </table>
       </section>
 
       <section class="panel">
-        <h2>Weapons <span class="muted">(top {weapons.length})</span></h2>
+        <h2>{S.profiles.weaponsPrefix}<span class="muted">{S.profiles.topPrefix}{weapons.length})</span></h2>
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Weapon</th>
-              <th scope="col" class="num">Kills</th>
-              <th scope="col" class="num">Damage</th>
+              <th scope="col">{S.profiles.thWeapon}</th>
+              <th scope="col" class="num">{S.profiles.thKills}</th>
+              <th scope="col" class="num">{S.profiles.thDamage}</th>
               <th scope="col" class="num">HS</th>
             </tr>
           </thead>
@@ -555,7 +556,7 @@
                 <td class="num">{fmtInt(w.headshots)}</td>
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">No weapon rows.</td></tr>
+              <tr><td colspan="4" class="muted">{S.profiles.noWeapons}</td></tr>
             {/each}
           </tbody>
         </table>
@@ -563,22 +564,22 @@
     </div>
 
     <section class="panel">
-      <h2>Match history <span class="muted">(most recent first)</span></h2>
+      <h2>{S.profiles.matchHistoryPrefix}<span class="muted">{S.profiles.mostRecentFirst}</span></h2>
       <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
               <th
                 scope="col"
-                title="Import date of the demo — CS2 demos record no played time"
-              >Imported</th>
-              <th scope="col">Map</th>
-              <th scope="col">Result</th>
-              <th scope="col" class="num">Score</th>
-              <th scope="col">Starting side</th>
+                title={S.profiles.importedTitle}
+              >{S.profiles.thImported}</th>
+              <th scope="col">{S.profiles.thMap}</th>
+              <th scope="col">{S.profiles.thResult}</th>
+              <th scope="col" class="num">{S.profiles.thScore}</th>
+              <th scope="col">{S.profiles.thStartingSide}</th>
               <th scope="col" class="num">K/D/A</th>
-              <th scope="col" class="num">ADR</th>
-              <th scope="col" class="num">KAST%</th>
+              <th scope="col" class="num">{S.profiles.thAdr}</th>
+              <th scope="col" class="num">{S.profiles.thKastPct}</th>
             </tr>
           </thead>
           <tbody>
@@ -586,7 +587,7 @@
               <tr
                 class="clickable"
                 tabindex="0"
-                title="Open match {h.matchId}"
+                title={S.fill(S.profiles.openMatchRow, { id: h.matchId })}
                 onclick={() => nav(`/match/${h.matchId}`)}
                 onkeydown={(e) => e.key === 'Enter' && nav(`/match/${h.matchId}`)}
               >
@@ -608,7 +609,7 @@
                        value. -->
                   <span
                     class="chip {teamStartClass(h.startSide, 0)}"
-                    title="Side the player started the match on"
+                    title={S.profiles.startSideTitle}
                   >
                     {(h.startSide || '—').toUpperCase()}
                   </span>
@@ -623,13 +624,13 @@
                 <td class="num">{fmtPercent(h.kastPct)}</td>
               </tr>
             {:else}
-              <tr><td colspan="8" class="muted">No matches yet.</td></tr>
+              <tr><td colspan="8" class="muted">{S.profiles.noHistory}</td></tr>
             {/each}
           </tbody>
         </table>
       </div>
     </section>
   {:else if !profileError}
-    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingDetail} /></p>
   {/if}
 </div>
