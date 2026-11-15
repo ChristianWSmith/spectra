@@ -96,4 +96,9 @@ export const common = {
   filterBarBboxLine: 'bbox {minX},{minY}–{maxX},{maxY}',
   filterBarClearBbox: 'Clear position filter', // the clear × button's aria-label
   filterBarReset: 'Reset', // the local reset button
+
+  // canvas heatmap layer (HeatmapLayer.svelte — the radar/raster overlay)
+  heatmapLayerLabel: 'Heatmap over the map grid', // the canvas aria-label
+  heatmapLayerDrillTitle: 'Click a region to open the replay events for that position', // drillable kind: the canvas tooltip
+  heatmapLayerNoDrillTitle: 'No region drill for this heatmap kind — its raster has no event rows behind it', // non-drillable kind: the canvas tooltip
 };
