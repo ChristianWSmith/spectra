@@ -1,39 +1,35 @@
-// jsdom driver for the Settings view — the analysis-rules panel's save
-// honesty and the behind-only re-run list (the four owner asks):
-//   A. Pristine gating: with the loaded rules unchanged, Save is
-//      disabled and the status slot reads "No changes" (never the
-//      re-run nudge); any edit of the four fields arms Save and shows
-//      the re-run hint; reverting disarms again.
-//   B. Fetch shape: the re-run list is ListMatchesPage bounded
-//      (BEHIND_PAGE window, {behind:true} through the shared filter
-//      normalization) + CountMatches({behind:true}) for the honest N +
-//      CountMatches({}) for the "All N analyzed" line — never the old
-//      whole-library listMatches (pinned: zero ListMatches calls).
-//   C. Re-query on spectra:analysis-done: a stamped row re-queries list
-//      + counts (the services.js completion flush + this view's own
-//      debounced refresh), so rows drop out and N decrements.
-//   D. Re-run-all: ConfirmDialog → RecomputeAll's honest
-//      {submitted, skipped, total} → k/N counted from the SAME
-//      analysis-done subscription (N = submitted, extra dones never
-//      overrun it), per-row chips via RecomputeStates rehydration.
-//   E. Empty/error gating: 0 behind → "All N matches analyzed under
-//      current rules"; a FAILED list read renders the alert and never a
-//      false "all analyzed" claim (PRODUCT.md error-dismissibility).
-//   F. Save honesty: a save response whose ruleVersion did not move
-//      (server judged the values identical) says "No changes", never
-//      "Saved. … re-run them below"; a bump keeps the re-run copy.
-//   G. Load more: the keyset window appends with the last row's id as
-//      cursor; the "Showing X of N" line reports CountMatches, not the
-//      rendered length.
-//   H. Parallel work: the 1..max numeric control in its OWN
+// jsdom driver for the Settings view — the analysis-rules card's save
+// flow (save = recompute, the metrics-save precedent) and the surfaces
+// this wave removed:
+//   A. Pristine gating + card shape: with the loaded rules unchanged,
+//      Save is disabled and the status slot reads "No changes" (never a
+//      recompute note); any edit of the four fields arms Save; reverting
+//      disarms again. The four fields are present, Save is the card's
+//      only button, and the card renders NO rules-version display
+//      (internal-only since 2026-11-15) and no dirty-state hint.
+//   B. The re-run UI is gone: no "Re-run analysis…" subsection, no
+//      Re-run-all button, no per-row list, no Load more, no behind
+//      count line — and the view performs NO behind fetches at all
+//      (zero ListMatchesPage / CountMatches / RecomputeStates calls,
+//      including after a spectra:analysis-done event). The Stat
+//      definitions card is gone with it (its guide bullet died in the
+//      same change — docslockstep pins that census).
+//   C. Save = recompute: a save whose ruleVersion bumped kicks
+//      RecomputeAll in the background — exactly once, with NO
+//      confirmation dialog — and says so in the status slot.
+//   D. Save honesty on the no-bump path: the server judged the values
+//      identical → "No changes — the rules were already saved with
+//      these values.", and NO recompute is kicked.
+//   E. Parallel work: the 1..max numeric control in its OWN
 //      "Background work" card (the import-scoped control is gone) —
 //      bounds seeded from the backend, in-range values passed
 //      verbatim, out-of-range clamped to the ceiling before the Set,
 //      garbage clamped to 1 (never 0 — it would stall the budget).
+//   F. No runtime errors over the whole run.
 //
-// Backend semantics live in store.matchListWhere (the behind predicate),
-// AnalyticsService.SetConfig (the no-bump) and RecomputeAll (server-side
-// set resolution) — this covers the view wiring only.
+// Backend semantics live in AnalyticsService.SetConfig (the no-bump)
+// and RecomputeAll (server-side behind-set resolution) — this covers
+// the view wiring only.
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
 // there provides it. From frontend/ run:
@@ -131,7 +127,7 @@ bindings.MapPackService.GetMapPackStatus = () =>
 bindings.IconService.GetIconManifest = () => Promise.resolve({ count: 0, note: '' });
 bindings.SoundService.GetSoundManifest = () => Promise.resolve({ count: 0, note: '' });
 
-// --- Scripted rules + behind list --------------------------------------
+// --- Scripted rules + the background-recompute submission --------------
 const RULES = {
   tradeWindowS: 5,
   ecoFullBuy: 20000,
@@ -139,41 +135,16 @@ const RULES = {
   tradeOppDistance: 1000,
   ruleVersion: 3,
 };
-let setConfigImpl = (c) => ({ ...c, ruleVersion: RULES.ruleVersion + 1 }); // default: a real bump
+// setConfigImpl: section C runs the default (a real bump — the version
+// the form loaded is 3, the answer carries 4); section D scripts the
+// no-bump answer (the server's current row, version 4 after C's save).
+let setConfigImpl = (c) => ({ ...c, ruleVersion: RULES.ruleVersion + 1 });
 bindings.handlers.GetConfig = () => ({ ...RULES });
 bindings.handlers.SetConfig = (c) => setConfigImpl(c);
-
-const row = (id) => ({
-  id,
-  path: `/d/m${id}.dem`,
-  map: 'de_mirage',
-  size: 1048576,
-  scoreCT: 13,
-  scoreT: 9,
-  ctName: 'Alpha',
-  tName: 'Beta',
-  realRounds: 22,
-  durationS: 3600,
-  extractedAt: '2026-01-01T00:00:00Z',
-  status: 'ready',
-  error: '',
-});
-// Windows behind the behind facet: window 0 = rows 1..2 (hasNext), the
-// afterID=2 window = rows 3..4 (exhausted) — section G drives Load more.
-const WINDOWS = { 0: { rows: [row(1), row(2)], hasNext: true }, 2: { rows: [row(3), row(4)], hasNext: false } };
-let listFail = false; // section E flips this to fail the list read
-let behindCount = 2; // CountMatches({behind:true})
-let libTotal = 5; // CountMatches({})
-
-bindings.handlers.ListMatchesPage = (q, sk, d, afterID, limit, f) => {
-  if (listFail) throw new Error('list exploded');
-  const w = WINDOWS[afterID] || { rows: [], hasNext: false };
-  return { rows: w.rows, hasNext: w.hasNext, rosters: {} };
-};
-bindings.handlers.CountMatches = (q, f) => (f && f.behind ? behindCount : libTotal);
-bindings.handlers.RecomputeStates = () => ({ queued: [1, 2], running: [3] });
-let recomputeAllImpl = () => ({ submitted: 3, skipped: 1, total: 4 });
-bindings.handlers.RecomputeAll = () => recomputeAllImpl();
+// RecomputeAll answers at SUBMISSION (services.js) with the honest
+// {submitted, skipped, total}; section C asserts it is kicked exactly
+// once and section D that a no-bump save never kicks it.
+bindings.handlers.RecomputeAll = () => ({ submitted: 3, skipped: 1, total: 4 });
 
 // --- Compile Settings + its components ---------------------------------
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'settings');
@@ -227,7 +198,7 @@ document.body.appendChild(target);
 let inst = mount(mod.default, { target });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-await sleep(150); // mount + the immediate first behind fetch
+await sleep(150); // mount + the config read
 
 let failures = 0;
 function check(name, cond, detail = '') {
@@ -241,21 +212,21 @@ const $ = (sel) => [...document.querySelectorAll(sel)];
 // textContent collapses nothing — template line breaks survive as
 // whitespace runs, so match against a single-space-normalized copy.
 const body = () => document.body.textContent.replace(/\s+/g, ' ');
-const pageCalls = () => bindings.calls.filter((c) => c.method === 'ListMatchesPage');
-const countCalls = () => bindings.calls.filter((c) => c.method === 'CountMatches');
-const listCalls = () => bindings.calls.filter((c) => c.method === 'ListMatches');
+const callCount = (m) => bindings.callCount(m);
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 };
 const saveBtn = () => $('button').find((b) => b.textContent.includes('Save rules'));
-const rerunAllBtn = () => $('button').find((b) => /Re-run all|Re-running…/.test(b.textContent));
 const tradeInput = () => document.getElementById('sett-trade');
-const confirmBtn = () =>
-  $('.cf-actions button').find((b) => b.textContent.includes('Re-run all'));
+const rulesCard = () =>
+  $('section.panel').find((s) => {
+    const h = s.querySelector('h2');
+    return h && h.textContent.includes('Analysis rules');
+  });
 
-console.log('A. pristine gating: Save disabled + "No changes", edits arm it');
+console.log('A. pristine gating + card shape: Save disabled, "No changes", no version display');
 {
   const save = saveBtn();
   check('Save present', !!save);
@@ -264,14 +235,30 @@ console.log('A. pristine gating: Save disabled + "No changes", edits arm it');
     'honest "No changes" copy shown',
     body().includes('No changes — the rules above are already saved.'),
   );
-  check('no re-run hint while pristine', !body().includes('Saving applies these rules'));
-  check('rules version rendered', body().includes('Rules version'));
+  check('no recompute hint while pristine', !body().includes('Saving applies these rules'));
+  check('no rules-version display (internal-only)', !body().includes('Rules version'));
+  check(
+    'the four rule fields are present',
+    ['sett-trade', 'sett-full', 'sett-trade-dist', 'sett-force'].every((id) => document.getElementById(id)),
+    ['sett-trade', 'sett-full', 'sett-trade-dist', 'sett-force']
+      .filter((id) => !document.getElementById(id))
+      .join(','),
+  );
+  {
+    const card = rulesCard();
+    const btns = card ? [...card.querySelectorAll('button')] : [];
+    check(
+      'Save is the card\'s only button (one save, no re-run controls)',
+      btns.length === 1 && btns[0].textContent.includes('Save rules'),
+      btns.map((b) => b.textContent.trim()).join(' | '),
+    );
+  }
 
   type(tradeInput(), '7');
   await sleep(10);
   check('edit arms Save', saveBtn() && !saveBtn().disabled);
   check('"No changes" gone after edit', !body().includes('No changes — the rules above'));
-  check('re-run hint appears while dirty', body().includes('Saving applies these rules'));
+  check('no hint appears while dirty', !body().includes('Saving applies these rules'));
 
   type(tradeInput(), '5'); // back to pristine
   await sleep(10);
@@ -279,202 +266,94 @@ console.log('A. pristine gating: Save disabled + "No changes", edits arm it');
   check('"No changes" back after revert', body().includes('No changes — the rules above are already saved.'));
 }
 
-console.log('B. behind fetch shape: bounded page + counts, no whole-library read');
+console.log('B. the re-run UI and the Stat definitions card are gone — and no behind fetches happen');
 {
-  check('exactly one page fetch on mount', pageCalls().length === 1, String(pageCalls().length));
+  check('no "Re-run analysis…" heading', !body().includes('Re-run analysis'));
+  check('no Re-run all button', !$('button').some((b) => /Re-run all|Re-running…/.test(b.textContent)));
+  check('no per-row re-run list', $('.sett-match-row').length === 0);
+  check('no Load more button', !$('button').some((b) => b.textContent.includes('Load more')));
+  check('no behind count line', !body().includes('behind the current rules'));
+  check('no Stat definitions panel', !body().includes('Stat definitions') && $('.sett-defs').length === 0);
+  check(
+    'no glossary entries rendered',
+    !body().includes('Share of rounds where the player recorded'),
+  );
+  check('no ListMatchesPage fetch on mount', callCount('ListMatchesPage') === 0, String(callCount('ListMatchesPage')));
+  check('no CountMatches fetch on mount', callCount('CountMatches') === 0, String(callCount('CountMatches')));
+  check('no RecomputeStates read on mount', callCount('RecomputeStates') === 0, String(callCount('RecomputeStates')));
+
+  // A stamped match no longer drives anything in this view: the event
+  // still flushes services' read cache, but the card never re-queries.
+  fire('spectra:analysis-done', { matchId: 1, error: '' });
+  await sleep(250); // long enough for the old 150 ms debounce + fetch
+  check(
+    'analysis-done triggers no list re-query',
+    callCount('ListMatchesPage') === 0 && callCount('CountMatches') === 0,
+    `pages=${callCount('ListMatchesPage')} counts=${callCount('CountMatches')}`,
+  );
+}
+
+console.log('C. save = recompute: a bumped rules save kicks RecomputeAll in the background');
+{
+  type(tradeInput(), '11');
+  await sleep(10);
+  check('edit armed Save', saveBtn() && !saveBtn().disabled);
+  click(saveBtn());
+  await sleep(50);
   {
-    const c = pageCalls()[0];
-    check('free-text query stays empty', c.args[0] === '', JSON.stringify(c.args[0]));
-    check('sort stays extracted_at', c.args[1] === 'extracted_at', String(c.args[1]));
-    check('window bounded by BEHIND_PAGE (50)', c.args[4] === 50, String(c.args[4]));
+    const set = bindings.calls.find((c) => c.method === 'SetConfig');
     check(
-      'behind facet rides the shared filter normalization',
-      c.args[5] && c.args[5].behind === true,
-      JSON.stringify(c.args[5]),
-    );
-    check('first window starts at cursor 0', c.args[3] === 0, String(c.args[3]));
-  }
-  check('whole-library ListMatches never called', listCalls().length === 0, String(listCalls().length));
-  check('behind count + total count fetched', countCalls().length === 2, String(countCalls().length));
-  check(
-    'behind count carries the facet',
-    countCalls().some((c) => c.args[1] && c.args[1].behind === true),
-  );
-  check('two rows render', $('.sett-match-row').length === 2, String($('.sett-match-row').length));
-  check(
-    'honest count line: "2 matches behind the current rules"',
-    body().includes('2 matches behind the current rules'),
-  );
-  check(
-    'showing X of N uses CountMatches (2 of 2 — no line needed yet)',
-    !body().includes('Showing 2 of'),
-  );
-  check('Re-run all enabled with 2 behind', rerunAllBtn() && !rerunAllBtn().disabled);
-}
-
-console.log('C. re-query on spectra:analysis-done (rows stamp out, N decrements)');
-{
-  const beforePages = pageCalls().length;
-  const beforeCounts = countCalls().length;
-  // A member finishes: it leaves the behind set (backend stamps it), so
-  // the next count reads 1 — the view must re-query and show that.
-  behindCount = 1;
-  fire('spectra:analysis-done', { matchId: 1, error: '' });
-  await sleep(250); // 150 ms debounce + fetch
-  check('list re-queried after analysis-done', pageCalls().length > beforePages, `${beforePages} -> ${pageCalls().length}`);
-  check('counts re-queried after analysis-done', countCalls().length > beforeCounts, `${beforeCounts} -> ${countCalls().length}`);
-  check(
-    'count line decremented to the fresh N',
-    body().includes('1 match behind the current rules'),
-  );
-}
-
-console.log('G. Load more: keyset window appends with the last row as cursor');
-{
-  const before = pageCalls().length;
-  const loadMore = $('button').find((b) => b.textContent.includes('Load more'));
-  check('Load more offered while hasNext', !!loadMore);
-  if (loadMore) {
-    click(loadMore);
-    await sleep(50);
-    const after = pageCalls();
-    check('next window fetched', after.length > before, `${before} -> ${after.length}`);
-    const last = after[after.length - 1];
-    check('cursor is the last rendered row id', last.args[3] === 2, String(last.args[3]));
-    check('four rows now rendered', $('.sett-match-row').length === 4, String($('.sett-match-row').length));
-    check(
-      'Load more dropped when exhausted',
-      !$('button').some((b) => b.textContent.includes('Load more')),
-    );
-    check(
-      'showing X of N still honest (4 of CountMatches 1 — capped by N semantics: X never exceeds shown of total)',
-      body().includes('1 match behind the current rules'),
+      'save submits the edited value',
+      !!set && set.args[0].tradeWindowS === 11,
+      JSON.stringify(set && set.args[0]),
     );
   }
+  check('RecomputeAll kicked exactly once', callCount('RecomputeAll') === 1, String(callCount('RecomputeAll')));
+  check(
+    'no confirmation dialog — the save kicks the batch itself',
+    $('.cf-actions').length === 0,
+    String($('.cf-actions').length),
+  );
+  check(
+    'confirmation says the matches are recomputing in the background',
+    body().includes('Matches behind the new rules are recomputing in the background'),
+  );
+  check(
+    'never the no-changes claim after a bump',
+    !body().includes('No changes — the rules were already saved with these values.'),
+  );
+  check('Save disarmed after save (pristine re-snapshotted)', saveBtn() && saveBtn().disabled);
+  check(
+    'no per-match RecomputeAnalysis path',
+    callCount('RecomputeAnalysis') === 0,
+    String(callCount('RecomputeAnalysis')),
+  );
 }
 
-console.log('D. Re-run-all: confirm → {submitted,skipped,total} → honest k/N');
+console.log('D. save honesty: a no-bump save says "No changes" and kicks no recompute');
 {
-  // Per-row chips seed from RecomputeStates (queued 1,2 / running 3).
-  check(
-    'per-row queued chip from RecomputeStates rehydration',
-    $('.sett-match-row').some((r) => r.textContent.includes('queued')),
-    body().slice(0, 200),
-  );
-
-  const btn = rerunAllBtn();
-  check('Re-run all enabled', btn && !btn.disabled);
-  click(btn);
-  await sleep(30);
-  const cf = confirmBtn();
-  check('confirm dialog opens', !!cf);
-  check(
-    'confirm message names the honest behind count',
-    body().includes('all 1 match behind the current rules') ||
-      body().includes('all 1 matches behind the current rules'),
-    '',
-  );
-  if (cf) {
-    click(cf);
-    await sleep(50);
-  }
-  check('RecomputeAll called once', bindings.callCount('RecomputeAll') === 1, String(bindings.callCount('RecomputeAll')));
-  check(
-    'k/N line: "Re-running 3 matches — 0/3 analyzed"',
-    body().includes('Re-running 3 matches') && body().includes('0/3 analyzed'),
-    body().match(/Re-running[^<]*/) || '',
-  );
-  check('skip note shown (1 skipped)', body().includes('1 skipped (already re-running).'));
-  check('button switches to busy label', rerunAllBtn() && rerunAllBtn().textContent.includes('Re-running…'));
-
-  // Three completions (the batch's N) → k/N counts up from the SAME
-  // analysis-done subscription as the per-row chips.
-  fire('spectra:analysis-done', { matchId: 1, error: '' });
-  await sleep(20);
-  check('k increments to 1/3', body().includes('1/3 analyzed'));
-  fire('spectra:analysis-done', { matchId: 2, error: '' });
-  fire('spectra:analysis-done', { matchId: 3, error: '' });
-  await sleep(20);
-  check('k reaches 3/3', body().includes('3/3 analyzed'));
-  check('batch complete: "Re-ran 3 matches"', body().includes('Re-ran 3 matches'));
-  check('button no longer busy', rerunAllBtn() && !rerunAllBtn().textContent.includes('Re-running…'));
-
-  // A stray 4th done must NOT overrun N (clamped to submitted).
-  fire('spectra:analysis-done', { matchId: 99, error: '' });
-  await sleep(20);
-  check('extra done never overruns N (still 3/3)', body().includes('3/3 analyzed') && !body().includes('4/3'));
-}
-
-console.log('F. save honesty: no-bump says "No changes", bump keeps the re-run copy');
-{
-  // F1: server judges the values identical (same ruleVersion back).
-  setConfigImpl = (c) => ({ ...c, ruleVersion: RULES.ruleVersion }); // NO bump
+  // The server judges the values identical: it returns its current row
+  // untouched — version 4, the bump C's save landed on.
+  setConfigImpl = (c) => ({ ...c, ruleVersion: 4 });
   type(tradeInput(), '9');
   await sleep(10);
   check('edit armed Save for the no-bump save', saveBtn() && !saveBtn().disabled);
-  const beforePages = pageCalls().length;
   click(saveBtn());
   await sleep(50);
   check(
-    'no-bump save says "No changes", never the re-run nudge',
+    'no-bump save says "No changes", never the recompute note',
     body().includes('No changes — the rules were already saved with these values.') &&
-      !body().includes('Saved. Matches you'),
+      !body().includes('recomputing in the background'),
+  );
+  check(
+    'no recompute kicked on a no-bump save',
+    callCount('RecomputeAll') === 1,
+    String(callCount('RecomputeAll')),
   );
   check('Save disarmed after save (pristine re-snapshotted)', saveBtn() && saveBtn().disabled);
-  check('rules version unchanged after no-bump', body().includes('Rules version') && !body().includes('Rules version:\n'));
-  check('save re-queried the behind list', pageCalls().length > beforePages, `${beforePages} -> ${pageCalls().length}`);
-
-  // F2: a real bump keeps the existing re-run copy.
-  setConfigImpl = (c) => ({ ...c, ruleVersion: RULES.ruleVersion + 1 });
-  type(tradeInput(), '11');
-  await sleep(10);
-  click(saveBtn());
-  await sleep(50);
-  check(
-    'bumped save keeps the re-run copy',
-    body().includes("Saved. Matches you've already imported keep their old numbers"),
-  );
-  check('Save disarmed after the bump save', saveBtn() && saveBtn().disabled);
 }
 
-console.log('E. empty state + error gating (a failed read is never "all analyzed")');
-{
-  // E1: 0 behind, N total → the friendly all-analyzed line.
-  behindCount = 0;
-  libTotal = 5;
-  fire('spectra:analysis-done', { matchId: 4, error: '' });
-  await sleep(250);
-  check(
-    '0 behind → "All 5 matches analyzed under current rules"',
-    body().includes('All 5 matches analyzed under current rules'),
-  );
-  check('Re-run all disabled at 0 behind', rerunAllBtn() && rerunAllBtn().disabled);
-  check('disabled title explains why', rerunAllBtn() && rerunAllBtn().title.includes('No matches behind'));
-
-  // E2: the next re-query FAILS → the alert carries it and the
-  // all-analyzed claim must disappear (it would be a false claim from a
-  // broken fetch).
-  listFail = true;
-  fire('spectra:analysis-done', { matchId: 5, error: '' });
-  await sleep(250);
-  check('failure alert rendered', $('.error[role="alert"]').some((e) => e.textContent.includes('list exploded')));
-  check(
-    'no false "All N analyzed" claim while the read is failed',
-    !body().includes('All 5 matches analyzed under current rules'),
-  );
-  check('Retry offered on the list error', $('button').some((b) => b.textContent.includes('Retry')));
-
-  // E3: Retry recovers (clears-on-retry: the error dies when the read lands).
-  listFail = false;
-  behindCount = 0;
-  const retry = $('.error[role="alert"] button').find((b) => b.textContent.includes('Retry'));
-  if (retry) click(retry);
-  await sleep(100);
-  check('error cleared after a successful retry', !body().includes('list exploded'));
-  check('all-analyzed line returns', body().includes('All 5 matches analyzed under current rules'));
-}
-
-console.log('H. parallel work: 1..max numeric control in its own Background work card');
+console.log('E. parallel work: 1..max numeric control in its own Background work card');
 {
   const pwInput = () => document.getElementById('sett-parallel-work');
   const pwSets = () => bindings.calls.filter((c) => c.method === 'SetParallelWork');

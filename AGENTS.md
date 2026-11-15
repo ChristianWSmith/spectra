@@ -447,8 +447,8 @@ Canonical homes (extend these, don't fork them):
   tests call the registry's `resetViewState()` hook (required in
   jsdom driver setup — the module instance persists across a suite's
   mounts); metric/definition tooltip
-  strings → `lib/definitions.js` (Settings' glossary is rendered from the
-  same array); event landmark categories/normalization →
+  strings → `lib/definitions.js` (the tooltip source for the
+  Combat/Economy/EconCurve definition constants); event landmark categories/normalization →
   `lib/replay/landmarks.js` (the ONE categorization — the feed list, the
   scrubber markers and the renderer's world layers all consume its
   pre-bucketed rows; the filter <-> URL shape lives here too);

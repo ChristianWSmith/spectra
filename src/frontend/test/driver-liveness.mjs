@@ -226,7 +226,15 @@ const EXPECTED = {
   'reports.dom.mjs': 22,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
-  'settings.dom.mjs': 74,
+  // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
+  // save = recompute — the "Re-run analysis…" subsection, the behind
+  // list machinery and the rules-version display are gone, and the
+  // Stat definitions card went with its guide bullet. Sections A–D
+  // rewritten for the new card (pristine gating + card shape, the
+  // absence pins for the removed UI, the bumped-save recompute kick,
+  // the no-bump honesty), E is the untouched Parallel-work card, F the
+  // runtime-error tail.
+  'settings.dom.mjs': 49,
   'stat-card.dom.mjs': 12,
   'utility.dom.mjs': 39,
   'voice-engine.dom.mjs': 7,
