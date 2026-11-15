@@ -9,12 +9,12 @@
 // the call site with `fill(S.errors.someTemplate, { err })`.
 //
 // Values are plain strings with `{arg}` placeholders — no functions, no
-// concatenation (design §3.2): the audit test reads them as data, a human
-// reads them as prose, a future export/i18n can consume them.
+// concatenation: the audit test reads them as data, a human reads them as
+// prose, a future export/i18n can consume them.
 //
-// Area files start empty (Stage 1 skeleton); Sweep-B extracts existing copy
-// one area per commit. Until a file migrates, its inline copy sits in
-// strings-audit.test.js's PENDING_INLINE ledger.
+// Every Svelte file that renders free chrome copy imports this barrel
+// (strings-audit.test.js's Check B — unconditional since 2026-11-15, when
+// the migration's class-1 inline ledger drained to empty).
 //
 // Run: node --test src/lib/strings-audit.test.js   (from frontend/)
 

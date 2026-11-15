@@ -12,8 +12,9 @@
   // The TABLE is sortable on every column and defaults to matches DESC
   // (owner ruling: a player seen in many matches is the common case in a
   // single-player import list, so they sit on top). The ADR column is
-  // metric-backed (dogfooding W3): it reads the stored `career_adr`
-  // career-bucket rows, never ListPlayers' adr_avg.
+  // metric-backed: it reads the stored `career_adr` metric rows (the
+  // canonical career read) — `player_career` holds raw counts only, so
+  // the player list read carries no ADR at all.
   import {
     listPlayers,
     listMetrics,
@@ -78,8 +79,9 @@
   });
 
   // --- The ADR column reads the STORED career metric row --------------
-  // dogfooding design §3.5: the list's ADR is the `career_adr` metric
-  // (D2), not ListPlayers' adr_avg — ONE batched
+  // the list's ADR is the `career_adr` metric — the canonical career
+  // read; the player list read carries no ADR column at all
+  // (`player_career` holds raw counts only) — ONE batched
   // getMetricValuesForPlayer('', [career_adr]) read for the WHOLE list
   // (the career bucket returns every player's row; never per-player
   // calls), merged into a steamId → row map. Every cell then renders
@@ -183,8 +185,8 @@
   // p.name (localeCompare; an empty name '' sorts first ascending and
   // renders '—'), Matches → p.matches numeric, ADR → the STORED
   // `career_adr` metric value for that player (adrValue — never the
-  // fmt1 string in the cell, and never ListPlayers' adr_avg, which this
-  // column stopped reading in dogfooding W3), the import-date column
+  // fmt1 string in the cell; the player list read carries no ADR at all,
+  // since `player_career` holds raw counts only), the import-date column
   // (field `lastSeen`, header "Last import") → p.lastSeen string compare
   // (zero-padded YYYY-MM-DD, so lexicographic = chronological; '' renders
   // '—').
