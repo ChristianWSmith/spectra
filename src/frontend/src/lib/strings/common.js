@@ -66,4 +66,34 @@ export const common = {
 
   // kill-event flag chips (EventFlags.svelte — the "no flags apply" fallback)
   eventFlagsNone: 'none', // rendered when the none prop is set and no flag chip applies
+
+  // event-filter bar (FilterBar.svelte — the Replay feed's advanced filter)
+  filterBarLabel: 'Event filters', // the group aria-label
+  filterBarRound: 'Round', // the round row's label cell
+  filterBarFrom: 'from', // round-from input placeholder
+  filterBarTo: 'to', // round-to input placeholder
+  filterBarFirstRound: 'First round', // round-from input aria-label
+  filterBarLastRound: 'Last round', // round-to input aria-label
+  filterBarPlayer: 'Player', // the player facet's label cell
+  filterBarAll: 'All', // every unconstrained <select>'s option text
+  filterBarSide: 'Side', // the side facet's label cell
+  filterBarTeam: 'Team', // the team facet's label cell
+  filterBarStartedCt: 'Started CT', // team option — the start-side identity spelled out
+  filterBarStartedT: 'Started T', // team option — the start-side identity spelled out
+  filterBarWeapon: 'Weapon', // the weapon facet's label cell
+  filterBarDist: 'Dist', // the distance row's label cell
+  filterBarMin: 'min', // distance-min input placeholder
+  filterBarMax: 'max', // distance-max input placeholder
+  filterBarMinDist: 'Minimum distance', // distance-min input aria-label
+  filterBarMaxDist: 'Maximum distance', // distance-max input aria-label
+  filterBarHeadshotsOnly: 'Headshots only', // the headshot facet's label cell
+  // The bbox chip: one fill for the tooltip (numbers are Math.round'ed at
+  // the call site) and one for the chip's readable line — the line keeps
+  // the exact spacing the compiler renders the static text with (edge
+  // whitespace trimmed, the run's trailing space before the clear button
+  // lives in the markup beside the expression).
+  filterBarBboxTitle: 'Position filter: x {minX}…{maxX}, y {minY}…{maxY} (world units)',
+  filterBarBboxLine: 'bbox {minX},{minY}–{maxX},{maxY}',
+  filterBarClearBbox: 'Clear position filter', // the clear × button's aria-label
+  filterBarReset: 'Reset', // the local reset button
 };

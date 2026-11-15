@@ -34,6 +34,7 @@
     applicableFilterFields,
     clearInapplicableFields,
   } from '../replay/landmarks.js';
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
@@ -250,16 +251,16 @@
      for the bbox chip and Reset — and rows whose field does not apply to
      the parent's category selection are not rendered at all (fields —
      landmarks.applicableFilterFields, the hide-and-CLEAR ruling). -->
-<div class="toolbar filt-bar" role="group" aria-label="Event filters">
-  <span class="filt-lab">Round</span>
+<div class="toolbar filt-bar" role="group" aria-label={S.common.filterBarLabel}>
+  <span class="filt-lab">{S.common.filterBarRound}</span>
   <span class="filt-ctl">
     <input
       class="input filt-num"
       id="filt-round-from"
       type="number"
       step="1"
-      placeholder="from"
-      aria-label="First round"
+      placeholder={S.common.filterBarFrom}
+      aria-label={S.common.filterBarFirstRound}
       value={f.roundFrom || ''}
       onchange={(e) => onRound('roundFrom', e)}
     />
@@ -269,18 +270,18 @@
       id="filt-round-to"
       type="number"
       step="1"
-      placeholder="to"
-      aria-label="Last round"
+      placeholder={S.common.filterBarTo}
+      aria-label={S.common.filterBarLastRound}
       value={f.roundTo || ''}
       onchange={(e) => onRound('roundTo', e)}
     />
   </span>
 
   {#if fields.player}
-    <label class="filt-lab" for="filt-player">Player</label>
+    <label class="filt-lab" for="filt-player">{S.common.filterBarPlayer}</label>
     <span class="filt-ctl">
       <select class="input" id="filt-player" value={f.steamId} onchange={(e) => set('steamId', e.currentTarget.value)}>
-        <option value="">All</option>
+        <option value="">{S.common.filterBarAll}</option>
         {#each players as p (p.steamId)}
           <option value={p.steamId}>{p.name}</option>
         {/each}
@@ -302,10 +303,10 @@
        (landmarks.sideVal); both are plain filter state (they never
        position the replay — only ?tick= does). -->
   {#if fields.side}
-    <label class="filt-lab" for="filt-side">Side</label>
+    <label class="filt-lab" for="filt-side">{S.common.filterBarSide}</label>
     <span class="filt-ctl">
       <select class="input" id="filt-side" value={f.side} onchange={(e) => set('side', e.currentTarget.value)}>
-        <option value="">All</option>
+        <option value="">{S.common.filterBarAll}</option>
         <option value="ct" class="side-ct">CT</option>
         <option value="t" class="side-t">T</option>
       </select>
@@ -313,21 +314,21 @@
   {/if}
 
   {#if fields.team}
-    <label class="filt-lab" for="filt-team">Team</label>
+    <label class="filt-lab" for="filt-team">{S.common.filterBarTeam}</label>
     <span class="filt-ctl">
       <select class="input" id="filt-team" value={f.team} onchange={(e) => set('team', e.currentTarget.value)}>
-        <option value="">All</option>
-        <option value="ct" class="team-start-ct">Started CT</option>
-        <option value="t" class="team-start-t">Started T</option>
+        <option value="">{S.common.filterBarAll}</option>
+        <option value="ct" class="team-start-ct">{S.common.filterBarStartedCt}</option>
+        <option value="t" class="team-start-t">{S.common.filterBarStartedT}</option>
       </select>
     </span>
   {/if}
 
   {#if fields.weapon}
-    <label class="filt-lab" for="filt-weapon">Weapon</label>
+    <label class="filt-lab" for="filt-weapon">{S.common.filterBarWeapon}</label>
     <span class="filt-ctl">
       <select class="input" id="filt-weapon" value={f.weapon} onchange={(e) => set('weapon', e.currentTarget.value)}>
-        <option value="">All</option>
+        <option value="">{S.common.filterBarAll}</option>
         {#each weapons as w (w)}
           <option value={w}>{w}</option>
         {/each}
@@ -336,15 +337,15 @@
   {/if}
 
   {#if fields.dist}
-    <span class="filt-lab">Dist</span>
+    <span class="filt-lab">{S.common.filterBarDist}</span>
     <span class="filt-ctl">
       <input
         class="input filt-num"
         id="filt-dist-min"
         type="number"
         min="0"
-        placeholder="min"
-        aria-label="Minimum distance"
+        placeholder={S.common.filterBarMin}
+        aria-label={S.common.filterBarMinDist}
         value={f.distMin || ''}
         onchange={(e) => onNum('distMin', e)}
       />
@@ -354,8 +355,8 @@
         id="filt-dist-max"
         type="number"
         min="0"
-        placeholder="max"
-        aria-label="Maximum distance"
+        placeholder={S.common.filterBarMax}
+        aria-label={S.common.filterBarMaxDist}
         value={f.distMax || ''}
         onchange={(e) => onNum('distMax', e)}
       />
@@ -363,7 +364,7 @@
   {/if}
 
   {#if fields.headshot}
-    <label class="filt-lab" for="filt-hs">Headshots only</label>
+    <label class="filt-lab" for="filt-hs">{S.common.filterBarHeadshotsOnly}</label>
     <span class="filt-ctl">
       <input
         type="checkbox"
@@ -379,12 +380,22 @@
     <span class="filt-ctl">
       <span
         class="chip filt-bbox"
-        title="Position filter: x {Math.round(f.bbox.minX)}…{Math.round(f.bbox.maxX)}, y {Math.round(f.bbox.minY)}…{Math.round(f.bbox.maxY)} (world units)"
+        title={S.fill(S.common.filterBarBboxTitle, {
+          minX: Math.round(f.bbox.minX),
+          maxX: Math.round(f.bbox.maxX),
+          minY: Math.round(f.bbox.minY),
+          maxY: Math.round(f.bbox.maxY),
+        })}
       >
-        bbox {Math.round(f.bbox.minX)},{Math.round(f.bbox.minY)}–{Math.round(f.bbox.maxX)},{Math.round(f.bbox.maxY)}
+        {S.fill(S.common.filterBarBboxLine, {
+          minX: Math.round(f.bbox.minX),
+          minY: Math.round(f.bbox.minY),
+          maxX: Math.round(f.bbox.maxX),
+          maxY: Math.round(f.bbox.maxY),
+        })}
         <button
           class="filt-x"
-          aria-label="Clear position filter"
+          aria-label={S.common.filterBarClearBbox}
           onclick={clearBbox}
         ><span class="codicon codicon-close"></span></button>
       </span>
@@ -394,7 +405,7 @@
   {#if showReset}
     <span class="filt-lab"></span>
     <span class="filt-ctl">
-      <button class="btn" onclick={reset}>Reset</button>
+      <button class="btn" onclick={reset}>{S.common.filterBarReset}</button>
     </span>
   {/if}
 </div>
