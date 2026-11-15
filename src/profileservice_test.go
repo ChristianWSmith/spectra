@@ -179,7 +179,8 @@ func TestGetProfileSidesKD(t *testing.T) {
 // TestGetProfileDesignedHybrid pins the DTO contract dogfooding design
 // §3.5 leaves behind — the audit's §5.2.5 prediction made literal: the
 // raw/inferred and non-expressible stats (N2–N6) STAY on the Go DTO and
-// the nine converted stats are GONE from it. The profile reads those as
+// every converted stat is GONE from it (the dogfood nine plus W3a's
+// Clutches count and Opening-duels rate). The profile reads those as
 // stored metric rows through the canonical career read (the "Career
 // metrics" panel), so a reintroduced field here would be exactly the
 // second presentation path the conversion removes — the JSON key SET is
@@ -199,13 +200,18 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 		t.Fatalf("unmarshal profile: %v", err)
 	}
 	staying := []string{
-		"steamId", "name", "matches", "wins", "winPct", "openingRate",
-		"clutches", "sides", "maps", "weapons", "history",
+		"steamId", "name", "matches", "wins", "winPct", "sides", "maps",
+		"weapons", "history",
 	}
 	converted := []string{
 		"adrAvg", "adrStd", "kd", "hsPct", "kastPct", "tradeRate",
 		"trades", "tradeOpps", "clutchWinPct", "avgEnemiesFlashed",
 		"avgUtilDamage",
+		// W3a: the last two presentation paths — the Clutches count and
+		// the Opening-duels rate — became career_clutches /
+		// career_opening_rate metric rows, so their JSON keys die here
+		// exactly like the eleven above.
+		"clutches", "openingRate",
 	}
 	for _, k := range staying {
 		if _, ok := got[k]; !ok {

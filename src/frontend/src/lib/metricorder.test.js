@@ -70,21 +70,23 @@ test('DEFAULT_RANKS.match replicates today\'s scoreboard: the twelve converted c
   });
 });
 
-test('DEFAULT_RANKS.profile replicates today\'s card grid (nine converted cards)', () => {
+test('DEFAULT_RANKS.profile replicates today\'s card grid (eleven converted cards)', () => {
   assert.deepEqual(DEFAULT_RANKS.profile, {
     career_adr: 1,
     career_adr_sigma: 2,
     career_kd: 3,
     career_hs_pct: 4,
     career_kast: 5,
-    career_trade_rate: 6,
-    career_clutch_win_rate: 7,
-    career_avg_enemies_flashed: 8,
-    career_avg_util_damage: 9,
+    career_opening_rate: 6,
+    career_trade_rate: 7,
+    career_clutches: 8,
+    career_clutch_win_rate: 9,
+    career_avg_enemies_flashed: 10,
+    career_avg_util_damage: 11,
   });
 });
 
-test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profile = the nine cards', () => {
+test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profile = the eleven cards', () => {
   assert.deepEqual(DEFAULT_PINS.match, [
     'assists',
     'adr',
@@ -109,7 +111,7 @@ test('FIXED_BLOCK: the Go stats\' labels minus the converted entries (post-conve
     'Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Rnds', 'Opening K/D',
     'Util', 'MVPs', 'Score',
   ]);
-  assert.deepEqual(FIXED_BLOCK.profile, ['Matches', 'Win%', 'Opening duels', 'Clutches']);
+  assert.deepEqual(FIXED_BLOCK.profile, ['Matches', 'Win%']);
   // Never reorderable: the accessor returns the same constant list.
   assert.equal(fixedBlock('match'), FIXED_BLOCK.match);
   assert.deepEqual(fixedBlock('nope'), []);

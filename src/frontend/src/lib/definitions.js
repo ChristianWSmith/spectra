@@ -10,12 +10,13 @@
 // Verified against the Go side:
 //   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL,
 //     plus the profile queries (GetPlayerSideSplits, GetPlayerHistory)
-//   - profileservice.go             — career opening rate
 //   - internal/extract/agg.go       — entry/opening/trade attribution
 //   - internal/analytics/engagements.go — opening|trade|traded|untraded kinds
 // (The profile's Trade rate and per-match averages are metric rows now —
-// career_trade_rate / career_avg_* — so their tooltips live in each
-// seed's doc, not here.)
+// career_trade_rate / career_avg_* — and W3a finished the job: the
+// profile's Opening-duels rate and Clutches count are metric rows too
+// (career_opening_rate / career_clutches), so their tooltips live in
+// each seed's doc, not here.)
 
 // The glossary Settings renders (Settings → Metric definitions). Every
 // entry is {term, inferred, text}; `inferred` drives the badge chip.
@@ -144,13 +145,6 @@ export const TRADE_DEF =
 // inside the trade window (internal/analytics/engagements.go).
 export const UNTRADED_DEF =
   'Untraded deaths — deaths with no teammate kill inside the trade window afterwards.';
-
-// Opening duel win rate (profile career). Verified: OpeningRate =
-// 100 × career.OpenerWins / career.Openings where RebuildCareer sums
-// player_stats.opening_kills and (opening_kills + opening_deaths) — the
-// extractor’s first-blood columns, NOT the engagement detector.
-export const OPENING_DEF =
-  'Opening duel win rate — opening kills ÷ (opening kills + opening deaths), added up across all of this player’s matches.';
 
 // Engagement distance (Combat's engagement deep-dive "Dist (m)" column).
 // The value is the game's own player_death `distance` field (demoinfocs

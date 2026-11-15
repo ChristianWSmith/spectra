@@ -67,25 +67,25 @@ type ProfileWeapon struct {
 }
 
 // Profile is the full cross-match read model — the DESIGNED HYBRID
-// (dogfooding design §3.5): the raw/inferred and non-expressible stats
-// (N2–N6 + raw) stay Go-rendered here, while the nine converted stats
-// (ADR ± σ, K/D, HS%, KAST%, Trade rate, clutch win share, avg enemies
-// flashed, avg util damage) are deliberately ABSENT from this DTO — the
-// profile reads them as stored metric rows through the canonical career
-// read (the "Career metrics" panel), and the history's ADR/KAST cells
-// read the match-scope rows (store.GetPlayerHistory).
+// (dogfooding design §3.5, completed by the inferred-conversion W3a
+// swap): the raw/inferred and non-expressible stats (N2–N6 + raw) stay
+// Go-rendered here, while every converted stat (ADR ± σ, K/D, HS%,
+// KAST%, Trade rate, the Clutches count + its win share, the
+// Opening-duels rate, avg enemies flashed, avg util damage) is
+// deliberately ABSENT from this DTO — the profile reads them as stored
+// metric rows through the canonical career read (the "Career metrics"
+// panel), and the history's metric-backed cells read the match-scope
+// rows (store.GetPlayerHistory).
 type Profile struct {
-	SteamID     string                     `json:"steamId"`
-	Name        string                     `json:"name"`
-	Matches     int                        `json:"matches"`
-	Wins        int                        `json:"wins"`
-	WinPct      float64                    `json:"winPct"`
-	OpeningRate float64                    `json:"openingRate"` // duel win rate, 0..100
-	Clutches    int                        `json:"clutches"`
-	Sides       []ProfileSide              `json:"sides"`
-	Maps        []ProfileMap               `json:"maps"`
-	Weapons     []ProfileWeapon            `json:"weapons"` // top by kills
-	History     []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
+	SteamID string                     `json:"steamId"`
+	Name    string                     `json:"name"`
+	Matches int                        `json:"matches"`
+	Wins    int                        `json:"wins"`
+	WinPct  float64                    `json:"winPct"`
+	Sides   []ProfileSide              `json:"sides"`
+	Maps    []ProfileMap               `json:"maps"`
+	Weapons []ProfileWeapon            `json:"weapons"` // top by kills
+	History []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
 // weaponTopLimit caps the profile's weapon proficiency list.
@@ -102,12 +102,13 @@ type ProfileService struct {
 // — the frontend shows an empty state. Per-weapon headshots come from the
 // stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
 // mergeWeapons alongside kills and damage; the per-ROUND side splits come
-// from store.GetPlayerSideSplits. The nine stats that converted to
-// metrics (dogfooding design §3.5 — ADR ± σ, K/D, HS%, KAST%, Trade
-// rate, clutch win share, avg enemies flashed, avg util damage) are
-// computed NOWHERE in this function any more: the profile reads them as
-// stored rows through the canonical career read, and the history's
-// ADR/KAST cells read the match-scope rows inside store.GetPlayerHistory.
+// from store.GetPlayerSideSplits. The stats that converted to metrics
+// (dogfooding design §3.5's nine — ADR ± σ, K/D, HS%, KAST%, Trade
+// rate, clutch win share, avg enemies flashed, avg util damage — plus
+// W3a's Clutches count and Opening-duels rate) are computed NOWHERE in
+// this function any more: the profile reads them as stored rows through
+// the canonical career read, and the history's metric-backed cells
+// read the match-scope rows inside store.GetPlayerHistory.
 func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p := Profile{SteamID: steamID}
 
@@ -124,10 +125,6 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	if p.Matches > 0 {
 		p.WinPct = 100 * float64(p.Wins) / float64(p.Matches)
 	}
-	if career.Openings > 0 {
-		p.OpeningRate = 100 * float64(career.OpenerWins) / float64(career.Openings)
-	}
-	p.Clutches = career.Clutches
 
 	history, err := s.st.GetPlayerHistory(steamID)
 	if err != nil {

@@ -28,12 +28,13 @@
 //      renders the value with its n, a non-fresh state renders the chip
 //      and never a number, a match-scope metric never surfaces here, and
 //      no rendered output carries a version number.
-//   J. dogfooding W3: the profile surface after the card conversion —
-//      exactly 4 fixed cards (Matches, Win%, Opening duels, Clutches
-//      count) followed by the Career metrics panel rendering the nine
-//      DEFAULT pins in DEFAULT order over a reversed catalog, and the
-//      Profiles list's ADR column reading the stored `career_adr` bucket
-//      row (value, honest gap, behind chip, metric-value sort).
+//   J. inferred-conversion W3a: the profile surface after BOTH card
+//      conversions — exactly 2 fixed cards (Matches, Win%) followed by
+//      the Career metrics panel rendering the eleven DEFAULT pins
+//      (the Opening-duels rate and the Clutches count among them) in
+//      DEFAULT order over a reversed catalog, and the Profiles list's
+//      ADR column reading the stored `career_adr` bucket row (value,
+//      honest gap, behind chip, metric-value sort).
 //
 // Backend semantics are out of scope here: ListPlayers' ORDER BY
 // (last-seen DESC, steam_id ASC) lives in store.ListPlayers
@@ -144,11 +145,9 @@ bindings.ProfileService.GetProfile = () =>
     kd: 1.1,
     hsPct: 40,
     kastPct: 70,
-    openingRate: 50,
     tradeRate: 30,
     trades: 3,
     tradeOpps: 10,
-    clutches: 1,
     clutchWinPct: 100,
     avgEnemiesFlashed: 2.1,
     avgUtilDamage: 45.5,
@@ -693,7 +692,7 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
 }
 
 console.log(
-  'J. dogfooding W3: 4 fixed cards + the nine default-pinned metric rows, and the Profiles ADR column is metric-backed',
+  'J. inferred W3a: 2 fixed cards + the eleven default-pinned metric rows, and the Profiles ADR column is metric-backed',
 );
 {
   // The profile-scope catalog in REVERSE default order (plus an
@@ -714,9 +713,21 @@ console.log(
       id: 67, name: 'career_clutch_win_rate', title: 'Clutch win %', scope: 'profile',
       format: 'percent', doc: 'Formula: avg(clutches.won)', origin: 'builtin',
     },
+    // W3a: the two cards that became rows — the Clutches COUNT (rank 8)
+    // and the Opening-duels rate (rank 6). Their stubs mirror the
+    // schema-seeded titles; `profile.clutches`/`profile.openingRate` left
+    // the Profile DTO with the cards.
+    {
+      id: 70, name: 'career_clutches', title: 'Clutches', scope: 'profile',
+      format: 'int', doc: 'Formula: count(clutches) over the whole library', origin: 'builtin',
+    },
     {
       id: 66, name: 'career_trade_rate', title: 'Trade rate', scope: 'profile',
       format: 'percent', doc: 'Formula: ratio(sum(trade_kills), sum(opps))', origin: 'builtin',
+    },
+    {
+      id: 71, name: 'career_opening_rate', title: 'Opening duels', scope: 'profile',
+      format: 'percent', doc: 'Formula: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))', origin: 'builtin',
     },
     {
       id: 65, name: 'career_kast', title: 'KAST%', scope: 'profile',
@@ -749,8 +760,8 @@ console.log(
       format: 'float1', doc: 'Formula: ratio(sum(total_damage), sum(rounds_played))', origin: 'builtin',
     },
   ];
-  const NINE = [69, 68, 67, 66, 65, 64, 63, 62, 61]; // CATALOG order
-  // amy's career rows for all nine (the profile under test), plus bob's
+  const ELEVEN = [69, 68, 67, 70, 66, 71, 65, 64, 63, 62, 61]; // CATALOG order
+  // amy's career rows for all eleven (the profile under test), plus bob's
   // and zoe's `career_adr` for the Profiles list column — dan gets NO
   // row, which is the honest gap that must render '—'.
   const ROWS = [
@@ -762,7 +773,9 @@ console.log(
     { metricId: 64, steamId: '76561198000000001', value: 0.41, n: 42 },
     { metricId: 65, steamId: '76561198000000001', value: 0.7, n: 42 },
     { metricId: 66, steamId: '76561198000000001', value: 0.666, n: 42 },
+    { metricId: 71, steamId: '76561198000000001', value: 0.5, n: 42 },
     { metricId: 67, steamId: '76561198000000001', value: 0.5, n: 42 },
+    { metricId: 70, steamId: '76561198000000001', value: 1, n: 42 },
     { metricId: 68, steamId: '76561198000000001', value: 3.2, n: 42 },
     { metricId: 69, steamId: '76561198000000001', value: 88.9, n: 42 },
   ];
@@ -773,9 +786,9 @@ console.log(
   // metric before rendering.
   bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(ROWS);
   bindings.MetricsService.GetMetricComputeState = () =>
-    Promise.resolve(NINE.map((id) => ({ metricId: id, state: 'fresh' })));
+    Promise.resolve(ELEVEN.map((id) => ({ metricId: id, state: 'fresh' })));
 
-  // --- J1: the profile surface = 4 fixed cards + 9 default-pinned rows
+  // --- J1: the profile surface = 2 fixed cards + 11 default-pinned rows
   invalidate(); // flush section I's stubs (same read-cache keys)
   const j1 = document.createElement('div');
   document.body.appendChild(j1);
@@ -790,23 +803,18 @@ console.log(
     ? [...grid.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
     : [];
   check(
-    'the fixed block is exactly Matches, Win%, Opening duels, Clutches (the nine converted cards left it)',
-    JSON.stringify(cardLabels) ===
-      JSON.stringify(['Matches', 'Win%', 'Opening duels', 'Clutches']),
+    'the fixed block is exactly Matches, Win% (every other card became a metric row)',
+    JSON.stringify(cardLabels) === JSON.stringify(['Matches', 'Win%']),
     JSON.stringify(cardLabels),
   );
   {
-    const cells = grid ? [...grid.querySelectorAll('.stat-cell')] : [];
-    const clutches = cells.find((c) => c.querySelector('.field-label')?.textContent.trim() === 'Clutches');
-    check(
-      'the Clutches card keeps its COUNT and lost "and the share won"',
-      !!clutches &&
-        clutches.querySelector('.stat-value')?.textContent.trim() === '1' &&
-        /1vN/.test(clutches.getAttribute('title') || '') &&
-        !/share won/.test(clutches.getAttribute('title') || ''),
-      clutches ? `value=${clutches.querySelector('.stat-value')?.textContent} title=${clutches.getAttribute('title')}` : 'no card',
-    );
-    for (const gone of ['ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage']) {
+    // W3a's swap: the Opening duels and Clutches cards left the grid —
+    // their numbers now live in the Career metrics panel (checked below),
+    // so no stat may render twice.
+    for (const gone of [
+      'ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage',
+      'Opening duels', 'Clutches',
+    ]) {
       check(`the converted card "${gone}" is gone from the grid`, !cardLabels.includes(gone));
     }
   }
@@ -819,13 +827,19 @@ console.log(
     (r) => r.children[0]?.textContent.trim(),
   );
   check(
-    'the Career metrics panel renders the nine default pins in DEFAULT order (catalog order is reversed above)',
+    'the Career metrics panel renders the eleven default pins in DEFAULT order (catalog order is reversed above)',
     JSON.stringify(j1Titles) ===
       JSON.stringify([
-        'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Trade rate',
-        'Clutch win %', 'Avg enemies flashed', 'Avg util damage',
+        'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Opening duels', 'Trade rate',
+        'Clutches', 'Clutch win %', 'Avg enemies flashed', 'Avg util damage',
       ]),
     JSON.stringify(j1Titles),
+  );
+  check(
+    'the two converted cards render their numbers as rows (the count and the rate)',
+    j1Rows[5]?.children[1]?.textContent.trim() === '50%' &&
+      j1Rows[7]?.children[1]?.textContent.trim() === '1',
+    JSON.stringify(j1Titles.map((t, i) => [t, j1Rows[i]?.children[1]?.textContent.trim()])),
   );
   check(
     'the unpinned profile metric and the match-scope metric never render',

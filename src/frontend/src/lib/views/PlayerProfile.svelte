@@ -20,7 +20,6 @@
     metricProgressFrac,
     metricProgressStage,
   } from '../metricstate.js';
-  import { OPENING_DEF } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
   import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
@@ -349,30 +348,26 @@
   {#if profile}
     <!-- The FIXED block of the profile surface (dogfooding design §1.5):
          the Go-rendered stats in their current relative order, minus the
-         nine cards that converted to metrics. The "Career metrics"
-         panel below is the metric half of the same surface — with W1's
-         default pins it re-expresses today's eleven cards as these 4
-         fixed cards followed by 9 metric rows. -->
+         nine cards that converted to metrics (W3a's swap took the last
+         two — Opening duels and the Clutches count). The "Career
+         metrics" panel below is the metric half of the same surface —
+         with W3a's default pins it re-expresses today's eleven cards as
+         these 2 fixed cards followed by 11 metric rows. -->
     <div class="stat-grid">
       <StatCard label="Matches" value={profile.matches} sub={`${profile.wins} wins`} title="Matches in the library for this player" />
       <StatCard label="Win%" value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title="Share of matches won" />
-      <StatCard label="Opening duels" value={fmtPercent(profile.openingRate)} sub="win rate" title={OPENING_DEF} />
-      <StatCard
-        label="Clutches"
-        value={profile.clutches}
-        sub="1vN"
-        title="Clutches (1vN) found in this player's matches"
-      />
     </div>
 
     <!-- Career metrics — the METRIC half of the profile surface
          (dogfooding design §3.5): profile-scope pins read from the
          stored career rows (one canonical read for the whole pinned
-         set, the state machine per cell). With W1's default pins this
-         renders the nine converted metrics in default order directly
-         after the four fixed cards above — today's eleven cards,
-         re-expressed. Hidden entirely while nothing is pinned that
-         resolves; a failed read shows its own alert. -->
+         set, the state machine per cell). With W3a's default pins this
+         renders the eleven converted metrics in default order directly
+         after the two fixed cards above — today's eleven cards,
+         re-expressed (the ADR ± σ and Clutches cards each yielded two
+         rows). Hidden entirely while
+         nothing is pinned that resolves; a failed read shows its own
+         alert. -->
     {#if careerCols.length > 0 || careerError}
       <section class="panel">
         <h2>Career metrics</h2>
