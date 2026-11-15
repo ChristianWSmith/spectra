@@ -1,7 +1,7 @@
 <script>
   // M5 reports: templated HTML/MD reports rendered by Go
   // (trusted templates), with a metrics appendix composed client-side.
-  // Acceptance #1: a checked saved metric's table lands under the report.
+  // Acceptance #1: a picked saved metric's table lands under the report.
   import {
     listReportTemplates,
     renderReport,
@@ -28,6 +28,7 @@
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
+  import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -35,7 +36,7 @@
   let { nav = () => {}, routeId = 0, embedded = false } = $props();
 
   // The report selection (template, match, player, round, appendix
-  // checks) is view-local state: it restores across navigation through
+  // stats) is view-local state: it restores across navigation through
   // the process-scoped registry (viewstate.svelte.js — flat key; the
   // component serves both the standalone route and Match's embedded
   // tab, one selection pool). URL wins for the context id: routeId
@@ -47,7 +48,12 @@
     matchId: 0,
     steamId: '',
     roundNo: 1,
-    checked: {},
+    // The appendix PICKER ROWS: one searchable single-select per stat
+    // ({key, id, text} — one empty row to start, + adds another, −
+    // removes its own). View-local working state like the rest of this
+    // view's selection: registry-owned (viewstate), never the URL, never
+    // web storage.
+    rows: [{ key: 1, id: null, text: '' }],
   });
   let templates = $state([]);
   let tplError = $state('');
@@ -74,19 +80,19 @@
   let metrics = $state([]);
   let metricsError = $state('');
   // The match-scope ORDER pref (metricorder; null = absent ⇒ default
-  // sequence) — presentation only, never gates the checkbox list.
+  // sequence) — presentation only, never gates the picker rows.
   let orderPref = $state(null);
-  let checked = $state(repSeed.checked); // metricId → true (appendix selection)
-  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, checked }));
+  let rows = $state(repSeed.rows); // picker rows: {key, id, text} — id null = nothing picked yet
+  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, rows }));
   // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
   // rows are the CANONICAL read's stored values for THIS match (design
-  // §5: a checked metric reads stored rows — no per-toggle query-time
+  // §5: a picked metric reads stored rows — no per-toggle query-time
   // run), shaped {id, label, value, n} with the label from the roster
   // read (GetPlayerRefs). `unitHasRows` is the sibling coverage that
   // separates '—' from the behind chip.
   let appendix = $state({});
   // The compute state (id → {state, error}) and the live progress feed:
-  // a checked metric with no fresh rows for this match renders its
+  // a picked metric with no fresh rows for this match renders its
   // STATE instead of a table (design §5's state machine).
   let metricStates = $state(new Map());
   let metricProgress = $state(new Map());
@@ -99,7 +105,7 @@
   $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
   // Completion is the refetch point: metric-done replaced the stored
   // rows (the cache already flushed through services' listener) and
-  // moved fresh/behind, so both the state map and the checked set
+  // moved fresh/behind, so both the state map and the picked set
   // reload — the doc above them is a generated snapshot the user
   // re-renders.
   $effect(() =>
@@ -144,7 +150,7 @@
   }
 
   // The metrics + compute-state read (mount AND metricsError's Retry):
-  // both land together so the checkbox list and its state chips settle
+  // both land together so the picker rows and their state chips settle
   // from one attempt. Clears only when BOTH land, so the appendix never
   // claims "No custom stats yet" while the previous failure still
   // stands. The match ORDER pref rides the same reload but feeds only
@@ -257,23 +263,71 @@
     return () => (live = false);
   });
 
-  // The checkbox list is FLAT and match-scope only (design §5: the
-  // Reports appendix is a per-match document — profile-scope metrics
-  // surface on PlayerProfile, and the groupBy grouping died with the
-  // W2 grammar wave: every row is "per player"). It renders in the
-  // match ORDER sequence (lib/metricorder.js — the one ordering
+  // The metric catalog on offer is FLAT and match-scope only (design §5:
+  // the Reports appendix is a per-match document — profile-scope metrics
+  // surface on PlayerProfile, and the groupBy grouping died with the W2
+  // grammar wave: every table is "per player"). It feeds the picker rows
+  // in the match ORDER sequence (lib/metricorder.js — the one ordering
   // mechanism): scope-filtered catalog in sequence order, absent pref ⇒
   // the default sequence (catalog order over the unranked). The pins
-  // array never orders this list — the appendix selection is the
-  // checkboxes' own.
+  // array never orders this list — the appendix selection is the rows'
+  // own.
   const matchMetrics = $derived(inSequence('match', orderPref, metrics));
 
-  // ONE stored read for the whole checked set (design §5: no per-toggle
+  // --- The appendix picker rows -------------------------------------------
+  // Each row is ONE searchable single-select over that catalog, through
+  // SuggestInput (kind 'text' — THE one suggestion dropdown): + adds an
+  // empty row, − removes its row. A row contributes its stat only while
+  // its text still names it (typo-free by construction, and editing the
+  // field re-opens every choice); `checked` — the SET the read pipeline
+  // below has always consumed — is DERIVED from the rows, so the stored
+  // read and the export stay keyed by a set: an empty row selects
+  // nothing, and a row only ever offers the stats no other row holds, so
+  // no duplicate can form.
+  const normStat = (s) => String(s == null ? '' : s).trim().toLowerCase();
+  const metricsById = $derived(new Map(matchMetrics.map((m) => [m.id, m])));
+  const metricText = (m) => m.title || m.name;
+  const checked = $derived.by(() => {
+    const sel = {};
+    for (const r of rows) {
+      const m = r.id == null ? null : metricsById.get(r.id);
+      if (m && normStat(r.text) === normStat(metricText(m))) sel[r.id] = true;
+    }
+    return sel;
+  });
+
+  // The suggestions one row offers: every match-scoped stat the OTHER
+  // rows don't already hold (its own stays listed, so re-picking or
+  // clearing itself works).
+  function rowItems(i) {
+    const own = rows[i] ? rows[i].id : null;
+    return matchMetrics.filter((m) => !(checked[m.id] && m.id !== own));
+  }
+
+  // pickMetric writes the row (and clears any other row holding the same
+  // stat — the belt to rowItems' braces; the SET never duplicates).
+  function pickMetric(i, m) {
+    const text = metricText(m);
+    rows = rows.map((r, j) =>
+      j === i ? { ...r, id: m.id, text } : r.id === m.id ? { ...r, id: null, text: '' } : r,
+    );
+  }
+
+  function addRow() {
+    const key = rows.reduce((k, r) => Math.max(k, r.key), 0) + 1;
+    rows = [...rows, { key, id: null, text: '' }];
+  }
+
+  function removeRow(i) {
+    rows = rows.filter((_, j) => j !== i);
+  }
+
+  // ONE stored read for the whole picked set (design §5: no per-toggle
   // query-time run): re-runs whenever the target, the selection, the
-  // definition list or a metric-done completion changes it. Each checked
+  // definition list or a metric-done completion changes it. Each picked
   // id that still resolves to a definition gets an entry — an id whose
   // metric is gone drops out (deleted metrics never render), and a
-  // checked metric with no stored row for this match keeps an honest
+  // picked metric with no stored row for this match keeps an honest
   // empty row list (the state decides what renders, never a 0).
   $effect(() => {
     const gen = ++appendixGen;
@@ -302,7 +356,7 @@
         }
         const next = {};
         for (const id of sel) {
-          const rows = (byMetric.get(id) || []).map((v) => ({
+          const valRows = (byMetric.get(id) || []).map((v) => ({
             id: v.steamId,
             label: bySteam.get(v.steamId) || v.steamId,
             value: v.value,
@@ -310,9 +364,9 @@
           }));
           next[id] = {
             loading: false,
-            rows,
+            rows: valRows,
             metric: defs.get(id),
-            unitHasRows: rows.length > 0,
+            unitHasRows: valRows.length > 0,
           };
         }
         appendix = next;
@@ -326,16 +380,6 @@
         appendix = next;
       });
   });
-
-  // toggleMetric flips the selection only — the effect above does the
-  // reading (stored rows, one call for the whole set).
-  function toggleMetric(m) {
-    const id = m.id;
-    const next = { ...checked };
-    if (next[id]) delete next[id];
-    else next[id] = true;
-    checked = next;
-  }
 
   // THE state machine for one appendix entry (lib/metricstate.js,
   // design §5): the live progress feed wins, then value / '—' / chip.
@@ -353,7 +397,7 @@
     return metricPresentation(st, row, a.unitHasRows);
   }
 
-  // The checkbox indicator: fresh → the honest row count; any other
+  // The row indicator: fresh → the honest row count; any other
   // state → the state chip (StatusChip — the ONE widget; the ms chip is
   // gone: timing was never provenance). The chip's title is the state
   // copy (failed carries the compute error, never a stamp).
@@ -596,7 +640,7 @@
   </section>
 
   {#if tpl}
-    <!-- Stats appendix (acceptance #1: checked metric → table under the report). -->
+    <!-- Stats appendix (acceptance #1: a picked metric → table under the report). -->
     <section class="panel">
       <h2>{S.reports.statsAppendix}</h2>
       {#if metricsError}
@@ -608,36 +652,7 @@
       <p class="muted">
         {S.reports.appendixHint}
       </p>
-      {#each matchMetrics as m (m.id)}
-        <label class="filt-check rep-metric">
-          <input
-            type="checkbox"
-            checked={!!checked[m.id]}
-            onchange={() => toggleMetric(m)}
-          />
-          <span>{m.title || m.name}</span>
-          <span class="muted mono rep-metric-expr">{m.expr}</span>
-          {#if appendix[m.id] && appendix[m.id].loading}
-            <span class="muted">…</span>
-          {:else if appendix[m.id] && appendix[m.id].error}
-            <span class="error-text" title={appendix[m.id].error}>{S.reports.failedLabel}</span>
-          {:else}
-            {@const chip = appendixChip(m.id)}
-            {#if chip && chip.kind === 'rows'}
-              <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
-            {:else if chip}
-              <!-- State in lieu of rows (design §5): processing /
-                   failed / behind / no-data through StatusChip. -->
-              <StatusChip
-                status={chip.state}
-                title={chip.title}
-                progress={metricProgressFrac(metricProgress, m.id)}
-                stage={metricProgressStage(metricProgress, m.id)}
-              />
-            {/if}
-          {/if}
-        </label>
-      {:else}
+      {#if matchMetrics.length === 0}
         {#if !metricsError}
           <!-- Gated on metricsError: a failed listMetrics read is UNKNOWN,
                never "no custom stats" — the alert above carries it. -->
@@ -647,7 +662,56 @@
               : S.reports.noCustomStats}
           </p>
         {/if}
-      {/each}
+      {:else}
+        {#each rows as row, i (row.key)}
+          <div class="rep-metric">
+            <SuggestInput
+              id="rep-pick-{row.key}"
+              kind="text"
+              items={rowItems(i)}
+              text={metricText}
+              bind:value={row.text}
+              placeholder={S.reports.metricHint}
+              ariaLabel={S.reports.metricAria}
+              align="start"
+              wrapClass="rep-pick"
+              onselect={(m) => pickMetric(i, m)}
+            />
+            {#if row.id != null && checked[row.id]}
+              <span class="muted mono rep-metric-expr">{metricsById.get(row.id).expr}</span>
+              {#if appendix[row.id] && appendix[row.id].loading}
+                <span class="muted">…</span>
+              {:else if appendix[row.id] && appendix[row.id].error}
+                <span class="error-text" title={appendix[row.id].error}>{S.reports.failedLabel}</span>
+              {:else}
+                {@const chip = appendixChip(row.id)}
+                {#if chip && chip.kind === 'rows'}
+                  <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
+                {:else if chip}
+                  <!-- State in lieu of rows (design §5): processing /
+                       failed / behind / no-data through StatusChip. -->
+                  <StatusChip
+                    status={chip.state}
+                    title={chip.title}
+                    progress={metricProgressFrac(metricProgress, row.id)}
+                    stage={metricProgressStage(metricProgress, row.id)}
+                  />
+                {/if}
+              {/if}
+            {/if}
+            <button
+              class="btn small ghost rep-drop"
+              title={S.reports.removeStat}
+              aria-label={S.reports.removeStat}
+              onclick={() => removeRow(i)}>−</button>
+          </div>
+        {/each}
+        <button
+          class="btn small rep-add"
+          title={S.reports.addStat}
+          aria-label={S.reports.addStat}
+          onclick={addRow}>+</button>
+      {/if}
     </section>
 
     <section class="panel">
@@ -671,3 +735,26 @@
     </section>
   {/if}
 </div>
+
+<style>
+  /* The appendix picker rows (rep-): one searchable stat field per row
+     with its expression, state chip and remove button beside it, and the
+     add-row button underneath. The row keeps the .rep-metric concept
+     class (one stat's row — global style-m3b.css still contributes the
+     expr ellipsis and the wrap). */
+  .rep-metric {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .rep-metric :global(.rep-pick) {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+
+  .rep-metric :global(.rep-pick .input) {
+    width: 100%;
+  }
+</style>

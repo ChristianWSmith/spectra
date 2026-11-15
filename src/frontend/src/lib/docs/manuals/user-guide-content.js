@@ -416,8 +416,9 @@ export const guideSectionsAfterManual = [
 and format. Then pick the target the template needs — the match, a player, or a round number —
 and press **Generate report**.
 
-**Stats appendix** — check any match-scoped metric to append its table under the report, scoped to
-that match. A metric that is still computing shows its state chip instead of a number; the
+**Stats appendix** — search a row to pick a match-scoped stat and append its table under the
+report, scoped to that match; **+** adds another row and **−** removes one, and a row you clear
+appends nothing. A stat that is still computing shows its state chip instead of a number; the
 appendix follows the same order as everywhere else.
 
 **Preview** shows the generated document (HTML templates render, markdown templates show as

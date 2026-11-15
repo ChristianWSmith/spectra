@@ -19,7 +19,12 @@ export const reports = {
   playerLabel: 'Player',
   roundLabel: 'Round',
   statsAppendix: 'Stats appendix',
-  appendixHint: 'Check stats to append their tables under the report (scoped to this\n        match). They are composed with the rendered document and shown in the\n        Preview below.',
+  appendixHint:
+    'Pick the stats to append their tables under the report (scoped to this match): search a row to choose a stat, add another row with +, and remove a row with −. They are composed with the rendered document and shown in the Preview below.',
+  metricHint: 'Search stats…',
+  metricAria: 'Stat to append',
+  addStat: 'Add stat',
+  removeStat: 'Remove stat',
   failedLabel: 'failed',
   rowsSuffix: ' rows',
   noMatchScopedStats: 'No match-scoped stats yet — profile-scoped stats surface on the player profile.',
