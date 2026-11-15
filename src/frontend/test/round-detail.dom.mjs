@@ -132,10 +132,12 @@ for (const name of ['EventFlags', 'ProfileLink', 'RoundStrip', 'StatusChip']) {
 // fmt/nav/rounds/sideparity/teams/players/router/replay-landmarks are
 // copied there); only the .svelte component imports need rewriting to
 // their compiled .js.
-const rdSrc = readFileSync('src/lib/views/RoundDetail.svelte', 'utf8').replace(
-  /from '\.\.\/components\/(\w+)\.svelte'/g,
-  "from '../components/$1.js'",
-);
+const rdSrc = readFileSync('src/lib/views/RoundDetail.svelte', 'utf8')
+  .replace(
+    /from '\.\.\/components\/(\w+)\.svelte'/g,
+    "from '../components/$1.js'",
+  )
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(rdSrc, 'RoundDetail.svelte', join(dir, 'views', 'RoundDetail.js'));
 
 const harnessSrc = `<script>

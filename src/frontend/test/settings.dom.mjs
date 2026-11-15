@@ -212,7 +212,7 @@ const rewrite = (src, from, to) => src.split(`from '${from}'`).join(`from '${to}
 let settSrc = readFileSync('src/lib/views/Settings.svelte', 'utf8');
 for (const rel of [
   'services.js', 'assets.js', 'fmt.js', 'definitions.js', 'theme.js', 'fontsize.js',
-  'replay/audio.js', 'replay/sfx.js',
+  'replay/audio.js', 'replay/sfx.js', 'strings/index.js',
 ]) {
   settSrc = rewrite(settSrc, `../${rel}`, fileURL(`src/lib/${rel}`));
 }

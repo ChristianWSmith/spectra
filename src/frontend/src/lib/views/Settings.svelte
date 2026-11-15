@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import { onMount } from 'svelte';
   import {
     getVersion,
@@ -932,13 +933,13 @@
 
 <div class="view">
   <header class="view-header">
-    <h1>Settings</h1>
+    <h1>{S.settings.settingsHeading}</h1>
   </header>
 
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss" onclick={() => (error = '')}
+      <button class="btn small" aria-label={S.settings.dismissAria} onclick={() => (error = '')}
         ><span class="codicon codicon-close"></span></button
       >
     </p>
@@ -947,17 +948,14 @@
   <section class="panel">
     <h2>About</h2>
     <p>
-      Spectra <span class="muted">v{version}</span> — an offline CS2 demo
-      viewer and match analysis toolkit. Everything runs on your machine;
-      nothing is uploaded anywhere.
+      {S.settings.spectraName} <span class="muted">v{version}</span> {S.settings.aboutTagline}
     </p>
     <div class="row-between">
       <span class="muted"
-        >Checks GitHub Releases for a newer version and offers to install it
-        when one exists (it also tells you when you're already up to date).</span
+        >{S.settings.updateCheckHint}</span
       >
       <button class="btn" disabled={updateBusy} onclick={checkForUpdates}>
-        {updateBusy ? 'Checking…' : 'Check for Updates…'}
+        {updateBusy ? S.settings.checking : S.settings.checkForUpdates}
       </button>
     </div>
   </section>
@@ -967,15 +965,15 @@
     {#if info}
       <dl class="facts">
         <div class="fact-wide">
-          <dt>Database</dt>
+          <dt>{S.settings.factDatabase}</dt>
           <dd class="mono">{info.dbPath}</dd>
         </div>
         <div class="fact-wide">
-          <dt>Matches directory</dt>
+          <dt>{S.settings.factMatchesDir}</dt>
           <dd class="mono">{info.matchesDir}</dd>
         </div>
         <div class="fact-wide">
-          <dt>Demo copies</dt>
+          <dt>{S.settings.factDemoCopies}</dt>
           <dd class="mono">
             {info.demosDir}
             <span class="muted">
@@ -986,28 +984,25 @@
           </dd>
         </div>
         <div>
-          <dt>Parser version</dt>
+          <dt>{S.settings.factParserVersion}</dt>
           <dd class="mono">{info.parserVersion}</dd>
         </div>
       </dl>
       <div class="row-between">
         <span class="muted"
-          >Spectra keeps its own copy of each imported demo so Re-parse works after your
-          original file moves or disappears. Freeing them reclaims the space — matches keep
-          everything they saved and replay instantly; Re-parse then needs your original
-          file.</span
+          >{S.settings.demoCopyHint}</span
         >
         <button
           class="btn danger"
           disabled={dataBusy || jobsPending || info.demoCount === 0}
           title={jobsPending
-            ? 'An import is still running — try again once it finishes'
+            ? S.settings.freeCopiesBusyTitle
             : info.demoCount === 0
-              ? 'No demo copies to free'
-              : 'Delete every demo copy from Spectra’s data folder'}
+              ? S.settings.freeCopiesEmptyTitle
+              : S.settings.freeCopiesTitle}
           onclick={onFreeAllCopies}
         >
-          {dataBusy ? 'Freeing…' : 'Free all demo copies'}
+          {dataBusy ? S.settings.freeing : S.settings.freeAllCopies}
         </button>
       </div>
       {#if dataMsg}
@@ -1024,18 +1019,15 @@
   <section class="panel">
     <h2>Import dirs</h2>
     <p class="muted">
-      The Library lists <span class="mono">.dem</span> /
-      <span class="mono">.dem.zst</span> files found in these import dirs and imports
-      them with one click — your original files are never moved, modified or deleted.
-      Subfolders are scanned up to four levels deep; hidden folders are skipped.
-      Demos already in the Library are left out of the list.
+      {S.settings.libraryListsLead} <span class="mono">{S.settings.extDem}</span> /
+      <span class="mono">{S.settings.extDemZst}</span> {S.settings.importDirsNote}
     </p>
     {#if demoDirs.length === 0}
       {#if !demoDirError}
         <!-- Gated on the panel's error: a failed read means the dirs are
              UNKNOWN, never "none" — the alert below carries the failure. -->
         <p class="muted" role="status">
-          No import dirs — the Library won’t offer any demos to import.
+          {S.settings.noImportDirs}
         </p>
       {/if}
     {:else}
@@ -1046,7 +1038,7 @@
             <button
               class="btn small danger"
               aria-label={`Remove ${dir}`}
-              onclick={() => removeDemoDir(dir)}>Remove</button
+              onclick={() => removeDemoDir(dir)}>{S.settings.remove}</button
             >
           </div>
         {/each}
@@ -1055,19 +1047,19 @@
     {#if demoDirError}
       <p class="error" role="alert">
         {demoDirError}
-        <button class="btn small" onclick={refreshDemoDirs}>Retry</button>
+        <button class="btn small" onclick={refreshDemoDirs}>{S.settings.retry}</button>
       </p>
     {/if}
     <div class="row-between">
       <span class="muted">
         {demoDirsCustom
-          ? 'Saved as your list — the defaults no longer apply.'
-          : 'Defaults in effect: your Downloads folder and the CS2 replay folder, where the client saves downloaded matches.'}
+          ? S.settings.defaultsCustom
+          : S.settings.defaultsEffect}
       </span>
       <div class="sett-seg">
-        <button class="btn" onclick={addDemoDir}>Add folder…</button>
+        <button class="btn" onclick={addDemoDir}>{S.settings.addFolder}</button>
         <button class="btn" disabled={!demoDirsCustom} onclick={onResetDemoDirs}
-          >Reset to defaults</button
+          >{S.settings.resetDefaults}</button
         >
       </div>
     </div>
@@ -1079,13 +1071,10 @@
           checked={copyOnImport}
           onchange={(e) => setCopyOnImport(e.target.checked)}
         />
-        <span>Copy demos into Spectra’s data folder</span>
+        <span>{S.settings.copyOnImportLabel}</span>
       </label>
       <span class="muted"
-        >On (the default): every import keeps its own copy of the demo, so Re-parse works
-        even after your original file is moved or deleted. Off: imports only reference your
-        original file — nothing is duplicated, and Re-parse needs that file to still exist.
-        Stored copies stay evictable either way (Data below, or Free copy in the Library).</span
+        >{S.settings.copyOnImportHint}</span>
       >
     </div>
   </section>
@@ -1097,12 +1086,11 @@
   <section class="panel">
     <h2>Background work</h2>
     <p class="muted">
-      Heavy background tasks — demo imports, rules re-runs and asset extraction — share one
-      budget of parallel work on this machine, so they never stack on top of each other.
+      {S.settings.backgroundWorkNote}
     </p>
     <div class="row-between">
       <div class="sett-field">
-        <label class="field-label" for="sett-parallel-work">Parallel work</label>
+        <label class="field-label" for="sett-parallel-work">{S.settings.parallelWorkLabel}</label>
         <input
           class="input"
           id="sett-parallel-work"
@@ -1114,16 +1102,13 @@
         />
       </div>
       <span class="muted"
-        >How many heavy background tasks — demo imports, rules re-runs and asset extraction —
-        run at the same time. 1 = one at a time; the default and the maximum are this
-        machine’s parallelism ({parallelMax}), so Spectra never runs more at once than your
-        hardware can handle. A change applies to work already queued or waiting.</span
+        >{S.fill(S.settings.parallelWorkHint, { max: parallelMax })}</span
       >
     </div>
     {#if parallelError}
       <p class="error" role="alert">
         {parallelError}
-        <button class="btn small" onclick={refreshParallelWork}>Retry</button>
+        <button class="btn small" onclick={refreshParallelWork}>{S.settings.retry}</button>
       </p>
     {/if}
   </section>
@@ -1131,46 +1116,44 @@
   <section class="panel">
     <h2>CS2 assets</h2>
     <p class="muted">
-      Radar images, equipment icons and replay sounds are all read from your
-      own Counter-Strike 2 installation on this machine — nothing is
-      uploaded, and no Valve assets ship with the app.
+      {S.settings.cs2AssetsNote}
     </p>
     {#if mpStatus}
       <dl class="facts">
         <div class="fact-wide">
-          <dt>CS2 install</dt>
+          <dt>{S.settings.factCs2Install}</dt>
           <dd class="mono">
-            {mpStatus.found ? mpStatus.path : 'not found'}
-            {#if mpStatus.manual}<span class="chip">manual</span>{/if}
+            {mpStatus.found ? mpStatus.path : S.settings.notFound}
+            {#if mpStatus.manual}<span class="chip">{S.settings.manualChip}</span>{/if}
           </dd>
         </div>
         <div>
-          <dt>Radar packs</dt>
+          <dt>{S.settings.factRadarPacks}</dt>
           <dd class="mono">
             {mpStatus.maps && mpStatus.maps.length ? mpStatus.maps.length : 'none'}
           </dd>
         </div>
         <div>
-          <dt>Equipment icons</dt>
+          <dt>{S.settings.factEquipmentIcons}</dt>
           <dd class="mono">
             {#if !iconManifest}
               …
             {:else if iconManifest.count > 0}
               {iconManifest.count}
             {:else}
-              none extracted yet{#if iconNote} — {iconNote}{/if}
+              {S.settings.noneExtractedYet}{#if iconNote} — {iconNote}{/if}
             {/if}
           </dd>
         </div>
         <div>
-          <dt>Replay sounds</dt>
+          <dt>{S.settings.factReplaySounds}</dt>
           <dd class="mono">
             {#if !soundManifest}
               …
             {:else if soundManifest.count > 0}
               {soundManifest.count}{soundNote ? ` — ${soundNote}` : ''}
             {:else}
-              none extracted yet{#if soundNote} — {soundNote}{/if}
+              {S.settings.noneExtractedYet}{#if soundNote} — {soundNote}{/if}
             {/if}
           </dd>
         </div>
@@ -1194,13 +1177,11 @@
     {/if}
     <div class="row-between">
       <span class="muted"
-        >Extracts every official-map radar, every equipment icon and the
-        replay's gun/utility sounds (safe to run again — re-run after a CS2
-        update to refresh).</span
+        >{S.settings.extractHint}</span>
       >
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
-          Choose folder…
+          {S.settings.chooseFolder}
         </button>
         <button class="btn primary" disabled={mpBusy || !mpStatus?.found} onclick={doExtract}>
           {mpBusy ? 'Extracting…' : 'Extract all CS2 assets'}
@@ -1213,30 +1194,28 @@
     <h2>Appearance</h2>
     <div class="row-between">
       <span class="muted"
-        >Theme — dark ships as the default. The choice is remembered and
-        applied at startup.</span
+        >{S.settings.themeHint}</span>
       >
-      <div class="sett-seg" role="group" aria-label="Theme">
+      <div class="sett-seg" role="group" aria-label={S.settings.themeAria}>
         <button
           class="btn"
           class:primary={theme === 'dark'}
           aria-pressed={theme === 'dark'}
-          onclick={() => setTheme('dark')}>Dark</button
+          onclick={() => setTheme('dark')}>{S.settings.themeDark}</button
         >
         <button
           class="btn"
           class:primary={theme === 'light'}
           aria-pressed={theme === 'light'}
-          onclick={() => setTheme('light')}>Light</button
+          onclick={() => setTheme('light')}>{S.settings.themeLight}</button
         >
       </div>
     </div>
     <div class="row-between">
       <span class="muted"
-        >Font size — scales the whole UI (13 / 15 / 17 px); applied instantly
-        and remembered across restarts. Medium is the default.</span
+        >{S.settings.fontSizeHint}</span>
       >
-      <div class="sett-seg" role="group" aria-label="Font size">
+      <div class="sett-seg" role="group" aria-label={S.settings.fontSizeAria}>
         {#each FONT_SIZES as sz (sz)}
           <button
             class="btn"
@@ -1252,27 +1231,25 @@
   <section class="panel">
     <h2>Plugins</h2>
     <p class="muted">
-      Declarative bundles: a directory with
-      <span class="mono">spectra-plugin.json</span> (plus optional metric /
-      report-template definitions) or a single manifest JSON. Enabled plugins
-      contribute metrics and report templates on the next list — no restart.
+      {S.settings.pluginsNoteLead}
+      <span class="mono">{S.settings.pluginManifestName}</span> {S.settings.pluginsNoteTail}
     </p>
     <div class="row-between">
       <input
         class="input sett-plugin-path"
-        placeholder="/path/to/plugin-dir or manifest.json"
+        placeholder={S.settings.pluginPathPlaceholder}
         bind:value={installPath}
         onkeydown={(e) => e.key === 'Enter' && doInstall()}
-        aria-label="Plugin source path"
+        aria-label={S.settings.pluginPathAria}
       />
       <button class="btn primary" disabled={installBusy || !installPath.trim()} onclick={doInstall}
-        >{installBusy ? 'Installing…' : 'Install from path'}</button
+        >{installBusy ? S.settings.installing : S.settings.installFromPath}</button
       >
     </div>
     {#if pluginsError}
       <p class="error" role="alert">
         {pluginsError}
-        <button class="btn small" onclick={refreshPlugins}>Retry</button>
+        <button class="btn small" onclick={refreshPlugins}>{S.settings.retry}</button>
       </p>
     {/if}
     {#if pluginMsg}
@@ -1284,7 +1261,7 @@
       {#if !pluginsError}
         <!-- Gated on the list error: a failed read is UNKNOWN, not
              "none installed" — the alert above carries the failure. -->
-        <p class="muted" role="status">No plugins installed yet.</p>
+        <p class="muted" role="status">{S.settings.noPluginsYet}</p>
       {/if}
     {:else}
       <div class="sett-plugins">
@@ -1295,12 +1272,12 @@
               <strong>{p.manifest.name || p.manifest.id}</strong>
               <span class="mono muted"> {p.manifest.id} · v{p.manifest.version}</span>
             </span>
-            <span class="chip" title="Metrics contributed">{(p.manifest.metrics || []).length} metrics</span>
-            <span class="chip" title="Report templates contributed"
-              >{(p.manifest.reportTpls || []).length} templates</span
+            <span class="chip" title={S.settings.metricsContributedTitle}>{(p.manifest.metrics || []).length} {S.settings.metricsWord}</span>
+            <span class="chip" title={S.settings.reportTplsContributedTitle}
+              >{(p.manifest.reportTpls || []).length} {S.settings.templatesWord}</span
             >
             {#if p.error}
-              <span class="error-text" title={p.error}>invalid</span>
+              <span class="error-text" title={p.error}>{S.settings.invalid}</span>
             {:else}
               <button
                 class="btn small"
@@ -1308,16 +1285,16 @@
                 disabled={op === 'busy'}
                 aria-pressed={p.enabled}
                 onclick={() => togglePlugin(p)}
-                title={p.enabled ? 'Disable plugin' : 'Enable plugin'}
-                >{p.enabled ? 'Enabled' : 'Disabled'}</button
+                title={p.enabled ? S.settings.disablePlugin : S.settings.enablePlugin}
+                >{p.enabled ? S.settings.enabled : S.settings.disabled}</button
               >
             {/if}
             {#if op && op !== 'busy'}
-              <span class="error-text" title={op}>failed</span>
+              <span class="error-text" title={op}>{S.settings.failed}</span>
             {/if}
             <span class="spacer"></span>
             <button class="btn small danger" disabled={op === 'busy'} onclick={() => doRemove(p)}
-              >Remove</button
+              >{S.settings.remove}</button
             >
             {#if p.error}
               <p class="plugin-err error-text">{p.error}</p>
@@ -1327,8 +1304,7 @@
       </div>
     {/if}
     <p class="muted">
-      Trust model: install only bundles you built or got from someone you
-      trust — manifests may pin a sha256 hash; there is no auto-update.
+      {S.settings.trustModelNote}
     </p>
   </section>
 
@@ -1336,7 +1312,7 @@
     <h2>Audio &amp; voice</h2>
     <div class="row-between">
       <span class="muted"
-        >Audio self-test — checks Spectra can open your audio device.</span
+        >{S.settings.audioSelfTestHint}</span>
       >
       <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
         >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
@@ -1345,16 +1321,16 @@
     {#if audioProbe}
       {#if audioProbe.ok}
         <p class="sett-audio-ok" role="status">
-          PASS — audio device open at {audioProbe.sampleRate} Hz.
+          {S.settings.audioPass} {audioProbe.sampleRate} Hz.
         </p>
       {:else}
         <p class="error" role="alert">
-          FAIL — {audioProbe.error}
+          {S.settings.audioFail} {audioProbe.error}
         </p>
         {#if !audioProbe.error.includes('gst-plugins-good')}
           <p class="muted">
-            Hint: on Linux install <span class="mono">gst-plugins-good</span>
-            (GStreamer) so WebKitGTK can open the audio device, then retry.
+            {S.settings.audioHintLead} <span class="mono">{S.settings.gstPluginsGood}</span>
+            {S.settings.audioHintTail}
           </p>
         {/if}
       {/if}
@@ -1363,57 +1339,56 @@
          as the transport's Volume popover — moving one here moves the
          other, and both survive restarts. -->
     <div class="row-between">
-      <span class="muted">Voice volume — the players' radio chatter in the replay.</span>
+      <span class="muted">{S.settings.volVoiceHint}</span>
       <input
         class="sett-vol"
         type="range"
         min="0"
         max="100"
         value={Math.round(volVoice * 100)}
-        aria-label="Voice volume"
+        aria-label={S.settings.volVoiceAria}
         oninput={(e) => setVol('voice', e.currentTarget.value)}
       />
     </div>
     <div class="row-between">
-      <span class="muted">Guns volume — weapon fire in the replay.</span>
+      <span class="muted">{S.settings.volGunsHint}</span>
       <input
         class="sett-vol"
         type="range"
         min="0"
         max="100"
         value={Math.round(volGuns * 100)}
-        aria-label="Guns volume"
+        aria-label={S.settings.volGunsAria}
         oninput={(e) => setVol('guns', e.currentTarget.value)}
       />
     </div>
     <div class="row-between">
-      <span class="muted">Utility volume — grenade detonations in the replay.</span>
+      <span class="muted">{S.settings.volUtilityHint}</span>
       <input
         class="sett-vol"
         type="range"
         min="0"
         max="100"
         value={Math.round(volUtil * 100)}
-        aria-label="Utility volume"
+        aria-label={S.settings.volUtilityAria}
         oninput={(e) => setVol('utility', e.currentTarget.value)}
       />
     </div>
     <div class="row-between">
-      <span class="muted">C4 volume — the planted bomb's beeps and its explosion.</span>
+      <span class="muted">{S.settings.volC4Hint}</span>
       <input
         class="sett-vol"
         type="range"
         min="0"
         max="100"
         value={Math.round(volC4 * 100)}
-        aria-label="C4 volume"
+        aria-label={S.settings.volC4Aria}
         oninput={(e) => setVol('c4', e.currentTarget.value)}
       />
     </div>
     <div class="row-between">
       <span class="muted"
-        >Announcer volume — the round-win / bomb voice lines in the
-        replay.</span
+        >{S.settings.volAnnouncerHint}</span>
       >
       <input
         class="sett-vol"
@@ -1421,15 +1396,13 @@
         min="0"
         max="100"
         value={Math.round(volAnnouncer * 100)}
-        aria-label="Announcer volume"
+        aria-label={S.settings.volAnnouncerAria}
         oninput={(e) => setVol('announcer', e.currentTarget.value)}
       />
     </div>
     <div class="row-between">
       <span class="muted"
-        >Footsteps volume — player footsteps and landings in the replay
-        (80 % by default — muted until you unmute in the replay volume
-        popover).</span
+        >{S.settings.volFootstepsHint}</span>
       >
       <input
         class="sett-vol"
@@ -1437,21 +1410,18 @@
         min="0"
         max="100"
         value={Math.round(volSteps * 100)}
-        aria-label="Footsteps volume"
+        aria-label={S.settings.volFootstepsAria}
         oninput={(e) => setVol('footsteps', e.currentTarget.value)}
       />
     </div>
     <p class="muted">
-      Sound effects are extracted from your local CS2 install (CS2 assets
-      above); the replay plays gun, utility, C4, announcer and footstep
-      sounds when they are available.
+      {S.settings.soundEffectsNote}
     </p>
     <p class="muted">
-      Voice is decoded as the replay plays and streamed in small pieces — no
-      extra disk space, always in sync with the replay.
+      {S.settings.voiceDecodeNote}
     </p>
     <p class="muted">
-      Voice-to-text transcription isn't available yet.
+      {S.settings.voiceToTextNote}
     </p>
   </section>
 
@@ -1465,7 +1435,7 @@
     {/if}
     <div class="sett-rules">
       <div class="sett-field">
-        <label class="field-label" for="sett-trade">Trade window (seconds)</label>
+        <label class="field-label" for="sett-trade">{S.settings.tradeWindowLabel}</label>
         <input
           class="input"
           id="sett-trade"
@@ -1475,10 +1445,10 @@
           step="0.5"
           bind:value={cfg.tradeWindowS}
         />
-        <span class="muted sett-hint">Kill after a teammate death within this window = trade (default 5).</span>
+        <span class="muted sett-hint">{S.settings.tradeWindowHint}</span>>
       </div>
       <div class="sett-field">
-        <label class="field-label" for="sett-full">Full-buy threshold (equip $)</label>
+        <label class="field-label" for="sett-full">{S.settings.fullBuyLabel}</label>
         <input
           class="input"
           id="sett-full"
@@ -1487,13 +1457,13 @@
           step="100"
           bind:value={cfg.ecoFullBuy}
         />
-        <span class="muted sett-hint">Team equipment ≥ this = full buy (default 20000).</span>
+        <span class="muted sett-hint">{S.settings.fullBuyHint}</span>>
       </div>
       <div class="sett-field">
         <label
           class="field-label"
           for="sett-trade-dist"
-          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The raw distance is measured for each kill when the demo is imported; this setting is applied when matches are analyzed — changing it marks matches behind, so re-run them below to apply it. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
+          title={S.settings.tradeOppTitle}>{S.settings.tradeOppLabel}</label>
         >
         <input
           class="input"
@@ -1504,11 +1474,11 @@
           bind:value={cfg.tradeOppDistance}
         />
         <span class="muted sett-hint"
-          >“Missed trades” counts a death nobody answered only when a living teammate of the victim was within this distance of the killer (default 1000).</span
+          >{S.settings.tradeOppHint}</span>
         >
       </div>
       <div class="sett-field">
-        <label class="field-label" for="sett-force">Force threshold (equip $)</label>
+        <label class="field-label" for="sett-force">{S.settings.forceLabel}</label>>
         <input
           class="input"
           id="sett-force"
@@ -1517,39 +1487,36 @@
           step="100"
           bind:value={cfg.ecoForce}
         />
-        <span class="muted sett-hint">Team equipment ≥ this = force buy (default 10000).</span>
+        <span class="muted sett-hint">{S.settings.forceHint}</span>>
       </div>
     </div>
     <div class="row-between">
-      <span class="muted">Rules version: <strong class="mono">{cfg.ruleVersion}</strong></span>
+      <span class="muted">{S.settings.rulesVersionLabel} <strong class="mono">{cfg.ruleVersion}</strong></span>
       <!-- Save is honest about dirtiness: pristine (loaded/saved values)
            → disabled + "No changes" below, never the re-run nudge. -->
       <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}
-        >Save rules</button
+        >{S.settings.saveRules}</button
       >
     </div>
     {#if cfgMsg}
       <p class="sett-msg" role="status">{cfgMsg}</p>
     {:else if !cfgLoading && !cfgError && !cfgDirty}
-      <p class="muted" role="status">No changes — the rules above are already saved.</p>
+      <p class="muted" role="status">{S.settings.noChanges}</p>
     {/if}
     {#if cfgDirty}
       <p class="muted">
-        Saving applies these rules to future analysis. Matches already in your
-        library keep the numbers they had — re-run them below.
+        {S.settings.savingNote}
       </p>
     {/if}
 
-    <h3 class="section-title sett-sub">Re-run analysis…</h3>
+    <h3 class="section-title sett-sub">{S.settings.reRunHeading}</h3>
     <p class="muted">
-      Only matches behind the current rules are listed — analyzed under an older
-      rules version or never analyzed. Per match, under the current rules (round
-      types, KAST, clutches, engagements and career numbers refresh too).
+      {S.settings.reRunNote}
     </p>
     {#if matchesError}
       <p class="error" role="alert">
         {matchesError}
-        <button class="btn small" onclick={refreshBehind}>Retry</button>
+        <button class="btn small" onclick={refreshBehind}>{S.settings.retry}</button>
       </p>
     {/if}
     <!-- The honest count (CountMatches({behind:true}) — never the list's
@@ -1562,26 +1529,26 @@
         {:else if behindLoading && !behindRows.length}
           Loading…
         {:else if behindTotal > 0}
-          {behindTotal} match{behindTotal === 1 ? '' : 'es'} behind the current rules
+          {behindTotal} {S.settings.matchWord}{behindTotal === 1 ? '' : 'es'} {S.settings.behindRulesSuffix}
         {:else if libTotal === 0}
-          No matches yet — import a demo first.
+          {S.settings.noMatchesYet}
         {:else}
-          All {libTotal} matches analyzed under current rules.
+          {S.fill(S.settings.allAnalyzed, { n: libTotal })}
         {/if}
       </span>
       <button
         class="btn"
         disabled={matchesError || behindLoading || behindTotal === 0 || allRunActive}
         title={matchesError
-          ? 'The behind count is unknown — retry the list first'
+          ? S.settings.behindUnknownTitle
           : behindTotal === 0
-            ? 'No matches behind the current rules'
+            ? S.settings.behindNoneTitle
             : allRunActive
-              ? 'A re-run is already in progress'
+              ? S.settings.reRunInProgressTitle
               : `Re-run every match behind the current rules (${behindTotal})`}
         onclick={recomputeAllBehind}
       >
-        {allRunActive ? 'Re-running…' : 'Re-run all'}
+        {allRunActive ? S.settings.reRunning : S.settings.reRunAll}
       </button>
     </div>
     <!-- k/N for the batch: N = RecomputeAll's submitted, k counted from
@@ -1590,13 +1557,13 @@
     {#if allRunError}
       <p class="error" role="alert">
         {allRunError}
-        <button class="btn small" onclick={recomputeAllBehind}>Retry</button>
+        <button class="btn small" onclick={recomputeAllBehind}>{S.settings.retry}</button>
       </p>
     {/if}
     {#if allRun}
       <p class="muted" role="status">
         {#if allRun.submitted === 0}
-          Nothing new to queue{allRun.total > 0
+          {S.settings.nothingNewToQueue}{allRun.total > 0
             ? ` — ${allRun.total} match${allRun.total === 1 ? ' is' : 'es'} already re-running`
             : ''}.
         {:else if allRunActive}
@@ -1605,18 +1572,18 @@
             progress={allRun.submitted ? allRun.done / allRun.submitted : 0}
             stage="analyze"
           />
-          Re-running {allRun.submitted} match{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
-          analyzed.
+          {S.settings.reRunningWord} {allRun.submitted} {S.settings.matchWord}{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
+          {S.settings.analyzedWord}
         {:else}
-          <span class="chip status ok">done</span>
-          Re-ran {allRun.submitted} match{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
-          analyzed.
+          <span class="chip status ok">{S.settings.doneChip}</span>
+          {S.settings.reRanWord} {allRun.submitted} {S.settings.matchWord}{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
+          {S.settings.analyzedWord}
         {/if}
         {#if allRun.skipped > 0}
-          {allRun.skipped} skipped (already re-running).
+          {allRun.skipped} {S.settings.skippedNote}
         {/if}
         {#if allRun.failed > 0}
-          <span class="error-text">{allRun.failed} failed.</span>
+          <span class="error-text">{allRun.failed} {S.settings.failedNote}</span>
         {/if}
       </p>
     {/if}
@@ -1641,12 +1608,12 @@
                 stage={state === 'running' ? 'analyze' : ''}
               />
             {:else if state === 'ok'}
-              <span class="chip status ok">done</span>
+              <span class="chip status ok">{S.settings.doneChip}</span>
             {:else if state}
-              <span class="error-text" title={state}>failed</span>
-              <button class="btn small" onclick={() => recompute(m)}>Retry</button>
+              <span class="error-text" title={state}>{S.settings.failed}</span>
+              <button class="btn small" onclick={() => recompute(m)}>{S.settings.retry}</button>
             {:else}
-              <button class="btn small" onclick={() => recompute(m)}>Re-run</button>
+              <button class="btn small" onclick={() => recompute(m)}>{S.settings.reRun}</button>
             {/if}
           </span>
         </div>
@@ -1659,12 +1626,12 @@
            pinned by test/settings.dom.mjs's working mount). -->
       {#if shownMatches.length < behindTotal}
         <p class="muted" role="status">
-          Showing {shownMatches.length} of {behindTotal} behind the current rules.
+          {S.fill(S.settings.showingBehind, { shown: shownMatches.length, total: behindTotal })}
         </p>
       {/if}
       {#if behindHasNext && shownMatches.length < BEHIND_CAP}
         <button class="btn" disabled={loadingMore} onclick={loadMoreBehind}>
-          {loadingMore ? 'Loading…' : 'Load more'}
+          {loadingMore ? S.settings.loadingMore : S.settings.loadMore}
         </button>
       {/if}
     </div>
@@ -1673,10 +1640,7 @@
   <section class="panel">
     <h2>Stat definitions</h2>
     <p class="muted">
-      What every stat in Spectra means and how it's calculated. Settings like
-      the trade window and buy thresholds are saved with a version number;
-      matches analyzed under older rules keep those numbers until you re-run
-      them.
+      {S.settings.statDefinitionsNote}
     </p>
     <div class="sett-defs">
       {#each GLOSSARY as d (d.term)}
@@ -1686,8 +1650,8 @@
             {#if d.inferred}
               <span
                 class="chip badge-inferred"
-                title="Worked out from the demo data — not read straight from the game"
-              >inferred</span>
+                title={S.settings.inferredTitle}
+              >{S.settings.inferredChip}</span>
             {/if}
           </summary>
           <p>{d.text}</p>

@@ -357,7 +357,8 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/ProfileLink.svelte'", "from './profilelink.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'")
-  .replace("from '../components/Popover.svelte'", "from './popover.js'");
+  .replace("from '../components/Popover.svelte'", "from './popover.js'")
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
 
 const { mount, unmount } = await import('svelte');

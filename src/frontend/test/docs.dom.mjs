@@ -287,7 +287,8 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/ProfileLink.svelte'", `from '${localURL('profilelink.js')}'`)
   .replace("from '../components/StatusChip.svelte'", `from '${localURL('statuschip.js')}'`)
   .replace("from '../components/MetricOrderDialog.svelte'", `from '${localURL('metricorderdialog.js')}'`)
-  .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`);
+  .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)
+  .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
 compileSvelte(bldSrc, 'Builder.svelte', localURL('builder-bundle.js'));
 
 // App.svelte: the blanket stub rewrite, then point the two REAL
