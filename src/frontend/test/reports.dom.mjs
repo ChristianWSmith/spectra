@@ -121,11 +121,15 @@ for (const name of ['StatusChip', 'Popover']) {
 const matchPickerSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from './StatusChip.svelte'", "from './statuschip.js'")
-  .replace("from './Popover.svelte'", "from './popover.js'");
+  .replace("from './Popover.svelte'", "from './popover.js'")
+  // plumbing (Strings Stage 3): the picker imports the strings catalog.
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'));
 const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  // plumbing (Strings Stage 3): the picker imports the strings catalog.
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
 
 // The view: plain-ESM imports resolve from their real module locations

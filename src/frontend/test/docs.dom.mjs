@@ -270,7 +270,10 @@ compileSvelte(plSrc, 'ProfileLink.svelte', localURL('profilelink.js'));
 const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
-  .replace("from './Dialog.svelte'", `from '${localURL('dialog.js')}'`);
+  .replace("from './Dialog.svelte'", `from '${localURL('dialog.js')}'`)
+  // plumbing (Strings Stage 3): the dialog imports the strings catalog —
+  // through the COPIED lib tree, like every other ../ module here.
+  .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
 compileSvelte(moSrc, 'MetricOrderDialog.svelte', localURL('metricorderdialog.js'));
 compileSvelte(
   readFileSync('src/lib/components/Popover.svelte', 'utf8'),

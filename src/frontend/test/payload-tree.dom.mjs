@@ -76,10 +76,14 @@ process.on('unhandledRejection', (e) => {
 // node_modules.
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'payload-tree');
 mkdirSync(dir, { recursive: true });
-const treeSrc = readFileSync('src/lib/components/PayloadTree.svelte', 'utf8').replace(
-  /import\s*\{[\s\S]*?\}\s*from\s*'\.\.\/payloadTree\.js';/,
-  '',
-);
+const treeSrc = readFileSync('src/lib/components/PayloadTree.svelte', 'utf8')
+  .replace(
+    /import\s*\{[\s\S]*?\}\s*from\s*'\.\.\/payloadTree\.js';/,
+    '',
+  )
+  // plumbing (Strings Stage 3): the component imports the strings
+  // catalog — resolve it from the real tree.
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 const helpers = readFileSync('src/lib/payloadTree.js', 'utf8').replace(/export /g, '');
 const treeCode = compile(treeSrc, { filename: 'PayloadTree.svelte', generate: 'client' })
   .js.code;

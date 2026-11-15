@@ -104,10 +104,13 @@ svelteCompile(
   'ProfileLink.svelte',
   join(dir, 'components', 'ProfileLink.js'),
 );
-const rowSrc = readFileSync('src/lib/components/LandmarkRow.svelte', 'utf8').replace(
-  "import ProfileLink from './ProfileLink.svelte';",
-  "import ProfileLink from './ProfileLink.js';",
-);
+const rowSrc = readFileSync('src/lib/components/LandmarkRow.svelte', 'utf8')
+  .replace(
+    "import ProfileLink from './ProfileLink.svelte';",
+    "import ProfileLink from './ProfileLink.js';",
+  )
+  // plumbing (Strings Stage 3): the row imports the strings catalog.
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(rowSrc, 'LandmarkRow.svelte', join(dir, 'components', 'LandmarkRow.js'));
 
 // Harness.

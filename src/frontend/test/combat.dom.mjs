@@ -133,7 +133,12 @@ export const warmProfile = () => {};
 
 for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink', 'StatusChip']) {
   svelteCompile(
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
+    // plumbing (Strings Stage 3): SortTh imports the strings catalog —
+    // resolve it from the real tree (no-op for the import-less leaves).
+    readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+      "from '../strings/index.js'",
+      `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+    ),
     `${name}.svelte`,
     join(dir, 'components', `${name}.js`),
   );

@@ -132,7 +132,10 @@ const promptSrc = readFileSync('src/lib/components/MapPackPrompt.svelte', 'utf8'
   .replace("'../services.js'", "'./services-stub.js'")
   .replace("'../assets.js'", "'./assets.js'")
   .replace("'./Dialog.svelte'", "'./dialog.js'")
-  .replace("'./StatusChip.svelte'", "'./statuschip.js'");
+  .replace("'./StatusChip.svelte'", "'./statuschip.js'")
+  // plumbing (Strings Stage 3): the prompt imports the strings catalog —
+  // resolve it from the real tree.
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 svelteCompile(promptSrc, 'MapPackPrompt.svelte', join(dir, 'mappackprompt-bundle.js'));
 svelteCompile(
   readFileSync('test/map-pack-prompt.harness.svelte', 'utf8'),

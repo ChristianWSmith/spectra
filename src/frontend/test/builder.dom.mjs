@@ -325,7 +325,9 @@ svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
-  .replace("from './Dialog.svelte'", "from './dialog.js'");
+  .replace("from './Dialog.svelte'", "from './dialog.js'")
+  // plumbing (Strings Stage 3): the dialog imports the strings catalog.
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(moSrc, 'MetricOrderDialog.svelte', join(dir, 'metricorderdialog.js'));
 svelteCompile(
   readFileSync('src/lib/components/Dialog.svelte', 'utf8'),

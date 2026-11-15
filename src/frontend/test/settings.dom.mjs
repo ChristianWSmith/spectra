@@ -192,11 +192,11 @@ svelteCompile(
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
 );
-// ConfirmDialog imports Dialog → point at the local bundle.
-const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8').replace(
-  "import Dialog from './Dialog.svelte';",
-  "import Dialog from './dialog.js';",
-);
+// ConfirmDialog imports Dialog → point at the local bundle; its strings
+// catalog import resolves from the real tree (Strings Stage 3 plumbing).
+const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8')
+  .replace("import Dialog from './Dialog.svelte';", "import Dialog from './dialog.js';")
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(
   readFileSync('src/lib/components/Dialog.svelte', 'utf8'),
   'Dialog.svelte',

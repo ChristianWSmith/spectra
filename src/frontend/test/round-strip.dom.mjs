@@ -94,12 +94,14 @@ for (const f of ['rounds.js', 'sideparity.js', 'teams.js', 'router.js']) {
   writeFileSync(join(dir, f), readFileSync(join('src/lib', f), 'utf8'));
 }
 
-// RoundStrip → rewrite its ../ imports to the local copies.
+// RoundStrip → rewrite its ../ imports to the local copies; the strings
+// catalog resolves from the real tree (Strings Stage 3 plumbing).
 const rsSrc = readFileSync('src/lib/components/RoundStrip.svelte', 'utf8')
   .replace("from '../sideparity.js'", "from './sideparity.js'")
   .replace("from '../teams.js'", "from './teams.js'")
   .replace("from '../rounds.js'", "from './rounds.js'")
-  .replace("from '../router.js'", "from './router.js'");
+  .replace("from '../router.js'", "from './router.js'")
+  .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
 if (rsSrc.includes('kvstore')) {
   console.log('  FAIL RoundStrip imports the kvstore — the visibility pref is retired');
   process.exit(1);
