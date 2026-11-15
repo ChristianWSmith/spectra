@@ -845,7 +845,11 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	if kind == jobKindImport {
 		existing, found, err := im.st.GetMatchBySHA(sha)
 		if err != nil {
-			im.failJob(jobID, 0, models.StageQueued, err.Error(), false)
+			// StageStore: playerJobError picks the frame from the stage, and
+			// the `store: ` message prefix that used to classify these
+			// ingest-phase store failures is gone (reworded 2026-11-15,
+			// store-B) — they must still read "Couldn't save the import".
+			im.failJob(jobID, 0, models.StageStore, err.Error(), false)
 			return
 		}
 		if found {
@@ -887,11 +891,11 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		// Row content is identical either way: path = source, sha, size.
 		matchID, err = im.st.CreateMatchRow(item.path, sha, size)
 		if err != nil {
-			im.failJob(jobID, 0, models.StageQueued, err.Error(), false)
+			im.failJob(jobID, 0, models.StageStore, err.Error(), false) // frame: see the StageStore note above
 			return
 		}
 		if err := im.st.SetJobMatch(jobID, matchID); err != nil {
-			im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
+			im.failJob(jobID, matchID, models.StageStore, err.Error(), false) // frame: see the StageStore note above
 			return
 		}
 	} else if copyOn && im.ManagedDemoPath(sha) == "" {
@@ -920,7 +924,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	release()
 
 	if err := im.st.SetMatchStatus(matchID, models.StatusParsing, ""); err != nil {
-		im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false) // frame: see the StageStore note above
 		return
 	}
 	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
@@ -1157,11 +1161,15 @@ func (im *Importer) analyze(matchID int64) error {
 }
 
 // jobErrPrefixes are the package/context prefixes pipeline errors wrap
-// themselves in ("store: create match row: …", "extract: parse failed:
-// demoinfocs: …"). They are developer vocabulary — dropped at the
-// failJob boundary so "Recent import problems" and the chip titles read
-// as player language. Known context segments (parse failed, the sink
-// names, copy demo) go too; the loop peels nested prefixes.
+// themselves in ("extract: parse failed: demoinfocs: …", "copy demo: …").
+// They are developer vocabulary — dropped at the failJob boundary so
+// "Recent import problems" and the chip titles read as player language.
+// Known context segments (parse failed, the sink names, copy demo) go
+// too; the loop peels nested prefixes. The store/analytics/sidecar/library
+// tokens are deliberately kept as no-ops: those families were reworded to
+// player language at the source (2026-11-15, store-B), so nothing carries
+// them any more — this list stays the boundary's own vocabulary, and the
+// same applies to the matching frame arms in playerJobError.
 var jobErrPrefixes = []string{
 	"store: ", "extract: ", "analytics: ", "sidecar: ", "library: ",
 	"demoinfocs: ", "zstd: ", "copy demo: ",

@@ -395,19 +395,19 @@ func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchLi
 
 	rows, err := s.db.Query(b.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: list matches: %w", err)
+		return nil, fmt.Errorf("couldn't load the matches: %w", err)
 	}
 	defer rows.Close()
 	var out []models.MatchSummary
 	for rows.Next() {
 		mm, err := scanMatchSummary(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: list matches: %w", err)
+			return nil, fmt.Errorf("couldn't load the matches: %w", err)
 		}
 		out = append(out, mm)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list matches: %w", err)
+		return nil, fmt.Errorf("couldn't load the matches: %w", err)
 	}
 	return out, nil
 }
@@ -494,19 +494,19 @@ func (s *Store) ListMatchesPage(query, sortKey string, desc bool, afterID int64,
 
 	rows, err := s.db.Query(b.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: list matches page: %w", err)
+		return nil, fmt.Errorf("couldn't load the matches: %w", err)
 	}
 	defer rows.Close()
 	page := &models.MatchListPage{Rows: []models.MatchSummary{}}
 	for rows.Next() {
 		mm, err := scanMatchSummary(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: list matches page: %w", err)
+			return nil, fmt.Errorf("couldn't load the matches: %w", err)
 		}
 		page.Rows = append(page.Rows, mm)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list matches page: %w", err)
+		return nil, fmt.Errorf("couldn't load the matches: %w", err)
 	}
 	if len(page.Rows) > limit {
 		page.Rows = page.Rows[:limit]
@@ -527,7 +527,7 @@ func (s *Store) CountMatches(query string, filters ...MatchListFilter) (int, err
 	where, args := matchListWhere(query, filters)
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*)`+matchSummaryFrom+where, args...).Scan(&n); err != nil {
-		return 0, fmt.Errorf("store: count matches: %w", err)
+		return 0, fmt.Errorf("couldn't count the matches: %w", err)
 	}
 	return n, nil
 }
@@ -543,10 +543,10 @@ func (s *Store) keysetAfter(order, dir string, afterID int64) (string, []any, er
 		`SELECT `+order+` FROM matches m WHERE m.id = ?`, afterID,
 	).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil, fmt.Errorf("store: list matches page: cursor match %d: %w", afterID, ErrNotFound)
+		return "", nil, fmt.Errorf("couldn't load the matches: %w", ErrNotFound)
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("store: list matches page: cursor match %d: %w", afterID, err)
+		return "", nil, fmt.Errorf("couldn't load the matches: %w", err)
 	}
 	// TEXT comes back as []byte on some driver paths; bind it back as a
 	// string so the comparison stays TEXT-vs-TEXT (a BLOB parameter would
@@ -599,7 +599,7 @@ func (s *Store) pageRosters(page *models.MatchListPage) error {
 			 FROM players p WHERE p.match_id IN (`+placeholders+`) AND `+HumanOnly("p")+`
 			 ORDER BY p.match_id, p.steam_id`, args64(part)...)
 		if err != nil {
-			return fmt.Errorf("store: list matches page: rosters: %w", err)
+			return fmt.Errorf("couldn't load the matches: %w", err)
 		}
 		for rows.Next() {
 			var (
@@ -608,7 +608,7 @@ func (s *Store) pageRosters(page *models.MatchListPage) error {
 			)
 			if err := rows.Scan(&id, &ref.SteamID, &ref.Name, &ref.Side, &ref.IsBot); err != nil {
 				rows.Close()
-				return fmt.Errorf("store: list matches page: rosters: %w", err)
+				return fmt.Errorf("couldn't load the matches: %w", err)
 			}
 			if page.Rosters == nil {
 				page.Rosters = map[int64][]models.PlayerRef{}
@@ -617,7 +617,7 @@ func (s *Store) pageRosters(page *models.MatchListPage) error {
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return fmt.Errorf("store: list matches page: rosters: %w", err)
+			return fmt.Errorf("couldn't load the matches: %w", err)
 		}
 		rows.Close()
 	}
@@ -650,19 +650,19 @@ func (s *Store) ListMapNames() ([]string, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT map FROM matches
 		WHERE TRIM(map) <> '' ORDER BY map`)
 	if err != nil {
-		return nil, fmt.Errorf("store: list map names: %w", err)
+		return nil, fmt.Errorf("couldn't load the map names: %w", err)
 	}
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
 		var m string
 		if err := rows.Scan(&m); err != nil {
-			return nil, fmt.Errorf("store: list map names: %w", err)
+			return nil, fmt.Errorf("couldn't load the map names: %w", err)
 		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list map names: %w", err)
+		return nil, fmt.Errorf("couldn't load the map names: %w", err)
 	}
 	return out, nil
 }
@@ -678,7 +678,7 @@ func (s *Store) GetMatchSummary(id int64) (models.MatchSummary, error) {
 		return models.MatchSummary{}, ErrNotFound
 	}
 	if err != nil {
-		return models.MatchSummary{}, fmt.Errorf("store: get match summary: %w", err)
+		return models.MatchSummary{}, fmt.Errorf("couldn't load the match summary: %w", err)
 	}
 	return mm, nil
 }
@@ -695,7 +695,7 @@ func (s *Store) GetTeamNames(id int64) (ctName, tName string, err error) {
 		return "", "", ErrNotFound
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("store: get team names: %w", err)
+		return "", "", fmt.Errorf("couldn't load the team names: %w", err)
 	}
 	return ctName, tName, nil
 }
@@ -735,7 +735,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: get match: %w", err)
+		return nil, fmt.Errorf("couldn't load the match: %w", err)
 	}
 	m.ExtractedAt = nullTime(extracted)
 	return &m, nil
@@ -785,7 +785,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		id,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get scoreboard: %w", err)
+		return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 	}
 	defer rows.Close()
 	var out []models.PlayerStatsRow
@@ -800,12 +800,12 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			&r.EnemiesFlashed, &r.FlashedTimes, &r.BombPlants, &r.BombDefuses, &r.MVPs,
 			&r.Score, &r.Teamkills, &r.Suicides, &r.MoneySpent, &r.KillsByWeapon, &r.DamageByWeapon,
 		); err != nil {
-			return nil, fmt.Errorf("store: get scoreboard: %w", err)
+			return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get scoreboard: %w", err)
+		return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 	}
 	return out, nil
 }
@@ -814,19 +814,19 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 func (s *Store) GetRounds(id int64) ([]models.RoundRow, error) {
 	rows, err := s.db.Query(roundRowSelect+` ORDER BY r.number ASC`, id)
 	if err != nil {
-		return nil, fmt.Errorf("store: get rounds: %w", err)
+		return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 	}
 	defer rows.Close()
 	var out []models.RoundRow
 	for rows.Next() {
 		rr, err := scanRoundRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: get rounds: %w", err)
+			return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 		}
 		out = append(out, rr)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get rounds: %w", err)
+		return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 	}
 	return out, nil
 }
@@ -844,7 +844,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: get round detail: %w", err)
+		return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 	}
 
 	econRows, err := s.db.Query(
@@ -853,29 +853,29 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 		id, round,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round detail: %w", err)
+		return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 	}
 	defer econRows.Close()
 	var economy []models.RoundEconomy
 	for econRows.Next() {
 		var e models.RoundEconomy
 		if err := econRows.Scan(&e.Side, &e.EquipValue, &e.MoneySampledSum, &e.MoneySamples, &e.Spent, &e.FreePistolValue); err != nil {
-			return nil, fmt.Errorf("store: get round detail: %w", err)
+			return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 		}
 		e.MatchID, e.Round = id, round
 		economy = append(economy, e)
 	}
 	if err := econRows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get round detail: %w", err)
+		return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 	}
 
 	events, err := s.queryEvents(models.EventFilter{MatchID: id}, &round)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round detail: %w", err)
+		return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 	}
 	chat, err := s.queryChat(id, round, true, "")
 	if err != nil {
-		return nil, fmt.Errorf("store: get round detail: %w", err)
+		return nil, fmt.Errorf("couldn't load the round detail: %w", err)
 	}
 
 	return &models.RoundDetail{Round: rr, Economy: economy, Events: events, Chat: chat}, nil
@@ -1121,7 +1121,7 @@ func (s *Store) eventWhere(f models.EventFilter, exactRound *int) (whereClause, 
 		var sw int
 		if err := s.db.QueryRow(`SELECT side_switches FROM matches WHERE id = ?`, f.MatchID).
 			Scan(&sw); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return w, fmt.Errorf("store: get events side switches: %w", err)
+			return w, fmt.Errorf("couldn't load the side switches: %w", err)
 		}
 		// The two Go-computed identities: rules.StartSide owns the flip
 		// (odd switch count), so SQL only maps a final side onto its
@@ -1202,19 +1202,19 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get events: %w", err)
+		return nil, fmt.Errorf("couldn't load the events: %w", err)
 	}
 	defer rows.Close()
 	var out []models.EventRow
 	for rows.Next() {
 		er, err := scanEventRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: get events: %w", err)
+			return nil, fmt.Errorf("couldn't load the events: %w", err)
 		}
 		out = append(out, er)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get events: %w", err)
+		return nil, fmt.Errorf("couldn't load the events: %w", err)
 	}
 	return out, nil
 }
@@ -1242,19 +1242,19 @@ func (s *Store) GetEventKeys(f models.EventFilter) ([]models.EventKey, error) {
 	args = append(args, w.bound()...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get event keys: %w", err)
+		return nil, fmt.Errorf("couldn't load the event keys: %w", err)
 	}
 	defer rows.Close()
 	out := make([]models.EventKey, 0, 64)
 	for rows.Next() {
 		var k models.EventKey
 		if err := rows.Scan(&k.ID, &k.Tick, &k.Kind); err != nil {
-			return nil, fmt.Errorf("store: get event keys: %w", err)
+			return nil, fmt.Errorf("couldn't load the event keys: %w", err)
 		}
 		out = append(out, k)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get event keys: %w", err)
+		return nil, fmt.Errorf("couldn't load the event keys: %w", err)
 	}
 	return out, nil
 }
@@ -1269,7 +1269,7 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: get event: %w", err)
+		return nil, fmt.Errorf("couldn't load the event: %w", err)
 	}
 	return &det, nil
 }
@@ -1323,19 +1323,19 @@ func (s *Store) GetEventDetails(ids []int64) ([]models.EventDetail, error) {
 			`SELECT `+eventRowCols+`, e.detail_json, e.raw_json`+eventRowFrom+
 				` WHERE e.id IN (`+placeholders+`)`, args64(part)...)
 		if err != nil {
-			return nil, fmt.Errorf("store: get event details: %w", err)
+			return nil, fmt.Errorf("couldn't load the event details: %w", err)
 		}
 		for rows.Next() {
 			det, err := scanEventDetail(rows)
 			if err != nil {
 				rows.Close()
-				return nil, fmt.Errorf("store: get event details: %w", err)
+				return nil, fmt.Errorf("couldn't load the event details: %w", err)
 			}
 			byID[det.ID] = det
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("store: get event details: %w", err)
+			return nil, fmt.Errorf("couldn't load the event details: %w", err)
 		}
 		rows.Close()
 	}
@@ -1361,7 +1361,7 @@ func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
 		matchID, models.EventBlind,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get blind details: %w", err)
+		return nil, fmt.Errorf("couldn't load the blind details: %w", err)
 	}
 	defer rows.Close()
 	out := map[int]string{}
@@ -1369,12 +1369,12 @@ func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
 		var seq int
 		var det string
 		if err := rows.Scan(&seq, &det); err != nil {
-			return nil, fmt.Errorf("store: get blind details: %w", err)
+			return nil, fmt.Errorf("couldn't load the blind details: %w", err)
 		}
 		out[seq] = det
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get blind details: %w", err)
+		return nil, fmt.Errorf("couldn't load the blind details: %w", err)
 	}
 	return out, nil
 }
@@ -1400,7 +1400,7 @@ func (s *Store) GetBlindFlashDurations(matchID int64) (map[int]int, error) {
 		matchID, models.EventBlind,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get blind durations: %w", err)
+		return nil, fmt.Errorf("couldn't load the blind durations: %w", err)
 	}
 	defer rows.Close()
 	out := map[int]int{}
@@ -1408,12 +1408,12 @@ func (s *Store) GetBlindFlashDurations(matchID int64) (map[int]int, error) {
 		var seq int
 		var ms int
 		if err := rows.Scan(&seq, &ms); err != nil {
-			return nil, fmt.Errorf("store: get blind durations: %w", err)
+			return nil, fmt.Errorf("couldn't load the blind durations: %w", err)
 		}
 		out[seq] = ms
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get blind durations: %w", err)
+		return nil, fmt.Errorf("couldn't load the blind durations: %w", err)
 	}
 	return out, nil
 }
@@ -1447,19 +1447,19 @@ func (s *Store) GetDropDetails(matchID int64) ([]models.DropDetail, error) {
 		matchID, models.EventWeaponDrop,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get drop details: %w", err)
+		return nil, fmt.Errorf("couldn't load the drop details: %w", err)
 	}
 	defer rows.Close()
 	var out []models.DropDetail
 	for rows.Next() {
 		var d models.DropDetail
 		if err := rows.Scan(&d.Seq, &d.Cat, &d.Mag, &d.Reserve); err != nil {
-			return nil, fmt.Errorf("store: get drop details: %w", err)
+			return nil, fmt.Errorf("couldn't load the drop details: %w", err)
 		}
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get drop details: %w", err)
+		return nil, fmt.Errorf("couldn't load the drop details: %w", err)
 	}
 	return out, nil
 }
@@ -1477,7 +1477,7 @@ func (s *Store) GetHurtHealthDetails(matchID int64) (map[int]string, error) {
 		matchID, models.EventDamage,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get hurt details: %w", err)
+		return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
 	}
 	defer rows.Close()
 	out := map[int]string{}
@@ -1485,12 +1485,12 @@ func (s *Store) GetHurtHealthDetails(matchID int64) (map[int]string, error) {
 		var seq int
 		var det string
 		if err := rows.Scan(&seq, &det); err != nil {
-			return nil, fmt.Errorf("store: get hurt details: %w", err)
+			return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
 		}
 		out[seq] = det
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get hurt details: %w", err)
+		return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
 	}
 	return out, nil
 }
@@ -1529,7 +1529,7 @@ func (s *Store) GetKillNearDists(matchID int64) ([]KillNearDist, error) {
 		 FROM events WHERE match_id = ? AND kind = 'kill' ORDER BY id`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get kill near dists: %w", err)
+		return nil, fmt.Errorf("couldn't load the kill distances: %w", err)
 	}
 	defer rows.Close()
 	var out []KillNearDist
@@ -1537,7 +1537,7 @@ func (s *Store) GetKillNearDists(matchID int64) ([]KillNearDist, error) {
 		var k KillNearDist
 		var raw any
 		if err := rows.Scan(&k.Tick, &k.Round, &k.Attacker, &k.Victim, &raw); err != nil {
-			return nil, fmt.Errorf("store: get kill near dists: %w", err)
+			return nil, fmt.Errorf("couldn't load the kill distances: %w", err)
 		}
 		switch v := raw.(type) {
 		case nil: // malformed / absent key / JSON null → never counted
@@ -1550,7 +1550,7 @@ func (s *Store) GetKillNearDists(matchID int64) ([]KillNearDist, error) {
 		out = append(out, k)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get kill near dists: %w", err)
+		return nil, fmt.Errorf("couldn't load the kill distances: %w", err)
 	}
 	return out, nil
 }
@@ -1583,7 +1583,7 @@ func (s *Store) queryChat(matchID int64, round int, exactRound bool, player stri
 	q += ` ORDER BY tick, id`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get chat: %w", err)
+		return nil, fmt.Errorf("couldn't load the chat: %w", err)
 	}
 	defer rows.Close()
 	var out []models.ChatRow
@@ -1593,13 +1593,13 @@ func (s *Store) queryChat(matchID int64, round int, exactRound bool, player stri
 			decrypted int64
 		)
 		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind, &c.Channel, &decrypted); err != nil {
-			return nil, fmt.Errorf("store: get chat: %w", err)
+			return nil, fmt.Errorf("couldn't load the chat: %w", err)
 		}
 		c.Decrypted = i2b(decrypted)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get chat: %w", err)
+		return nil, fmt.Errorf("couldn't load the chat: %w", err)
 	}
 	return out, nil
 }
@@ -1612,19 +1612,19 @@ func (s *Store) GetGenericHistogram(id int64) ([]models.NameCount, error) {
 		id,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get generic histogram: %w", err)
+		return nil, fmt.Errorf("couldn't load the histogram: %w", err)
 	}
 	defer rows.Close()
 	var out []models.NameCount
 	for rows.Next() {
 		var nc models.NameCount
 		if err := rows.Scan(&nc.Name, &nc.Count); err != nil {
-			return nil, fmt.Errorf("store: get generic histogram: %w", err)
+			return nil, fmt.Errorf("couldn't load the histogram: %w", err)
 		}
 		out = append(out, nc)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get generic histogram: %w", err)
+		return nil, fmt.Errorf("couldn't load the histogram: %w", err)
 	}
 	return out, nil
 }
@@ -1633,19 +1633,19 @@ func (s *Store) GetGenericHistogram(id int64) ([]models.NameCount, error) {
 func (s *Store) GetWarnings(id int64) ([]string, error) {
 	rows, err := s.db.Query(`SELECT message FROM warnings WHERE match_id = ? ORDER BY seq`, id)
 	if err != nil {
-		return nil, fmt.Errorf("store: get warnings: %w", err)
+		return nil, fmt.Errorf("couldn't load the warnings: %w", err)
 	}
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
 		var msg string
 		if err := rows.Scan(&msg); err != nil {
-			return nil, fmt.Errorf("store: get warnings: %w", err)
+			return nil, fmt.Errorf("couldn't load the warnings: %w", err)
 		}
 		out = append(out, msg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get warnings: %w", err)
+		return nil, fmt.Errorf("couldn't load the warnings: %w", err)
 	}
 	return out, nil
 }
@@ -1698,7 +1698,7 @@ func (s *Store) GetGenericEvents(id int64, name string, round int, limit int, of
 	}
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get generic events: %w", err)
+		return nil, fmt.Errorf("couldn't load the events: %w", err)
 	}
 	defer rows.Close()
 	var out []models.GenericEvent
@@ -1706,12 +1706,12 @@ func (s *Store) GetGenericEvents(id int64, name string, round int, limit int, of
 		var ge models.GenericEvent
 		ge.MatchID = id
 		if err := rows.Scan(&ge.RowID, &ge.Name, &ge.Tick, &ge.Round, &ge.PayloadJSON); err != nil {
-			return nil, fmt.Errorf("store: get generic events: %w", err)
+			return nil, fmt.Errorf("couldn't load the events: %w", err)
 		}
 		out = append(out, ge)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get generic events: %w", err)
+		return nil, fmt.Errorf("couldn't load the events: %w", err)
 	}
 	return out, nil
 }

@@ -58,19 +58,19 @@ func (s *Store) ListMetrics() ([]models.MetricRow, error) {
 		`SELECT ` + metricColumns + ` FROM metrics ORDER BY ` + metricOrder,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list metrics: %w", err)
+		return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 	}
 	defer rows.Close()
 	var out []models.MetricRow
 	for rows.Next() {
 		m, err := scanMetric(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: list metrics: %w", err)
+			return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list metrics: %w", err)
+		return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 	}
 	return out, nil
 }
@@ -120,7 +120,7 @@ func formatFilterPredicate(word string) (string, []any, error) {
 	for _, tok := range strings.Split(word, ",") {
 		rank := slices.Index(metricFormatTokens, tok)
 		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
-			return "", nil, fmt.Errorf("store: list metrics page: unknown format filter %q", word)
+			return "", nil, fmt.Errorf("couldn't load the metrics: unknown format filter %q", word)
 		}
 		lastRank = rank
 		if tok == "auto" {
@@ -248,7 +248,7 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	case "none":
 		addWhere(`0 = 1`)
 	default:
-		return nil, fmt.Errorf("store: list metrics page: unknown origin filter %q", originFilter)
+		return nil, fmt.Errorf("couldn't load the metrics: unknown origin filter %q", originFilter)
 	}
 	// The scope partition: both values are DDL-checked, so both-off is
 	// the empty set exactly like origin's "none".
@@ -261,7 +261,7 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	case "none":
 		addWhere(`0 = 1`)
 	default:
-		return nil, fmt.Errorf("store: list metrics page: unknown scope filter %q", scopeFilter)
+		return nil, fmt.Errorf("couldn't load the metrics: unknown scope filter %q", scopeFilter)
 	}
 	// The denominator pair (see the DENOMINATOR FILTER note above): the
 	// '' rows pass in EVERY state — including "none", which therefore
@@ -276,7 +276,7 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	case "none":
 		addWhere(`denominator = ''`)
 	default:
-		return nil, fmt.Errorf("store: list metrics page: unknown denominator filter %q", denomFilter)
+		return nil, fmt.Errorf("couldn't load the metrics: unknown denominator filter %q", denomFilter)
 	}
 	// The format subset (see the FORMAT FILTER note above): "none" is
 	// the empty set like origin's, and every other non-empty word is
@@ -311,19 +311,19 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 
 	rows, err := s.db.Query(b.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: list metrics page: %w", err)
+		return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 	}
 	defer rows.Close()
 	page := &models.MetricListPage{Rows: []models.MetricRow{}}
 	for rows.Next() {
 		m, err := scanMetric(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: list metrics page: %w", err)
+			return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 		}
 		page.Rows = append(page.Rows, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list metrics page: %w", err)
+		return nil, fmt.Errorf("couldn't load the metrics: %w", err)
 	}
 	if len(page.Rows) > limit {
 		page.Rows = page.Rows[:limit]
@@ -345,10 +345,10 @@ func (s *Store) metricKeysetAfter(afterID int64) (string, []any, error) {
 		`SELECT `+metricOriginRank+`, name FROM metrics WHERE id = ?`, afterID,
 	).Scan(&rank, &name)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil, fmt.Errorf("store: list metrics page: cursor metric %d: %w", afterID, ErrNotFound)
+		return "", nil, fmt.Errorf("couldn't load the metrics: %w", ErrNotFound)
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("store: list metrics page: cursor metric %d: %w", afterID, err)
+		return "", nil, fmt.Errorf("couldn't load the metrics: %w", err)
 	}
 	return `(` + metricOriginRank + `, name) > (?, ?)`, []any{rank, name}, nil
 }
@@ -370,7 +370,7 @@ func (s *Store) GetMetricByName(name string) (models.MetricRow, error) {
 		return models.MetricRow{}, ErrNotFound
 	}
 	if err != nil {
-		return models.MetricRow{}, fmt.Errorf("store: get metric by name: %w", err)
+		return models.MetricRow{}, fmt.Errorf("couldn't load the metric: %w", err)
 	}
 	return m, nil
 }
@@ -394,7 +394,7 @@ func getMetricRow(q metricsExec, id int64) (models.MetricRow, error) {
 		return models.MetricRow{}, ErrNotFound
 	}
 	if err != nil {
-		return models.MetricRow{}, fmt.Errorf("store: get metric: %w", err)
+		return models.MetricRow{}, fmt.Errorf("couldn't load the metric: %w", err)
 	}
 	return m, nil
 }
@@ -419,11 +419,11 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 		if isUniqueErr(err) {
 			return 0, fmt.Errorf("a metric named %q already exists", scrub(m.Name))
 		}
-		return 0, fmt.Errorf("store: create metric: %w", err)
+		return 0, fmt.Errorf("couldn't save the metric: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("store: create metric: %w", err)
+		return 0, fmt.Errorf("couldn't save the metric: %w", err)
 	}
 	return id, nil
 }
@@ -443,7 +443,7 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 		return err
 	}
 	if existing.Origin != "user" {
-		return fmt.Errorf("store: metric %q is origin %s and cannot be modified", existing.Name, existing.Origin)
+		return fmt.Errorf("the %s metric %q cannot be modified", existing.Origin, existing.Name)
 	}
 	if _, err := q.Exec(
 		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, format = ?,
@@ -454,7 +454,7 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 		if isUniqueErr(err) {
 			return fmt.Errorf("a metric named %q already exists", scrub(m.Name))
 		}
-		return fmt.Errorf("store: update metric: %w", err)
+		return fmt.Errorf("couldn't update the metric: %w", err)
 	}
 	return nil
 }
@@ -497,11 +497,11 @@ func (s *Store) DeleteMetric(id int64) error {
 		return err
 	}
 	if existing.Origin == "builtin" {
-		return fmt.Errorf("store: builtin metric %q cannot be deleted", existing.Name)
+		return fmt.Errorf("the built-in metric %q cannot be deleted", existing.Name)
 	}
 	res, err := s.db.Exec(`DELETE FROM metrics WHERE id = ?`, id)
 	if err != nil {
-		return fmt.Errorf("store: delete metric: %w", err)
+		return fmt.Errorf("couldn't delete the metric: %w", err)
 	}
 	return affectedOrNotFound(res, "deleting the metric")
 }
@@ -550,7 +550,7 @@ type DependentRewrite struct {
 func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool) (models.MetricRow, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return models.MetricRow{}, fmt.Errorf("store: save metric: %w", err)
+		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -571,7 +571,7 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 	for _, r := range rewrites {
 		res, err := tx.Exec(`UPDATE metrics SET expr = ? WHERE id = ?`, scrub(r.Expr), r.ID)
 		if err != nil {
-			return models.MetricRow{}, fmt.Errorf("store: rewrite dependent metric: %w", err)
+			return models.MetricRow{}, fmt.Errorf("couldn't update the dependent metric: %w", err)
 		}
 		if err := affectedOrNotFound(res, "updating the dependent metric"); err != nil {
 			return models.MetricRow{}, err
@@ -589,7 +589,7 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return models.MetricRow{}, fmt.Errorf("store: save metric: %w", err)
+		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
 	}
 	return s.GetMetric(id)
 }
@@ -600,7 +600,7 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 // while the extractor legitimately lists a name once per occurrence).
 func replaceMetricDeps(q metricsExec, metricID int64, deps []string) error {
 	if _, err := q.Exec(`DELETE FROM metric_deps WHERE metric_id = ?`, metricID); err != nil {
-		return fmt.Errorf("store: replace metric deps: %w", err)
+		return fmt.Errorf("couldn't save the metric dependencies: %w", err)
 	}
 	seen := make(map[string]bool, len(deps))
 	for _, d := range deps {
@@ -611,7 +611,7 @@ func replaceMetricDeps(q metricsExec, metricID int64, deps []string) error {
 		if _, err := q.Exec(
 			`INSERT INTO metric_deps (metric_id, dep_name) VALUES (?, ?)`, metricID, scrub(d),
 		); err != nil {
-			return fmt.Errorf("store: replace metric deps: %w", err)
+			return fmt.Errorf("couldn't save the metric dependencies: %w", err)
 		}
 	}
 	return nil
@@ -624,19 +624,19 @@ func replaceMetricDeps(q metricsExec, metricID int64, deps []string) error {
 func (s *Store) MetricDeps(metricID int64) ([]string, error) {
 	rows, err := s.db.Query(`SELECT dep_name FROM metric_deps WHERE metric_id = ? ORDER BY dep_name`, metricID)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric deps: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependencies: %w", err)
 	}
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("store: metric deps: %w", err)
+			return nil, fmt.Errorf("couldn't load the metric dependencies: %w", err)
 		}
 		out = append(out, name)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: metric deps: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependencies: %w", err)
 	}
 	return out, nil
 }
@@ -651,19 +651,19 @@ func (s *Store) MetricDependents(name string) ([]models.MetricRow, error) {
 		scrub(name),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: metric dependents: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependents: %w", err)
 	}
 	defer rows.Close()
 	var out []models.MetricRow
 	for rows.Next() {
 		m, err := scanMetric(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: metric dependents: %w", err)
+			return nil, fmt.Errorf("couldn't load the metric dependents: %w", err)
 		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: metric dependents: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependents: %w", err)
 	}
 	return out, nil
 }
@@ -679,19 +679,19 @@ func (s *Store) ListMetricEdges() (map[string][]string, error) {
 		 ORDER BY m.name ASC, d.dep_name ASC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list metric edges: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependency graph: %w", err)
 	}
 	defer rows.Close()
 	out := map[string][]string{}
 	for rows.Next() {
 		var from, to string
 		if err := rows.Scan(&from, &to); err != nil {
-			return nil, fmt.Errorf("store: list metric edges: %w", err)
+			return nil, fmt.Errorf("couldn't load the metric dependency graph: %w", err)
 		}
 		out[from] = append(out[from], to)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list metric edges: %w", err)
+		return nil, fmt.Errorf("couldn't load the metric dependency graph: %w", err)
 	}
 	return out, nil
 }

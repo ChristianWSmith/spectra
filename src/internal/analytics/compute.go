@@ -65,26 +65,26 @@ func ComputeForBatch(st *store.Store, matchID int64, cfg Config) error {
 func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) error {
 	m, err := st.GetMatch(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load match %d: %w", matchID, err)
+		return fmt.Errorf("couldn't load the match: %w", err)
 	}
 	if cfg.TickRate <= 0 {
 		cfg.TickRate = m.TickRate
 	}
 	rounds, err := st.GetRoundInfos(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load rounds: %w", err)
+		return fmt.Errorf("couldn't load the rounds: %w", err)
 	}
 	eco, err := st.GetRoundEconomyViews(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load economy: %w", err)
+		return fmt.Errorf("couldn't load the economy: %w", err)
 	}
 	events, err := st.GetEvents(models.EventFilter{MatchID: matchID, Limit: store.MaxEventLimit})
 	if err != nil {
-		return fmt.Errorf("analytics: load events: %w", err)
+		return fmt.Errorf("couldn't load the events: %w", err)
 	}
 	players, err := st.GetPlayerRefs(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load players: %w", err)
+		return fmt.Errorf("couldn't load the players: %w", err)
 	}
 	// EventRow → Event (the typed columns only — payloads stay in SQLite;
 	// models.EventFromRow is the one conversion).
@@ -97,7 +97,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// flashDurationMs, which EventRow deliberately never carries.
 	blindDetails, err := st.GetBlindFlashDetails(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load blind details: %w", err)
+		return fmt.Errorf("couldn't load the blind details: %w", err)
 	}
 	// player_hurt payloads are the second narrow read (same reason, same
 	// boundary): the clutch HPLeft reconstruction needs the game's
@@ -106,7 +106,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// production and in tests alike.
 	hurtDetails, err := st.GetHurtHealthDetails(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load hurt details: %w", err)
+		return fmt.Errorf("couldn't load the hurt details: %w", err)
 	}
 	for i, er := range events {
 		if det, ok := hurtDetails[er.Seq]; ok {
@@ -117,7 +117,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// round without stored sides produces no side-derived rows.
 	sides, err := st.GetRoundPlayerSides(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load round sides: %w", err)
+		return fmt.Errorf("couldn't load the round sides: %w", err)
 	}
 
 	classes, sideClasses := Classify(eco, rounds, cfg)
@@ -159,7 +159,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		}
 	}
 	if err := st.ReplaceTradeKills(matchID, tradeKills); err != nil {
-		return fmt.Errorf("analytics: replace trade kills: %w", err)
+		return fmt.Errorf("couldn't save the trade kills: %w", err)
 	}
 	// Trade-opportunity counts — the ONE writer of match_trade_opps
 	// (AGENTS.md "Analysis-rule derived values": every rules-derived
@@ -177,25 +177,25 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// rollback exists or is needed.
 	kills, err := st.GetKillNearDists(matchID)
 	if err != nil {
-		return fmt.Errorf("analytics: load kill near dists: %w", err)
+		return fmt.Errorf("couldn't load the kill distances: %w", err)
 	}
 	opps, missed := tradeOppCounts(kills, rounds, sides, engs, players, cfg.TradeOppDistance)
 	if err := st.ReplaceTradeOpps(matchID, opps, missed); err != nil {
-		return fmt.Errorf("analytics: replace trade opps: %w", err)
+		return fmt.Errorf("couldn't save the trade opportunities: %w", err)
 	}
 	if err := st.ReplaceUtility(matchID, utils); err != nil {
 		return err
 	}
 	if rebuildCareer {
 		if err := st.RebuildCareer(); err != nil {
-			return fmt.Errorf("analytics: rebuild career: %w", err)
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
 		}
 	}
 	// The stamp lands last (see the RULE STAMP note): only a pass that
 	// reached here — every replace committed, and the career rebuild when
 	// this path owns it — claims the rule version.
 	if err := st.SetMatchRuleVersion(matchID, cfg.RuleVersion); err != nil {
-		return fmt.Errorf("analytics: stamp rule version: %w", err)
+		return fmt.Errorf("couldn't save the analysis version: %w", err)
 	}
 	return nil
 }

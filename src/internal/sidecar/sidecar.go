@@ -163,7 +163,7 @@ func appendIdxEntry(b []byte, e idxEntry) []byte {
 // parseIdxEntries decodes a whole positions.idx payload.
 func parseIdxEntries(b []byte) ([]idxEntry, error) {
 	if len(b)%idxEntrySize != 0 {
-		return nil, fmt.Errorf("sidecar: index length %d is not a multiple of %d", len(b), idxEntrySize)
+		return nil, fmt.Errorf("the index length %d is not a multiple of %d", len(b), idxEntrySize)
 	}
 	out := make([]idxEntry, 0, len(b)/idxEntrySize)
 	for off := 0; off < len(b); off += idxEntrySize {
@@ -177,7 +177,7 @@ func parseIdxEntries(b []byte) ([]idxEntry, error) {
 }
 
 // errCorrupt builds a sidecar integrity error (truncated/misaligned data).
-func errCorrupt(msg string) error { return fmt.Errorf("sidecar: corrupt data: %s", msg) }
+func errCorrupt(msg string) error { return fmt.Errorf("corrupt data: %s", msg) }
 
 // quantCoord truncates a world coordinate onto the int16 @1.0 u grid,
 // clamped to ±32767 (the M2-T1 spike's encoding).

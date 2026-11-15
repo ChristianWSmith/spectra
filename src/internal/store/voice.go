@@ -32,7 +32,7 @@ func (s *Store) SaveVoicePresence(matchID int64, presence models.VoicePresenceRo
 		matchID, presence.ChunkCount, presence.PlayerCount, presence.CasterCount,
 		b2i(presence.KeyFound), presence.OutSampleRate,
 	); err != nil {
-		return fmt.Errorf("store: save voice presence: %w", err)
+		return fmt.Errorf("couldn't save the voice presence: %w", err)
 	}
 	return nil
 }
@@ -68,7 +68,7 @@ func (s *Store) GetVoicePresence(matchID int64) (models.VoicePresenceRow, error)
 		return models.VoicePresenceRow{}, ErrNotFound
 	}
 	if err != nil {
-		return models.VoicePresenceRow{}, fmt.Errorf("store: get voice presence: %w", err)
+		return models.VoicePresenceRow{}, fmt.Errorf("couldn't load the voice presence: %w", err)
 	}
 	p.KeyFound = i2b(keyFound)
 	return p, nil

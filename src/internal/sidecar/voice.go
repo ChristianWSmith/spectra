@@ -107,7 +107,7 @@ type VoiceWriter struct {
 func NewVoiceWriter(dir string) (*VoiceWriter, error) {
 	voiceDir := filepath.Join(dir, VoiceDirName)
 	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
-		return nil, fmt.Errorf("sidecar: create voice directory: %w", err)
+		return nil, fmt.Errorf("couldn't create the voice folder: %w", err)
 	}
 	return &VoiceWriter{
 		dir:   voiceDir,
@@ -122,21 +122,21 @@ func NewVoiceWriter(dir string) (*VoiceWriter, error) {
 // the decimal SteamID is formatted once per player, not once per chunk.
 func (w *VoiceWriter) Add(c extract.VoiceChunk) error {
 	if w.closed {
-		return errors.New("sidecar: add voice chunk after close")
+		return errors.New("cannot add a voice chunk after the writer is closed")
 	}
 	vf, ok := w.files[c.XUID]
 	if !ok {
 		steamID := strconv.FormatUint(c.XUID, 10) // formatted ONCE per player
 		f, err := os.Create(filepath.Join(w.dir, steamID+voicePayloadExt))
 		if err != nil {
-			return fmt.Errorf("sidecar: create voice file for %d: %w", c.XUID, err)
+			return fmt.Errorf("couldn't create the voice file: %w", err)
 		}
 		vf = &voiceFile{f: f, bw: bufio.NewWriter(f), steam: steamID}
 		w.files[c.XUID] = vf
 	}
 	n, err := vf.bw.Write(c.Payload)
 	if err != nil {
-		return fmt.Errorf("sidecar: write voice chunk: %w", err)
+		return fmt.Errorf("couldn't write the voice data: %w", err)
 	}
 	w.rows = append(w.rows, models.VoiceIndexRow{
 		Tick:    c.Tick,
@@ -158,7 +158,7 @@ func (w *VoiceWriter) Add(c extract.VoiceChunk) error {
 func (w *VoiceWriter) Close() (VoiceMeta, []models.VoiceIndexRow, error) {
 	var meta VoiceMeta
 	if w.closed {
-		return meta, nil, errors.New("sidecar: voice writer already closed")
+		return meta, nil, errors.New("the voice writer is already closed")
 	}
 	w.closed = true
 	meta.Chunks = len(w.rows)
@@ -173,22 +173,22 @@ func (w *VoiceWriter) Close() (VoiceMeta, []models.VoiceIndexRow, error) {
 	// sizes are the bound every record's uint32 off must stay inside, and
 	// the size the reader validates against.
 	byPlayer := make(map[string][]models.VoiceIndexRow, len(w.files))
-	for id, vf := range w.files {
+	for _, vf := range w.files {
 		if err := vf.bw.Flush(); err != nil {
-			return meta, nil, fmt.Errorf("sidecar: flush voice file %d: %w", id, err)
+			return meta, nil, fmt.Errorf("couldn't flush the voice file: %w", err)
 		}
 		if vf.off > maxVoicePayloadBytes {
-			return meta, nil, fmt.Errorf("sidecar: voice payload %d is %d bytes, over the %d byte index limit",
-				id, vf.off, maxVoicePayloadBytes)
+			return meta, nil, fmt.Errorf("the voice payload is %d bytes, over the %d byte index limit",
+				vf.off, maxVoicePayloadBytes)
 		}
 		if err := vf.f.Close(); err != nil {
-			return meta, nil, fmt.Errorf("sidecar: close voice file %d: %w", id, err)
+			return meta, nil, fmt.Errorf("couldn't close the voice file: %w", err)
 		}
 	}
 	for _, r := range w.rows {
 		if r.Len < 0 || r.Len > maxVoiceIdxLen {
-			return meta, nil, fmt.Errorf("sidecar: voice chunk for %s is %d bytes, over the %d byte record limit",
-				r.SteamID, r.Len, maxVoiceIdxLen)
+			return meta, nil, fmt.Errorf("the voice chunk is %d bytes, over the %d byte record limit",
+				r.Len, maxVoiceIdxLen)
 		}
 		byPlayer[r.SteamID] = append(byPlayer[r.SteamID], r)
 	}
@@ -201,7 +201,7 @@ func (w *VoiceWriter) Close() (VoiceMeta, []models.VoiceIndexRow, error) {
 		// In-place write, exactly like positions.idx: os.WriteFile
 		// truncates, so a rewrite never keeps stale records.
 		if err := os.WriteFile(filepath.Join(w.dir, steamID+voiceIdxExt), buf, 0o644); err != nil {
-			return meta, nil, fmt.Errorf("sidecar: write voice index %s: %w", steamID, err)
+			return meta, nil, fmt.Errorf("couldn't write the voice index: %w", err)
 		}
 	}
 	return meta, w.rows, nil

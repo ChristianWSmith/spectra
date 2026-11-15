@@ -19,7 +19,7 @@ func (s *Store) GetMatchBySHA(sha string) (int64, bool, error) {
 		return 0, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("store: get match by sha256: %w", err)
+		return 0, false, fmt.Errorf("couldn't look up the match: %w", err)
 	}
 	return id, true, nil
 }
@@ -32,11 +32,11 @@ func (s *Store) CreateMatchRow(path, sha string, size int64) (int64, error) {
 		scrub(path), scrub(sha), size, models.StatusQueued,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("store: create match row: %w", err)
+		return 0, fmt.Errorf("couldn't create the match: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("store: create match row: %w", err)
+		return 0, fmt.Errorf("couldn't create the match: %w", err)
 	}
 	return id, nil
 }
@@ -48,7 +48,7 @@ func (s *Store) SetMatchStatus(id int64, status, errMsg string) error {
 		scrub(status), scrub(errMsg), id,
 	)
 	if err != nil {
-		return fmt.Errorf("store: set match status: %w", err)
+		return fmt.Errorf("couldn't update the match status: %w", err)
 	}
 	return affectedOrNotFound(res, "updating the match status")
 }
@@ -61,11 +61,11 @@ func (s *Store) CreateJob(kind, path string) (int64, error) {
 		scrub(kind), scrub(path), models.JobQueued, models.StageQueued, 0.0, "", time.Now(), int64(0),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("store: create job: %w", err)
+		return 0, fmt.Errorf("couldn't create the job: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("store: create job: %w", err)
+		return 0, fmt.Errorf("couldn't create the job: %w", err)
 	}
 	return id, nil
 }
@@ -74,7 +74,7 @@ func (s *Store) CreateJob(kind, path string) (int64, error) {
 func (s *Store) SetJobMatch(jobID, matchID int64) error {
 	res, err := s.db.Exec(`UPDATE jobs SET match_id = ? WHERE id = ?`, matchID, jobID)
 	if err != nil {
-		return fmt.Errorf("store: set job match: %w", err)
+		return fmt.Errorf("couldn't link the job to the match: %w", err)
 	}
 	return affectedOrNotFound(res, "linking the job to the match")
 }
@@ -95,11 +95,11 @@ func (s *Store) UpdateJob(id int64, status, stage string, progress float64, errM
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("store: update job: %w", err)
+		return fmt.Errorf("couldn't update the job: %w", err)
 	}
 	ok, err := s.jobExists(id)
 	if err != nil {
-		return fmt.Errorf("store: update job: %w", err)
+		return fmt.Errorf("couldn't update the job: %w", err)
 	}
 	if !ok {
 		return ErrNotFound
@@ -130,18 +130,18 @@ func (s *Store) CancelJob(id int64) error {
 		models.JobCancelled, time.Now(), id, models.JobQueued, models.JobRunning,
 	)
 	if err != nil {
-		return fmt.Errorf("store: cancel job: %w", err)
+		return fmt.Errorf("couldn't cancel the job: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("store: cancel job: %w", err)
+		return fmt.Errorf("couldn't cancel the job: %w", err)
 	}
 	if n > 0 {
 		return nil
 	}
 	ok, err := s.jobExists(id)
 	if err != nil {
-		return fmt.Errorf("store: cancel job: %w", err)
+		return fmt.Errorf("couldn't cancel the job: %w", err)
 	}
 	if !ok {
 		return ErrNotFound
@@ -182,7 +182,7 @@ func (s *Store) findPendingJob(where string, args ...any) (models.Job, bool, err
 		return models.Job{}, false, nil
 	}
 	if err != nil {
-		return models.Job{}, false, fmt.Errorf("store: find pending job: %w", err)
+		return models.Job{}, false, fmt.Errorf("couldn't look up the pending job: %w", err)
 	}
 	return job, true, nil
 }
@@ -198,7 +198,7 @@ func (s *Store) UpdateJobProgress(id int64, stage string, progress float64) erro
 		`UPDATE jobs SET stage = ?, progress = ? WHERE id = ? AND status = ?`,
 		scrub(stage), progress, id, models.JobRunning,
 	); err != nil {
-		return fmt.Errorf("store: update job progress: %w", err)
+		return fmt.Errorf("couldn't update the job progress: %w", err)
 	}
 	return nil
 }
@@ -216,19 +216,19 @@ func (s *Store) ListJobs() ([]models.Job, error) {
 		`SELECT ` + jobsCols + ` FROM jobs ORDER BY created_at DESC, id DESC LIMIT 200`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list jobs: %w", err)
+		return nil, fmt.Errorf("couldn't load the jobs: %w", err)
 	}
 	defer rows.Close()
 	var jobs []models.Job
 	for rows.Next() {
 		job, err := scanJob(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: list jobs: %w", err)
+			return nil, fmt.Errorf("couldn't load the jobs: %w", err)
 		}
 		jobs = append(jobs, job)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list jobs: %w", err)
+		return nil, fmt.Errorf("couldn't load the jobs: %w", err)
 	}
 	return jobs, nil
 }
@@ -516,7 +516,7 @@ func (s *Store) SetPositionMeta(matchID int64, sampleRate, frames int) error {
 		sampleRate, frames, matchID,
 	)
 	if err != nil {
-		return fmt.Errorf("store: set position meta: %w", err)
+		return fmt.Errorf("couldn't save the position data: %w", err)
 	}
 	return affectedOrNotFound(res, "recording the position data")
 }
@@ -526,7 +526,7 @@ func (s *Store) SetPositionMeta(matchID int64, sampleRate, frames int) error {
 func (s *Store) DeleteMatchData(id int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: delete match data: %w", err)
+		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -535,18 +535,18 @@ func (s *Store) DeleteMatchData(id int64) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
-		return fmt.Errorf("store: delete match data: %w", err)
+		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
 	for _, table := range childTables {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, id); err != nil {
-			return fmt.Errorf("store: delete match data: clear %s: %w", table, err)
+			return fmt.Errorf("couldn't delete the match data: %w", err)
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM matches WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("store: delete match data: %w", err)
+		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: delete match data: %w", err)
+		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
 	// The deleted match's rows no longer exist — refresh the career rollup
 	// so profiles stay correct (M3: LibraryService.DeleteMatch → rebuild).

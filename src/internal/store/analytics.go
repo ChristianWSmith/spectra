@@ -130,7 +130,7 @@ func (s *Store) SetMatchRuleVersion(matchID int64, ruleVersion int) error {
 		`UPDATE matches SET analyzed_rule_version = ? WHERE id = ?`, ruleVersion, matchID,
 	)
 	if err != nil {
-		return fmt.Errorf("store: set analyzed rule version: %w", err)
+		return fmt.Errorf("couldn't save the analysis version: %w", err)
 	}
 	return affectedOrNotFound(res, "recording the analysis version")
 }
@@ -148,7 +148,7 @@ func (s *Store) GetMatchRuleVersion(matchID int64) (int, error) {
 		return 0, ErrNotFound
 	}
 	if err != nil {
-		return 0, fmt.Errorf("store: get analyzed rule version: %w", err)
+		return 0, fmt.Errorf("couldn't load the analysis version: %w", err)
 	}
 	return v, nil
 }
@@ -354,7 +354,7 @@ func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, er
 		 FROM round_classifications WHERE match_id = ? ORDER BY round ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round classes: %w", err)
+		return nil, fmt.Errorf("couldn't load the round classes: %w", err)
 	}
 	defer rows.Close()
 	var out []models.RoundClassification
@@ -362,12 +362,12 @@ func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, er
 		var r models.RoundClassification
 		r.MatchID = matchID
 		if err := rows.Scan(&r.Round, &r.Label, &r.Confidence, &r.RuleVersion, &r.Explanation); err != nil {
-			return nil, fmt.Errorf("store: get round classes: %w", err)
+			return nil, fmt.Errorf("couldn't load the round classes: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get round classes: %w", err)
+		return nil, fmt.Errorf("couldn't load the round classes: %w", err)
 	}
 	return out, nil
 }
@@ -385,7 +385,7 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 	q += ` ORDER BY round ASC, steam_id ASC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player rounds: %w", err)
+		return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
 	}
 	defer rows.Close()
 	var out []models.PlayerRoundStat
@@ -397,12 +397,12 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 			&r.Traded, &r.Survived, &r.KAST, &r.DMG, &r.UtilDmg,
 			&r.MoneyStart, &r.Equip, &r.Spent, &r.RuleVersion,
 		); err != nil {
-			return nil, fmt.Errorf("store: get player rounds: %w", err)
+			return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get player rounds: %w", err)
+		return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
 	}
 	return out, nil
 }
@@ -414,7 +414,7 @@ func (s *Store) GetClutches(matchID int64) ([]models.Clutch, error) {
 		 FROM clutches WHERE match_id = ? ORDER BY round ASC, start_tick ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get clutches: %w", err)
+		return nil, fmt.Errorf("couldn't load the clutches: %w", err)
 	}
 	defer rows.Close()
 	var out []models.Clutch
@@ -425,12 +425,12 @@ func (s *Store) GetClutches(matchID int64) ([]models.Clutch, error) {
 			&r.Round, &r.Size, &r.SteamID, &r.Name, &r.StartTick, &r.EndTick,
 			&r.BombState, &r.HPLeft, &r.Equip, &r.Won, &r.KillTicks, &r.ReplayAnchor,
 		); err != nil {
-			return nil, fmt.Errorf("store: get clutches: %w", err)
+			return nil, fmt.Errorf("couldn't load the clutches: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get clutches: %w", err)
+		return nil, fmt.Errorf("couldn't load the clutches: %w", err)
 	}
 	return out, nil
 }
@@ -448,7 +448,7 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 	q += ` ORDER BY seq ASC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get engagements: %w", err)
+		return nil, fmt.Errorf("couldn't load the engagements: %w", err)
 	}
 	defer rows.Close()
 	var out []models.Engagement
@@ -456,12 +456,12 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 		var r models.Engagement
 		r.MatchID = matchID
 		if err := rows.Scan(&r.Seq, &r.Tick, &r.Round, &r.Kind, &r.ASteam, &r.AName, &r.BSteam, &r.BName, &r.Distance, &r.WonBy); err != nil {
-			return nil, fmt.Errorf("store: get engagements: %w", err)
+			return nil, fmt.Errorf("couldn't load the engagements: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get engagements: %w", err)
+		return nil, fmt.Errorf("couldn't load the engagements: %w", err)
 	}
 	return out, nil
 }
@@ -473,7 +473,7 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 		 FROM utility_events WHERE match_id = ? ORDER BY seq ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get utility: %w", err)
+		return nil, fmt.Errorf("couldn't load the utility: %w", err)
 	}
 	defer rows.Close()
 	var out []models.UtilityEvent
@@ -485,13 +485,13 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 			&r.Seq, &r.Tick, &r.Round, &r.Thrower, &r.ThrowerName, &r.Kind, &detX, &detY,
 			&r.Damage, &r.FlashMs, &r.Affected, &r.Site, &r.TrajectoryRef,
 		); err != nil {
-			return nil, fmt.Errorf("store: get utility: %w", err)
+			return nil, fmt.Errorf("couldn't load the utility: %w", err)
 		}
 		r.DetX, r.DetY = nullFloat(detX), nullFloat(detY)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get utility: %w", err)
+		return nil, fmt.Errorf("couldn't load the utility: %w", err)
 	}
 	return out, nil
 }
@@ -547,7 +547,7 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 		 ORDER BY r.number ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get economy: %w", err)
+		return nil, fmt.Errorf("couldn't load the economy: %w", err)
 	}
 	defer rows.Close()
 	var out []models.EconomyRow
@@ -557,13 +557,13 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.FreePistolCT, &r.FreePistolT,
 			&r.Label, &r.Explanation, &r.RuleVersion,
 			&r.ClassCT, &r.ClassWhyCT, &r.ClassT, &r.ClassWhyT); err != nil {
-			return nil, fmt.Errorf("store: get economy: %w", err)
+			return nil, fmt.Errorf("couldn't load the economy: %w", err)
 		}
 		r.PistolRound = r.Label == "pistol"
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get economy: %w", err)
+		return nil, fmt.Errorf("couldn't load the economy: %w", err)
 	}
 	// Outcome flags + loss-bonus reconstruction (inferred — Inferred*
 	// signals the fact/inference badge).
@@ -746,7 +746,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		 GROUP BY e.attacker`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
+		return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 	}
 	defer dmgRows.Close()
 	type dmgAgg struct{ total, onKill, ff int }
@@ -755,12 +755,12 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		var sid string
 		var a dmgAgg
 		if err := dmgRows.Scan(&sid, &a.total, &a.onKill, &a.ff); err != nil {
-			return nil, fmt.Errorf("store: get combat stats: %w", err)
+			return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 		}
 		dmgs[sid] = a
 	}
 	if err := dmgRows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
+		return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 	}
 
 	// Untraded deaths and trade opportunities are NOT read here any more
@@ -779,14 +779,14 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		 WHERE ps.match_id = ? AND `+HumanOnly("p")+` ORDER BY p.name ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
+		return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 	}
 	defer base.Close()
 	var out []models.CombatStat
 	for base.Next() {
 		var r models.CombatStat
 		if err := base.Scan(&r.SteamID, &r.Name); err != nil {
-			return nil, fmt.Errorf("store: get combat stats: %w", err)
+			return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 		}
 		d := dmgs[r.SteamID]
 		r.DMGNoKill = d.total - d.onKill
@@ -803,7 +803,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		out = append(out, r)
 	}
 	if err := base.Err(); err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
+		return nil, fmt.Errorf("couldn't load the combat stats: %w", err)
 	}
 	return out, nil
 }
@@ -818,19 +818,19 @@ func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 		`SELECT steam_id, name, side, is_bot FROM players WHERE match_id = ? ORDER BY name ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player refs: %w", err)
+		return nil, fmt.Errorf("couldn't load the players: %w", err)
 	}
 	defer rows.Close()
 	var out []models.PlayerRef
 	for rows.Next() {
 		var r models.PlayerRef
 		if err := rows.Scan(&r.SteamID, &r.Name, &r.Side, &r.IsBot); err != nil {
-			return nil, fmt.Errorf("store: get player refs: %w", err)
+			return nil, fmt.Errorf("couldn't load the players: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get player refs: %w", err)
+		return nil, fmt.Errorf("couldn't load the players: %w", err)
 	}
 	return out, nil
 }
@@ -847,19 +847,19 @@ func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, 
 		 FROM round_economy WHERE match_id = ? ORDER BY round ASC, side ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round economy views: %w", err)
+		return nil, fmt.Errorf("couldn't load the economy: %w", err)
 	}
 	defer rows.Close()
 	var out []models.RoundEconomyView
 	for rows.Next() {
 		var r models.RoundEconomyView
 		if err := rows.Scan(&r.Round, &r.Side, &r.EquipValue, &r.MoneySampledSum, &r.MoneySamples); err != nil {
-			return nil, fmt.Errorf("store: get round economy views: %w", err)
+			return nil, fmt.Errorf("couldn't load the economy: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get round economy views: %w", err)
+		return nil, fmt.Errorf("couldn't load the economy: %w", err)
 	}
 	return out, nil
 }
@@ -874,19 +874,19 @@ func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 		 FROM rounds WHERE match_id = ? ORDER BY number ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round infos: %w", err)
+		return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 	}
 	defer rows.Close()
 	var out []models.RoundInfo
 	for rows.Next() {
 		var r models.RoundInfo
 		if err := rows.Scan(&r.Number, &r.Winner, &r.StartTick, &r.EndTick, &r.FreezeEndTick, &r.EquipCT, &r.EquipT); err != nil {
-			return nil, fmt.Errorf("store: get round infos: %w", err)
+			return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get round infos: %w", err)
+		return nil, fmt.Errorf("couldn't load the rounds: %w", err)
 	}
 	return out, nil
 }
@@ -901,7 +901,7 @@ func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, e
 		 WHERE match_id = ? ORDER BY round ASC, steam_id ASC`, matchID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get round player sides: %w", err)
+		return nil, fmt.Errorf("couldn't load the round sides: %w", err)
 	}
 	defer rows.Close()
 	out := map[int]map[string]string{}
@@ -912,7 +912,7 @@ func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, e
 			side  string
 		)
 		if err := rows.Scan(&round, &sid, &side); err != nil {
-			return nil, fmt.Errorf("store: get round player sides: %w", err)
+			return nil, fmt.Errorf("couldn't load the round sides: %w", err)
 		}
 		m := out[round]
 		if m == nil {
@@ -922,7 +922,7 @@ func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, e
 		m[sid] = side
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get round player sides: %w", err)
+		return nil, fmt.Errorf("couldn't load the round sides: %w", err)
 	}
 	return out, nil
 }
@@ -935,19 +935,19 @@ func (s *Store) ListSavedFilters() ([]models.SavedFilterRow, error) {
 		`SELECT id, ` + savedFilterCols + ` FROM saved_filters ORDER BY created_at DESC, id DESC`,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: list saved filters: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved filters: %w", err)
 	}
 	defer rows.Close()
 	var out []models.SavedFilterRow
 	for rows.Next() {
 		var r models.SavedFilterRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.Scope, &r.FilterJSON, &r.CreatedAt); err != nil {
-			return nil, fmt.Errorf("store: list saved filters: %w", err)
+			return nil, fmt.Errorf("couldn't load the saved filters: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list saved filters: %w", err)
+		return nil, fmt.Errorf("couldn't load the saved filters: %w", err)
 	}
 	return out, nil
 }
@@ -963,11 +963,11 @@ func (s *Store) CreateSavedFilter(name, scope, filterJSON string) (models.SavedF
 		if isUniqueErr(err) {
 			return models.SavedFilterRow{}, fmt.Errorf("a filter named %q already exists in this scope", scrub(name))
 		}
-		return models.SavedFilterRow{}, fmt.Errorf("store: create saved filter: %w", err)
+		return models.SavedFilterRow{}, fmt.Errorf("couldn't save the filter: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return models.SavedFilterRow{}, fmt.Errorf("store: create saved filter: %w", err)
+		return models.SavedFilterRow{}, fmt.Errorf("couldn't save the filter: %w", err)
 	}
 	rows, err := s.ListSavedFilters()
 	if err != nil {
@@ -985,7 +985,7 @@ func (s *Store) CreateSavedFilter(name, scope, filterJSON string) (models.SavedF
 func (s *Store) DeleteSavedFilter(id int64) error {
 	res, err := s.db.Exec(`DELETE FROM saved_filters WHERE id = ?`, id)
 	if err != nil {
-		return fmt.Errorf("store: delete saved filter: %w", err)
+		return fmt.Errorf("couldn't delete the saved filter: %w", err)
 	}
 	return affectedOrNotFound(res, "deleting the saved filter")
 }
@@ -1020,11 +1020,11 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 func (s *Store) RebuildCareer() error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: rebuild career: %w", err)
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM player_career`); err != nil {
-		return fmt.Errorf("store: rebuild career: %w", err)
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	// Source-data axis for the stored metrics (design §4): the career
 	// rollup regenerating means every PROFILE-grain metric value (the
@@ -1037,7 +1037,7 @@ func (s *Store) RebuildCareer() error {
 	// untouched (their inputs are this match's rows, cleared through
 	// childTables on reprocess instead).
 	if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
-		return fmt.Errorf("store: rebuild career: %w", err)
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	_, err = tx.Exec(
 		`INSERT INTO player_career (`+playerCareerCols+`)
@@ -1058,10 +1058,10 @@ func (s *Store) RebuildCareer() error {
 		time.Now(),
 	)
 	if err != nil {
-		return fmt.Errorf("store: rebuild career: %w", err)
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: rebuild career: %w", err)
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	return nil
 }
@@ -1083,7 +1083,7 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: get career: %w", err)
+		return nil, fmt.Errorf("couldn't load the career: %w", err)
 	}
 	c.UpdatedAt = updated
 	return &c, nil
@@ -1120,7 +1120,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	q += ` ORDER BY 4 DESC, c.steam_id ASC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: list players: %w", err)
+		return nil, fmt.Errorf("couldn't load the players: %w", err)
 	}
 	defer rows.Close()
 	var out []models.CareerSummary
@@ -1131,7 +1131,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 			updated time.Time
 		)
 		if err := rows.Scan(&r.SteamID, &r.Name, &r.Matches, &last, &updated); err != nil {
-			return nil, fmt.Errorf("store: list players: %w", err)
+			return nil, fmt.Errorf("couldn't load the players: %w", err)
 		}
 		r.LastSeen = updated
 		if last.Valid {
@@ -1142,7 +1142,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list players: %w", err)
+		return nil, fmt.Errorf("couldn't load the players: %w", err)
 	}
 	return out, nil
 }
@@ -1197,18 +1197,18 @@ var trendMetricSeed = map[string]string{
 func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
 	seed, ok := trendMetricSeed[metric]
 	if !ok {
-		return nil, fmt.Errorf("store: unknown trend metric %q", metric)
+		return nil, fmt.Errorf("unknown trend metric %q", metric)
 	}
 	m, found, err := s.seriesMetricFor(seed)
 	if err != nil {
-		return nil, fmt.Errorf("store: get trend: %w", err)
+		return nil, fmt.Errorf("couldn't load the trend: %w", err)
 	}
 	if !found {
 		return nil, nil // definition gone → honest empty series
 	}
 	series, err := s.GetPlayerMetricSeries(steamID, []int64{m.id})
 	if err != nil {
-		return nil, fmt.Errorf("store: get trend: %w", err)
+		return nil, fmt.Errorf("couldn't load the trend: %w", err)
 	}
 	var out []models.ProfileTrendPoint
 	for _, p := range series {
@@ -1259,7 +1259,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		 LIMIT 100`, scrub(steamID),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	defer rows.Close()
 	var out []models.ProfileHistoryRow
@@ -1271,7 +1271,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			&r.MatchID, &extracted, &r.Map, &r.ScoreCT, &r.ScoreT, &r.Side, &startSide,
 			&r.Kills, &r.Deaths,
 		); err != nil {
-			return nil, fmt.Errorf("store: get player history: %w", err)
+			return nil, fmt.Errorf("couldn't load the player history: %w", err)
 		}
 		r.ExtractedAt = nullTime(extracted)
 		r.StartSide = startSide.String
@@ -1279,7 +1279,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	if len(out) == 0 {
 		return out, nil
@@ -1291,15 +1291,15 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	// match with no fresh row) simply leaves that cell nil.
 	assists, assistsFound, err := s.seriesMetricFor("assists")
 	if err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	adr, adrFound, err := s.seriesMetricFor("adr")
 	if err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	kast, kastFound, err := s.seriesMetricFor("kast")
 	if err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	ids := make([]int64, 0, 3)
 	if assistsFound {
@@ -1316,7 +1316,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	}
 	series, err := s.GetPlayerMetricSeries(steamID, ids)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player history: %w", err)
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
 	byMatch := make(map[int64]map[int64]float64, len(series))
 	for _, p := range series {
@@ -1396,19 +1396,19 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 		 WHERE ps.steam_id = ? ORDER BY ps.match_id ASC`, scrub(steamID),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
+		return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 	}
 	defer rows.Close()
 	var out []models.ProfileWeaponJSONs
 	for rows.Next() {
 		var r models.ProfileWeaponJSONs
 		if err := rows.Scan(&r.KillsByWeapon, &r.DamageByWeapon, &r.HeadshotsByWeapon); err != nil {
-			return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
+			return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
+		return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 	}
 	return out, nil
 }
@@ -1443,19 +1443,19 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 		 ORDER BY rps.side ASC`, scrub(steamID),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: get player side splits: %w", err)
+		return nil, fmt.Errorf("couldn't load the side splits: %w", err)
 	}
 	defer rows.Close()
 	var out []models.ProfileSideSplit
 	for rows.Next() {
 		var r models.ProfileSideSplit
 		if err := rows.Scan(&r.Side, &r.Rounds, &r.Wins, &r.Kills, &r.Deaths, &r.ADR, &r.KASTPct); err != nil {
-			return nil, fmt.Errorf("store: get player side splits: %w", err)
+			return nil, fmt.Errorf("couldn't load the side splits: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get player side splits: %w", err)
+		return nil, fmt.Errorf("couldn't load the side splits: %w", err)
 	}
 	return out, nil
 }

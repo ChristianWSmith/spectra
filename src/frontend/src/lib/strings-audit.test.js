@@ -17,6 +17,14 @@
 // as the sweep rewords them (a stale entry fails too — the ledger is a
 // contract, webstorage's PREF_SITES liveness pin pattern).
 //
+// Check A also pins the layering-prefix rule: a `pkg: `-prefixed string in
+// non-test Go is package vocabulary that reaches errText verbatim. Since
+// store-B (2026-11-15) that check fires on EVERY literal of EVERY non-test
+// Go file — any file, any position — with two structural carve-outs only:
+// log call sites (never rendered; cut in goScan) and PREFIX_EXEMPT's frozen
+// playerJobError tokens. Its exemptions and liveness run through the same
+// ledger test as DENYLIST_EXEMPT's.
+//
 // Run: node --test src/lib/strings-audit.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -107,6 +115,33 @@ const DENYLIST_EXEMPT = {
   ],
 };
 
+// Check A exemptions for the PREFIX rule (mirrors DENYLIST_EXEMPT): a
+// layering prefix that must stay, because the literal is not error copy the
+// UI ever renders. Same `file` → literal keying, same liveness contract
+// (Check A-ledger), `why` mandatory (asserted there too). Everything else
+// with a prefix was reworded at the source (2026-11-15, store-B) — this set
+// holds only the tokens of the ONE mechanism that reads them on purpose.
+const PREFIX_EXEMPT = {
+  'internal/library/library.go': [
+    {
+      text: 'store: ',
+      why: "playerJobError's strip/classify token (jobErrPrefixes + the frame arms) — the import-pipeline framing mechanism itself; rewriting it is a playerJobError behavior change, fenced out of store-B. A no-op for the reworded store family.",
+    },
+    {
+      text: 'analytics: ',
+      why: "same strip/classify list — the analysis-failure frame arm; the compute family is reworded, so the token only ever matches nothing.",
+    },
+    {
+      text: 'sidecar: ',
+      why: 'same strip/classify list — the save-failure frame arm; the sidecar family is reworded, so the token only ever matches nothing.',
+    },
+    {
+      text: 'library: ',
+      why: 'same strip/classify list — the library token (errShuttingDown was already reworded in store-A, so it was already a no-op).',
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // The denylist — terms that are never the user's business (implementation
 // language, browser chrome), with the reason attached
@@ -150,8 +185,12 @@ const TABLE_TERMS = (() => {
 const EXPRESSION_CONTEXT = /^\s*(?:Formula:|from\s+[<&])/;
 
 // Package prefixes on Go errors that surface through errText verbatim
-// (design §4.1). Checked only at error-construction positions.
-const PREFIX_RE = /^(store|metrics|query|dialogs|platform|analytics|plugin|library): /;
+// (design §4.1). Contract since store-B (2026-11-15): checked over EVERY
+// literal of EVERY non-test Go file — any file, any position — because the
+// thin-delegate services pass these strings to errText unwrapped. The only
+// carve-outs are structural: log call sites (never rendered; goScan) and
+// PREFIX_EXEMPT's frozen mechanism tokens.
+const PREFIX_RE = /^(store|metrics|query|dialogs|platform|analytics|plugin|library|report|sidecar): /;
 
 const SRC_EXT = new Set(['.js', '.svelte']);
 const isPower = (rel) => POWER_SURFACES.has(rel) || POWER_PREFIXES.some((p) => rel.startsWith(p));
@@ -299,18 +338,35 @@ function jsLiterals(file) {
 
 // ---------------------------------------------------------------------------
 // Medium 3 — Go (non-test; comments and import declarations stripped;
-// denylist over every literal, table-in-prose + package prefix additionally
-// at error-construction positions).
+// denylist over every literal; table-in-prose at error-construction
+// positions; the package prefix over EVERY literal — store-B's ratchet:
+// a layering prefix anywhere in non-test Go is error copy that reaches
+// errText verbatim, so the position + service-file gate is gone).
 // ---------------------------------------------------------------------------
-const SVC_FILE = /^[^/]*service\.go$|^dialogs\.go$/;
 function goScan(file) {
   let code = stripComments(readFileSync(file, 'utf8'));
   code = code
     .replace(/^[ \t]*import\s*\(([\s\S]*?)^[ \t]*\)/gm, '')
     .replace(/^[ \t]*import\s+(?:[\w.]+\s+)?"[^"]*"/gm, '')
     .replace(/^[ \t]*import\s+(?:[\w.]+\s+)?`[^`]*`/gm, '');
+  // Log call sites — the first argument of log.*/slog.* — are developer
+  // output (stderr / the log file only, never errText), so they sit OUTSIDE
+  // the prefix rule. Criterion-based rather than a ledger entry: a new
+  // prefixed log line is not user copy and must never need an exemption.
+  // The denylist still scans them (it bans the words everywhere).
+  const logRanges = [];
+  for (const m of code.matchAll(/\b(?:log|slog)\.\w+\(\s*"((?:[^"\\\n]|\\.)*)"/g)) {
+    logRanges.push([m.index, m.index + m[0].length]);
+  }
+  const inLog = (m) => logRanges.some(([a, b]) => m.index >= a && m.index + m[0].length <= b);
   const all = [];
-  for (const m of code.matchAll(/"((?:[^"\\\n]|\\.)*)"|`([^`]*)`/g)) all.push(m[1] ?? m[2] ?? '');
+  const allNoLogs = [];
+  for (const m of code.matchAll(/"((?:[^"\\\n]|\\.)*)"|`([^`]*)`/g)) {
+    const v = m[1] ?? m[2] ?? '';
+    if (!v) continue;
+    all.push(v);
+    if (!inLog(m)) allNoLogs.push(v);
+  }
   const errors = [];
   for (const m of code.matchAll(/\b(?:fmt\.Errorf|errors\.New)\(\s*"((?:[^"\\\n]|\\.)*)"/g)) errors.push(m[1]);
   // The two helper-label shapes — string literals that reach the user
@@ -319,7 +375,7 @@ function goScan(file) {
   const labels = [];
   for (const m of code.matchAll(/\bconst\s+op\s*=\s*"((?:[^"\\\n]|\\.)*)"/g)) labels.push(m[1]);
   for (const m of code.matchAll(/\baffectedOrNotFound\([^,)]*,\s*"((?:[^"\\\n]|\\.)*)"/g)) labels.push(m[1]);
-  return { all, errors, labels };
+  return { all, allNoLogs, errors, labels };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,12 +496,19 @@ for (const f of jsFiles) {
 for (const f of goFiles) {
   const file = rel(f);
   if (isPower(file)) continue;
-  const { all, errors, labels } = goScan(f);
+  const { all, allNoLogs, errors, labels } = goScan(f);
   for (const text of all) if (DENYLIST.some((d) => d.re.test(text))) add(file, text);
+  // The package-prefix rule over EVERY literal of EVERY non-test Go file
+  // (store-B, 2026-11-15: the SVC_FILE-gated error-position path is gone —
+  // thin-delegate services hand these strings to errText unwrapped, so any
+  // layering prefix anywhere is user-facing copy). Log call sites are cut
+  // in goScan (never rendered); PREFIX_EXEMPT below holds the tokens of the
+  // one mechanism that still reads prefixes on purpose.
+  for (const text of allNoLogs) if (PREFIX_RE.test(text)) add(file, text);
+  // Table-in-prose stays exactly where it was: error-construction positions.
   for (const text of errors) {
-    const svc = SVC_FILE.test(file);
     const tableHit = TABLE_TERMS.some((t) => new RegExp(`\\b${t}\\b`).test(text)) && !EXPRESSION_CONTEXT.test(text);
-    if (tableHit || (svc && PREFIX_RE.test(text))) add(file, text);
+    if (tableHit) add(file, text);
   }
   // Two helper-label shapes, candidates under the SAME pipeline (prefix +
   // denylist → ledger/exempt → violations), 2026-11-15, store-A. Why they
@@ -456,11 +519,10 @@ for (const f of goFiles) {
   // so it appears as `<op>: <err>` in the Settings analysis-failure
   // tooltip; (b) the `affectedOrNotFound(res, "…")` label is rendered by
   // that helper's own `fmt.Errorf("%s: %w", op, err)`. Both are operation
-  // labels a player reads on failure, so they carry the same prefix rule
-  // the service-file gate applies elsewhere — checked here WITHOUT the
-  // SVC_FILE gate on purpose (these shapes live in internal/store, which
-  // is not a *service.go file; widening PREFIX_RE's own gate is store-B's).
-  // Scope is exactly these two shapes: no other helper is scanned.
+  // labels a player reads on failure, so they carry the prefix rule.
+  // store-B's all-literals scan above now subsumes them — the explicit
+  // shapes stay as the named pin for exactly these two (no other helper is
+  // scanned), so narrowing the general scan cannot silently unpin them.
   for (const text of labels) {
     if (PREFIX_RE.test(text) || DENYLIST.some((d) => d.re.test(text))) add(file, text);
   }
@@ -470,11 +532,12 @@ const pendingKeys = new Set(
   Object.entries(PENDING_DENYLIST).flatMap(([file, texts]) => texts.map((t) => `${file}\u0000${t}`)),
 );
 // Exemptions are consulted by Check A alongside the ledger: an exempt key is
-// never a violation (its denylist hit is deliberate, in a context the user
-// never reads) and, like a ledger entry, must stay live — an exemption whose
+// never a violation (its hit is deliberate, in a context the user never
+// reads) and, like a ledger entry, must stay live — an exemption whose
 // literal stopped matching is dead weight and fails Check A-ledger below.
 const exemptKeys = new Set(
-  Object.entries(DENYLIST_EXEMPT).flatMap(([file, items]) => items.map((i) => `${file}\u0000${i.text}`)),
+  [...Object.entries(DENYLIST_EXEMPT), ...Object.entries(PREFIX_EXEMPT)]
+    .flatMap(([file, items]) => items.map((i) => `${file}\u0000${i.text}`)),
 );
 const violations = [...candidates]
   .filter((k) => !pendingKeys.has(k) && !exemptKeys.has(k))
@@ -525,7 +588,7 @@ test('Check A — denylist over every app-rendered literal (svelte markup, JS, G
   );
 });
 
-test('Check A ledger — every PENDING_DENYLIST/DENYLIST_EXEMPT entry is a live hit (drop reworded entries)', () => {
+test('Check A ledger — every PENDING_DENYLIST/DENYLIST_EXEMPT/PREFIX_EXEMPT entry is a live hit and justified (drop reworded entries)', () => {
   assert.deepEqual(
     staleLedger,
     [],
@@ -535,9 +598,14 @@ test('Check A ledger — every PENDING_DENYLIST/DENYLIST_EXEMPT entry is a live 
   assert.deepEqual(
     staleExempt,
     [],
-    'stale DENYLIST_EXEMPT entries — these literals no longer hit the denylist; remove them from the exemptions:\n' +
+    'stale DENYLIST_EXEMPT/PREFIX_EXEMPT entries — these literals no longer hit; remove them from the exemptions:\n' +
       staleExempt.map(([f, t]) => `  ${f} :: ${JSON.stringify(t)}`).join('\n'),
   );
+  // Both exemption sets carry a mandatory `why` — an exemption nobody
+  // justified is how a rule quietly rots.
+  const noWhy = [...Object.entries(DENYLIST_EXEMPT), ...Object.entries(PREFIX_EXEMPT)]
+    .flatMap(([file, items]) => items.filter((i) => !i.why || !i.why.trim()).map((i) => `${file} :: ${JSON.stringify(i.text)}`));
+  assert.deepEqual(noWhy, [], `exemptions missing their mandatory why: ${noWhy.join(', ')}`);
 });
 
 test('Check A (content) — seed docs / templates / glossary prose are scanned for the sweep (non-blocking)', () => {

@@ -35,20 +35,20 @@ func (s *Store) GetSoundEvents(matchID int64, fromTick, toTick int) ([]models.So
 	q += ` ORDER BY tick, rowid`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("store: get sound events: %w", err)
+		return nil, fmt.Errorf("couldn't load the sound events: %w", err)
 	}
 	defer rows.Close()
 	var out []models.SoundEvent
 	for rows.Next() {
 		var se models.SoundEvent
 		if err := rows.Scan(&se.Tick, &se.Round, &se.SteamID, &se.Kind, &se.Material, &se.TeamPrefix, &se.SOSName); err != nil {
-			return nil, fmt.Errorf("store: get sound events: %w", err)
+			return nil, fmt.Errorf("couldn't load the sound events: %w", err)
 		}
 		se.MatchID = matchID
 		out = append(out, se)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get sound events: %w", err)
+		return nil, fmt.Errorf("couldn't load the sound events: %w", err)
 	}
 	return out, nil
 }
@@ -72,20 +72,20 @@ func (s *Store) GetSoundEventPresence(matchID int64) (models.SoundEventPresence,
 		matchID,
 	)
 	if err != nil {
-		return models.SoundEventPresence{}, fmt.Errorf("store: sound event presence: %w", err)
+		return models.SoundEventPresence{}, fmt.Errorf("couldn't load the sound event presence: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var kind string
 		var n int
 		if err := rows.Scan(&kind, &n); err != nil {
-			return models.SoundEventPresence{}, fmt.Errorf("store: sound event presence: %w", err)
+			return models.SoundEventPresence{}, fmt.Errorf("couldn't load the sound event presence: %w", err)
 		}
 		pres.ByKind[kind] = n
 		pres.Total += n
 	}
 	if err := rows.Err(); err != nil {
-		return models.SoundEventPresence{}, fmt.Errorf("store: sound event presence: %w", err)
+		return models.SoundEventPresence{}, fmt.Errorf("couldn't load the sound event presence: %w", err)
 	}
 	return pres, nil
 }

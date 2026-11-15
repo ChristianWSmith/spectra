@@ -574,5 +574,5 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("metrics: unsupported plan mode %d", plan.Mode)
+	return nil, fmt.Errorf("unsupported metrics plan mode %d", plan.Mode)
 }
