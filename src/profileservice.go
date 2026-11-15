@@ -26,8 +26,8 @@ import (
 // Deliberately NO ADR field (dogfooding W4): the picker and the
 // suggestion rows read the stored `career_adr` metric rows through
 // services.careerAdrRows — the canonical career read — so a
-// Go-computed ADR never reaches a view while player_career.adr_avg is
-// written-only (Q4's dual-write).
+// Go-computed ADR never reaches a view while player_career carries raw
+// counts only.
 type ProfileSummary struct {
 	SteamID  string `json:"steamId"`
 	Name     string `json:"name"`
@@ -150,9 +150,9 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 			RoundWinPct: winPct,
 			ADR:         sp.ADR,
 			KASTPct:     sp.KASTPct,
-			// KD uses the career rollup's pooled shape (kdCareerSQL):
-			// SUM(kills) / MAX(SUM(deaths), 1) over these rounds — a
-			// zero-death side counts every kill (same floor, no NaN).
+			// KD floors the denominator (kills / max(deaths, 1)) over
+			// these rounds — a zero-death side counts every kill (same
+			// floor, no NaN).
 			KD: float64(sp.Kills) / float64(max(sp.Deaths, 1)),
 		})
 	}

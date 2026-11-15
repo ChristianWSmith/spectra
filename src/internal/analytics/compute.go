@@ -16,8 +16,8 @@ import (
 // player_stats.trade_kills is rewritten here from the same engagements
 // pass (KindTrade per killer), so the frozen extractor column (import-time
 // 5 s default) becomes cfg-aware for every consumer — the scoreboard
-// Trade column, career trades, profile trade rate and the trade_rate
-// builtin metric — without touching their SQL. match_trade_opps (the two
+// Trade column, profile trade rate and the trade_rate builtin metric —
+// without touching their SQL. match_trade_opps (the two
 // distance-derived trade-opportunity counts, tradeopps.go) and
 // round_side_classes (the per-side eco classes, classify.go) are written
 // the same way: cfg.TradeOppDistance / cfg.EcoFullBuy / cfg.EcoForce are
@@ -148,9 +148,10 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		return err
 	}
 	// The ONE trade-window rule's output: count the same engagements pass
-	// (KindTrade per killer) into player_stats.trade_kills. Runs BEFORE
-	// RebuildCareer so the career rollup aggregates the fresh column; the
-	// extractor's import-time 5 s default is the seed this overwrites.
+	// (KindTrade per killer) into player_stats.trade_kills — read by the
+	// scoreboard Trade column, the profile Trade rate and the trade_rate
+	// metric rows. The extractor's import-time 5 s default is the seed
+	// this overwrites.
 	tradeKills := map[string]int{}
 	for _, e := range engs {
 		if e.Kind == KindTrade {

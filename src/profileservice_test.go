@@ -136,9 +136,9 @@ func newProfileFixture(t *testing.T) *ProfileService {
 // switch sides at halftime, so one row per match side would mix both
 // halves): alice plays counted round 1 on ct in match 1 (won, 5k/2d)
 // and on t in match 2 (lost, 4k/0d) — one round per side. K/D comes from
-// the same player_round_stats rows as Rounds/ADR/KAST with the career
-// rollup's floor (kdCareerSQL: SUM(kills) / MAX(SUM(deaths), 1)), never
-// a division-by-zero/empty-side 0.
+// the same player_round_stats rows as Rounds/ADR/KAST with the floored
+// denominator (kills / max(deaths, 1)), never a
+// division-by-zero/empty-side 0.
 func TestGetProfileSidesKD(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
@@ -164,7 +164,7 @@ func TestGetProfileSidesKD(t *testing.T) {
 	if kd := ct.KD; kd < 2.49 || kd > 2.51 {
 		t.Errorf("ct KD = %v, want 2.5 (5 kills / 2 deaths)", kd)
 	}
-	// Zero-death side: the denominator floors at 1 (kdCareerSQL's shape).
+	// Zero-death side: the denominator floors at 1 (the floored shape).
 	if kd := tside.KD; kd < 3.99 || kd > 4.01 {
 		t.Errorf("t KD = %v, want 4.0 (4 kills / max(0 deaths, 1))", kd)
 	}
@@ -335,9 +335,9 @@ func TestGetProfileWeapons(t *testing.T) {
 // the player suggestions and the report picker render comes from the
 // stored `career_adr` metric rows (frontend services.careerAdrRows —
 // the canonical career read), so no Go-computed ADR may survive here,
-// not even as a field name — while RebuildCareer keeps WRITING
-// player_career.adr_avg (Q4's dual-write) and store.ListPlayers stops
-// selecting it.
+// not even as a field name — player_career carries raw counts only
+// (the career dual-write removal) and store.ListPlayers never selects
+// a derived column.
 func TestListPlayersCarriesNoADR(t *testing.T) {
 	svc := newProfileFixture(t)
 	rows, err := svc.ListPlayers("")

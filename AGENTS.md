@@ -305,7 +305,7 @@ Canonical homes (extend these, don't fork them):
 | Concern | Canonical home |
 |---|---|
 | Negative-round filter semantics | `store.queryEvents` — `exactRound` for round detail; `RoundFrom`/`RoundTo` inclusive range with 0 = open bound |
-| KAST / K-D expressions | `store/queries.go` consts — `kastCareerSQL`/`kdCareerSQL` are the career rollup's production spellings (RebuildCareer — Q4's dual-write exception); `kastPerMatchSQL`/`kdPerMatchSQL` are RETIRED from production (W3/W4: trend, history and the report read-back serve stored metric rows) and survive only as the reference oracles in `metric_series_read_test.go` — per-match vs career stay deliberate scope variants |
+| KAST / K-D expressions | `store/queries.go` consts — `kastPerMatchSQL`/`kdPerMatchSQL` are RETIRED from production (W3/W4: trend, history and the report read-back serve stored metric rows) and survive only as the reference oracles in `metric_series_read_test.go`; the career-layer twins (`kastCareerSQL`/`kdCareerSQL`) died with the career dual-write removal — `RebuildCareer` writes raw counts only and every derived career number is a stored metric row |
 | Player-name joins | `store.playersJoin` — builds the join fragments; LEFT joins carry the empty-steam guard, INNER deliberately do not |
 | Column lists | one `<table>Cols` const per table in `internal/store`, pinned to the DDL by `TestColumnListConstsMatchSchema` |
 | Delete-then-insert writers | `store.replaceMatchRows` — voice/plugin/`SaveExtracted` keep bespoke tx (atomicity/upsert reasons in code) |
