@@ -43,8 +43,11 @@
 //   G. the header search — TOC-only filtering over title + rendered
 //      text (case-insensitive), the body staying complete, the honest
 //      no-match line straight from the strings catalog, clearing
-//      restores the full TOC, and the query being transient (no URL,
-//      no storage);
+//      restores the full TOC, the query being transient (no URL,
+//      no storage), and the content-only needle marking the hit INSIDE
+//      the body prose (every <mark> carrying the exact needle, the
+//      marked paragraph's text byte-identical to the unmarked render,
+//      the clear removing every body mark);
 //   H. the two-tier contents list (N3/N4): the ONE subsection toggle on
 //      the metric-language row (children visible by default, folding
 //      opt-in, no toggle on a childless major), the dual highlight (the
@@ -774,11 +777,39 @@ check(
     !Object.keys(dom.window.localStorage).some((k) => /doc|guide|search/i.test(k)),
   `${location.hash} / storage keys: ${Object.keys(dom.window.localStorage).join(',') || '(none)'}`,
 );
+// Body-prose marking (2026-11-15, manual-search): the SAME content-only
+// needle now marks the hit inside the rendered body, not just the TOC.
+// The paragraph is captured BEFORE the query goes in so the byte-identity
+// pin compares the marked render against the unmarked one.
+const importPara = [...sectionOf('importing-demos').querySelectorAll('p')].find((p) =>
+  p.textContent.includes('never moved, modified or deleted'),
+);
+const importParaBefore = importPara ? importPara.textContent : null;
 await typeQuery('never moved, modified or deleted');
 check(
   'a phrase from RENDERED TEXT only (it is in no title) keeps its section in the TOC',
   tocItems().length === 1 && tocItems()[0].textContent.trim() === 'Importing demos',
   tocItems().map((b) => b.textContent.trim()).join(', '),
+);
+const bodyMarks = [...docBody().querySelectorAll('mark')];
+check(
+  'the content-only needle marks the hit inside the body prose — every <mark> carries the exact needle',
+  bodyMarks.length > 0 &&
+    bodyMarks.every((m) => m.textContent === 'never moved, modified or deleted') &&
+    !!importPara &&
+    importPara.querySelector('mark') !== null,
+  `${bodyMarks.length} body marks / texts=${[...new Set(bodyMarks.map((m) => m.textContent))].join('|')}`,
+);
+check(
+  'the marked paragraph’s textContent is byte-identical to the unmarked render (segments re-join)',
+  !!importPara && importParaBefore !== null && importPara.textContent === importParaBefore,
+  `${JSON.stringify(importParaBefore)} → ${JSON.stringify(importPara?.textContent)}`,
+);
+await typeQuery('');
+check(
+  'clearing the content query removes every <mark> from the body too',
+  docBody().querySelectorAll('mark').length === 0,
+  `${docBody().querySelectorAll('mark').length} body marks`,
 );
 await typeQuery('zz-no-section-can-match-this');
 check(

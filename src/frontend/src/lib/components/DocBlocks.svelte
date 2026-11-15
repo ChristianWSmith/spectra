@@ -14,12 +14,28 @@
   // away from the view behind the popup, design §3.3); an external href
   // is a normal new-tab anchor (v1 manuals ship none — unverified in
   // WebKitGTK until one does).
-  let { blocks = [], onNav = null } = $props();
+  //
+  // Search marking: DocsPopup passes its `marked` snippet down (the ONE
+  // segment → <mark> builder), and every text leaf renders through
+  // `leaf` — so a body hit is marked exactly like a TOC label, still
+  // with no {@html} anywhere (the <mark> elements are built from plain
+  // segment objects). Marking is PER LEAF: the filter searches a
+  // section's WHOLE flattened text, so a phrase crossing markup or
+  // block boundaries can select a section whose leaves hold no complete
+  // match — that section lists with no visible mark (the honest scope
+  // of per-leaf marking; see the `marked` snippet's comment in
+  // DocsPopup). Segments re-join to the original string, so
+  // textContent is byte-identical whether or not a leaf is marked.
+  // Without the prop (DocsPopup is the sole caller today) a leaf
+  // renders plain.
+  let { blocks = [], onNav = null, marked = null } = $props();
 </script>
 
+{#snippet leaf(text)}{#if marked}{@render marked(text)}{:else}{text}{/if}{/snippet}
+
 {#snippet inline(span)}
-  {#if span.type === 'text'}{span.text}
-  {:else if span.type === 'code'}<code class="doc-code">{span.text}</code>
+  {#if span.type === 'text'}{@render leaf(span.text)}
+  {:else if span.type === 'code'}<code class="doc-code">{@render leaf(span.text)}</code>
   {:else if span.type === 'strong'}<strong>{#each span.spans as child}{@render inline(child)}{/each}</strong>
   {:else if span.type === 'em'}<em>{#each span.spans as child}{@render inline(child)}{/each}</em>
   {:else if span.type === 'link'}
@@ -73,7 +89,7 @@
   {:else if block.type === 'paragraph'}
     <p>{#each block.spans as child}{@render inline(child)}{/each}</p>
   {:else if block.type === 'code'}
-    <pre class="mono"><code>{block.text}</code></pre>
+    <pre class="mono"><code>{@render leaf(block.text)}</code></pre>
   {:else if block.type === 'list'}
     {@render list(block)}
   {:else if block.type === 'table'}
