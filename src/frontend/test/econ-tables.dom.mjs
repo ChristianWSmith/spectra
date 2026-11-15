@@ -486,13 +486,6 @@ const roundsData = dataFor(13);
 const classedData = {
   ...roundsData,
   getRoundClasses: classRows,
-  // Round 1 opens the match's first blood — the Details-tab fact spells
-  // its round with the RD prefix too.
-  getRounds: roundsData.getRounds.map((r) =>
-    r.number === 1
-      ? { ...r, firstKillName: 'alice', firstKillSteam: 'A', firstDeathName: 'bob', firstDeathSteam: 'B' }
-      : r,
-  ),
 };
 root = await showMatch(classedData, { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
@@ -528,16 +521,16 @@ check(
   rowsOf(table)[6]?.children[3]?.textContent.trim() === '—',
   rowsOf(table)[6]?.children[3]?.textContent.trim(),
 );
-// The First blood fact lives in the DETAILS tab's Key facts list — mount
-// it with the same data (the Rounds mount above cannot show it).
-root = await showMatch(classedData, { routeTab: 'Details' });
-const fbDd = [...root.querySelectorAll('dt')]
-  .find((dt) => dt.textContent.trim() === 'First blood')
-  ?.nextElementSibling;
+// The Details tab is technicals-only now (owner ruling, 2026-11-15): the
+// First blood fact (gameplay-derived) left Key facts. Absence pin, flipped
+// IN PLACE (same check count → driver-liveness's 116 stays): no First blood
+// term, while two surviving technical facts still render beside it.
+root = await showMatch(dataFor(13), { routeTab: 'Details' });
+const factDts = [...root.querySelectorAll('dt')].map((d) => d.textContent.trim());
 check(
-  'the Details-tab First blood fact spells its round with the RD prefix (RD1)',
-  /\(RD1\)/.test(fbDd?.textContent || ''),
-  fbDd ? fbDd.textContent.trim() : 'First blood fact missing',
+  'the Details Key facts list carries no First blood term (technicals only)',
+  !factDts.includes('First blood') && factDts.includes('Server') && factDts.includes('Parser'),
+  JSON.stringify(factDts),
 );
 // jsdom has no cascade — the rules are the pins (same idiom as the
 // stylesheet pins below). The palette must live ONCE, cover every key

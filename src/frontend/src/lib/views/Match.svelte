@@ -837,22 +837,6 @@
       { label: 'Most MVPs', p: mvp, value: `${mvp.mvps}` },
     ];
   });
-
-  // First blood of the first round that recorded one — kept as parts (not
-  // one formatted string) so both names can carry their per-round side
-  // color (lib/teams.js playerSideClassAt) and link to their profiles.
-  const firstBlood = $derived.by(() => {
-    const r = rounds.find((x) => x.firstKillName && x.firstDeathName);
-    return r
-      ? {
-          kill: r.firstKillName,
-          killSteam: r.firstKillSteam,
-          death: r.firstDeathName,
-          deathSteam: r.firstDeathSteam,
-          number: r.number,
-        }
-      : null;
-  });
 </script>
 
 <div class="view">
@@ -1473,9 +1457,13 @@
     {:else if tab === 'Reports'}
       <Reports embedded routeId={id} {nav} />
     {:else if tab === 'Details'}
-      <!-- Details = Key facts + Explorer's diagnostics (Provenance,
-           Entity summary, Network message census), embedded and fixed to
-           THIS match. Map/Duration live in the match header. -->
+      <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
+           facts panel (server, tickrate, frames, size, import, parser,
+           voice, warnings, source, demo copy) + Explorer's diagnostics
+           (import details, advanced diagnostics, network message census),
+           embedded and fixed to THIS match. Gameplay-derived facts (the
+           first blood) live on the Rounds tab. Map/Duration live in the
+           match header. -->
       <section class="panel">
         <h2>{S.match.keyFacts}</h2>
         <dl class="facts">
@@ -1507,29 +1495,6 @@
             </dd>
           </div>
           <div><dt>{S.match.factWarnings}</dt><dd>{match.warningsCount}</dd></div>
-          {#if firstBlood}
-            <div>
-              <dt>{S.match.firstBloodLabel}</dt>
-              <dd>
-                <ProfileLink
-                  steam={firstBlood.killSteam}
-                  name={firstBlood.kill}
-                  {nav}
-                  cls={playerRoundCls(firstBlood.number, firstBlood.killSteam, firstBlood.kill)}
-                  title={S.fill(S.match.openProfile, { name: firstBlood.kill })}
-                />
-                {S.match.killedVerb}
-                <ProfileLink
-                  steam={firstBlood.deathSteam}
-                  name={firstBlood.death}
-                  {nav}
-                  cls={playerRoundCls(firstBlood.number, firstBlood.deathSteam, firstBlood.death)}
-                  title={S.fill(S.match.openProfile, { name: firstBlood.death })}
-                />
-                ({firstBlood.number >= 1 ? `RD${firstBlood.number}` : roundIndexLabel(firstBlood.number)})
-              </dd>
-            </div>
-          {/if}
           <div class="fact-wide"><dt>{S.match.factSource}</dt><dd class="mono">{match.path}</dd></div>
           <!-- State line under Source: which demo file Re-parse would read
                right now (copyState is fs-derived by Go on this read —

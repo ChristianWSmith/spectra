@@ -177,21 +177,6 @@
             <dd class="num">{fmtInt(prov.parseMs)} ms</dd>
           </div>
           <div>
-            <!-- prov.ruleVersion is the MATCH's own stamp: 0 = never
-                 analyzed (honest unknown — analysis_config versions start
-                 at 1), never a fabricated number. The Trade window fact
-                 below is the LIVE config's value — the rules a re-run
-                 would apply — so the two are deliberately NOT presented
-                 as one "rules this ran under" tuple (backend documents
-                 them per-field). -->
-            <dt>Rules version (match stamp)</dt>
-            <dd class="num">{prov.ruleVersion > 0 ? prov.ruleVersion : S.library.notAnalyzed}</dd>
-          </div>
-          <div>
-            <dt>Trade window (current rules)</dt>
-            <dd class="num">{prov.tradeWindowS}s</dd>
-          </div>
-          <div>
             <dt>{S.library.dtVoiceSampleRate}</dt>
             <dd class="num">{prov.sampleRate ? `${prov.sampleRate} Hz` : '—'}</dd>
           </div>
