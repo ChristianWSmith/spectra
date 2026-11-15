@@ -10,9 +10,11 @@ import (
 // 2026-11-12 — AGENTS.md "Analysis-rule derived values": every
 // rules-derived value is STORED at analyze time; read-time thresholding
 // of rule outputs is forbidden). This file is the ONE implementation of
-// both predicates; store.GetCombatStats reads the stored numbers back
-// (the library-wide SUM the profile's Trade rate card used to need left
-// with that card's metric conversion in dogfooding W4).
+// both predicates; the stored numbers are read back ONLY as metric rows
+// (`missed_trades` and the `trade_rate`/`career_trade_rate` denominators
+// over this source — GetCombatStats' reads left with the W2b conversion,
+// and the library-wide SUM the profile's Trade rate card used to need
+// left with that card's metric conversion in dogfooding W4).
 //
 // Both counts replicate, exactly, the two query-time SQL derivations
 // retired on 2026-11-12 — kept verbatim as reference oracles in
@@ -44,7 +46,8 @@ import (
 //         `pd.round = d.round` was — a death in an earlier round does
 //         not make P unavailable in this one).
 //
-//   - missed (was GetCombatStats' TradeOppMissed subquery): for each
+//   - missed (the retired store.GetCombatStats TradeOppMissed subquery
+//     — gone since W2b; its oracle is legacyMissedSQL below): for each
 //     engagement of the match with kind = 'untraded' and b_steam <> '',
 //     find the paired kill event — same tick, attacker = a_steam,
 //     victim = b_steam, the FIRST such row in events.id order (the SQL's

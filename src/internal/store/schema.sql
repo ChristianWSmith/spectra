@@ -383,7 +383,7 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(m
 -- match) under the match's rule version. Owner ruling 2026-11-12: every
 -- rules-derived value is STORED at analyze time (AGENTS.md
 -- "Analysis-rule derived values") — the retired query-time json_extract
--- gates (GetCombatStats' TradeOppMissed subquery and
+-- gates (the TradeOppMissed subquery formerly in GetCombatStats and
 -- CountPlayerTradeOpportunities, the latter an O(library) scan per
 -- profile open) survive only as reference oracles in internal/analytics'
 -- equivalence test. Defined ABOVE the Tier-1 index block so its
@@ -400,7 +400,7 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(m
 --   missed per player: this player's 'untraded' engagements whose paired
 --          kill event's nearDist falls in the same range — Combat's
 --          "trade opportunities missed" badge (the distance-gated subset
---          of the read-time untraded count, which stays ungated).
+--          of the ungated untraded count, the `untraded_deaths` metric).
 --
 -- HUMANS ONLY (is_bot = 0): both read surfaces drop bots, so a bot's
 -- counts are not stored. SPARSE: a player with both counts at 0 writes

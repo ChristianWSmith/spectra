@@ -8,7 +8,9 @@
 // derived here: store.GetCombatStats is their read implementation (see
 // the authoritative-SQL notes there) — with ONE stored exception: the
 // trade-opportunity counts (tradeopps.go) are derived here at analyze
-// time and read back by GetCombatStats.
+// time, stored in match_trade_opps, and read back only as metric rows
+// (`missed_trades` / `trade_rate` over that source; GetCombatStats'
+// reads left with the W2b conversion).
 //
 // # Documented v1 limitations (heuristics need UI badges)
 //
@@ -28,14 +30,15 @@
 //   - Engagement kinds are opening|trade|traded|untraded; the entry kind
 //     is deferred (player_stats.entry_kills from the extractor already
 //     covers per-player entry attribution).
-//   - TradeOppMissed = the distance-gated subset of untraded deaths
+//   - missed (match_trade_opps.missed, read as the `missed_trades`
+//     builtin) is the distance-gated subset of untraded deaths
 //     (inferred → UI badge): the kill event's detail_json.nearDist —
 //     the nearest living teammate of the victim to the killer, measured
 //     once at extract — must fall within [0, cfg.TradeOppDistance]
 //     (default 1000u). The gate runs HERE at analyze time and the counts
 //     are stored per match in match_trade_opps (tradeopps.go — AGENTS.md
 //     "Analysis-rule derived values"); the retired query-time gate lived
-//     in store.GetCombatStats.
+//     in store.GetCombatStats (removed with the W2b conversion).
 //   - Clutch HPLeft is the game-sampled victim-health of the last
 //     player_hurt at/before the resolve tick (HP changes only through
 //     player_hurt; detail_json is stamped onto the typed copies by

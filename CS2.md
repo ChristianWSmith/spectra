@@ -806,8 +806,8 @@ at the end of the section.
   (`detail_json.nearDist`, the nearest living teammate of the victim to
   the killer, −1 = nobody measurable) gated by the configured
   trade-opportunity distance — see `analytics.tradeOppCounts` (the
-  stored-count predicate; `store.GetCombatStats`' TradeOppMissed reads
-  its twin).
+  stored-count predicate; its counts are stored in `match_trade_opps`
+  and read as the `missed_trades` / `trade_rate` metric rows).
   **Source** — https://leetify.com/blog/leetify-stats-glossary (2026-11-05).
 - **`weapon_fire` game-event payload (CS2)** — what each shot event
   carries (acceptance cross-check for sampled attack-button state):
