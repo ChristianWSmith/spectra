@@ -1,27 +1,38 @@
 // jsdom driver for the documentation popup (the dismissable help
-// side-sheet): App mounted with the app-dock machinery but Builder kept
+// sheet): App mounted with the app-dock machinery but Builder kept
 // REAL, so ONE mount pins both entry points and the popup end-to-end.
 // Section labels below match the run's console.log letters:
 //   A. the sidebar Help icon — nav-chrome chrome between the spacer and
 //      Settings, never active/aria-current across routes, the popup
 //      opens at the guide top with the full TOC (26 sections since the
 //      2026-11-14 content onboarding — Introduction leads) and no manual
-//      switcher (only one manual ships), and the Close button dismisses
-//      with focus returned to the opener;
+//      switcher (only one manual ships), the near-fullscreen geometry
+//      (centred backdrop with its uniform margin, panel = viewport −
+//      2×16px, max-height none — pinned as computed styles from the
+//      component's injected CSS), the header order (title … search
+//      input … Close), and the Close button dismisses with focus
+//      returned to the opener;
 //   B. the Builder `?` — top-right of .view-header, opens the popup at
 //      the metric-language section (aria-current + the composed anchor
 //      + the scrollTop formula), with the Builder still mounted and the
 //      hash untouched;
 //   C. dismissal by Escape and by bare-backdrop click, each returning
-//      focus to its opener (the Close-button leg is A's);
-//   D. TOC navigation — aria-current moves, the section takes focus,
-//      Back to top resets scroll + current, and a repeated openDocs
-//      (sidebar Help while open) re-targets through the token;
+//      focus to its opener (the Close-button leg is A's) — plus the
+//      search input's Escape contract: a non-empty query is cleared
+//      FIRST (the sheet stays open), the next Escape closes it;
+//   D. TOC navigation AND the scroll-spy — a TOC click moves
+//      aria-current and focuses the section, the spy re-derives
+//      `current` from dispatched scroll events over an explicit
+//      500px-per-section offsetTop model (manual scroll → .active +
+//      aria-current, the threshold that holds the previous section,
+//      goTo agreement after its scroll lands, the bottom-of-doc rule),
+//      and a repeated openDocs (sidebar Help while open) re-targets
+//      through the token;
 //   E. the onboarding reality: NO guide section is a placeholder (every
 //      one carries cited prose and none renders the coming-soon note);
 //      the sources section re-pinned to its count-free opener and the
 //      metric-language intro still renders real prose. (The placeholder
-//      RENDER path itself is pinned in G, on the throwaway manual.)
+//      RENDER path itself is pinned in H, on the throwaway manual.)
 //   F. accuracy pins from the manual AND from the newly written guide
 //      sections (rendered text): the subject-anchor rule, metric()'s two
 //      legal positions + denials, the sum(a + b) additive chain with
@@ -29,18 +40,26 @@
 //      guide's originals-untouched promise (importing demos), the
 //      honest dash (the Library) and the SQL console's read-only
 //      construction, each cited to the 2026-11-14 draft appendix;
-//   G. a throwaway second manual registered into the LIVE registry makes
+//   G. the header search — TOC-only filtering over title + rendered
+//      text (case-insensitive), the body staying complete, the honest
+//      no-match line straight from the strings catalog, clearing
+//      restores the full TOC, and the query being transient (no URL,
+//      no storage);
+//   H. a throwaway second manual registered into the LIVE registry makes
 //      the switcher appear on the next open, switching changes the TOC +
 //      body, and its placeholder section still renders ONLY the
 //      coming-soon note (run last so it cannot leak into earlier pins).
 //
 // Known jsdom limits (the standard caveats, stated where they bite):
-// there is no layout, so section offsetTop reads 0 — section D pins the
-// scrollTop FORMULA with an explicit offsetTop expando instead of a
-// pixel position, and section B pins the formula's consistency plus the
-// aria-current target. scrollIntoView is never used (undefined in
-// jsdom) — goTo() is scrollTop-only by design. No geometry, no scroll
-// spy, no external links (none ship).
+// there is no layout, so section D drives the scroll-spy with explicit
+// offsetTop expandos (500px per section) and DISPATCHES the scroll
+// events jsdom never delivers itself — section B pins the scrollTop
+// FORMULA against the natural zeros it sees at that point in the run.
+// scrollIntoView is never used (undefined in jsdom) — goTo() is
+// scrollTop-only by design. DocsPopup is compiled with css:'injected'
+// so section A can pin the near-fullscreen geometry as computed styles
+// (jsdom resolves the calc() against its viewport; there is no pixel
+// layout beyond that). No external links (none ship).
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
 // there provides it. From frontend/ run:
@@ -202,8 +221,11 @@ writeStub(
 // Dialog is a leaf; DocBlocks is a leaf; DocsPopup links Dialog +
 // DocBlocks locally and the docs layer through the COPIED tree (one
 // module instance each — the registry the checks import is this same
-// copied URL, which is what makes section G's live registration
-// visible to the popup).
+// copied URL, which is what makes section H's live registration
+// visible to the popup). DocsPopup alone compiles with css:'injected'
+// — its :global() doc-back/doc-panel shape rules must reach
+// document.head so section A can pin the near-fullscreen geometry as
+// computed styles (the default compile drops component CSS).
 compileSvelte(
   readFileSync('src/lib/components/Dialog.svelte', 'utf8'),
   'Dialog.svelte',
@@ -222,7 +244,7 @@ const docsSrc = readFileSync('src/lib/components/DocsPopup.svelte', 'utf8')
   .replace("from '../docs/manuals/index.js'", `from '${libURL('docs/manuals/index.js')}'`)
   .replace("import '../docs/manuals/index.js';", `import '${libURL('docs/manuals/index.js')}';`)
   .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
-compileSvelte(docsSrc, 'DocsPopup.svelte', localURL('docspopup.js'));
+compileSvelte(docsSrc, 'DocsPopup.svelte', localURL('docspopup.js'), { css: 'injected' });
 
 // Builder + its component deps — the compile discipline of
 // builder.dom.mjs: components to local bundles, plain-ESM lib imports
@@ -307,8 +329,10 @@ const helpBtn = () =>
 const panel = () => document.querySelector('.dlg-panel.doc-panel');
 const backdrop = () => document.querySelector('.dlg-back.doc-back');
 const docBody = () => document.querySelector('.doc-body');
-const tocItems = () => [...document.querySelectorAll('.doc-toc-item')]; // section entries (Back to top is .doc-toc-top)
+const tocItems = () => [...document.querySelectorAll('.doc-toc-item')]; // section entries (filtered by the header search)
 const tocCurrent = () => tocItems().find((b) => b.getAttribute('aria-current') === 'true');
+const searchBox = () => document.querySelector('.doc-head input[type="search"]');
+const emptyTocLine = () => document.querySelector('.doc-toc-empty');
 // The id rides the section's <h2> (registry.sectionAnchor): headingEl is
 // that heading (the goTo focus/offsetTop target), sectionOf is the
 // <section> wrapper that holds its heading + body.
@@ -375,6 +399,27 @@ check(
     panel()?.getAttribute('aria-label') === 'Spectra guide',
   `${document.querySelector('.doc-head h1')?.textContent} / ${panel()?.getAttribute('aria-label')}`,
 );
+// Near-fullscreen geometry (2026-11-14 sheet → sheet-on-margin change).
+// DocsPopup compiles with css:'injected' in this driver, so jsdom
+// resolves the shape rules — no pixel LAYOUT, but the declared geometry
+// (centred, uniform margin, viewport − 2×16px, no modal cap) is
+// pinnable as computed styles.
+const backCS = getComputedStyle(backdrop());
+check(
+  'the backdrop centres the panel with a uniform 16px margin on every edge',
+  backCS.justifyContent === 'center' &&
+    backCS.alignItems === 'center' &&
+    ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].every((p) => backCS[p] === '16px'),
+  `justify=${backCS.justifyContent} align=${backCS.alignItems} padding=${backCS.padding}`,
+);
+const panelCS = getComputedStyle(panel());
+check(
+  'the panel fills the viewport minus 2×16px on both axes (the old modal cap is gone)',
+  panelCS.width === `${window.innerWidth - 32}px` &&
+    panelCS.height === `${window.innerHeight - 32}px` &&
+    panelCS.maxHeight === 'none',
+  `width=${panelCS.width} height=${panelCS.height} max-height=${panelCS.maxHeight} / viewport ${window.innerWidth}×${window.innerHeight}`,
+);
 check(
   // Re-pinned 2026-11-14 (user-manual content onboarding): 22 → 26
   // entries; the researched draft's Introduction now leads the guide.
@@ -393,6 +438,18 @@ check(
   `${hb.getAttribute('aria-expanded')} / ${location.hash}`,
 );
 const closeBtn = () => document.querySelector('.doc-head button[aria-label="Close help"]');
+const headKids = () => [...(document.querySelector('.doc-head')?.children ?? [])];
+check(
+  'the header runs title … search input … Close (type=search with the catalog copy, Close last)',
+  headKids().length === 3 &&
+    headKids()[0]?.tagName === 'H1' &&
+    headKids()[1] === searchBox() &&
+    searchBox()?.getAttribute('type') === 'search' &&
+    searchBox()?.getAttribute('placeholder') === 'Search sections' &&
+    searchBox()?.getAttribute('aria-label') === 'Search sections' &&
+    headKids()[2] === closeBtn(),
+  headKids().map((c) => `${c.tagName}.${c.className}`).join(' → '),
+);
 click(closeBtn());
 await sleep();
 check('the Close button dismisses the sheet', !panel() && !backdrop(), panel() ? 'panel still up' : '');
@@ -455,15 +512,55 @@ check(
   document.activeElement === hb,
   document.activeElement?.getAttribute?.('title') || document.activeElement?.nodeName,
 );
-
-console.log('D. TOC navigation: aria-current moves, sections take focus, Back to top + repeated openDocs re-target');
+// The search input's Escape contract (the one key DocsPopup
+// intercepts): a non-empty query is cleared FIRST — stopPropagation
+// keeps Dialog's backdrop handler from closing the sheet — and the
+// NEXT Escape (empty input) closes through Dialog as always.
 hb.focus();
 click(hb);
 await sleep();
-// jsdom has no layout (offsetTop is always 0): pin the scrollTop FORMULA
-// with an explicit offsetTop so the −8 lead is observable for real.
+searchBox().focus();
+searchBox().value = 'sql';
+searchBox().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+await sleep();
+searchBox().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+await sleep();
+check(
+  'Escape inside a NON-EMPTY search input clears the query first — the sheet stays open',
+  searchBox()?.value === '' && !!panel() && !!backdrop(),
+  `value=${JSON.stringify(searchBox()?.value)} panel=${!!panel()}`,
+);
+searchBox().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+await sleep();
+check(
+  'the next Escape (empty input) closes the sheet and returns focus to the opener',
+  !panel() && !backdrop() && document.activeElement === hb,
+  `${!!panel()} / ${document.activeElement?.getAttribute?.('title') || document.activeElement?.nodeName}`,
+);
+
+console.log('D. TOC navigation + scroll-spy: aria-current follows clicks AND manual scrolling, repeated openDocs re-targets');
+hb.focus();
+click(hb);
+await sleep();
+// jsdom has no layout (offsetTop reads 0): MODEL one — every section
+// heading gets an explicit offsetTop expando, a uniform 500px-per-
+// section layout, so both the scrollTop FORMULA (the −8 lead) and the
+// scroll-spy's offsetTop math are observable. Section B ran before
+// this, against the natural zeros.
+const guideHeads = [...docBody().querySelectorAll('.doc-section > h2')];
+guideHeads.forEach((h, i) =>
+  Object.defineProperty(h, 'offsetTop', { value: i * 500, configurable: true }),
+);
+const headIdx = (id) => guideHeads.findIndex((h) => h.id === `doc-user-guide-${id}`);
+// jsdom never delivers scroll events itself — dispatch what a real
+// browser fires after a scroll (manual wheel or programmatic), then
+// let Svelte flush the state → DOM update before the caller reads it.
+const scrollSpy = async () => {
+  docBody().dispatchEvent(new dom.window.Event('scroll'));
+  await sleep();
+};
 const sourcesEl = headingEl('sources');
-Object.defineProperty(sourcesEl, 'offsetTop', { value: 500, configurable: true });
+const srcIdx = headIdx('sources');
 const sourcesToc = tocItems().find((b) => b.textContent.trim() === 'Sources');
 click(sourcesToc);
 await sleep();
@@ -478,19 +575,61 @@ check(
   document.activeElement?.id || document.activeElement?.nodeName,
 );
 check(
-  'the body scrolled to the section offset minus the 8px lead',
-  docBody().scrollTop === 492,
-  `scrollTop=${docBody().scrollTop}`,
+  'the body scrolled to the section offset minus the 8px lead (500px-per-section model)',
+  docBody().scrollTop === srcIdx * 500 - 8,
+  `scrollTop=${docBody().scrollTop} expected=${srcIdx * 500 - 8}`,
 );
 check('the hash never moved (TOC entries are buttons, never href="#…")', location.hash === '#/builder', location.hash);
-docBody().scrollTop = 42;
-click(document.querySelector('.doc-toc-top'));
-await sleep();
-check('Back to top resets the scroll', docBody().scrollTop === 0, `scrollTop=${docBody().scrollTop}`);
+// goTo agreement: the scroll event a browser fires once goTo's scroll
+// lands must leave the spy on the clicked section — no flicker back.
+await scrollSpy();
 check(
-  // First section re-pinned 2026-11-14: Introduction leads the guide.
-  'Back to top returns current to the first section',
-  tocCurrent()?.textContent.trim() === 'Introduction',
+  'after goTo’s scroll lands the spy still agrees with the clicked section',
+  tocCurrent()?.textContent.trim() === 'Sources',
+  tocCurrent()?.textContent.trim(),
+);
+// Manual scrolling: park the scroll top just PAST a section heading —
+// that section becomes current, in .active AND aria-current.
+const libIdx = headIdx('library');
+docBody().scrollTop = libIdx * 500 + 40;
+await scrollSpy();
+check(
+  'manual scroll: the section at the scroll top becomes current (.active + aria-current)',
+  tocCurrent() === tocItems()[libIdx] &&
+    tocItems()[libIdx].classList.contains('active') &&
+    tocItems()[libIdx].getAttribute('aria-current') === 'true',
+  `current=${tocCurrent()?.textContent.trim()} / expected=${guideHeads[libIdx].textContent.trim()}`,
+);
+// The threshold (SPY_THRESHOLD = 24px): the NEXT heading still sits
+// 100px below the scroll top, so the highlight must NOT hand over yet
+// (last-wins — the previous section keeps it).
+docBody().scrollTop = (libIdx + 1) * 500 - 100;
+await scrollSpy();
+check(
+  'a heading still below the threshold keeps the previous section current',
+  tocCurrent()?.textContent.trim() === guideHeads[libIdx].textContent.trim(),
+  tocCurrent()?.textContent.trim(),
+);
+// …and once it crosses the line the highlight follows it.
+docBody().scrollTop = (libIdx + 1) * 500 + 40;
+await scrollSpy();
+check(
+  'scrolling past the next heading hands the highlight over to it',
+  tocCurrent()?.textContent.trim() === guideHeads[libIdx + 1].textContent.trim(),
+  tocCurrent()?.textContent.trim(),
+);
+// Bottom of the document → the LAST section is current (its heading
+// can sit further down than the threshold when the final section is
+// taller than the viewport). The atBottom branch guards on
+// scrollHeight > clientHeight, so jsdom's natural 0/0 never reads as
+// "bottom" — here the driver models a scrollable body explicitly.
+Object.defineProperty(docBody(), 'scrollHeight', { value: 20000, configurable: true });
+Object.defineProperty(docBody(), 'clientHeight', { value: 800, configurable: true });
+docBody().scrollTop = 19200;
+await scrollSpy();
+check(
+  'bottom of the doc → the last section is current',
+  tocCurrent() === tocItems()[tocItems().length - 1],
   tocCurrent()?.textContent.trim(),
 );
 // The token leg: re-requesting a target while already open re-runs the
@@ -510,7 +649,7 @@ check(
 console.log('E. every guide section is written — nothing ships as a placeholder (2026-11-14 re-pin)');
 const soonNote = "Coming soon — this part of the guide isn't written yet.";
 // The same copied-tree registry instance the popup renders (DocsPopup
-// links this URL; section G registers into it below) — so E reads the
+// links this URL; section H registers into it below) — so E reads the
 // guide's real section flags, not a second copy of the data.
 const docsRegistry = await import(libURL('docs/registry.js'));
 const guideDoc = docsRegistry.getDoc('user-guide');
@@ -597,7 +736,53 @@ check(
   sqlText.slice(0, 100),
 );
 
-console.log('G. a second manual makes the switcher appear (live registry, last section)');
+console.log('G. search: the header input filters the TOC (title + rendered text, case-insensitive) without touching the body');
+const stringsCommon = (await import(libURL('strings/index.js'))).common;
+const typeQuery = async (v) => {
+  const el = searchBox();
+  el.value = v;
+  el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await sleep();
+};
+await typeQuery('INTRODUCTION');
+check(
+  'a title match filters the TOC — case-insensitively (uppercase query vs the mixed-case title)',
+  tocItems().length === 1 && tocItems()[0].textContent.trim() === 'Introduction',
+  tocItems().map((b) => b.textContent.trim()).join(', '),
+);
+check(
+  'the filter is TOC-only: the body still renders every section while it is active',
+  docBody().querySelectorAll('.doc-section').length === 26,
+  docBody().querySelectorAll('.doc-section').length + ' body sections',
+);
+check(
+  'the query is transient — the route did not move and nothing doc-shaped reached storage',
+  location.hash === '#/builder' &&
+    !Object.keys(dom.window.localStorage).some((k) => /doc|guide|search/i.test(k)),
+  `${location.hash} / storage keys: ${Object.keys(dom.window.localStorage).join(',') || '(none)'}`,
+);
+await typeQuery('never moved, modified or deleted');
+check(
+  'a phrase from RENDERED TEXT only (it is in no title) keeps its section in the TOC',
+  tocItems().length === 1 && tocItems()[0].textContent.trim() === 'Importing demos',
+  tocItems().map((b) => b.textContent.trim()).join(', '),
+);
+await typeQuery('zz-no-section-can-match-this');
+check(
+  'no match → zero entries and the honest line straight from the strings catalog',
+  tocItems().length === 0 &&
+    !!emptyTocLine() &&
+    emptyTocLine().textContent === stringsCommon.noSectionsMatch,
+  `${tocItems().length} entries / line=${JSON.stringify(emptyTocLine()?.textContent)}`,
+);
+await typeQuery('');
+check(
+  'clearing the input restores the full TOC (26 entries, no empty-state line)',
+  tocItems().length === 26 && !emptyTocLine(),
+  `${tocItems().length} entries`,
+);
+
+console.log('H. a second manual makes the switcher appear (live registry, last section)');
 click(closeBtn());
 await sleep();
 const registry = await import(libURL('docs/registry.js'));
