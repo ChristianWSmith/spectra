@@ -153,21 +153,24 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
       !/\{mpBusy \? 'Extracting…'[\s\S]{0,120}chip-spin/.test(sett),
     '',
   );
+  // The re-run subsection (per-row chips, k/N batch chip, behind count
+  // line) died with the re-run UI (N1, 2026-11-15): the card is now
+  // rules fields + one Save button that kicks the recompute itself.
+  // These three checks flipped from copy-preservation pins to absence
+  // pins in place — same check count, so EXPECTED stays 19.
   check(
-    'Settings: the re-run per-row chips stay inline (row-shaped list items are cells)',
-    /<StatusChip\n\s+status=\{state\}/.test(sett) &&
-      !/sett-match-row[\s\S]*?<StatusChip block/.test(sett),
+    'Settings: the re-run per-row chips are gone with the re-run list',
+    !/sett-match-row/.test(sett) && !/sett-sub/.test(sett) && !/status=\{state\}/.test(sett),
     '',
   );
   check(
-    'Settings: the k/N batch chip stays inline beside its count text',
-    /<StatusChip\n\s+status="running"\n\s+progress=\{allRun\.submitted/.test(sett),
+    'Settings: the k/N batch chip is gone (the save kicks RecomputeAll itself)',
+    !/allRun/.test(sett),
     '',
   );
   check(
-    'Settings: the behind count line keeps its own honest text (incl. its Loading… slot)',
-    sett.includes('{:else if behindLoading && !behindRows.length}') &&
-      /behindLoading && !behindRows\.length\}\n\s+Loading…/.test(sett),
+    'Settings: the behind count line is gone (no behind fetches from this view)',
+    !/behindLoading|behindTotal|behindRows/.test(sett),
     '',
   );
 

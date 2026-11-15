@@ -1,11 +1,16 @@
-// Canonical metric definitions (D5): ONE source for the Settings →
-// Metric definitions glossary and for every hover tooltip the match views
-// render. Views import from here instead of each keeping its own
-// paraphrase.
+// Canonical metric definitions (D5): ONE source for every hover tooltip
+// the match views render. Views import from here instead of each keeping
+// its own paraphrase.
 //
-// Wording rules (Settings' glossary header): generic where the exact
-// rule is configurable; every rule set is versioned via
-// analysis_config/rule_version.
+// The GLOSSARY array below is the tooltip source: glossaryText() pulls
+// an entry's body into the *_DEF constants (Combat, Economy,
+// EconCurve). It used to double as Settings' stat-definitions glossary
+// too — the card is gone (the metrics migration owns that prose now);
+// every remaining entry exists because a *_DEF looks it up, and an entry
+// with no lookup would be dead weight.
+//
+// Wording rules: generic where the exact rule is configurable (no
+// version numbers here — rule versions are internal and never surfaced).
 //
 // Verified against the Go side:
 //   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL,
@@ -18,65 +23,36 @@
 // (career_opening_rate / career_clutches), so their tooltips live in
 // each seed's doc, not here.)
 
-// The glossary Settings renders (Settings → Metric definitions). Every
-// entry is {term, inferred, text}; `inferred` drives the badge chip.
+// The entries the *_DEF tooltips derive from (see glossaryText below).
+// Every entry is {term, text}.
 export const GLOSSARY = [
   {
     term: 'KAST%',
-    inferred: false,
     text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Counted per round; the “traded” part follows the configured trade window (Settings → Analysis rules).',
   },
   {
-    term: 'Trade window',
-    inferred: false,
-    text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules; saving gives the rules a new version number — matches keep the numbers they were calculated with until you re-run them). Every trade surface follows the window of its re-run: KAST “traded”, the engagement trade and untraded rows, and the trade-kills total — recalculated by the analytics pass from the configured window — which feeds the scoreboard Trade column, career trades, profile Trade rate, the successful-trades stat and the Combat tab Trade rate.',
-  },
-  {
-    term: 'Buy types (full / force / eco / save / pistol / bonus)',
-    inferred: false,
-    text: 'Derived per side from the round-start equipment value against the configured thresholds (full buy ≥ ecoFullBuy, force ≥ ecoForce, below that = eco/save), plus pistol detection by round number and side-switch pattern, and bonus/save by spend behaviour. Each round keeps its label and the exact rule that produced it — hover a round chip to see it.',
-  },
-  {
-    term: 'Loss bonus (reconstructed)',
-    inferred: true,
-    text: 'A team’s loss-bonus money is worked out from the round results instead of read straight from the game, so it carries the inferred badge. The base amounts follow the game rules, not a configurable threshold.',
-  },
-  {
     term: 'Equipment value',
-    inferred: false,
     text: 'Freeze-time-end value of the gear a side actually holds: every weapon — including ones picked up and carried over from earlier rounds — plus armor, grenades and the defuse kit, as recorded by the game’s own per-player equipment value. It is never this round’s spend, so a team that survives with a stolen rifle shows that rifle’s value next round.',
   },
   {
     term: 'Net worth',
-    inferred: false,
     text: 'Equipment value plus that team’s unspent money at freeze time end: the total value the team holds at that instant — every weapon, armor, grenade and defuse kit its players carry (the free spawn-issued default sidearms included, since the game counts them at $200 each — see Equipment value) plus the cash it can still spend. It can never be below equipment value, because unspent money is never negative. The economy chart’s Net worth plots this per team per round — on a pistol round each side reads its starting money ($4000 = 5 × $800) plus the free default sidearms it still holds, so a side that dropped or upgraded some of them reads less than an opponent that kept all five.',
   },
   {
     term: 'Trade opportunities missed (inferred)',
-    inferred: true,
     text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. The distance is measured for each kill when the demo is imported (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 1000 units ≈ 25 m — the ground a player covers inside the default 5 s trade window, and the range trades actually happen at): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths reads the same engagement rows without the distance gate.',
   },
   {
     term: 'Damage conversion',
-    inferred: false,
     text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), counted from the demo’s events rather than reported by the game.',
-  },
-  {
-    term: 'ADR',
-    inferred: false,
-    text: 'Average damage per round = total damage ÷ rounds played, across this player’s rounds. Friendly-fire damage is reported separately in the Combat tab.',
-  },
-  {
-    term: 'Consistency σ',
-    inferred: false,
-    text: 'How much this player’s ADR moves from match to match — lower means steadier. Shown as “ADR ± σ” on profiles. It is not a margin of error.',
   },
 ];
 
-// glossaryText pulls an entry's body so a tooltip and the glossary entry
-// it explains can never drift apart again. lowerFirst keeps the derived
-// tooltip reading naturally after its "Term — " prefix (the glossary
-// entries are complete sentences).
+// glossaryText pulls an entry's body so a tooltip and its source entry
+// can never drift apart. lowerFirst keeps the derived tooltip reading
+// naturally after its "Term — " prefix (the entries are complete
+// sentences). Returns '' for a term with no entry — the *_DEF constants
+// below are the only lookups, pinned by their own consumers.
 function glossaryText(term) {
   const entry = GLOSSARY.find((d) => d.term === term);
   return entry ? entry.text : '';

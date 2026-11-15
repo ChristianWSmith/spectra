@@ -64,9 +64,9 @@ export const LibraryService = {
   ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),
   ListMatchesPage: rec('ListMatchesPage'),
-  // Honest "N behind" / "N total" count beside the Settings re-run list —
-  // same store.MatchListFilter as the list/page (services-cache pins the
-  // wrapper's filter normalization + flush).
+  // Library-wide counts (the behind facet rides the same store.MatchListFilter
+  // as the list/page — services-cache pins the wrapper's filter
+  // normalization + flush).
   CountMatches: rec('CountMatches'),
   ImportPaths: rec('ImportPaths'),
   DeleteMatch: rec('DeleteMatch'),
@@ -107,9 +107,12 @@ export const AnalyticsService = {
   // Background recompute (the cache tests pin its completion-driven flush).
   RecomputeAnalysis: rec('RecomputeAnalysis'),
   // The BULK twin: resolves the behind set server-side, answers
-  // {submitted, skipped, total} — Settings' Re-run-all button.
+  // {submitted, skipped, total} — kicked by a rules save (Settings'
+  // saveCfg, save = recompute).
   RecomputeAll: rec('RecomputeAll'),
-  // In-flight run rehydration for the Settings recompute chips.
+  // In-flight background-recompute read — the Go API's mirror in the
+  // stub (no frontend caller today; the settings driver pins that it
+  // stays that way).
   RecomputeStates: rec('RecomputeStates'),
   // Analysis rules: GetConfig seeds the form (and its pristine snapshot),
   // SetConfig is the mutating wrapper the flush pin drives.

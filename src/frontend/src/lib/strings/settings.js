@@ -1,8 +1,8 @@
 // strings/settings.js — Settings view chrome (views/Settings.svelte): About,
 // Data, Import dirs, Background work, CS2 assets, Appearance, Plugins, Audio
-// & voice, Analysis rules and Stat definitions panels.
+// & voice and Analysis rules panels.
 // Values are plain strings with {arg} placeholders (design §3.2); the view
-// composes them with S.fill at the call site. The ten <h2> panel headings and
+// composes them with S.fill at the call site. The nine <h2> panel headings and
 // the pinned loading-chip copy stay inline (source-pinned by
 // docslockstep.test.js's panel census and progress-presentation.dom.mjs).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
@@ -136,44 +136,15 @@ export const settings = {
   fullBuyLabel: 'Full-buy threshold (equip $)',
   fullBuyHint: 'Team equipment ≥ this = full buy (default 20000).',
   tradeOppTitle:
-    'A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The raw distance is measured for each kill when the demo is imported; this setting is applied when matches are analyzed — changing it marks matches behind, so re-run them below to apply it. Deaths with no nearby teammate or no position data never count.',
+    'A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The raw distance is measured for each kill when the demo is imported; this setting is applied when matches are analyzed — saving recomputes the matches already in your library in the background. Deaths with no nearby teammate or no position data never count.',
   tradeOppLabel: 'Trade-opportunity distance (units)',
   tradeOppHint:
     '“Missed trades” counts a death nobody answered only when a living teammate of the victim was within this distance of the killer (default 1000).',
   forceLabel: 'Force threshold (equip $)',
   forceHint: 'Team equipment ≥ this = force buy (default 10000).',
-  rulesVersionLabel: 'Rules version:',
   saveRules: 'Save rules',
   noChanges: 'No changes — the rules above are already saved.',
-  savingNote:
-    'Saving applies these rules to future analysis. Matches already in your\n        library keep the numbers they had — re-run them below.',
-  reRunHeading: 'Re-run analysis…',
-  reRunNote:
-    'Only matches behind the current rules are listed — analyzed under an older\n      rules version or never analyzed. Per match, under the current rules (round\n      types, KAST, clutches, engagements and career numbers refresh too).',
-  matchWord: 'match',
-  behindRulesSuffix: 'behind the current rules',
-  noMatchesYet: 'No matches yet — import a demo first.',
-  allAnalyzed: 'All {n} matches analyzed under current rules.',
-  behindUnknownTitle: 'The behind count is unknown — retry the list first',
-  behindNoneTitle: 'No matches behind the current rules',
-  reRunInProgressTitle: 'A re-run is already in progress',
-  reRunning: 'Re-running…',
-  reRunAll: 'Re-run all',
-  nothingNewToQueue: 'Nothing new to queue',
-  reRunningWord: 'Re-running',
-  analyzedWord: 'analyzed.',
-  doneChip: 'done',
-  reRanWord: 'Re-ran',
-  skippedNote: 'skipped (already re-running).',
-  failedNote: 'failed.',
-  reRun: 'Re-run',
-  showingBehind: 'Showing {shown} of {total} behind the current rules.',
-  loadingMore: 'Loading…',
-  loadMore: 'Load more',
-
-  // Stat definitions panel
-  statDefinitionsNote:
-    "What every stat in Spectra means and how it's calculated. Settings like\n      the trade window and buy thresholds are saved with a version number;\n      matches analyzed under older rules keep those numbers until you re-run\n      them.",
-  inferredTitle: 'Worked out from the demo data — not read straight from the game',
-  inferredChip: 'inferred',
+  saveNoChanges: 'No changes — the rules were already saved with these values.',
+  saveRecomputing:
+    'Saved. Matches behind the new rules are recomputing in the background — their numbers refresh as each match finishes.',
 };
