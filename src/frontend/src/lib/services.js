@@ -69,10 +69,12 @@ export function errText(e) {
 // event round-trip for the others can land AFTER the call site's own
 // refetch - invalidating inside the wrapper closes that race without any
 // call-site change. setAnalysisConfig belongs because the config VALUES
-// are inputs to reads (GetCombatStats gates on tradeOppDistance): a save
-// with no re-run changes what those reads return and emits no event of
-// its own, so without this flush a distance/window edit served stale
-// Combat/profile numbers until some unrelated spectra:* event.
+// are inputs to reads (the save bumps rule_version, and the cached
+// stored-metric value reads plus the library's behind facet compare
+// against the live rule version): a save with no re-run changes what
+// those reads return and emits no event of its own, so without this
+// flush a rules edit served stale Combat/profile numbers until some
+// unrelated spectra:* event.
 // RecomputeAnalysis deliberately left that group: it SUBMITS a background
 // compute and resolves at submission, so its invalidation rides
 // spectra:analysis-done — completion, not submission (listener beside the
@@ -582,9 +584,10 @@ export function getAnalysisConfig() { return AnalyticsService.GetConfig(); }
 
 // setAnalysisConfig saves the four rule thresholds. The wrapper
 // INVALIDATES on success like every other mutating wrapper (see the
-// comment at the top of this file): the config values gate reads such as
-// GetCombatStats, SetConfig emits no event, and without the flush a
-// distance/window edit served stale Combat/profile numbers until an
+// comment at the top of this file): a changed value bumps rule_version,
+// which is an input to the cached stored-metric value reads (fresh rows
+// only) and the behind facet, SetConfig emits no event, and without the
+// flush a rules edit served stale Combat/profile numbers until an
 // unrelated spectra:* event. The save NO-BUMP lives server-side
 // (AnalyticsService.SetConfig returns the current row untouched when the
 // four values are identical) — the caller compares ruleVersion to tell a

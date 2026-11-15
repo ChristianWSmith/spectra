@@ -241,7 +241,7 @@ test('fmtMetric drives every format tag, currency through fmtMoney', () => {
 
 test('fmtPercent renders an already-0..100 value (the read-DTO percent scale)', () => {
   // The contract every *Pct/*Rate read field follows (KASTPct,
-  // DMGConvPct, profile WinPct/OpeningRate/…): the
+  // DMGConvPct, profile WinPct/…): the
   // input is already a percent. fmtPercent does NOT scale fractions —
   // 0.05 renders "0.1%", never "5%" — which is why a 0..1 rate passed
   // here (the Combat tab's Entry%/Trade% regression, before those two

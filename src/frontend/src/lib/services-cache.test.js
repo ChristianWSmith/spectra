@@ -234,10 +234,11 @@ test('a mutating wrapper invalidates on success (no event needed)', async () => 
   assert.equal(bindings.callCount('GetMatch'), 2, 'delete flushed the cache');
 });
 
-// setAnalysisConfig is a mutating wrapper TOO (item 4): the config
-// VALUES gate reads (GetCombatStats reads tradeOppDistance), SetConfig
-// emits no event, and without the flush a distance/window edit served
-// stale Combat/profile numbers until an unrelated spectra:* event. The
+// setAnalysisConfig is a mutating wrapper TOO (item 4): the save bumps
+// rule_version, which is an input to the cached stored-metric value
+// reads (fresh rows only) and the behind facet, SetConfig emits no
+// event, and without the flush a rules edit served stale Combat/profile
+// numbers until an unrelated spectra:* event. The
 // full flush is the same rule every other mutating wrapper follows —
 // cachedRead keys carry no config dependency, so a targeted flush is
 // not expressible.
