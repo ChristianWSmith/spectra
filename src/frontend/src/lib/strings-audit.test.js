@@ -90,7 +90,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/views/CompareRounds.svelte',
   'frontend/src/lib/views/Economy.svelte',
   'frontend/src/lib/views/Explorer.svelte',
-  'frontend/src/lib/views/Heatmaps.svelte',
   'frontend/src/lib/views/Library.svelte',
   'frontend/src/lib/views/Match.svelte',
   'frontend/src/lib/views/PlayerProfile.svelte',
