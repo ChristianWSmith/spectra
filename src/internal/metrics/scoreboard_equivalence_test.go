@@ -434,15 +434,20 @@ func TestMissedTradesEquivalence(t *testing.T) {
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 
 // TestCareerClutchesEquivalence is the profile Clutches card's
-// acceptance oracle (design §6.3): career_clutches == player_career.
-// clutches — RebuildCareer's humans-only clutch COUNT, the exact number
-// the card rendered — subject for subject at the profile grain. The
+// acceptance oracle (design §6.3): career_clutches == the raw clutch
+// count over the library, computed here as an INDEPENDENT plain-SQL
+// oracle over the clutches table instead of reading the career rollup
+// (whose derived columns the career dual-write removal deleted). The
+// oracle applies the seed's own semantics: the `career_clutches` expr is
+// `from clutches: count()` and every statement is subject-addressed by
+// the engine — a non-empty `steam_id` beside the humans-only NOT EXISTS
+// over players (store.HumanOnlyBySteamID's spelling, match-scoped). The
 // committed corpus is clutchless (an empty primary table yields no
 // preview rows, the same treatment the fixtures give
 // career_clutch_win_rate), so this one INSERTS clutches first: a player
 // with clutches gets the same count from both sides, and a player
-// without them keeps career 0 AND no metric row — the profile's honest
-// "—", never a fabricated 0.
+// without them keeps 0 AND no metric row — the profile's honest "—",
+// never a fabricated 0.
 func TestCareerClutchesEquivalence(t *testing.T) {
 	st := seededStore(t)
 	inserted := map[int64][]models.Clutch{
@@ -463,31 +468,21 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 			t.Fatalf("ReplaceClutches(%d): %v", matchID, err)
 		}
 	}
-	if err := st.RebuildCareer(); err != nil {
-		t.Fatalf("RebuildCareer: %v", err)
-	}
 
+	want := oracle(t, st,
+		`SELECT c.steam_id, COUNT(*) FROM clutches c
+		 WHERE c.steam_id <> ''
+		   AND NOT EXISTS (SELECT 1 FROM players p
+			WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1)
+		 GROUP BY c.steam_id`)
 	got := previewAt(t, st, seedExpr(t, st, "career_clutches"), "")
-	withClutches := map[string]int{
-		"76561198000000001": 2, // both of Alice's, across two matches
-		"76561198000000003": 1,
-		"76561198000000005": 1,
-		"76561198000000008": 1,
-	}
 	for i := 1; i <= 8; i++ {
 		sid := fmt.Sprintf("7656119800000000%d", i)
-		career, err := st.GetCareer(sid)
-		if err != nil {
-			t.Fatalf("GetCareer(%s): %v", sid, err)
+		// want[sid] is 0 for every subject with no clutch rows.
+		if got[sid] != want[sid] {
+			t.Errorf("career_clutches[%s] = %v, want the raw clutch count %v", sid, got[sid], want[sid])
 		}
-		if career.Clutches != withClutches[sid] {
-			t.Errorf("player_career.clutches[%s] = %d, want %d (RebuildCareer's humans-only COUNT)",
-				sid, career.Clutches, withClutches[sid])
-		}
-		if got[sid] != float64(career.Clutches) {
-			t.Errorf("career_clutches[%s] = %v, want the card's %d", sid, got[sid], career.Clutches)
-		}
-		if withClutches[sid] == 0 {
+		if want[sid] == 0 {
 			if _, ok := got[sid]; ok {
 				t.Errorf("career_clutches[%s] = %v, want NO row (a clutchless player renders —)",
 					sid, got[sid])
@@ -499,43 +494,51 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 }
 
 // TestCareerOpeningEquivalence is the opening-duel trio's acceptance
-// oracle (design addendum I9): the three profile seeds equal the career
-// rollup the store keeps (RebuildCareer → GetCareer: openings =
-// Σ(opening_kills + opening_deaths), opener_wins = Σ(opening_kills)),
-// and the rate equals the EXACT percentage the Opening duels card
-// computed (profileservice's 100 × opener_wins / openings, guarded to
-// plain 0 when a career has no duels — that field died with the card in
-// W3a, which is why the formula is spelled here) — the number the
-// conversion must not move.
+// oracle (design addendum I9): the three profile seeds equal the raw
+// per-player sums over player_stats — openings =
+// Σ(opening_kills + opening_deaths), opener_wins = Σ(opening_kills),
+// each with the seed's own subject addressing (a non-empty `steam_id`
+// beside the humans-only NOT EXISTS over players, computed here as an
+// independent plain-SQL oracle instead of the career rollup whose
+// derived columns the dual-write removal deleted) — and the rate equals
+// the EXACT percentage the Opening duels card computed (profileservice's
+// 100 × opener_wins / openings, guarded to plain 0 when a career has no
+// duels — that field died with the card in W3a, which is why the formula
+// is spelled here) — the number the conversion must not move.
 func TestCareerOpeningEquivalence(t *testing.T) {
 	st := seededStore(t)
-	if err := st.RebuildCareer(); err != nil {
-		t.Fatalf("RebuildCareer: %v", err)
-	}
 	openings := previewAt(t, st, seedExpr(t, st, "career_openings"), "")
 	wins := previewAt(t, st, seedExpr(t, st, "career_opener_wins"), "")
 	rate := previewAt(t, st, seedExpr(t, st, "career_opening_rate"), "")
 	if len(openings) != 8 || len(wins) != 8 || len(rate) != 8 {
 		t.Fatalf("preview rows = %d/%d/%d, want 8 subjects each (%v/%v/%v)", len(openings), len(wins), len(rate), openings, wins, rate)
 	}
+	humansOnly := ` WHERE steam_id <> ''
+		AND NOT EXISTS (SELECT 1 FROM players p
+			WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)`
+	wantOpen := oracle(t, st,
+		`SELECT steam_id, SUM(opening_kills + opening_deaths) FROM player_stats`+humansOnly+
+			` GROUP BY steam_id`)
+	wantWins := oracle(t, st,
+		`SELECT steam_id, SUM(opening_kills) FROM player_stats`+humansOnly+
+			` GROUP BY steam_id`)
 
 	for i := 1; i <= 8; i++ {
 		sid := fmt.Sprintf("7656119800000000%d", i)
-		career, err := st.GetCareer(sid)
-		if err != nil {
-			t.Fatalf("GetCareer(%s): %v", sid, err)
+		if openings[sid] != wantOpen[sid] {
+			t.Errorf("career_openings[%s] = %v, want SUM(opening_kills + opening_deaths) = %v",
+				sid, openings[sid], wantOpen[sid])
 		}
-		if openings[sid] != float64(career.Openings) {
-			t.Errorf("career_openings[%s] = %v, want the career rollup's %d", sid, openings[sid], career.Openings)
+		if wins[sid] != wantWins[sid] {
+			t.Errorf("career_opener_wins[%s] = %v, want SUM(opening_kills) = %v",
+				sid, wins[sid], wantWins[sid])
 		}
-		if wins[sid] != float64(career.OpenerWins) {
-			t.Errorf("career_opener_wins[%s] = %v, want the career rollup's %d", sid, wins[sid], career.OpenerWins)
-		}
-		// The card's own formula: its guard shows plain 0 where the
-		// metric shows 0 beside N — the same displayed number.
+		// The card's own formula over the re-based numbers: its guard
+		// shows plain 0 where the metric shows 0 beside N — the same
+		// displayed number.
 		wantPct := 0.0
-		if career.Openings > 0 {
-			wantPct = 100 * float64(career.OpenerWins) / float64(career.Openings)
+		if wantOpen[sid] > 0 {
+			wantPct = 100 * wantWins[sid] / wantOpen[sid]
 		}
 		if rate[sid]*100 != wantPct {
 			t.Errorf("career_opening_rate[%s] ×100 = %v, want the Opening-duels card's %v", sid, rate[sid]*100, wantPct)

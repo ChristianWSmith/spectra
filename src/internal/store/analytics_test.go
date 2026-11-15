@@ -674,19 +674,6 @@ func TestGetEconomyNetWorthInvariant(t *testing.T) {
 func TestCareerRebuildMath(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/career.dem", "sha-career", time.Now())
-	// KAST rows: alice kast in her only recorded round; bob never.
-	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
-		{Round: 1, SteamID: "100", KAST: true},
-		{Round: 1, SteamID: "200", KAST: false},
-	}); err != nil {
-		t.Fatalf("ReplacePlayerRounds: %v", err)
-	}
-	if err := s.ReplaceClutches(id, []models.Clutch{
-		{Round: 1, Size: 1, SteamID: "100", StartTick: 100, Won: true},
-		{Round: 1, Size: 2, SteamID: "100", StartTick: 200, Won: false},
-	}); err != nil {
-		t.Fatalf("ReplaceClutches: %v", err)
-	}
 	if err := s.RebuildCareer(); err != nil {
 		t.Fatalf("RebuildCareer: %v", err)
 	}
@@ -695,31 +682,11 @@ func TestCareerRebuildMath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCareer(alice): %v", err)
 	}
-	// From testExtracted: alice kills 10, deaths 0, hs 4, adr 60, side ct,
-	// score CT 1–0 → 1 win; bob: 5/2, adr 30, side t → 0 wins.
+	// From testExtracted: alice kills 10, deaths 0, side ct, score CT 1–0
+	// → 1 win; bob: side t → 0 wins. (Every derived career number is a
+	// stored metric row now — this rollup carries raw counts only.)
 	if alice.Matches != 1 || alice.Wins != 1 {
 		t.Errorf("alice matches/wins = %d/%d, want 1/1", alice.Matches, alice.Wins)
-	}
-	if alice.ADRAvg != 60 || alice.ADRStd != 0 {
-		t.Errorf("alice adr = %v ± %v, want 60 ± 0", alice.ADRAvg, alice.ADRStd)
-	}
-	if alice.KD != 10 {
-		t.Errorf("alice kd = %v, want 10", alice.KD)
-	}
-	if alice.HSPct != 40 {
-		t.Errorf("alice hs = %v, want 40", alice.HSPct)
-	}
-	if alice.KASTPct != 100 {
-		t.Errorf("alice kast = %v, want 100", alice.KASTPct)
-	}
-	if alice.Openings != 1 || alice.OpenerWins != 1 {
-		t.Errorf("alice openings = %d/%d, want 1/1", alice.Openings, alice.OpenerWins)
-	}
-	if alice.Trades != 2 {
-		t.Errorf("alice trades = %d, want 2", alice.Trades)
-	}
-	if alice.Clutches != 2 {
-		t.Errorf("alice clutches = %d, want 2", alice.Clutches)
 	}
 	if alice.Name != "alice" {
 		t.Errorf("alice name = %q, want latest (NUL-scrubbed) name", alice.Name)
@@ -729,11 +696,10 @@ func TestCareerRebuildMath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCareer(bob): %v", err)
 	}
-	if bob.Wins != 0 || bob.KASTPct != 0 || bob.Openings != 1 || bob.OpenerWins != 0 {
-		t.Errorf("bob = %+v", bob)
+	if bob.Wins != 0 {
+		t.Errorf("bob = %+v, want 0 wins", bob)
 	}
 
-	// ADRStd across two matches: 30 and 90 → population stddev 30.
 	id2, err := s.CreateMatchRow("/d/career2.dem", "sha-career2", 5)
 	if err != nil {
 		t.Fatalf("CreateMatchRow: %v", err)
@@ -754,10 +720,8 @@ func TestCareerRebuildMath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCareer(alice) 2: %v", err)
 	}
-	// Population stddev of {60, 90} is 15.
-	if alice.Matches != 2 || alice.ADRAvg != 75 || alice.ADRStd != 15 {
-		t.Errorf("alice after 2nd match = matches %d, adr %v ± %v, want 2 / 75 ± 15",
-			alice.Matches, alice.ADRAvg, alice.ADRStd)
+	if alice.Matches != 2 {
+		t.Errorf("alice after 2nd match = matches %d, want 2", alice.Matches)
 	}
 	if alice.Name != "alice2" {
 		t.Errorf("alice name = %q, want alice2 (latest match)", alice.Name)
@@ -766,7 +730,7 @@ func TestCareerRebuildMath(t *testing.T) {
 	// ListPlayers + trend. The trend reads the STORED match-scope `adr`
 	// rows now (dogfooding design §3.5's D13 conversion), so seed the
 	// rows a completed sweep would have written — 60 for match 1, 90 for
-	// match 2, the same numbers the rollup asserts above.
+	// match 2.
 	seedFreshMetricValue(t, s, "adr", "100", id, 60)
 	seedFreshMetricValue(t, s, "adr", "100", id2, 90)
 	list, err := s.ListPlayers("")

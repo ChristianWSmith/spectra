@@ -81,7 +81,7 @@ func TestPlayerRoundsTeamkillDeathNotTraded(t *testing.T) {
 // DEFAULT window (5 s) must leave player_stats.trade_kills equal to the
 // extractor's stored output (the import-time 5 s rule), while a narrower
 // TradeWindowS must change the recomputed value — configurability
-// proven through Compute → store → scoreboard/career.
+// proven through Compute → store → scoreboard.
 func TestComputeTradeKillsDefaultAndConfigurable(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -114,15 +114,6 @@ func TestComputeTradeKillsDefaultAndConfigurable(t *testing.T) {
 	if at5["B"] != 1 || at5["A"] != 0 || at5["X"] != 0 {
 		t.Errorf("trade_kills@5s = %v, want {A:0 B:1 X:0} (equal to the extractor's stored output)", at5)
 	}
-	// Career rollup aggregates the fresh column (update runs BEFORE
-	// RebuildCareer inside Compute).
-	career, err := st.GetCareer("B")
-	if err != nil {
-		t.Fatalf("GetCareer(B): %v", err)
-	}
-	if career.Trades != 1 {
-		t.Errorf("career trades[B] = %d, want 1", career.Trades)
-	}
 
 	// Narrow window: the 4 s gap falls outside 1 s → the value changes.
 	if err := Compute(st, id, base(1.0)); err != nil {
@@ -131,13 +122,6 @@ func TestComputeTradeKillsDefaultAndConfigurable(t *testing.T) {
 	at1 := boardTrade(t, st, id)
 	if at1["B"] != 0 {
 		t.Errorf("trade_kills@1s = %v, want B=0 (4 s gap outside the 1 s window)", at1)
-	}
-	career, err = st.GetCareer("B")
-	if err != nil {
-		t.Fatalf("GetCareer(B) after 1s: %v", err)
-	}
-	if career.Trades != 0 {
-		t.Errorf("career trades[B] after 1s = %d, want 0", career.Trades)
 	}
 }
 
