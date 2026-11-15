@@ -833,7 +833,6 @@
       </label>
       <span class="muted"
         >{S.settings.copyOnImportHint}</span>
-      >
     </div>
   </section>
 
@@ -936,7 +935,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.extractHint}</span>
-      >
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
           {S.settings.chooseFolder}
@@ -953,7 +951,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.themeHint}</span>
-      >
       <div class="sett-seg" role="group" aria-label={S.settings.themeAria}>
         <button
           class="btn"
@@ -972,7 +969,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.fontSizeHint}</span>
-      >
       <div class="sett-seg" role="group" aria-label={S.settings.fontSizeAria}>
         {#each FONT_SIZES as sz (sz)}
           <button
@@ -1071,7 +1067,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.audioSelfTestHint}</span>
-      >
       <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
         >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
       >
@@ -1147,7 +1142,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.volAnnouncerHint}</span>
-      >
       <input
         class="sett-vol"
         type="range"
@@ -1161,7 +1155,6 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.volFootstepsHint}</span>
-      >
       <input
         class="sett-vol"
         type="range"
@@ -1203,7 +1196,7 @@
           step="0.5"
           bind:value={cfg.tradeWindowS}
         />
-        <span class="muted sett-hint">{S.settings.tradeWindowHint}</span>>
+        <span class="muted sett-hint">{S.settings.tradeWindowHint}</span>
       </div>
       <div class="sett-field">
         <label class="field-label" for="sett-full">{S.settings.fullBuyLabel}</label>
@@ -1215,14 +1208,13 @@
           step="100"
           bind:value={cfg.ecoFullBuy}
         />
-        <span class="muted sett-hint">{S.settings.fullBuyHint}</span>>
+        <span class="muted sett-hint">{S.settings.fullBuyHint}</span>
       </div>
       <div class="sett-field">
         <label
           class="field-label"
           for="sett-trade-dist"
           title={S.settings.tradeOppTitle}>{S.settings.tradeOppLabel}</label>
-        >
         <input
           class="input"
           id="sett-trade-dist"
@@ -1233,10 +1225,9 @@
         />
         <span class="muted sett-hint"
           >{S.settings.tradeOppHint}</span>
-        >
       </div>
       <div class="sett-field">
-        <label class="field-label" for="sett-force">{S.settings.forceLabel}</label>>
+        <label class="field-label" for="sett-force">{S.settings.forceLabel}</label>
         <input
           class="input"
           id="sett-force"
@@ -1245,7 +1236,7 @@
           step="100"
           bind:value={cfg.ecoForce}
         />
-        <span class="muted sett-hint">{S.settings.forceHint}</span>>
+        <span class="muted sett-hint">{S.settings.forceHint}</span>
       </div>
     </div>
     <!-- Save is honest about dirtiness: pristine (loaded/saved values)
