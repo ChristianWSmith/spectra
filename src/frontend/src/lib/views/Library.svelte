@@ -24,6 +24,7 @@
     invalidate,
     errText,
   } from '../services.js';
+  import * as S from '../strings/index.js';
   import { fmtBytes, fmtDuration, fmtDate, basename, neverExtracted } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
@@ -732,9 +733,9 @@
      native drop only reaches JS when the pointer is over it. -->
 <div class="view" data-file-drop-target>
   <header class="view-header">
-    <h1>Library</h1>
-    <button class="btn primary" onclick={doImport}>Import…</button>
-    <span class="muted">or drop .dem / .dem.zst files</span>
+    <h1>{S.library.title}</h1>
+    <button class="btn primary" onclick={doImport}>{S.library.importButton}</button>
+    <span class="muted">{S.library.dropHint}</span>
     <div class="spacer"></div>
     <!-- The Library's ONLY search controls, sitting where the free-text
          box used to be: the map + player facets, ANDed with each other
@@ -747,21 +748,21 @@
          what may be typed. The player facet carries no placeholder here:
          SuggestInput's kind="player" default is the standard
          "Search players..." hint (the same one Profiles wears). -->
-    <div class="lib-filters" role="group" aria-label="Library filters">
+    <div class="lib-filters" role="group" aria-label={S.library.filtersLabel}>
       <span class="lib-filter-field">
-        <label class="field-label" for="lib-filter-map">Map</label>
+        <label class="field-label" for="lib-filter-map">{S.library.mapLabel}</label>
         <SuggestInput
           id="lib-filter-map"
           inputClass="lib-filter"
-          placeholder="e.g. de_mirage"
-          ariaLabel="Filter by map"
+          placeholder={S.library.mapPlaceholder}
+          ariaLabel={S.library.mapAriaLabel}
           items={mapNames}
           bind:value={mapFilter}
           onselect={(m) => (mapFilter = m)}
         />
       </span>
       <span class="lib-filter-field">
-        <label class="field-label" for="lib-filter-player">Player</label>
+        <label class="field-label" for="lib-filter-player">{S.library.playerLabel}</label>
         <SuggestInput
           id="lib-filter-player"
           inputClass="lib-filter"
@@ -775,8 +776,8 @@
       {#if mapFilter || playerFilter}
         <button
           class="btn small ghost"
-          title="Clear the map and player filters"
-          onclick={clearFilters}>Clear filters</button
+          title={S.library.clearFiltersTitle}
+          onclick={clearFilters}>{S.library.clearFilters}</button
         >
       {/if}
     </div>
@@ -796,13 +797,13 @@
   {/if}
 
   {#if problemJobs.length > 0}
-    <section class="panel problems" aria-label="Recent import problems">
-      <h2>Recent import problems</h2>
+    <section class="panel problems" aria-label={S.library.problemsLabel}>
+      <h2>{S.library.problemsHeading}</h2>
       {#each problemJobs as job (job.id)}
         <div class="problem-row">
           <StatusChip status={job.status} />
           <span class="mono path" title={job.path}>{basename(job.path)}</span>
-          <span class="error-text">{job.error || 'no details'}</span>
+          <span class="error-text">{job.error || S.library.noDetails}</span>
         </div>
       {/each}
     </section>
@@ -816,41 +817,41 @@
            centered spinner with its details text underneath, no numbers
            (there is no denominator) — transient (see listLoading/
            jobsLoading), never restored. -->
-      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+      <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
     {:else if matches.length === 0 && jobs.length === 0 && !searching && !error}
       <!-- Honesty gate: a FAILED list load must not also claim the
            library is empty (error above is the truth about why nothing
            is here); the claim returns when a retry clears it. -->
       <div class="empty">
-        <p class="empty-title" role="status">No matches yet</p>
+        <p class="empty-title" role="status">{S.library.emptyStateTitle}</p>
         <!-- No Import… button here: the header already owns the one
              import action (top-left of this view) — the copy points at
              it instead of duplicating it. -->
         <p class="muted">
-          Import a CS2 demo with the button above, or drop <span class="mono"
-            >.dem</span
-          > / <span class="mono">.dem.zst</span> files anywhere in this panel.
+          {S.library.emptyLead}<span class="mono"
+            >{S.library.demExt}</span
+          > / <span class="mono">{S.library.demZstExt}</span>{S.library.emptyTail}
         </p>
       </div>
     {:else}
       <table class="data-table">
         <thead>
           <tr>
-            <SortTh label="Map" active={sortKey === 'map'} {desc} onclick={() => toggleSort('map')} />
-            <th scope="col">Matchup</th>
-            <SortTh label="W Score" cls="num" active={sortKey === 'winner_score'} {desc} onclick={() => toggleSort('winner_score')} />
-            <SortTh label="L Score" cls="num" active={sortKey === 'loser_score'} {desc} onclick={() => toggleSort('loser_score')} />
-            <SortTh label="Rounds" cls="num" active={sortKey === 'rounds'} {desc} onclick={() => toggleSort('rounds')} />
-            <SortTh label="Duration" cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
-            <SortTh label="Size" cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
-            <SortTh label="Imported" active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
+            <SortTh label={S.library.thMap} active={sortKey === 'map'} {desc} onclick={() => toggleSort('map')} />
+            <th scope="col">{S.library.thMatchup}</th>
+            <SortTh label={S.library.thWScore} cls="num" active={sortKey === 'winner_score'} {desc} onclick={() => toggleSort('winner_score')} />
+            <SortTh label={S.library.thLScore} cls="num" active={sortKey === 'loser_score'} {desc} onclick={() => toggleSort('loser_score')} />
+            <SortTh label={S.library.thRounds} cls="num" active={sortKey === 'rounds'} {desc} onclick={() => toggleSort('rounds')} />
+            <SortTh label={S.library.thDuration} cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
+            <SortTh label={S.library.thSize} cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
+            <SortTh label={S.library.thImported} active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
             <!-- Status is a reserved-width column (lib-status-col): its chip
                  carries a live progress bar + stage text whose length changes
                  on every parse stage, and an auto table would resize the whole
                  row each time — the column reserves its widest content instead
                  (style.css, "Library: reserved column widths"). -->
-            <SortTh label="Status" cls="lib-status-col" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
-            <th scope="col"><span class="sr-only">Actions</span></th>
+            <SortTh label={S.library.thStatus} cls="lib-status-col" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
+            <th scope="col"><span class="sr-only">{S.library.thActions}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -956,7 +957,7 @@
                     title={m.error || ''}
                   />
                 {:else if m.status === 'failed'}
-                  <StatusChip status="failed" title={m.error || 'import failed'} />
+                  <StatusChip status="failed" title={m.error || S.library.importFailed} />
                 {:else}
                   <StatusChip status="ready" />
                 {/if}
@@ -990,9 +991,9 @@
                     class="btn small"
                     disabled={!isOpenable(m)}
                     title={!isOpenable(m)
-                      ? 'Available once parsing finishes'
-                      : "Re-parse the demo — from Spectra's copy when one exists"}
-                    onclick={(e) => onReprocess(m.id, e)}>Re-parse</button
+                      ? S.library.availableAfterParse
+                      : S.library.reparseTitle}
+                    onclick={(e) => onReprocess(m.id, e)}>{S.library.reparseLabel}</button
                   >
                   <!-- Free copy: rendered only while the fs-derived state
                        says a managed copy exists AND the row is openable —
@@ -1002,17 +1003,17 @@
                   {#if m.copyState === 'copied' && isOpenable(m)}
                     <button
                       class="btn small"
-                      title="Free the disk space Spectra’s copy uses — your original file is not touched"
-                      onclick={(e) => onFreeCopy(m, e)}>Free copy</button
+                      title={S.library.freeCopyTitle}
+                      onclick={(e) => onFreeCopy(m, e)}>{S.library.freeCopy}</button
                     >
                   {/if}
                   <button
                     class="btn small danger"
                     disabled={!isOpenable(m)}
                     title={!isOpenable(m)
-                      ? 'Available once parsing finishes'
-                      : 'Delete this match’s data'}
-                    onclick={(e) => onDelete(m, e)}>Delete</button
+                      ? S.library.availableAfterParse
+                      : S.library.deleteMatchTitle}
+                    onclick={(e) => onDelete(m, e)}>{S.library.deleteLabel}</button
                   >
                 {/if}
               </td>
@@ -1028,7 +1029,7 @@
           <p class="muted" role="status">
             {searching
               ? `No matches match ${filterSummary}.`
-              : 'No matches yet — imports will appear here.'}
+              : S.library.noMatchesYet}
           </p>
         </div>
       {/if}
@@ -1037,9 +1038,9 @@
            ones already shown — jobs and dir sections are unaffected. -->
       {#if hasNext}
         <div class="row-between">
-          <span class="muted" role="status">Showing {matches.length} matches</span>
+          <span class="muted" role="status">{S.library.showingPrefix}{matches.length}{S.library.showingSuffix}</span>
           <button class="btn" disabled={loadingMore} onclick={loadMore}>
-            {loadingMore ? 'Loading…' : 'Load more'}
+            {loadingMore ? S.library.loadingMore : S.library.loadMore}
           </button>
         </div>
       {/if}
@@ -1054,21 +1055,18 @@
        flips to that job's chip and swaps Import for its Remove/Cancel
        (pendingDemoPaths, sourced from store.FindPendingJobByPath); Delete
        from disk removes the file itself, behind a confirmation. -->
-  <section class="panel" aria-label="Demos from your import dirs">
+  <section class="panel" aria-label={S.library.demosLabel}>
     <div class="row-between">
-      <h2>Demos from your import dirs</h2>
+      <h2>{S.library.demosHeading}</h2>
       <button
         class="btn small"
         disabled={demoScanning}
-        title="Rescan the configured import dirs"
-        onclick={() => refreshDemoFiles(true)}>Refresh</button
+        title={S.library.rescanTitle}
+        onclick={() => refreshDemoFiles(true)}>{S.library.refresh}</button
       >
     </div>
     <p class="muted">
-      Found under your import dirs (Settings → Import dirs) — subfolders up to
-      four levels deep, hidden folders skipped. Importing never moves, modifies or
-      deletes your original file; the copy kept in Spectra’s data folder is
-      optional (Settings → Import dirs) and can be freed from any match row.
+      {S.library.importDirsNote}
     </p>
     {#if demoError}
       <p class="error" role="alert">{demoError}</p>
@@ -1082,27 +1080,26 @@
            backend hashes → the ring. Never a second bar, never a
            fabricated "0%". -->
       <p class="muted" role="status">
-        <StatusChip block progress={scanProgress} detail="Scanning folders…" />
+        <StatusChip block progress={scanProgress} detail={S.library.scanningDetail} />
       </p>
     {:else if demoFiles.length === 0}
       <p class="muted" role="status">
-        No demos found — add import dirs in Settings, or use Import… / drop files on this
-        panel.
+        {S.library.noDemosFound}
       </p>
     {:else}
       <table class="data-table">
         <thead>
           <tr>
-            <th scope="col">Demo</th>
-            <th scope="col">Folder</th>
-            <th scope="col" class="num">Size</th>
-            <th scope="col">Modified</th>
+            <th scope="col">{S.library.thDemo}</th>
+            <th scope="col">{S.library.thFolder}</th>
+            <th scope="col" class="num">{S.library.thSize}</th>
+            <th scope="col">{S.library.thModified}</th>
             <!-- The import-dir table's status column is the SAME reserved
                  column as the match table's (lib-status-col): the cell flips
                  between the "not imported" chip and a live job chip (bar +
                  stage text) as a file gets enqueued mid-parse. -->
-            <th scope="col" class="lib-status-col">Library</th>
-            <th scope="col"><span class="sr-only">Actions</span></th>
+            <th scope="col" class="lib-status-col">{S.library.thLibrary}</th>
+            <th scope="col"><span class="sr-only">{S.library.thActions}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -1130,15 +1127,15 @@
                     status={pj.status}
                     progress={pj.progress}
                     stage={pj.stage}
-                    title={pj.error || 'This demo is already being imported'}
+                    title={pj.error || S.library.alreadyImporting}
                   />
                 {:else}
                   <span
                     class="chip idle"
                     title={f.hashed
-                      ? 'Not in the library yet'
-                      : 'Not compared with the library yet — importing is safe; Spectra spots duplicates itself'}
-                    >not imported</span
+                      ? S.library.notInLibrary
+                      : S.library.notComparedTitle}
+                    >{S.library.notImported}</span
                   >
                 {/if}
               </td>
@@ -1152,13 +1149,13 @@
                   >
                 {:else}
                   <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
-                    >Import</button
+                    >{S.library.importRow}</button
                   >
                 {/if}
                 <button
                   class="btn small danger"
-                  title="Delete this demo file from disk"
-                  onclick={(e) => onDeleteFile(f, e)}>Delete from disk</button
+                  title={S.library.deleteDemoFileTitle}
+                  onclick={(e) => onDeleteFile(f, e)}>{S.library.deleteFromDisk}</button
                 >
               </td>
             </tr>

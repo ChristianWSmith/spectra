@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import {
     getEconomy,
     getRounds,
@@ -258,22 +259,22 @@
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.economy.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
   {/if}
 
   {#if loading}
-    <p class="muted" role="status"><StatusChip block detail="Loading economy…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.economy.loadingDetail} /></p>
   {:else}
     <div class="econ-head">
       <span class="muted"
-        >{rows.length} round{rows.length === 1 ? '' : 's'}</span
+        >{rows.length}{S.economy.roundSuffix}{rows.length === 1 ? '' : 's'}</span
       >
       <span class="spacer"></span>
       <span class="muted econ-head-note"
-        >buy types follow saved rules — click a chip for the reason</span
+        >{S.economy.headNote}</span
       >
     </div>
 
@@ -281,86 +282,86 @@
 
     <div class="econ-summary stat-grid">
       <StatCard
-        label="Pistol → next round"
+        label={S.economy.pistolLabel}
         value={summary.pistolWon ? `${summary.held}/${summary.pistolWon}` : '—'}
-        sub="pistol wins held next round"
+        sub={S.economy.pistolSub}
         cls={!summary.firstPistol ? 'no-drill' : ''}
-        title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: watch round {summary.firstPistol || '—'} in the replay (the round's own span, start→end)."
+        title={S.fill(S.economy.pistolTitle, { round: summary.firstPistol || '—' })}
         onclick={() => drill(summary.firstPistol)}
       >
-        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
       </StatCard>
 
       <StatCard
-        label="Force-buy win rate"
+        label={S.economy.forceLabel}
         value={summary.forceTotal
           ? Math.round((100 * summary.forceWon) / summary.forceTotal) + '%'
           : '—'}
         sub={summary.forceTotal
           ? `${names.ct} ${summary.force.ct.won}/${summary.force.ct.total} · ${names.t} ${summary.force.t.won}/${summary.force.t.total}`
-          : 'no force buys'}
+          : S.economy.noForceBuys}
         cls={!summary.firstForce ? 'no-drill' : ''}
-        title="Formula: force-buy rounds won by the force-buying TEAM ÷ that team's own force-buy rounds, attributed per team across the halftime side switch (a round both teams force-bought counts once for each). Click: watch round {summary.firstForce || '—'} in the replay (the round's own span, start→end)."
+        title={S.fill(S.economy.forceTitle, { round: summary.firstForce || '—' })}
         onclick={() => drill(summary.firstForce)}
       >
-        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
       </StatCard>
 
       <StatCard
-        label="Winner equipment value advantage"
+        label={S.economy.gapLabel}
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
-        sub="avg winner − loser equip per round"
+        sub={S.economy.gapSub}
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: watch round {summary.gapRound || '—'} (largest gap) in the replay (the round's own span, start→end)."
+        title={S.fill(S.economy.gapTitle, { round: summary.gapRound || '—' })}
         onclick={() => drill(summary.gapRound)}
       >
-        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
       </StatCard>
 
       <StatCard
-        label="Lost equipment"
+        label={S.economy.lostLabel}
         value={fmtMoney(summary.lostTotal)}
         sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: total across decided rounds of the losing team's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: watch round {summary.lostRound || '—'} (largest loss) in the replay (the round's own span, start→end)."
+        title={S.fill(S.economy.lostTitle, { round: summary.lostRound || '—' })}
         onclick={() => drill(summary.lostRound)}
       >
-        {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}
+        {#snippet badge()}<span class="chip badge-inferred">{S.economy.badgeInferred}</span>{/snippet}
       </StatCard>
     </div>
 
     <section class="panel">
-      <h2>Buy types</h2>
+      <h2>{S.economy.buyTypesHeading}</h2>
       {#if rows.length === 0}
-        <p class="muted" role="status">No buy types recorded yet.</p>
+        <p class="muted" role="status">{S.economy.noBuyTypes}</p>
       {:else}
         <div class="table-scroll">
           <table class="data-table econ-table">
             <thead>
               <tr>
                 <th scope="col" class="num">RD</th>
-                <th scope="col">Winner</th>
-                <th scope="col">CT buy</th>
-                <th scope="col">T buy</th>
-                <th scope="col" class="num" title={EQUIP_DEF}>Equip CT</th>
-                <th scope="col" class="num" title={EQUIP_DEF}>Equip T</th>
+                <th scope="col">{S.economy.thWinner}</th>
+                <th scope="col">{S.economy.thCTBuy}</th>
+                <th scope="col">{S.economy.thTBuy}</th>
+                <th scope="col" class="num" title={EQUIP_DEF}>{S.economy.thEquipCT}</th>
+                <th scope="col" class="num" title={EQUIP_DEF}>{S.economy.thEquipT}</th>
                 <th scope="col" class="num">
-                  Loss CT
+                  {S.economy.thLossCT}
                   {#if lossInferredCT}
                     <span
                       class="chip badge-inferred"
-                      title="calculated from the round results"
-                      >inferred</span
+                      title={S.economy.inferredTitle}
+                      >{S.economy.badgeInferred}</span
                     >
                   {/if}
                 </th>
                 <th scope="col" class="num">
-                  Loss T
+                  {S.economy.thLossT}
                   {#if lossInferredT}
                     <span
                       class="chip badge-inferred"
-                      title="calculated from the round results"
-                      >inferred</span
+                      title={S.economy.inferredTitle}
+                      >{S.economy.badgeInferred}</span
                     >
                   {/if}
                 </th>
@@ -374,7 +375,7 @@
                   <td class="num">
                     <button
                       class="btn small ghost econ-rd"
-                      title="Open round {r.round}"
+                      title={S.fill(S.economy.openRound, { round: r.round })}
                       onclick={() => nav(`/match/${id}/round/${r.round}`)}
                       >{r.round}</button
                     >
@@ -385,7 +386,7 @@
                   <td>
                     <button
                       class="chip econ-cls {ctc.cls}"
-                      title="{ctc.why} (rules v{ctc.rule}) — click for full text"
+                      title={S.fill(S.economy.chipTitle, { why: ctc.why, rule: ctc.rule })}
                       aria-expanded={whyOpen === `${r.round}:ct`}
                       onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button
                     >
@@ -393,7 +394,7 @@
                   <td>
                     <button
                       class="chip econ-cls {tc.cls}"
-                      title="{tc.why} (rules v{tc.rule}) — click for full text"
+                      title={S.fill(S.economy.chipTitle, { why: tc.why, rule: tc.rule })}
                       aria-expanded={whyOpen === `${r.round}:t`}
                       onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
                     >
@@ -411,15 +412,15 @@
                           {whyText?.side === 'ct' ? ctc.cls : tc.cls}
                         </span>
                         <span class="econ-why-text"
-                          >{whyText?.why || 'no explanation recorded'}</span
+                          >{whyText?.why || S.economy.noExplanation}</span
                         >
                         <span class="spacer"></span>
                         <span class="econ-why-rules mono"
-                          >rules v{whyText?.rule ?? r.ruleVersion}</span
+                          >{S.economy.rulesV}{whyText?.rule ?? r.ruleVersion}</span
                         >
                         <button
                           class="btn small ghost"
-                          aria-label="Close explanation"
+                          aria-label={S.economy.closeExplanation}
                           onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button
                         >
                       </div>
@@ -431,19 +432,9 @@
           </table>
         </div>
         <p class="econ-table-note muted">
-          Equip CT/T = that side's equipment value at freeze time end — the
-          value of the gear its players actually hold (weapons picked up and
-          carried over from earlier rounds included), never this round's
-          spend; the chart's Net worth = that equipment value + the side's
-          unspent money at the same instant, so it is never below equipment
-          value (the glossary's Net worth entry has the full rule); Loss CT/T =
-          the round loss bonus that side would collect by losing
-          this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
-          steps it up, a win steps it down (never a full reset), and every
-          half starts one level up (a pistol loss pays $1900);
-          <span class="chip badge-inferred">inferred</span> on the Loss headers
-          marks those values as calculated from the round results rather than
-          recorded.
+          {S.economy.tableNote}
+          <span class="chip badge-inferred">{S.economy.badgeInferred}</span>
+          {S.economy.tableNoteTail}
         </p>
       {/if}
     </section>

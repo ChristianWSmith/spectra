@@ -130,10 +130,17 @@ for (const name of ['LandmarkRow', 'ProfileLink', 'StatusChip']) {
 
 // CompareRounds.svelte → its ../ imports land in dir/; only the .svelte
 // component imports need rewriting to their compiled .js.
-const cmpSrc = readFileSync('src/lib/views/CompareRounds.svelte', 'utf8').replace(
-  /from '\.\.\/components\/(\w+)\.svelte'/g,
-  "from '../components/$1.js'",
-);
+const cmpSrc = readFileSync('src/lib/views/CompareRounds.svelte', 'utf8')
+  .replace(
+    /from '\.\.\/components\/(\w+)\.svelte'/g,
+    "from '../components/$1.js'",
+  )
+  // plumbing (Strings Stage 3): the view imports the strings catalog —
+  // resolve it from the real tree, like every other ../ module here.
+  .replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  );
 svelteCompile(cmpSrc, 'CompareRounds.svelte', join(dir, 'views', 'CompareRounds.js'));
 
 const harnessSrc = `<script>

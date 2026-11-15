@@ -82,16 +82,6 @@ const PENDING_INLINE = new Set([
   'frontend/src/lib/components/StatusChip.svelte',
   'frontend/src/lib/components/SuggestInput.svelte',
   'frontend/src/lib/components/TeamColumn.svelte',
-  'frontend/src/lib/views/Combat.svelte',
-  'frontend/src/lib/views/CompareRounds.svelte',
-  'frontend/src/lib/views/Economy.svelte',
-  'frontend/src/lib/views/Explorer.svelte',
-  'frontend/src/lib/views/Heatmaps.svelte',
-  'frontend/src/lib/views/Library.svelte',
-  'frontend/src/lib/views/PlayerProfile.svelte',
-  'frontend/src/lib/views/Profiles.svelte',
-  'frontend/src/lib/views/Reports.svelte',
-  'frontend/src/lib/views/Utility.svelte',
 ]);
 
 // Check A ledger — pre-existing denylist hits, keyed file → exact literal

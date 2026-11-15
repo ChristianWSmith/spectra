@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import {
     getMatch,
     getScoreboard,
@@ -464,7 +465,7 @@
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.heatmaps.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
@@ -476,7 +477,7 @@
 
   <div class="toolbar heat-controls">
     <div class="heat-field">
-      <label class="field-label" for="heat-kind">Kind</label>
+      <label class="field-label" for="heat-kind">{S.heatmaps.kindLabel}</label>
       <select class="input" id="heat-kind" bind:value={kind}>
         {#each KIND_GROUPS as group (group.label)}
           <optgroup label={group.label}>
@@ -495,8 +496,8 @@
            drawn again on Regenerate, and layer being in filterKey keeps
            the stale banner on the pending controls. -->
       <div class="heat-field">
-        <span class="field-label">Floor</span>
-        <div class="sett-seg" role="group" aria-label="Floor">
+        <span class="field-label">{S.heatmaps.floorLabel}</span>
+        <div class="sett-seg" role="group" aria-label={S.heatmaps.floorLabel}>
           {#each layers as l, i (i)}
             <button
               class="btn"
@@ -509,9 +510,9 @@
       </div>
     {/if}
     <div class="heat-field">
-      <label class="field-label" for="heat-player">Player</label>
+      <label class="field-label" for="heat-player">{S.heatmaps.playerLabel}</label>
       <select class="input" id="heat-player" bind:value={player}>
-        <option value="">All players</option>
+        <option value="">{S.heatmaps.allPlayers}</option>
         {#each players as p (p.steamId)}
           <option value={p.steamId}>{p.name}</option>
         {/each}
@@ -525,17 +526,17 @@
            (HeatmapFilter.Team — the wire is unchanged); only this label
            (and the arrival filter's `side` key — heatRegionFilter) name
            it for what it is. -->
-      <label class="field-label" for="heat-side">Side</label>
+      <label class="field-label" for="heat-side">{S.heatmaps.sideLabel}</label>
       <select class="input" id="heat-side" bind:value={team}>
-        <option value="">Both</option>
+        <option value="">{S.heatmaps.bothSides}</option>
         <option value="ct">CT</option>
         <option value="t">T</option>
       </select>
     </div>
     <div class="heat-field">
-      <label class="field-label" for="heat-from">Rounds from</label>
+      <label class="field-label" for="heat-from">{S.heatmaps.roundsFrom}</label>
       <select class="input" id="heat-from" bind:value={roundFrom}>
-        <option value={-1}>All</option>
+        <option value={-1}>{S.heatmaps.allRounds}</option>
         <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds are
              numbered negatively, and -1 is this range's "all" sentinel. -->
         {#each rounds.filter(isCounted) as r (r.number)}
@@ -544,9 +545,9 @@
       </select>
     </div>
     <div class="heat-field">
-      <label class="field-label" for="heat-to">Rounds to</label>
+      <label class="field-label" for="heat-to">{S.heatmaps.roundsTo}</label>
       <select class="input" id="heat-to" bind:value={roundTo}>
-        <option value={-1}>All</option>
+        <option value={-1}>{S.heatmaps.allRounds}</option>
         {#each rounds.filter(isCounted) as r (r.number)}
           <option value={r.number}>RD{r.number}</option>
         {/each}
@@ -579,7 +580,7 @@
 
   {#if dirty}
     <p class="heat-stale muted" role="status">
-      controls changed — press Regenerate to redraw the heatmap
+      {S.heatmaps.controlsChanged}
     </p>
   {/if}
 
@@ -605,7 +606,7 @@
       {/if}
       <span class="chip heat-unit">{unit}</span>
       <span class="muted"
-        >{fmtInt(grid.samples)} plotted points · {grid.w}×{grid.h} grid · square-root scale</span
+        >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
       >
     </div>
   {/if}
@@ -615,15 +616,14 @@
   {#if grid}
     <p class="heat-hint muted">
       {#if heatRegionTakesBBox(src.kind)}
-        Click the map to open the replay events for that region (the clicked
-        square, padded to the splat’s reach).
+        {S.heatmaps.bboxHint}
       {:else}
-        {src.kind} has no event rows behind it — clicking the map opens nothing.
+        {src.kind}{S.heatmaps.noRowsSuffix}
       {/if}
     </p>
   {:else if !loading}
     <p class="heat-empty muted" role="status">
-      Choose filters and press Generate — heatmaps are computed on demand.
+      {S.heatmaps.emptyState}
     </p>
   {/if}
 </div>

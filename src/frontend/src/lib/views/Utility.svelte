@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import {
     getUtility,
     getRounds,
@@ -277,54 +278,54 @@
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.utility.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
   {/if}
 
   {#if loading}
-    <p class="muted" role="status"><StatusChip block detail="Loading utility events…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.utility.loadingDetail} /></p>
   {:else}
     <div class="util-filters toolbar">
       <label class="util-field" for="util-kind">
-        <span class="field-label">Kind</span>
+        <span class="field-label">{S.utility.kindLabel}</span>
         <select class="input" id="util-kind" bind:value={kindF}>
-          <option value="">All kinds</option>
+          <option value="">{S.utility.allKinds}</option>
           {#each kindOptions as k (k)}
             <option value={k}>{k}</option>
           {/each}
         </select>
       </label>
       <label class="util-field" for="util-thrower">
-        <span class="field-label">Thrower</span>
+        <span class="field-label">{S.utility.throwerLabel}</span>
         <select class="input" id="util-thrower" bind:value={throwerF}>
-          <option value="">All players</option>
+          <option value="">{S.utility.allPlayers}</option>
           {#each players as p (p.steamId)}
             <option value={p.steamId}>{p.name}</option>
           {/each}
         </select>
       </label>
       <span class="muted"
-        >{filtered.length} of {rows.length} grenade{rows.length === 1
+        >{filtered.length} of {rows.length}{S.utility.grenadeSuffix}{rows.length === 1
           ? ''
           : 's'}</span
       >
       <span class="spacer"></span>
-      <span class="muted util-hint">▶ seeks to the throw (±10 s loop) · camera follows the thrower</span>
+      <span class="muted util-hint">{S.utility.hint}</span>
     </div>
 
     <div class="util-summary">
       <section class="panel">
-        <h2>Utility damage per round</h2>
+        <h2>{S.utility.damagePerRoundHeading}</h2>
         {#if damageBars.per.length === 0}
-          <p class="muted" role="status">No utility damage in this selection.</p>
+          <p class="muted" role="status">{S.utility.noDamage}</p>
         {:else}
           <svg
             class="util-bars"
             viewBox="0 0 {barW} {barH}"
             preserveAspectRatio="none"
-            aria-label="Team utility damage per round"
+            aria-label={S.utility.barsLabel}
           >
             <defs>
               <!-- The identity STRIPE (the design language's first
@@ -366,7 +367,7 @@
                 width={bw}
                 height={hCt}
               >
-                <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct} {p.ct} damage</title>
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct} {p.ct}{S.utility.damageSuffix}</title>
               </rect>
               {#if STRIPED_KEY === 'ct'}
                 <rect
@@ -386,7 +387,7 @@
                 width={bw}
                 height={hT}
               >
-                <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t} {p.t} damage</title>
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t} {p.t}{S.utility.damageSuffix}</title>
               </rect>
               {#if STRIPED_KEY === 't'}
                 <rect
@@ -411,49 +412,49 @@
             <span
               ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
               >{names.ct}
-              <span class="chip badge-computed">computed</span></span
+              <span class="chip badge-computed">{S.utility.badgeComputed}</span></span
             >
             <span
               ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
               >{names.t}</span
             >
             <span class="muted"
-              title="total damage in the current filter, by thrower team"
-              >max {damageBars.max} dmg/round · totals of recorded damage</span
+              title={S.utility.damageTitle}
+              >{S.utility.maxPrefix}{damageBars.max}{S.utility.maxSuffix}</span
             >
           </div>
         {/if}
       </section>
 
       <section class="panel">
-        <h2>Flash effectiveness</h2>
+        <h2>{S.utility.flashHeading}</h2>
         <div class="util-flash-grid">
           <div class="util-flash-cell">
-            <span class="field-label {clsCT}">{names.ct} blinds</span>
+            <span class="field-label {clsCT}">{names.ct}{S.utility.blindsSuffix}</span>
             <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
-            <span class="muted">{flash.ctAff} affected</span>
+            <span class="muted">{flash.ctAff}{S.utility.affectedSuffix}</span>
           </div>
           <div class="util-flash-cell">
-            <span class="field-label {clsT}">{names.t} blinds</span>
+            <span class="field-label {clsT}">{names.t}{S.utility.blindsSuffix}</span>
             <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
-            <span class="muted">{flash.tAff} affected</span>
+            <span class="muted">{flash.tAff}{S.utility.affectedSuffix}</span>
           </div>
         </div>
         <p class="util-flash-note">
           <span
             class="chip badge-inferred"
-            title="calculated from the demo's blind events"
-            >inferred</span
+            title={S.utility.inferredTitle}
+            >{S.utility.badgeInferred}</span
           >
           <span class="muted"
-            >total blind time + affected players, by thrower team</span
+            >{S.utility.flashNote}</span
           >
         </p>
       </section>
     </div>
 
     {#if groups.length === 0}
-      <p class="muted" role="status">No grenades match the current filters.</p>
+      <p class="muted" role="status">{S.utility.noGrenades}</p>
     {:else}
       <div class="util-groups">
         {#each groups as [round, list] (round)}
@@ -471,9 +472,9 @@
               aria-expanded={!closed[round]}
               onclick={() => toggleRound(round)}
             >
-              <span class="util-group-title">Round {roundIndexLabel(rbn.get(round) ?? round)}</span>
+              <span class="util-group-title">{S.utility.groupTitlePrefix}{roundIndexLabel(rbn.get(round) ?? round)}</span>
               <span class="chip round-chip">{list.length}</span>
-              <span class="muted mono">{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)} dmg</span>
+              <span class="muted mono">{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)}{S.utility.dmgSuffix}</span>
               <span class="spacer"></span>
               <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
             </button>
@@ -487,24 +488,24 @@
                       name={r.throwerName || r.thrower}
                       nav={go}
                       cls="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
-                      title="Open {r.throwerName || r.thrower} profile"
+                      title={S.fill(S.utility.openProfile, { name: r.throwerName || r.thrower })}
                     />
                     <span
                       class="mono muted util-tick"
-                      title="tick {r.tick} — time into round {roundIndexLabel(rbn.get(r.round) ?? r.round)}"
+                      title={S.fill(S.utility.tickTitle, { tick: r.tick, round: roundIndexLabel(rbn.get(r.round) ?? r.round) })}
                       >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
                     >
-                    <span class="util-num" title="damage dealt"
+                    <span class="util-num" title={S.utility.damageDealtTitle}
                       >{fmtZeroDash(r.damage, 'dmg')}</span
                     >
-                    <span class="util-num muted" title="total blind time"
+                    <span class="util-num muted" title={S.utility.blindTimeTitle}
                       >{r.flashMsTotal > 0
                         ? fmtMs(r.flashMsTotal)
                         : '—'}</span
                     >
                     <span
                       class="util-num muted"
-                      title="affected players (blinded or damaged by this throw)"
+                      title={S.utility.affectedTitle}
                       >{fmtZeroDash(affectedCount(r.affected), 'aff')}</span
                     >
                     <span class="util-actions">
@@ -512,7 +513,7 @@
                         class="btn small ghost"
                         title={r.thrower
                           ? `Watch this throw — follow ${r.throwerName || r.thrower}`
-                          : 'Watch this throw in the replay'}
+                          : S.utility.watchThrowFallback}
                         aria-label={r.thrower
                           ? `Watch this throw at tick ${r.tick} — follow ${r.throwerName || r.thrower}`
                           : `Watch this throw at tick ${r.tick}`}
@@ -522,7 +523,7 @@
                     </span>
                     <span
                       class="util-coord muted mono"
-                      title="detonation world coordinates"
+                      title={S.utility.coordTitle}
                       >{coordCell(r)}</span
                     >
                   </li>

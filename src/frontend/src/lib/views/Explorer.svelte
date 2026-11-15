@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   // Explorer — the demo-file DIAGNOSTICS surface: per-match provenance,
   // entity summary and the static network-census reference. Warnings
   // live on the Match view, and the one ConVar parser is eventlabels.go
@@ -123,21 +124,21 @@
 <div class="view">
   {#if !embedded}
     <header class="view-header">
-      <h1>Explorer</h1>
+      <h1>{S.library.explorerTitle}</h1>
       <MatchPicker
         id="expl-match"
         matches={matches}
         value={matchId}
         onselect={(id) => (matchId = id)}
       />
-      <span class="muted">Diagnostics for this demo file.</span>
+      <span class="muted">{S.library.explorerSubtitle}</span>
     </header>
   {/if}
 
   {#if loadError}
     <p class="error" role="alert">
       {loadError}
-      <button class="btn small" onclick={loadMatches}>Retry</button>
+      <button class="btn small" onclick={loadMatches}>{S.library.retry}</button>
     </p>
   {/if}
 
@@ -146,33 +147,33 @@
       <!-- Gated on loadError: a failed match-list read is UNKNOWN, never
            "no matches" — the alert above carries it (and its Retry). -->
       <div class="panel empty">
-        <p class="empty-title" role="status">No matches</p>
-        <p class="muted">Import a demo in the Library first.</p>
+        <p class="empty-title" role="status">{S.library.noMatches}</p>
+        <p class="muted">{S.library.noMatchesHint}</p>
       </div>
     {/if}
   {:else}
     <!-- Provenance: reproducibility panel per match. -->
     <section class="panel">
-      <h2>Import details</h2>
+      <h2>{S.library.importDetails}</h2>
       {#if provError}
         <p class="error" role="alert">
           {provError}
-          <button class="btn small" onclick={() => loadProv(matchId)}>Retry</button>
+          <button class="btn small" onclick={() => loadProv(matchId)}>{S.library.retry}</button>
         </p>
       {:else if !prov}
         <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
       {:else}
         <dl class="facts">
           <div>
-            <dt>Parser version</dt>
+            <dt>{S.library.dtParserVersion}</dt>
             <dd class="mono">{prov.parserVersion || '—'}</dd>
           </div>
           <div>
-            <dt>Imported</dt>
+            <dt>{S.library.dtImported}</dt>
             <dd>{fmtDate(prov.extractedAt)}</dd>
           </div>
           <div>
-            <dt>Parse time</dt>
+            <dt>{S.library.dtParseTime}</dt>
             <dd class="num">{fmtInt(prov.parseMs)} ms</dd>
           </div>
           <div>
@@ -184,33 +185,33 @@
                  as one "rules this ran under" tuple (backend documents
                  them per-field). -->
             <dt>Rules version (match stamp)</dt>
-            <dd class="num">{prov.ruleVersion > 0 ? prov.ruleVersion : 'not analyzed'}</dd>
+            <dd class="num">{prov.ruleVersion > 0 ? prov.ruleVersion : S.library.notAnalyzed}</dd>
           </div>
           <div>
             <dt>Trade window (current rules)</dt>
             <dd class="num">{prov.tradeWindowS}s</dd>
           </div>
           <div>
-            <dt>Voice sample rate</dt>
+            <dt>{S.library.dtVoiceSampleRate}</dt>
             <dd class="num">{prov.sampleRate ? `${prov.sampleRate} Hz` : '—'}</dd>
           </div>
           <div>
-            <dt>Voice chunks</dt>
+            <dt>{S.library.dtVoiceChunks}</dt>
             <dd class="num">{fmtInt(prov.voiceChunks)}</dd>
           </div>
           <div>
-            <dt>Warnings</dt>
+            <dt>{S.library.dtWarnings}</dt>
             <dd class="num">{fmtInt(prov.warnings)}</dd>
           </div>
           <div>
-            <dt>Status</dt>
+            <dt>{S.library.dtStatus}</dt>
             <dd><StatusChip status={prov.status} /></dd>
           </div>
         </dl>
         {#if prov.notes && prov.notes.length}
           <div class="expl-notes">
             {#each prov.notes as n, i (i)}
-              <span class="chip expl-note-chip" title="Note">{n}</span>
+              <span class="chip expl-note-chip" title={S.library.noteChipTitle}>{n}</span>
             {/each}
           </div>
         {/if}
@@ -222,30 +223,30 @@
 
     <!-- Entity summary -->
     <section class="panel">
-      <h2>Advanced diagnostics</h2>
+      <h2>{S.library.advancedDiagnostics}</h2>
       {#if entError}
         <p class="error" role="alert">
           {entError}
-          <button class="btn small" onclick={() => loadEnt(matchId)}>Retry</button>
+          <button class="btn small" onclick={() => loadEnt(matchId)}>{S.library.retry}</button>
         </p>
       {:else if !entities}
         <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
       {:else}
         <dl class="facts">
           <div>
-            <dt>Entity types</dt>
+            <dt>{S.library.dtEntityTypes}</dt>
             <dd class="num">{fmtInt(entities.entityClasses)}</dd>
           </div>
           <div>
-            <dt>Entities at end</dt>
+            <dt>{S.library.dtEntitiesAtEnd}</dt>
             <dd class="num">{fmtInt(entities.endEntities)}</dd>
           </div>
           <div>
-            <dt>Generic event types</dt>
+            <dt>{S.library.dtGenericEventTypes}</dt>
             <dd class="num">{fmtInt(entities.genericTypes)}</dd>
           </div>
           <div>
-            <dt>Generic events total</dt>
+            <dt>{S.library.dtGenericEventsTotal}</dt>
             <dd class="num">{fmtInt(entities.genericTotal)}</dd>
           </div>
         </dl>
@@ -257,10 +258,10 @@
 
     <!-- Static reference block (short pointer, not a dump). -->
     <section class="panel expl-ref">
-      <h2>Network messages</h2>
+      <h2>{S.library.networkMessages}</h2>
       <p class="muted">
-        <strong>639</strong> protobuf network-message types exist in CS2;
-        <strong>39</strong> of them fire in the golden demo (1,965,413 messages total).
+        <strong>639</strong>{S.library.protobufTypes}
+        <strong>39</strong>{S.library.goldenDemoShare}
       </p>
       <ul class="expl-ref-list">
         {#each REF_BULLETS as b, i (i)}
@@ -270,12 +271,11 @@
       {#if prov}
         {#if Number(prov.encMessages) > 0}
           <p class="muted">
-            Encrypted messages present ({fmtInt(prov.encMessages)}) —
-            <span class="chip flag">enc</span> key status is listed under Import details
-            notes above; content is never stored or shown.
+            {S.library.encPresentPrefix}{fmtInt(prov.encMessages)}) —
+            <span class="chip flag">{S.library.encChip}</span>{S.library.encKeyStatus}
           </p>
         {:else}
-          <p class="muted" role="status">No encrypted network messages recorded for this match.</p>
+          <p class="muted" role="status">{S.library.encNone}</p>
         {/if}
       {/if}
     </section>

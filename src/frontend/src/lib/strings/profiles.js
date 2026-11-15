@@ -1,6 +1,74 @@
-// strings/profiles.js — Profiles + PlayerProfile chrome (career panels, player list)
-// Skeleton (Stage 1): empty until Sweep-B extracts the area's copy (design
-// §5.2); values are plain strings with {arg} placeholders (design §3.2).
+// strings/profiles.js — Profiles list chrome (header, count, empty
+// states, table headers)
+// Extracted from views/Profiles.svelte (Strings Stage 3, Sweep-B);
+// values are plain strings with {arg} placeholders.
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
-export const profiles = {};
+export const profiles = {
+  title: 'Profiles',
+  subtitle: 'Every player in the library — click a row for their profile.',
+  playerSuffix: ' player',
+  retry: 'Retry',
+  adrErrorLead: 'ADR unavailable: ',
+  dismissAdrError: 'Dismiss ADR error',
+  loadingPlayersDetail: 'Loading players…',
+  noPlayers: 'No players yet',
+  noPlayersHint: 'Players appear here once matches are imported.',
+  noMatchPrefix: 'No players match “',
+  tryDifferentName: 'Try a different name.',
+  thPlayer: 'Player',
+  thMatches: 'Matches',
+  thAdr: 'ADR',
+  thLastImport: 'Last import',
+
+  // PlayerProfile — the profile surface (fixed cards, career metrics,
+  // trend, splits and match history)
+  h1Player: 'Player',
+  statMatchesLabel: 'Matches',
+  statMatchesTitle: 'Matches in the library for this player',
+  statWinPctLabel: 'Win%',
+  statWinPctTitle: 'Share of matches won',
+  careerHeading: 'Career metrics',
+  careerErrorLead: 'Career metrics unavailable: ',
+  thMetric: 'Metric',
+  thValue: 'Value',
+  trendHeading: 'Trend',
+  trendGroupLabel: 'Trend stat',
+  trendAriaLead: ' trend across ',
+  trendAriaTail: ' matches',
+  openMatchDot: 'Open match — {title}',
+  sparkMinLead: ' matches · min ',
+  sparkMaxLead: ' · max ',
+  sparkFootnote: '· x = sequence (patch order → import order within a patch) · click a dot to open the match',
+  onlyOneMatch: 'Only one match so far — the trend line needs at least two.',
+  noTrendData: 'No trend data for this stat yet.',
+  sidesHeading: 'Sides',
+  thSide: 'Side',
+  thRounds: 'Rounds',
+  thWinPct: 'Win%',
+  thKast: 'KAST',
+  noSides: 'No CT/T breakdown yet.',
+  mapsHeading: 'Maps',
+  thMap: 'Map',
+  thWins: 'Wins',
+  openMapTitle: 'Open {map} matches for this player in the Library',
+  noMaps: 'No per-map breakdown yet.',
+  weaponsPrefix: 'Weapons ',
+  topPrefix: '(top ',
+  thWeapon: 'Weapon',
+  thKills: 'Kills',
+  thDamage: 'Damage',
+  noWeapons: 'No weapon rows.',
+  matchHistoryPrefix: 'Match history ',
+  mostRecentFirst: '(most recent first)',
+  importedTitle: 'Import date of the demo — CS2 demos record no played time',
+  thImported: 'Imported',
+  thResult: 'Result',
+  thScore: 'Score',
+  thStartingSide: 'Starting side',
+  thKastPct: 'KAST%',
+  openMatchRow: 'Open match {id}',
+  startSideTitle: 'Side the player started the match on',
+  noHistory: 'No matches yet.',
+  loadingDetail: 'Loading…',
+};

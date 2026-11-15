@@ -142,10 +142,17 @@ for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink', 'StatusChip'
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
 // .svelte component imports need rewriting to their compiled .js.
-const combatSrc = readFileSync('src/lib/views/Combat.svelte', 'utf8').replace(
-  /from '\.\.\/components\/(\w+)\.svelte'/g,
-  "from '../components/$1.js'",
-);
+const combatSrc = readFileSync('src/lib/views/Combat.svelte', 'utf8')
+  .replace(
+    /from '\.\.\/components\/(\w+)\.svelte'/g,
+    "from '../components/$1.js'",
+  )
+  // plumbing (Strings Stage 3): the view imports the strings catalog —
+  // resolve it from the real tree, like every other ../ module here.
+  .replace(
+    "from '../strings/index.js'",
+    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  );
 svelteCompile(combatSrc, 'Combat.svelte', join(dir, 'views', 'Combat.js'));
 
 const harnessSrc = `<script>

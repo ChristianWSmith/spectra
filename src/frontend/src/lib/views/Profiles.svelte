@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   // Profiles: the sidebar's player directory — every player in the
   // library, searchable by name, one click away from the
   // canonical player profile. Rows come from the one player-list service
@@ -245,8 +246,8 @@
 
 <div class="view">
   <header class="view-header">
-    <h1>Profiles</h1>
-    <span class="muted">Every player in the library — click a row for their profile.</span>
+    <h1>{S.profiles.title}</h1>
+    <span class="muted">{S.profiles.subtitle}</span>
   </header>
 
   <div class="toolbar pf-toolbar">
@@ -263,14 +264,14 @@
       }}
     />
     <span class="muted pf-count" role="status">
-      {filtered.length} of {players.length} player{players.length === 1 ? '' : 's'}
+      {filtered.length} of {players.length}{S.profiles.playerSuffix}{players.length === 1 ? '' : 's'}
     </span>
   </div>
 
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" onclick={loadPlayers}>Retry</button>
+      <button class="btn small" onclick={loadPlayers}>{S.profiles.retry}</button>
     </p>
   {/if}
 
@@ -278,8 +279,8 @@
     <!-- The metric read failing is UNKNOWN, not "no data": the alert
          carries it (the cells keep rendering their honest state). -->
     <p class="error" role="alert">
-      ADR unavailable: {adrError}
-      <button class="btn small" aria-label="Dismiss ADR error" onclick={() => (adrError = '')}>
+      {S.profiles.adrErrorLead}{adrError}
+      <button class="btn small" aria-label={S.profiles.dismissAdrError} onclick={() => (adrError = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
@@ -287,31 +288,31 @@
 
   <section class="panel">
     {#if loading}
-      <p class="muted" role="status"><StatusChip block detail="Loading players…" /></p>
+      <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingPlayersDetail} /></p>
     {:else if players.length === 0}
       {#if !error}
         <!-- Gated on error: a failed list read is UNKNOWN, never "no
              players yet" — the alert above carries the failure. -->
         <div class="empty">
-          <p class="empty-title" role="status">No players yet</p>
-          <p class="muted">Players appear here once matches are imported.</p>
+          <p class="empty-title" role="status">{S.profiles.noPlayers}</p>
+          <p class="muted">{S.profiles.noPlayersHint}</p>
         </div>
       {/if}
     {:else if filtered.length === 0}
       <div class="empty">
-        <p class="empty-title" role="status">No players match “{query.trim()}”</p>
-        <p class="muted">Try a different name.</p>
+        <p class="empty-title" role="status">{S.profiles.noMatchPrefix}{query.trim()}”</p>
+        <p class="muted">{S.profiles.tryDifferentName}</p>
       </div>
     {:else}
       <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
-              <SortTh label="Player" active={sortKey === 'name'} {desc} onclick={() => toggleSort('name')} />
-              <SortTh label="Matches" cls="num" active={sortKey === 'matches'} {desc} onclick={() => toggleSort('matches')} />
-              <SortTh label="ADR" cls="num" active={sortKey === 'adr'} {desc} onclick={() => toggleSort('adr')} />
+              <SortTh label={S.profiles.thPlayer} active={sortKey === 'name'} {desc} onclick={() => toggleSort('name')} />
+              <SortTh label={S.profiles.thMatches} cls="num" active={sortKey === 'matches'} {desc} onclick={() => toggleSort('matches')} />
+              <SortTh label={S.profiles.thAdr} cls="num" active={sortKey === 'adr'} {desc} onclick={() => toggleSort('adr')} />
               <SortTh
-                label="Last import"
+                label={S.profiles.thLastImport}
                 title={LAST_IMPORT_TITLE}
                 active={sortKey === 'lastSeen'}
                 {desc}

@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   // Combat tab: per-player damage/trade stats, the engagement deep-dive
   // (round → time-into-round → killer vs victim → distance in metres —
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
@@ -559,7 +560,7 @@
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+      <button class="btn small" aria-label={S.combat.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
     </p>
@@ -570,21 +571,21 @@
          settles, empty tables would be a false "no data" state — rung 3
          of the loading ladder (the bare fallback's centered spinner +
          details underneath, transient). -->
-    <p class="muted" role="status"><StatusChip block detail="Loading combat data…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.combat.loadingDetail} /></p>
   {:else}
     {#if metricError}
       <!-- The metric read failed: the five fixed slots keep rendering
            the honest dash behind it (never a fabricated number), and the
            failure itself is dismissible in place (house rule). -->
       <p class="error" role="alert">
-        Metric-backed stats unavailable: {metricError}
-        <button class="btn small" aria-label="Dismiss metric stats error" onclick={() => (metricError = '')}>
+        {S.combat.metricErrorLead}{metricError}
+        <button class="btn small" aria-label={S.combat.dismissMetricError} onclick={() => (metricError = '')}>
           <span class="codicon codicon-close"></span>
         </button>
       </p>
     {/if}
     <section class="panel comb-sec">
-      <h2>Combat stats</h2>
+      <h2>{S.combat.combatStatsHeading}</h2>
       <!-- A metric slot's state chip (processing / failed / behind) —
            the five-state presentation's markup half; the RULE lives in
            lib/metricstate.js. Rendered inside the slot's cell (the KAST
@@ -611,7 +612,7 @@
                   onclick={() => toggleStatSort(col.key)}
                 >
                   {#if col.inferred}
-                    <span class="chip badge-inferred" title={col.badge}>inferred</span>
+                    <span class="chip badge-inferred" title={col.badge}>{S.combat.badgeInferred}</span>
                   {/if}
                 </SortTh>
               {/each}
@@ -628,7 +629,7 @@
                         name={r.name}
                         {nav}
                         cls={playerCls(r.steamId, r.name)}
-                        title="Open player profile"
+                        title={S.combat.openPlayerProfile}
                       />
                     </td>
                   {:else if col.metric}
@@ -640,7 +641,7 @@
                       <td class="num">
                         <button
                           class="comb-kast-btn"
-                          title="{KAST_DEF} — click for the per-round K/A/T/S grid"
+                          title={S.fill(S.combat.kastCellTitle, { def: KAST_DEF })}
                           onclick={() => openKast(r)}
                           >{slotText(col, pres)}{#if pres.kind === 'chip'}{@render metricChip(col, pres)}{/if}</button
                         >
@@ -660,22 +661,20 @@
                    has no combat stats (the error above says why nothing
                    is here); the claim returns once error is cleared. -->
               {#if !error}
-                <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
+                <tr><td colspan={STAT_COLS.length} class="muted">{S.combat.noCombatStats}</td></tr>
               {/if}
             {/each}
           </tbody>
         </table>
       </div>
       <p class="muted comb-note">
-        Dotted headers and <span class="chip badge-inferred">inferred</span> badges
-        mark stats Spectra calculates rather than reads from the demo — hover for
-        the rule.
+        {S.combat.noteLead}<span class="chip badge-inferred">{S.combat.badgeInferred}</span>{S.combat.noteTail}
       </p>
     </section>
 
     <section class="panel comb-sec">
-      <h2>Engagements</h2>
-      <div class="comb-kinds" role="group" aria-label="Filter engagements by kind">
+      <h2>{S.combat.engagementsHeading}</h2>
+      <div class="comb-kinds" role="group" aria-label={S.combat.filterEngagementsLabel}>
         {#each ENG_KINDS as k (k)}
           <button
             class="btn small comb-kind"
@@ -688,14 +687,14 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col"><span class="sr-only">Replay</span></th>
-              <th scope="col" class="num">Round</th>
-              <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (exact tick in the tooltip)">Time</th>
-              <th scope="col">Kind</th>
-              <th scope="col">Killer</th>
-              <th scope="col"><span class="sr-only">versus</span></th>
-              <th scope="col">Victim</th>
-              <th scope="col" class="num def" title={ENG_DIST_DEF}>Dist (m)</th>
+              <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
+              <th scope="col" class="num">{S.combat.thRound}</th>
+              <th scope="col" class="num def" title={S.combat.timeTitle}>{S.combat.thTime}</th>
+              <th scope="col">{S.combat.thKind}</th>
+              <th scope="col">{S.combat.thKiller}</th>
+              <th scope="col"><span class="sr-only">{S.combat.thVersus}</span></th>
+              <th scope="col">{S.combat.thVictim}</th>
+              <th scope="col" class="num def" title={ENG_DIST_DEF}>{S.combat.thDist}</th>
             </tr>
           </thead>
           <tbody>
@@ -708,7 +707,7 @@
                     tick={g.tick}
                     title={g.aSteam
                       ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
-                      : 'Watch this engagement in the replay'}
+                      : S.combat.watchEngagement}
                     label={g.aSteam
                       ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
                       : `Watch tick ${g.tick} in the replay`}
@@ -721,7 +720,7 @@
                      event/follow play above. Round watching lives in the
                      RoundDetail header's "Watch round". -->
                 <td class="num">RD{g.round}</td>
-                <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
+                <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}>{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
                 <td>
                   <!-- ONE kill, up to FOUR kind facts (opening / trade /
                        traded / untraded — every kill yields ≥ 1 row): the
@@ -731,7 +730,7 @@
                        perspective title — plus an sr-only combined line,
                        making the cell read as one kill with its facts
                        rather than as two rows' worth of labels. -->
-                  {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">One kill — {g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
+                  {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">{S.combat.oneKillPrefix}{g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
                 </td>
                 <td>
                   <ProfileLink
@@ -739,7 +738,7 @@
                     name={g.aName || '—'}
                     {nav}
                     cls={playerRoundCls(g.round, g.aSteam, g.aName)}
-                    title="Open profile — {g.aName}"
+                    title={S.fill(S.combat.openProfileName, { name: g.aName })}
                   />
                 </td>
                 <td class="muted">vs</td>
@@ -749,7 +748,7 @@
                     name={g.bName || '—'}
                     {nav}
                     cls={playerRoundCls(g.round, g.bSteam, g.bName)}
-                    title="Open profile — {g.bName}"
+                    title={S.fill(S.combat.openProfileName, { name: g.bName })}
                   />
                 </td>
                 <td class="num" title={ENG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
@@ -757,7 +756,7 @@
             {:else}
               <tr>
                 <td colspan="8" class="muted">
-                  {error ? 'Engagements unavailable.' : 'No engagements match this filter.'}
+                  {error ? S.combat.engagementsUnavailable : S.combat.noEngagements}
                 </td>
               </tr>
             {/each}
@@ -768,29 +767,29 @@
 
     <section class="panel comb-sec">
       <h2>
-        Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).">alive-count · won/lost toggle</span>
+        {S.combat.clutchesPrefix}<span class="chip provenance" title={S.combat.clutchTitle}>{S.combat.clutchChipLabel}</span>
       </h2>
       <!-- Outcome TOGGLES — chip-style like the Engagements card's kind
            chips, but independent (each flips its own boolean): won+lost = all
            rows, won-only = the default/historical list, lost-only = the lost
            rows, neither = the empty state below. Local $state only — never
            route-query state (retention ruling pending). -->
-      <div class="comb-kinds" role="group" aria-label="Filter clutches by outcome">
+      <div class="comb-kinds" role="group" aria-label={S.combat.filterClutchesLabel}>
         <button
           class="btn small comb-kind"
           class:active={clutchWon}
           aria-pressed={clutchWon}
           onclick={() => (clutchWon = !clutchWon)}
-        >won</button>
+        >{S.combat.wonToggle}</button>
         <button
           class="btn small comb-kind"
           class:active={clutchLost}
           aria-pressed={clutchLost}
           onclick={() => (clutchLost = !clutchLost)}
-        >lost</button>
+        >{S.combat.lostToggle}</button>
       </div>
       {#if clutches.length === 0 && !error}
-        <p class="muted" role="status">No clutches detected in this match.</p>
+        <p class="muted" role="status">{S.combat.noClutches}</p>
       {:else if shownClutches.length === 0}
         <p class="muted" role="status">{clutchEmptyText}</p>
       {:else}
@@ -798,13 +797,13 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th scope="col"><span class="sr-only">Replay</span></th>
-                <th scope="col" class="num">Round</th>
-                <th scope="col">Size</th>
-                <th scope="col">Player</th>
-                <th scope="col">Outcome</th>
-                <th scope="col">Bomb</th>
-                <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the last recorded health before the round ended (rows without that detail fall back to damage arithmetic, and a dead solo reads 0)">HP left</th>
+                <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
+                <th scope="col" class="num">{S.combat.thRound}</th>
+                <th scope="col">{S.combat.thSize}</th>
+                <th scope="col">{S.combat.thPlayer}</th>
+                <th scope="col">{S.combat.thOutcome}</th>
+                <th scope="col">{S.combat.thBomb}</th>
+                <th scope="col" class="num def" title={S.combat.hpTitle}>{S.combat.thHpLeft}</th>
               </tr>
             </thead>
             <tbody>
@@ -818,7 +817,7 @@
                         tick={c.replayAnchorTick}
                         title={c.steamId
                           ? `Watch this clutch — follow ${c.name || c.steamId}`
-                          : 'Watch this clutch in the replay'}
+                          : S.combat.watchClutch}
                         label={c.steamId
                           ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
                           : `Watch the clutch in round ${c.round} in the replay`}
@@ -836,7 +835,7 @@
                       name={c.name || '—'}
                       {nav}
                       cls={playerRoundCls(c.round, c.steamId, c.name)}
-                      title="Open player profile"
+                      title={S.combat.openPlayerProfile}
                     />
                   </td>
                   <td>
@@ -844,7 +843,7 @@
                   </td>
                   <td>
                     {#if c.bombState && c.bombState !== 'none'}
-                      <span class="chip">bomb {c.bombState}</span>
+                      <span class="chip">{S.combat.bombPrefix}{c.bombState}</span>
                     {:else}
                       <span class="muted">—</span>
                     {/if}
@@ -861,19 +860,19 @@
     </section>
   {/if}
 
-  <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>
+  <Dialog open={!!kastSteam} label={S.fill(S.combat.kastDialogTitle, { name: kastName })} panelClass="wide" onClose={closeKast}>
     <div class="row-between">
       <h2>
-        KAST rounds —
+        {S.combat.kastHeading}
         <ProfileLink
           steam={kastSteam}
           name={kastName}
           {nav}
           cls={playerCls(kastSteam, kastName)}
-          title="Open {kastName} profile"
+          title={S.fill(S.combat.openProfile, { name: kastName })}
         />
       </h2>
-      <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
+      <button class="btn small" aria-label={S.combat.closeLabel} onclick={closeKast}><span class="codicon codicon-close"></span></button>
     </div>
     <p class="muted" title={KAST_DEF}>
       {#if kastRows.length > 0}
@@ -883,27 +882,27 @@
              with the metric conversion. -->
         {#if kastPres && kastPres.kind === 'value'}
           {fmtMetric(kastPres.value, (slot(kastCol) && slot(kastCol).def.format) || 'percent')}
-          KAST over {kastRows.length} rounds —
+          {S.combat.kastOverPrefix}{kastRows.length}{S.combat.kastSuffix}
         {:else if kastPres && kastPres.kind === 'chip'}
           <StatusChip
             status={kastPres.state}
             title={metricStateTitle(kastPres.state, (slot(kastCol) && slot(kastCol).error) || '')}
           />
-          KAST over {kastRows.length} rounds —
+          {S.combat.kastOverPrefix}{kastRows.length}{S.combat.kastSuffix}
         {:else}
-          — KAST over {kastRows.length} rounds —
+          {S.combat.kastElsePrefix}{kastRows.length}{S.combat.kastSuffix}
         {/if}
       {/if}
-      dots = K kill · A assist · T traded · S survived (filled = applied).
+      {S.combat.kastLegend}
     </p>
     {#if kastError}
       <p class="error" role="alert">{kastError}</p>
     {:else if kastLoading}
-      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+      <p class="muted" role="status"><StatusChip block detail={S.combat.loading} /></p>
     {:else}
       <div class="comb-kast-grid">
         {#each kastRows as r (r.round)}
-          <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, 'all parts')}>
+          <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, S.combat.kastDotAll)}>
             <span class="mono comb-round-n">RD{r.round}</span>
             <span class="comb-dots">
               <span class="comb-dot" class:on={r.kills > 0} title={kastDotTitle(r, 'kill')}>K</span>
@@ -913,7 +912,7 @@
             </span>
           </div>
         {:else}
-          <p class="muted" role="status">No per-round rows for this player.</p>
+          <p class="muted" role="status">{S.combat.noKastRows}</p>
         {/each}
       </div>
     {/if}
