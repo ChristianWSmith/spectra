@@ -1,4 +1,5 @@
 <script>
+  import * as S from '../strings/index.js';
   import {
     getRoundDetail,
     getRounds,
@@ -258,15 +259,15 @@
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(backPath ? '/' + backPath : `/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Back</button>
+    <button class="btn" onclick={() => nav(backPath ? '/' + backPath : `/match/${id}`)}><span class="codicon codicon-arrow-left"></span> {S.match.backBtn}</button>
     {#if detail}
       <!-- Round-level control: ICON-ONLY play (the one canonical tick-
            link glyph — no label text, no chevron/arrow), round-level so
            it stamps NO follow. -->
       <button
         class="btn primary"
-        title="Watch round {round} from its start in the replay"
-        aria-label="Watch round {round}"
+        title={S.fill(S.match.watchRoundTitle, { round })}
+        aria-label={S.fill(S.match.watchRoundAria, { round })}
         onclick={() =>
           watchTick(detail.round.startTick || 0, entryLoopSpan(detail.round.startTick, detail.round.endTick))}
       >
@@ -276,17 +277,17 @@
         {#if roundKind(detail.round)}
           <span
             title={roundKind(detail.round) === 'Knife'
-              ? 'pre-match knife round — not counted play'
-              : 'warmup round — not counted play'}
-            >{roundKind(detail.round)} round</span
+              ? S.match.knifeRoundTitle
+              : S.match.warmupRoundTitle}
+            >{roundKind(detail.round)} {S.match.roundWord}</span
           >
         {:else}
-          Round {detail.round.number}
+          {S.match.roundLabel} {detail.round.number}
         {/if}
         {#if cls}
           <span
             class="chip cmp-class {cls.label || 'unknown'}"
-            title="{cls.explanation || 'classified'} (rules v{cls.ruleVersion} — {Math.round((cls.confidence || 0) * 100)}% sure)"
+            title={S.fill(S.match.classChipTitle, { what: cls.explanation || 'classified', v: cls.ruleVersion, pct: Math.round((cls.confidence || 0) * 100) })}
             >{cls.label || 'unknown'}</span
           >
         {/if}
@@ -298,15 +299,15 @@
            CT/T pair live in the Round result / Kills / Economy cards. -->
       <p class="muted">
         {fmtDuration(detail.round.durationS)}
-        · site {detail.round.bombSite || '—'}
-        · MVP
+        {S.match.siteMeta} {detail.round.bombSite || '—'}
+        {S.match.mvpMeta}
         {#if detail.round.mvpName}
           <ProfileLink
             steam={detail.round.mvp}
             name={detail.round.mvpName}
             {nav}
             cls={playerCls(detail.round.mvp, detail.round.mvpName)}
-            title="Open {detail.round.mvpName} profile"
+            title={S.fill(S.match.openProfile, { name: detail.round.mvpName })}
           />
         {:else}
           —
@@ -319,7 +320,7 @@
   {#if error}
     <p class="error" role="alert">
       {error}
-      <button class="btn small" onclick={loadRound}>Retry</button>
+      <button class="btn small" onclick={loadRound}>{S.match.retryBtn}</button>
     </p>
   {/if}
 
@@ -334,10 +335,10 @@
     <div class="round-grid">
       <div class="round-side">
         <section class="panel">
-          <h2>Round result</h2>
+          <h2>{S.match.roundResultHeading}</h2>
           <dl class="facts">
             <div>
-              <dt>Winner</dt>
+              <dt>{S.match.colWinner}</dt>
               <dd>
                 {#if detail.round.winner}
                   <!-- detail.round.winner is the side played IN THIS ROUND;
@@ -352,13 +353,13 @@
               </dd>
             </div>
             <div>
-              <dt>Reason</dt>
+              <dt>{S.match.colReason}</dt>
               <dd>{detail.round.reason || '—'}</dd>
             </div>
             <div>
-              <dt>Score</dt>
+              <dt>{S.match.scoreLabel}</dt>
               <dd
-                title="Counted-round wins through this round"
+                title={S.match.scoreCountedTitle}
               >
                 {#if round >= 1 && rounds.length}
                   <span class="ct">{scoreAt.ct}</span>–<span class="t">{scoreAt.t}</span>
@@ -368,7 +369,7 @@
               </dd>
             </div>
             <div>
-              <dt>First kill</dt>
+              <dt>{S.match.firstKillLabel}</dt>
               <dd>
                 {#if detail.round.firstKillName}
                   <ProfileLink
@@ -376,7 +377,7 @@
                     name={detail.round.firstKillName}
                     {nav}
                     cls={playerCls(detail.round.firstKillSteam, detail.round.firstKillName)}
-                    title="Open {detail.round.firstKillName} profile"
+                    title={S.fill(S.match.openProfile, { name: detail.round.firstKillName })}
                   />
                 {:else}
                   —
@@ -388,7 +389,7 @@
                     name={detail.round.firstDeathName}
                     {nav}
                     cls={playerCls(detail.round.firstDeathSteam, detail.round.firstDeathName)}
-                    title="Open {detail.round.firstDeathName} profile"
+                    title={S.fill(S.match.openProfile, { name: detail.round.firstDeathName })}
                   />
                 {/if}
               </dd>
@@ -397,33 +398,33 @@
         </section>
 
         <section class="panel">
-          <h2>Kills <span class="muted">({kills.length})</span></h2>
+          <h2>{S.match.colKills} <span class="muted">({kills.length})</span></h2>
           {#if kills.length === 0}
-            <p class="muted" role="status">No kills this round.</p>
+            <p class="muted" role="status">{S.match.noKills}</p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Time</th>
-                    <th scope="col">Killer</th>
-                    <th scope="col">Victim</th>
-                    <th scope="col">Weapon</th>
-                    <th scope="col">Flags</th>
-                    <th scope="col"><span class="sr-only">Watch</span></th>
+                    <th scope="col">{S.match.colTime}</th>
+                    <th scope="col">{S.match.colKiller}</th>
+                    <th scope="col">{S.match.colVictim}</th>
+                    <th scope="col">{S.match.colWeapon}</th>
+                    <th scope="col">{S.match.colFlags}</th>
+                    <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each kills as k (k.id)}
                     <tr>
-                      <td class="mono" title="tick {k.tick}">{roundClock(k.tick)}</td>
+                      <td class="mono" title={S.fill(S.match.tickTitle, { n: k.tick })}>{roundClock(k.tick)}</td>
                       <td>
                         <ProfileLink
                           steam={k.attacker}
                           name={k.attackerName || k.attacker}
                           {nav}
                           cls={playerCls(k.attacker, k.attackerName)}
-                          title="Open {k.attackerName || k.attacker} profile"
+                          title={S.fill(S.match.openProfile, { name: k.attackerName || k.attacker })}
                         />
                       </td>
                       <td>
@@ -432,7 +433,7 @@
                           name={k.victimName || k.victim}
                           {nav}
                           cls={playerCls(k.victim, k.victimName)}
-                          title="Open {k.victimName || k.victim} profile"
+                          title={S.fill(S.match.openProfile, { name: k.victimName || k.victim })}
                         />
                       </td>
                       <td class="mono">{k.weapon || '—'}</td>
@@ -442,7 +443,7 @@
                           class="btn small ghost"
                           title={k.attacker
                             ? `Watch from this kill — follow ${k.attackerName || k.attacker} (killer)`
-                            : 'Watch from this kill in the replay'}
+                            : S.match.watchKillIdle}
                           aria-label={k.attacker
                             ? `Watch from tick ${k.tick} — follow ${k.attackerName || k.attacker}`
                             : `Watch from tick ${k.tick} in the replay`}
@@ -459,25 +460,25 @@
         </section>
 
         <section class="panel">
-          <h2>Bomb</h2>
+          <h2>{S.match.bombHeading}</h2>
           {#if bombEvents.length === 0}
-            <p class="muted" role="status">No bomb events this round.</p>
+            <p class="muted" role="status">{S.match.noBombEvents}</p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Time</th>
-                    <th scope="col">Event</th>
-                    <th scope="col">Player</th>
-                    <th scope="col">Site</th>
-                    <th scope="col"><span class="sr-only">Watch</span></th>
+                    <th scope="col">{S.match.colTime}</th>
+                    <th scope="col">{S.match.colEvent}</th>
+                    <th scope="col">{S.match.colPlayer}</th>
+                    <th scope="col">{S.match.colSite}</th>
+                    <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each bombEvents as e (e.id)}
                     <tr>
-                      <td class="mono" title="tick {e.tick}">{roundClock(e.tick)}</td>
+                      <td class="mono" title={S.fill(S.match.tickTitle, { n: e.tick })}>{roundClock(e.tick)}</td>
                       <td>{bombLabel(e.kind)}</td>
                       <td>
                         <ProfileLink
@@ -485,7 +486,7 @@
                           name={e.attackerName || e.attacker}
                           {nav}
                           cls={playerCls(e.attacker, e.attackerName)}
-                          title="Open {e.attackerName || e.attacker} profile"
+                          title={S.fill(S.match.openProfile, { name: e.attackerName || e.attacker })}
                         />
                       </td>
                       <td>{e.site || '—'}</td>
@@ -507,13 +508,13 @@
         </section>
 
         <section class="panel">
-          <h2>Economy</h2>
+          <h2>{S.match.economyHeading}</h2>
           <table class="data-table">
             <thead>
               <tr>
-                <th scope="col">Side</th>
-                <th scope="col" class="num">Equip</th>
-                <th scope="col" class="num">Money</th>
+                <th scope="col">{S.match.colSide}</th>
+                <th scope="col" class="num">{S.match.colEquip}</th>
+                <th scope="col" class="num">{S.match.colMoney}</th>
               </tr>
             </thead>
             <tbody>
@@ -534,7 +535,7 @@
                   </td>
                 </tr>
               {:else}
-                <tr><td colspan="3" class="muted">No economy samples.</td></tr>
+                <tr><td colspan="3" class="muted">{S.match.noEconomySamples}</td></tr>
               {/each}
             </tbody>
           </table>
@@ -543,22 +544,22 @@
 
       <div class="round-side">
         <section class="panel">
-          <h2>Round chat</h2>
+          <h2>{S.match.roundChatHeading}</h2>
           {#if chat.length === 0}
-            <p class="muted" role="status">No chat this round.</p>
+            <p class="muted" role="status">{S.match.noChat}</p>
           {:else}
             <ul class="chat-list">
               {#each chat as c (c.id)}
                 {@const tag = chatTag(c.channel || '', playerSideAt(players, sideSwitches, rounds, round, c.steamId, c.name))}
                 <li>
-                  <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
+                  <span class="mono muted" title={S.fill(S.match.tickTitle, { n: c.tick })}>{chatClock(c, rbn, tickRate)}</span>
                   <strong>
                     <ProfileLink
                       steam={c.steamId}
                       name={c.name}
                       {nav}
                       cls={playerCls(c.steamId, c.name)}
-                      title="Open {c.name} profile"
+                      title={S.fill(S.match.openProfile, { name: c.name })}
                     />{#if tag}{' '}{tag}{/if}
                   </strong>
                   <!-- THE chat display rule (fmt.chatLine's DOM twin):
@@ -584,8 +585,8 @@
       {#if prevRound}
         <button
           class="btn"
-          aria-label="Previous round"
-          title="Previous round"
+          aria-label={S.match.prevRoundLabel}
+          title={S.match.prevRoundLabel}
           onclick={() => nav(roundNav(prevRound.number))}
         >
           <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
@@ -604,8 +605,8 @@
       {#if nextRound}
         <button
           class="btn"
-          aria-label="Next round"
-          title="Next round"
+          aria-label={S.match.nextRoundLabel}
+          title={S.match.nextRoundLabel}
           onclick={() => nav(roundNav(nextRound.number))}
         >
           <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
