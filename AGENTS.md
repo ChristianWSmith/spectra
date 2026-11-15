@@ -256,6 +256,17 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   is retrievable from git history only (it left the tree with the
   reference docs); leave the comments as-is — when a citation encodes a
   durable rule, write the rule here instead of chasing the section.
+- **The user guide's mechanics:** PRODUCT.md **The manual stays in
+  lockstep** is THE statement — never restate it here. The manual lives
+  in `frontend/src/lib/docs/manuals/` (one module per manual,
+  registered through `lib/docs/registry.js`, rendered by the help
+  popup); a wave that changes user-visible behavior, surfaces or
+  wording updates the guide's sections in the SAME wave; a new
+  user-visible surface gets a guide section (or an explicit placeholder)
+  before merge; guide prose is count-free (names, never hard-coded
+  counts) and code-cited — verify each claim against its cited source
+  before wording it. Surface→section coverage is pinned by
+  `src/lib/docslockstep.test.js` (run from `frontend/`).
 
 ### Adopting principles (meta)
 
@@ -474,6 +485,11 @@ Canonical homes (extend these, don't fork them):
   solid/dashed = team identity IN SERIES LINES; existing border dashes
   (provenance chips, halftime separator, unknown buy-class) keep their
   meanings.
+- **Desktop app, not a web app** (owner, 2026-11-14): Spectra runs on web
+  technology (Wails + WebKitGTK) but is a desktop application — user-facing
+  copy never describes it with browser chrome (address bars, copied links,
+  bookmarks) or as a website. External links (e.g. Steam profiles) open in
+  the system browser and may be described as such.
 - **View-level aggregates are allowed** only when they are pure functions
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without

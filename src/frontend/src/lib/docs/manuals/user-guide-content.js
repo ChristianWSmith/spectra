@@ -184,20 +184,20 @@ open that round.
 # The tabs
 
 **Overview · Scoreboard · Rounds · Economy · Utility · Combat · Heatmaps · Reports · Details.**
-Every tab is addressable on its own — the address bar follows the tab you are on, so a copied
-link opens that exact tab.
+The tab you are on travels with you: open a round, a comparison, the replay or a player's
+profile from a tab, go back, and you land on that same tab again.
 
 **Overview** — the headline cards (**Top fragger**, **Best ADR**, **Most util**, **Entry
 opens**, **Most MVPs**) and both rosters with K/D/A and ADR. Clicking a card or a roster row
 opens the replay with the camera on that player; clicking a player's name opens their profile.
 
-**Scoreboard** — the sortable per-player table: name, team, K, D, A, KDA, damage, rounds, the
-multi-kill counts (2K–5K), entries, trades, opening K/D, best streak, utility damage, MVPs and
-score — **plus one column per metric you have pinned**, each with an ⓘ carrying its formula and
-its sample size, an unpin ✕, and sortable. Expand a row (the chevron) for kills by weapon,
-damage by weapon and the utility numbers. Bots never appear here — the scoreboard lists human
-players only. A row click opens the replay following that player; the name cell opens their
-profile.
+**Scoreboard** — the sortable per-player table: the fixed columns (name, team, K, D, KDA,
+damage, rounds, opening K/D, utility damage, MVPs, score), then **one column per metric you
+have pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, the multi-kill counts (2K–5K),
+entries, trades and best streak), each with an ⓘ carrying its formula and its sample size, an
+unpin ✕, and sortable. Expand a row (the chevron) for kills by weapon, damage by weapon and
+the utility numbers. Bots never appear here — the scoreboard lists human players only. A row
+click opens the replay following that player; the name cell opens their profile.
 
 **Rounds** — one row per round: number, winner, the **buy-type class** chip (pistol / anti-eco /
 eco / force / full / bonus / save — hover for the rule text and how sure the classification is),
@@ -350,7 +350,8 @@ match "…"*.
 A player page opens with a back button (to wherever you came from), the player's name and Steam
 id, and a player search box to jump to someone else. Then:
 
-- **Four headline cards** — Matches (with wins), Win%, Opening duels win rate, Clutches (1vN).
+- **Headline cards** — Matches (with wins) and Win%; the profile's other headline numbers
+  (opening-duels win rate, clutches, ADR, KAST%, …) render as rows in **Career metrics** below.
 - **Career metrics** — every profile-scope metric you have pinned, as name/value rows with the usual honest states (a number, a dash when there is no data for this player, or a state chip while a value is recomputing). This panel appears once something is pinned.
 - **Trend** — ADR, KAST%, K/D or HS% across the player's matches; click a point to open that match.
 - **Sides** — CT vs T rounds, win rate, ADR, KAST, K/D.
