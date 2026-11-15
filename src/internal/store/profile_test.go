@@ -89,7 +89,10 @@ func TestGetPlayerSideSplits(t *testing.T) {
 // TestGetPlayerHistoryStartSide: the history row carries BOTH sides —
 // Side (player_stats.side, the final side models.WinFor needs) and
 // StartSide (the first counted round's freeze-end sample) — and a match
-// with no stored samples yields StartSide "" rather than a guess.
+// with no stored samples yields StartSide "" rather than a guess. It
+// also carries W3a's metric-backed A half: the K/D/A triple's assists
+// cell is a stored `assists` metric row (nil without one, the stored
+// value with one), never the raw ps.assists select it replaced.
 func TestGetPlayerHistoryStartSide(t *testing.T) {
 	s := openMem(t)
 	id, err := s.CreateMatchRow("/d/startside.dem", "sha-startside", 7)
@@ -124,6 +127,26 @@ func TestGetPlayerHistoryStartSide(t *testing.T) {
 	// Win follows the FINAL side (score 1–0: ct won, t lost).
 	if rows[0].Win {
 		t.Error("win = true for the t side of a 1–0 CT win, want false")
+	}
+
+	// W3a — the A half of the K/D/A triple is METRIC-backed: the raw
+	// ps.assists select is gone, so with no stored `assists` row the cell
+	// is the honest nil (*float64 → the profile's "—"), never the raw
+	// integer it used to carry.
+	if rows[0].Assists != nil {
+		t.Errorf("assists = %v, want nil with no stored metric row (the profile's —)", *rows[0].Assists)
+	}
+	// …and the fill reads the stored row exactly like ADR/KAST do.
+	seedFreshMetricValue(t, s, "assists", "100", id, 4)
+	rows, err = s.GetPlayerHistory("100")
+	if err != nil {
+		t.Fatalf("GetPlayerHistory (after seeding assists): %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("history = %+v, want 1 row", rows)
+	}
+	if rows[0].Assists == nil || *rows[0].Assists != 4 {
+		t.Errorf("assists = %v, want 4 (the stored `assists` metric row)", rows[0].Assists)
 	}
 
 	// No stored samples at all → StartSide stays "" (no guess).

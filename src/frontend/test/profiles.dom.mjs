@@ -19,9 +19,10 @@
 //   E. PlayerProfile's match-history column header reads "Imported"
 //      (never "Date"), the career-trend dot tooltip leads with the
 //      match's patch (fmtPatch) followed by the honest "Imported" date
-//      (read off the trend point's own extractedAt), and the x-axis
+//      (read off the trend point's own extractedAt), the x-axis
 //      caption names the patch-ordered sequence — the chart must not
-//      read as a played-on timeline;
+//      read as a played-on timeline — and the K/D/A cell composes per
+//      half (raw K/D, metric-backed assists, null → the honest dash);
 //   I. PlayerProfile's "Career metrics" panel (stored-metrics design
 //      §1a/§5): the profile-scope pins (spectra:pinned-profile-metrics)
 //      read the STORED career rows through the canonical read — fresh
@@ -161,8 +162,11 @@ bindings.ProfileService.GetProfile = () =>
         adr: 40, kastPct: 70,
       },
       {
+        // assists: null is W3a's honest gap — the A half of the K/D/A
+        // triple is a stored `assists` metric row now, and this match
+        // carries no fresh one (never a fabricated 0).
         matchId: 2, extractedAt: '2026-03-01T10:00:00Z', map: 'de_mirage', win: false,
-        scoreCT: 10, scoreT: 13, startSide: 't', kills: 5, deaths: 12, assists: 1,
+        scoreCT: 10, scoreT: 13, startSide: 't', kills: 5, deaths: 12, assists: null,
         adr: 35, kastPct: 60,
       },
     ],
@@ -411,6 +415,24 @@ await sleep(100); // mount + getProfile + getCareerTrend + listPlayers
     /2026/.test(histTable.querySelector('tbody tr td').textContent),
     histTable.querySelector('tbody tr td').textContent,
   );
+  {
+    // W3a's per-half triple: K and D are raw columns, the A half is the
+    // stored `assists` metric row — the first history row has one, the
+    // second carries none and must render the honest dash (never 0).
+    const kda = [...histTable.querySelectorAll('tbody tr')].map(
+      (tr) => tr.querySelectorAll('td')[5]?.textContent.trim(),
+    );
+    check(
+      'the K/D/A cell renders raw K/D with the metric-backed assists value',
+      kda[0] === '10/5/2',
+      JSON.stringify(kda),
+    );
+    check(
+      'a match with no fresh assists row renders the honest dash, never a 0',
+      kda[1] === '5/12/—',
+      JSON.stringify(kda),
+    );
+  }
 
   const dotTitles = [...pTarget.querySelectorAll('.prof-spark circle title')].map(
     (t) => t.textContent.trim(),

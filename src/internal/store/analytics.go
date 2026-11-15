@@ -1249,14 +1249,17 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 // yields "" rather than a guess). Side stays player_stats.side (final
 // side) — the input models.WinFor uses below.
 //
-// The ADR and KAST% cells read the STORED match-scope metric rows (the
-// `adr`/`kast` seeds — design §3.5's gated D13 conversion, the same
-// series read GetTrend uses), never the ps.adr / kastPerMatchSQL
-// query-time arithmetic they replaced: a match with no FRESH row leaves
-// that cell ABSENT (nil → the profile's honest "—"), never a fabricated
-// 0 and never a fallback-to-Go recomputation. The display scale follows
+// The Assists, ADR and KAST% cells read the STORED match-scope metric
+// rows (the `assists`/`adr`/`kast` seeds — design §3.5's gated D13
+// conversion for ADR/KAST, the inferred-conversion W3a swap for the
+// triple's A half, all through the same series read GetTrend uses),
+// never the ps.adr / ps.assists / kastPerMatchSQL query-time arithmetic
+// and raw select they replaced: a match with no FRESH row leaves that
+// cell ABSENT (nil → the profile's honest "—"), never a fabricated 0
+// and never a fallback-to-Go recomputation. The display scale follows
 // the definition's format tag (see seriesMetric) so the cells keep the
-// 0..100 percent they have always rendered.
+// 0..100 percent they have always rendered; Kills and Deaths stay raw
+// columns (Q2 — a value triple composes per half).
 func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, error) {
 	rows, err := s.db.Query(
 		`SELECT m.id, m.extracted_at, m.map, m.score_ct, m.score_t, ps.side,
@@ -1265,7 +1268,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
 			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
-			ps.kills, ps.deaths, ps.assists
+			ps.kills, ps.deaths
 		 FROM player_stats ps
 		 JOIN matches m ON m.id = ps.match_id
 		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
@@ -1283,7 +1286,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		var startSide sql.NullString
 		if err := rows.Scan(
 			&r.MatchID, &extracted, &r.Map, &r.ScoreCT, &r.ScoreT, &r.Side, &startSide,
-			&r.Kills, &r.Deaths, &r.Assists,
+			&r.Kills, &r.Deaths,
 		); err != nil {
 			return nil, fmt.Errorf("store: get player history: %w", err)
 		}
@@ -1299,10 +1302,14 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		return out, nil
 	}
 
-	// The two metric-backed cells, filled from ONE series read (the
+	// The three metric-backed cells, filled from ONE series read (the
 	// history rows are keyed by match id, so the read's trend order does
 	// not matter here). A metric definition absent from the catalog (or a
 	// match with no fresh row) simply leaves that cell nil.
+	assists, assistsFound, err := s.seriesMetricFor("assists")
+	if err != nil {
+		return nil, fmt.Errorf("store: get player history: %w", err)
+	}
 	adr, adrFound, err := s.seriesMetricFor("adr")
 	if err != nil {
 		return nil, fmt.Errorf("store: get player history: %w", err)
@@ -1311,7 +1318,10 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	if err != nil {
 		return nil, fmt.Errorf("store: get player history: %w", err)
 	}
-	ids := make([]int64, 0, 2)
+	ids := make([]int64, 0, 3)
+	if assistsFound {
+		ids = append(ids, assists.id)
+	}
 	if adrFound {
 		ids = append(ids, adr.id)
 	}
@@ -1329,7 +1339,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	for _, p := range series {
 		m := byMatch[p.MatchID]
 		if m == nil {
-			m = make(map[int64]float64, 2)
+			m = make(map[int64]float64, 3)
 			byMatch[p.MatchID] = m
 		}
 		m[p.MetricID] = p.Value
@@ -1338,6 +1348,12 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		m := byMatch[out[i].MatchID]
 		if m == nil {
 			continue
+		}
+		if assistsFound {
+			if v, ok := m[assists.id]; ok {
+				scaled := v * assists.scale
+				out[i].Assists = &scaled
+			}
 		}
 		if adrFound {
 			if v, ok := m[adr.id]; ok {

@@ -74,7 +74,7 @@ type ProfileWeapon struct {
 // Opening-duels rate, avg enemies flashed, avg util damage) is
 // deliberately ABSENT from this DTO — the profile reads them as stored
 // metric rows through the canonical career read (the "Career metrics"
-// panel), and the history's metric-backed cells read the match-scope
+// panel), and the history's Assists/ADR/KAST cells read the match-scope
 // rows (store.GetPlayerHistory).
 type Profile struct {
 	SteamID string                     `json:"steamId"`
@@ -107,7 +107,7 @@ type ProfileService struct {
 // rate, clutch win share, avg enemies flashed, avg util damage — plus
 // W3a's Clutches count and Opening-duels rate) are computed NOWHERE in
 // this function any more: the profile reads them as stored rows through
-// the canonical career read, and the history's metric-backed cells
+// the canonical career read, and the history's Assists/ADR/KAST cells
 // read the match-scope rows inside store.GetPlayerHistory.
 func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p := Profile{SteamID: steamID}

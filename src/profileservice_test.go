@@ -227,6 +227,34 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 		t.Errorf("Profile DTO carries %d fields, want exactly the %d staying ones: %s",
 			len(got), len(staying), raw)
 	}
+	// W3a's history half rides the same key-set pin: the A half of the
+	// K/D/A triple is the STORED `assists` metric row now, so the history
+	// row keeps its `assists` key but it goes NULLABLE (nil → JSON null
+	// → the profile's "—"), never the raw integer the select used to
+	// carry. This fixture runs no metric sweep, so every row is null.
+	if len(p.History) == 0 {
+		t.Fatalf("history = %+v, want the fixture's 2 rows", p.History)
+	}
+	var histRows []map[string]any
+	histJSON, err := json.Marshal(p.History)
+	if err != nil {
+		t.Fatalf("marshal history: %v", err)
+	}
+	if err := json.Unmarshal(histJSON, &histRows); err != nil {
+		t.Fatalf("unmarshal history: %v", err)
+	}
+	for i, r := range histRows {
+		v, ok := r["assists"]
+		if !ok {
+			t.Errorf("history[%d] carries no %q key (the metric-backed A half): %s", i, "assists", r)
+		}
+		if v != nil {
+			t.Errorf("history[%d] assists = %v, want null with no stored metric rows (nil → the profile's —)", i, v)
+		}
+		if _, raw := r["kills"]; !raw {
+			t.Errorf("history[%d] lost its raw K/D columns: %s", i, r)
+		}
+	}
 	// The staying Go stats are still REAL values, not zeros: two
 	// matches, one win (alice's ct match), 50%.
 	if p.Matches != 2 || p.Wins != 1 || p.WinPct < 49.9 || p.WinPct > 50.1 {
@@ -256,13 +284,14 @@ func TestGetProfileHistoryStartingSide(t *testing.T) {
 	if p.History[0].Win || !p.History[1].Win {
 		t.Errorf("win = %v/%v, want false/true (final side vs 13–10)", p.History[0].Win, p.History[1].Win)
 	}
-	// The ADR/KAST cells read STORED metric rows (D13). This fixture
-	// never runs the metric sweep, so both are absent — the honest nil
-	// the profile renders as "—", never a fabricated 0.
+	// The Assists/ADR/KAST cells read STORED metric rows (D13 for
+	// ADR/KAST, W3a for the triple's A half). This fixture never runs the
+	// metric sweep, so all three are absent — the honest nil the profile
+	// renders as "—", never a fabricated 0.
 	for i, h := range p.History {
-		if h.ADR != nil || h.KASTPct != nil {
-			t.Errorf("history[%d] adr/kast = %v/%v, want nil with no stored metric rows",
-				i, h.ADR, h.KASTPct)
+		if h.Assists != nil || h.ADR != nil || h.KASTPct != nil {
+			t.Errorf("history[%d] assists/adr/kast = %v/%v/%v, want nil/nil/nil with no stored metric rows",
+				i, h.Assists, h.ADR, h.KASTPct)
 		}
 	}
 }

@@ -339,8 +339,9 @@ type seriesMetric struct {
 	scale float64
 }
 
-// seriesMetricFor resolves a SEED metric name (adr|kast|kd|hs_pct) to
-// its seriesMetric. ok=false when the catalog carries no such definition
+// seriesMetricFor resolves a SEED metric name (the trend's
+// adr|kast|kd|hs_pct, the history's assists|adr|kast) to its
+// seriesMetric. ok=false when the catalog carries no such definition
 // — the caller then renders an honest empty series / nil cells instead
 // of falling back to Go arithmetic.
 func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {

@@ -613,7 +613,12 @@
                     {(h.startSide || '—').toUpperCase()}
                   </span>
                 </td>
-                <td class="num">{h.kills}/{h.deaths}/{h.assists}</td>
+                <!-- K/D/A per Q2's per-half rule: K and D are raw
+                     stored columns, the A half is the match-scope
+                     `assists` metric row (store.GetPlayerHistory) —
+                     a match with no fresh row renders the honest dash,
+                     never a fabricated 0. -->
+                <td class="num">{h.kills}/{h.deaths}/{h.assists ?? '—'}</td>
                 <td class="num">{fmt1(h.adr)}</td>
                 <td class="num">{fmtPercent(h.kastPct)}</td>
               </tr>

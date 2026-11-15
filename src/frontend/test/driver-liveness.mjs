@@ -168,8 +168,14 @@ const EXPECTED = {
   'player-card.dom.mjs': 174,
   'player-search-hint.dom.mjs': 21,
   // profiles 45 → 51 (section I — PlayerProfile's Career metrics panel),
-  // then 51 → 67 for dogfooding W3 (section J — see the header note).
-  'profiles.dom.mjs': 67,
+  // then 51 → 67 for dogfooding W3 (section J — see the header note),
+  // then 67 → 71 for inferred-conversion W3a (2026-11-14): +2 section E
+  // (the K/D/A cell composes raw K/D with the metric-backed assists, and
+  // a null assists renders the honest dash), +2 section J (both
+  // converted cards gone from the grid — the Opening duels and Clutches
+  // checks join the gone-loop — and their numbers render as rows), −1
+  // the retired Clutches CARD value check.
+  'profiles.dom.mjs': 71,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
