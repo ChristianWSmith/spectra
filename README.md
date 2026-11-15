@@ -11,8 +11,9 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 - Import `.dem` / `.dem.zst` demos (picker or drag-and-drop) with background
   parsing, progress, and SHA-256 duplicate detection — originals are never
   modified
-- Searchable match library: re-run imports, delete a match’s data (optionally
-  the file too), per-match parser version and import warnings
+- Match library with map and player filters: re-run imports, delete a
+  match’s data (optionally the file too), per-match parser version and
+  import warnings
 
 **Replay**
 
@@ -22,8 +23,8 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 - Voice and in-demo text chat synchronized with the replay, with per-player
   mute (when available in the demo)
 - Playback from 0.25× to 8×, WebM clip recording, PNG snapshots
-- Universal event timeline with round/player/type filters, a raw game-event
-  histogram, and drill-down to the underlying event payloads
+- Universal event timeline with round/player/type filters and drill-down
+  to the underlying event payloads
 
 **Analysis**
 
