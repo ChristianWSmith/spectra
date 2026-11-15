@@ -554,7 +554,7 @@
       </select>
     </div>
     <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
-      {loading ? S.heatmaps.generating : grid ? S.heatmaps.regenerate : S.heatmaps.generate}
+      {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
     </button>
   </div>
   <!-- The ONE progress widget (StatusChip block mode) — deliberately

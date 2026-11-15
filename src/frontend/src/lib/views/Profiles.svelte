@@ -288,7 +288,7 @@
 
   <section class="panel">
     {#if loading}
-      <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingDetail} /></p>
+      <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingPlayersDetail} /></p>
     {:else if players.length === 0}
       {#if !error}
         <!-- Gated on error: a failed list read is UNKNOWN, never "no

@@ -49,7 +49,7 @@ export const library = {
   problemsHeading: 'Recent import problems',
   noDetails: 'no details',
   loadingDetail: 'Loading…',
-  noMatches: 'No matches yet',
+  emptyStateTitle: 'No matches yet',
   emptyLead: 'Import a CS2 demo with the button above, or drop ',
   demExt: '.dem',
   demZstExt: '.dem.zst',

@@ -15,9 +15,6 @@ export const heatmaps = {
   roundsFrom: 'Rounds from',
   roundsTo: 'Rounds to',
   allRounds: 'All', // both round-range selects' open-bound option
-  generate: 'Generate', // first raster not fetched yet
-  regenerate: 'Regenerate',
-  generating: 'Generating…',
   controlsChanged: 'controls changed — press Regenerate to redraw the heatmap',
   plottedSuffix: ' plotted points · ', // after the sample count
   gridSuffix: ' grid · square-root scale', // after the W×H cell count

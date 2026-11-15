@@ -823,7 +823,7 @@
            library is empty (error above is the truth about why nothing
            is here); the claim returns when a retry clears it. -->
       <div class="empty">
-        <p class="empty-title" role="status">{S.library.noMatches}</p>
+        <p class="empty-title" role="status">{S.library.emptyStateTitle}</p>
         <!-- No Import… button here: the header already owns the one
              import action (top-left of this view) — the copy points at
              it instead of duplicating it. -->
