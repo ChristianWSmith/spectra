@@ -431,7 +431,7 @@ shows a second statement beside the first; that one still reads \`?\` where its 
 are not carried over), and statements like these run one at a time.
 
 **Order…** arranges what the scoreboard and the profile cards show. The fixed stats (Name, Team,
-K, D, …) lead by default; every row — fixed or metric — reorders with the ↑↓ buttons (or the
+Kills, Deaths, …) lead by default; every row — fixed or metric — reorders with the ↑↓ buttons (or the
 ↑/↓ arrow keys), so a pinned metric can sit anywhere among them. The eye button on a fixed stat
 hides it from its view without taking it off this list (the scoreboard's **Name** column is the
 one that cannot be hidden), and a pinned metric's pin button unpins it: the row leaves this list

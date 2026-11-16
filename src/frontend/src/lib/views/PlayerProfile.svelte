@@ -494,9 +494,12 @@
               {/snippet}
             </StatCard>
           {:else if card.fixed === '@Matches'}
-            <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
+            <!-- W13b: the fixed card's title comes from the ONE label
+                 table through composedSequence (card.label = the entry's
+                 full name), never a second strings copy of it. -->
+            <StatCard label={card.label} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
           {:else}
-            <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
+            <StatCard label={card.label} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
           {/if}
         {/each}
       </div>

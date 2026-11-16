@@ -137,22 +137,54 @@ test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profi
   assert.ok([...DEFAULT_PINS.match, ...DEFAULT_PINS.profile].every((n) => !n.startsWith('@')));
 });
 
-test('FIXED_BLOCK: the Go stats\' labels minus the converted entries (unchanged labels)', () => {
+test('FIXED_BLOCK: structured {key, name, short, field} entries — full names over UNCHURNED identity (W13b, 2026-11-16)', () => {
   // Rnds is gone with the owner's C14 scoreboard change (the column
   // left SCORE_COLS too — metricorder mirrors it, never leads it).
+  // `key` and `short` are byte-identical to the flat label the table
+  // shipped as before W13b, so every stored pref, FIXED_RANKS key,
+  // data-mo-name, colByLabel key and RAW_FIELDS key keeps working —
+  // identity never churns (pre-release no-versioning policy).
   assert.deepEqual(FIXED_BLOCK.match, [
-    'Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Opening K/D',
-    'Util', 'MVPs', 'Score',
+    { key: '@Name', name: 'Name', short: 'Name', field: null },
+    { key: '@Team', name: 'Team', short: 'Team', field: null },
+    { key: '@K', name: 'Kills', short: 'K', field: 'kills' },
+    { key: '@D', name: 'Deaths', short: 'D', field: 'deaths' },
+    { key: '@KDA', name: 'KDA', short: 'KDA', field: 'kda' },
+    { key: '@DMG', name: 'Damage', short: 'DMG', field: 'totalDamage' },
+    { key: '@Opening K/D', name: 'Opening K/D', short: 'Opening K/D', field: null },
+    { key: '@Util', name: 'Utility damage', short: 'Util', field: 'utilityDamage' },
+    { key: '@MVPs', name: 'MVPs', short: 'MVPs', field: 'mvps' },
+    { key: '@Score', name: 'Score', short: 'Score', field: 'score' },
   ]);
-  assert.deepEqual(FIXED_BLOCK.profile, ['Matches', 'Win%']);
+  assert.deepEqual(FIXED_BLOCK.profile, [
+    { key: '@Matches', name: 'Matches', short: 'Matches', field: null },
+    { key: '@Win%', name: 'Win%', short: 'Win%', field: null },
+  ]);
+  // The identity invariant, mechanical: key = '@' + short for EVERY
+  // entry — the pre-W13b flat label — so a name-only edit can never
+  // move a pref key, and name===short marks the entries that show no
+  // mono slot in the dialog (never "Team Team").
+  for (const entries of Object.values(FIXED_BLOCK)) {
+    for (const e of entries) {
+      assert.equal(e.key, `@${e.short}`, `${e.key}: identity churned`);
+    }
+  }
+  // The three full-name rows the dialog/Reports ask for, and the short
+  // the scoreboard mirror keeps.
+  const byKey = new Map(FIXED_BLOCK.match.map((e) => [e.key, e]));
+  assert.equal(byKey.get('@K').name, 'Kills');
+  assert.equal(byKey.get('@DMG').name, 'Damage');
+  assert.equal(byKey.get('@DMG').short, 'DMG');
+  assert.equal(byKey.get('@Util').name, 'Utility damage');
+  assert.equal(byKey.get('@Util').short, 'Util');
 });
 
 // --- The fixed namespace + its negative ranks (W6) ---------------------------
 
-test('fixedKeys: every fixed entry is its "@"+label namespaced key, in canonical order', () => {
+test('fixedKeys: every fixed entry is its "@"+short namespaced key, in canonical order', () => {
   assert.deepEqual(
     fixedKeys('match'),
-    FIXED_BLOCK.match.map((l) => `@${l}`),
+    FIXED_BLOCK.match.map((e) => e.key),
   );
   assert.deepEqual(fixedKeys('profile'), ['@Matches', '@Win%']);
   assert.deepEqual(fixedKeys('nope'), []);
@@ -431,13 +463,24 @@ test('composedSequence: fixed stats and metrics as ONE ordered entry list', () =
   );
   assert.deepEqual(
     seq.filter((e) => e.kind === 'fixed').map((e) => e.label),
-    FIXED_BLOCK.match,
-    'a fixed entry carries its OWN label (the one label table)',
+    FIXED_BLOCK.match.map((e) => e.name),
+    'a fixed entry carries its FULL name as the display label (the one label table)',
+  );
+  assert.deepEqual(
+    seq.filter((e) => e.kind === 'fixed').map((e) => e.short),
+    FIXED_BLOCK.match.map((e) => e.short),
+    'a fixed entry carries its `short` (the SCORE_COLS mirror) beside the full name',
+  );
+  assert.deepEqual(
+    seq.filter((e) => e.kind === 'fixed').map((e) => e.name),
+    FIXED_BLOCK.match.map((e) => e.key),
+    "a fixed entry's `name` stays the '@'-key identity (data-mo-name)",
   );
   const adr = seq.find((e) => e.key === 'adr');
   assert.equal(adr.kind, 'metric');
   assert.equal(adr.def.id, 1);
   assert.equal(adr.label, 'adr', 'a metric entry carries its title||name');
+  assert.equal(adr.short, undefined, 'a metric entry carries no short (no column-header twin)');
   assert.equal(adr.hidden, false, 'metric visibility is pin-driven, never this pref');
   // Only the scope's own defs enter (the profile def never does).
   assert.ok(!seq.some((e) => e.key === 'career_kd'));
@@ -464,11 +507,11 @@ test('composedSequence: a hidden fixed entry stays IN the sequence and is marked
 
 // --- rawItems: the report raw-item table (N5) --------------------------------
 
-test('rawItems: the fixed stats that carry a raw scoreboard field, labelled from FIXED_BLOCK', () => {
+test('rawItems: the fixed stats that carry a raw scoreboard field, labelled with the FULL name from the one table (W13b)', () => {
   assert.deepEqual(
     rawItems('match').map((r) => r.label),
-    ['K', 'D', 'KDA', 'DMG', 'Util', 'MVPs', 'Score'],
-    'every label is a FIXED_BLOCK entry — the one label table',
+    ['Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score'],
+    'every label is a FIXED_BLOCK entry name — the one label table, never its short',
   );
   // Exactly the exclusions N5 ruled: Name/Team are descriptors with no
   // raw value, Opening K/D is a compound cell.
@@ -476,16 +519,46 @@ test('rawItems: the fixed stats that carry a raw scoreboard field, labelled from
     assert.ok(!rawItems('match').some((r) => r.label === gone), `${gone} has no raw item`);
   }
   // The ids are namespaced strings over the PlayerStatsRow JSON field,
-  // and every field is a real RAW_FIELDS value.
+  // and every field is the field of the label-table entry that carries
+  // that name (RAW_FIELDS is keyed by that entry's `short`).
+  const byName = new Map(FIXED_BLOCK.match.map((e) => [e.name, e]));
   for (const r of rawItems('match')) {
+    const e = byName.get(r.label);
+    assert.ok(e, `${r.label} is a FIXED_BLOCK name`);
     assert.equal(r.id, `raw:${r.field}`);
     assert.equal(r.kind, 'raw');
-    assert.equal(r.field, RAW_FIELDS[r.label]);
+    assert.equal(r.field, e.field);
+    assert.equal(r.field, RAW_FIELDS[e.short], 'RAW_FIELDS is keyed by short');
     assert.ok(isRawId(r.id), `${r.id} is a raw id`);
   }
   assert.ok(!isRawId(3) && !isRawId('kd'), 'a metric id is never a raw id');
   // The appendix is a per-match document: the profile scope offers none.
   assert.deepEqual(rawItems('profile'), []);
+});
+
+test('RAW_FIELDS derives from the fixed table — keyed by short, exactly the entries carrying a field (W13b)', () => {
+  // Today's exported shape, byte-identical (rawItems/Reports/tests keep
+  // one source: the derivation below, not a second hand-written list).
+  assert.deepEqual(RAW_FIELDS, {
+    K: 'kills',
+    D: 'deaths',
+    KDA: 'kda',
+    DMG: 'totalDamage',
+    Util: 'utilityDamage',
+    MVPs: 'mvps',
+    Score: 'score',
+  });
+  const derived = {};
+  for (const entries of Object.values(FIXED_BLOCK)) {
+    for (const e of entries) if (e.field) derived[e.short] = e.field;
+  }
+  assert.deepEqual(RAW_FIELDS, derived, 'the table IS the source — no forked key list');
+  // The exclusions are the null fields: descriptors and the compound.
+  const noField = Object.values(FIXED_BLOCK)
+    .flat()
+    .filter((e) => !e.field)
+    .map((e) => e.name);
+  assert.deepEqual(noField, ['Name', 'Team', 'Opening K/D', 'Matches', 'Win%']);
 });
 
 // --- read / write / reset route the scope keys (§1.2) -----------------------

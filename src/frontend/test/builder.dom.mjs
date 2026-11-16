@@ -1989,6 +1989,41 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     );
   }
   {
+    // W13b (2026-11-16) — the structured {name, short} fixed entries:
+    // the row TITLE reads the FULL name (Kills), the mono slot carries
+    // the SHORT (K) only when the two differ (Team never doubles to
+    // "Team Team"), and a metric row carries NO mono slot — its title
+    // alone identifies it (the old "Assists assists" title+name
+    // doubling). The aria labels derive from the same visible full
+    // name (Hide Kills / Move Kills up) while data-mo-name keeps the
+    // '@'-key identity (pinned by the dNames lists above — unchanged).
+    const rows = dRows('match');
+    const kRow = rows.find((x) => x.dataset.moName === '@K');
+    const teamRow = rows.find((x) => x.dataset.moName === '@Team');
+    const metricRow = rows.find((x) => x.dataset.moName === 'adr_avg');
+    const monos = (row) =>
+      [...(row?.querySelectorAll('.mo-name') || [])].map((s) => s.textContent.trim());
+    check(
+      'the mono short slot shows K under Kills and nothing under Team (never "Team Team"); a metric row carries no mono name slot',
+      kRow?.querySelector('.mo-title')?.textContent.trim() === 'Kills' &&
+        JSON.stringify(monos(kRow)) === JSON.stringify(['K']) &&
+        teamRow?.querySelector('.mo-title')?.textContent.trim() === 'Team' &&
+        monos(teamRow).length === 0 &&
+        JSON.stringify(monos(metricRow)) === JSON.stringify([]),
+      `Kills title="${kRow?.querySelector('.mo-title')?.textContent ?? 'no row'}" monos=${JSON.stringify(monos(kRow))} Team monos=${JSON.stringify(monos(teamRow))} metric monos=${JSON.stringify(monos(metricRow))}`,
+    );
+    check(
+      "the fixed rows' aria labels derive from the visible FULL name — Hide Kills / Move Kills up and down; Team keeps Hide Team",
+      !!kRow?.querySelector('button[aria-label="Hide Kills"]') &&
+        !!kRow?.querySelector('button[aria-label="Move Kills up"]') &&
+        !!kRow?.querySelector('button[aria-label="Move Kills down"]') &&
+        !!teamRow?.querySelector('button[aria-label="Hide Team"]'),
+      (kRow || teamRow)
+        ? [...(kRow?.querySelectorAll('button[aria-label]') || [])].map((b) => b.getAttribute('aria-label')).join(' | ')
+        : 'no fixed row',
+    );
+  }
+  {
     const rows = dRows('match');
     const from = dNames('match').indexOf('adr_avg');
     rows[from].focus();

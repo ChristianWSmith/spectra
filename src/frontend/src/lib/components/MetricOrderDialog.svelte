@@ -269,12 +269,22 @@
           onkeydown={(ev) => onRowKey(scope, i, ev)}
         >
           <span class="mo-title">{e.label}</span>
-          {#if e.kind === 'metric'}
-            <span class="mono mo-name">{e.name}</span>
-          {:else if e.hidden}
-            <!-- A hidden fixed stat says so in place — the row never
-                 leaves the list (owner requirement). -->
-            <span class="mono mo-name">{S.common.metricOrderHiddenMark}</span>
+          <!-- W13b — the structured fixed label: the title reads the
+               FULL name (e.label), the mono slot carries the entry's
+               SHORT (e.short) only when the two differ (Team never
+               doubles to "Team Team"), and a hidden fixed stat keeps
+               its in-place mark. A metric row carries NO mono slot —
+               its title alone identifies it (the old title+name
+               doubling, "Assists assists", is gone). -->
+          {#if e.kind === 'fixed'}
+            {#if e.short !== e.label}
+              <span class="mono mo-name">{e.short}</span>
+            {/if}
+            {#if e.hidden}
+              <!-- A hidden fixed stat says so in place — the row never
+                   leaves the list (owner requirement). -->
+              <span class="mono mo-name">{S.common.metricOrderHiddenMark}</span>
+            {/if}
           {/if}
           <!-- M1: ONE right-aligned cluster — the row's controls (eye,
                pin, ↑↓) sit together at the row's right edge instead of

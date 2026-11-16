@@ -91,8 +91,9 @@
   // test pins, so the target and the documented coverage cannot drift.
   const helpSection = $derived(MATCH_TAB_SECTIONS[tab] || 'understanding-a-match');
 
-  // The scoreboard's FIXED block (metricorder.js FIXED_BLOCK mirrors this
-  // list): the Go-rendered stats' labels in their store order. Combined
+  // The scoreboard's FIXED block (metricorder.js FIXED_BLOCK's `short`
+  // mirrors this list): the Go-rendered stats' compact headers in their
+  // store order. Combined
   // columns sort by their primary key. N4: these are SEQUENCE entries
   // now (the '@'-namespaced fixed keys in metricorder.js), so the
   // RENDERED column order comes from the composed sequence (sbCols) —
@@ -131,10 +132,13 @@
     { key: 'score', label: 'Score' },
   ];
 
-  // The fixed block's label → its SCORE_COLS entry (the composed
-  // sequence speaks metricorder's labels; this map is what turns a
-  // visible fixed entry into the renderer + sort key above — the ONE
-  // bridge, since metricorder.FIXED_BLOCK is this list's mirror).
+  // The fixed block's `short` → its SCORE_COLS entry (the composed
+  // sequence's fixed entries speak metricorder's `short` headers —
+  // their `label` is the full name the dialog/Reports read; this map is
+  // what turns a visible fixed entry into the renderer + sort key above
+  // — the ONE bridge, since metricorder.FIXED_BLOCK's `short` is this
+  // list's mirror). The SCORE_COLS labels themselves never change: the
+  // rendered scoreboard headers stay the shorts.
   const colByLabel = new Map(SCORE_COLS.map((c) => [c.label, c]));
 
   // The (0,0) descriptor: the corner cell wears the Name header's own
@@ -621,7 +625,7 @@
         for (const e of composedSequence('match', order, rows, hiddenKeys)) {
           if (e.kind === 'fixed') {
             if (e.hidden) continue;
-            const col = colByLabel.get(e.label);
+            const col = colByLabel.get(e.short);
             if (col) seq.push({ key: `f:${col.key}`, col });
           } else {
             if (!pinSet.has(e.def.id)) continue;

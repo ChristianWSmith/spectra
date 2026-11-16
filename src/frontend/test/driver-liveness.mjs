@@ -208,7 +208,17 @@ const EXPECTED = {
   // ("rounds" → "rounds,none") moved with them — same counts; the
   // twelve-box restore pins became the fifteen-box fifteenOf (same two
   // checks).
-  'builder.dom.mjs': 146,
+  // builder 146 → 148 (2026-11-16, W13b structured fixed labels — +2
+  // layered on the post-W13c 146; W13b branched from 52c7ce7's 137):
+  // +2 section J — the mono short slot shows K under the Kills row and
+  // nothing under Team (never "Team Team"; a metric row carries no mono
+  // slot, killing the "Assists assists" title+name doubling), and the
+  // fixed rows' aria labels derive from the visible FULL name (Hide
+  // Kills / Move Kills up and down, Team still Hide Team). The dNames
+  // data-mo-name lists and every other section-J pin were re-pointed in
+  // place (they read .mo-title/data-mo-name, which keep their shapes) —
+  // same counts. Sections A–I untouched.
+  'builder.dom.mjs': 148,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

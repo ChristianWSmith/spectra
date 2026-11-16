@@ -252,7 +252,10 @@ const optLabels = (opts) => opts.map((o) => o.textContent.trim());
 // The seven raw recorded-value items in their fixed-block order (N5) —
 // they LEAD the universe (metricorder.composedSequence's fixed
 // positions), so every option-list pin below composes with them.
-const RAW_LABELS = ['K', 'D', 'KDA', 'DMG', 'Util', 'MVPs', 'Score'];
+// W13b (2026-11-16): the raw items carry the label table's FULL names
+// (the appendix chips and the exported headings read "Kills"), never
+// the bare scoreboard shorts.
+const RAW_LABELS = ['Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score'];
 
 // --- The save ----------------------------------------------------------------
 // The Generate/Save button (its busy shape — {#if rendering}Generating…
@@ -359,12 +362,14 @@ console.log('A. the item universe behind the field is the raw recorded values pl
   const labels = optLabels(opts);
   // N5: the seven raw recorded values lead (the fixed block's
   // positions), then the match-scope metric definitions — a
-  // profile-scope metric never enters a per-match appendix.
+  // profile-scope metric never enters a per-match appendix. W13b: the
+  // raw labels are the table's FULL names.
   check(
     'the raw recorded values AND the match-scope metrics offer themselves (a profile-scope metric never does)',
     JSON.stringify(labels) ===
       JSON.stringify([
-        'K', 'D', 'KDA', 'DMG', 'Util', 'MVPs', 'Score', 'Match stat', 'Behind stat',
+        'Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score',
+        'Match stat', 'Behind stat',
       ]) &&
       !r.textContent.includes('Career stat'),
     JSON.stringify(labels),
@@ -651,7 +656,7 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
       JSON.stringify([...RAW_LABELS, 'Match stat', 'Behind stat']),
     JSON.stringify(optLabels(opts)),
   );
-  click(opts.find((o) => o.textContent.trim() === 'K'));
+  click(opts.find((o) => o.textContent.trim() === 'Kills'));
   await sleep(150);
   check(
     'picking a raw value reads the SCOREBOARD for this match (the recorded read)',
@@ -664,11 +669,11 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
     `stored=${JSON.stringify(storedCalls)} preview=${bindings.callCount('PreviewMetric')}`,
   );
   check(
-    'the raw pick lands as its own chip (its namespaced id, the fixed-label label)',
-    JSON.stringify(tokenNames(rRaw)) === JSON.stringify(['K']),
+    'the raw pick lands as its own chip (its namespaced id, the full-name label)',
+    JSON.stringify(tokenNames(rRaw)) === JSON.stringify(['Kills']),
     JSON.stringify(tokenNames(rRaw)),
   );
-  const rawLine = readout(rRaw, 'K');
+  const rawLine = readout(rRaw, 'Kills');
   const rawChips = rawLine ? [...rawLine.querySelectorAll('.chip')] : [];
   check(
     'its readout carries ONE static provenance chip — no state chip, no expression text, no Formula:',
@@ -684,7 +689,7 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
   const rawText = savedText(rawDl);
   check(
     'the saved document carries the recorded-value heading, the honest meta line and the table — never "value not computed"',
-    rawText.includes('### K') &&
+    rawText.includes('### Kills') &&
       rawText.includes('recorded value · per player · 1 players') &&
       rawText.includes('| 76561198000000001 | amy | 20 | 24 |') &&
       !rawText.includes('value not computed'),
