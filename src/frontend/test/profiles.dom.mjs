@@ -850,16 +850,18 @@ console.log(
   });
   await sleep(140); // mount + getProfile + listMetrics + the career read
 
-  // P1 (2026-11-16): the fixed pair and the pinned metric tiles live in
-  // ONE `.stat-grid.prof-stats` block now (the Career-metrics panel is
-  // gone) — the fixed pair LEADS, the metricorder-composed tiles follow.
+  // P1 (2026-11-16), N4 (2026-11-16): the fixed pair and the pinned
+  // metric tiles live in ONE `.stat-grid.prof-stats` block over THE
+  // composed sequence (metricorder.composedSequence) — under the
+  // DEFAULT prefs the fixed pair LEADS (its negative ranks), then the
+  // metricorder-composed tiles.
   const grid = j1.querySelector('.stat-grid.prof-stats');
   const cardLabels = grid
     ? [...grid.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
     : [];
   const fixedLabels = cardLabels.slice(0, 2);
   check(
-    'the fixed pair leads the merged block (Matches, Win% first — the pinned metric tiles follow it)',
+    'the composed sequence leads with the fixed pair (Matches, Win% first — the pinned metric tiles follow it)',
     JSON.stringify(fixedLabels) === JSON.stringify(['Matches', 'Win%']) &&
       cardLabels.length === 2 + 11,
     JSON.stringify(cardLabels),
@@ -997,6 +999,68 @@ console.log(
     );
   }
   document.body.removeChild(j3);
+
+  // --- J4 (N4): the fixed cards are SEQUENCE entries — orderable AND hideable
+  // J1 above pins the default composition (fixed leads). These two
+  // mounts prove the prefs actually WIRE THROUGH: a stored order with
+  // Win% first reorders the fixed pair, and a stored hidden set removes
+  // the named fixed card from the VIEW (it stays listed in the ordering
+  // dialog — visibility is view-display only, never this surface's
+  // business). The metric reads go back to the full rows first, so the
+  // composition is the only thing these mounts change.
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(ROWS);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve(ELEVEN.map((id) => ({ metricId: id, state: 'fresh' })));
+  // A WHOLE stored sequence (the writer persists every entry on the
+  // first move — a partial pref would re-insert the missing entries at
+  // their default ranks).
+  const FULL_PROFILE_ORDER = [
+    '@Win%', '@Matches', 'career_trade_rate', 'career_adr', 'career_adr_sigma',
+    'career_kd', 'career_hs_pct', 'career_kast', 'career_opening_rate',
+    'career_clutches', 'career_clutch_win_rate', 'career_avg_enemies_flashed',
+    'career_avg_util_damage',
+  ];
+  const mountProfile = async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    mount(profileMod.default, {
+      target: el,
+      props: { steamId: '76561198000000001', nav: () => {} },
+    });
+    await sleep(140); // mount + getProfile + listMetrics + the career read
+    const g = el.querySelector('.stat-grid.prof-stats');
+    const labels = g
+      ? [...g.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
+      : [];
+    return { el, labels };
+  };
+
+  bindings.handlers.GetPref = (key) =>
+    key === 'metric_order_profile' ? FULL_PROFILE_ORDER : undefined;
+  invalidate();
+  const j4 = await mountProfile();
+  check(
+    'N4: a stored order pref reorders the FIXED cards too — Win% leads, Matches second (the sequence owns both)',
+    j4.labels[0] === 'Win%' && j4.labels[1] === 'Matches' && j4.labels.length === 13,
+    JSON.stringify(j4.labels),
+  );
+  document.body.removeChild(j4.el);
+
+  bindings.handlers.GetPref = (key) =>
+    key === 'metric_hidden_profile' ? ['@Matches'] : undefined;
+  invalidate();
+  const j5 = await mountProfile();
+  check(
+    'N4: a hidden fixed card leaves the VIEW — Matches gone, Win% still leads, every metric tile keeps its place',
+    !j5.labels.includes('Matches') &&
+      j5.labels[0] === 'Win%' &&
+      j5.labels.length === 12 &&
+      JSON.stringify(j5.labels.slice(1, 4)) === JSON.stringify(['ADR', 'ADR σ', 'K/D']),
+    JSON.stringify(j5.labels),
+  );
+  document.body.removeChild(j5.el);
+  delete bindings.handlers.GetPref;
+  invalidate();
 }
 
 console.log('K. PlayerProfile trend: the picker offers ANY match-scope metric and reads it by NAME');

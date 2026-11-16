@@ -23,7 +23,7 @@
   import * as S from '../strings/index.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
-  import { readOrder, resolvePinIds, pinnedInSequence, inSequence } from '../metricorder.js';
+  import { readOrder, readHidden, resolvePinIds, pinnedInSequence, inSequence, composedSequence } from '../metricorder.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -271,6 +271,51 @@
     return () => (live = false);
   });
 
+  // The profile surface's SEQUENCE + VISIBILITY reads (N4): the order
+  // pref and the hidden fixed-entry set, read once per mount beside the
+  // career values read above (presentation only — a failed pref read
+  // falls back to the default order / nothing hidden, never into the
+  // career error slot).
+  let profOrder = $state(null);
+  let profHidden = $state([]);
+  $effect(() => {
+    let live = true;
+    Promise.all([readOrder('profile'), readHidden('profile').catch(() => [])])
+      .then(([order, hidden]) => {
+        if (live) {
+          profOrder = order;
+          profHidden = hidden;
+        }
+      })
+      .catch(() => {
+        /* the default order stands */
+      });
+    return () => (live = false);
+  });
+
+  // careerCards — THE one composed card list (N4): the fixed pair and
+  // the pinned metric tiles as entries of the ONE sequence
+  // (metricorder.composedSequence), in order, with a hidden fixed entry
+  // dropped (it stays listed in the ordering dialog — visibility is
+  // view-display only). An unpinned metric never enters; a pinned one
+  // enters only once its stored read landed (the honest gap: the tile
+  // appears with its value read, never with a guessed one).
+  const careerCards = $derived.by(() => {
+    const byName = new Map(careerCols.map((c) => [c.def.name, c]));
+    const pinned = new Set(careerPins);
+    const out = [];
+    for (const e of composedSequence('profile', profOrder, trendDefs, profHidden)) {
+      if (e.hidden) continue;
+      if (e.kind === 'fixed') {
+        out.push({ key: e.key, fixed: e.key, label: e.label, col: null });
+      } else if (pinned.has(e.def.id)) {
+        const col = byName.get(e.name);
+        if (col) out.push({ key: `m:${e.def.id}`, fixed: '', label: e.label, col });
+      }
+    }
+    return out;
+  });
+
   // THE state machine for one career cell (lib/metricstate.js, design §5).
   function careerPres(col) {
     const st = liveMetricState(metricProgress, metricStates, col.def.id);
@@ -398,55 +443,64 @@
 
   {#if profile}
     <!-- The profile's headline surface (dogfooding design §1.5 + the
-         career-metrics consolidation): ONE panel-less block — the two
-         fixed Go-rendered cards (Matches, Win%) lead, then every pinned
-         profile-scope metric as a canonical StatCard tile in the
-         metricorder composition (fixed block first, then
-         pinnedInSequence — lib/metricorder.js is the ONE ordering
-         mechanism and is untouched here). The career half is the same
-         stored-read state machine as before (fresh → the value, no-data
-         → '—', anything else → the state chip — never a fabricated 0,
-         never a version number); a failed career read shows its alert
-         ABOVE the block (the profileError pattern), and an empty pin
-         set leaves just the two fixed cards — never an empty panel. -->
+         career-metrics consolidation, N4): ONE panel-less block over
+         THE composed sequence — the fixed cards (Matches, Win%) and the
+         pinned profile-scope metrics as StatCard tiles in metricorder
+         order (lib/metricorder.js composedSequence is the ONE ordering
+         mechanism). The REAL empty-state invariant: the block renders
+         whenever at least ONE entry is visible — a hidden fixed pair
+         with nothing pinned renders NO grid (never a broken empty one),
+         and a hidden entry simply leaves while the rest keep their
+         order. The career half is the same stored-read state machine as
+         before (fresh → the value, no-data → '—', anything else → the
+         state chip — never a fabricated 0, never a version number); a
+         failed career read shows its alert ABOVE the block (the
+         profileError pattern). -->
     {#if careerError}
       <p class="error" role="alert">
         {S.profiles.careerErrorLead}{careerError}
         <button class="btn small" onclick={() => (careerReload += 1)}>{S.profiles.retry}</button>
       </p>
     {/if}
-    <div class="stat-grid prof-stats">
-      <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
-      <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
-      {#each careerCols as col (col.def.id)}
-        {@const pres = careerPres(col)}
-        <!-- One tile per pinned metric through the canonical StatCard:
-             children[0] the label (its `labelTitle` carries the metric's
-             doc), children[1] the value slot running the state machine —
-             the cell's own `title` carries n=/state — never a fabricated
-             0 and never a version number. -->
-        <StatCard
-          label={col.def.title || col.def.name}
-          labelTitle={col.def.doc || col.def.name}
-          title={careerTitle(col, pres)}
-        >
-          {#snippet valueSlot()}
-            {#if pres.kind === 'value'}
-              {fmtMetric(pres.value, col.def.format)}
-            {:else if pres.kind === 'nodata'}
-              —
-            {:else}
-              <StatusChip
-                status={pres.state}
-                title={careerTitle(col, pres)}
-                progress={metricProgressFrac(metricProgress, col.def.id)}
-                stage={metricProgressStage(metricProgress, col.def.id)}
-              />
-            {/if}
-          {/snippet}
-        </StatCard>
-      {/each}
-    </div>
+    {#if careerCards.length > 0}
+      <div class="stat-grid prof-stats">
+        {#each careerCards as card (card.key)}
+          {#if card.col}
+            {@const col = card.col}
+            {@const pres = careerPres(col)}
+            <!-- One tile per pinned metric through the canonical StatCard:
+                 children[0] the label (its `labelTitle` carries the metric's
+                 doc), children[1] the value slot running the state machine —
+                 the cell's own `title` carries n=/state — never a fabricated
+                 0 and never a version number. -->
+            <StatCard
+              label={col.def.title || col.def.name}
+              labelTitle={col.def.doc || col.def.name}
+              title={careerTitle(col, pres)}
+            >
+              {#snippet valueSlot()}
+                {#if pres.kind === 'value'}
+                  {fmtMetric(pres.value, col.def.format)}
+                {:else if pres.kind === 'nodata'}
+                  —
+                {:else}
+                  <StatusChip
+                    status={pres.state}
+                    title={careerTitle(col, pres)}
+                    progress={metricProgressFrac(metricProgress, col.def.id)}
+                    stage={metricProgressStage(metricProgress, col.def.id)}
+                  />
+                {/if}
+              {/snippet}
+            </StatCard>
+          {:else if card.fixed === '@Matches'}
+            <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
+          {:else}
+            <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
+          {/if}
+        {/each}
+      </div>
+    {/if}
 
     <section class="panel">
       <div class="row-between">

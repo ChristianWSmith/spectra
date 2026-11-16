@@ -33,16 +33,26 @@ const (
 	prefsFontSizeKey = "font_size"
 
 	// prefsMetricOrderMatchKey / prefsMetricOrderProfileKey hold the
-	// user's preferred render order of METRICS on the two surfaces (the
-	// fixed Go-rendered stats are a constant code prefix and are never
-	// stored). Value: a JSON array of metric NAMES (name is the stable
-	// identity — ids churn on plugin replace), scope-matched on read;
-	// absent = the default order (metricorder.js DEFAULT_RANKS). Written
-	// by the Builder's Order dialog through the kvstore service — the
-	// frontend reads/writes it directly; Go never consumes it
-	// (font_size precedent).
+	// user's preferred render order of the FIXED stats AND the metrics on
+	// the two surfaces (the fixed stats are sequence entries under their
+	// own '@'-prefixed keys — metricorder.js owns the namespace, the
+	// negative default ranks and the composition). Value: a JSON array of
+	// entry NAMES (a metric's name is the stable identity — ids churn on
+	// plugin replace), scope-matched on read; absent = the default order
+	// (metricorder.js DEFAULT_RANKS + FIXED_RANKS). Written by the
+	// Builder's Order dialog through the kvstore service — the frontend
+	// reads/writes it directly; Go never consumes it (font_size
+	// precedent).
 	prefsMetricOrderMatchKey   = "metric_order_match"
 	prefsMetricOrderProfileKey = "metric_order_profile"
+
+	// prefsMetricHiddenMatchKey / prefsMetricHiddenProfileKey hold which
+	// FIXED stats are hidden from their view (metricorder.js HIDDEN_KEYS:
+	// '@'-prefixed entry names). Absent = nothing hidden; metric
+	// visibility stays pin-driven and is never stored here. Same
+	// frontend-written / Go-never-consumes contract as the order keys.
+	prefsMetricHiddenMatchKey   = "metric_hidden_match"
+	prefsMetricHiddenProfileKey = "metric_hidden_profile"
 
 	// The knife/warmup display pref (show knife + warmup rounds in the
 	// round lists) is RETIRED: the extractor discards knife/warmup

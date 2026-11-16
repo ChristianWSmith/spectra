@@ -759,6 +759,16 @@
       saveError = 'Doc is required for user metrics — document the formula.';
       return;
     }
+    // The short-name cap (N3): six characters, counted as characters
+    // (never UTF-16 units) — the same bound SaveMetric enforces
+    // server-side, surfaced here before the round trip. The input's
+    // maxlength keeps new typing inside the cap; this guard is what
+    // reports an EXISTING over-limit value on save (plain reject — no
+    // validate-only-on-change, no truncation).
+    if ([...form.shortName.trim()].length > 6) {
+      saveError = S.builder.shortNameTooLong;
+      return;
+    }
     if (exprCheck.state === 'error') {
       saveError = `Fix the expression error first: ${exprCheck.msg}`;
       return;
@@ -1238,24 +1248,32 @@
           <p class="muted" role="status">{S.builder.noMetricsToShow}</p>
         {/if}
       {:else}
-        <!-- One header per contiguous origin run (runs above): a window
-             boundary inside a group never repeats the header. -->
-        {#each runs as run (run.origin + ':' + run.rows[0].id)}
-          <div class="bld-group">
-            <h3>{GROUP_LABEL[run.origin] || run.origin}</h3>
-            {#each run.rows as m (m.id)}
-              {@render metricRow(m)}
-            {/each}
-          </div>
-        {/each}
-        {#if hasNext}
-          <div class="row-between">
-            <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: metrics.length })}</span>
-            <button class="btn" disabled={loadingMore} onclick={loadMore}>
-              {loadingMore ? S.builder.loadingMore : S.builder.loadMore}
-            </button>
-          </div>
-        {/if}
+        <!-- The list BODY is the view's one scroll region (N1): the
+             panel header, the search box and the Filters trigger stay
+             put above it (the filter popover is anchored to that
+             trigger, so it must never scroll away), while the rows and
+             the Load-more footer ride the height-capped scroller
+             (.bld-rows in style-m3a.css — the .sql-side calc idiom). -->
+        <div class="bld-rows">
+          <!-- One header per contiguous origin run (runs above): a window
+               boundary inside a group never repeats the header. -->
+          {#each runs as run (run.origin + ':' + run.rows[0].id)}
+            <div class="bld-group">
+              <h3>{GROUP_LABEL[run.origin] || run.origin}</h3>
+              {#each run.rows as m (m.id)}
+                {@render metricRow(m)}
+              {/each}
+            </div>
+          {/each}
+          {#if hasNext}
+            <div class="row-between">
+              <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: metrics.length })}</span>
+              <button class="btn" disabled={loadingMore} onclick={loadMore}>
+                {loadingMore ? S.builder.loadingMore : S.builder.loadMore}
+              </button>
+            </div>
+          {/if}
+        </div>
       {/if}
     </section>
 
@@ -1335,6 +1353,7 @@
             <input
               id="bld-short"
               class="input"
+              maxlength="6"
               bind:value={form.shortName}
               placeholder={S.builder.shortNamePlaceholder}
               readonly={builtinLoaded}
@@ -1389,46 +1408,58 @@
               readonly={builtinLoaded}
             ></textarea>
             <p class="bld-hint mono">from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) | percentile(p, col) — a comma list LEFT JOINs the sources (no ON/join syntax); denominator: rounds | matches</p>
-            {#if exprCheck.state === 'pending'}
-              <p class="bld-expr-state muted">{S.builder.exprChecking}</p>
-            {:else if exprCheck.state === 'valid'}
-              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</p>
-            {:else if exprCheck.state === 'error'}
-              <p class="bld-expr-state bad">
-                <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
-              </p>
-            {/if}
           </div>
         </div>
 
-        <div class="toolbar bld-actions">
-          <button
-            class="btn primary"
-            onclick={save}
-            disabled={saveDisabled}
-            title={builtinLoaded ? S.builder.builtinReadOnly : undefined}
-          >
-            {saving
-              ? S.builder.saving
-              : !builtinLoaded && form.id && !dirty
-                ? S.builder.saved
-                : S.builder.saveMetric}
-          </button>
-          <button
-            class="btn"
-            class:bld-pin-on={form.id > 0 && pinnedIn(form.id) !== ''}
-            disabled={form.id === 0}
-            onclick={() => togglePin(form.id)}
-          >
-            <span class="codicon codicon-pin"></span>
-            {form.id > 0 && pinnedIn(form.id) !== '' ? S.builder.pinned : S.builder.pin}
-          </button>
-          <span class="muted bld-note">
-            <!-- The disabled Save's reason, in the user's words (the
-                 button carries the same string as its tooltip). -->
-            {builtinLoaded
-              ? S.builder.builtinReadOnly
-              : S.builder.saveNoteDefault}
+        <!-- ONE actions line (N6): the expression validity indicator and
+             the hint + Pin + Save cluster share a single row — the left
+             slot ALWAYS renders (empty while the check is idle) so the
+             right cluster sits flush right in every state, and there is
+             exactly ONE validity indicator (the block below moved here
+             from under the Expression textarea — never a second one; the
+             short-name length error stays up in saveError with the other
+             save guards, so this slot is expression-only). -->
+        <div class="row-between bld-actions">
+          <span class="bld-valid">
+            {#if exprCheck.state === 'pending'}
+              <span class="bld-expr-state muted">{S.builder.exprChecking}</span>
+            {:else if exprCheck.state === 'valid'}
+              <span class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</span>
+            {:else if exprCheck.state === 'error'}
+              <span class="bld-expr-state bad">
+                <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
+              </span>
+            {/if}
+          </span>
+          <span class="toolbar">
+            <span class="muted bld-note">
+              <!-- The disabled Save's reason, in the user's words (the
+                   button carries the same string as its tooltip). -->
+              {builtinLoaded
+                ? S.builder.builtinReadOnly
+                : S.builder.saveNoteDefault}
+            </span>
+            <button
+              class="btn"
+              class:bld-pin-on={form.id > 0 && pinnedIn(form.id) !== ''}
+              disabled={form.id === 0}
+              onclick={() => togglePin(form.id)}
+            >
+              <span class="codicon codicon-pin"></span>
+              {form.id > 0 && pinnedIn(form.id) !== '' ? S.builder.pinned : S.builder.pin}
+            </button>
+            <button
+              class="btn primary"
+              onclick={save}
+              disabled={saveDisabled}
+              title={builtinLoaded ? S.builder.builtinReadOnly : undefined}
+            >
+              {saving
+                ? S.builder.saving
+                : !builtinLoaded && form.id && !dirty
+                  ? S.builder.saved
+                  : S.builder.saveMetric}
+            </button>
           </span>
         </div>
       </section>
