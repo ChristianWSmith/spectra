@@ -263,9 +263,9 @@ the one on screen as needing a **Regenerate**. Kinds are grouped as:
 - **Grenade detonation** — one per grenade type.
 
 The map carries a legend showing the value range the colours stand for (K/D is drawn on a
-two-sided scale). On kinds that carry event rows, clicking a marked region opens the replay
-filtered to what happened there; kinds with no rows behind them say so instead of pretending a
-click did something.`,
+two-sided scale). On kinds that carry event rows, dragging a box over the map opens the replay
+filtered to what happened there — a single click opens one square — while kinds with no rows
+behind them say so instead of pretending a selection did something.`,
   },
   {
     id: 'replay',

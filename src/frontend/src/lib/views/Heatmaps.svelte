@@ -353,13 +353,15 @@
     }
   }
 
-  // Region drill: cell-sized bbox around the click → the canonical event
-  // browser (Replay's landmark feed) scoped to that region. The note
-  // renders first so the effect of the click is visible before the route
-  // switch.
+  // Region drill: a bbox around the gesture → the canonical event browser
+  // (Replay's landmark feed) scoped to that region. The bbox is the CELL
+  // under the cursor for a bare press and the DRAGGED box clipped to the
+  // raster for a rubber-band selection (both emitted by HeatmapLayer,
+  // whose gesture math is lib/heatselect.js). The note renders first so
+  // the effect of the drill is visible before the route switch.
   // ACCEPTED EXCEPTION to "outside-replay buttons seek, never filter":
   // this region drill is a documented power-user path that arrives with
-  // a landmark filter (the cell bbox + the mirrored categories AND the
+  // a landmark filter (the region bbox + the mirrored categories AND the
   // heatmap's own player/round settings — heatRegionFilter, lib/
   // heatkinds.js), kept by product-owner decision — together with the
   // command palette's saved-filter apply, the ONLY two filter-arrival
@@ -367,13 +369,14 @@
   // triggers the replay's feed reveal on entry (lib/replay/landmarks.js
   // shouldRevealFeed), which picks the mirrored keys up through the same
   // serialization.
-  // THE BBOX IS THE CELL EXPANDED BY grid.pad, never the raw cell edges:
-  // the displayed cell value is the Gaussian-smeared splat (σ = 150u,
-  // windowed to zero at the 3σ reach = pad) of everything within the
-  // kernel's reach, so cell ± pad is exactly the region whose events can
-  // have painted this cell — the raw ~30×36u cell holds almost no event
-  // endpoints, and querying it alone is what produced the guaranteed-
-  // empty "No events match these filters." arrival (the nearest kill in
+  // THE BBOX IS ALWAYS EXPANDED BY grid.pad, never queried at its raw
+  // edges: for a bare press that bbox IS the cell, and the displayed cell
+  // value is the Gaussian-smeared splat (σ = 150u, windowed to zero at
+  // the 3σ reach = pad) of everything within the kernel's reach, so
+  // bbox ± pad is exactly the region whose events can have painted this
+  // cell — the raw ~30×36u cell holds almost no event endpoints, and
+  // querying it alone is what produced the guaranteed-empty "No events
+  // match these filters." arrival (the nearest kill in
   // the owner's repro sat 238u away). The pad rides the wire from Go
   // (HeatmapGrid.Pad — Go owns the kernel width; the store stays a dumb
   // rectangle predicate), and regionNote states the APPLIED (padded)

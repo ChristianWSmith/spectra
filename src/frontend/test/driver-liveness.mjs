@@ -213,23 +213,24 @@ const EXPECTED = {
   // metric-composed pair both ways, the expand toggle, the expanded
   // row's fixed metric slots raw-vs-metric + tooltips + raw survivors,
   // the roster triple's metric A half both ways).
-  // econ-tables 116 → 122 (2026-11-15, scoreboard-expand): +1 section J —
-  // the metric header's unpin ✕ is gone (C12): the widget-placement
-  // check was rewritten in place for the ⓘ-only reality and one check
-  // pins the absent unpin widget; +5 the NEW section L — the frozen
-  // player column's CSS-text pins (the name cell sticky at 44px with its
-  // opaque background + seam shadow, the chevron cell's 44px column pin,
-  // the z-index-2 frozen headers, the row-hover twin, the narrowed
-  // chevron button). The float-centered expansion was dropped from the
-  // wave (the expandable rows are going away), so no util-grid /
-  // container-type pins exist by design.
   // econ-tables 122 → 124 (2026-11-15, round-view C6 — merged atop the
   // 122 re-pin): section C2's round-level chip pins became per-SIDE pins
   // (two chips per round from getEconomy — the CT/T pair split the old
   // one-chip checks, +1 the side-label pin; the `—`/unknown/tooltip pins
   // re-pointed in place), I(c)'s failure source re-pointed to getEconomy.
   'econ-tables.dom.mjs': 124,
-  'heatmap-layer.dom.mjs': 49,
+  // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
+  // the new section O — the rubber-band gesture's two shapes: the overlay
+  // while held (presence + CSS-px geometry) with nothing emitted until the
+  // release, the clipped world box + anchor value on release, the sub-
+  // threshold nudge drawing no box and emitting the old cell, the inclusive
+  // 4px boundary taking the region path, the canvas-edge clamp, pointercancel
+  // clearing without emitting, the bbox-less kind never starting a gesture,
+  // the empty-intersection anchor-cell fallback (out-of-raster, missing
+  // value), the straight zero-width drag reaching the raster as a line, and
+  // the owner's styling ruling (solid accent, never side colours, never
+  // dashed, pointer-events none) as a CSS-text pin.
+  'heatmap-layer.dom.mjs': 71,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
   // and the matchup names were RE-PINNED to the START-side colour rule

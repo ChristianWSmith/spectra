@@ -19,7 +19,7 @@ export const heatmaps = {
   plottedSuffix: ' plotted points · ', // after the sample count
   gridSuffix: ' grid · square-root scale', // after the W×H cell count
   bboxHint:
-    'Click the map to open the replay events for that region (the clicked\n        square, padded to the splat’s reach).',
-  noRowsSuffix: ' has no event rows behind it — clicking the map opens nothing.',
+    'Drag a box on the map to open the replay events for that region (padded\n        to the splat’s reach); a single click opens one square.',
+  noRowsSuffix: ' has no event rows behind it — a drag or click opens nothing.',
   emptyState: 'Choose filters and press Generate — heatmaps are computed on demand.',
 };

@@ -165,7 +165,7 @@ const HINT_KEYS = {
   'common.metricOrderNote': 'footnote under the metric-order list (pin-more pointer)',
   'economy.tableNote': 'footnote defining the table headers (Equip / Net worth / Loss)',
   'economy.tableNoteTail': 'footnote tail for the Loss-header inferred marker',
-  'heatmaps.bboxHint': 'click-hint under the map — how the region click behaves',
+  'heatmaps.bboxHint': 'drag/click hint under the map — how the region selection behaves',
   'library.encKeyStatus': 'in-place note pointing at the per-match key status',
   'library.importDirsNote': 'footnote under the import listing (scan depth + copy semantics)',
   'profiles.sparkFootnote': 'footnote under the match-history sparkline',
