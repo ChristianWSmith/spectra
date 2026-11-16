@@ -962,6 +962,11 @@ export function saveQuery(name, sql, description) { return QueryService.SaveQuer
 export function updateQuery(id, name, sql, description) { return QueryService.UpdateQuery(id, name, sql, description); }
 export function deleteQuery(id) { return QueryService.DeleteQuery(id); }
 export function listQueryHistory(limit) { return QueryService.ListHistory(limit || 50); }
+// deleteQueryHistory removes ONE history line (the console's per-line
+// Remove): history is a persisted FIFO, so the row must go server-side —
+// a frontend-only splice would resurrect on the next fetch. Unknown ids
+// report the service's friendly "no query history entry with id".
+export function deleteQueryHistory(id) { return QueryService.DeleteHistory(id); }
 export function clearQueryHistory() { return QueryService.ClearHistory(); }
 
 // --- PlatformService (M5) ----------------------------------------------------

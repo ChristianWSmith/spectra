@@ -381,7 +381,21 @@ const EXPECTED = {
   // `?` is the header's last element right of the .spacer with the
   // shared labels + glyph, the head note intact) and B (one openDocs
   // call with the `sql-console` section id, the route unmoved).
-  'sqlconsole.dom.mjs': 5,
+  // sqlconsole 5 → 30 (2026-11-15, sql-history C2+C3): +25 — the driver
+  // grew into the console's own surface: C (the save form relocated to
+  // the Statement card — once, between the textarea and the Run/Export
+  // toolbar, its inputs + Save, the saved-queries card free of the form,
+  // and the validation error landing under the bar) +5; D (history lines
+  // as ROWS — div.sql-hist.as-row with a load body and two ghost
+  // buttons, no nested buttons, dot/meta intact, Save/Remove titled) +5;
+  // E (the load-into-form flow — the saved row ties the form, a line's
+  // Save loads its statement, clears name/description and focuses the
+  // name, and naming it after an EXISTING saved row still INSERTS, so a
+  // stale save tie never survives) +7; F (Remove → DeleteHistory with
+  // the line's id, the row leaves, no error) +3; G (the schema
+  // accordion — noted entries collapsed by default, expand/collapse, the
+  // column chips and the click-to-insert) +5.
+  'sqlconsole.dom.mjs': 30,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage

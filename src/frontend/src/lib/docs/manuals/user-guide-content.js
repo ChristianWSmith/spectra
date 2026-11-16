@@ -450,8 +450,8 @@ rejected before they run.
 - **Statement** — the editor; **Run** or **Ctrl/Cmd+Enter**. The stated limits are *rows cap 5,000 · timeout 5 s*. A statement carrying parameters (\`?\`, \`:name\`) is refused with *this statement has parameters — replace them with values* — the console is never given values, so put them in yourself; a metric's **compiled SQL** already has its values written in (see *The metric Builder*), so a single statement of it runs as pasted.
 - **Results** — the row grid with the query time, the row count, and a *truncated* chip when the cap was hit. The grid renders the first 2,000 rows; exports always carry every returned row.
 - **Export CSV / Export JSON** — saves the result of the last run.
-- **Saved queries** — give the current statement a name and description, save it, re-run it later, delete what you no longer need.
-- **History (last 50)** — the statements you have run, with **Clear**.`,
+- **Saved queries** — the queries you have saved: click one to load it, with its name and description, back into the statement, or delete one you no longer need. Its **name**, **description** and **Save** fields live in the **Statement** card just above **Run** — that is where the current statement gets named and saved.
+- **History (last 50)** — the statements you have run, newest first. Click a line to load it; a line's **Save** loads it with the name and description cleared so you can name it afresh, and **Remove** drops that one line — **Clear** still drops them all.`,
   },
   {
     id: 'settings',

@@ -51,7 +51,22 @@ export const MetricsService = {
   CompileMetric: rec('CompileMetric'),
   GetMetric: rec('GetMetric'),
 };
-export const QueryService = {};
+// The SQL console's service: the three mount-time reads (schema, history,
+// saved-query window) plus the statement run and the saved/history
+// mutators services.js wraps. Recorded like every other namespace — the
+// console drivers script the methods they drive on top.
+export const QueryService = {
+  Run: rec('Run'),
+  GetSchema: rec('GetSchema'),
+  ListSavedQueries: rec('ListSavedQueries'),
+  ListSavedQueriesPage: rec('ListSavedQueriesPage'),
+  SaveQuery: rec('SaveQuery'),
+  UpdateQuery: rec('UpdateQuery'),
+  DeleteQuery: rec('DeleteQuery'),
+  ListHistory: rec('ListHistory'),
+  DeleteHistory: rec('DeleteHistory'),
+  ClearHistory: rec('ClearHistory'),
+};
 // PlatformService: ListPlugins is the Builder mount's fire-and-forget
 // plugin-state read (a missing method would throw at mount); the two
 // report reads drive test/reports.dom.mjs.

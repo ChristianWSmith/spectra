@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -112,6 +113,41 @@ func TestUpdateQueryServiceFlow(t *testing.T) {
 		t.Errorf("unknown-id err = %v, want friendly not-found message", err)
 	}
 	if _, err := s.UpdateQuery(9999, "x", "SELECT 1", "d"); errors.Is(err, store.ErrNotFound) {
+		t.Errorf("service leaked raw store.ErrNotFound: %v", err)
+	}
+}
+
+// TestDeleteHistoryServiceFlow pins the console's per-line Remove: a
+// recorded line deletes through the store the service wraps (the list
+// drops it), and an unknown id reports the friendly not-found message —
+// never the raw store.ErrNotFound (the pattern DeleteQuery/UpdateQuery
+// pin above).
+func TestDeleteHistoryServiceFlow(t *testing.T) {
+	s := newQueryService(t)
+
+	// A recorded run — history is written by the session on every Run
+	// (session.Run appends success OR failure); the row itself is the
+	// store's contract, exercised in query_store_test.go.
+	if err := s.st.AppendQueryHistory(models.QueryHistoryRow{SQL: "SELECT 1", MS: 2, Rows: 1, OK: true}); err != nil {
+		t.Fatalf("AppendQueryHistory: %v", err)
+	}
+	list, err := s.ListHistory(0)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("history = %d rows (err %v), want 1", len(list), err)
+	}
+	if err := s.DeleteHistory(list[0].ID); err != nil {
+		t.Fatalf("DeleteHistory: %v", err)
+	}
+	if list, err := s.ListHistory(0); err != nil || len(list) != 0 {
+		t.Errorf("history after delete = %d rows (err %v), want 0", len(list), err)
+	}
+
+	// Unknown id → the friendly message, and the raw sentinel stays
+	// wrapped inside the service.
+	if err := s.DeleteHistory(9999); err == nil || !strings.Contains(err.Error(), "no query history entry with id") {
+		t.Errorf("unknown-id err = %v, want friendly not-found message", err)
+	}
+	if err := s.DeleteHistory(9999); errors.Is(err, store.ErrNotFound) {
 		t.Errorf("service leaked raw store.ErrNotFound: %v", err)
 	}
 }

@@ -407,6 +407,62 @@ func TestQueryHistoryFIFO(t *testing.T) {
 	}
 }
 
+// TestQueryHistoryDeleteOne pins the console's per-line Remove: one row
+// goes, its neighbours and their newest-first order stay, and the FIFO
+// trim still runs on append (deleting a line never wedges the cap).
+func TestQueryHistoryDeleteOne(t *testing.T) {
+	s := openMem(t)
+	for i := 0; i < QueryHistoryCap+10; i++ {
+		if err := s.AppendQueryHistory(modelsQueryHistory(i)); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+	all, err := s.ListQueryHistory(0)
+	if err != nil || len(all) != QueryHistoryCap {
+		t.Fatalf("history len = %d (err %v), want the full cap", len(all), err)
+	}
+	victim := all[3].ID
+	if err := s.DeleteQueryHistory(victim); err != nil {
+		t.Fatalf("DeleteQueryHistory: %v", err)
+	}
+	after, err := s.ListQueryHistory(0)
+	if err != nil || len(after) != QueryHistoryCap-1 {
+		t.Fatalf("history after delete = %d rows (err %v), want %d", len(after), err, QueryHistoryCap-1)
+	}
+	for i, r := range after {
+		if r.ID == victim {
+			t.Errorf("deleted id %d still listed at %d", victim, i)
+		}
+		if i > 0 && r.ID >= after[i-1].ID {
+			t.Errorf("order broken at %d: id %d follows %d, want strictly newest-first", i, r.ID, after[i-1].ID)
+		}
+	}
+	// The FIFO trim still runs on the next appends: one row over the cap
+	// is dropped from the OLD end, the cap holds, the deleted row stays
+	// deleted and the newest row leads.
+	for i := 0; i < 2; i++ {
+		if err := s.AppendQueryHistory(modelsQueryHistory(QueryHistoryCap + 10 + i)); err != nil {
+			t.Fatalf("append after delete %d: %v", i, err)
+		}
+	}
+	trimmed, err := s.ListQueryHistory(0)
+	if err != nil || len(trimmed) != QueryHistoryCap {
+		t.Fatalf("history after refilled cap = %d rows (err %v), want %d", len(trimmed), err, QueryHistoryCap)
+	}
+	if trimmed[0].ID != int64(QueryHistoryCap+12) {
+		t.Errorf("newest id = %d, want %d", trimmed[0].ID, QueryHistoryCap+12)
+	}
+	for _, r := range trimmed {
+		if r.ID == victim {
+			t.Error("deleted id resurrected by the trim")
+		}
+	}
+	// Unknown id → ErrNotFound (the service maps it to a friendly message).
+	if err := s.DeleteQueryHistory(999999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("delete unknown id err = %v, want ErrNotFound", err)
+	}
+}
+
 // TestSavedQueries: unique names + CRUD + the description field +
 // the update path (UpdateQuery: round-trip, colliding rename, unknown id).
 func TestSavedQueries(t *testing.T) {

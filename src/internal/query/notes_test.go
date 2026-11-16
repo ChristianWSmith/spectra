@@ -1,6 +1,11 @@
 package query
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/ChristianWSmith/spectra/internal/store"
+)
 
 // TestNoteFallbacks pins the schema-browser contract: unknown tables and
 // columns keep Note "" (package doc).
@@ -41,6 +46,36 @@ func TestStoredMetricsNotes(t *testing.T) {
 	} {
 		if got := columnNote(c.table, c.col); got != "" {
 			t.Errorf("%s.%s note = %q, want \"\" (stamps are internal-only — no version language in the console)", c.table, c.col, got)
+		}
+	}
+}
+
+// TestEverySchemaTableHasNote is the note-coverage assertion (C3): the
+// sidebar reads its schema LIVE (sqlite_master + pragma_table_info on the
+// app's own database — never the embedded baseline schema.sql), and the
+// prose notes are the only thing this package hard-codes about it. Every
+// table the baseline ships must carry one, so a table added to
+// schema.sql without a note fails here instead of reaching users as a
+// bare name (plugin/unknown tables keep "" — TestNoteFallbacks).
+func TestEverySchemaTableHasNote(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	// The same read the console's sidebar does (Session.Schema over the
+	// store's live schema).
+	tables, err := New(st).Schema()
+	if err != nil {
+		t.Fatalf("Schema: %v", err)
+	}
+	if len(tables) == 0 {
+		t.Fatal("schema read returned no tables — the coverage loop would pass vacuously")
+	}
+	for _, tb := range tables {
+		if strings.TrimSpace(tb.Note) == "" {
+			t.Errorf("table %s has no note in the SQL console schema browser", tb.Name)
 		}
 	}
 }
