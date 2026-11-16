@@ -987,9 +987,11 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 {
   // One pinned metric so the METRIC SortTh actually renders: the width
   // cap is a class Match puts on the metric header only (static
-  // SCORE_COLS must never wear it), the ⓘ / unpin widgets must
-  // stay OUTSIDE the capped .th-sort button (the cap bounds the label
-  // text alone), and the th's title tooltip must survive untouched.
+  // SCORE_COLS must never wear it), the ⓘ widget must stay OUTSIDE the
+  // capped .th-sort button (the cap bounds the label text alone) with
+  // NO unpin ✕ beside it (C12 — the scoreboard header's unpin affordance
+  // is gone; pins live in the Metric builder / Order dialog), and the
+  // th's title tooltip must survive untouched.
   // jsdom has no layout, so the cap RULE itself is pinned from the
   // stylesheet source (section G's precedent).
   localStorage.setItem('spectra:pinned-metrics', '[7]');
@@ -1024,14 +1026,20 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
       ? `metric=${metricTh.className} static=${staticTh ? staticTh.className : 'no K header'}`
       : 'no metric header rendered',
   );
-  const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib, .th-sort .m5-unpin');
-  const widgetCount = metricTh
-    ? metricTh.querySelectorAll(':scope > .m5-ib, :scope > .m5-unpin').length
-    : -1;
+  const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib');
+  const widgetCount = metricTh ? metricTh.querySelectorAll(':scope > .m5-ib').length : -1;
   check(
-    'the cap covers the label button only — ⓘ / unpin stay outside it',
-    !!metricTh && !widgetsInButton && widgetCount === 2,
+    'the cap covers the label button only — the ⓘ stays outside it (the header’s only widget)',
+    !!metricTh && !widgetsInButton && widgetCount === 1,
     `outside-widgets=${widgetCount} inside-button=${!!widgetsInButton}`,
+  );
+  const unpinWidgets = root.querySelectorAll(
+    '.data-table.scoreboard .m5-unpin, .data-table.scoreboard [title="Unpin from scoreboard"]',
+  );
+  check(
+    'the unpin ✕ is gone from the metric headers (pins live in the builder / Order dialog)',
+    !!metricTh && unpinWidgets.length === 0,
+    `unpin-widgets=${unpinWidgets.length}`,
   );
   check(
     'the metric th still carries its title tooltip (SortTh untouched)',
@@ -1424,6 +1432,74 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
     bobKda ? `${bobKda.textContent.trim()} title=${bobKda.getAttribute('title')}` : 'no cell',
   );
   localStorage.removeItem('spectra:pinned-metrics');
+}
+
+console.log('L. Scoreboard frozen player column (CSS-text pins — jsdom has no layout)');
+{
+  // The freeze (scoreboard-expand, part b) is pure CSS: jsdom computes
+  // no layout, so the RULES themselves are pinned from the stylesheet —
+  // selector text included, because the direct-child scoping IS the guard
+  // (it keeps the expansion row's full-width td and that row's nested
+  // mini tables out of the freeze). The float-centered expansion was
+  // dropped from the wave (the expandable rows are going away), so no
+  // util-grid / container-type pins exist here by design.
+  const cssSb = readFileSync('public/style.css', 'utf8');
+  const ruleOf = (src, sel) => {
+    const i = src.indexOf(sel);
+    if (i < 0) return null;
+    const open = src.indexOf('{', i);
+    if (open < 0) return null;
+    const close = src.indexOf('}', open);
+    return close < 0 ? null : src.slice(open + 1, close);
+  };
+  const body = (rule) => (rule ? rule.replace(/\s+/g, ' ').trim() : 'rule not found in public/style.css');
+
+  const nameRule = ruleOf(cssSb, '.scoreboard > tbody > tr > td.name-cell {');
+  check(
+    'the name cell freezes at the chevron’s right edge (sticky, left 44px, opaque bg, seam shadow)',
+    !!nameRule &&
+      /position:\s*sticky/.test(nameRule) &&
+      /left:\s*44px/.test(nameRule) &&
+      /background:\s*var\(--bg\)/.test(nameRule) &&
+      /box-shadow:/.test(nameRule),
+    body(nameRule),
+  );
+
+  const chevRule = ruleOf(cssSb, '.scoreboard > tbody > tr > td.expand-cell {');
+  check(
+    'the chevron cell freezes at the scrollport edge and pins its column to exactly 44px',
+    !!chevRule &&
+      /position:\s*sticky/.test(chevRule) &&
+      /left:\s*0\b/.test(chevRule) &&
+      /width:\s*44px/.test(chevRule),
+    body(chevRule),
+  );
+
+  const headRule = ruleOf(cssSb, '.scoreboard > thead > tr > th:first-child,');
+  check(
+    'the frozen header cells stick and out-paint the ordinary sticky headers (z-index 2)',
+    !!headRule && /position:\s*sticky/.test(headRule) && /z-index:\s*2/.test(headRule),
+    body(headRule),
+  );
+
+  const hoverSel = '.scoreboard > tbody > tr:hover > td.expand-cell,';
+  const hoverAt = cssSb.indexOf(hoverSel);
+  const hoverRule = ruleOf(cssSb, hoverSel);
+  check(
+    'the row-hover twin lights both frozen cells (the tr’s hover paints under their own background)',
+    hoverAt >= 0 &&
+      cssSb.slice(hoverAt, hoverAt + 240).includes('.scoreboard > tbody > tr:hover > td.name-cell') &&
+      !!hoverRule &&
+      /var\(--list-hover\)/.test(hoverRule),
+    hoverAt < 0 ? 'hover-twin rule not found in public/style.css' : body(hoverRule),
+  );
+
+  const btnRule = ruleOf(cssSb, '.scoreboard .expand-cell .btn {');
+  check(
+    'the chevron button’s padding keeps the column’s min-content under 44px (root 13/15/17)',
+    !!btnRule && /padding:\s*1px 2px/.test(btnRule),
+    body(btnRule),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

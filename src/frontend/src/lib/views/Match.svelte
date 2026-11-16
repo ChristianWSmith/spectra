@@ -200,7 +200,6 @@
   // rows, never a query-time calculation); the compute state and the
   // live progress feed decide whether a cell shows the number or the
   // state chip (lib/metricstate.js — design §5's state machine).
-  let pins = $state([]);
   let metricCols = $state([]);
   // The W2a fixed named slots (design §6.1): the compound cells'
   // halves and the expanded row's two stat lines read these metrics BY
@@ -473,10 +472,10 @@
     id;
     metricReload; // spectra:metric-done → refetch (the cache flushed)
     let live = true;
-    // Read localStorage directly — reading the `pins` state here would make
-    // it a dependency of this effect and re-trigger it on every pin write.
+    // Read localStorage directly, never through a component-state mirror:
+    // the stored selection is a one-shot input to this effect, so caching
+    // it in state would make the effect re-trigger on every pin write.
     const stored = readPins(); // null = ABSENT → metricorder resolves DEFAULT_PINS
-    pins = stored || [];
     metricCols = [];
     fixedCols = new Map();
     metricError = '';
@@ -492,7 +491,6 @@
         // nothing" is never overridden (and never silences the fixed
         // slots either — they are not a selection).
         const pinIds = resolvePinIds('match', stored, rows);
-        pins = pinIds;
         // THE composition (lib/metricorder.js — the ONE site): the
         // sequence filtered to the pinned set. The pins array orders
         // nothing; a newly pinned metric appears where the sequence
@@ -539,20 +537,6 @@
       });
     return () => (live = false);
   });
-
-  function unpin(metricId) {
-    pins = pins.filter((x) => x !== metricId);
-    try {
-      localStorage.setItem('spectra:pinned-metrics', JSON.stringify(pins));
-    } catch {
-      /* storage unavailable — the column still drops for this render */
-    }
-    metricCols = metricCols.filter((c) => c.def.id !== metricId);
-    if (sortKey === metricSortKey(metricId)) {
-      sortKey = 'kills';
-      desc = true;
-    }
-  }
 
   function metricCell(mc, p) {
     return mc.map.get(p.steamId) || null;
@@ -1110,8 +1094,8 @@
               {/each}
               <!-- Width-constrained column header (the .m5-mth cap): THE
                    short_name display criterion — short || title || name.
-                   Every other metric display (cell tooltip, unpin label,
-                   Reports, Builder rows, palette) reads title || name. -->
+                   Every other metric display (cell tooltip, Reports,
+                   Builder rows, palette) reads title || name. -->
               {#each metricCols as mc (mc.def.id)}
                 <SortTh
                   label={mc.def.shortName || mc.def.title || mc.def.name}
@@ -1121,13 +1105,10 @@
                   {desc}
                   onclick={() => toggleSort(metricSortKey(mc.def.id))}
                 >
+                  <!-- The ⓘ is the header's ONLY widget now: the unpin ✕
+                       left with C12 (pins are managed in the Metric
+                       builder / Order dialog, never at this surface). -->
                   <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
-                  <button
-                    class="m5-unpin"
-                    title={S.match.unpinTitle}
-                    aria-label={S.fill(S.match.unpinAria, { name: mc.def.title || mc.def.name })}
-                    onclick={() => unpin(mc.def.id)}><span class="codicon codicon-close"></span></button
-                  >
                 </SortTh>
               {/each}
             </tr>

@@ -195,7 +195,17 @@ const EXPECTED = {
   // metric-composed pair both ways, the expand toggle, the expanded
   // row's fixed metric slots raw-vs-metric + tooltips + raw survivors,
   // the roster triple's metric A half both ways).
-  'econ-tables.dom.mjs': 116,
+  // econ-tables 116 → 122 (2026-11-15, scoreboard-expand): +1 section J —
+  // the metric header's unpin ✕ is gone (C12): the widget-placement
+  // check was rewritten in place for the ⓘ-only reality and one check
+  // pins the absent unpin widget; +5 the NEW section L — the frozen
+  // player column's CSS-text pins (the name cell sticky at 44px with its
+  // opaque background + seam shadow, the chevron cell's 44px column pin,
+  // the z-index-2 frozen headers, the row-hover twin, the narrowed
+  // chevron button). The float-centered expansion was dropped from the
+  // wave (the expandable rows are going away), so no util-grid /
+  // container-type pins exist by design.
+  'econ-tables.dom.mjs': 122,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,

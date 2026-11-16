@@ -32,8 +32,6 @@ export const match = {
   pinnedStatsUnavailable: 'Pinned stats unavailable:',
   dismissPinnedStatsError: 'Dismiss pinned stats error',
   expandLabel: 'Expand',
-  unpinTitle: 'Unpin from scoreboard',
-  unpinAria: 'Unpin {name}',
   breakdownAria: 'Breakdown for {name}',
   openProfilePossessive: "Open {name}'s profile",
 

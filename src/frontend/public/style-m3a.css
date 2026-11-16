@@ -870,34 +870,13 @@ canvas.heat-canvas {
   color: var(--accent);
 }
 
-/* Unpin only reveals on header hover (focus keeps it reachable). */
-.m5-unpin {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0 0 0 5px;
-  font-size: 0.85em;
-  line-height: 1;
-  opacity: 0;
-}
-
-.scoreboard th:hover .m5-unpin,
-.m5-unpin:focus-visible {
-  opacity: 1;
-}
-
-.m5-unpin:hover {
-  color: var(--danger);
-}
-
 /* Metric header label rides the canonical truncation cap (the
    .lib-demo-name pattern in style.css) so one long metric title can
    never widen its scoreboard column without bound; the header's full
    tooltip is the th's title, untouched. Scope is m5-mth, the class
    Match puts on the METRIC SortTh only — static SCORE_COLS don't wear
-   it — and the ⓘ / unpin widgets sit OUTSIDE .th-sort, so the
-   cap applies to the label text alone. */
+   it — and the ⓘ widget sits OUTSIDE .th-sort, so the cap applies to
+   the label text alone. */
 .m5-mth .th-sort {
   display: inline-block;
   max-width: 260px;
