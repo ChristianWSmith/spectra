@@ -338,7 +338,7 @@ select {
   cursor: pointer;
 }
 
-.nav-item:hover {
+.nav-item:hover:not(:disabled) {
   background: var(--list-hover);
   color: var(--text);
 }
@@ -347,6 +347,18 @@ select {
 .nav-item.active {
   color: var(--accent);
   background: var(--accent-tint);
+}
+
+/* Disabled action — the Match tab before a match has been opened this
+   session (lib/nav.js isNavEnabled): greyed glyph, no pointer, no hover
+   wash and no active tint. WebKit matches :hover on a DISABLED button,
+   hence the :not(:disabled) above; this rule sits after .nav-item.active
+   so the tint can never show on an unavailable action either. */
+.nav-item:disabled {
+  background: none;
+  color: var(--muted);
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* App mark pinned above the rail's first action (Library): branding, not

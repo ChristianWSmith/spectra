@@ -30,6 +30,7 @@ screen exists to serve that loop.
 The bar on the left edge is the way around:
 
 - **Library** — your imported matches; every match detail view starts here.
+- **Match** — the match itself, reached from any Library row. This tab is greyed out until you open one, and then goes back to the last match you had open.
 - **Profiles** — every player in your library, and each player's career page.
 - **Builder** — the metric Builder, where numbers are defined and previewed.
 - **SQL console** — read-only queries over your whole library.
@@ -124,7 +125,7 @@ Copies are evictable at any time:
     id: 'library',
     title: 'The Library',
     blocks: `The Library is the table of everything you have imported, and the hub every match view is
-reached from. Click any row to open that match.
+reached from. Click any row to open that match in the **Match** tab.
 
 # The table
 
@@ -166,7 +167,8 @@ instead.`,
   {
     id: 'understanding-a-match',
     title: 'Understanding a match',
-    blocks: `A match page opens from any Library row. It is a header, a round strip, and a row of tabs.
+    blocks: `A match page opens from any Library row — or from the **Match** sidebar tab, which goes
+back to the last match you had open. It is a header, a round strip, and a row of tabs.
 
 # The header
 

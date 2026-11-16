@@ -92,7 +92,17 @@ const PROBE_POOL = 4;
 // catalog, and the Profiles ADR column is metric-backed: stored value,
 // honest gap, behind chip, metric-value sort with gaps last).
 const EXPECTED = {
-  'app-dock.dom.mjs': 59,
+  // app-dock 59 → 66 (2026-11-16, R2 L4 — the Match sidebar tab): +7 —
+  // the boot pair right after the mount (the Match tab DISABLED with its
+  // why-tooltip while the Library tab beside it stays enabled — the one
+  // moment the session memory is empty) and the new section G (enabled
+  // + lit on a match route, still enabled away from it with only
+  // Profiles lit, a click returning to the remembered FULL hash — path
+  // AND query — through resolveNavTarget, plus the two style.css source
+  // pins: the greyed .nav-item:disabled rule and the
+  // :hover:not(:disabled) neutralization, since jsdom never applies
+  // :hover and has no layout).
+  'app-dock.dom.mjs': 66,
   // builder 72 → 95 (2026-11-14, metrics UI-A + B): UI-A rewrote the
   // filter/editor sections (72 → 91 with section J at its base 16) and
   // UI-B reworked section J 16 → 20 (pins-only list, help line + empty
@@ -348,7 +358,12 @@ const EXPECTED = {
   // byte-identical), the logo-less map stays text-only, style.css pins
   // the fixed .lib-map-icon size, and a manifest that never arrives
   // leaves the cell exactly as it was.
-  'library.dom.mjs': 181,
+  // library 181 → 182 (2026-11-16, R2 L2 — the Clear button moved to the
+  // LEFT of the filter row): +1 section A — the order pin (Clear is the
+  // first element of .lib-filters and precedes the map input in document
+  // order). The L1 placeholder re-pin ('Filter by map...') rewrote the
+  // existing hint check IN PLACE and moved no count.
+  'library.dom.mjs': 182,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,

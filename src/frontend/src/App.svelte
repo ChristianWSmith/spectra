@@ -17,7 +17,13 @@
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
-  import { NAV_ACTIONS, expandReplayHash } from './lib/nav.js';
+  import {
+    NAV_ACTIONS,
+    MATCH_FAMILY,
+    expandReplayHash,
+    isNavEnabled,
+    resolveNavTarget,
+  } from './lib/nav.js';
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
   import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
@@ -73,6 +79,19 @@
   // (lib/nav.js). Recorded on every hashchange — the hash BEFORE the
   // current one — so it is empty until the first navigation.
   let originHash = $state('');
+  // The Match tab's TARGET memory (L4): the last match-family hash the
+  // user visited this SESSION — the FULL path+query, so returning to the
+  // tab lands on the exact tab / round / URL filters they left (a stale
+  // memory hitting a deleted match lands on Match's own "not found").
+  // Session-scoped by ruling: App $state only — no pref, no viewstate
+  // registry, no route query (the registry never holds anything that is
+  // or should be a link; a link-shaped value belongs in the URL, and this
+  // is a "where was I" breadcrumb). Seeded from the boot route and
+  // written in the hashchange handler below IN THE SAME FLUSH as
+  // `route`/`alive`/`originHash`; lib/nav.js's isNavEnabled/resolveNavTarget
+  // read it through the derived ctx, so the rail and the command palette
+  // can never diverge.
+  let lastMatchHash = $state(MATCH_FAMILY.has(firstRoute.name) ? location.hash : '');
   let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
 
@@ -264,6 +283,11 @@
   // in NAV_ACTIONS — the command palette renders the same list.
   const mainActions = NAV_ACTIONS.filter((a) => !a.bottom);
   const bottomActions = NAV_ACTIONS.filter((a) => a.bottom);
+  // The ctx every nav click resolves through (lib/nav.js
+  // isNavEnabled/resolveNavTarget): derived so the rail's disabled
+  // states, tooltips and targets re-evaluate the moment the memory flips
+  // — one object, both surfaces (the palette receives it as a prop).
+  const navCtx = $derived({ lastMatchHash });
 
   // Frame-probe HUD — the ?probe=1 operator readout (App-level so it
   // shows over whatever view is active; procedure in frameprobe.js).
@@ -308,6 +332,13 @@
       // create/refresh the captured hash, same-id match routes keep the
       // record (hash frozen), everything else drops it → unmount.
       alive = nextReplayAlive(alive, next, location.hash);
+      // The Match tab's target memory — SAME flush as `route` (it is the
+      // "where I was" twin of the highlight the flip below re-renders):
+      // any match-family route overwrites it with the FULL live hash
+      // (path + query), every other route leaves it alone so the tab
+      // keeps its way back. lib/nav.js isNavEnabled gates what the stored
+      // value must still parse to; storing needs only the family.
+      if (MATCH_FAMILY.has(next.name)) lastMatchHash = location.hash;
       route = next;
     };
     window.addEventListener('hashchange', onChange);
@@ -353,17 +384,26 @@
     <img class="sidebar-mark" src="/wails.png" alt={S.common.appMarkAlt} width="30" height="30" />
     <!-- One action list, shared with CommandPalette's Actions section
          (lib/nav.js NAV_ACTIONS) — membership, order, labels and icons
-         live there; active(route) drives the highlight here. The button
-         is icon-only: the label rides title/aria-label (hover tooltip). -->
+         live there; active(route) drives the highlight here and
+         isNavEnabled/resolveNavTarget (through navCtx) drive the
+         disabled state, its tooltip and the click's target. The button
+         is icon-only: the label rides title/aria-label (hover tooltip),
+         swapped for the why-tooltip while disabled. -->
     {#each mainActions as a (a.label)}
+      <!-- Disabled actions (the Match tab before a match has been opened
+           this session): lib/nav.js isNavEnabled/resolveNavTarget are the
+           ONE decision — the rail disables the button and explains why in
+           the tooltip, the palette omits the row (never a dead one). -->
+      {@const enabled = isNavEnabled(a, navCtx)}
       <button
         class="nav-item"
         class:active={a.active(route)}
         type="button"
-        title={a.label}
+        title={enabled ? a.label : S.common.navMatchDisabled}
         aria-label={a.label}
         aria-current={a.active(route) ? 'page' : undefined}
-        onclick={() => nav(a.hash)}
+        disabled={!enabled}
+        onclick={() => nav(resolveNavTarget(a, navCtx))}
       >
         <span class="codicon {a.icon}" aria-hidden="true"></span>
       </button>
@@ -389,14 +429,16 @@
     <!-- Pinned bottom entries (Settings) — same list, split by the
          `bottom` flag; see mainActions above. -->
     {#each bottomActions as a (a.label)}
+      {@const enabled = isNavEnabled(a, navCtx)}
       <button
         class="nav-item"
         class:active={a.active(route)}
         type="button"
-        title={a.label}
+        title={enabled ? a.label : S.common.navMatchDisabled}
         aria-label={a.label}
         aria-current={a.active(route) ? 'page' : undefined}
-        onclick={() => nav(a.hash)}
+        disabled={!enabled}
+        onclick={() => nav(resolveNavTarget(a, navCtx))}
       >
         <span class="codicon {a.icon}" aria-hidden="true"></span>
       </button>
@@ -509,7 +551,7 @@
       {/if}
     </div>
   </main>
-  <CommandPalette {nav} />
+  <CommandPalette {nav} ctx={navCtx} />
   <MapPackPrompt bind:this={mapPackPrompt} />
   <!-- The help side-sheet — transient overlay state (see openDocs
        above), mounted beside the other App-level overlays. -->

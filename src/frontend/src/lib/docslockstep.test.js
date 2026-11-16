@@ -75,6 +75,7 @@ const sectionIds = new Set(guide.sections.map((s) => s.id));
 // palette render this one list).
 const NAV_SECTIONS = {
   Library: 'library',
+  Match: 'understanding-a-match', // the match view's own section (L4: Match became its own sidebar tab)
   Profiles: 'profiles',
   Builder: 'metric-builder',
   'SQL console': 'sql-console',

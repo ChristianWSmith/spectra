@@ -1,7 +1,10 @@
 // Tests for lib/nav.js: the profile return trip (profileBackTarget — the
 // resolution behind PlayerProfile's top-left back button), the navigation
 // guards the profile links share (isSteam/openProfile), the sidebar
-// action highlighters (NAV_ACTIONS active()) and the replay entry
+// action highlighters (NAV_ACTIONS active()) and the nav decision pair
+// (MATCH_FAMILY + isNavEnabled/resolveNavTarget — the Match tab's
+// session-memory target, shared by the rail and the command palette),
+// and the replay entry
 // resolvers (entrySeekTick — the ?tick= position contract: the ONLY
 // "where to jump" instruction, with the round scope as feed-filter
 // state that never seeks — plus entryLoopRange and
@@ -19,6 +22,9 @@ import {
   openProfile,
   profileBackTarget,
   NAV_ACTIONS,
+  MATCH_FAMILY,
+  isNavEnabled,
+  resolveNavTarget,
   entrySeekTick,
   entryLoopRange,
   entrySeed,
@@ -87,13 +93,32 @@ test('sidebar active(): the player profile highlights Profiles, not Library', ()
   const route = (name) => ({ name });
   assert.equal(active.Profiles(route('player')), true);
   assert.equal(active.Library(route('player')), false);
+  assert.equal(active.Match(route('player')), false);
   // The directory itself stays Profiles-active.
   assert.equal(active.Profiles(route('profiles')), true);
-  // Match detail routes still light up the Library hub.
-  for (const name of ['library', 'match', 'round', 'replay', 'compare']) {
-    assert.equal(active.Library(route(name)), true, `Library on ${name}`);
+  // L4: the match family is the MATCH tab's, never the Library hub's —
+  // the Library claims only its own route, so exactly one action claims
+  // each of them (the invariant pinned below).
+  for (const name of ['match', 'round', 'replay', 'compare']) {
+    assert.equal(active.Library(route(name)), false, `Library on ${name}`);
+    assert.equal(active.Match(route(name)), true, `Match on ${name}`);
     assert.equal(active.Profiles(route(name)), false, `Profiles on ${name}`);
   }
+  // …and the Library route itself is still the Library's alone.
+  assert.equal(active.Library(route('library')), true, 'Library on library');
+  assert.equal(active.Match(route('library')), false, 'Match on library');
+});
+
+// MATCH_FAMILY — THE nav-level partition behind the Match tab (L4): the
+// four route names that are the match view, and nothing else.
+test('MATCH_FAMILY holds exactly the match view routes (the nav partition)', () => {
+  assert.deepEqual([...MATCH_FAMILY].sort(), ['compare', 'match', 'replay', 'round']);
+  const matchAction = NAV_ACTIONS.find((a) => a.label === 'Match');
+  assert.ok(matchAction, 'the Match action exists');
+  for (const name of MATCH_FAMILY) {
+    assert.equal(matchAction.active({ name }), true, `Match on ${name}`);
+  }
+  assert.equal(matchAction.active({ name: 'library' }), false, 'Match on library');
 });
 
 test('sidebar active(): exactly one action lights up per route', () => {
@@ -113,6 +138,61 @@ test('sidebar active(): exactly one action lights up per route', () => {
     const on = NAV_ACTIONS.filter((a) => a.active({ name })).map((a) => a.label);
     assert.equal(on.length, 1, `${name} → ${on.join(', ')}`);
   }
+});
+
+// --- resolveNavTarget / isNavEnabled: the ONE nav decision pair ------------
+// Both surfaces (App's rail, the command palette's Actions) resolve
+// through these, so they can never diverge about what an action does or
+// whether it is live. ctx = { lastMatchHash }: the full hash of the last
+// match-family route the user visited this session.
+test('isNavEnabled: only the memory-backed Match action is ever gated', () => {
+  const byLabel = Object.fromEntries(NAV_ACTIONS.map((a) => [a.label, a]));
+  const withHash = { lastMatchHash: '#/match/5/scoreboard?roundFrom=3' };
+  // Every fixed-target action is enabled whatever the memory says.
+  for (const label of ['Library', 'Profiles', 'Builder', 'SQL console', 'Settings']) {
+    assert.equal(isNavEnabled(byLabel[label], { lastMatchHash: '' }), true, `${label} empty`);
+    assert.equal(isNavEnabled(byLabel[label], withHash), true, `${label} with memory`);
+    assert.equal(isNavEnabled(byLabel[label], undefined), true, `${label} no ctx`);
+  }
+  // The Match action: disabled until the memory names a REAL match.
+  assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: '' }), false, 'no memory yet');
+  assert.equal(isNavEnabled(byLabel.Match, undefined), false, 'no ctx');
+  assert.equal(isNavEnabled(byLabel.Match, {}), false, 'ctx without the key');
+  assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: '#/library' }), false, 'not match-family');
+  assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: '#/match' }), false, 'no id (parses to library)');
+  assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: '#/match/0' }), false, 'id 0 is no match');
+  // Every match-family shape with a real id enables it.
+  for (const h of [
+    '#/match/5',
+    '#/match/5/scoreboard',
+    '#/match/5/round/7',
+    '#/replay/5?cat=chat&tick=100',
+    '#/compare/5?rounds=3,5',
+  ]) {
+    assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: h }), true, h);
+  }
+});
+
+test('resolveNavTarget: fixed actions ignore the memory; Match returns the remembered FULL hash', () => {
+  const byLabel = Object.fromEntries(NAV_ACTIONS.map((a) => [a.label, a]));
+  const withHash = { lastMatchHash: '#/replay/5?cat=chat&tick=100' };
+  // Fixed targets are the action's own hash, memory or not.
+  assert.equal(resolveNavTarget(byLabel.Library, withHash), '/library');
+  assert.equal(resolveNavTarget(byLabel.Settings, { lastMatchHash: '' }), '/settings');
+  // The Match action lands on the WHOLE remembered hash — path AND query
+  // (the tab, round and URL filters survive the round trip).
+  assert.equal(resolveNavTarget(byLabel.Match, withHash), '#/replay/5?cat=chat&tick=100');
+  assert.equal(
+    resolveNavTarget(byLabel.Match, { lastMatchHash: '#/match/5/scoreboard?roundFrom=3' }),
+    '#/match/5/scoreboard?roundFrom=3',
+  );
+  // Unusable memory (empty / not a match / no id) → the fallback hash,
+  // never a broken target: the rail disables the button and the palette
+  // omits the row, so this leg is only a stray-click safety net.
+  assert.equal(resolveNavTarget(byLabel.Match, { lastMatchHash: '' }), '/library');
+  assert.equal(resolveNavTarget(byLabel.Match, { lastMatchHash: '#/profiles' }), '/library');
+  assert.equal(resolveNavTarget(byLabel.Match, { lastMatchHash: '#/match/0' }), '/library');
+  assert.equal(resolveNavTarget(byLabel.Match, undefined), '/library');
 });
 
 // --- entrySeekTick: the replay entry time target --------------------------
