@@ -228,7 +228,13 @@ const EXPECTED = {
   // (two chips per round from getEconomy — the CT/T pair split the old
   // one-chip checks, +1 the side-label pin; the `—`/unknown/tooltip pins
   // re-pointed in place), I(c)'s failure source re-pointed to getEconomy.
-  'econ-tables.dom.mjs': 124,
+  // econ-tables 124 → 118 (2026-11-15, no-expand C13): −4 section K (the
+  // expand toggle and the expanded row's three panel checks died with the
+  // row expansion; the fixed-block/metric index offsets re-based onto the
+  // chevron-free first column), −2 section L (the chevron-cell and
+  // chevron-button pins deleted; the name cell, the header and the hover
+  // twin re-pinned to the ONE frozen column at left 0).
+  'econ-tables.dom.mjs': 118,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells

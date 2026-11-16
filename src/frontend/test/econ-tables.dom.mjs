@@ -320,18 +320,17 @@ const match = {
 };
 const scoreboard = [
   // The raw fields the Q2 conversions must NOT read anymore sit beside
-  // their metric twins on purpose: Enemies flashed / Flash assists show
-  // the METRIC numbers (999/888 never render), and bob's raw assists=5
-  // renders as the honest dash because no assists row exists for him.
+  // their metric twins on purpose: bob's raw assists=5 renders as the
+  // honest dash because no assists row exists for him.
   // Opening K/D renders from the metrics with no openingKills/
   // openingDeaths fields on the row at all.
   {
     steamId: 'A', name: 'alice', side: 'ct', kills: 20, deaths: 12, assists: 4,
-    adr: 90, mvps: 3, utilityDamage: 150, flashedTimes: 6, enemiesFlashed: 999, flashAssists: 888,
+    adr: 90, mvps: 3, utilityDamage: 150,
   },
   {
     steamId: 'B', name: 'bob', side: 't', kills: 18, deaths: 13, assists: 5,
-    adr: 85, mvps: 2, utilityDamage: 120, flashedTimes: 4, enemiesFlashed: 777, flashAssists: 666,
+    adr: 85, mvps: 2, utilityDamage: 120,
   },
 ];
 const summary = { id: 3, ctName: 'Alpha', tName: 'Beta' };
@@ -1283,10 +1282,9 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
   // rule resolves a fresh install to these same twelve ids in this same
   // order, pinned in metricorder.test.js); the fixed block is code and
   // no pref can reorder or preempt it. The catalog also carries the
-  // fixed named slots the compound/expanded cells read PINS-INDEPENDENT
-  // (design §6.1): entry_deaths for the Opening K/D halves, flash_
-  // assists/enemies_flashed for the expanded row, assists for the
-  // roster triples — none of them pinned, none of them columns.
+  // fixed named slots the compound cells read PINS-INDEPENDENT
+  // (design §6.1): entry_deaths for the Opening K/D halves, assists
+  // for the roster triples — none of them pinned, none of them columns.
   localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4,5,6,7,8,9,10,11,12]');
   const mk = (id, name, label, format) => ({
     id, name, title: label, shortName: label, scope: 'match', format,
@@ -1309,8 +1307,6 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
       mk(12, 'best_streak', 'Streak', 'int'),
       // The fixed named slots (never pinned → never columns).
       mk(13, 'entry_deaths', 'Entry deaths', 'int'),
-      mk(14, 'flash_assists', 'Flash assists', 'int'),
-      mk(15, 'enemies_flashed', 'Enemies flashed', 'int'),
     ],
     // Fresh rows for alice only — bob's metric cells render the honest
     // dash (the unit IS covered, he just has no row).
@@ -1329,10 +1325,8 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
       { metricId: 12, steamId: 'A', value: 7, n: 13 },
       // The fixed named slots' rows (the ONE unioned stored read).
       { metricId: 13, steamId: 'A', value: 9, n: 13 },
-      { metricId: 14, steamId: 'A', value: 2, n: 13 },
-      { metricId: 15, steamId: 'A', value: 33, n: 13 },
     ],
-    getMetricComputeState: Array.from({ length: 15 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
+    getMetricComputeState: Array.from({ length: 13 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
@@ -1343,25 +1337,25 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
   const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Streak'];
   check(
     'the fixed block leads in store order (no converted column inside it)',
-    JSON.stringify(labels.slice(1, 1 + fixed.length)) === JSON.stringify(fixed),
+    JSON.stringify(labels.slice(0, fixed.length)) === JSON.stringify(fixed),
     JSON.stringify(labels),
   );
   check(
     'the twelve converted columns follow, in today’s relative order',
-    JSON.stringify(labels.slice(1 + fixed.length)) === JSON.stringify(converted),
-    JSON.stringify(labels.slice(1 + fixed.length)),
+    JSON.stringify(labels.slice(fixed.length)) === JSON.stringify(converted),
+    JSON.stringify(labels.slice(fixed.length)),
   );
   check(
     'exactly those twelve headers wear m5-mth (fixed ones never do)',
     ths.filter((t) => t.classList.contains('m5-mth')).length === 12 &&
-      ths.slice(1, 1 + fixed.length).every((t) => !t.classList.contains('m5-mth')),
+      ths.slice(0, fixed.length).every((t) => !t.classList.contains('m5-mth')),
     String(ths.filter((t) => t.classList.contains('m5-mth')).length),
   );
   const rowsOfSb = [...root.querySelectorAll('.data-table.scoreboard tbody tr')];
   const alice = rowsOfSb.find((r) => (r.querySelector('.name-cell')?.textContent || '').includes('alice'));
   const bob = rowsOfSb.find((r) => (r.querySelector('.name-cell')?.textContent || '').includes('bob'));
   const cellAt = (i) => (alice ? alice.children[i].textContent.trim() : 'no alice row');
-  const first = 1 + fixed.length;
+  const first = fixed.length;
   check(
     'the metric cells render through fmtMetric (4 / 90.0 / 71% / 50% / 1.67 / 3 / 1 / 0 / 0 / 12 / 5 / 7)',
     cellAt(first) === '4' &&
@@ -1398,42 +1392,6 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
     bob.children[kdIdx].textContent.trim() + ' title=' + bob.children[kdIdx].getAttribute('title'),
   );
 
-  // The expanded row's two FIXED metric slots (the Combat pattern):
-  // the metric numbers win over the raw fields the row still carries
-  // (999/888 never render), each with its sample-size tooltip, while
-  // Utility damage and Times flashed stay raw.
-  const expandBtn = alice.querySelector('button[aria-label="Breakdown for alice"]');
-  check('the expand toggle renders for alice', !!expandBtn);
-  clickEl(expandBtn);
-  await sleep();
-  const expRow = root.querySelector('tr.expand-row');
-  const utilTbl = [...(expRow?.querySelectorAll('table.data-table.mini') || [])].find((t) =>
-    (t.querySelector('thead')?.textContent || '').includes('Stat'),
-  );
-  const statRow = (label) =>
-    [...(utilTbl?.querySelectorAll('tbody tr') || [])].find((r) => r.children[0]?.textContent.trim() === label);
-  const flashedCell = statRow('Enemies flashed')?.children[1];
-  const flashAssistCell = statRow('Flash assists')?.children[1];
-  check(
-    'the expanded row renders the enemies-flashed / flash-assists METRIC values (raw 999/888 never render)',
-    flashedCell?.textContent.trim() === '33' && flashAssistCell?.textContent.trim() === '2',
-    `${flashedCell?.textContent.trim()} / ${flashAssistCell?.textContent.trim()}`,
-  );
-  check(
-    'both fixed slots carry the sample-size tooltip (n=13)',
-    flashedCell?.getAttribute('title') === 'Enemies flashed — sample size n=13' &&
-      flashAssistCell?.getAttribute('title') === 'Flash assists — sample size n=13',
-    `${flashedCell?.getAttribute('title')} / ${flashAssistCell?.getAttribute('title')}`,
-  );
-  check(
-    'Utility damage and Times flashed stay raw stored columns',
-    statRow('Utility damage')?.children[1].textContent.trim() === '150' &&
-      statRow('Times flashed')?.children[1].textContent.trim() === '6',
-    `${statRow('Utility damage')?.children[1].textContent.trim()} / ${statRow('Times flashed')?.children[1].textContent.trim()}`,
-  );
-  clickEl(expandBtn);
-  await sleep();
-
   // Q2 compound cell #2 — the Overview roster triples: raw K + raw D
   // + the assists METRIC half (bob's raw assists=5 renders as the dash
   // because no metric row exists for him — the source switch, pinned).
@@ -1463,13 +1421,13 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
 
 console.log('L. Scoreboard frozen player column (CSS-text pins — jsdom has no layout)');
 {
-  // The freeze (scoreboard-expand, part b) is pure CSS: jsdom computes
-  // no layout, so the RULES themselves are pinned from the stylesheet —
-  // selector text included, because the direct-child scoping IS the guard
-  // (it keeps the expansion row's full-width td and that row's nested
-  // mini tables out of the freeze). The float-centered expansion was
-  // dropped from the wave (the expandable rows are going away), so no
-  // util-grid / container-type pins exist here by design.
+  // The freeze (scoreboard-expand, part b; the row expansion itself was
+  // removed by C13 — the NAME cell is now the ONE frozen column) is pure
+  // CSS: jsdom computes no layout, so the RULES themselves are pinned
+  // from the stylesheet — selector text included, because the
+  // direct-child scoping IS the guard (it keeps a nested mini table, also
+  // .data-table, out of the freeze). No util-grid / container-type pins
+  // exist by design — that float-centered expansion never landed.
   const cssSb = readFileSync('public/style.css', 'utf8');
   const ruleOf = (src, sel) => {
     const i = src.indexOf(sel);
@@ -1483,49 +1441,30 @@ console.log('L. Scoreboard frozen player column (CSS-text pins — jsdom has no 
 
   const nameRule = ruleOf(cssSb, '.scoreboard > tbody > tr > td.name-cell {');
   check(
-    'the name cell freezes at the chevron’s right edge (sticky, left 44px, opaque bg, seam shadow)',
+    'the name cell IS the frozen column (sticky, left 0, opaque bg, seam shadow)',
     !!nameRule &&
       /position:\s*sticky/.test(nameRule) &&
-      /left:\s*44px/.test(nameRule) &&
+      /left:\s*0\b/.test(nameRule) &&
       /background:\s*var\(--bg\)/.test(nameRule) &&
       /box-shadow:/.test(nameRule),
     body(nameRule),
   );
 
-  const chevRule = ruleOf(cssSb, '.scoreboard > tbody > tr > td.expand-cell {');
+  const headRule = ruleOf(cssSb, '.scoreboard > thead > tr > th:first-child {');
   check(
-    'the chevron cell freezes at the scrollport edge and pins its column to exactly 44px',
-    !!chevRule &&
-      /position:\s*sticky/.test(chevRule) &&
-      /left:\s*0\b/.test(chevRule) &&
-      /width:\s*44px/.test(chevRule),
-    body(chevRule),
-  );
-
-  const headRule = ruleOf(cssSb, '.scoreboard > thead > tr > th:first-child,');
-  check(
-    'the frozen header cells stick and out-paint the ordinary sticky headers (z-index 2)',
-    !!headRule && /position:\s*sticky/.test(headRule) && /z-index:\s*2/.test(headRule),
+    'the frozen header cell sticks at the scrollport edge and out-paints the ordinary sticky headers (z-index 2)',
+    !!headRule &&
+      /position:\s*sticky/.test(headRule) &&
+      /z-index:\s*2/.test(headRule) &&
+      /left:\s*0\b/.test(headRule),
     body(headRule),
   );
 
-  const hoverSel = '.scoreboard > tbody > tr:hover > td.expand-cell,';
-  const hoverAt = cssSb.indexOf(hoverSel);
-  const hoverRule = ruleOf(cssSb, hoverSel);
+  const hoverRule = ruleOf(cssSb, '.scoreboard > tbody > tr:hover > td.name-cell {');
   check(
-    'the row-hover twin lights both frozen cells (the tr’s hover paints under their own background)',
-    hoverAt >= 0 &&
-      cssSb.slice(hoverAt, hoverAt + 240).includes('.scoreboard > tbody > tr:hover > td.name-cell') &&
-      !!hoverRule &&
-      /var\(--list-hover\)/.test(hoverRule),
-    hoverAt < 0 ? 'hover-twin rule not found in public/style.css' : body(hoverRule),
-  );
-
-  const btnRule = ruleOf(cssSb, '.scoreboard .expand-cell .btn {');
-  check(
-    'the chevron button’s padding keeps the column’s min-content under 44px (root 13/15/17)',
-    !!btnRule && /padding:\s*1px 2px/.test(btnRule),
-    body(btnRule),
+    'the row-hover twin lights the frozen cell (the tr’s hover paints under its own background)',
+    !!hoverRule && /var\(--list-hover\)/.test(hoverRule),
+    body(hoverRule),
   );
 }
 

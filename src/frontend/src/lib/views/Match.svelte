@@ -124,17 +124,16 @@
   let sortKey = $state('kills');
   let desc = $state(true);
 
-  // Selection state (the expanded scoreboard row + the Rounds-tab
-  // compare picks below) restores per match through the process-scoped
-  // registry (viewstate.svelte.js): the key carries the match id
-  // (matchKey), so match A's picks never show in match B. App reuses
-  // this component when only the id changes (no remount), so ONE
-  // combined effect both RE-SEEDS on a key change and writes through
-  // otherwise — self-ordering: the write branch runs only while the key
-  // is unchanged, so the old match's values can never land under the
-  // new key. The TAB stays URL-owned (routeTab effect below) and is
-  // never registered; busy/error/warnings stay transient.
-  const selDefaults = () => ({ expanded: 0, compareSel: [] });
+  // Selection state (the Rounds-tab compare picks below) restores per
+  // match through the process-scoped registry (viewstate.svelte.js):
+  // the key carries the match id (matchKey), so match A's picks never
+  // show in match B. App reuses this component when only the id changes
+  // (no remount), so ONE combined effect both RE-SEEDS on a key change
+  // and writes through otherwise — self-ordering: the write branch runs
+  // only while the key is unchanged, so the old match's values can never
+  // land under the new key. The TAB stays URL-owned (routeTab effect
+  // below) and is never registered; busy/error/warnings stay transient.
+  const selDefaults = () => ({ compareSel: [] });
   const selKey = $derived(matchKey('selection', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
   // (Svelte's documented state_referenced_locally fix); the snapshot carries
@@ -143,7 +142,6 @@
   // change — URL stays the sole durable record; registry semantics unchanged.
   const selInit = () => ({ ...seed(selKey, selDefaults()), key: selKey });
   const selSeed = selInit();
-  let expanded = $state(selSeed.expanded); // steamId of the expanded scoreboard row
   let warnings = $state(null); // null = not loaded
   // Warnings render directly (no header button): the panel is open by
   // default whenever the match has warnings, and the dismiss X hides it
@@ -174,11 +172,10 @@
       // change, which reads the re-seeded values).
       selLastKey = k;
       const s = seed(k, selDefaults());
-      expanded = s.expanded;
       compareSel = s.compareSel;
       return;
     }
-    remember(k, { expanded, compareSel });
+    remember(k, { compareSel });
   });
 
   // Side-switch boundary per row (index-aligned with rounds): the
@@ -203,17 +200,11 @@
   // live progress feed decide whether a cell shows the number or the
   // state chip (lib/metricstate.js — design §5's state machine).
   let metricCols = $state([]);
-  // The W2a fixed named slots (design §6.1): the compound cells'
-  // halves and the expanded row's two stat lines read these metrics BY
-  // NAME — pins-independent, unioned into the ONE stored read below (an
-  // unpinned metric still fills its cell — the kast precedent).
-  const FIXED_SLOTS = [
-    'assists',
-    'entry_kills',
-    'entry_deaths',
-    'flash_assists',
-    'enemies_flashed',
-  ];
+  // The W2a fixed named slots (design §6.1): the compound cells' halves
+  // read these metrics BY NAME — pins-independent, unioned into the ONE
+  // stored read below (an unpinned metric still fills its cell — the
+  // kast precedent).
+  const FIXED_SLOTS = ['assists', 'entry_kills', 'entry_deaths'];
   // name → columnOf() data for each fixed slot the catalog carried
   // (empty until the read lands; a name the catalog lacks stays absent
   // → the honest dash, never a guessed number).
@@ -568,10 +559,10 @@
 
   // --- W2a fixed named slots (design §6.1) --------------------------------
   // The compound cells (Opening K/D pair, Overview roster K/D/A
-  // triples) and the expanded row's two stat lines read their metrics
-  // BY NAME from `fixedCols` — pins-independent (an unpinned metric
-  // still fills its cell), resolved from the SAME catalog read and
-  // served by the SAME ONE stored read as the pinned columns.
+  // triples) read their metrics BY NAME from `fixedCols` — pins-
+  // independent (an unpinned metric still fills its cell), resolved from
+  // the SAME catalog read and served by the SAME ONE stored read as the
+  // pinned columns.
   function fixedPres(name, p) {
     const mc = fixedCols.get(name);
     // Slot not resolved yet (read in flight / name absent from the
@@ -638,32 +629,12 @@
     };
   }
 
-  // slotText — one STANDALONE fixed slot's text half (the expanded
-  // row, the Combat pattern): the stored number through the metric's
-  // format, the honest dash for no-data, and NOTHING for a state — the
-  // chip renders instead. (Compound halves use halfText above, which
-  // never renders a chip inside a pair/triple — invariant 9.)
-  function slotText(name, pres) {
-    if (pres.kind === 'nodata') return '—';
-    if (pres.kind !== 'value') return '';
-    const mc = fixedCols.get(name);
-    return fmtMetric(pres.value, (mc && mc.def.format) || '');
-  }
-
-  // fixedId — one resolved slot's metric id (the live-progress feed's
-  // key); undefined until the read lands.
-  function fixedId(name) {
-    const mc = fixedCols.get(name);
-    return mc && mc.def.id;
-  }
-
   function toggleSort(key) {
     if (sortKey === key) desc = !desc;
     else {
       sortKey = key;
       desc = true;
     }
-    expanded = 0;
   }
 
   // Cell display for a scoreboard column: map the snake_case sort key
@@ -742,18 +713,6 @@
   function selectTab(t) {
     tab = t;
     nav(t === 'Overview' ? `/match/${id}` : `/match/${id}/${matchTabSlug(t)}`);
-  }
-
-  // JSON.parse of killsByWeapon/damageByWeapon — "" or malformed → [].
-  function weaponEntries(json) {
-    if (!json) return [];
-    try {
-      const obj = JSON.parse(json);
-      if (!obj || typeof obj !== 'object') return [];
-      return Object.entries(obj).sort((a, b) => Number(b[1]) - Number(a[1]));
-    } catch {
-      return [];
-    }
   }
 
   // Team display names for the scoreline header and the roster headings:
@@ -1087,7 +1046,6 @@
         <table class="data-table scoreboard">
           <thead>
             <tr>
-              <th scope="col"><span class="sr-only">{S.match.expandLabel}</span></th>
               {#each SCORE_COLS as col (col.key)}
                 <SortTh
                   label={col.label}
@@ -1136,16 +1094,6 @@
                   e.key === 'Enter' && openPlayerEvents(p.steamId, { follow: true })}
                 tabindex="0"
               >
-                <td class="expand-cell" onclick={(e) => e.stopPropagation()}>
-                  <button
-                    class="btn small ghost"
-                    aria-label={S.fill(S.match.breakdownAria, { name: p.name })}
-                    aria-expanded={expanded === p.steamId}
-                    onclick={() => (expanded = expanded === p.steamId ? 0 : p.steamId)}
-                  >
-                    <span class="codicon {expanded === p.steamId ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span>
-                  </button>
-                </td>
                 {#each SCORE_COLS as col (col.key)}
                   {#if col.key === 'name'}
                     <td class="num name-cell {nameCls}"
@@ -1213,92 +1161,6 @@
                   </td>
                 {/each}
               </tr>
-              {#if expanded === p.steamId}
-                {@const flashed = fixedPres('enemies_flashed', p)}
-                {@const flashAssists = fixedPres('flash_assists', p)}
-                <tr class="expand-row">
-                  <td colspan={SCORE_COLS.length + 1 + metricCols.length}>
-                    <div class="weapon-grid util-grid">
-                      <div>
-                        <h3>{S.match.killsByWeapon}</h3>
-                        <table class="data-table mini">
-                          <thead>
-                            <tr><th scope="col">{S.match.colWeapon}</th><th scope="col" class="num">{S.match.colKills}</th></tr>
-                          </thead>
-                          <tbody>
-                            {#each weaponEntries(p.killsByWeapon) as [w, n] (w)}
-                              <tr><td>{w}</td><td class="num">{n}</td></tr>
-                            {:else}
-                              <tr><td colspan="2" class="muted">{S.match.noneRecorded}</td></tr>
-                            {/each}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div>
-                        <h3>{S.match.damageByWeapon}</h3>
-                        <table class="data-table mini">
-                          <thead>
-                            <tr><th scope="col">{S.match.colWeapon}</th><th scope="col" class="num">{S.match.colDamage}</th></tr>
-                          </thead>
-                          <tbody>
-                            {#each weaponEntries(p.damageByWeapon) as [w, n] (w)}
-                              <tr><td>{w}</td><td class="num">{n}</td></tr>
-                            {:else}
-                              <tr><td colspan="2" class="muted">{S.match.noneRecorded}</td></tr>
-                            {/each}
-                          </tbody>
-                        </table>
-                      </div>
-                      <!-- Utility usage: Utility damage and Times
-                           flashed are read-only columns the scoreboard
-                           row already carries (store GetScoreboard
-                           SELECT); Enemies flashed and Flash assists
-                           are fixed metric slots (design §6.1 — the
-                           Combat pattern: value / honest dash / state
-                           chip, read by NAME from the pins-independent
-                           fixed set). -->
-                      <div>
-                        <h3>{S.match.utilStatsHeading}</h3>
-                        <table class="data-table mini">
-                          <thead>
-                            <tr><th scope="col">{S.match.colStat}</th><th scope="col" class="num">{S.match.colValue}</th></tr>
-                          </thead>
-                          <tbody>
-                            <tr><td>{S.match.statUtilityDamage}</td><td class="num">{p.utilityDamage}</td></tr>
-                            <tr>
-                              <td>{S.match.statEnemiesFlashed}</td>
-                              <td class="num" title={fixedTitle('enemies_flashed', flashed)}
-                                >{slotText('enemies_flashed', flashed)}{#if flashed.kind === 'chip'}
-                                  <StatusChip
-                                    status={flashed.state}
-                                    title={fixedTitle('enemies_flashed', flashed)}
-                                    progress={metricProgressFrac(metricProgress, fixedId('enemies_flashed'))}
-                                    stage={metricProgressStage(metricProgress, fixedId('enemies_flashed'))}
-                                  />
-                                {/if}</td
-                              >
-                            </tr>
-                            <tr>
-                              <td>{S.match.statFlashAssists}</td>
-                              <td class="num" title={fixedTitle('flash_assists', flashAssists)}
-                                >{slotText('flash_assists', flashAssists)}{#if flashAssists.kind === 'chip'}
-                                  <StatusChip
-                                    status={flashAssists.state}
-                                    title={fixedTitle('flash_assists', flashAssists)}
-                                    progress={metricProgressFrac(metricProgress, fixedId('flash_assists'))}
-                                    stage={metricProgressStage(metricProgress, fixedId('flash_assists'))}
-                                  />
-                                {/if}</td
-                              >
-                            </tr>
-                            <tr><td>{S.match.statTimesFlashed}</td><td class="num">{p.flashedTimes}</td></tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              {/if}
             {/each}
           </tbody>
         </table>

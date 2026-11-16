@@ -937,11 +937,6 @@ mark {
   white-space: nowrap;
 }
 
-.data-table .expand-cell {
-  width: 30px;
-  padding-right: 0;
-}
-
 .data-table.mini {
   font-size: 0.85em;
 }
@@ -976,25 +971,6 @@ mark {
   gap: 6px;
   justify-content: flex-end;
   white-space: nowrap;
-}
-
-.expand-row td {
-  background: var(--inset);
-  padding: 10px 14px;
-}
-
-.weapon-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  max-width: 640px;
-}
-
-.weapon-grid h3 {
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin-bottom: 6px;
-  font-weight: 600;
 }
 
 /* --- Dropzone / library ---------------------------------------------------- */
@@ -1472,67 +1448,45 @@ mark {
   padding: 4px 7px;
 }
 
-/* Scoreboard — frozen player column: the chevron and the name stay pinned
-   to the scrollport's left edge, so scrolling across the metric columns
-   never loses the statline the row belongs to. This is the first
+/* Scoreboard — frozen player column: the NAME cell and its header stay
+   pinned to the scrollport's left edge, so scrolling across the metric
+   columns never loses the statline the row belongs to. This is the first
    HORIZONTAL freeze app-wide (the two earlier sticky sites are vertical);
    both patterns share opaque background + explicit z-index — a sticky cell
    must hide whatever scrolls beneath it, and a stuck header must out-paint
    the ordinary sticky headers (`.data-table th`, z-index 1) that scroll
    under it.
    Scoped by class AND direct-child structure, never by index alone: the
-   body freeze keys off .expand-cell/.name-cell — the expansion row's
-   full-width td wears neither class and must keep scrolling with the
-   table — while the header's first two cells are addressed positionally
-   because the chevron th is classless. Every selector is direct-child so
-   the expansion's nested mini tables (also .data-table) can never freeze.
+   body freeze keys off .name-cell (the scoreboard's first column since the
+   row expansion went away — the chevron column is gone), while the header's
+   first cell is addressed positionally because it is a plain SortTh. Every
+   selector is direct-child so a nested mini table (also .data-table) can
+   never freeze.
    Body cells paint var(--bg) opaque (rows are transparent — there is no
    zebra) and carry the row-hover twin: a row hover paints on the tr, which
    sits UNDER a sticky cell's own background, so without the twin the
-   frozen cells would stay unlit while the rest of the row lights up.
+   frozen cell would stay unlit while the rest of the row lights up.
    The name cell's right seam is an inset shadow, never a real border —
    border-collapse: collapse does not travel with a stuck cell.
-   The 44px chevron column is the frozen offset's premise, so BOTH of its
-   cells pin the width (the shared 30px hint sits below the button's
-   min-content) and the button's padding is narrowed to keep that
-   min-content under 44px at every root font size (13/15/17). */
-
-.scoreboard > thead > tr > th:first-child,
-.scoreboard > thead > tr > th:nth-child(2) {
-  position: sticky;
-  z-index: 2;
-}
+   `th:first-child` IS the freeze target (positionally); the future
+   transpose work repopulates that cell, so the corner is deliberately NOT
+   pre-built here. */
 
 .scoreboard > thead > tr > th:first-child {
-  left: 0;
-  width: 44px;
-}
-
-.scoreboard > thead > tr > th:nth-child(2) {
-  left: 44px;
-}
-
-.scoreboard > tbody > tr > td.expand-cell {
   position: sticky;
+  z-index: 2;
   left: 0;
-  width: 44px;
-  background: var(--bg);
 }
 
 .scoreboard > tbody > tr > td.name-cell {
   position: sticky;
-  left: 44px;
+  left: 0;
   background: var(--bg);
   box-shadow: inset -1px 0 0 var(--divider);
 }
 
-.scoreboard > tbody > tr:hover > td.expand-cell,
 .scoreboard > tbody > tr:hover > td.name-cell {
   background: var(--list-hover);
-}
-
-.scoreboard .expand-cell .btn {
-  padding: 1px 2px;
 }
 
 /* Rounds / chat */
@@ -2669,23 +2623,9 @@ mark {
   }
 
   .roster-grid,
-  .round-grid,
-  .weapon-grid {
+  .round-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Scoreboard expanded row: the utility-usage table joins the two weapon
-   tables as a third panel. Appended (not edited into .weapon-grid above)
-   because that block is the shared two-panel spelling — this variant is
-   match-scoreboard-only; auto-fit collapses the columns on narrow widths
-   instead of relying on the shared media query. margin-inline: auto
-   centers the (capped-width) panel group in the expand row instead of
-   leaving it hugging the left edge. */
-.weapon-grid.util-grid {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  max-width: 960px;
-  margin-inline: auto;
 }
 
 /* --- Heatmap legend (appended block) --------------------------------------
