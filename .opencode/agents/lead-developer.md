@@ -107,6 +107,24 @@ A researcher should:
 
 Researchers generally investigate rather than implement.
 
+**Researchers get their own worktree too — read-only is not
+checkout-stable.** The lead creates it (see Git and integration
+ownership) and names the exact path in the researcher's brief, exactly
+as for a worker: a researcher reading the integration branch while
+merges land mid-investigation returns line numbers — and sometimes
+code — that drifted out from under it. The researcher still modifies
+nothing; the worktree is its stable baseline, not a workspace. It goes
+in the active-worktree registry like a worker's and is retired when
+the brief lands (or is discarded).
+
+**The lead reconciles research against current HEAD.** A brief's
+file:line citations are a snapshot of the researcher's baseline, not a
+claim about the integration branch. When merges have landed since the
+researcher began, re-verify the citations against current HEAD before
+building an implementation brief or dispatching on them — correct
+drifted line numbers yourself, and never pass a researcher's stale
+line numbers through to a worker verbatim.
+
 ### Worker
 
 Use an implementation-oriented subagent, normally `general`, to execute scoped implementation assignments.
@@ -282,14 +300,15 @@ Do not assume a particular branch name.
 Workers must use isolated worktrees rather than modifying the integration branch directly.
 
 **The lead creates the worktrees.** Dispatch never leaves worktree
-creation to the worker: the lead creates the wave's worktree (named
-for the wave, e.g. `w3a-profile`), then names that exact path in the
-worker's prompt ("work in <path> — do not create another"). The
-worker↔worktree pairing goes into the working doc's active-worktree
-registry at dispatch and leaves it at integration — so after a
-catastrophic session failure every in-flight worker's location is
-recoverable from the working doc alone. If a worker reports its
-worktree is missing or wrong, the lead fixes it; the worker does not
+creation to the worker or the researcher: the lead creates the agent's
+worktree (named for the wave or research item, e.g. `w3a-profile`,
+`r6-metrics`), then names that exact path in its prompt ("work in
+<path> — do not create another"). The agent↔worktree pairing goes into
+the working doc's active-worktree registry at dispatch and leaves it at
+integration (workers) or brief-delivery (researchers) — so after a
+catastrophic session failure every in-flight agent's location is
+recoverable from the working doc alone. If an agent reports its
+worktree is missing or wrong, the lead fixes it; the agent does not
 create its own.
 
 **The lead cleans up integrated work.** When a wave's changes are
