@@ -239,9 +239,11 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 		t.Error("no per-weapon headshots derived for any player")
 	}
 
-	// Profile trend series: kd and hs must be non-zero for every player.
+	// Profile trend series: kd and hs_pct must be non-zero for every
+	// player (GetTrend takes the metric NAME — the retired "hs" button
+	// name is no longer a key).
 	for _, p := range board {
-		for _, metric := range []string{"kd", "hs"} {
+		for _, metric := range []string{"kd", "hs_pct"} {
 			pts, err := st.GetTrend(p.SteamID, metric)
 			if err != nil {
 				t.Fatalf("GetTrend(%s, %s): %v", p.Name, metric, err)

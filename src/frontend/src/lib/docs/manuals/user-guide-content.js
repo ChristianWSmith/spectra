@@ -351,9 +351,10 @@ A player page opens with a back button (to wherever you came from), the player's
 id, and a player search box to jump to someone else. Then:
 
 - **Headline cards** — Matches (with wins) and Win%; the profile's other headline numbers
-  (opening-duels win rate, clutches, ADR, KAST%, …) render as rows in **Career metrics** below.
-- **Career metrics** — every profile-scope metric you have pinned, as name/value rows with the usual honest states (a number, a dash when there is no data for this player, or a state chip while a value is recomputing). This panel appears once something is pinned.
-- **Trend** — ADR, KAST%, K/D or HS% across the player's matches; click a point to open that match.
+  (opening-duels win rate, clutches, ADR, KAST%, …) render as cards in **Career metrics** below.
+- **Career metrics** — every profile-scope metric you have pinned, as name/value cards with the usual honest states (a number, a dash when there is no data for this player, or a state chip while a value is recomputing). This panel appears once something is pinned.
+- **Trend** — any match-scope metric you have (ADR, KAST%, K/D, HS%, …) across the player's
+  matches: search the metric picker for the one you want, then click a point to open that match.
 - **Sides** — CT vs T rounds, win rate, ADR, KAST, K/D.
 - **Maps** — matches, wins and ADR per map; click a row to open the Library filtered to that player and map.
 - **Weapons** — kills, damage and headshots per weapon.

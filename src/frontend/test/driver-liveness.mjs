@@ -224,7 +224,13 @@ const EXPECTED = {
   // converted cards gone from the grid — the Opening duels and Clutches
   // checks join the gone-loop — and their numbers render as rows), −1
   // the retired Clutches CARD value check.
-  'profiles.dom.mjs': 71,
+  // then 71 → 79 for profile-trend-career (2026-11-15): +8 section K —
+  // the trend card's metric picker (verb hint + aria, the default read
+  // by NAME, the sequence listing, the profile-scope exclusion, the
+  // picked TITLE in the field, the NAME on the series read, the
+  // sparkline's aria-label); sections I/J moved from `tbody tr` to the
+  // new `.prof-career-card` grid in place (no count change).
+  'profiles.dom.mjs': 79,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the

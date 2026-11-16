@@ -36,6 +36,11 @@
 //      DEFAULT order over a reversed catalog, and the Profiles list's
 //      ADR column reading the stored `career_adr` bucket row (value,
 //      honest gap, behind chip, metric-value sort).
+//   K. PlayerProfile's trend picker: the four-button stat set is gone —
+//      the card offers EVERY match-scope metric (never a profile-scope
+//      one) through the shared SuggestInput in metricorder sequence,
+//      puts the picked metric's TITLE in the field and sends its NAME
+//      to the series read (the picker's hint is THE verb hint).
 //
 // Backend semantics are out of scope here: ListPlayers' ORDER BY
 // (last-seen DESC, steam_id ASC) lives in store.ListPlayers
@@ -177,11 +182,16 @@ bindings.ProfileService.GetProfile = () =>
 // the import time of the 1.40.8.9 patch — so a tooltip showing 2025
 // pins the trend point as the date's source. Patches ascend with seq
 // (GetTrend's row order); the history table keeps its own import order.
-bindings.ProfileService.GetCareerTrend = () =>
-  Promise.resolve([
+// Every call is recorded as [steamId, metric] — section K asserts the
+// picker sends the metric NAME (never a button key or a display title).
+const trendCalls = [];
+bindings.ProfileService.GetCareerTrend = (sid, metric) => {
+  trendCalls.push([sid, metric]);
+  return Promise.resolve([
     { matchId: 1, seq: 0, value: 35, patch: 14089, extractedAt: '2025-07-28T09:00:00Z' },
     { matchId: 2, seq: 1, value: 40, patch: 14113, extractedAt: '2026-03-01T10:00:00Z' },
   ]);
+};
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'profiles');
 mkdirSync(dir, { recursive: true });
@@ -669,7 +679,10 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
     s.textContent.includes('Career metrics'),
   );
   check('the Career metrics panel renders for the profile pins', !!panel, 'no panel');
-  const rows = panel ? [...panel.querySelectorAll('tbody tr')] : [];
+  // The career surface is a card GRID now (one .prof-career-card per
+  // pin) — children[0] the metric name, children[1] the value slot,
+  // same order the table's two columns had.
+  const rows = panel ? [...panel.querySelectorAll('.prof-career-card')] : [];
   check(
     'exactly the two profile-scope pins list (a match-scope metric never surfaces here)',
     rows.length === 2 &&
@@ -707,7 +720,9 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
   {
     const leaks = [];
     const re = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
-    for (const el of panel ? panel.querySelectorAll('.chip, td[title]') : []) {
+    // `[title]` (was `td[title]`): the career cells are card divs now —
+    // scanning every titled element in the panel, not just table cells.
+    for (const el of panel ? panel.querySelectorAll('.chip, [title]') : []) {
       const tip = el.getAttribute('title') || '';
       if (re.test(tip)) leaks.push(`title: ${tip}`);
       if (re.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim()}`);
@@ -854,7 +869,7 @@ console.log(
   const j1Panel = [...j1.querySelectorAll('section.panel')].find((s) =>
     s.textContent.includes('Career metrics'),
   );
-  const j1Rows = j1Panel ? [...j1Panel.querySelectorAll('tbody tr')] : [];
+  const j1Rows = j1Panel ? [...j1Panel.querySelectorAll('.prof-career-card')] : [];
   const j1Titles = j1Rows.map(
     (r) => r.children[0]?.textContent.trim(),
   );
@@ -970,6 +985,95 @@ console.log(
     );
   }
   document.body.removeChild(j3);
+}
+
+console.log('K. PlayerProfile trend: the picker offers ANY match-scope metric and reads it by NAME');
+{
+  // A match-scope catalog in a deliberate non-default order, plus a
+  // profile-scope metric the trend card must never offer (the series
+  // read is match-grain — match_id > 0 only).
+  bindings.MetricsService.ListMetrics = () =>
+    Promise.resolve([
+      {
+        id: 81, name: 'kast', title: 'KAST%', scope: 'match', format: 'percent',
+        doc: 'Formula: avg(player_round_stats.kast)', origin: 'builtin',
+      },
+      {
+        id: 82, name: 'hs_pct', title: 'HS%', scope: 'match', format: 'percent',
+        doc: 'Formula: ratio(sum(headshots), sum(kills))', origin: 'builtin',
+      },
+      {
+        id: 83, name: 'adr', title: 'ADR', scope: 'match', format: 'float1',
+        doc: 'Formula: ratio(sum(total_damage), sum(rounds_played))', origin: 'builtin',
+      },
+      {
+        id: 84, name: 'career_kd', title: 'Career K/D', scope: 'profile', format: 'float2',
+        doc: 'Formula: ratio(sum(kills), sum(deaths))', origin: 'builtin',
+      },
+    ]);
+  invalidate(); // the trend + catalog reads are read-cached — flush before mounting
+  const k = document.createElement('div');
+  document.body.appendChild(k);
+  mount(profileMod.default, { target: k, props: { steamId: '76561198000000001', nav: () => {} } });
+  await sleep(160); // mount + getProfile + listMetrics + getCareerTrend
+
+  const input = k.querySelector('#prof-trend');
+  check('the trend card offers a metric picker', !!input, 'no #prof-trend input');
+  check(
+    'the picker wears THE verb hint (Search metrics…) and its aria label',
+    input?.placeholder === 'Search metrics…' && input?.getAttribute('aria-label') === 'Trend metric',
+    `${input?.placeholder} / ${input?.getAttribute('aria-label')}`,
+  );
+  check(
+    'the mount read went out with the default metric NAME',
+    trendCalls.some(([sid, m]) => sid === '76561198000000001' && m === 'adr'),
+    JSON.stringify(trendCalls),
+  );
+
+  // An empty field lists the WHOLE sequence (a non-empty value filters
+  // the suggestions down to the substring matches).
+  type(input, '');
+  await sleep(40);
+  {
+    const opts = [...k.querySelectorAll('#prof-trend-list .sg-opt')].map((b) =>
+      b.textContent.trim(),
+    );
+    check(
+      'suggestions list the match-scope metrics in metricorder sequence (absent pref ⇒ default)',
+      JSON.stringify(opts) === JSON.stringify(['ADR', 'KAST%', 'HS%']),
+      JSON.stringify(opts),
+    );
+    check(
+      'a profile-scope metric is never offered on the trend card',
+      !k.querySelector('#prof-trend-list')?.textContent.includes('Career K/D'),
+      k.querySelector('#prof-trend-list')?.textContent ?? 'no list',
+    );
+  }
+  {
+    const hs = [...k.querySelectorAll('#prof-trend-list .sg-opt')].find(
+      (b) => b.textContent.trim() === 'HS%',
+    );
+    if (hs) click(hs);
+    await sleep(80);
+    check(
+      'picking a metric puts its TITLE in the field',
+      k.querySelector('#prof-trend')?.value === 'HS%',
+      k.querySelector('#prof-trend')?.value,
+    );
+    check(
+      'the series read goes out with the metric NAME (hs_pct — never the title, never a button key)',
+      trendCalls.some(([, m]) => m === 'hs_pct'),
+      JSON.stringify(trendCalls),
+    );
+    check(
+      'the sparkline names the picked metric, not a raw name key',
+      (k.querySelector('.prof-spark')?.getAttribute('aria-label') || '').startsWith(
+        'HS% trend across',
+      ),
+      k.querySelector('.prof-spark')?.getAttribute('aria-label') ?? 'no sparkline',
+    );
+  }
+  document.body.removeChild(k);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
