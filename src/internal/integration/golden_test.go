@@ -385,6 +385,30 @@ func TestGolden(t *testing.T) {
 		}
 	}
 
+	// Detonation no-duplication pin (bug class, not one number): exactly
+	// ONE stored detonation row per (tick, thrower, weapon) — demoinfocs
+	// v6 dispatches FlashExplode twice per flashbang (CS2.md "A flashbang
+	// detonation fires TWICE in demoinfocs-golang v6") and the extractor's
+	// agg.blastSeen dedupe keeps the first dispatch. Count-free: it stays
+	// green through any fixture regen.
+	type blastKey struct {
+		tick     int
+		attacker string
+		weapon   string
+	}
+	blastSeen := map[blastKey]int{}
+	for _, e := range m.Events {
+		if e.Kind != models.EventGrenade {
+			continue
+		}
+		k := blastKey{tick: e.Tick, attacker: e.Attacker, weapon: e.Weapon}
+		blastSeen[k]++
+		if blastSeen[k] == 2 {
+			t.Errorf("duplicate EventGrenade rows at (tick %d, thrower %q, weapon %q) — one detonation must store one row",
+				e.Tick, e.Attacker, e.Weapon)
+		}
+	}
+
 	// M3 analytics pass over the same extract (always — its safety nets
 	// hold in both update and verify mode).
 	gotAnalytics := runGoldenAnalytics(t, m)
@@ -533,6 +557,27 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 	utils, err := st.GetUtility(id)
 	if err != nil {
 		t.Fatalf("GetUtility: %v", err)
+	}
+
+	// Utility no-duplication pin (bug class, not one number): no two
+	// utility_events rows share (round, tick, thrower, kind) — each stored
+	// detonation must yield exactly one utility row (the extractor's
+	// agg.blastSeen dedupe, CS2.md "A flashbang detonation fires TWICE in
+	// demoinfocs-golang v6"). Count-free: green through any fixture regen.
+	type utilKey struct {
+		round   int
+		tick    int
+		thrower string
+		kind    string
+	}
+	utilSeen := map[utilKey]int{}
+	for _, u := range utils {
+		k := utilKey{round: u.Round, tick: u.Tick, thrower: u.Thrower, kind: u.Kind}
+		utilSeen[k]++
+		if utilSeen[k] == 2 {
+			t.Errorf("duplicate utility rows at (round %d, tick %d, thrower %q, kind %q) — one detonation must yield one utility row",
+				u.Round, u.Tick, u.Thrower, u.Kind)
+		}
 	}
 	economy, err := st.GetEconomy(id)
 	if err != nil {

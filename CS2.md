@@ -778,20 +778,23 @@ at the end of the section.
   (2026-11-05).
 
 - **A flashbang detonation fires TWICE in demoinfocs-golang v6** — why one
-  flashbang yields two `grenade` events (flash detonation counts read ~2×).
-  `events.FlashExplode` is dispatched from BOTH the `flashbang_detonate`
-  game event (`game_events.go` `flashBangDetonate`) and the flash
-  projectile's entity on-destroy handler (`datatables.go` `stOnDestroy`),
-  each gated on `!disableMimicSource1GameEvents` (zero value → both run);
+  flashbang yields two `FlashExplode` dispatches (flash detonation counts
+  read ~2× at the parser level). `events.FlashExplode` is dispatched from
+  BOTH the `flashbang_detonate` game event (`game_events.go`
+  `flashBangDetonate`) and the flash projectile's entity on-destroy
+  handler (`datatables.go` `stOnDestroy`), each gated on
+  `!disableMimicSource1GameEvents` (zero value → both run);
   HE/smoke/fire/decoy detonations dispatch once. Golden demo: 91 flashbang
-  throws → 182 `grenade` rows at 91 distinct ticks (the pair's positions
-  differ by ~0.01u — entity position vs game-event position). Code that
-  assumes one row per detonation must dedupe flashes by tick+thrower;
-  spectra stores the rows as-is (golden-fixture-pinned). **Source** —
+  throws → 182 dispatches at 91 distinct ticks (the pair's positions
+  differ by ~0.01u — entity position vs game-event position). Spectra's
+  extractor DEDUPEs: `agg.grenadeBlast` keeps the FIRST dispatch keyed
+  (tick, thrower, weapon) — one stored `grenade` row per detonation,
+  uniform over all kinds (golden-fixture-pinned: `grenade` 387 on
+  de_cache). **Source** —
   demoinfocs-golang v6.0.0-rc.1 `pkg/demoinfocs/game_events.go` +
   `pkg/demoinfocs/datatables.go`
   (github.com/markus-wa/demoinfocs-golang); golden-demo/dev-DB event
-  counts (2026-11-05).
+  counts (2026-11-05; dedupe verified 2026-11-16).
 - **Trade kill opportunity (per player) — what a trade rate's
   denominator is** — Leetify's glossary splits trading into "Trade Kill
   Opportunities: how many times did you have the chance to trade a
