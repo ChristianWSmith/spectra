@@ -71,6 +71,14 @@ export const library = {
   freeCopy: 'Free copy',
   deleteMatchTitle: 'Delete this match’s data',
   deleteLabel: 'Delete',
+  // Cancel/Remove — one backend call, two labels: a queued job is
+  // waiting in line (Remove takes it out), a running one is being worked
+  // (Cancel stops it). The row buttons are icon-only, so the label IS
+  // the button's aria-label and the title rides its tooltip.
+  cancelLabel: 'Cancel',
+  cancelTitle: 'Stop this import now',
+  removeLabel: 'Remove',
+  removeTitle: 'Take it out of line — nothing has been read yet',
   noMatchesYet: 'No matches yet — imports will appear here.',
   showingPrefix: 'Showing ',
   showingSuffix: ' matches',
@@ -92,6 +100,7 @@ export const library = {
   notComparedTitle: 'Not compared with the library yet — importing is safe; Spectra spots duplicates itself',
   notImported: 'not imported',
   importRow: 'Import',
+  importRowTitle: 'Import this demo into your library',
   deleteDemoFileTitle: 'Delete this demo file from disk',
   deleteFromDisk: 'Delete from disk',
 };

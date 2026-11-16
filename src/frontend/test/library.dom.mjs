@@ -451,6 +451,39 @@ check('clear button present', clearBtn().length === 1, String(clearBtn().length)
       ? `first=${row.firstElementChild?.className || row.firstElementChild?.tagName} / pos=${clear.compareDocumentPosition(mapInput())}`
       : 'no clear button',
   );
+  // N8-2 (library-buttons wave, 2026-11-16): the clear button is
+  // ICON-ONLY — the word it used to render is now its aria-label (so the
+  // guide's "**Clear filters** resets both" stays true), the longer hint
+  // stays the title, and the glyph is codicon-clear-all (close is the
+  // generic dismiss, filter is Builder's/Replay's toggle glyph — both
+  // rejected for this spot).
+  check(
+    'clear button is icon-only: clear-all glyph + aria-label "Clear filters" + its own title',
+    !!clear &&
+      clear.getAttribute('aria-label') === 'Clear filters' &&
+      clear.getAttribute('title') === 'Clear the map and player filters' &&
+      !!clear.querySelector('.codicon.codicon-clear-all[aria-hidden="true"]') &&
+      !clear.textContent.trim(),
+    clear ? clear.outerHTML.slice(0, 220) : 'no clear button',
+  );
+  // N8-1 (library-buttons wave, 2026-11-16): the import-dirs card's
+  // rescan button is ICON-ONLY the same way — "Refresh" is its
+  // aria-label (the guide's "a **Refresh** to rescan" claim), the rescan
+  // hint stays the title, and codicon-refresh is the glyph (deliberately
+  // distinct from Re-parse's codicon-sync, so the view never shows two
+  // re-run glyphs).
+  const rescan = document.querySelector(
+    'section[aria-label="Demos from your import dirs"] .row-between .btn',
+  );
+  check(
+    'card rescan button is icon-only: refresh glyph + aria-label "Refresh" + its own title',
+    !!rescan &&
+      rescan.getAttribute('aria-label') === 'Refresh' &&
+      rescan.getAttribute('title') === 'Rescan the configured import dirs' &&
+      !!rescan.querySelector('.codicon.codicon-refresh[aria-hidden="true"]') &&
+      !rescan.textContent.trim(),
+    rescan ? rescan.outerHTML.slice(0, 240) : 'no rescan button',
+  );
 }
 // Placement: the two facets are the Library's ONLY search and they live
 // where the free-text box used to be — in the header row, next to
@@ -598,6 +631,22 @@ await sleep(350); // past the 250 ms debounce
         readyBtns.some((b) => b.title.includes('Re-parse')) &&
         readyBtns.some((b) => b.title.includes('Delete this match')),
       JSON.stringify(readyBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
+    );
+    // N9 (library-buttons wave, 2026-11-16): every row-action button is
+    // ICON-ONLY — no visible word left in the cell, so each carries its
+    // label on aria-label, its hint on title, and one decorative
+    // codicon glyph (aria-hidden). Count unchanged: this is an
+    // attribute/glyph pin over the same two buttons.
+    check(
+      'row actions are icon-only: no text, aria-label + title + a decorative glyph on each',
+      readyBtns.length === 2 &&
+        readyBtns.every((b) => !b.textContent.trim()) &&
+        readyBtns.every((b) => !!b.getAttribute('aria-label')) &&
+        readyBtns.every((b) => !!b.title) &&
+        readyBtns.every((b) => !!b.querySelector('.codicon[aria-hidden="true"]')),
+      JSON.stringify(
+        readyBtns.map((b) => [b.getAttribute('aria-label'), b.title, b.textContent.trim()]),
+      ),
     );
   }
 }
@@ -1055,12 +1104,14 @@ const cancelCalls = () => bindings.calls.filter((c) => c.method === 'CancelJob')
   // Re-parse/Delete pair is gone (owner ruling). The 42% chip pins above
   // are untouched; the pair's disabled form survives on a reprocess with
   // prior data (pinned in the reprocess block below).
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): the row
+  // buttons are icon-only, so the visible word lives on aria-label.
   check(
     'running parse row: exactly the enabled Cancel control (RE-PIN: was Cancel + 2 disabled)',
     btns.length === 1 &&
-      btns[0].textContent.trim() === 'Cancel' &&
+      btns[0].getAttribute('aria-label') === 'Cancel' &&
       !btns[0].disabled,
-    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+    JSON.stringify(btns.map((b) => [b.getAttribute('aria-label'), b.disabled])),
   );
   const before = cancelCalls().length;
   click(btns[0]);
@@ -1096,10 +1147,12 @@ await sleep(350); // past the 250 ms debounce
     !!synth.querySelector('.chip-bar-fill.indeterminate'),
   );
   const btns = [...synth.querySelectorAll('.row-actions button')];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons — the word moved to aria-label, the count did not.
   check(
     'synthetic row offers exactly Remove',
-    btns.length === 1 && btns[0].textContent.trim() === 'Remove',
-    JSON.stringify(btns.map((b) => b.textContent.trim())),
+    btns.length === 1 && btns[0].getAttribute('aria-label') === 'Remove',
+    JSON.stringify(btns.map((b) => b.getAttribute('aria-label'))),
   );
   const before = cancelCalls().length;
   click(btns[0]);
@@ -1126,9 +1179,9 @@ await sleep(350); // past the 250 ms debounce
   check(
     'queued match row: exactly Remove, live (RE-PIN: was Remove + 2 disabled)',
     mBtns.length === 1 &&
-      mBtns[0].textContent.trim() === 'Remove' &&
+      mBtns[0].getAttribute('aria-label') === 'Remove' &&
       !mBtns[0].disabled,
-    JSON.stringify(mBtns.map((b) => [b.textContent.trim(), b.disabled])),
+    JSON.stringify(mBtns.map((b) => [b.getAttribute('aria-label'), b.disabled])),
   );
   const beforeM = cancelCalls().length;
   click(mBtns[0]);
@@ -1152,12 +1205,15 @@ await sleep(350); // past the 250 ms debounce
     chip ? chip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
   );
   const btns = [...rows[0].querySelectorAll('.row-actions button')];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons — "Import hidden" is now "no button is labelled Import".
   check(
     'Import hidden — replaced by Remove (Delete from disk stays)',
     btns.length === 2 &&
-      btns[0].textContent.trim() === 'Remove' &&
-      !btns.some((b) => b.textContent.trim() === 'Import'),
-    JSON.stringify(btns.map((b) => b.textContent.trim())),
+      btns[0].getAttribute('aria-label') === 'Remove' &&
+      btns[1].getAttribute('aria-label') === 'Delete from disk' &&
+      !btns.some((b) => b.getAttribute('aria-label') === 'Import'),
+    JSON.stringify(btns.map((b) => b.getAttribute('aria-label'))),
   );
 }
 
@@ -1209,12 +1265,14 @@ await sleep(350); // past the 250 ms debounce
     JSON.stringify(cells),
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons — the order pin now reads the labels' order, unchanged.
   check(
     'failed fresh row actionable again: Re-parse + Delete live, no cancel control',
     btns.length === 2 &&
-      btns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Delete' &&
+      btns.map((b) => b.getAttribute('aria-label')).join(',') === 'Re-parse,Delete' &&
       btns.every((b) => !b.disabled),
-    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+    JSON.stringify(btns.map((b) => [b.getAttribute('aria-label'), b.disabled])),
   );
   const chip = tr.querySelector('.chip.status');
   check(
@@ -1250,13 +1308,15 @@ await sleep(350); // past the 250 ms debounce
     JSON.stringify(cells),
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons — Cancel is the first button's label, the pair still disabled.
   check(
     'reprocess parsing row keeps the 3-button set (Cancel live, pair disabled)',
     btns.length === 3 &&
-      btns[0].textContent.trim() === 'Cancel' &&
+      btns[0].getAttribute('aria-label') === 'Cancel' &&
       !btns[0].disabled &&
       btns.slice(1).every((b) => b.disabled),
-    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+    JSON.stringify(btns.map((b) => [b.getAttribute('aria-label'), b.disabled])),
   );
   const pct = tr.querySelector('.chip-pct');
   check(
@@ -1570,9 +1630,13 @@ const dlgBtn = (label) =>
   [...document.querySelectorAll('.cf-actions .btn')].find((b) => b.textContent.trim() === label);
 const dlgOpen = () => !!document.querySelector('.cf-prompt');
 const freeCopyBtn = (tr) =>
-  [...tr.querySelectorAll('.row-actions button')].find((b) => b.textContent.trim() === 'Free copy');
+  [...tr.querySelectorAll('.row-actions button')].find(
+    (b) => b.getAttribute('aria-label') === 'Free copy',
+  );
 const deleteBtn = (tr) =>
-  [...tr.querySelectorAll('.row-actions button')].find((b) => b.textContent.trim() === 'Delete');
+  [...tr.querySelectorAll('.row-actions button')].find(
+    (b) => b.getAttribute('aria-label') === 'Delete',
+  );
 const roleStatus = () =>
   [...document.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | ');
 
@@ -1580,16 +1644,38 @@ const roleStatus = () =>
   const rows = windowRows();
   check('copy facet renders two ready rows', rows.length === 2, String(rows.length));
   const copiedBtns = [...rows[0].querySelectorAll('.row-actions button')];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons — the order pin reads the labels' order, unchanged.
   check(
     'copied row renders Free copy between Re-parse and Delete',
-    copiedBtns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Free copy,Delete',
-    JSON.stringify(copiedBtns.map((b) => b.textContent.trim())),
+    copiedBtns.map((b) => b.getAttribute('aria-label')).join(',') === 'Re-parse,Free copy,Delete',
+    JSON.stringify(copiedBtns.map((b) => b.getAttribute('aria-label'))),
   );
   const plainBtns = [...rows[1].querySelectorAll('.row-actions button')];
   check(
     'a row with no copy keeps exactly Re-parse + Delete (render gate)',
-    plainBtns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Delete',
-    JSON.stringify(plainBtns.map((b) => b.textContent.trim())),
+    plainBtns.map((b) => b.getAttribute('aria-label')).join(',') === 'Re-parse,Delete',
+    JSON.stringify(plainBtns.map((b) => b.getAttribute('aria-label'))),
+  );
+
+  // N9 (library-buttons wave, 2026-11-16): the destructive FAMILY pin —
+  // the criterion is "is this action destructive", never "is it in this
+  // view". Delete (the match's data) and Delete from disk carry the
+  // `danger` class (whose rule now paints --danger at REST, not only on
+  // hover) plus the trash glyph; Free copy evicts Spectra's managed copy
+  // rather than data, so it takes the discard glyph and NO danger class;
+  // Re-parse is mutating-but-safe and stays neutral.
+  check(
+    'destructive family: Delete = danger + trash glyph, Free copy = discard (no danger), Re-parse neutral',
+    copiedBtns.some((b) => b.classList.contains('danger') && !!b.querySelector('.codicon-trash')) &&
+      copiedBtns.some(
+        (b) => !b.classList.contains('danger') && !!b.querySelector('.codicon-discard'),
+      ) &&
+      plainBtns[1].classList.contains('danger') &&
+      !!plainBtns[1].querySelector('.codicon-trash') &&
+      !plainBtns[0].classList.contains('danger') &&
+      !!plainBtns[0].querySelector('.codicon-sync'),
+    JSON.stringify(copiedBtns.map((b) => [b.getAttribute('aria-label'), b.className])),
   );
 
   // Cancel is a cancel: the confirm dialog resolves false, nothing hits

@@ -386,7 +386,24 @@ const EXPECTED = {
   // first element of .lib-filters and precedes the map input in document
   // order). The L1 placeholder re-pin ('Filter by map...') rewrote the
   // existing hint check IN PLACE and moved no count.
-  'library.dom.mjs': 182,
+  // library 182 → 186 (2026-11-16, library-buttons N8 + N9 — the Library's
+  // header and row-action buttons became icon-only codicon buttons):
+  // +2 section A (N8-2: the .lib-filters clear button renders
+  // codicon-clear-all with aria-label "Clear filters" and its own title;
+  // N8-1: the import-dirs card's rescan button renders codicon-refresh
+  // with aria-label "Refresh" and its own title — both keep their visible
+  // word as the aria-label so the guide's Clear-filters/Refresh claims
+  // stay true), +1 section B (N9: every row-action button carries an
+  // aria-label, a title and one decorative glyph and renders no visible
+  // text), +1 section I (N9's destructive-family pin: Delete = .btn.danger
+  // + codicon-trash, Free copy = codicon-discard with NO danger class,
+  // Re-parse neutral + codicon-sync). Eight textContent row-button pins
+  // (six in section F, the two order pins in section I) were re-pinned
+  // IN PLACE to aria-label, and the section-I freeCopyBtn/deleteBtn
+  // finders were re-pointed — count unchanged; the td.row-actions
+  // min-width kept its `calc(` form (value re-derived 11rem + 90px →
+  // 3rem + 88px for glyph-only buttons, comment rewritten with it).
+  'library.dom.mjs': 186,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,

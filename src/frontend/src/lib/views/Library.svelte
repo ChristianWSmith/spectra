@@ -411,15 +411,15 @@
 
   // Cancel vs Remove: one backend call (cancelJob), two labels — a
   // queued job is waiting in line (Remove takes it out), a running one
-  // is being worked (Cancel stops it).
+  // is being worked (Cancel stops it). Both live in the strings catalog:
+  // the row buttons are icon-only, so the label is the button's
+  // aria-label and the title rides its tooltip.
   function cancelLabel(status) {
-    return status === 'queued' ? 'Remove' : 'Cancel';
+    return status === 'queued' ? S.library.removeLabel : S.library.cancelLabel;
   }
 
   function cancelTitle(status) {
-    return status === 'queued'
-      ? 'Take it out of line — nothing has been read yet'
-      : 'Stop this import now';
+    return status === 'queued' ? S.library.removeTitle : S.library.cancelTitle;
   }
 
   // Cancel/Remove on any Library row (match row, synthetic import row,
@@ -770,11 +770,17 @@
            Existing pins are position-agnostic; the order pin is in
            test/library.dom.mjs. -->
       {#if mapFilter || playerFilter}
+        <!-- Icon-only clear (library-buttons wave, 2026-11-16): the
+             visible word moved to aria-label — the tooltip keeps the
+             longer hint, and the L2 "clear first" position is untouched. -->
         <button
           class="btn small ghost"
           title={S.library.clearFiltersTitle}
-          onclick={clearFilters}>{S.library.clearFilters}</button
+          aria-label={S.library.clearFilters}
+          onclick={clearFilters}
         >
+          <span class="codicon codicon-clear-all" aria-hidden="true"></span>
+        </button>
       {/if}
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-map">{S.library.mapLabel}</label>
@@ -909,9 +915,11 @@
                 <button
                   class="btn small"
                   title={cancelTitle(job.status)}
+                  aria-label={cancelLabel(job.status)}
                   onclick={(e) => onCancelJob(job.id, e)}
-                  >{cancelLabel(job.status)}</button
                 >
+                  <span class="codicon codicon-close" aria-hidden="true"></span>
+                </button>
               </td>
             </tr>
           {/each}
@@ -1024,9 +1032,11 @@
                   <button
                     class="btn small"
                     title={cancelTitle(progressByMatch.get(m.id).status)}
+                    aria-label={cancelLabel(progressByMatch.get(m.id).status)}
                     onclick={(e) => onCancelJob(progressByMatch.get(m.id).id, e)}
-                    >{cancelLabel(progressByMatch.get(m.id).status)}</button
                   >
+                    <span class="codicon codicon-close" aria-hidden="true"></span>
+                  </button>
                 {/if}
                 <!-- Re-parse/Delete render EXCEPT on a never-extracted
                      row still queued/parsing: before the first extract
@@ -1047,8 +1057,11 @@
                     title={!isOpenable(m)
                       ? S.library.availableAfterParse
                       : S.library.reparseTitle}
-                    onclick={(e) => onReprocess(m.id, e)}>{S.library.reparseLabel}</button
+                    aria-label={S.library.reparseLabel}
+                    onclick={(e) => onReprocess(m.id, e)}
                   >
+                    <span class="codicon codicon-sync" aria-hidden="true"></span>
+                  </button>
                   <!-- Free copy: rendered only while the fs-derived state
                        says a managed copy exists AND the row is openable —
                        a parsing/queued row never shows it (and a
@@ -1058,8 +1071,11 @@
                     <button
                       class="btn small"
                       title={S.library.freeCopyTitle}
-                      onclick={(e) => onFreeCopy(m, e)}>{S.library.freeCopy}</button
+                      aria-label={S.library.freeCopy}
+                      onclick={(e) => onFreeCopy(m, e)}
                     >
+                      <span class="codicon codicon-discard" aria-hidden="true"></span>
+                    </button>
                   {/if}
                   <button
                     class="btn small danger"
@@ -1067,8 +1083,11 @@
                     title={!isOpenable(m)
                       ? S.library.availableAfterParse
                       : S.library.deleteMatchTitle}
-                    onclick={(e) => onDelete(m, e)}>{S.library.deleteLabel}</button
+                    aria-label={S.library.deleteLabel}
+                    onclick={(e) => onDelete(m, e)}
                   >
+                    <span class="codicon codicon-trash" aria-hidden="true"></span>
+                  </button>
                 {/if}
               </td>
             </tr>
@@ -1112,12 +1131,19 @@
   <section class="panel" aria-label={S.library.demosLabel}>
     <div class="row-between">
       <h2>{S.library.demosHeading}</h2>
+      <!-- Icon-only rescan (library-buttons wave, 2026-11-16): the
+           visible word "Refresh" moves to aria-label, so the guide's
+           "a Refresh to rescan" claim stays true — the tooltip keeps the
+           longer hint. -->
       <button
         class="btn small"
         disabled={demoScanning}
         title={S.library.rescanTitle}
-        onclick={() => refreshDemoFiles(true)}>{S.library.refresh}</button
+        aria-label={S.library.refresh}
+        onclick={() => refreshDemoFiles(true)}
       >
+        <span class="codicon codicon-refresh" aria-hidden="true"></span>
+      </button>
     </div>
     <p class="muted">
       {S.library.importDirsNote}
@@ -1198,19 +1224,29 @@
                   <button
                     class="btn small"
                     title={cancelTitle(pj.status)}
+                    aria-label={cancelLabel(pj.status)}
                     onclick={(e) => onCancelJob(pj.id, e)}
-                    >{cancelLabel(pj.status)}</button
                   >
+                    <span class="codicon codicon-close" aria-hidden="true"></span>
+                  </button>
                 {:else}
-                  <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
-                    >{S.library.importRow}</button
+                  <button
+                    class="btn small primary"
+                    title={S.library.importRowTitle}
+                    aria-label={S.library.importRow}
+                    onclick={(e) => doImportFile(f, e)}
                   >
+                    <span class="codicon codicon-file-add" aria-hidden="true"></span>
+                  </button>
                 {/if}
                 <button
                   class="btn small danger"
                   title={S.library.deleteDemoFileTitle}
-                  onclick={(e) => onDeleteFile(f, e)}>{S.library.deleteFromDisk}</button
+                  aria-label={S.library.deleteFromDisk}
+                  onclick={(e) => onDeleteFile(f, e)}
                 >
+                  <span class="codicon codicon-trash" aria-hidden="true"></span>
+                </button>
               </td>
             </tr>
           {/each}

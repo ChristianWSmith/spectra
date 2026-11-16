@@ -519,6 +519,16 @@ select {
   background: var(--brand-active);
 }
 
+/* Destructive at REST (library-buttons wave, 2026-11-16): the colour
+   rule keys on the ACTION being destructive, not on the view it sits
+   in — the Library row Delete / Delete-from-disk, Settings' remove-dir
+   buttons and ConfirmDialog's destructive confirm all read red before
+   the pointer ever lands (one spelling, the one --danger token). Hover
+   keeps painting the border too. */
+.btn.danger {
+  color: var(--danger);
+}
+
 .btn.danger:hover {
   border-color: var(--danger);
   color: var(--danger);
@@ -1188,20 +1198,27 @@ mark {
   display: table-cell;
   text-align: right;
   /* Reserved width for the widest button set a row can ever show —
-     Re-parse + Free copy + Delete (or Cancel/Remove + Re-parse + Delete,
-     the control that appears the moment a job takes the row: exactly the
-     instant this column used to jump and drag its neighbours with it).
+     THREE icon-only buttons: Re-parse + Free copy + Delete (or
+     Cancel/Remove + Re-parse + Delete, the control that appears the
+     moment a job takes the row: exactly the instant this column used to
+     jump and drag its neighbours with it).
      table-layout: auto re-solves every column on any content change, so
-     the cell reserves the worst case instead: the widest combo measured
-     at ~224/245/266px for the small/medium/large font sizes
-     (lib/fontsize.js) in DejaVu Sans — the widest default sans the
-     common system-ui stacks resolve to — plus ~4% for anything wider.
-     The rem term is the button text (it scales with the font-size
-     setting); the px term is the fixed chrome (3 × 18px button padding +
-     border, 2 × 6px gaps, 20px cell padding) that does not. The
-     import-dir table's narrower Import/Remove + "Delete from disk" combo
-     rides the same rule — one reservation for both library tables. */
-  min-width: calc(11rem + 90px);
+     the cell reserves the worst case instead. Re-derived for the
+     icon-only row buttons (library-buttons wave, 2026-11-16): a codicon
+     glyph advances 1em of the button's own 0.92em font, so three glyphs
+     come to ~2.76rem — the rem term, carried as 3rem — and the fixed
+     chrome is 3 × 18px button padding + border, 2 × 6px gaps and the
+     cell's 20px inline padding ≈ 86px, carried as 88px. That reserves
+     127–139px across the small/medium/large font sizes
+     (lib/fontsize.js) for ~114/119/125px of actual content — the px
+     term counts the un-trimmed 20px cell padding while both library
+     tables trim to 6px a side, so the slack is deliberate, not label
+     width (the old 233–277px text-label reservation sat ~4% over its
+     measured widest combo for the same purpose). The rem term is what
+     scales with the font-size setting; the px term does not. The
+     import-dir table's two-button combos ride the same rule — one
+     reservation for both library tables. */
+  min-width: calc(3rem + 88px);
 }
 
 .view .data-table td.row-actions .btn + .btn {
