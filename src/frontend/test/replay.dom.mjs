@@ -4319,21 +4319,36 @@ check(
   JSON.stringify(lastFilter6() || {}),
 );
 
-// --- (C19): the feed row's ▶ SEEKS AND PAUSES ------------------------------
-// The lead ruling: Replay's seekTo (the row ▶ AND the detail pane's
-// "Seek to event") = engine.seekTick + engine.pause — a seek lands you
-// LOOKING AT the moment. engine.seekTick itself stays position-only
+// --- (C19 superseded): the feed row's ▶ SEEKS, PLAYS AND ARMS THE LOOP ------
+// The owner ruling supersedes C19's pause for these buttons: once the loop
+// is armed, PLAY (Replay's armLoopAroundSeek = seek → play → arm), the same
+// arrival every external watch link has (startEngine autoplays with its loop
+// armed). The order mirrors the entry ?loop= apply (seek → bounds → arm):
+// engine seekTick's loop-exit guard (cancelLoopIfOutside) cancels an armed
+// range the seek lands OUTSIDE of, so arming after the seek is the side
+// that can never be undone by the seek it follows — and NOTE this end-state
+// pin cannot tell the two orders apart (the window is CENTERED on the event
+// tick, so the landing frame always falls inside it): the order is the
+// code's stated contract, not something this fixture can detect.
+// engine.seekTick itself stays position-only
 // (section K's "seek never touches play/pause" pins own that), and no
-// wasPlaying write either: the keep-alive re-records it from the engine
-// at leave. Counter-baseline pattern (the __plays/__pauses/__seeks
-// precedent): snapshot the stub's counters around the click, then pin
-// the deltas plus the uiPlaying mirror the transport glyph renders.
-console.log('N2. C19 — the row ▶ seeks to the event AND pauses (seekTo = seek + pause)');
+// wasPlaying write either: the keep-alive re-records it from the engine at
+// leave. Counter-baseline pattern (the __plays/__pauses/__seeks precedent):
+// snapshot the stub's counters around the click, then pin the deltas plus
+// the uiPlaying mirror the transport glyph renders. The engine is paused
+// ON PURPOSE first — through the transport's own toggle, which the stub
+// never counts — so the PLAY leg is a real transition instead of a no-op
+// against an already-running stub.
+console.log('N2. event-card play — the row ▶ seeks to the event, STARTS playback, and arms the loop length around it');
 const transportN2 = target6.querySelector('.replay-transport');
 const glyphN2 = () =>
   transportN2?.querySelector('button[aria-label="Play"]') ? 'play'
     : transportN2?.querySelector('button[aria-label="Pause"]') ? 'pause'
       : 'none';
+const ctrlTextsN2 = () =>
+  [...(target6.querySelector('.rp-ctrl-list')?.querySelectorAll('.rp-ctrl-row') || [])].map((r) =>
+    r.textContent.trim(),
+  );
 const seeksN2 = [...(globalThis.__seeks || [])];
 const playsN2 = globalThis.__plays || 0;
 const pausesN2 = globalThis.__pauses || 0;
@@ -4343,7 +4358,16 @@ check(
   !!rowN2?.querySelector('.lm-play') && glyphN2() === 'pause',
   `row=${!!rowN2} glyph=${glyphN2()}`,
 );
-click(rowN2?.querySelector('.lm-play') || document.createElement('button'));
+click(transportN2?.querySelector('button[aria-label="Pause"]') || document.createElement('button'));
+await sleep();
+check(
+  'setup: the transport pause left the stub PAUSED (the glyph offers Play — counters untouched)',
+  glyphN2() === 'play' &&
+    (globalThis.__plays || 0) === playsN2 &&
+    (globalThis.__pauses || 0) === pausesN2,
+  `glyph=${glyphN2()} plays=${(globalThis.__plays || 0) - playsN2} pauses=${(globalThis.__pauses || 0) - pausesN2}`,
+);
+click(target6.querySelector('.lm-row .lm-play') || document.createElement('button'));
 await sleep();
 check(
   'the row ▶ seeks to the event tick (seek +1 → 128, the stub logs every seekTick)',
@@ -4352,14 +4376,25 @@ check(
   JSON.stringify((globalThis.__seeks || []).slice(seeksN2.length)),
 );
 check(
-  'the same seek PAUSES playback (pause +1, no extra play call)',
-  (globalThis.__pauses || 0) === pausesN2 + 1 && (globalThis.__plays || 0) === playsN2,
+  'the same click STARTS playback (play +1, no pause — the armed loop plays)',
+  (globalThis.__plays || 0) === playsN2 + 1 && (globalThis.__pauses || 0) === pausesN2,
   `plays +${(globalThis.__plays || 0) - playsN2}, pauses +${(globalThis.__pauses || 0) - pausesN2}`,
 );
 check(
-  'the transport glyph mirrors it — the uiPlaying mirror offers Play again',
-  glyphN2() === 'play',
+  'the transport glyph mirrors it — the uiPlaying mirror offers Pause again',
+  glyphN2() === 'pause',
   glyphN2(),
+);
+check(
+  // The loop length is the `loop_secs` pref (unset in this fresh profile
+  // → the default 5 s): 128∓320 → frames 0…7 = 0:00 — 0:07, the `from`
+  // floored at 0. The row only renders while ARMED, so its presence is
+  // the arm pin beside the bounds pin — one assertion for "armed" and
+  // "armed at the pref width around THIS event".
+  'the row ▶ arms the loop length around the event (loop: 0:00–0:07 — the pref width, armed)',
+  ctrlTextsN2().includes('loop: 0:00–0:07') &&
+    transportN2?.querySelector('button[aria-label="Loop range"]')?.getAttribute('aria-pressed') === 'true',
+  JSON.stringify(ctrlTextsN2()),
 );
 
 // ============================================================================

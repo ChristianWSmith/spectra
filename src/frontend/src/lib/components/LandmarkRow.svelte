@@ -4,7 +4,7 @@
   // Rows arrive pre-categorized from lib/replay/
   // landmarks.js normalize*; this component owns only DISPLAY: the
   // source-aware primary text, the category chip, and the row actions
-  // (seek ▶, select). Profile/payload detail lives in the caller's
+  // (watch ▶, select). Profile/payload detail lives in the caller's
   // detail pane, not here.
   //
   // Props:
@@ -28,13 +28,14 @@
   //                  chat shows NO bracket rather than a guessed side —
   //                  the row's generic contract stays intact.
   //   onselect     — click the row (Replay's detail pane)
-  //   onseek       — click ▶ (seek to the row's tick)
+  //   onseek       — click ▶ (watch the row's tick: seek there, play and
+  //                  loop around it — armLoopAroundSeek in Replay)
   //   seekTitle / seekLabel — optional caller's OWN ▶ tooltip copy: the
   //                  canonical tick link outside Replay says what the
-  //                  arrival does beyond seeking (CompareRounds stamps
+  //                  arrival does beyond watching (CompareRounds stamps
   //                  the row's actor as the camera follow, so its ▶
   //                  titles say "follow <name>"). Empty/absent = the
-  //                  default seek wording below — Replay's feed passes
+  //                  default watch wording below — Replay's feed passes
   //                  neither and keeps byte-identical copy.
   import { categoryById } from '../replay/landmarks.js';
   import { roundIndexLabel } from '../rounds.js';
@@ -155,11 +156,17 @@
   {/if}
 {/snippet}
 
+<!-- The default ▶ copy (caller-supplied seekTitle/seekLabel win): the row
+     action is WATCH — seek to the event, play and loop the user's loop
+     length around it — true in BOTH consumers (Replay's feed arms the
+     loop in place; CompareRounds' actor-less rows stamp the same anchor
+     as their entry ?loop=), so it may name neither a bare seek (the old
+     wording) nor a second count (the length is the `loop_secs` pref). -->
 <li class="lm-row" class:lm-compact={compact} class:active={selected}>
   <button
     class="btn small ghost lm-play"
-    title={seekTitle || `Seek replay to tick ${row.tick}`}
-    aria-label={seekLabel || `Seek to tick ${row.tick}`}
+    title={seekTitle || `Watch this event — jump to it, play, and loop around it for your loop length (Settings → Replay)`}
+    aria-label={seekLabel || `Watch at tick ${row.tick}`}
     onclick={seek}
   ><span class="codicon codicon-play" aria-hidden="true"></span></button
   >

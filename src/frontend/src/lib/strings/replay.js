@@ -157,7 +157,7 @@ export const replay = {
   // detail pane
   selectedEventAria: 'Selected event',
   tickLabel: 'tick {tick}',
-  hearVoiceTitle: 'Open playback at this event with voice on — hear comms around it',
+  hearVoiceTitle: 'Open playback at this event with voice on — hear comms around it as it loops',
   hearBtn: 'Hear around the event',
   closeDetailAria: 'Close detail',
   closeDetailTitle: 'Close detail — back to the list',
@@ -188,5 +188,5 @@ export const replay = {
   filterPayloadKeysAria: 'Filter payload keys',
   toggleRawJsonTitle: 'Toggle raw JSON',
   copyLabel: 'Copy',
-  seekToEvent: 'Seek to event',
+  seekToEvent: 'Watch this event',
 };

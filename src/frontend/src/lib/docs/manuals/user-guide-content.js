@@ -287,7 +287,7 @@ install required.
 # Opening it
 
 - **Watch replay** in a match header.
-- Any ▶ or watch button in the analysis views, round detail or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start.
+- Any ▶ or watch button in the analysis views, round detail or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start. The replay's own event feed does the same in place, without leaving the replay.
 - A roster or scoreboard row click — opens the replay following that player.
 
 Leaving the replay does not stop it: it collapses into a small dock in the bottom-right corner
@@ -341,8 +341,9 @@ distance range, headshot and a **Position** row where the world-space bounds are
 directly (minimum and maximum on each axis) or cleared, plus **saved filter presets** (save, apply,
 delete, reset). The loaded feed exports as **CSV or JSON**. Selecting an event opens its detail
 pane with the participants, a filter over its payload keys and a raw-JSON toggle. The row's play
-button — and **Seek to event** in that pane — jump the replay to the event and pause there, so
-you land looking at the moment.
+button — and **Watch this event** in that pane — jump the replay to the event, start playing and
+loop it for the length set in **Settings → Replay**; **Hear around the event** does the same with
+voice on.
 
 # Keyboard shortcuts
 
@@ -494,7 +495,7 @@ rejected before they run.
 - **Appearance** — theme (**Dark** / **Light**) and font size (small / medium / large — the whole UI scales). Both apply immediately and are remembered.
 - **Plugins** — install a bundle from a path (a directory with a plugin manifest, or a single manifest file); enable, disable and remove them. They contribute metrics and report templates on the next list — no restart. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
 - **Audio & voice** — a **Run audio self-test** that checks Spectra can open your audio device, and the same six volume faders the replay uses (they stay in sync). Sound effects are extracted from your local CS2 install; voice is decoded as the replay plays.
-- **Replay** — **Loop length (seconds)**: how long a loop spans around the playhead or an event (1–60, default 5). The transport's loop popover quick-range button and every event ▶ link in the analysis views arm exactly this width.
+- **Replay** — **Loop length (seconds)**: how long a loop spans around the playhead or an event (1–60, default 5). The transport's loop popover quick-range button and every event ▶ link — in the analysis views and in the replay's own event feed — arm exactly this width.
 - **Analysis rules** — the thresholds that decide Spectra's analysis: **Trade window (seconds)**, **Full-buy threshold (equip $)**, **Trade-opportunity distance (units)** and **Force threshold (equip $)**. **Save rules** stores them and, when a rule actually changed, recomputes the matches behind the new rules in the background — their numbers refresh as each match finishes, so there is no manual re-run step.`,
   },
 ];
