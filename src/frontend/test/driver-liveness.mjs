@@ -250,7 +250,13 @@ const EXPECTED = {
   // new `.prof-career-card` grid in place (no count change).
   'profiles.dom.mjs': 79,
   'progress-presentation.dom.mjs': 19,
-  'replay.dom.mjs': 450,
+  // replay 450 → 451 (2026-11-15, C10 loop-length pref): +1 the E1b
+  // PREF_READS pin (the view reads loop_secs on load — the same store a
+  // reload reads back, mirrored from the skip_freeze pin). The
+  // quick-range label and both window checks re-pinned IN PLACE for the
+  // default 5 s (label ±5 s; 0:05–0:09 at tick 640, 0:00–0:05 at tick
+  // 0), so only the new pin moved the count.
+  'replay.dom.mjs': 451,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
@@ -285,7 +291,15 @@ const EXPECTED = {
   // absence pins for the removed UI, the bumped-save recompute kick,
   // the no-bump honesty), E is the untouched Parallel-work card, F the
   // runtime-error tail.
-  'settings.dom.mjs': 49,
+  // settings 49 → 63 (2026-11-15, C10 loop-length pref): +14 section G —
+  // the new "Replay" card's Loop length control: card + label presence,
+  // the min 1 / max 60 bounds, the seeded default 5 (the pref read is
+  // unset on a fresh profile), NO write on a plain mount, the in-range
+  // write verbatim, and the clamps both ways (99 → 60, 0 → 1, garbage →
+  // the default) each with the input snapping to what was stored.
+  // Sections A–F kept their check counts (F's whole-run error check just
+  // runs after G now).
+  'settings.dom.mjs': 63,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage

@@ -100,6 +100,15 @@ const (
 	prefsC4VolumeKey        = "c4_volume"
 	prefsAnnouncerVolumeKey = "announcer_volume"
 	prefsFootstepsVolumeKey = "footsteps_volume"
+
+	// prefsLoopSecsKey is the replay LOOP-LENGTH setting: how many
+	// seconds a loop spans around the playhead or an event (the loop
+	// popover's quick-range button and every event-level replay link),
+	// the value Settings' Replay panel edits. Integer seconds, DEFAULT 5
+	// (bounds 1..60, applied on the read — nav.prefLoopSecs). The
+	// frontend reads/writes it directly through the kvstore service —
+	// Go never consumes it (font_size precedent).
+	prefsLoopSecsKey = "loop_secs"
 )
 
 // prefsFilename returns the path of the on-disk prefs file, creating the

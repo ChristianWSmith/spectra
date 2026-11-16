@@ -7,7 +7,8 @@
 // numeric and the Flash-effectiveness card stays out of scope), the
 // coordinate carve-out (dashes only when BOTH components are 0), the dead
 // site column's removal (markup + CSS), the retired events button and the
-// icon-only throw ▶ (tick + ±10 s loop + the thrower as the camera
+// icon-only throw ▶ (tick + the loop-length loop — the `loop_secs` pref,
+// default 5 s — + the thrower as the camera
 // follow — never a filter).
 //
 // jsdom is a declared devDependency; from frontend/ run:
@@ -116,6 +117,9 @@ export const getRounds = () => Promise.resolve(d().rounds || []);
 export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
 export const getMatch = () => Promise.resolve(d().match || null);
 export const getTeamNames = () => Promise.resolve(d().teams || null);
+// The one pref read at mount (the loop length) — unset, so the view
+// seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
+export const getPref = () => Promise.resolve(undefined);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -391,10 +395,10 @@ throwBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 await sleep();
 const navThrow = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'throw ▶ stamps tick + ±10 s loop + follow=thrower, no filter',
+  'throw ▶ stamps tick + the loop-length loop + follow=thrower, no filter',
   !!navThrow &&
     navThrow.includes('tick=1500') &&
-    navThrow.includes('loop=860,2140') &&
+    navThrow.includes('loop=1180,1820') &&
     navThrow.includes('follow=A') &&
     !navThrow.includes('cat=') &&
     !navThrow.includes('roundFrom'),

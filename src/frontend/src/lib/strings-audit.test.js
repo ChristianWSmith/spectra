@@ -178,6 +178,7 @@ const HINT_KEYS = {
   'settings.copyOnImportHint': 'hint under the copy-on-import switch (on/off consequences)',
   'settings.backgroundWorkNote': 'footnote under the parallel-work setting (what shares the budget)',
   'settings.parallelWorkHint': 'hint beside the parallel-work stepper (units, default, ceiling)',
+  'settings.loopSecsHint': 'hint beside the loop-length stepper (range, default, which controls it drives)',
   'settings.cs2AssetsNote': 'footnote under CS2 assets (where they are read from)',
   'settings.extractHint': 'hint under the asset-extraction button (what it extracts)',
   'settings.themeHint': 'hint under the theme picker (default + persistence)',

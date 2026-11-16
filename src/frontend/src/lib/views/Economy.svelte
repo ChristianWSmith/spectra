@@ -208,10 +208,10 @@
 
   // Stat-card drill → WATCH the round: ROUND-LEVEL loop (the round IS
   // the sequence — the owner's watch rule: a round-level button loops the
-  // round's own start→end span, freeze included, never ±10 s around its
-  // edges, which would bleed into the previous round's end / the next
-  // round's freeze). The start tick is stamped as ?tick= (the seek —
-  // nav.entrySeekTick) and the span as ?loop= BESIDE it
+  // round's own start→end span, freeze included, never an event-level pad
+  // around its edges, which would bleed into the previous round's end /
+  // the next round's freeze). The start tick is stamped as ?tick= (the
+  // seek — nav.entrySeekTick) and the span as ?loop= BESIDE it
   // (nav.entryLoopSpan — the SAME helper RoundDetail's "Watch round" and
   // CompareRounds' "Replay start" stamp, so the three agree byte for
   // byte). No landmark FILTER: outside the replay, buttons seek.

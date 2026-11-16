@@ -1,9 +1,9 @@
 // strings/settings.js — Settings view chrome (views/Settings.svelte): About,
 // Data, Import dirs, Background work, CS2 assets, Appearance, Plugins, Audio
-// & voice and Analysis rules panels.
+// & voice, Replay and Analysis rules panels.
 // Values are plain strings with {arg} placeholders (the catalog contract,
 // strings/index.js); the view composes them with S.fill at the call site.
-// The nine <h2> panel headings and the pinned loading-chip copy stay
+// The ten <h2> panel headings and the pinned loading-chip copy stay
 // inline (source-pinned by docslockstep.test.js's panel census and
 // progress-presentation.dom.mjs).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
@@ -129,6 +129,13 @@ export const settings = {
   voiceDecodeNote:
     'Voice is decoded as the replay plays and streamed in small pieces — no\n      extra disk space, always in sync with the replay.',
   voiceToTextNote: "Voice-to-text transcription isn't available yet.",
+
+  // Replay panel — the loop-length setting (the `loop_secs` pref): the
+  // ONE knob behind the loop popover's quick-range button and every
+  // event-level ▶ link in the analysis views.
+  loopSecsLabel: 'Loop length (seconds)',
+  loopSecsHint:
+    'How many seconds a loop spans around the playhead or an event: 1–60, default 5. The loop popover’s quick-range button and every event ▶ link use it.',
 
   // Analysis rules panel
   tradeWindowLabel: 'Trade window (seconds)',

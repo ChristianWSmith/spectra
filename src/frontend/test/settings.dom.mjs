@@ -26,6 +26,12 @@
 //      verbatim, out-of-range clamped to the ceiling before the Set,
 //      garbage clamped to 1 (never 0 — it would stall the budget).
 //   F. No runtime errors over the whole run.
+//   G. Replay loop length: the 1..60 numeric control in its OWN
+//      "Replay" card — present with its label, min/max, seeded from the
+//      pref read (unset → the default 5), NO write on a plain mount,
+//      an in-range value written verbatim, and the clamps (above the
+//      ceiling → 60, below the floor → 1, garbage → the default).
+//      G runs just BEFORE F's whole-run error check (F stays last).
 //
 // Backend semantics live in AnalyticsService.SetConfig (the no-bump)
 // and RecomputeAll (server-side behind-set resolution) — this covers
@@ -183,7 +189,7 @@ const rewrite = (src, from, to) => src.split(`from '${from}'`).join(`from '${to}
 let settSrc = readFileSync('src/lib/views/Settings.svelte', 'utf8');
 for (const rel of [
   'services.js', 'assets.js', 'fmt.js', 'definitions.js', 'theme.js', 'fontsize.js',
-  'replay/audio.js', 'replay/sfx.js', 'strings/index.js',
+  'replay/audio.js', 'replay/sfx.js', 'strings/index.js', 'nav.js',
 ]) {
   settSrc = rewrite(settSrc, `../${rel}`, fileURL(`src/lib/${rel}`));
 }
@@ -391,6 +397,62 @@ console.log('E. parallel work: 1..max numeric control in its own Background work
   await sleep(20);
   check('non-numeric clamps to 1', pwSets().length === 3 && JSON.stringify(pwSets()[2].args) === '[1]', JSON.stringify(pwSets().map((c) => c.args)));
   check('input snaps to 1', pwInput().value === '1', pwInput().value);
+}
+
+console.log('G. replay loop length: the 1..60 numeric control in its own Replay card');
+{
+  const lsCard = () =>
+    $('section.panel').find((s) => {
+      const h = s.querySelector('h2');
+      return h && h.textContent.trim() === 'Replay';
+    });
+  const lsInput = () => document.getElementById('sett-loop-secs');
+  const lsSets = () => bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'loop_secs');
+  check('the Replay card exists', !!lsCard());
+  check('control present in the Replay card', !!lsInput());
+  check('label names it', body().includes('Loop length (seconds)'));
+  check('min = 1 (the floor)', lsInput() && lsInput().min === '1', lsInput() && String(lsInput().min));
+  check('max = 60 (the ceiling)', lsInput() && lsInput().max === '60', lsInput() && lsInput().max);
+  check(
+    'value seeded from the pref read (unset → the default 5)',
+    lsInput() && lsInput().value === '5',
+    lsInput() && lsInput().value,
+  );
+  check('no loop_secs write on a plain mount', lsSets().length === 0, String(lsSets().length));
+
+  // An in-range change reaches the kvstore verbatim.
+  type(lsInput(), '12');
+  lsInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep(20);
+  check(
+    'setPref(loop_secs, 12) for an in-range value',
+    lsSets().length === 1 && JSON.stringify(lsSets()[0].args) === '["loop_secs",12]',
+    JSON.stringify(lsSets().map((c) => c.args)),
+  );
+
+  // Above the ceiling clamps to 60 BEFORE the write; the input snaps to
+  // what was actually stored.
+  type(lsInput(), '99');
+  lsInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep(20);
+  check('99 clamps to 60', lsSets().length === 2 && JSON.stringify(lsSets()[1].args) === '["loop_secs",60]', JSON.stringify(lsSets().map((c) => c.args)));
+  check('input snaps to 60', lsInput().value === '60', lsInput().value);
+
+  // Below the floor clamps to 1 — never 0 (a zero-length loop).
+  type(lsInput(), '0');
+  lsInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep(20);
+  check('0 clamps to 1', lsSets().length === 3 && JSON.stringify(lsSets()[2].args) === '["loop_secs",1]', JSON.stringify(lsSets().map((c) => c.args)));
+  check('input snaps to 1', lsInput().value === '1', lsInput().value);
+
+  // Garbage (a number input yields "" for it) lands on the DEFAULT
+  // through the same coercer the read path uses — never 0, never
+  // out of range.
+  type(lsInput(), 'banana');
+  lsInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep(20);
+  check('non-numeric falls back to the default 5', lsSets().length === 4 && JSON.stringify(lsSets()[3].args) === '["loop_secs",5]', JSON.stringify(lsSets().map((c) => c.args)));
+  check('input snaps to 5', lsInput().value === '5', lsInput().value);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

@@ -6,12 +6,19 @@
     getScoreboard,
     getMatch,
     getTeamNames,
+    getPref,
     errText,
   } from '../services.js';
+  import { onMount } from 'svelte';
   import { fmtMs, roundClock, fmtZeroDash } from '../fmt.js';
   import { roundIndexLabel } from '../rounds.js';
   import { sideAtRound } from '../sideparity.js';
-  import { replayHash, entryLoopAround } from '../nav.js';
+  import {
+    replayHash,
+    entryLoopAround,
+    LOOP_SECS_DEFAULT,
+    prefLoopSecs,
+  } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
@@ -33,6 +40,19 @@
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
   let error = $state('');
+
+  // Event-level loop length: the `loop_secs` pref (Settings → Replay),
+  // read ONCE at mount — nav.prefLoopSecs coerces it (unset/corrupt →
+  // LOOP_SECS_DEFAULT), so the throw ▶ stamps the same width the
+  // replay's quick-range button arms.
+  let loopSecs = LOOP_SECS_DEFAULT;
+  onMount(() => {
+    getPref('loop_secs')
+      .then((v) => (loopSecs = prefLoopSecs(v)))
+      .catch(() => {
+        /* keep the default */
+      });
+  });
 
   // View-local filter/selection state (kind + thrower filters, collapsed
   // rounds) restores per match through the process-scoped registry
@@ -257,17 +277,17 @@
   }
 
   // The throw's row ▶ — ICON-ONLY play (the one canonical tick-link
-  // glyph; no label text). It stamps the throw's own tick with a ±10 s
-  // entry loop around it (nav.entryLoopAround — the engine's default
-  // loop width) AND the THROWER as the camera follow: entry context,
-  // never a filter — an absent thrower stamps no follow (buildHash
-  // drops it). The ONE way this view enters the replay: buttons SEEK,
-  // never set a landmark filter (the retired round "events" filter
-  // button stays gone).
+  // glyph; no label text). It stamps the throw's own tick with a
+  // loop-length entry loop around it (nav.entryLoopAround — the
+  // `loop_secs` pref, loopSecs above) AND the THROWER as the camera
+  // follow: entry context, never a filter — an absent thrower stamps no
+  // follow (buildHash drops it). The ONE way this view enters the
+  // replay: buttons SEEK, never set a landmark filter (the retired
+  // round "events" filter button stays gone).
   function openReplay(r) {
     // `|| undefined` — an absent thrower stamps NOTHING (buildHash keeps
     // an empty string as `follow=`, which is not "no stamp").
-    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate), follow: r.thrower || undefined, back }));
+    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate, loopSecs), follow: r.thrower || undefined, back }));
   }
 
   const barW = 1000;

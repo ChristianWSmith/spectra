@@ -38,6 +38,9 @@
   import { fmtBytes } from '../fmt.js';
   import { getTheme, applyTheme } from '../theme.js';
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
+  // The loop-length pref's ONE home (default + coercer) — Settings is a
+  // consumer like the replay transport and the event ▶ links.
+  import { LOOP_SECS_DEFAULT, prefLoopSecs } from '../nav.js';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
@@ -250,6 +253,33 @@
     const n = Math.min(Math.max(Number.parseInt(e.target.value, 10) || 1, 1), parallelMax);
     e.target.value = String(n); // snap the DOM even when state doesn't move
     saveParallelWork(n);
+  }
+
+  // Replay loop length (the loop_secs pref — frontend-owned kvstore, the
+  // font_size pattern): how many seconds a loop spans around the
+  // playhead or an event. The SAME number drives the replay transport's
+  // quick-range button and every event-level ▶ link (nav.prefLoopSecs is
+  // the one coercer, LOOP_SECS_DEFAULT the one default), so this control
+  // and those surfaces can never disagree; an unset/corrupt pref reads
+  // back as the default. Bounds are the coercer's own — min/max below.
+  let loopSecs = $state(LOOP_SECS_DEFAULT);
+
+  function saveLoopSecs(n) {
+    error = ''; // clears-on-retry
+    loopSecs = n; // optimistic: the input paints immediately
+    setPref('loop_secs', n).catch((e) => (error = errText(e)));
+  }
+
+  // onLoopSecsChange snaps out-of-range or non-numeric input through the
+  // SAME coercer the read path uses BEFORE saving (the input's own
+  // min/max are advisory — typed values still land on [1, 60] rounded to
+  // whole seconds, and garbage — an empty number field — lands on the
+  // default, never 0).
+  function onLoopSecsChange(e) {
+    const raw = e.target.value;
+    const n = prefLoopSecs(raw === '' ? NaN : Number(raw));
+    e.target.value = String(n); // snap the DOM even when state doesn't move
+    saveLoopSecs(n);
   }
 
   // Plugins: declarative bundles installed by
@@ -615,12 +645,13 @@
     reconcileFontSize()
       .then((v) => (fontSize = v))
       .catch(() => {});
-    // Replay-audio faders: read the six persisted levels back (the
-    // boot-time pass may still be in flight for a deep-linked Settings);
-    // never-set/corrupt falls to each key's OWN default — the shared 0.8
-    // for five of them, FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) for footsteps
-    // (muted by the replay popover's session mute, not by the fader) —
-    // so a broken pref can never bind a wrong slider.
+    // Replay-audio faders + the loop length: read the persisted values
+    // back (the boot-time pass may still be in flight for a deep-linked
+    // Settings); never-set/corrupt falls to each key's OWN default — the
+    // shared 0.8 for five of them, FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) for
+    // footsteps (muted by the replay popover's session mute, not by the
+    // fader), LOOP_SECS_DEFAULT for the loop length — so a broken pref
+    // can never bind a wrong control value.
     Promise.all([
       getPref('voice_volume').catch(() => null),
       getPref('guns_volume').catch(() => null),
@@ -628,14 +659,17 @@
       getPref('c4_volume').catch(() => null),
       getPref('announcer_volume').catch(() => null),
       getPref('footsteps_volume').catch(() => null),
+      getPref('loop_secs').catch(() => null),
     ])
-      .then(([v, g, u, c, a, s]) => {
+      .then(([v, g, u, c, a, s, ls]) => {
         volVoice = prefVolume(v);
         volGuns = prefVolume(g);
         volUtil = prefVolume(u);
         volC4 = prefVolume(c);
         volAnnouncer = prefVolume(a);
         volSteps = prefVolume(s, FOOTSTEPS_VOL_DEFAULT);
+        // Loop length: unset/corrupt → the default (nav.prefLoopSecs).
+        loopSecs = prefLoopSecs(ls);
       })
       .catch(() => {
         /* keep the defaults */
@@ -1174,6 +1208,30 @@
     <p class="muted">
       {S.settings.voiceToTextNote}
     </p>
+  </section>
+
+  <!-- Replay: the loop-length setting — ONE number behind the transport
+       loop popover's quick-range button and every event-level ▶ link in
+       the analysis views (the `loop_secs` pref; nav.prefLoopSecs owns the
+       bounds and the default, so this control can never disagree with the
+       surfaces it drives). -->
+  <section class="panel">
+    <h2>Replay</h2>
+    <div class="row-between">
+      <div class="sett-field">
+        <label class="field-label" for="sett-loop-secs">{S.settings.loopSecsLabel}</label>
+        <input
+          class="input"
+          id="sett-loop-secs"
+          type="number"
+          min="1"
+          max="60"
+          value={loopSecs}
+          onchange={onLoopSecsChange}
+        />
+      </div>
+      <span class="muted">{S.settings.loopSecsHint}</span>
+    </div>
   </section>
 
   <section class="panel">

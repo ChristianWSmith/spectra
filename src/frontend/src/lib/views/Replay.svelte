@@ -105,7 +105,7 @@
   import { chatClock, chatTag, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate, fmtBytes } from '../fmt.js';
   import { playerSideAt } from '../teams.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
-  import { isSteam, entrySeed, entrySeedPlan } from '../nav.js';
+  import { isSteam, entrySeed, entrySeedPlan, LOOP_SECS_DEFAULT, prefLoopSecs } from '../nav.js';
   // Keep-alive resume rule (the mini-player dock): THE one predicate for
   // "leaving should remember this as a play-on-return" — see keepalive.js.
   import { shouldResumeOnReturn } from '../keepalive.js';
@@ -256,6 +256,13 @@
   let uiLoopFrom = $state(-1);
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
+  // Loop LENGTH in seconds (the `loop_secs` pref — frontend-owned
+  // kvstore, the font_size pattern): the width the loop popover's
+  // quick-range button arms, seeded from the default and read fresh in
+  // load() (the same pass as the volumes — kvstore writes emit no event,
+  // so a stale read must never win). The button's label and tooltip read
+  // THIS state, so they can never advertise a width it does not arm.
+  let uiLoopSecs = $state(LOOP_SECS_DEFAULT);
   // Skip-freeze mirror (the same transport-bar mirror as uiLoopOn): the
   // ENGINE owns the jump (skipFreeze + the rounds pushed in startEngine),
   // this drives the toolbar button and is persisted in the frontend-owned
@@ -1976,6 +1983,7 @@
         getPref('c4_volume').catch(() => null),
         getPref('announcer_volume').catch(() => null),
         getPref('footsteps_volume').catch(() => null),
+        getPref('loop_secs').catch(() => null),
       ]);
       // The pre-emptive bundle (the loading ladder — PRODUCT.md
       // "### Defaults"): Match's tier-1 effect warms it in the
@@ -2125,7 +2133,7 @@
       // BEFORE the bundle await (the Promise.all at the top of load()),
       // so this is a microtask — never a serialized stage — and they
       // carry the CURRENT store, not a preloaded snapshot.
-      const [skipPref, vv, gv, uv, cv, av, sv] = await prefsP;
+      const [skipPref, vv, gv, uv, cv, av, sv, loopSecsPref] = await prefsP;
       // The DEFAULT entry tick (no explicit ?tick=): resolved HERE from
       // the first counted round — load() runs before startEngine applies
       // the entry seek, so there is no race against a second read (every
@@ -2136,6 +2144,12 @@
       // push carries the persisted choice; unset / unreadable → OFF (the
       // default — the freeze skip is opt-in).
       uiSkipFreeze = skipPref === true;
+      // Loop length (the loop_secs pref — Settings' Replay panel writes
+      // it): unset / unreadable / corrupt → LOOP_SECS_DEFAULT through
+      // nav.prefLoopSecs (the one coercer, the same 1..60 bounds the
+      // control advertises), so the quick-range button and its tooltip
+      // always state the width they arm.
+      uiLoopSecs = prefLoopSecs(loopSecsPref);
       // Replay-audio faders: the six persisted levels (voice/guns/
       // utility/C4/announcer/footsteps) read fresh here — before
       // startEngine applies them to the voice master and (once the
@@ -2604,8 +2618,10 @@
     engine?.toggleLoop();
   }
 
-  // loop10 — arm ±10 s AROUND the playhead in one click (the loop
-  // popover's quick-range button, beside the Loop toggle). The window
+  // loop10 — arm the loop-length window AROUND the playhead in one click
+  // (the loop popover's quick-range button, beside the Loop toggle): the
+  // width is uiLoopSecs — the `loop_secs` pref, the same number the
+  // button's label and tooltip state — at the match tick rate. The window
   // CLAMPS at the stream edges — frameForTick floors at 0 and the `to`
   // side clamps to the last frame — so it SHRINKS near an edge, never
   // wraps. Unlike a bound EDIT (loopBoundEdited — whose job is to
@@ -2617,8 +2633,9 @@
   function loop10() {
     if (!engine || !data) return;
     const tr = normTickRate(meta?.tickRate);
-    const f0 = engine.frameForTick(uiTick - 10 * tr); // clamps to 0
-    const f1 = Math.min(data.frames - 1, engine.frameForTick(uiTick + 10 * tr));
+    const half = uiLoopSecs * tr;
+    const f0 = engine.frameForTick(uiTick - half); // clamps to 0
+    const f1 = Math.min(data.frames - 1, engine.frameForTick(uiTick + half));
     engine.setLoop(f0, f1); // never enables by itself
     if (query.loop) navigateFilter(filter, { keepLoop: false });
     engine.setLoopEnabled(true); // arm, like the entry ?loop= apply
@@ -3443,15 +3460,18 @@
                   title={S.replay.toggleLoopTitle}
                   onclick={toggleLoop}>{S.replay.loopBtnLabel}</button
                 >
-                <!-- Quick range: ±10 s AROUND the playhead, clamped at
+                <!-- Quick range: the loop length (±uiLoopSecs — the
+                     loop_secs pref) AROUND the playhead, clamped at
                      the stream edges (never wraps) — bounds then arm,
                      one click. It never DISABLES first (unlike a bound
-                     edit): the window is the point of the click. -->
+                     edit): the window is the point of the click. Both
+                     the label and the tooltip read the state, so they
+                     always state the width the click arms. -->
                 <button
                   class="btn small"
-                  title={S.replay.loop10Title}
+                  title={S.fill(S.replay.loop10Title, { n: uiLoopSecs })}
                   disabled={!ready}
-                  onclick={loop10}>±10 s</button
+                  onclick={loop10}>{S.fill(S.replay.loop10Label, { n: uiLoopSecs })}</button
                 >
               </div>
             </Popover>
