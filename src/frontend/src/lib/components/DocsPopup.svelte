@@ -8,11 +8,14 @@
   // --overlay-55 backdrop shows through that margin (it is still the
   // backdrop-click target). Escape, bare-backdrop click, focus
   // move/return and role="dialog"/aria-modal all come verbatim from
-  // Dialog.svelte — never re-implemented here. The ONE key this
-  // component intercepts is Escape while the search input holds text:
-  // it clears the query and stops propagation so Dialog's backdrop
-  // handler never sees the event (an empty input lets Escape through
-  // and Dialog closes the sheet as always).
+  // Dialog.svelte — never re-implemented here. The keys this component
+  // intercepts all live in the search input's ONE key handler:
+  // Escape while the input holds text clears the query and stops
+  // propagation so Dialog's backdrop handler never sees the event (an
+  // empty input lets Escape through and Dialog closes the sheet as
+  // always), and Enter / Shift+Enter step the body's search matches
+  // (never a form here, but stopPropagation makes "Enter can never
+  // close the sheet" structural rather than incidental).
   //
   // State: NONE of it outlives the session (State placement — dialogs
   // never restore: no URL, no viewstate registry, no storage). App
@@ -54,6 +57,10 @@
   // "where is X?" without hiding content the reader may already be
   // reading).
   let query = $state('');
+  // The search input element — bound so a stepper-button click can hand
+  // focus straight back to it (Shift+Enter must keep reaching
+  // onSearchKey; focus never moves to a button by design).
+  let searchEl = $state(null);
   // Per-major subsection collapse (N3): children are VISIBLE by default
   // and folding them away is opt-in per major (majors without children
   // never render a toggle). Transient like `query` — it never restores,
@@ -250,16 +257,63 @@
     current = id;
   }
 
+  // --- Match enumeration (M1) -----------------------------------------------
+  // A "match" is one <mark> OCCURRENCE in the rendered body (browser-find
+  // semantics — the stepper visits every one of them, wrapping at both
+  // ends). The count can only be read from the DOM: the marks are built
+  // at render time by the `marked` snippet, so a $derived cannot see
+  // them — it lives in an $effect keyed on the needle and the document
+  // (the two inputs that re-render the marks), which runs after that
+  // render. A fresh query starts on the FIRST match; Enter advances,
+  // Shift+Enter goes back. Transient like the query itself: it never
+  // restores, and it dies with the {#if open} panel.
+  let matchIdx = $state(0);
+  let matchCount = $state(0);
+  $effect(() => {
+    void needle;
+    void docIdx;
+    matchCount = bodyEl ? bodyEl.querySelectorAll('mark').length : 0;
+    matchIdx = 0;
+  });
+
+  // Step the body's <mark> occurrences: DOM order, wrap-around
+  // (i + dir + n) % n, scrolled with the SAME formula goTo() uses
+  // (bodyEl is position:relative, so a mark's offsetTop is
+  // body-relative — jsdom has no layout, the driver models offsetTop
+  // explicitly and never scrollIntoView). The step's section becomes
+  // `current` from its <h2> id (the registry anchor), so the TOC's dual
+  // highlight and the scroll-spy agree with the step. Focus NEVER moves
+  // — no element here is ever .focus()ed; the search input keeps it, so
+  // Shift+Enter keeps reaching onSearchKey.
+  function stepMatch(dir) {
+    if (!bodyEl || !doc) return;
+    const marks = [...bodyEl.querySelectorAll('mark')];
+    const n = marks.length;
+    if (!n) return; // TOC match, zero body marks (the honest limitation): nothing to step
+    matchIdx = (matchIdx + dir + n) % n;
+    const el = marks[matchIdx];
+    bodyEl.scrollTop = Math.max(0, el.offsetTop - 8);
+    const h2 = el.closest('.doc-section')?.querySelector('h2');
+    const sec = h2 ? doc.sections.find((s) => sectionAnchor(doc.id, s.id) === h2.id) : null;
+    if (sec) current = sec.id;
+  }
+
   // Escape inside the search input clears a non-empty query FIRST and
   // stops the event before Dialog's backdrop onkeydown can see it
   // (keydown bubbles input → panel → backdrop; Svelte's delegated walk
   // aborts on cancelBubble). An empty input lets Escape through, so
-  // Dialog closes the sheet exactly as before.
+  // Dialog closes the sheet exactly as before. Enter is intercepted in
+  // this SAME handler: it steps the matches and is stopped here, so no
+  // future Enter handler above it can ever close the sheet.
   function onSearchKey(e) {
     if (e.key === 'Escape' && query) {
       e.preventDefault();
       e.stopPropagation();
       query = '';
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      stepMatch(e.shiftKey ? -1 : 1);
     }
   }
 
@@ -293,12 +347,51 @@
   <Dialog open={open} label={doc.title} backClass="doc-back" panelClass="doc-panel" {onClose}>
     <div class="doc-head">
       <h1>{doc.title}</h1>
+      <!-- Match stepping (M1): the two stepper buttons render ONLY
+           while a query is active, left of the input (markup order
+           h1 | prev | next | input | close). Canonical icon-only button
+           pattern (RoundDetail's round transport): btn + disabled +
+           title/aria-label from the catalog + an aria-hidden chevron
+           glyph — chevrons, never codicon-arrow-* (those reserve
+           back/forward nav). Disabled at zero body matches (the honest
+           limitation: a TOC hit whose leaves hold no complete match).
+           The click hands focus back to the input so Shift+Enter keeps
+           reaching onSearchKey. -->
+      {#if needle}
+        <button
+          class="btn doc-find-btn"
+          type="button"
+          disabled={matchCount === 0}
+          title={S.common.searchPrev}
+          aria-label={S.common.searchPrev}
+          onclick={() => {
+            stepMatch(-1);
+            searchEl?.focus();
+          }}
+        >
+          <span class="codicon codicon-chevron-up" aria-hidden="true"></span>
+        </button>
+        <button
+          class="btn doc-find-btn"
+          type="button"
+          disabled={matchCount === 0}
+          title={S.common.searchNext}
+          aria-label={S.common.searchNext}
+          onclick={() => {
+            stepMatch(1);
+            searchEl?.focus();
+          }}
+        >
+          <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+        </button>
+      {/if}
       <input
         class="input doc-search"
         type="search"
         placeholder={S.common.searchSections}
         aria-label={S.common.searchSections}
         bind:value={query}
+        bind:this={searchEl}
         onkeydown={onSearchKey}
       />
       <button class="btn" type="button" title={S.common.closeHelp} aria-label={S.common.closeHelp} onclick={onClose}>
@@ -437,6 +530,11 @@
   .doc-search {
     flex: 0 1 220px;
     min-width: 120px;
+  }
+  /* The match-stepper buttons (M1): glyph-sized, glued to the input by
+     .doc-head's gap — they never grow with the header. */
+  .doc-find-btn {
+    flex: 0 0 auto;
   }
   .doc-main {
     flex: 1;

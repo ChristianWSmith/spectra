@@ -10,8 +10,9 @@
 //      (centred backdrop with its uniform margin, panel = viewport −
 //      2×16px, max-height none — pinned as computed styles from the
 //      component's injected CSS), the header order (title … search
-//      input … Close), and the Close button dismisses with focus
-//      returned to the opener;
+//      input … Close) with NO match-stepper buttons under an empty
+//      query, and the Close button dismisses with focus returned to
+//      the opener;
 //   B. the Builder `?` — top-right of .view-header, opens the popup at
 //      the metric-language section (aria-current + the composed anchor
 //      + the scrollTop formula), with the Builder still mounted and the
@@ -47,7 +48,14 @@
 //      no storage), and the content-only needle marking the hit INSIDE
 //      the body prose (every <mark> carrying the exact needle, the
 //      marked paragraph's text byte-identical to the unmarked render,
-//      the clear removing every body mark);
+//      the clear removing every body mark) — plus match stepping (M1):
+//      the two stepper buttons only under a needle (the 5-child header
+//      order with the catalog labels), disabled at zero body marks with
+//      Enter still keeping the sheet open, Enter/Shift+Enter stepping
+//      forward/back over the offsetTop − 8 scroll formula with
+//      wrap-around at both ends, the step's section taking the TOC
+//      highlight, the buttons stepping and returning focus, and focus
+//      never leaving the search input;
 //   H. the two-tier contents list (N3/N4): the ONE subsection toggle on
 //      the metric-language row (children visible by default, folding
 //      opt-in, no toggle on a childless major), the dual highlight (the
@@ -377,6 +385,10 @@ const docBody = () => document.querySelector('.doc-body');
 const tocItems = () => [...document.querySelectorAll('.doc-toc-item')]; // section entries, both tiers (filtered by the header search; the fold toggles are separate buttons)
 const tocCurrent = () => tocItems().find((b) => b.getAttribute('aria-current') === 'true');
 const searchBox = () => document.querySelector('.doc-head input[type="search"]');
+// The match-stepper buttons (M1) — they render only while a query is
+// active, so every helper here is null under an empty needle.
+const prevMatch = () => document.querySelector('.doc-head button[aria-label="Previous match"]');
+const nextMatch = () => document.querySelector('.doc-head button[aria-label="Next match"]');
 const emptyTocLine = () => document.querySelector('.doc-toc-empty');
 // The id rides the section's <h2> (registry.sectionAnchor): headingEl is
 // that heading (the goTo focus/offsetTop target), sectionOf is the
@@ -493,6 +505,11 @@ check(
     searchBox()?.getAttribute('placeholder') === 'Search sections' &&
     searchBox()?.getAttribute('aria-label') === 'Search sections' &&
     headKids()[2] === closeBtn(),
+  headKids().map((c) => `${c.tagName}.${c.className}`).join(' → '),
+);
+check(
+  'no match-stepper buttons under an empty query (they render only while the input holds text)',
+  headKids().length === 3 && !prevMatch() && !nextMatch() && !document.querySelector('.doc-find-btn'),
   headKids().map((c) => `${c.tagName}.${c.className}`).join(' → '),
 );
 click(closeBtn());
@@ -848,12 +865,122 @@ check(
     emptyTocLine().textContent === stringsCommon.noSectionsMatch,
   `${tocItems().length} entries / line=${JSON.stringify(emptyTocLine()?.textContent)}`,
 );
+// M1 lead ruling (2): a needle that filters TOC sections but leaves
+// ZERO body marks (the documented honest limitation) simply disables
+// the steppers — no section-level fallback — and Enter still cannot
+// close the sheet.
+searchBox().dispatchEvent(
+  new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+);
+await sleep();
+check(
+  'zero body matches → both stepper buttons render DISABLED, and Enter still keeps the sheet open',
+  !!prevMatch() &&
+    !!nextMatch() &&
+    prevMatch().disabled &&
+    nextMatch().disabled &&
+    !!panel(),
+  `${prevMatch() ? prevMatch().disabled : 'absent'}/${nextMatch() ? nextMatch().disabled : 'absent'} panel=${!!panel()}`,
+);
 await typeQuery('');
 check(
   'clearing the input restores the full TOC (26 entries, no empty-state line)',
   tocItems().length === 26 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
+
+// --- Match stepping (M1, 2026-11-16) ------------------------------------
+// The same header query now drives body <mark> enumeration: the two
+// stepper buttons render only under a needle, Enter steps forward and
+// Shift+Enter back through the marks in DOM order (wrapping at BOTH
+// ends), every step scrolls with goTo's offsetTop − 8 formula and hands
+// the mark's section the TOC highlight (the dual highlight and the
+// scroll-spy stay in sync) — focus never leaves the search input, and
+// Enter never closes the sheet. jsdom has no layout: the marks get
+// explicit offsetTop expandos (30px apart — section D's model for the
+// section headings does the same), and scroll events are never needed
+// here because jsdom never delivers one on a scrollTop write.
+await typeQuery('match');
+check(
+  'a non-empty query adds the two stepper buttons LEFT of the input (h1 | prev | next | input | close) with the catalog labels',
+  headKids().length === 5 &&
+    headKids()[0]?.tagName === 'H1' &&
+    headKids()[1] === prevMatch() &&
+    headKids()[2] === nextMatch() &&
+    headKids()[3] === searchBox() &&
+    headKids()[4] === closeBtn() &&
+    prevMatch()?.getAttribute('title') === stringsCommon.searchPrev &&
+    prevMatch()?.getAttribute('aria-label') === stringsCommon.searchPrev &&
+    nextMatch()?.getAttribute('title') === stringsCommon.searchNext &&
+    nextMatch()?.getAttribute('aria-label') === stringsCommon.searchNext &&
+    !!prevMatch()?.querySelector('.codicon-chevron-up') &&
+    !!nextMatch()?.querySelector('.codicon-chevron-down'),
+  headKids().map((c) => `${c.tagName}.${c.className}`).join(' → '),
+);
+const stepMarks = [...docBody().querySelectorAll('mark')];
+stepMarks.forEach((m, i) =>
+  Object.defineProperty(m, 'offsetTop', { value: 300 + i * 30, configurable: true }),
+);
+const scrollTopOfMark = (i) => Math.max(0, stepMarks[i].offsetTop - 8);
+const enterStep = (shift = false) =>
+  searchBox().dispatchEvent(
+    new dom.window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: shift,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+const markSectionTitle = (m) =>
+  m.closest('.doc-section')?.querySelector('h2')?.textContent.trim() ?? '';
+searchBox().focus();
+enterStep();
+await sleep();
+check(
+  'Enter steps to the NEXT match: the sheet stays open, focus stays on the search input, the body scrolled to that mark (offsetTop − 8) and its section took the TOC highlight',
+  stepMarks.length >= 2 &&
+    !!panel() &&
+    document.activeElement === searchBox() &&
+    docBody().scrollTop === scrollTopOfMark(1) &&
+    tocCurrent()?.textContent.trim() === markSectionTitle(stepMarks[1]),
+  `${stepMarks.length} marks / scrollTop=${docBody().scrollTop} want=${scrollTopOfMark(1)} / active=${document.activeElement?.nodeName}.${document.activeElement?.className} / toc=${tocCurrent()?.textContent.trim()} want=${markSectionTitle(stepMarks[1])}`,
+);
+enterStep(true);
+await sleep();
+check(
+  'Shift+Enter steps BACK to the previous match (the body scrolled to the mark before it)',
+  docBody().scrollTop === scrollTopOfMark(0) &&
+    document.activeElement === searchBox() &&
+    !!panel(),
+  `scrollTop=${docBody().scrollTop} want=${scrollTopOfMark(0)} / active=${document.activeElement?.nodeName}`,
+);
+enterStep(true);
+await sleep();
+check(
+  'stepping back from the FIRST match wraps around to the LAST one',
+  docBody().scrollTop === scrollTopOfMark(stepMarks.length - 1),
+  `scrollTop=${docBody().scrollTop} want=${scrollTopOfMark(stepMarks.length - 1)} of ${stepMarks.length} marks`,
+);
+enterStep();
+await sleep();
+check(
+  'stepping forward from the LAST match wraps around back to the FIRST one',
+  docBody().scrollTop === scrollTopOfMark(0),
+  `scrollTop=${docBody().scrollTop} want=${scrollTopOfMark(0)}`,
+);
+click(nextMatch());
+await sleep();
+const afterNextBtn = docBody().scrollTop;
+click(prevMatch());
+await sleep();
+check(
+  'the stepper buttons step (Next → the next mark, Prev → back) and each returns focus to the search input',
+  afterNextBtn === scrollTopOfMark(1) &&
+    docBody().scrollTop === scrollTopOfMark(0) &&
+    document.activeElement === searchBox(),
+  `next=${afterNextBtn} want=${scrollTopOfMark(1)} / prev=${docBody().scrollTop} want=${scrollTopOfMark(0)} / active=${document.activeElement?.nodeName}.${document.activeElement?.className}`,
+);
+await typeQuery('');
 
 console.log('H. two tiers: the subsection toggle, the dual highlight, <mark> search hits, and the body-side tier styling (sizes + separator)');
 // The contents list is two tiers (N3): the metric chapter's minors are

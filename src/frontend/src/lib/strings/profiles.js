@@ -28,7 +28,6 @@ export const profiles = {
   statMatchesTitle: 'Matches in the library for this player',
   statWinPctLabel: 'Win%',
   statWinPctTitle: 'Share of matches won',
-  careerHeading: 'Career metrics',
   careerErrorLead: 'Career metrics unavailable: ',
   trendHeading: 'Trend',
   // The trend card's metric picker (the shared SuggestInput): the one

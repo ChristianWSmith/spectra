@@ -332,7 +332,7 @@ from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))
 | Scope | Means | Shown as |
 |---|---|---|
 | \`match\` | this player in this match | a pinned metric appears as a scoreboard column on every match, and saved metrics are appended to match reports |
-| \`profile\` | this player's career, over every match in the library | Career metrics on a player profile |
+| \`profile\` | this player's career, over every match in the library | pinned metrics appear as cards on a player profile, alongside Matches and Win% |
 
 Both are computed per player; the scope only decides **how much of the library** the number is taken over. Any other scope value is refused.`,
   },

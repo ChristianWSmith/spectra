@@ -397,72 +397,56 @@
   {/if}
 
   {#if profile}
-    <!-- The FIXED block of the profile surface (dogfooding design §1.5):
-         the Go-rendered stats in their current relative order, minus the
-         nine cards that converted to metrics (W3a's swap took the last
-         two — Opening duels and the Clutches count). The "Career
-         metrics" panel below is the metric half of the same surface —
-         with W3a's default pins it re-expresses today's eleven cards as
-         these 2 fixed cards followed by 11 metric cards. -->
-    <div class="stat-grid">
+    <!-- The profile's headline surface (dogfooding design §1.5 + the
+         career-metrics consolidation): ONE panel-less block — the two
+         fixed Go-rendered cards (Matches, Win%) lead, then every pinned
+         profile-scope metric as a canonical StatCard tile in the
+         metricorder composition (fixed block first, then
+         pinnedInSequence — lib/metricorder.js is the ONE ordering
+         mechanism and is untouched here). The career half is the same
+         stored-read state machine as before (fresh → the value, no-data
+         → '—', anything else → the state chip — never a fabricated 0,
+         never a version number); a failed career read shows its alert
+         ABOVE the block (the profileError pattern), and an empty pin
+         set leaves just the two fixed cards — never an empty panel. -->
+    {#if careerError}
+      <p class="error" role="alert">
+        {S.profiles.careerErrorLead}{careerError}
+        <button class="btn small" onclick={() => (careerReload += 1)}>{S.profiles.retry}</button>
+      </p>
+    {/if}
+    <div class="stat-grid prof-stats">
       <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
       <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
+      {#each careerCols as col (col.def.id)}
+        {@const pres = careerPres(col)}
+        <!-- One tile per pinned metric through the canonical StatCard:
+             children[0] the label (its `labelTitle` carries the metric's
+             doc), children[1] the value slot running the state machine —
+             the cell's own `title` carries n=/state — never a fabricated
+             0 and never a version number. -->
+        <StatCard
+          label={col.def.title || col.def.name}
+          labelTitle={col.def.doc || col.def.name}
+          title={careerTitle(col, pres)}
+        >
+          {#snippet valueSlot()}
+            {#if pres.kind === 'value'}
+              {fmtMetric(pres.value, col.def.format)}
+            {:else if pres.kind === 'nodata'}
+              —
+            {:else}
+              <StatusChip
+                status={pres.state}
+                title={careerTitle(col, pres)}
+                progress={metricProgressFrac(metricProgress, col.def.id)}
+                stage={metricProgressStage(metricProgress, col.def.id)}
+              />
+            {/if}
+          {/snippet}
+        </StatCard>
+      {/each}
     </div>
-
-    <!-- Career metrics — the METRIC half of the profile surface
-         (dogfooding design §3.5): profile-scope pins read from the
-         stored career rows (one canonical read for the whole pinned
-         set, the state machine per cell). With W3a's default pins this
-         renders the eleven converted metrics in default order directly
-         after the two fixed cards above — today's eleven cards,
-         re-expressed (the ADR ± σ and Clutches cards each yielded two
-         cards). Hidden entirely while
-         nothing is pinned that resolves; a failed read shows its own
-         alert. -->
-    {#if careerCols.length > 0 || careerError}
-      <section class="panel">
-        <h2>{S.profiles.careerHeading}</h2>
-        {#if careerError}
-          <p class="error" role="alert">
-            {S.profiles.careerErrorLead}{careerError}
-            <button class="btn small" onclick={() => (careerReload += 1)}>{S.profiles.retry}</button>
-          </p>
-        {/if}
-        {#if careerCols.length > 0}
-          <!-- The career GRID: one square card per pinned metric — the
-               metric's name over its value slot, centered and wrapping
-               (it replaced a Metric/Value table). The children keep the
-               order the pins' own readers key on: [0] the name (its
-               doc tooltip), [1] the value slot running the state
-               machine — the value, the honest dash, or the state chip,
-               never a fabricated 0 and never a version number. -->
-          <div class="prof-career">
-            {#each careerCols as col (col.def.id)}
-              {@const pres = careerPres(col)}
-              <div class="prof-career-card">
-                <div class="prof-career-name" title={col.def.doc || col.def.name}
-                  >{col.def.title || col.def.name}</div
-                >
-                <div class="prof-career-val" title={careerTitle(col, pres)}>
-                  {#if pres.kind === 'value'}
-                    {fmtMetric(pres.value, col.def.format)}
-                  {:else if pres.kind === 'nodata'}
-                    —
-                  {:else}
-                    <StatusChip
-                      status={pres.state}
-                      title={careerTitle(col, pres)}
-                      progress={metricProgressFrac(metricProgress, col.def.id)}
-                      stage={metricProgressStage(metricProgress, col.def.id)}
-                    />
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {/if}
 
     <section class="panel">
       <div class="row-between">
