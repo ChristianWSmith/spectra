@@ -38,7 +38,7 @@ const ASSET_FAMILIES = [
     run: (dir) => extractIcons(dir),
     // count = the equipment + notice set PLUS the map logos (Go's
     // IconManifest splits them: Count stays equipment-only for
-    // Settings' "Equipment icons" row, MapCount carries the maps), so
+    // Settings' "Equipment" row, MapCount carries the maps), so
     // "Extracted N icons" never under-reports what this family wrote.
     count: (out) => ((out && out.count) || 0) + ((out && out.mapCount) || 0),
     errors: (out) => (out && out.note ? [out.note] : []),

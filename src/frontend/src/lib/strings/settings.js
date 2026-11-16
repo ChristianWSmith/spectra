@@ -64,7 +64,7 @@ export const settings = {
   notFound: 'not found',
   manualChip: 'manual',
   factRadarPacks: 'Radar packs',
-  factEquipmentIcons: 'Equipment icons',
+  factEquipmentIcons: 'Equipment',
   factReplaySounds: 'Replay sounds',
   noneExtractedYet: 'none extracted yet',
   extractHint:

@@ -952,7 +952,7 @@
               }}
               tabindex={isOpenable(m) ? 0 : undefined}
             >
-              <td>{#if mapIcon}<img class="lib-map-icon" src={mapIcon} alt="" aria-hidden="true" />{/if}{m.map || '—'}</td>
+              <td class="lib-map-cell">{#if mapIcon}<img class="lib-map-icon" src={mapIcon} alt="" aria-hidden="true" />{/if}{m.map || '—'}</td>
               <td>
                 {#if neverExt && m.path}
                   <!-- The file name rides the SAME truncation every other

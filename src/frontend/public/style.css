@@ -1086,6 +1086,21 @@ mark {
   margin-inline-end: .35em;
 }
 
+/* The Map column itself (owner nits, 2026-11-16): white-space: nowrap
+   RAISES the cell's min-content to the whole logo+name run — without it
+   the table's min-content is the name ALONE (there is a break
+   opportunity between the inline image and the following text), so under
+   width pressure auto layout squeezes the column to the name and the
+   logo drops onto its own line. min-width reserves a little more room
+   than the tight content so the column reads as a column, not as its
+   shortest member — one knob, tune here. Scoped to the match list's
+   map cell (.lib-map-cell) — never a bare td:first-child, which would
+   also hit the import-dir list's .lib-table. */
+.lib-table .lib-map-cell {
+  white-space: nowrap;
+  min-width: 9em;
+}
+
 /* Width-fit trim, BOTH library tables — the `lib-table` class on each
    <table> (Library.svelte): these two .data-tables are among the few NOT
    wrapped in .table-scroll, so a table wider than the content budget
