@@ -160,17 +160,28 @@ export const DEFAULT_PINS = Object.freeze({
   ]),
 });
 
-// FIXED_BLOCK — the Go-rendered stats' labels in their canonical order,
-// MINUS the entries that convert (design §1.5). This is THE label
-// table: Match's SCORE_COLS mirrors it (pinned in
-// econ-tables.dom.mjs), the ordering dialog reads it through
-// composedSequence, and N5's Reports raw items compose from it through
-// RAW_FIELDS — never fork a second list.
+// FIXED_BLOCK — the Go-rendered stats' {key, name, short, field}
+// entries in their canonical order, MINUS the entries that convert
+// (design §1.5). This is THE label table (W13b): ONE entry carries
+// both label shapes — `name` is the FULL name the ordering dialog
+// title, the aria labels and the Reports appendix/export read, `short`
+// is the compact header Match's SCORE_COLS mirrors (pinned in
+// econ-tables.dom.mjs) and the ordering dialog's mono slot shows beside
+// the full name when the two differ. `key` is the '@'-namespaced
+// sequence identity and `field` the PlayerStatsRow JSON field a raw
+// report item reads (null = no raw counterpart) — RAW_FIELDS derives
+// from it below, never a second list. `key` and `short` are byte-
+// identical to the pre-W13b flat label, so every stored pref, every
+// FIXED_RANKS key, every data-mo-name and colByLabel key keeps working
+// with zero migration — identity never churns (pre-release no-versioning
+// policy).
 //
 // match: SCORE_COLS (Match.svelte) minus every entry that renders as
 // a metric — adr/kast/hs_pct/kd (dogfood W2) and A, 2K–5K, Entry,
-// Trade, Streak (the W2a swap) — leaving Name, Team, K, D, KDA, DMG,
-// Opening K/D, Util, MVPs, Score. Opening K/D STAYS fixed: it
+// Trade, Streak (the W2a swap) — leaving the ten entries whose
+// `short`s are Name, Team, K, D, KDA, DMG, Opening K/D, Util, MVPs,
+// Score (their `name`s read Kills / Deaths / Damage / Utility damage
+// where the two differ). Opening K/D STAYS fixed: it
 // keeps its fixed position (design Q2) while its cell composes the
 // entry_kills / entry_deaths metric halves. (The Rnds row left with the
 // owner's C14 scoreboard change — the column is gone from SCORE_COLS
@@ -185,31 +196,46 @@ export const DEFAULT_PINS = Object.freeze({
 // Matches and Win% (raw / N2).
 export const FIXED_BLOCK = Object.freeze({
   match: Object.freeze([
-    'Name',
-    'Team',
-    'K',
-    'D',
-    'KDA',
-    'DMG',
-    'Opening K/D',
-    'Util',
-    'MVPs',
-    'Score',
+    Object.freeze({ key: '@Name', name: 'Name', short: 'Name', field: null }),
+    Object.freeze({ key: '@Team', name: 'Team', short: 'Team', field: null }),
+    Object.freeze({ key: '@K', name: 'Kills', short: 'K', field: 'kills' }),
+    Object.freeze({ key: '@D', name: 'Deaths', short: 'D', field: 'deaths' }),
+    Object.freeze({ key: '@KDA', name: 'KDA', short: 'KDA', field: 'kda' }),
+    Object.freeze({ key: '@DMG', name: 'Damage', short: 'DMG', field: 'totalDamage' }),
+    Object.freeze({ key: '@Opening K/D', name: 'Opening K/D', short: 'Opening K/D', field: null }),
+    Object.freeze({ key: '@Util', name: 'Utility damage', short: 'Util', field: 'utilityDamage' }),
+    Object.freeze({ key: '@MVPs', name: 'MVPs', short: 'MVPs', field: 'mvps' }),
+    Object.freeze({ key: '@Score', name: 'Score', short: 'Score', field: 'score' }),
   ]),
-  profile: Object.freeze(['Matches', 'Win%']),
+  profile: Object.freeze([
+    Object.freeze({ key: '@Matches', name: 'Matches', short: 'Matches', field: null }),
+    Object.freeze({ key: '@Win%', name: 'Win%', short: 'Win%', field: null }),
+  ]),
 });
 
-// The namespace: a fixed entry's identity is '@' + its label. The '@'
-// prefix can never appear in a metric name, so the two identity spaces
-// cannot collide — and where a colliding name is attempted anyway, the
-// FIXED entry wins (the dedupe set below is seeded with the fixed keys
-// first, so the metric name drops and the fixed entry stands).
+// The key → entry index (keys are unique across scopes — the '@'
+// namespace is the fixed side's alone). composedSequence resolves a
+// sequence key through this; a key not in it can only arrive through a
+// saved pref and never reaches the fixed branch.
+const FIXED_BY_KEY = new Map();
+for (const entries of Object.values(FIXED_BLOCK)) {
+  for (const e of entries) FIXED_BY_KEY.set(e.key, e);
+}
+
+// The namespace: a fixed entry's identity is '@' + its `short` —
+// byte-identical to the flat label the table shipped as before W13b,
+// so the stored pref keys, FIXED_RANKS keys and data-mo-name values
+// never churn. The '@' prefix can never appear in a metric name, so
+// the two identity spaces cannot collide — and where a colliding name
+// is attempted anyway, the FIXED entry wins (the dedupe set below is
+// seeded with the fixed keys first, so the metric name drops and the
+// fixed entry stands).
 export const FIXED_PREFIX = '@';
 
 // fixedKeys(scope) — the scope's fixed entries as their sequence keys,
 // in canonical order.
 export function fixedKeys(scope) {
-  return (FIXED_BLOCK[scope] || []).map((label) => FIXED_PREFIX + label);
+  return (FIXED_BLOCK[scope] || []).map((e) => e.key);
 }
 
 // FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
@@ -236,36 +262,39 @@ export const FIXED_RANKS = Object.freeze({
 });
 
 // RAW_FIELDS — the fixed stats that ALSO have a raw scoreboard field,
-// keyed by their FIXED_BLOCK label (the one label table — the value is
-// the PlayerStatsRow JSON field GetScoreboard serves, the same field
-// Match's cellText derives from a SCORE_COLS key). Reports' raw items
-// compose from this; the fixed block minus this table is exactly the
-// entries with no raw counterpart or no numeric cell:
+// DERIVED from the one label table (FIXED_BLOCK entries carrying a
+// `field`), keyed by their `short` — byte-identical to the flat-label
+// shape it shipped as before W13b (rawItems, Reports and the tests
+// read one source, never a forked list). The value is the PlayerStatsRow
+// JSON field GetScoreboard serves, the same field Match's cellText
+// derives from a SCORE_COLS key. Reports' raw items compose from this;
+// the fixed block minus this table is exactly the entries with no raw
+// counterpart or no numeric cell:
 //   Name / Team       — descriptors, not values
 //   Opening K/D       — a compound cell (lead ruling: its halves are
 //                       metrics and the compound fights the table)
-export const RAW_FIELDS = Object.freeze({
-  K: 'kills',
-  D: 'deaths',
-  KDA: 'kda',
-  DMG: 'totalDamage',
-  Util: 'utilityDamage',
-  MVPs: 'mvps',
-  Score: 'score',
-});
+//   Matches / Win%    — profile-scope descriptors (no scoreboard row)
+export const RAW_FIELDS = Object.freeze(
+  Object.fromEntries(
+    Object.values(FIXED_BLOCK)
+      .flat()
+      .filter((e) => e.field)
+      .map((e) => [e.short, e.field]),
+  ),
+);
 
 // rawItems(scope) — the scope's raw report items in fixed-block order:
 // {id: 'raw:<field>', label, kind: 'raw', field}. The id is a STRING
 // (namespaced) so a raw pick can never collide with a metric id in the
-// selection set; `label` comes from FIXED_BLOCK, never a second list.
-// Only a scope with raw counterparts (match — the Reports appendix is a
-// per-match document) yields any.
+// selection set; `label` is the entry's FULL name from the ONE label
+// table (W13b — the appendix chips and the exported headings read
+// "Kills", never the bare short). Only a scope with raw counterparts
+// (match — the Reports appendix is a per-match document) yields any.
 export function rawItems(scope) {
   const out = [];
-  for (const label of FIXED_BLOCK[scope] || []) {
-    const field = RAW_FIELDS[label];
-    if (!field) continue;
-    out.push({ id: `raw:${field}`, label, kind: 'raw', field });
+  for (const e of FIXED_BLOCK[scope] || []) {
+    if (!e.field) continue;
+    out.push({ id: `raw:${e.field}`, label: e.name, kind: 'raw', field: e.field });
   }
   return out;
 }
@@ -292,7 +321,7 @@ const HIDE_EXEMPT = Object.freeze({
 // so a metric key answers false.
 export function hideable(scope, key) {
   if (typeof key !== 'string' || !key.startsWith(FIXED_PREFIX)) return false;
-  if (!(FIXED_BLOCK[scope] || []).includes(key.slice(1))) return false;
+  if (!(FIXED_BLOCK[scope] || []).some((e) => e.key === key)) return false;
   return !(HIDE_EXEMPT[scope] || []).includes(key);
 }
 
@@ -417,16 +446,19 @@ export function pinnedInSequence(scope, saved, defs, pinIds) {
 // sequence (W6): fixed stats AND metrics as ONE ordered entry list —
 // the input for the ordering dialog, the Match scoreboard and the
 // profile card block. Each entry:
-//   { kind:'fixed',  key, name, label, hidden }
+//   { kind:'fixed',  key, name, short, label, hidden }
 //   { kind:'metric', key, name, label, def, hidden:false }
 // `key`/`name` are the sequence identity (fixed entries carry their
-// '@'-key, metrics their name); `label` is the display label (the
-// fixed entry's own label — the ONE label table — else the metric's
-// title||name). `hidden` marks a fixed entry the user hid: it stays in
-// the sequence (and stays listed in the dialog) and the VIEW filters
-// it out — never the dialog, never Reports' addable set (lead ruling:
-// visibility is view-display only). Metric visibility is pin-driven and
-// therefore never expressed here.
+// '@'-key — the data-mo-name/focus contract — metrics their name);
+// `label` is the display label (the fixed entry's FULL name from the
+// ONE label table — W13b, so the dialog reads "Kills" — else the
+// metric's title||name) and `short` the fixed entry's compact header
+// form (the SCORE_COLS mirror; metrics carry none — they have no
+// column-header twin here). `hidden` marks a fixed entry the user hid:
+// it stays in the sequence (and stays listed in the dialog) and the
+// VIEW filters it out — never the dialog, never Reports' addable set
+// (lead ruling: visibility is view-display only). Metric visibility is
+// pin-driven and therefore never expressed here.
 export function composedSequence(scope, saved, defs, hiddenKeys = []) {
   const fixed = new Set(fixedKeys(scope));
   const hidden = new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
@@ -435,11 +467,13 @@ export function composedSequence(scope, saved, defs, hiddenKeys = []) {
   const out = [];
   for (const n of resolveOrder(saved, scoped.map((d) => d.name), scope)) {
     if (fixed.has(n)) {
+      const entry = FIXED_BY_KEY.get(n);
       out.push({
         kind: 'fixed',
         key: n,
         name: n,
-        label: n.slice(FIXED_PREFIX.length),
+        short: entry.short,
+        label: entry.name,
         hidden: hideable(scope, n) && hidden.has(n),
       });
     } else {

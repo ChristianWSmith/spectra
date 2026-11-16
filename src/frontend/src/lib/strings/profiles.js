@@ -22,11 +22,12 @@ export const profiles = {
   thLastImport: 'Last import',
 
   // PlayerProfile — the profile surface (fixed cards, career metrics,
-  // trend, splits and match history)
+  // trend, splits and match history). The fixed cards' LABELS are not
+  // chrome copy: they are metricorder data (FIXED_BLOCK's full names,
+  // read through composedSequence) — W13b retired statMatchesLabel /
+  // statWinPctLabel as their second home; only the tooltips stay here.
   h1Player: 'Player',
-  statMatchesLabel: 'Matches',
   statMatchesTitle: 'Matches in the library for this player',
-  statWinPctLabel: 'Win%',
   statWinPctTitle: 'Share of matches won',
   careerErrorLead: 'Profile metrics unavailable: ',
   trendHeading: 'Trend',
