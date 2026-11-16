@@ -1,32 +1,37 @@
 // jsdom driver for the Reports metrics appendix (stored-metrics design
-// §5's Reports surface — the appendix METRIC PICKER: N searchable
-// single-select rows with + / − row buttons).
-//   A. the metric list behind the picker rows is FLAT and match-scope
-//      only — the groupBy grouping died with the W2 grammar wave (no
-//      "by …" group headers, no profile-scope rows: those surface on
+// §5's Reports surface — the appendix SELECTOR: ONE type-to-search
+// token field whose picks land as chips with their own ✕, and the save
+// that downloads the composed document).
+//   A. the metric list behind the field is FLAT and match-scope only —
+//      the groupBy grouping died with the W2 grammar wave (no "by …"
+//      group headers, no profile-scope rows: those surface on
 //      PlayerProfile);
-//   B. picking a stat (through SuggestInput's suggestion) reads the
+//   B. picking a stat (through the field's suggestion) reads the
 //      STORED rows through the canonical read (one call carrying the
 //      whole picked set + the roster label read) — PreviewMetric is
-//      NEVER called for a saved definition;
-//   C. the generated document (the export surface) carries the design
-//      copy "per player · N rows · match #id" and the displayed rows —
-//      never "group by …", never a `· N ms` timing line, never a stamp;
-//   D. + adds a row that offers only the stats no other row holds (no
-//      duplicate can form), and a non-fresh stat renders its STATE chip
-//      in its row and an honest "value not computed — <state>" line in
-//      the document (no table, no fabricated number);
+//      NEVER called for a saved definition — and the pick lands as a
+//      chip with a remove button beside its readout line;
+//   C. Save report lands the composed document (the export surface) on
+//      disk through downloadText — the design copy "per player · N rows
+//      · match #id" and the displayed rows ride the file — never "group
+//      by …", never a `· N ms` timing line, never a stamp;
+//   D. the field offers only the stats you do not hold (no duplicate
+//      can form), a non-fresh stat renders its STATE chip in its
+//      readout line and an honest "value not computed — <state>" line
+//      in the saved file (no table, no fabricated number), and the
+//      chip's ✕ removes it;
 //   E. the live feed flips a picked stat to processing and metric-done
 //      refetches the stored rows (the cache flushed);
-//   F. the no-version pin over every rendered metric output;
-//   G. the picker follows the match ORDER pref (dogfooding design §1)
-//      AND the exported document's sections follow the same sequence
-//      (the W4 addendum — design §2.5): absent key ⇒ the default
-//      sequence (= catalog order, pinned in A), a saved order
-//      re-sequences the suggestions and the generated document, and a
-//      deleted key (reset) returns both to the default — the pins array
-//      never orders this list; the − button removes rows, and NO rows
-//      means no appendix (only the add button stays);
+//   F. the no-version pin over every rendered metric output (the
+//      readout chips/lines AND the saved file);
+//   G. the field follows the match ORDER pref (dogfooding design §1)
+//      AND the saved document's sections follow the same sequence (the
+//      W4 addendum — design §2.5): the selection restores from the
+//      registry on remount, chips render in the sequence (not the pick
+//      order), Backspace on an empty field drops the last chip, the ✕
+//      clears the rest, no chips → no appendix, and a deleted key
+//      returns both the list and the file to the default order — the
+//      pins array never orders this list;
 //   H. the player picker's K/D/A triple composes per half (inferred
 //      conversion design §3.1/Q2): K and D are the raw scoreboard
 //      fields, the A half is the match-scope `assists` METRIC row
@@ -136,29 +141,46 @@ const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', '
   // plumbing (Strings Stage 3): the picker imports the strings catalog.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
-// The appendix picker's suggestion box (kind="text" over the metric
-// catalog) — Popover leaf + fmt/services/strings imports rebased like
-// every other component this driver mounts.
-const suggestInputSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
+// The appendix selector (TokenSelect — the token field over the metric
+// catalog): Popover leaf + the strings catalog rebased like every other
+// component this driver mounts.
+const tokenSelectSrc = readFileSync('src/lib/components/TokenSelect.svelte', 'utf8')
   .replace("from './Popover.svelte'", "from './popover.js'")
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
-  // plumbing (Strings Stage 3): the widget imports the strings catalog.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(suggestInputSrc, 'SuggestInput.svelte', join(dir, 'suggestinput.js'));
+svelteCompile(tokenSelectSrc, 'TokenSelect.svelte', join(dir, 'tokenselect.js'));
+
+// download.js — the save path the view drives (the ruling: the composed
+// document goes through downloadText + the native dialog, NOT
+// /api/export). Every helper RECORDS its call in globalThis.__downloads
+// and resolves "" (save.js's cancel contract), so a pin can read back
+// the exact bytes that would have been written.
+writeFileSync(
+  join(dir, 'download.js'),
+  `export const downloadText = (...a) => {
+  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind: 'text', args: a });
+  return Promise.resolve('');
+};
+export const downloadBlob = (...a) => {
+  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind: 'blob', args: a });
+  return Promise.resolve('');
+};
+`,
+);
 
 // The view: plain-ESM imports resolve from their real module locations
-// (services → the stubs, metricstate/players/viewstate absolute), the
-// .svelte imports point at the local bundles.
+// (services → the stubs, metricorder/players/viewstate absolute), the
+// .svelte imports point at the local bundles, download.js at the
+// recording stub above.
 const repSrc = readFileSync('src/lib/views/Reports.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
+  .replace("from '../download.js'", "from './download.js'")
   .replace("from '../components/MatchPicker.svelte'", "from './matchpicker.js'")
   .replace("from '../components/PlayerPicker.svelte'", "from './playerpicker.js'")
-  .replace("from '../components/SuggestInput.svelte'", "from './suggestinput.js'")
+  .replace("from '../components/TokenSelect.svelte'", "from './tokenselect.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   // plumbing (Strings Stage 3): the view imports the strings catalog —
   // resolve it from the real tree, like every other ../ module above.
@@ -181,30 +203,51 @@ function check(name, cond, detail = '') {
   }
 }
 
-// --- The appendix metric picker ---------------------------------------------
-// One row per stat: a SuggestInput single-select (focus opens its
-// suggestion panel) with its remove button beside it, the add-row button
-// underneath. The pick lives in the input's VALUE — an input's value
-// never lands in textContent, so rows are found by value, never by the
-// text they contain.
-const pickRows = (root) => [...root.querySelectorAll('.rep-metric')];
-const rowValue = (row) => row.querySelector('input[type="search"]')?.value || '';
-const rowByValue = (root, title) => pickRows(root).find((row) => rowValue(row) === title);
-const addBtn = (root) => root.querySelector('.rep-add');
+// --- The token field ---------------------------------------------------------
+// TokenSelect renders the selection as chips INSIDE the field (.tk-tok,
+// each with its .tk-x remove button) and the suggestions as .tk-opt rows
+// in the panel that focus/typing opens. The pick lives in the set, so a
+// stat is found by its chip's text (an input's value never lands in
+// textContent) and a readout line by the stat name it leads with.
+const tokens = (root) => [...root.querySelectorAll('.tk-tok')];
+const tokenNames = (root) => tokens(root).map((c) => c.textContent.trim());
+const removeBtn = (root, name) => {
+  const tok = tokens(root).find((c) => c.textContent.trim() === name);
+  return tok ? tok.querySelector('.tk-x') : null;
+};
+const readout = (root, name) =>
+  [...root.querySelectorAll('.rep-metric')].find(
+    (el) => (el.querySelector('strong')?.textContent || '').trim() === name,
+  ) || null;
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-// Focus opens the suggestion panel (SuggestInput's onfocus → open), so
-// the options are readable once the panel paints; they come back scoped
-// to THIS row (the widget's panel renders inside it).
-const openRow = async (row) => {
-  row.querySelector('input[type="search"]').dispatchEvent(
+// Focus opens the suggestion panel (TokenSelect's onfocus → open), so
+// the options are readable once the panel paints.
+const openBox = async (root) => {
+  root.querySelector('#rep-stats').dispatchEvent(
     new dom.window.FocusEvent('focus', { bubbles: false }),
   );
   await sleep(60);
-  return [...row.querySelectorAll('.sg-opt')];
+  return [...root.querySelectorAll('.tk-opt')];
 };
+const optLabels = (opts) => opts.map((o) => o.textContent.trim());
+
+// --- The save ----------------------------------------------------------------
+// The Generate/Save button (its busy shape — {#if rendering}Generating…
+// {:else}… — is pinned by progress-presentation.dom.mjs) and the
+// recorded downloadText call: [filename, mime, text].
+const saveBtn = (root) =>
+  [...root.querySelectorAll('button')].find((b) => b.textContent.includes('Save report'));
+const saveReport = async (root) => {
+  const before = (globalThis.__downloads || []).length;
+  click(saveBtn(root));
+  await sleep(120);
+  const all = globalThis.__downloads || [];
+  return all.length > before ? all[all.length - 1] : null;
+};
+const savedText = (dl) => (dl ? dl.args[2] : '');
 
 // --- The scripted backend ---------------------------------------------------
-// One match-scope metric (checked → stored rows) and one profile-scope
+// One match-scope metric (picked → stored rows) and one profile-scope
 // metric (must never appear in this per-match appendix).
 const MATCH_METRIC = {
   id: 1, name: 'match_stat', title: 'Match stat', scope: 'match',
@@ -274,10 +317,10 @@ async function mountReports() {
 viewstate.resetViewState();
 const r = await mountReports();
 
-console.log('A. the metric list behind the picker rows is flat and match-scope only');
+console.log('A. the metric list behind the field is flat and match-scope only');
 {
-  const opts = await openRow(pickRows(r)[0]);
-  const labels = opts.map((o) => o.textContent.trim());
+  const opts = await openBox(r);
+  const labels = optLabels(opts);
   check(
     'exactly the match-scope metrics offer themselves (a profile-scope metric never does)',
     JSON.stringify(labels) === JSON.stringify(['Match stat', 'Behind stat']) &&
@@ -292,12 +335,11 @@ console.log('A. the metric list behind the picker rows is flat and match-scope o
   );
 }
 
-console.log('B. picking a stat reads the STORED rows (one call) — never PreviewMetric');
+console.log('B. picking a stat reads the STORED rows (one call) — never PreviewMetric — and lands as a chip');
 {
   const previewBefore = bindings.callCount('PreviewMetric');
   storedCalls.length = 0;
-  const row = pickRows(r)[0];
-  const opts = await openRow(row);
+  const opts = await openBox(r);
   click(opts.find((o) => o.textContent.includes('Match stat')));
   await sleep(120);
   check(
@@ -315,97 +357,113 @@ console.log('B. picking a stat reads the STORED rows (one call) — never Previe
     bindings.callCount('GetPlayerRefs') >= 1,
     String(bindings.callCount('GetPlayerRefs')),
   );
-  const chip = row.querySelector('.chip.status');
-  const rowsChip = [...row.querySelectorAll('.chip')].find((c) =>
-    /rows$/.test(c.textContent.trim()),
-  );
   check(
-    'the picked stat shows its honest row count (fresh), named in the field',
-    !chip && !!rowsChip && rowsChip.textContent.trim() === '1 rows' &&
-      rowValue(row) === 'Match stat',
-    rowValue(row) + ' | ' + row.textContent.replace(/\s+/g, ' '),
+    'the pick lands as a chip carrying the stat name, with its remove button',
+    JSON.stringify(tokenNames(r)) === JSON.stringify(['Match stat']) &&
+      !!removeBtn(r, 'Match stat'),
+    JSON.stringify(tokenNames(r)),
+  );
+  const line = readout(r, 'Match stat');
+  const statusChip = line && line.querySelector('.chip.status');
+  const rowsChip =
+    line && [...line.querySelectorAll('.chip')].find((c) => /rows$/.test(c.textContent.trim()));
+  check(
+    'its readout line shows the honest row count (fresh), never a state chip',
+    !!line && !statusChip && !!rowsChip && rowsChip.textContent.trim() === '1 rows',
+    line ? line.textContent.replace(/\s+/g, ' ') : 'no readout line',
   );
 }
 
-console.log('C. the generated document carries the design copy — no groupBy, no timing, no stamp');
+console.log('C. Save report lands the composed document — body + appendix, design copy, no timing, no stamp');
 {
-  const gen = [...r.querySelectorAll('button')].find((b) =>
-    b.textContent.includes('Generate report'),
+  const dl = await saveReport(r);
+  const text = savedText(dl);
+  check(
+    'the save goes through downloadText with the template’s filename and mime',
+    !!dl && dl.kind === 'text' &&
+      dl.args[0] === 'match-summary-match-13.md' &&
+      dl.args[1] === 'text/markdown',
+    dl ? JSON.stringify(dl.args.slice(0, 2)) : 'no download recorded',
   );
-  gen.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  await sleep(120);
-  const doc = r.querySelector('.rep-md')?.textContent || '';
-  check('the report body renders with the appendix', doc.includes('REPORT BODY'), doc.slice(0, 120));
+  check(
+    'the report body lands in the saved file with the appendix',
+    text.includes('REPORT BODY'),
+    text.slice(0, 120),
+  );
   check(
     'the appendix line is the design §5 copy ("per player · N rows · match #id")',
-    doc.includes('per player · 1 rows · match #13'),
-    doc.replace(/\s+/g, ' ').slice(0, 400),
+    text.includes('per player · 1 rows · match #13'),
+    text.replace(/\s+/g, ' ').slice(0, 400),
   );
   check(
     'no "group by …" copy and no "· ms" timing line survives',
-    !doc.includes('group by') && !/\d+\s*ms/.test(doc),
-    doc.replace(/\s+/g, ' ').slice(0, 400),
+    !text.includes('group by') && !/\d+\s*ms/.test(text),
+    text.replace(/\s+/g, ' ').slice(0, 400),
   );
   check(
-    'the displayed rows carry the roster label, the value and n',
-    doc.includes('| 76561198000000001 | amy | 4.25 | 7 |'),
-    doc.replace(/\s+/g, ' ').slice(0, 400),
+    'the saved rows carry the roster label, the value and n',
+    text.includes('| 76561198000000001 | amy | 4.25 | 7 |'),
+    text.replace(/\s+/g, ' ').slice(0, 400),
   );
 }
 
-console.log('D. + adds a row offering only the free stats; a non-fresh stat renders its STATE — chip in its row, honest line in the document');
+console.log('D. the field offers only the free stats; a non-fresh stat renders its STATE — line chip, honest file line; the ✕ removes');
 {
-  click(addBtn(r));
-  await sleep(60);
-  const rows2 = pickRows(r);
-  const opts = await openRow(rows2[rows2.length - 1]);
-  const labels = opts.map((o) => o.textContent.trim());
+  const opts = await openBox(r);
+  const labels = optLabels(opts);
   check(
-    'the new row offers only the stats no other row already holds (no duplicate can form)',
+    'a picked stat never offers itself again (no duplicate can form)',
     JSON.stringify(labels) === JSON.stringify(['Behind stat']),
     JSON.stringify(labels),
   );
   click(opts.find((o) => o.textContent.includes('Behind stat')));
   await sleep(120);
-  const row = rowByValue(r, 'Behind stat');
-  const chip = row && row.querySelector('.chip.status');
+  const line = readout(r, 'Behind stat');
+  const chip = line && line.querySelector('.chip.status');
   check(
     'the behind stat shows the idle chip, never a row count',
     !!chip && chip.classList.contains('idle') && chip.textContent.trim() === 'behind',
-    row ? row.textContent.replace(/\s+/g, ' ') : 'no Behind stat row',
+    line ? line.textContent.replace(/\s+/g, ' ') : 'no readout line',
   );
-  const gen = [...r.querySelectorAll('button')].find((b) =>
-    b.textContent.includes('Generate report'),
-  );
-  gen.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  await sleep(120);
-  const doc = r.querySelector('.rep-md')?.textContent || '';
+  const dl = await saveReport(r);
+  const text = savedText(dl);
   check(
-    'the document carries "value not computed — behind" and no table for it',
-    doc.includes('value not computed — behind') &&
-      !doc.includes('Behind stat\n\n|'),
-    doc.replace(/\s+/g, ' ').slice(0, 500),
+    'the saved file carries "value not computed — behind" and no table for it',
+    text.includes('value not computed — behind') &&
+      !text.includes('Behind stat\n\n|'),
+    text.replace(/\s+/g, ' ').slice(0, 500),
+  );
+  click(removeBtn(r, 'Behind stat'));
+  await sleep(60);
+  const again = optLabels(await openBox(r));
+  check(
+    'the chip’s ✕ removes the stat — chip and readout line go, and it becomes pickable again',
+    !tokenNames(r).includes('Behind stat') && !readout(r, 'Behind stat') &&
+      // "Match stat" is still held (E reads its line) — a held stat is
+      // never re-offered, so only the removed one comes back.
+      JSON.stringify(again) === JSON.stringify(['Behind stat']),
+    JSON.stringify({ tokens: tokenNames(r), again }),
   );
 }
 
 console.log('E. the live feed flips to processing; metric-done refetches the stored rows');
 {
-  const box = rowByValue(r, 'Match stat');
+  const line = readout(r, 'Match stat');
   fire('spectra:metric-progress', { metricId: 1, stage: 'compute', done: 2, total: 5 });
   await sleep(60);
-  const chip = box.querySelector('.chip.status');
+  const chip = line.querySelector('.chip.status');
   check(
     'metric-progress flips the picked stat to the busy chip with its k/N bar',
     !!chip && chip.classList.contains('busy') && chip.textContent.includes('processing') &&
       !!chip.querySelector('.chip-bar'),
-    box.textContent.replace(/\s+/g, ' '),
+    line.textContent.replace(/\s+/g, ' '),
   );
   const before = storedCalls.length;
   fire('spectra:metric-done', { ok: true, error: '', metricIds: [1] });
   await sleep(120);
   check(
     'metric-done refetches the stored rows (the cache flushed + the reload)',
-    storedCalls.length > before && !box.querySelector('.chip.status.busy'),
+    storedCalls.length > before && !line.querySelector('.chip.status.busy'),
     `calls ${before} -> ${storedCalls.length}`,
   );
 }
@@ -414,100 +472,99 @@ console.log('F. no version number or timestamp in any rendered metric output');
 {
   const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
   const leaks = [];
-  for (const el of r.querySelectorAll('.rep-metric .chip, .rep-metric [title], .rep-md')) {
+  for (const el of r.querySelectorAll('.tk-tok, .rep-metric .chip, .rep-metric [title]')) {
     const tip = el.getAttribute('title') || '';
     if (leakRe.test(tip)) leaks.push(`title: ${tip}`);
     if (leakRe.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim().slice(0, 80)}`);
   }
+  const all = globalThis.__downloads || [];
+  const text = all.length ? all[all.length - 1].args[2] : '';
+  if (leakRe.test(text)) leaks.push(`saved file: ${text.slice(0, 80)}`);
   check('no version number or timestamp appears anywhere in the appendix output', leaks.length === 0, leaks.join(' | '));
 }
 
-console.log('G. the picker follows the match ORDER pref (metricorder — the one sequence), and − removes rows');
+console.log('G. the field follows the match ORDER pref (metricorder — the one sequence); chips restore, Backspace/✕ clear, no chips → no appendix');
 {
   // Absent pref ⇒ the default sequence, which over this unranks catalog
   // equals catalog order (already pinned by A's default options).
   bindings.handlers.GetPref = (key) =>
     key === 'metric_order_match' ? ['behind_stat', 'match_stat'] : undefined;
   const r2 = await mountReports();
-  // The selection persists in the view registry (B/D wrote the rows), so
-  // this mount restores BOTH picks — the preview carries the appendix
-  // suffix before anything is removed.
-  const previewLine = () => {
-    const h2 = [...r2.querySelectorAll('h2')].find((h) => h.textContent.includes('Preview'));
-    return (h2 && h2.parentElement.querySelector('p.muted')?.textContent) || '';
-  };
-  const hadAppendix = previewLine().includes('+ appendix');
-  // The − button removes each row (element refs: the survivors re-index
-  // between clicks), and NO rows means NO appendix — the add button is
-  // all that stays, so the picker remains reachable.
-  for (const row of [...pickRows(r2)]) {
-    click(row.querySelector('.rep-drop'));
-    await sleep(60);
-  }
+  // B/D wrote the selection (the registry `stats`), so this mount
+  // restores the chip — remounted state, not a leftover DOM node.
   check(
-    'the − button removes every row — no rows means no appendix, only the add button left',
-    pickRows(r2).length === 0 &&
-      !!addBtn(r2) &&
-      hadAppendix &&
-      !previewLine().includes('+ appendix'),
-    JSON.stringify({ hadAppendix, rows: pickRows(r2).length }),
+    'the selection restores from the registry on remount (chip + readout line back)',
+    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Match stat']) &&
+      !!readout(r2, 'Match stat'),
+    JSON.stringify(tokenNames(r2)),
   );
-
-  // A fresh (empty) row offers the WHOLE list, in sequence order.
-  click(addBtn(r2));
+  // Drop it so the WHOLE sequence is on offer again (the field only ever
+  // lists what you do not hold).
+  click(removeBtn(r2, 'Match stat'));
   await sleep(60);
-  const opts = await openRow(pickRows(r2)[0]);
-  const labels = opts.map((o) => o.textContent.trim());
+  const opts = await openBox(r2);
+  const labels = optLabels(opts);
   check(
     'a saved order re-sequences the metric list (behind_stat first)',
     JSON.stringify(labels) === JSON.stringify(['Behind stat', 'Match stat']),
     JSON.stringify(labels),
   );
-  // The EXPORTED document follows the SAME sequence (design §2.5's
-  // intent — the W4 addendum): appendixEntries() sorts by the match
-  // sequence instead of the selection's id-ASC build order, so the
-  // generated document's sections re-order with the pref too. Pick both
-  // stats (the second row only offers what the first doesn't hold) and
-  // generate while THIS mount is live — mounting the next root unmounts
-  // and detaches this one.
-  const generate = async (root) => {
-    const gen = [...root.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Generate report'),
-    );
-    click(gen);
-    await sleep(120);
-    return root.querySelector('.rep-md')?.textContent || '';
-  };
-  const sectionOrder = (text) => [text.indexOf('### Match stat'), text.indexOf('### Behind stat')];
-  click(opts.find((o) => o.textContent.includes('Behind stat')));
+  // Pick in the OPPOSITE order: the chips still render in the sequence
+  // (the exported document's sections follow the same one).
+  click(opts.find((o) => o.textContent.includes('Match stat')));
   await sleep(60);
-  click(addBtn(r2));
+  const opts2 = await openBox(r2);
+  click(opts2.find((o) => o.textContent.includes('Behind stat')));
   await sleep(60);
-  const opts2 = await openRow(pickRows(r2)[1]);
-  click(opts2.find((o) => o.textContent.includes('Match stat')));
-  await sleep(60);
-  const doc2 = await generate(r2);
+  check(
+    'the chips render in the metric-order sequence, not the pick order',
+    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Behind stat', 'Match stat']),
+    JSON.stringify(tokenNames(r2)),
+  );
+  const dl = await saveReport(r2);
+  const text = savedText(dl);
   {
-    const [m, b] = sectionOrder(doc2);
+    const [m, b] = [text.indexOf('### Match stat'), text.indexOf('### Behind stat')];
     check(
-      'the exported document orders its sections by the match sequence (behind_stat first)',
+      'the saved document orders its sections by the match sequence (behind_stat first)',
       m > -1 && b > -1 && b < m,
-      doc2.replace(/\s+/g, ' ').slice(0, 300),
+      text.replace(/\s+/g, ' ').slice(0, 300),
     );
   }
+  // Backspace on the EMPTY field drops the last chip (the keyboard path).
+  const input = r2.querySelector('#rep-stats');
+  input.dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
+  await sleep(60);
+  input.dispatchEvent(
+    new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+  );
+  await sleep(60);
+  check(
+    'Backspace on an empty field removes the last chip (sequence order)',
+    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Behind stat']),
+    JSON.stringify(tokenNames(r2)),
+  );
+  click(removeBtn(r2, 'Behind stat'));
+  await sleep(60);
+  check(
+    'the remaining chip’s ✕ clears the field',
+    tokenNames(r2).length === 0,
+    JSON.stringify(tokenNames(r2)),
+  );
+  const dl2 = await saveReport(r2);
+  const text2 = savedText(dl2);
+  check(
+    'no chips → the saved file carries no appendix section (the body alone)',
+    text2.includes('REPORT BODY') && !text2.includes('## Stats appendix'),
+    text2.replace(/\s+/g, ' ').slice(0, 300),
+  );
 
   // Reset deletes the key (metricorder.resetOrder → kvstore Delete) —
   // here: the key simply stops resolving, and the default returns.
   delete bindings.handlers.GetPref;
   const r3 = await mountReports();
-  for (const row of [...pickRows(r3)]) {
-    click(row.querySelector('.rep-drop'));
-    await sleep(60);
-  }
-  click(addBtn(r3));
-  await sleep(60);
-  const opts3 = await openRow(pickRows(r3)[0]);
-  const labels3 = opts3.map((o) => o.textContent.trim());
+  const opts3 = await openBox(r3);
+  const labels3 = optLabels(opts3);
   check(
     'key gone → the default sequence again (catalog order)',
     JSON.stringify(labels3) === JSON.stringify(['Match stat', 'Behind stat']),
@@ -515,18 +572,17 @@ console.log('G. the picker follows the match ORDER pref (metricorder — the one
   );
   click(opts3.find((o) => o.textContent.includes('Match stat')));
   await sleep(60);
-  click(addBtn(r3));
-  await sleep(60);
-  const opts4 = await openRow(pickRows(r3)[1]);
+  const opts4 = await openBox(r3);
   click(opts4.find((o) => o.textContent.includes('Behind stat')));
   await sleep(60);
-  const doc3 = await generate(r3);
+  const dl3 = await saveReport(r3);
+  const text3 = savedText(dl3);
   {
-    const [m, b] = sectionOrder(doc3);
+    const [m, b] = [text3.indexOf('### Match stat'), text3.indexOf('### Behind stat')];
     check(
-      'key gone → the document returns to the default section order (match_stat first)',
+      'key gone → the saved file returns to the default section order (match_stat first)',
       m > -1 && b > -1 && m < b,
-      doc3.replace(/\s+/g, ' ').slice(0, 300),
+      text3.replace(/\s+/g, ' ').slice(0, 300),
     );
   }
 }

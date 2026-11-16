@@ -28,8 +28,9 @@
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
-  import SuggestInput from '../components/SuggestInput.svelte';
+  import TokenSelect from '../components/TokenSelect.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import { downloadText } from '../download.js';
   import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
 
@@ -41,19 +42,21 @@
   // component serves both the standalone route and Match's embedded
   // tab, one selection pool). URL wins for the context id: routeId
   // below overrides the restored matchId whenever the route carries one,
-  // so a deep link never loses to the registry. Rendered docs, appendix
-  // rows and busy/error stay transient and never restore.
+  // so a deep link never loses to the registry. The composed document
+  // and busy/error stay transient and never restore.
   const repSeed = seed('reports', {
     tplId: '',
     matchId: 0,
     steamId: '',
     roundNo: 1,
-    // The appendix PICKER ROWS: one searchable single-select per stat
-    // ({key, id, text} — one empty row to start, + adds another, −
-    // removes its own). View-local working state like the rest of this
-    // view's selection: registry-owned (viewstate), never the URL, never
-    // web storage.
-    rows: [{ key: 1, id: null, text: '' }],
+    // The appendix SELECTION: the picked stat ids as a SET (no
+    // duplicates possible — TokenSelect filters the list against it),
+    // rendered in the metric-order sequence by the `picked` derivation
+    // below. View-local working state like the rest of this view's
+    // selection: registry-owned (viewstate), never the URL, never web
+    // storage. A fresh key (the retired `rows` picker shape is not
+    // migrated — pre-release, wipe-and-rerun is the contract).
+    stats: [],
   });
   let templates = $state([]);
   let tplError = $state('');
@@ -80,10 +83,10 @@
   let metrics = $state([]);
   let metricsError = $state('');
   // The match-scope ORDER pref (metricorder; null = absent ⇒ default
-  // sequence) — presentation only, never gates the picker rows.
+  // sequence) — presentation only, never gates the token field.
   let orderPref = $state(null);
-  let rows = $state(repSeed.rows); // picker rows: {key, id, text} — id null = nothing picked yet
-  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, rows }));
+  let stats = $state(repSeed.stats); // picked stat ids (a set) — chip order comes from `picked`
+  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, stats }));
   // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
   // rows are the CANONICAL read's stored values for THIS match (design
   // §5: a picked metric reads stored rows — no per-toggle query-time
@@ -106,8 +109,7 @@
   // Completion is the refetch point: metric-done replaced the stored
   // rows (the cache already flushed through services' listener) and
   // moved fresh/behind, so both the state map and the picked set
-  // reload — the doc above them is a generated snapshot the user
-  // re-renders.
+  // reload — a saved document is a snapshot the user saves again.
   $effect(() =>
     onMetricDone(() => {
       appendixReload += 1;
@@ -115,7 +117,9 @@
     }),
   );
 
-  let doc = $state(''); // rendered report text
+  // The save's error slot: a failed template render OR a failed save
+  // lands here (the dialog's cancel is a silent no-op by save.js's
+  // contract) — transient, never restored.
   let docError = $state('');
   let rendering = $state(false);
 
@@ -150,7 +154,7 @@
   }
 
   // The metrics + compute-state read (mount AND metricsError's Retry):
-  // both land together so the picker rows and their state chips settle
+  // both land together so the token field and its readout lines settle
   // from one attempt. Clears only when BOTH land, so the appendix never
   // claims "No custom stats yet" while the previous failure still
   // stands. The match ORDER pref rides the same reload but feeds only
@@ -266,60 +270,31 @@
   // The metric catalog on offer is FLAT and match-scope only (design §5:
   // the Reports appendix is a per-match document — profile-scope metrics
   // surface on PlayerProfile, and the groupBy grouping died with the W2
-  // grammar wave: every table is "per player"). It feeds the picker rows
+  // grammar wave: every table is "per player"). It feeds the token field
   // in the match ORDER sequence (lib/metricorder.js — the one ordering
   // mechanism): scope-filtered catalog in sequence order, absent pref ⇒
   // the default sequence (catalog order over the unranked). The pins
-  // array never orders this list — the appendix selection is the rows'
+  // array never orders this list — the appendix selection is the set's
   // own.
   const matchMetrics = $derived(inSequence('match', orderPref, metrics));
 
-  // --- The appendix picker rows -------------------------------------------
-  // Each row is ONE searchable single-select over that catalog, through
-  // SuggestInput (kind 'text' — THE one suggestion dropdown): + adds an
-  // empty row, − removes its row. A row contributes its stat only while
-  // its text still names it (typo-free by construction, and editing the
-  // field re-opens every choice); `checked` — the SET the read pipeline
-  // below has always consumed — is DERIVED from the rows, so the stored
-  // read and the export stay keyed by a set: an empty row selects
-  // nothing, and a row only ever offers the stats no other row holds, so
-  // no duplicate can form.
-  const normStat = (s) => String(s == null ? '' : s).trim().toLowerCase();
-  const metricsById = $derived(new Map(matchMetrics.map((m) => [m.id, m])));
+  // --- The appendix selection (a SET of stat ids) ---------------------------
+  // `stats` is the set; `picked` is its RENDER — the catalog filtered to
+  // it, which is exactly the metric-order sequence, so the chips read in
+  // the same order the exported document's sections do (and the token
+  // field can never re-offer a picked stat: TokenSelect filters its list
+  // against `tokens`, so no duplicate can form).
   const metricText = (m) => m.title || m.name;
-  const checked = $derived.by(() => {
-    const sel = {};
-    for (const r of rows) {
-      const m = r.id == null ? null : metricsById.get(r.id);
-      if (m && normStat(r.text) === normStat(metricText(m))) sel[r.id] = true;
-    }
-    return sel;
-  });
+  const picked = $derived(matchMetrics.filter((m) => stats.includes(m.id)));
 
-  // The suggestions one row offers: every match-scoped stat the OTHER
-  // rows don't already hold (its own stays listed, so re-picking or
-  // clearing itself works).
-  function rowItems(i) {
-    const own = rows[i] ? rows[i].id : null;
-    return matchMetrics.filter((m) => !(checked[m.id] && m.id !== own));
+  // addStat/removeStat write the SET (idempotent — the list is already
+  // filtered, this is the belt to its braces).
+  function addStat(m) {
+    if (!stats.includes(m.id)) stats = [...stats, m.id];
   }
 
-  // pickMetric writes the row (and clears any other row holding the same
-  // stat — the belt to rowItems' braces; the SET never duplicates).
-  function pickMetric(i, m) {
-    const text = metricText(m);
-    rows = rows.map((r, j) =>
-      j === i ? { ...r, id: m.id, text } : r.id === m.id ? { ...r, id: null, text: '' } : r,
-    );
-  }
-
-  function addRow() {
-    const key = rows.reduce((k, r) => Math.max(k, r.key), 0) + 1;
-    rows = [...rows, { key, id: null, text: '' }];
-  }
-
-  function removeRow(i) {
-    rows = rows.filter((_, j) => j !== i);
+  function removeStat(id) {
+    stats = stats.filter((x) => x !== id);
   }
 
   // ONE stored read for the whole picked set (design §5: no per-toggle
@@ -334,10 +309,7 @@
     const mid = matchId;
     appendixReload; // spectra:metric-done → refetch (the cache flushed)
     const defs = new Map(metrics.map((m) => [m.id, m]));
-    const sel = Object.keys(checked)
-      .map(Number)
-      .filter((id) => defs.has(id))
-      .sort((a, b) => a - b);
+    const sel = stats.filter((id) => defs.has(id)).sort((a, b) => a - b);
     if (!sel.length) {
       appendix = {};
       return;
@@ -422,10 +394,31 @@
     return !!matchId;
   }
 
+  // The filename the save dialog opens with: the template's title
+  // slugged, the target it addresses, and the extension the template's
+  // own format dictates (the download helper derives the dialog's
+  // extension from it).
+  function reportFilename() {
+    const base =
+      String((tpl && (tpl.title || tpl.id)) || 'report')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'report';
+    const target =
+      tpl.scope === 'player' ? steamId : tpl.scope === 'round' ? `round-${roundNo}` : `match-${matchId}`;
+    return `${base}-${target}.${(tpl.format || 'md') === 'html' ? 'html' : 'md'}`;
+  }
+
+  // Save (was "generate + preview"): render the Go template, compose the
+  // client-side appendix onto it (compositeText — the export pipeline
+  // below), and land the whole document through the native save dialog
+  // (downloadText → save.js; cancel resolves "" and stays silent, a
+  // genuine failure lands in docError). The appendix goes WITH the file
+  // because the composition happens here — the /api/export route never
+  // sees it.
   async function render() {
     rendering = true;
     docError = '';
-    doc = '';
     try {
       const text = await renderReport(
         tplId,
@@ -433,7 +426,9 @@
         tpl && tpl.scope === 'player' ? steamId : '',
         tpl && tpl.scope === 'round' ? roundNo : 0,
       );
-      doc = text || '';
+      const body = text || '';
+      const html = (tpl.format || 'md') === 'html';
+      await downloadText(reportFilename(), html ? 'text/html' : 'text/markdown', compositeText(body));
     } catch (e) {
       docError = errText(e);
     } finally {
@@ -520,12 +515,13 @@
   }
 
   // The Go templates are ours (trusted) — the appendix is built from
-  // server data + escaped text, so concatenation is safe.
-  function compositeText() {
+  // server data + escaped text, so concatenation is safe. `body` is the
+  // rendered template: with no appendix entries the file IS the body.
+  function compositeText(body) {
     const ents = appendixEntries();
-    if (!ents.length) return doc;
-    if ((tpl && tpl.format) === 'html') return doc + appendixHtml();
-    return doc + appendixMd();
+    if (!ents.length) return body;
+    if ((tpl && tpl.format) === 'html') return body + appendixHtml();
+    return body + appendixMd();
   }
 
   function esc(s) {
@@ -535,8 +531,6 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
-
-  const hasAppendix = $derived(appendixEntries().length > 0);
 </script>
 
 <div class="view">
@@ -557,12 +551,19 @@
   <section class="panel">
     <div class="row-between">
       <h2>{S.reports.templateAndTarget}</h2>
-      <!-- Render lives with its inputs: template + target pick the scope,
-           this button produces the document they both address. -->
+      <!-- Save lives with its inputs: template + target pick the scope,
+           this button produces the document they both address and hands
+           it to the save dialog. The busy shape is pinned by
+           progress-presentation.dom.mjs — a save that renders the body
+           first is still "Generating…". -->
       <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
         {#if rendering}Generating…{:else}{S.reports.generateReport}<span class="codicon codicon-play"></span>{/if}
       </button>
     </div>
+    {#if docError}
+      <!-- The one error slot for render + save (cancel stays silent). -->
+      <p class="error" role="alert">{docError}</p>
+    {/if}
     <div class="rep-tpl-grid">
       {#each templates as t (t.id)}
         <button
@@ -571,7 +572,7 @@
           aria-pressed={tplId === t.id}
           onclick={() => {
             tplId = t.id;
-            doc = '';
+            docError = '';
           }}
         >
           <span class="rep-tpl-title">{t.title}</span>
@@ -663,98 +664,64 @@
           </p>
         {/if}
       {:else}
-        {#each rows as row, i (row.key)}
+        <!-- One field, not N rows: type to search, pick → a chip (the
+             set of ids lives in `stats`; TokenSelect renders it in the
+             metric-order sequence). -->
+        <TokenSelect
+          id="rep-stats"
+          items={matchMetrics}
+          text={metricText}
+          tokens={picked.map((m) => ({ id: m.id, label: metricText(m) }))}
+          placeholder={S.reports.metricHint}
+          ariaLabel={S.reports.metricAria}
+          removeAria={S.reports.removeStatAria}
+          align="start"
+          onselect={addStat}
+          onremove={removeStat}
+        />
+        <!-- The per-picked-stat readout: the honesty line each stat
+             earns — expression, row count or STATE chip (never a
+             fabricated number), in the same sequence as its chip. -->
+        {#each picked as m (m.id)}
           <div class="rep-metric">
-            <SuggestInput
-              id="rep-pick-{row.key}"
-              kind="text"
-              items={rowItems(i)}
-              text={metricText}
-              bind:value={row.text}
-              placeholder={S.reports.metricHint}
-              ariaLabel={S.reports.metricAria}
-              align="start"
-              wrapClass="rep-pick"
-              onselect={(m) => pickMetric(i, m)}
-            />
-            {#if row.id != null && checked[row.id]}
-              <span class="muted mono rep-metric-expr">{metricsById.get(row.id).expr}</span>
-              {#if appendix[row.id] && appendix[row.id].loading}
-                <span class="muted">…</span>
-              {:else if appendix[row.id] && appendix[row.id].error}
-                <span class="error-text" title={appendix[row.id].error}>{S.reports.failedLabel}</span>
-              {:else}
-                {@const chip = appendixChip(row.id)}
-                {#if chip && chip.kind === 'rows'}
-                  <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
-                {:else if chip}
-                  <!-- State in lieu of rows (design §5): processing /
-                       failed / behind / no-data through StatusChip. -->
-                  <StatusChip
-                    status={chip.state}
-                    title={chip.title}
-                    progress={metricProgressFrac(metricProgress, row.id)}
-                    stage={metricProgressStage(metricProgress, row.id)}
-                  />
-                {/if}
+            <strong>{metricText(m)}</strong>
+            <span class="muted mono rep-metric-expr">{m.expr}</span>
+            {#if appendix[m.id] && appendix[m.id].loading}
+              <span class="muted">…</span>
+            {:else if appendix[m.id] && appendix[m.id].error}
+              <span class="error-text" title={appendix[m.id].error}>{S.reports.failedLabel}</span>
+            {:else}
+              {@const chip = appendixChip(m.id)}
+              {#if chip && chip.kind === 'rows'}
+                <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
+              {:else if chip}
+                <!-- State in lieu of rows (design §5): processing /
+                     failed / behind / no-data through StatusChip. -->
+                <StatusChip
+                  status={chip.state}
+                  title={chip.title}
+                  progress={metricProgressFrac(metricProgress, m.id)}
+                  stage={metricProgressStage(metricProgress, m.id)}
+                />
               {/if}
             {/if}
-            <button
-              class="btn small ghost rep-drop"
-              title={S.reports.removeStat}
-              aria-label={S.reports.removeStat}
-              onclick={() => removeRow(i)}>−</button>
           </div>
         {/each}
-        <button
-          class="btn small rep-add"
-          title={S.reports.addStat}
-          aria-label={S.reports.addStat}
-          onclick={addRow}>+</button>
-      {/if}
-    </section>
-
-    <section class="panel">
-      <h2>{S.reports.previewHeading}</h2>
-      <p class="muted">
-        {tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? S.reports.appendixSuffix : ''}
-      </p>
-      {#if docError}
-        <p class="error" role="alert">{docError}</p>
-      {/if}
-      {#if doc}
-        {#if (tpl.format || 'md') === 'html'}
-          <!-- Go templates are authored in-repo (trusted) — rendered as HTML. -->
-          <div class="rep-html">{@html compositeText()}</div>
-        {:else}
-          <pre class="rep-md">{compositeText()}</pre>
-        {/if}
-      {:else if !rendering}
-        <p class="muted" role="status">{S.reports.pressGenerate}</p>
       {/if}
     </section>
   {/if}
 </div>
 
 <style>
-  /* The appendix picker rows (rep-): one searchable stat field per row
-     with its expression, state chip and remove button beside it, and the
-     add-row button underneath. The row keeps the .rep-metric concept
-     class (one stat's row — global style-m3b.css still contributes the
-     expr ellipsis and the wrap). */
+  /* The appendix (rep-): the token field spans the panel (its own
+     full-width .tk), then one readout row per picked stat — the row
+     keeps the .rep-metric concept class (one stat's line — global
+     style-m3b.css still contributes the expr ellipsis and the wrap). */
   .rep-metric {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-  }
-
-  .rep-metric :global(.rep-pick) {
-    flex: 1 1 240px;
-    min-width: 0;
-  }
-
-  .rep-metric :global(.rep-pick .input) {
-    width: 100%;
+    margin-top: 6px;
   }
 </style>
