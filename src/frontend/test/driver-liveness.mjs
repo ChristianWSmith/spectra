@@ -345,7 +345,14 @@ const EXPECTED = {
   // default: seeded empty, and carrying aria-labels with no
   // placeholders). The default-hides check itself, the landing-URL
   // re-pin and the label-sequence re-pin (…· POSITION) moved IN PLACE.
-  'replay.dom.mjs': 463,
+  // replay 463 → 465 (2026-11-16, match-view V11 — the round ribbon is
+  // centered over the RADAR): section A's bar-order pins rewrote IN
+  // PLACE for the top bar's new three-cell shape (left wing .rp-cluster
+  // / ribbon / right wing .rp-tools — the ribbon is the middle cell and
+  // the `?` heads the right wing), and section C gained +2 stylesheet
+  // pins for the equal-width wing rules that center the ribbon cell
+  // (jsdom has no layout — the rules are the pin).
+  'replay.dom.mjs': 465,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
