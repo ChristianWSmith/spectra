@@ -7,6 +7,7 @@
     updateQuery,
     deleteQuery,
     listQueryHistory,
+    deleteQueryHistory,
     clearQueryHistory,
     errText,
   } from '../services.js';
@@ -61,10 +62,16 @@
   let saveName = $state('');
   let saveDescription = $state('');
   let saveError = $state('');
+  // The name input's node — the history row's Save hands it focus after
+  // loading the line into the form (saveFromHistory).
+  let nameInput = $state(null);
   // saveTarget is the SAVE TIE: {id, name} of the saved row the editor
   // fields were loaded from (or last produced). Null = a fresh editor →
   // Save inserts. Loading a saved row sets it; editing its SQL keeps it
-  // (no handler clears it on edit). Routing lives in saveCurrent.
+  // (no handler clears it on edit). Loading a HISTORY line clears it
+  // (loadHistory — a history line starts a fresh save form, so a stale
+  // tie can never turn Save into a silent UPDATE of another row).
+  // Routing lives in saveCurrent.
   let saveTarget = $state(null);
   // savedGen tags the current window sequence so a Load-more reply that
   // lands after a (re)fetch restart is dropped instead of interleaved;
@@ -205,6 +212,28 @@
     saveTarget = { id: sq.id, name: sq.name };
   }
 
+  // loadHistory pulls a history line into the editor as a FRESH save
+  // form: name and description empty, saveTarget null — the tie names a
+  // saved ROW, so without this reset the next Save would silently UPDATE
+  // whatever saved row was loaded before this line (the save-target
+  // footgun). Name + description are required to save (form and
+  // server-side), which is why a history line always goes through here.
+  function loadHistory(h) {
+    sql = h.sql;
+    saveName = '';
+    saveDescription = '';
+    saveTarget = null;
+    saveError = ''; // a fresh form never carries the previous one's error
+  }
+
+  // saveFromHistory is a history row's Save button: load the line into
+  // the form (above) and hand it focus — the only thing left to type is
+  // the name.
+  function saveFromHistory(h) {
+    loadHistory(h);
+    requestAnimationFrame(() => nameInput?.focus());
+  }
+
   // saveCurrent routes Save by the tie and the CURRENT name field:
   //   tied AND the name still names an existing saved row → UPDATE the
   //     tied row (its own name → rewrite SQL/description; a DIFFERENT
@@ -253,6 +282,19 @@
       await refreshSaved();
     } catch (e) {
       saveError = errText(e);
+    }
+  }
+
+  // removeHistory deletes ONE line server-side (History is a persisted
+  // FIFO — a frontend-only splice would resurrect on the next fetch) and
+  // drops it from the list; failures land in the history slot.
+  async function removeHistory(h) {
+    historyError = '';
+    try {
+      await deleteQueryHistory(h.id);
+      history = history.filter((r) => r.id !== h.id);
+    } catch (e) {
+      historyError = errText(e);
     }
   }
 
@@ -425,6 +467,31 @@
             }
           }}
         ></textarea>
+        <!-- The save form lives in the STATEMENT card (owner, 2026-11-15):
+             name/description belong with the statement they name, above
+             the Run/Export row. `sql-save-bar` travels with it — its CSS
+             is card-agnostic. -->
+        <div class="toolbar sql-save-bar">
+          <input
+            class="input"
+            placeholder="name…"
+            aria-label="Query name"
+            bind:value={saveName}
+            bind:this={nameInput}
+            onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
+          />
+          <input
+            class="input sql-save-desc"
+            placeholder="description…"
+            aria-label="Query description"
+            bind:value={saveDescription}
+            onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
+          />
+          <button class="btn small" onclick={saveCurrent} disabled={!sql.trim()}>Save</button>
+        </div>
+        {#if saveError}
+          <p class="error" role="alert">{saveError}</p>
+        {/if}
         <div class="toolbar">
           <button class="btn primary" onclick={run} disabled={running || !sql.trim()}>
             {#if running}Running…{:else}Run <span class="codicon codicon-play"></span>{/if}
@@ -499,29 +566,9 @@
            never squeeze the saved panel off the screen. -->
       <div class="sql-lower">
         <section class="panel">
-          <div class="row-between">
-            <h2>Saved queries</h2>
-            <div class="toolbar sql-save-bar">
-              <input
-                class="input"
-                placeholder="name…"
-                aria-label="Query name"
-                bind:value={saveName}
-                onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
-              />
-              <input
-                class="input sql-save-desc"
-                placeholder="description…"
-                aria-label="Query description"
-                bind:value={saveDescription}
-                onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
-              />
-              <button class="btn small" onclick={saveCurrent} disabled={!sql.trim()}>Save</button>
-            </div>
-          </div>
-          {#if saveError}
-            <p class="error" role="alert">{saveError}</p>
-          {/if}
+          <!-- The save form moved to the Statement card (owner, 2026-11-15)
+               — this card keeps its heading, list and footer. -->
+          <h2>Saved queries</h2>
           {#if savedError}
             <p class="error" role="alert">
               {savedError}
@@ -580,16 +627,40 @@
           {/if}
           <div class="sql-hist-list">
             {#each history as h (h.id)}
-              <button class="sql-hist" title={short(cellTitle(h.sql), SQL_TITLE_CAP)} onclick={() => (sql = h.sql)}>
-                <span
-                  class="sql-dot"
-                  class:ok={h.ok}
-                  class:bad={!h.ok}
-                  title={h.ok ? 'ok' : 'error'}
-                ></span>
-                <span class="mono sql-hist-sql">{short(truncateSql(h.sql), 100)}</span>
-                <span class="sql-hist-meta num">{h.ms} ms · {h.rows} rows</span>
-              </button>
+              <!-- One history line = a ROW plus three buttons (the
+                   saved-queries row pattern): nested <button> is invalid,
+                   so the loadable body is the .sql-hist-load button and
+                   Save/Remove ride beside it as ghost buttons. -->
+              <div class="sql-hist as-row">
+                <button
+                  class="sql-hist-load"
+                  title={short(cellTitle(h.sql), SQL_TITLE_CAP)}
+                  onclick={() => loadHistory(h)}
+                >
+                  <span
+                    class="sql-dot"
+                    class:ok={h.ok}
+                    class:bad={!h.ok}
+                    title={h.ok ? 'ok' : 'error'}
+                  ></span>
+                  <span class="mono sql-hist-sql">{short(truncateSql(h.sql), 100)}</span>
+                  <span class="sql-hist-meta num">{h.ms} ms · {h.rows} rows</span>
+                </button>
+                <button
+                  class="btn small ghost"
+                  title="Save this line as a query"
+                  aria-label="Save history line: {short(truncateSql(h.sql), 40)}"
+                  onclick={() => saveFromHistory(h)}
+                  ><span class="codicon codicon-save"></span></button
+                >
+                <button
+                  class="btn small ghost"
+                  title="Remove this line from history"
+                  aria-label="Remove history line: {short(truncateSql(h.sql), 40)}"
+                  onclick={() => removeHistory(h)}
+                  ><span class="codicon codicon-close"></span></button
+                >
+              </div>
             {:else}
               {#if !historyError}
                 <p class="muted" role="status">No runs yet.</p>

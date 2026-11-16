@@ -127,4 +127,17 @@ func (s *QueryService) ListHistory(limit int) ([]models.QueryHistoryRow, error) 
 	return s.st.ListQueryHistory(limit)
 }
 
+// DeleteHistory removes ONE history line by id (the console's per-line
+// Remove). Unknown ids report "no query history entry with id" — the
+// friendly not-found message, never the raw store.ErrNotFound.
+func (s *QueryService) DeleteHistory(id int64) error {
+	if err := s.st.DeleteQueryHistory(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no query history entry with id %d", id)
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *QueryService) ClearHistory() error { return s.st.ClearHistory() }

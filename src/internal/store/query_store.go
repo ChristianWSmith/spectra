@@ -569,6 +569,18 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 	return out, nil
 }
 
+// DeleteQueryHistory removes ONE history line (the console's per-line
+// Remove — history is persisted, so the frontend cannot splice a row and
+// have it stay gone). Unknown ids → ErrNotFound; the FIFO trim is
+// untouched (it runs on append).
+func (s *Store) DeleteQueryHistory(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM query_history WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("couldn't delete the query history entry: %w", err)
+	}
+	return affectedOrNotFound(res, "deleting the query history entry")
+}
+
 // ClearHistory wipes the console history.
 func (s *Store) ClearHistory() error {
 	if _, err := s.db.Exec(`DELETE FROM query_history`); err != nil {
