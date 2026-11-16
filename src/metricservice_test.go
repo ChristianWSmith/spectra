@@ -460,10 +460,16 @@ func TestListMetricsPageArity(t *testing.T) {
 	// Each filter slot answers in ITS position: the store's pre-SQL
 	// rejection names the argument that carried the bad word — an arg
 	// dropped or shifted on the way down would surface as "" and pass.
+	// The denominator rows carry Reading B's vocabulary (2026-11-16): a
+	// bogus word, a known token mixed with an unknown one and an empty
+	// element are all the store's own `unknown denominator filter` —
+	// token-level rejection, not just word-level.
 	for _, tc := range []struct{ slot, word, want string }{
 		{"origin", "everything", `unknown origin filter "everything"`},
 		{"scope", "career", `unknown scope filter "career"`},
 		{"denominator", "games", `unknown denominator filter "games"`},
+		{"denominator", "rounds,games", `unknown denominator filter "rounds,games"`},
+		{"denominator", "rounds,", `unknown denominator filter "rounds,"`},
 		{"format", "huge", `unknown format filter "huge"`},
 	} {
 		var err error

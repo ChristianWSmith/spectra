@@ -42,6 +42,11 @@ export const builder = {
   denominatorLabel: 'Denominator',
   filterRounds: 'Rounds',
   filterMatches: 'Matches',
+  // The Denominator group's third box (Reading B, 2026-11-16): the
+  // boxes are exactly the column's three values — this one is the
+  // denominator-less rows. Distinct from denomNone ('none'), the
+  // editor's Denominator SELECT option.
+  filterNone: 'None',
   typeLabel: 'Type',
   filterAuto: 'Auto',
   filterInt: 'Int',
@@ -49,6 +54,11 @@ export const builder = {
   filterFloat2: 'Float2',
   filterPercent: 'Percent',
   filterCurrency: 'Currency',
+  // The Pinning group (the list's fifth filter — client-side: pins live
+  // in localStorage, so the backend cannot narrow on them).
+  pinningLabel: 'Pinning',
+  filterPinned: 'Pinned',
+  filterUnpinned: 'Unpinned',
 
   // empty states + paging
   noMetricsMatch: 'No metrics match “{q}.”',

@@ -760,14 +760,18 @@ export function listMetrics() {
 // same canonical order as listMetrics, ONE window of `limit` rows
 // strictly after `afterID` (0 = the first window), narrowed SERVER-side
 // by `query` (case-insensitive LIKE over name/title) AND by the four
-// filter groups — `originFilter` (Built-in / My metrics: '' = both,
+// SERVER-side filter groups — `originFilter` (Built-in / My metrics: '' = both,
 // 'builtin', 'mine' = user + plugin, 'none' = both off),
 // `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none'),
-// `denomFilter` (Rounds / Matches: '', 'rounds', 'matches', 'none' — the
-// store's vocabulary and its denominator-less rule) and `formatFilter`
+// `denomFilter` (Denominator: '' = every box, 'empty' = no box, or the
+// canonical comma-subset of the three bucket tokens rounds/matches/none
+// where 'none' names the denominator-less rows — Reading B 2026-11-16,
+// store.ListMetricsPage's vocabulary) and `formatFilter`
 // (Type: '' = every format, 'none' = none, or the canonical comma-subset
 // of format tokens where 'auto' names the '' format — the store's
-// vocabulary, store.ListMetricsPage), returned as {rows, hasNext}.
+// vocabulary, store.ListMetricsPage), returned as {rows, hasNext}. The
+// fifth group (Pinning) is render-time in the view — pins live in
+// localStorage and never reach this call.
 // Read-cached keyed (query, originFilter, scopeFilter, denomFilter,
 // formatFilter, afterID, limit) — every filter rides the args, so they
 // join the ONE existing cache key and need no second cache — like

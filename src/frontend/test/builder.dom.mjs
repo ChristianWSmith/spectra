@@ -1,15 +1,18 @@
 // jsdom driver for the metrics Builder's list UX (owner wave A: the
 // built-in editor load + the scope/denominator filter pairs + the
 // denominator chip; the filter UI is now ONE multi-select; the Type
-// group = the format filter).
+// group = the format filter; w13c 2026-11-16 — Reading B's third
+// Denominator box (None) and the fifth render-time Pinning group).
 // Section labels below match the run's console.log letters:
 //   A. the ONE filter multi-select (a Filters trigger opens the
-//      canonical Popover's checkbox panel with four labelled groups —
+//      canonical Popover's checkbox panel with five labelled groups —
 //      Origin (Built-in|My metrics), Scope (Match|Profile),
-//      Denominator (Rounds|Matches), Type (Auto|Int|Float1|Float2|
-//      Percent|Currency); defaults: Built-in OFF / My metrics ON (the
-//      owner's standing ruling), every OTHER option ON — the owner's
-//      addendum and Type ruling ("all six checked except Built-in") —
+//      Denominator (Rounds|Matches|None), Type (Auto|Int|Float1|Float2|
+//      Percent|Currency), Pinning (Pinned|Unpinned); defaults: Built-in
+//      OFF / My metrics ON (the owner's standing ruling), every OTHER
+//      option ON — the owner's addendum, the Type ruling ("all six
+//      checked except Built-in"), Reading B's three Denominator boxes
+//      and both Pinning boxes —
 //      so the first window is the mine partition and format "" (no
 //      predicate)) — the trigger opens and closes it — and the
 //      SERVER-side narrowings the checked sets drive: the scripted
@@ -24,11 +27,14 @@
 //      formatFilter) — the group headers follow the partition, and
 //      both Origin options off is a legal empty read;
 //   C. the Scope group, the Denominator group and the Type group
-//      narrow the SAME server call (exact args + cursor reset), both-off
-//      in a pair group is the empty state, the lead's denominator-less
-//      rule holds (a metric with no denominator passes whatever the
-//      group says), and the Type group's canonical subset word drives
-//      the auto bucket (format '' rows), subsets and all-off;
+//      narrow the SAME server call (exact args + cursor reset), all-off
+//      in any server-side group is the empty state, the Denominator
+//      group sends Reading B's canonical subset words (a row passes iff
+//      its bucket is checked — "" = all three, "empty" = none), the
+//      Pinning group narrows RENDER-TIME with NO new server call (the
+//      one sanctioned exception — pins live in localStorage), and the
+//      Type group's canonical subset word drives the auto bucket
+//      (format '' rows), subsets and all-off;
 //   D. the built-in EDITOR load: a builtin row is a button like every
 //      other and fills the form read-only — Save disabled with the
 //      end-user reason, chip present, delete absent, pin/preview live —
@@ -46,10 +52,10 @@
 //      numeric columns by VALUE (never their formatted text) and text
 //      columns A→Z, every header flipping on a second click;
 //   F. a user row still loads the form for editing (unaffected);
-//   G. the search composes with the filters (all four groups) in ONE
-//      server call;
+//   G. the search composes with the filters (all four server-side
+//      groups, incl. a Denominator subset word) in ONE server call;
 //   H. the filter checks are view-local registry state
-//      (viewstate.svelte.js): all twelve restore across unmount →
+//      (viewstate.svelte.js): all fifteen restore across unmount →
 //      remount, and resetViewState() returns the next mount to the
 //      defaults;
 //   I. the compute-state surface (design §4/§5): every list item and
@@ -176,8 +182,9 @@ bindings.MetricsService.ListMetrics = () => Promise.resolve(METRICS);
 // plugin, name ASC within each origin) — the order the paged read and
 // the view's group headers are built on. Denominators: one 'rounds', one
 // 'matches', two denominator-less — the chip presence/absence and the
-// denominator-less rule both read these. Formats: adr_avg is the AUTO
-// bucket (format '' — what the Type group's Auto selects), then float1,
+// bucket-subset filter (Reading B) both read these. Formats: adr_avg is
+// the AUTO bucket (format '' — what the Type group's Auto selects), then
+// float1,
 // float1, int beside the builtins' percent/float1 — the auto-bucket and
 // subset flips read these.
 const METRICS = [
@@ -206,10 +213,10 @@ const METRICS = [
 ];
 
 // The scripted paged read: the SAME partitions + LIKE the store applies
-// (store.ListMetricsPage — including the denominator-less rule and the
-// format subset), recorded so the checks can assert the exact args the
-// view sent — (query, originFilter, scopeFilter, denomFilter,
-// formatFilter, afterID, limit).
+// (store.ListMetricsPage — including Reading B's denominator bucket
+// subset and the format subset), recorded so the checks can assert the
+// exact args the view sent — (query, originFilter, scopeFilter,
+// denomFilter, formatFilter, afterID, limit).
 const pageCalls = [];
 bindings.handlers.ListMetricsPage = (
   q,
@@ -228,12 +235,19 @@ bindings.handlers.ListMetricsPage = (
   if (scopeFilter === 'match') rows = rows.filter((m) => (m.scope || 'match') === 'match');
   else if (scopeFilter === 'profile') rows = rows.filter((m) => m.scope === 'profile');
   else if (scopeFilter === 'none') rows = [];
-  // The denominator-less rule (lead ruling): a metric with NO
-  // denominator passes in every state — including both-off ("none"),
-  // which keeps exactly those rows instead of an empty window.
-  if (denomFilter === 'rounds') rows = rows.filter((m) => !m.denominator || m.denominator === 'rounds');
-  else if (denomFilter === 'matches') rows = rows.filter((m) => !m.denominator || m.denominator === 'matches');
-  else if (denomFilter === 'none') rows = rows.filter((m) => !m.denominator);
+  // The denominator BUCKET SUBSET (Reading B — the 2026-11-16 overturn
+  // of the 2026-11-14 "denominator-less rows pass in every state"
+  // ruling): the word is the checked set of buckets ("" = all three,
+  // "empty" = the empty set, otherwise the canonical comma-subset) and
+  // a row passes iff its bucket — the denominator column with '' spelled
+  // "none" — is in that set. store.ListMetricsPage mirrors this exactly
+  // (its DENOMINATOR FILTER note), and denomFilterWord composes the
+  // words on the view side.
+  if (denomFilter === 'empty') rows = [];
+  else if (denomFilter) {
+    const buckets = new Set(denomFilter.split(','));
+    rows = rows.filter((m) => buckets.has(m.denominator || 'none'));
+  }
   // The format subset (the Type group's word): "none" is the empty set
   // like origin's; any other word is the checked tokens, "auto" naming
   // the '' rows (the store's FORMAT FILTER).
@@ -403,6 +417,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../metricformats.js'", `from '${fileURL('src/lib/metricformats.js')}'`)
+  .replace("from '../metricdenoms.js'", `from '${fileURL('src/lib/metricdenoms.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
@@ -466,9 +481,11 @@ const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubb
 // pointerdown, so the panel only closes when a test clicks the trigger
 // or sends Escape). setBox flips ONE option to the requested state
 // through the same DOM path (the panel stays open — it is a
-// multi-select), and sixOf/typeOf read the first six (the three pairs)
-// and the Type six in panel order (null when a box is missing, which
-// fails every expectation below); twelveOf is the whole panel.
+// multi-select), and sixOf/typeOf read the first six (the three pairs —
+// Reading B's Denominator NONE box sits AFTER Rounds/Matches, so the
+// first-six shape holds) and the Type six in panel order (null when a
+// box is missing, which fails every expectation below); fifteenOf is
+// the whole panel.
 const filterTrigger = (r) => r.querySelector('.bld-filter-host > button');
 const panelOf = (r) => r.querySelector('.bld-filter-pop');
 const boxesOf = (r) => [...(panelOf(r)?.querySelectorAll('input[type="checkbox"]') || [])];
@@ -493,14 +510,22 @@ const sixOf = (r) =>
   ['Built-in', 'My metrics', 'Match', 'Profile', 'Rounds', 'Matches'].map(
     (l) => boxNamed(r, l)?.checked ?? null,
   );
+// The Denominator group's three boxes in panel order (Reading B) and
+// the Pinning group's pair — read beside sixOf/typeOf below.
+const denomOf = (r) => ['Rounds', 'Matches', 'None'].map((l) => boxNamed(r, l)?.checked ?? null);
+const PIN_LABELS = ['Pinned', 'Unpinned'];
+const pinningOf = (r) => PIN_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 // The Type group's six format boxes in panel order — the canonical
 // enum order the subset word composes in (lib/metricformats.js).
 const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency'];
 const typeOf = (r) => FMT_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
-const twelveOf = (r) => [...sixOf(r), ...typeOf(r)];
+// The whole panel in DOM order: the first six (the three pairs), the
+// Denominator group's third None box, the Type six and the Pinning pair
+// — fifteen boxes in five groups.
+const fifteenOf = (r) => [...sixOf(r), denomOf(r)[2], ...typeOf(r), ...pinningOf(r)];
 // The panel's group names in DOM order (the panel itself first, then
-// its four labelled groups).
-const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator', 'Type'];
+// its five labelled groups).
+const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator', 'Type', 'Pinning'];
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -577,14 +602,20 @@ check(
 await openFilters(r);
 const panel = panelOf(r);
 check(
-  'the trigger opens the checkbox panel (aria-expanded + twelve options)',
-  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 12,
+  'the trigger opens the checkbox panel (aria-expanded + fifteen options)',
+  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 15,
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
   'defaults render with Built-in unchecked and every other pair option checked (owner ruling)',
   JSON.stringify(sixOf(r)) === JSON.stringify([false, true, true, true, true, true]),
   JSON.stringify(sixOf(r)),
+);
+check(
+  "the Denominator group defaults to ALL THREE boxes checked (Rounds, Matches, None — Reading B) and the Pinning group to BOTH (Pinned, Unpinned)",
+  JSON.stringify(denomOf(r)) === JSON.stringify([true, true, true]) &&
+    JSON.stringify(pinningOf(r)) === JSON.stringify([true, true]),
+  JSON.stringify(denomOf(r)) + ' / ' + JSON.stringify(pinningOf(r)),
 );
 check(
   'the Type group defaults to ALL SIX format boxes checked (owner: "all six checked except Built-in")',
@@ -596,7 +627,7 @@ check(
     ? [...panel.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))
     : [];
   check(
-    'the panel is ONE named group holding four labelled groups (Origin, Scope, Denominator, Type)',
+    'the panel is ONE named group holding five labelled groups (Origin, Scope, Denominator, Type, Pinning)',
     panel?.getAttribute('aria-label') === 'Metric filters' &&
       JSON.stringify(names) === JSON.stringify(GROUP_LABELS.slice(1)),
     JSON.stringify([panel?.getAttribute('aria-label'), ...names]),
@@ -703,7 +734,7 @@ check(
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 
-console.log('C. the Scope, Denominator and Type groups narrow the same server call (the denominator-less rule and the format subset hold)');
+console.log('C. the Scope, Denominator and Type groups narrow the same server call (Reading B\'s bucket subsets + the format subset hold), and the Pinning group narrows render-time with no call');
 services.invalidate();
 pageCalls.length = 0;
 await setBox(r, 'Match', false); // Profile only
@@ -750,51 +781,131 @@ check(
 );
 services.invalidate();
 pageCalls.length = 0;
-await setBox(r, 'Rounds', false); // Matches only
+await setBox(r, 'Rounds', false); // Matches + None (the default third box)
 await sleep(DEBOUNCE);
 check(
-  'Rounds unchecked → (…, denominator "matches", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches', '', 0, 100]),
+  'Rounds unchecked → (…, denominator "matches,none", cursor 0, 100) — the canonical subset word',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches,none', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
-  'Matches only → the matches metric AND both denominator-less rows (the no-denominator rule)',
+  'Matches+None → the matches metric AND both denominator-less rows (today\'s old "matches" window, behaviour preserved)',
   JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
   JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
-await setBox(r, 'Matches', false); // both Denominator options off
+await setBox(r, 'Matches', false); // only None left
 await sleep(DEBOUNCE);
 check(
-  'both Denominator options off → denominator "none"',
+  'Matches unchecked → denominator "none" (the {None} subset)',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'none', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
-  'both off → ONLY the denominator-less rows: they pass whatever the group says',
+  'only {None} checked → ONLY the denominator-less rows (today\'s old "none" window, behaviour preserved)',
   JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
   JSON.stringify(namesOf(r)),
 );
+// Reading B's empty checked set (2026-11-16): all three boxes off is
+// the EMPTY set — nothing passes, said through the empty state (the
+// 2026-11-14 rule this overturns kept the denominator-less rows here).
 services.invalidate();
 pageCalls.length = 0;
-await setBox(r, 'Rounds', true); // Rounds only
+await setBox(r, 'None', false); // no Denominator box left
 await sleep(DEBOUNCE);
 check(
-  'Rounds back checked (Matches off) → the rounds metric + the denominator-less rows',
+  'every Denominator box off → denominator "empty" — the empty set, a legal empty read',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'empty', '', 0, 100]) &&
+    rowsOf(r).length === 0 &&
+    r.textContent.includes('No metrics to show.'),
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+// The NEW subsets (the ones the old pair could not spell): {Rounds}
+// drops the denominator-less rows, {Rounds, Matches} keeps exactly the
+// two denominated metrics.
+services.invalidate();
+pageCalls.length = 0;
+await setBox(r, 'Rounds', true); // {Rounds} only
+await sleep(DEBOUNCE);
+check(
+  '{Rounds} alone → denominator "rounds" — the NEW rounds-only subset, one store-side row (the denominator-less rows are gone)',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds', '', 0, 100]) &&
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'plug_stat']),
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
-await setBox(r, 'Matches', true);
+await setBox(r, 'Matches', true); // {Rounds, Matches}
 await sleep(DEBOUNCE);
 check(
-  'both Denominator options on → denominator "" — all four rows again',
+  '{Rounds, Matches} → denominator "rounds,matches" — both denominated metrics, still no denominator-less row',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds,matches', '', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
+await setBox(r, 'None', true); // all three back on
+await sleep(DEBOUNCE);
+check(
+  'all three Denominator boxes on → denominator "" — all four rows again',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
+
+// --- The Pinning group (the fifth) — RENDER-TIME, the one sanctioned
+// exception: pins live in localStorage (spectra:pinned-metrics), so Go
+// cannot narrow on them and flipping these boxes must issue NO
+// listMetricsPage call at all — the rows below are a render-time filter
+// over the windows already accumulated. trade_rate is pinned first (it
+// is the fixture's one unpinned-at-rest row later sections expect), and
+// it is unpinned again at the end so sections D–J see the pins as they
+// found them.
+{
+  // The row's pin button is re-queried on every use: each render can
+  // rebuild the row's DOM (the group it sits in changed with the
+  // filter), and a destroyed node's handler is gone with it.
+  const pinToggle = () =>
+    rowNamed(r, 'trade_rate')?.querySelector('[aria-label="Toggle pin for trade_rate"]');
+  click(pinToggle());
+  await sleep(40);
+  services.invalidate(); // any wrong fetch below would hit the stub and be recorded
+  pageCalls.length = 0;
+  await setBox(r, 'Unpinned', false); // Pinned only
+  await sleep(DEBOUNCE);
+  check(
+    'Pinned only → NO new ListMetricsPage call (the pin filter never reaches the server) and only the pinned row renders',
+    pageCalls.length === 0 &&
+      pinToggle()?.classList.contains('bld-pin-on') &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+    `calls=${JSON.stringify(pageCalls)} rows=${JSON.stringify(namesOf(r))} pin=${pinToggle()?.className}`,
+  );
+  await setBox(r, 'Pinned', false); // neither — both Pinning boxes off
+  await sleep(DEBOUNCE);
+  check(
+    'both Pinning boxes off → still no call, no rows render, the empty state says so',
+    pageCalls.length === 0 &&
+      rowsOf(r).length === 0 &&
+      r.textContent.includes('No metrics to show.'),
+    `calls=${JSON.stringify(pageCalls)} rows=${rowsOf(r).length}`,
+  );
+  await setBox(r, 'Unpinned', true);
+  await setBox(r, 'Pinned', true);
+  await sleep(DEBOUNCE);
+  check(
+    'both Pinning boxes back on → the full window renders again (still no new call)',
+    pageCalls.length === 0 && rowsOf(r).length === 4,
+    `calls=${JSON.stringify(pageCalls)} rows=${rowsOf(r).length}`,
+  );
+  click(pinToggle()); // restore: trade_rate unpinned for sections D–J
+  await sleep(40);
+  check(
+    'trade_rate is unpinned again — sections D–J see the pins as they found them',
+    !pinToggle()?.classList.contains('bld-pin-on'),
+    pinToggle()?.className,
+  );
+}
 // The Type group narrows the SAME call (origin is the whole catalog
 // here): the word is the CHECKED set in canonical enum order, "auto"
 // being the '' rows — unchecking Auto hands the five literal tokens to
@@ -1348,13 +1459,41 @@ console.log('G. the search composes with the filters in ONE server call');
     JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
     JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
   );
+  // A Denominator SUBSET word composes with the search in the same ONE
+  // call ({Rounds, None} → "rounds,none"): the fifth group's
+  // render-time narrowing rides none of these args — section C pinned
+  // that it issues no call of its own.
+  services.invalidate();
+  pageCalls.length = 0;
+  await setBox(r, 'Matches', false); // {Rounds, None} → "rounds,none"
+  await sleep(DEBOUNCE);
+  pageCalls.length = 0; // …so the typing below is the only call recorded
+  type(search, 'trade');
+  await sleep(DEBOUNCE);
+  check(
+    'the Denominator subset composes with the search in ONE call: (query "trade", denominator "rounds,none", origin "", …)',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['trade', '', '', 'rounds,none', '', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  services.invalidate();
+  pageCalls.length = 0;
+  type(search, '');
+  await setBox(r, 'Matches', true);
+  await sleep(DEBOUNCE);
+  check(
+    'clearing the query and restoring the Denominator boxes → the whole catalog window again',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+    JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+  );
 }
 
-console.log('H. the filter checks are view-local registry state (restore all twelve, then reset to defaults)');
+console.log('H. the filter checks are view-local registry state (restore all fifteen, then reset to defaults)');
 {
   // Leave a DISTINCT state behind — one option off in EACH of the
-  // Origin, Denominator and Type groups, so the restore proves every
-  // one of the twelve keys round-trips.
+  // Origin, Denominator and Type groups (the Pinning pair and the
+  // Denominator NONE box stay on), so the restore proves every one of
+  // the fifteen keys round-trips.
   services.invalidate();
   pageCalls.length = 0;
   await setBox(r, 'Built-in', false);
@@ -1368,19 +1507,21 @@ console.log('H. the filter checks are view-local registry state (restore all twe
   await setBox(r, 'Currency', false); // no currency row in the fixture — the rows below stand
   await sleep(DEBOUNCE);
   check(
-    'the parting state is mine + Rounds minus Currency (Built-in, Matches and Currency off)',
+    // Reading B re-pin (2026-11-16): Matches off with Rounds AND None
+    // on sends the subset word "rounds,none" (the old "rounds" rows).
+    'the parting state is mine + Rounds/None minus Currency (Built-in, Matches and Currency off)',
     JSON.stringify(pageCalls[pageCalls.length - 1]) ===
-      JSON.stringify(['', 'mine', '', 'rounds', 'auto,int,float1,float2,percent', 0, 100]) &&
+      JSON.stringify(['', 'mine', '', 'rounds,none', 'auto,int,float1,float2,percent', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
   await openFilters(r);
   check(
-    'unmount → remount restores ALL twelve checks (only Built-in, Matches and Currency off)',
-    JSON.stringify(twelveOf(r)) ===
-      JSON.stringify([false, true, true, true, true, false, true, true, true, true, true, false]),
-    JSON.stringify(twelveOf(r)),
+    'unmount → remount restores ALL fifteen checks (only Built-in, Matches and Currency off)',
+    JSON.stringify(fifteenOf(r)) ===
+      JSON.stringify([false, true, true, true, true, false, true, true, true, true, true, true, false, true, true]),
+    JSON.stringify(fifteenOf(r)),
   );
   check(
     '…and the restored view shows the restored rows',
@@ -1391,10 +1532,10 @@ console.log('H. the filter checks are view-local registry state (restore all twe
   r = await mountBuilder();
   await openFilters(r);
   check(
-    'resetViewState() → the next mount is back to the defaults (Built-in OFF / My metrics ON, every other option ON — Type all six checked)',
-    JSON.stringify(twelveOf(r)) ===
-      JSON.stringify([false, true, true, true, true, true, true, true, true, true, true, true]),
-    JSON.stringify(twelveOf(r)),
+    'resetViewState() → the next mount is back to the defaults (Built-in OFF / My metrics ON, every other option ON — Denominator all three, Type all six, Pinning both)',
+    JSON.stringify(fifteenOf(r)) ===
+      JSON.stringify([false, true, true, true, true, true, true, true, true, true, true, true, true, true, true]),
+    JSON.stringify(fifteenOf(r)),
   );
   check(
     '…and the default view is the mine partition again',

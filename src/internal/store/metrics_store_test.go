@@ -896,30 +896,36 @@ func scopeFilterMetricRef(rows []models.MetricRow, filter string) []models.Metri
 }
 
 // denomFilterMetricRef applies ListMetricsPage's denominator filter as
-// the Go-side reference — including THE denominator-less rule (lead
-// ruling, 2026-11-14): a row with denominator ” passes in EVERY state,
-// so "none" keeps exactly those rows instead of the empty set the other
-// two filters spell.
+// the Go-side reference — Reading B (the owner-accepted OVERTURN of the
+// 2026-11-14 "denominator-less rows pass in every state" ruling,
+// re-pinned 2026-11-16): the word is the CHECKED SET of buckets ("" =
+// all three = no filter, "empty" = the empty set, otherwise the
+// canonical comma-subset in metricDenomTokens order) and a row passes
+// iff its bucket — the denominator column with its ” value spelled
+// "none" — is in that set. Derived here independently of the store's
+// WHERE builder (the originFilterMetricRef pattern).
 func denomFilterMetricRef(rows []models.MetricRow, filter string) []models.MetricRow {
 	switch filter {
-	case "rounds", "matches":
-		var out []models.MetricRow
-		for _, m := range rows {
-			if m.Denominator == filter || m.Denominator == "" {
-				out = append(out, m)
-			}
-		}
-		return out
-	case "none":
-		var out []models.MetricRow
-		for _, m := range rows {
-			if m.Denominator == "" {
-				out = append(out, m)
-			}
-		}
-		return out
-	default:
+	case "":
 		return rows
+	case "empty":
+		return []models.MetricRow{}
+	default:
+		want := map[string]bool{}
+		for _, tok := range strings.Split(filter, ",") {
+			want[tok] = true
+		}
+		var out []models.MetricRow
+		for _, m := range rows {
+			bucket := m.Denominator
+			if bucket == "" {
+				bucket = "none"
+			}
+			if want[bucket] {
+				out = append(out, m)
+			}
+		}
+		return out
 	}
 }
 
@@ -988,110 +994,183 @@ func TestListMetricsPageScopeFilter(t *testing.T) {
 	}
 }
 
-// TestListMetricsPageDenominatorFilter pins the denominator pair — the
-// server-side predicate behind the Builder's Rounds / Matches toggles —
-// and THE denominator-less rule (lead ruling): a metric with no
-// denominator passes in EVERY toggle state, so it never disappears when
-// a side is selected and it survives both-off (which is therefore NOT
-// the empty set the origin/scope "none" spells). A row that carries a
-// denominator is excluded by the other side and by both-off, an unknown
-// value is rejected before any SQL, and the partition holds over keyset
-// windows.
+// TestListMetricsPageDenominatorFilter pins the denominator SUBSET —
+// the server-side predicate behind the Builder's Rounds / Matches /
+// None checkboxes (Reading B, the owner-accepted OVERTURN of the
+// 2026-11-14 "denominator-less rows pass in every state" ruling,
+// re-pinned 2026-11-16): the word is the CHECKED set of the column's
+// three buckets ("" = all three, "empty" = no box, otherwise the
+// canonical comma-subset in metricDenomTokens order) and a row passes
+// iff its bucket is in that set. So the old "rounds" window (rounds OR
+// denominator-less) is now the "rounds,none" word, "rounds" alone is
+// the NEW rounds-only window, "none" still keeps exactly the
+// denominator-less rows (the one word whose behaviour did not move),
+// all boxes off is the EMPTY set (the origin/scope shape — no longer
+// the exception the denominator-less rows used to be), an unknown
+// token / empty element / duplicate / reorder is rejected before any
+// SQL, and the partition holds over keyset windows.
 func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	s := openMem(t)
 	seedScopedMetric(t, s, "per_round", "match", "rounds")
 	seedScopedMetric(t, s, "per_match", "match", "matches")
 	seedScopedMetric(t, s, "plain_count", "match", "")
 	ref := metricRowsRef(t, s) // every seeded builtin (all denominator-less) + 3 users
-	// Both sides are reachable: one seeded row of each denomination
-	// beside the denominator-less builtins (derived from the reference —
-	// no seed-count pin).
-	if got, want := len(denomFilterMetricRef(ref, "rounds")), len(ref)-1; got != want {
-		t.Fatalf("rounds reference = %d rows, want %d (every denominator-less row + per_round)", got, want)
+	// The vocabulary itself: THE canonical bucket order every accepted
+	// subset word is composed in (the rejections below depend on it).
+	if got, want := strings.Join(metricDenomTokens, ","), "rounds,matches,none"; got != want {
+		t.Fatalf("metricDenomTokens = %q, want %q", got, want)
 	}
-	if got, want := len(denomFilterMetricRef(ref, "matches")), len(ref)-1; got != want {
-		t.Fatalf("matches reference = %d rows, want %d (every denominator-less row + per_match)", got, want)
+	// Every bucket is reachable beside the denominator-less builtins
+	// (derived from the reference — no seed-count pin), so no word below
+	// is vacuous.
+	for _, tok := range metricDenomTokens {
+		if len(denomFilterMetricRef(ref, tok)) == 0 {
+			t.Fatalf("fixture has no %s-bucket row (reference = %d rows)", tok, len(ref))
+		}
 	}
 
-	// Every filter value in ONE window: exactly its reference partition,
-	// in the canonical order, no successor.
-	for _, filter := range []string{"", "rounds", "matches", "none"} {
+	// Every filter word in ONE window: exactly its checked set, in the
+	// canonical order, no successor beyond it, and no row outside the
+	// checked set ever leaks in.
+	for _, filter := range []string{
+		"", "empty",
+		"rounds", "matches", "none",
+		"rounds,matches", "rounds,none", "matches,none",
+		"rounds,matches,none",
+	} {
 		want := denomFilterMetricRef(ref, filter)
 		page, err := s.ListMetricsPage("", "", "", filter, "", 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(denom=%q): %v", filter, err)
 		}
 		if !sameIDs(metricIDs(page.Rows), metricIDs(want)) {
-			t.Errorf("denom=%q window = %v, want the reference ids %v", filter, metricIDs(page.Rows), metricIDs(want))
+			t.Errorf("denom=%q window = %v, want the checked-set ids %v", filter, metricIDs(page.Rows), metricIDs(want))
 		}
 		if page.HasNext {
 			t.Errorf("denom=%q reported HasNext for its %d rows in one window", filter, len(want))
 		}
-		// THE RULE, pinned four ways: no row carries a denominator the
-		// pair did not select.
-		if filter != "" {
-			for _, m := range page.Rows {
-				if m.Denominator != "" && m.Denominator != filter {
-					t.Errorf("denom=%q leaked %s (denominator %q)", filter, m.Name, m.Denominator)
-				}
-			}
+		if filter == "empty" && page.Rows == nil {
+			t.Error("all-off window rows = nil, want an empty (non-nil) slice for the JSON []")
 		}
-		for _, m := range ref {
-			if m.Denominator != "" {
-				continue
+		if filter != "" {
+			set := map[string]bool{}
+			for _, tok := range strings.Split(filter, ",") {
+				set[tok] = true
 			}
-			found := false
-			for _, p := range page.Rows {
-				if p.ID == m.ID {
-					found = true
+			for _, m := range page.Rows {
+				bucket := m.Denominator
+				if bucket == "" {
+					bucket = "none"
 				}
-			}
-			if !found {
-				t.Errorf("denom=%q dropped the denominator-less metric %q (it carries no denominator to filter on)", filter, m.Name)
+				if !set[bucket] {
+					t.Errorf("denom=%q leaked %s (bucket %q not in the checked set)", filter, m.Name, bucket)
+				}
 			}
 		}
 	}
 
-	// Both-off keeps ONLY the denominator-less rows: the denominated ones
-	// are the ones it excludes (never the empty set).
-	bothOff, err := s.ListMetricsPage("", "", "", "none", "", 0, 500)
+	// ALL-ON == ALL THREE CHECKED: no predicate and the full subset
+	// select the identical window (the popover's all-checked word is "",
+	// so this is what makes the default first render unfiltered).
+	allOn, err := s.ListMetricsPage("", "", "", "", "", 0, 500)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(denom=): %v", err)
+	}
+	allThree, err := s.ListMetricsPage("", "", "", "rounds,matches,none", "", 0, 500)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(denom=rounds,matches,none): %v", err)
+	}
+	if !sameIDs(metricIDs(allThree.Rows), metricIDs(allOn.Rows)) {
+		t.Errorf("all-three window = %v, want the all-on window %v", metricIDs(allThree.Rows), metricIDs(allOn.Rows))
+	}
+
+	// The three words the overturn actually changed, pinned by NAME
+	// (2026-11-16): {Rounds, None} reproduces the OLD "rounds" window
+	// exactly (rounds row + every denominator-less row — everything
+	// except the matches-denominated one), {Rounds} alone is the NEW
+	// rounds-only window (the denominator-less rows are gone — that IS
+	// the overturn), and {None} alone keeps exactly the denominator-less
+	// rows (the one word whose behaviour did not move).
+	nMatches := len(denomFilterMetricRef(ref, "matches"))
+	roundsNone := denomFilterMetricRef(ref, "rounds,none")
+	if len(roundsNone) != len(ref)-nMatches {
+		t.Fatalf("rounds,none reference = %d rows, want %d (everything except the %d matches-denominated row(s))",
+			len(roundsNone), len(ref)-nMatches, nMatches)
+	}
+	roundsOnly, err := s.ListMetricsPage("", "", "", "rounds", "", 0, 500)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(denom=rounds): %v", err)
+	}
+	if len(roundsOnly.Rows) != 1 || roundsOnly.Rows[0].Name != "per_round" {
+		names := make([]string, 0, len(roundsOnly.Rows))
+		for _, m := range roundsOnly.Rows {
+			names = append(names, m.Name)
+		}
+		t.Errorf("rounds-only window = %v, want just [per_round] (the denominator-less rows dropped)", names)
+	}
+	noneOnly, err := s.ListMetricsPage("", "", "", "none", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=none): %v", err)
 	}
-	if len(bothOff.Rows) == 0 {
-		t.Fatal("both-off denominator window is empty — the denominator-less rows must still pass")
+	if len(noneOnly.Rows) == 0 {
+		t.Fatal("none window is empty — the denominator-less rows must still pass")
 	}
-	for _, m := range bothOff.Rows {
+	for _, m := range noneOnly.Rows {
 		if m.Denominator != "" {
-			t.Errorf("both-off kept %s (denominator %q)", m.Name, m.Denominator)
+			t.Errorf("none kept %s (denominator %q)", m.Name, m.Denominator)
 		}
 	}
-	if sameIDs(metricIDs(bothOff.Rows), metricIDs(ref)) {
-		t.Error("both-off returned the whole catalog — the denominated rows must be excluded")
+	if sameIDs(metricIDs(noneOnly.Rows), metricIDs(ref)) {
+		t.Error("none returned the whole catalog — the denominated rows must be excluded")
 	}
 
-	// The partition holds ACROSS keyset windows: "matches" in windows of
-	// 2 tiles the matches reference exactly, and no rounds-denominated
-	// row ever leaks in.
-	wantMatches := denomFilterMetricRef(ref, "matches")
-	sizes, got := walkMetricPage(t, s, "", "", "", "matches", "", 0, 2)
-	if len(sizes) != (len(wantMatches)+1)/2 {
-		t.Errorf("matches window sizes = %v (%d windows), want %d windows of 2 over %d rows",
-			sizes, len(sizes), (len(wantMatches)+1)/2, len(wantMatches))
+	// ALL BOXES OFF ("empty"): the EMPTY set, the origin/scope shape —
+	// non-nil, no successor, and the denominator-less rows do NOT
+	// smuggle themselves in (the 2026-11-14 rule this overturns).
+	bothOff, err := s.ListMetricsPage("", "", "", "empty", "", 0, 500)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(denom=empty): %v", err)
 	}
-	if !sameIDs(metricIDs(got), metricIDs(wantMatches)) {
-		t.Errorf("matches walk ids = %v, want %v", metricIDs(got), metricIDs(wantMatches))
+	if len(bothOff.Rows) != 0 || bothOff.HasNext {
+		t.Errorf("all-off window = %d rows (HasNext=%v), want 0, false", len(bothOff.Rows), bothOff.HasNext)
+	}
+	if bothOff.Rows == nil {
+		t.Error("all-off window rows = nil, want an empty (non-nil) slice for the JSON []")
+	}
+
+	// The partition holds ACROSS keyset windows: "matches,none" in
+	// windows of 2 tiles its checked set exactly, and no rounds-
+	// denominated row ever leaks in.
+	wantMatchesNone := denomFilterMetricRef(ref, "matches,none")
+	sizes, got := walkMetricPage(t, s, "", "", "", "matches,none", "", 0, 2)
+	if len(sizes) != (len(wantMatchesNone)+1)/2 {
+		t.Errorf("matches,none window sizes = %v (%d windows), want %d windows of 2 over %d rows",
+			sizes, len(sizes), (len(wantMatchesNone)+1)/2, len(wantMatchesNone))
+	}
+	if !sameIDs(metricIDs(got), metricIDs(wantMatchesNone)) {
+		t.Errorf("matches,none walk ids = %v, want %v", metricIDs(got), metricIDs(wantMatchesNone))
 	}
 	for _, m := range got {
-		if m.Denominator != "" && m.Denominator != "matches" {
-			t.Errorf("%s (denominator %q) leaked into a matches window", m.Name, m.Denominator)
+		if m.Denominator == "rounds" {
+			t.Errorf("%s (denominator %q) leaked into a matches,none window", m.Name, m.Denominator)
 		}
 	}
 
-	// Unknown filter value: rejected before any SQL (no window).
-	if _, err := s.ListMetricsPage("", "", "", "games", "", 0, 100); err == nil ||
-		!strings.Contains(err.Error(), `unknown denominator filter "games"`) {
-		t.Errorf("unknown denominator filter err = %v, want the friendly pre-SQL rejection", err)
+	// Unknown token / empty element / duplicate / reorder: rejected
+	// before any SQL (no window), with the origin/scope/format rejection
+	// copy. The list covers a bogus token, a mixed known+unknown word,
+	// empty segments, a duplicate and a known-but-REORDERED word
+	// (canonical means order) — plus "empty" smuggled into a subset
+	// (it is the caller's whole-word empty set, never a token).
+	for _, w := range []string{
+		"games", "rounds,games", "empty,rounds",
+		"rounds,", ",none", "rounds,,none", "rounds,matches,",
+		"rounds,rounds", "none,rounds",
+	} {
+		if _, err := s.ListMetricsPage("", "", "", w, "", 0, 100); err == nil ||
+			!strings.Contains(err.Error(), fmt.Sprintf("unknown denominator filter %q", w)) {
+			t.Errorf("denominator filter %q: err = %v, want the friendly pre-SQL rejection", w, err)
+		}
 	}
 }
 
@@ -1100,9 +1179,9 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 // equals the reference list filtered independently by each predicate
 // (a union, a client-side slice or a dropped arg would diverge), the
 // composed walk still tiles the composed list under a keyset cursor, and
-// an all-both-off window is an empty NON-nil read (the origin/scope
-// empty set — the denominator pair's both-off alone keeps its ” rows,
-// pinned above).
+// an all-both-off window is an empty NON-nil read (each group's all-off
+// now spells an empty set — origin/scope "none" and the denominator
+// group's "empty", pinned above).
 func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 	s := openMem(t)
 	seedScopedMetric(t, s, "mine_rounds_match", "match", "rounds")
@@ -1131,6 +1210,11 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 		{"builtin", "profile", "none"},
 		{"none", "", "rounds"},
 		{"", "profile", "none"},
+		// Reading B's subset words (2026-11-16): the empty checked set
+		// and a two-token subset riding the same composed WHERE.
+		{"", "", "empty"},
+		{"mine", "", "rounds,none"},
+		{"", "match", "rounds,matches"},
 	}
 	for _, tc := range combos {
 		want := denomFilterMetricRef(

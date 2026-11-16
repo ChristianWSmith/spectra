@@ -172,7 +172,26 @@ const EXPECTED = {
   // merged sequence and the FOUR deletes. The old "nothing to order" /
   // "no profile metrics yet" checks were deleted with their dead
   // strings.
-  'builder.dom.mjs': 131,
+  // builder 131 → 140 (2026-11-16, w13c filters M7+M8): +9 — +1 section
+  // A (the Denominator group's three boxes and the Pinning pair's two
+  // default to checked, beside the fifteen-box/five-group panel pin);
+  // +2 section C (Reading B's subset words — every box off → "empty"
+  // with the empty state, {Rounds} alone → "rounds" with the one
+  // store-side row — replacing the two "denominator-less rows pass
+  // everywhere" pins, whose rows-preservation legs kept their counts);
+  // +4 section C's new Pinning block (Pinned-only issues NO list call
+  // and renders only the pinned row, both boxes off → the empty-state
+  // copy with still no call, both back on → the full window, and the
+  // trade_rate pin restored for sections D–J); +2 section G (the
+  // "rounds,none" subset composing with the search in ONE call, plus
+  // its restore). Section C's other denominator pins re-pinned IN PLACE
+  // for the subset words ("matches" → "matches,none", "none" → the
+  // {None} box, both-on stays "") and section H's parting word
+  // ("rounds" → "rounds,none") moved with them — same counts; the
+  // twelve-box restore pins became the fifteen-box fifteenOf (same two
+  // checks). NOTE for the lead: w13a re-pins this same line for its
+  // section-J change — merge both deltas on top of 131.
+  'builder.dom.mjs': 140,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
