@@ -20,6 +20,7 @@ export const common = {
   appSidebarLabel: 'Main', // <nav class="sidebar"> accessible name
   appMarkAlt: 'Spectra', // the sidebar app-mark image (favicon) alt text
   appHelpLabel: 'Help', // sidebar Help button: title + aria-label
+  viewHelp: 'Help for this view', // view-header `?` (HelpButton.svelte): title + aria-label
   appExpandReplayLabel: 'Expand replay', // collapsed dock wrapper: title + aria-label
   appCloseReplayLabel: 'Close replay', // dock close X: aria-label
   appCloseReplayTitle: 'Close the replay — it reloads when reopened', // dock close X: title

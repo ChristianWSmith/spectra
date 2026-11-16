@@ -2,7 +2,8 @@
 // COLLAPSED — its toggle sits on the main column's ONE top line
 // (.replay-topbar, first child of .replay-main: the Close · Minimize ·
 // Theater cluster left (macOS traffic-light order), round ribbon in the
-// flex-grow middle, rail toggle right, spec 7/13/14) with
+// flex-grow middle, the header `?` (HelpButton — help-buttons wave)
+// then the rail toggle right, spec 7/13/14) with
 // no .replay-side at all until it expands; the view itself is the ROW
 // (main column + rail beside it when open, no .replay-cols wrapper), so
 // the expanded aside's header shares the top line with that bar. The
@@ -880,6 +881,8 @@ for (const name of [
   // StatusChip — the loading ladder's tier-2 progress renderer (the
   // ONE progress widget; MapPackPrompt's non-job precedent).
   'StatusChip',
+  // HelpButton — the top bar's `?` (help-buttons wave, 2026-11-15).
+  'HelpButton',
 ]) {
   const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
@@ -908,7 +911,7 @@ svelteCompile(replaySrc, 'Replay.svelte', join(dir, 'views', 'Replay.js'));
 const harnessSrc = `<script>
   import Replay from './views/Replay.js';
 </script>
-<Replay id={1} query={{}} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} onClose={(e) => (globalThis.__closes = (globalThis.__closes || []).concat(e))} />`;
+<Replay id={1} query={{}} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} openDocs={(s) => (globalThis.__docs = (globalThis.__docs || []).concat(s))} onClose={(e) => (globalThis.__closes = (globalThis.__closes || []).concat(e))} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
@@ -1002,6 +1005,31 @@ check(
     children(topbar)[2] === theaterCell && children(topbar)[3]?.classList.contains('rp-ribbon') &&
     children(topbar)[children(topbar).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
+);
+// The header `?` (help-buttons wave, 2026-11-15): the shared
+// HelpButton between the ribbon (the bar's flex-grow spacer) and the
+// rail toggle — ONE per view header, primary chrome only, opening the
+// guide at the `replay` section.
+const helpCell = topbar?.querySelector('button[aria-label="Help for this view"]');
+const helpIdx = helpCell ? children(topbar).indexOf(helpCell) : -1;
+check(
+  'the ? rides the top bar right of the ribbon (immediately left of the rail toggle), shared labels + question glyph',
+  !!helpCell && helpIdx === 4 &&
+    helpIdx === children(topbar).indexOf(toggle) - 1 &&
+    helpCell.getAttribute('title') === 'Help for this view' &&
+    helpCell.classList.contains('btn') && !!helpCell.querySelector('.codicon-question'),
+  topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar',
+);
+const docs0 = (globalThis.__docs || []).length;
+const navDocs0 = (globalThis.__nav || []).length;
+click(helpCell);
+await sleep();
+check(
+  'clicking it opens the guide at the replay section (openDocs) and navigates nowhere',
+  (globalThis.__docs || []).slice(docs0).length === 1 &&
+    (globalThis.__docs || []).at(-1) === 'replay' &&
+    (globalThis.__nav || []).length === navDocs0,
+  `docs=${JSON.stringify((globalThis.__docs || []).slice(docs0))} nav+${(globalThis.__nav || []).length - navDocs0}`,
 );
 check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));

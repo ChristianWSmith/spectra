@@ -119,6 +119,7 @@
   import RoundStrip from '../components/RoundStrip.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import TeamColumn from '../components/TeamColumn.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
 
   // active — App's keep-alive activation flag: false while this instance
   // is collapsed into the mini-player dock (the route sits on a same-id
@@ -134,7 +135,7 @@
   // the topbar Close cell shares ONE path instead of forking it. Only
   // Close calls it (Minimize keeps the instance); App always passes it,
   // the DOM drivers opt in to pin the wiring.
-  let { id = 0, query = {}, nav = () => {}, active = true, onClose = null } = $props();
+  let { id = 0, query = {}, nav = () => {}, active = true, openDocs = () => {}, onClose = null } = $props();
 
   let meta = $state(null);
   let matchMap = $state('');
@@ -3106,6 +3107,11 @@
           />
         {/if}
       </div>
+      <!-- The view's help affordance (HelpButton.svelte): the ribbon's
+           flex-grow parks it at the bar's right end, just left of the
+           rail toggle (which the expanded feed's own header owns) —
+           one `?`, primary chrome only (Part 8's placement ruling). -->
+      <HelpButton section="replay" {openDocs} />
       {#if !eventsOpen && railVisible}
         <button
           class="side-toggle rp-rail-toggle"

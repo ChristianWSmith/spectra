@@ -33,11 +33,12 @@
   import SortTh from '../components/SortTh.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
 
   // query is the route query: #/library?map=<MapName>&player=<steamid>
   // presets the structured filters below (the profile → library deep
   // link — App passes route.query through).
-  let { nav = () => {}, query: routeQuery = {} } = $props();
+  let { nav = () => {}, query: routeQuery = {}, openDocs = () => {} } = $props();
 
   // Sortable column headers: clicking a header sorts the list by that
   // column (the store whitelists the keys — see matchListSort), a second
@@ -785,6 +786,10 @@
         >
       {/if}
     </div>
+    <!-- The view's help affordance (HelpButton.svelte): the header's
+         LAST element, right of the .spacer and the facets it shares the
+         row with — one `?`, primary chrome only. -->
+    <HelpButton section="library" {openDocs} />
   </header>
 
   <!-- Sortable header cells (SortTh): label + active-direction arrow; the

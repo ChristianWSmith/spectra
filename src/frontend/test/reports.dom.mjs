@@ -149,6 +149,15 @@ const tokenSelectSrc = readFileSync('src/lib/components/TokenSelect.svelte', 'ut
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(tokenSelectSrc, 'TokenSelect.svelte', join(dir, 'tokenselect.js'));
 
+// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
+// the view's header button is this component; its strings catalog
+// import resolves from the real tree like every other component here.
+const helpButtonSrc = readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
+  "from '../strings/index.js'",
+  `from '${fileURL('src/lib/strings/index.js')}'`,
+);
+svelteCompile(helpButtonSrc, 'HelpButton.svelte', join(dir, 'helpbutton.js'));
+
 // download.js — the save path the view drives (the ruling: the composed
 // document goes through downloadText + the native dialog, NOT
 // /api/export). Every helper RECORDS its call in globalThis.__downloads
@@ -182,6 +191,7 @@ const repSrc = readFileSync('src/lib/views/Reports.svelte', 'utf8')
   .replace("from '../components/PlayerPicker.svelte'", "from './playerpicker.js'")
   .replace("from '../components/TokenSelect.svelte'", "from './tokenselect.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
+  .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   // plumbing (Strings Stage 3): the view imports the strings catalog —
   // resolve it from the real tree, like every other ../ module above.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
@@ -309,7 +319,7 @@ async function mountReports() {
   }
   root = document.createElement('div');
   document.body.appendChild(root);
-  inst = mount(mod.default, { target: root, props: { nav: () => {} } });
+  inst = mount(mod.default, { target: root, props: { nav: () => {}, openDocs: (s) => (globalThis.__docs = [...(globalThis.__docs || []), s]) } });
   await sleep(120); // mount + the template/match/metrics reads
   return root;
 }
@@ -662,6 +672,34 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
     'exactly ONE section.panel renders (both sections live in the single card)',
     panels.length === 1,
     `${panels.length} panels`,
+  );
+}
+
+console.log('I. the header `?` opens the guide at the reports section (standalone header only)');
+{
+  // help-buttons wave (2026-11-15): the shared HelpButton is the
+  // standalone header's LAST element, right of the .spacer; embedded
+  // (Match's Reports tab) the header does not render at all — Match's
+  // own header `?` covers that tab.
+  viewstate.resetViewState();
+  const rr = await mountReports();
+  const hdr = rr.querySelector('.view-header');
+  const help = hdr?.querySelector(':scope > button[aria-label="Help for this view"]');
+  check(
+    'the ? is the standalone header’s LAST element, right of the .spacer, shared labels + question glyph',
+    !!help && hdr.lastElementChild === help &&
+      !!hdr.querySelector(':scope > .spacer') &&
+      help.getAttribute('title') === 'Help for this view' &&
+      help.classList.contains('btn') && !!help.querySelector('.codicon-question'),
+    hdr ? [...hdr.children].map((c) => c.className || c.tagName).join(' | ') : 'no header',
+  );
+  const docs0 = (globalThis.__docs || []).length;
+  click(help);
+  await sleep();
+  check(
+    'clicking it opens the guide at the reports section (openDocs)',
+    (globalThis.__docs || []).length === docs0 + 1 && (globalThis.__docs || []).at(-1) === 'reports',
+    JSON.stringify((globalThis.__docs || []).slice(docs0)),
   );
 }
 

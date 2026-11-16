@@ -280,6 +280,18 @@ const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8')
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(cdSrc, 'ConfirmDialog.svelte', join(dir, 'confirmdialog.js'));
 
+// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
+// the view's header button is this component; its strings catalog
+// import resolves from the real tree like every other ../ module.
+svelteCompile(
+  readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'HelpButton.svelte',
+  join(dir, 'helpbutton.js'),
+);
+
 // SuggestInput (the shared suggestion dropdown) imports Popover, the
 // plain-ESM fmt helper and services (the career ADR metric read) →
 // local bundle + absolute module URLs; the strings catalog likewise.
@@ -305,6 +317,7 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/ConfirmDialog.svelte'", "from './confirmdialog.js'")
   .replace("from '../components/SuggestInput.svelte'", "from './suggestinput.js'")
+  .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   // plumbing (Strings Stage 3): the view imports the strings catalog —
   // resolve it from the real tree, like every other ../ module above.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
@@ -317,7 +330,7 @@ const harnessSrc = `<script>
   import Library from './library-bundle.js';
   let { query = {} } = $props();
 </script>
-<Library nav={(p) => (globalThis.__nav = [...(globalThis.__nav || []), p])} {query} />
+<Library nav={(p) => (globalThis.__nav = [...(globalThis.__nav || []), p])} openDocs={(s) => (globalThis.__docs = [...(globalThis.__docs || []), s])} {query} />
 `;
 writeFileSync(join(dir, 'harness.svelte'), harnessSrc);
 svelteCompile(harnessSrc, 'harness.svelte', join(dir, 'harness.js'));
@@ -381,6 +394,31 @@ check(
 );
 check('map facet keeps its own hint', mapInput().placeholder === 'Filter by map (e.g. de_mirage)…', mapInput().placeholder);
 check('map facet marked active', mapInput().classList.contains('active'));
+// The header `?` (help-buttons wave, 2026-11-15): the shared
+// HelpButton is the header's LAST element — right of the .spacer and
+// the facet group it shares the row with — and opens the guide at the
+// `library` section (docslockstep VIEW_SECTIONS['Library.svelte']).
+const libHelp = document.querySelector('.view-header > button[aria-label="Help for this view"]');
+const libHeader = document.querySelector('.view-header');
+check(
+  'the ? is the header’s LAST element, right of the .spacer, with the shared labels + question glyph',
+  !!libHelp && !!libHeader && libHeader.lastElementChild === libHelp &&
+    !!libHeader.querySelector(':scope > .spacer') &&
+    libHelp.getAttribute('title') === 'Help for this view' &&
+    libHelp.classList.contains('btn') && !!libHelp.querySelector('.codicon-question'),
+  libHeader ? [...libHeader.children].map((c) => c.className || c.tagName).join(' | ') : 'no header',
+);
+const libDocs0 = (globalThis.__docs || []).length;
+const libNav0 = navCalls().length;
+click(libHelp);
+await sleep();
+check(
+  'clicking it opens the guide at the library section (openDocs) and navigates nowhere',
+  (globalThis.__docs || []).length === libDocs0 + 1 &&
+    (globalThis.__docs || []).at(-1) === 'library' &&
+    navCalls().length === libNav0,
+  JSON.stringify((globalThis.__docs || []).slice(libDocs0)),
+);
 check('player facet marked active', playerInput().classList.contains('active'));
 check('clear button present', clearBtn().length === 1, String(clearBtn().length));
 // Placement: the two facets are the Library's ONLY search and they live

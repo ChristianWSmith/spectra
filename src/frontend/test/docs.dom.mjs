@@ -288,6 +288,17 @@ compileSvelte(
   'Popover.svelte',
   localURL('popover.js'),
 );
+// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
+// Builder's header button is this component now; its strings catalog
+// resolves from the COPIED tree like every other ../ module here.
+compileSvelte(
+  readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${libURL('strings/index.js')}'`,
+  ),
+  'HelpButton.svelte',
+  localURL('helpbutton.js'),
+);
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
@@ -299,6 +310,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/StatusChip.svelte'", `from '${localURL('statuschip.js')}'`)
   .replace("from '../components/MetricOrderDialog.svelte'", `from '${localURL('metricorderdialog.js')}'`)
   .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)
+  .replace("from '../components/HelpButton.svelte'", `from '${localURL('helpbutton.js')}'`)
   .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
 compileSvelte(bldSrc, 'Builder.svelte', localURL('builder-bundle.js'));
 

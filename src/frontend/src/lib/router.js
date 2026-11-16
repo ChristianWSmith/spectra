@@ -82,6 +82,29 @@ export const MATCH_TABS = [
   'Details',
 ];
 
+// MATCH_TAB_SECTIONS — the match tab → user-guide section mapping (the
+// header `?` on the Match view targets the section of the tab you are
+// on; the sidebar/nav equivalents live in docslockstep.test.js). It
+// sits HERE, beside the tab list it keys, because the view consumes
+// it: ONE spelling, so the button's target and the lockstep contract
+// cannot drift apart (docslockstep.test.js imports this table and
+// still pins that its keys are exactly MATCH_TABS and that every value
+// is a registered guide section). Coverage decision (lockstep
+// adoption, 2026-11-14): the four analysis tabs are deliberately
+// covered by the ONE `match-analysis` section, the match shell tabs by
+// `understanding-a-match`, and the Reports tab by `reports`.
+export const MATCH_TAB_SECTIONS = {
+  Overview: 'understanding-a-match',
+  Scoreboard: 'understanding-a-match',
+  Rounds: 'understanding-a-match',
+  Economy: 'match-analysis',
+  Utility: 'match-analysis',
+  Combat: 'match-analysis',
+  Heatmaps: 'match-analysis',
+  Reports: 'reports',
+  Details: 'understanding-a-match',
+};
+
 // matchTabSlug is the URL segment for a tab; matchTabFromSlug is its
 // inverse (null for anything that is not a tab).
 export function matchTabSlug(tab) {

@@ -30,11 +30,12 @@
   import PlayerPicker from '../components/PlayerPicker.svelte';
   import TokenSelect from '../components/TokenSelect.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
   import { downloadText } from '../download.js';
   import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
 
-  let { nav = () => {}, routeId = 0, embedded = false } = $props();
+  let { nav = () => {}, routeId = 0, embedded = false, openDocs = () => {} } = $props();
 
   // The report selection (template, match, player, round, appendix
   // stats) is view-local state: it restores across navigation through
@@ -538,6 +539,11 @@
     <header class="view-header">
       <h1>{S.reports.title}</h1>
       <span class="muted">{S.reports.subtitle}</span>
+      <!-- Standalone only: embedded (Match's Reports tab) the header
+           does not render — Match's own header `?` covers that tab
+           (MATCH_TAB_SECTIONS → reports). One `?`, primary chrome. -->
+      <div class="spacer"></div>
+      <HelpButton section="reports" {openDocs} />
     </header>
   {/if}
 

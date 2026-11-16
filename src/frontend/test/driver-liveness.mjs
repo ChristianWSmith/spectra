@@ -227,7 +227,12 @@ const EXPECTED = {
   // (two chips per round from getEconomy — the CT/T pair split the old
   // one-chip checks, +1 the side-label pin; the `—`/unknown/tooltip pins
   // re-pointed in place), I(c)'s failure source re-pointed to getEconomy.
-  'econ-tables.dom.mjs': 124,
+  // econ-tables 124 → 127 (2026-11-15, help-buttons — merged atop the
+  // 124 re-pin): +3 section H (the header `?` is the Match header's last
+  // element right of the .spacer with the shared labels + glyph, then the
+  // per-tab walk — every one of the nine tabs' `?` opens its OWN guide
+  // section, and the walk fires exactly one openDocs call per tab).
+  'econ-tables.dom.mjs': 127,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the
@@ -247,7 +252,11 @@ const EXPECTED = {
   // on, superseding the W cell's end-side rule) — +1 the section B
   // matchup-name colour pin, +1 the section K pin over both rendered
   // rows (their fixtures now carry an ODD side-switch count).
-  'library.dom.mjs': 169,
+  // library 169 → 171 (2026-11-15, help-buttons): +2 section A (the
+  // header `?` is the header's last element right of the .spacer with
+  // the shared labels + glyph, and clicking it fires openDocs once with
+  // the `library` section id and navigates nowhere).
+  'library.dom.mjs': 171,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,
@@ -269,7 +278,12 @@ const EXPECTED = {
   // new `.prof-career-card` grid in place (no count change).
   'profiles.dom.mjs': 79,
   'progress-presentation.dom.mjs': 19,
-  'replay.dom.mjs': 450,
+  // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the
+  // header `?` rides the top bar right of the ribbon — immediately
+  // left of the rail toggle — with the shared labels + glyph, and
+  // clicking it fires openDocs once with the `replay` section id and
+  // navigates nowhere).
+  'replay.dom.mjs': 452,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
@@ -296,7 +310,11 @@ const EXPECTED = {
   // reports 31 → 32 (2026-11-15, reports-card): the match view's Reports
   // tab consolidated its content to a single section.panel — +1 the
   // mount-shape pin (exactly one panel renders; both headings stay in it).
-  'reports.dom.mjs': 32,
+  // reports 32 → 34 (2026-11-15, help-buttons — merged atop the 32 re-pin):
+  // +2 the new section I (the header `?` is the standalone header's last
+  // element right of the .spacer with the shared labels + glyph, and
+  // clicking it fires openDocs once with the `reports` section id).
+  'reports.dom.mjs': 34,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:
   // renamed card, meta line landed, First kill absence), +2 ribbon pins
@@ -313,9 +331,22 @@ const EXPECTED = {
   // Stat definitions card went with its guide bullet. Sections A–D
   // rewritten for the new card (pristine gating + card shape, the
   // absence pins for the removed UI, the bumped-save recompute kick,
-  // the no-bump honesty), E is the untouched Parallel-work card, F the
-  // runtime-error tail.
-  'settings.dom.mjs': 49,
+  // the no-bump honesty), E is the untouched Parallel-work card, and
+  // the runtime-error tail closes the file.
+  // settings 49 → 51 (2026-11-15, help-buttons): +2 the new section F
+  // (the header `?` — Settings gained the .spacer it never had — is the
+  // header's last element with the shared labels + glyph, and clicking
+  // it fires openDocs once with the `settings` section id); the
+  // runtime-error tail stays the closing check after it.
+  'settings.dom.mjs': 51,
+  // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
+  // is the one view header with no driver of its own (its loading lines
+  // are source-pinned in progress-presentation, its engine in Go), so
+  // the shared HelpButton's mount coverage lives here: section A (the
+  // `?` is the header's last element right of the .spacer with the
+  // shared labels + glyph, the head note intact) and B (one openDocs
+  // call with the `sql-console` section id, the route unmoved).
+  'sqlconsole.dom.mjs': 5,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage

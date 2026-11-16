@@ -69,6 +69,17 @@ globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.navigator = dom.window.navigator;
 
+// jsdom ships no ResizeObserver: the Heatmaps tab's HeatmapLayer binds
+// clientWidth, which Svelte's size binding observes the moment that tab
+// mounts (the help-buttons header-`?` walk visits every match tab).
+// Inert — this harness has no layout to report and no check reads a
+// size; the observer is only there so the mount does not throw.
+globalThis.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 const errors = [];
 process.on('uncaughtException', (e) => {
   errors.push(e);
@@ -201,7 +212,7 @@ build('views/Match.svelte'); // hosts both tables as tabs (Rounds / Economy)
 const harnessSrc = `<script>
   import Match from './views/Match.js';
 </script>
-<Match id={3} routeTab={globalThis.__routeTab} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} />`;
+<Match id={3} routeTab={globalThis.__routeTab} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} openDocs={(s) => (globalThis.__docs = (globalThis.__docs || []).concat(s))} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
@@ -870,7 +881,7 @@ check(
   '.view > .view rule not found or changed',
 );
 
-console.log("H. Match header: Watch replay is the row's FAR-LEFT cell, first-half copy cut");
+console.log("H. Match header: Watch replay is the row's FAR-LEFT cell, first-half copy cut, header ? follows the active tab");
 root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 const sub = root.querySelector('.match-sub');
 check('the header meta row renders', !!sub, 'no .match-sub');
@@ -896,6 +907,61 @@ check(
   'the remaining facts survive (map · duration · patch · status)',
   subText.includes('de_mirage') && subText.includes('40m00s') && subText.includes('patch 1.40.8.9') && !!sub.querySelector('.status, .chip'),
   subText.slice(0, 200),
+);
+// The header `?` (help-buttons wave, 2026-11-15): ONE button in the
+// Match header (right of the .spacer), targeting the section of the
+// ACTIVE tab — MATCH_TAB_SECTIONS in lib/router.js, the very table
+// docslockstep.test.js pins against the registered guide, so the
+// button's target and the documented coverage are one spelling.
+const hdr = root.querySelector('.match-header');
+const help = hdr?.querySelector(':scope > button[aria-label="Help for this view"]');
+check(
+  'the ? is the header’s LAST element, right of the .spacer, with the shared labels + question glyph',
+  !!help && hdr.lastElementChild === help &&
+    !!hdr.querySelector(':scope > .spacer') &&
+    help.getAttribute('title') === 'Help for this view' &&
+    help.classList.contains('btn') && !!help.querySelector('.codicon-question'),
+  hdr ? [...hdr.children].map((c) => c.className || c.tagName).join(' | ') : 'no header',
+);
+const TAB_TARGETS = {
+  Overview: 'understanding-a-match',
+  Scoreboard: 'understanding-a-match',
+  Rounds: 'understanding-a-match',
+  Economy: 'match-analysis',
+  Utility: 'match-analysis',
+  Combat: 'match-analysis',
+  Heatmaps: 'match-analysis',
+  Reports: 'reports',
+  Details: 'understanding-a-match',
+};
+const docsBefore = (globalThis.__docs || []).length;
+const tabWalk = [];
+for (const [t, want] of Object.entries(TAB_TARGETS)) {
+  const tabBtn = [...root.querySelectorAll('nav.tabs .tab')].find((b) => b.textContent.trim() === t);
+  if (!tabBtn) {
+    tabWalk.push(`${t}→NO TAB BUTTON`);
+    continue;
+  }
+  tabBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  const b = root.querySelector('.match-header > button[aria-label="Help for this view"]');
+  if (!b) {
+    tabWalk.push(`${t}→NO ?`);
+    continue;
+  }
+  b.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  tabWalk.push(`${t}→${(globalThis.__docs || []).at(-1)}`);
+}
+check(
+  'every tab’s ? targets its OWN guide section (the per-tab map, all nine tabs)',
+  tabWalk.join(' | ') === Object.entries(TAB_TARGETS).map(([t, s]) => `${t}→${s}`).join(' | '),
+  tabWalk.join(' | '),
+);
+check(
+  'the walk fired exactly one openDocs call per tab (the ? is the only opener)',
+  (globalThis.__docs || []).length - docsBefore === Object.keys(TAB_TARGETS).length,
+  `+${(globalThis.__docs || []).length - docsBefore}`,
 );
 // Source pins (jsdom applies no CSS): the component-scoped override that
 // zeroes the global .match-replay auto-margin (which parks it RIGHT), and

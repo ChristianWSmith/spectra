@@ -44,7 +44,7 @@
   import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
   import { roundIndexLabel, separatorFlags } from '../rounds.js';
   import { winnerTeamKey } from '../sideparity.js';
-  import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
+  import { MATCH_TABS, MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
@@ -59,6 +59,7 @@
   import StatCard from '../components/StatCard.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
   import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
@@ -76,11 +77,18 @@
   // running instance (filter/loop/selection/playhead intact) instead of
   // minting a fresh entry hash. Null while no instance is alive → the
   // fresh-entry replayHash below, exactly as before.
-  let { id = 0, nav = () => {}, routeTab = '', expandReplay = null } = $props();
+  let { id = 0, nav = () => {}, routeTab = '', expandReplay = null, openDocs = () => {} } = $props();
 
   // The tab bar is the canonical list from the route table, so a deep
   // link can never point at a tab that does not exist.
   const TABS = MATCH_TABS;
+
+  // The header `?` targets the ACTIVE tab's guide section — the ONE
+  // per-tab help button (Part 8's per-tab ruling): one button in the
+  // view header, never one per tab (anti-spam criterion: primary
+  // chrome only). MATCH_TAB_SECTIONS is the same table the lockstep
+  // test pins, so the target and the documented coverage cannot drift.
+  const helpSection = $derived(MATCH_TAB_SECTIONS[tab] || 'understanding-a-match');
 
   // GetScoreboard sort whitelist (mirror of the Go store's map).
   // Combined columns sort by their primary key.
@@ -883,6 +891,11 @@
           {/if}
         </p>
       </div>
+      <!-- The view's help affordance (HelpButton.svelte): ONE `?` in
+           the header, right of the .spacer, targeting the section of
+           the tab you are on (helpSection above — per-tab, one button). -->
+      <div class="spacer"></div>
+      <HelpButton section={helpSection} {openDocs} />
     </header>
 
     <!-- Warnings: no button — the panel is present iff the match has

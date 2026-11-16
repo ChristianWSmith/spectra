@@ -32,6 +32,7 @@
   import StatusChip from '../components/StatusChip.svelte';
   import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
   import Popover from '../components/Popover.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {}, openDocs = () => {} } = $props();
@@ -970,21 +971,16 @@
         {S.builder.headNotePinned}<span class="codicon codicon-pin"></span>{S.builder.headNoteScopes}
       </p>
     </div>
-    <!-- Metric-language help: opens the docs popup AT the
-         metric-language section (openDocs prop — no navigation, the
-         Builder stays mounted behind the sheet). The global .spacer
-         inside .view-header right-aligns it (Library's header does the
-         same). Not a route: no hash change, no active treatment. -->
+    <!-- Metric-language help: the shared header `?` (HelpButton.svelte
+         — the ONE spelling of this idiom) opened AT the metric-language
+         section (openDocs prop — no navigation, the Builder stays
+         mounted behind the sheet). The global .spacer inside
+         .view-header right-aligns it (every view header does the same).
+         Not a route: no hash change, no active treatment. Builder is
+         the one caller that names its target — the label says which
+         section opens; the view headers share the common copy. -->
     <div class="spacer"></div>
-    <button
-      class="btn"
-      type="button"
-      title={S.builder.metricLanguageHelp}
-      aria-label={S.builder.metricLanguageHelp}
-      onclick={() => openDocs('metric-language')}
-    >
-      <span class="codicon codicon-question" aria-hidden="true"></span>
-    </button>
+    <HelpButton section="metric-language" {openDocs} label={S.builder.metricLanguageHelp} />
   </header>
 
   {#if listError}
