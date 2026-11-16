@@ -505,7 +505,15 @@ const EXPECTED = {
   // the `?` heads the right wing), and section C gained +2 stylesheet
   // pins for the equal-width wing rules that center the ribbon cell
   // (jsdom has no layout — the rules are the pin).
-  'replay.dom.mjs': 465,
+  // replay 465 → 471 (2026-11-16, W9 follow-camera draw order): +6 the
+  // new section S — the stage ResizeObserver wiring for the render-area
+  // size changes while paused (the observer watches `.replay-stage`, its
+  // recorded callback IS the handler that drives renderer.resize(), and
+  // firing it after the events-card open and again after entering
+  // theater each increments `__resizes` — jsdom never fires a
+  // ResizeObserver, so the stub now RECORDS (callback, observed element)
+  // and the section drives the callback by hand).
+  'replay.dom.mjs': 471,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when

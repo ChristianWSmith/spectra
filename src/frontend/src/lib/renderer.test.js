@@ -7763,3 +7763,135 @@ test('resize() while paused repaints the current state at the NEW canvas size (m
     'the projection actually moved with the resize (not the stale mini geometry)',
   );
 });
+
+// --- layer order: ONE camera per draw (the radar pass vs the entity pass) -----
+//
+// draw() paints the radar layer and then the entity layer; both must read
+// the camera as of the START of the draw. Free mode never writes cam
+// inside draw() and smart's stepSmart runs BEFORE the radar pass, so the
+// only mode that could write cam BETWEEN the two passes is FOLLOW — and
+// it did: a size change runs resize() → fit(), which teleports the
+// camera to the map centre; the radar painted at that centre, and only
+// THEN did the follow block re-centre cam on the followed player, so the
+// entities painted displaced from the radar by (player − map centre)·s.
+// While PAUSED nothing draws again (the engine's per-frame draw stops and
+// the smart settle loop is disabled while following), so the mismatched
+// frame stayed — which is exactly why ONE zoom healed it: input.js's
+// zoomAt → draw is a second draw whose radar key now reads the
+// follow-recentred camera, so the radar repainted under the same camera
+// as the entities.
+//
+// Characterization pins (grid geometry is the radar's paint-time
+// camera: line spacing yields the drawn scale, the offsets cam.cx/cy at
+// the moment the layer painted):
+//   · follow + a paused size change → the radar pass and the next draw's
+//     radar pass read the SAME camera (and it is the camera getCam()
+//     reports at the end of the draw — i.e. final BEFORE any layer
+//     painted, not recomputed in the middle of the frame);
+//   · free mode (the control): unchanged by the reorder — the camera
+//     never moves mid-draw there either way.
+const GRID_STROKE = 'rgba(215, 221, 232, 0.06)'; // drawGrid's line stroke
+
+// gridGeom — the recorded grid pass of one draw, as [op, x, y] tuples.
+// Filtered by the grid's own stroke so a chevron/trail path in the same
+// frame can never be mistaken for radar geometry.
+function gridGeom(ops) {
+  return ops
+    .filter((e) => (e.op === 'moveTo' || e.op === 'lineTo') && e.strokeStyle === GRID_STROKE)
+    .map((e) => [e.op, e.args[0], e.args[1]]);
+}
+
+// expectedGridGeom — the SAME geometry the grid pass emits, derived from
+// a camera read after the draw (drawGrid's formula, verbatim: the image
+// box from screenToImage at both corners, 64 px steps, the line's screen
+// x/y from cam.cx/cy and s = fit·zoom).
+function expectedGridGeom(cam, cssW, cssH) {
+  const s = cam.fit * cam.zoom;
+  const gx0 = Math.floor((cam.cx + (0 - cssW / 2) / s) / 64) * 64;
+  const gy0 = Math.floor((cam.cy + (0 - cssH / 2) / s) / 64) * 64;
+  const brX = cam.cx + (cssW - cssW / 2) / s;
+  const brY = cam.cy + (cssH - cssH / 2) / s;
+  const out = [];
+  for (let gx = gx0; gx <= brX; gx += 64) {
+    const sx = cssW / 2 + (gx - cam.cx) * s;
+    out.push(['moveTo', sx, 0], ['lineTo', sx, cssH]);
+  }
+  for (let gy = gy0; gy <= brY; gy += 64) {
+    const sy = cssH / 2 + (gy - cam.cy) * s;
+    out.push(['moveTo', 0, sy], ['lineTo', cssW, sy]);
+  }
+  return out;
+}
+
+// followFixture — the shared scene: synthStore's standing players on an
+// 800×600 recording canvas, no map pack (so the radar layer is the grid
+// pass — the geometry above).
+function followFixture(cssW = 800, cssH = 600) {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas(cssW, cssH);
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize();
+  return { engine, canvas, r };
+}
+
+test('follow camera: after a paused size change the radar pass and the entity pass read ONE camera', () => {
+  const { engine, canvas, r } = followFixture();
+  assert.equal(engine.state.playing, false, 'the whole pin runs paused');
+  engine.setFollow(0); // alice — the only camera mode that writes cam inside draw()
+  engine.seekTick(100);
+
+  // The render area changes size while paused (events-card toggle,
+  // theater enter/exit, window resize) → ResizeObserver → resize() →
+  // fit() teleports the camera to the map centre.
+  canvas.clientWidth = 1200;
+  canvas.clientHeight = 700;
+  let mark = canvas.log.length;
+  r.resize();
+  const radar1 = gridGeom(canvas.log.slice(mark));
+  assert.ok(radar1.length > 0, 'fixture sanity: the no-pack grid painted on the resize draw');
+
+  // The radar pass of THAT draw must already be at the camera the draw
+  // ends with — a plain second draw must not move it.
+  assert.deepEqual(
+    radar1,
+    expectedGridGeom(r.getCam(), 1200, 700),
+    'the radar pass painted at the camera getCam() reports — the follow re-centre runs BEFORE the radar pass, not between radar and entities',
+  );
+
+  mark = canvas.log.length;
+  r.draw();
+  const radar2 = gridGeom(canvas.log.slice(mark));
+  assert.ok(radar2.length > 0, 'fixture sanity: the grid painted again');
+  assert.deepEqual(
+    radar1,
+    radar2,
+    'a second draw repaints the radar at the SAME camera — the follow re-centre must not land between the radar and entity passes',
+  );
+  r.destroy();
+});
+
+test('free camera (control): a size change never moves the radar pass mid-draw', () => {
+  const { canvas, r } = followFixture(); // NO setFollow — free mode
+  canvas.clientWidth = 1200;
+  canvas.clientHeight = 700;
+  let mark = canvas.log.length;
+  r.resize();
+  const radar1 = gridGeom(canvas.log.slice(mark));
+  assert.ok(radar1.length > 0, 'fixture sanity: the no-pack grid painted on the resize draw');
+  assert.deepEqual(radar1, expectedGridGeom(r.getCam(), 1200, 700), 'free mode: the radar pass reads getCam() at paint time');
+
+  mark = canvas.log.length;
+  r.draw();
+  const radar2 = gridGeom(canvas.log.slice(mark));
+  assert.deepEqual(radar1, radar2, 'free mode: a second draw repaints the radar at the same camera (the reorder changes nothing here)');
+  r.destroy();
+});

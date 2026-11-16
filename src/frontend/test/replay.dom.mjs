@@ -90,9 +90,19 @@ globalThis.document = dom.window.document;
 globalThis.navigator = dom.window.navigator;
 
 // jsdom has no ResizeObserver and Node's fetch cannot resolve the
-// sidecar's relative URL — the view only needs both to exist.
+// sidecar's relative URL — the view only needs both to exist. The
+// observer RECORDS its callback and observed element (section S: jsdom
+// never fires it, so the size-change wiring is driven by hand).
+globalThis.__roObservers = [];
 globalThis.ResizeObserver = class {
-  observe() {}
+  constructor(cb) {
+    this.cb = cb;
+    this.el = null;
+    globalThis.__roObservers.push(this);
+  }
+  observe(el) {
+    this.el = el;
+  }
   unobserve() {}
   disconnect() {}
 };
@@ -4820,6 +4830,61 @@ check(
   loggedR.some((s) => s.includes('snapshot save failed')),
   loggedR.join(' | '),
 );
+
+// --- (S): the size-change wiring — stage ResizeObserver → renderer.resize() --
+// W9 (the follow-camera re-centre ordering in renderer.js draw()): the
+// events card and the theater toggle change the RENDER AREA while the
+// engine may be PAUSED, and the repaint that heals the frozen frame comes
+// from the stage ResizeObserver → renderer.resize() path. jsdom never
+// fires a ResizeObserver, so this pins the wiring by hand: the observer
+// Replay created watches the stage (the element those two toggles
+// resize), and invoking its recorded callback repaints through the
+// renderer — the same assertion shape as J3's activation leg.
+console.log('S. the stage ResizeObserver wires renderer.resize() for the events card and theater size changes');
+const stageRO = () => (globalThis.__roObservers || []).find((o) => targetR.contains(o.el));
+check(
+  'S: the mounted replay watches its stage with a ResizeObserver',
+  !!stageRO() && stageRO().el === targetR.querySelector('.replay-stage'),
+  stageRO() ? 'stage ✓' : 'no observer over this instance',
+);
+check(
+  'S: the recorded callback is a function (the size-change handler to drive)',
+  typeof stageRO()?.cb === 'function',
+  String(typeof stageRO()?.cb),
+);
+
+// The events card (feed rail) opens/closes over the stage — the first
+// render-area change while paused.
+const railOpenS = () => !!targetR.querySelector('.replay-side');
+if (!railOpenS()) {
+  click(targetR.querySelector('.replay-topbar .side-toggle'));
+  await sleep();
+}
+check('S: the events card is open for the size change', railOpenS());
+const resizesS1 = globalThis.__resizes || 0;
+stageRO()?.cb();
+check(
+  'S: the events-card size change repaints (renderer.resize ran)',
+  (globalThis.__resizes || 0) > resizesS1,
+  `resizes +${(globalThis.__resizes || 0) - resizesS1}`,
+);
+
+// Theater hides the chrome around the stage — the second size change.
+const resizesS2 = globalThis.__resizes || 0;
+click(targetR.querySelector('.replay-topbar #rp-theater'));
+await sleep();
+check(
+  'S: theater mode is on (the stage owns the whole render area)',
+  !!targetR.querySelector('.replay-stage .rp-theater-exit'),
+);
+stageRO()?.cb();
+check(
+  'S: the theater size change repaints (renderer.resize ran)',
+  (globalThis.__resizes || 0) > resizesS2,
+  `resizes +${(globalThis.__resizes || 0) - resizesS2}`,
+);
+click(targetR.querySelector('.replay-stage .rp-theater-exit'));
+await sleep();
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
