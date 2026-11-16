@@ -27,7 +27,7 @@
   import * as S from '../strings/index.js';
   import { fmtBytes, fmtDuration, fmtDate, basename, neverExtracted } from '../fmt.js';
   import { listedPlayers } from '../players.js';
-  import { teamNames } from '../teams.js';
+  import { teamNames, teamStartClass } from '../teams.js';
   import { seed, remember } from '../viewstate.svelte.js';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
@@ -712,20 +712,24 @@
     if (next) synthPlayers = next;
   }
 
-  function matchup(m) {
+  // matchupTeams resolves the Matchup cell's two display names — the
+  // FIRST name is always the team that finished CT, the second the team
+  // that finished T (both branches resolve per final side), which is what
+  // lets the cell colour each name by that team's START side. Returns
+  // null while neither source has answered (the cell then shows "—").
+  function matchupTeams(m) {
     // Both demo clan names known: no need for the scoreboard fallback.
-    if (m.ctName && m.tName) return `${m.ctName} vs ${m.tName}`;
+    if (m.ctName && m.tName) return { ct: m.ctName, t: m.tName };
     const players = synthPlayers.get(m.id);
-    if (!players) return '—'; // fallback still loading
-    if (!players.length) return '—'; // no extracted players (parsing/failed row)
+    if (!players) return null; // fallback still loading
+    if (!players.length) return null; // no extracted players (parsing/failed row)
     // Sides switch at halftime — these are team names, resolved per side
     // (demo name → team_<player> → bare side as a last resort).
-    const { ct, t } = teamNames({
+    return teamNames({
       ctName: m.ctName || '',
       tName: m.tName || '',
       players,
     });
-    return `${ct} vs ${t}`;
   }
 </script>
 
@@ -902,6 +906,19 @@
                  computed (no 0–0/0/0s). Size keeps its real value — it
                  is known, and hiding real data would be a downgrade. -->
             {@const neverExt = neverExtracted(m.extractedAt)}
+            <!-- The Matchup cell's names and both score cells share ONE
+                 colour rule: every colour on this row is the side that
+                 team STARTED on (teamStartClass over the row's stored
+                 sideSwitches — the team identity colour), never the side
+                 at match end. Sides switch at halftime, so the name's
+                 final side only picks WHICH start side it reads. -->
+            {@const matchNames = matchupTeams(m)}
+            <!-- The split score columns' sides, by FINAL side: the
+                 winner finished CT iff scoreCT > scoreT, the loser
+                 finished CT iff scoreCT < scoreT; a draw has neither, so
+                 both stay '' → no colour. -->
+            {@const winnerSide = m.scoreCT > m.scoreT ? 'ct' : m.scoreT > m.scoreCT ? 't' : ''}
+            {@const loserSide = m.scoreCT < m.scoreT ? 'ct' : m.scoreT < m.scoreCT ? 't' : ''}
             <tr
               class:clickable={isOpenable(m)}
               onclick={() => openMatch(m)}
@@ -920,27 +937,37 @@
                        260px cap) — an unbounded basename would inflate
                        the Matchup column while the row parses. -->
                   <span class="mono lib-demo-name" title={m.path}>{basename(m.path)}</span>
+                {:else if matchNames}
+                  <span class={teamStartClass('ct', m.sideSwitches)}>{matchNames.ct}</span> vs <span class={teamStartClass('t', m.sideSwitches)}>{matchNames.t}</span>
                 {:else}
-                  {matchup(m)}
+                  —
                 {/if}
               </td>
               <!-- Split score columns: W = max(scoreCT, scoreT), L =
                    min() — the composite "13–9" line had no meaningful
                    single sort order, each axis does (winner_score /
-                   loser_score in matchListSort). The W cell carries the
-                   WINNER's side colour: the final score is the side at
-                   match end, which is what colour means here; a draw has
-                   no winner, so both cells stay neutral, and a
-                   never-extracted row shows "—" in both (the extracted_at
-                   gate above). -->
+                   loser_score in matchListSort). Colour is the row rule
+                   stated above: BOTH cells carry the side that team
+                   STARTED on (the winner's / the loser's start side
+                   through teamStartClass), not the side at match end —
+                   the ruling that supersedes the W cell's old end-side
+                   rule. A draw has no winner or loser, so both cells
+                   stay neutral, and a never-extracted row shows "—" in
+                   both (the extracted_at gate above). -->
               <td class="num">
                 {#if neverExt}
                   —
                 {:else}
-                  <span class:ct={m.scoreCT > m.scoreT} class:t={m.scoreT > m.scoreCT}>{Math.max(m.scoreCT, m.scoreT)}</span>
+                  <span class={teamStartClass(winnerSide, m.sideSwitches)}>{Math.max(m.scoreCT, m.scoreT)}</span>
                 {/if}
               </td>
-              <td class="num">{neverExt ? '—' : Math.min(m.scoreCT, m.scoreT)}</td>
+              <td class="num">
+                {#if neverExt}
+                  —
+                {:else}
+                  <span class={teamStartClass(loserSide, m.sideSwitches)}>{Math.min(m.scoreCT, m.scoreT)}</span>
+                {/if}
+              </td>
               <td class="num">{neverExt ? '—' : m.realRounds}</td>
               <td class="num">{neverExt ? '—' : fmtDuration(m.durationS)}</td>
               <td class="num">{fmtBytes(m.size)}</td>

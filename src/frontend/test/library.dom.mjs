@@ -207,6 +207,10 @@ const row = {
   size: 1048576,
   scoreCT: 13,
   scoreT: 9,
+  // No side switches recorded → the start-side colours (matchup names,
+  // W/L cells) equal the final-side ones. Section K's fixtures carry an
+  // ODD count instead, so both parities are pinned.
+  sideSwitches: 0,
   ctName: 'Alpha',
   tName: 'Beta',
   realRounds: 22,
@@ -436,14 +440,16 @@ await sleep(350); // past the 250 ms debounce
   check('fetch fired with the new map facet', f && f.map === 'cache', JSON.stringify(c && c.args));
   check('player facet preserved', f && f.player === '76561198000000001');
   check('scripted rows render', $('tbody tr').length === 1, String($('tbody tr').length));
-  // RE-PIN (owner ruling — a composite "13–9" scoreline has no
-  // meaningful single sort order): the one Score column is TWO columns,
-  // W Score = max(scoreCT, scoreT), L Score = min(), each with its own
-  // store sort key (winner_score / loser_score). Header old → new:
-  // "Score" → "W Score" + "L Score". Cell old → new: "13–9" (CT-blue 13,
-  // T-orange 9) → "13" in the WINNER's side colour (CT took this match —
-  // colour = the side at match end, which is what the final score is) +
-  // a neutral "9" (the loser's side colour says nothing new here).
+  // RE-PIN (owner ruling 2026-11-15 — START-side colours): the one Score
+  // column is TWO columns, W Score = max(scoreCT, scoreT), L Score =
+  // min(), each with its own store sort key (winner_score /
+  // loser_score). Header old → new: "Score" → "W Score" + "L Score".
+  // Cell old → new: "13–9" (CT-blue 13, T-orange 9) → "13" + "9", each
+  // in the TEAM colour of the side that team STARTED on (the row rule
+  // for this whole table: matchup names and both score cells alike),
+  // never the side at match end. This fixture records no side switches,
+  // so start side == final side: winner indigo .team-start-ct, loser
+  // orange .team-start-t.
   {
     const heads = [...document.querySelectorAll('.dropzone .data-table thead th')].map(
       (th) => th.textContent.trim(),
@@ -456,15 +462,30 @@ await sleep(350); // past the 250 ms debounce
     const scoreTr = $('tbody tr')[0];
     const scoreCells = [...scoreTr.children].map((td) => td.textContent.trim());
     const wSpan = scoreTr.children[2].querySelector('span');
+    const lSpan = scoreTr.children[3].querySelector('span');
     check(
-      'RE-PIN: cell 13–9 → W 13 (winner side colour) + L 9 (neutral)',
+      'RE-PIN: cell 13–9 → W 13 (winner start side) + L 9 (loser start side)',
       scoreCells[2] === '13' &&
         scoreCells[3] === '9' &&
         !!wSpan &&
-        wSpan.classList.contains('ct') &&
-        !wSpan.classList.contains('t') &&
-        !scoreTr.children[3].querySelector('.ct, .t'),
-      `${JSON.stringify(scoreCells)} / w=${wSpan && wSpan.className} / l=${scoreTr.children[3].innerHTML}`,
+        wSpan.classList.contains('team-start-ct') &&
+        !wSpan.classList.contains('team-start-t') &&
+        !!lSpan &&
+        lSpan.classList.contains('team-start-t') &&
+        !lSpan.classList.contains('team-start-ct'),
+      `${JSON.stringify(scoreCells)} / w=${wSpan && wSpan.className} / l=${lSpan && lSpan.className}`,
+    );
+    // The same rule on the Matchup cell: first name = the team that
+    // finished CT, second = the team that finished T, each coloured by
+    // the side that team STARTED on.
+    const nameSpans = [...scoreTr.children[1].querySelectorAll('span')];
+    check(
+      'RE-PIN: matchup team names carry their own start-side colours',
+      scoreTr.children[1].textContent.trim() === 'Alpha vs Beta' &&
+        nameSpans.length === 2 &&
+        nameSpans[0].classList.contains('team-start-ct') &&
+        nameSpans[1].classList.contains('team-start-t'),
+      scoreTr.children[1].innerHTML,
     );
   }
   // An extracted (ready) row stays the openable kind: pointer cursor +
@@ -1697,6 +1718,9 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   // the second is the DRAW fixture for the split score columns (equal
   // scores: both W/L cells show the same value, max = min, no invented
   // tie-break, and neither cell is side-coloured — no side took it).
+  // Both fixtures record an ODD side-switch count, so their start sides
+  // are the FLIP of their final sides — the start-side colour rule can't
+  // be satisfied by accident from the final-side data.
   const kRow = {
     id: 42,
     path: '/d/k.dem',
@@ -1704,6 +1728,7 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
     size: 2048,
     scoreCT: 13,
     scoreT: 11,
+    sideSwitches: 1, // odd → the CT-finishing team STARTED T
     ctName: 'K1',
     tName: 'K2',
     realRounds: 24,
@@ -1719,6 +1744,7 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
     size: 2048,
     scoreCT: 12,
     scoreT: 12,
+    sideSwitches: 1, // odd, and STILL neutral: a draw has no side to colour
     ctName: 'D1',
     tName: 'D2',
     realRounds: 24,
@@ -1760,11 +1786,15 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   );
 
   // (a2) the split score columns: cell values on both rendered rows
-  // (13-11 → W13 in the winner's side colour + neutral L11; the draw
-  // 12-12 → both cells 12, neither side-coloured), then one header
-  // click per axis — first click applies the column's natural default
-  // (W desc = most decisive finishes first, L asc = most lopsided games
-  // first), the second flips the active header like every other SortTh.
+  // (13-11 → W13 + L11, each in its team's START-side colour — these
+  // fixtures record an ODD switch count, so the winner reads T-orange
+  // and the loser CT-indigo, the OPPOSITE of their final sides; the draw
+  // 12-12 → both cells 12, neither side-coloured even with that odd
+  // count), the matchup names carrying the same start-side rule, then
+  // one header click per axis — first click applies the column's
+  // natural default (W desc = most decisive finishes first, L asc =
+  // most lopsided games first), the second flips the active header like
+  // every other SortTh.
   {
     const rowByText = (txt) =>
       [...document.querySelectorAll('.dropzone .data-table tbody tr')].find((tr) =>
@@ -1775,31 +1805,62 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
     const kTr = rowByText('K1 vs K2');
     const kCells = cellsOf(kTr);
     const kW = kTr && kTr.children[2].querySelector('span');
+    const kL = kTr && kTr.children[3].querySelector('span');
     check(
-      'ready row split: W 13 (winner side colour) + L 11 (neutral)',
+      'ready row split: W 13 + L 11, each in its team’s start-side colour (odd switches)',
       !!kCells &&
         kCells[2] === '13' &&
         kCells[3] === '11' &&
         !!kW &&
-        kW.classList.contains('ct') &&
-        !kW.classList.contains('t') &&
-        !kTr.children[3].querySelector('.ct, .t'),
-      JSON.stringify(kCells),
+        kW.classList.contains('team-start-t') &&
+        !kW.classList.contains('team-start-ct') &&
+        !!kL &&
+        kL.classList.contains('team-start-ct') &&
+        !kL.classList.contains('team-start-t'),
+      `w=${kW && kW.className} / l=${kL && kL.className} / ${JSON.stringify(kCells)}`,
     );
 
     const dTr = rowByText('D1 vs D2');
     const dCells = cellsOf(dTr);
     const dW = dTr && dTr.children[2].querySelector('span');
+    const dL = dTr && dTr.children[3].querySelector('span');
     check(
-      'draw row: both cells 12 (max = min), no side colour on either cell',
+      'draw row: both cells 12 (max = min), no start-side colour on either cell',
       !!dCells &&
         dCells[2] === '12' &&
         dCells[3] === '12' &&
         !!dW &&
-        !dW.classList.contains('ct') &&
-        !dW.classList.contains('t') &&
-        !dTr.children[3].querySelector('.ct, .t'),
-      JSON.stringify(dCells),
+        !dW.classList.contains('team-start-ct') &&
+        !dW.classList.contains('team-start-t') &&
+        !!dL &&
+        !dL.classList.contains('team-start-ct') &&
+        !dL.classList.contains('team-start-t'),
+      `w=${dW && dW.className} / l=${dL && dL.className} / ${JSON.stringify(dCells)}`,
+    );
+
+    // The Matchup cell follows the same rule on BOTH rows: first name =
+    // the team that finished CT, second = the team that finished T,
+    // each coloured by the side it STARTED on (odd switches → flipped).
+    const nameClasses = (txt) => {
+      const tr = rowByText(txt);
+      if (!tr) return null;
+      const spans = [...tr.children[1].querySelectorAll('span')];
+      return {
+        text: tr.children[1].textContent.trim(),
+        spans: spans.map((s) => s.className),
+      };
+    };
+    const kNames = nameClasses('K1 vs K2');
+    const dNames = nameClasses('D1 vs D2');
+    check(
+      'matchup names carry their start-side colours (both rows, odd switches)',
+      !!kNames &&
+        kNames.text === 'K1 vs K2' &&
+        kNames.spans.join('|') === 'team-start-t|team-start-ct' &&
+        !!dNames &&
+        dNames.text === 'D1 vs D2' &&
+        dNames.spans.join('|') === 'team-start-t|team-start-ct',
+      JSON.stringify({ kNames, dNames }),
     );
   }
   click(sortBtn(a.t, 'W Score'));

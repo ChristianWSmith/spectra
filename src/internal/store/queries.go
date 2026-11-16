@@ -280,9 +280,13 @@ var roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.bomb_
 // matchSummaryCols/matchSummaryFrom are the library-list projection and its
 // teams join — ONE denormalized read model shared by ListMatches
 // (search/sort), GetMatchSummary (one row) and GetTeamNames (names only).
+// side_switches rides along so the list can colour a team by the side it
+// STARTED on (models.MatchSummary.SideSwitches → the frontend's
+// teamStartClass) without a second read — it is an existing matches
+// column, no schema change.
 const matchSummaryCols = `m.id, m.path, m.map, m.size, m.score_ct, m.score_t,
 	COALESCE(ct.name, ''), COALESCE(t.name, ''), m.real_rounds, m.playback_time_s,
-	m.extracted_at, m.status, m.error, m.sha256`
+	m.extracted_at, m.status, m.error, m.sha256, m.side_switches`
 
 const matchSummaryFrom = ` FROM matches m
 	LEFT JOIN teams ct ON ct.match_id = m.id AND ct.side = 'ct'
@@ -709,6 +713,7 @@ func scanMatchSummary(row interface{ Scan(...any) error }) (models.MatchSummary,
 	if err := row.Scan(
 		&mm.ID, &mm.Path, &mm.Map, &mm.Size, &mm.ScoreCT, &mm.ScoreT, &mm.CTName, &mm.TName,
 		&mm.RealRounds, &mm.DurationS, &extracted, &mm.Status, &mm.Error, &mm.SHA256,
+		&mm.SideSwitches,
 	); err != nil {
 		return models.MatchSummary{}, err
 	}
