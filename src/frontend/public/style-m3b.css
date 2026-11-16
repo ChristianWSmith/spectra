@@ -270,15 +270,60 @@ label.filt-lab {
   width: 220px;
 }
 
-.prof-metrics {
+/* The career grid: one square card per pinned metric — the metric's
+   name over its value, centered and wrapping (it replaced a
+   Metric/Value table). */
+.prof-career {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
 
-.prof-metric.active {
-  border-color: var(--accent);
-  color: var(--accent);
+.prof-career-card {
+  width: clamp(140px, 12vw, 160px);
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  overflow: hidden;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Long metric names clamp to two lines inside the square instead of
+   pushing the value out of it. */
+.prof-career-name {
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.prof-career-val {
+  font-weight: 600;
+  max-width: 100%;
+}
+
+/* A state chip in the value slot keeps its own copy inside the card. */
+.prof-career-val .chip {
+  max-width: 100%;
+}
+
+/* The trend card's metric picker — the shared SuggestInput (sg-),
+   sized to a metric name. */
+.prof-trend-pick .input {
+  width: 200px;
 }
 
 .prof-spark {

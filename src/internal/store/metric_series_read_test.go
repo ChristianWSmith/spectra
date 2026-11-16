@@ -391,7 +391,7 @@ func TestGetTrendPercentScaleAndQ1Divergences(t *testing.T) {
 	// hs: 0.4 × 100 == the retired ps.hs_pct (40) — equal, no scaling
 	// surprise on the side where both agree.
 	legacyHS := byMatch("hs")
-	hs := trendByMatch("hs")
+	hs := trendByMatch("hs_pct") // the trend now takes the metric NAME; "hs" is the oracle's own retired key
 	if legacyHS[idA] != 40 || legacyHS[idB] != 40 {
 		t.Fatalf("legacy hs = %v, want 40 for both (testExtracted hs_pct)", legacyHS)
 	}
@@ -472,5 +472,45 @@ func TestGetPlayerHistoryReadsStoredMetricRows(t *testing.T) {
 	// retired ps.assists select is the only assist source that died).
 	if rows[0].Kills != 10 || rows[0].Deaths != 0 || rows[0].Map == "" {
 		t.Errorf("newer row lost its raw columns: %+v", rows[0])
+	}
+}
+
+// TestGetTrendAnyMetricName pins the opened-up API contract (the trend
+// card became a picker over the catalog): metric IS the metric NAME, so
+// any match-scope definition the catalog carries resolves to its stored
+// rows — a name the retired four-button whitelist never knew included —
+// while a name the catalog does not carry is still the unknown-metric
+// error and a PROFILE-scope name resolves but serves an honest empty
+// series (the read is match-grain: match_id > 0 only, never a Go
+// recomputation either way).
+func TestGetTrendAnyMetricName(t *testing.T) {
+	s, ids := trendFixture(t)
+
+	// A match-scope name outside the retired adr|kast|kd|hs set — a user
+	// metric — resolves and serves its fresh stored row.
+	seedUserMetric(t, s, "utility_damage_avg", "")
+	seedFreshMetricValue(t, s, "utility_damage_avg", "100", ids["trend-a"], 42.5)
+	pts, err := s.GetTrend("100", "utility_damage_avg")
+	if err != nil {
+		t.Fatalf("GetTrend(utility_damage_avg): %v", err)
+	}
+	if len(pts) != 1 || pts[0].MatchID != ids["trend-a"] || pts[0].Value != 42.5 {
+		t.Errorf("user-metric trend = %+v, want exactly the fresh {trend-a 42.5} point", pts)
+	}
+
+	// The unknown-name error is unchanged (the API contract).
+	if _, err := s.GetTrend("100", "definitely_not_a_metric"); err == nil {
+		t.Error("GetTrend(unknown) err = nil, want unknown-metric error")
+	}
+
+	// A profile-scope name resolves but never reaches a match-grain
+	// series — an empty series, not an error and not a recompute.
+	seedScopedMetric(t, s, "career_probe", "profile", "rounds")
+	pts, err = s.GetTrend("100", "career_probe")
+	if err != nil {
+		t.Fatalf("GetTrend(career_probe): %v", err)
+	}
+	if len(pts) != 0 {
+		t.Errorf("profile-scope trend = %+v, want an empty series (match-grain read only)", pts)
 	}
 }

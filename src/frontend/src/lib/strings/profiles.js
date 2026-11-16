@@ -30,10 +30,11 @@ export const profiles = {
   statWinPctTitle: 'Share of matches won',
   careerHeading: 'Career metrics',
   careerErrorLead: 'Career metrics unavailable: ',
-  thMetric: 'Metric',
-  thValue: 'Value',
   trendHeading: 'Trend',
-  trendGroupLabel: 'Trend stat',
+  // The trend card's metric picker (the shared SuggestInput): the one
+  // place a metric NAME is chosen for the sparkline.
+  trendMetricSearch: 'Search metrics…',
+  trendMetricAria: 'Trend metric',
   trendAriaLead: ' trend across ',
   trendAriaTail: ' matches',
   openMatchDot: 'Open match — {title}',

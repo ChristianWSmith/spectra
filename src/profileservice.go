@@ -272,8 +272,11 @@ func (s *ProfileService) ListPlayers(query string) ([]ProfileSummary, error) {
 }
 
 // GetCareerTrend returns a metric series across matches (oldest → newest).
-// metric ∈ adr|kast|kd|hs. Values are served at full precision — the
-// frontend's fmt1/fmt2/round1 do the display rounding.
+// metric is the metric NAME — any match-scoped definition the trend
+// picker can offer (an unknown name is an error; a profile-scope name
+// resolves to an empty series, since the series is match-grain). Values
+// are served at full precision — the frontend's fmt1/fmt2/round1 do the
+// display rounding.
 func (s *ProfileService) GetCareerTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
 	return s.st.GetTrend(steamID, metric)
 }

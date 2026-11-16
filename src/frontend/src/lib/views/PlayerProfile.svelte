@@ -23,7 +23,7 @@
   import * as S from '../strings/index.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
-  import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
+  import { readOrder, resolvePinIds, pinnedInSequence, inSequence } from '../metricorder.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -37,16 +37,8 @@
   // hashchange. profileBackTarget (lib/nav.js) resolves both.
   let { steamId = null, query = {}, origin = '', nav = () => {} } = $props();
 
-  const METRICS = [
-    { key: 'adr', label: 'ADR' },
-    { key: 'kast', label: 'KAST%' },
-    { key: 'kd', label: 'K/D' },
-    { key: 'hs', label: 'HS%' },
-  ];
-
   let profile = $state(null);
   let profileError = $state('');
-  let metric = $state('adr');
   let trend = $state([]);
   let trendError = $state('');
 
@@ -55,13 +47,17 @@
   // fetched once and filtered client-side by SuggestInput, which owns the
   // dropdown, the keyboard and the dismissal. Picking navigates to the
   // canonical /player/:steamid view.
-  // The finder's query is view-local state: it restores across
-  // navigation through the process-scoped registry (viewstate.svelte.js
-  // — flat key; the same search pool for every profile). The route's
-  // own query above stays URL-owned and is never registered.
-  const finderSeed = seed('player', { q: '' });
+  // The finder's query AND the trend's picked metric are view-local
+  // state: they restore across navigation through the process-scoped
+  // registry (viewstate.svelte.js — flat key; the same search pool for
+  // every profile, the same trend metric per visit). The route's own
+  // query above stays URL-owned and is never registered.
+  const finderSeed = seed('player', { q: '', trend: 'adr' });
   let q = $state(finderSeed.q);
-  $effect(() => remember('player', { q }));
+  // `metric` IS the metric NAME the series read takes (the trend card
+  // picks over the catalog below — no four-name button set anymore).
+  let metric = $state(finderSeed.trend || 'adr');
+  $effect(() => remember('player', { q, trend: metric }));
   let players = $state([]);
 
   $effect(() => {
@@ -128,6 +124,56 @@
   $effect(() => {
     loadTrend();
   });
+
+  // --- The trend metric picker --------------------------------------------
+  // The catalog on offer is the MATCH-scope set in the metricorder
+  // sequence (lib/metricorder.js — the ONE ordering mechanism: scope
+  // filtered, absent pref ⇒ default sequence). `metric` stays the metric
+  // NAME the series read takes; the shared SuggestInput owns the
+  // dropdown, the keyboard and the dismissal (the same widget the
+  // profile finder above and the Reports appendix rows use).
+  let trendDefs = $state([]);
+  let orderPref = $state(null);
+  let trendText = $state('');
+
+  $effect(() => {
+    let live = true;
+    Promise.all([listMetrics(), readOrder('match')])
+      .then(([defs, order]) => {
+        if (!live) return;
+        trendDefs = defs || [];
+        orderPref = order;
+      })
+      .catch(() => {
+        if (live) trendDefs = []; // a failed catalog read offers nothing — never a guess
+      });
+    return () => (live = false);
+  });
+
+  const trendItems = $derived(inSequence('match', orderPref, trendDefs));
+
+  // A selection the loaded catalog no longer carries falls back to the
+  // default — but ONLY from a non-default selection, so a catalog that
+  // simply has no match-scope `adr` (or has not loaded yet) never
+  // rewrites the selection or re-fires the series read.
+  $effect(() => {
+    if (trendDefs.length === 0) return;
+    if (metric !== 'adr' && !trendItems.some((d) => d.name === metric)) metric = 'adr';
+  });
+
+  // The picked metric's DISPLAY name — what the input shows and what the
+  // sparkline's aria-label names (never the raw name key). Before the
+  // catalog resolves the default still reads as itself.
+  const trendLabel = $derived.by(() => {
+    const def = trendItems.find((d) => d.name === metric);
+    if (def) return def.title || def.name;
+    return metric === 'adr' ? 'ADR' : metric;
+  });
+  $effect(() => (trendText = trendLabel));
+
+  // The picked metric's format tag — the trend formatter's input (the
+  // definition is the catalog's, never a per-name special case).
+  const trendFormat = $derived(trendItems.find((d) => d.name === metric)?.format || '');
 
   // --- Career metrics (stored-metrics design §1a/§5) -----------------------
   // Profile-scope pins live under their OWN localStorage key —
@@ -250,11 +296,15 @@
     nav(buildHash('/library', { map, player: profile.steamId }));
   }
 
-  function fmtProfileMetric(v, m) {
-    if (!Number.isFinite(v)) return '—';
-    if (m === 'kast' || m === 'hs') return fmtPercent(v);
-    if (m === 'kd') return fmt2(v);
-    return fmt1(v);
+  // The trend serves values at DISPLAY scale already — the series read
+  // returns a percent-format metric 0..100 (see store.GetTrend) — so
+  // percent is the ONE divergence from the shared fmtMetric (which
+  // multiplies a stored 0..1 fraction by 100); every other format tag
+  // delegates to it, so the trend formats exactly like every other
+  // metric cell in the app. Never fmtMetric straight on a percent.
+  function fmtTrendValue(v, format) {
+    if (format === 'percent') return Number.isFinite(v) ? fmtPercent(v) : '—';
+    return fmtMetric(v, format);
   }
 
   // Hand-rolled sparkline: x = Seq (GetTrend's row order — CS2 patch
@@ -296,7 +346,7 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: `${fmtPatch(p.patch)} · Imported ${fmtDate(p.extractedAt)} · ${fmtProfileMetric(p.value, metric)}`,
+        title: `${fmtPatch(p.patch)} · Imported ${fmtDate(p.extractedAt)} · ${fmtTrendValue(p.value, trendFormat)}`,
       })),
     };
   });
@@ -353,7 +403,7 @@
          two — Opening duels and the Clutches count). The "Career
          metrics" panel below is the metric half of the same surface —
          with W3a's default pins it re-expresses today's eleven cards as
-         these 2 fixed cards followed by 11 metric rows. -->
+         these 2 fixed cards followed by 11 metric cards. -->
     <div class="stat-grid">
       <StatCard label={S.profiles.statMatchesLabel} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
       <StatCard label={S.profiles.statWinPctLabel} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
@@ -366,7 +416,7 @@
          renders the eleven converted metrics in default order directly
          after the two fixed cards above — today's eleven cards,
          re-expressed (the ADR ± σ and Clutches cards each yielded two
-         rows). Hidden entirely while
+         cards). Hidden entirely while
          nothing is pinned that resolves; a failed read shows its own
          alert. -->
     {#if careerCols.length > 0 || careerError}
@@ -379,39 +429,36 @@
           </p>
         {/if}
         {#if careerCols.length > 0}
-          <div class="table-scroll">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">{S.profiles.thMetric}</th>
-                  <th scope="col" class="num">{S.profiles.thValue}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each careerCols as col (col.def.id)}
-                  {@const pres = careerPres(col)}
-                  <tr>
-                    <td title={col.def.doc || col.def.name}
-                      >{col.def.title || col.def.name}</td
-                    >
-                    <td class="num" title={careerTitle(col, pres)}>
-                      {#if pres.kind === 'value'}
-                        {fmtMetric(pres.value, col.def.format)}
-                      {:else if pres.kind === 'nodata'}
-                        —
-                      {:else}
-                        <StatusChip
-                          status={pres.state}
-                          title={careerTitle(col, pres)}
-                          progress={metricProgressFrac(metricProgress, col.def.id)}
-                          stage={metricProgressStage(metricProgress, col.def.id)}
-                        />
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
+          <!-- The career GRID: one square card per pinned metric — the
+               metric's name over its value slot, centered and wrapping
+               (it replaced a Metric/Value table). The children keep the
+               order the pins' own readers key on: [0] the name (its
+               doc tooltip), [1] the value slot running the state
+               machine — the value, the honest dash, or the state chip,
+               never a fabricated 0 and never a version number. -->
+          <div class="prof-career">
+            {#each careerCols as col (col.def.id)}
+              {@const pres = careerPres(col)}
+              <div class="prof-career-card">
+                <div class="prof-career-name" title={col.def.doc || col.def.name}
+                  >{col.def.title || col.def.name}</div
+                >
+                <div class="prof-career-val" title={careerTitle(col, pres)}>
+                  {#if pres.kind === 'value'}
+                    {fmtMetric(pres.value, col.def.format)}
+                  {:else if pres.kind === 'nodata'}
+                    —
+                  {:else}
+                    <StatusChip
+                      status={pres.state}
+                      title={careerTitle(col, pres)}
+                      progress={metricProgressFrac(metricProgress, col.def.id)}
+                      stage={metricProgressStage(metricProgress, col.def.id)}
+                    />
+                  {/if}
+                </div>
+              </div>
+            {/each}
           </div>
         {/if}
       </section>
@@ -420,15 +467,25 @@
     <section class="panel">
       <div class="row-between">
         <h2>{S.profiles.trendHeading}</h2>
-        <div class="prof-metrics" role="group" aria-label={S.profiles.trendGroupLabel}>
-          {#each METRICS as m (m.key)}
-            <button
-              class="btn small prof-metric"
-              class:active={metric === m.key}
-              onclick={() => (metric = m.key)}
-            >{m.label}</button>
-          {/each}
-        </div>
+        <!-- The trend's metric picker: ANY match-scope metric the
+             catalog carries (the four-button set is gone — the series
+             read takes the metric NAME), offered through the one
+             suggestion dropdown in the metricorder sequence. -->
+        <SuggestInput
+          id="prof-trend"
+          wrapClass="prof-trend-pick"
+          kind="text"
+          items={trendItems}
+          text={(d) => d.title || d.name}
+          placeholder={S.profiles.trendMetricSearch}
+          ariaLabel={S.profiles.trendMetricAria}
+          align="end"
+          bind:value={trendText}
+          onselect={(d) => {
+            metric = d.name;
+            trendText = d.title || d.name;
+          }}
+        />
       </div>
       {#if trendError}
         <p class="error" role="alert">
@@ -440,7 +497,7 @@
           class="prof-spark"
           viewBox="0 0 {spark.W} {spark.H}"
           role="img"
-          aria-label="{metric}{S.profiles.trendAriaLead}{trend.length}{S.profiles.trendAriaTail}"
+          aria-label="{trendLabel}{S.profiles.trendAriaLead}{trend.length}{S.profiles.trendAriaTail}"
         >
           <polyline points={spark.line} fill="none" stroke="var(--accent)" stroke-width="2" />
           {#each spark.dots as d, i (i)}
@@ -461,7 +518,7 @@
           {/each}
         </svg>
         <p class="muted prof-spark-cap">
-          {trend.length}{S.profiles.sparkMinLead}{fmtProfileMetric(spark.min, metric)}{S.profiles.sparkMaxLead}{fmtProfileMetric(spark.max, metric)}
+          {trend.length}{S.profiles.sparkMinLead}{fmtTrendValue(spark.min, trendFormat)}{S.profiles.sparkMaxLead}{fmtTrendValue(spark.max, trendFormat)}
           {S.profiles.sparkFootnote}
         </p>
       {:else if trend.length === 1}

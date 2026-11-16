@@ -1147,26 +1147,20 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	return out, nil
 }
 
-// trendMetricSeed maps GetTrend's four trend-button names to the
-// MATCH-scope seed metric names whose stored rows the series reads
-// (dogfooding design §3.5's D13: the trend consumes the match-scope
-// adr / kast / kd / hs_pct rows — never the profile-scope career_*
-// twins; the button set stays these four — making it metric-driven is a
-// product extension, out of scope). Unknown names yield an error (the
-// API contract below); a definition missing from the catalog yields an
-// honest empty series, never a Go recomputation.
-var trendMetricSeed = map[string]string{
-	"adr":  "adr",
-	"kast": "kast",
-	"kd":   "kd",
-	"hs":   "hs_pct",
-}
-
 // GetTrend returns a per-match metric series for one player, ordered by
 // CS2 patch number — the authoritative "when this match was played" (a
 // demo carries no played-at date; see CS2.md's played-at entry) — with
 // import time (m.extracted_at) as the tiebreaker inside a patch.
-// metric ∈ adr|kast|kd|hs (unknown names yield an error).
+//
+// metric IS the metric NAME (dogfooding design §3.5's D13 read, opened
+// up when the trend card stopped being a four-button set and became a
+// picker over the catalog): any match-scope definition resolves to its
+// stored rows, user and plugin metrics included. Two honest edges — a
+// name the catalog does not carry is still the unknown-metric ERROR (the
+// API contract the service layer and the tests pin), and a PROFILE-scope
+// name resolves but serves an EMPTY series, because the series read only
+// ever returns match-grain rows (match_id > 0) — never a Go
+// recomputation either way.
 //
 // The VALUES are the stored match-scope metric rows (design §3.5's
 // gated D13 conversion — one series read, GetPlayerMetricSeries): a
@@ -1195,16 +1189,16 @@ var trendMetricSeed = map[string]string{
 // yields an empty series — no bot aggregate ever reaches the profile's
 // trend card.
 func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
-	seed, ok := trendMetricSeed[metric]
-	if !ok {
-		return nil, fmt.Errorf("unknown trend metric %q", metric)
-	}
-	m, found, err := s.seriesMetricFor(seed)
+	// seriesMetricFor resolves the NAME (it is the one name→definition
+	// lookup behind the trend and history series reads); !found means the
+	// catalog carries no such name — the unknown-metric error below, kept
+	// byte for byte for the API contract the callers pin.
+	m, found, err := s.seriesMetricFor(metric)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the trend: %w", err)
 	}
 	if !found {
-		return nil, nil // definition gone → honest empty series
+		return nil, fmt.Errorf("unknown trend metric %q", metric)
 	}
 	series, err := s.GetPlayerMetricSeries(steamID, []int64{m.id})
 	if err != nil {

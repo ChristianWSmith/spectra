@@ -169,8 +169,11 @@ export function fmtMoney(v) {
 // scoreboard's pinned-metric columns (int | float1 | float2 | percent |
 // currency, defaulting by integrality). float2 keeps a two-decimal tail
 // unconditionally (Q6 — a whole-number K/D renders 2.00, never "2").
-// PlayerProfile's per-key metric formatter is a different shape (metric
-// id, not format tag) and stays local.
+// PlayerProfile's trend formatter stays local for a different reason
+// than a per-key shape: it takes the same format TAG, but a percent
+// metric arrives ALREADY scaled (the series read serves 0..100), so it
+// diverts percent to fmtPercent(v) and delegates every other tag here —
+// fmtMetric's percent branch would multiply that value by 100 again.
 export function fmtMetric(v, format) {
   if (!Number.isFinite(v)) return '—';
   switch (format) {
