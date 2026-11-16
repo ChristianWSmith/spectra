@@ -251,6 +251,21 @@ type agg struct {
 	// by <1 u) and the FIRST one wins (its origin is the row's position).
 	bounceSeen map[bounceKey]bool
 
+	// blastSeen dedupes detonations the parser dispatches TWICE: exactly
+	// one stored detonation row per (tick, thrower, weapon), FIRST
+	// dispatch wins (its position is the row's). Today the only such twin
+	// is FlashExplode — demoinfocs-golang v6 fires it from BOTH the
+	// flashbang_detonate game event (game_events.go flashBangDetonate) and
+	// the flash projectile's entity on-destroy handler (datatables.go
+	// stOnDestroy) — so this is a no-op for the once-dispatched kinds and
+	// self-heals any future mimic twin (the general criterion is "the
+	// parser dispatches some detonations twice", not "flashes"). See the
+	// FlashExplode handler in handlers.go and CS2.md "A flashbang
+	// detonation fires TWICE in demoinfocs-golang v6". Accepted edge: two
+	// DISTINCT same-kind nades from one thrower in the identical tick
+	// would merge — impossible in practice (0 occurrences library-wide).
+	blastSeen map[blastKey]bool
+
 	// svc_EncryptedData net-messages seen (M4): decrypted inner messages
 	// dispatch as ordinary events, so this raw count is the extract's only
 	// encrypted-chat provenance (models.Match.EncryptedMessages).
@@ -284,6 +299,7 @@ func newAgg() *agg {
 		warnings:      make([]string, 0, 8),
 		soundEvents:   make([]models.SoundEvent, 0, 1024),
 		bounceSeen:    make(map[bounceKey]bool, 512),
+		blastSeen:     make(map[blastKey]bool, 128),
 		rawLatest:     make(map[string]string),
 		frameQueue:    make(map[string][]string),
 	}
@@ -1065,7 +1081,29 @@ type blastInfo struct {
 	x, y, z     float64
 }
 
+// blastKey is the detonation dedupe key: (tick, thrower, weapon). The
+// weapon keeps a flash and an HE from the same thrower in one tick apart;
+// the thrower keeps two players' simultaneous detonations apart; the tick
+// is the detonation itself (see agg.blastSeen for the full rationale).
+type blastKey struct {
+	tick    int
+	thrower uint64
+	weapon  string
+}
+
+// grenadeBlast stores ONE detonation row per (tick, thrower, weapon): the
+// parser dispatches some detonations TWICE (today exactly FlashExplode —
+// demoinfocs-golang v6 fires it from both the flashbang_detonate game
+// event and the flash projectile's entity on-destroy handler; cached in
+// CS2.md), and the FIRST dispatch wins — its position is the row's.
+// Uniform over all kinds: a once-dispatched detonation can never repeat a
+// key, so HE/smoke/fire/decoy rows are unaffected.
 func (a *agg) grenadeBlast(g blastInfo) {
+	key := blastKey{tick: g.tick, thrower: g.throwerKey, weapon: g.weapon}
+	if a.blastSeen[key] {
+		return
+	}
+	a.blastSeen[key] = true
 	px, py, pz := pos3(g.x, g.y, g.z)
 	a.addEvent(models.Event{
 		Tick:     g.tick,

@@ -385,6 +385,11 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 
 	p.RegisterEventHandler(func(e events.FlashExplode) {
+		// demoinfocs v6 dispatches FlashExplode TWICE per flashbang (the
+		// flashbang_detonate game event AND the projectile's entity
+		// on-destroy handler — CS2.md "A flashbang detonation fires TWICE
+		// in demoinfocs-golang v6"); agg.grenadeBlast's blastSeen dedupe
+		// keeps ONE row per (tick, thrower, weapon), first dispatch wins.
 		a.grenadeBlast(blastFor(e.GrenadeEvent, "flashbang_detonate", p))
 	})
 
@@ -605,7 +610,7 @@ func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser) blast
 	// throw → bounces → det with (models.EventGrenadeBounce). Measured on
 	// golden: a bounce's SOS source index is the thrown projectile entity
 	// 979/979, and ge.Projectile.Entity.ID() covers every one of those ids
-	// across all 478 blast rows (GrenadeEntityID only 912/979 — for a
+	// across all 387 blast rows (GrenadeEntityID only 912/979 — for a
 	// molotov's inferno_startburn it is the INFERNO entity, not the
 	// projectile — and the legacy payload's entityid is 912/979 too). 0 =
 	// the projectile instance is unknown: recorded as-is, never guessed.

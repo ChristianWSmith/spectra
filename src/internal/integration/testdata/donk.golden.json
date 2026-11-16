@@ -26,7 +26,7 @@
     "damage": 637,
     "extinguish": 4,
     "fade_out": 90,
-    "grenade": 478,
+    "grenade": 387,
     "grenade_bounce": 979,
     "grenade_land": 0,
     "grenade_throw": 393,
@@ -39,7 +39,7 @@
     "weapon_drop": 273,
     "weapon_pickup": 1030
   },
-  "eventTotal": 4448,
+  "eventTotal": 4357,
   "eventKindsDistinct": 21,
   "genericDistinct": 43,
   "genericTotal": 20647,
