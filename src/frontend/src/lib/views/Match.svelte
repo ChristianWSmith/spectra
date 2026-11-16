@@ -1,6 +1,6 @@
 <script>
   import * as S from '../strings/index.js';
-  import { isSteam, replayHash } from '../nav.js';
+  import { isSteam, replayHash, entryLoopSpan } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import {
     getMatch,
@@ -42,7 +42,7 @@
     fmtPatch,
   } from '../fmt.js';
   import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
-  import { roundIndexLabel, separatorFlags } from '../rounds.js';
+  import { roundIndexLabel, separatorFlags, roundStartTick, roundEndTick } from '../rounds.js';
   import { winnerTeamKey } from '../sideparity.js';
   import { MATCH_TABS, MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -59,6 +59,7 @@
   import StatCard from '../components/StatCard.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
@@ -181,14 +182,14 @@
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
 
-  // Analytics (M3): per-side buy classes for the Rounds tab — the
-  // store.GetEconomy rows keyed by round (the canonical per-side-class
-  // read, shared with the Economy tab and RoundDetail's Economy card).
+  // Analytics (M3): the Rounds tab's Class column left THIS view (W3a —
+  // the table opens with its far-left watch column instead), so the
+  // per-side buy-class read (store.GetEconomy, the canonical read the
+  // Economy tab and RoundDetail's Economy card still share) is no longer
+  // fetched here — only warmed through the analytics warm below.
   // The per-player KAST path (combatBySteam + its fetch + the combatError
   // panel) died with the dogfooding conversion (W2) — KAST% is a pinned
   // metric column now (the Combat tab still warms getCombatStats below).
-  let econByRound = $state(new Map());
-  let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4).
   let compareSel = $state(selSeed.compareSel);
   // The scoreboard's transposed shape (owner C14) — registry-owned and
@@ -417,24 +418,6 @@
       })
       .catch((e) => {
         if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  // Per-side buy classes for the Rounds tab (label + why + rules version,
-  // read verbatim from round_side_classes through getEconomy — the SAME
-  // read the Economy tab and RoundDetail use, so the three surfaces can
-  // never disagree). The alert keeps its round-types wording: a failed
-  // read is exactly what it reports.
-  $effect(() => {
-    let live = true;
-    classError = '';
-    getEconomy(id)
-      .then((rows) => {
-        if (live) econByRound = new Map((rows || []).map((r) => [r.round, r]));
-      })
-      .catch((e) => {
-        if (live) classError = errText(e);
       });
     return () => (live = false);
   });
@@ -765,6 +748,21 @@
   // #/match/:id for Overview).
   function backPath() {
     return tab === 'Overview' ? `match/${id}` : `match/${id}/${matchTabSlug(tab)}`;
+  }
+
+  // Rounds-tab row ▶ — ROUND-level watch, byte-identical to Economy's
+  // drill() and RoundDetail's "Watch round": the round's start tick as
+  // ?tick=, its OWN start→end span as ?loop= (nav.entryLoopSpan — the
+  // round IS the sequence, never an event-level pad) and THIS tab as the
+  // ?back= origin. No landmark filter: outside the replay, buttons seek.
+  // The row-click handler ignores button targets, so the row still opens
+  // the round summary beside it.
+  function watchRound(n) {
+    const start = roundStartTick(rounds, n);
+    // An unknown end stamps NO loop rather than a guessed bound —
+    // entryLoopSpan yields undefined and buildHash drops it.
+    const end = roundEndTick(rounds, n);
+    nav(replayHash(id, {}, { tick: start, loop: entryLoopSpan(start, end), back: backPath() }));
   }
 
   // Player entry → THE event browser with the camera on that player.
@@ -1164,7 +1162,7 @@
           aria-pressed={transposed}
           onclick={toggleTranspose}
         >
-          <span class="codicon codicon-split-horizontal" aria-hidden="true"></span>
+          <span class="codicon codicon-arrow-swap" aria-hidden="true"></span>
         </button>
       {/snippet}
       <!-- One fixed stat cell, shared by BOTH shapes: the normal body's
@@ -1337,19 +1335,27 @@
               {#each viewRows as p (p.steamId)}
                 {@const nameCls = teamCls(p.side)}
                 <th scope="col" class="sb-player">
-                  {#if isSteam(p.steamId)}
-                    <button
-                      class="btn ghost small name-link {nameCls}"
-                      title={S.fill(S.match.openProfilePossessive, { name: p.name })}
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        nav(`/player/${p.steamId}`);
-                      }}
-                      >{p.name}</button
-                    >
-                  {:else}
-                    {p.name}
-                  {/if}
+                  <!-- The name BLOCK (W3a): one wrapper covers both name
+                       shapes (the profile button and the bare name), so
+                       the team chip below always drops to its own line
+                       instead of riding inline after the name. The chip
+                       itself stays inside the <th> (pinned — Team
+                       moves INTO this header, it never leaves it). -->
+                  <span class="sb-name">
+                    {#if isSteam(p.steamId)}
+                      <button
+                        class="btn ghost small name-link {nameCls}"
+                        title={S.fill(S.match.openProfilePossessive, { name: p.name })}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          nav(`/player/${p.steamId}`);
+                        }}
+                        >{p.name}</button
+                      >
+                    {:else}
+                      {p.name}
+                    {/if}
+                  </span>
                   <!-- The Team column's cell rides along as the side chip
                        (team display name, colored by the team's START
                        side like every other team name). -->
@@ -1392,18 +1398,14 @@
         </table>
       </div>
     {:else if tab === 'Rounds'}
-      {#if classError}
-        <p class="error" role="alert">
-          {S.match.roundTypesUnavailable} {classError}
-          <button class="btn small" aria-label={S.match.dismissRoundTypesError} onclick={() => (classError = '')}>
-            <span class="codicon codicon-close"></span>
-          </button>
-        </p>
-      {/if}
       <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
+              <!-- Far-left watch column (W3a): the canonical ghost ▶ cell
+                   (EventPlay) — same sr-only header idiom RoundDetail's
+                   kill/bomb tables use. -->
+              <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
               <th
                 scope="col"
                 class="num cmp-cmp-col"
@@ -1411,11 +1413,6 @@
               >{S.match.colCmp}</th>
               <th scope="col" class="num">RD</th>
               <th scope="col">{S.match.colWinner}</th>
-              <th
-                scope="col"
-                class="def"
-                title={S.match.buyClassTitle}
-              >{S.match.colClass}</th>
               <th scope="col">{S.match.colReason}</th>
               <th scope="col" class="num">{S.match.colDuration}</th>
               <th scope="col">{S.match.colSite}</th>
@@ -1426,7 +1423,6 @@
           </thead>
           <tbody>
             {#each rounds as r, ri (r.number)}
-              {@const econ = econByRound.get(r.number)}
               <tr
                 class="clickable"
                 class:split-before={ri > 0 && sepFlags[ri - 1]}
@@ -1439,6 +1435,17 @@
                   e.key === 'Enter' && nav(buildHash(`/match/${id}/round/${r.number}`, { back: backPath() }))}
                 tabindex="0"
               >
+                <td>
+                  <!-- The row's own ▶ — ROUND-level stamping (watchRound
+                       above); the row handler ignores button targets, so
+                       the row still opens the round summary. -->
+                  <EventPlay
+                    tick={roundStartTick(rounds, r.number)}
+                    title={S.fill(S.match.watchRoundTitle, { round: r.number })}
+                    label={S.fill(S.match.watchRoundAria, { round: r.number })}
+                    onclick={() => watchRound(r.number)}
+                  />
+                </td>
                 <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
@@ -1452,32 +1459,6 @@
                 <td class="num">{roundIndexLabel(r)}</td>
                 <td>
                   <WinnerCell winner={r.winner} name={winnerName(r)} />
-                </td>
-                <td>
-                  {#if econ}
-                    <!-- Per-side buy classes (owner C6): one chip per team
-                         for THIS round, side-labelled so the pair reads
-                         unambiguously — the shared .cmp-class palette over
-                         the STORED side class (`unknown` when the match
-                         carries none), never a read-time re-classification.
-                         The tooltip is why + rules version only: a side
-                         chip carries no round-level confidence and
-                         promises no click. -->
-                    <span class="chip side ct">{S.match.sideCt}</span>
-                    <span
-                      class="chip cmp-class {econ.classCT || 'unknown'}"
-                      title={S.fill(S.match.sideClassTitle, { why: econ.classWhyCT || S.economy.noExplanation, rule: econ.ruleVersion ?? '—' })}
-                      >{econ.classCT || 'unknown'}</span
-                    >
-                    <span class="chip side t">{S.match.sideT}</span>
-                    <span
-                      class="chip cmp-class {econ.classT || 'unknown'}"
-                      title={S.fill(S.match.sideClassTitle, { why: econ.classWhyT || S.economy.noExplanation, rule: econ.ruleVersion ?? '—' })}
-                      >{econ.classT || 'unknown'}</span
-                    >
-                  {:else}
-                    <span class="muted">—</span>
-                  {/if}
                 </td>
                 <td>{r.reason || '—'}</td>
                 <td class="num">{fmtDuration(r.durationS)}</td>

@@ -7,8 +7,9 @@
 // grouping-key precision in E/F), the `traded` kind chip + toggle (I),
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
 // its long-event replay loop (H: solo's kill span at the loop length,
-// padded-span
-// fallback, unstatable → no ?loop=), and the RD{n} round labels (J).
+// padded-span fallback, unstatable → no ?loop=), the bare round numbers
+// under the RD heading (J) and the Engagements ROUND scope — one
+// selector, 'all' by default, Engagements only (N).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -278,17 +279,18 @@ check('engagements table rendered', !!engTable);
 check(
   'header order',
   JSON.stringify(headerTexts(engTable)) ===
-    JSON.stringify(['Replay', 'Round', 'Time', 'Kind', 'Killer', 'versus', 'Victim', 'Dist (m)']),
+    JSON.stringify(['Replay', 'RD', 'Time', 'Kind', 'Killer', 'versus', 'Victim', 'Dist (m)']),
   JSON.stringify(headerTexts(engTable)),
 );
 const engRows = rows(engTable);
 check('two engagement rows', engRows.length === 2, String(engRows.length));
 const first = engRows[0]?.querySelectorAll('td') || [];
 // The Round cell is TEXT again (owner ruling: "no round play button
-// there" — the round-watch ▶ was removed): RD{n} as a plain label, and
-// the row's ONLY play button is the event/follow ▶ in the Replay column
-// (A5 resolved to ONE play button per row).
-check('round cell renders the RD{n} text label', first[1]?.textContent.trim() === 'RD7', first[1]?.textContent);
+// there" — the round-watch ▶ was removed): the bare round number under
+// the RD heading (W3a), and the row's ONLY play button is the
+// event/follow ▶ in the Replay column (A5 resolved to ONE play button
+// per row).
+check('round cell renders the bare round number', first[1]?.textContent.trim() === '7', first[1]?.textContent);
 check('round cell carries NO button (no round play)', !first[1]?.querySelector('button'), first[1]?.innerHTML);
 const engPlayBtn = first[0]?.querySelector('button');
 check(
@@ -308,7 +310,8 @@ check('distance rounded in metres', first[7]?.textContent.trim() === '19', first
 const second = engRows[1]?.querySelectorAll('td') || [];
 check('missing distance renders an em dash', second[7]?.textContent.trim() === '—', second[7]?.textContent);
 // The exclusive "all" button is gone: the four kind TOGGLES are the
-// whole filter row (labels exactly opening/trade/traded/untraded).
+// kind half of the filter row (labels exactly opening/trade/traded/
+// untraded) — the round selector beside them is section N's pin.
 check(
   'kind toggles offered, no "all" button (the victim-side traded included)',
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(',') ===
@@ -405,12 +408,12 @@ check(
     !navClutch.includes('cat='),
   navClutch || 'no navigation',
 );
-// …and the clutch Round cell is TEXT too: the RD{n} label with no round
-// play — the clutch ▶ above is the row's only play button.
+// …and the clutch Round cell is TEXT too: the bare round number with no
+// round play — the clutch ▶ above is the row's only play button.
 const clutchCells = clutchRows[0]?.querySelectorAll('td') || [];
 check(
-  'clutch round cell renders the RD{n} text label, no button',
-  clutchCells[1]?.textContent.trim() === 'RD7' && !clutchCells[1]?.querySelector('button'),
+  'clutch round cell renders the bare round number, no button',
+  clutchCells[1]?.textContent.trim() === '7' && !clutchCells[1]?.querySelector('button'),
   clutchCells[1]?.textContent,
 );
 check(
@@ -499,8 +502,8 @@ check(
   dPlay?.getAttribute('title'),
 );
 check(
-  'the merged round cell keeps its RD{n} text (no round play)',
-  dCells[1]?.textContent.trim() === 'RD7' && !dCells[1]?.querySelector('button'),
+  'the merged round cell keeps its bare round number (no round play)',
+  dCells[1]?.textContent.trim() === '7' && !dCells[1]?.querySelector('button'),
   dCells[1]?.textContent,
 );
 
@@ -831,6 +834,16 @@ check(
   roundNs.length === 2 && roundNs.every((t) => /^RD\d+$/.test(t)) && roundNs.join(',') === 'RD6,RD7',
   roundNs.join(','),
 );
+// W3a (owner answer Q2): the KAST grid/dialog gets NO round filter — its
+// cells are a read-out, and the view's ONE round selector is the
+// Engagements card's (section N drives it).
+check(
+  'the KAST dialog carries no round filter (the grid has no select; the view’s only selector is the Engagements one)',
+  !rootJ.querySelector('.comb-kast-grid select') &&
+    rootJ.querySelectorAll('select').length === 1 &&
+    !!rootJ.querySelector('#comb-round-filter'),
+  `selects=${rootJ.querySelectorAll('select').length}`,
+);
 // The dialog header reads the SAME metric cell presentation — and the
 // client-side fallback % (audit N18) is dead: both scripted rounds are
 // KAST, so a fallback would compute 100%; the header must show the
@@ -1041,6 +1054,68 @@ console.log('M. Entry% / Trade% / Untraded deaths / Missed trades / KAST% are me
       behindCells[7].includes('behind') &&
       behindCells[8].includes('behind'),
     JSON.stringify([behindCells[4], behindCells[5], behindCells[6], behindCells[7], behindCells[8]]),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section N: the Engagements ROUND scope (owner answer Q2, W3a): ONE
+// <select> on the Engagements card only — 'all' by default (no filter,
+// the kind toggles' all-off rule), a round number narrows the same list;
+// the Clutches card and the KAST grid/dialog carry none. Labels read the
+// canonical `RD<n> | <ct>-<t>` (roundScoreLabel, lib/rounds.js).
+console.log('N. engagements round scope: one selector, all-by-default, Engagements only');
+{
+  const rootN = await render({
+    ...base,
+    engagements: [
+      ...base.engagements, // round 7's opening + untraded pair (two kills)
+      // …plus ONE kill in round 6, so the scope has something to drop.
+      { tick: 9500, round: 6, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 3, wonBy: 't' },
+    ],
+  });
+  const engN = sections(rootN, 'Engagements')[0];
+  const tableN = engN?.querySelector('table');
+  const selN = engN?.querySelector('#comb-round-filter');
+  check(
+    'the engagement filter row carries the round selector',
+    !!selN,
+    engN ? 'no #comb-round-filter' : 'no Engagements section',
+  );
+  check(
+    'its options are "All rounds" + one canonical RD | score label per round with a kill',
+    !!selN &&
+      [...selN.options].map((o) => o.textContent.trim()).join(',') ===
+        'All rounds,RD6 | 0-0,RD7 | 0-0',
+    selN ? [...selN.options].map((o) => o.textContent.trim()).join(',') : 'missing',
+  );
+  check(
+    'the default is "All rounds" — no filter, every row shows (the kind toggles’ all-off rule)',
+    selN?.value === 'all' && rows(tableN).length === 3,
+    `${selN?.value} / ${rows(tableN).length} rows`,
+  );
+  selN.value = '6';
+  selN.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep();
+  check(
+    'round 6 selected → only round 6’s kill shows, the control reads the choice back',
+    rows(tableN).length === 1 &&
+      rows(tableN)[0]?.textContent.includes('bob') &&
+      selN.value === '6',
+    `${rows(tableN).length} rows / value=${selN.value}`,
+  );
+  selN.value = 'all';
+  selN.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep();
+  check(
+    'back to "All rounds" → every row returns',
+    rows(tableN).length === 3 && selN.value === 'all',
+    `${rows(tableN).length} rows / value=${selN.value}`,
+  );
+  const clutchN = sections(rootN, 'Clutches')[0];
+  check(
+    'the Clutches card carries NO round selector (owner answer Q2)',
+    !!clutchN && !clutchN.querySelector('select'),
+    clutchN ? `selects=${clutchN.querySelectorAll('select').length}` : 'no Clutches section',
   );
 }
 

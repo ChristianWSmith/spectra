@@ -8,16 +8,19 @@
     getScoreboard,
     errText,
   } from '../services.js';
-  import { fmtInt, fmtMoney } from '../fmt.js';
+  import { fmtMoney } from '../fmt.js';
   import { replayHash, entryLoopSpan } from '../nav.js';
+  import { buildHash } from '../router.js';
   import { teamKeyAt, winnerTeamKey } from '../sideparity.js';
   import { roundStartTick, roundEndTick, separatorFlags } from '../rounds.js';
+  import { lossPips } from '../econ.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import { EQUIP_DEF } from '../definitions.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import EventPlay from '../components/EventPlay.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
@@ -236,6 +239,20 @@
     whyOpen = whyOpen === key ? '' : key;
   }
 
+  // Round-detail link from the RD cell: ALWAYS stamped with THIS tab as
+  // the ?back= origin (an unstamped back made RoundDetail fall back to
+  // the Overview — the same defect the curve's hit rects and winner strip
+  // had, fixed in the same wave). buildHash drops nothing here: the
+  // origin is exactly the string drill() above uses.
+  function openRound(round) {
+    nav(buildHash(`/match/${id}/round/${round}`, { back: `match/${id}/economy` }));
+  }
+
+  // The loss-bonus pip stack: always FIVE slots (the ladder's rungs),
+  // filled up to lossPips(v) — lib/econ.js is the ONE count (never
+  // re-derived here). The exact dollar amount stays in the cell title.
+  const PIP_SLOTS = [1, 2, 3, 4, 5];
+
   const whyText = $derived.by(() => {
     if (!whyOpen) return null;
     const [rs, side] = whyOpen.split(':');
@@ -339,6 +356,9 @@
           <table class="data-table econ-table">
             <thead>
               <tr>
+                <!-- Far-left watch column (W3a): the canonical ghost ▶
+                     cell (EventPlay) → the existing drill() round loop. -->
+                <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
                 <th scope="col" class="num">RD</th>
                 <th scope="col">{S.economy.thWinner}</th>
                 <th scope="col">{S.economy.thCTBuy}</th>
@@ -372,11 +392,19 @@
                 {@const ctc = classChip('ct', r)}
                 {@const tc = classChip('t', r)}
                 <tr class:split-before={ri > 0 && sepFlags[ri - 1]}>
+                  <td>
+                    <EventPlay
+                      tick={roundStartTick(rounds, r.round)}
+                      title={S.fill(S.match.watchRoundTitle, { round: r.round })}
+                      label={S.fill(S.match.watchRoundAria, { round: r.round })}
+                      onclick={() => drill(r.round)}
+                    />
+                  </td>
                   <td class="num">
                     <button
                       class="btn small ghost econ-rd"
                       title={S.fill(S.economy.openRound, { round: r.round })}
-                      onclick={() => nav(`/match/${id}/round/${r.round}`)}
+                      onclick={() => openRound(r.round)}
                       >{r.round}</button
                     >
                   </td>
@@ -401,12 +429,20 @@
                   </td>
                   <td class="num">{fmtMoney(r.equipCT)}</td>
                   <td class="num">{fmtMoney(r.equipT)}</td>
-                  <td class="num econ-loss">{fmtInt(r.lossBonusCT)}</td>
-                  <td class="num econ-loss">{fmtInt(r.lossBonusT)}</td>
+                  <td class="num econ-loss" title={fmtMoney(r.lossBonusCT)}>
+                    {#each PIP_SLOTS as pip (pip)}
+                      <span class="econ-loss-pip" class:ct={pip <= lossPips(r.lossBonusCT)}></span>
+                    {/each}
+                  </td>
+                  <td class="num econ-loss" title={fmtMoney(r.lossBonusT)}>
+                    {#each PIP_SLOTS as pip (pip)}
+                      <span class="econ-loss-pip" class:t={pip <= lossPips(r.lossBonusT)}></span>
+                    {/each}
+                  </td>
                 </tr>
                 {#if whyOpen.startsWith(`${r.round}:`)}
                   <tr class="econ-why-row">
-                    <td colspan="8">
+                    <td colspan="9">
                       <div class="econ-why">
                         <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}">
                           {whyText?.side === 'ct' ? ctc.cls : tc.cls}

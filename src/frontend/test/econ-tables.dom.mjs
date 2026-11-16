@@ -1,14 +1,15 @@
 // jsdom driver for the match-details table consistency pass: the Rounds
-// tab table and the Economy buy-types table (side-colored TEAM names in
-// the Winner cells via sideparity.winnerTeamKey + components/WinnerCell,
-// the `.split-before` side-switch boundary row via rounds.separatorFlags,
-// the retired yellow pistol pip) and the EconCurve per-money-era stroke
-// colors (one <path> per team per money era, GAPped at every money-reset
-// boundary — the line is never drawn across one) — plus the
-// Match HEADER row (Watch replay parked far LEFT of the meta line, the
-// "first half" segment cut, the half-score wiring removed) and the
-// Economy summary stat-card drill's ROUND-LEVEL watch loop (tick +
-// nav.entryLoopSpan round span, never an event pad anchor).
+// tab table and the Economy buy-types table (the far-left watch columns
+// and their round-level ▶ stamping, side-colored TEAM names in the
+// Winner cells via sideparity.winnerTeamKey + components/WinnerCell,
+// the loss-bonus pip stacks, the `.split-before` side-switch boundary
+// row via rounds.separatorFlags, the retired yellow pistol pip) and the
+// EconCurve per-money-era stroke colors (one <path> per team per money
+// era, GAPped at every money-reset boundary — the line is never drawn
+// across one) — plus the Match HEADER row (Watch replay parked far LEFT
+// of the meta line, the "first half" segment cut, the half-score wiring
+// removed) and the Economy summary stat-card drill's ROUND-LEVEL watch
+// loop (tick + nav.entryLoopSpan round span, never an event pad anchor).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -371,18 +372,21 @@ const rowsOf = (table) => [...table.querySelectorAll('tbody tr')];
 const headerTexts = (table) =>
   [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
 // The Winner cell chip: the `.chip.side` span inside the WINNER column —
-// column 3 of the Rounds table (Cmp · RD · Winner · …), column 2 of the
-// buy-types table (RD · Winner · …). The Rounds table's Equip CT/T
-// columns are gone (owner C6) but its per-side Class cell now carries
-// `.chip side ct|t` label chips too, so the column index matters.
+// column 4 of the Rounds table (Watch · Cmp · RD · Winner · …), column 3
+// of the buy-types table (Watch · RD · Winner · …). Both tables gained
+// the far-left watch column (W3a) and the Rounds table lost its Class
+// column (W3a), so the column index matters — the Rounds table's
+// per-side Class cell is gone entirely (RoundDetail/CompareRounds keep
+// the shared .cmp-class palette).
 const winnerChips = (table, winnerCol) =>
   rowsOf(table)
     .filter((tr) => !tr.classList.contains('econ-why-row'))
     .map((tr) => tr.querySelector(`td:nth-child(${winnerCol}) .chip.side`));
 const splitRows = (table) =>
   rowsOf(table).filter((tr) => tr.classList.contains('split-before'));
-// Round number of a round row (its first .econ-rd button, else the first cell).
-const roundOf = (tr) => (tr.querySelector('.econ-rd') || tr.children[1]).textContent.trim();
+// Round number of a round row (its first .econ-rd button, else the RD
+// cell — children[2] behind the far-left watch column).
+const roundOf = (tr) => (tr.querySelector('.econ-rd') || tr.children[2]).textContent.trim();
 
 // Winner cell chip of the round row whose RD reads `n` (rows render in
 // stored order; legacy negative rows render too — lookups are BY ROUND
@@ -390,12 +394,12 @@ const roundOf = (tr) => (tr.querySelector('.econ-rd') || tr.children[1]).textCon
 const chipFor = (table, n) => {
   const tr = rowsOf(table).filter((r) => !r.classList.contains('econ-why-row'))
     .find((r) => roundOf(r) === String(n));
-  return tr ? tr.querySelector('td:nth-child(3) .chip.side') : null;
+  return tr ? tr.querySelector('td:nth-child(4) .chip.side') : null;
 };
 const rowFor = (table, n) =>
   rowsOf(table).filter((r) => !r.classList.contains('econ-why-row')).find((r) => roundOf(r) === String(n));
 
-console.log('A. Rounds tab: RD header, side-colored TEAM winner names, split-before');
+console.log('A. Rounds tab: far-left watch column, RD header, side-colored TEAM winner names, split-before');
 let root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 let table = root.querySelector('.data-table');
 check('rounds table rendered', !!table);
@@ -404,6 +408,37 @@ check(
   headerTexts(table).includes('RD') && !headerTexts(table).includes('№'),
   JSON.stringify(headerTexts(table)),
 );
+// W3a: the far-left watch column — an sr-only Watch header (the
+// RoundDetail kill/bomb-table idiom) and one ghost ▶ per row. The ▶
+// stamps the ROUND-level watch (start tick + the round's own start→end
+// span + THIS tab as the ?back= origin) and the row handler ignores
+// button targets, so the SAME click never also opens the round page —
+// the two nav paths coexist (lead ruling).
+check(
+  'the table opens with the far-left watch column (sr-only Watch header + one ghost ▶ per row)',
+  headerTexts(table)[0] === 'Watch' &&
+    rowsOf(table).length === 16 &&
+    rowsOf(table).every((tr) => tr.querySelector('td:first-child button .codicon-play')),
+  JSON.stringify([headerTexts(table)[0], rowsOf(table).length]),
+);
+{
+  globalThis.__nav = [];
+  // Row 3 is counted round 1 (3 legacy pre-match rows ahead of it).
+  rowsOf(table)[3]?.querySelector('td:first-child button')?.dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true }),
+  );
+  await sleep();
+  const watchNav = (globalThis.__nav || []).slice();
+  check(
+    'the row ▶ goes to the replay with tick + the round-span loop + the Rounds-tab back origin (never the round page)',
+    watchNav.length === 1 &&
+      watchNav[0].includes('/replay/3?') &&
+      watchNav[0].includes('tick=1000') &&
+      watchNav[0].includes('loop=1000,2900') &&
+      watchNav[0].includes('back=match/3/rounds'),
+    JSON.stringify(watchNav),
+  );
+}
 // BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): the
 // show_knife_warmup_rounds pref is retired — the Rounds tab renders
 // EVERY stored row (the fixture's 3 legacy pre-match rows included;
@@ -416,8 +451,8 @@ check(
 );
 check(
   'first row is a legacy pre-match round (canonical W label in the Rd cell)',
-  rowsOf(table)[0].children[1].textContent.includes('W'),
-  rowsOf(table)[0].children[1].textContent,
+  rowsOf(table)[0].children[2].textContent.includes('W'),
+  rowsOf(table)[0].children[2].textContent,
 );
 // Round 1: era 0 — the final-CT team (Alpha) played T, so a round-1 CT
 // win belongs to the final-T team (Beta): the chip keeps the winning
@@ -466,8 +501,8 @@ table = root.querySelector('.data-table');
 check('16 rows render (3 pre-match + 13 counted)', rowsOf(table).length === 16, String(rowsOf(table).length));
 check(
   'first row is a pre-match round (canonical W label in the Rd cell)',
-  rowsOf(table)[0].children[1].textContent.includes('W'),
-  rowsOf(table)[0].children[1].textContent,
+  rowsOf(table)[0].children[2].textContent.includes('W'),
+  rowsOf(table)[0].children[2].textContent,
 );
 check(
   'boundary still rides round 13 (index 14), not shifted by the negatives',
@@ -481,79 +516,12 @@ table = root.querySelector('.data-table');
 check('15 rows render (3 legacy + 12 counted)', rowsOf(table).length === 15, String(rowsOf(table).length));
 check('no split-before row exists', splitRows(table).length === 0, JSON.stringify(splitRows(table).map(roundOf)));
 
-console.log('C2. Rounds tab: per-team buy-class chips wear THE palette (raw key as class, shared CSS)');
-// The .cmp-class sites (the Rounds tab's Class cell — TWO side-labelled
-// chips per round now, owner C6 — RoundDetail's Economy card, Compare
-// ×2) render the RAW stored side class as an extra class — and the raw
-// value IS the palette key (round_side_classes classCT/classT:
-// pistol|eco|force|full|save; empty → `unknown`, the same `|| 'unknown'`
-// idiom CompareRounds' per-side chips use). style-m3a.css's THE
-// buy-class palette covers `.cmp-class.<key>` at specificity (0,2,0),
-// which beats m3b's flat `.cmp-class` accent (0,1,0) — by specificity,
-// NOT load order (m3b loads last), so the palette value always shows and
-// is never forked.
-//
-// The Class cell reads getEconomy now (owner C6): script one round whose
-// stored CT class is EMPTY (→ the dashed `unknown` chip) and drop one
-// round's row entirely (→ the honest `—`).
-const roundsData = dataFor(13);
-const classedData = {
-  ...roundsData,
-  getEconomy: economyRows(13)
-    .map((r) => (r.round === 3 ? { ...r, classCT: '' } : r))
-    .filter((r) => r.round !== 7),
-};
-root = await showMatch(classedData, { routeTab: 'Rounds' });
-table = root.querySelector('.data-table');
-const chipsOf = (n) => [...(rowFor(table, n)?.querySelectorAll('.chip.cmp-class') || [])];
-const r1chips = chipsOf(1);
-check(
-  'each classified round renders TWO chips (round 1: CT + T)',
-  r1chips.length === 2,
-  String(r1chips.length),
-);
-check(
-  'CT chip carries the RAW palette key as a class',
-  !!r1chips[0] && r1chips[0].classList.contains('full') && r1chips[0].textContent.trim() === 'full',
-  r1chips[0] ? r1chips[0].className : 'missing',
-);
-check(
-  'T chip carries the RAW palette key as a class',
-  !!r1chips[1] && r1chips[1].classList.contains('eco') && r1chips[1].textContent.trim() === 'eco',
-  r1chips[1] ? r1chips[1].className : 'missing',
-);
-const r1labels = [...(rowFor(table, 1)?.children[3]?.querySelectorAll('.chip.side') || [])];
-check(
-  'each chip is side-labelled (CT label then T label)',
-  r1labels.length === 2 &&
-    r1labels[0].textContent.trim() === 'CT' && r1labels[0].className.includes('side ct') &&
-    r1labels[1].textContent.trim() === 'T' && r1labels[1].className.includes('side t'),
-  r1labels.map((c) => c.textContent.trim()).join(','),
-);
-const r2chips = chipsOf(2);
-check(
-  'round 2 chip pair carries its own palette keys',
-  !!r2chips[0] && r2chips[0].classList.contains('eco') &&
-    !!r2chips[1] && r2chips[1].classList.contains('force'),
-  r2chips.map((c) => c.className).join(' | '),
-);
-const r3ct = chipsOf(3)[0];
-check(
-  'empty stored class falls back to the `unknown` key (the dashed one)',
-  !!r3ct && r3ct.classList.contains('unknown') && r3ct.textContent.trim() === 'unknown',
-  r3ct ? r3ct.className : 'missing',
-);
-check(
-  "the side chips' tooltip = that side's why + rules version (no round-level confidence)",
-  r1chips[0]?.getAttribute('title') === 'two rifles held over (rules v1)' &&
-    r1chips[1]?.getAttribute('title') === 'low buy after a loss (rules v1)',
-  r1chips[0]?.getAttribute('title'),
-);
-check(
-  'a round with no economy row still reads — (never a guessed chip)',
-  rowFor(table, 7)?.children[3]?.textContent.trim() === '—',
-  rowFor(table, 7)?.children[3]?.textContent.trim(),
-);
+// C2 (W3a): the Rounds tab's Class column and its per-side chip pins
+// are GONE — the table opens with the far-left watch column instead and
+// no longer reads getEconomy at all (the classError alert died with it).
+// The shared .cmp-class PALETTE itself STAYS: RoundDetail's Economy card
+// and CompareRounds still render it, and the cascade checks below pin it
+// exactly as before.
 // The Details tab is technicals-only now (owner ruling, 2026-11-15): the
 // First blood fact (gameplay-derived) left Key facts. Absence pin, flipped
 // IN PLACE (same check count → driver-liveness's 116 stays): no First blood
@@ -610,7 +578,7 @@ check(
   'm3a palette selector or m3b flat rule missing/overridden',
 );
 
-console.log('D. Economy tab: buy-types table — RD header, TEAM names, pip retired');
+console.log('D. Economy tab: buy-types table — far-left watch column, RD header, TEAM names, loss pips');
 root = await showMatch(dataFor(13), { routeTab: 'Economy' });
 table = root.querySelector('.econ-table');
 check('buy-types table rendered', !!table);
@@ -619,7 +587,7 @@ check(
   headerTexts(table).includes('RD'),
   JSON.stringify(headerTexts(table)),
 );
-const chips = winnerChips(table, 2);
+const chips = winnerChips(table, 3);
 check(
   'economy round 1 winner = Beta (side-ct chip, era 0)',
   chips[0].classList.contains('ct') && chips[0].textContent.trim() === 'Beta',
@@ -636,6 +604,74 @@ check(
   chips[4] ? chips[4].textContent.trim() : 'missing',
 );
 check('yellow pistol pip is gone from the table', !root.querySelector('.econ-pip'));
+// W3a: the far-left watch column and the RD cell's return stamp.
+check(
+  'the buy-types table opens with the far-left watch column (sr-only Watch header + one ghost ▶ per row)',
+  headerTexts(table)[0] === 'Watch' &&
+    rowsOf(table).filter((tr) => !tr.classList.contains('econ-why-row')).length === 13 &&
+    rowsOf(table).every((tr) => tr.querySelector('td:first-child button .codicon-play')),
+  JSON.stringify([headerTexts(table)[0], rowsOf(table).length]),
+);
+{
+  globalThis.__nav = [];
+  rowsOf(table)[0]
+    ?.querySelector('td:first-child button')
+    ?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  const ecoNav = (globalThis.__nav || []).slice();
+  check(
+    'the row ▶ drills the ROUND-level loop WITH the Economy back origin',
+    ecoNav.length === 1 &&
+      ecoNav[0].includes('/replay/3?') &&
+      ecoNav[0].includes('tick=1000') &&
+      ecoNav[0].includes('loop=1000,2900') &&
+      ecoNav[0].includes('back=match/3/economy'),
+    JSON.stringify(ecoNav),
+  );
+}
+{
+  globalThis.__nav = [];
+  rowsOf(table)[0]
+    ?.querySelector('.econ-rd')
+    ?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  const rdNav = (globalThis.__nav || []).slice();
+  check(
+    'the RD cell opens the round page WITH ?back= (never the unstamped Overview fallback)',
+    rdNav.length === 1 &&
+      rdNav[0].startsWith('/match/3/round/1?') &&
+      rdNav[0].includes('back=match/3/economy'),
+    JSON.stringify(rdNav),
+  );
+}
+// W3a loss-bonus pips: five slots per Loss cell, filled to the side's
+// stored bonus in that SIDE's colour (fixture: CT 1400 → one filled, T
+// 1900 → two), the exact amount kept in the cell title, and the retired
+// `econ-pip` class name never resurrected (checked above).
+{
+  const trs = rowsOf(table).filter((tr) => !tr.classList.contains('econ-why-row'));
+  const ctCell = trs[0]?.children[7];
+  const tCell = trs[0]?.children[8];
+  const filledOf = (cell, cls) =>
+    cell ? [...cell.querySelectorAll('.econ-loss-pip')].filter((p) => p.classList.contains(cls)).length : -1;
+  check(
+    'Loss cells render five pips, filled to the side’s bonus in the side colours (CT 1400 → 1, T 1900 → 2)',
+    !!ctCell &&
+      !!tCell &&
+      ctCell.querySelectorAll('.econ-loss-pip').length === 5 &&
+      tCell.querySelectorAll('.econ-loss-pip').length === 5 &&
+      filledOf(ctCell, 'ct') === 1 &&
+      filledOf(tCell, 't') === 2 &&
+      filledOf(ctCell, 't') === 0 &&
+      filledOf(tCell, 'ct') === 0,
+    `ct=${ctCell?.textContent}/${ctCell?.querySelectorAll('.econ-loss-pip').length} t=${tCell?.textContent}`,
+  );
+  check(
+    'the exact dollar amount stays in the Loss cell title (honesty)',
+    ctCell?.getAttribute('title') === '$1,400' && tCell?.getAttribute('title') === '$1,900',
+    `${ctCell?.getAttribute('title')} | ${tCell?.getAttribute('title')}`,
+  );
+}
 check(
   'boundary rides the round-13 row',
   splitRows(table).length === 1 && roundOf(splitRows(table)[0]) === '13',
@@ -713,6 +749,16 @@ check(
   rowsOf(table).findIndex((tr) => tr.classList.contains('split-before')) === 13,
   String(rowsOf(table).findIndex((tr) => tr.classList.contains('split-before'))),
 );
+check(
+  'the open why row spans every column (colspan 9 behind the new watch column)',
+  rowsOf(table)
+    .find((tr) => tr.classList.contains('econ-why-row'))
+    ?.querySelector('td')
+    ?.getAttribute('colspan') === '9',
+  String(
+    rowsOf(table).find((tr) => tr.classList.contains('econ-why-row'))?.querySelector('td')?.getAttribute('colspan'),
+  ),
+);
 
 console.log('F. EconCurve: one path per team per MONEY era — gaps at resets, one side color each');
 const paths = [...root.querySelectorAll('.econ-line')];
@@ -778,6 +824,33 @@ check(
   !root.textContent.includes('solid = match winner') &&
     !root.textContent.includes('match winner undecided'),
 );
+// W3a (V5c): BOTH round links out of the curve carry the Economy origin.
+{
+  globalThis.__nav = [];
+  root.querySelectorAll('.econ-hit')[0]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  const hitNav = (globalThis.__nav || []).slice();
+  check(
+    'the curve hit-rect opens the round WITH ?back=match/3/economy (the Overview-fallback fix)',
+    hitNav.length === 1 &&
+      hitNav[0].startsWith('/match/3/round/1?') &&
+      hitNav[0].includes('back=match/3/economy'),
+    JSON.stringify(hitNav),
+  );
+}
+{
+  globalThis.__nav = [];
+  root.querySelectorAll('.econ-strip-cell')[0]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  const stripNav = (globalThis.__nav || []).slice();
+  check(
+    'the winner-strip button opens the round WITH the same Economy origin',
+    stripNav.length === 1 &&
+      stripNav[0].startsWith('/match/3/round/1?') &&
+      stripNav[0].includes('back=match/3/economy'),
+    JSON.stringify(stripNav),
+  );
+}
 
 console.log('F2. EconCurve n=28 (golden nuke shape, sideSwitches=2): resets-only boundaries');
 // Remount the Economy tab with 28 counted rows and TWO recorded side
@@ -998,7 +1071,7 @@ check(
 // with `codicon-close` INSIDE the `p.error[role="alert"]`, clearing the
 // state variable. Each sub-check asserts the view stays mounted (its own
 // content still rendered) and no navigation happened.
-console.log('I. error dismissals: Match top-level, pinned stats, round types, Economy');
+console.log('I. error dismissals: Match top-level, pinned stats, Economy');
 const clickEl = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const alertP = (r, needle) =>
   [...r.querySelectorAll('p.error[role="alert"]')].find((p) => p.textContent.includes(needle));
@@ -1051,22 +1124,10 @@ const dismissInPlace = async (r, needle, stillThere) => {
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-// (c) classError on the Rounds tab ("Round types unavailable") — the
-// failure source is getEconomy now: the per-side Class cells read the
-// same canonical economy read the Economy tab does, so a dead read is
-// what this alert reports (the table itself still renders, class cells
-// dashed).
-{
-  const d = { ...dataFor(13), getEconomy: new Error('class backend down') };
-  root = await showMatch(d, { routeTab: 'Rounds' });
-  const p = alertP(root, 'Round types unavailable');
-  check('round-types failure renders its own alert', !!p && p.textContent.includes('class backend down'), p ? p.textContent.trim() : 'no alert');
-  const res = await dismissInPlace(root, 'Round types unavailable', (r) => !!r.querySelector('.view .data-table'));
-  check('✕ clears the round-types error in place (rounds table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
-}
-
-// (d) The Economy TAB's own error (Economy.svelte) — its fetch has no
-// in-view re-trigger, so the ✕ is its dismissal.
+// (c) The Economy TAB's own error (Economy.svelte) — its fetch has no
+// in-view re-trigger, so the ✕ is its dismissal. (The Rounds tab's
+// classError alert died with its Class column in W3a — the tab no
+// longer reads getEconomy at all, so there is nothing to fail.)
 {
   const d = { ...dataFor(13), getEconomy: new Error('eco backend down') };
   root = await showMatch(d, { routeTab: 'Economy' });
@@ -1685,6 +1746,12 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
         corner === table().querySelector('thead tr > th:first-child'),
       corner ? corner.innerHTML.slice(0, 200) : 'no corner',
     );
+    check(
+      'the transpose button wears the arrow-swap glyph (codicon-arrow-swap)',
+      !!corner?.querySelector('.sb-transpose .codicon-arrow-swap') &&
+        !corner?.querySelector('.sb-transpose .codicon-split-horizontal'),
+      corner?.querySelector('.sb-transpose')?.innerHTML.slice(0, 120) || 'no corner',
+    );
   }
   check(
     'one row per stat, in the COLUMN order (fixed block minus Name/Team)',
@@ -1732,6 +1799,19 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
           );
         }),
       playerThs.map((th) => `${JSON.stringify(th.querySelector('.chip')?.textContent)} ${th.querySelector('.chip')?.className || 'no chip'}`).join(' | '),
+    );
+    // W3a: the name BLOCK — the wrapper holds the name (button shape
+    // here) and the chip follows it as the next sibling, so a block
+    // wrapper drops the chip onto its own line (the stylesheet pin is
+    // below; the bare-name shape gets its own mount at the end of M).
+    check(
+      'the name is wrapped in .sb-name with the side chip as its following sibling (button shape)',
+      playerThs.length === 3 &&
+        playerThs.every((th) => {
+          const name = th.querySelector('.sb-name');
+          return !!name && name.nextElementSibling?.classList.contains('chip');
+        }),
+      playerThs.map((th) => th.innerHTML.slice(0, 90)).join(' | '),
     );
   }
   {
@@ -1788,6 +1868,16 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
         /letter-spacing:\s*normal/.test(playerRule) &&
         /color:\s*inherit/.test(playerRule),
       body(playerRule),
+    );
+
+    const nameRule = ruleOf(
+      cssSb,
+      '.scoreboard.transposed > thead > tr > th.sb-player .sb-name {',
+    );
+    check(
+      'the name block is display:block — the chip drops to its own line (jsdom has no layout, the rule is the pin)',
+      !!nameRule && /display:\s*block/.test(nameRule),
+      body(nameRule),
     );
   }
 
@@ -1866,6 +1956,39 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
       'a state chip lands in the transposed metric row exactly as in the normal cell',
       !!chip && chip.classList.contains('idle') && chip.textContent.includes('behind'),
       chip ? `${chip.className} ${chip.textContent.trim()}` : 'no chip',
+    );
+  }
+  // W3a (V1): the OTHER name shape — a player without a Steam id renders
+  // its BARE name inside the same block wrapper, so the chip still drops
+  // to its own line (one wrapper covers both shapes).
+  {
+    const sbMixed = [
+      ...sb3,
+      {
+        steamId: 'X', name: 'zed', side: 'ct', kills: 5, deaths: 5, kda: 1,
+        totalDamage: 10, utilityDamage: 0, mvps: 0, score: 1,
+      },
+    ];
+    root = await showMatch({ ...dataFor(13), getScoreboard: sbMixed }, { routeTab: 'Scoreboard' });
+    await sleep();
+    // The transposed shape is registry-owned and match-scoped: the mounts
+    // above left it ON, so only flip when the restored shape is the other
+    // way (never toggle a shape that is already the one we want).
+    if (!table().classList.contains('transposed')) {
+      clickEl(transposeBtn());
+      await sleep();
+    }
+    const zedTh = [...table().querySelectorAll('thead th.sb-player')].find(
+      (th) => th.querySelector('.sb-name')?.textContent.trim() === 'zed',
+    );
+    const zedName = zedTh?.querySelector('.sb-name');
+    check(
+      'the bare-name shape is wrapped too (no profile button, chip still the following sibling)',
+      !!zedTh &&
+        !!zedName &&
+        !zedName.querySelector('button') &&
+        zedName.nextElementSibling?.classList.contains('chip'),
+      zedTh ? zedTh.innerHTML.slice(0, 160) : 'no zed header',
     );
   }
   localStorage.removeItem('spectra:pinned-metrics');

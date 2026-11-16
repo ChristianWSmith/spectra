@@ -5,9 +5,10 @@
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
   // traded — share the one row, both chips in its Kind cell; the kind
   // TOGGLES are independent/OR'd and ALL OFF by default = no filter,
-  // every row) and the clutches (won/lost toggle — won ON, lost OFF by
-  // default). Every inferred metric carries the badge with its
-  // definition in the title attribute.
+  // every row; the round <select> narrows the same list — 'all' by
+  // default — and rides the Engagements card only) and the clutches
+  // (won/lost toggle — won ON, lost OFF by default). Every inferred
+  // metric carries the badge with its definition in the title attribute.
   import {
     getCombatStats,
     getClutches,
@@ -41,6 +42,7 @@
     prefLoopSecs,
   } from '../nav.js';
   import { listedPlayers } from '../players.js';
+  import { roundScoreLabel } from '../rounds.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
@@ -162,21 +164,30 @@
     return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
-  // View-local filter/sort state (kind chips, clutch won/lost, stat
-  // sort) restores per match through the process-scoped registry
-  // (viewstate.svelte.js): the key carries the match id (matchKey), so
-  // match A's filters never seed into match B. App's {#if} chain reuses
-  // this component when only the id changes (no remount), so ONE
-  // combined effect both RE-SEEDS when the key changes and writes
+  // View-local filter/sort state (kind chips, the round scope, clutch
+  // won/lost, stat sort) restores per match through the process-scoped
+  // registry (viewstate.svelte.js): the key carries the match id
+  // (matchKey), so match A's filters never seed into match B. App's {#if}
+  // chain reuses this component when only the id changes (no remount), so
+  // ONE combined effect both RE-SEEDS when the key changes and writes
   // through otherwise — self-ordering: the write branch runs only while
-  // the key is unchanged, so the old match's values can never land
-  // under the new key. KAST drill-down, busy/error stay transient.
+  // the key is unchanged, so the old match's values can never land under
+  // the new key. KAST drill-down, busy/error stay transient.
   const combDefaults = () => ({
     // Engagements: an ARRAY of active kind toggles — [] (all off) is
     // the no-filter default (every row), not an empty card. A stale
     // scalar `engKind` entry fails sameKind's array check and is
     // whitelisted away — no migration.
     engKinds: [],
+    // The engagements ROUND scope (owner answer Q2, 2026-11-16): ONE
+    // round <select> on the Engagements card ONLY — the Clutches card
+    // and the KAST grid/dialog get none (the criterion is that the
+    // round picker scopes the kill-by-kill list it sits on). The value
+    // is the option's own string: 'all' (the default = no filter — the
+    // kind toggles' all-off rule applies here too: a fresh card shows
+    // every row) or a round number. Unlike the throw log's preselect
+    // (Q1), nothing narrows by default.
+    engRound: 'all',
     clutchWon: true,
     clutchLost: false,
     // The default ordering follows the KAST slot — now a METRIC column
@@ -192,6 +203,9 @@
   const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
   const combSeed = combInit();
   let engKinds = $state(combSeed.engKinds);
+  // The Engagements round scope: 'all' (no filter — the default) or a
+  // round's option value (a round number as text); see combDefaults.
+  let engRound = $state(combSeed.engRound);
   // Clutches card outcome toggle — LOCAL state only: never stamped into
   // the URL (the route-query retention ruling resolved to the
   // process-scoped registry below): won ON and lost OFF by default, i.e.
@@ -214,12 +228,13 @@
       combLastKey = k;
       const s = seed(k, combDefaults());
       engKinds = s.engKinds;
+      engRound = s.engRound;
       clutchWon = s.clutchWon;
       clutchLost = s.clutchLost;
       statSort = s.statSort;
       return;
     }
-    remember(k, { engKinds, clutchWon, clutchLost, statSort });
+    remember(k, { engKinds, engRound, clutchWon, clutchLost, statSort });
   });
 
   // KAST drill-down modal (per-round K/A/T/S grid).
@@ -422,13 +437,19 @@
   // The kind TOGGLES filter the merged rows as an OR UNION: a row
   // matches when it CONTAINS ANY selected kind — a trade+untraded kill
   // shows under either toggle and once (not twice) under both. With
-  // every toggle off (the default) there is no filter at all: every
-  // row shows. The filter only narrows — it preserves the fetch order
-  // of engagementRows.
+  // every toggle off (the default) there is no kind filter at all. The
+  // round scope (owner answer Q2) narrows the SAME list to one round —
+  // 'all' (the default) is no round filter either. Both predicates
+  // compose over the fetch order of engagementRows, which is preserved.
+  const engRoundOptions = $derived(
+    [...new Set(engagementRows.map((g) => g.round))].sort((a, b) => a - b),
+  );
   const visibleEngagements = $derived(
-    engKinds.length === 0
-      ? engagementRows
-      : engagementRows.filter((g) => g.kinds.some((k) => engKinds.includes(k))),
+    engagementRows.filter(
+      (g) =>
+        (engKinds.length === 0 || g.kinds.some((k) => engKinds.includes(k))) &&
+        (engRound === 'all' || String(g.round) === engRound),
+    ),
   );
 
   // Each click adds its kind to the selection or removes it (the
@@ -726,6 +747,25 @@
             onclick={() => toggleEngKind(k)}
           >{k}</button>
         {/each}
+        <!-- The ONE round scope (owner answer Q2): Engagements only —
+             the Clutches card and the KAST grid/dialog carry none. The
+             default is 'all' (no filter — the kind toggles' all-off
+             rule); option labels read the canonical `RD<n> | <ct>-<t>`
+             (roundScoreLabel). -->
+        <label class="comb-round-filter" for="comb-round-filter">
+          <span class="field-label">{S.combat.roundFilterLabel}</span>
+          <select
+            class="input"
+            id="comb-round-filter"
+            value={engRound}
+            onchange={(e) => (engRound = e.currentTarget.value)}
+          >
+            <option value="all">{S.combat.allRounds}</option>
+            {#each engRoundOptions as n (n)}
+              <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
+            {/each}
+          </select>
+        </label>
       </div>
       <div class="table-scroll">
         <table class="data-table">
@@ -759,11 +799,12 @@
                   />
                 </td>
                 <!-- The Round cell is TEXT, not a control (owner ruling:
-                     "no round play button there"): RD{n} as a plain label —
-                     a label isn't a play button, and the row's ONE ▶ is the
-                     event/follow play above. Round watching lives in the
-                     RoundDetail header's "Watch round". -->
-                <td class="num">RD{g.round}</td>
+                     "no round play button there"): the bare round number
+                     under the RD heading — a label isn't a play button,
+                     and the row's ONE ▶ is the event/follow play above.
+                     Round watching lives in the RoundDetail header's
+                     "Watch round". -->
+                <td class="num">{g.round}</td>
                 <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}>{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
                 <td>
                   <!-- ONE kill, up to FOUR kind facts (opening / trade /
@@ -872,8 +913,9 @@
                     {/if}
                   </td>
                   <!-- Same ruling as the engagement row: the Round cell is
-                       the RD{n} label, never a second play button. -->
-                  <td class="num">RD{c.round}</td>
+                       the bare round number under the RD heading, never a
+                       second play button. -->
+                  <td class="num">{c.round}</td>
                   <td><strong>1v{c.size}</strong></td>
                   <td>
                     <ProfileLink

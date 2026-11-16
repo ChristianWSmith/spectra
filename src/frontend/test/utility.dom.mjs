@@ -10,9 +10,10 @@
 // icon-only throw ▶ (tick + the loop-length loop — the `loop_secs` pref,
 // default 5 s — + the thrower as the camera follow — never a filter), the
 // C9 hint-line removal, and the C7 consolidation: ONE bottom card
-// carrying the filters + count and a single line of per-round show/hide
-// toggles (all OFF by default) whose throw lists render only for the
-// rounds turned on.
+// carrying the filters + count, with the round scope in ONE <select> that
+// preselects the first round with throws and offers "All rounds" (owner
+// answer Q1, 2026-11-16 — it replaced the per-round toggle row) whose
+// throw lists render for exactly the round(s) in scope.
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --test test/utility.dom.mjs
@@ -164,10 +165,10 @@ const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(harnessOut).href);
 // The view-state registry Utility links (the copied file → same
 // instance): reset in EVERY mount's setup — the jsdom cross-talk rule in
-// viewstate.svelte.js' header. The kind/thrower filters and the
-// per-round show/hide map are registry state, so a fresh mount must never
-// inherit an earlier section's toggles or filter (and the all-off default
-// the C7 pins rest on is only pristine after a reset).
+// viewstate.svelte.js' header. The kind/thrower filters and the round
+// scope are registry state, so a fresh mount must never inherit an
+// earlier section's filter or round choice (and the preselect the Q1
+// pins rest on is only pristine after a reset).
 const viewstate = await import(pathToFileURL(join(dir, 'viewstate.svelte.js')).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
@@ -180,7 +181,6 @@ function check(name, cond, detail = '') {
     console.log('  FAIL ' + name + (detail ? ' — ' + detail : ''));
   }
 }
-const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 
 // --- Fixture ----------------------------------------------------------------
 // 13 counted rounds, sideSwitches=1 → the switch lands AFTER round 12, so
@@ -325,11 +325,17 @@ check(
 
 // --- C7: the consolidation ---------------------------------------------
 // The view is now two summary charts on top and ONE throw-log card at the
-// bottom carrying the filters, the count and the round toggles. This
-// section pins the new chrome AND doubles as the "toggle round on"
-// preamble for every row check below: all rounds start OFF, so the throw
-// rows do not exist until the driver turns them on.
-console.log('D. C7 structure: ONE bottom card, filters + count inside, every round OFF by default');
+// bottom carrying the filters, the count and the ONE round selector. This
+// section pins the new chrome AND doubles as the preamble for every row
+// check below: the selector preselects the first round with throws (the
+// owner's Q1 answer), so the driver switches it to "All rounds" before
+// E…K read every row.
+console.log('D. C7 structure: ONE bottom card, filters + round selector inside, first throwing round preselected');
+const setSel = async (el, value) => {
+  el.value = value;
+  el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await sleep();
+};
 const panels = $$('section.panel');
 check(
   'exactly three panels: two summary charts + the throw log',
@@ -342,8 +348,8 @@ check(
   panels[panels.length - 1]?.className || 'no panels',
 );
 check(
-  'the kind + thrower selectors moved INTO the card',
-  !!$('.util-throwlog #util-kind') && !!$('.util-throwlog #util-thrower'),
+  'the kind, thrower AND round selectors moved INTO the card',
+  !!$('.util-throwlog #util-kind') && !!$('.util-throwlog #util-thrower') && !!$('.util-throwlog #util-round'),
 );
 check(
   'the live count rides with them (one .util-filters, inside the card)',
@@ -353,27 +359,30 @@ check(
   'the per-round group cards are gone (no .util-group / .util-groups)',
   !$('.util-group') && !$('.util-groups'),
 );
-const toggles = $$('.util-toggle');
+const roundSel = $('#util-round');
 check(
-  'one round toggle per round that has throws (2)',
-  toggles.length === 2,
-  toggles.map((t) => t.textContent.trim()).join(' | '),
+  'the round selector offers "All rounds" plus one option per round with throws, in the canonical RD | score labels',
+  !!roundSel &&
+    [...roundSel.options].map((o) => o.textContent.trim()).join(',') ===
+      'All rounds,RD1 | 1-0,RD13 | 13-0',
+  roundSel ? [...roundSel.options].map((o) => o.textContent.trim()).join(',') : 'no #util-round',
 );
 check(
-  'every round starts OFF (aria-pressed=false — the C7 default)',
-  toggles.length === 2 && toggles.every((t) => t.getAttribute('aria-pressed') === 'false'),
+  'it PRESELECTS the first round with throws (round 1 — the owner’s Q1 default)',
+  roundSel?.value === '1',
+  roundSel?.value || 'missing',
 );
 check(
-  'all-off default → no throw rows are rendered',
-  $$('.util-nade').length === 0,
-  String($$('.util-nade').length),
+  'the preselected round’s throws render (round 1 only: one list, three rows)',
+  $$('.util-lists ul.util-nades').length === 1 && $$('.util-nade').length === 3,
+  `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
 );
-// Preamble: turn BOTH rounds on so the row-level checks below (E…H) have
-// rows to read — the state the old always-open cards shipped with.
-toggles.forEach(click);
-await sleep();
+// Preamble: switch to "All rounds" so the row-level checks below (E…K)
+// have every row to read — the state the old always-open cards shipped
+// with.
+await setSel(roundSel, 'all');
 check(
-  'turning both rounds on renders their throws (4 rows across 2 lists)',
+  '"All rounds" renders every throw (4 rows across 2 lists)',
   $$('.util-lists ul.util-nades').length === 2 && $$('.util-nade').length === 4,
   `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
 );
@@ -561,48 +570,48 @@ check(
 );
 
 // --- C7, the lists half --------------------------------------------------
-console.log('L. C7: throw lists render only for the rounds turned on (two empty states)');
+console.log('L. round scope: "All rounds" lists every round, one round narrows to it (one empty state)');
 check(
-  'both rounds on → two lists, four rows',
+  'All rounds → two lists, four rows',
   $$('.util-lists ul.util-nades').length === 2 && $$('.util-nade').length === 4,
   `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
 );
-const t13 = $$('.util-toggle').find(
-  (t) => t.querySelector('.util-toggle-label')?.textContent.trim() === 'Round 13',
-);
-click(t13);
-await sleep();
+await setSel(roundSel, '13');
 check(
-  'round 13 off → only round 1’s list remains (3 rows)',
+  'round 13 selected → only its list (one row) and the control reads the choice back',
+  $$('.util-lists ul.util-nades').length === 1 &&
+    $$('.util-nade').length === 1 &&
+    roundSel.value === '13',
+  `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows / value=${roundSel.value}`,
+);
+await setSel(roundSel, '1');
+check(
+  'round 1 selected → its three rows',
   $$('.util-lists ul.util-nades').length === 1 && $$('.util-nade').length === 3,
   `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
 );
-check('the toggle reflects its state (aria-pressed=false)', t13?.getAttribute('aria-pressed') === 'false');
-const t1 = $$('.util-toggle').find(
-  (t) => t.querySelector('.util-toggle-label')?.textContent.trim() === 'Round 1',
-);
-click(t1);
-await sleep();
-check(
-  'every round off → no rows + the "turn on a round" line (empty state 1)',
-  $$('.util-nade').length === 0 &&
-    ($('.util-throwlog')?.textContent || '').includes('Turn on a round above'),
-  ($('.util-throwlog')?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
-);
+// The ONE empty state: a filter matching nothing. The "turn on a round"
+// line died with the per-round toggle row (owner answer Q1) — the
+// selector's own option list only ever carries throwing rounds, so no
+// selection can empty the list on its own.
 throwerSel.value = 'C';
 throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check(
-  'no grenades in the filter → its OWN line, no toggles (empty state 2, distinct)',
+  'no grenades in the filter → its own line, and the retired "Turn on a round" copy never renders',
   ($('.util-throwlog')?.textContent || '').includes('No grenades match the current filters.') &&
-    $$('.util-toggle').length === 0 &&
+    $$('.util-nade').length === 0 &&
     !($('.util-throwlog')?.textContent || '').includes('Turn on a round'),
   ($('.util-throwlog')?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
 );
 throwerSel.value = '';
 throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
-check('clearing the filter brings the toggles back', $$('.util-toggle').length === 2);
+check(
+  'clearing the filter restores the selector’s options (All rounds + both throwing rounds)',
+  !!roundSel && [...roundSel.options].length === 3 && roundSel.value === '1',
+  roundSel ? `${[...roundSel.options].length} options / value=${roundSel.value}` : 'missing',
+);
 
 console.log('M. stylesheet pins (jsdom has no layout — the rules are the pins)');
 const css = readFileSync('public/style-m3a.css', 'utf8');
@@ -644,15 +653,17 @@ check(
     /grid-template-columns:\s*1fr/.test(ruleBody('.util-summary {') || ''),
   `occurrences: ${(css.match(/\.util-summary\b/g) || []).length}`,
 );
-check(
-  'the round toggles sit on ONE line with a wrap fallback',
-  /display:\s*flex/.test(ruleBody('.util-toggles {') || '') &&
-    /flex-wrap:\s*wrap/.test(ruleBody('.util-toggles {') || ''),
-  ruleBody('.util-toggles {') || 'no .util-toggles rule',
-);
 // Comments may NAME a retired rule (the throw-log block explains that
-// .util-group* died) — the check is over the rules themselves.
+// .util-group* and the .util-toggle* row died) — the checks below are
+// over the rules themselves.
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
+check(
+  'the retired toggle rules are gone (.util-toggles / .util-toggle* — the round selector replaced them)',
+  !cssRules.includes('.util-toggles') &&
+    !cssRules.includes('.util-toggle') &&
+    !cssRules.includes('.util-toggle-label'),
+  'a per-round toggle rule survived in public/style-m3a.css',
+);
 check(
   'the retired rules are gone (.util-hint, .util-group*, .util-flash-*)',
   !cssRules.includes('.util-hint') &&

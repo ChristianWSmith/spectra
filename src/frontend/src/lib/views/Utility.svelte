@@ -11,7 +11,7 @@
   } from '../services.js';
   import { onMount } from 'svelte';
   import { fmtMs, roundClock, fmtZeroDash } from '../fmt.js';
-  import { roundIndexLabel } from '../rounds.js';
+  import { roundIndexLabel, roundScoreLabel } from '../rounds.js';
   import { sideAtRound } from '../sideparity.js';
   import {
     replayHash,
@@ -54,23 +54,29 @@
       });
   });
 
-  // View-local state (kind + thrower filters, the per-round show/hide
-  // map) restores per match through the process-scoped registry
-  // (viewstate.svelte.js): the key carries the match id (matchKey), so
-  // match A's filters never seed into match B. App's {#if} chain reuses
-  // Match's children across an id change (no remount), so ONE combined
-  // effect both RE-SEEDS when the key changes and writes through
-  // otherwise — self-ordering: the write branch runs only while the key
-  // is unchanged, so the old match's values can never land under the
-  // new key. Loading/error stay transient.
+  // View-local state (kind + thrower filters, the round scope) restores
+  // per match through the process-scoped registry (viewstate.svelte.js):
+  // the key carries the match id (matchKey), so match A's filters never
+  // seed into match B. App's {#if} chain reuses Match's children across
+  // an id change (no remount), so ONE combined effect both RE-SEEDS when
+  // the key changes and writes through otherwise — self-ordering: the
+  // write branch runs only while the key is unchanged, so the old match's
+  // values can never land under the new key. Loading/error stay
+  // transient.
   //
-  // The round map is INVERTED from the retired `closed` key (round →
-  // shown, default all OFF — the owner's C7 ruling): same registry key
-  // slot, but the default flips and the field name says what it means.
-  // The registry is process-scoped and never serialized, so no stale
-  // `closed` record can survive into this shape — seed() reads only the
-  // defaults' own keys, and an unknown field never reaches `shown`.
-  const utilDefaults = () => ({ kindF: '', throwerF: '', shown: {} });
+  // The round scope (owner answer Q1, 2026-11-16 — it SUPERSEDES C7's
+  // all-rounds-OFF default, which the per-round toggle row embodied and
+  // which this selector replaces): ONE round <select> in the filter row,
+  // PRESELECTING the first round with throws (the log opens compact — the
+  // C7 spirit kept) and offering an "All rounds" option. `roundSel`
+  // records the USER's choice only: '' = untouched (auto → the first
+  // round with throws, re-resolved whenever the filter changes the option
+  // list), 'all' = every round, otherwise the round's own option value
+  // (a round number as text — the same shape Combat's scope keeps). The registry is
+  // process-scoped and never serialized, and seed() reads only the
+  // defaults' own keys — the retired `shown` map (and the `closed` key
+  // before it) can never surface here.
+  const utilDefaults = () => ({ kindF: '', throwerF: '', roundSel: '' });
   const utilKey = $derived(matchKey('utility', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
   // (Svelte's documented state_referenced_locally fix); the snapshot carries
@@ -81,7 +87,10 @@
   const utilSeed = utilInit();
   let kindF = $state(utilSeed.kindF);
   let throwerF = $state(utilSeed.throwerF);
-  let shown = $state(utilSeed.shown); // round -> true = its throws are listed
+  // '' = untouched (auto → preselect the first round with throws),
+  // 'all' = every round, otherwise the round's option value (see
+  // utilDefaults).
+  let roundSel = $state(utilSeed.roundSel);
   let utilLastKey = utilSeed.key;
   $effect(() => {
     const k = utilKey;
@@ -95,10 +104,10 @@
       const s = seed(k, utilDefaults());
       kindF = s.kindF;
       throwerF = s.throwerF;
-      shown = s.shown;
+      roundSel = s.roundSel;
       return;
     }
-    remember(k, { kindF, throwerF, shown });
+    remember(k, { kindF, throwerF, roundSel });
   });
   // Match tickrate for the tick → clock conversion (unknown until the
   // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
@@ -221,10 +230,30 @@
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
 
-  // Any round turned on? The consolidated card has TWO empty states and
-  // they say different things: no grenades in the filter at all vs
-  // grenades present but every round still OFF (the C7 default).
-  const anyShown = $derived(groups.some(([round]) => shown[round]));
+  // The round options: only the rounds that carry throws in the CURRENT
+  // kind/thrower filter — the selector never offers an empty round.
+  const roundOptions = $derived(groups.map(([round]) => round));
+
+  // What the <select> shows: the recorded choice while it still exists
+  // in the option list, else the PRESELECT (the first round with throws —
+  // owner answer Q1), else "All rounds" when the filter leaves no throws
+  // at all. The stored choice is normalized here, never by an effect, so
+  // one spelling decides what the control renders.
+  const roundValue = $derived(
+    roundSel === 'all'
+      ? 'all'
+      : roundSel !== '' && roundOptions.some((n) => String(n) === roundSel)
+        ? roundSel
+        : roundOptions.length
+          ? String(roundOptions[0])
+          : 'all',
+  );
+
+  // The rounds in scope: every group under "All rounds", the selected one
+  // otherwise (its option exists only when it carries throws).
+  const shownGroups = $derived(
+    roundValue === 'all' ? groups : groups.filter(([round]) => String(round) === roundValue),
+  );
 
   // Round lookup behind the row clock: each row's time is how far INTO
   // that round the throw happened (roundClock + the canonical
@@ -288,13 +317,6 @@
     }
   }
 
-  // The throw-log toggles: a round's throws list ONLY while the user has
-  // turned that round on — every round starts OFF (the owner's C7
-  // default), so the card opens as a single line of round buttons.
-  function toggleRound(round) {
-    shown = { ...shown, [round]: !shown[round] };
-  }
-
   // The throw's row ▶ — ICON-ONLY play (the one canonical tick-link
   // glyph; no label text). It stamps the throw's own tick with a
   // loop-length entry loop around it (nav.entryLoopAround — the
@@ -328,7 +350,7 @@
   {:else}
     <!-- Summary charts first, the consolidated throw log LAST (the
          owner's C7 ruling: the card carrying the filters, the count and
-         the round toggles is the bottom card). -->
+         the round selector is the bottom card). -->
     <div class="util-summary">
       <section class="panel util-card-damage">
         <h2>{S.utility.damagePerRoundHeading}</h2>
@@ -549,10 +571,12 @@
     </div>
 
     <!-- ONE consolidated card at the BOTTOM (C7, owner 2026-11-15): the
-         kind/thrower filters and the live count moved in here, a single
-         line of per-round show/hide toggles (every round starts OFF),
-         and the throw list of only the rounds the user turns on. It
-         replaces the per-round collapsible cards. -->
+         kind/thrower/round filters and the live count moved in here, and
+         the throw list shows ONE round at a time — the round selector
+         preselects the first round with throws and offers "All rounds"
+         (owner answer Q1, 2026-11-16, replacing the per-round
+         show/hide toggle row). It replaces the per-round collapsible
+         cards. -->
     <section class="panel util-throwlog">
       <h2>{S.utility.throwLogHeading}</h2>
       <div class="util-filters toolbar">
@@ -574,87 +598,86 @@
             {/each}
           </select>
         </label>
+        <!-- The ONE round scope (owner answer Q1): labels read the
+             canonical `RD<n> | <ct>-<t>` (roundScoreLabel). The option
+             list only ever carries rounds WITH throws, so the control
+             can never sit on an empty round; the stored choice stays
+             `''` until the user moves it (auto → first round). -->
+        <label class="util-field" for="util-round">
+          <span class="field-label">{S.utility.roundLabel}</span>
+          <select
+            class="input"
+            id="util-round"
+            value={roundValue}
+            onchange={(e) => (roundSel = e.currentTarget.value)}
+          >
+            <option value="all">{S.utility.allRounds}</option>
+            {#each roundOptions as n (n)}
+              <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
+            {/each}
+          </select>
+        </label>
         <span class="muted"
           >{filtered.length} of {rows.length}{S.utility.grenadeSuffix}{rows.length === 1
             ? ''
             : 's'}</span
         >
       </div>
-      <div class="util-toggles">
-        {#each groups as [round, list] (round)}
-          <button
-            class="btn small util-toggle"
-            class:primary={!!shown[round]}
-            aria-pressed={!!shown[round]}
-            title={S.utility.toggleTitle}
-            onclick={() => toggleRound(round)}
-          >
-            <span class="util-toggle-label"
-              >{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(round) ?? round)}</span
-            >
-            <span class="chip round-chip">{list.length}</span>
-          </button>
-        {/each}
-      </div>
       {#if groups.length === 0}
         <p class="muted" role="status">{S.utility.noGrenades}</p>
-      {:else if !anyShown}
-        <p class="muted" role="status">{S.utility.noRoundShown}</p>
       {:else}
         <div class="util-lists">
-          {#each groups as [round, list] (round)}
-            {#if shown[round]}
-              <ul class="util-nades">
-                {#each list as r, i (r.tick + ':' + i)}
-                  <li class="util-nade">
-                    <span class="chip util-kind {r.kind}">{r.kind}</span>
-                    <ProfileLink
-                      steam={r.thrower}
-                      name={r.throwerName || r.thrower}
-                      nav={go}
-                      cls="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
-                      title={S.fill(S.utility.openProfile, { name: r.throwerName || r.thrower })}
-                    />
-                    <span
-                      class="mono muted util-tick"
-                      title={S.fill(S.utility.tickTitle, { tick: r.tick, round: roundIndexLabel(rbn.get(r.round) ?? r.round) })}
-                      >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
+          {#each shownGroups as [round, list] (round)}
+            <ul class="util-nades">
+              {#each list as r, i (r.tick + ':' + i)}
+                <li class="util-nade">
+                  <span class="chip util-kind {r.kind}">{r.kind}</span>
+                  <ProfileLink
+                    steam={r.thrower}
+                    name={r.throwerName || r.thrower}
+                    nav={go}
+                    cls="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
+                    title={S.fill(S.utility.openProfile, { name: r.throwerName || r.thrower })}
+                  />
+                  <span
+                    class="mono muted util-tick"
+                    title={S.fill(S.utility.tickTitle, { tick: r.tick, round: roundIndexLabel(rbn.get(r.round) ?? r.round) })}
+                    >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
+                  >
+                  <span class="util-num" title={S.utility.damageDealtTitle}
+                    >{fmtZeroDash(r.damage, 'dmg')}</span
+                  >
+                  <span class="util-num muted" title={S.utility.blindTimeTitle}
+                    >{r.flashMsTotal > 0
+                      ? fmtMs(r.flashMsTotal)
+                      : '—'}</span
+                  >
+                  <span
+                    class="util-num muted"
+                    title={S.utility.affectedTitle}
+                    >{fmtZeroDash(affectedCount(r.affected), 'aff')}</span
+                  >
+                  <span class="util-actions">
+                    <button
+                      class="btn small ghost"
+                      title={r.thrower
+                        ? `Watch this throw — follow ${r.throwerName || r.thrower}`
+                        : S.utility.watchThrowFallback}
+                      aria-label={r.thrower
+                        ? `Watch this throw at tick ${r.tick} — follow ${r.throwerName || r.thrower}`
+                        : `Watch this throw at tick ${r.tick}`}
+                      onclick={() => openReplay(r)}
+                      ><span class="codicon codicon-play" aria-hidden="true"></span></button
                     >
-                    <span class="util-num" title={S.utility.damageDealtTitle}
-                      >{fmtZeroDash(r.damage, 'dmg')}</span
-                    >
-                    <span class="util-num muted" title={S.utility.blindTimeTitle}
-                      >{r.flashMsTotal > 0
-                        ? fmtMs(r.flashMsTotal)
-                        : '—'}</span
-                    >
-                    <span
-                      class="util-num muted"
-                      title={S.utility.affectedTitle}
-                      >{fmtZeroDash(affectedCount(r.affected), 'aff')}</span
-                    >
-                    <span class="util-actions">
-                      <button
-                        class="btn small ghost"
-                        title={r.thrower
-                          ? `Watch this throw — follow ${r.throwerName || r.thrower}`
-                          : S.utility.watchThrowFallback}
-                        aria-label={r.thrower
-                          ? `Watch this throw at tick ${r.tick} — follow ${r.throwerName || r.thrower}`
-                          : `Watch this throw at tick ${r.tick}`}
-                        onclick={() => openReplay(r)}
-                        ><span class="codicon codicon-play" aria-hidden="true"></span></button
-                      >
-                    </span>
-                    <span
-                      class="util-coord muted mono"
-                      title={S.utility.coordTitle}
-                      >{coordCell(r)}</span
-                    >
-                  </li>
-                {/each}
-              </ul>
-            {/if}
+                  </span>
+                  <span
+                    class="util-coord muted mono"
+                    title={S.utility.coordTitle}
+                    >{coordCell(r)}</span
+                  >
+                </li>
+              {/each}
+            </ul>
           {/each}
         </div>
       {/if}

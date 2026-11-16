@@ -20,6 +20,7 @@
   // SIDE era (the side-switch series is a subset of the reset series —
   // see rounds.js), so a segment takes exactly one side color.
   import { fmtMoney } from '../fmt.js';
+  import { buildHash } from '../router.js';
   import { teamKeyAt, flipIndexes, eraOf, sideInEra } from '../sideparity.js';
   import { moneyResetIndexes } from '../rounds.js';
   import { teamStartClass } from '../teams.js';
@@ -224,6 +225,15 @@
     return `Round ${r.round} — ${w} wins · buy CT ${r.classCT || 'unknown'} / T ${r.classT || 'unknown'} · ${verdict(r)}${r.pistolRound ? ' · pistol' : ''}`;
   }
 
+  // Round-detail link — BOTH navigation sites (the SVG hit rects and the
+  // winner-strip buttons) stamp THIS view as the ?back= origin (the exact
+  // string Economy.svelte's drill() uses). An unstamped back made
+  // RoundDetail's Back fall through to the Overview (query.back empty →
+  // Overview fallback), which is the bug this helper fixes in one place.
+  function openRound(round) {
+    nav(buildHash(`/match/${id}/round/${round}`, { back: `match/${id}/economy` }));
+  }
+
   function onMove(e) {
     if (n <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -318,10 +328,8 @@
             role="button"
             tabindex="0"
             aria-label="{S.common.econCurveOpenRoundAria}{r.round}"
-            onclick={() => nav(`/match/${id}/round/${r.round}`)}
-            onkeydown={(e) =>
-              (e.key === 'Enter' || e.key === ' ') &&
-              nav(`/match/${id}/round/${r.round}`)}
+            onclick={() => openRound(r.round)}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openRound(r.round)}
           >
             <title>{S.common.econCurveRoundTitle}{r.round}</title>
           </rect>
@@ -368,7 +376,7 @@
           class:pistol={r.pistolRound}
           title={cellTitle(r)}
           aria-label="{S.common.econCurveOpenRoundAria}{r.round}"
-          onclick={() => nav(`/match/${id}/round/${r.round}`)}
+          onclick={() => openRound(r.round)}
         >
           <span class="econ-strip-num">{r.round}</span>
           <span
