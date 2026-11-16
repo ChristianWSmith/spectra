@@ -90,30 +90,32 @@
   // test pins, so the target and the documented coverage cannot drift.
   const helpSection = $derived(MATCH_TAB_SECTIONS[tab] || 'understanding-a-match');
 
-  // GetScoreboard sort whitelist (mirror of the Go store's map).
-  // Combined columns sort by their primary key.
+  // The scoreboard's FIXED block (metricorder.js FIXED_BLOCK mirrors this
+  // list): the Go-rendered stats' labels in their store order. Combined
+  // columns sort by their primary key.
   // ADR / KAST% / HS% / K/D left SCORE_COLS with the dogfooding
   // conversion (W2); A, 2K–5K, Entry, Trade and Streak left with the
   // inferred-conversion swap (W2a): all twelve render as PINNED METRIC
   // columns at the tail (metricCols below — sourced from the stored
   // metric rows through the five-state machine), in today's relative
   // order once the default pins/sequence land (metricorder.js).
-  // Opening K/D keeps its fixed position AND its sort key (server
-  // ordering over opening_kills is value-identical to the entry_kills
-  // metric) — only its cell changed: it composes the entry_kills /
-  // entry_deaths metric halves (design Q2). Every remaining key here
-  // is a store column, so the server sort applies verbatim.
+  // Opening K/D keeps its fixed position AND its sort key — only its
+  // cell changed: it composes the entry_kills / entry_deaths metric
+  // halves (design Q2).
+  // Every key here sorts CLIENT-side over the displayed sequence (the
+  // fold below): the fetch is id-keyed (one GetScoreboard call per
+  // match, kills DESC) and no sort ever re-requests a row order from the
+  // store again. The Rnds column is gone (owner C14) — rounds played is
+  // still a store column and a metric input, just no longer a column.
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
-    // "Team" column: the key stays `side` (the store's sort whitelist is
-    // keyed by it) but the cell shows the TEAM's display name — see the
-    // body branch below.
+    // "Team" column: the key stays `side` but the cell shows the TEAM's
+    // display name — see the body branch below.
     { key: 'side', label: 'Team' },
     { key: 'kills', label: 'K' },
     { key: 'deaths', label: 'D' },
     { key: 'kda', label: 'KDA' },
     { key: 'total_damage', label: 'DMG' },
-    { key: 'rounds_played', label: 'Rnds' },
     // Fixed position, metric-composed cell (design Q2): both halves
     // read the fixed named slots entry_kills / entry_deaths — the
     // identical stored columns this cell used to render raw. The body
@@ -124,24 +126,44 @@
     { key: 'score', label: 'Score' },
   ];
 
+  // The TRANSPOSED axis (owner C14): stat rows = the fixed block minus
+  // the Name/Team descriptors — those two move INTO the player column
+  // headers in transposed form (name + side chip), so no redundant
+  // Name/Team rows — followed by the pinned metric sequence (metricCols
+  // below), i.e. the same column order the normal table renders.
+  const statRows = SCORE_COLS.filter((c) => c.key !== 'name' && c.key !== 'side');
+
+  // The (0,0) descriptor: the corner cell wears the Name header's own
+  // label in BOTH shapes (the transpose button rides its children slot).
+  const nameCol = SCORE_COLS.find((c) => c.key === 'name');
+
   let match = $state(null);
   let summary = $state(null); // MatchSummary row (team names)
   let rounds = $state([]);
   let scoreboard = $state([]);
   let tab = $state('Overview');
-  let sortKey = $state('kills');
-  let desc = $state(true);
+  // THE sort chain, newest entry LAST (owner C14's minimum-swap sort):
+  // every entry is folded over the sequence the previous ones produced
+  // (foldRows below), so sorting a second stat never destroys the first
+  // one's order — it only refines it inside its own ties, and an
+  // all-tied key moves nothing at all. sortKey/desc stay DERIVED from
+  // the newest entry, so the SortTh markers keep their single-mark shape.
+  // Re-seeded with the id-keyed fetch (kills DESC — the store's default).
+  let sortStack = $state([{ key: 'kills', desc: true }]);
+  const sortKey = $derived(sortStack[sortStack.length - 1]?.key ?? '');
+  const desc = $derived(sortStack[sortStack.length - 1]?.desc ?? false);
 
-  // Selection state (the Rounds-tab compare picks below) restores per
-  // match through the process-scoped registry (viewstate.svelte.js):
-  // the key carries the match id (matchKey), so match A's picks never
-  // show in match B. App reuses this component when only the id changes
+  // Selection state (the Rounds-tab compare picks below, plus the
+  // scoreboard's transposed shape — owner C14) restores per match
+  // through the process-scoped registry (viewstate.svelte.js): the key
+  // carries the match id (matchKey), so match A's picks never show in
+  // match B. App reuses this component when only the id changes
   // (no remount), so ONE combined effect both RE-SEEDS on a key change
   // and writes through otherwise — self-ordering: the write branch runs
   // only while the key is unchanged, so the old match's values can never
   // land under the new key. The TAB stays URL-owned (routeTab effect
   // below) and is never registered; busy/error/warnings stay transient.
-  const selDefaults = () => ({ compareSel: [] });
+  const selDefaults = () => ({ compareSel: [], transposed: false });
   const selKey = $derived(matchKey('selection', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
   // (Svelte's documented state_referenced_locally fix); the snapshot carries
@@ -169,6 +191,12 @@
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4).
   let compareSel = $state(selSeed.compareSel);
+  // The scoreboard's transposed shape (owner C14) — registry-owned and
+  // match-scoped like compareSel (the expanded/compareSel precedent):
+  // a process-local view shape, never a link, so it is NOT URL state and
+  // never survives as a shareable address; each match restores the shape
+  // it was left in.
+  let transposed = $state(selSeed.transposed);
   let selLastKey = selSeed.key;
   $effect(() => {
     const k = selKey;
@@ -181,9 +209,10 @@
       selLastKey = k;
       const s = seed(k, selDefaults());
       compareSel = s.compareSel;
+      transposed = s.transposed;
       return;
     }
-    remember(k, { compareSel });
+    remember(k, { compareSel, transposed });
   });
 
   // Side-switch boundary per row (index-aligned with rounds): the
@@ -365,24 +394,25 @@
     if (routeTab) tab = routeTab;
   });
 
-  // Scoreboard fetch: initial load + every sort change. The four
-  // converted columns (ADR/KAST%/HS%/K/D) sort as m:* metric keys —
-  // never a store sort — so server ordering for the remaining SCORE_COLS
-  // stays exactly as GetScoreboard returns it.
+  // Scoreboard fetch — ID-KEYED (owner C14): ONE GetScoreboard call per
+  // match, in the store's default order (kills DESC), whatever the user
+  // sorts afterwards. Sorting is a pure client-side fold over this seed
+  // (viewRows below), so a sort can never discard the order a previous
+  // sort built. The stack re-seeds here too: every match starts at the
+  // default kills-DESC marker, so one match's sort chain can never leak
+  // into the next (the pre-C14 sortKey/desc were component state and did
+  // not re-seed — ruling 5).
   $effect(() => {
-    sortKey;
-    desc;
-    // m:* metric columns sort client-side (viewRows) — the store sort
-    // only ever runs for SCORE_COLS keys.
-    if (sortKey.startsWith('m:')) return;
+    id;
+    sortStack = [{ key: 'kills', desc: true }];
     let live = true;
-    getScoreboard(id, sortKey, desc)
+    getScoreboard(id, 'kills', true)
       .then((sb) => {
         // The ONE place this view's roster rows enter: listedPlayers
         // (lib/players.js — the canonical client-side bot filter; the
         // store already filters GetScoreboard, this is its twin) covers
-        // every derivation below — rosters, viewRows, topStats, the
-        // team_<player> names and the per-round side lookups.
+        // every derivation below — the fold's seed, rosters, topStats,
+        // the team_<player> names and the per-round side lookups.
         if (live) scoreboard = listedPlayers(sb) || [];
       })
       .catch((e) => {
@@ -409,28 +439,77 @@
     return () => (live = false);
   });
 
-  const viewRows = $derived.by(() => {
-    if (sortKey.startsWith('m:')) {
-      const col = metricCols.find((c) => metricSortKey(c.def.id) === sortKey);
-      if (!col) return scoreboard;
-      return [...scoreboard].sort((a, b) => {
-        const va = metricSortVal(col, a);
-        const vb = metricSortVal(col, b);
-        if (va == null && vb == null) return 0;
-        if (va == null) return 1;
-        if (vb == null) return -1;
-        return desc ? vb - va : va - vb;
-      });
+  // --- THE sort fold (owner C14 — minimum row swaps) ------------------------
+  // Each stack entry is applied to the sequence the EARLIER entries
+  // produced, so a second sort refines the first instead of replacing it:
+  // sort by damage, then by deaths → inside equal deaths the damage order
+  // stands, and a key whose values are all tied moves nothing at all.
+  // Every step decorates its rows with their incoming index and breaks
+  // ties on it — the explicit "prior order wins" chain (Array#sort has
+  // been stable since ES2019; Profiles.svelte's `sorted` derived cites
+  // the same precedent, but an index tiebreak makes the result
+  // engine-luck-free by construction instead of relying on it).
+  // Rejected: writing the sorted sequence back into the seed (breaks the
+  // moment late-arriving metric values change a cell) and an SQL ORDER
+  // chain (the store cannot express m: metric keys at all).
+  function foldRows(rows, stack) {
+    let out = rows;
+    for (const entry of stack) out = stableStep(out, entry);
+    return out;
+  }
+
+  function stableStep(rows, entry) {
+    const keyed = rows.map((p, i) => ({ p, i }));
+    keyed.sort((a, b) => {
+      const c = compareSort(entry.key, a.p, b.p, entry.desc);
+      return c !== 0 ? c : a.i - b.i;
+    });
+    return keyed.map((x) => x.p);
+  }
+
+  // One comparator for every key: fixed keys map through the cell's own
+  // display value (cellText), m: keys through the metric column's stored
+  // value; nulls/undefined sort LAST in both directions (a gap is not a
+  // zero and must not win the ascending sort by pretending to be the
+  // smallest), strings through localeCompare, numbers by value.
+  function compareSort(key, a, b, isDesc) {
+    const va = sortValue(key, a);
+    const vb = sortValue(key, b);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    let c;
+    if (typeof va === 'string' || typeof vb === 'string') {
+      c = String(va).localeCompare(String(vb));
+    } else {
+      c = va < vb ? -1 : va > vb ? 1 : 0;
     }
-    return scoreboard;
-  });
+    return isDesc ? -c : c;
+  }
+
+  function sortValue(key, p) {
+    if (key.startsWith('m:')) {
+      const col = metricCols.find((c) => metricSortKey(c.def.id) === key);
+      // Column not landed yet → every value null → the step moves
+      // nothing (what the pre-C14 "return scoreboard" did, per step).
+      return col ? metricSortVal(col, p) : null;
+    }
+    // kda sorts as the RAW number: cellText formats it through fmt2 for
+    // display, and a formatted string would sort lexicographically
+    // (10.00 before 9.00).
+    if (key === 'kda') return Number.isFinite(p.kda) ? p.kda : null;
+    return cellText({ key }, p);
+  }
+
+  const viewRows = $derived(foldRows(scoreboard, sortStack));
 
   // --- M5 pinned metric columns ---------------------------------------------
-  // Column-merge: SCORE_COLS stays a pure store-driven set; pinned metrics
+  // Column-merge: SCORE_COLS stays a pure fixed block; pinned metrics
   // append as extra <th>/<td> cells rendered from their own preview map.
-  // Sorting a metric key never leaves the client (the fetch effect skips
-  // m:* keys), so GetScoreboard ordering for the M1/M3/M4 columns is
-  // untouched; players without a value for the metric sort last either way.
+  // Sorting never leaves the client for ANY key now (the fetch is
+  // id-keyed), and a metric key folds over the sequence the fixed keys
+  // already ordered; players without a value for the metric sort last
+  // either way (nulls-last in both directions — sortValue above).
   // render = FIXED_BLOCK ++ resolveOrder ∩ pins (design §1.3): pins
   // SELECT the columns, the order pref SEQUENCES them — the pins array's
   // own order stopped being an ordering source.
@@ -637,12 +716,32 @@
     };
   }
 
+  // A column click EXTENDS the chain (newest entry last): clicking the
+  // already-newest key flips its direction in place, clicking any other
+  // key pushes a new refinement on top — never a reset, so the previous
+  // keys keep ordering inside the new key's ties (foldRows above).
   function toggleSort(key) {
-    if (sortKey === key) desc = !desc;
-    else {
-      sortKey = key;
-      desc = true;
+    const last = sortStack[sortStack.length - 1];
+    if (last && last.key === key) sortStack = [...sortStack.slice(0, -1), { key, desc: !last.desc }];
+    else sortStack = [...sortStack, { key, desc: true }];
+  }
+
+  // The transpose toggle (owner C14) lives in the (0,0) cell — the Name
+  // header's children slot (the ⓘ idiom: outside the .th-sort button, so
+  // name sorting stays functional). Entering: the DISPLAYED sequence
+  // becomes the fold's seed and the sort stack empties — the row order is
+  // retained and every column sort mark goes with it (the owner's
+  // "transposing toggles off the column sorts"). Leaving flips the shape
+  // only: the retained order stands, still unmarked.
+  function toggleTranspose() {
+    if (transposed) {
+      transposed = false;
+      return;
     }
+    const shown = viewRows;
+    scoreboard = shown;
+    sortStack = [];
+    transposed = true;
   }
 
   // Cell display for a scoreboard column: map the snake_case sort key
@@ -731,7 +830,11 @@
     teamNames({
       ctName: summary?.ctName || '',
       tName: summary?.tName || '',
-      players: scoreboard,
+      // viewRows, not the raw seed: every derivation here follows the
+      // DISPLAYED sequence (research step 1.5), so the roster order, the
+      // stat cards and the transposed player columns can never disagree
+      // about which row the scoreboard is showing.
+      players: viewRows,
     }),
   );
 
@@ -747,9 +850,9 @@
   }
 
   const rosters = $derived.by(() => {
-    const ct = scoreboard.filter((p) => p.side === 'ct');
-    const t = scoreboard.filter((p) => p.side === 't');
-    const other = scoreboard.filter((p) => p.side !== 'ct' && p.side !== 't');
+    const ct = viewRows.filter((p) => p.side === 'ct');
+    const t = viewRows.filter((p) => p.side === 't');
+    const other = viewRows.filter((p) => p.side !== 'ct' && p.side !== 't');
     return { ct, t, other };
   });
 
@@ -769,7 +872,7 @@
   // Unresolved player → '' (never a guessed color).
   function playerRoundCls(roundNumber, steamId, name) {
     return playerSideClassAt(
-      scoreboard,
+      viewRows,
       match?.sideSwitches || 0,
       rounds,
       roundNumber,
@@ -779,8 +882,8 @@
   }
 
   const topStats = $derived.by(() => {
-    if (!scoreboard.length) return [];
-    const maxBy = (fn) => scoreboard.reduce((a, b) => (fn(b) > fn(a) ? b : a));
+    if (!viewRows.length) return [];
+    const maxBy = (fn) => viewRows.reduce((a, b) => (fn(b) > fn(a) ? b : a));
     const frag = maxBy((p) => p.kills);
     const util = maxBy((p) => p.utilityDamage);
     const adr = maxBy((p) => p.adr);
@@ -1047,6 +1150,61 @@
         </section>
       </div>
     {:else if tab === 'Scoreboard'}
+      <!-- The (0,0) transpose button (owner C14): it rides the NAME
+           header's children slot — the same idiom the metric ⓘ uses, so
+           it sits OUTSIDE the .th-sort button and the header keeps its
+           primary affordance (name sorting). It renders in BOTH shapes:
+           (0,0) is the Name column header in player rows and the corner
+           cell in transposed rows. -->
+      {#snippet transposeBtn()}
+        <button
+          class="btn ghost small sb-transpose"
+          title={transposed ? S.match.transposeBackTitle : S.match.transposeTitle}
+          aria-label={S.match.transposeLabel}
+          aria-pressed={transposed}
+          onclick={toggleTranspose}
+        >
+          <span class="codicon codicon-split-horizontal" aria-hidden="true"></span>
+        </button>
+      {/snippet}
+      <!-- One fixed stat cell, shared by BOTH shapes: the normal body's
+           else-branch and every transposed stat row. Opening K/D is the
+           fixed position, metric-composed cell (design Q2) — each half is
+           the fresh entry_kills / entry_deaths number in the unchanged
+           ${k}/${d} format, or the honest dash with that half's state in
+           the title (never a chip inside a compound cell — invariant 9);
+           everything else maps through cellText. -->
+      {#snippet fixedCell(col, p)}
+        {#if col.key === 'opening_kills'}
+          {@const kd = openingKd(p)}
+          <td class="num" title={kd.title || undefined}>{kd.text}</td>
+        {:else}
+          <td class="num">{cellText(col, p)}</td>
+        {/if}
+      {/snippet}
+      <!-- One pinned metric cell, shared by BOTH shapes (design §5's
+           state machine: value / honest dash / chip, never a number in
+           lieu of a chip). -->
+      {#snippet metricCellView(mc, p)}
+        {@const pres = metricCellPres(mc, p)}
+        <td class="num m5-cell" title={metricCellTitle(mc, pres)}>
+          {#if pres.kind === 'value'}
+            {fmtMetric(pres.value, mc.def.format)}
+          {:else if pres.kind === 'nodata'}
+            —
+          {:else}
+            <!-- State chip in lieu of a number (design §5):
+                 processing / failed / behind. The bar
+                 quantifies when the live feed carries k/N. -->
+            <StatusChip
+              status={pres.state}
+              title={metricCellTitle(mc, pres)}
+              progress={metricProgressFrac(metricProgress, mc.def.id)}
+              stage={metricProgressStage(metricProgress, mc.def.id)}
+            />
+          {/if}
+        </td>
+      {/snippet}
       {#if metricError}
         <p class="error" role="alert">
           {S.match.pinnedStatsUnavailable} {metricError}
@@ -1056,7 +1214,8 @@
         </p>
       {/if}
       <div class="table-scroll">
-        <table class="data-table scoreboard">
+        <table class="data-table scoreboard" class:transposed>
+          {#if !transposed}
           <thead>
             <tr>
               {#each SCORE_COLS as col (col.key)}
@@ -1067,7 +1226,11 @@
                   active={sortKey === col.key}
                   {desc}
                   onclick={() => toggleSort(col.key)}
-                />
+                >
+                  <!-- The (0,0) cell carries the transpose button
+                       (children slot, outside .th-sort). -->
+                  {#if col.key === 'name'}{@render transposeBtn()}{/if}
+                </SortTh>
               {/each}
               <!-- Width-constrained column header (the .m5-mth cap): THE
                    short_name display criterion — short || title || name.
@@ -1093,7 +1256,6 @@
           <tbody>
             {#each viewRows as p (p.steamId)}
               {@const nameCls = teamCls(p.side)}
-              {@const kdCell = openingKd(p)}
               <tr
                 class="clickable"
                 onclick={(e) => {
@@ -1141,41 +1303,92 @@
                         >{p.side === 'ct' ? teams.ct : p.side === 't' ? teams.t : '—'}</span
                       ></td
                     >
-                  {:else if col.key === 'opening_kills'}
-                    <!-- Opening K/D: fixed position, metric-composed
-                         cell (design Q2) — each half is the fresh
-                         entry_kills / entry_deaths number in the
-                         unchanged ${k}/${d} format, or the honest dash
-                         with that half's state in the title (never a
-                         chip inside a compound cell — invariant 9). -->
-                    <td class="num" title={kdCell.title || undefined}>{kdCell.text}</td>
                   {:else}
-                    <td class="num">{cellText(col, p)}</td>
+                    {@render fixedCell(col, p)}
                   {/if}
                 {/each}
                 {#each metricCols as mc (mc.def.id)}
-                  {@const pres = metricCellPres(mc, p)}
-                  <td class="num m5-cell" title={metricCellTitle(mc, pres)}>
-                    {#if pres.kind === 'value'}
-                      {fmtMetric(pres.value, mc.def.format)}
-                    {:else if pres.kind === 'nodata'}
-                      —
-                    {:else}
-                      <!-- State chip in lieu of a number (design §5):
-                           processing / failed / behind. The bar
-                           quantifies when the live feed carries k/N. -->
-                      <StatusChip
-                        status={pres.state}
-                        title={metricCellTitle(mc, pres)}
-                        progress={metricProgressFrac(metricProgress, mc.def.id)}
-                        stage={metricProgressStage(metricProgress, mc.def.id)}
-                      />
-                    {/if}
-                  </td>
+                  {@render metricCellView(mc, p)}
                 {/each}
               </tr>
             {/each}
           </tbody>
+          {:else}
+          <!-- TRANSPOSED (owner C14): a true matrix transpose — the
+               players become COLUMNS in the retained viewRows order
+               (ruling 1: Name/Team move INTO these headers, with the
+               side chip; ruling 4: the profile link stays, a column
+               header is not a row so the row-click→replay affordance
+               does not), and every stat becomes a ROW in the column
+               order (the fixed block, then the pinned metric sequence).
+               No sorting on the stat-label rows (ruling 2): they are
+               plain row headers, never SortTh. -->
+          <thead>
+            <tr>
+              <SortTh
+                label={nameCol.label}
+                cls="num"
+                active={sortKey === 'name'}
+                {desc}
+                onclick={() => toggleSort('name')}
+              >
+                {@render transposeBtn()}
+              </SortTh>
+              {#each viewRows as p (p.steamId)}
+                {@const nameCls = teamCls(p.side)}
+                <th scope="col" class="sb-player">
+                  {#if isSteam(p.steamId)}
+                    <button
+                      class="btn ghost small name-link {nameCls}"
+                      title={S.fill(S.match.openProfilePossessive, { name: p.name })}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        nav(`/player/${p.steamId}`);
+                      }}
+                      >{p.name}</button
+                    >
+                  {:else}
+                    {p.name}
+                  {/if}
+                  <!-- The Team column's cell rides along as the side chip
+                       (team display name, colored by the team's START
+                       side like every other team name). -->
+                  <span class="chip {nameCls}"
+                    >{p.side === 'ct' ? teams.ct : p.side === 't' ? teams.t : '—'}</span
+                  >
+                </th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each statRows as col (col.key)}
+              <tr>
+                <!-- Row header = the stat label, frozen at left:0 in the
+                     transposed form (public/style.css). -->
+                <th scope="row">{col.label}</th>
+                {#each viewRows as p (p.steamId)}
+                  {@render fixedCell(col, p)}
+                {/each}
+              </tr>
+            {/each}
+            {#each metricCols as mc (mc.def.id)}
+              <tr>
+                <th scope="row" class="def" title={mc.def.doc || mc.def.name}>
+                  {mc.def.shortName || mc.def.title || mc.def.name}
+                  <!-- The ⓘ is the label's widget (the column header's
+                       own ⓘ idiom, outside any sort button — there is
+                       none on this axis). -->
+                  <span class="m5-ib" title={mc.def.doc || ''}
+                    ><span class="codicon codicon-info"></span></span
+                  >
+                </th>
+                {#each viewRows as p (p.steamId)}
+                  {@render metricCellView(mc, p)}
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+          {/if}
         </table>
       </div>
     {:else if tab === 'Rounds'}

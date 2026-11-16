@@ -138,9 +138,12 @@ export const DEFAULT_PINS = Object.freeze({
 // match: SCORE_COLS (Match.svelte) minus every entry that renders as
 // a metric — adr/kast/hs_pct/kd (dogfood W2) and A, 2K–5K, Entry,
 // Trade, Streak (the W2a swap) — leaving Name, Team, K, D, KDA, DMG,
-// Rnds, Opening K/D, Util, MVPs, Score. Opening K/D STAYS fixed: it
+// Opening K/D, Util, MVPs, Score. Opening K/D STAYS fixed: it
 // keeps its fixed position (design Q2) while its cell composes the
-// entry_kills / entry_deaths metric halves.
+// entry_kills / entry_deaths metric halves. (The Rnds row left with the
+// owner's C14 scoreboard change — the column is gone from SCORE_COLS
+// too, so this list stays its mirror; rounds played itself remains a
+// store column and a metric input.)
 // profile: the StatCards grid (PlayerProfile.svelte) minus every card
 // that renders as a metric — ADR ± σ, K/D, HS%, KAST%, Trade rate, the
 // Clutches win-% sub, Avg enemies flashed and Avg util damage (the
@@ -156,7 +159,6 @@ export const FIXED_BLOCK = Object.freeze({
     'D',
     'KDA',
     'DMG',
-    'Rnds',
     'Opening K/D',
     'Util',
     'MVPs',

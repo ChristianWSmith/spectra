@@ -1401,7 +1401,7 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
   const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
   const labelOf = (th) => (th.querySelector('.th-sort')?.textContent || th.textContent || '').trim();
   const labels = ths.map(labelOf);
-  const fixed = ['Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Rnds', 'Opening K/D', 'Util', 'MVPs', 'Score'];
+  const fixed = ['Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score'];
   const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Streak'];
   check(
     'the fixed block leads in store order (no converted column inside it)',
@@ -1534,6 +1534,341 @@ console.log('L. Scoreboard frozen player column (CSS-text pins — jsdom has no 
     !!hoverRule && /var\(--list-hover\)/.test(hoverRule),
     body(hoverRule),
   );
+}
+
+console.log('M. Scoreboard sort chain + transpose (owner C14)');
+{
+  // The owner's three scoreboard changes, pinned end to end over ONE
+  // ≥3-player fixture:
+  //   1. sorts ACCUMULATE — every click folds over the sequence on
+  //      screen (the prior order IS the tiebreak), so a damage sort
+  //      survives inside the death ties and an all-tied key moves
+  //      nothing at all (minimum row swaps);
+  //   2. transpose RETAINS the row order and TOGGLES the column sort
+  //      marks off — sort → transpose → transpose back keeps the order
+  //      with zero `.sorted` anywhere;
+  //   3. the transposed shape = players as COLUMNS (retained order,
+  //      name + side chip + profile link) and stats as ROWS (the fixed
+  //      block minus Name/Team, then the pinned metric sequence), the
+  //      transpose button in the (0,0) Name header in BOTH shapes, and
+  //      the stat-label column frozen (CSS-text pins at the end).
+  // mvps is deliberately IDENTICAL for all three players (the fully-tied
+  // key); deaths carries a two-way tie so the tiebreak is observable;
+  // the store order for this fixture is kills DESC (GetScoreboard's
+  // default) — bob 20, carol 15, alice 10.
+  const sb3 = [
+    { steamId: '76561198000000002', name: 'bob', side: 't', kills: 20, deaths: 5, kda: 3.2, totalDamage: 100, utilityDamage: 60, mvps: 1, score: 11 },
+    { steamId: '76561198000000003', name: 'carol', side: 'ct', kills: 15, deaths: 3, kda: 4.1, totalDamage: 200, utilityDamage: 50, mvps: 1, score: 12 },
+    { steamId: '76561198000000001', name: 'alice', side: 'ct', kills: 10, deaths: 5, kda: 3.4, totalDamage: 300, utilityDamage: 40, mvps: 1, score: 13 },
+  ];
+  localStorage.removeItem('spectra:pinned-metrics');
+
+  const table = () => root.querySelector('.data-table.scoreboard');
+  const ths = () => [...table().querySelectorAll('thead th')];
+  const sortBtn = (label) =>
+    ths()
+      .map((th) => th.querySelector('.th-sort'))
+      .find((b) => b && b.getAttribute('aria-label') === `Sort by ${label}`);
+  const transposeBtn = () => table().querySelector('thead th:first-child .sb-transpose');
+  const rowOrder = () =>
+    [...table().querySelectorAll('tbody tr')].map(
+      (tr) => (tr.querySelector('.name-cell')?.textContent || '').trim(),
+    );
+  const marks = () =>
+    [...table().querySelectorAll('thead th .th-sort.sorted')].map((b) => b.textContent.trim());
+  const playerCols = () =>
+    [...table().querySelectorAll('thead th.sb-player .name-link')].map((b) => b.textContent.trim());
+  const statLabels = () =>
+    [...table().querySelectorAll('tbody tr')].map(
+      (tr) => (tr.querySelector('th[scope="row"]')?.textContent || '').trim(),
+    );
+  // One transposed cell: the stat row's label + the named player's column
+  // (children[0] is the frozen stat-label header, so the player sits at
+  // index +1).
+  const cellOf = (label, player) => {
+    const tr = [...table().querySelectorAll('tbody tr')].find(
+      (r) => (r.querySelector('th[scope="row"]')?.textContent || '').trim() === label,
+    );
+    const i = playerCols().indexOf(player);
+    return tr && i >= 0 ? tr.children[i + 1].textContent.trim() : 'no cell';
+  };
+
+  root = await showMatch({ ...dataFor(13), getScoreboard: sb3 }, { routeTab: 'Scoreboard' });
+  await sleep();
+
+  check(
+    'the seed renders the store order (kills DESC) with the default kills mark',
+    JSON.stringify(rowOrder()) === JSON.stringify(['bob', 'carol', 'alice']) &&
+      JSON.stringify(marks()) === JSON.stringify(['K']) &&
+      !!sortBtn('DMG') &&
+      !!sortBtn('D') &&
+      !!sortBtn('MVPs'),
+    `${rowOrder()} marks=${marks()} dmgs=${!!sortBtn('DMG')}`,
+  );
+
+  clickEl(sortBtn('DMG'));
+  await sleep();
+  check(
+    'sorting DMG desc reorders the rows (alice 300, carol 200, bob 100)',
+    JSON.stringify(rowOrder()) === JSON.stringify(['alice', 'carol', 'bob']) &&
+      JSON.stringify(marks()) === JSON.stringify(['DMG']),
+    `${rowOrder()} marks=${marks()}`,
+  );
+
+  clickEl(sortBtn('D'));
+  await sleep();
+  // deaths desc: alice/bob 5 ahead of carol 3 — and inside that 5-tie the
+  // PRIOR (damage) order survives: alice 300 before bob 100.
+  const dmgIdx = ths().findIndex(
+    (th) => th.querySelector('.th-sort')?.getAttribute('aria-label') === 'Sort by DMG',
+  );
+  const dmgOf = (name) =>
+    [...table().querySelectorAll('tbody tr')]
+      .find((tr) => (tr.querySelector('.name-cell')?.textContent || '').includes(name))
+      ?.children[dmgIdx].textContent.trim();
+  check(
+    'a second sort folds: the damage order still holds inside the death tie (prior order = tiebreak)',
+    JSON.stringify(rowOrder()) === JSON.stringify(['alice', 'bob', 'carol']) &&
+      dmgOf('alice') === '300' &&
+      dmgOf('bob') === '100',
+    `${rowOrder()} dmg alice=${dmgOf('alice')} bob=${dmgOf('bob')}`,
+  );
+  check(
+    'only the newest entry owns the mark (DMG dropped it)',
+    JSON.stringify(marks()) === JSON.stringify(['D']),
+    JSON.stringify(marks()),
+  );
+
+  clickEl(sortBtn('MVPs'));
+  await sleep();
+  check(
+    'a fully-tied key moves nothing (MVPs are 1 for all three) — zero row swaps',
+    JSON.stringify(rowOrder()) === JSON.stringify(['alice', 'bob', 'carol']) &&
+      JSON.stringify(marks()) === JSON.stringify(['MVPs']),
+    `${rowOrder()} marks=${marks()}`,
+  );
+
+  {
+    const corner = table().querySelector('thead th:first-child');
+    const tBtn = corner?.querySelector('.sb-transpose');
+    check(
+      'the transpose button rides the Name header’s children slot (outside .th-sort, name sorting intact)',
+      !!tBtn &&
+        !!corner.querySelector('.th-sort') &&
+        !corner.querySelector('.th-sort .sb-transpose') &&
+        (corner.querySelector('.th-sort')?.getAttribute('aria-label') === 'Sort by Name'),
+      corner ? corner.innerHTML.slice(0, 200) : 'no corner',
+    );
+  }
+
+  clickEl(transposeBtn());
+  await sleep();
+  check(
+    'transposed: the player columns keep the DISPLAYED order (not the store order)',
+    table().classList.contains('transposed') &&
+      JSON.stringify(playerCols()) === JSON.stringify(['alice', 'bob', 'carol']),
+    `${table()?.className} cols=${playerCols()}`,
+  );
+  check(
+    'transposing toggles every column sort mark off',
+    marks().length === 0,
+    JSON.stringify(marks()),
+  );
+  {
+    const corner = table().querySelector('thead th:first-child');
+    check(
+      'the transposed corner is still the Name SortTh carrying the transpose button in its children slot',
+      !!corner?.querySelector('.th-sort') &&
+        corner.querySelector('.th-sort')?.getAttribute('aria-label') === 'Sort by Name' &&
+        !!corner.querySelector('.sb-transpose') &&
+        !corner.querySelector('.th-sort .sb-transpose') &&
+        corner === table().querySelector('thead tr > th:first-child'),
+      corner ? corner.innerHTML.slice(0, 200) : 'no corner',
+    );
+  }
+  check(
+    'one row per stat, in the COLUMN order (fixed block minus Name/Team)',
+    JSON.stringify(statLabels()) ===
+      JSON.stringify(['K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score']),
+    JSON.stringify(statLabels()),
+  );
+  check(
+    'the stat labels are plain row headers — no sort button on this axis (ruling 2)',
+    [...table().querySelectorAll('tbody tr')].every(
+      (tr) => tr.querySelector('th[scope="row"]') && tr.children[0].tagName === 'TH',
+    ) &&
+      table().querySelectorAll('tbody .th-sort').length === 0 &&
+      table().querySelectorAll('tbody tr').length === 8,
+    `rows=${table().querySelectorAll('tbody tr').length} sortbtns=${table().querySelectorAll('tbody .th-sort').length}`,
+  );
+  check(
+    'transposed cells keep their renderers (K 10/20/15 · DMG 300/100/200 · Opening K/D —/—)',
+    cellOf('K', 'alice') === '10' &&
+      cellOf('K', 'bob') === '20' &&
+      cellOf('K', 'carol') === '15' &&
+      cellOf('DMG', 'alice') === '300' &&
+      cellOf('DMG', 'bob') === '100' &&
+      cellOf('DMG', 'carol') === '200' &&
+      cellOf('Opening K/D', 'alice') === '—/—',
+    `K=${cellOf('K', 'alice')}/${cellOf('K', 'bob')}/${cellOf('K', 'carol')} DMG=${cellOf('DMG', 'alice')}/${cellOf('DMG', 'bob')}/${cellOf('DMG', 'carol')} okd=${cellOf('Opening K/D', 'alice')}`,
+  );
+  {
+    const playerThs = [...table().querySelectorAll('thead th.sb-player')];
+    check(
+      'the player column headers keep the profile link (ruling 4 — the name-cell affordance)',
+      playerThs.length === 3 &&
+        playerThs.every((th) => !!th.querySelector('button.name-link')),
+      `player-ths=${playerThs.length} links=${playerThs.filter((th) => th.querySelector('button.name-link')).length}`,
+    );
+    check(
+      'the player column headers carry the side chip (ruling 1 — Name/Team move INTO them)',
+      playerThs.length === 3 &&
+        playerThs.every((th) => {
+          const chip = th.querySelector('.chip');
+          return (
+            !!chip &&
+            ['Alpha', 'Beta'].includes(chip.textContent.trim()) &&
+            (chip.classList.contains('team-start-ct') || chip.classList.contains('team-start-t'))
+          );
+        }),
+      playerThs.map((th) => `${JSON.stringify(th.querySelector('.chip')?.textContent)} ${th.querySelector('.chip')?.className || 'no chip'}`).join(' | '),
+    );
+  }
+  {
+    const navBefore = (globalThis.__nav || []).length;
+    const firstCell = table().querySelector('tbody tr')?.children[1];
+    if (firstCell) clickEl(firstCell);
+    await sleep();
+    check(
+      'a transposed stat row is not a player row — no row-click → replay (ruling 4)',
+      (globalThis.__nav || []).length === navBefore,
+      `nav ${(globalThis.__nav || []).length} → ${navBefore}`,
+    );
+  }
+
+  // The owner's side note, made mechanical: the stat-label column is the
+  // frozen leftmost one through the transpose (jsdom has no layout, so
+  // the RULES are pinned from the stylesheet — section L's precedent).
+  {
+    const cssSb = readFileSync('public/style.css', 'utf8');
+    const ruleOf = (src, sel) => {
+      const i = src.indexOf(sel);
+      if (i < 0) return null;
+      const open = src.indexOf('{', i);
+      if (open < 0) return null;
+      const close = src.indexOf('}', open);
+      return close < 0 ? null : src.slice(open + 1, close);
+    };
+    const body = (rule) => (rule ? rule.replace(/\s+/g, ' ').trim() : 'rule not found in public/style.css');
+
+    const labelRule = ruleOf(cssSb, '.scoreboard.transposed > tbody > tr > th:first-child {');
+    check(
+      'the transposed stat-label column is frozen at left 0 (sticky, opaque, seam, no vertical stick)',
+      !!labelRule &&
+        /position:\s*sticky/.test(labelRule) &&
+        /top:\s*auto/.test(labelRule) &&
+        /left:\s*0\b/.test(labelRule) &&
+        /background:\s*var\(--bg\)/.test(labelRule) &&
+        /box-shadow:/.test(labelRule),
+      body(labelRule),
+    );
+
+    const hoverRule = ruleOf(cssSb, '.scoreboard.transposed > tbody > tr:hover > th:first-child {');
+    check(
+      'the row-hover twin lights the frozen stat label (the tr’s hover paints under its own background)',
+      !!hoverRule && /var\(--list-hover\)/.test(hoverRule),
+      body(hoverRule),
+    );
+
+    const playerRule = ruleOf(cssSb, '.scoreboard.transposed > thead > tr > th.sb-player {');
+    check(
+      'the player headers opt out of the table-header chrome (a name is never uppercased or muted)',
+      !!playerRule &&
+        /text-transform:\s*none/.test(playerRule) &&
+        /letter-spacing:\s*normal/.test(playerRule) &&
+        /color:\s*inherit/.test(playerRule),
+      body(playerRule),
+    );
+  }
+
+  clickEl(transposeBtn());
+  await sleep();
+  check(
+    'transpose back: the rows keep the displayed order and every mark stays off',
+    JSON.stringify(rowOrder()) === JSON.stringify(['alice', 'bob', 'carol']) &&
+      marks().length === 0,
+    `${rowOrder()} marks=${marks()}`,
+  );
+
+  // The owner's literal example: sort by kills → transpose → transpose
+  // back ⇒ still kill-ordered, header no longer marked.
+  clickEl(sortBtn('K'));
+  await sleep();
+  check(
+    'sorting K marks it again (the chain restarts from the retained order)',
+    JSON.stringify(marks()) === JSON.stringify(['K']),
+    JSON.stringify(marks()),
+  );
+  clickEl(transposeBtn());
+  await sleep();
+  clickEl(transposeBtn());
+  await sleep();
+  check(
+    'sort K → transpose → transpose back: still kill-ordered, ZERO marks',
+    JSON.stringify(rowOrder()) === JSON.stringify(['bob', 'carol', 'alice']) &&
+      marks().length === 0,
+    `${rowOrder()} marks=${marks()}`,
+  );
+
+  // Transposed METRIC rows: the same pinned-metric sequence and the same
+  // cell renderers (value / honest dash / state chip) on the stat axis.
+  localStorage.setItem('spectra:pinned-metrics', '[91,92]');
+  const mk = (id, name, label) => ({
+    id,
+    name,
+    title: label,
+    shortName: label,
+    scope: 'match',
+    doc: `Formula: ${name}`,
+  });
+  const d2 = {
+    ...dataFor(13),
+    getScoreboard: sb3,
+    listMetrics: [mk(91, 'm_one', 'One'), mk(92, 'm_two', 'Two')],
+    // Fresh row for alice only; metric 92 has NO rows and a behind state.
+    getMetricValuesForMatch: [{ metricId: 91, steamId: '76561198000000001', value: 7, n: 13 }],
+    getMetricComputeState: [
+      { metricId: 91, state: 'fresh' },
+      { metricId: 92, state: 'behind' },
+    ],
+  };
+  root = await showMatch(d2, { routeTab: 'Scoreboard' });
+  await sleep();
+  clickEl(transposeBtn());
+  await sleep();
+  check(
+    'the pinned metrics follow the fixed block as stat rows, in the metricorder sequence',
+    JSON.stringify(statLabels()) ===
+      JSON.stringify(['K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score', 'One', 'Two']),
+    JSON.stringify(statLabels()),
+  );
+  check(
+    'metric stat cells keep their renderers: the stored value for the covered player, the honest dash otherwise',
+    cellOf('One', 'alice') === '7' && cellOf('One', 'bob') === '—',
+    `One alice=${cellOf('One', 'alice')} bob=${cellOf('One', 'bob')}`,
+  );
+  {
+    const tr = [...table().querySelectorAll('tbody tr')].find(
+      (r) => (r.querySelector('th[scope="row"]')?.textContent || '').trim() === 'Two',
+    );
+    const chip = tr?.children[1].querySelector('.chip.status');
+    check(
+      'a state chip lands in the transposed metric row exactly as in the normal cell',
+      !!chip && chip.classList.contains('idle') && chip.textContent.includes('behind'),
+      chip ? `${chip.className} ${chip.textContent.trim()}` : 'no chip',
+    );
+  }
+  localStorage.removeItem('spectra:pinned-metrics');
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
