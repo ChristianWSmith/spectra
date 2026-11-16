@@ -59,9 +59,9 @@
 //      sequence order — the unpinned catalog entries and the old pin
 //      indicator are gone), the help line + the pins-empty state,
 //      the read-only fixed block over the listbox/option rows, the
-//      grabber handle as the drag source, keyboard/button moves that
-//      write the WHOLE sequence through (SetPref), Reset → Delete,
-//      and Close.
+//      drag-free list (no handle, nothing draggable), keyboard/button
+//      moves that write the WHOLE sequence through (SetPref),
+//      Reset → Delete, and Close.
 //
 // Backend semantics — the SQL partitions + keyset tiling
 // (store.TestListMetricsPageOriginFilter*,
@@ -1337,7 +1337,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
 }
 
-console.log('J. the Order dialog: pins-only list, handle drag, write-through moves, Reset, Close');
+console.log('J. the Order dialog: pins-only list, no drag, write-through moves, Reset, Close');
 {
   // Two opens: FIRST with nothing pinned — the honest empty state plus
   // the help line (the owner copy rule: user's domain, no dev
@@ -1441,8 +1441,8 @@ console.log('J. the Order dialog: pins-only list, handle drag, write-through mov
     // cannot carry aria-readonly, so the read-only statement is the
     // list's accessible NAME, the visible caption "… not reorderable" —
     // and the reorderable half is the listbox/option pair that makes
-    // the row's tabindex, keydown and drag handlers valid (role=listitem
-    // is non-interactive and would flag all three).
+    // the row's tabindex and keydown handler valid (role=listitem
+    // is non-interactive and would flag both).
     const secEl = sec('match');
     const fixed = secEl?.querySelector('.mo-fixed');
     const cap = secEl?.querySelector('.mo-fixed-cap');
@@ -1481,21 +1481,14 @@ console.log('J. the Order dialog: pins-only list, handle drag, write-through mov
   {
     const rows = dRows('match');
     check(
-      'every row carries a grabber handle as THE drag source (draggable on the handle, never on the row) — aria-hidden, the named ↑/↓ buttons stay the accessible path',
+      'no drag source anywhere: nothing in the dialog is draggable and no row carries a grip handle — the ↑/↓ buttons are the only move path',
       rows.length === 3 &&
-        rows.every((x) => {
-          const g = x.querySelector('.mo-grip');
-          return (
-            !!g &&
-            g.getAttribute('draggable') === 'true' &&
-            g.getAttribute('aria-hidden') === 'true' &&
-            !x.hasAttribute('draggable')
-          );
-        }),
+        !dlg.querySelector('[draggable]') &&
+        rows.every((x) => !x.hasAttribute('draggable') && !x.querySelector('.mo-grip')),
       rows
         .map(
           (x) =>
-            `${x.dataset.moName}:handle=${x.querySelector('.mo-grip')?.getAttribute('draggable')} row-draggable=${x.hasAttribute('draggable')}`,
+            `${x.dataset.moName}:row-draggable=${x.hasAttribute('draggable')} grip=${!!x.querySelector('.mo-grip')}`,
         )
         .join(', '),
     );
@@ -1547,25 +1540,6 @@ console.log('J. the Order dialog: pins-only list, handle drag, write-through mov
       document.activeElement?.dataset?.moName === 'plug_stat' &&
         JSON.stringify(dNames('match')) === JSON.stringify(['my_kd', 'plug_stat', 'adr_avg']),
       `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match'))}`,
-    );
-  }
-  {
-    // Handle-driven DnD, dispatched ON the grabber: dragstart bubbles
-    // to the row's handler (the row itself is not draggable), the
-    // dragover/drop pair resolves the insertion slot, and the very
-    // same write-through move() runs. jsdom has no DragEvent, but these
-    // are plain native listeners, so a bubbling Event exercises the
-    // real chain.
-    const rows = dRows('match');
-    const grip = rows[0].querySelector('.mo-grip');
-    grip.dispatchEvent(new dom.window.Event('dragstart', { bubbles: true }));
-    rows[1].dispatchEvent(new dom.window.Event('dragover', { bubbles: true, cancelable: true }));
-    rows[1].dispatchEvent(new dom.window.Event('drop', { bubbles: true, cancelable: true }));
-    await sleep(80);
-    check(
-      'dragging the GRABBER handle reorders the row (its dragstart reaches the row’s handlers)',
-      JSON.stringify(dNames('match')) === JSON.stringify(['plug_stat', 'my_kd', 'adr_avg']),
-      JSON.stringify(dNames('match')),
     );
   }
   {

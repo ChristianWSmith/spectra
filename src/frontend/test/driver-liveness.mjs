@@ -124,7 +124,11 @@ const EXPECTED = {
   // so the owner's row ruling is mechanical. The stray ">" text nodes
   // beside the two read-only chips were deleted the same day — the
   // chip assertions read the <span> only, so they moved no count.
-  'builder.dom.mjs': 112,
+  // builder 112 → 111 (2026-11-15, metric-reorder): −1 section J — the
+  // handle-driven DnD check died with the drag path (rows are no longer
+  // draggable and carry no grip); the grabber pin was rewritten IN PLACE
+  // as the "no drag source anywhere" pin, which moves no count.
+  'builder.dom.mjs': 111,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

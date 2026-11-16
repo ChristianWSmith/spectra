@@ -397,9 +397,9 @@ which unit they came from); an unsaved or edited expression is calculated on the
 why an ad-hoc preview notes that the denominator applies after save. State chips appear in place
 of numbers while a value is recomputing or has failed.
 
-**Order…** arranges the pinned metrics: the built-in stats stay first and are not reorderable,
-your pinned metrics drag (or move with the arrow buttons) below them, and **Reset order** restores
-the defaults.
+**Order…** arranges the pinned metrics: the fixed stats (Name, Team, K, D…) always come first and
+cannot be reordered, while your pinned metrics — built-in and your own — reorder below them with the
+↑↓ buttons (or the ↑/↓ arrow keys). **Reset order** restores the defaults.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,
