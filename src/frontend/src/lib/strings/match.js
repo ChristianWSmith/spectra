@@ -45,8 +45,6 @@ export const match = {
   colKills: 'Kills',
 
   // Rounds tab
-  roundTypesUnavailable: 'Round types unavailable:',
-  dismissRoundTypesError: 'Dismiss round types error',
   compareSelectTitle: 'Select rounds to compare (up to 4)',
   colCmp: 'Cmp',
   colWinner: 'Winner',
@@ -59,10 +57,11 @@ export const match = {
   colMvp: 'MVP',
   firstBloodLabel: 'First blood',
   compareRoundAria: 'Compare round {round}',
-  // Per-side buy-class chip (RoundDetail's Economy card + the Rounds tab):
-  // the why text + rules version only — round-level confidence never rides
-  // a side chip, and the tooltip never promises a click (those chips are
-  // not buttons; Economy.chipTitle is the click-for-full-text one).
+  // Per-side buy-class chip (RoundDetail's Economy card — the Rounds
+  // tab's Class column left with the watch column, W3a): the why text +
+  // rules version only — round-level confidence never rides a side chip,
+  // and the tooltip never promises a click (those chips are not buttons;
+  // Economy.chipTitle is the click-for-full-text one).
   sideClassTitle: '{why} (rules v{rule})',
   sideCt: 'CT',
   sideT: 'T',
@@ -105,7 +104,7 @@ export const match = {
   mvpMeta: '· MVP',
   retryBtn: 'Retry',
   roundInfoHeading: 'Round info',
-  scoreLabel: 'Score',
+  scoreLabel: 'Resulting score',
   scoreCountedTitle: 'Counted-round wins through this round',
   noKills: 'No kills this round.',
   colTime: 'Time',

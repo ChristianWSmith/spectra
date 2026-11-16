@@ -45,7 +45,8 @@ export const economy = {
   noExplanation: 'no explanation recorded',
   rulesV: 'rules v',
   closeExplanation: 'Close explanation',
-  tableNote: 'Equip CT/T = freeze-end gear held (never this round\'s spend); Net worth = that plus unspent money; Loss CT/T = the bonus that side would collect for losing ($1400→$3400 by $500, half +1).',
+  tableNote:
+    "Equip CT/T = freeze-end gear held (never this round's spend); Loss CT/T shows that side's loss bonus as pips — five rungs from $1400 to $3400 in $500 steps.",
   tableNoteTail:
-    'on the Loss headers\n          marks those values as calculated from the round results rather than\n          recorded.',
+    'on the Loss cells marks those pips as calculated from the round results rather than recorded.',
 };

@@ -1,6 +1,7 @@
 // Canonical economy math for the Economy view: the two per-team series
-// the chart plots (EconCurve) and the two columns its hover tooltip
-// shows. One spelling of the formulas, unit-tested in econ.test.js —
+// the chart plots (EconCurve), the two columns its hover tooltip shows,
+// and the loss-bonus pip count the buy-types table's Loss cells render
+// (lossPips). One spelling of the formulas, unit-tested in econ.test.js —
 // views must not re-derive them.
 //
 //   equipment value — the game's freeze-time-end value of the gear the
@@ -34,4 +35,20 @@ export function econColumns(r, key) {
 export function econValue(r, key, metric) {
   const c = econColumns(r, key);
   return metric === 'equip' ? c.equip : c.net;
+}
+
+// lossPips — THE loss-bonus pip count for one side's stored bonus value
+// (the Economy table's Loss CT/T cells render it as a five-slot stack —
+// never re-derived at a call site). The store reconstructs the value
+// from round results (store.GetEconomy → applyLossBonuses: base $1400,
+// +$500 per consecutive loss, max 4), so every stored number is one of
+// $1400 / $1900 / $2400 / $2900 / $3400 and the ladder maps straight
+// onto its five rungs: pips = clamp(round((v − 1400) / 500) + 1, 0…5).
+// A non-positive or unparseable value reads ZERO filled pips — never a
+// guessed step (the lead ruling: non-positive ⇒ no filled pip).
+export function lossPips(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  const p = Math.round((n - 1400) / 500) + 1;
+  return Math.min(5, Math.max(0, p));
 }

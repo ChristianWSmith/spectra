@@ -1590,6 +1590,14 @@ mark {
   color: inherit;
 }
 
+/* The transposed player header's name BLOCK (W3a): the name holds the
+   line and the team chip drops beneath it instead of riding inline after
+   the name. One wrapper covers BOTH name shapes (the profile button and
+   the bare name), so the rule keys on the wrapper alone. */
+.scoreboard.transposed > thead > tr > th.sb-player .sb-name {
+  display: block;
+}
+
 .scoreboard .sb-transpose {
   margin-left: 6px;
   vertical-align: middle;

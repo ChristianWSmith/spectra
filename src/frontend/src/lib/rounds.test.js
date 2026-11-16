@@ -5,7 +5,9 @@
 // lookups behind every "jump to round N" link (the watch/drill links'
 // stamped ?tick=) and every round-span loop
 // range (nav.entryLoopSpan, Replay's round ribbon),
-// scoreThrough (the scoreline-at-a-round aggregate), separatorAfter
+// scoreThrough (the scoreline-at-a-round aggregate), roundScoreLabel
+// (the `RD<n> | <ct>-<t>` option label every round <select> renders),
+// separatorAfter
 // (the round-ribbon separator cadence), separatorFlags (its gating over
 // a rendered list), moneyResetIndexes (the money-reset cadence behind
 // EconCurve's line gaps), the freeze window
@@ -17,7 +19,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, freezeWindows, seekTargetTick, separatorAfter, separatorFlags, moneyResetIndexes } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, roundScoreLabel, scoreThrough, inFreezeTime, freezeWindowAt, freezeWindows, seekTargetTick, separatorAfter, separatorFlags, moneyResetIndexes } from './rounds.js';
 import { flipIndexes } from './sideparity.js';
 
 const ROUNDS = [
@@ -341,6 +343,25 @@ test('scoreThrough: degrades to 0-0 instead of guessing', () => {
   assert.deepEqual(scoreThrough(SCORE_ROUNDS, 'x'), { ct: 0, t: 0 });
   // A numeric string coerces — a route query round param.
   assert.deepEqual(scoreThrough(SCORE_ROUNDS, '2'), { ct: 1, t: 1 });
+});
+
+test('roundScoreLabel: `RD<n> | <ct>-<t>` composed from roundIndexLabel + scoreThrough', () => {
+  // Y = CT score, Z = T score (the same ct–t order RoundDetail reads).
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, 1), 'RD1 | 1-0');
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, 2), 'RD2 | 1-1');
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, 3), 'RD3 | 2-1');
+  // An undecided round adds nothing to the scoreline (scoreThrough's
+  // own rule) and a legacy pre-match row takes the canonical W/K letter
+  // with the 0-0 it has.
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, 4), 'RD4 | 2-1');
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, -1), 'RDW | 0-0');
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, -2), 'RDK | 0-0');
+  // The round row itself (number-bearing object) and a round outside the
+  // list both still label — never a crash, never a guessed score.
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, { number: 2 }), 'RD2 | 1-1');
+  assert.equal(roundScoreLabel(SCORE_ROUNDS, 9), 'RD9 | 2-1');
+  assert.equal(roundScoreLabel([], 5), 'RD5 | 0-0');
+  assert.equal(roundScoreLabel(null, 5), 'RD5 | 0-0');
 });
 
 test('inFreezeTime: true only inside a round with a usable freeze window', () => {

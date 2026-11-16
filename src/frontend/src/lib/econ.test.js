@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { econColumns, econValue } from './econ.js';
+import { econColumns, econValue, lossPips } from './econ.js';
 
 // Golden-demo shaped rows: equip/money pairs straight from the stored
 // economy view, including the rows where the side's cash is smaller than
@@ -59,4 +59,35 @@ test('characterization: econValue picks the metric (non-equip reads net worth)',
   assert.equal(econValue(r, 'ct', 'networth'), 4600);
   assert.equal(econValue(r, 'ct', ''), 4600); // only two metrics exist
   assert.equal(econValue(r, 't', 'equip'), 0);
+});
+
+// lossPips — the five-rung loss-bonus ladder behind the buy-types
+// table's Loss CT/T pip stacks (store applyLossBonuses: base $1400,
+// +$500 per consecutive loss, max 4 → every stored value is one of
+// $1400/$1900/$2400/$2900/$3400). The formula is the lead ruling's
+// clamp(round((v − 1400) / 500) + 1, 0…5); the render site (Economy)
+// must never re-derive it.
+test('lossPips: the stored bonus ladder maps onto its five rungs', () => {
+  assert.equal(lossPips(1400), 1);
+  assert.equal(lossPips(1900), 2);
+  assert.equal(lossPips(2400), 3);
+  assert.equal(lossPips(2900), 4);
+  assert.equal(lossPips(3400), 5);
+});
+
+test('lossPips: out-of-ladder and unparseable values never guess a step', () => {
+  // Below the base (a corrupted/non-positive value) → zero filled pips.
+  assert.equal(lossPips(0), 0);
+  assert.equal(lossPips(-500), 0);
+  // Above the max clamps to the full stack, never a sixth pip.
+  assert.equal(lossPips(3900), 5);
+  assert.equal(lossPips(10000), 5);
+  // Garbage reads 0 rather than a fabricated bonus.
+  assert.equal(lossPips(undefined), 0);
+  assert.equal(lossPips(null), 0);
+  assert.equal(lossPips('x'), 0);
+  assert.equal(lossPips(NaN), 0);
+  // A numeric string coerces (the wire carries numbers, but a route/JSON
+  // round-trip may hand one over as text).
+  assert.equal(lossPips('1900'), 2);
 });

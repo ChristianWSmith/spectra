@@ -204,13 +204,14 @@ frozen at the left edge as you scroll across the players. The player column stay
 scroll across the metrics, so you never lose the statline you are reading. Bots never appear
 here — the scoreboard lists human players only. In the player-row layout a row click opens the
 replay following that player, and the name cell opens their profile; transposed, the profile
-link travels with the name into the player column headers.
+link travels with the name into the player column headers, with the team chip on its own line
+beneath it.
 
-**Rounds** — one row per round: number, winner, the **buy-type class** chip for each side
-(pistol / anti-eco / eco / force / full / bonus / save — hover a chip for the rule text and rules
-version), win reason, duration, bomb site, MVP, the first blood, and the kill count. Click a row
-for the round page. Tick the **Cmp** boxes on up to four rounds and a
-**Compare N rounds** button appears.
+**Rounds** — one row per round: a ▶ that watches the round in the replay, the compare box, the
+number, winner, win reason, duration, bomb site, MVP, the first blood, and the kill count. The ▶
+opens the replay at that round's own start with the round's span looped and a return to this tab;
+clicking anywhere else in the row opens the round page. Tick the **Cmp** boxes on up to four
+rounds and a **Compare N rounds** button appears.
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
 warning count, the source file and whether a managed copy exists)
@@ -222,7 +223,7 @@ diagnostics.
 Reached from any round cell or row. The **round ribbon** (Previous / Next round around the round
 strip) sits at the top, then **Watch round** (opens the replay at that round's start) in the
 header, then the cards: **Round info** (duration, bomb site, MVP, winner, win reason and the
-score so far), **Kills**, **Bomb**, the round's **Economy** (per-side buy class, equipment and
+resulting score), **Kills**, **Bomb**, the round's **Economy** (per-side buy class, equipment and
 money), and the **Round chat**.
 
 # Compare rounds
@@ -243,18 +244,18 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 - **The curve** — *Equip value per round* or *Team net worth per round*, one line per team, with a legend and a round strip under it. Hover for values; click a column to open that round.
 - **Four summary cards** — *Pistol → next round* (pistol wins held the next round), *Force-buy win rate*, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* (marked **inferred**). Each card's tooltip states the exact formula, and clicking it watches the relevant round in the replay.
-- **Buy types** — one row per round with both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus. The footnote names what the columns mean: equipment value is the gear a side *holds* at freeze time end — never that round's spend — and the loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
+- **Buy types** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The footnote names what the columns mean: equipment value is the gear a side *holds* at freeze time end — never that round's spend — and the loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
 
 # Utility
 
 - **Utility damage per round** — a bar per round, split by thrower team.
 - **Blind time per round** — the same bars for the total blind time each team's flashes applied (marked **inferred**: calculated from the demo's blind events).
-- **The throw log** — one card at the bottom, holding the **Kind** and **Thrower** filters with a live *n of m grenades* count and a single row of round toggles (all off by default). Switching a round on lists its throws: kind, thrower, time into the round, damage, total blind time, affected players and the detonation coordinates, each with a ▶ that seeks to the throw (±10 s loop) and follows the thrower.
+- **The throw log** — one card at the bottom, holding the **Kind**, **Thrower** and **Round** filters with a live *n of m grenades* count. The Round filter shows one round at a time — the first round with throws is selected to keep the log compact — and **All rounds** shows every throw in the filter: kind, thrower, time into the round, damage, total blind time, affected players and the detonation coordinates, each with a ▶ that seeks to the throw (±10 s loop) and follows the thrower.
 
 # Combat
 
 - **Combat stats** — damage dealt without a kill, kill conversion %, friendly-fire damage, Entry%, Trade%, untraded deaths, missed trades, and KAST% (click KAST% for that player's per-round K/A/T/S grid).
-- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows), with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
+- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** filter beside them that narrows the list to one round (**All rounds** by default), with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
 - **Clutches** — the detected 1vN situations (found by counting who is still alive when a side drops to one player), with size, player, outcome, bomb state and HP left; **won** / **lost** toggles filter the list, and ▶ follows the lone player.
 
 # Heatmaps

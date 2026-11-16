@@ -36,10 +36,12 @@ export const utility = {
   inferredTitle: 'calculated from the demo\'s blind events',
   badgeInferred: 'inferred',
   // The consolidated throw log (C7): ONE card at the bottom carrying the
-  // filters, the live count and the single line of per-round toggles.
+  // filters, the live count and the ONE round selector. The selector
+  // PRESELECTS the first round with throws (the owner's Q1 answer — the
+  // log opens compact, C7's spirit) and also offers "All rounds".
   throwLogHeading: 'Throw log',
-  toggleTitle: 'show or hide this round\'s throws',
-  noRoundShown: 'Turn on a round above to see its throws.',
+  roundLabel: 'Round',
+  allRounds: 'All rounds',
   noGrenades: 'No grenades match the current filters.',
   openProfile: 'Open {name} profile',
   tickTitle: 'tick {tick} — time into round {round}',

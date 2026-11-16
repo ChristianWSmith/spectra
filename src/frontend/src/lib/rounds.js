@@ -1,7 +1,8 @@
 // Round helpers — the ONE frontend home for round rules: the
 // round-number predicate (isCounted), the round-number → start/end-tick
 // lookups behind every "jump to round N" link and every round-span loop
-// range, the scoreline-through-a-round aggregate, the round-group
+// range, the scoreline-through-a-round aggregate, the round-option label
+// every round <select> renders (roundScoreLabel), the round-group
 // separator rule (the cadence + its gating over a rendered list) and the
 // money-reset cadence it also spells (moneyResetIndexes).
 // Pure functions, no services.
@@ -354,4 +355,20 @@ export function scoreThrough(rounds, roundNumber) {
     else if (r.winner === 't') t++;
   }
   return { ct, t };
+}
+
+// roundScoreLabel — THE round-option label for a round <select>: the
+// canonical ``RD<n> | <ct>-<t>`` spelling every round picker renders
+// (Utility's throw log, Combat's engagements filter, Heatmaps' round
+// ranges). Composed ONLY from roundIndexLabel (the display label —
+// counted numbers, W/K for a legacy negative row) and scoreThrough (the
+// scoreline through that round); neither may be re-spelled at a call
+// site. Y = CT score, Z = T score (the lead ruling — the same ct–t
+// order RoundDetail's scoreline and Replay's HUD read). A round outside
+// `rounds` (or one with no decided winner yet) still labels honestly:
+// its own number with the scoreline it actually has.
+export function roundScoreLabel(rounds, number) {
+  const n = number && typeof number === 'object' ? number.number : number;
+  const s = scoreThrough(rounds, n);
+  return `RD${roundIndexLabel(n)} | ${s.ct}-${s.t}`;
 }

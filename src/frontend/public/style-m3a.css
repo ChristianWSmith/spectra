@@ -432,6 +432,30 @@
   white-space: nowrap;
 }
 
+/* Loss-bonus pips (W3a): the ladder's five rungs as small rounded
+   squares — filled up to the side's bonus IN THAT SIDE's colour (the
+   column IS the side: --ct for Loss CT, --t for Loss T), unfilled slots
+   neutral gray. The count comes from lib/econ.js lossPips() (never
+   re-derived here) and the exact amount stays in the cell's title. The
+   class is deliberately NOT `econ-pip` — that name belongs to the
+   retired yellow pistol pip (pinned gone by econ-tables.dom.mjs). */
+.econ-loss-pip {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.econ-loss-pip.ct {
+  background: var(--ct);
+}
+
+.econ-loss-pip.t {
+  background: var(--t);
+}
+
 .econ-loss .chip {
   margin-left: 4px;
 }
@@ -573,35 +597,18 @@
   );
 }
 
-/* --- The consolidated throw log (C7, owner 2026-11-15) — ONE card at
-   the bottom of the view: the kind/thrower filters + the live count, a
-   single line of per-round show/hide toggles (all OFF by default), and
-   the throw lists of only the rounds turned on. It replaces the
-   per-round collapsible cards — their .util-group* rules are retired
-   with them. The card itself rides .panel (flex column + 10px gap), so
-   this class is the marker both the view and the driver address. */
+/* --- The consolidated throw log (C7, owner 2026-11-15; round scope,
+   owner answer Q1 2026-11-16) — ONE card at the bottom of the view: the
+   kind/thrower/round filters + the live count, and the throw lists of
+   the selected round (or every round under "All rounds"). It replaces
+   the per-round collapsible cards — their .util-group* rules are
+   retired with them. The card itself rides .panel (flex column + 10px
+   gap), so this class is the marker both the view and the driver
+   address. The per-round toggle row and its .util-toggle* rules left
+   with the selector: ONE round <select> in .util-filters now owns the
+   round scope (it preselects the first round with throws). */
 
-/* The round toggles: one line when they fit, wrapping only when the
-   match carries more rounds than the row can hold (the fallback). The
-   ON state rides .btn.primary via class:primary — never a second
-   accent spelling. */
-.util-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.util-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.util-toggle-label {
-  font-weight: 600;
-}
-
-/* The lists of the rounds turned on — one <ul> per round, each drawn
+/* The lists of the rounds in scope — one <ul> per round, each drawn
    apart by its own hairline. */
 .util-lists {
   display: flex;

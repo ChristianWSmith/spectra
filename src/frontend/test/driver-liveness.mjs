@@ -154,7 +154,19 @@ const EXPECTED = {
   // kinds; both-on shows the row once; deselect-all → all rows;
   // opening-only empties; untraded ADDED keeps the traded row) — those
   // kept their check counts.
-  'combat.dom.mjs': 88,
+  // combat 88 → 95 (2026-11-16, matchview V7 — round scope + RD cells):
+  // +6 the NEW section N (the Engagements round selector exists, its
+  // options are "All rounds" + the canonical `RD<n> | <ct>-<t>` labels,
+  // the default is All rounds with every row showing, picking round 6
+  // narrows to its kill and reads back, All rounds restores, and the
+  // Clutches card carries no selector — owner answer Q2), +1 section J
+  // (the KAST dialog carries no round filter: its grid has no select and
+  // the view's only selector is the Engagements one). Sections A/B/D
+  // re-pinned IN PLACE for the bare round numbers under the new 'RD'
+  // heading ('RD7' → '7', same check counts); the KAST `RD{n}` labels
+  // KEEP (V7 does not touch the grid) and the kind-toggle row shape
+  // survives untouched.
+  'combat.dom.mjs': 95,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the
@@ -272,7 +284,25 @@ const EXPECTED = {
   // zero marks — the owner's kills example included), and the pinned-
   // metric stat rows (sequence, stored value, state chip). Section K's
   // fixed-block pin dropped 'Rnds' in place (the column left SCORE_COLS).
-  'econ-tables.dom.mjs': 145,
+  // econ-tables 145 → 149 (2026-11-16, matchview V1–V5): −10 — section
+  // C2's per-side Class-chip pins (8) died with the Rounds tab's Class
+  // column, and section I(c)'s classError dismissal pair (2) with the
+  // getEconomy read behind it; +14 — +2 section A (the far-left watch
+  // column with its sr-only header, and the row ▶ stamping tick +
+  // round-span loop + the Rounds-tab back origin in ONE navigation, so
+  // the button never also opens the round page), +5 section D (the
+  // buy-types watch column, its ▶'s Economy back origin, the RD cell's
+  // ?back= stamp, the five-pip Loss stacks filled 1/2 in the side
+  // colours, the dollar amounts kept in the titles), +1 section E (the
+  // open why row spans all nine columns), +2 section F (the curve hit
+  // rect AND the winner-strip button both carry ?back=match/3/economy —
+  // the Overview-fallback fix), +4 section M (the arrow-swap glyph, the
+  // .sb-name wrapper with the chip as its following sibling, the
+  // stylesheet's display:block pin, and the bare-name shape's own
+  // mount). Column-index pins re-based IN PLACE for the new far-left
+  // column (roundOf/children[2], chipFor nth-child(4), winnerChips 3)
+  // and the RD-column checks kept their counts.
+  'econ-tables.dom.mjs': 149,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the
@@ -506,7 +536,17 @@ const EXPECTED = {
   // 3 CSS pins (stacked charts, the single-line toggle row, the retired
   // rules gone) and section E lost the group-header/flash-card checks it
   // replaced. Error-path section re-pinned to the throw-log card.
-  'utility.dom.mjs': 69,
+  // utility 69 → 68 (2026-11-16, matchview V6 — round selector): −1
+  // section L (the second empty state and the toggle-state pin died with
+  // the per-round toggle row — one empty state remains: the filter that
+  // matches nothing), and D's nine checks REWRITTEN in place for the new
+  // rule (kind/thrower/ROUND selectors inside the card, the option list
+  // in canonical `RD<n> | <ct>-<t>` labels, the FIRST throwing round
+  // preselected with its rows rendering, then the "All rounds" preamble
+  // the row checks read) — same count there. Section M's `.util-toggles`
+  // layout pin became the absence pin over the retired `.util-toggle*`
+  // rules (1 check, same slot).
+  'utility.dom.mjs': 68,
   'voice-engine.dom.mjs': 7,
 };
 
