@@ -433,7 +433,10 @@ are not carried over), and statements like these run one at a time.
 K, D, …) lead by default; every row — fixed or metric — reorders with the ↑↓ buttons (or the
 ↑/↓ arrow keys), so a pinned metric can sit anywhere among them. The eye button on a fixed stat
 hides it from its view without taking it off this list (the scoreboard's **Name** column is the
-one that cannot be hidden), and **Reset order** restores every default, hidden ones included.
+one that cannot be hidden), and a pinned metric's pin button unpins it: the row leaves this list
+at once and the metric stops showing on its surface, while its slot in the order is kept, so
+pinning it again restores its place. Each row's buttons sit together at the row's right edge, and
+**Reset order** restores every default, hidden ones included.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,

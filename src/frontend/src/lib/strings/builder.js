@@ -12,6 +12,17 @@ export const builder = {
   previewThisMetric: 'Preview this metric',
   previewAria: 'Preview {name}',
   togglePinAria: 'Toggle pin for {name}',
+  // Pin-button titles — BOTH pin sites compose these (Builder's list
+  // row through pinTitle, the Order dialog's metric row directly): the
+  // scope names the SURFACE the metric reaches (design §3 — match → a
+  // scoreboard column, profile → the player's Career metrics panel),
+  // the state whether it is being pinned or unpinned. Wording is
+  // byte-identical to the four literals pinTitle carried inline before
+  // they moved here (one canonical way, tests pin the exact strings).
+  pinToScoreboard: 'Pin as scoreboard column',
+  pinToProfile: 'Pin to player profile',
+  unpinFromScoreboard: 'Unpin from scoreboard',
+  unpinFromProfile: 'Unpin from player profile',
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
 

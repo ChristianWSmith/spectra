@@ -12,9 +12,14 @@
   // listed here (owner requirement: the ordering view is where you find
   // a stat again — the toggle never removes the row), they just stop
   // rendering on the scoreboard / profile. Metric visibility stays
-  // pin-driven, so a metric row has no toggle: pin TOGGLING stays with
-  // Builder's rows (the single pins writer), and this dialog can never
-  // fork the pins contract.
+  // pin-driven: a metric row carries a PIN toggle (M6 — unpin from
+  // here), but the write never happens in this dialog — Builder owns
+  // both pin keys and is handed in as `onTogglePin` (the single pins
+  // writer), so this dialog still cannot fork the pins contract, and
+  // the unpin leaves metric_order_* untouched — the sequence keeps the
+  // slot for re-pinning. The eye keeps its Show/Hide name and never
+  // says "pin"; the pin toggle's label comes from the same catalog
+  // keys Builder's pin button composes (strings/builder.js).
   //
   // Every move is WRITE-THROUGH: one move rewrites the scope's full
   // resolved sequence and persists it immediately (kvstore AutoSave —
@@ -53,6 +58,7 @@
     open = false,
     pinnedMatch = [],
     pinnedProfile = [],
+    onTogglePin = () => {},
     onClose = () => {},
   } = $props();
 
@@ -157,6 +163,26 @@
     }
   }
 
+  // unpin (M6) — the dialog's pin toggle on a METRIC row. The write
+  // stays with Builder: onTogglePin → togglePin writes BOTH pin keys
+  // and never metric_order_* (the sequence keeps the slot, so
+  // re-pinning restores the position). The row leaves through Builder's
+  // pins prop (reactive — nothing here removes it), and focus moves to
+  // the row that takes its place (or the section listbox if it was the
+  // last one) — never a detached node.
+  async function unpin(scope, entry) {
+    const shown = seqOf(scope);
+    const i = shown.findIndex((x) => x.key === entry.key);
+    const neighbour = shown[i + 1] || shown[i - 1] || null;
+    await onTogglePin(entry.def.id, scope); // Builder's writer resolves before the list updates
+    await tick();
+    if (neighbour) {
+      focusRow(scope, neighbour.name);
+    } else {
+      bodyEl?.querySelector(`.mo-sec[data-mo-scope="${scope}"] .mo-list`)?.focus();
+    }
+  }
+
   // Focus follows the moved row (house a11y: the keyboard gesture keeps
   // its target under the user's fingers).
   function focusRow(scope, name) {
@@ -217,12 +243,16 @@
          handler (role=listitem cannot — it is non-interactive), so ↑/↓
          and the move buttons stay unchanged. aria-selected is required
          on option and is statically false: this dialog never selects
-         anything (pinning stays with Builder's rows). The listbox takes
+         anything (unpinning below routes through Builder's writer, it
+         is not a selection). tabindex=-1 makes the listbox the
+         PROGRAMMATIC focus fallback when the last row unpins (the
+         neighbour focus above is the normal path). The listbox takes
          its name from the section heading and its description from the
          caption above. -->
     <div
       class="mo-list"
       role="listbox"
+      tabindex="-1"
       aria-labelledby="mo-sec-title-{scope}"
       aria-describedby="mo-fixed-cap-{scope}"
     >
@@ -246,31 +276,56 @@
                  leaves the list (owner requirement). -->
             <span class="mono mo-name">{S.common.metricOrderHiddenMark}</span>
           {/if}
-          {#if e.kind === 'fixed' && hideable(scope, e.key)}
-            <button
-              class="btn small ghost"
-              aria-label={e.hidden
-                ? S.fill(S.common.metricOrderShow, { name: e.label })
-                : S.fill(S.common.metricOrderHide, { name: e.label })}
-              onclick={() => toggleHidden(scope, e.key)}
-              ><span class="codicon {e.hidden ? 'codicon-eye-closed' : 'codicon-eye'}"></span
-            ></button>
-          {/if}
-          <span class="mo-moves">
-            <button
-              class="btn small ghost"
-              aria-label={S.fill(S.common.metricOrderMoveUp, { name: e.label })}
-              disabled={i === 0}
-              onclick={() => move(scope, i, i - 1)}
-              ><span class="codicon codicon-arrow-up"></span></button
-            >
-            <button
-              class="btn small ghost"
-              aria-label={S.fill(S.common.metricOrderMoveDown, { name: e.label })}
-              disabled={i === shown.length - 1}
-              onclick={() => move(scope, i, i + 1)}
-              ><span class="codicon codicon-arrow-down"></span></button
-            >
+          <!-- M1: ONE right-aligned cluster — the row's controls (eye,
+               pin, ↑↓) sit together at the row's right edge instead of
+               the eye floating after the label. The eye keeps its
+               Show/Hide name ONLY (no visible text, no title — the icon
+               alone, owner ruling); the pin toggle is metric-row-only
+               and composes the catalog keys Builder's pin button uses. -->
+          <span class="mo-acts">
+            {#if e.kind === 'fixed' && hideable(scope, e.key)}
+              <button
+                class="btn small ghost"
+                aria-label={e.hidden
+                  ? S.fill(S.common.metricOrderShow, { name: e.label })
+                  : S.fill(S.common.metricOrderHide, { name: e.label })}
+                onclick={() => toggleHidden(scope, e.key)}
+                ><span class="codicon {e.hidden ? 'codicon-eye-closed' : 'codicon-eye'}"></span
+              ></button>
+            {/if}
+            {#if e.kind === 'metric'}
+              <!-- M6: unpin only — every listed metric IS pinned (the
+                   list is fixed stats + pinned metrics), so the toggle
+                   always shows the pinned state and the row leaves the
+                   list the moment it is clicked. The WRITE rides
+                   onTogglePin back to Builder; the title is the same
+                   catalog wording Builder's row pin button shows. -->
+              <button
+                class="btn small ghost mo-pin-on"
+                title={scope === 'profile'
+                  ? S.builder.unpinFromProfile
+                  : S.builder.unpinFromScoreboard}
+                aria-label={S.fill(S.builder.togglePinAria, { name: e.name })}
+                onclick={() => unpin(scope, e)}
+                ><span class="codicon codicon-pin"></span
+              ></button>
+            {/if}
+            <span class="mo-moves">
+              <button
+                class="btn small ghost"
+                aria-label={S.fill(S.common.metricOrderMoveUp, { name: e.label })}
+                disabled={i === 0}
+                onclick={() => move(scope, i, i - 1)}
+                ><span class="codicon codicon-arrow-up"></span></button
+              >
+              <button
+                class="btn small ghost"
+                aria-label={S.fill(S.common.metricOrderMoveDown, { name: e.label })}
+                disabled={i === shown.length - 1}
+                onclick={() => move(scope, i, i + 1)}
+                ><span class="codicon codicon-arrow-down"></span></button
+              >
+            </span>
           </span>
         </div>
       {/each}
@@ -316,8 +371,16 @@
   :global(.dlg-panel.mo-prompt) {
     width: min(720px, 94vw);
     padding: 16px 18px;
+    /* M4: the panel is a flex column — clip it so the TITLE BAR never
+       scrolls (DocsPopup.svelte's .doc-panel precedent: "the panel is
+       a flex column; the BODY scrolls"). The base .dlg-panel cap
+       (max-height: 70vh) stays; other dialogs keep their own
+       overflow — Dialog.svelte is untouched. */
+    overflow: hidden;
   }
   .mo-head {
+    /* M4: fixed above the scroll region — never scrolls away. */
+    flex: 0 0 auto;
     margin-bottom: 4px;
   }
   .mo-head h2 {
@@ -325,6 +388,12 @@
     font-size: 1.1em;
   }
   .mo-body {
+    /* M4/M5: THE one scroll region — the panel's 70vh cap shrinks it
+       (min-height: 0) and it scrolls everything below the title bar,
+       so the sections, the note and the footer ride ONE scrollbar
+       (the per-table .mo-list scrolling is gone). */
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -346,13 +415,14 @@
     margin: 0;
     font-size: 0.85em;
   }
+  /* M5: .mo-list carries NO cap or scrolling of its own — the rows
+     run to the section's end and .mo-body scrolls them (the
+     border/radius keep framing the whole list). */
   .mo-list {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    max-height: 34vh;
-    overflow: auto;
   }
   .mo-row {
     display: flex;
@@ -384,10 +454,29 @@
     font-size: 0.85em;
     opacity: 0.75;
   }
-  .mo-moves {
+  /* M1: the row's whole control cluster, right-aligned — the eye and
+     the pin toggle sit beside the ↑↓ instead of after the label. */
+  .mo-acts {
     margin-left: auto;
     display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mo-moves {
+    /* the right-alignment moved OUT to .mo-acts (M1) — this stays a
+       plain flex pair inside the cluster. */
+    display: flex;
     gap: 2px;
+  }
+  /* M6 — the pin toggle's pinned state. Deliberately NOT .bld-pin-on:
+     that spelling is Builder's (bld- = its component prefix, in
+     public/style-m3a.css), and the one-prefix-per-component rule keeps
+     it out of this dialog; pin-state is not a shared concept class
+     either (style.css spells no unprefixed .pin-* concept, and this
+     wave freezes style-m3a.css), so the dialog scopes its own twin —
+     the same accent tint, cross-referencing Builder's spelling. */
+  .mo-pin-on {
+    color: var(--accent);
   }
   .mo-foot {
     margin-top: 0;

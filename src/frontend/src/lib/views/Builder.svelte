@@ -393,11 +393,13 @@
 
   // The pin button's label: the scope names the SURFACE the metric
   // reaches (design §3 — match → a scoreboard column, profile → the
-  // player's Career metrics panel).
+  // player's Career metrics panel). The four strings live in the
+  // strings catalog (strings/builder.js) — the Order dialog's metric
+  // row composes the same keys, so both pin sites stay in step.
   function pinTitle(m) {
     const on = pinnedIn(m.id) !== '';
-    if (m.scope === 'profile') return on ? 'Unpin from player profile' : 'Pin to player profile';
-    return on ? 'Unpin from scoreboard' : 'Pin as scoreboard column';
+    if (m.scope === 'profile') return on ? S.builder.unpinFromProfile : S.builder.pinToProfile;
+    return on ? S.builder.unpinFromScoreboard : S.builder.pinToScoreboard;
   }
 
   // The left list's group runs: the paged read is origin-contiguous
@@ -1599,11 +1601,15 @@
   </div>
 
   <!-- ONE dialog, two stacked sections (design §2.2); its open state
-       is transient (openOrder above), pins ride as read-only props. -->
+       is transient (openOrder above). Pins ride as props, and the
+       dialog's pin toggle (M6) routes back through the ONE pins
+       writer — togglePin writes both pin keys and never the order
+       pref, so this view stays the only place prefs are written. -->
   <MetricOrderDialog
     open={orderOpen}
     pinnedMatch={pins}
     pinnedProfile={profilePins}
+    onTogglePin={(id, scope) => togglePin(id, scope)}
     onClose={() => (orderOpen = false)}
   />
 </div>
