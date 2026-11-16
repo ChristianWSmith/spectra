@@ -2,10 +2,11 @@
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
 // traded/untraded facts share one row with its chips — section D — plus
-// the opening+untraded pair, the contained-kind filter behaviour and the
-// grouping-key precision in E/F), the `traded` kind chip + filter (I), the
-// Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and its
-// long-event replay loop (H: solo's kill span ±10 s, padded-span
+// the opening+untraded pair, the OR-toggle filter behaviour with the
+// no-"all"-button and all-off = no-filter default pins, and the
+// grouping-key precision in E/F), the `traded` kind chip + toggle (I),
+// the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
+// its long-event replay loop (H: solo's kill span ±10 s, padded-span
 // fallback, unstatable → no ?loop=), and the RD{n} round labels (J).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
@@ -302,11 +303,30 @@ check('victim column holds the victim', first[6]?.textContent.includes('bob'), f
 check('distance rounded in metres', first[7]?.textContent.trim() === '19', first[7]?.textContent);
 const second = engRows[1]?.querySelectorAll('td') || [];
 check('missing distance renders an em dash', second[7]?.textContent.trim() === '—', second[7]?.textContent);
+// The exclusive "all" button is gone: the four kind TOGGLES are the
+// whole filter row (labels exactly opening/trade/traded/untraded).
 check(
-  'kind filter still offered (incl. the victim-side traded)',
+  'kind toggles offered, no "all" button (the victim-side traded included)',
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(',') ===
-    'all,opening,trade,traded,untraded',
+    'opening,trade,traded,untraded',
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
+);
+// The all-off verdict made mechanical: a FRESH mount starts with every
+// toggle off (aria-pressed="false", no .active) and NO filter applied —
+// every engagement row renders (all-off = all rows, never an empty
+// default card).
+check(
+  'fresh mount: all four toggles off (aria-pressed=false, no .active) and every row shown',
+  [...eng.querySelectorAll('.comb-kind')].every(
+    (b) => b.getAttribute('aria-pressed') === 'false' && !b.classList.contains('active'),
+  ) && rows(engTable).length === 2,
+  JSON.stringify(
+    [...eng.querySelectorAll('.comb-kind')].map((b) => [
+      b.textContent.trim(),
+      b.getAttribute('aria-pressed'),
+      b.classList.contains('active'),
+    ]),
+  ),
 );
 
 // (B) the engagement ▶ keeps its seek tick, stamps the ±10 s entry
@@ -478,31 +498,47 @@ check(
   dCells[1]?.textContent,
 );
 
-// The kind chips FILTER merged rows by CONTAINED kind: the row shows
-// under trade AND under untraded, exactly once under "all", and a kind
-// the pair does not carry empties the table.
+// The kind TOGGLES filter merged rows by CONTAINED kind, OR'd: the row
+// shows under trade AND under untraded (both on → once, not twice),
+// deselecting every toggle removes the filter (all rows — the all-off
+// default), and selecting only a kind the pair does not carry empties
+// the table.
 const dMatched = () => !tableD.textContent.includes('No engagements match this filter.');
 click(kindBtn(engD, 'trade'));
 await sleep();
-check('filter trade → the merged row shows', rows(tableD).length === 1 && dMatched(), String(rows(tableD).length));
+check(
+  'toggle trade on → the merged row shows, its aria-pressed flips',
+  rows(tableD).length === 1 && dMatched() &&
+    kindBtn(engD, 'trade')?.getAttribute('aria-pressed') === 'true' &&
+    kindBtn(engD, 'opening')?.getAttribute('aria-pressed') === 'false',
+  String(rows(tableD).length),
+);
 click(kindBtn(engD, 'untraded'));
 await sleep();
 check(
-  'filter untraded → the SAME row (both chips still on it)',
+  'OR union: trade+untraded both on → the SAME row shows once (both chips still on it)',
   rows(tableD).length === 1 && dMatched() &&
     [...tableD.querySelectorAll('.comb-kind-chip')].length === 2,
+  String(rows(tableD).length),
+);
+click(kindBtn(engD, 'trade'));
+click(kindBtn(engD, 'untraded'));
+await sleep();
+check(
+  'deselect-all → no filter → every row shows (all-off default, never an empty card)',
+  rows(tableD).length === 1 && dMatched() &&
+    [...tableD.querySelectorAll('.comb-kind')].every(
+      (b) => b.getAttribute('aria-pressed') === 'false' && !b.classList.contains('active'),
+    ),
   String(rows(tableD).length),
 );
 click(kindBtn(engD, 'opening'));
 await sleep();
 check(
-  'filter opening → no match (the pair carries no opening fact)',
+  'opening alone → no match (the pair carries no opening fact)',
   !dMatched() && tableD.textContent.includes('No engagements match this filter.'),
   tableD.textContent.slice(-90),
 );
-click(kindBtn(engD, 'all'));
-await sleep();
-check('filter all → exactly ONE row (never twice)', rows(tableD).length === 1, String(rows(tableD).length));
 
 console.log('E. the real seq 27/28 shape: an opening+untraded pair merges too');
 document.body.removeChild(rootD);
@@ -533,19 +569,28 @@ check(
   JSON.stringify(eChips.map((c) => c.textContent.trim())) === '["opening","untraded"]',
   JSON.stringify(eChips.map((c) => c.textContent.trim())),
 );
+// Explicit OR pin: the opening+untraded pair shows under EITHER toggle
+// alone and — both selected — exactly once (union, never a duplicate).
 click(kindBtn(engE, 'opening'));
 await sleep();
 check(
-  'filter opening → the merged row shows',
+  'toggle opening on → the merged row shows',
   rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
   String(rows(tableE).length),
 );
 click(kindBtn(engE, 'untraded'));
 await sleep();
 check(
-  'filter untraded → the SAME row shows',
-  rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
-  String(rows(tableE).length),
+  'OR union: opening+untraded both on → the SAME row shows once, both toggles pressed',
+  rows(tableE).length === 1 &&
+    !tableE.textContent.includes('No engagements match this filter.') &&
+    [...tableE.querySelectorAll('.comb-kind-chip')].length === 2 &&
+    kindBtn(engE, 'opening')?.getAttribute('aria-pressed') === 'true' &&
+    kindBtn(engE, 'untraded')?.getAttribute('aria-pressed') === 'true',
+  JSON.stringify([
+    rows(tableE).length,
+    [...tableE.querySelectorAll('.comb-kind-chip')].length,
+  ]),
 );
 
 console.log('F. grouping precision: same tick, DIFFERENT pair stays its own row; fetch order preserved');
@@ -728,16 +773,20 @@ check(
 click(kindBtn(engI, 'traded'));
 await sleep();
 check(
-  'filter traded → the merged row CONTAINS-matches and shows',
+  'toggle traded → the merged row CONTAINS-matches and shows',
   rows(tableI).length === 1 && !tableI.textContent.includes('No engagements match this filter.'),
   String(rows(tableI).length),
 );
 click(kindBtn(engI, 'untraded'));
 await sleep();
+// Inverted by the OR toggles: untraded is ADDED, not swapped in — the
+// row still carries traded, so it keeps showing (the exclusive
+// selection used to empty the table here).
 check(
-  'filter untraded → no match (an answered death is never untraded)',
-  [...tableI.querySelectorAll('.comb-kind-chip')].length === 0 &&
-    tableI.textContent.includes('No engagements match this filter.'),
+  'adding untraded (OR, never exclusive) → the row still shows — it contains traded',
+  rows(tableI).length === 1 &&
+    !tableI.textContent.includes('No engagements match this filter.') &&
+    [...tableI.querySelectorAll('.comb-kind-chip')].length === 2,
   tableI.textContent.slice(-90),
 );
 

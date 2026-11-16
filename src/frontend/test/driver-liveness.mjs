@@ -135,7 +135,15 @@ const EXPECTED = {
   // W2b slots — Untraded deaths / Missed trades — render their metric
   // values, a stored 0 and the honest dash); the behind check widened in
   // place to all five slots (no count change).
-  'combat.dom.mjs': 87,
+  // combat 87 → 88 (2026-11-15, C11 engagement kind toggles): +1 section
+  // A (fresh mount = all four kind toggles off — aria-pressed="false",
+  // no .active — with every row shown: all-off = no filter, the lead
+  // ruling made mechanical); sections D/E/I re-pinned in place for the
+  // OR union and the removed "all" button (labels exactly the four
+  // kinds; both-on shows the row once; deselect-all → all rows;
+  // opening-only empties; untraded ADDED keeps the traded row) — those
+  // kept their check counts.
+  'combat.dom.mjs': 88,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the
