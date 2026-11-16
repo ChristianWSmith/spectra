@@ -24,17 +24,13 @@
   // deletes both pref keys; Close just closes (dialog open state is
   // transient — never seeded, never remembered, never in the URL).
   //
-  // Drag: no reorder-dnd exists anywhere else in the frontend, so the
-  // dialog ships its own deliberately-dual-path one — HTML5 drag
-  // starting at each row's GRABBER handle (the only draggable element;
-  // the handlers stay on the row, where role=option makes them
-  // ARIA-valid, and dragstart/dragend bubble up from the handle) AND
-  // first-class keyboard (row focus + ArrowUp/ArrowDown) plus per-row
-  // move buttons, ALL of it routed through the same write-through
-  // move(). The handle is aria-hidden on purpose: it is a pointer
-  // affordance that duplicates the named ↑/↓ buttons, which stay the
-  // accessible path. Escape/outside-click/focus-return come from
-  // Dialog (never re-implemented here).
+  // Reordering is BUTTON + KEYBOARD ONLY (owner, 2026-11-15: retire the
+  // drag path — "dragging doesn't work well"). The named ↑/↓ buttons
+  // per row and first-class keyboard (row focus + ArrowUp/ArrowDown)
+  // both route through the same write-through move(); no drag source
+  // exists anywhere in the dialog — rows are never draggable. The ↑/↓
+  // buttons are the pointer AND the accessible path. Escape/outside-
+  // click/focus-return come from Dialog (never re-implemented here).
   import { tick } from 'svelte';
   import Dialog from './Dialog.svelte';
   import { listMetrics, errText } from '../services.js';
@@ -89,7 +85,7 @@
 
   // seqOf — WHAT THE DIALOG SHOWS: the surface's pinned metrics in
   // sequence order (the metricorder.js composition, consumed as-is).
-  // Every gesture index — keyboard, ↑/↓ buttons, drag — is an index
+  // Every gesture index — keyboard and the ↑/↓ buttons — is an index
   // into THIS list, not into the catalog.
   function seqOf(scope) {
     return pinnedInSequence(scope, orders[scope], defs, pinnedIds(scope));
@@ -149,37 +145,6 @@
     }
   }
 
-  // HTML5 DnD — thin handlers only: dragstart/dragend bubble up from
-  // the row's grabber handle (the only draggable element), every
-  // gesture ends in the same move the keyboard uses (jsdom has no
-  // DragEvent/DataTransfer, so the DOM tests dispatch plain bubbling
-  // Events on the handle and pin the handle markup).
-  let dragFrom = null; // {scope, index}
-  let dropAt = null; // insertion index under the pointer
-  function dragStart(scope, i, e) {
-    dragFrom = { scope, i };
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-  }
-  function dragOver(scope, i, e) {
-    if (!dragFrom || dragFrom.scope !== scope) return;
-    e.preventDefault(); // must be prevented or the drop is refused
-    const rect = e.currentTarget.getBoundingClientRect();
-    dropAt = e.clientY < rect.top + rect.height / 2 ? i : i + 1;
-  }
-  function dropOn(scope, e) {
-    if (!dragFrom || dragFrom.scope !== scope || dropAt == null) return;
-    e.preventDefault();
-    let to = dropAt;
-    if (dragFrom.i < to) to -= 1; // removing the row shifts the target down
-    move(scope, dragFrom.i, to);
-    dragFrom = null;
-    dropAt = null;
-  }
-  function dragEnd() {
-    dragFrom = null;
-    dropAt = null;
-  }
-
   // Reset order: delete BOTH pref keys ⇒ each section snaps back to its
   // default sequence (the fixed block is untouched — reset can never
   // reorder it).
@@ -230,9 +195,9 @@
       <p class="muted" role="status">{S.common.metricOrderNothingToOrder}</p>
     {:else}
       <!-- The reorderable half is a real listbox/option pair: option is
-           the ARIA construct that legitimately carries tabindex, a
-           keydown handler and drag handlers (role=listitem cannot — it
-           is non-interactive), so ↑/↓ and HTML5 DnD stay unchanged.
+           the ARIA construct that legitimately carries tabindex and a
+           keydown handler (role=listitem cannot — it is
+           non-interactive), so ↑/↓ and the move buttons stay unchanged.
            aria-selected is required on option and is statically false:
            this dialog never selects anything (pinning stays with
            Builder's rows). The listbox takes its name from the section
@@ -247,24 +212,8 @@
             data-mo-scope={scope}
             data-mo-name={m.name}
             tabindex="0"
-            ondragstart={(e) => dragStart(scope, i, e)}
-            ondragover={(e) => dragOver(scope, i, e)}
-            ondrop={(e) => dropOn(scope, e)}
-            ondragend={dragEnd}
             onkeydown={(e) => onRowKey(scope, i, e)}
           >
-            <!-- The GRABBER is the drag source: `draggable` lives here
-                 (never on the row — grabbing text must not start a
-                 drag) while the handlers above catch it bubbling up.
-                 aria-hidden on purpose: it is a pointer affordance that
-                 duplicates the named ↑/↓ buttons, which stay the
-                 accessible path. -->
-            <span
-              class="mo-grip codicon codicon-grabber"
-              draggable="true"
-              aria-hidden="true"
-              title={S.common.metricOrderDragTitle}
-            ></span>
             <span class="mo-title">{m.title || m.name}</span>
             <span class="mono mo-name">{m.name}</span>
             <span class="mo-moves">
@@ -302,7 +251,7 @@
     {@render section('profile', S.common.metricOrderProfileSection)}
     <div class="toolbar mo-foot">
       <span class="muted mo-hint"
-        >{S.common.metricOrderHintDrag}<span class="codicon codicon-arrow-up"></span><span
+        ><span class="codicon codicon-arrow-up"></span><span
           class="codicon codicon-arrow-down"></span
         >{S.common.metricOrderHintKeys}</span
       >
@@ -381,13 +330,6 @@
   .mo-row:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
-  }
-  .mo-grip {
-    opacity: 0.55;
-    cursor: grab;
-  }
-  .mo-grip:active {
-    cursor: grabbing;
   }
   .mo-title {
     white-space: nowrap;

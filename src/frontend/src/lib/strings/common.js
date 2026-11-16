@@ -151,16 +151,14 @@ export const common = {
   metricOrderNoProfileMetrics: 'No profile metrics yet.', // empty state, profile section
   metricOrderNoMatchMetrics: 'No match metrics yet.', // empty state, match section
   metricOrderNothingToOrder: 'Nothing to order yet — pin metrics from the metric list.', // pins-only empty state
-  metricOrderDragTitle: 'Drag to reorder', // the grabber handle's tooltip
   metricOrderMoveUp: 'Move {name} up', // per-row move button aria-label (fill: name = the metric)
   metricOrderMoveDown: 'Move {name} down', // per-row move button aria-label (fill: name = the metric)
   metricOrderScoreboardSection: 'Scoreboard (match metrics)', // the match section's heading
   metricOrderProfileSection: 'Player profile (profile metrics)', // the profile section's heading
   metricOrderReset: 'Reset order', // the reset button label
   metricOrderClose: 'Close', // the close button label
-  // Help line: the two text runs around the ↑↓ glyphs (the values carry
+  // Help line: the text run after the ↑↓ glyphs (the value carries
   // the exact spacing the static text rendered with).
-  metricOrderHintDrag: 'drag the handle · ',
   metricOrderHintKeys: ' move · Esc close',
   metricOrderNote:
     'Only your pinned metrics are listed here, in the order they\'ll appear — pin more from the pin\n      buttons in the metric list.',
