@@ -239,7 +239,14 @@ const EXPECTED = {
   // element right of the .spacer with the shared labels + glyph, then the
   // per-tab walk — every one of the nine tabs' `?` opens its OWN guide
   // section, and the walk fires exactly one openDocs call per tab).
-  'econ-tables.dom.mjs': 127,
+  // econ-tables 127 → 121 (2026-11-15, no-expand C13 — merged atop the
+  // 127 re-pin): −4 section K (the expand toggle and the expanded row's
+  // three panel checks died with the row expansion; the fixed-block/
+  // metric index offsets re-based onto the chevron-free first column),
+  // −2 section L (the chevron-cell and chevron-button pins deleted; the
+  // name cell, the header and the hover twin re-pinned to the ONE frozen
+  // column at left 0).
+  'econ-tables.dom.mjs': 121,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the

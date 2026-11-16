@@ -781,7 +781,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
 			ps.two_k, ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.enemies_flashed,
-			ps.flashed_times, ps.bomb_plants, ps.bomb_defuses, ps.mvps, ps.score,
+			ps.bomb_plants, ps.bomb_defuses, ps.mvps, ps.score,
 			ps.teamkills, ps.suicides, ps.money_spent_total, ps.kills_by_weapon, ps.damage_by_weapon
 		FROM player_stats ps
 		`+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
@@ -802,7 +802,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KDA, &r.TotalDamage,
 			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
 			&r.TradeKills, &r.BestStreak, &r.TwoK, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
-			&r.EnemiesFlashed, &r.FlashedTimes, &r.BombPlants, &r.BombDefuses, &r.MVPs,
+			&r.EnemiesFlashed, &r.BombPlants, &r.BombDefuses, &r.MVPs,
 			&r.Score, &r.Teamkills, &r.Suicides, &r.MoneySpent, &r.KillsByWeapon, &r.DamageByWeapon,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)

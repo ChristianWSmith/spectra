@@ -1,6 +1,6 @@
 // strings/match.js — Match view chrome (views/Match.svelte): header meta
-// line, import-warnings panel, tab bar + rosters, scoreboard, expanded-row
-// tables, Rounds-tab table and the Details key-facts list.
+// line, import-warnings panel, tab bar + rosters, scoreboard, Rounds-tab
+// table and the Details key-facts list.
 // Values are plain strings with {arg} placeholders (the catalog contract,
 // strings/index.js); the view composes them with S.fill at the call site.
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
@@ -31,24 +31,12 @@ export const match = {
   // Scoreboard tab
   pinnedStatsUnavailable: 'Pinned stats unavailable:',
   dismissPinnedStatsError: 'Dismiss pinned stats error',
-  expandLabel: 'Expand',
-  breakdownAria: 'Breakdown for {name}',
   openProfilePossessive: "Open {name}'s profile",
 
-  // expanded scoreboard row — weapon / utility mini tables
-  killsByWeapon: 'Kills by weapon',
+  // Column heads shared beyond this view: RoundDetail's weapon table +
+  // kill list and the Rounds tab's kill count.
   colWeapon: 'Weapon',
   colKills: 'Kills',
-  noneRecorded: 'None recorded',
-  damageByWeapon: 'Damage by weapon',
-  colDamage: 'Damage',
-  utilStatsHeading: 'Utility',
-  colStat: 'Stat',
-  colValue: 'Value',
-  statUtilityDamage: 'Utility damage',
-  statEnemiesFlashed: 'Enemies flashed',
-  statFlashAssists: 'Flash assists',
-  statTimesFlashed: 'Times flashed',
 
   // Rounds tab
   roundTypesUnavailable: 'Round types unavailable:',

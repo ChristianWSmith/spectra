@@ -61,10 +61,10 @@ test('seed: a recorded entry merges OVER the defaults, whitelisted to their keys
 test('seed: wrong-shaped recorded values are rejected per field (invalid entry → defaults)', () => {
   resetViewState();
   // Array defaults only accept arrays (compareSel is round numbers).
-  remember('match:5:scoreboard', { compareSel: [3, 5], expanded: 0 });
-  assert.deepEqual(seed('match:5:scoreboard', { compareSel: [], expanded: 0 }).compareSel, [3, 5]);
+  remember('match:5:scoreboard', { compareSel: [3, 5] });
+  assert.deepEqual(seed('match:5:scoreboard', { compareSel: [] }).compareSel, [3, 5]);
   remember('match:5:scoreboard', { compareSel: 'not-an-array' });
-  assert.deepEqual(seed('match:5:scoreboard', { compareSel: [], expanded: 0 }).compareSel, []);
+  assert.deepEqual(seed('match:5:scoreboard', { compareSel: [] }).compareSel, []);
 
   // Scalar defaults keep their type: a number where a string belongs
   // (and vice versa) falls back to the default, never a coercion.
