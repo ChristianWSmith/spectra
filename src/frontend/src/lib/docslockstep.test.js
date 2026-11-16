@@ -30,7 +30,9 @@
 //   - Match's four analysis tabs (Economy/Utility/Combat/Heatmaps) are
 //     deliberately covered by the ONE `match-analysis` section; the match
 //     shell tabs (Overview/Scoreboard/Rounds/Details) by
-//     `understanding-a-match`; the Reports tab by `reports`.
+//     `understanding-a-match`; the Reports tab by `reports`. (That table
+//     now lives in lib/router.js as MATCH_TAB_SECTIONS — Match's header
+//     `?` consumes it, so there is one spelling; see the note there.)
 //   - Explorer renders as the Details tab's diagnostics block:
 //     `understanding-a-match`'s Details paragraph documents all three of
 //     its panels (Import details / Advanced diagnostics / Network
@@ -48,7 +50,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { NAV_ACTIONS } from './nav.js';
-import { MATCH_TABS } from './router.js';
+import { MATCH_TABS, MATCH_TAB_SECTIONS } from './router.js';
 import { getDoc } from './docs/registry.js';
 import './docs/manuals/index.js'; // registers the shipped user guide
 
@@ -79,18 +81,13 @@ const NAV_SECTIONS = {
   Settings: 'settings',
 };
 
-// Match view tabs — lib/router.js MATCH_TABS (Match.svelte's tab bar).
-const TAB_SECTIONS = {
-  Overview: 'understanding-a-match',
-  Scoreboard: 'understanding-a-match',
-  Rounds: 'understanding-a-match',
-  Economy: 'match-analysis',
-  Utility: 'match-analysis',
-  Combat: 'match-analysis',
-  Heatmaps: 'match-analysis',
-  Reports: 'reports',
-  Details: 'understanding-a-match',
-};
+// Match view tabs — lib/router.js MATCH_TABS. The table itself moved to
+// router.js as MATCH_TAB_SECTIONS (help-buttons, 2026-11-15): Match's
+// header `?` targets the ACTIVE tab's section, so the view consumes it
+// and there may be only ONE spelling (AGENTS "One canonical way"). The
+// contract is unchanged and still asserted below: the keys are exactly
+// MATCH_TABS and every value is a registered guide section.
+const TAB_SECTIONS = MATCH_TAB_SECTIONS;
 
 // Sidebar chrome buttons that are NOT nav actions — literal title=""
 // attributes inside App.svelte's <nav class="sidebar"> block (NAV_ACTIONS'

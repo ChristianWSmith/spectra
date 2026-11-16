@@ -82,8 +82,10 @@
   // for the NEXT open (null = the guide's top/TOC) and is cleared on
   // close; `docsToken` bumps on every request so asking for the SAME
   // section while already open still re-targets (the popup's scroll
-  // effect is value-keyed). Two entry points call openDocs: the sidebar
-  // Help button (null) and Builder's `?` ('metric-language').
+  // effect is value-keyed). Entry points call openDocs: the sidebar
+  // Help button (null), Builder's `?` ('metric-language') and every
+  // view-header `?` (HelpButton.svelte — the section each view passes,
+  // Match following its active tab).
   let docsOpen = $state(false);
   let docsSection = $state(null);
   let docsToken = $state(0);
@@ -436,7 +438,7 @@
         onkeydown={replayActive ? null : onDockKey}
       >
         {#key alive.id}
-          <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} onClose={closeReplay} />
+          <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} {openDocs} onClose={closeReplay} />
         {/key}
         {#if !replayActive}
           <!-- Close (X): the panel's TOP-RIGHT corner, collapsed state
@@ -471,9 +473,9 @@
     <div class="app-views" inert={replayActive}>
       {#if viewRoute}
         {#if viewRoute.name === 'library'}
-          <Library {nav} query={viewRoute.query || {}} />
+          <Library {nav} {openDocs} query={viewRoute.query || {}} />
         {:else if viewRoute.name === 'match'}
-          <Match id={viewRoute.id} routeTab={viewRoute.tab || ''} {nav} expandReplay={matchExpand} />
+          <Match id={viewRoute.id} routeTab={viewRoute.tab || ''} {nav} {openDocs} expandReplay={matchExpand} />
         {:else if viewRoute.name === 'round'}
           <RoundDetail id={viewRoute.id} round={viewRoute.round} query={viewRoute.query || {}} {nav} />
         {:else if viewRoute.name === 'player'}
@@ -494,15 +496,15 @@
         {:else if viewRoute.name === 'builder'}
           <Builder {nav} {openDocs} />
         {:else if viewRoute.name === 'sql'}
-          <SqlConsole {nav} />
+          <SqlConsole {nav} {openDocs} />
         {:else if viewRoute.name === 'profiles'}
           <Profiles {nav} />
         {:else if viewRoute.name === 'explorer'}
           <Explorer {nav} routeId={viewRoute.id || 0} />
         {:else if viewRoute.name === 'reports'}
-          <Reports {nav} routeId={viewRoute.id || 0} />
+          <Reports {nav} {openDocs} routeId={viewRoute.id || 0} />
         {:else if viewRoute.name === 'settings'}
-          <Settings />
+          <Settings {openDocs} />
         {/if}
       {/if}
     </div>

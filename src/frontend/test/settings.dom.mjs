@@ -175,6 +175,18 @@ svelteCompile(
 );
 svelteCompile(cdSrc, 'ConfirmDialog.svelte', join(dir, 'confirmdialog.js'));
 
+// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
+// the header's button is this component; its strings catalog import
+// resolves from the real tree like every other ../ module above.
+svelteCompile(
+  readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'HelpButton.svelte',
+  join(dir, 'helpbutton.js'),
+);
+
 // Settings → its plain-ESM imports resolve from the real module
 // locations (absolute URLs); its components from the local bundles.
 // The bindings import ('../../../bindings/github.com/…') is caught by
@@ -189,13 +201,17 @@ for (const rel of [
 }
 settSrc = rewrite(settSrc, '../components/StatusChip.svelte', './statuschip.js');
 settSrc = rewrite(settSrc, '../components/ConfirmDialog.svelte', './confirmdialog.js');
+settSrc = rewrite(settSrc, '../components/HelpButton.svelte', './helpbutton.js');
 svelteCompile(settSrc, 'Settings.svelte', join(dir, 'settings-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(join(dir, 'settings-bundle.js')).href);
 const target = document.createElement('div');
 document.body.appendChild(target);
-let inst = mount(mod.default, { target });
+let inst = mount(mod.default, {
+  target,
+  props: { openDocs: (s) => (globalThis.__docs = [...(globalThis.__docs || []), s]) },
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(150); // mount + the config read
@@ -391,6 +407,31 @@ console.log('E. parallel work: 1..max numeric control in its own Background work
   await sleep(20);
   check('non-numeric clamps to 1', pwSets().length === 3 && JSON.stringify(pwSets()[2].args) === '[1]', JSON.stringify(pwSets().map((c) => c.args)));
   check('input snaps to 1', pwInput().value === '1', pwInput().value);
+}
+
+console.log('F. the header `?` opens the guide at the settings section (help-buttons)');
+{
+  // The shared HelpButton: Settings' header gained the .spacer it never
+  // had, and the `?` is its LAST element — one per view header, primary
+  // chrome only.
+  const hdr = document.querySelector('.view-header');
+  const help = hdr?.querySelector(':scope > button[aria-label="Help for this view"]');
+  check(
+    'the ? is the header’s LAST element, right of the .spacer, shared labels + question glyph',
+    !!help && hdr.lastElementChild === help &&
+      !!hdr.querySelector(':scope > .spacer') &&
+      help.getAttribute('title') === 'Help for this view' &&
+      help.classList.contains('btn') && !!help.querySelector('.codicon-question'),
+    hdr ? [...hdr.children].map((c) => c.className || c.tagName).join(' | ') : 'no header',
+  );
+  const docs0 = (globalThis.__docs || []).length;
+  click(help);
+  await sleep();
+  check(
+    'clicking it opens the guide at the settings section (openDocs)',
+    (globalThis.__docs || []).length === docs0 + 1 && (globalThis.__docs || []).at(-1) === 'settings',
+    JSON.stringify((globalThis.__docs || []).slice(docs0)),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

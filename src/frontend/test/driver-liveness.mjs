@@ -201,7 +201,12 @@ const EXPECTED = {
   // metric-composed pair both ways, the expand toggle, the expanded
   // row's fixed metric slots raw-vs-metric + tooltips + raw survivors,
   // the roster triple's metric A half both ways).
-  'econ-tables.dom.mjs': 116,
+  // econ-tables 116 → 119 (2026-11-15, help-buttons): +3 section H (the
+  // header `?` is the Match header's last element right of the .spacer
+  // with the shared labels + glyph, then the per-tab walk — every one of
+  // the nine tabs' `?` opens its OWN guide section, and the walk fires
+  // exactly one openDocs call per tab).
+  'econ-tables.dom.mjs': 119,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
@@ -210,7 +215,11 @@ const EXPECTED = {
   // on, superseding the W cell's end-side rule) — +1 the section B
   // matchup-name colour pin, +1 the section K pin over both rendered
   // rows (their fixtures now carry an ODD side-switch count).
-  'library.dom.mjs': 169,
+  // library 169 → 171 (2026-11-15, help-buttons): +2 section A (the
+  // header `?` is the header's last element right of the .spacer with
+  // the shared labels + glyph, and clicking it fires openDocs once with
+  // the `library` section id and navigates nowhere).
+  'library.dom.mjs': 171,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,
@@ -226,7 +235,12 @@ const EXPECTED = {
   // the retired Clutches CARD value check.
   'profiles.dom.mjs': 71,
   'progress-presentation.dom.mjs': 19,
-  'replay.dom.mjs': 450,
+  // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the
+  // header `?` rides the top bar right of the ribbon — immediately
+  // left of the rail toggle — with the shared labels + glyph, and
+  // clicking it fires openDocs once with the `replay` section id and
+  // navigates nowhere).
+  'replay.dom.mjs': 452,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
@@ -250,7 +264,11 @@ const EXPECTED = {
   // checks now read back the downloadText bytes (filename/mime pin, the
   // appendix line and the saved rows ride the file). A/D dedupe and E/F/H
   // keep their shape.
-  'reports.dom.mjs': 31,
+  // reports 31 → 33 (2026-11-15, help-buttons): +2 the new section I (the
+  // header `?` is the standalone header's last element right of the
+  // .spacer with the shared labels + glyph, and clicking it fires
+  // openDocs once with the `reports` section id).
+  'reports.dom.mjs': 33,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
@@ -259,9 +277,22 @@ const EXPECTED = {
   // Stat definitions card went with its guide bullet. Sections A–D
   // rewritten for the new card (pristine gating + card shape, the
   // absence pins for the removed UI, the bumped-save recompute kick,
-  // the no-bump honesty), E is the untouched Parallel-work card, F the
-  // runtime-error tail.
-  'settings.dom.mjs': 49,
+  // the no-bump honesty), E is the untouched Parallel-work card, and
+  // the runtime-error tail closes the file.
+  // settings 49 → 51 (2026-11-15, help-buttons): +2 the new section F
+  // (the header `?` — Settings gained the .spacer it never had — is the
+  // header's last element with the shared labels + glyph, and clicking
+  // it fires openDocs once with the `settings` section id); the
+  // runtime-error tail stays the closing check after it.
+  'settings.dom.mjs': 51,
+  // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
+  // is the one view header with no driver of its own (its loading lines
+  // are source-pinned in progress-presentation, its engine in Go), so
+  // the shared HelpButton's mount coverage lives here: section A (the
+  // `?` is the header's last element right of the .spacer with the
+  // shared labels + glyph, the head note intact) and B (one openDocs
+  // call with the `sql-console` section id, the route unmoved).
+  'sqlconsole.dom.mjs': 5,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage

@@ -290,6 +290,8 @@ const HINT_EXEMPT = {
 const HINT_PASSTHROUGH = {
   'frontend/src/lib/components/SuggestInput.svelte#expr:hint':
     'the $derived `hint` expression — resolves to the caller’s placeholder (checked at its own site) or to PLAYER_SEARCH_HINT (checked via HINT_SOURCES); no literal to classify here',
+  'frontend/src/lib/components/TokenSelect.svelte#expr:placeholder':
+    'the `placeholder` prop passthrough — the text resolves at the caller’s own placeholder attribute (Reports’ metric picker passes S.reports.metricHint, checked there); no literal to classify here',
 };
 
 // Not exemptions but declaration inputs: consts whose text renders as an input

@@ -14,8 +14,9 @@
   import { toCSV } from '../csv.js';
   import { seed, remember } from '../viewstate.svelte.js';
   import StatusChip from '../components/StatusChip.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
 
-  let { nav = () => {} } = $props();
+  let { nav = () => {}, openDocs = () => {} } = $props();
 
   // Server defaults echoed in the header (query.DefaultLimit / DefaultTimeoutMS).
   const DEFAULTS = 'rows cap 5,000 · timeout 5 s';
@@ -342,6 +343,10 @@
     {#if slow}
       <span class="chip sql-running">running…</span>
     {/if}
+    <!-- The view's help affordance (HelpButton.svelte): the header's
+         LAST element, right of the running chip — one `?`, primary
+         chrome only. -->
+    <HelpButton section="sql-console" {openDocs} />
   </header>
 
   <div class="sql-grid">

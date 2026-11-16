@@ -40,6 +40,11 @@
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import HelpButton from '../components/HelpButton.svelte';
+
+  // The header `?` (HelpButton.svelte) — App hands the view its
+  // openDocs; Settings is the one view that had no props at all.
+  let { openDocs = () => {} } = $props();
 
   let version = $state('…');
   let info = $state(null);
@@ -692,6 +697,11 @@
 <div class="view">
   <header class="view-header">
     <h1>{S.settings.settingsHeading}</h1>
+    <!-- The view's help affordance (HelpButton.svelte): one `?` at the
+         header's right end (the .spacer the header did not have yet),
+         opening the guide's settings section. -->
+    <div class="spacer"></div>
+    <HelpButton section="settings" {openDocs} />
   </header>
 
   {#if error}

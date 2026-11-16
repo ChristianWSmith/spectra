@@ -345,6 +345,19 @@ svelteCompile(
   join(dir, 'popover.js'),
 );
 
+// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
+// the Builder header's button is this component now (one canonical
+// idiom); its strings catalog import resolves from the real tree like
+// every other ../ module above.
+svelteCompile(
+  readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'HelpButton.svelte',
+  join(dir, 'helpbutton.js'),
+);
+
 // The view: plain-ESM imports (services/fmt/viewstate) resolve from
 // their real module locations — viewstate through the SAME absolute URL
 // the pins below import, so the view and the test share one registry
@@ -360,6 +373,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'")
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
+  .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
 
