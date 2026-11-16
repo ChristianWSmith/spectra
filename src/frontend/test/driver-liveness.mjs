@@ -204,7 +204,13 @@ const EXPECTED = {
   'econ-tables.dom.mjs': 116,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
-  'library.dom.mjs': 167,
+  // library 167 → 169 (2026-11-15, library-side-color): the score cells
+  // and the matchup names were RE-PINNED to the START-side colour rule
+  // (owner ruling: BOTH W and L are keyed to the side each team started
+  // on, superseding the W cell's end-side rule) — +1 the section B
+  // matchup-name colour pin, +1 the section K pin over both rendered
+  // rows (their fixtures now carry an ODD side-switch count).
+  'library.dom.mjs': 169,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,

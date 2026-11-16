@@ -129,8 +129,8 @@ reached from. Click any row to open that match.
 # The table
 
 One row per match: **Map**, **Matchup** (the two team names, or the demo file name while the row
-is still parsing), **W Score** and **L Score** (the winner's and loser's scores — the winner's
-cell carries the winning side's colour), **Rounds**, **Duration**, **Size**, **Imported** (when
+is still parsing), **W Score** and **L Score** (the winner's and loser's scores — both score
+cells and the two team names are tinted with the colour of the side each team started on), **Rounds**, **Duration**, **Size**, **Imported** (when
 Spectra read the file), **Status**, and the row's actions. Every column except the matchup sorts
 by clicking its header.
 

@@ -6,20 +6,27 @@ import "time"
 // includes both team names so the list shows the matchup without joins in
 // the frontend).
 type MatchSummary struct {
-	ID          int64     `json:"id"`
-	Path        string    `json:"path"`
-	Map         string    `json:"map"`
-	Size        int64     `json:"size"`
-	ScoreCT     int       `json:"scoreCT"`
-	ScoreT      int       `json:"scoreT"`
-	CTName      string    `json:"ctName"`
-	TName       string    `json:"tName"`
-	RealRounds  int       `json:"realRounds"`
-	DurationS   float64   `json:"durationS"`
-	ExtractedAt time.Time `json:"extractedAt"`
-	Status      string    `json:"status"`
-	Error       string    `json:"error"`
-	SHA256      string    `json:"sha256"`
+	ID      int64  `json:"id"`
+	Path    string `json:"path"`
+	Map     string `json:"map"`
+	Size    int64  `json:"size"`
+	ScoreCT int    `json:"scoreCT"`
+	ScoreT  int    `json:"scoreT"`
+	CTName  string `json:"ctName"`
+	TName   string `json:"tName"`
+	// SideSwitches is the match's stored side-switch count (the existing
+	// matches.side_switches column — read, never written here): the input
+	// the frontend's start-side team colour needs (lib/teams.js
+	// teamStartClass), so the list paints a team by the side it STARTED
+	// on without a second read. 0 when the extract recorded none — start
+	// side and final side then coincide.
+	SideSwitches int       `json:"sideSwitches"`
+	RealRounds   int       `json:"realRounds"`
+	DurationS    float64   `json:"durationS"`
+	ExtractedAt  time.Time `json:"extractedAt"`
+	Status       string    `json:"status"`
+	Error        string    `json:"error"`
+	SHA256       string    `json:"sha256"`
 	// CopyState is the fs-derived demo-copy state ("copied" | "external" |
 	// "missing" — library.CopyState*). SERVICE-OWNED: the store never
 	// fills it (no column, nothing to go stale); LibraryService.
