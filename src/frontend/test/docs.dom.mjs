@@ -56,7 +56,12 @@
 //      the parent style), a query expanding a FOLDED chapter so its
 //      match stays listed, the fold state surviving the query, and
 //      <mark> hits in a TOC label AND a body section heading with the
-//      text byte-identical (clearing removes every mark);
+//      text byte-identical (clearing removes every mark) — plus the
+//      body-side tier styling (C4, 2026-11-15): the declared 1.5rem
+//      major / 1.15rem minor heading sizes as rendered, the separator
+//      rule's `:not(:first-child)` exemption, and the `parent` criterion
+//      reaching the DOM (classes + the injected rule matching a
+//      non-first major only, its 14px/12px gap computing there);
 //   I. a throwaway second manual registered into the LIVE registry makes
 //      the switcher appear on the next open, switching changes the TOC +
 //      body, and its placeholder section still renders ONLY the
@@ -826,7 +831,7 @@ check(
   `${tocItems().length} entries`,
 );
 
-console.log('H. two tiers: the subsection toggle, the dual highlight, and <mark> search hits');
+console.log('H. two tiers: the subsection toggle, the dual highlight, <mark> search hits, and the body-side tier styling (sizes + separator)');
 // The contents list is two tiers (N3): the metric chapter's minors are
 // indented entries under their major, and ONLY a major that HAS
 // children carries the fold toggle — children are visible by default
@@ -929,6 +934,75 @@ check(
 );
 click(toggleOf('Metric language')); // unfold — leave the guide as section I found it
 await sleep();
+
+// --- Body-side tier styling (C4, 2026-11-15) ------------------------------
+// The tier criterion (the registry's `parent` field: absent = major,
+// set = minor) now reaches the BODY as .doc-section.major/.minor —
+// global on that criterion, never scoped to one chapter. Three pins:
+// both declared heading sizes with the rendered minor genuinely smaller
+// (DocsPopup compiles css:'injected', so these computed styles are the
+// real injected rules), the separator rule's first-section exemption as
+// source text, and the criterion actually landing in the DOM.
+// jsdom caveat on the applied leg: its cssstyle DROPS the whole
+// `border-top` shorthand when the colour is a var() reference (probed
+// 2026-11-15 — computed width resolves 0px / style none even though the
+// rule is present and matches), so a border-width assertion there would
+// fail for engine reasons, not ours. The applied leg therefore pins what
+// jsdom can compute — the rule's 14px/12px gap on a non-first major
+// only, which proves the rule cascades onto exactly the right elements —
+// and discriminates the BORDER leg through the injected rule's own
+// selectorText (matches the non-first major, rejects a minor and the
+// first section) plus the declaration carried in its cssText. The colour
+// is never asserted anywhere (jsdom cannot resolve var() colours).
+const tierFirst = sectionOf(guideDoc.sections[0].id);
+const tierMinor = sectionOf(guideDoc.sections.find((s) => s.parent)?.id);
+const tierLaterMajor = sectionOf(
+  guideDoc.sections.find((s, i) => !s.parent && i > 0)?.id,
+);
+const tierFs = (el) => parseFloat(getComputedStyle(el).fontSize);
+const tierRootFs = parseFloat(getComputedStyle(document.documentElement).fontSize);
+const tierRule = [...document.styleSheets]
+  .flatMap((sheet) => {
+    try {
+      return [...sheet.cssRules];
+    } catch {
+      return []; // cross-origin rules are unreadable — none ship, but stay safe
+    }
+  })
+  .find((r) => r.cssText?.includes('.doc-section.major'));
+check(
+  'tier heading sizes: the major rule declares 1.5rem (today’s rendered size) and the minor rule 1.15rem — rendered majors sit at 1.5rem, rendered minors at the smaller 1.15rem',
+  /\.doc-body \.doc-section > h2\s*\{[^}]*font-size:\s*1\.5rem/.test(docsSrc) &&
+    /\.doc-body \.doc-section\.minor > h2\s*\{[^}]*font-size:\s*1\.15rem/.test(docsSrc) &&
+    tierFs(tierMinor.querySelector('h2')) === 1.15 * tierRootFs &&
+    tierFs(tierLaterMajor.querySelector('h2')) === 1.5 * tierRootFs &&
+    tierFs(tierFirst.querySelector('h2')) === tierFs(tierLaterMajor.querySelector('h2')),
+  `root=${tierRootFs}px / rendered minor=${tierFs(tierMinor.querySelector('h2'))}px (want ${1.15 * tierRootFs}) major=${tierFs(tierLaterMajor.querySelector('h2'))}px (want ${1.5 * tierRootFs}) first=${tierFs(tierFirst.querySelector('h2'))}px`,
+);
+check(
+  'the separator rule targets non-first majors ONLY (`:not(:first-child)`) and carries the 1px var(--divider) border-top with its margin/padding gap — separators stay CSS, never content',
+  /\.doc-body \.doc-section\.major:not\(:first-child\)\s*\{[^}]*border-top:\s*1px solid var\(--divider\)[^}]*margin-top:\s*14px[^}]*padding-top:\s*12px/.test(
+    docsSrc,
+  ),
+  docsSrc.match(/\.doc-section\.major:not\(:first-child\)[^}]*\}/)?.[0] ?? 'rule missing',
+);
+check(
+  'the criterion reaches the DOM: the section classes come from `parent`, the injected rule matches a non-first major only, and its 14px/12px gap computes there — never on a minor or the first section',
+  tierLaterMajor.classList.contains('major') &&
+    tierMinor.classList.contains('minor') &&
+    !tierMinor.classList.contains('major') &&
+    tierFirst.classList.contains('major') &&
+    !!tierRule &&
+    tierRule.cssText.includes('border-top: 1px solid var(--divider)') &&
+    tierLaterMajor.matches(tierRule.selectorText) &&
+    !tierMinor.matches(tierRule.selectorText) &&
+    !tierFirst.matches(tierRule.selectorText) &&
+    getComputedStyle(tierLaterMajor).marginTop === '14px' &&
+    getComputedStyle(tierLaterMajor).paddingTop === '12px' &&
+    getComputedStyle(tierMinor).marginTop === '0px' &&
+    getComputedStyle(tierFirst).marginTop === '0px',
+  `classes major=${tierLaterMajor.className} minor=${tierMinor.className} / rule=${tierRule?.cssText ?? 'MISSING'} / gap major=${getComputedStyle(tierLaterMajor).marginTop}/${getComputedStyle(tierLaterMajor).paddingTop} minor=${getComputedStyle(tierMinor).marginTop} first=${getComputedStyle(tierFirst).marginTop}`,
+);
 
 console.log('I. a second manual makes the switcher appear (live registry, last section)');
 click(closeBtn());

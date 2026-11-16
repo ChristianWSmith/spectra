@@ -371,7 +371,11 @@
       </nav>
       <div class="doc-body" bind:this={bodyEl} onscroll={syncCurrent}>
         {#each doc.sections as s (s.id)}
-          <section class="doc-section">
+          <!-- Tier classes (C4): the registry's `parent` field IS the
+               criterion (absent = major, set = minor) — carried into the
+               body so the tier reaches STYLING too, keyed on the criterion
+               rather than on any one chapter. -->
+          <section class="doc-section" class:major={!s.parent} class:minor={!!s.parent}>
             <!-- The anchor is composed from HAND-AUTHORED ids
                  (registry.sectionAnchor) — stable across rewording, and
                  tabindex -1 lets goTo() land focus on user navigation. -->
@@ -528,6 +532,39 @@
     overscroll-behavior: contain; /* wheel input never escapes to the view behind */
     position: relative; /* goTo() reads section offsetTop against this */
     padding: 16px 22px 48px;
+  }
+  /* --- Section tiers + separators (C4, 2026-11-15) -----------------------
+     The owner's report: every section heading renders at ONE size, so the
+     metric chapter's subsections read as peers of their own chapter.
+     The tier criterion is the registry's `parent` field (absent = major,
+     set = minor, rendered as .doc-section.major/.minor) — applied
+     GLOBALLY on that criterion, not scoped to #metric-language, so any
+     future minor (or manual) gets the same treatment without a new
+     selector (metric-language is the only major with minors today).
+
+     The two h2 rules DECLARE the ladder instead of leaving it to the
+     UA: majors keep the 1.5em default they already rendered at
+     (font-size-less parent → 1.5em ≈ 1.5rem, so tier 1 is a no-op), and
+     minors step down one clear size — level with the doc-title h1
+     (1.15rem) and still above DocBlocks' content h3 (1.02rem), so the
+     h1 → h2 → h3 ladder keeps no skip. NOT --fs-section: that is the
+     panel-chrome section-label vocabulary, the wrong concept here.
+
+     Separators are CSS, never content: the markdown subset degrades a
+     literal `---` to text (pinned by docsmd.test.js), so each major
+     AFTER the first carries the divider rule. The colour is
+     var(--divider) — the same border .doc-switch uses — with margin and
+     padding so the line does not crowd the heading above it. */
+  .doc-body .doc-section > h2 {
+    font-size: 1.5rem;
+  }
+  .doc-body .doc-section.minor > h2 {
+    font-size: 1.15rem;
+  }
+  .doc-body .doc-section.major:not(:first-child) {
+    border-top: 1px solid var(--divider);
+    margin-top: 14px;
+    padding-top: 12px;
   }
   .doc-placeholder {
     color: var(--muted);

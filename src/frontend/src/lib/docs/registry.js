@@ -20,10 +20,13 @@
 // absent → a MAJOR (a top-level contents entry), set to a sibling
 // section's id → a MINOR (an entry nested under that major in the TOC).
 // Depth is capped at TWO by registration (a parent must itself be a
-// major), and the field is TOC-only — the body renderer is deliberately
-// tier-agnostic: every section keeps its own <section><h2>, whatever
-// tier it is (rendering minors as <h3> would collide with the markdown
-// headings inside their own content).
+// major). The body renderer still gives every section its own
+// <section><h2>, whatever tier it is (rendering minors as <h3> would
+// collide with the markdown headings inside their own content), but the
+// field is no longer TOC-only: DocsPopup carries it into the body as
+// .doc-section.major/.minor, so the heading sizes and the separator
+// line between majors key off THIS criterion (C4, 2026-11-15) — global
+// on `parent`, never scoped to one chapter.
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const docs = new Map(); // registration order — powers listDocs()

@@ -202,7 +202,16 @@ const EXPECTED = {
   // inside the importing-demos paragraph, that paragraph's textContent
   // byte-identical to its unmarked render, and the clear removing every
   // body mark); every existing G/H check untouched.
-  'docs.dom.mjs': 72,
+  // docs 72 → 75 (2026-11-15, C4 guide tier headers + separators): +3
+  // section H — the body-side tier styling: both declared heading sizes
+  // as rendered (majors 1.5rem, minors 1.15rem), the separator rule's
+  // `:not(:first-child)` exemption with its 1px var(--divider)
+  // border-top, and the `parent` criterion reaching the DOM (classes +
+  // the injected rule matching a non-first major only, its 14px/12px
+  // gap computing there — jsdom cannot compute a var()-coloured
+  // border-top shorthand, so the border is pinned as source + selector
+  // match, never as a computed width).
+  'docs.dom.mjs': 75,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
