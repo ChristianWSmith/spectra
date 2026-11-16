@@ -194,8 +194,9 @@ opens the replay with the camera on that player; clicking a player's name opens 
 **Scoreboard** — the sortable per-player table: the fixed columns (name, team, K, D, KDA,
 damage, rounds, opening K/D, utility damage, MVPs, score), then **one column per metric you
 have pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, the multi-kill counts (2K–5K),
-entries, trades and best streak), each with an ⓘ carrying its formula, an
-unpin ✕, and sortable. Expand a row (the chevron) for kills by weapon, damage by weapon and
+entries, trades and best streak), each with an ⓘ carrying its formula, and sortable. The
+player column stays put while you scroll across the metrics, so you never lose the statline
+you are reading. Expand a row (the chevron) for kills by weapon, damage by weapon and
 the utility numbers. Bots never appear here — the scoreboard lists human players only. A row
 click opens the replay following that player; the name cell opens their profile.
 
