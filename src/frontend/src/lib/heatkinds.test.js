@@ -65,26 +65,32 @@ test('grenade ids match the Go registry (heatmap.go grenadeHeatmapKinds)', () =>
   );
 });
 
-test('labels read as the kind on screen', () => {
+test('labels read as the kind on screen (title case)', () => {
+  // DELIBERATE RE-PIN (2026-11-16, match-view V8d): the kind dropdown
+  // entries are title-cased now — 'presence' → 'Presence', 'HE thrown'
+  // → 'HE Thrown' — so the selector reads as English instead of raw ids.
+  // 'K/D' keeps its slash form (an abbreviation is never case-touched)
+  // and unknown ids still pass through verbatim (never blank).
   assert.equal(heatKindLabel('kd'), 'K/D');
+  const core = { presence: 'Presence', kills: 'Kills', deaths: 'Deaths', damage: 'Damage' };
   for (const k of HEAT_CORE_KINDS) {
     if (k === 'kd') continue;
-    assert.equal(heatKindLabel(k), k, `${k} reads as itself`);
+    assert.equal(heatKindLabel(k), core[k], `${k} title-cases`);
   }
-  assert.equal(heatKindLabel('he_thrown'), 'HE thrown');
-  assert.equal(heatKindLabel('he_det'), 'HE detonation');
-  assert.equal(heatKindLabel('flash_thrown'), 'Flash thrown');
-  assert.equal(heatKindLabel('smoke_det'), 'Smoke detonation');
+  assert.equal(heatKindLabel('he_thrown'), 'HE Thrown');
+  assert.equal(heatKindLabel('he_det'), 'HE Detonation');
+  assert.equal(heatKindLabel('flash_thrown'), 'Flash Thrown');
+  assert.equal(heatKindLabel('smoke_det'), 'Smoke Detonation');
   // Molotov ≡ Incendiary: the one option says both spellings.
-  assert.equal(heatKindLabel('molotov_thrown'), 'Molotov/Incendiary thrown');
-  assert.equal(heatKindLabel('molotov_det'), 'Molotov/Incendiary detonation');
+  assert.equal(heatKindLabel('molotov_thrown'), 'Molotov/Incendiary Thrown');
+  assert.equal(heatKindLabel('molotov_det'), 'Molotov/Incendiary Detonation');
   // 'decoy' here is the STORED utility-kind vocabulary (models.UtilityWeaponKind
   // → heatmap.go grenadeHeatmapKinds) — a DIFFERENT vocabulary from the
   // replay's detonation buckets, where 'decoy' was removed (a decoy
   // detonation buckets 'he' now). Inert w.r.t. that change: decoy rows
   // still store kind 'grenade' + weapon 'Decoy Grenade', so the decoy_det
   // heatmaps keep working.
-  assert.equal(heatKindLabel('decoy_det'), 'Decoy detonation');
+  assert.equal(heatKindLabel('decoy_det'), 'Decoy Detonation');
   // Unknown ids pass through instead of rendering blank.
   assert.equal(heatKindLabel('mystery'), 'mystery');
 });

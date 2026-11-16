@@ -423,21 +423,26 @@ select {
    but its children stretch to its width (and the card's children to the
    card's), so each content row has to center itself on the same axis.
    Scoped by .heat-view, so no other embedded tab's row moves: the filter
-   toolbar and the legend justify their contents; the hint/empty rows hug
-   their content and take auto margins (the .round-strip-wrap idiom); the
+   toolbar (now INSIDE the card, riding with its controls — the revised
+   C18) and the legend justify their contents; the hint row hugs its
+   content and takes auto margins (the .round-strip-wrap idiom); the
    radar block centers on auto margins WITHOUT any width/padding change —
    its box must stay ≡ the canvas box for HeatmapLayer's click and drag
-   math. The transient rows (error, pack note, progress, region/stale
-   notes) keep their start alignment: they are exception states riding
-   above the card, not the layout. */
-.heat-view > .heat-controls,
+   math. The transient rows (error, pack note, region/stale notes) keep
+   their start alignment: they are exception states riding above the
+   card, not the layout. */
+.heat-view .heat-controls,
 .heat-view .heat-legend {
   justify-content: center;
 }
 
-.heat-view .heat-hint,
-.heat-view .heat-empty {
+/* The hint row centers under the radar; its max-width keeps the centered
+   text clear of the floating Save parked in the card's bottom-right
+   corner (only bites when the text would otherwise reach it); 240px
+   clears the button + its right offset with room to spare. */
+.heat-view .heat-hint {
   width: fit-content;
+  max-width: calc(100% - 240px);
   margin-inline: auto;
 }
 

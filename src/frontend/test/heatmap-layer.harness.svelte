@@ -55,6 +55,14 @@
   // what came back).
   let kind = $state('kills');
   const regions = [];
+  // V8e canvas bridge: HeatmapLayer hands its composite canvas up through
+  // onCanvas (a callback handle — no global state). The harness records
+  // every hand-off so the driver can assert the view really receives the
+  // live <canvas> element, not just that the markup mentions the prop.
+  const canvasHandles = [];
+  function onCanvas(c) {
+    canvasHandles.push(c);
+  }
 
   // Driver controls. __setGrid(null) is the pre-Generate state; __newGrid
   // swaps in a fresh raster object the way Regenerate does after another
@@ -69,9 +77,10 @@
   globalThis.__singlePack = singlePack;
   globalThis.__setKind = (k) => (kind = k);
   globalThis.__regions = regions;
+  globalThis.__canvasHandles = canvasHandles;
   function onRegion(bbox, value) {
     regions.push({ bbox, value });
   }
 </script>
 
-<HeatmapLayer map="de_test" {pack} {grid} {layer} {gridLayer} {kind} {onRegion} />
+<HeatmapLayer map="de_test" {pack} {grid} {layer} {gridLayer} {kind} {onRegion} {onCanvas} />

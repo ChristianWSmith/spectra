@@ -740,6 +740,28 @@
   min-width: 110px;
 }
 
+/* V8e — positioning context for the floating Save (bottom-right of the
+   card): .panel carries no position of its own, and the rule is scoped
+   to .heat-view so no other panel in the app becomes a containing block. */
+.heat-view .panel {
+  position: relative;
+}
+
+/* V8e — the floating Save, parked in the card's bottom-right corner once
+   a heatmap exists (Heatmaps gates it on `grid`). It rides ON the card
+   (absolute → out of the panel's flex flow, so the legend/radar/hint rows
+   never shift), above the radar art, with the overlay shadow the floating
+   buttons share (.cmp-float) so it reads as actionable over any map. */
+.heat-save {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  /* opaque over any radar art (the shared .btn background is transparent) */
+  background: var(--panel);
+  box-shadow: 0 8px 28px var(--overlay-55);
+}
+
 .heat-region-note {
   display: flex;
   align-items: center;
@@ -834,22 +856,22 @@ canvas.heat-canvas {
 }
 
 /* Rubber-band selection box while dragging over the map (lib/heatselect.js
-   math, rendered by HeatmapLayer). SOLID accent — the selection is the
-   user's own gesture, never a side: --ct/--t would read as team identity
-   on a surface that carries none, and a dashed border is already spoken for
-   (provenance chips, the halftime separator). pointer-events: none so the
-   overlay can never eat the pointer events it is drawn from; the wrap's
-   overflow clips it at the map edge. */
+   math, rendered by HeatmapLayer). WHITE — the selection is the user's own
+   gesture, not a side: --ct/--t would read as team identity on a surface
+   that carries none (white is the "no side" signal the design language
+   reserves for user-drawn marks), and a dashed border is already spoken
+   for (provenance chips, the halftime separator). pointer-events: none so
+   the overlay can never eat the pointer events it is drawn from; the
+   wrap's overflow clips it at the map edge. */
 .heat-selbox {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid var(--accent);
-  background: var(--accent-12);
+  border: 1px solid #fff;
+  background: rgba(255, 255, 255, 0.16);
   pointer-events: none;
 }
 
 .heat-hint,
-.heat-empty,
 .heat-stale {
   font-size: 0.86em;
 }

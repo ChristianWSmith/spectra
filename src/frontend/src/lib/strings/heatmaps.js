@@ -21,5 +21,5 @@ export const heatmaps = {
   bboxHint:
     'Drag a box on the map to open the replay events for that region (padded\n        to the splat’s reach); a single click opens one square.',
   noRowsSuffix: ' has no event rows behind it — a drag or click opens nothing.',
-  emptyState: 'Choose filters and press Generate — heatmaps are computed on demand.',
+  saveImage: 'Save image', // the floating Save on the radar card (V8e)
 };

@@ -300,17 +300,33 @@ globalThis.__set(1, 0); // floor clicked before any Generate
 await sleep();
 check('still no overlay (floor mismatch + no grid)', overlayDraws() === 0, String(overlayDraws()));
 
-console.log('H. Heatmaps view: the round-range <option> labels spell RD (source pin)');
+console.log('H. Heatmaps view: the round-range <option> labels use roundScoreLabel (source pin)');
 // The two round selects (Rounds from / Rounds to) are Heatmaps' only
-// compact round labels; the owner's "standardize round spelling
-// everywhere as RD" applies (R{n} → RD{n}). No driver mounts the Heatmaps
-// view (heatmap-layer.dom.mjs drives components/HeatmapLayer.js), so this
-// is a source pin over the view — mounting it would drag in the whole
-// service surface for two <option> strings.
+// round pickers; the match-view wave standardised every round <option>
+// on the canonical `RD<n> | <ct>-<t>` label (roundScoreLabel, lib/
+// rounds.js — the helper Utility and Combat also render through), so the
+// view must COMPOSE through it and never re-spell the format itself.
+// No driver mounts the Heatmaps VIEW (heatmap-layer.dom.mjs drives
+// components/HeatmapLayer.js), so this is a source pin over the view —
+// mounting it would drag in the whole service surface for two <option>
+// strings.
 const heatSrc = readFileSync('src/lib/views/Heatmaps.svelte', 'utf8');
-const rdOptionLabels = (heatSrc.match(/RD\{r\.number\}/g) || []).length;
-check('both round-range options read RD{r.number}', rdOptionLabels === 2, String(rdOptionLabels));
-check('no bare R{r.number} option label survives', !/>R\{r\.number\}</.test(heatSrc), '');
+const scoreLabelCalls = (heatSrc.match(/roundScoreLabel\(rounds, r\.number\)/g) || []).length;
+check(
+  'both round-range options render roundScoreLabel(rounds, r.number)',
+  scoreLabelCalls === 2,
+  String(scoreLabelCalls),
+);
+check(
+  'no hand-spelled RD{r.number} option label survives',
+  !/RD\{r\.number\}/.test(heatSrc),
+  '',
+);
+check(
+  'roundScoreLabel is imported from the canonical lib/rounds.js home',
+  /import \{ isCounted, roundScoreLabel \} from '\.\.\/rounds\.js'/.test(heatSrc),
+  '',
+);
 
 // The Heatmaps VIEW's load-failure alert is dismissible in place too
 // (PRODUCT.md "Every error indication is dismissible") — a source pin
@@ -578,7 +594,9 @@ console.log('N. progress presentation outside a cell (owner ruling, source pin)'
 // (PRODUCT.md "### Defaults"): outside a table cell a progress display
 // is a centered ring/spinner with its details text underneath, and a
 // horizontal control row cannot be "centered" — so the display lives in
-// its own row AFTER the toolbar closes, never inside it.
+// its own row AFTER the toolbar closes, never inside it. (V8b moved the
+// toolbar AND this row onto the card together; the row's relation to the
+// toolbar — its own, beneath — is what these checks pin.)
 const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
 const progressAt = heatSrc.indexOf('<StatusChip block');
 check('toolbar + block-mode progress both present', toolbarAt >= 0 && progressAt > toolbarAt, `${toolbarAt} ${progressAt}`);
@@ -806,19 +824,22 @@ await sleep();
   );
 }
 
-// The overlay's STYLE is an owner ruling too (row 22: "accent solid —
-// never side colors"): a selection is the user's own gesture, not a team,
-// so it must not borrow --ct/--t, and a dashed border is already spoken for
-// (provenance chips, the halftime separator). CSS-text pin, econ-tables
-// precedent — no driver asserts rendered CSS.
+// The overlay's STYLE is an owner ruling too (match-view V8f, restating
+// row 22's "never side colors"): a selection is the user's own gesture,
+// not a team, so it must not borrow --ct/--t — it renders WHITE (the
+// "no side" mark: white is never a side colour in the design language),
+// and a dashed border is already spoken for (provenance chips, the
+// halftime separator). The old accent-orange spelling is retired with
+// this ruling. CSS-text pin, econ-tables precedent — no driver asserts
+// rendered CSS.
 const m3a = readFileSync('public/style-m3a.css', 'utf8');
 const selRule = /\.heat-selbox\s*\{[^}]*\}/.exec(m3a)?.[0] || '';
 check('selbox rule exists (public/style-m3a.css)', selRule.length > 0, selRule);
 check(
-  'selbox: solid accent outline + low-alpha accent fill, never side colours or dashes',
-  /border: 1px solid var\(--accent\)/.test(selRule) &&
-    /background: var\(--accent-12\)/.test(selRule) &&
-    !/var\(--ct\)|var\(--t\)|dashed/.test(selRule),
+  'selbox: solid WHITE outline + low-alpha white fill, never side colours, accent or dashes',
+  /border: 1px solid #fff/.test(selRule) &&
+    /background: rgba\(255, 255, 255, 0\.\d+\)/.test(selRule) &&
+    !/var\(--ct\)|var\(--t\)|var\(--accent\)|dashed/.test(selRule),
   selRule,
 );
 check(
@@ -832,12 +853,14 @@ check(
 // Still SOURCE pins: no driver mounts the Heatmaps VIEW (the precedent of
 // H/J/K/N — mounting it would drag in the whole service surface). Pinned
 // here is the lead-ruled layout: the floor BUTTON group became one native
-// select, the heatmap CONTENT moved into the single card while the
-// toolbar stayed outside it (section N's toolbar/progress pins above must
-// stay green), and the view's rows center on one axis with a height cap
-// on the radar block — CSS text, the econ-tables/replay ruleBody
-// precedent, since no driver asserts rendered CSS.
-console.log('P. Heatmaps view: floor <select>, content card, centered rows, height cap');
+// select; the heatmap CONTENT AND the filter controls (toolbar + progress
+// row) now share the single card (V8b reversed C18 — section N's
+// toolbar/progress pins above stay green); the empty-state hint line is
+// gone (V8c); the floating Save parks bottom-right of that card (V8e);
+// and the view's rows center on one axis with a height cap on the radar
+// block — CSS text, the econ-tables/replay ruleBody precedent, since no
+// driver asserts rendered CSS.
+console.log('P. Heatmaps view: floor <select>, controls+content card, Save, centered rows, height cap');
 
 {
   const floorAt = heatSrc.indexOf('id="heat-floor"');
@@ -870,9 +893,12 @@ console.log('P. Heatmaps view: floor <select>, content card, centered rows, heig
     `gate@${gateAt} select@${floorAt}`,
   );
 
-  // Card shape (C18): exactly one panel, holding only the content, with
-  // the toolbar literal and the block progress BEFORE it — the two pins
-  // section N already asserts over the same offsets.
+  // Card shape (C18 as REVISED by V8b): exactly ONE panel now holds the
+  // filter toolbar, the block progress row AND the content, in that
+  // order — the old "toolbar stays outside" rule is inverted here
+  // deliberately (section N still pins the toolbar→progress row order
+  // over the same offsets). The empty-state hint line is gone (V8c), so
+  // the content order is toolbar, progress, legend, radar, hint.
   const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
   const chipAt = heatSrc.indexOf('<StatusChip block');
   const panelAt = heatSrc.indexOf('<section class="panel">');
@@ -882,21 +908,31 @@ console.log('P. Heatmaps view: floor <select>, content card, centered rows, heig
   const hintAt = heatSrc.indexOf('class="heat-hint', panelAt);
   const emptyAt = heatSrc.indexOf('class="heat-empty', panelAt);
   check(
-    'toolbar stays OUTSIDE the card: its literal opening tag and the block progress both precede the panel',
-    toolbarAt >= 0 && chipAt > toolbarAt && panelAt > chipAt,
-    `${toolbarAt} ${chipAt} ${panelAt}`,
+    'controls moved ONTO the card: the toolbar literal and the block progress both sit INSIDE the panel',
+    panelAt > 0 && panelAt < toolbarAt && toolbarAt < chipAt && chipAt < panelEnd,
+    `${panelAt} ${toolbarAt} ${chipAt} ${panelEnd}`,
   );
   check(
-    'exactly one section.panel wraps the content in order — legend, radar, hint/empty',
+    'exactly one section.panel wraps controls + content in order — toolbar, progress, legend, radar, hint',
     (heatSrc.match(/<section class="panel">/g) || []).length === 1 &&
       panelAt > 0 &&
       panelEnd > panelAt &&
-      legendAt > panelAt &&
+      legendAt > chipAt &&
       radarAt > legendAt &&
       hintAt > radarAt &&
-      emptyAt > radarAt &&
-      panelEnd > Math.max(hintAt, emptyAt),
+      emptyAt === -1 &&
+      panelEnd > hintAt,
     `${panelAt} ${legendAt} ${radarAt} ${hintAt} ${emptyAt} ${panelEnd}`,
+  );
+  // V8c — the "Choose filters and press Generate" empty state and its
+  // catalog key both died with it (the view never renders it; the key
+  // must not linger in the catalog either).
+  check(
+    'the Generate empty-state line is gone: no .heat-empty row in the view, no emptyState key in the catalog',
+    emptyAt === -1 &&
+      !/S\.heatmaps\.emptyState/.test(heatSrc) &&
+      !/emptyState\s*:/.test(readFileSync('src/lib/strings/heatmaps.js', 'utf8')),
+    '',
   );
 
   // CSS text pins — the cap and the centering rules (no rendered CSS in a
@@ -917,23 +953,96 @@ console.log('P. Heatmaps view: floor <select>, content card, centered rows, heig
     heatSrc.includes('style="--heat-aspect: {heatAspect}"'),
   );
   check(
-    'centering: the controls row and the legend justify their contents to the middle (scoped .heat-view)',
-    /\.heat-view > \.heat-controls, \.heat-view \.heat-legend \{ justify-content: center; \}/.test(
+    'centering: the controls row (now a card descendant) and the legend justify their contents to the middle (scoped .heat-view)',
+    /\.heat-view \.heat-controls, \.heat-view \.heat-legend \{ justify-content: center; \}/.test(
       cssNorm,
     ),
     '',
   );
   check(
-    'centering: the hint/empty rows hug their content and take auto margins',
-    /\.heat-view \.heat-hint, \.heat-view \.heat-empty \{ width: fit-content; margin-inline: auto; \}/.test(
+    'centering: the hint row hugs its content and takes auto margins (the empty-state twin rule is gone), capped clear of the floating Save',
+    /\.heat-view \.heat-hint \{ width: fit-content; max-width: calc\(100% - 240px\); margin-inline: auto; \}/.test(
       cssNorm,
-    ),
+    ) && !/heat-empty/.test(cssNorm),
     '',
   );
   check(
     'centering: the radar block centers on auto margins alone — no width/padding change (box ≡ canvas)',
     /\.heat-view \.heat-canvas-wrap \{ margin-inline: auto; \}/.test(cssNorm),
     '',
+  );
+
+  // --- V8e: the floating Save -------------------------------------------
+  // It renders only once a heatmap exists (`grid`), hands HeatmapLayer's
+  // PRIVATE composite canvas to the canonical downloadCanvasPNG through
+  // the explicit onCanvas bridge, and parks bottom-right of the card —
+  // which needs .panel to become a positioning context (scoped to
+  // .heat-view so no other panel gains one).
+  const layerSrc = readFileSync('src/lib/components/HeatmapLayer.svelte', 'utf8');
+  const saveAt = heatSrc.indexOf('class="btn heat-save"');
+  const saveGateAt = heatSrc.indexOf('{#if grid && heatCanvas}');
+  check(
+    'Save button markup lives in the view, gated on the generated raster (grid && heatCanvas)',
+    saveAt > panelAt && saveAt < panelEnd && saveGateAt > panelAt && saveGateAt < saveAt,
+    `${panelAt} ${saveGateAt} ${saveAt} ${panelEnd}`,
+  );
+  check(
+    'Save path: downloadCanvasPNG (THE canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
+    /import \{ downloadCanvasPNG \} from '\.\.\/download\.js'/.test(heatSrc) &&
+      /await downloadCanvasPNG\(heatCanvas, heatRasterName\(\)\)/.test(heatSrc) &&
+      /`heatmap-\$\{map \|\| 'map'\}-\$\{stamp\}\.png`/.test(heatSrc),
+    '',
+  );
+  check(
+    'canvas bridge: HeatmapLayer hands its canvas out through the explicit onCanvas callback (no global state)',
+    /onCanvas = \(\) => \{\}/.test(layerSrc) &&
+      /onCanvas\(canvas\)/.test(layerSrc) &&
+      /onCanvas=\{onHeatCanvas\}/.test(heatSrc),
+    '',
+  );
+  const m3aNorm = m3a.replace(/\s+/g, ' ');
+  check(
+    'Save positioning: .heat-view .panel is the positioning context and .heat-save parks bottom-right of it',
+    /\.heat-view \.panel \{ position: relative; \}/.test(m3aNorm) &&
+      /\.heat-save \{ position: absolute; right: 12px; bottom: 10px;/.test(m3aNorm),
+    '',
+  );
+
+  // --- V8d: title-cased kind labels --------------------------------------
+  // The dropdown renders through heatKindLabel, so pinning the registry's
+  // spellings here covers what the selector shows (heatkinds.test.js pins
+  // the function itself).
+  const kindsSrc = readFileSync('src/lib/heatkinds.js', 'utf8');
+  check(
+    'kind labels title-cased on screen: Presence/Kills/Deaths/Damage, K/D untouched',
+    /presence: 'Presence'/.test(kindsSrc) &&
+      /damage: 'Damage'/.test(kindsSrc) &&
+      /if \(kind === 'kd'\) return 'K\/D'/.test(kindsSrc) &&
+      /heatKindLabel\(k\)/.test(heatSrc),
+    '',
+  );
+  check(
+    'grenade labels title-cased: "<Type> Thrown" / "<Type> Detonation"',
+    /flavor === 'thrown' \? 'Thrown' : 'Detonation'/.test(kindsSrc),
+    '',
+  );
+}
+
+console.log('Q. V8e canvas bridge (mounted): the layer hands its live <canvas> up through onCanvas');
+// The Save button's whole premise: HeatmapLayer's composite canvas (the
+// one draw() paints radar + overlay into) must reach the view as a LIVE
+// element through the onCanvas callback. The harness records every
+// hand-off, so this is a behavioural pin (the bridge actually fires with
+// the element), not just a source mention of the prop.
+{
+  const handles = globalThis.__canvasHandles;
+  const live = document.querySelector('canvas.heat-canvas');
+  check('the bridge fired with the real canvas element', handles.length > 0 && handles[0] === live,
+    `handles=${handles.length} live=${!!live}`);
+  check(
+    'exactly one hand-off so far (stable callback, no re-fire per render)',
+    handles.length === 1,
+    String(handles.length),
   );
 }
 

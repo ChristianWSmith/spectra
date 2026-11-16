@@ -264,16 +264,19 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 Pick a **Kind**, choose **Floor** (on multi-floor maps), narrow by **Player**, **Side** and a
 round range, then **Generate** — heatmaps are computed on demand, and changing a control marks
-the one on screen as needing a **Regenerate**. Kinds are grouped as:
+the one on screen as needing a **Regenerate**. The controls sit on the map card itself, with
+the round options labelled by their scoreline (**RD7 | 4-3**). Kinds are grouped as:
 
-- **Overview** — presence, kills, deaths, damage and K/D.
+- **Overview** — Presence, Kills, Deaths, Damage and K/D.
 - **Grenade thrown** — one per grenade type.
 - **Grenade detonation** — one per grenade type.
 
 The map carries a legend showing the value range the colours stand for (K/D is drawn on a
-two-sided scale). On kinds that carry event rows, dragging a box over the map opens the replay
-filtered to what happened there — a single click opens one square — while kinds with no rows
-behind them say so instead of pretending a selection did something.`,
+two-sided scale). Once a heatmap is generated, **Save image** in the map card's corner writes
+the picture — radar and heatmap together — to a file you choose. On kinds that carry event
+rows, dragging a box over the map opens the replay filtered to what happened there — a single
+click opens one square — while kinds with no rows behind them say so instead of pretending a
+selection did something.`,
   },
   {
     id: 'replay',
