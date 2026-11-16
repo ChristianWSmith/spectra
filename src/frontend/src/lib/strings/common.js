@@ -171,7 +171,7 @@ export const common = {
   // the exact spacing the static text rendered with).
   metricOrderHintKeys: ' move · Esc close',
   metricOrderNote:
-    'Fixed stats and your pinned metrics are listed in the order they appear — reorder with the arrows, hide a fixed stat with the eye, and pin more from the metric list.',
+    'Fixed stats and your pinned metrics are listed in the order they appear — reorder with the arrows, hide a fixed stat with the eye, and unpin a metric here with the pin on its row.',
 
   // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
   payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)

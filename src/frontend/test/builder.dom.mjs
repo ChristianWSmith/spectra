@@ -59,16 +59,23 @@
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
 //      state output carries a version number or timestamp;
 //   J. the Order dialog (dogfooding design §2 + metrics UI wave B,
-//      reworked by N2/N4): the list-header entry point, ONE dialog with
-//      its visible TITLE BAR + icon-only ✕ (N2), the merged reorder
-//      list (the fixed stats fold into the ONE listbox as sequence
-//      entries — there is no read-only context block any more — beside
-//      the pinned metrics), the per-row show/hide toggle on every
-//      HIDEABLE fixed stat (hidden rows stay listed; the scoreboard's
-//      Name is exempt), the drag-free list (no handle, nothing
-//      draggable), keyboard/button moves that write the WHOLE sequence
-//      through (SetPref), Reset → FOUR deletes (both pref PAIRS), and
-//      the header ✕ closing it.
+//      reworked by N2/N4, M1/M4/M5/M6): the list-header entry point,
+//      ONE dialog with its visible TITLE BAR + icon-only ✕ (N2) that
+//      never scrolls (M4/M5 — the head sits outside the ONE scroll
+//      region, the panel clips, the list no longer scrolls itself),
+//      the merged reorder list (the fixed stats fold into the ONE
+//      listbox as sequence entries — there is no read-only context
+//      block any more — beside the pinned metrics), the per-row
+//      show/hide toggle on every HIDEABLE fixed stat (hidden rows stay
+//      listed; the scoreboard's Name is exempt) and the PIN toggle on
+//      metric rows only (M6 — unpin through Builder's writer: both
+//      pin keys, never the order pref, focus to the neighbour row,
+//      Builder flipping behind the dialog), the right-aligned control
+//      cluster (M1 — eye/pin/↑↓ in one .mo-acts span, no title on the
+//      eye), the drag-free list (no handle, nothing draggable),
+//      keyboard/button moves that write the WHOLE sequence through
+//      (SetPref), Reset → FOUR deletes (both pref PAIRS), and the
+//      header ✕ closing it.
 //
 // Section A opens with the N1 list-scroll pins and section F carries
 // the N6 one-line actions-row anatomy pins (validity slot + the
@@ -1554,7 +1561,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
 }
 
-console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, write-through moves, Reset, header ✕');
+console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-aligned cluster, fixed title bar + one scroll region, unpin, no drag, write-through moves, Reset, header ✕');
 {
   // Two opens: FIRST with nothing pinned — the honest empty state plus
   // the help line (the owner copy rule: user's domain, no dev
@@ -1619,15 +1626,87 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, 
     head ? head.textContent.replace(/\s+/g, ' ').trim() : 'no title bar',
   );
 
+  // M1/M4/M5 — structure pins. jsdom has no layout, so the geometry
+  // (right-alignment, the fixed title bar, the single scroll region)
+  // is pinned as DOM structure + the component's own CSS source, the
+  // N1 source-pin precedent (section A over style-m3a.css).
+  {
+    const headEl = dlg?.querySelector(':scope > .row-between.mo-head');
+    const bodyEl2 = dlg?.querySelector(':scope > .mo-body');
+    check(
+      'M4: the title bar sits OUTSIDE the scroll region — a direct child of the panel, immediately above .mo-body',
+      !!headEl &&
+        !!bodyEl2 &&
+        headEl.parentElement === dlg &&
+        headEl.nextElementSibling === bodyEl2 &&
+        !bodyEl2.contains(headEl),
+      headEl && bodyEl2
+        ? `parent-ok=${headEl.parentElement === dlg} adjacent=${headEl.nextElementSibling === bodyEl2}`
+        : 'missing head/body',
+    );
+    const src = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8');
+    const ruleOf = (sel) => (src.match(new RegExp(`(?:^|\\n)\\s*${sel}\\s*\\{([^}]*)\\}`)) || [])[1] || '';
+    const panelR = ruleOf(':global\\(\\.dlg-panel\\.mo-prompt\\)');
+    const headR = ruleOf('\\.mo-head');
+    const bodyR = ruleOf('\\.mo-body');
+    const listR = ruleOf('\\.mo-list');
+    check(
+      'M4/M5: the panel clips, .mo-head is fixed and .mo-body is THE scroll region — .mo-list carries neither max-height nor overflow',
+      /overflow:\s*hidden/.test(panelR) &&
+        /flex:\s*0 0 auto/.test(headR) &&
+        /min-height:\s*0/.test(bodyR) &&
+        /overflow-y:\s*auto/.test(bodyR) &&
+        !/max-height/.test(listR) &&
+        !/overflow/.test(listR),
+      `panel="${panelR.trim()}" head="${headR.trim()}" body="${bodyR.trim()}" list="${listR.trim()}"`,
+    );
+    const actsR = ruleOf('\\.mo-acts');
+    const movesR = ruleOf('\\.mo-moves');
+    check(
+      'M1: the row controls cluster right — .mo-acts carries margin-left:auto and .mo-moves no longer does',
+      /margin-left:\s*auto/.test(actsR) &&
+        /display:\s*flex/.test(actsR) &&
+        /align-items:\s*center/.test(actsR) &&
+        !/margin-left/.test(movesR),
+      `acts="${actsR.trim()}" moves="${movesR.trim()}"`,
+    );
+    const rowsC = dRows('match');
+    check(
+      'M1: every row rides ONE .mo-acts cluster (toggle + ↑↓ together) and the eye carries no title=',
+      rowsC.length > 0 &&
+        rowsC.every((x) => {
+          const acts = x.querySelector(':scope > .mo-acts');
+          const moves = x.querySelector('.mo-moves');
+          const eye = x.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
+          return (
+            !!acts &&
+            !!moves &&
+            acts.contains(moves) &&
+            (!eye || (acts.contains(eye) && !eye.hasAttribute('title')))
+          );
+        }),
+      rowsC
+        .map(
+          (x) =>
+            `${x.dataset.moName}:acts=${!!x.querySelector(':scope > .mo-acts')} eye-title=${x
+              .querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]')
+              ?.hasAttribute('title')}`,
+        )
+        .join(', '),
+    );
+  }
+
   // The help line (reworded for N4: fixed stats are listed now, and
   // they can be hidden — the pins-only copy was wrong once they
-  // folded into the list). Still the owner's domain, no dev shorthand.
+  // folded into the list; M6: it names the unpin HERE instead of
+  // pointing back at the metric list). Still the owner's domain, no
+  // dev shorthand.
   const note = (dlg?.querySelector('.mo-note')?.textContent || '').replace(/\s+/g, ' ').trim();
   check(
-    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, pin from the metric list; no dev-process phrase',
+    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, unpin here in the dialog; no dev-process phrase',
     /Fixed stats and your pinned metrics are listed/.test(note) &&
       /hide a fixed stat with the eye/.test(note) &&
-      /pin more from the metric list/.test(note) &&
+      /unpin a metric here/.test(note) &&
       !/Go stats/i.test(dlg?.textContent || ''),
     note,
   );
@@ -1707,15 +1786,16 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, 
     JSON.stringify(dNames('match')),
   );
   {
-    // The show/hide toggle (N4): every HIDEABLE fixed row carries one —
-    // named Show/Hide {label} (never the word "pin": pinning stays in
-    // the list, and a pin control here would fork the contract), the
-    // Name column is EXEMPT (owner ruling), and metric rows never get
-    // one (their visibility is the pin selection).
+    // The show/hide toggle (N4/M1): every HIDEABLE fixed row carries
+    // one — named Show/Hide {label} (never the word "pin": the eye is
+    // visibility only; the PIN toggle on metric rows below is a
+    // separate control), the Name column is EXEMPT (owner ruling), and
+    // metric rows never carry a show/hide (their visibility is the pin
+    // selection).
     const rows = dRows('match');
     const toggleFor = (row) => row.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
     check(
-      'every hideable fixed row carries a Show/Hide toggle; the Name column is exempt; metric rows never do',
+      'every hideable fixed row carries a Show/Hide toggle; the Name column is exempt; metric rows never carry one',
       rows.slice(1, 10).every((x) => x.dataset.moKind === 'fixed' && !!toggleFor(x)) &&
         !toggleFor(rows[0]) &&
         rows.slice(10).every((x) => x.dataset.moKind === 'metric' && !toggleFor(x)),
@@ -1846,13 +1926,36 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, 
     );
   }
   {
-    const offender = ['.mo-pin', '[aria-label^="Toggle pin"]', 'button[aria-label*="pin" i]'].find(
-      (sel) => dlg.querySelector(sel),
-    );
+    // M6 — the old "no pin indicator, no pin control anywhere" ban,
+    // INVERTED by design: a pin toggle now rides the METRIC rows (it
+    // unpins through Builder's writer), fixed rows carry none, and the
+    // eye still never says "pin" — its Show/Hide aria is untouched.
+    // The pin button's title composes the SAME catalog wording
+    // Builder's row button shows (byte-identical: 'Unpin from …').
+    const rows = dRows('match');
+    const metricRows = rows.filter((x) => x.dataset.moKind === 'metric');
+    const fixedRows = rows.filter((x) => x.dataset.moKind === 'fixed');
+    const pinOf = (row) => row.querySelector('[aria-label^="Toggle pin"]');
+    const eyes = rows
+      .map((x) => x.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]'))
+      .filter(Boolean);
     check(
-      'no pin indicator and no pin control anywhere in the dialog — the visibility toggles never say "pin"; pinning stays with the list',
-      !offender,
-      offender ? `found ${offender}` : '',
+      'the pin control exists on metric rows ONLY (fixed rows carry none) and the eye still never says "pin"',
+      metricRows.length === 3 &&
+        metricRows.every(
+          (x) =>
+            pinOf(x)?.getAttribute('aria-label') === `Toggle pin for ${x.dataset.moName}` &&
+            pinOf(x)?.getAttribute('title') === 'Unpin from scoreboard',
+        ) &&
+        fixedRows.every((x) => !pinOf(x)) &&
+        eyes.length === 9 &&
+        eyes.every((b) => !/pin/i.test(b.getAttribute('aria-label') || '')),
+      rows
+        .map(
+          (x) =>
+            `${x.dataset.moName}:${x.dataset.moKind}:pin=${pinOf(x)?.getAttribute('title') ?? '-'}`,
+        )
+        .join(', '),
     );
   }
   {
@@ -1887,6 +1990,62 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, 
       'Reset also SHOWS the hidden Team again (its row carries Hide, no hidden mark)',
       !!teamBack && !teamBack.classList.contains('mo-hidden') && !!teamBack.querySelector('button[aria-label="Hide Team"]'),
       teamBack ? `class=${teamBack.className}` : 'row gone',
+    );
+  }
+  {
+    // M6 — unpin from the ORDERING dialog (the writer stays in Builder):
+    // the click routes through onTogglePin → togglePin, which writes
+    // BOTH pin keys (localStorage) and never metric_order_* (the
+    // kvstore — the sequence keeps the slot for re-pinning); the row
+    // leaves .mo-list at once and focus moves to the row that took its
+    // place. adr_avg is still loaded in the editor from section I, so
+    // BOTH Builder surfaces flip behind the dialog in the same click.
+    const pinsKey = 'spectra:pinned-metrics';
+    const profileKey = 'spectra:pinned-profile-metrics';
+    const before = JSON.parse(localStorage.getItem(pinsKey) || '[]');
+    const orderWrites = bindings.calls.filter(
+      (c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match',
+    ).length;
+    const setKeys = [];
+    const origSet = dom.window.Storage.prototype.setItem;
+    dom.window.Storage.prototype.setItem = function (k, v) {
+      setKeys.push(k);
+      return origSet.call(this, k, v);
+    };
+    const dlgPin = dRows('match')
+      .find((x) => x.dataset.moName === 'adr_avg')
+      ?.querySelector('[aria-label^="Toggle pin"]');
+    if (dlgPin) click(dlgPin);
+    await sleep(80);
+    dom.window.Storage.prototype.setItem = origSet;
+    const after = JSON.parse(localStorage.getItem(pinsKey) || '[]');
+    const rowGone = !dNames('match').includes('adr_avg');
+    const focused = document.activeElement?.dataset?.moName;
+    check(
+      'unpin writes BOTH pin keys (never the order pref), drops the row from the list at once and focuses the neighbouring row',
+      setKeys.includes(pinsKey) &&
+        setKeys.includes(profileKey) &&
+        after.length === before.length - 1 &&
+        after.every((x) => before.includes(x)) &&
+        bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match')
+          .length === orderWrites &&
+        rowGone &&
+        focused === 'my_kd',
+      `keys=${JSON.stringify(setKeys)} pins ${JSON.stringify(before)} → ${JSON.stringify(after)} rowGone=${rowGone} focus=${focused} dlgPin=${!!dlgPin}`,
+    );
+    const rowBtn = rowNamed(r, 'adr_avg')?.querySelector('[aria-label="Toggle pin for adr_avg"]');
+    const editorBtn = [...(r.querySelectorAll('.bld-actions .toolbar button') || [])].find((b) =>
+      b.querySelector('.codicon-pin'),
+    );
+    check(
+      'Builder flips behind the dialog — the list row AND the editor Pin button both return to the unpinned state',
+      !!rowBtn &&
+        rowBtn.getAttribute('title') === 'Pin as scoreboard column' &&
+        !rowBtn.classList.contains('bld-pin-on') &&
+        !!editorBtn &&
+        editorBtn.textContent.trim() === 'Pin' &&
+        !editorBtn.classList.contains('bld-pin-on'),
+      `row title=${rowBtn?.getAttribute('title')} class=${rowBtn?.className} editor="${editorBtn?.textContent.trim()}" class=${editorBtn?.className}`,
     );
   }
   {

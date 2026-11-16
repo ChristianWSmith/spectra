@@ -172,7 +172,23 @@ const EXPECTED = {
   // merged sequence and the FOUR deletes. The old "nothing to order" /
   // "no profile metrics yet" checks were deleted with their dead
   // strings.
-  'builder.dom.mjs': 131,
+  // builder 131 → 137 (2026-11-16, W13a ordering dialog — M1/M4/M5/M6):
+  // +4 section J structure pins over the component's own CSS source +
+  // DOM (the N1 source-pin idiom — jsdom has no layout): the title bar
+  // sits OUTSIDE .mo-body as the panel's direct child above it, the
+  // panel clips (overflow:hidden) with .mo-head flex:0 0 auto and
+  // .mo-body THE scroll region (min-height:0 + overflow-y:auto) while
+  // .mo-list carries neither max-height nor overflow, the row's
+  // controls ride ONE right-aligned .mo-acts cluster (margin-left:auto
+  // there, gone from .mo-moves) with no title= on the eye; +2 the new
+  // M6 unpin leg (both pin keys written and never metric_order_match,
+  // the row gone from .mo-list at once with focus on the neighbouring
+  // row, and Builder's list row AND editor Pin button flipping back
+  // behind the dialog). The old "no pin anywhere" ban was REVERSED IN
+  // PLACE to "the pin control exists on metric rows only" and the
+  // help-line pin reworded in place for the new metricOrderNote (both
+  // same slot, same count); the Show/Hide and no-drag pins kept theirs.
+  'builder.dom.mjs': 137,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
