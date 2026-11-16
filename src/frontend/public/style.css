@@ -1049,11 +1049,17 @@ mark {
    title tooltip. The synthetic job row (Library's pendingImports, its
    Matchup cell) rides the SAME cap, so a long importing file name can
    never inflate that column while the job runs — see the reserved-width
-   block below. */
+   block below.
+   The cap is 170px (260px until 2026-11-15, library-fit): a capped column
+   is one of the width floors that put these tables past the content
+   budget at the default 1250px window, and neither library table is
+   wrapped in .table-scroll, so the overflow clips at the window edge
+   instead of scrolling (owner: "it trails off the right edge"). The full
+   path still rides the title tooltip. */
 .lib-demo-name,
 .lib-demo-root {
   display: inline-block;
-  max-width: 260px;
+  max-width: 170px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1062,6 +1068,24 @@ mark {
 
 .lib-demo-root {
   color: var(--muted);
+}
+
+/* Width-fit trim, BOTH library tables — the `lib-table` class on each
+   <table> (Library.svelte): these two .data-tables are among the few NOT
+   wrapped in .table-scroll, so a table wider than the content budget
+   (~1126px at the default 1250px window) runs past the window edge and
+   clips — it reads as "cut off", not "scrollable" (owner, 2026-11-15).
+   The shared .data-table cells pad 10px inline; 6px per side across the
+   column count, together with the 170px demo-name cap above, brings the
+   match list and the import-dir list back inside the budget. Vertical
+   padding, every column, and the two min-width reservations below
+   (lib-status-col, td.row-actions — the parse-jitter contract, 0db8cde)
+   are untouched. Scoped to .lib-table ONLY — never `.view .data-table`
+   (that would trim Match/Combat/… too). Scoreboard precedent:
+   `.scoreboard td,th { padding: 4px 7px }`. */
+.lib-table th,
+.lib-table td {
+  padding-inline: 6px;
 }
 
 /* --- Library search filters (lib-) ----------------------------------------- */

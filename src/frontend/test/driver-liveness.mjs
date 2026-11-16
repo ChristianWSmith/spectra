@@ -228,7 +228,13 @@ const EXPECTED = {
   // on, superseding the W cell's end-side rule) — +1 the section B
   // matchup-name colour pin, +1 the section K pin over both rendered
   // rows (their fixtures now carry an ODD side-switch count).
-  'library.dom.mjs': 169,
+  // library 169 → 171 (2026-11-15, library-fit C15 — the imported-demos
+  // table trailing off the window's right edge): +2 section J width-fit
+  // trim pins — both library tables carry the lib-table class, and
+  // style.css trims their horizontal cell padding in a rule scoped to
+  // that class (the demo-name cap 260px → 170px is an in-place value
+  // re-pin; both min-width reservation pins untouched).
+  'library.dom.mjs': 171,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,

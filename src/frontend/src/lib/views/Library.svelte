@@ -838,7 +838,7 @@
         </p>
       </div>
     {:else}
-      <table class="data-table">
+      <table class="data-table lib-table">
         <thead>
           <tr>
             <SortTh label={S.library.thMap} active={sortKey === 'map'} {desc} onclick={() => toggleSort('map')} />
@@ -867,7 +867,7 @@
               <td>—</td>
               <!-- The importing demo's file name rides the SAME truncation
                    every other demo name in this view uses (lib-demo-name,
-                   the 260px cap): an unbounded basename here is what used to
+                   the 170px cap): an unbounded basename here is what used to
                    inflate the Matchup column while the job ran, then collapse
                    it the moment the match row landed. -->
               <td><span class="mono lib-demo-name" title={job.path}>{basename(job.path)}</span></td>
@@ -934,7 +934,7 @@
                 {#if neverExt && m.path}
                   <!-- The file name rides the SAME truncation every other
                        demo name in this view uses (lib-demo-name, the
-                       260px cap) — an unbounded basename would inflate
+                       170px cap) — an unbounded basename would inflate
                        the Matchup column while the row parses. -->
                   <span class="mono lib-demo-name" title={m.path}>{basename(m.path)}</span>
                 {:else if matchNames}
@@ -1114,7 +1114,7 @@
         {S.library.noDemosFound}
       </p>
     {:else}
-      <table class="data-table">
+      <table class="data-table lib-table">
         <thead>
           <tr>
             <th scope="col">{S.library.thDemo}</th>
