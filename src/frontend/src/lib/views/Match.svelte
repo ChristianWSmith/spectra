@@ -1546,10 +1546,11 @@
       <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
            facts panel (server, tickrate, frames, size, import, parser,
            voice, warnings, source, demo copy) + Explorer's diagnostics
-           (import details, advanced diagnostics, network message census),
-           embedded and fixed to THIS match. Gameplay-derived facts (the
-           first blood) live on the Rounds tab. Map/Duration live in the
-           match header. -->
+           (import details, advanced diagnostics), embedded and fixed to
+           THIS match — the standalone Explorer's network-message census
+           is Library copy, not this match's data, so it stays out of the
+           tab. Gameplay-derived facts (the first blood) live on the
+           Rounds tab. Map/Duration live in the match header. -->
       <section class="panel">
         <h2>{S.match.keyFacts}</h2>
         <dl class="facts">

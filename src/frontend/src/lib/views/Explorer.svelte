@@ -1,7 +1,8 @@
 <script>
   import * as S from '../strings/index.js';
   // Explorer — the demo-file DIAGNOSTICS surface: per-match provenance,
-  // entity summary and the static network-census reference. Warnings
+  // entity summary and the static network-census reference (the last one
+  // STANDALONE only — the embedded Details tab drops it). Warnings
   // live on the Match view, and the one ConVar parser is eventlabels.go
   // on the Go side (the FE filter surface is gameplay-only since Q3a —
   // generic event records are no longer a feed category). Standalone (#/explorer/:id) the picker
@@ -241,7 +242,14 @@
       {/if}
     </section>
 
-    <!-- Static reference block (short pointer, not a dump). -->
+    <!-- Static reference block (short pointer, not a dump) — the
+         STANDALONE (#/explorer) page only. The match view's Details tab
+         mounts this view embedded, and the golden demo's network census
+         is not this match's data: embedded, the card goes (it stays
+         behind `{#if !embedded}` so Library keeps it). REF_BULLETS and
+         the encryption note are Library copy too — the note lives in the
+         import-details section above, which embedded keeps. -->
+    {#if !embedded}
     <section class="panel expl-ref">
       <h2>{S.library.networkMessages}</h2>
       <p class="muted">
@@ -264,5 +272,6 @@
         {/if}
       {/if}
     </section>
+    {/if}
   {/if}
 </div>

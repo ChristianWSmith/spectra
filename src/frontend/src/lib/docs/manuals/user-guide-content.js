@@ -213,8 +213,8 @@ for the round page. Tick the **Cmp** boxes on up to four rounds and a
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
 warning count, the source file and whether a managed copy exists)
-followed by the demo's import diagnostics: import details (parse time, notes),
-advanced diagnostics, and the network-message reference.
+followed by the demo's import diagnostics: import details (parse time, notes) and advanced
+diagnostics.
 
 # Round detail
 
@@ -439,11 +439,11 @@ and format. Then pick the target the template needs — the match, a player, or 
 and press **Save report** (at the top of this panel) to write the document to disk.
 
 **Stats appendix** — type into the stats field to search the match-scoped stats and pick one:
-it lands as a chip, and each picked stat earns a line under the field carrying its expression
-and its row count — while it has no computed number for this match, that line shows its state
-chip instead. Remove a chip with its ✕, or with Backspace while the field is empty; with no
-chips the saved document carries no appendix. Picked stats and their sections follow the same
-order as everywhere else.
+it lands as a highlighted chip in the field, and each picked stat earns a line under the field
+carrying its expression and its row count — while it has no computed number for this match, that
+line shows its state chip instead. Remove a chip with its ✕, or with Backspace while the field is
+empty; with no chips the saved document carries no appendix. Picked stats and their sections
+follow the same order as everywhere else.
 
 **Save report** renders the template's body, composes every picked stat's table onto it and
 hands the whole document to the save dialog; the filename ends in .md or .html to match the

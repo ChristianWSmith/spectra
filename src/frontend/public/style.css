@@ -1684,12 +1684,21 @@ mark {
 }
 
 /* The main column's TOP LINE: the Close · Minimize · Theater cluster
-   left, the round ribbon in the one flex-grow cell, the collapsed rail
-   toggle right (the cluster and the toggle used to float inside the
-   render stage). The toggle only renders while the rail is collapsed —
-   expanded, the aside's header owns it at the same
-   height (see .replay-side). Buttons stay flex: none so the ribbon
-   absorbs the squeeze; min-width: 0 lets it shrink with the column. */
+   (.rp-cluster) left, the round ribbon in the middle cell, the help `?`
+   and the collapsed rail toggle (.rp-tools) right (the cluster and the
+   toggle used to float inside the render stage). The bar carries TWO
+   EQUAL WINGS (see the .rp-cluster/.rp-tools rule below): whatever each
+   wing holds, both come out the same width, so the ribbon cell between
+   them lands exactly on the bar's center. The two TeamColumns flanking
+   the stage share one fixed width (.tc-col — flex: 0 0 auto, so neither
+   ever shrinks), which centers the stage under the bar as well: the
+   ribbon reads centered over the RADAR, which is what the owner asked
+   for (were the columns ever unequal, the ribbon would have to be
+   positioned against the stage instead). The toggle only renders while
+   the rail is collapsed — expanded, the aside's header owns it at the
+   same height (see .replay-side). Buttons stay flex: none (rule below)
+   and each wing floors at its own contents, so the ribbon absorbs the
+   squeeze; min-width: 0 lets it shrink with the column. */
 .replay-topbar {
   display: flex;
   align-items: center;
@@ -1698,11 +1707,37 @@ mark {
   min-width: 0;
 }
 
-/* The round ribbon's cell in the top bar: it takes every spare pixel
-   between the top-left cluster and the rail toggle (and keeps the toggle
-   pinned right while the ribbon is empty/loading), shrinking before
-   either button does — min-width: 0 lifts the automatic minimum so a
-   narrow window squeezes the strip instead of overflowing the bar. */
+/* The bar's two WINGS — .rp-cluster (the three top-left buttons) and
+   .rp-tools (the help `?` + collapsed rail toggle): flex-basis 0 with
+   equal grow gives each wing exactly HALF the bar's spare space whatever
+   it holds, which is what centers the ribbon cell between them (the
+   bar's rule above). Each wing pins its own contents to its OUTER edge
+   — cluster flush left, tools flush right — and carries the bar's 8px
+   gap between them. The default min-width (automatic minimum) floors a
+   wing at its buttons, so a very narrow window squeezes the ribbon
+   first, never the chrome. */
+.replay-topbar > .rp-cluster,
+.replay-topbar > .rp-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+}
+
+.replay-topbar > .rp-cluster {
+  justify-content: flex-start;
+}
+
+.replay-topbar > .rp-tools {
+  justify-content: flex-end;
+}
+
+/* The round ribbon's cell in the top bar: it sits between the two equal
+   wings, taking its share of the spare space with them (wide enough to
+   hold the strip, with the toggle pinned right even while the ribbon is
+   empty/loading), shrinking before either wing's buttons do — min-width:
+   0 lifts the automatic minimum so a narrow window squeezes the strip
+   instead of overflowing the bar. */
 .rp-ribbon {
   flex: 1 1 auto;
   min-width: 0;
@@ -1770,13 +1805,14 @@ mark {
    must never be gated away). */
 
 /* Top-left cluster (macOS traffic-light order): Close · Minimize ·
-   Theater — the top bar's FIRST cells, left of the round ribbon. All
-   icon-only .btn cells (the labelled "← Back" pill is retired: its
-   exit-to-origin behavior is now the Minimize cell, and Close adds the
-   closeReplay teardown on top). flex: none keeps the ribbon's flex-grow
-   from squashing them (the rule the old .rp-back cell carried); the
-   compact padding matches that cell. Theater keeps its #rp-theater id —
-   it moved here from the transport's control group. */
+   Theater — the top bar's first WING (.rp-cluster), left of the round
+   ribbon. All icon-only .btn cells (the labelled "← Back" pill is
+   retired: its exit-to-origin behavior is now the Minimize cell, and
+   Close adds the closeReplay teardown on top). flex: none keeps the
+   bar's squeeze off them (the ribbon cell takes that instead — the
+   rule the old .rp-back cell carried); the compact padding matches
+   that cell. Theater keeps its #rp-theater id — it moved here from
+   the transport's control group. */
 .replay-topbar .rp-close,
 .replay-topbar .rp-minimize,
 .replay-topbar .rp-theater {
@@ -1785,7 +1821,8 @@ mark {
 }
 
 /* Collapsed landmark rail (spec 14): the toggle sits at the top bar's
-   RIGHT — last cell of that line. Expanded, the aside's own header
+   RIGHT — last cell of the right wing (.rp-tools). Expanded, the aside's
+   own header
    owns the toggle at the SAME height (the base .side-toggle rule
    below); this scope keeps the panel-chrome pill on the collapsed one
    whatever the source order is. flex: none keeps it from shrinking. */

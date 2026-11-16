@@ -244,10 +244,21 @@
     border-color: var(--focus);
   }
 
+  /* The chip INSIDE the field: the base .chip is muted gray on a
+     near-invisible wash (public/style.css), which reads as disabled
+     sitting in the input — the picked token is the point of the field,
+     so it takes an accent presence instead: `--text` on an
+     `--accent-12` wash with an `--accent-40` border — the accent
+     vocabulary `.chip.flag` and the suggestion-row hover already speak.
+     Component-owned styling under tk-: never a new global .chip.*
+     concept class. */
   .tk-tok {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--text);
+    background: var(--accent-12);
+    border-color: var(--accent-40);
   }
 
   .tk-x {

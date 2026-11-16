@@ -3070,9 +3070,13 @@
        down through App's closeReplay, Minimize is the old Back
        behavior verbatim: exit to the origin with the instance kept
        alive in the dock, Theater hides this bar + the transport), the
-       round ribbon in the middle (spec 13, the flex-grow cell — it
-       shrinks before the buttons do), the collapsed landmark-rail
-       toggle right (spec 14). The cluster and the toggle used to float
+       round ribbon in the middle cell (spec 13 — it shrinks before the
+       buttons do), and the help `?` plus the collapsed landmark-rail
+       toggle (spec 14) right. The buttons and the ?/toggle ride the
+       bar's two EQUAL wings (.rp-cluster / .rp-tools — half the spare
+       width each), so the ribbon cell between them lands on the bar's
+       center, which is the stage's center: the ribbon reads centered
+       over the radar. The cluster and the toggle used to float
        inside the render stage; the stage's corners belong to the
        HUD/canvas now. The toggle keeps the rail-visible gate the
        stage-floated one had (it appears exactly when the canvas does)
@@ -3089,7 +3093,9 @@
          .rp-mini-bar remain (the mini shows chrome only on expand). -->
     {#if !theater && active}
     <div class="replay-topbar">
-      <!-- Top-left cluster, macOS traffic-light order: Close (exit to
+      <!-- The bar's LEFT WING (.rp-cluster — the equal-wing rule lives
+           with .replay-topbar in public/style.css): the top-left cluster
+           in macOS traffic-light order: Close (exit to
            the back origin + TEAR DOWN via App's closeReplay — the dock
            X's exact path through the onClose prop), Minimize (today's
            Back behavior verbatim: collapse to the keep-alive dock,
@@ -3097,21 +3103,23 @@
            Theater (moved OUT of the transport's control group; the
            stage's .rp-theater-exit stays the way out, because theater
            hides this whole bar). Icon-only .btn cells like their
-           neighbors; the ribbon and the rail toggle keep their places. -->
-      <button class="btn rp-close" aria-label={S.replay.closeLabel} title={S.replay.closeLabel} onclick={closeInstance}>
-        <span class="codicon codicon-close" aria-hidden="true"></span>
-      </button>
-      <button class="btn rp-minimize" aria-label={S.replay.minimizeLabel} title={S.replay.minimizeLabel} onclick={goBack}>
-        <span class="codicon codicon-chrome-minimize" aria-hidden="true"></span>
-      </button>
-      <button
-        class="btn rp-theater"
-        id="rp-theater"
-        aria-label={S.replay.theaterModeAria}
-        title={S.replay.theaterModeTitle}
-        onclick={enterTheater}
-        ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
-      >
+           neighbors; the ribbon and the right wing keep their places. -->
+      <div class="rp-cluster">
+        <button class="btn rp-close" aria-label={S.replay.closeLabel} title={S.replay.closeLabel} onclick={closeInstance}>
+          <span class="codicon codicon-close" aria-hidden="true"></span>
+        </button>
+        <button class="btn rp-minimize" aria-label={S.replay.minimizeLabel} title={S.replay.minimizeLabel} onclick={goBack}>
+          <span class="codicon codicon-chrome-minimize" aria-hidden="true"></span>
+        </button>
+        <button
+          class="btn rp-theater"
+          id="rp-theater"
+          aria-label={S.replay.theaterModeAria}
+          title={S.replay.theaterModeTitle}
+          onclick={enterTheater}
+          ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
+        >
+      </div>
       <div class="rp-ribbon">
         {#if rounds.length}
           <!-- The canonical RoundStrip (Match header / RoundDetail keep
@@ -3130,22 +3138,28 @@
           />
         {/if}
       </div>
-      <!-- The view's help affordance (HelpButton.svelte): the ribbon's
-           flex-grow parks it at the bar's right end, just left of the
-           rail toggle (which the expanded feed's own header owns) —
-           one `?`, primary chrome only (Part 8's placement ruling). -->
-      <HelpButton section="replay" {openDocs} />
-      {#if !eventsOpen && railVisible}
-        <button
-          class="side-toggle rp-rail-toggle"
-          aria-expanded="false"
-          aria-label={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
-          title={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
-          onclick={() => (eventsOpen = true)}
-        >
-          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
-        </button>
-      {/if}
+      <!-- The bar's RIGHT WING (.rp-tools): the view's help
+           affordance (HelpButton.svelte) and the collapsed rail toggle
+           (which the expanded feed's own header owns) — one `?`,
+           primary chrome only (Part 8's placement ruling). The two wings
+           take HALF the bar's spare space each, so the ribbon cell
+           between them sits on the bar's center — and the stage is
+           centered under it (owner answer: the ribbon is centered over
+           the radar). -->
+      <div class="rp-tools">
+        <HelpButton section="replay" {openDocs} />
+        {#if !eventsOpen && railVisible}
+          <button
+            class="side-toggle rp-rail-toggle"
+            aria-expanded="false"
+            aria-label={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
+            title={S.fill(S.replay.eventsCountAria, { n: feedCountLabel })}
+            onclick={() => (eventsOpen = true)}
+          >
+            <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+          </button>
+        {/if}
+      </div>
     </div>
     {/if}
     {#if loadError}

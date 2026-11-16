@@ -1,9 +1,11 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
 // (.replay-topbar, first child of .replay-main: the Close · Minimize ·
-// Theater cluster left (macOS traffic-light order), round ribbon in the
-// flex-grow middle, the header `?` (HelpButton — help-buttons wave)
-// then the rail toggle right, spec 7/13/14) with
+// Theater cluster in the bar's LEFT wing (.rp-cluster, macOS
+// traffic-light order), round ribbon in the middle cell, the header `?`
+// (HelpButton — help-buttons wave) then the rail toggle in the RIGHT
+// wing (.rp-tools), spec 7/13/14 — the two wings are equal-width flex
+// cells, which is what centers the ribbon over the radar stage) with
 // no .replay-side at all until it expands; the view itself is the ROW
 // (main column + rail beside it when open, no .replay-cols wrapper), so
 // the expanded aside's header shares the top line with that bar. The
@@ -962,13 +964,15 @@ check('no .replay-cols wrapper anymore', !view?.querySelector('.replay-cols'));
 const topbar = main?.querySelector(':scope > .replay-topbar');
 check('top bar is the FIRST child of the main column', !!topbar && children(main)[0] === topbar, 'missing .replay-topbar first');
 // --- The top-left cluster (macOS traffic-light order): Close · Minimize · Theater ---
+const cluster = topbar?.querySelector(':scope > .rp-cluster');
 const closeCell = topbar?.querySelector('.rp-close');
 const minCell = topbar?.querySelector('.rp-minimize');
 const theaterCell = topbar?.querySelector('#rp-theater');
 check(
-  'cluster order: Close, Minimize, Theater — the top bar\'s first three cells (macOS traffic-light order)',
-  !!closeCell && !!minCell && !!theaterCell &&
-    children(topbar)[0] === closeCell && children(topbar)[1] === minCell && children(topbar)[2] === theaterCell,
+  'cluster order: Close, Minimize, Theater — the first three cells of the top bar\'s LEFT wing (macOS traffic-light order)',
+  !!cluster && !!closeCell && !!minCell && !!theaterCell &&
+    children(topbar)[0] === cluster &&
+    children(cluster)[0] === closeCell && children(cluster)[1] === minCell && children(cluster)[2] === theaterCell,
   topbar ? children(topbar).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | ') : 'no topbar',
 );
 check(
@@ -999,23 +1003,30 @@ check(
   !!toggle && !stage.querySelector('.side-toggle'),
   'missing top-bar .side-toggle',
 );
+// The bar's THREE cells (V11, owner answer Q3 2026-11-16): the two
+// wings (.rp-cluster / .rp-tools) are equal-width flex cells around the
+// ribbon, which is what centers the ribbon over the radar stage — the
+// wing rules themselves are pinned in section C.
+const tools = topbar?.querySelector(':scope > .rp-tools');
 check(
-  'bar order: cluster (Close, Minimize, Theater) first, ribbon cell FOURTH, rail toggle last',
-  topbar && children(topbar)[0] === closeCell && children(topbar)[1] === minCell &&
-    children(topbar)[2] === theaterCell && children(topbar)[3]?.classList.contains('rp-ribbon') &&
-    children(topbar)[children(topbar).length - 1] === toggle,
+  'bar shape: left wing (Close, Minimize, Theater) FIRST, ribbon cell in the MIDDLE, right wing (?, rail toggle) LAST — three cells, ribbon between two wings',
+  topbar && children(topbar).length === 3 &&
+    children(topbar)[0] === cluster && children(topbar)[1]?.classList.contains('rp-ribbon') &&
+    children(topbar)[2] === tools &&
+    !!tools && children(tools)[children(tools).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
 );
 // The header `?` (help-buttons wave, 2026-11-15): the shared
-// HelpButton between the ribbon (the bar's flex-grow spacer) and the
-// rail toggle — ONE per view header, primary chrome only, opening the
+// HelpButton heads the bar's RIGHT wing — the rail toggle immediately
+// to its right — ONE per view header, primary chrome only, opening the
 // guide at the `replay` section.
 const helpCell = topbar?.querySelector('button[aria-label="Help for this view"]');
-const helpIdx = helpCell ? children(topbar).indexOf(helpCell) : -1;
+const helpIdx = helpCell && tools ? children(tools).indexOf(helpCell) : -1;
 check(
-  'the ? rides the top bar right of the ribbon (immediately left of the rail toggle), shared labels + question glyph',
-  !!helpCell && helpIdx === 4 &&
-    helpIdx === children(topbar).indexOf(toggle) - 1 &&
+  'the ? rides the top bar\'s right wing — first cell of it, right of the ribbon, immediately left of the rail toggle — shared labels + question glyph',
+  !!helpCell && !!tools && helpIdx === 0 &&
+    helpIdx === children(tools).indexOf(toggle) - 1 &&
+    children(topbar).indexOf(tools) === 2 &&
     helpCell.getAttribute('title') === 'Help for this view' &&
     helpCell.classList.contains('btn') && !!helpCell.querySelector('.codicon-question'),
   topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar',
@@ -1117,6 +1128,25 @@ check(
   'ribbon mounted in the top bar\'s .rp-ribbon cell (not a loose .replay-main child)',
   !!topbar?.querySelector(':scope > .rp-ribbon') && !!ribbon,
   'missing .rp-ribbon / .round-strip-wrap',
+);
+// Centered over the RADAR (owner answer Q3, 2026-11-16): the ribbon
+// cell lands on the bar's center because the bar's two wings are
+// equal-width flex cells (flex-basis 0 + equal grow), and the stage
+// sits centered under that bar (both TeamColumns share one fixed width;
+// the narrow layout gives the stage the body's whole first line). jsdom
+// has no layout, so the stylesheet rules are the pin (round-detail's
+// idiom).
+const cssBar = readFileSync('public/style.css', 'utf8');
+check(
+  'the top bar\'s two wings carry the equal-width rule that centers the ribbon cell (flex-basis 0, equal grow)',
+  /\.replay-topbar > \.rp-cluster,\s*\.replay-topbar > \.rp-tools\s*\{[^}]*flex: 1 1 0;/.test(cssBar),
+  'missing equal-wing rule in public/style.css',
+);
+check(
+  'each wing pins its contents to its outer edge (cluster flush left, tools flush right)',
+  /\.replay-topbar > \.rp-cluster\s*\{\s*justify-content: flex-start;\s*\}/.test(cssBar) &&
+    /\.replay-topbar > \.rp-tools\s*\{\s*justify-content: flex-end;\s*\}/.test(cssBar),
+  'missing wing justify rules in public/style.css',
 );
 const ribbonCells = ribbon ? [...ribbon.querySelectorAll('.round-cell')] : [];
 check(
