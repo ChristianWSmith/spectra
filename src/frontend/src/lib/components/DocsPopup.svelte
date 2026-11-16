@@ -106,12 +106,14 @@
   }
 
   // --- Search highlighting (N4) ----------------------------------------------
-  // Split a label into plain/matched segments for the `marked` snippet
+  // Split a text leaf into plain/matched segments for the `marked` snippet
   // below: case-insensitive substring over the SAME needle the filter
   // uses, each matched slice keeping the ORIGINAL casing so every
   // textContent pin stays byte-identical. Segments are plain objects —
   // never an HTML string ({@html} is forbidden in both docs components,
   // docsmd.test.js); the template builds the <mark> elements itself.
+  // The snippet serves the TOC labels, the body's section headings AND
+  // (passed down as a snippet prop) every text leaf DocBlocks renders.
   function markSegments(text, q) {
     if (!q) return [{ text, hit: false }];
     const lower = text.toLowerCase();
@@ -273,8 +275,18 @@
 <!-- Search-hit rendering (N4) — the ONE way a label reaches the DOM with
      matches marked: plain segments render as text, matched segments as
      <mark>. Defined at the template root so the TOC entries (both tiers)
-     and the body's section headings share it; textContent is unchanged
-     either way (the segments concatenate back to the original string). -->
+     and the body's section headings share it — and passed down as a
+     snippet prop, so DocBlocks renders every body-prose leaf through the
+     very same builder (one splitter, one element template). textContent
+     is unchanged either way (the segments concatenate back to the
+     original string).
+     Honest limitation, by construction: the FILTER matches a section's
+     whole flattened text, while marking is PER TEXT LEAF — a needle that
+     spans markup or block boundaries (plain text into a bold span, one
+     line into the next) can therefore select a section whose leaves hold
+     no complete match. That section still lists; it just shows no visible
+     mark. Matching is a plain lowercase indexOf, never a regex, so
+     there is no escaping surface. -->
 {#snippet marked(text)}{#each markSegments(text, needle) as seg, i (i)}{#if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{/snippet}
 
 {#if doc}
@@ -367,7 +379,7 @@
             {#if s.placeholder}
               <p class="doc-placeholder">{S.common.guideComingSoon}</p>
             {:else}
-              <DocBlocks blocks={blocksOf(s)} onNav={(id) => goTo(id, true)} />
+              <DocBlocks blocks={blocksOf(s)} {marked} onNav={(id) => goTo(id, true)} />
             {/if}
           </section>
         {/each}

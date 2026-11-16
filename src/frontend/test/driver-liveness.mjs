@@ -184,7 +184,13 @@ const EXPECTED = {
   // <mark> in a TOC label AND a body section heading with byte-identical
   // text, clearing removing every mark); the second-manual section
   // re-lettered H → I with its 4 checks unchanged.
-  'docs.dom.mjs': 69,
+  // docs 69 → 72 (2026-11-15, manual-search body highlighting): +3
+  // section G (the content-only needle now marks the BODY prose, not
+  // just the TOC — every <mark> in .doc-body carrying the exact needle
+  // inside the importing-demos paragraph, that paragraph's textContent
+  // byte-identical to its unmarked render, and the clear removing every
+  // body mark); every existing G/H check untouched.
+  'docs.dom.mjs': 72,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
