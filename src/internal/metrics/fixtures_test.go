@@ -155,14 +155,14 @@ var builtinSeed = []struct {
 	{
 		// D11: enemies_flashed absent from the corpus's INSERTs → 0.
 		name: "career_avg_enemies_flashed", expr: "from player_stats: avg(enemies_flashed)",
-		scope: "profile", format: "float1", shortName: "Avg enemies flashed", denominator: "",
+		scope: "profile", format: "float1", shortName: "Flash", denominator: "",
 		interpretation: "mean enemies flashed per match (0 — the corpus records none)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
 		// D12: utility_damage absent from the corpus's INSERTs → 0.
 		name: "career_avg_util_damage", expr: "from player_stats: avg(utility_damage)",
-		scope: "profile", format: "float1", shortName: "Avg util damage", denominator: "",
+		scope: "profile", format: "float1", shortName: "Util", denominator: "",
 		interpretation: "mean utility damage per match (0 — the corpus records none)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
@@ -171,7 +171,7 @@ var builtinSeed = []struct {
 		// Counts), so a subject-grouped statement produces no groups →
 		// zero rows. Honest empty, never a fabricated 0 row.
 		name: "career_clutch_win_rate", expr: "from clutches: avg(won)",
-		scope: "profile", format: "percent", shortName: "Clutch win %", denominator: "",
+		scope: "profile", format: "percent", shortName: "CW%", denominator: "",
 		interpretation: "share of the player's clutches won (clutchless corpus → no rows)",
 		rows:           0,
 	},
@@ -204,7 +204,7 @@ var builtinSeed = []struct {
 		// cross-scope ref ban forbids referencing the match seed, so the
 		// join recomputes from the sources; same numbers here.
 		name: "career_trade_rate", expr: "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
-		scope: "profile", format: "percent", shortName: "Trade rate", denominator: "",
+		scope: "profile", format: "percent", shortName: "Trade%", denominator: "",
 		interpretation: "career trade opportunities ratio (recomputes the join — cross-scope ref ban)",
 		rows:           8, wantValues: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0}, wantN: 3,
 		wantLabels: eightLabels,
