@@ -1831,7 +1831,7 @@ check(
   JSON.stringify(ctrlTexts()),
 );
 
-console.log('E1b. loop popover: the ±10 s quick range (clamped at the stream edges, arms the loop)');
+console.log('E1b. loop popover: the loop-length quick range (the loop_secs pref, default 5 s — clamped at the stream edges, arms the loop)');
 // State entering this section: the popover closed by E1's last step,
 // bounds 0:01–0:02 (the range-edit rule), loop OFF, playhead at the
 // round-2 start (tick 640 over the stub's ticks 0…576 / 10 frames).
@@ -1839,18 +1839,18 @@ click(loopBtn);
 await sleep();
 const loopPanel10 = controls.querySelector('.rp-loop-pop');
 // The sr-only labels are accessibility text, not controls — the VISIBLE
-// order is start input, the – separator, stop input, Loop, ±10 s.
+// order is start input, the – separator, stop input, Loop, quick range.
 const panelKids = children(loopPanel10).filter(
   (el) => !(el.tagName === 'LABEL' && el.classList.contains('sr-only')),
 );
 check(
-  'popover child order: start, stop, Loop, ±10 s',
+  'popover child order: start, stop, Loop, quick range',
   panelKids.length === 5 &&
     panelKids[0].id === 'rp-loop-from' &&
     panelKids[1].textContent.trim() === '–' &&
     panelKids[2].id === 'rp-loop-to' &&
     panelKids[3].textContent.trim() === 'Loop' &&
-    panelKids[4].textContent.trim() === '±10 s',
+    panelKids[4].textContent.trim() === '±5 s',
   panelKids.map((el) => el.id || el.textContent.trim() || el.tagName).join(' | '),
 );
 check(
@@ -1866,10 +1866,18 @@ const navBase10 = (globalThis.__nav || []).length;
 click(loop10Btn);
 await sleep();
 check(
-  '±10 s around the playhead (tick 640): 0:00 — 0:09, the `to` clamped to the last frame',
-  controls.querySelector('#rp-loop-from')?.value === '0:00' &&
+  // The width comes from the loop_secs pref (unset in this fresh
+  // profile → the default 5 s): 640∓320 → frames 5…9 = 0:05 — 0:09, the
+  // `to` clamped to the last frame.
+  'the loop length (5 s) around the playhead (tick 640): 0:05 — 0:09, the `to` clamped to the last frame',
+  controls.querySelector('#rp-loop-from')?.value === '0:05' &&
     controls.querySelector('#rp-loop-to')?.value === '0:09',
   `${controls.querySelector('#rp-loop-from')?.value}–${controls.querySelector('#rp-loop-to')?.value}`,
+);
+check(
+  'the view READ loop_secs on load (the same store a reload reads back)',
+  (globalThis.__prefReads || []).includes('loop_secs'),
+  JSON.stringify(globalThis.__prefReads),
 );
 check(
   'it ARMS the loop (bounds-then-arm — never the bound-edit rule that disables)',
@@ -1877,7 +1885,7 @@ check(
   `${loopBtn.getAttribute('aria-pressed')} warn=${loopBtn.classList.contains('warn')}`,
 );
 check(
-  '±10 s writes no navigation (the harness query carries no loop= promise)',
+  'the quick range writes no navigation (the harness query carries no loop= promise)',
   (globalThis.__nav || []).length === navBase10,
   String((globalThis.__nav || []).length - navBase10),
 );
@@ -1891,9 +1899,10 @@ check('the scrub landed on frame 0 (tick 0)', readoutTick().includes('tick 0'), 
 click(loop10Btn);
 await sleep();
 check(
-  '±10 s at tick 0 clamps BOTH edges to the stream (0:00–0:09, no wrap)',
+  // 5 s either side of tick 0 → frames 0…5 = 0:00–0:05.
+  'the loop length at tick 0 clamps BOTH edges to the stream (0:00–0:05, no wrap)',
   controls.querySelector('#rp-loop-from')?.value === '0:00' &&
-    controls.querySelector('#rp-loop-to')?.value === '0:09',
+    controls.querySelector('#rp-loop-to')?.value === '0:05',
   `${controls.querySelector('#rp-loop-from')?.value}–${controls.querySelector('#rp-loop-to')?.value}`,
 );
 check('the clamp leaves the loop armed', loopBtn.getAttribute('aria-pressed') === 'true', loopBtn.getAttribute('aria-pressed'));

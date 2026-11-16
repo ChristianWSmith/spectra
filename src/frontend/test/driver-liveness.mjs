@@ -304,7 +304,13 @@ const EXPECTED = {
   // left of the rail toggle — with the shared labels + glyph, and
   // clicking it fires openDocs once with the `replay` section id and
   // navigates nowhere).
-  'replay.dom.mjs': 452,
+  // replay 452 → 453 (2026-11-15, C10 loop-length pref — merged atop the
+  // 452 re-pin): +1 the E1b PREF_READS pin (the view reads loop_secs on
+  // load — the same store a reload reads back, mirrored from the
+  // skip_freeze pin). The quick-range label and both window checks
+  // re-pinned IN PLACE for the default 5 s (label ±5 s; 0:05–0:09 at tick
+  // 640, 0:00–0:05 at tick 0), so only the new pin moved the count.
+  'replay.dom.mjs': 453,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
@@ -359,7 +365,15 @@ const EXPECTED = {
   // header's last element with the shared labels + glyph, and clicking
   // it fires openDocs once with the `settings` section id); the
   // runtime-error tail stays the closing check after it.
-  'settings.dom.mjs': 51,
+  // settings 51 → 65 (2026-11-15, C10 loop-length pref — merged atop the
+  // 51 re-pin): +14 section G — the new "Replay" card's Loop length
+  // control: card + label presence, the min 1 / max 60 bounds, the
+  // seeded default 5 (the pref read is unset on a fresh profile), NO
+  // write on a plain mount, the in-range write verbatim, and the clamps
+  // both ways (99 → 60, 0 → 1, garbage → the default) each with the
+  // input snapping to what was stored. Sections A–F kept their check
+  // counts (F's whole-run error check just runs after G now).
+  'settings.dom.mjs': 65,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so

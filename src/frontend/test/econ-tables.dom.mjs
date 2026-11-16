@@ -8,7 +8,7 @@
 // Match HEADER row (Watch replay parked far LEFT of the meta line, the
 // "first half" segment cut, the half-score wiring removed) and the
 // Economy summary stat-card drill's ROUND-LEVEL watch loop (tick +
-// nav.entryLoopSpan round span, never an event ±10 s anchor).
+// nav.entryLoopSpan round span, never an event pad anchor).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -650,13 +650,13 @@ check(
 
 // Open round 12's WHY row: it must stay attached ABOVE the boundary line
 // (round row → why row → line → next round row).
-console.log("D2. Economy stat-card drill → ROUND-LEVEL loop (the round's own span, never ±10 s)");
+console.log("D2. Economy stat-card drill → ROUND-LEVEL loop (the round's own span, never an event pad)");
 // The four summary cards are the Economy view's watch buttons: each
 // drills to the round it names with the ROUND-LEVEL loop (the round IS
 // the sequence — owner's watch rule): tick = the round's start, loop =
 // nav.entryLoopSpan(start, end) — the SAME helper RoundDetail's "Watch
 // round" and CompareRounds' "Replay start" stamp — never an event-style
-// ±10 s anchor and never a filter. Fixture round 1 spans 1000→2900
+// pad anchor and never a filter. Fixture round 1 spans 1000→2900
 // (counted(13) above).
 globalThis.__nav = [];
 const econCards = [...root.querySelectorAll('.econ-summary .stat-cell')];
@@ -682,8 +682,10 @@ check(
   navDrill || 'no navigation',
 );
 check(
-  'the round span is NOT an event anchor (no ±10 s pad: 1000−640 would read loop=360,…)',
-  !!navDrill && !navDrill.includes('loop=360,'),
+  // 360 was the ±10 s arithmetic (1000−640); the loop length's default
+  // 5 s would read 680 (1000−320) — neither may appear.
+  'the round span is NOT an event anchor (no event pad: 1000−320 would read loop=680,…)',
+  !!navDrill && !navDrill.includes('loop=680,'),
   navDrill || 'no navigation',
 );
 check(

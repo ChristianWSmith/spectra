@@ -26,6 +26,8 @@ import {
   entryLoopSpan,
   entryLoopAround,
   entryLoopSpanAround,
+  LOOP_SECS_DEFAULT,
+  prefLoopSecs,
   expandReplayHash,
 } from './nav.js';
 
@@ -368,18 +370,51 @@ test('entryLoopSpan stamps a round/clutch span, or nothing when unstatable', () 
   assert.equal(entryLoopSpan('', ''), undefined); // Number('') is 0 too
 });
 
-test('entryLoopAround anchors an event at ±10 s (the engine default width)', () => {
-  // 10 s × 64 tick = 640 ticks either side — the width toggleLoop arms.
-  assert.equal(entryLoopAround(10640, 64), '10000,11280');
-  // …and exactly ±10 s at ANY match rate (128-tick → 1280 a side).
-  assert.equal(entryLoopAround(10640, 128), '9360,11920');
+// The loop LENGTH of the two event categories is the user's `loop_secs`
+// pref (Settings → Replay) — nav.prefLoopSecs is its ONE coercer and
+// LOOP_SECS_DEFAULT its default home.
+test('prefLoopSecs: the one loop_secs coercer (round, clamp 1..60, unset/corrupt → the default)', () => {
+  assert.equal(LOOP_SECS_DEFAULT, 5); // the default is this wave's owner-set number
+  // Unset / not this pref's shape → the default (never 0, never NaN).
+  assert.equal(prefLoopSecs(undefined), 5);
+  assert.equal(prefLoopSecs(null), 5);
+  assert.equal(prefLoopSecs(''), 5);
+  assert.equal(prefLoopSecs('5'), 5); // a string is never this pref's shape
+  assert.equal(prefLoopSecs('nope'), 5);
+  assert.equal(prefLoopSecs([]), 5); // the econ-tables auto-stub's `[]` answer
+  assert.equal(prefLoopSecs({}), 5);
+  assert.equal(prefLoopSecs(true), 5);
+  assert.equal(prefLoopSecs(NaN), 5);
+  assert.equal(prefLoopSecs(Infinity), 5);
+  // A real value rounds to whole seconds…
+  assert.equal(prefLoopSecs(5), 5);
+  assert.equal(prefLoopSecs(7.4), 7);
+  assert.equal(prefLoopSecs(7.6), 8);
+  // …and clamps into the Settings control's own bounds (min 1 / max 60).
+  assert.equal(prefLoopSecs(0), 1);
+  assert.equal(prefLoopSecs(-9), 1);
+  assert.equal(prefLoopSecs(999), 60);
+});
+
+test('entryLoopAround anchors an event at the loop length (the loop_secs pref, default 5 s)', () => {
+  // Default: 5 s × 64 tick = 320 ticks either side (LOOP_SECS_DEFAULT).
+  assert.equal(entryLoopAround(10640, 64), '10320,10960');
+  // An explicit width pads exactly that many seconds — 10 s was the old
+  // fixed width and stays reachable as a stored pref.
+  assert.equal(entryLoopAround(10640, 64, 10), '10000,11280');
+  // …and the width scales with the match rate (5 s × 128 = 640 a side).
+  assert.equal(entryLoopAround(10640, 128), '10000,11280');
   // The lower bound floors at 0 (never negative); the upper keeps full
   // width — the range is never reshaped to the round.
-  assert.equal(entryLoopAround(100, 64), '0,740');
+  assert.equal(entryLoopAround(100, 64), '0,420');
   // An absent/invalid tick rate is the engine's own 64 fallback
   // (fmt.normTickRate), not a zero-width anchor.
-  assert.equal(entryLoopAround(10640, 0), '10000,11280');
-  assert.equal(entryLoopAround(10640, undefined), '10000,11280');
+  assert.equal(entryLoopAround(10640, 0), '10320,10960');
+  assert.equal(entryLoopAround(10640, undefined), '10320,10960');
+  // A corrupt seconds argument falls back to the default as well — the
+  // coercer is the only reader of the pref.
+  assert.equal(entryLoopAround(10640, 64, null), '10320,10960');
+  assert.equal(entryLoopAround(10640, 64, 'x'), '10320,10960');
   // No tick, no promise (null would coerce to 0 — never a bound).
   assert.equal(entryLoopAround(undefined, 64), undefined);
   assert.equal(entryLoopAround(null, 64), undefined);
@@ -387,24 +422,29 @@ test('entryLoopAround anchors an event at ±10 s (the engine default width)', ()
   assert.equal(entryLoopAround(-1, 64), undefined);
 });
 
-// The LONG-EVENT category (the owner's rule verbatim: "10 seconds before
-// the first … to 10 seconds after the last"): the same ±10 s half-width
-// as entryLoopAround, padded onto BOTH ends of the occurrence span.
-test('entryLoopSpanAround pads ±10 s onto BOTH ends of a long-event span', () => {
-  // 10 s × 64 tick = 640 ticks on each side of each bound.
-  assert.equal(entryLoopSpanAround(10640, 20000, 64), '10000,20640');
+// The LONG-EVENT category (the owner's rule shape: `seconds` before the
+// first … to `seconds` after the last): the same half-width as
+// entryLoopAround — the loop_secs pref — padded onto BOTH ends of the
+// occurrence span.
+test('entryLoopSpanAround pads the loop length onto BOTH ends of a long-event span', () => {
+  // Default 5 s × 64 tick = 320 ticks on each side of each bound.
+  assert.equal(entryLoopSpanAround(10640, 20000, 64), '10320,20320');
+  // An explicit width pads exactly that many seconds (10 s = the old
+  // fixed width).
+  assert.equal(entryLoopSpanAround(10640, 20000, 64, 10), '10000,20640');
   // A single-occurrence span (first === last) degenerates to the
-  // singular-event ±10 s anchor.
-  assert.equal(entryLoopSpanAround(10640, 10640, 64), '10000,11280');
+  // singular-event anchor.
+  assert.equal(entryLoopSpanAround(10640, 10640, 64), '10320,10960');
   // The lower bound floors at 0 (never negative); the upper keeps full
   // width — never reshaped to the round, same clamp as entryLoopAround.
-  assert.equal(entryLoopSpanAround(100, 5000, 64), '0,5640');
+  assert.equal(entryLoopSpanAround(100, 5000, 64), '0,5320');
   // An absent/invalid tick rate falls back to the engine's 64
   // (fmt.normTickRate), never a zero-width pad.
-  assert.equal(entryLoopSpanAround(10640, 20000, 0), '10000,20640');
-  assert.equal(entryLoopSpanAround(10640, 20000, undefined), '10000,20640');
-  // 128-tick matches pad by 1280 (the width scales with the match rate).
-  assert.equal(entryLoopSpanAround(10640, 20000, 128), '9360,21280');
+  assert.equal(entryLoopSpanAround(10640, 20000, 0), '10320,20320');
+  assert.equal(entryLoopSpanAround(10640, 20000, undefined), '10320,20320');
+  // 128-tick matches scale the width with the match rate (5 s → 640).
+  assert.equal(entryLoopSpanAround(10640, 20000, 128), '10000,20640');
+  assert.equal(entryLoopSpanAround(10640, 20000, 128, 10), '9360,21280');
 });
 
 test('entryLoopSpanAround states nothing when a bound or the order is unstatable', () => {

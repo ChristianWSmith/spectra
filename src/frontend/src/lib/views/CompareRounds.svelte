@@ -18,10 +18,18 @@
     getUtility,
     getRoundClasses,
     getMatch,
+    getPref,
     errText,
   } from '../services.js';
+  import { onMount } from 'svelte';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
-  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
+  import {
+    replayHash,
+    entryLoopSpan,
+    entryLoopAround,
+    LOOP_SECS_DEFAULT,
+    prefLoopSecs,
+  } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundStartTick, roundEndTick, roundIndexLabel } from '../rounds.js';
   import { buildHash } from '../router.js';
@@ -75,6 +83,20 @@
   let rounds = $state([]);
   let players = $state([]);
   let sideSwitches = $state(0);
+
+  // Event-level loop length: the `loop_secs` pref (Settings → Replay),
+  // read ONCE at mount — nav.prefLoopSecs coerces it (unset/corrupt →
+  // LOOP_SECS_DEFAULT), so every event ▶ here stamps the same width the
+  // replay's quick-range button arms. The round-level "Replay start"
+  // button is untouched: it promises the round's own span.
+  let loopSecs = LOOP_SECS_DEFAULT;
+  onMount(() => {
+    getPref('loop_secs')
+      .then((v) => (loopSecs = prefLoopSecs(v)))
+      .catch(() => {
+        /* keep the default */
+      });
+  });
 
   // Per-round SIDE color for a name in ONE compared round — lib/teams.js
   // playerSideClassAt; '' when the player or round can't be resolved.
@@ -148,17 +170,18 @@
     return normalizeEvent(e, { policy: false });
   }
 
-  // …and both click and ▶ land in it through this handler — with a ±10 s
-  // entry loop around the tick (nav.entryLoopAround), the same anchor
-  // every event ▶ link stamps, plus the row's ACTOR as the camera
-  // follow: `attacker` is the killer of a kill, the thrower of a throw,
-  // the planter/defuser of a bomb row — actor-less rows (round_start /
-  // round_end, chat) stamp none, and a null stamp drops the param (never
-  // a guessed follow). `sel` stays the entry selection.
+  // …and both click and ▶ land in it through this handler — with the
+  // loop length (the loop_secs pref) as an entry loop around the tick
+  // (nav.entryLoopAround), the same anchor every event ▶ link stamps,
+  // plus the row's ACTOR as the camera follow: `attacker` is the killer
+  // of a kill, the thrower of a throw, the planter/defuser of a bomb row
+  // — actor-less rows (round_start / round_end, chat) stamp none, and a
+  // null stamp drops the param (never a guessed follow). `sel` stays the
+  // entry selection.
   function openEvent(row) {
     nav(replayHash(id, {}, {
       tick: row.tick,
-      loop: entryLoopAround(row.tick, tickRate),
+      loop: entryLoopAround(row.tick, tickRate, loopSecs),
       sel: row.key,
       follow: row.attacker || undefined,
       back: backToCompare,

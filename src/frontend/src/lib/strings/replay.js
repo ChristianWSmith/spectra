@@ -52,7 +52,11 @@ export const replay = {
   loopStopPlaceholder: 'stop',
   toggleLoopTitle: 'Toggle loop (L)',
   loopBtnLabel: 'Loop',
-  loop10Title: 'Loop ±10 s around the playhead',
+  // The quick-range button: label + tooltip read the SAME `loop_secs`
+  // pref the Settings control writes (S.fill at the call site), so the
+  // button can never advertise a width it does not arm.
+  loop10Label: '±{n} s',
+  loop10Title: 'Loop ±{n} s around the playhead',
 
   // camera / follow / UI overlays / drop markers
   cameraHelpTitle:
