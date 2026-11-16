@@ -18,7 +18,7 @@
    .filt-ctl control cell per field, so every control starts at ONE x
    (the old inline-flex rows started right after their own label — 26px-
    ragged control edges, content-sized selects). Rows are always a
-   lab/ctl pair (an empty label cell for the bbox chip and Reset), and
+   lab/ctl pair (an empty label cell for Reset), and
    rows whose field does not apply to the category selection are not
    rendered at all (landmarks.applicableFilterFields — the hide-and-CLEAR
    ruling). gap 8px = the panel's rhythm scale (.lm-filter-panel and
@@ -34,7 +34,7 @@
 /* THE one label style for every filter field — the old split (.filt-grp
    0.76em uppercase-muted for grouped controls vs .filt-check 0.82em
    normal-case for the checkbox) is gone: ROUND/PLAYER/SIDE/TEAM/WEAPON/
-   DIST/HEADSHOTS ONLY all read as this. .filt-grp/.filt-line died with
+   DIST/HEADSHOTS ONLY/POSITION all read as this. .filt-grp/.filt-line died with
    the inline layout; .filt-check itself STAYS below for Builder's filter
    checkboxes and Settings' copy-on-import row (FilterBar no longer renders
    through it). */
@@ -93,9 +93,28 @@ label.filt-lab {
   accent-color: var(--accent);
 }
 
+/* Position row (the bbox filter — C20, first-class + manually
+   enterable): the control cell holds a NESTED grid — one line per axis
+   (static axis label + a min–max pair) with a 4th track for the second
+   line's pair — so four world-coordinate spinners fit the rail's ONE
+   control column instead of the old value-gated chip. The clear ✕ sits
+   beside it in the outer .filt-ctl flex. Field-gated like every other
+   row (it renders whenever the position field applies), never
+   value-gated. */
 .filt-bbox {
-  color: var(--accent);
-  border-color: var(--accent-45);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 4px;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Stretch each spinner to its grid track — an <input>'s intrinsic
+   width would otherwise fight minmax(0, 1fr). */
+.filt-bbox .input {
+  min-width: 0;
+  width: 100%;
 }
 
 .filt-x {
@@ -106,6 +125,7 @@ label.filt-lab {
   padding: 0 2px;
   font-size: 0.9em;
   line-height: 1;
+  flex: none;
 }
 
 .filt-x:hover {

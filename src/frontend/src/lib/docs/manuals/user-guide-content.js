@@ -324,9 +324,12 @@ The rail on the right is the event browser for the match. One **Filters** toggle
 everything: a **Categories** multi-select (kills, deaths, round wins, round starts, bomb,
 grenade throws/detonations/landings/bounces, dropped items, damage, flashes & blinds, joins &
 leaves, buys, footsteps — round starts are on by default), then round range, player, side, team, weapon,
-distance range, headshot and a position filter, plus **saved filter presets** (save, apply,
+distance range, headshot and a **Position** row where the world-space bounds are typed in
+directly (minimum and maximum on each axis) or cleared, plus **saved filter presets** (save, apply,
 delete, reset). The loaded feed exports as **CSV or JSON**. Selecting an event opens its detail
-pane with the participants, a filter over its payload keys and a raw-JSON toggle.
+pane with the participants, a filter over its payload keys and a raw-JSON toggle. The row's play
+button — and **Seek to event** in that pane — jump the replay to the event and pause there, so
+you land looking at the moment.
 
 # Keyboard shortcuts
 

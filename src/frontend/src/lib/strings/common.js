@@ -88,13 +88,19 @@ export const common = {
   filterBarMinDist: 'Minimum distance', // distance-min input aria-label
   filterBarMaxDist: 'Maximum distance', // distance-max input aria-label
   filterBarHeadshotsOnly: 'Headshots only', // the headshot facet's label cell
-  // The bbox chip: one fill for the tooltip (numbers are Math.round'ed at
-  // the call site) and one for the chip's readable line — the line keeps
-  // the exact spacing the compiler renders the static text with (edge
-  // whitespace trimmed, the run's trailing space before the clear button
-  // lives in the markup beside the expression).
-  filterBarBboxTitle: 'Position filter: x {minX}…{maxX}, y {minY}…{maxY} (world units)',
-  filterBarBboxLine: 'bbox {minX},{minY}–{maxX},{maxY}',
+  // The Position row (the bbox filter — first-class and manually
+  // enterable): the row label, the two static axis labels (NO input
+  // placeholders — Check E stays out; the axis letter in front of each
+  // min–max pair is the per-field visible name) and one aria-label per
+  // spinner. The old chip's two fill strings left WITH the chip: the
+  // bounds are now readable in the inputs themselves.
+  filterBarPosition: 'Position', // the position row's label cell
+  filterBarBboxAxisX: 'X', // static axis label in front of the X min–max pair
+  filterBarBboxAxisY: 'Y', // static axis label in front of the Y min–max pair
+  filterBarBboxMinX: 'Position minimum X', // the x-min spinner's aria-label
+  filterBarBboxMaxX: 'Position maximum X', // the x-max spinner's aria-label
+  filterBarBboxMinY: 'Position minimum Y', // the y-min spinner's aria-label
+  filterBarBboxMaxY: 'Position maximum Y', // the y-max spinner's aria-label
   filterBarClearBbox: 'Clear position filter', // the clear × button's aria-label
   filterBarReset: 'Reset', // the local reset button
 

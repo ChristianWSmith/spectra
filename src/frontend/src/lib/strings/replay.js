@@ -158,7 +158,7 @@ export const replay = {
   selectedEventAria: 'Selected event',
   tickLabel: 'tick {tick}',
   hearVoiceTitle: 'Open playback at this event with voice on — hear comms around it',
-  hearBtn: 'Hear ±10s',
+  hearBtn: 'Hear around the event',
   closeDetailAria: 'Close detail',
   closeDetailTitle: 'Close detail — back to the list',
   factAttacker: 'Attacker',

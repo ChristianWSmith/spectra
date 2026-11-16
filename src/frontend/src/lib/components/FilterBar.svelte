@@ -33,6 +33,7 @@
     sideVal,
     applicableFilterFields,
     clearInapplicableFields,
+    parseBboxInputs,
   } from '../replay/landmarks.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
@@ -238,6 +239,27 @@
     commit();
   }
 
+  // Position row (C20): the bbox is FIRST-CLASS — four manually
+  // enterable world-coordinate bounds, not a heatmap-drill chip. A
+  // change re-reads ALL FOUR inputs (each blur re-parses the whole row)
+  // through landmarks.parseBboxInputs: all four blank clears the rect,
+  // four finite numbers commit it, and a PARTIAL or non-numeric row
+  // commits NOTHING (the prior rect keeps filtering). Deliberately not
+  // num(), which clamps to >0 — world coordinates go negative.
+  function onBbox(e) {
+    const cell = e.currentTarget.closest('.filt-ctl');
+    const val = (id) => cell?.querySelector('#' + id)?.value ?? '';
+    const next = parseBboxInputs([
+      val('filt-bbox-min-x'),
+      val('filt-bbox-min-y'),
+      val('filt-bbox-max-x'),
+      val('filt-bbox-max-y'),
+    ]);
+    if (next === undefined) return; // partial/invalid → keep the prior rect
+    f.bbox = next;
+    commit();
+  }
+
   function clearBbox() {
     f.bbox = null;
     commit();
@@ -248,9 +270,11 @@
      label cell + a .filt-ctl control cell per field, so every control's
      left edge aligns (the old inline-flex rows started right after their
      own ragged label). Every row is a lab/ctl PAIR — an empty label cell
-     for the bbox chip and Reset — and rows whose field does not apply to
+     for Reset — and rows whose field does not apply to
      the parent's category selection are not rendered at all (fields —
-     landmarks.applicableFilterFields, the hide-and-CLEAR ruling). -->
+     landmarks.applicableFilterFields, the hide-and-CLEAR ruling). The
+     Position row is field-gated like every other row (C20), so it has a
+     real label cell too. -->
 <div class="toolbar filt-bar" role="group" aria-label={S.common.filterBarLabel}>
   <span class="filt-lab">{S.common.filterBarRound}</span>
   <span class="filt-ctl">
@@ -375,30 +399,65 @@
     </span>
   {/if}
 
-  {#if f.bbox}
-    <span class="filt-lab"></span>
+  <!-- Position row (C20): the bbox filter is FIRST-CLASS — four
+       manually enterable world-coordinate bounds, rendered whenever the
+       field APPLIES (fields.bbox — the same table every other row gates
+       on) instead of only when a heatmap drill left a value behind. The
+       control cell holds a nested 2-line grid: one line per axis (static
+       axis label + a min–max pair) so four spinners fit the rail's one
+       control column, with the clear ✕ at its right. No placeholders
+       (the axis labels + aria-labels name the inputs — Check E stays
+       out), and the commit rule lives in landmarks.parseBboxInputs. -->
+  {#if fields.bbox}
+    <span class="filt-lab">{S.common.filterBarPosition}</span>
     <span class="filt-ctl">
-      <span
-        class="chip filt-bbox"
-        title={S.fill(S.common.filterBarBboxTitle, {
-          minX: Math.round(f.bbox.minX),
-          maxX: Math.round(f.bbox.maxX),
-          minY: Math.round(f.bbox.minY),
-          maxY: Math.round(f.bbox.maxY),
-        })}
-      >
-        {S.fill(S.common.filterBarBboxLine, {
-          minX: Math.round(f.bbox.minX),
-          minY: Math.round(f.bbox.minY),
-          maxX: Math.round(f.bbox.maxX),
-          maxY: Math.round(f.bbox.maxY),
-        })}
-        <button
-          class="filt-x"
-          aria-label={S.common.filterBarClearBbox}
-          onclick={clearBbox}
-        ><span class="codicon codicon-close"></span></button>
+      <span class="filt-bbox">
+        <span class="filt-lab">{S.common.filterBarBboxAxisX}</span>
+        <input
+          class="input"
+          id="filt-bbox-min-x"
+          type="number"
+          step="any"
+          aria-label={S.common.filterBarBboxMinX}
+          value={f.bbox?.minX ?? ''}
+          onchange={onBbox}
+        />
+        <span class="filt-sep">–</span>
+        <input
+          class="input"
+          id="filt-bbox-max-x"
+          type="number"
+          step="any"
+          aria-label={S.common.filterBarBboxMaxX}
+          value={f.bbox?.maxX ?? ''}
+          onchange={onBbox}
+        />
+        <span class="filt-lab">{S.common.filterBarBboxAxisY}</span>
+        <input
+          class="input"
+          id="filt-bbox-min-y"
+          type="number"
+          step="any"
+          aria-label={S.common.filterBarBboxMinY}
+          value={f.bbox?.minY ?? ''}
+          onchange={onBbox}
+        />
+        <span class="filt-sep">–</span>
+        <input
+          class="input"
+          id="filt-bbox-max-y"
+          type="number"
+          step="any"
+          aria-label={S.common.filterBarBboxMaxY}
+          value={f.bbox?.maxY ?? ''}
+          onchange={onBbox}
+        />
       </span>
+      <button
+        class="filt-x"
+        aria-label={S.common.filterBarClearBbox}
+        onclick={clearBbox}
+      ><span class="codicon codicon-close"></span></button>
     </span>
   {/if}
 

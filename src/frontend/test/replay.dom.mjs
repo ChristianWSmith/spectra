@@ -2719,11 +2719,16 @@ check(
 // carries no player endpoint, is outside the Side/Team scope clause and
 // writes no weapon/distance/headshot, so every value field except ROUND
 // hides — the empty-list footgun the ruling complained about, pinned
-// from the DOM. The PRESENCE / clearing / URL-write half needs an
-// endpoint-scoped selection and mounts below (G2 — kills-seeded
-// harness8); the dist/player/weapon/headshot pins moved there with it.
+// from the DOM. C20 re-pins the exception: the POSITION row is FIELD-
+// gated (it renders whenever landmarks.applicableFilterFields says the
+// field applies — the event source is on under round_starts), so under
+// the default it shows too: four empty spinners, seeded from a null
+// f.bbox, never a value-gated chip. The PRESENCE / clearing / URL-write
+// half needs an endpoint-scoped selection and mounts below (G2 —
+// kills-seeded harness8); the dist/player/weapon/headshot pins moved
+// there with it.
 check(
-  'default selection: every field except ROUND hides (hide-and-clear ruling)',
+  'default selection: every field except ROUND and POSITION hides (hide-and-clear ruling)',
   !!bar &&
     !bar.querySelector('#filt-player') &&
     !bar.querySelector('#filt-side') &&
@@ -2732,8 +2737,30 @@ check(
     !bar.querySelector('#filt-dist-min') &&
     !bar.querySelector('#filt-dist-max') &&
     !bar.querySelector('#filt-hs') &&
-    !bar.querySelector('.filt-bbox'),
+    !!bar.querySelector('.filt-bbox') &&
+    !!bar.querySelector('#filt-bbox-min-x') &&
+    !!bar.querySelector('#filt-bbox-max-y'),
   bar ? [...bar.children].map((el) => el.className).join(' | ') : 'no bar',
+);
+check(
+  'the POSITION row is seeded EMPTY under the default (field-gated, not value-gated)',
+  ['min-x', 'min-y', 'max-x', 'max-y'].every(
+    (k) => bar?.querySelector(`#filt-bbox-${k}`)?.value === '',
+  ),
+  ['min-x', 'min-y', 'max-x', 'max-y']
+    .map((k) => `${k}=${JSON.stringify(bar?.querySelector(`#filt-bbox-${k}`)?.value)}`)
+    .join(' '),
+);
+check(
+  'the POSITION row inputs carry aria-labels and NO placeholders (Check E stays out)',
+  !!bar &&
+    ['min-x', 'min-y', 'max-x', 'max-y'].every((k) => {
+      const el = bar.querySelector(`#filt-bbox-${k}`);
+      return el && el.getAttribute('aria-label') && !el.hasAttribute('placeholder');
+    }),
+  ['min-x', 'min-y', 'max-x', 'max-y']
+    .map((k) => `${k}:${bar?.querySelector(`#filt-bbox-${k}`)?.getAttribute('aria-label')}`)
+    .join(' '),
 );
 
 // Layout ruling (owner's screenshot): the panel rows are a two-column
@@ -2907,6 +2934,7 @@ const bar8 = panel8?.querySelector('.filt-bar');
 const presenceIds = [
   '#filt-player', '#filt-side', '#filt-team', '#filt-weapon',
   '#filt-dist-min', '#filt-dist-max', '#filt-hs',
+  '#filt-bbox-min-x', '#filt-bbox-min-y', '#filt-bbox-max-x', '#filt-bbox-max-y',
 ];
 check(
   'kills on: every conditional field renders',
@@ -2919,9 +2947,9 @@ check(
   bar8?.querySelector('#filt-player')?.value ?? 'no select',
 );
 check(
-  'the field rows read ROUND · PLAYER · SIDE · TEAM · WEAPON · DIST · HEADSHOTS ONLY (one label style)',
+  'the field rows read ROUND · PLAYER · SIDE · TEAM · WEAPON · DIST · HEADSHOTS ONLY · POSITION (one label style)',
   (bar8 ? [...bar8.children].filter((el, i) => i % 2 === 0).map((el) => el.textContent.trim()) : []).join(' · ') ===
-    'Round · Player · Side · Team · Weapon · Dist · Headshots only',
+    'Round · Player · Side · Team · Weapon · Dist · Headshots only · Position',
   (bar8 ? [...bar8.children].map((el) => el.textContent.trim()) : []).join(' · '),
 );
 
@@ -3057,13 +3085,14 @@ check(
 // fields unmount…
 await sleep();
 check(
-  'the landing URL hides every conditional field again (ROUND only)',
+  'the landing URL hides every conditional field again (ROUND + POSITION — the position row is FIELD-gated, not value-gated)',
   !!bar8?.querySelector('#filt-round-from') &&
     !bar8.querySelector('#filt-player') &&
     !bar8.querySelector('#filt-side') &&
     !bar8.querySelector('#filt-team') &&
     !bar8.querySelector('#filt-weapon') &&
-    !bar8.querySelector('#filt-hs'),
+    !bar8.querySelector('#filt-hs') &&
+    !!bar8.querySelector('.filt-bbox'),
   bar8 ? [...bar8.children].map((el) => el.className).join(' | ') : 'no bar',
 );
 // …and turning kills back on must NOT resurrect the cleared values —
@@ -3079,6 +3108,62 @@ check(
     bar8?.querySelector('#filt-team')?.value === '' &&
     bar8?.querySelector('#filt-player')?.value === '',
   `weapon=${bar8?.querySelector('#filt-weapon')?.value} side=${bar8?.querySelector('#filt-side')?.value}`,
+);
+
+// --- G3 (C20): the POSITION row is first-class + manually enterable -------
+// The row already RENDERED above (field-gated); here it does the work:
+// four typed bounds commit as ONE rect through landmarks.parseBboxInputs
+// and ride the URL (commit → onBarFilter → navigateFilter → serialize —
+// the pipeline is unchanged, zero backend). The three commit rules are
+// pinned from __nav8, the harness whose nav feeds the query back into
+// the prop (the real URL → prop loop): a PARTIAL row commits nothing,
+// four finite numbers gain ?bbox=minX,minY,maxX,maxY, and the clear ✕
+// drops it again.
+console.log('G3. C20 position row: partial never commits, four bounds ride the URL, clear drops them');
+const bboxEl8 = (k) => bar8?.querySelector(`#filt-bbox-${k}`);
+const navC20 = () => (globalThis.__nav8 || []).length;
+const navC20Base = navC20();
+
+// (a) PARTIAL — three of the four bounds, then a change: no commit at
+// all (not even a clear): the prior rect keeps standing.
+bboxEl8('min-x').value = '-1000';
+bboxEl8('min-y').value = '-900';
+bboxEl8('max-x').value = '100';
+bboxEl8('max-x').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'a PARTIAL position row never commits (no navigation at all)',
+  navC20() === navC20Base,
+  `navs +${navC20() - navC20Base} :: ${(globalThis.__nav8 || []).at(-1) || 'none'}`,
+);
+
+// (b) All four finite → ONE commit, and the rect rides the URL in rect
+// order (serialize emits minX,minY,maxX,maxY; buildHash keeps commas raw).
+bboxEl8('max-y').value = '200';
+bboxEl8('max-y').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+const bboxURL8 = (globalThis.__nav8 || []).at(-1) || '';
+check(
+  'four finite bounds commit → the URL gains bbox=minX,minY,maxX,maxY',
+  navC20() === navC20Base + 1 && bboxURL8.includes('bbox=-1000,-900,100,200'),
+  `navs +${navC20() - navC20Base} :: ${bboxURL8}`,
+);
+await sleep();
+check(
+  'the committed bounds read back into the row (URL → prop → parse round trip)',
+  ['min-x', 'min-y', 'max-x', 'max-y'].map((k) => bboxEl8(k)?.value).join(',') === '-1000,-900,100,200',
+  ['min-x', 'min-y', 'max-x', 'max-y'].map((k) => bboxEl8(k)?.value).join(','),
+);
+
+// (c) The clear ✕ drops the rect from the URL and empties the row.
+click(bar8.querySelector('.filt-x'));
+await sleep();
+const clearedURL8 = (globalThis.__nav8 || []).at(-1) || '';
+check(
+  'the clear ✕ drops bbox from the URL and empties the row',
+  !clearedURL8.includes('bbox=') &&
+    ['min-x', 'min-y', 'max-x', 'max-y'].every((k) => bboxEl8(k)?.value === ''),
+  `${clearedURL8} :: ${['min-x', 'min-y', 'max-x', 'max-y'].map((k) => JSON.stringify(bboxEl8(k)?.value)).join(',')}`,
 );
 
 console.log('I. theater mode: the chrome hides, the stage keeps its exit button, popovers reset');
@@ -4192,6 +4277,49 @@ check(
   'both: the typed fetch carries killRole=any (today\'s either-endpoint)',
   lastFilter6()?.killRole === 'any',
   JSON.stringify(lastFilter6() || {}),
+);
+
+// --- (C19): the feed row's ▶ SEEKS AND PAUSES ------------------------------
+// The lead ruling: Replay's seekTo (the row ▶ AND the detail pane's
+// "Seek to event") = engine.seekTick + engine.pause — a seek lands you
+// LOOKING AT the moment. engine.seekTick itself stays position-only
+// (section K's "seek never touches play/pause" pins own that), and no
+// wasPlaying write either: the keep-alive re-records it from the engine
+// at leave. Counter-baseline pattern (the __plays/__pauses/__seeks
+// precedent): snapshot the stub's counters around the click, then pin
+// the deltas plus the uiPlaying mirror the transport glyph renders.
+console.log('N2. C19 — the row ▶ seeks to the event AND pauses (seekTo = seek + pause)');
+const transportN2 = target6.querySelector('.replay-transport');
+const glyphN2 = () =>
+  transportN2?.querySelector('button[aria-label="Play"]') ? 'play'
+    : transportN2?.querySelector('button[aria-label="Pause"]') ? 'pause'
+      : 'none';
+const seeksN2 = [...(globalThis.__seeks || [])];
+const playsN2 = globalThis.__plays || 0;
+const pausesN2 = globalThis.__pauses || 0;
+const rowN2 = target6.querySelector('.lm-row');
+check(
+  'C19 baseline: the kill row is listed and the stub is PLAYING (transport offers Pause)',
+  !!rowN2?.querySelector('.lm-play') && glyphN2() === 'pause',
+  `row=${!!rowN2} glyph=${glyphN2()}`,
+);
+click(rowN2?.querySelector('.lm-play') || document.createElement('button'));
+await sleep();
+check(
+  'the row ▶ seeks to the event tick (seek +1 → 128, the stub logs every seekTick)',
+  (globalThis.__seeks || []).length === seeksN2.length + 1 &&
+    (globalThis.__seeks || []).at(-1) === 128,
+  JSON.stringify((globalThis.__seeks || []).slice(seeksN2.length)),
+);
+check(
+  'the same seek PAUSES playback (pause +1, no extra play call)',
+  (globalThis.__pauses || 0) === pausesN2 + 1 && (globalThis.__plays || 0) === playsN2,
+  `plays +${(globalThis.__plays || 0) - playsN2}, pauses +${(globalThis.__pauses || 0) - pausesN2}`,
+);
+check(
+  'the transport glyph mirrors it — the uiPlaying mirror offers Play again',
+  glyphN2() === 'play',
+  glyphN2(),
 );
 
 // ============================================================================
