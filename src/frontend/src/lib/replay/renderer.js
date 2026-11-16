@@ -1160,7 +1160,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // The cache keeps ONE offscreen canvas holding the last-rendered radar
   // LAYER (the clearRect + panels/label pixels — nothing painted above it)
   // plus the context residue drawRadar left, keyed by everything those
-  // pixels depend on (radarLayerKey below, by drawRadar's home). A key
+  // pixels depend on (radarLayerKey below, by drawRadar's home). In draw()
+  // the key is built AFTER the follow re-centre, so a follow move misses
+  // (and repaints) on the frame it happens, not one frame late. A key
   // match BLITS the cached raster instead of re-running the path; any key
   // change re-emits the full path byte-for-byte as before — the cache only
   // ever SKIPS redundant work, never changes what is drawn. The visible
@@ -1181,7 +1183,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // fit scale (which is recomputed on resize).
   const cam = { cx: 0, cy: 0, zoom: 1, fit: 1 };
   // Follow camera: last ALIVE world position of the followed slot (the
-  // camera holds it while they are dead — see draw()).
+  // camera holds it while they are dead — see draw(), which re-centres
+  // it BEFORE the radar pass so one draw paints radar and entities from
+  // ONE camera).
   let followFor = -1;
   let followX = null;
   let followY = null;
@@ -4438,23 +4442,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (st.followSlot == null && store && store.frames > 0) stepSmart(now);
       else smartConverged = true; // follow owns it / nothing to frame
     }
-    // RADAR LAYER CACHE: a key match blits the cached raster (the hit
-    // branch performs its own full clear in device space as part of the
-    // 1:1 blit); any miss runs the exact sequence below — today's
-    // clearRect + radar/grid — and, when radar pixels actually drew,
-    // snapshots the layer for the next draw. The key is built BEFORE
-    // drawRadar so it reads the same camera/camSeen state drawRadar
-    // would paint with.
-    const rkey = radarLayerKey();
-    if (radarCache.key === rkey) {
-      blitRadarCache();
-    } else {
-      ctx.clearRect(0, 0, cssW, cssH);
-      if (drawRadar()) snapshotRadarCache(rkey);
-      else drawGrid();
-    }
+    // FOLLOW CAMERA — re-centred BEFORE the radar pass, never between the
+    // radar and the entity passes: fit() (resize → reproject) teleports
+    // the camera to the map centre on ANY size change, so a re-centre
+    // that ran after drawRadar painted the radar at that centre and the
+    // entities at the followed player — a mismatched frame that NOTHING
+    // repaints while PAUSED (the engine's per-frame draw stops and the
+    // smart settle loop is disabled while following), which is why one
+    // zoom used to snap it back (input.js's zoomAt → draw is a second
+    // draw whose key now reads the follow-recentred camera). With the
+    // camera final before ANY layer paints, the radar key, the radar
+    // paint and the entities all read ONE camera in one draw — and
+    // radarMoving() sees follow motion on the frame it happens instead
+    // of one frame late. Design notes cross-referenced here: the
+    // last-ALIVE hold rationale lives with the followX/followY/followZ
+    // declarations, the cache design (why the key is built before
+    // drawRadar) with the radarCache block.
     if (store && store.frames > 0) {
-      // center on the followed player before drawing the rest
       if (st.followSlot != null) {
         if (st.followSlot !== followFor) {
           followFor = st.followSlot;
@@ -4478,6 +4482,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       } else {
         followFor = -1;
       }
+    }
+    // RADAR LAYER CACHE: a key match blits the cached raster (the hit
+    // branch performs its own full clear in device space as part of the
+    // 1:1 blit); any miss runs the exact sequence below — today's
+    // clearRect + radar/grid — and, when radar pixels actually drew,
+    // snapshots the layer for the next draw. The key is built AFTER the
+    // follow re-centre above and BEFORE drawRadar so it reads the same
+    // camera/camSeen state drawRadar would paint with.
+    const rkey = radarLayerKey();
+    if (radarCache.key === rkey) {
+      blitRadarCache();
+    } else {
+      ctx.clearRect(0, 0, cssW, cssH);
+      if (drawRadar()) snapshotRadarCache(rkey);
+      else drawGrid();
+    }
+    if (store && store.frames > 0) {
       drawTrails(st.frame);
       drawGrenades(st.tick);
       // Death X UNDER the bomb layer: the dropped/planted C4 icon and
