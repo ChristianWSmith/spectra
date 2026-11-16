@@ -29,6 +29,7 @@
   import { fmtInt, fmtMetric } from '../fmt.js';
   import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
   import Popover from '../components/Popover.svelte';
@@ -248,6 +249,65 @@
   let previewKey = $state(null);
   let previewError = $state('');
   let previewBusy = $state(false);
+  // Preview rows sort CLIENT-side (the bound is small — an ad-hoc run is
+  // capped, a stored read is a roster or a career bucket), the same way
+  // Profiles/Match keep their table sorts: transient view state, never in
+  // the URL (a sort is not shareable) and never in the registry (this
+  // view's own placement comment above keeps previews transient).
+  //
+  // Each header sorts its column. The NUMERIC columns (value, N) compare
+  // by VALUE — never the formatted text, so "5%" cannot sort before
+  // "41.2%" as text — and both take DESCENDING as their natural
+  // direction, so the default order is N highest-first (the owner's
+  // ruling); text columns start A→Z. Rows whose key is not a number sort
+  // last either way (a gap is not a zero), and ties keep arrival order
+  // (Array#sort is stable), so a fresh preview still renders what the
+  // read returned.
+  const PREVIEW_SORT_DEFAULT_DESC = { group: false, label: false, value: true, n: true };
+  let previewSortKey = $state('n');
+  let previewSortDesc = $state(true);
+
+  // numKey reads a sort key as a NUMBER: numeric text ("13", "0.412")
+  // compares as its value, anything unnumbered ("", null, "abc") is a
+  // gap — never 0, which would let a gap win an ascending sort.
+  function numKey(v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+
+  const sortedPreviewRows = $derived.by(() => {
+    const key = previewSortKey;
+    const dir = previewSortDesc ? -1 : 1;
+    const rows = [...(preview ? preview.rows : [])];
+    rows.sort((a, b) => {
+      if (key === 'value' || key === 'n') {
+        const av = numKey(a[key]);
+        const bv = numKey(b[key]);
+        if (av === null || bv === null) {
+          if (av === null && bv === null) return 0; // both gaps: keep arrival order
+          return av === null ? 1 : -1; // gaps sort LAST either way
+        }
+        return (av - bv) * dir;
+      }
+      return String(a[key] ?? '').localeCompare(String(b[key] ?? '')) * dir;
+    });
+    return rows;
+  });
+
+  // First click on an inactive header → that column's natural direction;
+  // a second click on the ACTIVE header flips it (SortTh's contract, as
+  // in Library/Profiles).
+  function togglePreviewSort(key) {
+    if (previewSortKey === key) previewSortDesc = !previewSortDesc;
+    else {
+      previewSortKey = key;
+      previewSortDesc = !!PREVIEW_SORT_DEFAULT_DESC[key];
+    }
+  }
   // The format the preview's value column renders with: every preview
   // carries the format it was rendered for — an AD-HOC preview echoes
   // the FORM's (the definition being edited), a SAVED preview the stored
@@ -1438,14 +1498,37 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">{S.builder.colGroup}</th>
-                    <th scope="col">{S.builder.colLabel}</th>
-                    <th scope="col" class="num">{S.builder.colValue}</th>
-                    <th scope="col" class="num" title={S.builder.sampleSizeTitle}>N</th>
+                    <SortTh
+                      label={S.builder.colGroup}
+                      active={previewSortKey === 'group'}
+                      desc={previewSortDesc}
+                      onclick={() => togglePreviewSort('group')}
+                    />
+                    <SortTh
+                      label={S.builder.colLabel}
+                      active={previewSortKey === 'label'}
+                      desc={previewSortDesc}
+                      onclick={() => togglePreviewSort('label')}
+                    />
+                    <SortTh
+                      label={S.builder.colValue}
+                      cls="num"
+                      active={previewSortKey === 'value'}
+                      desc={previewSortDesc}
+                      onclick={() => togglePreviewSort('value')}
+                    />
+                    <SortTh
+                      label="N"
+                      cls="num"
+                      title={S.builder.sampleSizeTitle}
+                      active={previewSortKey === 'n'}
+                      desc={previewSortDesc}
+                      onclick={() => togglePreviewSort('n')}
+                    />
                   </tr>
                 </thead>
                 <tbody>
-                  {#each preview.rows as r, i (i)}
+                  {#each sortedPreviewRows as r, i (i)}
                     <tr
                       class:bld-missing={r.n === 0}
                       class:bld-egroup={!r.group}
@@ -1467,6 +1550,14 @@
               </table>
             </div>
           {/if}
+          <!-- Provenance copy: the statement arrives with its bound
+               values WRITTEN IN (metrics.Plan/Preview.DisplaySQL — display
+               only, the run itself used binds), so a single-statement
+               metric pastes and runs as-is. A metric whose formula mixes
+               percentile with other aggregations appends its companion
+               statement, whose values are not carried on the plan — those
+               markers stay `?`, honestly, and two statements need running
+               one at a time. -->
           <details class="bld-sql">
             <summary>{S.builder.compiledSql}</summary>
             <pre class="mono">{preview.sql}</pre>

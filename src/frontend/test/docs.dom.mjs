@@ -270,6 +270,17 @@ const plSrc = readFileSync('src/lib/components/ProfileLink.svelte', 'utf8')
   .replace("from '../nav.js'", `from '${libURL('nav.js')}'`)
   .replace("from '../services.js'", `from '${libURL('services.js')}'`);
 compileSvelte(plSrc, 'ProfileLink.svelte', localURL('profilelink.js'));
+// SortTh — Builder's preview-table headers now render through it (the
+// leaf compiles alone; its strings catalog comes from the COPIED tree,
+// like every other ../ module here).
+compileSvelte(
+  readFileSync('src/lib/components/SortTh.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${libURL('strings/index.js')}'`,
+  ),
+  'SortTh.svelte',
+  localURL('sortth.js'),
+);
 const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
@@ -291,6 +302,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../metricstate.js'", `from '${libURL('metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${libURL('viewstate.svelte.js')}'`)
   .replace("from '../components/ProfileLink.svelte'", `from '${localURL('profilelink.js')}'`)
+  .replace("from '../components/SortTh.svelte'", `from '${localURL('sortth.js')}'`)
   .replace("from '../components/StatusChip.svelte'", `from '${localURL('statuschip.js')}'`)
   .replace("from '../components/MetricOrderDialog.svelte'", `from '${localURL('metricorderdialog.js')}'`)
   .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)

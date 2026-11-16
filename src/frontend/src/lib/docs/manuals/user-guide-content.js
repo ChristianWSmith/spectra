@@ -393,7 +393,15 @@ carry a *read-only source* chip; saving one stores a copy as your own metric.
 and its **N**. A saved, unmodified metric previews the values already stored (the panel names
 which unit they came from); an unsaved or edited expression is calculated on the spot — which is
 why an ad-hoc preview notes that the denominator applies after save. State chips appear in place
-of numbers while a value is recomputing or has failed.
+of numbers while a value is recomputing or has failed. Click a column header to sort the rows:
+they open with the highest **N** first, the numeric columns order by their value (never by how the
+number happens to be written), and a second click on the active header flips the direction.
+
+Under the table, **compiled SQL (provenance)** shows the statement behind those values with the
+numbers and text it used written straight into it, so you can copy it and run it as it stands —
+in the SQL console or any SQLite tool. A formula that mixes a percentile with other aggregations
+shows a second statement beside the first; that one still reads \`?\` where its values belong (they
+are not carried over), and statements like these run one at a time.
 
 **Order…** arranges the pinned metrics: the built-in stats stay first and are not reorderable,
 your pinned metrics drag (or move with the arrow buttons) below them, and **Reset order** restores
@@ -436,7 +444,7 @@ read-only connection, one statement at a time, and writes and multi-statement sc
 rejected before they run.
 
 - **Schema** (left) — every table with its note; expand one to see its columns and types, and click a column name to insert it into your statement.
-- **Statement** — the editor; **Run** or **Ctrl/Cmd+Enter**. The stated limits are *rows cap 5,000 · timeout 5 s*.
+- **Statement** — the editor; **Run** or **Ctrl/Cmd+Enter**. The stated limits are *rows cap 5,000 · timeout 5 s*. A statement carrying parameters (\`?\`, \`:name\`) is refused with *this statement has parameters — replace them with values* — the console is never given values, so put them in yourself; a metric's **compiled SQL** already has its values written in (see *The metric Builder*), so a single statement of it runs as pasted.
 - **Results** — the row grid with the query time, the row count, and a *truncated* chip when the cap was hit. The grid renders the first 2,000 rows; exports always carry every returned row.
 - **Export CSV / Export JSON** — saves the result of the last run.
 - **Saved queries** — give the current statement a name and description, save it, re-run it later, delete what you no longer need.

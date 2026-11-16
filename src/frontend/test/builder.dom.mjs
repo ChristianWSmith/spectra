@@ -40,6 +40,9 @@
 //      provenance, shows the STATE indicator instead of a timing chip,
 //      and never loads the form (design §5's saved-form criterion —
 //      PreviewMetric stays the on-demand calculator for dirty drafts);
+//      the table sorts CLIENT-side — N highest-first by default, the
+//      numeric columns by VALUE (never their formatted text) and text
+//      columns A→Z, every header flipping on a second click;
 //   F. a user row still loads the form for editing (unaffected);
 //   G. the search composes with the filters (all four groups) in ONE
 //      server call;
@@ -265,12 +268,25 @@ bindings.handlers.PreviewMetric = (id, expr, scope, limit) => {
 const storedCalls = [];
 bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
   storedCalls.push([matchID, metricIDs]);
-  return (metricIDs || []).map((id) => ({
-    metricId: id,
-    steamId: '76561198000000001',
-    value: id === 1 ? 0.412 : 6,
-    n: 13,
-  }));
+  const rows = [];
+  for (const id of metricIDs || []) {
+    if (id === 1) {
+      // THREE rows so section E can pin the client-side sort: alice's
+      // row keeps the default (N highest-first) first position the value
+      // check below reads, bob's value is the largest (90%), and carl's
+      // is numerically the smallest (5%) while its percent TEXT ("5%")
+      // sorts before "41.2%" lexicographically — a text sort cannot
+      // pass these checks. Ns descend 13 → 7 → 3 in arrival order.
+      rows.push(
+        { metricId: id, steamId: '76561198000000001', value: 0.412, n: 13 },
+        { metricId: id, steamId: '76561198000000002', value: 0.9, n: 7 },
+        { metricId: id, steamId: '76561198000000003', value: 0.05, n: 3 },
+      );
+    } else {
+      rows.push({ metricId: id, steamId: '76561198000000001', value: 6, n: 13 });
+    }
+  }
+  return rows;
 };
 const compileCalls = [];
 bindings.handlers.CompileMetric = (id, expr, scope) => {
@@ -318,6 +334,19 @@ const plSrc = readFileSync('src/lib/components/ProfileLink.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
 svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 
+// SortTh (the preview table's sortable headers) — a leaf apart from
+// 'svelte', compiled to the local bundle the view's rewritten
+// './sortth.js' import resolves; its strings catalog import comes from
+// the real tree (Strings Stage 3 plumbing, as in library/profiles).
+svelteCompile(
+  readFileSync('src/lib/components/SortTh.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'SortTh.svelte',
+  join(dir, 'sortth.js'),
+);
+
 // The Order dialog + its Dialog wrapper: the dialog rewrites its
 // services/metricorder imports to the same absolute URLs the view links
 // (one module instance each) and its ./Dialog.svelte to the local
@@ -357,6 +386,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/ProfileLink.svelte'", "from './profilelink.js'")
+  .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'")
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
@@ -1038,6 +1068,69 @@ compileCalls.length = 0;
       chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
     );
   }
+
+  // --- The preview table sorts CLIENT-side (owner ruling, row 28) ---
+  // The stub above returns THREE rows for this metric — alice n=13
+  // (41.2%), bob n=7 (90%), carl n=3 (5%): N arrives already descending
+  // (the default), the values are numeric where their percent TEXT is
+  // not ("5%" < "41.2%" lexically, 5 > 41.2 never), and the labels mix
+  // a name with two ids so a text sort is observable too.
+  const pRows = () => [...r.querySelectorAll('.bld-preview table.data-table tbody tr')];
+  const pCol = (i) => pRows().map((row) => row.querySelectorAll('td')[i]?.textContent);
+  const pTh = () => [...r.querySelectorAll('.bld-preview table.data-table thead th button')];
+
+  check(
+    'preview rows default to N descending — highest N first (owner ruling)',
+    JSON.stringify(pCol(3)) === JSON.stringify(['13', '7', '3']),
+    JSON.stringify(pCol(3)),
+  );
+
+  click(pTh()[2]); // Value — a numeric column's natural direction is highest first
+  await sleep(60);
+  check(
+    'the first click on Value sorts by VALUE, highest first (never the formatted text)',
+    JSON.stringify(pCol(2)) === JSON.stringify(['90%', '41.2%', '5%']),
+    JSON.stringify(pCol(2)),
+  );
+  click(pTh()[2]); // Value again
+  await sleep(60);
+  check(
+    'a second click on Value flips to lowest first',
+    JSON.stringify(pCol(2)) === JSON.stringify(['5%', '41.2%', '90%']),
+    JSON.stringify(pCol(2)),
+  );
+
+  click(pTh()[3]); // N — inactive after the Value clicks → its natural direction
+  await sleep(60);
+  const nTh = r.querySelector('.bld-preview table.data-table thead th:nth-child(4)');
+  check(
+    'the first click on N sorts highest-first and marks that header active',
+    JSON.stringify(pCol(3)) === JSON.stringify(['13', '7', '3']) &&
+      nTh.querySelector('button')?.classList.contains('sorted') &&
+      !!nTh.querySelector('.codicon-arrow-down'),
+    `${JSON.stringify(pCol(3))} ${nTh.innerHTML.slice(0, 120)}`,
+  );
+  check(
+    'the N header keeps its sample-size tooltip',
+    (nTh.getAttribute('title') || '').length > 0,
+    nTh.getAttribute('title'),
+  );
+  click(pTh()[3]); // N again
+  await sleep(60);
+  check(
+    'a second click on N flips to lowest first',
+    JSON.stringify(pCol(3)) === JSON.stringify(['3', '7', '13']),
+    JSON.stringify(pCol(3)),
+  );
+
+  click(pTh()[1]); // Label — text columns start A→Z
+  await sleep(60);
+  check(
+    'a text column sorts A→Z by its own text (the two ids before "alice")',
+    JSON.stringify(pCol(1)) ===
+      JSON.stringify(['76561198000000002', '76561198000000003', 'alice']),
+    JSON.stringify(pCol(1)),
+  );
 }
 
 console.log('F. a user row still loads the form for editing (unaffected)');

@@ -528,6 +528,9 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 // the saved catalog first (drafts are CALCULATED — a ref resolves
 // against saved metrics, never against other drafts), so a draft with
 // refs previews exactly like the save would validate it.
+//
+// The reported SQL is the DISPLAY copy (bound values written in as
+// literals — Preview.DisplaySQL); the run itself used the binds.
 func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limit int) (MetricPreview, error) {
 	var (
 		def      metrics.Def
@@ -563,14 +566,14 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 		return MetricPreview{}, exprErrorErr(perr)
 	}
 	if err != nil {
-		return MetricPreview{Metric: echo, MS: pv.MS, SQL: pv.SQL}, err
+		return MetricPreview{Metric: echo, MS: pv.MS, SQL: pv.DisplaySQL()}, err
 	}
 	rows := make([]MetricPreviewRow, len(pv.Rows))
 	for i, r := range pv.Rows {
 		rows[i] = MetricPreviewRow{Group: r.Group, Label: r.Label, Value: r.Value, N: r.N}
 	}
 	return MetricPreview{
-		Metric: echo, Rows: rows, MS: pv.MS, SQL: pv.SQL, Truncated: pv.Truncated,
+		Metric: echo, Rows: rows, MS: pv.MS, SQL: pv.DisplaySQL(), Truncated: pv.Truncated,
 	}, nil
 }
 
@@ -608,6 +611,13 @@ func (s *MetricsService) GetMetricValuesForPlayer(steamID string, metricIDs []in
 // PreviewMetric's ("" = whole library). Returns the statement(s), never
 // a result set; parse/resolution failures come back as the shared
 // ExprError-shaped error.
+//
+// DISPLAY ONLY: the returned text has the plan's values written in as
+// literals (Plan.DisplaySQL) so what the user copies runs as-is — the
+// plan itself still carries binds and nothing here executes. The
+// companion statement (percentile mixes) keeps its `?`: its values are
+// not carried on the plan, so they are shown honestly uninlined rather
+// than inlined wrong.
 func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (string, error) {
 	var (
 		def      metrics.Def
@@ -635,11 +645,7 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 	if perr != nil {
 		return "", exprErrorErr(perr)
 	}
-	sql := plan.SQL
-	if plan.Secondary != "" {
-		sql += "\n" + plan.Secondary
-	}
-	return sql, nil
+	return plan.DisplaySQL(), nil
 }
 
 // ValidateExpr parses without executing (builder live-check). The

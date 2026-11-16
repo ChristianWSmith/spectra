@@ -46,6 +46,7 @@ type Preview struct {
 	Rows      []PreviewRow
 	MS        int64  // read-only session wall time (SQL execution + row scan)
 	SQL       string // compiled statement (+ companion) — provenance view
+	Args      []any  // SQL's positional values — DISPLAY only (Preview.DisplaySQL); execution ran with them as binds
 	Truncated bool
 }
 
@@ -63,7 +64,7 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 	if perr != nil {
 		return Preview{}, perr, nil
 	}
-	pv := Preview{SQL: plan.SQL}
+	pv := Preview{SQL: plan.SQL, Args: plan.Args}
 	if plan.Secondary != "" {
 		pv.SQL += "\n" + plan.Secondary
 	}

@@ -124,7 +124,14 @@ const EXPECTED = {
   // so the owner's row ruling is mechanical. The stray ">" text nodes
   // beside the two read-only chips were deleted the same day — the
   // chip assertions read the <span> only, so they moved no count.
-  'builder.dom.mjs': 112,
+  // builder 112 → 119 (2026-11-15, preview N-sort): +7 section E — the
+  // preview table's client-side sort (default N highest-first; Value
+  // highest then lowest first by VALUE not its percent text; N's first
+  // click high-first with the header marked and its sample-size tooltip
+  // kept, second click low-first; a text column A→Z). The stored-value
+  // stub now returns three rows for the previewed metric so an ORDER is
+  // observable at all (it was single-row before).
+  'builder.dom.mjs': 119,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
