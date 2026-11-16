@@ -637,12 +637,8 @@
           </div>
         {/if}
       </div>
-    {/if}
-  </section>
 
-  {#if tpl}
-    <!-- Stats appendix (acceptance #1: a picked metric → table under the report). -->
-    <section class="panel">
+      <!-- Stats appendix (acceptance #1: a picked metric → table under the report). -->
       <h2>{S.reports.statsAppendix}</h2>
       {#if metricsError}
         <p class="error" role="alert">
@@ -708,8 +704,8 @@
           </div>
         {/each}
       {/if}
-    </section>
-  {/if}
+    {/if}
+  </section>
 </div>
 
 <style>

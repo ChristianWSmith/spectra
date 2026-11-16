@@ -274,7 +274,10 @@ const EXPECTED = {
   // checks now read back the downloadText bytes (filename/mime pin, the
   // appendix line and the saved rows ride the file). A/D dedupe and E/F/H
   // keep their shape.
-  'reports.dom.mjs': 31,
+  // reports 31 → 32 (2026-11-15, reports-card): the match view's Reports
+  // tab consolidated its content to a single section.panel — +1 the
+  // mount-shape pin (exactly one panel renders; both headings stay in it).
+  'reports.dom.mjs': 32,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
