@@ -794,13 +794,28 @@
   );
 }
 
+/* Width cap = HEIGHT cap (C16): the canvas is aspect-driven off its
+   WIDTH (canvas.heat-canvas is width:100% / height:auto), so bounding
+   the wrap bounds the canvas — 100vh minus everything else that shares
+   the scroll area, times --heat-aspect (width ÷ height, set by Heatmaps
+   from the pack's radar dims; a square radar → 1, unset → 1). What the
+   ~330px constant covers: the ~277px of row chrome the research measured
+   around the old fixed 860px canvas (Match's header + round strip + tab
+   bar with the view gaps, and this view's toolbar, legend and hint rows
+   with their gaps), + the card's ~20px padding/border/gap delta (C18),
+   + the .content scroll padding (16px top/bottom, which every `100vh −`
+   cap must subtract itself — the .sql-side precedent), + rounding
+   headroom. Raise it when a row is ADDED around the radar — the
+   transient error/note/progress rows sit OUTSIDE this budget by
+   decision, so they may still scroll the view slightly in exception
+   states (accepted trade). */
 .heat-canvas-wrap {
   position: relative;
   background: var(--stage-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  max-width: 860px;
+  max-width: min(860px, calc((100vh - 330px) * var(--heat-aspect, 1)));
   width: 100%;
 }
 

@@ -827,6 +827,116 @@ check(
   selRule,
 );
 
+// --- Heatmaps layout wave (C16 + C18) --------------------------------------
+//
+// Still SOURCE pins: no driver mounts the Heatmaps VIEW (the precedent of
+// H/J/K/N — mounting it would drag in the whole service surface). Pinned
+// here is the lead-ruled layout: the floor BUTTON group became one native
+// select, the heatmap CONTENT moved into the single card while the
+// toolbar stayed outside it (section N's toolbar/progress pins above must
+// stay green), and the view's rows center on one axis with a height cap
+// on the radar block — CSS text, the econ-tables/replay ruleBody
+// precedent, since no driver asserts rendered CSS.
+console.log('P. Heatmaps view: floor <select>, content card, centered rows, height cap');
+
+{
+  const floorAt = heatSrc.indexOf('id="heat-floor"');
+  const floorBlock =
+    /<select class="input" id="heat-floor"[\s\S]*?<\/select>/.exec(heatSrc)?.[0] || '';
+  const short = (s) => s.replace(/\s+/g, ' ').slice(0, 140);
+  check(
+    'floor control = ONE native select bound to the live layer index, labelled by for/id',
+    floorAt > 0 &&
+      /bind:value=\{layer\}/.test(floorBlock) &&
+      /<label class="field-label" for="heat-floor">\{S\.heatmaps\.floorLabel\}<\/label>/.test(heatSrc),
+    short(floorBlock),
+  );
+  check(
+    'floor options are the pack layers (name, else id) in pack order',
+    /\{#each layers as l, i \(i\)\}/.test(floorBlock) && /\{l\.name \|\| l\.id\}/.test(floorBlock),
+    short(floorBlock),
+  );
+  check(
+    'the .sett-seg floor BUTTON group is gone (no aria-pressed floor buttons)',
+    !heatSrc.includes('sett-seg') && !heatSrc.includes('aria-pressed={layer === i}'),
+  );
+  const gateAt = heatSrc.indexOf('{#if showLayers}');
+  check(
+    'the select keeps the showLayers gate — single-floor packs still show no floor field',
+    gateAt > 0 &&
+      gateAt < floorAt &&
+      heatSrc.indexOf('{/if}', floorAt) > 0 &&
+      heatSrc.indexOf('{/if}', floorAt) < heatSrc.indexOf('id="heat-player"'),
+    `gate@${gateAt} select@${floorAt}`,
+  );
+
+  // Card shape (C18): exactly one panel, holding only the content, with
+  // the toolbar literal and the block progress BEFORE it — the two pins
+  // section N already asserts over the same offsets.
+  const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
+  const chipAt = heatSrc.indexOf('<StatusChip block');
+  const panelAt = heatSrc.indexOf('<section class="panel">');
+  const panelEnd = heatSrc.indexOf('</section>', panelAt);
+  const legendAt = heatSrc.indexOf('class="heat-legend"', panelAt);
+  const radarAt = heatSrc.indexOf('<HeatmapLayer', panelAt);
+  const hintAt = heatSrc.indexOf('class="heat-hint', panelAt);
+  const emptyAt = heatSrc.indexOf('class="heat-empty', panelAt);
+  check(
+    'toolbar stays OUTSIDE the card: its literal opening tag and the block progress both precede the panel',
+    toolbarAt >= 0 && chipAt > toolbarAt && panelAt > chipAt,
+    `${toolbarAt} ${chipAt} ${panelAt}`,
+  );
+  check(
+    'exactly one section.panel wraps the content in order — legend, radar, hint/empty',
+    (heatSrc.match(/<section class="panel">/g) || []).length === 1 &&
+      panelAt > 0 &&
+      panelEnd > panelAt &&
+      legendAt > panelAt &&
+      radarAt > legendAt &&
+      hintAt > radarAt &&
+      emptyAt > radarAt &&
+      panelEnd > Math.max(hintAt, emptyAt),
+    `${panelAt} ${legendAt} ${radarAt} ${hintAt} ${emptyAt} ${panelEnd}`,
+  );
+
+  // CSS text pins — the cap and the centering rules (no rendered CSS in a
+  // jsdom driver).
+  const cssMain = readFileSync('public/style.css', 'utf8');
+  const cssNorm = cssMain.replace(/\s+/g, ' ');
+  const capRule = /\.heat-canvas-wrap \{[^}]*\}/.exec(m3a)?.[0] || '';
+  check(
+    'height cap: the wrap bounds width by (100vh − ~330px chrome) × --heat-aspect, overflow/box untouched',
+    /max-width: min\(860px, calc\(\(100vh - 330px\) \* var\(--heat-aspect, 1\)\)\)/.test(capRule) &&
+      /overflow: hidden/.test(capRule) &&
+      /width: 100%/.test(capRule) &&
+      !/padding|object-fit/.test(capRule),
+    short(capRule),
+  );
+  check(
+    'the view SETS --heat-aspect (the pack radar dims ride the heat-view root)',
+    heatSrc.includes('style="--heat-aspect: {heatAspect}"'),
+  );
+  check(
+    'centering: the controls row and the legend justify their contents to the middle (scoped .heat-view)',
+    /\.heat-view > \.heat-controls, \.heat-view \.heat-legend \{ justify-content: center; \}/.test(
+      cssNorm,
+    ),
+    '',
+  );
+  check(
+    'centering: the hint/empty rows hug their content and take auto margins',
+    /\.heat-view \.heat-hint, \.heat-view \.heat-empty \{ width: fit-content; margin-inline: auto; \}/.test(
+      cssNorm,
+    ),
+    '',
+  );
+  check(
+    'centering: the radar block centers on auto margins alone — no width/padding change (box ≡ canvas)',
+    /\.heat-view \.heat-canvas-wrap \{ margin-inline: auto; \}/.test(cssNorm),
+    '',
+  );
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

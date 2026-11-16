@@ -198,6 +198,30 @@
   // samples at the wrong XY.
   const showLayers = $derived(layers.length >= 2);
 
+  // The radar's ASPECT (width ÷ height) for the height cap in
+  // public/style-m3a.css (.heat-canvas-wrap): the canvas is aspect-driven
+  // off its WIDTH (canvas.heat-canvas is width:100% / height:auto), so
+  // bounding the wrap's width by (viewport − chrome) × aspect is what
+  // bounds the canvas's HEIGHT. It mirrors HeatmapLayer's image-space W/H
+  // exactly — the live floor's panel when the pack declares layers, else
+  // the pack transform (its dims ARE the radar's) — and for the no-pack /
+  // no-transform case, HeatmapLayer's plain-grid fallback (mapxform fb
+  // builds it from the heatmap's world bounds → aspect spanX/spanY, the
+  // square 1024² default with no grid). That last branch is floored at 1:
+  // assuming the SMALLER aspect only under-sizes the radar (safe — the
+  // cap guards a height), while an over-guessed aspect would let a
+  // portrait canvas overrun the budget and scroll again.
+  const heatAspect = $derived.by(() => {
+    const t = pack && pack.transform ? pack.transform : null;
+    const l = t && Array.isArray(t.layers) ? t.layers[layer] : null;
+    const w = (l && l.width) || (t && t.width) || 0;
+    const h = (l && l.height) || (t && t.height) || 0;
+    if (w > 0 && h > 0) return Math.round((w / h) * 1000) / 1000;
+    const spanX = grid && grid.w ? Math.max(1, grid.maxX - grid.minX) : 1024;
+    const spanY = grid && grid.h ? Math.max(1, grid.maxY - grid.minY) : 1024;
+    return Math.round(Math.min(1, spanX / spanY) * 1000) / 1000;
+  });
+
   // Legend labels must describe the data on screen, not the pending
   // controls (fetch is on-demand, so the two can diverge). presence's
   // unit says "live play" because it IS the live-play population now:
@@ -464,7 +488,7 @@
   }
 </script>
 
-<div class="view heat-view">
+<div class="view heat-view" style="--heat-aspect: {heatAspect}">
   {#if error}
     <p class="error" role="alert">
       {error}
@@ -493,23 +517,21 @@
     </div>
     {#if showLayers}
       <!-- Multi-floor pack only (see showLayers): the pack's own panels,
-           default first, named as the pack names them. Switching flips the
-           RADAR immediately AND clears the raster (HeatmapLayer's
-           floor-mismatch gate — the new floor has no data yet); it is
-           drawn again on Regenerate, and layer being in filterKey keeps
-           the stale banner on the pending controls. -->
+           default first, named as the pack names them — ONE native
+           select (the kind selector's shape, the round-range selects'
+           numeric binding) instead of the old button group: floorLabel
+           labels it through for/id, no aria-label group of its own.
+           Switching flips the RADAR immediately AND clears the raster
+           (HeatmapLayer's floor-mismatch gate — the new floor has no data
+           yet); it is drawn again on Regenerate, and layer being in
+           filterKey keeps the stale banner on the pending controls. -->
       <div class="heat-field">
-        <span class="field-label">{S.heatmaps.floorLabel}</span>
-        <div class="sett-seg" role="group" aria-label={S.heatmaps.floorLabel}>
+        <label class="field-label" for="heat-floor">{S.heatmaps.floorLabel}</label>
+        <select class="input" id="heat-floor" bind:value={layer}>
           {#each layers as l, i (i)}
-            <button
-              class="btn"
-              class:primary={layer === i}
-              aria-pressed={layer === i}
-              onclick={() => (layer = i)}>{l.name || l.id}</button
-            >
+            <option value={i}>{l.name || l.id}</option>
           {/each}
-        </div>
+        </select>
       </div>
     {/if}
     <div class="heat-field">
@@ -587,46 +609,53 @@
     </p>
   {/if}
 
-  {#if grid}
-    <div class="heat-legend">
-      <!-- The ramp gradient is a complete background declaration built
-           from lib/heatramp.js — the same stop tables the canvas
-           renders — so legend and overlay cannot diverge (a bare
-           gradient in style={…} would be invalid CSS and silently fall
-           back to the stylesheet's static gradient). The kd legend is
-           an opaque diverging bar: deaths (−) solid blue on the left,
-           kills (+) amber→red→white-hot on the right, the two halves
-           meeting at zero in the middle; the plain legend keeps the
-           stops' alpha so its 0 end reads as "no signal". -->
-      {#if unitKind === 'kd'}
-        <span class="mono heat-legend-label heat-legend-neg">−{maxLabel}</span>
-        <span class="heat-ramp signed" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
-        <span class="mono heat-legend-label heat-legend-pos">+{maxLabel}</span>
-      {:else}
-        <span class="mono heat-legend-label">0</span>
-        <span class="heat-ramp" aria-hidden="true" style={rampCss(HEAT_STOPS)}></span>
-        <span class="mono heat-legend-label">{maxLabel}</span>
-      {/if}
-      <span class="chip heat-unit">{unit}</span>
-      <span class="muted"
-        >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
-      >
-    </div>
-  {/if}
+  <!-- C18 — the card: the heatmap CONTENT (legend, radar, hint/empty)
+       lives in one section.panel, while the filter toolbar and the
+       transient status rows above stay OUTSIDE it — the sibling
+       convention (filter toolbars sit beside/outside panels) and the C17
+       precedent (the owning header never enters the card). -->
+  <section class="panel">
+    {#if grid}
+      <div class="heat-legend">
+        <!-- The ramp gradient is a complete background declaration built
+             from lib/heatramp.js — the same stop tables the canvas
+             renders — so legend and overlay cannot diverge (a bare
+             gradient in style={…} would be invalid CSS and silently fall
+             back to the stylesheet's static gradient). The kd legend is
+             an opaque diverging bar: deaths (−) solid blue on the left,
+             kills (+) amber→red→white-hot on the right, the two halves
+             meeting at zero in the middle; the plain legend keeps the
+             stops' alpha so its 0 end reads as "no signal". -->
+        {#if unitKind === 'kd'}
+          <span class="mono heat-legend-label heat-legend-neg">−{maxLabel}</span>
+          <span class="heat-ramp signed" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
+          <span class="mono heat-legend-label heat-legend-pos">+{maxLabel}</span>
+        {:else}
+          <span class="mono heat-legend-label">0</span>
+          <span class="heat-ramp" aria-hidden="true" style={rampCss(HEAT_STOPS)}></span>
+          <span class="mono heat-legend-label">{maxLabel}</span>
+        {/if}
+        <span class="chip heat-unit">{unit}</span>
+        <span class="muted"
+          >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
+        >
+      </div>
+    {/if}
 
-  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={src.kind} />
+    <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={src.kind} />
 
-  {#if grid}
-    <p class="heat-hint muted">
-      {#if heatRegionTakesBBox(src.kind)}
-        {S.heatmaps.bboxHint}
-      {:else}
-        {src.kind}{S.heatmaps.noRowsSuffix}
-      {/if}
-    </p>
-  {:else if !loading}
-    <p class="heat-empty muted" role="status">
-      {S.heatmaps.emptyState}
-    </p>
-  {/if}
+    {#if grid}
+      <p class="heat-hint muted">
+        {#if heatRegionTakesBBox(src.kind)}
+          {S.heatmaps.bboxHint}
+        {:else}
+          {src.kind}{S.heatmaps.noRowsSuffix}
+        {/if}
+      </p>
+    {:else if !loading}
+      <p class="heat-empty muted" role="status">
+        {S.heatmaps.emptyState}
+      </p>
+    {/if}
+  </section>
 </div>

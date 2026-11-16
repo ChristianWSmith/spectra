@@ -407,6 +407,32 @@ select {
   margin-inline: auto;
 }
 
+/* C16 — centering INSIDE that root: the rules above center the BLOCK,
+   but its children stretch to its width (and the card's children to the
+   card's), so each content row has to center itself on the same axis.
+   Scoped by .heat-view, so no other embedded tab's row moves: the filter
+   toolbar and the legend justify their contents; the hint/empty rows hug
+   their content and take auto margins (the .round-strip-wrap idiom); the
+   radar block centers on auto margins WITHOUT any width/padding change —
+   its box must stay ≡ the canvas box for HeatmapLayer's click and drag
+   math. The transient rows (error, pack note, progress, region/stale
+   notes) keep their start alignment: they are exception states riding
+   above the card, not the layout. */
+.heat-view > .heat-controls,
+.heat-view .heat-legend {
+  justify-content: center;
+}
+
+.heat-view .heat-hint,
+.heat-view .heat-empty {
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.heat-view .heat-canvas-wrap {
+  margin-inline: auto;
+}
+
 .view-header {
   display: flex;
   align-items: center;
