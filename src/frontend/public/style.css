@@ -1072,6 +1072,20 @@ mark {
   color: var(--muted);
 }
 
+/* The Map column's square logo (map logos wave): the extracted
+   map_icon_<map>.svg sits left of the map name. A FIXED height (1.1em,
+   so it tracks the cell font) with width auto — the icons are square
+   (32×32, two night variants 32×33) — keeps the column from jittering
+   between rows that have a logo and rows that don't, and the inline-end
+   margin is the gap before the name. alt="" (Library.svelte) keeps the
+   cell's textContent the bare map name. */
+.lib-map-icon {
+  height: 1.1em;
+  width: auto;
+  vertical-align: -0.15em;
+  margin-inline-end: .35em;
+}
+
 /* Width-fit trim, BOTH library tables — the `lib-table` class on each
    <table> (Library.svelte): these two .data-tables are among the few NOT
    wrapped in .table-scroll, so a table wider than the content budget

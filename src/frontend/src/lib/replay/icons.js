@@ -4,19 +4,23 @@
 // install into the app data dir (internal/mappack/icons.go, IconService),
 // serves them at /api/icons/<file>.svg, and describes what's available at
 // /api/icons/manifest.json — {"extracted", "count",
-// "icons": {"<canonical name>": "/api/icons/<file>.svg"}}. Keys are the
-// canonical demoinfocs equipment names — the exact strings the replay
-// state stream's weapon/inventory fields carry ("AK-47", "Smoke Grenade",
-// "Kevlar + Helmet", …), so lookup is one exact-match hit against data
-// the stream already produced.
+// "icons": {"<canonical name>": "/api/icons/<file>.svg"},
+// "maps": {"<map name>": "/api/icons/map_icon_<map>.svg"}}. icons keys
+// are the canonical demoinfocs equipment names — the exact strings the
+// replay state stream's weapon/inventory fields carry ("AK-47", "Smoke
+// Grenade", "Kevlar + Helmet", …), so lookup is one exact-match hit
+// against data the stream already produced; maps keys are MAP names
+// ("de_mirage"), the Library's map column's lookup. The two halves stay
+// split: count === icons size (the map logos are ~1.75 MB the Replay
+// preload never draws — they ride their own key, mapCount).
 //
-// TEXT-LABEL FALLBACK: iconURL()/preloadIcons() return null for a name
-// with no icon (no CS2 install, extraction not run yet, file missing
-// after a game update). null is a normal outcome, not an error — the
-// CALLER renders the canonical name as a text label instead of an image.
-// Never throws for a missing icon or a dead manifest endpoint.
+// TEXT-LABEL FALLBACK: iconURL()/mapIconURL()/preloadIcons() return null
+// for a name with no icon (no CS2 install, extraction not run yet, file
+// missing after a game update). null is a normal outcome, not an error —
+// the CALLER renders the canonical name as a text label instead of an
+// image. Never throws for a missing icon or a dead manifest endpoint.
 //
-// Pure parts (normalizeManifest, iconURL) are node-tested:
+// Pure parts (normalizeManifest, iconURL, mapIconURL) are node-tested:
 // frontend/src/lib/icons.test.js.
 
 // The fail-soft empty manifest — frozen so callers can share it safely.
@@ -24,6 +28,8 @@ const EMPTY_MANIFEST = Object.freeze({
   extracted: false,
   count: 0,
   icons: Object.freeze({}),
+  maps: Object.freeze({}),
+  mapCount: 0,
   note: '',
 });
 
@@ -31,25 +37,39 @@ const EMPTY_MANIFEST = Object.freeze({
 // (the service wrappers do this after a successful extraction).
 let manifestPromise = null;
 
-// normalizeManifest is the fail-soft boundary: any input (null, a 404
-// body, a malformed payload) becomes a well-formed manifest with the
-// same three keys, so callers never shape-check. iconURL only keeps
-// string→string entries; count is recomputed so count === icons size.
-export function normalizeManifest(raw) {
-  if (raw == null || typeof raw !== 'object') return EMPTY_MANIFEST;
-  const icons = {};
-  if (raw.icons != null && typeof raw.icons === 'object') {
-    for (const [name, url] of Object.entries(raw.icons)) {
+// stringEntries is the fail-soft dict filter both halves share: only
+// string→string (non-empty URL) entries survive, so a malformed payload
+// can never put a non-string into a lookup table.
+function stringEntries(raw) {
+  const out = {};
+  if (raw != null && typeof raw === 'object') {
+    for (const [name, url] of Object.entries(raw)) {
       if (typeof name === 'string' && typeof url === 'string' && url !== '') {
-        icons[name] = url;
+        out[name] = url;
       }
     }
   }
-  if (Object.keys(icons).length === 0) return EMPTY_MANIFEST;
+  return out;
+}
+
+// normalizeManifest is the fail-soft boundary: any input (null, a 404
+// body, a malformed payload) becomes a well-formed manifest with the
+// same five keys, so callers never shape-check. iconURL/mapIconURL only
+// keep string→string entries; count/mapCount are recomputed so they
+// match their own half's size.
+export function normalizeManifest(raw) {
+  if (raw == null || typeof raw !== 'object') return EMPTY_MANIFEST;
+  const icons = stringEntries(raw.icons);
+  const maps = stringEntries(raw.maps);
+  if (Object.keys(icons).length === 0 && Object.keys(maps).length === 0) {
+    return EMPTY_MANIFEST;
+  }
   return Object.freeze({
     extracted: raw.extracted !== false,
     count: Object.keys(icons).length,
     icons: Object.freeze(icons),
+    maps: Object.freeze(maps),
+    mapCount: Object.keys(maps).length,
     note: typeof raw.note === 'string' ? raw.note : '',
   });
 }
@@ -91,6 +111,17 @@ export function resetIconManifest() {
 export function iconURL(name, manifest) {
   if (!manifest || !manifest.icons) return null;
   return manifest.icons[name] || null;
+}
+
+// mapIconURL resolves a MAP name ("de_mirage") to its square logo URL,
+// or null (→ the caller renders the bare map name). Same contract as
+// iconURL: takes the manifest so a caller (the Library's map column) can
+// pass the one it already loaded, and never throws for a missing
+// manifest or an unlisted map. It reads ONLY the manifest's `maps` half —
+// the map logos are deliberately not in `icons` (see the module header).
+export function mapIconURL(mapName, manifest) {
+  if (!manifest || !manifest.maps) return null;
+  return manifest.maps[mapName] || null;
 }
 
 // preloadIcons fetches and decodes every requested icon, resolving to a

@@ -301,7 +301,12 @@ const EXPECTED = {
   // padding in a rule scoped to that class (the demo-name cap 260px →
   // 170px is an in-place value re-pin; both min-width reservation pins
   // untouched).
-  'library.dom.mjs': 173,
+  // library 173 → 181 (2026-11-16, map logos W4): +8 section Q — the Map
+  // column's logo renders before the map text with alt="" (textContent
+  // byte-identical), the logo-less map stays text-only, style.css pins
+  // the fixed .lib-map-icon size, and a manifest that never arrives
+  // leaves the cell exactly as it was.
+  'library.dom.mjs': 181,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,

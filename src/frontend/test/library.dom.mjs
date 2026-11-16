@@ -316,6 +316,10 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../teams.js'", `from '${fileURL('src/lib/teams.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
+  // the map-icon manifest reader (map logos wave) — same absolute URL the
+  // section-Q checks import, so the view and the test share one module
+  // instance (the session memo + resetIconManifest()).
+  .replace("from '../replay/icons.js'", `from '${fileURL('src/lib/replay/icons.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
@@ -2267,6 +2271,122 @@ await sleep(200); // the immediate first list fetch (failing) + the jobs read
 await unmount(pInst);
 rowsForFacet = prevRowsP;
 bindings.LibraryService.ListJobs = prevListJobsP;
+
+// ---------------------------------------------------------------------------
+// Section Q: the Map column's logo (map logos wave). The manifest rides
+// /api/icons/manifest.json and this suite had no fetch stub until now, so
+// the section installs one, drops the session memo (replay/icons.js
+// resetIconManifest — the same module instance the view links) and mounts
+// fresh: with a logo extracted the <img> renders BEFORE the map text with
+// alt="" (so textContent stays byte-identical), a map with no logo is
+// text-only, and a manifest that never arrives leaves the cell exactly as
+// it was. jsdom has no layout, so the fixed-size rule is pinned in
+// public/style.css through section J's ruleBody instead.
+console.log('Q. the Map column shows the map logo when extracted, else bare text');
+{
+  const iconMods = await import(pathToFileURL('src/lib/replay/icons.js').href);
+  const realFetch = globalThis.fetch;
+  const manifestBody = {
+    extracted: true,
+    count: 2,
+    icons: { 'AK-47': '/api/icons/ak47.svg', 'Smoke Grenade': '/api/icons/smokegrenade.svg' },
+    maps: { de_mirage: '/api/icons/map_icon_de_mirage.svg' },
+    mapCount: 1,
+    note: '',
+  };
+  globalThis.fetch = (url) =>
+    String(url).includes('/api/icons/manifest.json')
+      ? Promise.resolve({ ok: true, json: async () => manifestBody })
+      : Promise.resolve({ ok: false }); // nothing else fetches here
+
+  // Two ready rows: one whose map has a logo, one whose map does not.
+  const logoRow = { ...row, id: 71, path: '/d/logo.dem', map: 'de_mirage' };
+  const bareRow = { ...row, id: 72, path: '/d/bare.dem', map: 'de_dust2' };
+  const prevRowsQ = rowsForFacet;
+  rowsForFacet = () => [logoRow, bareRow];
+
+  const mountLogos = async () => {
+    viewstate.resetViewState();
+    services.invalidate(); // a cache-served list would never reach the stub
+    iconMods.resetIconManifest(); // the memo must not carry an earlier load
+    const t = document.createElement('div');
+    document.body.appendChild(t);
+    const inst = mount(mod.default, { target: t, props: { query: {} } });
+    await sleep(150); // mount + list fetch + the manifest fetch
+    return { inst, t };
+  };
+  const matchRowsIn = (root) => [
+    ...root.querySelectorAll('.dropzone .data-table tbody tr:not([data-pending-import])'),
+  ];
+  const cellFor = (root, mapName) =>
+    matchRowsIn(root).find((tr) => tr.textContent.includes(mapName))?.children[0];
+
+  const first = await mountLogos();
+  {
+    const iconTd = cellFor(first.t, 'de_mirage');
+    const bareTd = cellFor(first.t, 'de_dust2');
+    check(
+      'both rows render (logo map + logo-less map)',
+      !!iconTd && !!bareTd,
+      `icon=${!!iconTd} bare=${!!bareTd}`,
+    );
+    const img = iconTd && iconTd.querySelector('img');
+    check(
+      'the extracted map renders its logo at the manifest URL',
+      !!img && img.getAttribute('src') === '/api/icons/map_icon_de_mirage.svg',
+      iconTd ? iconTd.innerHTML : 'no cell',
+    );
+    check(
+      'the logo is decorative: alt="" + aria-hidden (no text, no announcement)',
+      !!img && img.getAttribute('alt') === '' && img.getAttribute('aria-hidden') === 'true',
+      img ? img.outerHTML : 'no img',
+    );
+    check(
+      'the logo carries the fixed-size lib-map-icon class',
+      !!img && img.classList.contains('lib-map-icon'),
+      img ? img.className : 'no img',
+    );
+    check(
+      'DOM order: logo FIRST, and textContent is byte-identically the map name',
+      !!iconTd && iconTd.firstElementChild === img && iconTd.textContent === 'de_mirage',
+      iconTd ? iconTd.innerHTML : 'no cell',
+    );
+    check(
+      'a map with no logo stays text-only (the fallback contract)',
+      !!bareTd && !bareTd.querySelector('img') && bareTd.textContent === 'de_dust2',
+      bareTd ? bareTd.innerHTML : 'no cell',
+    );
+    // The stylesheet half: fixed height + auto width, so the column never
+    // jitters between a logo row and a bare one.
+    const logoRule = ruleBody('.lib-map-icon');
+    check(
+      'style.css pins the logo size (fixed height, auto width)',
+      !!logoRule && /height:\s*1\.1em/.test(logoRule) && /width:\s*auto/.test(logoRule),
+      logoRule ? logoRule.trim() : 'no .lib-map-icon rule',
+    );
+  }
+
+  // A manifest that never arrives (endpoint down / not extracted): the
+  // cell must be EXACTLY the bare map name — the same text-only shape
+  // the logo-less row has, with no leftover <img>.
+  globalThis.fetch = () => Promise.resolve({ ok: false });
+  await unmount(first.inst);
+  const second = await mountLogos();
+  {
+    const iconTd = cellFor(second.t, 'de_mirage');
+    check(
+      'missing manifest → identical text-only cell (no img, exact map name)',
+      !!iconTd && !iconTd.querySelector('img') && iconTd.textContent === 'de_mirage',
+      iconTd ? iconTd.innerHTML : 'no cell',
+    );
+  }
+  await unmount(second.inst);
+
+  globalThis.fetch = realFetch;
+  iconMods.resetIconManifest();
+  rowsForFacet = prevRowsQ;
+  services.invalidate();
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

@@ -74,13 +74,13 @@ func TestExtractRealCS2Install(t *testing.T) {
 	}
 }
 
-// TestExtractRealCS2Icons extracts the equipment-icon set from a real
-// local CS2 install (FindCS2 auto-detects) into a temp dir and checks
-// the contract the frontend keys on: the canonical names the replay
-// stream emits are present, and every written file is a CRC-verified,
-// well-formed SVG. Skipped when CS2 isn't installed (CI never has it —
-// the synthetic fixtures carry the portable coverage). Nothing
-// Valve-derived is kept: output is a temp dir.
+// TestExtractRealCS2Icons extracts the icon set from a real local CS2
+// install (FindCS2 auto-detects) into a temp dir and checks the
+// contract the frontend keys on: the canonical names the replay stream
+// emits are present, the map-icon family came along, and every written
+// file is a CRC-verified, well-formed SVG. Skipped when CS2 isn't
+// installed (CI never has it — the synthetic fixtures carry the portable
+// coverage). Nothing Valve-derived is kept: output is a temp dir.
 func TestExtractRealCS2Icons(t *testing.T) {
 	cs2Dir := FindCS2("")
 	if cs2Dir == "" {
@@ -93,14 +93,18 @@ func TestExtractRealCS2Icons(t *testing.T) {
 		t.Fatalf("extract: %v", err)
 	}
 	// A per-name error means the table points at a file the game update
-	// moved/renamed (or the decoder regressed) — surface it.
+	// moved/renamed (or the decoder regressed) — surface it. The map-icon
+	// guard problems would land here too, and the real install has none
+	// (every entry is a flat map_icon_<map>.vsvg_c; CS2.md "Map icon
+	// logos in a CS2 install").
 	if len(errs) > 0 {
 		t.Errorf("per-icon errors: %v", errs)
 	}
-	// Both families extract: the equipment table AND the death-notice
-	// glyphs (extractTable = the merged set ExtractIcons walks).
-	if len(names) != len(extractTable) {
-		t.Errorf("extracted %d icons, want %d (the whole table)", len(names), len(extractTable))
+	// Both static families extract (extractTable = the merged set
+	// ExtractIcons walks) AND the map icons the VPK carries — the run's
+	// names are static + maps, so the table is a FLOOR, never the total.
+	if len(names) < len(extractTable) {
+		t.Errorf("extracted %d icons, want at least %d (the whole static table)", len(names), len(extractTable))
 	}
 
 	// Manifest keys other agents are coding against (incl. the renderer's
@@ -114,6 +118,14 @@ func TestExtractRealCS2Icons(t *testing.T) {
 	} {
 		if files[key] == "" {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))
+		}
+	}
+	// …and the map-icon family: the map name is the key, the VPK basename
+	// the file (probe-verified entries — de_mirage/de_dust2/de_nuke/
+	// de_cache are all in the install's 26 map_icon_*.vsvg_c).
+	for _, key := range []string{"de_mirage", "de_dust2", "de_nuke", "de_cache"} {
+		if want := "map_icon_" + key + ".svg"; files[key] != want {
+			t.Errorf("map icon %q: IconFiles = %q, want %q", key, files[key], want)
 		}
 	}
 	// Every file: non-empty, re-verifiable through the decoder (CRC +

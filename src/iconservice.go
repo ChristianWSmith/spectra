@@ -10,18 +10,20 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/mappack"
 )
 
-// IconService is the frontend-facing equipment-icon surface: extract the
-// game's SVG silhouettes (weapons, utility, armor, bomb) from the user's
-// own CS2 install into the app data dir, and report which canonical
-// equipment names have an icon ready. Same acquisition posture as the
-// radar map packs — Valve IP never ships; extraction runs locally on
-// demand (frontend/public/maps/README.md).
+// IconService is the frontend-facing icon surface: extract the game's
+// SVG silhouettes (weapons, utility, armor, bomb), its death-notice
+// glyphs and its per-map square logos from the user's own CS2 install
+// into the app data dir, and report which names have an icon ready. Same
+// acquisition posture as the radar map packs — Valve IP never ships;
+// extraction runs locally on demand (frontend/public/maps/README.md).
 //
 // Icon keys are the canonical demoinfocs equipment names — the exact
 // common.EquipmentType.String() strings the replay state stream's
 // weapon/inventory fields carry ("AK-47", "Smoke Grenade",
 // "Kevlar + Helmet", …) — so a lookup is one exact-match hit against
-// whatever the stream already says. A name with no icon (no CS2
+// whatever the stream already says; the death-notice glyphs key on the
+// renderer's glyph names, and the map logos on the MAP name
+// ("de_mirage", manifest half `maps`). A name with no icon (no CS2
 // installed, file missing after a game update) is simply absent from the
 // manifest: the frontend falls back to a text label.
 type IconService struct {
@@ -38,11 +40,21 @@ type IconService struct {
 //
 //	{"extracted": bool, "count": N,
 //	 "icons": {"<canonical name>": "/api/icons/<file>.svg", …},
+//	 "maps": {"<map name>": "/api/icons/map_icon_<map>.svg", …},
+//	 "mapCount": N,
 //	 "note": "…"}   // human-readable status, omitted when empty
+//
+// count and mapCount are SPLIT on purpose: count is the equipment +
+// death-notice set (Settings' "Equipment icons" row reads it, and the
+// Replay preload walks `icons` — folding the map logos in would drag
+// ≈1.75 MB of SVGs into a preload that never draws one). maps/mapCount
+// are omitted when empty; `count` stays the `icons` size.
 type IconManifest struct {
 	Extracted bool              `json:"extracted"`
 	Count     int               `json:"count"`
 	Icons     map[string]string `json:"icons"`
+	Maps      map[string]string `json:"maps,omitempty"`
+	MapCount  int               `json:"mapCount,omitempty"`
 	Note      string            `json:"note,omitempty"`
 }
 
@@ -58,7 +70,8 @@ func (s *IconService) GetIconManifest() IconManifest {
 	return m
 }
 
-// ExtractIcons extracts every equipment icon from the CS2 install at
+// ExtractIcons extracts every icon the manifest serves (equipment +
+// death-notice glyphs + the map logos) from the CS2 install at
 // cs2Dir (empty = auto-detect: the saved mappack_cs2_path pref first,
 // then the conventional Steam roots — mappack.FindCS2, the same
 // detection MapPackService uses) into the app data dir and returns the
@@ -77,8 +90,9 @@ func (s *IconService) ExtractIcons(cs2Dir string) IconManifest {
 // (explicit dir wins over detection via the saved manual path), extract
 // into outDir, and describe the outcome as a manifest. progress (nil =
 // no emission) is the per-item callback forwarded to
-// mappack.WithProgress; the honest denominator is mappack's canonical
-// icon table — one call per canonical icon attempted.
+// mappack.WithProgress; the honest denominator is mappack's job list —
+// the canonical icon table plus the map icons the VPK carries — known
+// before the first item.
 func extractIcons(cs2Dir, manual, outDir string, progress func(done, total int)) IconManifest {
 	if cs2Dir == "" {
 		cs2Dir = mappack.FindCS2(manual)
@@ -104,16 +118,31 @@ func extractIcons(cs2Dir, manual, outDir string, progress func(done, total int))
 
 // buildIconManifest turns an icons directory into the served manifest:
 // mappack lists the extracted files fresh (no stale manifest file), and
-// every URL points at this process's own /api/icons route.
+// every URL points at this process's own /api/icons route. The flat
+// listing splits by family: a map icon (IsMapIconFile) lands in Maps
+// with its map name as the key, everything else in Icons with its
+// canonical name — Count stays the equipment+notice size (see
+// IconManifest), Extracted is true when EITHER family is on disk.
 func buildIconManifest(dir string) IconManifest {
 	files := mappack.IconFiles(dir)
 	icons := make(map[string]string, len(files))
+	maps := make(map[string]string)
 	for name, file := range files {
-		icons[name] = "/api/icons/" + file
+		url := "/api/icons/" + file
+		if mappack.IsMapIconFile(file) {
+			maps[name] = url
+		} else {
+			icons[name] = url
+		}
 	}
-	return IconManifest{
-		Extracted: len(icons) > 0,
+	m := IconManifest{
+		Extracted: len(icons)+len(maps) > 0,
 		Count:     len(icons),
 		Icons:     icons,
 	}
+	if len(maps) > 0 {
+		m.Maps = maps
+		m.MapCount = len(maps)
+	}
+	return m
 }
