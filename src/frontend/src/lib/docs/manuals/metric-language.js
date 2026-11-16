@@ -208,7 +208,8 @@ from rounds, events: count()               -- refused: rounds leads
 | \`count()\` | the number of rows in scope |
 | \`count(<condition>)\` | the rows where the condition holds |
 | \`sum(col)\` / \`sum(a + b + …)\` | a total — the one place columns may be added |
-| \`avg(col)\` / \`min(col)\` / \`max(col)\` | mean, smallest, largest |
+| \`avg(col)\` / \`min(col)\` / \`max(col)\` | mean, smallest, largest — read over one column |
+| \`min(a, b, …)\` / \`max(a, b, …)\` | the least/greatest of whole values and numbers — at least two (see below) |
 | \`stddev(col)\` | population standard deviation (σ), never below 0 |
 | \`percentile(p, col)\` | the p-quantile of that player's own values, \`p\` between 0 and 1 |
 | \`median(col)\` | shorthand for \`percentile(0.5, col)\` |
@@ -235,7 +236,16 @@ from player_stats: sum(where side = 'ct', total_damage)
 from events: min(tick), max(tick)
 \`\`\`
 
-Each takes **one** column. An optional filter comes first, after \`where\`, separated by a comma: \`sum(where <condition>, col)\` keeps only the rows the condition selects.
+In their **aggregate** form each takes **one** column: they read that column row by row and reduce it over the rows in scope. An optional filter comes first, after \`where\`, separated by a comma: \`sum(where <condition>, col)\` keeps only the rows the condition selects.
+
+\`min\` and \`max\` also have a second, **value** form: give them at least two computed values or numbers and they answer the least/greatest of them — the operator itself reads no column; it only compares the finished values:
+
+\`\`\`
+from player_stats: max(sum(deaths), 1)
+from player_stats: ratio(sum(kills), max(sum(deaths), 1))
+\`\`\`
+
+Which form you get is decided by what follows the bracket: \`where\` or a plain column name means the aggregate form above; a number, a \`-\`, or another aggregation (\`sum(\`, \`count(\`, …) means the value form. In the value form **every argument must be a whole aggregation or a number** — bare columns are refused (\`max(kills, deaths)\` is an error), strings are refused, and there must be at least two (a single argument is the aggregate form over one column). A nested \`percentile\`, \`median\`, \`ratio\` or \`metric()\` is refused there too. A \`-\` before a number works: \`max(sum(kills), -1)\`.
 
 # sum with several columns
 
@@ -271,7 +281,7 @@ from events: median(dmg)
 from player_stats: ratio(sum(kills), sum(deaths))
 \`\`\`
 
-\`ratio(a, b)\` divides \`a\` by \`b\`. Both halves must be aggregations from this list — \`count\`, \`sum\`, \`avg\`, \`min\`, \`max\`, \`stddev\` or \`metric('name')\` — and never another \`ratio\` or a \`percentile\`. If \`b\` is zero the value comes out as **0 beside N** rather than an error or an invented number (see [Missing data](#missing-data)).
+\`ratio(a, b)\` divides \`a\` by \`b\`. Both halves must be aggregations from this list — \`count\`, \`sum\`, \`avg\`, \`min\`, \`max\`, \`stddev\` or \`metric('name')\` — and never another \`ratio\` or a \`percentile\`. Either half may also be a \`min\`/\`max\` **value** form, which is how a floor travels inside the formula: \`ratio(sum(kills), max(sum(deaths), 1))\` divides a deathless subject's kills by 1 instead of answering 0 beside N. If \`b\` is zero and nothing floors it, the value comes out as **0 beside N** rather than an error or an invented number (see [Missing data](#missing-data)).
 
 # Conditions and filters
 
@@ -481,6 +491,7 @@ from player_stats: count() AS matches                          -- optional label
 
 \`\`\`
 from player_stats: ratio(sum(kills), sum(deaths))              -- K/D
+from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1)) -- KDA, floored at one death
 from player_stats: ratio(sum(total_damage), sum(rounds_played)) -- ADR
 from player_round_stats: avg(kast)                             -- KAST%
 from clutches: avg(won)                                        -- clutch win share
@@ -580,6 +591,10 @@ from player_stats: percentile(1.5, adr)
 | \`value column "x" comes from secondary source "y", but the join is not 1:1 …\` | a number may only be read from a one-to-one partner |
 | \`avg() takes a single column — only sum() accepts an additive column expression …\` | only \`sum(a + b)\` may add columns |
 | \`expected "," or end of expression (got "+")\` | arithmetic between aggregations (like \`sum(a) + sum(b)\`) is not part of the language |
+| \`max() takes at least two values …\` | the value form of \`min\`/\`max\` needs at least two arguments — a single argument is the aggregate over one column |
+| \`expected a value aggregation or a number (got "…")\` | a \`min\`/\`max\` value-form argument must be a whole aggregation or a number — not a bare column, a string or a keyword |
+| \`percentile() cannot be nested inside max()\` | percentile, median and ratio compute outside the statement — they cannot sit inside a \`min\`/\`max\` value (the same applies to a nested \`ratio()\`) |
+| \`expected ")" (got ",")\` | an argument list carries more than its form allows — plain-column \`min\`/\`max\` take a single column; the multi-value form needs aggregations or numbers (see [Operators](#operators)) |
 | \`percentile fraction must be in [0,1]\` | the first argument of \`percentile\` must be between 0 and 1 |
 | \`unknown aggregation "x" (valid: count, sum, avg, min, max, stddev, percentile, median, ratio, metric)\` | the operator is misspelled |
 | \`metric() …\` (several variants) | a reference is in a place it may not appear — see [Metric references](#metric-references) |

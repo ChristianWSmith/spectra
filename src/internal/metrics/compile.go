@@ -514,6 +514,16 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 			return p
 		}
 	}
+	// min()/max() scalar value form (w13e): nested aggregations walk
+	// their own Col/Terms/Where like any other argument; literals carry
+	// no identifier to resolve.
+	for i := range a.Scalar {
+		if a.Scalar[i].agg != nil {
+			if p := validateAggIdents(a.Scalar[i].agg, res); p != nil {
+				return p
+			}
+		}
+	}
 	return nil
 }
 
@@ -767,6 +777,27 @@ func (e *emitter) emitValue(a *Agg) {
 		e.sb.WriteString(" THEN 1 ELSE 0 END)")
 	case "sum", "avg", "min", "max":
 		fn := strings.ToUpper(a.Op)
+		if a.Scalar != nil {
+			// The min()/max() VALUE form (w13e): SQLite's scalar
+			// two-or-more-argument MIN/MAX over computed values and
+			// bound numbers — args in strict textual order, each
+			// literal bound as it is written (parameterization holds:
+			// no literal reaches the statement text).
+			e.sb.WriteString(fn)
+			e.sb.WriteString("(")
+			for i, term := range a.Scalar {
+				if i > 0 {
+					e.sb.WriteString(", ")
+				}
+				if term.agg != nil {
+					e.emitValue(term.agg)
+					continue
+				}
+				e.sb.WriteString(e.bind(term.num))
+			}
+			e.sb.WriteString(")")
+			return
+		}
 		if a.Where == nil {
 			e.sb.WriteString(fn)
 			e.sb.WriteString("(")

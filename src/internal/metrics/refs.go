@@ -6,7 +6,8 @@ import "strings"
 // admits in exactly two positions — a top-level aggregation in the agg
 // list and a ratio() numerator/denominator operand (the criterion: a ref
 // may appear only where a computed value may appear; parse.go holds the
-// two legal positions and the three denied-position errors). This file
+// two legal positions and the denied-position errors, the min()/max()
+// scalar argument list among them). This file
 // is the ref surface: extraction (the source metric_deps rows are
 // re-derived from), the compile-time resolution handle, and the rename
 // splice (the one rewrite that may touch a stored expression).
@@ -29,6 +30,11 @@ type MetricRef struct {
 // The grammar admits a ref in exactly two positions, so the walk covers
 // the top-level list and ratio()'s two operands and nothing else can
 // hold one — a ref may appear only where a computed value may appear.
+// The min()/max() SCALAR argument list is a DENIED ref position, not a
+// third legal one: parse.go's parseScalarTerm refuses `metric` before
+// any node is built, so no scalar argument can ever carry a ref for this
+// walk to miss (admitting refs there later — a deliberate FUTURE option,
+// not an oversight — would extend this walk in the same change).
 // Duplicates are kept (two occurrences of metric('a') are two refs, two
 // spans); edges are a SET, so callers that persist or compare dedupe.
 func MetricRefs(spec Spec) []MetricRef {

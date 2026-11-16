@@ -30,17 +30,20 @@ const (
 // value reference (design §2): a ref joins the op table so it reuses the
 // tStr lexer and yields positioned ParseErrors, but it is legal in
 // exactly two positions (a top-level aggregation and a ratio() operand —
-// see parseMetricArg and the parseColArg/parseOperand denials).
+// see parseMetricArg and the parseColArg/parseScalarTerm/parseOperand
+// denials).
 var aggOps = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
 	"stddev": true, "percentile": true, "median": true, "ratio": true,
 	"metric": true,
 }
 
-// ratioNestedOps restricts ratio()'s arguments to value aggregations
-// (percentile is Go-side, ratio is a single-SQL expression — no nesting).
-// `metric` is a VALUE term, so it is a legal ratio operand — one of the
-// ref's two legal positions (design §2).
+// ratioNestedOps restricts ratio()'s arguments — AND the min()/max()
+// scalar value form's terms — to value aggregations (percentile is
+// Go-side, ratio is a single-SQL expression — no nesting). `metric` is
+// a VALUE term, so it is a legal ratio operand — one of the ref's two
+// legal positions (design §2) — but it is DENIED as a scalar min/max
+// term (parseScalarTerm), which keeps refs.go's two-position walk true.
 var ratioNestedOps = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
 	"stddev": true, "metric": true,
@@ -90,11 +93,23 @@ type Agg struct {
 	// FIRST term (validation and emission prefer Terms when present).
 	Terms   []string
 	TermPos []int
-	Count   *condNode // count(): condition; nil = count(*)
-	P       float64   // percentile fraction (median → 0.5)
-	Num     *Agg      // ratio numerator
-	Den     *Agg      // ratio denominator
-	Pos     int       // byte offset of the op name
+	// Scalar: the min()/max() VALUE form (w13e) — a comma list of ≥2
+	// value terms, each a nested value aggregation (the ratioNestedOps
+	// set; metric denied, percentile/median/ratio rejected — see
+	// parseScalarArgs) or a bound numeric literal. nil = the AGGREGATE
+	// form over one column (every other op always nil; emission stays
+	// byte-stable for it). The shape dispatch in parseOpArgs picks the
+	// form before any `where` prefix: `where`/a bare non-op column ⇒
+	// aggregate, a number/unary minus/aggregate-op call ⇒ scalar — the
+	// ≥2 floor is load-bearing (one argument IS the aggregate, and
+	// SQLite resolves min/max by argument count: MAX(SUM(x)) is
+	// rejected at execution).
+	Scalar []scalarTerm
+	Count  *condNode // count(): condition; nil = count(*)
+	P      float64   // percentile fraction (median → 0.5)
+	Num    *Agg      // ratio numerator
+	Den    *Agg      // ratio denominator
+	Pos    int       // byte offset of the op name
 	// Op == "metric": the referenced metric's name and the byte span of
 	// its '...' literal (RefPos inclusive, RefEnd exclusive). The span is
 	// what the rename splice rewrites in place (design §2 identity rule:
@@ -102,6 +117,17 @@ type Agg struct {
 	RefName string
 	RefPos  int
 	RefEnd  int
+}
+
+// scalarTerm is one argument of the min()/max() value form: a nested
+// value aggregation (agg != nil — its Col/Terms/Where walk the normal
+// validation and emission paths) or a numeric literal (num, already
+// signed; always bound as a `?` parameter, never inlined). Pos is the
+// term's first token (the `-` when negated).
+type scalarTerm struct {
+	agg *Agg
+	num float64
+	pos int
 }
 
 // operand kinds in conditions.
@@ -457,6 +483,18 @@ func (p *parser) parseCountArgs() (*condNode, *ParseError) {
 // parseOpArgs handles the optional `where <cond>,` filter prefix plus the
 // op-specific argument shape.
 func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
+	// min()/max() SHAPE DISPATCH (w13e), BEFORE the where block — the
+	// criterion that partitions the two forms: `where` or a bare
+	// identifier that is NOT an aggregate op ⇒ the AGGREGATE form over
+	// one column (byte-identical to the pre-w13e grammar); anything else
+	// — a number, a unary `-`, or an identifier that IS an aggregate op
+	// ⇒ the SCALAR value form, python-min/max least/greatest over
+	// computed values and numbers (≥2 terms, see parseScalarArgs).
+	if agg.Op == "min" || agg.Op == "max" {
+		if p.scalarShape() {
+			return p.parseScalarArgs(agg)
+		}
+	}
 	if t, ok := p.peek(); ok && t.is("where") {
 		p.i++
 		c, perr := p.parseCond()
@@ -511,6 +549,126 @@ func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
 		return agg, nil
 	}
 	return Agg{}, errf(agg.Pos, "internal: unhandled aggregation %q", agg.Op)
+}
+
+// scalarShape is the min()/max() dispatch predicate: true = the SCALAR
+// value form, false = the AGGREGATE form over one column. The criterion
+// is the shape of the first token after the paren (case-insensitive, the
+// op names being contextual keywords): `where` or a bare identifier that
+// is NOT an aggregate op — a plain column — takes the aggregate form
+// (byte-identical to the pre-w13e grammar, the where-prefix and
+// single-column productions below); a number, a unary `-` or an
+// identifier that IS an aggregate op (`sum(`, `max(`, …) takes the
+// scalar form. No whitelisted column is named any aggOps entry, so the
+// identifier test cannot shadow a real column. End of input takes the
+// scalar path, which reports its own positioned error.
+func (p *parser) scalarShape() bool {
+	t, ok := p.peek()
+	if !ok {
+		return true
+	}
+	if t.is("where") {
+		return false
+	}
+	if t.kind == tIdent {
+		return aggOps[strings.ToLower(t.text)]
+	}
+	return true
+}
+
+// parseScalarArgs reads the min()/max() VALUE form: a comma list of ≥2
+// value terms — each a nested value aggregation (the ratioNestedOps set:
+// count/sum/avg/min/max/stddev; metric denied, percentile/median/ratio
+// rejected — same semantics as ratio()'s gate) or a numeric literal
+// (unary minus allowed, mirroring parseOperand). NEVER a bare column:
+// columns still reach a value only through an aggregation, so the
+// closed sum-chain hole stays closed (literals live in THIS argument
+// list, nowhere else). The ≥2 floor is load-bearing: one argument IS
+// the aggregate (SQLite resolves min/max by argument count, and
+// MAX(SUM(x)) is rejected at execution).
+func (p *parser) parseScalarArgs(agg Agg) (Agg, *ParseError) {
+	op := agg.Op
+	for {
+		term, perr := p.parseScalarTerm(op)
+		if perr != nil {
+			return Agg{}, perr
+		}
+		agg.Scalar = append(agg.Scalar, term)
+		if p.eatPunct(",") {
+			continue
+		}
+		if t, ok := p.peek(); ok && t.kind == tPunct && t.text == ")" {
+			if len(agg.Scalar) < 2 {
+				return Agg{}, errf(t.pos,
+					"%s() takes at least two values — %s(<column>) is the aggregate over one column", op, op)
+			}
+			return agg, nil
+		}
+		return Agg{}, p.errHere("expected %q or %q", ",", ")")
+	}
+}
+
+// parseScalarTerm reads one value-form argument: a nested value
+// aggregation (parseAgg reuses the op table, the tStr lexer and every
+// positioned error) or a signed number.
+//
+// Denied position (design §2, kept mechanically): `metric` is refused
+// here with the SAME per-op copy the column form uses, at the nested
+// token's position — so MetricRefs' walk (top-level + ratio operands)
+// stays TRUE with zero migration: no ref node can ever be built inside
+// a scalar argument. Allowing refs into scalar arguments later is a
+// deliberate FUTURE option (a ref IS a computed value and could floor a
+// ratio denominator) — not an oversight; admitting it would extend the
+// refs.go walk in the same change.
+func (p *parser) parseScalarTerm(op string) (scalarTerm, *ParseError) {
+	t, ok := p.peek()
+	if !ok {
+		return scalarTerm{}, p.errHere("expected a value aggregation or a number")
+	}
+	if t.kind == tIdent && strings.EqualFold(t.text, "metric") {
+		return scalarTerm{}, errf(t.pos, "metric() is a value reference — it cannot appear inside %s()", op)
+	}
+	if t.kind == tIdent {
+		if !aggOps[strings.ToLower(t.text)] {
+			// A bare column or keyword: only whole aggregations carry
+			// columns into a value.
+			return scalarTerm{}, p.errHere("expected a value aggregation or a number")
+		}
+		nested, perr := p.parseAgg(false)
+		if perr != nil {
+			return scalarTerm{}, perr
+		}
+		// The ratioNestedOps gate (ratio()'s semantics): a nested
+		// percentile/median is Go-side and would emit SQL NULL at this
+		// position; a nested ratio would nest the value twice; metric is
+		// denied above with its own copy.
+		if !ratioNestedOps[nested.Op] {
+			return scalarTerm{}, errf(nested.Pos, "%s() cannot be nested inside %s()", nested.Op, op)
+		}
+		return scalarTerm{agg: &nested, pos: nested.Pos}, nil
+	}
+	if t.kind == tNum {
+		v, err := strconv.ParseFloat(t.text, 64)
+		if err != nil {
+			return scalarTerm{}, errf(t.pos, "invalid number %q", t.text)
+		}
+		p.i++
+		return scalarTerm{num: v, pos: t.pos}, nil
+	}
+	// Unary minus — numbers only, exactly like parseOperand's `-`.
+	if t.kind == tPunct && t.text == "-" {
+		p.i++
+		n, ok2 := p.next()
+		if !ok2 || n.kind != tNum {
+			return scalarTerm{}, p.errHere("expected a number after %q", "-")
+		}
+		v, err := strconv.ParseFloat(n.text, 64)
+		if err != nil {
+			return scalarTerm{}, errf(n.pos, "invalid number %q", n.text)
+		}
+		return scalarTerm{num: -v, pos: t.pos}, nil
+	}
+	return scalarTerm{}, p.errHere("expected a value aggregation or a number")
 }
 
 // parseMetricArg reads `metric('<name>')` — the value reference (design

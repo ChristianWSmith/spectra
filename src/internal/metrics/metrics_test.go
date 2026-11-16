@@ -3,6 +3,7 @@ package metrics
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,13 @@ func TestParseAndCompileValid(t *testing.T) {
 		{"join + scope", "from player_stats, match_trade_opps: count()", "", "match:3", ModeGrouped},
 		{"join + denominator", "from player_stats, match_trade_opps: sum(trade_kills)", "rounds", "", ModeGrouped},
 		{"reversed 1:1 pair (secondary value column allowed)", "from match_trade_opps, player_stats: sum(kills)", "", "", ModeGrouped},
+		// Scalar min/max (w13e): python-min/max least/greatest over
+		// computed values and numbers — the floored K/D shape the owner
+		// asked for (a zero-death subject can never divide by zero).
+		{"floored kda ratio", "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))", "", "", ModeGrouped},
+		{"top-level scalar floor", "from player_stats: max(sum(deaths), 1)", "", "", ModeGrouped},
+		{"scalar floor in the numerator", "from player_stats: ratio(max(sum(kills), 0), sum(deaths))", "", "", ModeGrouped},
+		{"scalar with unary minus", "from player_stats: min(avg(deaths), -1)", "", "", ModeGrouped},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -120,6 +128,15 @@ func TestParseAndCompileInvalid(t *testing.T) {
 		{"round-grain primary", "from rounds: count()", "", "", "not player-anchored", true},
 		{"side-grain primary", "from round_economy: sum(equip_value)", "", "", "not player-anchored", true},
 		{"round-grain primary of a join", "from rounds, events: count()", "", "", "not player-anchored", true},
+		// Scalar min/max (w13e) — the value form's closed borders: the
+		// ≥2 floor, no bare columns, the ratioNestedOps gate, the ref
+		// denial, and numeric-literal-only arguments.
+		{"scalar min/max arity floor", "from player_stats: max(sum(deaths))", "", "", "at least two values", true},
+		{"scalar min/max bare columns", "from player_stats: max(kills, deaths)", "", "", "expected \")\"", true},
+		{"percentile in scalar min/max", "from events: max(percentile(0.5, dmg), 1)", "", "", "cannot be nested inside max()", true},
+		{"ratio in scalar min/max", "from events: max(ratio(count(), count()), 1)", "", "", "cannot be nested inside max()", true},
+		{"ref in a scalar min/max argument", "from events: max(metric('x'), 1)", "", "", "metric() is a value reference — it cannot appear inside max()", true},
+		{"string literal in scalar min/max", "from player_stats: max(sum(kills), 'a')", "", "", "expected a value aggregation or a number", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -492,9 +509,12 @@ func TestSumChainCompileShapes(t *testing.T) {
 		{"career_opening_rate", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
 			"1.0*(SUM(opening_kills)) / NULLIF((SUM(opening_kills + opening_deaths)), 0)"},
 		// Capability proofs for the shared two-column wall (audit N1/N3
-		// shapes) — NOT seeded (outside the owner greenlight).
-		{"n1_kda_shape", "from player_stats: ratio(sum(kills + assists), sum(deaths))",
-			"SUM(kills + assists)"},
+		// shapes) — NOT seeded (outside the owner greenlight). N1 is the
+		// FLOORED spelling (w13e): the scalar max() floors the
+		// denominator, so a zero-death subject can never divide by zero
+		// (the bind is the bound `1`).
+		{"n1_kda_shape", "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))",
+			"1.0*(SUM(kills + assists)) / NULLIF((MAX(SUM(deaths), ?)), 0)"},
 		{"n3_rate_shape", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))", ""},
 	}
 	for _, c := range cases {
@@ -599,5 +619,187 @@ func TestAggLevelArithmeticDenied(t *testing.T) {
 				t.Errorf("Pos = %d, want a positioned error", perr.Pos)
 			}
 		})
+	}
+}
+
+// ---- w13e: the min()/max() scalar value form ----
+
+// TestScalarMinMaxMatrix is THE w13e accept/reject matrix — the shape
+// dispatch criterion pinned mechanically (sibling of
+// TestSumChainGrammarMatrix, which keeps its 6-accepts/9-rejects
+// counts untouched): AGGREGATE = a row transform over ONE column
+// (`where` or a bare non-op identifier after the paren — byte-identical
+// to the pre-w13e grammar); SCALAR = the least/greatest of ≥2 computed
+// values and numbers (a number, a unary `-` or an aggregate-op call
+// after the paren). A regression that quietly widens either side —
+// a bare column into the value form, one argument past the arity floor,
+// a nested percentile/ratio/ref — fails here.
+func TestScalarMinMaxMatrix(t *testing.T) {
+	accept := []struct{ name, expr string }{
+		// The scalar form.
+		{"number floor", "from player_stats: max(sum(deaths), 1)"},
+		{"literal first", "from player_stats: max(1, sum(deaths))"},
+		{"floored ratio", "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))"},
+		{"unary minus", "from player_stats: max(sum(kills), -1)"},
+		{"case-insensitive dispatch", "from player_stats: MAX(SUM(deaths), 1)"},
+		{"filter inside a nested aggregation", "from player_stats: max(sum(where side='ct', deaths), 1)"},
+		{"three values", "from player_stats: max(sum(kills), sum(assists), 1)"},
+		{"scalar nested in scalar", "from player_stats: min(max(sum(kills), 0), 10)"},
+		// The aggregate form is untouched.
+		{"aggregate column", "from player_stats: max(deaths)"},
+		{"aggregate with filter prefix", "from player_stats: max(where side='ct', deaths)"},
+	}
+	for _, c := range accept {
+		t.Run("accept "+c.name, func(t *testing.T) {
+			if perr := Validate(c.expr); perr != nil {
+				t.Fatalf("Validate(%q): %v", c.expr, perr)
+			}
+			if _, perr := Compile(c.expr, "", ""); perr != nil {
+				t.Fatalf("Compile(%q): %v", c.expr, perr)
+			}
+		})
+	}
+	reject := []struct{ name, expr, want string }{
+		// One argument IS the aggregate — the ≥2 floor keeps the
+		// unexecutable MAX(SUM(x)) shape out of the language.
+		{"single value", "from player_stats: max(sum(deaths))", "at least two values"},
+		// Bare columns never enter the value form: the first one routes
+		// to the aggregate form (whose argument list ends after the
+		// column), a later one is refused as a term.
+		{"bare columns", "from player_stats: max(kills, deaths)", `expected ")"`},
+		{"bare column as a later value", "from player_stats: max(sum(kills), deaths)", "expected a value aggregation or a number"},
+		// The closed sum-chain hole stays closed: the value form admits
+		// numbers, never additive column chains.
+		{"literal chain stays closed", "from player_stats: max(kills + assists, 1)", "single column"},
+		// The ratioNestedOps gate (same semantics as ratio()).
+		{"percentile value", "from events: max(percentile(0.5, dmg), 1)", "cannot be nested inside max()"},
+		{"median value", "from events: max(median(dmg), 1)", "cannot be nested inside max()"},
+		{"ratio value", "from events: max(ratio(count(), count()), 1)", "cannot be nested inside max()"},
+		// The ref stays in its two legal positions (see refs_test.go).
+		{"ref value", "from events: max(metric('a'), 1)", "metric() is a value reference — it cannot appear inside max()"},
+		// Numbers only — no strings, no keywords, no bare idents, and a
+		// unary minus only ever negates a number.
+		{"string value", "from player_stats: max(sum(kills), 'a')", "expected a value aggregation or a number"},
+		{"keyword value", "from player_stats: max(sum(kills), and)", "expected a value aggregation or a number"},
+		{"negative non-number", "from player_stats: max(sum(kills), -assists)", `expected a number after "-"`},
+	}
+	for _, c := range reject {
+		t.Run("reject "+c.name, func(t *testing.T) {
+			// A compile-level rejection counts too — Validate runs
+			// Compile.
+			perr := Validate(c.expr)
+			if perr == nil {
+				if _, cerr := Compile(c.expr, "", ""); cerr == nil {
+					t.Fatalf("Compile(%q) unexpectedly accepted", c.expr)
+				} else {
+					perr = cerr
+				}
+			}
+			if !strings.Contains(perr.Message, c.want) {
+				t.Errorf("message = %q, want substring %q", perr.Message, c.want)
+			}
+			if perr.Pos <= 0 {
+				t.Errorf("Pos = %d, want a positioned error", perr.Pos)
+			}
+		})
+	}
+}
+
+// TestScalarMinMaxBinds pins the value form's parameterization: a
+// numeric literal is BOUND — never inlined into statement text (42 is
+// the canary; `1` cannot be, since ratio's own emission writes `1.0*(`)
+// — and the binds keep strict textual order (the nested filter's
+// literal first, the scalar literal second, the scope id last).
+func TestScalarMinMaxBinds(t *testing.T) {
+	plan, perr := Compile("from player_stats: max(sum(where side='ct', deaths), 42)", "", "match:7")
+	if perr != nil {
+		t.Fatalf("compile: %v", perr)
+	}
+	if strings.Contains(plan.SQL, "42") {
+		t.Errorf("SQL leaks the scalar literal 42: %s", plan.SQL)
+	}
+	wantSQL := "MAX(SUM(CASE WHEN (side = ?) THEN deaths END), ?)"
+	if !strings.Contains(plan.SQL, wantSQL) {
+		t.Errorf("SQL missing %q:\n%s", wantSQL, plan.SQL)
+	}
+	want := []any{"ct", float64(42), int64(7)}
+	if !reflect.DeepEqual(plan.Args, want) {
+		t.Errorf("args = %v, want %v (nested filter bind, scalar literal, scope id — textual order)", plan.Args, want)
+	}
+}
+
+// TestScalarFloorSparesZeroDeathSubject is THE semantic pin for the
+// scalar min/max form — the owner's "express KDA without accidentally
+// dividing by zero". The fixture corpus has NO zero-death player, so the
+// subject is hand-built here (the pctlStore pattern): alice 5 kills / 0
+// deaths, bob 2 / 2. Both spellings run on the real store:
+//
+//   - NULLIF (the ratio() denominator guard) answers 0 beside N for a
+//     zero-death subject — the honest missing-data row, unchanged;
+//   - the floored spelling max(sum(deaths), 1) runs to 5/1 = 5.
+//
+// Executing both statements is also the load-bearing SQLite claim: a
+// TWO-argument MAX(...) is the scalar function, so MAX(SUM(x), ?) runs —
+// while the one-argument MAX(SUM(x)) would be rejected at execution
+// ("misuse of aggregate function sum()"). Pre-w13e the floored leg does
+// not parse at all, so this test is honestly RED before the grammar
+// change.
+func TestScalarFloorSparesZeroDeathSubject(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "floor.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	id, err := st.CreateMatchRow("/d/floor1.dem", "sha-floor1", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	em := &models.ExtractedMatch{
+		Match: models.Match{
+			Path: "/d/floor1.dem", SHA256: "sha-floor1", Map: "de_dust2",
+			TickRate: 64, ExtractedAt: time.Now(),
+		},
+		Players: []models.Player{
+			{SteamID: aliceID, Name: "alice", Side: "ct"},
+			{SteamID: bobID, Name: "bob", Side: "t"},
+		},
+		PlayerStats: []models.PlayerStats{
+			{SteamID: aliceID, Name: "alice", Side: "ct", RoundsPlayed: 1, Kills: 5, Deaths: 0},
+			{SteamID: bobID, Name: "bob", Side: "t", RoundsPlayed: 1, Kills: 2, Deaths: 2},
+		},
+	}
+	if err := st.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	// The NULLIF spelling: alice's zero deaths → NULL → Value 0 beside N
+	// (N = her single stored row); bob divides normally.
+	nullif, perr, err := RunPreview(st, Def{Expr: "from player_stats: ratio(sum(kills), sum(deaths))"}, "", 10)
+	if perr != nil || err != nil {
+		t.Fatalf("NULLIF preview: %v %v", perr, err)
+	}
+	if len(nullif.Rows) != 2 {
+		t.Fatalf("NULLIF rows = %+v, want two subjects", nullif.Rows)
+	}
+	if nullif.Rows[0].Group != aliceID || nullif.Rows[0].Value != 0 || nullif.Rows[0].N != 1 {
+		t.Errorf("NULLIF alice = %+v, want value 0 beside N 1 (zero deaths, no floor)", nullif.Rows[0])
+	}
+	if nullif.Rows[1].Group != bobID || nullif.Rows[1].Value != 1 {
+		t.Errorf("NULLIF bob = %+v, want 2/2 = 1", nullif.Rows[1])
+	}
+
+	// The floored spelling: MAX(sum(deaths), 1) → alice 5/1 = 5.
+	floored, perr, err := RunPreview(st, Def{Expr: "from player_stats: ratio(sum(kills), max(sum(deaths), 1))"}, "", 10)
+	if perr != nil || err != nil {
+		t.Fatalf("floored preview: %v %v (the scalar statement must execute)", perr, err)
+	}
+	if len(floored.Rows) != 2 {
+		t.Fatalf("floored rows = %+v, want two subjects", floored.Rows)
+	}
+	if floored.Rows[0].Group != aliceID || floored.Rows[0].Value != 5 || floored.Rows[0].N != 1 {
+		t.Errorf("floored alice = %+v, want 5/1 = 5 (the floor spares the zero-death subject)", floored.Rows[0])
+	}
+	if floored.Rows[1].Group != bobID || floored.Rows[1].Value != 1 {
+		t.Errorf("floored bob = %+v, want 2/2 = 1 (the floor is invisible above it)", floored.Rows[1])
 	}
 }

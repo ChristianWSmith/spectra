@@ -81,6 +81,12 @@ func TestRefDeniedPositions(t *testing.T) {
 		{"percentile", "from events: percentile(0.5, metric('a'))", "metric('a')", "metric() is a value reference — it cannot appear inside percentile()", 0},
 		{"median (as written)", "from events: median(metric('a'))", "metric('a')", "metric() is a value reference — it cannot appear inside median()", 0},
 		{"column-form arg", "from events: sum(metric)", "sum(metric)", "metric() is a value reference — it cannot appear inside sum()", len("sum(")},
+		// Denied in the min()/max() VALUE form — the scalar argument
+		// list (w13e): its terms are aggregations and numbers, so the
+		// refusal reuses the per-op copy and keeps the "exactly two
+		// legal positions" contract true with refs.go unchanged.
+		{"scalar max argument", "from events: max(sum(dmg), metric('a'))", "metric('a')", "metric() is a value reference — it cannot appear inside max()", 0},
+		{"scalar min argument first", "from events: min(metric('a'), 1)", "metric('a')", "metric() is a value reference — it cannot appear inside min()", 0},
 		// The `where <cond>,` filter prefix parses BEFORE the value
 		// column — a filter IS a condition, so this is the condition
 		// denial, not the sum() one.

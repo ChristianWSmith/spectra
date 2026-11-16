@@ -34,13 +34,37 @@
 //	count()                        rows in scope
 //	count(<cond>)                  rows where <cond> is truthy
 //	count(where <cond>)            same (filter form)
-//	sum|avg|min/max(<col>)         aggregate over a whitelisted column;
-//	                               sum() ALONE also takes the additive
-//	                               column chain sum(<col> + <col> …) — the
-//	                               one linear aggregate (sum(a + b) ==
-//	                               sum(a) + sum(b); avg/min/max keep a
-//	                               single column — min(a+b) ≠ min(a)+min(b),
-//	                               and no other op accepts `+`)
+//	sum|avg|min/max(<col>)         AGGREGATE form — a ROW TRANSFORM over
+//	                               one whitelisted column (each row's
+//	                               column value, reduced over the rows in
+//	                               scope); sum() ALONE also takes the
+//	                               additive column chain sum(<col> + <col>
+//	                               …) — the one linear aggregate (sum(a +
+//	                               b) == sum(a) + sum(b); avg/min/max
+//	                               keep a single column — min(a+b) ≠
+//	                               min(a)+min(b), and no other op accepts
+//	                               `+`)
+//	min|max(<v1>, <v2>, …)         SCALAR form of min/max (w13e) — the
+//	                               LEAST/GREATEST of ≥2 computed values
+//	                               and numbers (python-min/max
+//	                               semantics): each <v> is a nested value
+//	                               aggregation (the ratioNestedOps set —
+//	                               never a nested percentile/median/
+//	                               ratio, never metric(), see the denial
+//	                               list below) or a bound number (unary
+//	                               minus allowed); NEVER a bare column.
+//	                               Criterion (shape dispatch, BEFORE any
+//	                               `where` prefix): after min(/max(, `where`
+//	                               or a bare non-op column ⇒ the
+//	                               aggregate form above (byte-identical);
+//	                               a number, a unary `-` or an
+//	                               aggregate-op call ⇒ this scalar form.
+//	                               The ≥2 floor is load-bearing — ONE
+//	                               argument IS the aggregate, and
+//	                               MAX(SUM(x)) is rejected at execution.
+//	                               Worked: ratio(sum(kills), max(sum(deaths),
+//	                               1)) keeps a zero-death subject's K/D
+//	                               computable — it never divides by zero.
 //	[where <cond>,] as first args  optional per-agg filter on any of the above,
 //	                               e.g. sum(where kind='kill', dmg) or
 //	                                    count(where kind='kill' and headshot)
@@ -59,15 +83,27 @@
 //	                               — `sum(a) + sum(b)` and ratio-operand
 //	                               arithmetic are not grammar, and metric()
 //	                               as an addend stays denied (its two legal
-//	                               positions, below).
-//	                               Spelling note: the store's fixed K/D
-//	                               spelling floors instead (MAX(deaths,
-//	                               1), internal/store kdPerMatchSQL —
-//	                               retired from production, kept as a
-//	                               test oracle) — a typed value with no
-//	                               NULL state vs this generic compiler
-//	                               over user-chosen columns; both are
-//	                               deliberate.
+//	                               positions, below). A scalar min/max call
+//	                               is a VALUE TERM in this boundary,
+//	                               exactly like ratio() itself: it may sit
+//	                               as a ratio() operand or a top-level
+//	                               aggregation, but agg-level arithmetic
+//	                               around it (`max(sum(a), 1) + 1`) stays
+//	                               denied by the unchanged outer grammar.
+//	                               Spelling note: a zero denominator here
+//	                               still answers 0 beside N (NULLIF); the
+//	                               ZERO-DEATH FLOOR is now expressible in
+//	                               the grammar itself —
+//	                               ratio(sum(kills), max(sum(deaths), 1))
+//	                               (the scalar form above) divides by 1
+//	                               for a deathless subject. The store's
+//	                               fixed spelling floors at the ROW
+//	                               (MAX(deaths, 1), internal/store
+//	                               kdPerMatchSQL — retired from
+//	                               production, kept as a test oracle): a
+//	                               typed value with no NULL state vs this
+//	                               generic compiler over user-chosen
+//	                               columns; both remain deliberate.
 //	metric('<name>')               another SAVED metric's value — see
 //	                               "Metric references" below (exactly two
 //	                               legal positions, never elsewhere)
@@ -97,10 +133,14 @@
 // positioned error (parse.go): inside sum/avg/min/max/stddev/percentile/
 // median — *"metric() is a value reference — it cannot appear inside
 // sum()"* (a ref is a computed value, not a row transform; aggregating a
-// broadcast scalar double-aggregates it); inside a condition or filter —
-// *"... it cannot appear in a condition or filter (they are row-level
-// predicates over source columns)"*; and nested inside metric() —
-// *"metric() cannot be nested inside metric()"*.
+// broadcast scalar double-aggregates it); in the min()/max() SCALAR
+// argument list — the same per-op copy (*"... inside max()"*) at the
+// ref's own token, so the two-positions contract holds with refs.go's
+// walk unchanged (admitting refs into scalar arguments is a deliberate
+// FUTURE option, not an oversight — see parseScalarTerm); inside a
+// condition or filter — *"... it cannot appear in a condition or filter
+// (they are row-level predicates over source columns)"*; and nested
+// inside metric() — *"metric() cannot be nested inside metric()"*.
 //
 // COMPILE: a ref becomes ONE engine-derived INNER JOIN per distinct name
 // (alias md0, md1, … in first-appearance order; CompileRefs' doc has the
