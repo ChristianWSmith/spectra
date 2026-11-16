@@ -2,13 +2,16 @@
 // (COLOR = the side each team held IN THAT round via sideparity.sideAtRound,
 // with the era flip visible across the halftime switch; PATTERN = team
 // identity — one team's rects carry the SVG stripe overlay and its legend
-// dot the CSS twin), the owner's zero → em-dash rule (damage / affected /
-// group-header summary read "—" at 0 while the toolbar's row counts stay
-// numeric and the Flash-effectiveness card stays out of scope), the
+// dot the CSS twin), the blind-time chart's TWIN channels and its honest
+// label (C8), the owner's zero → em-dash rule (damage / affected / blind
+// time read "—" at 0 while the throw-log count stays numeric), the
 // coordinate carve-out (dashes only when BOTH components are 0), the dead
-// site column's removal (markup + CSS), the retired events button and the
+// site column's removal (markup + CSS), the retired events button, the
 // icon-only throw ▶ (tick + ±10 s loop + the thrower as the camera
-// follow — never a filter).
+// follow — never a filter), the C9 hint-line removal, and the C7
+// consolidation: ONE bottom card carrying the filters + count and a
+// single line of per-round show/hide toggles (all OFF by default) whose
+// throw lists render only for the rounds turned on.
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --test test/utility.dom.mjs
@@ -155,6 +158,13 @@ svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(harnessOut).href);
+// The view-state registry Utility links (the copied file → same
+// instance): reset in EVERY mount's setup — the jsdom cross-talk rule in
+// viewstate.svelte.js' header. The kind/thrower filters and the
+// per-round show/hide map are registry state, so a fresh mount must never
+// inherit an earlier section's toggles or filter (and the all-off default
+// the C7 pins rest on is only pristine after a reset).
+const viewstate = await import(pathToFileURL(join(dir, 'viewstate.svelte.js')).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
@@ -166,12 +176,13 @@ function check(name, cond, detail = '') {
     console.log('  FAIL ' + name + (detail ? ' — ' + detail : ''));
   }
 }
+const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 
 // --- Fixture ----------------------------------------------------------------
 // 13 counted rounds, sideSwitches=1 → the switch lands AFTER round 12, so
 // round 1 is era 0 (Alpha, the final-CT team, played T) and round 13 is
 // era 1 (sides back to the final sides) — the era flip the bar colors
-// must show. carol throws nothing (the toolbar's 0-match case).
+// must show. carol throws nothing (the throw-log count's 0-match case).
 const rounds = Array.from({ length: 13 }, (_, i) => ({
   number: i + 1,
   winner: 'ct',
@@ -193,8 +204,8 @@ const rows = [
   { seq: 1, tick: 1500, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', detX: 5, detY: 12, damage: 40, flashMsTotal: 0, affected: '["B"]', site: 'A' },
   // zero damage + zero affected + the both-zero coordinate carve-out.
   { seq: 2, tick: 2000, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', detX: 0, detY: 0, damage: 0, flashMsTotal: 0, affected: '', site: 'A' },
-  // flash row: blind time dashes are the precedent (kept), the FLASH card
-  // is out of scope — it must stay NUMERIC even at 0 affected.
+  // flash row: blind time dashes are the precedent (kept); its 1500 ms is
+  // also the ONE non-zero value behind the blind-time chart (section K).
   { seq: 3, tick: 1700, round: 1, thrower: 'A', throwerName: 'alice', kind: 'flash', detX: 10, detY: 20, damage: 0, flashMsTotal: 1500, affected: '', site: '' },
   // round 13 — era 1: sides back to the final sides.
   { seq: 4, tick: 25500, round: 13, thrower: 'B', throwerName: 'bob', kind: 'smoke', detX: -100, detY: 300, damage: 30, flashMsTotal: 0, affected: '["A","B"]', site: '' },
@@ -209,6 +220,7 @@ async function show() {
     inst = null;
   }
   globalThis.__utility = { rows, rounds, scoreboard, match, teams };
+  viewstate.resetViewState();
   const target = document.createElement('div');
   document.body.appendChild(target);
   inst = mount(mod.default, { target });
@@ -224,7 +236,9 @@ const titleOf = (rect) => rect.querySelector('title')?.textContent || '';
 const cls = (el) => (el ? el.getAttribute('class') || '' : '');
 
 console.log('A. damage bars: COLOR = side at that round (era flip across halftime)');
-const bars = $$('.util-bar');
+// Scoped to the damage card: the blind-time chart (C8) carries its own
+// .util-bar rects and .util-dot legend, addressed in its own section.
+const bars = $$('.util-card-damage .util-bar');
 check('two rounds × two team bars = 4 rects', bars.length === 4, String(bars.length));
 const byTitle = (needle) => bars.find((r) => titleOf(r).includes(needle));
 const alpha1 = byTitle('Round 1 — Alpha');
@@ -251,16 +265,25 @@ check(
   bars.every((r) => !cls(r).includes('team-start')),
   bars.map(cls).join(' | '),
 );
+// The bar title is one SVG <title> text node; Svelte drops a whitespace-
+// only text node between expressions inside SVG, so the team↔value space
+// is expression-borne ({" "}) — without it the tooltip reads "Alpha40".
+check(
+  'bar titles keep the team↔value space ("Round 1 — Alpha 40 damage")',
+  titleOf(alpha1) === 'Round 1 — Alpha 40 damage' &&
+    titleOf(beta13) === 'Round 13 — Beta 30 damage',
+  `${titleOf(alpha1)} | ${titleOf(beta13)}`,
+);
 
 console.log('B. damage bars: PATTERN = team identity (stripe overlay + defs)');
-const pattern = $('#util-stripe');
+const pattern = $('.util-card-damage #util-stripe');
 check('the SVG <pattern> def exists', !!pattern);
 check(
   'patternUnits="userSpaceOnUse" (tile in bar units despite the viewBox stretch)',
   pattern?.getAttribute('patternUnits') === 'userSpaceOnUse',
   pattern?.getAttribute('patternUnits') || 'missing',
 );
-const stripes = $$('.util-bar-stripe');
+const stripes = $$('.util-card-damage .util-bar-stripe');
 check('the striped team (final T) gets one overlay per slot = 2', stripes.length === 2, String(stripes.length));
 check(
   'every overlay fills url(#util-stripe)',
@@ -279,7 +302,7 @@ check(
 );
 
 console.log('C. legend: identity-colored dots, the striped team carries the stripe');
-const dots = $$('.util-dot');
+const dots = $$('.util-card-damage .util-dot');
 check('two legend dots', dots.length === 2, String(dots.length));
 check(
   'both dots keep the team-identity classes',
@@ -293,10 +316,65 @@ check(
 );
 check(
   'legend labels stay plain text (no patterned text)',
-  !$('.util-legend').querySelector('u, s, strike, del'),
+  !$('.util-card-damage .util-legend').querySelector('u, s, strike, del'),
 );
 
-console.log('D. zero → em dash: damage / affected / group headers (value cells only)');
+// --- C7: the consolidation ---------------------------------------------
+// The view is now two summary charts on top and ONE throw-log card at the
+// bottom carrying the filters, the count and the round toggles. This
+// section pins the new chrome AND doubles as the "toggle round on"
+// preamble for every row check below: all rounds start OFF, so the throw
+// rows do not exist until the driver turns them on.
+console.log('D. C7 structure: ONE bottom card, filters + count inside, every round OFF by default');
+const panels = $$('section.panel');
+check(
+  'exactly three panels: two summary charts + the throw log',
+  panels.length === 3,
+  panels.map((p) => p.className).join(' | '),
+);
+check(
+  'the consolidated throw log is the LAST card of the view',
+  panels[panels.length - 1]?.classList.contains('util-throwlog'),
+  panels[panels.length - 1]?.className || 'no panels',
+);
+check(
+  'the kind + thrower selectors moved INTO the card',
+  !!$('.util-throwlog #util-kind') && !!$('.util-throwlog #util-thrower'),
+);
+check(
+  'the live count rides with them (one .util-filters, inside the card)',
+  $$('.util-filters').length === 1 && !!$('.util-throwlog .util-filters .muted'),
+);
+check(
+  'the per-round group cards are gone (no .util-group / .util-groups)',
+  !$('.util-group') && !$('.util-groups'),
+);
+const toggles = $$('.util-toggle');
+check(
+  'one round toggle per round that has throws (2)',
+  toggles.length === 2,
+  toggles.map((t) => t.textContent.trim()).join(' | '),
+);
+check(
+  'every round starts OFF (aria-pressed=false — the C7 default)',
+  toggles.length === 2 && toggles.every((t) => t.getAttribute('aria-pressed') === 'false'),
+);
+check(
+  'all-off default → no throw rows are rendered',
+  $$('.util-nade').length === 0,
+  String($$('.util-nade').length),
+);
+// Preamble: turn BOTH rounds on so the row-level checks below (E…H) have
+// rows to read — the state the old always-open cards shipped with.
+toggles.forEach(click);
+await sleep();
+check(
+  'turning both rounds on renders their throws (4 rows across 2 lists)',
+  $$('.util-lists ul.util-nades').length === 2 && $$('.util-nade').length === 4,
+  `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
+);
+
+console.log('E. zero → em dash: damage / affected / blind-time cells (value cells only)');
 const nadeCells = (sel) => $$('.util-nade ' + sel).map((el) => el.textContent.trim());
 const dmgCells = nadeCells('[title="damage dealt"]');
 const affCells = nadeCells('[title^="affected players"]');
@@ -310,45 +388,14 @@ check(
   JSON.stringify(affCells) === JSON.stringify(['1 aff', '—', '—', '2 aff']),
   JSON.stringify(affCells),
 );
-const headers = $$('.util-group-head .mono').map((el) => el.textContent.trim());
-check(
-  'group header summary applies the helper (… · Beta — dmg / Alpha — · …)',
-  JSON.stringify(headers) === JSON.stringify(['Alpha 40 · Beta — dmg', 'Alpha — · Beta 30 dmg']),
-  JSON.stringify(headers),
-);
-// I30 (view-aggregate rule): the per-round team-damage line documents
-// its own formula in a tooltip — it had no documentation anywhere.
-const headTips = $$('.util-group-head .mono').map((el) => el.getAttribute('title') || '');
-check(
-  'the per-round team-damage line carries a formula tooltip (this round, current filter)',
-  headTips.length === 2 && headTips.every((t) => t.includes('team damage in this round') && t.includes('current filter')),
-  headTips.join(' | '),
-);
 check(
   'the blind-time precedent still dashes its own 0s',
   nadeCells('[title="total blind time"]').some((t) => t === '—') &&
     nadeCells('[title="total blind time"]').includes('1.5s'),
   JSON.stringify(nadeCells('[title="total blind time"]')),
 );
-// The Flash-effectiveness card is OUT of scope (a summary card, not a
-// table): its counts stay numeric even at zero.
-const flashText = [...root.querySelectorAll('.util-flash-cell')].map((c) => c.textContent);
-check(
-  'flash card stays numeric at 0 affected (out of scope, by the owner)',
-  flashText.some((t) => t.includes('0 affected')) && flashText.every((t) => !t.includes('— affected')),
-  flashText.join(' | '),
-);
-// I30 (view-aggregate rule): each flash cell documents its composition
-// in a CARD tooltip — the section footnote alone is section level.
-const flashTips = [...root.querySelectorAll('.util-flash-cell')].map((c) => c.getAttribute('title') || '');
-check(
-  'flash cards carry a formula tooltip (blind time + affected players, current filter)',
-  flashTips.length === 2 &&
-    flashTips.every((t) => t.includes('blind time') && t.includes('affected players') && t.includes('current filter')),
-  flashTips.join(' | '),
-);
 
-console.log('E. coordinates: dash ONLY when both components are 0');
+console.log('F. coordinates: dash ONLY when both components are 0');
 const coords = nadeCells('.util-coord');
 check(
   'coordinates (5, 12) / (10, 20) / (-100, 300) render, (0, 0) dashes',
@@ -356,7 +403,7 @@ check(
   JSON.stringify(coords),
 );
 
-console.log('F. the dead site column is gone (markup + CSS)');
+console.log('G. the dead site column is gone (markup + CSS)');
 check('no .util-site cell renders (the fixture even carries site values)', !$('.util-site'));
 check(
   'no button says "events" (retired with "buttons seek, never filter")',
@@ -373,7 +420,7 @@ check(
   $$('.util-actions button').map((b) => `${b.textContent.trim()}[${b.getAttribute('title')}]`).join(' | '),
 );
 
-console.log("G1. the throw ▶ seeks + follows the THROWER (icon-only, no filter)");
+console.log("H. the throw ▶ seeks + follows the THROWER (icon-only, no filter)");
 const throwBtn = $('.util-nade .util-actions button');
 check('a throw ▶ rendered', !!throwBtn, 'no .util-actions button');
 check(
@@ -401,7 +448,7 @@ check(
   navThrow || 'no navigation',
 );
 
-console.log('G. toolbar counts stay NUMERIC when nothing matches (the table’s N)');
+console.log('I. the throw-log count stays NUMERIC when nothing matches (the table’s N)');
 const before = $('.util-filters .muted')?.textContent.trim();
 check('initially "4 of 4 grenades"', /^4 of 4 grenades$/.test(before || ''), before || 'missing');
 const throwerSel = $('#util-thrower');
@@ -414,8 +461,146 @@ check(
   /^0 of 4 grenades$/.test(after || ''),
   after || 'missing',
 );
+// Restore the filter: sections K/L run over the full data set (and the
+// count's own restore is a pin — the card must come back, not stick).
+throwerSel.value = '';
+throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'clearing the filter restores "4 of 4 grenades"',
+  /^4 of 4 grenades$/.test($('.util-filters .muted')?.textContent.trim() || ''),
+  $('.util-filters .muted')?.textContent.trim() || 'missing',
+);
 
-console.log('H. stylesheet pins (jsdom has no layout — the rules are the pins)');
+console.log('J. C9: the "▶ seeks to the throw" hint line is deleted');
+check(
+  'no hint text renders anywhere in the view',
+  !root.textContent.includes('seeks to the throw'),
+  root.textContent.replace(/\s+/g, ' ').slice(0, 160),
+);
+check('no .util-hint element is left', !$('.util-hint'));
+
+// --- C8: the blind-time chart ------------------------------------------
+// The flash-effectiveness totals card is gone; its replacement is the
+// damage chart's comparative twin over the stored per-throw blind
+// milliseconds — same geometry, same color/stripe channels, and an
+// honest label (total blind time from this team's flashes, NOT an
+// enemy-only figure).
+console.log('K. C8: the blind-time chart replaces the flash-effectiveness card');
+const blindCard = $('.util-card-blind');
+check(
+  'the card exists under its own heading',
+  !!blindCard && blindCard.querySelector('h2')?.textContent.trim() === 'Blind time per round',
+  blindCard ? blindCard.querySelector('h2')?.textContent.trim() : 'no card',
+);
+const fbars = $$('.util-card-blind .util-bar');
+check(
+  'one bar pair per round (4), every title carrying "blind time"',
+  fbars.length === 4 && fbars.every((b) => titleOf(b).endsWith('blind time')),
+  fbars.map((b) => titleOf(b)).join(' | '),
+);
+const fA1 = fbars.find((r) => titleOf(r).includes('Round 1 — Alpha'));
+check(
+  'the recorded flash renders its real duration (Round 1 — Alpha 1.5s blind time)',
+  titleOf(fA1) === 'Round 1 — Alpha 1.5s blind time',
+  titleOf(fA1) || 'not found',
+);
+check(
+  'its bars carry the same era flip: round 1 Alpha = side-t, round 13 = side-ct',
+  !!fA1?.classList.contains('side-t') &&
+    !!fbars.find((r) => titleOf(r).includes('Round 13 — Alpha'))?.classList.contains('side-ct'),
+  fA1 ? cls(fA1) : 'not found',
+);
+check(
+  'its own pattern id — never a shared one',
+  !!$('.util-card-blind #util-stripe-blind') && !!$('.util-card-damage #util-stripe'),
+);
+const fstripes = $$('.util-card-blind .util-bar-stripe');
+check(
+  'the striped team gets one overlay per slot = 2, filling ITS pattern',
+  fstripes.length === 2 && fstripes.every((s) => s.getAttribute('fill') === 'url(#util-stripe-blind)'),
+  fstripes.map((s) => s.getAttribute('fill')).join(','),
+);
+const fdots = $$('.util-card-blind .util-dot');
+check(
+  'legend: two identity dots + the inferred badge',
+  fdots.length === 2 && fdots.every((d) => d.className.includes('team-start-')) &&
+    !!$('.util-card-blind .badge-inferred'),
+  fdots.map((d) => d.className).join(' | '),
+);
+const fmax = $('.util-card-blind .util-legend .muted');
+check(
+  'the legend states the honest label with its formula tooltip',
+  (fmax?.getAttribute('title') || '').includes('total blind time from this team') &&
+    (fmax?.textContent || '').includes('max 1.5s blind/round'),
+  `${fmax?.getAttribute('title')} :: ${fmax?.textContent}`,
+);
+// Empty state: a filter with no flashes must say so instead of drawing a
+// chart of zero-height bars — while the damage chart keeps drawing.
+const kindSel = $('#util-kind');
+kindSel.value = 'he';
+kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'no blind time in the filter → "No blind time…" while the damage chart still draws',
+  ($('.util-card-blind')?.textContent || '').includes('No blind time in this selection.') &&
+    $$('.util-card-damage .util-bar').length > 0,
+  ($('.util-card-blind')?.textContent || '').replace(/\s+/g, ' ').slice(0, 120),
+);
+kindSel.value = '';
+kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'clearing the filter brings the chart back (4 bars)',
+  $$('.util-card-blind .util-bar').length === 4,
+  String($$('.util-card-blind .util-bar').length),
+);
+
+// --- C7, the lists half --------------------------------------------------
+console.log('L. C7: throw lists render only for the rounds turned on (two empty states)');
+check(
+  'both rounds on → two lists, four rows',
+  $$('.util-lists ul.util-nades').length === 2 && $$('.util-nade').length === 4,
+  `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
+);
+const t13 = $$('.util-toggle').find(
+  (t) => t.querySelector('.util-toggle-label')?.textContent.trim() === 'Round 13',
+);
+click(t13);
+await sleep();
+check(
+  'round 13 off → only round 1’s list remains (3 rows)',
+  $$('.util-lists ul.util-nades').length === 1 && $$('.util-nade').length === 3,
+  `${$$('.util-lists ul.util-nades').length} lists / ${$$('.util-nade').length} rows`,
+);
+check('the toggle reflects its state (aria-pressed=false)', t13?.getAttribute('aria-pressed') === 'false');
+const t1 = $$('.util-toggle').find(
+  (t) => t.querySelector('.util-toggle-label')?.textContent.trim() === 'Round 1',
+);
+click(t1);
+await sleep();
+check(
+  'every round off → no rows + the "turn on a round" line (empty state 1)',
+  $$('.util-nade').length === 0 &&
+    ($('.util-throwlog')?.textContent || '').includes('Turn on a round above'),
+  ($('.util-throwlog')?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
+);
+throwerSel.value = 'C';
+throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'no grenades in the filter → its OWN line, no toggles (empty state 2, distinct)',
+  ($('.util-throwlog')?.textContent || '').includes('No grenades match the current filters.') &&
+    $$('.util-toggle').length === 0 &&
+    !($('.util-throwlog')?.textContent || '').includes('Turn on a round'),
+  ($('.util-throwlog')?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
+);
+throwerSel.value = '';
+throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check('clearing the filter brings the toggles back', $$('.util-toggle').length === 2);
+
+console.log('M. stylesheet pins (jsdom has no layout — the rules are the pins)');
 const css = readFileSync('public/style-m3a.css', 'utf8');
 const ruleBody = (sel) => {
   const i = css.indexOf(sel);
@@ -449,14 +634,36 @@ check(
     !/44px/.test(ruleBody('.util-nade {') || ''),
   ruleBody('.util-nade {') || 'no .util-nade rule',
 );
+check(
+  'the summary charts stack: ONE .util-summary rule, one column (the 2-col layout is gone)',
+  (css.match(/\.util-summary\b/g) || []).length === 1 &&
+    /grid-template-columns:\s*1fr/.test(ruleBody('.util-summary {') || ''),
+  `occurrences: ${(css.match(/\.util-summary\b/g) || []).length}`,
+);
+check(
+  'the round toggles sit on ONE line with a wrap fallback',
+  /display:\s*flex/.test(ruleBody('.util-toggles {') || '') &&
+    /flex-wrap:\s*wrap/.test(ruleBody('.util-toggles {') || ''),
+  ruleBody('.util-toggles {') || 'no .util-toggles rule',
+);
+// Comments may NAME a retired rule (the throw-log block explains that
+// .util-group* died) — the check is over the rules themselves.
+const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
+check(
+  'the retired rules are gone (.util-hint, .util-group*, .util-flash-*)',
+  !cssRules.includes('.util-hint') &&
+    !cssRules.includes('.util-group') &&
+    !cssRules.includes('.util-flash'),
+);
 
 // ---------------------------------------------------------------------------
-// Section I: a failed load is dismissible IN PLACE (PRODUCT.md "Every
+// Section N: a failed load is dismissible IN PLACE (PRODUCT.md "Every
 // error indication is dismissible"). The ✕ is the canonical idiom — a
 // `btn small` with `codicon-close` INSIDE the `p.error[role="alert"]`,
-// clearing the state variable — and the view keeps rendering (its filters
-// toolbar stays mounted): no navigation, no remount.
-console.log('I. failed load: the error is dismissible in place (✕ clears it, view stays)');
+// clearing the state variable — and the view keeps rendering (its
+// throw-log card, filters and count stay mounted): no navigation, no
+// remount.
+console.log('N. failed load: the error is dismissible in place (✕ clears it, view stays)');
 {
   globalThis.__utilityError = 'utility backend down';
   const errRoot = await show(); // fresh mount with the failing read
@@ -472,8 +679,8 @@ console.log('I. failed load: the error is dismissible in place (✕ clears it, v
     errP ? errP.innerHTML.slice(0, 160) : '',
   );
   check(
-    'the filters toolbar still renders (nothing unmounted)',
-    !!errRoot.querySelector('.util-filters'),
+    'the throw-log card still renders (filters + count inside, nothing unmounted)',
+    !!errRoot.querySelector('.util-throwlog .util-filters'),
     errRoot.textContent.replace(/\s+/g, ' ').slice(0, 120),
   );
   errP
@@ -481,8 +688,8 @@ console.log('I. failed load: the error is dismissible in place (✕ clears it, v
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await sleep();
   check(
-    '✕ clears the error in place (view + filters still mounted)',
-    !errRoot.querySelector('p.error[role="alert"]') && !!errRoot.querySelector('.util-filters'),
+    '✕ clears the error in place (view + throw log still mounted)',
+    !errRoot.querySelector('p.error[role="alert"]') && !!errRoot.querySelector('.util-throwlog .util-filters'),
     errRoot.textContent.replace(/\s+/g, ' ').slice(0, 120),
   );
   globalThis.__utilityError = 0;
