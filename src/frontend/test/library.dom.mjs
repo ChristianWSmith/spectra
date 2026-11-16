@@ -50,7 +50,11 @@
 // both library tables, the synthetic job row's demo name) and
 // public/style.css carries the matching min-width declarations. jsdom has
 // no layout, so the RULE'S APPLICATION is what is pinned — never pixel
-// widths (those are sized in the style.css comments).
+// widths (those are sized in the style.css comments). The section also
+// pins the width-FIT trim (library-fit, 2026-11-15): the lib-table class
+// on BOTH library tables, its scoped padding-inline rule, and the
+// demo-name cap that keeps the tables inside the default window's
+// budget instead of clipping at its right edge.
 // Section K pins the view-state registry (lib/viewstate.svelte.js): a
 // mutated sort RESTORES across an unmount → remount, the URL-owned
 // facet input does NOT (the registry never carries route-query state —
@@ -1656,6 +1660,11 @@ const roleStatus = () =>
 // pin the RULE'S APPLICATION: the reservation class on each column's cells
 // and the min-width declarations in public/style.css (the values and their
 // sizing arithmetic live in the style.css comments, not here).
+// The same section pins the width-FIT trim (library-fit, 2026-11-15): both
+// library tables carry the lib-table class and style.css trims their
+// horizontal cell padding through a rule scoped to that class (never
+// `.view .data-table` — that would hit Match/Combat/…), so the tables fit
+// the default window's budget instead of trailing off its right edge.
 console.log('J. reserved column widths: status, actions, job-row demo name');
 
 const css = readFileSync(join('public', 'style.css'), 'utf8');
@@ -1726,6 +1735,28 @@ const ruleBody = (sel) => {
     ra ? ra.trim() : 'rule .view .data-table td.row-actions not found',
   );
 
+  // The width-FIT trim (library-fit, 2026-11-15): the two Library tables
+  // are the data-tables NOT wrapped in .table-scroll, so anything past the
+  // content budget clips at the window's right edge. Both sides are pinned
+  // — the scoping class on each <table> (markup) and the padding rule
+  // scoped to that class (stylesheet; never `.view .data-table`, which
+  // would trim Match/Combat/… too).
+  const libTables = [
+    $('.dropzone .data-table')[0],
+    $('section[aria-label="Demos from your import dirs"] .data-table')[0],
+  ];
+  check(
+    'both library tables carry the lib-table width-trim class',
+    libTables.every((t) => t && t.classList.contains('lib-table')),
+    JSON.stringify(libTables.map((t) => t && t.className)),
+  );
+  const trim = ruleBody('.lib-table th');
+  check(
+    'library tables trim cell padding-inline in a .lib-table-scoped rule',
+    !!trim && /padding-inline:\s*6px/.test(trim),
+    trim ? trim.trim() : 'rule .lib-table th/.lib-table td not found',
+  );
+
   // Row-type difference: the synthetic job row's Matchup cell holds the
   // importing demo's file name — it rides the SAME truncation cap as every
   // other demo name in the view, so an unbounded basename cannot inflate
@@ -1739,10 +1770,15 @@ const ruleBody = (sel) => {
     !!nameSpan && nameSpan.classList.contains('lib-demo-name'),
     nameSpan ? nameSpan.className : 'no synthetic row / name span',
   );
+  // Re-pinned 2026-11-15 (library-fit, C15): the cap came 260px → 170px —
+  // one of the width floors that pushed the match table past the default
+  // window's budget (neither library table scrolls horizontally, so the
+  // overflow clipped at the window edge). Same rule, same ellipsis; only
+  // the value moved, and the full path still rides the title attribute.
   const cap = ruleBody('.lib-demo-name,');
   check(
     'the demo-name cap still bounds it (max-width + ellipsis)',
-    !!cap && /max-width:\s*260px/.test(cap) && /text-overflow:\s*ellipsis/.test(cap),
+    !!cap && /max-width:\s*170px/.test(cap) && /text-overflow:\s*ellipsis/.test(cap),
     cap ? cap.trim() : 'rule .lib-demo-name not found',
   );
 }

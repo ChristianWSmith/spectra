@@ -263,7 +263,14 @@ const EXPECTED = {
   // header `?` is the header's last element right of the .spacer with
   // the shared labels + glyph, and clicking it fires openDocs once with
   // the `library` section id and navigates nowhere).
-  'library.dom.mjs': 171,
+  // library 171 → 173 (2026-11-15, library-fit C15 — merged atop the 171
+  // re-pin; the imported-demos table trailing off the window's right
+  // edge): +2 section J width-fit trim pins — both library tables carry
+  // the lib-table class, and style.css trims their horizontal cell
+  // padding in a rule scoped to that class (the demo-name cap 260px →
+  // 170px is an in-place value re-pin; both min-width reservation pins
+  // untouched).
+  'library.dom.mjs': 173,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,
