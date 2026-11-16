@@ -57,17 +57,21 @@ export const match = {
   colCmp: 'Cmp',
   colWinner: 'Winner',
   buyClassTitle:
-    'Buy type (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip',
+    'Buy type per side (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip',
   colClass: 'Class',
   colReason: 'Reason',
   colDuration: 'Duration',
   colSite: 'Site',
   colMvp: 'MVP',
-  colEquipCt: 'Equip CT',
-  colEquipT: 'Equip T',
   firstBloodLabel: 'First blood',
   compareRoundAria: 'Compare round {round}',
-  classChipTitle: '{what} (rules v{v} — {pct}% sure)',
+  // Per-side buy-class chip (RoundDetail's Economy card + the Rounds tab):
+  // the why text + rules version only — round-level confidence never rides
+  // a side chip, and the tooltip never promises a click (those chips are
+  // not buttons; Economy.chipTitle is the click-for-full-text one).
+  sideClassTitle: '{why} (rules v{rule})',
+  sideCt: 'CT',
+  sideT: 'T',
   killedVerb: 'killed',
   roundsSelected: '{n} of 4 rounds selected.',
   compareBtn: 'Compare {n} rounds',
@@ -106,10 +110,9 @@ export const match = {
   siteMeta: '· site',
   mvpMeta: '· MVP',
   retryBtn: 'Retry',
-  roundResultHeading: 'Round result',
+  roundInfoHeading: 'Round info',
   scoreLabel: 'Score',
   scoreCountedTitle: 'Counted-round wins through this round',
-  firstKillLabel: 'First kill',
   noKills: 'No kills this round.',
   colTime: 'Time',
   colKiller: 'Killer',

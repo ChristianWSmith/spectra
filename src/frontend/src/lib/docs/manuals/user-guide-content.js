@@ -200,10 +200,10 @@ you are reading. Expand a row (the chevron) for kills by weapon, damage by weapo
 the utility numbers. Bots never appear here — the scoreboard lists human players only. A row
 click opens the replay following that player; the name cell opens their profile.
 
-**Rounds** — one row per round: number, winner, the **buy-type class** chip (pistol / anti-eco /
-eco / force / full / bonus / save — hover for the rule text and how sure the classification is),
-win reason, duration, bomb site, MVP, each side's equipment value, the first blood, and the kill
-count. Click a row for the round page. Tick the **Cmp** boxes on up to four rounds and a
+**Rounds** — one row per round: number, winner, the **buy-type class** chip for each side
+(pistol / anti-eco / eco / force / full / bonus / save — hover a chip for the rule text and rules
+version), win reason, duration, bomb site, MVP, the first blood, and the kill count. Click a row
+for the round page. Tick the **Cmp** boxes on up to four rounds and a
 **Compare N rounds** button appears.
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
@@ -213,9 +213,11 @@ advanced diagnostics, and the network-message reference.
 
 # Round detail
 
-Reached from any round cell or row. It has **Watch round** (opens the replay at that round's
-start), then **Round result** (winner, score so far, first blood), **Kills**, **Bomb**, the
-round's **Economy**, and the **Round chat** — with Previous / Next round at the foot.
+Reached from any round cell or row. The **round ribbon** (Previous / Next round around the round
+strip) sits at the top, then **Watch round** (opens the replay at that round's start) in the
+header, then the cards: **Round info** (duration, bomb site, MVP, winner, win reason and the
+score so far), **Kills**, **Bomb**, the round's **Economy** (per-side buy class, equipment and
+money), and the **Round chat**.
 
 # Compare rounds
 

@@ -631,9 +631,10 @@ Events.On('spectra:analysis-done', () => invalidate());
 
 // The per-match ANALYTICS family is read-cached like every other repeated
 // read (Match warms all six from its mount effect — services' KAST column
-// and round chips then share ONE entry with the Combat/Utility/Economy
-// tabs, and Match/RoundDetail/CompareRounds collapse onto one
-// getRoundClasses entry; flush comes free from the listeners above).
+// and the Rounds tab's side classes then share ONE entry with the
+// Combat/Utility/Economy tabs, Match/CompareRounds collapse onto one
+// getRoundClasses entry and RoundDetail joins the getEconomy entry;
+// flush comes free from the listeners above).
 // getPlayerRounds/getHeatmap stay uncached: per-player/per-filter reads
 // with no repeated mount site.
 export function getEconomy(matchId) {

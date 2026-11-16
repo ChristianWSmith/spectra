@@ -5,7 +5,7 @@
     getRounds,
     getMatch,
     getScoreboard,
-    getRoundClasses,
+    getEconomy,
     getTeamNames,
     errText,
   } from '../services.js';
@@ -45,7 +45,11 @@
   // since kill/chat rows may carry only a name).
   let players = $state([]);
   let error = $state('');
-  let cls = $state(null); // models.RoundClassification for this round (may be null)
+  // Per-side buy classes for this round: the store.GetEconomy rows (the
+  // canonical per-side-class read the Economy tab and the Rounds tab
+  // share) — "" per side = no stored side-class row (unanalyzed match),
+  // rendered as the honest `unknown` chip, never a read-time guess.
+  let econRows = $state([]);
 
   // Per-round SIDE color class for a name surface — every name on this
   // view belongs to exactly THIS round, so the color follows the side the
@@ -77,12 +81,17 @@
       getRounds(id),
       getMatch(id),
       getScoreboard(id, 'kills', true).catch(() => []),
+      // Best-effort like the scoreboard read: a failed economy read costs
+      // the side-class chips only (they fall back to `unknown`), never the
+      // whole round view.
+      getEconomy(id).catch(() => []),
     ])
-      .then(([d, r, m, sb]) => {
+      .then(([d, r, m, sb, econ]) => {
         if (my !== roundGen) return;
         detail = d;
         rounds = r || [];
         players = listedPlayers(sb) || [];
+        econRows = econ || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
         error = d ? '' : 'Round not found.';
@@ -117,19 +126,31 @@
     return () => (live = false);
   });
 
-  // Classification chip (analytics pass) — best-effort, absence is fine.
-  $effect(() => {
-    let live = true;
-    getRoundClasses(id)
-      .then((rows) => {
-        if (!live) return;
-        cls = (rows || []).find((r) => r.round === round) || null;
-      })
-      .catch(() => {
-        if (live) cls = null;
-      });
-    return () => (live = false);
-  });
+  // This round's economy row (the getEconomy read keyed by round) — the
+  // source of the per-side buy classes the Economy card shows. null = no
+  // row at all (an unanalyzed match), which its side rows render as the
+  // honest `unknown` chip.
+  const econRound = $derived(econRows.find((r) => r.round === round) || null);
+
+  // Per-side buy class for a chip: the STORED side class (round_side_classes
+  // read verbatim through GetEconomy) with the `unknown` fallback every
+  // per-side chip uses (CompareRounds/Economy precedent) — never a
+  // read-time re-classification.
+  function sideClass(side) {
+    return (side === 'ct' ? econRound?.classCT : econRound?.classT) || 'unknown';
+  }
+
+  // The side chip's tooltip: that side's why text + rules version only —
+  // a side chip carries NO round-level confidence and promises no click
+  // (Economy.chipTitle is the click-for-full-text one).
+  function sideClassTitle(side) {
+    return S.fill(S.match.sideClassTitle, {
+      why:
+        (side === 'ct' ? econRound?.classWhyCT : econRound?.classWhyT) ||
+        S.economy.noExplanation,
+      rule: econRound?.ruleVersion ?? '—',
+    });
+  }
 
   const economy = $derived(detail?.economy || []);
   const chat = $derived(detail?.chat || []);
@@ -284,36 +305,7 @@
         {:else}
           {S.match.roundLabel} {detail.round.number}
         {/if}
-        {#if cls}
-          <span
-            class="chip cmp-class {cls.label || 'unknown'}"
-            title={S.fill(S.match.classChipTitle, { what: cls.explanation || 'classified', v: cls.ruleVersion, pct: Math.round((cls.confidence || 0) * 100) })}
-            >{cls.label || 'unknown'}</span
-          >
-        {/if}
       </h1>
-      <!-- Header keeps the fields nothing else on this view shows:
-           duration (unique once the start/stop seconds are gone), bomb
-           site (the Bomb card's Site column is empty-state-dependent) and
-           the MVP line. Reason, kill count, winner chip and the equip
-           CT/T pair live in the Round result / Kills / Economy cards. -->
-      <p class="muted">
-        {fmtDuration(detail.round.durationS)}
-        {S.match.siteMeta} {detail.round.bombSite || '—'}
-        {S.match.mvpMeta}
-        {#if detail.round.mvpName}
-          <ProfileLink
-            steam={detail.round.mvp}
-            name={detail.round.mvpName}
-            {nav}
-            cls={playerCls(detail.round.mvp, detail.round.mvpName)}
-            title={S.fill(S.match.openProfile, { name: detail.round.mvpName })}
-          />
-        {:else}
-          —
-        {/if}
-        {#if detail.round.mvpReason}({detail.round.mvpReason}){/if}
-      </p>
     {/if}
   </header>
 
@@ -325,6 +317,46 @@
   {/if}
 
   {#if detail}
+    <!-- Ribbon chrome at the TOP of the round content: icon-only round
+         transport (the replay transport's #rp-round-prev/#rp-round-next
+         glyph pattern — chevrons reserve codicon-arrow-* for back/forward
+         nav), the canonical RoundStrip between them. Both transport
+         buttons ALWAYS render — disabled at the ends instead of absent —
+         so the strip keeps its centered seat instead of shifting when a
+         neighbouring round is missing. Centered by .round-nav in
+         public/style.css (the shared .round-strip-wrap rule stays out of
+         it — see the note there). -->
+    <div class="round-nav">
+      <button
+        class="btn"
+        disabled={!prevRound}
+        aria-label={S.match.prevRoundLabel}
+        title={S.match.prevRoundLabel}
+        onclick={() => prevRound && nav(roundNav(prevRound.number))}
+      >
+        <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+      </button>
+      <RoundStrip
+        {rounds}
+        current={round}
+        matchId={id}
+        teamAbove={teams.ct}
+        teamBelow={teams.t}
+        {sideSwitches}
+        back={backPath}
+        {nav}
+      />
+      <button
+        class="btn"
+        disabled={!nextRound}
+        aria-label={S.match.nextRoundLabel}
+        title={S.match.nextRoundLabel}
+        onclick={() => nextRound && nav(roundNav(nextRound.number))}
+      >
+        <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
+      </button>
+    </div>
+
     <!-- Round analysis: the round's result, kill feed and bomb timeline
          (the round-detail read's typed events), with economy and this
          round's chat alongside. Every event row drills into the replay
@@ -335,7 +367,31 @@
     <div class="round-grid">
       <div class="round-side">
         <section class="panel">
-          <h2>{S.match.roundResultHeading}</h2>
+          <h2>{S.match.roundInfoHeading}</h2>
+          <!-- The header's muted meta line moved here (owner C5): duration
+               (unique once the start/stop seconds are gone), bomb site (the
+               Bomb card's Site column is empty-state-dependent) and the MVP
+               line with its reason. The <h1> round label stays in the header
+               as the view title; the winner/score facts live in the list
+               below and first blood is immediately evident from the Kills
+               card's first row. -->
+          <p class="muted">
+            {fmtDuration(detail.round.durationS)}
+            {S.match.siteMeta} {detail.round.bombSite || '—'}
+            {S.match.mvpMeta}
+            {#if detail.round.mvpName}
+              <ProfileLink
+                steam={detail.round.mvp}
+                name={detail.round.mvpName}
+                {nav}
+                cls={playerCls(detail.round.mvp, detail.round.mvpName)}
+                title={S.fill(S.match.openProfile, { name: detail.round.mvpName })}
+              />
+            {:else}
+              —
+            {/if}
+            {#if detail.round.mvpReason}({detail.round.mvpReason}){/if}
+          </p>
           <dl class="facts">
             <div>
               <dt>{S.match.colWinner}</dt>
@@ -365,32 +421,6 @@
                   <span class="ct">{scoreAt.ct}</span>–<span class="t">{scoreAt.t}</span>
                 {:else}
                   <span class="muted">—</span>
-                {/if}
-              </dd>
-            </div>
-            <div>
-              <dt>{S.match.firstKillLabel}</dt>
-              <dd>
-                {#if detail.round.firstKillName}
-                  <ProfileLink
-                    steam={detail.round.firstKillSteam}
-                    name={detail.round.firstKillName}
-                    {nav}
-                    cls={playerCls(detail.round.firstKillSteam, detail.round.firstKillName)}
-                    title={S.fill(S.match.openProfile, { name: detail.round.firstKillName })}
-                  />
-                {:else}
-                  —
-                {/if}
-                {#if detail.round.firstDeathName}
-                  {' → '}
-                  <ProfileLink
-                    steam={detail.round.firstDeathSteam}
-                    name={detail.round.firstDeathName}
-                    {nav}
-                    cls={playerCls(detail.round.firstDeathSteam, detail.round.firstDeathName)}
-                    title={S.fill(S.match.openProfile, { name: detail.round.firstDeathName })}
-                  />
                 {/if}
               </dd>
             </div>
@@ -513,6 +543,7 @@
             <thead>
               <tr>
                 <th scope="col">{S.match.colSide}</th>
+                <th scope="col" title={S.match.buyClassTitle}>{S.match.colClass}</th>
                 <th scope="col" class="num">{S.match.colEquip}</th>
                 <th scope="col" class="num">{S.match.colMoney}</th>
               </tr>
@@ -527,6 +558,17 @@
                   <td
                     ><span class="chip side {e.side}">{teamNameForSide(e.side)}</span></td
                   >
+                  <!-- This side's STORED buy class (owner C5: the header's
+                       buy-class chip left for the table, per team) — the
+                       shared .cmp-class palette, `unknown` when the match
+                       carries no stored side class. -->
+                  <td>
+                    <span
+                      class="chip cmp-class {sideClass(e.side)}"
+                      title={sideClassTitle(e.side)}
+                      >{sideClass(e.side)}</span
+                    >
+                  </td>
                   <td class="num">{e.equipValue}</td>
                   <td class="num">
                     {e.moneySamples > 0
@@ -535,7 +577,7 @@
                   </td>
                 </tr>
               {:else}
-                <tr><td colspan="3" class="muted">{S.match.noEconomySamples}</td></tr>
+                <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
               {/each}
             </tbody>
           </table>
@@ -575,44 +617,6 @@
       </div>
     </div>
 
-    <!-- Ribbon chrome: icon-only round transport (the replay transport's
-         #rp-round-prev/#rp-round-next glyph pattern — chevrons reserve
-         codicon-arrow-* for back/forward nav), the canonical RoundStrip
-         between them. Centered by .round-nav in public/style.css (the
-         shared .round-strip-wrap rule stays out of it — see the note
-         there). -->
-    <div class="round-nav">
-      {#if prevRound}
-        <button
-          class="btn"
-          aria-label={S.match.prevRoundLabel}
-          title={S.match.prevRoundLabel}
-          onclick={() => nav(roundNav(prevRound.number))}
-        >
-          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
-        </button>
-      {/if}
-      <RoundStrip
-        {rounds}
-        current={round}
-        matchId={id}
-        teamAbove={teams.ct}
-        teamBelow={teams.t}
-        {sideSwitches}
-        back={backPath}
-        {nav}
-      />
-      {#if nextRound}
-        <button
-          class="btn"
-          aria-label={S.match.nextRoundLabel}
-          title={S.match.nextRoundLabel}
-          onclick={() => nav(roundNav(nextRound.number))}
-        >
-          <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
-        </button>
-      {/if}
-    </div>
   {:else if loading}
     <!-- The round reads are still in flight: without this the view is a
          blank page under its header (rung 3 — the bare fallback's

@@ -223,7 +223,12 @@ const EXPECTED = {
   // chevron button). The float-centered expansion was dropped from the
   // wave (the expandable rows are going away), so no util-grid /
   // container-type pins exist by design.
-  'econ-tables.dom.mjs': 122,
+  // econ-tables 122 → 124 (2026-11-15, round-view C6 — merged atop the
+  // 122 re-pin): section C2's round-level chip pins became per-SIDE pins
+  // (two chips per round from getEconomy — the CT/T pair split the old
+  // one-chip checks, +1 the side-label pin; the `—`/unknown/tooltip pins
+  // re-pointed in place), I(c)'s failure source re-pointed to getEconomy.
+  'econ-tables.dom.mjs': 124,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
@@ -282,7 +287,15 @@ const EXPECTED = {
   // tab consolidated its content to a single section.panel — +1 the
   // mount-shape pin (exactly one panel renders; both headings stay in it).
   'reports.dom.mjs': 32,
-  'round-detail.dom.mjs': 64,
+  // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
+  // (meta line + buy-class chip moved out — +2 the Round info card pins:
+  // renamed card, meta line landed, First kill absence), +2 ribbon pins
+  // (top-of-content order, both neighbours enabled at round 5), +6 the
+  // Economy card's per-team Class column (header, one chip per side row,
+  // palette keys, why+rules tooltip, colspan-4 empty state), +2 the new
+  // F2 block (round 1 → prev disabled), and F's end-pin flipped from
+  // "next gone" to "next disabled".
+  'round-detail.dom.mjs': 76,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
   // save = recompute — the "Re-run analysis…" subsection, the behind
