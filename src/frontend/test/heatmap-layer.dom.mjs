@@ -1,4 +1,5 @@
-// jsdom driver for HeatmapLayer: the floor-mismatch overlay gate.
+// jsdom driver for HeatmapLayer: the floor-mismatch overlay gate, the
+// region drill (bare click + rubber-band drag) and its selection overlay.
 //
 // Pins the owner's hybrid-timing rule: the radar image follows the LIVE
 // floor selection immediately, while the raster overlay draws only while
@@ -7,6 +8,13 @@
 // until Regenerate, other pending filter changes on the same floor keep
 // it visible, and the no-pack / single-layer (selector-hidden) fallbacks
 // keep drawing exactly as before.
+//
+// The drill pins both gesture shapes: a bare press (down + up, no move —
+// the pre-drag click) emits the CELL under the cursor, while a drag past
+// the 4px threshold shows the `.heat-selbox` overlay and emits the world
+// box it spans, clipped to the raster (an empty intersection falls back
+// to the anchor cell). Pointer events are constructed on dom.window —
+// jsdom's PointerEvent is NOT in the driver's global copy list.
 //
 // jsdom has no canvas renderer and no image decoder, so the driver
 // records what the component paints: getContext returns a recording 2d
@@ -181,10 +189,11 @@ writeFileSync(
   readFileSync('src/lib/components/mapxform.js', 'utf8'),
 );
 // heatkinds.js is HeatmapLayer's drill predicate (heatRegionTakesBBox);
-// it pulls replay/landmarks.js (sideVal) → rounds.js — the same
-// verbatim-copy chain the other drivers use for landmarks.
+// heatselect.js is its pointer/selection math — both plain ESM with no
+// further app imports beyond heatkinds' own chain (replay/landmarks.js →
+// rounds.js), the same verbatim-copy chain the other drivers use.
 mkdirSync(join(dir, 'replay'), { recursive: true });
-for (const rel of ['heatkinds.js', 'rounds.js']) {
+for (const rel of ['heatkinds.js', 'heatselect.js', 'rounds.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -320,7 +329,7 @@ check(
   errBlock.replace(/\s+/g, ' ').slice(0, 160),
 );
 
-// --- Region clicks -----------------------------------------------------------
+// --- Region clicks and drags ------------------------------------------------
 //
 // The click path: client px → image space (the stubbed 1024×1024 rect) →
 // toWorld (the pack transform: pos_x −50, pos_y 50, scale 1) → the grid
@@ -329,11 +338,48 @@ check(
 // (−50)) / 25) = 3 over the 4×4 fixture spanning [−50, 50]² — the raw cell
 // [−50, −25] × [25, 50]. HeatmapLayer emits the CELL; the view pads it by
 // grid.pad on the way into the drill (source-pinned in J below).
+//
+// Pointer events are built on dom.window: jsdom's PointerEvent exists but
+// is NOT in the driver's global copy list (:49-56), so `new PointerEvent`
+// would throw. Svelte 5 delegates pointer events, so everything bubbles.
+const pe = (type, x, y) =>
+  new dom.window.PointerEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1 });
+
+// A BARE CLICK: pointerdown + pointerup at the same point, no move — the
+// gesture the map accepted before the drag existed (and what a user's
+// normal click still is). Sub-threshold by construction, so the component
+// takes the cell path.
 const clickCanvas = (x, y) => {
   const canvas = document.querySelector('canvas.heat-canvas');
-  canvas.dispatchEvent(
-    new dom.window.MouseEvent('click', { clientX: x, clientY: y, bubbles: true }),
-  );
+  canvas.dispatchEvent(pe('pointerdown', x, y));
+  canvas.dispatchEvent(pe('pointerup', x, y));
+};
+
+// Gesture primitives — the driver dispatches them directly so a check can
+// assert MID-gesture state (the overlay is up, no region yet) before the
+// release resolves it. Svelte batches DOM updates, so callers await sleep()
+// after a burst before querying the overlay.
+const dragStart = (x, y) => document.querySelector('canvas.heat-canvas').dispatchEvent(pe('pointerdown', x, y));
+const dragMove = (x, y) => document.querySelector('canvas.heat-canvas').dispatchEvent(pe('pointermove', x, y));
+const dragEnd = (x, y) => document.querySelector('canvas.heat-canvas').dispatchEvent(pe('pointerup', x, y));
+const cancelGesture = () => document.querySelector('canvas.heat-canvas').dispatchEvent(pe('pointercancel', 0, 0));
+
+// A full DRAG: down at (x0, y0), the intermediate moves, up at (x1, y1) —
+// one settled gesture (the caller reads regions/overlay after it resolves).
+const dragCanvas = async (x0, y0, x1, y1, moves = []) => {
+  dragStart(x0, y0);
+  for (const [mx, my] of moves) dragMove(mx, my);
+  dragMove(x1, y1);
+  dragEnd(x1, y1);
+  await sleep();
+};
+
+// The selection overlay (only rendered mid-drag).
+const selBox = () => document.querySelector('.heat-selbox');
+const selBoxRect = (el) => {
+  const s = (el && el.getAttribute('style')) || '';
+  const n = (k) => Number.parseFloat((new RegExp(`(?:^|;)\\s*${k}:\\s*(-?[\\d.]+)px`).exec(s) || [])[1]);
+  return { left: n('left'), top: n('top'), width: n('width'), height: n('height') };
 };
 
 console.log('I. region click: emits the cell; a bbox-less kind drills nowhere');
@@ -369,7 +415,7 @@ check(
   JSON.stringify(hit && hit.bbox),
 );
 const canvasEl = document.querySelector('canvas.heat-canvas');
-check('kills: drill affordance present (title)', /Click a region/.test(canvasEl.title), canvasEl.title);
+check('kills: drill affordance present (title)', /Drag a box/.test(canvasEl.title), canvasEl.title);
 check(
   'kills: no inline cursor override (the stylesheet crosshair stands)',
   canvasEl.style.cursor === '',
@@ -558,6 +604,227 @@ check(
   /\{loading \? 'Generating\…' : grid \? 'Regenerate' : 'Generate'\}/.test(heatSrc) &&
     !/<button[^>]*>[\s\S]{0,120}?chip-(spin|ring)/.test(heatSrc),
   '',
+);
+
+console.log('O. rubber-band drag: overlay while held, region on release');
+// The gesture has two shapes (heatselect.js): a BARE PRESS (down + up with
+// under 4px of movement) keeps the old cell drill; a DRAG past the
+// threshold draws .heat-selbox and emits the world box it spans, clipped to
+// the raster. The overlay's presence therefore means "this release selects
+// a region" — a sub-threshold wobble draws nothing. All geometry runs over
+// the harness fixture: the 1024×1024 stub rect, transform pos_x −50 /
+// pos_y 50 / scale 1, the 4×4 grid over [−50, 50]² (cells i + 1).
+reset();
+globalThis.__regions.length = 0; // section L's out-of-raster click left one behind
+globalThis.__set(0, 0);
+globalThis.__setKind('kills');
+globalThis.__newGrid();
+await sleep();
+
+// A settled drag (10,10) → (510,510): the overlay is up while the button
+// is held, and NOTHING is emitted until the release resolves it.
+dragStart(10, 10);
+dragMove(510, 510);
+await sleep();
+{
+  const box = selBox();
+  check('drag: the selection overlay is present while held', !!box, box ? 'found' : 'missing');
+  const r = selBoxRect(box);
+  check(
+    'drag: the overlay carries its CSS-px geometry (left/top/width/height)',
+    r.left === 10 && r.top === 10 && r.width === 500 && r.height === 500,
+    JSON.stringify(r),
+  );
+  check(
+    'drag: no region is emitted mid-gesture (the release decides)',
+    globalThis.__regions.length === 0,
+    String(globalThis.__regions.length),
+  );
+}
+dragEnd(510, 510);
+await sleep();
+{
+  const hit = globalThis.__regions[0];
+  check(
+    'drag: the release emits exactly one region',
+    globalThis.__regions.length === 1,
+    String(globalThis.__regions.length),
+  );
+  // Corners (10,10) → world (−40, 40) and (510,510) → (460, −460): the box
+  // is clipped to the raster on the sides that overrun — the view pads THAT
+  // by grid.pad (pinned in J), never the raw gesture.
+  check(
+    'drag: the region is the world box clipped to the raster bounds',
+    hit &&
+      hit.bbox.minX === -40 && hit.bbox.maxX === 50 &&
+      hit.bbox.minY === -50 && hit.bbox.maxY === 40,
+    JSON.stringify(hit && hit.bbox),
+  );
+  check(
+    'drag: the anchor cell value rides along (the kd sign source)',
+    hit && hit.value === 13,
+    String(hit && hit.value),
+  );
+  check('drag: the overlay is gone after release', !selBox(), selBox() ? 'still present' : '');
+}
+
+// Under the threshold the gesture is a click: no overlay is ever drawn and
+// the release emits the CELL, exactly as the map did before the drag.
+globalThis.__regions.length = 0;
+dragStart(10, 10);
+dragMove(13, 13); // 3px — below DRAG_THRESHOLD_PX (4)
+await sleep();
+check('sub-threshold: no overlay is drawn for a 3px nudge', !selBox(), selBox() ? 'present' : '');
+dragEnd(13, 13);
+await sleep();
+{
+  const hit = globalThis.__regions[0];
+  check(
+    'sub-threshold: the release emits the single cell (the pre-drag click)',
+    globalThis.__regions.length === 1 &&
+      hit &&
+      hit.bbox.minX === -50 && hit.bbox.maxX === -25 &&
+      hit.bbox.minY === 25 && hit.bbox.maxY === 50,
+    JSON.stringify(hit && hit.bbox),
+  );
+}
+
+// The threshold boundary is inclusive: 4px CROSSES it, so the overlay goes
+// up and the release takes the region path.
+globalThis.__regions.length = 0;
+dragStart(10, 10);
+dragMove(14, 14);
+await sleep();
+{
+  const r = selBoxRect(selBox());
+  check(
+    'threshold: a 4px move crosses it — the overlay goes up (4×4 box)',
+    r.width === 4 && r.height === 4,
+    JSON.stringify(r),
+  );
+}
+dragEnd(14, 14);
+await sleep();
+{
+  const hit = globalThis.__regions[0];
+  check(
+    'threshold: the release takes the region path (the 4px box, not the cell)',
+    globalThis.__regions.length === 1 &&
+      hit &&
+      hit.bbox.minX === -40 && hit.bbox.maxX === -36 &&
+      hit.bbox.minY === 36 && hit.bbox.maxY === 40,
+    JSON.stringify(hit && hit.bbox),
+  );
+}
+
+// The overlay is clamped to the canvas: a gesture running off the map still
+// reports a box that never spills past the edge (the wrap clips anyway —
+// the clamp keeps the numbers honest).
+globalThis.__regions.length = 0;
+dragStart(10, 10);
+dragMove(4000, 4000);
+await sleep();
+{
+  const r = selBoxRect(selBox());
+  check(
+    'clamp: the overlay stops at the canvas edge (never spills)',
+    r.left === 10 && r.top === 10 && r.width === 1014 && r.height === 1014,
+    JSON.stringify(r),
+  );
+}
+// pointercancel (window blur, a stolen pointer) abandons the gesture: the
+// overlay clears and nothing is emitted.
+cancelGesture();
+await sleep();
+check('cancel: the overlay clears without emitting', !selBox() && globalThis.__regions.length === 0,
+  `${selBox() ? 'overlay' : ''} ${globalThis.__regions.length} region(s)`);
+
+// A bbox-less kind (presence) never even STARTS a gesture — the gate runs at
+// pointerdown, so there is no overlay to show and no region to emit.
+globalThis.__setKind('presence');
+await sleep();
+globalThis.__regions.length = 0;
+dragStart(10, 10);
+dragMove(510, 510);
+await sleep();
+check('presence: a drag draws no overlay (no drill → no gesture)', !selBox(), selBox() ? 'present' : '');
+dragEnd(510, 510);
+await sleep();
+check(
+  'presence: a drag emits NO region (no bbox → no drill)',
+  globalThis.__regions.length === 0,
+  String(globalThis.__regions.length),
+);
+globalThis.__setKind('kills');
+await sleep();
+
+// EMPTY grid intersection → the ANCHOR CELL fallback: a gesture that never
+// reaches the raster drills where it started — the same out-of-raster cell
+// a click there emits (value missing, never a fabricated 0), never an
+// invented region and never a silent no-op.
+globalThis.__regions.length = 0;
+dragStart(500, 500); // world (450, −450) — outside the [−50, 50]² raster
+dragMove(900, 900);
+dragEnd(900, 900);
+await sleep();
+{
+  const hit = globalThis.__regions[0];
+  check(
+    'empty intersection: the anchor cell is emitted instead (one region)',
+    globalThis.__regions.length === 1,
+    String(globalThis.__regions.length),
+  );
+  check(
+    'empty intersection: the anchor cell is out-of-raster with a MISSING value',
+    hit &&
+      hit.bbox.minX === 450 && hit.bbox.maxX === 475 &&
+      hit.bbox.minY === -450 && hit.bbox.maxY === -425 &&
+      'value' in hit && hit.value === undefined,
+    JSON.stringify(hit),
+  );
+  check('empty intersection: the overlay is gone after the fallback', !selBox(), selBox() ? 'present' : '');
+}
+
+// A perfectly straight drag (zero width) still REACHES the raster, so it
+// yields the line-shaped box rather than falling back — the view's pad
+// expansion turns it into a real region. (Falling back here would ignore a
+// 500px gesture and drill one cell.)
+globalThis.__regions.length = 0;
+dragStart(10, 10);
+dragMove(10, 510);
+dragEnd(10, 510);
+await sleep();
+{
+  const hit = globalThis.__regions[0];
+  check(
+    'straight drag: a zero-width box reaches the raster (line, not the cell)',
+    globalThis.__regions.length === 1 &&
+      hit &&
+      hit.bbox.minX === -40 && hit.bbox.maxX === -40 &&
+      hit.bbox.minY === -50 && hit.bbox.maxY === 40,
+    JSON.stringify(hit && hit.bbox),
+  );
+}
+
+// The overlay's STYLE is an owner ruling too (row 22: "accent solid —
+// never side colors"): a selection is the user's own gesture, not a team,
+// so it must not borrow --ct/--t, and a dashed border is already spoken for
+// (provenance chips, the halftime separator). CSS-text pin, econ-tables
+// precedent — no driver asserts rendered CSS.
+const m3a = readFileSync('public/style-m3a.css', 'utf8');
+const selRule = /\.heat-selbox\s*\{[^}]*\}/.exec(m3a)?.[0] || '';
+check('selbox rule exists (public/style-m3a.css)', selRule.length > 0, selRule);
+check(
+  'selbox: solid accent outline + low-alpha accent fill, never side colours or dashes',
+  /border: 1px solid var\(--accent\)/.test(selRule) &&
+    /background: var\(--accent-12\)/.test(selRule) &&
+    !/var\(--ct\)|var\(--t\)|dashed/.test(selRule),
+  selRule,
+);
+check(
+  'selbox: pointer-events none (the overlay can never eat the gesture it draws)',
+  /pointer-events: none/.test(selRule),
+  selRule,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

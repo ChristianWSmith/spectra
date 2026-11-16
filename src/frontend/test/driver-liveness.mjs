@@ -196,7 +196,18 @@ const EXPECTED = {
   // row's fixed metric slots raw-vs-metric + tooltips + raw survivors,
   // the roster triple's metric A half both ways).
   'econ-tables.dom.mjs': 116,
-  'heatmap-layer.dom.mjs': 49,
+  // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
+  // the new section O — the rubber-band gesture's two shapes: the overlay
+  // while held (presence + CSS-px geometry) with nothing emitted until the
+  // release, the clipped world box + anchor value on release, the sub-
+  // threshold nudge drawing no box and emitting the old cell, the inclusive
+  // 4px boundary taking the region path, the canvas-edge clamp, pointercancel
+  // clearing without emitting, the bbox-less kind never starting a gesture,
+  // the empty-intersection anchor-cell fallback (out-of-raster, missing
+  // value), the straight zero-width drag reaching the raster as a line, and
+  // the owner's styling ruling (solid accent, never side colours, never
+  // dashed, pointer-events none) as a CSS-text pin.
+  'heatmap-layer.dom.mjs': 71,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,
   'map-pack-prompt.dom.mjs': 48,

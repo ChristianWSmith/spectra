@@ -99,7 +99,7 @@ export const common = {
 
   // canvas heatmap layer (HeatmapLayer.svelte — the radar/raster overlay)
   heatmapLayerLabel: 'Heatmap over the map grid', // the canvas aria-label
-  heatmapLayerDrillTitle: 'Click a region to open the replay events for that position', // drillable kind: the canvas tooltip
+  heatmapLayerDrillTitle: 'Drag a box or click the map to open the replay events for that region', // drillable kind: the canvas tooltip
   heatmapLayerNoDrillTitle: 'No region drill for this heatmap kind — its raster has no event rows behind it', // non-drillable kind: the canvas tooltip
 
   // landmark row (LandmarkRow.svelte — the shared event presentation)

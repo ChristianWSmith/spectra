@@ -845,6 +845,21 @@ canvas.heat-canvas {
   cursor: crosshair;
 }
 
+/* Rubber-band selection box while dragging over the map (lib/heatselect.js
+   math, rendered by HeatmapLayer). SOLID accent — the selection is the
+   user's own gesture, never a side: --ct/--t would read as team identity
+   on a surface that carries none, and a dashed border is already spoken for
+   (provenance chips, the halftime separator). pointer-events: none so the
+   overlay can never eat the pointer events it is drawn from; the wrap's
+   overflow clips it at the map edge. */
+.heat-selbox {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  background: var(--accent-12);
+  pointer-events: none;
+}
+
 .heat-hint,
 .heat-empty,
 .heat-stale {

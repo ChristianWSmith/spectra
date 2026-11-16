@@ -2,6 +2,14 @@
   import { makeTransform } from './mapxform.js';
   import { renderHeatField } from '../heatramp.js';
   import { heatRegionTakesBBox } from '../heatkinds.js';
+  import {
+    isBareClick,
+    clientToWorld,
+    dragWorldBox,
+    intersectGrid,
+    overlayRect,
+    cellAt,
+  } from '../heatselect.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
@@ -268,13 +276,25 @@
     ctx.restore();
   }
 
-  // Click → world coords → the grid cell containing the point (snapped to
-  // cell size) → bbox drill into the replay landmark feed. Client pixels
-  // map through the displayed size to IMAGE space (the backing store is
-  // device pixels, so c.width is the wrong scale here).
-  // No bbox for this kind (heatRegionTakesBBox — the view's nav gate is
-  // the same predicate) → the click does nothing: a click that navigated
-  // nowhere useful would open the replay with no region selected. The
+  // Click/drag → world coords. Client pixels map through the displayed size
+  // to IMAGE space (the backing store is device pixels, so c.width is the
+  // wrong scale here); all of that math is lib/heatselect.js — one formula
+  // shared by the bare click and the rubber-band drag.
+  //
+  // Two gestures, one drill:
+  //   • a BARE CLICK (pointer down + up with under 4px of movement) emits
+  //     the CELL containing the point — exactly what the map did before the
+  //     drag existed, snapped to cell size;
+  //   • a DRAG emits the world box it spans, clipped to the raster's bounds
+  //     (an empty intersection falls back to the anchor's own cell — a
+  //     selection over no data drills where the gesture started, never an
+  //     invented region). The overlay's presence means "this release selects
+  //     a region": a sub-threshold wobble draws no box at all.
+  //
+  // No bbox for this kind (heatRegionTakesBBox — the view's nav gate is the
+  // same predicate) → the gesture does nothing: a drill that navigated
+  // nowhere useful would open the replay with no region selected. The gate
+  // runs at POINTERDOWN, so a bbox-less kind never starts a gesture. The
   // cell readout under the cursor stays available (the title still names
   // what the map shows) — only the DRILL affordance goes away.
   // The cell's DISPLAYED value rides the callback (second argument): the
@@ -283,12 +303,20 @@
   // sampleField share — so the view can read the SIGN of a signed kd
   // cell (> 0 killers stood here, < 0 victims fell here —
   // heatmap.go combineSignedHeatmaps, kills − deaths). A cell outside
-  // the grid reads undefined (no signal — never a fabricated 0).
-  function onClick(e) {
-    if (!drillable) return;
+  // the grid reads undefined (no signal — never a fabricated 0). A drag
+  // carries the ANCHOR cell's value for the same reason: it is where the
+  // gesture started reading from.
+  //
+  // The gesture state below is transient component $state — never viewstate,
+  // never the URL (State placement: a half-finished drag never restores).
+  let drag = $state(null); // { left, top, width, height } CSS px | null
+  let anchor = null; // press point + canvas rect (plain: never rendered)
+
+  function beginDrag(e) {
+    if (!drillable || e.button !== 0) return;
     const c = canvas;
-    // baseTf (the LIVE floor's mapping — same space as the image on
-    // screen and the W/H below): a click drills into the world region the
+    // baseTf (the LIVE floor's mapping — same space as the image on screen
+    // and the W/H below): the gesture drills into the world region the
     // cursor is over on the radar the user is actually looking at.
     if (!baseTf || !c || !grid || !grid.w || !grid.h) return;
     const cw = (grid.maxX - grid.minX) / grid.w;
@@ -296,21 +324,68 @@
     if (!(cw > 0) || !(ch > 0)) return;
     const rect = c.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const ix = ((e.clientX - rect.left) / rect.width) * W;
-    const iy = ((e.clientY - rect.top) / rect.height) * H;
-    const world = baseTf.toWorld(ix, iy);
-    const ci = Math.floor((world.x - grid.minX) / cw);
-    const ri = Math.floor((world.y - grid.minY) / ch);
-    const inGrid = ci >= 0 && ci < grid.w && ri >= 0 && ri < grid.h;
-    onRegion(
-      {
-        minX: grid.minX + ci * cw,
-        minY: grid.minY + ri * ch,
-        maxX: grid.minX + (ci + 1) * cw,
-        maxY: grid.minY + (ri + 1) * ch,
-      },
-      inGrid ? grid.cells[ri * grid.w + ci] : undefined,
-    );
+    anchor = { x: e.clientX, y: e.clientY, rect };
+    drag = null;
+    // Capture keeps the gesture alive past the canvas edge. jsdom has no
+    // setPointerCapture at all (and a browser may refuse it for a detached
+    // element) — guarded, because a failed capture must never swallow the
+    // drag; the overlay simply stops at the canvas then.
+    if (typeof c.setPointerCapture === 'function') {
+      try {
+        c.setPointerCapture(e.pointerId);
+      } catch {
+        /* not capturable — the in-canvas gesture still works */
+      }
+    }
+  }
+
+  function moveDrag(e) {
+    if (!anchor) return;
+    // Under the threshold the gesture is still a click: no box, so the
+    // overlay never shows a selection the release will not make.
+    drag = isBareClick(anchor.x, anchor.y, e.clientX, e.clientY)
+      ? null
+      : overlayRect(anchor.x, anchor.y, e.clientX, e.clientY, anchor.rect);
+  }
+
+  function endDrag(e) {
+    const a = anchor;
+    anchor = null;
+    drag = null;
+    if (!a) return;
+    if (typeof canvas?.setPointerCapture === 'function') {
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* never captured */
+      }
+    }
+    if (!drillable) return;
+    // The release decides, not the overlay: a press with no move (or one
+    // that never cleared the threshold) is the old cell click.
+    if (isBareClick(a.x, a.y, e.clientX, e.clientY)) {
+      emitCell(e.clientX, e.clientY, a.rect);
+      return;
+    }
+    const box = dragWorldBox(baseTf, a.rect, W, H, a.x, a.y, e.clientX, e.clientY);
+    const region = box && intersectGrid(grid, box);
+    const anchorCell = cellAt(grid, clientToWorld(baseTf, a.rect, a.x, a.y, W, H));
+    if (!anchorCell) return;
+    onRegion(region || anchorCell.bbox, anchorCell.value);
+  }
+
+  function cancelDrag() {
+    anchor = null;
+    drag = null;
+  }
+
+  // The bare click: the cell containing the point (heatselect's cellAt —
+  // row-major, row 0 at grid.minY, missing value outside the raster).
+  function emitCell(clientX, clientY, rect) {
+    const world = clientToWorld(baseTf, rect, clientX, clientY, W, H);
+    const cell = world && cellAt(grid, world);
+    if (!cell) return;
+    onRegion(cell.bbox, cell.value);
   }
 </script>
 
@@ -324,7 +399,16 @@
       ? S.common.heatmapLayerDrillTitle
       : S.common.heatmapLayerNoDrillTitle}
     style={drillable ? undefined : 'cursor: default'}
-    onclick={onClick}
+    onpointerdown={beginDrag}
+    onpointermove={moveDrag}
+    onpointerup={endDrag}
+    onpointercancel={cancelDrag}
     aria-label={S.common.heatmapLayerLabel}
   ></canvas>
+  {#if drag}
+    <div
+      class="heat-selbox"
+      style={`left:${drag.left}px;top:${drag.top}px;width:${drag.width}px;height:${drag.height}px`}
+    ></div>
+  {/if}
 </div>
