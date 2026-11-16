@@ -417,10 +417,11 @@
 
   // Region drill: a bbox around the gesture → the canonical event browser
   // (Replay's landmark feed) scoped to that region. The bbox is the CELL
-  // under the cursor for a bare press and the DRAGGED box clipped to the
-  // raster for a rubber-band selection (both emitted by HeatmapLayer,
-  // whose gesture math is lib/heatselect.js). The note renders first so
-  // the effect of the drill is visible before the route switch.
+  // under the cursor for a bare press and the DRAGGED box AS DRAWN for a
+  // rubber-band selection (both emitted by HeatmapLayer, whose gesture
+  // math is lib/heatselect.js; the third argument `source` names the
+  // shape). The note renders first so the effect of the drill is visible
+  // before the route switch.
   // ACCEPTED EXCEPTION to "outside-replay buttons seek, never filter":
   // this region drill is a documented power-user path that arrives with
   // a landmark filter (the region bbox + the mirrored categories AND the
@@ -431,18 +432,24 @@
   // triggers the replay's feed reveal on entry (lib/replay/landmarks.js
   // shouldRevealFeed), which picks the mirrored keys up through the same
   // serialization.
-  // THE BBOX IS ALWAYS EXPANDED BY grid.pad, never queried at its raw
-  // edges: for a bare press that bbox IS the cell, and the displayed cell
-  // value is the Gaussian-smeared splat (σ = 150u, windowed to zero at
-  // the 3σ reach = pad) of everything within the kernel's reach, so
-  // bbox ± pad is exactly the region whose events can have painted this
-  // cell — the raw ~30×36u cell holds almost no event endpoints, and
-  // querying it alone is what produced the guaranteed-empty "No events
-  // match these filters." arrival (the nearest kill in
-  // the owner's repro sat 238u away). The pad rides the wire from Go
-  // (HeatmapGrid.Pad — Go owns the kernel width; the store stays a dumb
-  // rectangle predicate), and regionNote states the APPLIED (padded)
-  // rect, because that is what was actually queried.
+  // A 'cell' BBOX IS EXPANDED BY grid.pad before it is queried; a 'drag'
+  // BBOX IS NEVER PADDED — its applied rect === the drawn box (owner fix
+  // 2026-11-16: the pad's own contract is the CLICKED-CELL splat reach,
+  // and non-playable margins are thinner than it — de_cache's top margin
+  // is 14u — so padding every emission made a margin box query a rect
+  // that reached into the map and returned events for a region the owner
+  // had drawn over nothing). For a bare press the pad IS the point: the
+  // displayed cell value is the Gaussian-smeared splat (σ = 150u,
+  // windowed to zero at the 3σ reach = pad) of everything within the
+  // kernel's reach, so bbox ± pad is exactly the region whose events can
+  // have painted this cell — the raw ~30×36u cell holds almost no event
+  // endpoints, and querying it alone is what produced the
+  // guaranteed-empty "No events match these filters." arrival (the
+  // nearest kill in the owner's repro sat 238u away). The pad rides the
+  // wire from Go (HeatmapGrid.Pad — Go owns the kernel width; the store
+  // stays a dumb rectangle predicate), and regionNote states the APPLIED
+  // rect, because that is what was actually queried (for a drag: the
+  // drawn box, verbatim).
   // A kind that takes NO bbox at all (heatRegionTakesBBox — presence,
   // and any future bbox-less kind) does not navigate: the drill is a
   // bbox drill, and an arrival without one opens the replay on its
@@ -457,7 +464,7 @@
   // under changed live controls never opens an arrival that contradicts
   // what the user is clicking. The live controls only reach the drill
   // through the documented `src` fallback (no raster → nothing to click).
-  function onRegion(bbox, value) {
+  function onRegion(bbox, value, source) {
     const carries = heatRegionTakesBBox(src.kind);
     if (!carries) {
       regionChip = 'region not applied';
@@ -476,8 +483,10 @@
       roundFrom: src.roundFrom,
       roundTo: src.roundTo,
     });
-    // KD IS SIGNED — the clicked cell's VALUE picks the endpoint the
-    // arrival asks for (the sign override lives HERE, at the click site;
+    // KD IS SIGNED — the emitted VALUE picks the endpoint the arrival
+    // asks for (the clicked cell's own value for a bare press, the drag's
+    // anchor cell's value for a rubber band — HeatmapLayer; the sign
+    // override lives HERE, at the click site;
     // heatRegionCats('kd') keeps its ['kills'] default projection, so the
     // registry's pinned test line is untouched). Polarity, verified:
     // heatmap.go GetHeatmapKD builds the kills population from
@@ -506,9 +515,15 @@
     // Cell ± pad = the events whose splat can reach the clicked cell
     // (the kernel is windowed to zero AT pad, so a sample a touch beyond
     // the expanded edge contributes nothing — at most one cell of index
-    // quantization at the zero-weight taper edge). A grid without a pad
-    // (none exist today) expands by 0 rather than inventing a reach.
-    const pad = grid && Number.isFinite(grid.pad) ? grid.pad : 0;
+    // quantization at the zero-weight taper edge). ONLY a 'cell'
+    // emission receives it: a drag's box is the user's own gesture and is
+    // queried VERBATIM (a drag that missed the raster queries honestly
+    // empty rather than reaching into the map). Any other/absent source
+    // also stays unpadded — fail honest, never pad what was not a clicked
+    // cell. A grid without a pad (none exist today) expands by 0 rather
+    // than inventing a reach.
+    const pad =
+      source === 'cell' && grid && Number.isFinite(grid.pad) ? grid.pad : 0;
     const applied = {
       minX: bbox.minX - pad,
       minY: bbox.minY - pad,

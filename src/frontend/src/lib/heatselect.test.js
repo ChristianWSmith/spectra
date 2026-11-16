@@ -1,7 +1,8 @@
 // Tests for the heatmap rubber-band selection math (lib/heatselect.js): the
 // one client px → world mapping (shared by click and drag), the bare-click
-// threshold, the gesture box's normalisation/clamping, its intersection with
-// the raster grid, and the cell read that anchors a selection.
+// threshold, the gesture box's normalisation/clamping, and the cell read
+// that anchors a selection. (The raster clip `intersectGrid` died with the
+// 2026-11-16 pad-on-drag fix — a drag now emits its raw world box.)
 // Run: node --test src/lib/heatselect.test.js   (from frontend/)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +12,6 @@ import {
   isBareClick,
   clientToWorld,
   dragWorldBox,
-  intersectGrid,
   overlayRect,
   cellAt,
 } from './heatselect.js';
@@ -99,41 +99,12 @@ test('dragWorldBox normalises both corners — the Y flip comes out in min/max',
     maxY: 40,
   });
   // A box that runs off the right/bottom edge is NOT clamped here (the
-  // overlay clamps for display; the world box keeps the true gesture and
-  // intersectGrid trims it to the data).
+  // overlay clamps for display; the world box keeps the true gesture —
+  // the view queries that rect verbatim for a drag).
   const wide = dragWorldBox(tf, RECT, 1024, 1024, 10, 10, 4000, 4000);
   assert.ok(wide.maxX > 50 && wide.minY < -50, JSON.stringify(wide));
   // Unmappable corners → null (never a half-invented box).
   assert.equal(dragWorldBox(null, RECT, 1024, 1024, 0, 0, 10, 10), null);
-});
-
-test('intersectGrid clips to the raster bounds and says null when it misses', () => {
-  const box = { minX: -40, minY: -460, maxX: 460, maxY: 40 };
-  // Clipped on the sides that overrun; the in-bounds edges stay put.
-  assert.deepEqual(intersectGrid(GRID, box), { minX: -40, minY: -50, maxX: 50, maxY: 40 });
-  // A box entirely inside the grid passes through unchanged.
-  const inner = { minX: -40, minY: 10, maxX: -10, maxY: 40 };
-  assert.deepEqual(intersectGrid(GRID, inner), inner);
-  // A box that misses the grid entirely: null (the anchor-cell fallback
-  // path — never an empty or negative rect).
-  assert.equal(intersectGrid(GRID, { minX: 100, minY: 100, maxX: 200, maxY: 200 }), null);
-  assert.equal(intersectGrid(GRID, { minX: 60, minY: -40, maxX: 90, maxY: 40 }), null);
-  assert.equal(intersectGrid(GRID, { minX: -40, minY: 60, maxX: 40, maxY: 90 }), null);
-  // ZERO-extent overlap still REACHES the raster: a perfectly straight
-  // (zero-width) drag, or a box resting exactly on an edge, clips to a line
-  // — the gesture touched the data, so it must not fall back to the cell.
-  assert.deepEqual(intersectGrid(GRID, { minX: 50, minY: -40, maxX: 90, maxY: 40 }), {
-    minX: 50, minY: -40, maxX: 50, maxY: 40,
-  });
-  assert.deepEqual(intersectGrid(GRID, { minX: -40, minY: 50, maxX: 40, maxY: 90 }), {
-    minX: -40, minY: 50, maxX: 40, maxY: 50,
-  });
-  assert.deepEqual(intersectGrid(GRID, { minX: -40, minY: -460, maxX: -40, maxY: 40 }), {
-    minX: -40, minY: -50, maxX: -40, maxY: 40,
-  });
-  // Degenerate inputs never throw and never invent a region.
-  assert.equal(intersectGrid(null, box), null);
-  assert.equal(intersectGrid(GRID, null), null);
 });
 
 test('overlayRect normalises, clamps to the canvas and is origin-relative', () => {
@@ -179,18 +150,26 @@ test('cellAt reads the containing cell: row 0 at minY, missing value outside', (
   assert.equal(cellAt({ ...GRID, maxX: -50 }, { x: 0, y: 0 }), null);
 });
 
-test('the full drag path: gesture → world box → grid-clamped region + anchor value', () => {
+// Re-pinned 2026-11-16 (owner fix — pad-on-drag + clip/anchor fallback):
+// the drag path is gesture → world box → THE RAW REGION, and the anchor
+// cell contributes only its VALUE. `intersectGrid` (the raster clip that
+// existed to serve the view's cell pad) was deleted with the fix, and the
+// caller no longer substitutes the anchor cell when a gesture misses the
+// raster — an honest raw rect that simply returns nothing.
+test('the full drag path: gesture → world box emitted AS-IS + anchor value', () => {
   // End-to-end over the driver fixture: press (10, 10), release (510, 510).
   const box = dragWorldBox(tf, RECT, 1024, 1024, 10, 10, 510, 510);
-  const region = intersectGrid(GRID, box);
-  assert.deepEqual(region, { minX: -40, minY: -50, maxX: 50, maxY: 40 });
+  // The drawn box runs past the raster on every side — NOT clipped: the
+  // region IS the gesture (the view pads only a 'cell' emission).
+  assert.deepEqual(box, { minX: -40, minY: -460, maxX: 460, maxY: 40 });
   // The anchor cell's value rides along (kd sign source in Heatmaps.onRegion).
   const anchor = clientToWorld(tf, RECT, 10, 10, 1024, 1024);
   assert.equal(cellAt(GRID, anchor).value, 13);
-  // A gesture that misses the raster entirely → null region → the caller
-  // falls back to the anchor cell (the decision recorded in HeatmapLayer).
+  // A gesture that misses the raster entirely: the region is STILL the
+  // drawn box, and the anchor value is MISSING (out of grid — never a
+  // fabricated 0), never a substitute cell region.
   const miss = dragWorldBox(tf, RECT, 1024, 1024, 500, 500, 900, 900);
-  assert.equal(intersectGrid(GRID, miss), null);
+  assert.deepEqual(miss, { minX: 450, minY: -850, maxX: 850, maxY: -450 });
   const anchorCell = cellAt(GRID, clientToWorld(tf, RECT, 500, 500, 1024, 1024));
   assert.equal(anchorCell.inGrid, false);
   assert.equal(anchorCell.value, undefined);

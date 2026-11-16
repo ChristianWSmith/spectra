@@ -1,8 +1,16 @@
 // heatselect.js — THE pure selection math for the heatmap map's rubber-band
 // drag (HeatmapLayer): client px → image space → world, the bare-click
-// threshold, the drag box's normalisation/clamping and its intersection with
-// the raster grid. No DOM, no component state — unit-tested by
+// threshold, the drag box's normalisation/clamping, and the cell read that
+// anchors a selection. No DOM, no component state — unit-tested by
 // heatselect.test.js; HeatmapLayer keeps only the pointer plumbing.
+//
+// Gesture contract (owner fix, 2026-11-16): a DRAG emits EXACTLY the world
+// rect it spans — never clipped to the raster, never substituted by a cell —
+// while a BARE CLICK emits the containing cell (which the view expands by
+// grid.pad). The drag box is therefore NOT intersected with the grid here:
+// the old `intersectGrid` clip existed only to serve that pad, and it both
+// could drop valid either-endpoint rows and hid margin boxes behind an
+// anchor-cell fallback.
 //
 // Every client→world mapping goes through the SAME formula the single-click
 // path always used (ix = (clientX − rect.left) / rect.width · W, then
@@ -50,25 +58,6 @@ export function dragWorldBox(tf, rect, W, H, x0, y0, x1, y1) {
     maxX: Math.max(a.x, b.x),
     maxY: Math.max(a.y, b.y),
   };
-}
-
-// intersectGrid — the drag box clipped to the raster's world bounds; null
-// when it NEVER reaches the raster. "Reaches" is deliberately generous: a
-// zero-extent clip (a perfectly straight drag, or a box resting exactly on
-// an edge) still counts, because the gesture does touch the data and the
-// view's pad expansion turns the line into a real region — falling back
-// there would ignore a 500px gesture to drill one cell. Null therefore means
-// exactly one thing: the gesture missed the raster entirely, and the caller
-// falls back to the anchor's own cell — a selection over no data drills
-// where it started, never an invented region and never a silent no-op.
-export function intersectGrid(grid, box) {
-  if (!grid || !box) return null;
-  const minX = Math.max(box.minX, grid.minX);
-  const minY = Math.max(box.minY, grid.minY);
-  const maxX = Math.min(box.maxX, grid.maxX);
-  const maxY = Math.min(box.maxY, grid.maxY);
-  if (!(minX <= maxX) || !(minY <= maxY)) return null;
-  return { minX, minY, maxX, maxY };
 }
 
 // overlayRect — the gesture in CSS px RELATIVE TO THE RECT'S ORIGIN, clamped

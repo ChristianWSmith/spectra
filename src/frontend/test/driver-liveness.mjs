@@ -390,7 +390,27 @@ const EXPECTED = {
   // in section Q (the onCanvas bridge actually hands the view the LIVE
   // <canvas> element, exactly once — a stable callback, not one hand-off
   // per render).
-  'heatmap-layer.dom.mjs': 92,
+  // heatmap-layer 92 → 100 (2026-11-16, W11 heatmap bbox — the pad-on-drag
+  // + clip/anchor-fallback fix): +8. Section O re-pinned IN PLACE: a drag
+  // now emits the DRAWN world box verbatim, tagged source 'drag' (the old
+  // expectation was the raster-clipped [−40,−50]×[50,40] — now
+  // [−40,−460]×[460,40]; +1 the source-tag pin), the miss block's
+  // anchor-cell substitution became the honest raw rect (450..850 ×
+  // −850..−450 with a missing anchor value — 3 checks → 4, +1), the
+  // straight zero-width drag's clipped minY −50 → −460 in place, and the
+  // sub-threshold/threshold/clamp/cancel/presence pins kept their counts
+  // (the cell emission just gained its 'cell' tag inside the existing
+  // check). +1 section I (the bare click is tagged source 'cell'), +1
+  // section J (grid.pad is source-CONDITIONAL — only a 'cell' emission
+  // expands on all four sides; a drag's applied rect is the drawn bbox,
+  // and regionNote still states the applied rect), and +4 NEW section O2
+  // over the real de_cache meta (pos_x −2000 / pos_y 3250 / scale 5.5): a
+  // known px rect → its hand-computed world corners tagged 'drag', plus
+  // the non-playable regression (a drag confined to y > 2288 never reaches
+  // into playable space and IS the drawn rect — maxY ≤ drawn maxY, never
+  // ±450). Sections A–H, K–Q untouched; M's onRegion signature pin
+  // re-pointed at `value, source` in place.
+  'heatmap-layer.dom.mjs': 100,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
   // and the matchup names were RE-PINNED to the START-side colour rule

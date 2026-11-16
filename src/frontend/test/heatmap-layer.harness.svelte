@@ -78,8 +78,11 @@
   globalThis.__setKind = (k) => (kind = k);
   globalThis.__regions = regions;
   globalThis.__canvasHandles = canvasHandles;
-  function onRegion(bbox, value) {
-    regions.push({ bbox, value });
+  // The THIRD argument names the gesture shape ('drag' | 'cell') — the
+  // view pads grid.pad to a 'cell' emission only (Heatmaps.onRegion), so
+  // the tag is part of the region contract the driver pins.
+  function onRegion(bbox, value, source) {
+    regions.push({ bbox, value, source });
   }
 </script>
 
