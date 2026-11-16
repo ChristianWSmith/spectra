@@ -141,13 +141,17 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // (0 = the first window) for the same server-side search query AND the
 // same server-side filters — origin ("" = all, "builtin", "mine" = user +
 // plugin, "none" = both toggles off), scope ("match", "profile", "none"),
-// denominator ("rounds", "matches", "none" — with the store's
-// denominator-less rule: a row with no denominator passes in every
-// state) and format (the Builder's Type group: "" = every format,
+// denominator (the Denominator group's checked set as a canonical
+// comma-subset of the three bucket tokens rounds/matches/none where
+// "none" names the denominator-less rows: "" = every box, "empty" = no
+// box — Reading B, 2026-11-16; see store.ListMetricsPage's DENOMINATOR
+// FILTER note) and format (the Builder's Type group: "" = every format,
 // "none" = none, or the canonical comma-subset of format tokens where
-// "auto" names the ” format) — which are the Builder's four filter
-// groups; see store.ListMetricsPage — at most limit rows (0 = the
-// store's default window), plus HasNext (another window follows) — see
+// "auto" names the ” format) — which are the Builder's four SERVER-side
+// filter groups (the fifth, Pinning, is a render-time filter over
+// localStorage the backend cannot see — see Builder.svelte); see
+// store.ListMetricsPage — at most limit rows (0 = the store's default
+// window), plus HasNext (another window follows) — see
 // store.ListMetricsPage / models.MetricListPage.
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,

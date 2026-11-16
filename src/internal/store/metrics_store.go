@@ -139,6 +139,57 @@ func formatFilterPredicate(word string) (string, []any, error) {
 	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
 }
 
+// metricDenomTokens is the CANONICAL denominator-bucket vocabulary in
+// canonical order — the tokens ListMetricsPage's denominator filter
+// accepts (store-side twin of the Builder Denominator group's three
+// boxes, Reading B 2026-11-16): "rounds"/"matches" name the
+// denominator column's literal values and "none" names its ” value
+// (the denominator-less rows). Like metricFormatTokens it is what makes
+// a subset word canonical instead of merely valid; the empty checked
+// set is the caller's separate "empty" word (see the DENOMINATOR FILTER
+// note above — "none" is taken by a bucket here).
+var metricDenomTokens = []string{"rounds", "matches", "none"}
+
+// denomFilterPredicate renders ListMetricsPage's denominator-subset
+// predicate for a word that is neither "" (all-on) nor "empty"
+// (all-off, the caller's switch): `(denominator = ? OR denominator IN
+// (?, …))` — the canonical comma-subset with the "none" bucket (the
+// column's ” value) bound as its own equality beside the literal
+// tokens' single IN, exactly formatFilterPredicate's shape. Every token
+// must be known, DISTINCT and in metricDenomTokens order (a
+// known-but-reordered word is a non-canonical word, and an empty
+// segment is an unknown token), so anything else is the pre-SQL
+// rejection `unknown denominator filter %q` (the origin/scope/format
+// copy) and NO SQL ever runs.
+func denomFilterPredicate(word string) (string, []any, error) {
+	var (
+		preds    []string
+		args     []any
+		literals []string
+		lastRank = -1
+	)
+	for _, tok := range strings.Split(word, ",") {
+		rank := slices.Index(metricDenomTokens, tok)
+		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
+			return "", nil, fmt.Errorf("couldn't load the metrics: unknown denominator filter %q", word)
+		}
+		lastRank = rank
+		if tok == "none" {
+			preds = append(preds, `denominator = ?`)
+			args = append(args, "")
+			continue
+		}
+		literals = append(literals, tok)
+	}
+	if len(literals) > 0 {
+		preds = append(preds, `denominator IN (`+strings.TrimSuffix(strings.Repeat("?,", len(literals)), ",")+`)`)
+		for _, lit := range literals {
+			args = append(args, lit)
+		}
+	}
+	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
+}
+
 // ListMetricsPage returns ONE keyset window of the metric-definition
 // list ListMetrics returns: the rows strictly after the cursor row
 // (afterID — 0 starts the first window) in ListMetrics' exact order,
@@ -170,16 +221,23 @@ func formatFilterPredicate(word string) (string, []any, error) {
 // of the two values, so the empty set, same spelling as origin's),
 // "" (no predicate). An unknown value is rejected before any SQL.
 //
-// DENOMINATOR FILTER: denomFilter is the one pair that does NOT
-// partition the table — a metric may carry NO denominator (” — counts,
-// plain sums; the column's DEFAULT). Lead ruling (2026-11-14, pinned by
-// TestListMetricsPageDenominatorFilter): such a row is NEVER filtered
-// out by this pair, whatever the toggles say — it carries no
-// denominator to filter on. So a side reads
-// `(denominator = '<side>' OR denominator = ”)` and "none" (both
-// toggles off) keeps the denominator-less rows only — deliberately NOT
-// the empty set the origin/scope "none" spells, because the ” rows
-// still pass. An unknown value is rejected before any SQL.
+// DENOMINATOR FILTER (Reading B — the owner-accepted OVERTURN of the
+// 2026-11-14 "denominator-less rows pass in EVERY state" ruling,
+// re-pinned 2026-11-16; pinned by TestListMetricsPageDenominatorFilter):
+// the group's boxes are exactly the column's three values and a row
+// passes iff its BUCKET is in the CHECKED set — so denomFilter is the
+// same canonical comma-subset shape as FORMAT below, over
+// metricDenomTokens (rounds, matches, none — the "none" bucket naming
+// the column's ” value, i.e. a metric with no denominator). "" = every
+// box checked (no predicate — equivalent to listing all three), "empty"
+// = no box checked (the empty set; the other three groups spell theirs
+// "none", but "none" is a DENOMINATOR TOKEN here, so the empty checked
+// set needs a word of its own), any other word is a CANONICAL
+// COMMA-SUBSET ("rounds,none"): every token known, distinct and in
+// metricDenomTokens order. An unknown token, an empty element, a
+// duplicate or a reorder is rejected before any SQL. Query-layer only —
+// no schema change: the column still holds exactly ”, 'rounds',
+// 'matches'.
 //
 // FORMAT FILTER: formatFilter narrows the window to a SUBSET of the
 // format column — the Builder Filters popover's fourth group (Type).
@@ -263,20 +321,21 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	default:
 		return nil, fmt.Errorf("couldn't load the metrics: unknown scope filter %q", scopeFilter)
 	}
-	// The denominator pair (see the DENOMINATOR FILTER note above): the
-	// '' rows pass in EVERY state — including "none", which therefore
-	// keeps them instead of spelling the empty set. The parens are load-
-	// bearing: OR binds looser than the ANDs this builder writes.
+	// The denominator subset (see the DENOMINATOR FILTER note above):
+	// "" is the all-on default, "empty" is the empty set like the
+	// other groups' "none", and every other non-empty word is the
+	// canonical comma-subset denomFilterPredicate renders — its
+	// rejection happens there, before any SQL.
 	switch denomFilter {
-	case "": // no predicate — every denominator, '' included
-	case "rounds":
-		addWhere(`(denominator = 'rounds' OR denominator = '')`)
-	case "matches":
-		addWhere(`(denominator = 'matches' OR denominator = '')`)
-	case "none":
-		addWhere(`denominator = ''`)
+	case "": // no predicate — every bucket, the denominator-less one included
+	case "empty":
+		addWhere(`0 = 1`)
 	default:
-		return nil, fmt.Errorf("couldn't load the metrics: unknown denominator filter %q", denomFilter)
+		pred, a, err := denomFilterPredicate(denomFilter)
+		if err != nil {
+			return nil, err
+		}
+		addWhere(pred, a...)
 	}
 	// The format subset (see the FORMAT FILTER note above): "none" is
 	// the empty set like origin's, and every other non-empty word is

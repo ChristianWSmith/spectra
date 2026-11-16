@@ -393,7 +393,8 @@ formula and sample-size honesty (a value is never invented; missing data shows a
 honest zero beside its \`N\`).
 
 The **left column** lists every metric, grouped **Builtins / Yours / Plugins**, with a search box
-and one **Filters** panel (origin, scope, denominator and format). The list scrolls when it grows
+and one **Filters** panel (origin, scope, denominator, format and pinning — the last narrows the list
+to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
 it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
 **Order…** opens the ordering dialog.

@@ -188,7 +188,27 @@ const EXPECTED = {
   // PLACE to "the pin control exists on metric rows only" and the
   // help-line pin reworded in place for the new metricOrderNote (both
   // same slot, same count); the Show/Hide and no-drag pins kept theirs.
-  'builder.dom.mjs': 137,
+  // builder 137 → 146 (2026-11-16, w13c filters M7+M8 — +9 layered on
+  // W13a's 137; both waves branched from the shared 131 base, sections
+  // disjoint): +1 section
+  // A (the Denominator group's three boxes and the Pinning pair's two
+  // default to checked, beside the fifteen-box/five-group panel pin);
+  // +2 section C (Reading B's subset words — every box off → "empty"
+  // with the empty state, {Rounds} alone → "rounds" with the one
+  // store-side row — replacing the two "denominator-less rows pass
+  // everywhere" pins, whose rows-preservation legs kept their counts);
+  // +4 section C's new Pinning block (Pinned-only issues NO list call
+  // and renders only the pinned row, both boxes off → the empty-state
+  // copy with still no call, both back on → the full window, and the
+  // trade_rate pin restored for sections D–J); +2 section G (the
+  // "rounds,none" subset composing with the search in ONE call, plus
+  // its restore). Section C's other denominator pins re-pinned IN PLACE
+  // for the subset words ("matches" → "matches,none", "none" → the
+  // {None} box, both-on stays "") and section H's parting word
+  // ("rounds" → "rounds,none") moved with them — same counts; the
+  // twelve-box restore pins became the fifteen-box fifteenOf (same two
+  // checks).
+  'builder.dom.mjs': 146,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

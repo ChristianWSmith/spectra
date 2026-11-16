@@ -28,6 +28,7 @@
   } from '../metricstate.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
   import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
+  import { denomFilterWord } from '../metricdenoms.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -164,7 +165,7 @@
   }
 
   // The editor form (fields + the dirty-check baseline), the list's
-  // search text and the filter multi-select's TWELVE CHECKBOXES are
+  // search text and the filter multi-select's FIFTEEN CHECKBOXES are
   // view-local state: they restore across navigation through the
   // process-scoped registry (viewstate.svelte.js — flat key; they
   // travel together so the unsaved-changes flag, the search and the
@@ -178,18 +179,20 @@
     query: '',
     // Origin group: the owner's STANDING default — Built-in OFF, My
     // metrics ON — so the initial view lists the user's own metrics
-    // (user + plugin). The Scope and Denominator groups start BOTH
+    // (user + plugin). The Scope and Denominator groups start ALL their
     // options ON (the owner's addendum: "both scopes and both
-    // denominators toggled on"), so neither narrows the first render.
-    // Each group narrows SERVER-side only when an option goes off
-    // (originFilter / scopeFilter / denomFilter below), and both-off is
-    // legal in every group.
+    // denominators toggled on"; the Denominator group gained its third
+    // None box with Reading B, 2026-11-16, also ON), so neither narrows
+    // the first render. Each group narrows SERVER-side only when an
+    // option goes off (originFilter / scopeFilter / denomFilter below),
+    // and all-off is legal in every group.
     builtin: false,
     mine: true,
     scopeMatch: true,
     scopeProfile: true,
     denomRounds: true,
     denomMatches: true,
+    denomNone: true,
     // Type group: the owner's ruling ("all six checked — auto + int +
     // float1 + float2 + percent + currency") — only Built-in starts off,
     // so the first render is unfiltered on every group but Origin.
@@ -199,6 +202,11 @@
     formatFloat2: true,
     formatPercent: true,
     formatCurrency: true,
+    // Pinning group (the fifth, client-side — see pinFilter below): the
+    // owner's default both ON, so the first render is unfiltered here
+    // too.
+    showPinned: true,
+    showUnpinned: true,
   });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
@@ -209,12 +217,15 @@
   let scopeProfile = $state(bldSeed.scopeProfile);
   let denomRounds = $state(bldSeed.denomRounds);
   let denomMatches = $state(bldSeed.denomMatches);
+  let denomNone = $state(bldSeed.denomNone);
   let formatAuto = $state(bldSeed.formatAuto);
   let formatInt = $state(bldSeed.formatInt);
   let formatFloat1 = $state(bldSeed.formatFloat1);
   let formatFloat2 = $state(bldSeed.formatFloat2);
   let formatPercent = $state(bldSeed.formatPercent);
   let formatCurrency = $state(bldSeed.formatCurrency);
+  let showPinned = $state(bldSeed.showPinned);
+  let showUnpinned = $state(bldSeed.showUnpinned);
   $effect(() =>
     remember('builder', {
       form,
@@ -226,12 +237,15 @@
       scopeProfile,
       denomRounds,
       denomMatches,
+      denomNone,
       formatAuto,
       formatInt,
       formatFloat1,
       formatFloat2,
       formatPercent,
       formatCurrency,
+      showPinned,
+      showUnpinned,
     }),
   );
   let saveError = $state('');
@@ -407,17 +421,9 @@
   // accumulated windows form one run per origin present. The markup
   // renders ONE header per run, so a window boundary inside a group
   // never repeats a header — the final look matches the unpaginated
-  // grouped list.
+  // grouped list. Runs derive from the PIN-FILTERED rows (visibleMetrics
+  // below), so a group can vanish entirely under the Pinning filter.
   const GROUP_LABEL = { builtin: 'Builtins', user: 'Yours', plugin: 'Plugins' };
-  const runs = $derived.by(() => {
-    const out = [];
-    for (const m of metrics) {
-      const last = out[out.length - 1];
-      if (last && last.origin === m.origin) last.rows.push(m);
-      else out.push({ origin: m.origin, rows: [m] });
-    }
-    return out;
-  });
 
   const dirty = $derived(snapshot(form) !== baseline);
   // readOnly — a loaded definition the API never updates in place: a
@@ -451,27 +457,82 @@
   });
 
   // scopeFilter / denomFilter — the SAME derivation over the other two
-  // groups (Match / Profile, Rounds / Matches): both checked = no
-  // predicate, one checked = that side, neither = 'none'. The store
-  // owns what each word means — including the denominator group's
-  // denominator-less rule (a row with no denominator passes in every
-  // state, so its "none" is not the empty set the other two spell).
+  // SERVER-side groups (Match / Profile, Rounds / Matches / None). The
+  // store owns what each word means. scopeFilter is the pair shape:
+  // both checked = no predicate, one checked = that side, neither =
+  // 'none'. denomFilter is the CHECKED-SET shape since Reading B (the
+  // owner-accepted overturn of the 2026-11-14 denominator-less rule,
+  // 2026-11-16): the group's boxes are exactly the column's three
+  // values, so the word is the canonical comma-subset of the checked
+  // buckets — all three = '' (no predicate), none = 'empty' (the empty
+  // set, nothing passes), otherwise the subset ("rounds,none") — the
+  // ONE composer in lib/metricdenoms.js, mirroring the store's
+  // metricDenomTokens.
   const scopeFilter = $derived.by(() => {
     if (scopeMatch && scopeProfile) return '';
     if (scopeMatch) return 'match';
     if (scopeProfile) return 'profile';
     return 'none';
   });
-  const denomFilter = $derived.by(() => {
-    if (denomRounds && denomMatches) return '';
-    if (denomRounds) return 'rounds';
-    if (denomMatches) return 'matches';
+  const denomFilter = $derived(
+    denomFilterWord({ rounds: denomRounds, matches: denomMatches, none: denomNone }),
+  );
+
+  // pinFilter — the Pinning group's (the fifth) checked set → word:
+  // both checked = no filter, one = that word, neither = nothing passes
+  // (the same shape as the Scope pair). It NEVER reaches the server —
+  // see visibleMetrics for the sanctioned-exception contract.
+  const pinFilter = $derived.by(() => {
+    if (showPinned && showUnpinned) return '';
+    if (showPinned) return 'pinned';
+    if (showUnpinned) return 'unpinned';
     return 'none';
   });
 
+  // --- The SANCTIONED EXCEPTION (the one) — the Pinning group --------
+  // Every other narrowing in this view is SERVER-side: refreshList's
+  // contract below ("Every narrowing is SERVER-side … never a
+  // client-side slice of a window") and store.ListMetricsPage's ORIGIN
+  // FILTER note ("a client-side filter over a page window would drop
+  // rows at the window edges"). A filter over state the backend cannot
+  // know is a render-time filter over the accumulated windows: pins
+  // live in localStorage ('spectra:pinned-metrics' /
+  // 'spectra:pinned-profile-metrics') and Go cannot see them, so the
+  // Pinning group narrows HERE, at render — it rides no list-read arg,
+  // so flipping a Pinning box issues no ListMetricsPage call at all.
+  // Page tiling and the cursor stay SERVER-side: the windows keep
+  // coming from the store under the other four filters, so a
+  // pinned-only view may legitimately show fewer rows than were fetched
+  // while Load more stays live (it appends the next window, which the
+  // same render-time filter then narrows).
+  //
+  // visibleMetrics — the pin narrowing over the accumulated windows;
+  // "Pinned" = pinned in EITHER scope (pinnedIn reports '' only when
+  // the id is in neither pin key). The empty state and the Showing
+  // count below key off THIS count, so a fully pin-filtered list says
+  // so instead of rendering blank.
+  const visibleMetrics = $derived.by(() => {
+    if (pinFilter === '') return metrics;
+    if (pinFilter === 'none') return []; // both boxes off — nothing passes
+    const wantPinned = pinFilter === 'pinned';
+    return metrics.filter((m) => (pinnedIn(m.id) !== '') === wantPinned);
+  });
+
+  const runs = $derived.by(() => {
+    const out = [];
+    for (const m of visibleMetrics) {
+      const last = out[out.length - 1];
+      if (last && last.origin === m.origin) last.rows.push(m);
+      else out.push({ origin: m.origin, rows: [m] });
+    }
+    return out;
+  });
+
   // formatFilter — the fourth group's (Type) checked-set → server word:
-  // unlike the three PAIRS it is six checkboxes, so the derivation is
-  // the canonical one in lib/metricformats.js (all six = '' no
+  // unlike the pair-shaped groups (Origin / Scope / Pinning) it is six
+  // checkboxes (the Denominator group's three are the checked-set shape
+  // too — denomFilterWord above), so the derivation is the canonical one
+  // in lib/metricformats.js (all six = '' no
   // predicate, none = 'none', otherwise the canonical comma-subset —
   // "auto" being the format select's Auto, the '' format). Same
   // plumbing as the others: it rides the list read's args (refreshList
@@ -539,9 +600,12 @@
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR filter change (the Library's debounce)
   // so typing doesn't hammer the store — and ANY checkbox flip in the
-  // multi-select (origin, scope, denominator or format) lands on this
-  // SAME path, which restarts the window at cursor 0 (a filter change
-  // never appends onto the previous filter's windows).
+  // multi-select's four SERVER-side groups (origin, scope, denominator
+  // or format) lands on this SAME path, which restarts the window at
+  // cursor 0 (a filter change never appends onto the previous filter's
+  // windows). The fifth group (Pinning) is render-time and deliberately
+  // absent from these deps — flipping it must issue NO list read (see
+  // the sanctioned-exception note at visibleMetrics).
   let firstList = true;
   $effect(() => {
     const q = query;
@@ -566,14 +630,18 @@
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
-  // search change, a filter change (any of the four groups), a
-  // save/delete refresh or a Retry must never APPEND onto the previous
-  // window's rows. listGen tags the sequence so a Load-more reply
-  // landing after a restart is dropped instead of appended (the
-  // Library's refreshList/loadMore shape). Every narrowing is
-  // SERVER-side (query LIKE + originFilter + scopeFilter + denomFilter +
-  // formatFilter — store.ListMetricsPage), never a client-side slice of
-  // a window.
+  // search change, a filter change (any of the four SERVER-side
+  // groups), a save/delete refresh or a Retry must never APPEND onto
+  // the previous window's rows. listGen tags the sequence so a
+  // Load-more reply landing after a restart is dropped instead of
+  // appended (the Library's refreshList/loadMore shape). Every
+  // narrowing here is SERVER-side (query LIKE + originFilter +
+  // scopeFilter + denomFilter + formatFilter — store.ListMetricsPage),
+  // never a client-side slice of a window. The ONE sanctioned exception
+  // is the Pinning group (visibleMetrics above): a filter over state
+  // the backend cannot know — pins live in localStorage — is a
+  // render-time filter over these accumulated windows, never a slice of
+  // a window handed to it.
   async function refreshList(q = '', f = '', sc = '', dn = '', fm = '') {
     appliedQuery = q;
     appliedFilter = f;
@@ -597,10 +665,15 @@
     }
   }
 
-  // loadMore appends the NEXT window: the cursor is the last rendered
-  // row's id (the store resolves it to its stored origin-rank/name key,
-  // so windows never skip or duplicate a row). Duplicate ids are filtered
-  // out anyway — a repeated keyed {#each} id would throw.
+  // loadMore appends the NEXT window: the cursor is the last FETCHED
+  // row's id (metrics — the server's list, never the pin-filtered
+  // render, so the cursor keeps tiling the store's order even when the
+  // Pinning group hides rows; the store resolves it to its stored
+  // origin-rank/name key, so windows never skip or duplicate a row).
+  // Duplicate ids are filtered out anyway — a repeated keyed {#each} id
+  // would throw. Under a Pinning filter this is exactly how a
+  // pinned-only view keeps loading: fewer rows render, Load more stays
+  // live.
   async function loadMore() {
     if (loadingMore || !hasNext || !metrics.length) return;
     loadingMore = true;
@@ -1100,14 +1173,17 @@
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
-           panel with four labelled groups (Origin / Scope /
-           Denominator / Type) over the SAME twelve viewstate booleans
-           and the SAME debounced list read below. The FilterBar vein —
-           the control commits, the parent owns the filter state, the
-           debounced refetch follows — without reusing FilterBar itself
-           (that is the landmark feed's conditional-fields panel).
-           Dismissal is the canonical Popover's (Escape / outside
-           pointerdown); focus returns to the trigger on Escape only. -->
+           panel with five labelled groups (Origin / Scope /
+           Denominator / Type / Pinning) over the SAME viewstate
+           booleans and the SAME debounced list read below — the first
+           four SERVER-side, the Pinning group render-time (the one
+           sanctioned exception — see visibleMetrics). The FilterBar
+           vein — the control commits, the parent owns the filter state,
+           the debounced refetch follows — without reusing FilterBar
+           itself (that is the landmark feed's conditional-fields
+           panel). Dismissal is the canonical Popover's (Escape /
+           outside pointerdown); focus returns to the trigger on Escape
+           only. -->
       <div class="toolbar">
         <span class="bld-filter-host" bind:this={filterAnchor}>
           <button
@@ -1170,6 +1246,13 @@
               </div>
               <div class="bld-filter-group" role="group" aria-label={S.builder.denominatorLabel}>
                 <span class="filt-lab">{S.builder.denominatorLabel}</span>
+                <!-- Reading B (2026-11-16): the group's boxes are
+                     exactly the column's three values — Rounds, Matches
+                     then None (the denominator-less rows) — and a row
+                     passes iff its bucket is checked (all three = no
+                     predicate, none = nothing passes). The word each
+                     checked set sends is denomFilterWord's, in this box
+                     order. -->
                 <label class="filt-check"
                   ><input
                     type="checkbox"
@@ -1183,6 +1266,12 @@
                     checked={denomMatches}
                     onchange={(e) => (denomMatches = e.currentTarget.checked)}
                   /> {S.builder.filterMatches}</label>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={denomNone}
+                    onchange={(e) => (denomNone = e.currentTarget.checked)}
+                  /> {S.builder.filterNone}</label>
               </div>
               <!-- Type = the metric's format (the editor's Format
                    select vocabulary, lib/metricformats.js): every
@@ -1233,20 +1322,44 @@
                     onchange={(e) => (formatCurrency = e.currentTarget.checked)}
                   /> {S.builder.filterCurrency}</label>
               </div>
+              <!-- Pinning = the fifth group, RENDER-TIME (the one
+                   sanctioned exception — see visibleMetrics): pins live
+                   in localStorage, so the backend cannot narrow on
+                   them. Both boxes checked by default; like the Scope
+                   pair, one checked = that side, none = nothing passes. -->
+              <div class="bld-filter-group" role="group" aria-label={S.builder.pinningLabel}>
+                <span class="filt-lab">{S.builder.pinningLabel}</span>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={showPinned}
+                    onchange={(e) => (showPinned = e.currentTarget.checked)}
+                  /> {S.builder.filterPinned}</label>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={showUnpinned}
+                    onchange={(e) => (showUnpinned = e.currentTarget.checked)}
+                  /> {S.builder.filterUnpinned}</label>
+              </div>
             </div>
           </Popover>
         </span>
       </div>
-      {#if metrics.length === 0 && !listError}
-        {#if loading}
+      {#if visibleMetrics.length === 0 && !listError}
+        {#if loading && metrics.length === 0}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
-        {:else if appliedQuery}
+        {:else if metrics.length === 0 && appliedQuery}
           <p class="muted" role="status">{S.fill(S.builder.noMetricsMatch, { q: appliedQuery })}</p>
         {:else}
-          <!-- Query-less empty: a filter group narrowed the window to
-               nothing (an empty My-metrics side, both origin options
-               off, Match+Profile off, every Type box off) — legal, and
-               said so here instead of leaving a blank panel. -->
+          <!-- Empty: either a server-side filter group narrowed the
+               window to nothing (an empty My-metrics side, both origin
+               options off, Match+Profile off, every Type box off, the
+               Denominator boxes down to none) or the render-time
+               Pinning group hid every fetched row — legal, and said so
+               here instead of leaving a blank panel. The gate is the
+               FILTERED count (visibleMetrics), so a fully pin-filtered
+               list shows this copy instead of rendering blank. -->
           <p class="muted" role="status">{S.builder.noMetricsToShow}</p>
         {/if}
       {:else}
@@ -1269,7 +1382,7 @@
           {/each}
           {#if hasNext}
             <div class="row-between">
-              <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: metrics.length })}</span>
+              <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: visibleMetrics.length })}</span>
               <button class="btn" disabled={loadingMore} onclick={loadMore}>
                 {loadingMore ? S.builder.loadingMore : S.builder.loadMore}
               </button>
