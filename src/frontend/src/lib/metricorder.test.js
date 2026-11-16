@@ -107,8 +107,10 @@ test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profi
 });
 
 test('FIXED_BLOCK: the Go stats\' labels minus the converted entries (post-conversion order)', () => {
+  // Rnds is gone with the owner's C14 scoreboard change (the column
+  // left SCORE_COLS too — metricorder mirrors it, never leads it).
   assert.deepEqual(FIXED_BLOCK.match, [
-    'Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Rnds', 'Opening K/D',
+    'Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Opening K/D',
     'Util', 'MVPs', 'Score',
   ]);
   assert.deepEqual(FIXED_BLOCK.profile, ['Matches', 'Win%']);

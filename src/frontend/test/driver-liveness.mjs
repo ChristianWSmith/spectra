@@ -246,7 +246,21 @@ const EXPECTED = {
   // −2 section L (the chevron-cell and chevron-button pins deleted; the
   // name cell, the header and the hover twin re-pinned to the ONE frozen
   // column at left 0).
-  'econ-tables.dom.mjs': 121,
+  // econ-tables 121 → 145 (2026-11-15, transpose C14): +24 the NEW section
+  // M over a ≥3-player fixture — the sort chain accumulating (the seed
+  // order + default kills mark, a DMG sort, a second sort folding with
+  // the prior order as the tiebreak inside a death tie, the single-mark
+  // rule, the fully-tied MVPs key moving nothing), the transpose button
+  // riding the Name header's children slot in BOTH shapes, the transposed
+  // structure (player columns in retained order, the eight stat rows in
+  // column order, plain row headers with no sort button, the same cell
+  // renderers incl. the Opening K/D compound, the profile link + side
+  // chip on the player headers, no row-click → replay), the three
+  // .scoreboard.transposed CSS-text pins, the round trip (order kept,
+  // zero marks — the owner's kills example included), and the pinned-
+  // metric stat rows (sequence, stored value, state chip). Section K's
+  // fixed-block pin dropped 'Rnds' in place (the column left SCORE_COLS).
+  'econ-tables.dom.mjs': 145,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the

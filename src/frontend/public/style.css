@@ -1492,9 +1492,11 @@ mark {
    frozen cell would stay unlit while the rest of the row lights up.
    The name cell's right seam is an inset shadow, never a real border —
    border-collapse: collapse does not travel with a stuck cell.
-   `th:first-child` IS the freeze target (positionally); the future
-   transpose work repopulates that cell, so the corner is deliberately NOT
-   pre-built here. */
+   `th:first-child` IS the freeze target (positionally): it is the Name
+   SortTh in player rows (whose children slot now carries the transpose
+   button) and the corner cell in transposed rows, so this ONE header rule
+   freezes the corner through a transpose — the transposed BODY's stat
+   label column is the .scoreboard.transposed block below. */
 
 .scoreboard > thead > tr > th:first-child {
   position: sticky;
@@ -1511,6 +1513,46 @@ mark {
 
 .scoreboard > tbody > tr:hover > td.name-cell {
   background: var(--list-hover);
+}
+
+/* Scoreboard — TRANSPOSED (owner C14): players become the columns, the
+   stats become the rows, and the STAT-LABEL column is now the frozen
+   leftmost one (the owner's side note, made mechanical). The rules
+   mirror the name-cell freeze above: class + direct-child scoped so a
+   nested mini table can never freeze, an opaque background (a sticky
+   cell must hide whatever scrolls beneath it) with the row-hover twin
+   (the tr's hover paints UNDER the sticky cell's own background), and
+   the same inset seam instead of a real border.
+   `top: auto` is load-bearing: `.data-table th` sticks at `top: 0` for
+   every table header, and a tbody ROW header must not float vertically
+   while the players scroll under it.
+   The player column headers carry a player's name (profile link) and the
+   team chip — user data, so they opt out of the table-header chrome
+   (uppercase / letterspaced / muted) the stat labels keep; the transpose
+   button rides the corner SortTh's children slot in both shapes. */
+
+.scoreboard.transposed > tbody > tr > th:first-child {
+  position: sticky;
+  top: auto;
+  left: 0;
+  background: var(--bg);
+  box-shadow: inset -1px 0 0 var(--divider);
+}
+
+.scoreboard.transposed > tbody > tr:hover > th:first-child {
+  background: var(--list-hover);
+}
+
+.scoreboard.transposed > thead > tr > th.sb-player {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+  color: inherit;
+}
+
+.scoreboard .sb-transpose {
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 /* Rounds / chat */

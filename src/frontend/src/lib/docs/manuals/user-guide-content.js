@@ -192,12 +192,18 @@ opens**, **Most MVPs**) and both rosters with K/D/A and ADR. Clicking a card or 
 opens the replay with the camera on that player; clicking a player's name opens their profile.
 
 **Scoreboard** — the sortable per-player table: the fixed columns (name, team, K, D, KDA,
-damage, rounds, opening K/D, utility damage, MVPs, score), then **one column per metric you
-have pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, the multi-kill counts (2K–5K),
-entries, trades and best streak), each with an ⓘ carrying its formula, and sortable. The
-player column stays put while you scroll across the metrics, so you never lose the statline
-you are reading. Bots never appear here — the scoreboard lists human players only. A row
-click opens the replay following that player; the name cell opens their profile.
+damage, opening K/D, utility damage, MVPs, score), then **one column per metric you have
+pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, the multi-kill counts (2K–5K),
+entries, trades and best streak), each with an ⓘ carrying its formula, and sortable. Sorting
+builds on the order you already see: sort a second stat and the first one's order still holds
+inside it, so nothing you sorted by is lost. The transpose button in the top-left cell flips the
+table to one row per stat and one column per player, keeping the players in the order they were
+in and clearing the sort marks until you sort again; in that shape the stat column is the one
+frozen at the left edge as you scroll across the players. The player column stays put while you
+scroll across the metrics, so you never lose the statline you are reading. Bots never appear
+here — the scoreboard lists human players only. In the player-row layout a row click opens the
+replay following that player, and the name cell opens their profile; transposed, the profile
+link travels with the name into the player column headers.
 
 **Rounds** — one row per round: number, winner, the **buy-type class** chip for each side
 (pistol / anti-eco / eco / force / full / bonus / save — hover a chip for the rule text and rules

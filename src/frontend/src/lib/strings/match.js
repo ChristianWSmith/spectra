@@ -32,6 +32,12 @@ export const match = {
   pinnedStatsUnavailable: 'Pinned stats unavailable:',
   dismissPinnedStatsError: 'Dismiss pinned stats error',
   openProfilePossessive: "Open {name}'s profile",
+  // The (0,0) transpose toggle (owner C14): the label is a common
+  // location (tier 1 ≤70); the two direction tooltips ride title= (tier
+  // 2 ≤200) and switch with the shape the button will produce.
+  transposeLabel: 'Transpose table',
+  transposeTitle: 'Transpose: one row per stat and one column per player — the order you are looking at is kept',
+  transposeBackTitle: 'Back to one row per player — the current order stands',
 
   // Column heads shared beyond this view: RoundDetail's weapon table +
   // kill list and the Rounds tab's kill count.
