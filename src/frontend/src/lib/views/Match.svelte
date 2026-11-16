@@ -61,7 +61,7 @@
   import WinnerCell from '../components/WinnerCell.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
-  import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
+  import { readOrder, readHidden, resolvePinIds, composedSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
@@ -93,11 +93,15 @@
 
   // The scoreboard's FIXED block (metricorder.js FIXED_BLOCK mirrors this
   // list): the Go-rendered stats' labels in their store order. Combined
-  // columns sort by their primary key.
+  // columns sort by their primary key. N4: these are SEQUENCE entries
+  // now (the '@'-namespaced fixed keys in metricorder.js), so the
+  // RENDERED column order comes from the composed sequence (sbCols) —
+  // this array stays the fixed half's cell renderers + sort keys, and
+  // the transposed corner still reads nameCol below.
   // ADR / KAST% / HS% / K/D left SCORE_COLS with the dogfooding
   // conversion (W2); A, 2K–5K, Entry, Trade and Streak left with the
   // inferred-conversion swap (W2a): all twelve render as PINNED METRIC
-  // columns at the tail (metricCols below — sourced from the stored
+  // columns (composed into sbCols below — sourced from the stored
   // metric rows through the five-state machine), in today's relative
   // order once the default pins/sequence land (metricorder.js).
   // Opening K/D keeps its fixed position AND its sort key — only its
@@ -127,12 +131,11 @@
     { key: 'score', label: 'Score' },
   ];
 
-  // The TRANSPOSED axis (owner C14): stat rows = the fixed block minus
-  // the Name/Team descriptors — those two move INTO the player column
-  // headers in transposed form (name + side chip), so no redundant
-  // Name/Team rows — followed by the pinned metric sequence (metricCols
-  // below), i.e. the same column order the normal table renders.
-  const statRows = SCORE_COLS.filter((c) => c.key !== 'name' && c.key !== 'side');
+  // The fixed block's label → its SCORE_COLS entry (the composed
+  // sequence speaks metricorder's labels; this map is what turns a
+  // visible fixed entry into the renderer + sort key above — the ONE
+  // bridge, since metricorder.FIXED_BLOCK is this list's mirror).
+  const colByLabel = new Map(SCORE_COLS.map((c) => [c.label, c]));
 
   // The (0,0) descriptor: the corner cell wears the Name header's own
   // label in BOTH shapes (the transpose button rides its children slot).
@@ -150,6 +153,9 @@
   // all-tied key moves nothing at all. sortKey/desc stay DERIVED from
   // the newest entry, so the SortTh markers keep their single-mark shape.
   // Re-seeded with the id-keyed fetch (kills DESC — the store's default).
+  // N4 (lead ruling): hiding K leaves this seed alone — the fold still
+  // orders the rows by kills, it just shows no K column marking it (no
+  // re-seed machinery for a hidden default key).
   let sortStack = $state([{ key: 'kills', desc: true }]);
   const sortKey = $derived(sortStack[sortStack.length - 1]?.key ?? '');
   const desc = $derived(sortStack[sortStack.length - 1]?.desc ?? false);
@@ -486,16 +492,21 @@
 
   const viewRows = $derived(foldRows(scoreboard, sortStack));
 
-  // --- M5 pinned metric columns ---------------------------------------------
-  // Column-merge: SCORE_COLS stays a pure fixed block; pinned metrics
-  // append as extra <th>/<td> cells rendered from their own preview map.
-  // Sorting never leaves the client for ANY key now (the fetch is
-  // id-keyed), and a metric key folds over the sequence the fixed keys
-  // already ordered; players without a value for the metric sort last
-  // either way (nulls-last in both directions — sortValue above).
-  // render = FIXED_BLOCK ++ resolveOrder ∩ pins (design §1.3): pins
-  // SELECT the columns, the order pref SEQUENCES them — the pins array's
-  // own order stopped being an ordering source.
+  // --- M5/W6 composed columns -----------------------------------------------
+  // Column-merge (N4): the ONE composed list (metricorder.
+  // composedSequence) decides WHICH columns exist and in what order —
+  // the fixed stats as '@'-namespaced sequence entries (hideable: a
+  // hidden one drops out of the render, never out of the sequence) and
+  // the pinned metrics as metric entries. Sorting never leaves the
+  // client for ANY key now (the fetch is id-keyed), and a metric key
+  // folds over the sequence the fixed keys already ordered; players
+  // without a value for the metric sort last either way (nulls-last in
+  // both directions — sortValue above).
+  // render = composedSequence ∩ visibility/pins (design §1.3's
+  // composition, extended): the pins still SELECT the metric columns,
+  // the order pref SEQUENCES everything — the pins array's own order
+  // stopped being an ordering source — and the hidden pref (metric_-
+  // hidden_match) removes fixed entries from THIS view only.
   function readPins() {
     // The RAW stored selection — null when the key is ABSENT (the
     // absent-vs-present rule lives in metricorder.resolvePinIds:
@@ -510,6 +521,39 @@
       return null;
     }
   }
+
+  // sbSeq — the composed render sequence as LOOKUP ENTRIES: a visible
+  // fixed entry carries its SCORE_COLS renderer ({key:'f:…', col}), a
+  // pinned metric its definition ({key:'m:…', def}). It lands BEFORE
+  // the stored value read, so an empty or failed metric read still
+  // renders the fixed half — never a blank scoreboard.
+  let sbSeq = $state([]);
+
+  // sbCols — the sequence joined with what has landed: fixed entries
+  // are complete immediately, metric entries appear when their stored
+  // read returns (the honest gap stays a gap, never a guessed cell).
+  const sbCols = $derived.by(() => {
+    const byId = new Map(metricCols.map((mc) => [mc.def.id, mc]));
+    const out = [];
+    for (const s of sbSeq) {
+      if (s.col) {
+        out.push({ kind: 'fixed', key: s.key, col: s.col });
+      } else {
+        const mc = byId.get(s.def.id);
+        if (mc) out.push({ kind: 'metric', key: s.key, mc });
+      }
+    }
+    return out;
+  });
+
+  // The TRANSPOSED axis (owner C14): stat rows = the composed columns
+  // minus the Name/Team descriptors — those two move INTO the player
+  // column headers in transposed form (name + side chip), so no
+  // redundant Name/Team rows — i.e. the same column order the normal
+  // table renders (N4: one composed list now, fixed and metric alike).
+  const statCols = $derived(
+    sbCols.filter((c) => !(c.kind === 'fixed' && (c.col.key === 'name' || c.col.key === 'side'))),
+  );
 
   function metricSortKey(metricId) {
     return `m:${metricId}`;
@@ -546,11 +590,18 @@
     metricCols = [];
     fixedCols = new Map();
     metricError = '';
+    sbSeq = [];
     // The catalog read ALWAYS runs (never gated on the pins): the fixed
     // named slots above need it even when a stored selection says "pin
     // nothing" — the selection governs the COLUMNS, not these cells.
-    Promise.all([listMetrics(), readOrder('match')])
-      .then(([defs, order]) => {
+    Promise.all([
+      listMetrics(),
+      readOrder('match'),
+      // The visibility read is presentation-only: a failed pref read
+      // falls back to "nothing hidden" instead of failing the columns.
+      readHidden('match').catch(() => []),
+    ])
+      .then(([defs, order, hiddenKeys]) => {
         if (!live) return;
         const rows = defs || [];
         // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
@@ -558,11 +609,27 @@
         // nothing" is never overridden (and never silences the fixed
         // slots either — they are not a selection).
         const pinIds = resolvePinIds('match', stored, rows);
-        // THE composition (lib/metricorder.js — the ONE site): the
-        // sequence filtered to the pinned set. The pins array orders
-        // nothing; a newly pinned metric appears where the sequence
-        // puts it, never appended.
-        const picked = pinnedInSequence('match', order, rows, pinIds);
+        const pinSet = new Set(pinIds);
+        // THE composition (lib/metricorder.js — the ONE site): fixed
+        // stats and metrics in one ordered entry list. A hidden fixed
+        // entry drops out of THIS render (it stays in the sequence and
+        // in the ordering dialog); an unpinned metric drops out too —
+        // pins SELECT, the sequence ORDERS. sbSeq lands here, BEFORE
+        // the value read below.
+        const seq = [];
+        const picked = [];
+        for (const e of composedSequence('match', order, rows, hiddenKeys)) {
+          if (e.kind === 'fixed') {
+            if (e.hidden) continue;
+            const col = colByLabel.get(e.label);
+            if (col) seq.push({ key: `f:${col.key}`, col });
+          } else {
+            if (!pinSet.has(e.def.id)) continue;
+            seq.push({ key: `m:${e.def.id}`, def: e.def });
+            picked.push(e.def);
+          }
+        }
+        sbSeq = seq;
         // THE one stored read: the pinned column ids UNIONED with the
         // fixed named slots' ids (design §6.1). An empty id list would
         // mean "every metric" on the wire — never send one; with
@@ -1216,38 +1283,44 @@
           {#if !transposed}
           <thead>
             <tr>
-              {#each SCORE_COLS as col (col.key)}
-                <SortTh
-                  label={col.label}
-                  cls={col.title ? 'num def' : 'num'}
-                  title={col.title || ''}
-                  active={sortKey === col.key}
-                  {desc}
-                  onclick={() => toggleSort(col.key)}
-                >
-                  <!-- The (0,0) cell carries the transpose button
-                       (children slot, outside .th-sort). -->
-                  {#if col.key === 'name'}{@render transposeBtn()}{/if}
-                </SortTh>
-              {/each}
-              <!-- Width-constrained column header (the .m5-mth cap): THE
-                   short_name display criterion — short || title || name.
-                   Every other metric display (cell tooltip, Reports,
-                   Builder rows, palette) reads title || name. -->
-              {#each metricCols as mc (mc.def.id)}
-                <SortTh
-                  label={mc.def.shortName || mc.def.title || mc.def.name}
-                  cls="num def m5-mth"
-                  title="{mc.def.doc || mc.def.name}{mc.error ? ` — couldn’t calculate: ${mc.error}` : ''}"
-                  active={sortKey === metricSortKey(mc.def.id)}
-                  {desc}
-                  onclick={() => toggleSort(metricSortKey(mc.def.id))}
-                >
-                  <!-- The ⓘ is the header's ONLY widget now: the unpin ✕
-                       left with C12 (pins are managed in the Metric
-                       builder / Order dialog, never at this surface). -->
-                  <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
-                </SortTh>
+              <!-- ONE composed header list (N4): the fixed stats and the
+                   pinned metrics share it, in sequence order — a fixed
+                   header keeps its own label/sort key, a metric header
+                   keeps the width cap and the ⓘ. -->
+              {#each sbCols as c (c.key)}
+                {#if c.kind === 'fixed'}
+                  <SortTh
+                    label={c.col.label}
+                    cls={c.col.title ? 'num def' : 'num'}
+                    title={c.col.title || ''}
+                    active={sortKey === c.col.key}
+                    {desc}
+                    onclick={() => toggleSort(c.col.key)}
+                  >
+                    <!-- The (0,0) cell carries the transpose button
+                         (children slot, outside .th-sort). -->
+                    {#if c.col.key === 'name'}{@render transposeBtn()}{/if}
+                  </SortTh>
+                {:else}
+                  {@const mc = c.mc}
+                  <!-- Width-constrained column header (the .m5-mth cap): THE
+                       short_name display criterion — short || title || name.
+                       Every other metric display (cell tooltip, Reports,
+                       Builder rows, palette) reads title || name. -->
+                  <SortTh
+                    label={mc.def.shortName || mc.def.title || mc.def.name}
+                    cls="num def m5-mth"
+                    title="{mc.def.doc || mc.def.name}{mc.error ? ` — couldn’t calculate: ${mc.error}` : ''}"
+                    active={sortKey === metricSortKey(mc.def.id)}
+                    {desc}
+                    onclick={() => toggleSort(metricSortKey(mc.def.id))}
+                  >
+                    <!-- The ⓘ is the header's ONLY widget now: the unpin ✕
+                         left with C12 (pins are managed in the Metric
+                         builder / Order dialog, never at this surface). -->
+                    <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
+                  </SortTh>
+                {/if}
               {/each}
             </tr>
           </thead>
@@ -1267,8 +1340,10 @@
                   e.key === 'Enter' && openPlayerEvents(p.steamId, { follow: true })}
                 tabindex="0"
               >
-                {#each SCORE_COLS as col (col.key)}
-                  {#if col.key === 'name'}
+                {#each sbCols as c (c.key)}
+                  {#if c.kind === 'metric'}
+                    {@render metricCellView(c.mc, p)}
+                  {:else if c.col.key === 'name'}
                     <td class="num name-cell {nameCls}"
                       >{#if isSteam(p.steamId)}
                         <button
@@ -1289,7 +1364,7 @@
                            The replay view is the only place a bot is
                            listed (lib/replay/playercard.js presentAt). -->
                     </td>
-                  {:else if col.key === 'side'}
+                  {:else if c.col.key === 'side'}
                     <!-- Team cell: the display name for this row's final
                          side (teamNames in lib/teams.js — clan name, else
                          team_<player>, else the bare side), colored by the
@@ -1302,11 +1377,8 @@
                       ></td
                     >
                   {:else}
-                    {@render fixedCell(col, p)}
+                    {@render fixedCell(c.col, p)}
                   {/if}
-                {/each}
-                {#each metricCols as mc (mc.def.id)}
-                  {@render metricCellView(mc, p)}
                 {/each}
               </tr>
             {/each}
@@ -1318,7 +1390,8 @@
                side chip; ruling 4: the profile link stays, a column
                header is not a row so the row-click→replay affordance
                does not), and every stat becomes a ROW in the column
-               order (the fixed block, then the pinned metric sequence).
+               order (the ONE composed sequence — fixed stats and pinned
+               metrics alike, N4).
                No sorting on the stat-label rows (ruling 2): they are
                plain row headers, never SortTh. -->
           <thead>
@@ -1367,30 +1440,33 @@
             </tr>
           </thead>
           <tbody>
-            {#each statRows as col (col.key)}
+            <!-- ONE composed stat-row list (N4): the fixed stats and the
+                 pinned metrics as rows in the COLUMN order, minus the
+                 Name/Team descriptors those player headers carry. -->
+            {#each statCols as c (c.key)}
               <tr>
                 <!-- Row header = the stat label, frozen at left:0 in the
                      transposed form (public/style.css). -->
-                <th scope="row">{col.label}</th>
-                {#each viewRows as p (p.steamId)}
-                  {@render fixedCell(col, p)}
-                {/each}
-              </tr>
-            {/each}
-            {#each metricCols as mc (mc.def.id)}
-              <tr>
-                <th scope="row" class="def" title={mc.def.doc || mc.def.name}>
-                  {mc.def.shortName || mc.def.title || mc.def.name}
-                  <!-- The ⓘ is the label's widget (the column header's
-                       own ⓘ idiom, outside any sort button — there is
-                       none on this axis). -->
-                  <span class="m5-ib" title={mc.def.doc || ''}
-                    ><span class="codicon codicon-info"></span></span
-                  >
-                </th>
-                {#each viewRows as p (p.steamId)}
-                  {@render metricCellView(mc, p)}
-                {/each}
+                {#if c.kind === 'fixed'}
+                  <th scope="row">{c.col.label}</th>
+                  {#each viewRows as p (p.steamId)}
+                    {@render fixedCell(c.col, p)}
+                  {/each}
+                {:else}
+                  {@const mc = c.mc}
+                  <th scope="row" class="def" title={mc.def.doc || mc.def.name}>
+                    {mc.def.shortName || mc.def.title || mc.def.name}
+                    <!-- The ⓘ is the label's widget (the column header's
+                         own ⓘ idiom, outside any sort button — there is
+                         none on this axis). -->
+                    <span class="m5-ib" title={mc.def.doc || ''}
+                      ><span class="codicon codicon-info"></span></span
+                    >
+                  </th>
+                  {#each viewRows as p (p.steamId)}
+                    {@render metricCellView(mc, p)}
+                  {/each}
+                {/if}
               </tr>
             {/each}
           </tbody>

@@ -34,7 +34,9 @@
 //      end-user reason, chip present, delete absent, pin/preview live —
 //      Save stays disabled through an edit (dirty never re-enables it)
 //      and loading a user row, a plugin row or New fully restores the
-//      editable state;
+//      editable state; the short-name field caps at SIX characters and
+//      an already-over-limit value refuses to save with its own field
+//      message (N3 — never a silent truncation, never an API call);
 //   E. a SAVED (unmodified) preview reads the canonical stored-value
 //      read for the newest ready match + the no-execution compile as
 //      provenance, shows the STATE indicator instead of a timing chip,
@@ -56,15 +58,21 @@
 //      bar in the row), metric-done refetches the state and clears the
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
 //      state output carries a version number or timestamp;
-//   J. the Order dialog (dogfooding design §2 + metrics UI wave B):
-//      the list-header entry point, ONE dialog with two stacked
-//      sections, the PINS-ONLY reorder list (pinned metrics in
-//      sequence order — the unpinned catalog entries and the old pin
-//      indicator are gone), the help line + the pins-empty state,
-//      the read-only fixed block over the listbox/option rows, the
-//      drag-free list (no handle, nothing draggable), keyboard/button
-//      moves that write the WHOLE sequence through (SetPref),
-//      Reset → Delete, and Close.
+//   J. the Order dialog (dogfooding design §2 + metrics UI wave B,
+//      reworked by N2/N4): the list-header entry point, ONE dialog with
+//      its visible TITLE BAR + icon-only ✕ (N2), the merged reorder
+//      list (the fixed stats fold into the ONE listbox as sequence
+//      entries — there is no read-only context block any more — beside
+//      the pinned metrics), the per-row show/hide toggle on every
+//      HIDEABLE fixed stat (hidden rows stay listed; the scoreboard's
+//      Name is exempt), the drag-free list (no handle, nothing
+//      draggable), keyboard/button moves that write the WHOLE sequence
+//      through (SetPref), Reset → FOUR deletes (both pref PAIRS), and
+//      the header ✕ closing it.
+//
+// Section A opens with the N1 list-scroll pins and section F carries
+// the N6 one-line actions-row anatomy pins (validity slot + the
+// hint→Pin→Save cluster).
 //
 // Backend semantics — the SQL partitions + keyset tiling
 // (store.TestListMetricsPageOriginFilter*,
@@ -514,6 +522,43 @@ viewstate.resetViewState();
 
 console.log('A. ONE multi-select for the four groups — defaults Built-in OFF / My metrics ON, every other option ON (Type: all six checked); the trigger opens and closes the panel');
 let r = await mountBuilder();
+// N1 — the list BODY is the view's one scroll region: one .bld-rows
+// scroller holds the rows + the Load-more footer, while the panel
+// header, the search box and the Filters trigger sit OUTSIDE it (the
+// filter popover anchors to that trigger, so it must never scroll
+// away). The scroller's rule itself is a source pin (jsdom has no
+// layout): the viewport-capped calc is what makes the chrome fixed.
+{
+  const rowsWrap = r.querySelector('.bld-list .bld-rows');
+  const list = r.querySelector('.bld-list');
+  const m3aCss = readFileSync('public/style-m3a.css', 'utf8');
+  check(
+    'N1: the rows ride ONE .bld-rows scroller; the header, search and Filters trigger stay outside it',
+    !!list && !!rowsWrap &&
+      !!rowsWrap.querySelector('.bld-group') &&
+      !rowsWrap.contains(list.querySelector('h2')) &&
+      !rowsWrap.contains(list.querySelector('input[type="search"]')) &&
+      !rowsWrap.contains(filterTrigger(r)) &&
+      !!list.querySelector(':scope > .toolbar .bld-filter-host'),
+    list
+      ? `wrap=${!!rowsWrap} groups=${rowsWrap ? rowsWrap.querySelectorAll('.bld-group').length : 0}`
+      : 'no list',
+  );
+  check(
+    'N1: style-m3a.css pins .bld-rows to the viewport-capped scroller (100vh − 300px chrome, overflow-y auto)',
+    /\.bld-rows\s*\{[^}]*max-height:\s*calc\(100vh - 300px\)[^}]*overflow-y:\s*auto/s.test(m3aCss),
+    'no .bld-rows { max-height: calc(100vh - 300px); overflow-y: auto } rule',
+  );
+  // N6's IDLE leg: the left slot renders even when the expression
+  // check has nothing to say — that is what keeps the right cluster
+  // flush right in every state.
+  check(
+    'N6: the actions row always renders its validity slot — empty while the expression check is idle',
+    !!r.querySelector('.bld-actions > .bld-valid') &&
+      r.querySelector('.bld-actions > .bld-valid').textContent.trim() === '',
+    r.querySelector('.bld-actions > .bld-valid')?.textContent ?? 'no .bld-valid slot',
+  );
+}
 check(
   'first list call = (query "", origin "mine", scope "", denominator "", format "", cursor 0, 100)',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', '', 0, 100]),
@@ -947,7 +992,10 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       : 'no Save button',
   );
   check(
-    'the note under the buttons repeats the same reason',
+    // N6: the hint keeps its .bld-actions .bld-note home — it moved
+    // from AFTER the buttons to the front of the right cluster, so the
+    // check's NAME says cluster now (the selector is unchanged).
+    'the note in the actions cluster repeats the same reason',
     (r.querySelector('.bld-actions .bld-note')?.textContent || '').includes(REASON),
     r.querySelector('.bld-actions .bld-note')?.textContent?.replace(/\s+/g, ' ').trim(),
   );
@@ -1006,6 +1054,31 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       !saveBtn().disabled,
     `name=${r.querySelector('#bld-name')?.value} chip=${chip() && chip().textContent.trim()} disabled=${saveBtn().disabled}`,
   );
+
+  // --- N3: the short-name cap -----------------------------------------------
+  // maxlength stops new typing at six characters; this guard is what
+  // reports a value that is ALREADY over it (loaded from a stale seed
+  // or pasted): a plain reject through saveError with the field-level
+  // message, before any round trip — never a silent truncation.
+  check(
+    'the short-name field caps typing at six characters (maxlength)',
+    r.querySelector('#bld-short')?.getAttribute('maxlength') === '6',
+    r.querySelector('#bld-short')?.getAttribute('maxlength'),
+  );
+  {
+    const savesBefore = bindings.callCount('SaveMetric');
+    type(r.querySelector('#bld-short'), '1234567');
+    await sleep(20);
+    click(saveButton(r));
+    await sleep(60);
+    check(
+      'an over-limit short name refuses to save with its own message (no API call, no truncation)',
+      (r.querySelector('p.error')?.textContent || '').includes('Short name must be 6 characters or fewer') &&
+        bindings.callCount('SaveMetric') === savesBefore &&
+        r.querySelector('#bld-short').value === '1234567',
+      `err="${r.querySelector('p.error')?.textContent}" saves ${savesBefore} -> ${bindings.callCount('SaveMetric')}`,
+    );
+  }
 
   // → New resets everything (the reset transition, both ways pinned).
   const newBtn = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('New'));
@@ -1163,6 +1236,43 @@ console.log('F. a user row still loads the form for editing (unaffected)');
     !!r.querySelector('.bld-expr-state.ok'),
     r.querySelector('.bld-expr-state')?.textContent ?? 'no state line',
   );
+
+  // --- N6: ONE actions line (the lead's W1/T1 pattern) ----------------------
+  // The validity indicator and the hint + Pin + Save cluster share a
+  // single row: the left slot ALWAYS renders, the cluster is its LAST
+  // child, and the indicator lives there (never under the textarea —
+  // there is exactly ONE).
+  const actions = r.querySelector('.bld-actions');
+  const aKids = actions ? [...actions.children] : [];
+  check(
+    'N6: the actions row is one line — the validity slot is its FIRST child, the hint→Pin→Save cluster its LAST',
+    aKids.length === 2 &&
+      aKids[0].classList.contains('bld-valid') &&
+      aKids[1].classList.contains('toolbar'),
+    JSON.stringify(aKids.map((k) => k.className)),
+  );
+  check(
+    'N6: the validity indicator moved INTO that slot — nothing renders under the Expression textarea',
+    !!aKids[0]?.querySelector('.bld-expr-state.ok') && !r.querySelector('.bld-fields .bld-expr-state'),
+    r.querySelector('.bld-fields .bld-expr-state') ? 'still under the textarea' : 'moved',
+  );
+  {
+    const cluster = aKids[1] ? [...aKids[1].children] : [];
+    check(
+      'N6: the cluster runs hint → Pin → Save, no divider and no separator',
+      cluster.length === 3 &&
+        cluster[0].classList.contains('bld-note') &&
+        !!cluster[1].querySelector('.codicon-pin') &&
+        /^Pin(ned)?$/.test(cluster[1].textContent.trim()) &&
+        cluster[2].classList.contains('btn') &&
+        cluster[2].classList.contains('primary') &&
+        !actions.querySelector('.toolbar-sep') &&
+        !/\|/.test(actions.textContent),
+      JSON.stringify(
+        cluster.map((c) => c.className + ':' + c.textContent.trim().replace(/\s+/g, ' ')),
+      ),
+    );
+  }
 }
 
 console.log('G. the search composes with the filters in ONE server call');
@@ -1444,7 +1554,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
 }
 
-console.log('J. the Order dialog: pins-only list, no drag, write-through moves, Reset, Close');
+console.log('J. the Order dialog: merged fixed+metric list, show/hide, no drag, write-through moves, Reset, header ✕');
 {
   // Two opens: FIRST with nothing pinned — the honest empty state plus
   // the help line (the owner copy rule: user's domain, no dev
@@ -1496,42 +1606,61 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
     [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
   );
 
-  // The help line (wave B verbiage): pins-only + where to pin, in the
-  // user's domain — and the owner-flagged development-process phrase
-  // is retired for good.
+  // The visible title bar (N2) — the KAST dialog's idiom: the label as
+  // an <h2> with an icon-only ✕ at its right edge, ABOVE the note.
+  const head = dlg?.querySelector(':scope > .row-between.mo-head');
+  check(
+    'N2: the dialog opens with a visible title bar — "Metric order" as an <h2> and an icon-only ✕ at its right edge',
+    !!head &&
+      head.querySelector(':scope > h2')?.textContent.trim() === 'Metric order' &&
+      head.lastElementChild?.getAttribute('aria-label') === 'Close' &&
+      !!head.lastElementChild?.querySelector('.codicon-close') &&
+      head.querySelector('button') === head.lastElementChild,
+    head ? head.textContent.replace(/\s+/g, ' ').trim() : 'no title bar',
+  );
+
+  // The help line (reworded for N4: fixed stats are listed now, and
+  // they can be hidden — the pins-only copy was wrong once they
+  // folded into the list). Still the owner's domain, no dev shorthand.
   const note = (dlg?.querySelector('.mo-note')?.textContent || '').replace(/\s+/g, ' ').trim();
   check(
-    'help line: the list is PINS-ONLY and points at the metric list’s pin buttons; no dev-process phrase',
-    /Only your pinned metrics are listed here/.test(note) &&
-      /pin buttons in the metric list/.test(note) &&
+    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, pin from the metric list; no dev-process phrase',
+    /Fixed stats and your pinned metrics are listed/.test(note) &&
+      /hide a fixed stat with the eye/.test(note) &&
+      /pin more from the metric list/.test(note) &&
       !/Go stats/i.test(dlg?.textContent || ''),
     note,
   );
 
+  // N4: with nothing pinned the match section still lists the FIXED
+  // stats — the old "nothing to order" / "no metrics yet" empty states
+  // are gone (a fixed stat always has something to order and hide).
   check(
-    'nothing pinned yet → the match section says nothing to order and points at the pin buttons (no rows, no listbox)',
+    'nothing pinned yet → the match section still lists the fixed stats in canonical order (no empty state, a real listbox)',
     !!sec('match') &&
-      /Nothing to order yet — pin metrics from the metric list/.test(sec('match').textContent) &&
-      !!sec('match').querySelector('p[role="status"]') &&
-      dRows('match').length === 0 &&
-      !sec('match').querySelector('[role="listbox"]'),
-    sec('match')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 160),
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify([
+          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+        ]) &&
+      !!sec('match').querySelector('[role="listbox"]') &&
+      !sec('match').querySelector('p[role="status"]'),
+    sec('match')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 200),
   );
   check(
-    'the profile section says so when its catalog is empty',
-    !!sec('profile')?.textContent.includes('No profile metrics yet.'),
-    sec('profile')?.textContent.replace(/\s+/g, ' ').slice(0, 120),
+    'the profile section lists its fixed stats (Matches, Win%) even with an empty catalog',
+    JSON.stringify(dNames('profile')) === JSON.stringify(['@Matches', '@Win%']),
+    JSON.stringify(dNames('profile')),
   );
   {
-    const closeBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Close');
+    const closeBtn = head?.querySelector('button[aria-label="Close"]');
     click(closeBtn);
     await sleep(60);
-    check('Close dismisses the empty dialog', !document.querySelector('.dlg-panel.mo-prompt'));
+    check('the header ✕ dismisses the empty dialog', !document.querySelector('.dlg-panel.mo-prompt'));
   }
 
   // Pin three of the four match metrics from the Builder rows —
-  // trade_rate stays UNPINNED, which is exactly what the pins-only
-  // list must never show.
+  // trade_rate stays UNPINNED, which is exactly what the list must
+  // never show (the fixed stats are there by their own right).
   for (const name of ['adr_avg', 'my_kd', 'plug_stat']) {
     click(rowNamed(r, name)?.querySelector(`[aria-label="Toggle pin for ${name}"]`));
     await sleep(40);
@@ -1543,53 +1672,71 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
   dlg = document.querySelector('.dlg-panel.mo-prompt');
 
   {
-    // The section's ARIA structure (2026-11-14 a11y fix, unchanged by
-    // wave B): the fixed context is a READ-ONLY list — role=list
-    // cannot carry aria-readonly, so the read-only statement is the
-    // list's accessible NAME, the visible caption "… not reorderable" —
-    // and the reorderable half is the listbox/option pair that makes
-    // the row's tabindex and keydown handler valid (role=listitem
-    // is non-interactive and would flag both).
+    // N4 (W6): the fixed stats FOLD INTO the one listbox — the
+    // read-only .mo-fixed context block is gone, and the section's
+    // caption now describes the list (aria-describedby) while the
+    // listbox keeps its name from the section heading. Every row is a
+    // real listbox option: fixed and metric alike.
     const secEl = sec('match');
     const fixed = secEl?.querySelector('.mo-fixed');
     const cap = secEl?.querySelector('.mo-fixed-cap');
     const list = secEl?.querySelector('.mo-list');
     const rows = [...(list?.querySelectorAll('.mo-row') || [])];
-    const items = fixed ? [...fixed.querySelectorAll('.mo-fixed-item')].map((x) => x.textContent) : [];
     check(
-      'fixed block: read-only context (role=list, named "not reorderable", no controls, not draggable); the reorderable half is a listbox of unselected options',
-      !!fixed &&
-        fixed.getAttribute('role') === 'list' &&
-        fixed.getAttribute('aria-labelledby') === cap?.id &&
-        /not reorderable/.test(cap?.textContent || '') &&
-        items[0] === 'Name' &&
-        items[items.length - 1] === 'Score' &&
-        items.includes('KDA') &&
-        !items.includes('ADR') &&
-        !items.includes('KAST%') &&
-        !fixed.querySelector('button') &&
-        !fixed.hasAttribute('draggable') &&
-        !fixed.querySelector('[draggable]') &&
+      'N4: ONE listbox holds the fixed stats AND the pinned metrics — the read-only .mo-fixed block is gone, rows are unselected options',
+      !fixed &&
         list?.getAttribute('role') === 'listbox' &&
         list?.getAttribute('aria-labelledby') === secEl?.querySelector('.mo-sec-title')?.id &&
-        rows.length > 0 &&
+        list?.getAttribute('aria-describedby') === cap?.id &&
+        /Fixed stats lead/.test(cap?.textContent || '') &&
+        rows.length === 13 &&
         rows.every((x) => x.getAttribute('role') === 'option' && x.getAttribute('aria-selected') === 'false'),
-      fixed && list
-        ? `${JSON.stringify(items)} list=${list.getAttribute('role')} rows=${rows.length}`
-        : 'no fixed block',
+      !fixed && list
+        ? `rows=${rows.length} cap="${cap?.textContent.trim()}" desc=${list.getAttribute('aria-describedby')}`
+        : 'the read-only block is back',
     );
   }
   check(
-    'the list shows ONLY the pinned metrics in sequence order — the unpinned trade_rate never appears',
-    JSON.stringify(dNames('match')) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
+    'the list = the fixed stats (canonical order) then the pinned metrics in sequence order — the unpinned trade_rate never appears',
+    JSON.stringify(dNames('match')) ===
+      JSON.stringify([
+        '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+        'adr_avg', 'my_kd', 'plug_stat',
+      ]) &&
       !dRows('match').some((x) => x.dataset.moName === 'trade_rate'),
     JSON.stringify(dNames('match')),
   );
   {
+    // The show/hide toggle (N4): every HIDEABLE fixed row carries one —
+    // named Show/Hide {label} (never the word "pin": pinning stays in
+    // the list, and a pin control here would fork the contract), the
+    // Name column is EXEMPT (owner ruling), and metric rows never get
+    // one (their visibility is the pin selection).
+    const rows = dRows('match');
+    const toggleFor = (row) => row.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
+    check(
+      'every hideable fixed row carries a Show/Hide toggle; the Name column is exempt; metric rows never do',
+      rows.slice(1, 10).every((x) => x.dataset.moKind === 'fixed' && !!toggleFor(x)) &&
+        !toggleFor(rows[0]) &&
+        rows.slice(10).every((x) => x.dataset.moKind === 'metric' && !toggleFor(x)),
+      rows
+        .map((x) => `${x.dataset.moName}:${x.dataset.moKind}:${toggleFor(x)?.getAttribute('aria-label') ?? '-'}`)
+        .join(', '),
+    );
+    check(
+      'the toggle never says "pin" and starts exactly at Hide (nothing hidden yet)',
+      rows.every((x) => !/pin/i.test(toggleFor(x)?.getAttribute('aria-label') || '')) &&
+        rows[1].querySelector('button[aria-label="Hide Team"]') !== null,
+      rows[1].querySelectorAll('button[aria-label]').length
+        ? [...rows[1].querySelectorAll('button')].map((b) => b.getAttribute('aria-label')).join(' | ')
+        : 'no buttons',
+    );
+  }
+  {
     const rows = dRows('match');
     check(
       'no drag source anywhere: nothing in the dialog is draggable and no row carries a grip handle — the ↑/↓ buttons are the only move path',
-      rows.length === 3 &&
+      rows.length === 13 &&
         !dlg.querySelector('[draggable]') &&
         rows.every((x) => !x.hasAttribute('draggable') && !x.querySelector('.mo-grip')),
       rows
@@ -1602,32 +1749,49 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
   }
   {
     const rows = dRows('match');
-    const up0 = rows[0]?.querySelector('[aria-label="Move adr_avg up"]');
-    const down0 = rows[0]?.querySelector('[aria-label="Move adr_avg down"]');
-    const downLast = rows[2]?.querySelector('[aria-label="Move plug_stat down"]');
+    const label = (row) => row.querySelector('.mo-title')?.textContent.trim();
+    const upFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} up"]`);
+    const downFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} down"]`);
+    const up0 = rows[10]?.querySelector('[aria-label="Move ADR average up"]');
+    const down0 = rows[10]?.querySelector('[aria-label="Move ADR average down"]');
+    const upLast = rows[12]?.querySelector('[aria-label="Move Plugin stat up"]');
+    const downLast = rows[12]?.querySelector('[aria-label="Move Plugin stat down"]');
     check(
-      'every row carries labelled ↑/↓ buttons; the boundary ones are disabled',
-      !!up0 && up0.disabled && !!down0 && !down0.disabled && !!downLast && downLast.disabled,
-      `up0=${up0 && up0.disabled} down0=${down0 && !down0.disabled} downLast=${downLast && downLast.disabled}`,
+      'every row carries labelled ↑/↓ buttons (named for the row’s visible label); the boundary ones are disabled',
+      !!upFirst && upFirst.disabled &&
+        !!downFirst && !downFirst.disabled &&
+        !!up0 && !up0.disabled &&
+        !!down0 && !down0.disabled &&
+        !!upLast && !upLast.disabled &&
+        !!downLast && downLast.disabled,
+      `first↑=${upFirst && upFirst.disabled} first↓=${downFirst && !downFirst.disabled} mid↑=${up0 && !up0.disabled} mid↓=${down0 && !down0.disabled} last↑=${upLast && !upLast.disabled} last↓=${downLast && downLast.disabled}`,
     );
   }
   {
     const rows = dRows('match');
-    rows[0].focus();
-    rows[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    const from = dNames('match').indexOf('adr_avg');
+    rows[from].focus();
+    rows[from].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await sleep(80);
     check(
-      'ArrowDown on the focused row moves it one slot down (within the pinned list)',
-      JSON.stringify(dNames('match')) === JSON.stringify(['my_kd', 'adr_avg', 'plug_stat']),
+      'ArrowDown on the focused metric row moves it one slot down (the fixed rows above stay put)',
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify([
+          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+          'my_kd', 'adr_avg', 'plug_stat',
+        ]),
       JSON.stringify(dNames('match')),
     );
-    const set = bindings.calls.find((c) => c.method === 'SetPref');
+    const sets = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match');
+    const set = sets[sets.length - 1];
     check(
-      'the move is write-through: SetPref carries the key AND the whole sequence — the unpinned entry keeps its slot',
+      'the move is write-through: SetPref carries the key AND the whole merged sequence — fixed stats and the unpinned entry keep their slots',
       !!set &&
-        set.args[0] === 'metric_order_match' &&
         JSON.stringify(set.args[1]) ===
-          JSON.stringify(['trade_rate', 'my_kd', 'adr_avg', 'plug_stat']),
+          JSON.stringify([
+            '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+            'trade_rate', 'my_kd', 'adr_avg', 'plug_stat',
+          ]),
       set ? JSON.stringify(set.args) : 'no SetPref call',
     );
   }
@@ -1639,14 +1803,46 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
     // which is what the reset check below must undo.
     const btn = dRows('match')
       .find((x) => x.dataset.moName === 'plug_stat')
-      ?.querySelector('[aria-label="Move plug_stat up"]');
+      ?.querySelector('[aria-label="Move Plugin stat up"]');
     click(btn);
     await sleep(80);
     check(
       'focus follows the row moved by its button',
       document.activeElement?.dataset?.moName === 'plug_stat' &&
-        JSON.stringify(dNames('match')) === JSON.stringify(['my_kd', 'plug_stat', 'adr_avg']),
-      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match'))}`,
+        dNames('match').slice(10).join(',') === 'my_kd,plug_stat,adr_avg',
+      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match').slice(10))}`,
+    );
+  }
+  {
+    // The show/hide WRITE: Team hides, the ROW STAYS LISTED (the owner's
+    // requirement — the toggle never removes a row from the ordering
+    // view) with its hidden mark and the Show label, and only the
+    // visibility key is written (the order pref is untouched).
+    const rows = dRows('match');
+    const teamRow = rows.find((x) => x.dataset.moName === '@Team');
+    const hideBtn = teamRow?.querySelector('button[aria-label="Hide Team"]');
+    const ordersBefore = bindings.calls.filter(
+      (c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match',
+    ).length;
+    click(hideBtn);
+    await sleep(80);
+    const hiddenSet = bindings.calls.find(
+      (c) => c.method === 'SetPref' && c.args[0] === 'metric_hidden_match',
+    );
+    const teamAfter = dRows('match').find((x) => x.dataset.moName === '@Team');
+    check(
+      'hiding a fixed stat writes the VISIBILITY pref and the row stays listed (marked hidden, offered as Show)',
+      !!hiddenSet &&
+        JSON.stringify(hiddenSet.args[1]) === JSON.stringify(['@Team']) &&
+        !!teamAfter &&
+        teamAfter.classList.contains('mo-hidden') &&
+        teamAfter.querySelector('[aria-label="Show Team"]') !== null &&
+        /hidden/.test(teamAfter.textContent) &&
+        dRows('match').length === 13 &&
+        bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match').length === ordersBefore,
+      teamAfter
+        ? `class=${teamAfter.className} label=${teamAfter.querySelector('button[aria-label^="Sh"]')?.getAttribute('aria-label')} set=${JSON.stringify(hiddenSet && hiddenSet.args)}`
+        : 'row gone',
     );
   }
   {
@@ -1654,7 +1850,7 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
       (sel) => dlg.querySelector(sel),
     );
     check(
-      'no pin indicator and no pin control anywhere in the dialog — only pinned rows render; pinning stays with the list',
+      'no pin indicator and no pin control anywhere in the dialog — the visibility toggles never say "pin"; pinning stays with the list',
       !offender,
       offender ? `found ${offender}` : '',
     );
@@ -1667,22 +1863,37 @@ console.log('J. the Order dialog: pins-only list, no drag, write-through moves, 
     await sleep(80);
     const dels = bindings.calls.filter((c) => c.method === 'Delete');
     check(
-      'Reset order deletes BOTH pref keys (key gone ⇒ default sequence)',
+      'Reset order deletes BOTH pref PAIRS — the order keys and the hidden keys (the lead: visibility resets too)',
       JSON.stringify(dels.map((c) => c.args[0]).sort()) ===
-        JSON.stringify(['metric_order_match', 'metric_order_profile']),
+        JSON.stringify([
+          'metric_hidden_match',
+          'metric_hidden_profile',
+          'metric_order_match',
+          'metric_order_profile',
+        ]),
       JSON.stringify(dels.map((c) => c.args)),
     );
     check(
-      'the list snaps back to the DEFAULT sequence (pinned, in default order) after reset',
-      JSON.stringify(dNames('match')) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
+      'the list snaps back to the DEFAULT sequence (fixed stats + the pinned metrics, default order) after reset',
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify([
+          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+          'adr_avg', 'my_kd', 'plug_stat',
+        ]),
       JSON.stringify(dNames('match')),
+    );
+    const teamBack = dRows('match').find((x) => x.dataset.moName === '@Team');
+    check(
+      'Reset also SHOWS the hidden Team again (its row carries Hide, no hidden mark)',
+      !!teamBack && !teamBack.classList.contains('mo-hidden') && !!teamBack.querySelector('button[aria-label="Hide Team"]'),
+      teamBack ? `class=${teamBack.className}` : 'row gone',
     );
   }
   {
-    const closeBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Close');
+    const closeBtn = dlg.querySelector('button[aria-label="Close"]');
     click(closeBtn);
     await sleep(60);
-    check('Close dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
+    check('the header ✕ dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
   }
 }
 

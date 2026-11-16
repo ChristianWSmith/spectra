@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -316,7 +317,15 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	}
 	// Optional short label (like title): trimmed, never required — an
 	// empty one keeps the display fallback (short_name || title || name).
+	// A filled one is capped at SIX characters (runes, not bytes — it is
+	// a width-constrained header label, and every seeded short_name
+	// honors the same cap; see schema.sql). Existing over-limit rows are
+	// rejected on save, never silently truncated: pre-release, the fix
+	// for a stale local seed is a wipe + re-import.
 	m.ShortName = strings.TrimSpace(m.ShortName)
+	if n := utf8.RuneCountInString(m.ShortName); n > 6 {
+		return models.MetricRow{}, fmt.Errorf("short name must be 6 characters or fewer (yours has %d)", n)
+	}
 	m.Format = strings.TrimSpace(m.Format)
 	if !metricFormats[m.Format] {
 		return models.MetricRow{}, fmt.Errorf("unknown format %q (valid: int, float1, float2, percent, currency)", m.Format)

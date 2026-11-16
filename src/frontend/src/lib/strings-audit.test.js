@@ -162,7 +162,7 @@ const HINT_KEYS = {
   'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
   'common.mapPackFoundIntro': 'asset-prompt explanatory copy — the paragraph listing what extraction reads',
   'common.mapPackFoundFine': 'asset-prompt explanatory copy — the local-storage assurance',
-  'common.metricOrderNote': 'footnote under the metric-order list (pin-more pointer)',
+  'common.metricOrderNote': 'footnote under the metric-order dialog title (what the list holds, how to reorder/hide, where to pin)',
   'economy.tableNote': 'footnote defining the table headers (Equip / Loss) and the loss-bonus pip ladder',
   'economy.tableNoteTail': 'footnote tail for the Loss-cell inferred marker over the pips',
   'heatmaps.bboxHint': 'drag/click hint under the map — how the region selection behaves',

@@ -20,6 +20,7 @@
   import {
     NAV_ACTIONS,
     MATCH_FAMILY,
+    PROFILE_FAMILY,
     expandReplayHash,
     isNavEnabled,
     resolveNavTarget,
@@ -92,6 +93,15 @@
   // read it through the derived ctx, so the rail and the command palette
   // can never diverge.
   let lastMatchHash = $state(MATCH_FAMILY.has(firstRoute.name) ? location.hash : '');
+  // The Profiles tab's TARGET memory (N7) — the exact twin of the Match
+  // memory above: the last PROFILE_FAMILY hash the user visited this
+  // SESSION (the directory OR a player page — the whole family, the
+  // last PLACE in the tab), full path+query verbatim, seeded from the
+  // boot route and written in the SAME hashchange flush. Same session-
+  // breadcrumb ruling: App $state only — no pref, no viewstate registry,
+  // no route query. Profiles is a 'fallback' policy (lib/nav.js): always
+  // enabled, so an empty memory simply targets the directory.
+  let lastProfilesHash = $state(PROFILE_FAMILY.has(firstRoute.name) ? location.hash : '');
   let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
 
@@ -287,7 +297,7 @@
   // isNavEnabled/resolveNavTarget): derived so the rail's disabled
   // states, tooltips and targets re-evaluate the moment the memory flips
   // — one object, both surfaces (the palette receives it as a prop).
-  const navCtx = $derived({ lastMatchHash });
+  const navCtx = $derived({ lastMatchHash, lastProfilesHash });
 
   // Frame-probe HUD — the ?probe=1 operator readout (App-level so it
   // shows over whatever view is active; procedure in frameprobe.js).
@@ -339,6 +349,12 @@
       // keeps its way back. lib/nav.js isNavEnabled gates what the stored
       // value must still parse to; storing needs only the family.
       if (MATCH_FAMILY.has(next.name)) lastMatchHash = location.hash;
+      // The Profiles twin (N7): same flush, same rule — a profile-family
+      // route (directory or player page) overwrites its memory with the
+      // FULL live hash, everything else leaves it alone so the tab keeps
+      // its way back. lib/nav.js validates what the stored value must
+      // still parse to; storing needs only the family.
+      if (PROFILE_FAMILY.has(next.name)) lastProfilesHash = location.hash;
       route = next;
     };
     window.addEventListener('hashchange', onChange);

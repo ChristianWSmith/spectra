@@ -17,7 +17,7 @@
     onMetricDone,
     errText,
   } from '../services.js';
-  import { readOrder, inSequence } from '../metricorder.js';
+  import { readOrder, inSequence, composedSequence, rawItems, isRawId } from '../metricorder.js';
   import {
     metricPresentation,
     metricStateTitle,
@@ -50,14 +50,19 @@
     matchId: 0,
     steamId: '',
     roundNo: 1,
-    // The appendix SELECTION: the picked stat ids as a SET (no
-    // duplicates possible — TokenSelect filters the list against it),
-    // rendered in the metric-order sequence by the `picked` derivation
-    // below. View-local working state like the rest of this view's
-    // selection: registry-owned (viewstate), never the URL, never web
-    // storage. A fresh key (the retired `rows` picker shape is not
-    // migrated — pre-release, wipe-and-rerun is the contract).
+    // The appendix SELECTION, split by KIND (N5): `stats` holds picked
+    // METRIC ids (numbers, as before), `rawStats` holds the raw
+    // counterpart ids ('raw:<field>' strings — GetScoreboard's recorded
+    // values, which carry no metric definition and therefore can never
+    // live in `stats`). No duplicates possible in either set
+    // (TokenSelect filters the list against BOTH), rendered in the
+    // composed order by the `picked` derivation below. View-local
+    // working state like the rest of this view's selection: registry-
+    // owned (viewstate), never the URL, never web storage. A fresh key
+    // (the retired `rows` picker shape is not migrated — pre-release,
+    // wipe-and-rerun is the contract).
     stats: [],
+    rawStats: [],
   });
   let templates = $state([]);
   let tplError = $state('');
@@ -86,8 +91,9 @@
   // The match-scope ORDER pref (metricorder; null = absent ⇒ default
   // sequence) — presentation only, never gates the token field.
   let orderPref = $state(null);
-  let stats = $state(repSeed.stats); // picked stat ids (a set) — chip order comes from `picked`
-  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, stats }));
+  let stats = $state(repSeed.stats); // picked metric ids (a set) — chip order comes from `picked`
+  let rawStats = $state(repSeed.rawStats); // picked raw ids ('raw:<field>') — same `picked` order
+  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, stats, rawStats }));
   // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
   // rows are the CANONICAL read's stored values for THIS match (design
   // §5: a picked metric reads stored rows — no per-toggle query-time
@@ -271,55 +277,106 @@
   // The metric catalog on offer is FLAT and match-scope only (design §5:
   // the Reports appendix is a per-match document — profile-scope metrics
   // surface on PlayerProfile, and the groupBy grouping died with the W2
-  // grammar wave: every table is "per player"). It feeds the token field
-  // in the match ORDER sequence (lib/metricorder.js — the one ordering
-  // mechanism): scope-filtered catalog in sequence order, absent pref ⇒
-  // the default sequence (catalog order over the unranked). The pins
-  // array never orders this list — the appendix selection is the set's
-  // own.
+  // grammar wave: every table is "per player"). The TOKEN FIELD's item
+  // universe is that catalog PLUS the raw recorded-value items (N5):
+  // the fixed stats' GetScoreboard counterparts (metricorder.rawItems —
+  // labels from the ONE fixed-label table), composed through the SAME
+  // order mechanism (lib/metricorder.js — the one ordering mechanism).
+  // A raw item has no metric definition by construction: it is a stored
+  // column, not a computed value, which is exactly why it can be added
+  // here at all.
   const matchMetrics = $derived(inSequence('match', orderPref, metrics));
 
-  // --- The appendix selection (a SET of stat ids) ---------------------------
-  // `stats` is the set; `picked` is its RENDER — the catalog filtered to
-  // it, which is exactly the metric-order sequence, so the chips read in
-  // the same order the exported document's sections do (and the token
-  // field can never re-offer a picked stat: TokenSelect filters its list
-  // against `tokens`, so no duplicate can form).
-  const metricText = (m) => m.title || m.name;
-  const picked = $derived(matchMetrics.filter((m) => stats.includes(m.id)));
+  // The raw offer (N5): the fixed stats' recorded-value counterparts —
+  // a STATIC list over metricorder.rawItems (labels from the ONE
+  // fixed-label table, ids namespaced 'raw:<field>'). Recorded values
+  // are not metrics: they carry no definition, no formula and no
+  // compute state, which is what makes them addable here at all.
+  const rawOffer = rawItems('match');
 
-  // addStat/removeStat write the SET (idempotent — the list is already
-  // filtered, this is the belt to its braces).
+  // appendixItems — THE ordered item universe: the composed sequence's
+  // raw entries (their fixed stats' position) interleaved with its
+  // metric definitions. It feeds the field, `picked` and the export's
+  // section rank, so chips and document sections read in ONE order.
+  // Visibility is VIEW-display only (lead ruling): a hidden fixed stat
+  // is still addable here — this view never reads the hidden pref.
+  const appendixItems = $derived.by(() => {
+    const rawByLabel = new Map(rawOffer.map((r) => [r.label, r]));
+    const out = [];
+    for (const e of composedSequence('match', orderPref, metrics)) {
+      if (e.kind === 'fixed') {
+        const raw = rawByLabel.get(e.label);
+        if (raw) out.push(raw);
+      } else {
+        out.push(e.def);
+      }
+    }
+    return out;
+  });
+
+  // --- The appendix selection (a SET of stat ids, split by kind) ------------
+  // `picked` is its RENDER — the item universe filtered to both sets,
+  // which is exactly the composed order, so the chips read in the same
+  // order the exported document's sections do (and the token field can
+  // never re-offer a picked stat: TokenSelect filters its list against
+  // the tokens, so no duplicate can form).
+  const itemText = (m) => (m.kind === 'raw' ? m.label : m.title || m.name);
+  const picked = $derived(
+    appendixItems.filter((it) =>
+      isRawId(it.id) ? rawStats.includes(it.id) : stats.includes(it.id),
+    ),
+  );
+
+  // addStat/removeStat write the SETS (idempotent — the list is already
+  // filtered, this is the belt to its braces), routed by the id's
+  // namespace: a raw pick never enters `stats` (it has no definition id
+  // and must never reach a metric-value read) and vice versa.
   function addStat(m) {
-    if (!stats.includes(m.id)) stats = [...stats, m.id];
+    if (isRawId(m.id)) {
+      if (!rawStats.includes(m.id)) rawStats = [...rawStats, m.id];
+    } else if (!stats.includes(m.id)) {
+      stats = [...stats, m.id];
+    }
   }
 
   function removeStat(id) {
-    stats = stats.filter((x) => x !== id);
+    if (isRawId(id)) rawStats = rawStats.filter((x) => x !== id);
+    else stats = stats.filter((x) => x !== id);
   }
 
   // ONE stored read for the whole picked set (design §5: no per-toggle
-  // query-time run): re-runs whenever the target, the selection, the
+  // query-time run): re-runs whenever the target, either selection, the
   // definition list or a metric-done completion changes it. Each picked
   // id that still resolves to a definition gets an entry — an id whose
   // metric is gone drops out (deleted metrics never render), and a
   // picked metric with no stored row for this match keeps an honest
   // empty row list (the state decides what renders, never a 0).
+  // A raw pick (N5) reads the SCOREBOARD instead — GetScoreboard is a
+  // cachedRead, so this is the same shared call the player-target
+  // effect makes (one backend read per match), and it NEVER reaches a
+  // metric-value read or PreviewMetric: a recorded value has no
+  // definition to compute.
   $effect(() => {
     const gen = ++appendixGen;
     const mid = matchId;
     appendixReload; // spectra:metric-done → refetch (the cache flushed)
+    const rawSel = rawOffer.filter((r) => rawStats.includes(r.id)); // reactive: a new raw pick re-runs
     const defs = new Map(metrics.map((m) => [m.id, m]));
     const sel = stats.filter((id) => defs.has(id)).sort((a, b) => a - b);
-    if (!sel.length) {
+    if (!sel.length && !rawSel.length) {
       appendix = {};
       return;
     }
     const pending = {};
     for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
+    for (const r of rawSel) pending[r.id] = { loading: true, raw: r };
     appendix = pending;
-    Promise.all([getMetricValuesForMatch(mid, sel), getPlayerRefs(mid)])
-      .then(([values, refs]) => {
+    Promise.all([
+      sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
+      getPlayerRefs(mid),
+      rawSel.length ? getScoreboard(mid, '', false) : Promise.resolve(null),
+    ])
+      .then(([values, refs, board]) => {
         if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
         const byMetric = new Map();
@@ -342,14 +399,32 @@
             unitHasRows: valRows.length > 0,
           };
         }
+        // Raw rows: one row per ROSTER player (listedPlayers — bots are
+        // never listed; the shape is the metric rows' own), the value
+        // read straight off the recorded field, and N = that player's
+        // stored round count (honest — never a formula's sample size,
+        // because this is not a formula).
+        for (const r of rawSel) {
+          const rawRows = (listedPlayers(board || []) || []).map((p) => ({
+            id: p.steamId,
+            label: bySteam.get(p.steamId) || p.name || p.steamId,
+            value: Number.isFinite(p[r.field]) ? p[r.field] : null,
+            n: Number.isFinite(p.roundsPlayed) ? p.roundsPlayed : null,
+          }));
+          next[r.id] = {
+            loading: false,
+            rows: rawRows,
+            raw: r,
+            unitHasRows: rawRows.length > 0,
+          };
+        }
         appendix = next;
       })
       .catch((e) => {
         if (gen !== appendixGen) return;
         const next = {};
-        for (const id of sel) {
-          next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
-        }
+        for (const id of sel) next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
+        for (const r of rawSel) next[r.id] = { loading: false, error: errText(e), raw: r };
         appendix = next;
       });
   });
@@ -358,9 +433,14 @@
   // design §5): the live progress feed wins, then value / '—' / chip.
   // A value-kind entry carries its rows; everything else renders the
   // state word.
+  // RAW entries branch BEFORE the machine (N5): a recorded value has no
+  // compute state — it can never be processing/failed/behind — so it
+  // answers its own honest kind instead of a state the words don't
+  // cover (Number() below would also miss the namespaced id).
   function appendixPres(id) {
     const a = appendix[id];
     if (!a || a.loading || a.error) return null;
+    if (a.raw) return { kind: 'raw', rows: a.rows || [] };
     // Number(): Object.entries hands the id over as a STRING key while
     // the state/progress Maps key by NUMBER — a raw '3' would miss every
     // Map and render the unknown-state dash.
@@ -373,10 +453,13 @@
   // The row indicator: fresh → the honest row count; any other
   // state → the state chip (StatusChip — the ONE widget; the ms chip is
   // gone: timing was never provenance). The chip's title is the state
-  // copy (failed carries the compute error, never a stamp).
+  // copy (failed carries the compute error, never a stamp). A RAW entry
+  // earns a static PROVENANCE chip instead (no state, no row count —
+  // the recorded value just is what the match recorded).
   function appendixChip(id) {
     const pres = appendixPres(id);
     if (!pres) return null;
+    if (pres.kind === 'raw') return { kind: 'recorded' };
     if (pres.kind === 'value') return { kind: 'rows', n: appendix[id].rows.length };
     const state = pres.kind === 'nodata' ? 'no-data' : pres.state;
     const st = metricStates.get(id);
@@ -441,31 +524,53 @@
   // THE section order of the exported document — appendixEntries is the
   // ONE list appendixMd/appendixHtml walk (the W4 addendum to W1:
   // design §2.5's intent — a document is read top-down in the order the
-  // surface renders its metrics, so the exported appendix follows the
-  // match SEQUENCE, not the selection's id-ASC build order). matchMetrics
-  // IS that sequence (metricorder.inSequence — the one ordering
-  // mechanism); an entry whose metric fell out of it (scope filter, a
-  // definition the catalog no longer lists) trails, id-ASC.
+  // surface renders its stats, so the exported appendix follows the
+  // COMPOSED match sequence, not the selection's id-ASC build order).
+  // appendixItems IS that sequence (metricorder.composedSequence — the
+  // one ordering mechanism: the raw fixed entries sit at their fixed
+  // positions, the metric definitions at theirs); an entry whose stat
+  // fell out of it (a definition the catalog no longer lists) trails.
+  // Object.entries hands STRING keys over, so the rank map is
+  // string-keyed — metric ids and 'raw:<field>' ids rank through one
+  // lookup, and a string id never falls into Number() (NaN) here.
   function appendixEntries() {
-    const rank = new Map(matchMetrics.map((m, i) => [m.id, i]));
+    const rank = new Map(appendixItems.map((it, i) => [String(it.id), i]));
     return Object.entries(appendix)
-      .filter(([, a]) => !a.loading && !a.error && a.rows && a.metric)
+      .filter(([, a]) => !a.loading && !a.error && a.rows && (a.metric || a.raw))
       .sort(([a], [b]) => {
-        const ra = rank.get(Number(a));
-        const rb = rank.get(Number(b));
-        if (ra === undefined && rb === undefined) return Number(a) - Number(b);
+        const ra = rank.get(String(a));
+        const rb = rank.get(String(b));
+        if (ra === undefined && rb === undefined) {
+          return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+        }
         if (ra === undefined) return 1;
         if (rb === undefined) return -1;
         return ra - rb;
       });
   }
 
-  // The per-metric meta line: fresh rows → "per player · N rows" (the
+  // The entry's display title: the metric's title||name, else the raw
+  // item's label (its ONE fixed-label source — never a second list).
+  const entryTitle = (a) => (a.raw ? a.raw.label : a.metric.title || a.metric.name);
+
+  // Does this entry carry a TABLE? The metric's fresh rows and a raw
+  // entry's recorded rows both do; a state (or an entry still loading)
+  // earns its line alone.
+  const entryHasTable = (id) => ['value', 'raw'].includes((appendixPres(id) || {}).kind);
+
+  // The sample-size cell: a real count, else the honest dash — a raw
+  // row without a stored round count states nothing rather than a 0.
+  const cellN = (r) => (Number.isFinite(r.n) ? r.n : '—');
+
+  // The per-entry meta line: fresh rows → "per player · N rows" (the
   // design §5 copy — the groupBy line and the `· N ms` timing are gone:
-  // timing was never provenance); any other state → the honest
+  // timing was never provenance); a RAW entry → its parallel recorded-
+  // value line (it has no formula, so there is no computed sample size
+  // to state — only the players it lists); any other state → the honest
   // "value not computed" line with the state word. No stamp, no
   // timestamp, ever (design §5's export pin).
   function appendixLine(id, a) {
+    if (a.raw) return `recorded value · per player · ${a.rows.length} players`;
     const pres = appendixPres(id);
     if (pres && pres.kind === 'value') {
       return `per player · ${a.rows.length} rows · match #${matchId}`;
@@ -481,12 +586,12 @@
     if (!ents.length) return '';
     let out = '\n\n## Stats appendix\n\n';
     for (const [id, a] of ents) {
-      out += `### ${a.metric.title || a.metric.name}\n\n`;
+      out += `### ${entryTitle(a)}\n\n`;
       out += `${appendixLine(id, a)}\n\n`;
-      if ((appendixPres(id) || {}).kind !== 'value') continue;
+      if (!entryHasTable(id)) continue;
       out += '| Group | Label | Value | n |\n|---|---|---|---|\n';
       for (const r of a.rows) {
-        out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} | ${r.n} |\n`;
+        out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} | ${cellN(r)} |\n`;
       }
       out += '\n';
     }
@@ -502,12 +607,12 @@
     if (!ents.length) return '';
     let out = '<section class="rep-appendix-doc"><h2>Stats appendix</h2>';
     for (const [id, a] of ents) {
-      out += `<h3>${esc(a.metric.title || a.metric.name)}</h3>`;
+      out += `<h3>${esc(entryTitle(a))}</h3>`;
       out += `<p>${esc(appendixLine(id, a))}</p>`;
-      if ((appendixPres(id) || {}).kind !== 'value') continue;
+      if (!entryHasTable(id)) continue;
       out += '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th><th class="num">n</th></tr></thead><tbody>';
       for (const r of a.rows) {
-        out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td><td class="num">${r.n}</td></tr>`;
+        out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td><td class="num">${cellN(r)}</td></tr>`;
       }
       out += '</tbody></table>';
     }
@@ -655,61 +760,71 @@
       <p class="muted">
         {S.reports.appendixHint}
       </p>
-      {#if matchMetrics.length === 0}
-        {#if !metricsError}
-          <!-- Gated on metricsError: a failed listMetrics read is UNKNOWN,
-               never "no custom stats" — the alert above carries it. -->
-          <p class="muted" role="status">
-            {metrics.length
-              ? S.reports.noMatchScopedStats
-              : S.reports.noCustomStats}
-          </p>
-        {/if}
-      {:else}
-        <!-- One field, not N rows: type to search, pick → a chip (the
-             set of ids lives in `stats`; TokenSelect renders it in the
-             metric-order sequence). -->
-        <TokenSelect
-          id="rep-stats"
-          items={matchMetrics}
-          text={metricText}
-          tokens={picked.map((m) => ({ id: m.id, label: metricText(m) }))}
-          placeholder={S.reports.metricHint}
-          ariaLabel={S.reports.metricAria}
-          removeAria={S.reports.removeStatAria}
-          align="start"
-          onselect={addStat}
-          onremove={removeStat}
-        />
-        <!-- The per-picked-stat readout: the honesty line each stat
-             earns — expression, row count or STATE chip (never a
-             fabricated number), in the same sequence as its chip. -->
-        {#each picked as m (m.id)}
-          <div class="rep-metric">
-            <strong>{metricText(m)}</strong>
-            <span class="muted mono rep-metric-expr">{m.expr}</span>
-            {#if appendix[m.id] && appendix[m.id].loading}
-              <span class="muted">…</span>
-            {:else if appendix[m.id] && appendix[m.id].error}
-              <span class="error-text" title={appendix[m.id].error}>{S.reports.failedLabel}</span>
-            {:else}
-              {@const chip = appendixChip(m.id)}
-              {#if chip && chip.kind === 'rows'}
-                <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
-              {:else if chip}
-                <!-- State in lieu of rows (design §5): processing /
-                     failed / behind / no-data through StatusChip. -->
-                <StatusChip
-                  status={chip.state}
-                  title={chip.title}
-                  progress={metricProgressFrac(metricProgress, m.id)}
-                  stage={metricProgressStage(metricProgress, m.id)}
-                />
-              {/if}
-            {/if}
-          </div>
-        {/each}
+      {#if matchMetrics.length === 0 && !metricsError}
+        <!-- Gated on metricsError: a failed listMetrics read is UNKNOWN,
+             never "no custom stats" — the alert above carries it. This
+             is a NOTE, not a gate (N5): the raw recorded values are
+             always on offer, so the field itself never disappears. -->
+        <p class="muted" role="status">
+          {metrics.length
+            ? S.reports.noMatchScopedStats
+            : S.reports.noCustomStats}
+        </p>
       {/if}
+      <!-- One field, not N rows: type to search, pick → a chip (the two
+           id sets live in `stats`/`rawStats`; TokenSelect renders them
+           in the composed sequence — recorded values and metrics
+           interleaved by the one ordering mechanism). -->
+      <TokenSelect
+        id="rep-stats"
+        items={appendixItems}
+        text={itemText}
+        tokens={picked.map((m) => ({ id: m.id, label: itemText(m) }))}
+        placeholder={S.reports.metricHint}
+        ariaLabel={S.reports.metricAria}
+        removeAria={S.reports.removeStatAria}
+        align="start"
+        onselect={addStat}
+        onremove={removeStat}
+      />
+      <!-- The per-picked-stat readout: the honesty line each stat earns
+           — expression + row count or STATE chip for a metric (never a
+           fabricated number), a static provenance chip for a RECORDED
+           value (no formula, no compute state), in the same sequence as
+           its chip. -->
+      {#each picked as m (m.id)}
+        <div class="rep-metric">
+          <strong>{itemText(m)}</strong>
+          {#if m.kind !== 'raw'}
+            <span class="muted mono rep-metric-expr">{m.expr}</span>
+          {/if}
+          {#if appendix[m.id] && appendix[m.id].loading}
+            <span class="muted">…</span>
+          {:else if appendix[m.id] && appendix[m.id].error}
+            <span class="error-text" title={appendix[m.id].error}>{S.reports.failedLabel}</span>
+          {:else if m.kind === 'raw'}
+            <!-- A recorded value is not computed: static provenance,
+                 never a state chip (it can never be processing, failed
+                 or behind) and never a Formula: line (there is no
+                 expression — this is a stored column). -->
+            <span class="chip">{S.reports.recordedValue}</span>
+          {:else}
+            {@const chip = appendixChip(m.id)}
+            {#if chip && chip.kind === 'rows'}
+              <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
+            {:else if chip}
+              <!-- State in lieu of rows (design §5): processing /
+                   failed / behind / no-data through StatusChip. -->
+              <StatusChip
+                status={chip.state}
+                title={chip.title}
+                progress={metricProgressFrac(metricProgress, m.id)}
+                stage={metricProgressStage(metricProgress, m.id)}
+              />
+            {/if}
+          {/if}
+        </div>
+      {/each}
     {/if}
   </section>
 </div>

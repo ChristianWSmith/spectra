@@ -149,10 +149,13 @@ function servicesStub() {
   for (const n of names) {
     // A scripted Error is the FAILURE sentinel: that getter returns a
     // rejected promise (section I drives the views' error indications;
-    // the fixtures above only ever script data).
+    // the fixtures above only ever script data). A scripted FUNCTION is
+    // a live read (args in, value out) — what the pref reads need,
+    // since ONE getter serves every kvstore key (getPref('…')).
     lines.push(
-      `export const ${n} = () => {\n` +
-        `  const v = has('${n}') ? d().${n} : [];\n` +
+      `export const ${n} = (...args) => {\n` +
+        `  const raw = has('${n}') ? d().${n} : [];\n` +
+        `  const v = typeof raw === 'function' ? raw(...args) : raw;\n` +
         `  return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);\n` +
         `};`,
     );
@@ -1402,15 +1405,17 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-console.log('K. Scoreboard order: the fixed Go block first, then the twelve converted metric columns (W2a)');
+console.log('K. Scoreboard order: the fixed block first, then the twelve converted metric columns (W2a)');
 {
   // The twelve converted columns (design §4.2/§4.3): they left
   // SCORE_COLS and arrive as PINNED METRIC columns at the tail, in
   // today's relative order. Pins are set EXPLICITLY here (a present key
   // renders the stored selection verbatim — the absent→DEFAULT_PINS
   // rule resolves a fresh install to these same twelve ids in this same
-  // order, pinned in metricorder.test.js); the fixed block is code and
-  // no pref can reorder or preempt it. The catalog also carries the
+  // order, pinned in metricorder.test.js); under the ABSENT order pref
+  // the fixed block leads exactly as the old code prefix did (its
+  // negative ranks — metricorder.FIXED_RANKS), and the pins never
+  // reorder it. The catalog also carries the
   // fixed named slots the compound cells read PINS-INDEPENDENT
   // (design §6.1): entry_deaths for the Opening K/D halves, assists
   // for the roster triples — none of them pinned, none of them columns.
@@ -1545,6 +1550,30 @@ console.log('K. Scoreboard order: the fixed Go block first, then the twelve conv
       bobKda?.getAttribute('title') === 'no data for this player',
     bobKda ? `${bobKda.textContent.trim()} title=${bobKda.getAttribute('title')}` : 'no cell',
   );
+
+  // N4 wire-through: the VISIBILITY pref removes a fixed column from
+  // THIS view — the ordering dialog's `metric_hidden_match` written
+  // through the same kvstore read (readHidden) — while every other
+  // column keeps its position. The default (absent key) is the
+  // fixed-leads composition the pins above assert.
+  root = await showMatch(
+    { ...d, getPref: (key) => (key === 'metric_hidden_match' ? ['@K'] : undefined) },
+    { routeTab: 'Scoreboard' },
+  );
+  await sleep();
+  {
+    const hiddenLabels = [...root.querySelectorAll('.data-table.scoreboard thead th')].map(labelOf);
+    check(
+      'N4: hiding K drops exactly the K column — the other fixed stats and every metric keep their place',
+      !hiddenLabels.includes('K') &&
+        JSON.stringify(hiddenLabels.slice(0, 9)) ===
+          JSON.stringify([
+            'Name', 'Team', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score',
+          ]) &&
+        JSON.stringify(hiddenLabels.slice(9)) === JSON.stringify(converted),
+      JSON.stringify(hiddenLabels),
+    );
+  }
   localStorage.removeItem('spectra:pinned-metrics');
 }
 

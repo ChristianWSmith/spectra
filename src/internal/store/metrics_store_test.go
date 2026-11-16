@@ -47,13 +47,13 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	// profile surface to it.
 	"career_adr":                 {"profile", "float1", "ADR"},
 	"career_adr_sigma":           {"profile", "float1", "ADR σ"},
-	"career_avg_enemies_flashed": {"profile", "float1", "Avg enemies flashed"},
-	"career_avg_util_damage":     {"profile", "float1", "Avg util damage"},
-	"career_clutch_win_rate":     {"profile", "percent", "Clutch win %"},
+	"career_avg_enemies_flashed": {"profile", "float1", "Flash"},
+	"career_avg_util_damage":     {"profile", "float1", "Util"},
+	"career_clutch_win_rate":     {"profile", "percent", "CW%"},
 	"career_hs_pct":              {"profile", "percent", "HS%"},
 	"career_kast":                {"profile", "percent", "KAST%"},
 	"career_kd":                  {"profile", "float2", "K/D"},
-	"career_trade_rate":          {"profile", "percent", "Trade rate"},
+	"career_trade_rate":          {"profile", "percent", "Trade%"},
 	// inferred set — match scope (27): the stored per-match stats; only
 	// the eight width-constrained scoreboard columns ship a short_name.
 	"assists":            {"match", "int", "A"},

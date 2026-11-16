@@ -303,6 +303,11 @@ const navBtn = (label) =>
     lib?.disabled === false,
     `disabled=${lib?.disabled}`,
   );
+  check(
+    'boot on the Library: the Profiles tab is enabled too (its memory policy is fallback — the directory is always a target)',
+    navBtn('Profiles')?.disabled === false,
+    `disabled=${navBtn('Profiles')?.disabled}`,
+  );
 }
 
 console.log('A. off the replay route there is no dock; the replay route mounts the instance (no DOCK X — the top bar cluster is Replay\'s own)');
@@ -640,6 +645,20 @@ check(
   'style.css: the nav hover wash is neutralized for a disabled item',
   /\.nav-item:hover:not\(:disabled\)/.test(cssF),
   'no .nav-item:hover:not(:disabled) rule',
+);
+
+console.log('H. the Profiles sidebar tab (N7): the session memory remembers the last place in the tab');
+// Enter the family with a full hash (path + query), leave it, then the
+// click must return to that exact hash through the SAME resolveNavTarget
+// the rail and the palette share.
+await go('#/player/76561198012345678?back=match/5/scoreboard');
+await go('#/library');
+click(navBtn('Profiles'));
+await sleep();
+check(
+  'clicking Profiles away from the family returns to the remembered FULL hash (the player page + its query)',
+  location.hash === '#/player/76561198012345678?back=match/5/scoreboard',
+  location.hash,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

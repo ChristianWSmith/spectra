@@ -137,6 +137,68 @@ func orName(format string) string {
 	return format
 }
 
+// TestSaveMetricShortNameCap pins the SIX-character short-name cap (N3):
+// it counts RUNES, never bytes (a short label is a width-constrained
+// header — 'σσσσσσ' is six characters, not twelve), an empty one stays
+// legal (the display fallback covers it), and an over-limit value is
+// REJECTED with a friendly service error rather than silently
+// truncated — the seeded built-ins honor the same cap (schema.sql).
+func TestSaveMetricShortNameCap(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "short-name.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	base := func(short string) models.MetricRow {
+		return models.MetricRow{
+			Name: "cap_" + strings.Map(func(r rune) rune {
+				if r == ' ' || r == '%' {
+					return '_'
+				}
+				return r
+			}, short),
+			Expr: "from events: count()", Format: "int", Scope: "match",
+			Origin: "user", ShortName: short,
+		}
+	}
+
+	// Empty (the fallback case) and exactly six characters round-trip.
+	for _, short := range []string{"", "Trade%"} {
+		m := base(short)
+		if short == "" {
+			m.Name = "cap_empty"
+		}
+		saved, err := svc.SaveMetric(m)
+		if err != nil {
+			t.Errorf("SaveMetric(short=%q): %v (empty and six characters must save)", short, err)
+			continue
+		}
+		if saved.ShortName != short {
+			t.Errorf("short name %q round-tripped as %q", short, saved.ShortName)
+		}
+	}
+
+	// Rune count, not byte count: six multibyte characters pass, seven
+	// fail — a byte cap would answer the opposite way.
+	if _, err := svc.SaveMetric(base("σσσσσσ")); err != nil {
+		t.Errorf("six multibyte characters rejected: %v (the cap counts runes)", err)
+	}
+	over := base("σσσσσσσ")
+	over.Name = "cap_seven_multibyte"
+	_, err = svc.SaveMetric(over)
+	if err == nil {
+		t.Fatal("seven characters saved — the cap must reject")
+	}
+	if !strings.Contains(err.Error(), "short name") || !strings.Contains(err.Error(), "6") {
+		t.Errorf("over-limit err = %v, want the friendly short-name copy naming the cap", err)
+	}
+	if strings.Contains(err.Error(), "metricservice") {
+		t.Errorf("over-limit err = %v, must carry no package prefix (user-facing copy)", err)
+	}
+}
+
 // TestSaveMetricBuiltinGuards pins the service-level built-in
 // immutability (owner wave): an EXISTING builtin row can be neither
 // edited nor deleted through the API, judged by the STORED row's origin

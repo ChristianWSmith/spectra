@@ -26,6 +26,9 @@ export const reports = {
   removeStatAria: 'Remove {name}',
   failedLabel: 'failed',
   rowsSuffix: ' rows',
+  // N5 — the raw recorded-value item's provenance chip (a stored
+  // column, not a computed metric: static provenance, never a state).
+  recordedValue: 'Recorded value',
   noMatchScopedStats: 'No match-scoped stats yet — profile-scoped ones live on profiles.',
   noCustomStats: 'No custom stats yet — build one in the Builder.',
 };

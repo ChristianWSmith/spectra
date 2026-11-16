@@ -85,6 +85,16 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsMetricOrderProfileKey != "metric_order_profile" {
 		t.Errorf("metric order (profile) key = %q, want %q", prefsMetricOrderProfileKey, "metric_order_profile")
 	}
+	// The metric VISIBILITY twin (metricorder.js HIDDEN_KEYS): which
+	// fixed stats are hidden per surface. Same contract as the order
+	// pair — one rename silently reverts every stored choice to
+	// "nothing hidden".
+	if prefsMetricHiddenMatchKey != "metric_hidden_match" {
+		t.Errorf("metric hidden (match) key = %q, want %q", prefsMetricHiddenMatchKey, "metric_hidden_match")
+	}
+	if prefsMetricHiddenProfileKey != "metric_hidden_profile" {
+		t.Errorf("metric hidden (profile) key = %q, want %q", prefsMetricHiddenProfileKey, "metric_hidden_profile")
+	}
 	// The replay loop-length pref (Settings' Replay panel writes it, the
 	// replay transport and every event-level replay link read it; Go never
 	// consumes it). One key rename silently reverts every stored choice

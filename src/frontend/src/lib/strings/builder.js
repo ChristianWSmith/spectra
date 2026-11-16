@@ -71,6 +71,9 @@ export const builder = {
   titlePlaceholder: 'Enter a display label…',
   fieldShortName: 'Short name (optional)',
   shortNamePlaceholder: 'Enter a short label for narrow columns…',
+  // The six-character cap (N3) — the save guard's report when a loaded
+  // value is already over it (the input's maxlength stops new typing).
+  shortNameTooLong: 'Short name must be 6 characters or fewer.',
   scopeMatchOption: 'match — this player in this match',
   scopeProfileOption: "profile — this player's career",
   fieldFormat: 'Format',

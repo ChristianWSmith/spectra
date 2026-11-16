@@ -709,6 +709,8 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 -- Streak, 2K, 3K, 4K, 5K, Trade); every other row ships empty ('' —
 -- its header falls back to title; display criterion
 -- short_name || title || name — Match's scoreboard metric header).
+-- Every short_name is at most SIX characters — the same cap
+-- SaveMetric enforces on user input (metricservice.go).
 -- version is omitted (DEFAULT 1) on every row.
 -- The exprs are the grammar shapes internal/metrics/doc.go documents;
 -- trade_rate's is the join-grammar example — the engine derives
@@ -767,17 +769,17 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'profile', 'float1',
  'Formula: stddev(player_stats.adr) — the population standard deviation (σ) of the player''s per-match ADR over their career, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
-('career_avg_enemies_flashed', 'Avg enemies flashed', 'Avg enemies flashed',
+('career_avg_enemies_flashed', 'Avg enemies flashed', 'Flash',
  'from player_stats: avg(enemies_flashed)',
  'profile', 'float1',
  'Formula: avg(player_stats.enemies_flashed) — the player''s mean enemies-flashed count per match over their career, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
-('career_avg_util_damage', 'Avg util damage', 'Avg util damage',
+('career_avg_util_damage', 'Avg util damage', 'Util',
  'from player_stats: avg(utility_damage)',
  'profile', 'float1',
  'Formula: avg(player_stats.utility_damage) — the player''s mean utility damage per match over their career, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
-('career_clutch_win_rate', 'Clutch win %', 'Clutch win %',
+('career_clutch_win_rate', 'Clutch win %', 'CW%',
  'from clutches: avg(won)',
  'profile', 'percent',
  'Formula: avg(clutches.won) — the share of the player''s career clutches won (0/1 outcomes, shown as a percent), addressed per player — the profile''s win share.',
@@ -797,7 +799,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'profile', 'float2',
  'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s career, addressed per player — no deaths → 0 beside N (the scoreboard floors instead).',
  'builtin', '', CURRENT_TIMESTAMP),
-('career_trade_rate', 'Trade rate', 'Trade rate',
+('career_trade_rate', 'Trade rate', 'Trade%',
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
  'profile', 'percent',
  'Formula: sum(player_stats.trade_kills) / sum(match_trade_opps.opps) over the engine-derived LEFT JOIN on (match_id, steam_id) — addressed per player over the joined sources — a ratio; may top 100%.',

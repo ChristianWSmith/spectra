@@ -102,7 +102,13 @@ const EXPECTED = {
   // pins: the greyed .nav-item:disabled rule and the
   // :hover:not(:disabled) neutralization, since jsdom never applies
   // :hover and has no layout).
-  'app-dock.dom.mjs': 66,
+  // app-dock 66 → 68 (2026-11-16, N7 — the Profiles sidebar tab's
+  // session memory): +1 the boot pair (the Profiles tab is ENABLED on
+  // the Library — its policy is 'fallback', always a directory to go
+  // to) and +1 the new section H (enter the family with a full player
+  // hash + query, leave it, click Profiles → the remembered FULL hash
+  // verbatim through the same resolveNavTarget the palette shares).
+  'app-dock.dom.mjs': 68,
   // builder 72 → 95 (2026-11-14, metrics UI-A + B): UI-A rewrote the
   // filter/editor sections (72 → 91 with section J at its base 16) and
   // UI-B reworked section J 16 → 20 (pins-only list, help line + empty
@@ -145,7 +151,28 @@ const EXPECTED = {
   // its sample-size tooltip kept, second click low-first; a text column
   // A→Z). The stored-value stub now returns three rows for the previewed
   // metric so an ORDER is observable at all (it was single-row before).
-  'builder.dom.mjs': 118,
+  // builder 118 → 131 (2026-11-16, W6 metrics — N1/N2/N3/N4/N6): +13 —
+  // +3 section A (N1: the rows ride one .bld-rows scroller with the
+  // header/search/Filters outside it, the style-m3a calc source pin, and
+  // N6's idle leg — the actions row always renders its empty validity
+  // slot); +2 section D (N3: the short-name maxlength=6 and the
+  // over-limit SAVE guard — its own message, no API call, no
+  // truncation); +3 section F (N6 anatomy — the row is validity slot +
+  // cluster, the indicator is NOT under the textarea any more, and the
+  // cluster runs hint → Pin → Save with no divider); +5 section J (the
+  // N2 title bar with its icon-only ✕, the Show/Hide toggle pair —
+  // Name exempt, metric rows none, never the word "pin" —, the
+  // hide write-through with its row-stays-listed invariant, and Reset
+  // restoring the hidden Team). The pins the N4 dialog rewrite moved
+  // were REWRITTEN in place and move no count: the read-only .mo-fixed
+  // block died with the merged listbox (one list of fixed + pinned
+  // rows), the Close lookups moved to the header aria-label, the help
+  // line and the two dead empty states were re-pointed ("the fixed
+  // stats are always listed"), and the move/Reset pins now carry the
+  // merged sequence and the FOUR deletes. The old "nothing to order" /
+  // "no profile metrics yet" checks were deleted with their dead
+  // strings.
+  'builder.dom.mjs': 131,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -312,7 +339,13 @@ const EXPECTED = {
   // mount). Column-index pins re-based IN PLACE for the new far-left
   // column (roundOf/children[2], chipFor nth-child(4), winnerChips 3)
   // and the RD-column checks kept their counts.
-  'econ-tables.dom.mjs': 149,
+  // econ-tables 149 → 150 (2026-11-16, W6 metrics — N4 wire-through):
+  // +1 section K — a stored metric_hidden_match=['@K'] drops exactly the
+  // K column while the other nine fixed stats and every metric keep
+  // their place (the fixed-leads default above stays the absent-key
+  // pin; the harness's services stub grew a function-valued read so ONE
+  // getPref can answer per-key — plain value fixtures behave as before).
+  'econ-tables.dom.mjs': 150,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the
@@ -433,7 +466,15 @@ const EXPECTED = {
   // metric tiles follow" (13 labels) with the six converted-card
   // checks now pinning "never renders twice (fixed card AND metric
   // tile)", and the eleven-pin order pin rides `.stat-cell`.slice(2).
-  'profiles.dom.mjs': 79,
+  // profiles 79 → 81 (2026-11-16, W6 metrics — N4): the J1 "fixed pair
+  // leads" pin re-worded IN PLACE for the composed sequence (same count,
+  // the default composition is unchanged) and +2 the new J4 legs — a
+  // stored metric_order_profile reorders the FIXED cards too (Win%
+  // leads, Matches second) and a stored metric_hidden_profile=['@Matches']
+  // removes that card from the VIEW while every metric tile keeps its
+  // place (the hidden entry stays listed in the ordering dialog —
+  // visibility is view-display only).
+  'profiles.dom.mjs': 81,
   'progress-presentation.dom.mjs': 19,
   // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the
   // header `?` rides the top bar right of the ribbon — immediately
@@ -495,7 +536,18 @@ const EXPECTED = {
   // +2 the new section I (the header `?` is the standalone header's last
   // element right of the .spacer with the shared labels + glyph, and
   // clicking it fires openDocs once with the `reports` section id).
-  'reports.dom.mjs': 34,
+  // reports 34 → 42 (2026-11-16, W6 metrics — N5 raw values): +8 the new
+  // section G2 (a raw pick offers from the SAME universe, reads the
+  // SCOREBOARD, provably never getMetricValuesForMatch nor PreviewMetric,
+  // lands as its own chip, carries ONE static "Recorded value" chip with
+  // no expression/state, exports the recorded-value meta line + the table
+  // with N = the stored round count and never "value not computed", no
+  // Formula:/state word in the export, and the no-version leak scan over
+  // the raw surface). Sections A/D/G re-pinned IN PLACE for the seven raw
+  // items now leading every option list (same check counts — only their
+  // expectations grew), and the section-F leak scan widened to the whole
+  // `.rep-metric` readout row.
+  'reports.dom.mjs': 42,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:
   // renamed card, meta line landed, First kill absence), +2 ribbon pins

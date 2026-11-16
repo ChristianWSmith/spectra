@@ -155,23 +155,23 @@ export const common = {
   pickerEnterSelect: 'Enter select',
   pickerEscClose: 'Esc close',
 
-  // metric order dialog (MetricOrderDialog.svelte — the pin-order UI)
-  metricOrderDialogLabel: 'Metric order', // the Dialog accessible name
-  metricOrderFixedCaption: 'Fixed stats — always first, not reorderable', // the read-only fixed block's caption
-  metricOrderNoProfileMetrics: 'No profile metrics yet.', // empty state, profile section
-  metricOrderNoMatchMetrics: 'No match metrics yet.', // empty state, match section
-  metricOrderNothingToOrder: 'Nothing to order yet — pin metrics from the metric list.', // pins-only empty state
-  metricOrderMoveUp: 'Move {name} up', // per-row move button aria-label (fill: name = the metric)
-  metricOrderMoveDown: 'Move {name} down', // per-row move button aria-label (fill: name = the metric)
+  // metric order dialog (MetricOrderDialog.svelte — the order + visibility UI)
+  metricOrderDialogLabel: 'Metric order', // the Dialog accessible name AND its visible <h2>
+  metricOrderFixedCaption: 'Fixed stats lead the list; the eye hides one from the view.', // above each listbox
+  metricOrderMoveUp: 'Move {name} up', // per-row move button aria-label (fill: name = the row's label)
+  metricOrderMoveDown: 'Move {name} down', // per-row move button aria-label (fill: name = the row's label)
+  metricOrderShow: 'Show {name}', // per-row show/hide toggle, hidden state (fill: name = the label)
+  metricOrderHide: 'Hide {name}', // per-row show/hide toggle, visible state (fill: name = the label)
+  metricOrderHiddenMark: 'hidden', // the in-place state mark on a hidden fixed row
   metricOrderScoreboardSection: 'Scoreboard (match metrics)', // the match section's heading
   metricOrderProfileSection: 'Player profile (profile metrics)', // the profile section's heading
   metricOrderReset: 'Reset order', // the reset button label
-  metricOrderClose: 'Close', // the close button label
+  metricOrderClose: 'Close', // the header ✕ button label
   // Help line: the text run after the ↑↓ glyphs (the value carries
   // the exact spacing the static text rendered with).
   metricOrderHintKeys: ' move · Esc close',
   metricOrderNote:
-    'Only your pinned metrics are listed here, in the order they\'ll appear — pin more from the pin\n      buttons in the metric list.',
+    'Fixed stats and your pinned metrics are listed in the order they appear — reorder with the arrows, hide a fixed stat with the eye, and pin more from the metric list.',
 
   // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
   payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)

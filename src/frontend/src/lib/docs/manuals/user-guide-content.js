@@ -31,7 +31,7 @@ The bar on the left edge is the way around:
 
 - **Library** — your imported matches; every match detail view starts here.
 - **Match** — the match itself, reached from any Library row. This tab is greyed out until you open one, and then goes back to the last match you had open.
-- **Profiles** — every player in your library, and each player's career page.
+- **Profiles** — every player in your library, and each player's career page. Clicking it again returns to the player you had open.
 - **Builder** — the metric Builder, where numbers are defined and previewed.
 - **SQL console** — read-only queries over your whole library.
 - **Settings** — at the bottom of the bar.
@@ -363,7 +363,8 @@ If a match has no replay data, the stage says so and offers **Go to Library** �
     blocks: `**Profiles** (sidebar) is the directory of every human player in your library — *click a row for
 their profile* — with a search box, a live count, and sortable **Player / Matches / ADR / Last
 import** columns. Empty states say *No players yet* (with a pointer to importing) or *No players
-match "…"*.
+match "…"*. The sidebar's **Profiles** tab opens this directory the first time you use it, then
+takes you back to the last player you had open.
 
 A player page opens with a back button (to wherever you came from), the player's name and Steam
 id, and a player search box to jump to someone else. Then:
@@ -372,7 +373,9 @@ id, and a player search box to jump to someone else. Then:
   name/value cards, followed by every profile-scope metric you have pinned (opening-duels win
   rate, clutches, ADR, KAST%, …) with the usual honest states (a number, a dash when there is
   no data for this player, or a state chip while a value is recomputing). The cards wrap
-  outward from the center; with nothing pinned you get just the two headline cards.
+  outward from the center; with nothing pinned you get just the two headline cards, and the
+  metric builder's **Order…** dialog decides whether those two show at all (or where they sit
+  among the rest).
 - **Trend** — any match-scope metric you have (ADR, KAST%, K/D, HS%, …) across the player's
   matches: search the metric picker for the one you want, then click a point to open that match.
 - **Sides** — CT vs T rounds, win rate, ADR, KAST, K/D.
@@ -389,7 +392,8 @@ formula and sample-size honesty (a value is never invented; missing data shows a
 honest zero beside its \`N\`).
 
 The **left column** lists every metric, grouped **Builtins / Yours / Plugins**, with a search box
-and one **Filters** panel (origin, scope, denominator and format). Each row has a ▶ to preview
+and one **Filters** panel (origin, scope, denominator and format). The list scrolls when it grows
+past the window while those controls stay put. Each row has a ▶ to preview
 it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
 **Order…** opens the ordering dialog.
 
@@ -400,7 +404,7 @@ The **editor** on the right has:
 - **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
 - **Denominator** — none, \`rounds\` or \`matches\` (what a total is divided by to become a rate).
 - **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
-- **Expression** — the formula itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text.
+- **Expression** — the formula itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
 
 **Save metric** stores it; the button reads *Saved* while nothing has changed. **Pin** places the
 metric: a match-scoped metric becomes a column on the scoreboard, a profile-scoped one a row on
@@ -424,9 +428,11 @@ in the SQL console or any SQLite tool. A formula that mixes a percentile with ot
 shows a second statement beside the first; that one still reads \`?\` where its values belong (they
 are not carried over), and statements like these run one at a time.
 
-**Order…** arranges the pinned metrics: the fixed stats (Name, Team, K, D…) always come first and
-cannot be reordered, while your pinned metrics — built-in and your own — reorder below them with the
-↑↓ buttons (or the ↑/↓ arrow keys). **Reset order** restores the defaults.
+**Order…** arranges what the scoreboard and the profile cards show. The fixed stats (Name, Team,
+K, D, …) lead by default; every row — fixed or metric — reorders with the ↑↓ buttons (or the
+↑/↓ arrow keys), so a pinned metric can sit anywhere among them. The eye button on a fixed stat
+hides it from its view without taking it off this list (the scoreboard's **Name** column is the
+one that cannot be hidden), and **Reset order** restores every default, hidden ones included.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,
@@ -445,10 +451,14 @@ export const guideSectionsAfterManual = [
 and format. Then pick the target the template needs — the match, a player, or a round number —
 and press **Save report** (at the top of this panel) to write the document to disk.
 
-**Stats appendix** — type into the stats field to search the match-scoped stats and pick one:
-it lands as a highlighted chip in the field, and each picked stat earns a line under the field
+**Stats appendix** — type into the stats field to search and pick what goes under the report: it
+lands as a highlighted chip in the field, and each picked stat earns a line under the field
 carrying its expression and its row count — while it has no computed number for this match, that
-line shows its state chip instead. Remove a chip with its ✕, or with Backspace while the field is
+line shows its state chip instead. The field also offers the match's **recorded values** — the
+scoreboard numbers themselves (kills, deaths, K/D/A, damage, utility damage, MVPs, score) — which
+are not metrics: a recorded pick carries a *Recorded value* chip instead of an expression or a
+state, and its exported section says so plainly, with each player's stored round count beside the
+value. Remove a chip with its ✕, or with Backspace while the field is
 empty; with no chips the saved document carries no appendix. Picked stats and their sections
 follow the same order as everywhere else.
 

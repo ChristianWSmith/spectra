@@ -2,10 +2,11 @@
 // §5's Reports surface — the appendix SELECTOR: ONE type-to-search
 // token field whose picks land as chips with their own ✕, and the save
 // that downloads the composed document).
-//   A. the metric list behind the field is FLAT and match-scope only —
-//      the groupBy grouping died with the W2 grammar wave (no "by …"
-//      group headers, no profile-scope rows: those surface on
-//      PlayerProfile);
+//   A. the item universe behind the field is the raw RECORDED values
+//      (the fixed stats' scoreboard counterparts — N5) followed by the
+//      flat match-scope METRIC definitions — the groupBy grouping died
+//      with the W2 grammar wave (no "by …" group headers, no
+//      profile-scope rows: those surface on PlayerProfile);
 //   B. picking a stat (through the field's suggestion) reads the
 //      STORED rows through the canonical read (one call carrying the
 //      whole picked set + the roster label read) — PreviewMetric is
@@ -32,6 +33,14 @@
 //      clears the rest, no chips → no appendix, and a deleted key
 //      returns both the list and the file to the default order — the
 //      pins array never orders this list;
+//   G2. a raw recorded value (N5) is addable WITHOUT a definition: the
+//      pick reads the SCOREBOARD (never getMetricValuesForMatch, never
+//      PreviewMetric), its readout carries ONE static provenance chip
+//      (no state chip, no expression text), and its export section
+//      carries the recorded-value meta line + the table with N = the
+//      stored round count — never "value not computed", never a
+//      Formula:, never a compute-state word (honesty: a recorded value
+//      is not a metric), plus the no-version leak scan over both;
 //   H. the player picker's K/D/A triple composes per half (inferred
 //      conversion design §3.1/Q2): K and D are the raw scoreboard
 //      fields, the A half is the match-scope `assists` METRIC row
@@ -240,6 +249,10 @@ const openBox = async (root) => {
   return [...root.querySelectorAll('.tk-opt')];
 };
 const optLabels = (opts) => opts.map((o) => o.textContent.trim());
+// The seven raw recorded-value items in their fixed-block order (N5) —
+// they LEAD the universe (metricorder.composedSequence's fixed
+// positions), so every option-list pin below composes with them.
+const RAW_LABELS = ['K', 'D', 'KDA', 'DMG', 'Util', 'MVPs', 'Score'];
 
 // --- The save ----------------------------------------------------------------
 // The Generate/Save button (its busy shape — {#if rendering}Generating…
@@ -293,6 +306,19 @@ bindings.handlers.GetMetricComputeState = () => [
   { metricId: 2, state: 'fresh' },
   { metricId: 3, state: 'behind' },
 ];
+// The recorded-value read (N5): scripted with the other backend reads
+// so ANY section's raw pick finds it (it is a cachedRead, so the
+// player-target effect below shares this one backend call). Section H
+// re-scripts it for the player scope. `roundsPlayed` is the per-row N
+// the raw appendix line reports — the STORED round count, never a
+// formula's sample size.
+bindings.handlers.GetScoreboard = () => [
+  {
+    steamId: '76561198000000001', name: 'amy', side: 'ct', isBot: false,
+    kills: 20, deaths: 5, kda: 4.2, totalDamage: 1750, utilityDamage: 120,
+    mvps: 3, score: 48, roundsPlayed: 24,
+  },
+];
 
 // The canonical stored-value read — recorded so the checks can pin the
 // args (design §5: no per-toggle query-time run, no PreviewMetric).
@@ -327,13 +353,19 @@ async function mountReports() {
 viewstate.resetViewState();
 const r = await mountReports();
 
-console.log('A. the metric list behind the field is flat and match-scope only');
+console.log('A. the item universe behind the field is the raw recorded values plus the flat match-scope metrics');
 {
   const opts = await openBox(r);
   const labels = optLabels(opts);
+  // N5: the seven raw recorded values lead (the fixed block's
+  // positions), then the match-scope metric definitions — a
+  // profile-scope metric never enters a per-match appendix.
   check(
-    'exactly the match-scope metrics offer themselves (a profile-scope metric never does)',
-    JSON.stringify(labels) === JSON.stringify(['Match stat', 'Behind stat']) &&
+    'the raw recorded values AND the match-scope metrics offer themselves (a profile-scope metric never does)',
+    JSON.stringify(labels) ===
+      JSON.stringify([
+        'K', 'D', 'KDA', 'DMG', 'Util', 'MVPs', 'Score', 'Match stat', 'Behind stat',
+      ]) &&
       !r.textContent.includes('Career stat'),
     JSON.stringify(labels),
   );
@@ -422,8 +454,8 @@ console.log('D. the field offers only the free stats; a non-fresh stat renders i
   const opts = await openBox(r);
   const labels = optLabels(opts);
   check(
-    'a picked stat never offers itself again (no duplicate can form)',
-    JSON.stringify(labels) === JSON.stringify(['Behind stat']),
+    'a picked stat never offers itself again (no duplicate can form) — the raw values still do',
+    JSON.stringify(labels) === JSON.stringify([...RAW_LABELS, 'Behind stat']),
     JSON.stringify(labels),
   );
   click(opts.find((o) => o.textContent.includes('Behind stat')));
@@ -450,8 +482,9 @@ console.log('D. the field offers only the free stats; a non-fresh stat renders i
     'the chip’s ✕ removes the stat — chip and readout line go, and it becomes pickable again',
     !tokenNames(r).includes('Behind stat') && !readout(r, 'Behind stat') &&
       // "Match stat" is still held (E reads its line) — a held stat is
-      // never re-offered, so only the removed one comes back.
-      JSON.stringify(again) === JSON.stringify(['Behind stat']),
+      // never re-offered, so only the removed one comes back (beside
+      // the raw values, which no metric pick ever holds).
+      JSON.stringify(again) === JSON.stringify([...RAW_LABELS, 'Behind stat']),
     JSON.stringify({ tokens: tokenNames(r), again }),
   );
 }
@@ -482,7 +515,9 @@ console.log('F. no version number or timestamp in any rendered metric output');
 {
   const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
   const leaks = [];
-  for (const el of r.querySelectorAll('.tk-tok, .rep-metric .chip, .rep-metric [title]')) {
+  // The scan walks the WHOLE readout row now (N5) — a raw item's
+  // provenance chip rides the same `.rep-metric` line a metric's does.
+  for (const el of r.querySelectorAll('.tk-tok, .rep-metric, .rep-metric [title]')) {
     const tip = el.getAttribute('title') || '';
     if (leakRe.test(tip)) leaks.push(`title: ${tip}`);
     if (leakRe.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim().slice(0, 80)}`);
@@ -515,8 +550,9 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   const opts = await openBox(r2);
   const labels = optLabels(opts);
   check(
-    'a saved order re-sequences the metric list (behind_stat first)',
-    JSON.stringify(labels) === JSON.stringify(['Behind stat', 'Match stat']),
+    'a saved order re-sequences the metric list (behind_stat first) — the raw values keep leading at their fixed positions',
+    JSON.stringify(labels) ===
+      JSON.stringify([...RAW_LABELS, 'Behind stat', 'Match stat']),
     JSON.stringify(labels),
   );
   // Pick in the OPPOSITE order: the chips still render in the sequence
@@ -576,8 +612,8 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   const opts3 = await openBox(r3);
   const labels3 = optLabels(opts3);
   check(
-    'key gone → the default sequence again (catalog order)',
-    JSON.stringify(labels3) === JSON.stringify(['Match stat', 'Behind stat']),
+    'key gone → the default sequence again (raw values, then the catalog order)',
+    JSON.stringify(labels3) === JSON.stringify([...RAW_LABELS, 'Match stat', 'Behind stat']),
     JSON.stringify(labels3),
   );
   click(opts3.find((o) => o.textContent.includes('Match stat')));
@@ -595,6 +631,91 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
       text3.replace(/\s+/g, ' ').slice(0, 300),
     );
   }
+}
+
+console.log('G2. a RAW recorded value (N5): addable without a definition — the scoreboard read, no metric read, honest export');
+{
+  // The raw leg proves itself on a CLEAN selection: with no metric
+  // picked, any metric-value read or PreviewMetric call could only
+  // come from the raw item — and the raw item has no definition to
+  // compute (it reads the recorded scoreboard instead).
+  viewstate.resetViewState();
+  const rRaw = await mountReports();
+  storedCalls.length = 0;
+  const sbBefore = bindings.callCount('GetScoreboard');
+  const prevBefore = bindings.callCount('PreviewMetric');
+  const opts = await openBox(rRaw);
+  check(
+    'the raw recorded values are on offer beside the metric definitions (same universe, fixed positions leading)',
+    JSON.stringify(optLabels(opts)) ===
+      JSON.stringify([...RAW_LABELS, 'Match stat', 'Behind stat']),
+    JSON.stringify(optLabels(opts)),
+  );
+  click(opts.find((o) => o.textContent.trim() === 'K'));
+  await sleep(150);
+  check(
+    'picking a raw value reads the SCOREBOARD for this match (the recorded read)',
+    bindings.callCount('GetScoreboard') > sbBefore && storedCalls.length === 0,
+    `sb ${sbBefore} -> ${bindings.callCount('GetScoreboard')}, metric reads=${storedCalls.length}`,
+  );
+  check(
+    'a raw pick NEVER reaches getMetricValuesForMatch nor PreviewMetric',
+    storedCalls.length === 0 && bindings.callCount('PreviewMetric') === prevBefore,
+    `stored=${JSON.stringify(storedCalls)} preview=${bindings.callCount('PreviewMetric')}`,
+  );
+  check(
+    'the raw pick lands as its own chip (its namespaced id, the fixed-label label)',
+    JSON.stringify(tokenNames(rRaw)) === JSON.stringify(['K']),
+    JSON.stringify(tokenNames(rRaw)),
+  );
+  const rawLine = readout(rRaw, 'K');
+  const rawChips = rawLine ? [...rawLine.querySelectorAll('.chip')] : [];
+  check(
+    'its readout carries ONE static provenance chip — no state chip, no expression text, no Formula:',
+    !!rawLine &&
+      rawChips.length === 1 &&
+      rawChips[0].textContent.trim() === 'Recorded value' &&
+      !rawChips[0].classList.contains('status') &&
+      !rawLine.querySelector('.rep-metric-expr') &&
+      !/Formula:/.test(rawLine.textContent),
+    rawLine ? rawLine.textContent.replace(/\s+/g, ' ') : 'no readout line',
+  );
+  const rawDl = await saveReport(rRaw);
+  const rawText = savedText(rawDl);
+  check(
+    'the saved document carries the recorded-value heading, the honest meta line and the table — never "value not computed"',
+    rawText.includes('### K') &&
+      rawText.includes('recorded value · per player · 1 players') &&
+      rawText.includes('| 76561198000000001 | amy | 20 | 24 |') &&
+      !rawText.includes('value not computed'),
+    rawText.replace(/\s+/g, ' ').slice(0, 600),
+  );
+  check(
+    'no formula text and no compute-state word reaches a raw export (a recorded value is not a metric)',
+    !/Formula:/.test(rawText) &&
+      !/(behind|processing|no-data|failed)/.test(rawText.split('## Stats appendix')[1] || ''),
+    rawText.replace(/\s+/g, ' ').slice(0, 400),
+  );
+  // The leak scan (section F) extended over the raw surface: the readout
+  // row AND its export are in scope for version/timestamp leaks too.
+  {
+    const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
+    const leaks = [];
+    for (const el of rRaw.querySelectorAll('.tk-tok, .rep-metric, .rep-metric [title]')) {
+      const tip = el.getAttribute('title') || '';
+      if (leakRe.test(tip)) leaks.push(`title: ${tip}`);
+      if (leakRe.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim().slice(0, 80)}`);
+    }
+    if (leakRe.test(rawText)) leaks.push(`saved file: ${rawText.slice(0, 80)}`);
+    check(
+      'no version number or timestamp reaches the raw value output either',
+      leaks.length === 0,
+      leaks.join(' | '),
+    );
+  }
+  // Restore the selection for the sections below (H mounts its own
+  // player-scoped backend anyway; this keeps the registry honest).
+  viewstate.resetViewState();
 }
 
 console.log('H. the player picker triple composes per half — raw K/D + the assists metric half (absent → —)');

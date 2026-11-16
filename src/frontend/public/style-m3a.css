@@ -939,6 +939,21 @@ canvas.heat-canvas {
   gap: 8px;
 }
 
+/* The list BODY (N1) — the Builder's one scroll region: the panel
+   header, the search box and the Filters trigger above it stay fixed
+   (the filter popover is anchored to that trigger and must never scroll
+   away), while the rows and the Load-more footer ride a height-capped
+   scroller. The 300px allowance is the chrome above them (view header +
+   list header + search + filter row) subtracted from the viewport —
+   the .sql-side calc idiom below. */
+.bld-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
 /* Filter multi-select (owner ruling: ONE control replaces the three
    toggle lines — origin / scope / denominator): the host is the
    canonical Popover's anchor (position: relative so the panel attaches
