@@ -28,6 +28,7 @@
   import { fmtBytes, fmtDuration, fmtDate, basename, neverExtracted } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import { teamNames, teamStartClass } from '../teams.js';
+  import { loadIconManifest, mapIconURL } from '../replay/icons.js';
   import { seed, remember } from '../viewstate.svelte.js';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
@@ -122,6 +123,16 @@
   $effect(() => remember(LIB_KEY, { sortKey, desc }));
   let error = $state('');
   let importError = $state('');
+
+  // The icons manifest, read ONCE per mount (the session memo in
+  // replay/icons.js means one fetch per page load): its `maps` half is
+  // what lets the Map column show a map's own logo. A missing/failed
+  // manifest resolves to the empty one and mapIconURL misses → the cell
+  // stays the bare map name, which is the whole fallback contract.
+  let iconManifest = $state(null);
+  loadIconManifest().then((m) => {
+    iconManifest = m;
+  });
 
   // Demos sitting in the configured import dirs (Settings → "Import
   // dirs") that are not in the library yet — each with a one-click
@@ -924,6 +935,13 @@
                  both stay '' → no colour. -->
             {@const winnerSide = m.scoreCT > m.scoreT ? 'ct' : m.scoreT > m.scoreCT ? 't' : ''}
             {@const loserSide = m.scoreCT < m.scoreT ? 'ct' : m.scoreT < m.scoreCT ? 't' : ''}
+            <!-- The Map cell's logo: the map's own square icon when the
+                 icons family has extracted it (mapIconURL misses → no
+                 <img>, the bare name renders — the fail-soft contract).
+                 alt="" keeps the cell's textContent byte-identical to
+                 the map name, so every textContent pin stays true, and
+                 it adds no user-facing copy. -->
+            {@const mapIcon = mapIconURL(m.map, iconManifest)}
             <tr
               class:clickable={isOpenable(m)}
               onclick={() => openMatch(m)}
@@ -934,7 +952,7 @@
               }}
               tabindex={isOpenable(m) ? 0 : undefined}
             >
-              <td>{m.map || '—'}</td>
+              <td>{#if mapIcon}<img class="lib-map-icon" src={mapIcon} alt="" aria-hidden="true" />{/if}{m.map || '—'}</td>
               <td>
                 {#if neverExt && m.path}
                   <!-- The file name rides the SAME truncation every other

@@ -22,10 +22,14 @@ import (
 // (noticeIconTable), keyed the way renderer.js drawKillFeed asks for them
 // ('blind_kill'/'headshot' plus the round-4 indicator keys 'noscope',
 // 'throughsmoke', 'wallbang', 'airborne', 'suicide', 'explosion', plus
-// the kill feed's 'disconnect' line glyph) —
-// non-equipment keys, so they live in their
-// own table and never join iconTable (TestIconTableCanonicalNames pins
-// that one to the demoinfocs enum). Assets the UI needs but has no
+// the kill feed's 'disconnect' line glyph) — non-equipment keys, so they
+// live in their own table and never join iconTable
+// (TestIconTableCanonicalNames pins that one to the demoinfocs enum). A
+// THIRD family rides the same pipeline: the game's per-map square logos
+// (mapIconPrefix → map_icon_<map>.svg), keyed by MAP NAME rather than by
+// any table — enumerated from the VPK per install, so it has no static
+// reverse index — for the Library's map column (CS2.md "Map icon logos
+// in a CS2 install"). Assets the UI needs but has no
 // canonical name for (planted_c4, knife variants) are NOT extracted: the
 // frontend tints/chooses per render site — that includes the radar
 // elevation marks (T / ⊥), which renderer.js draws from canvas paths
@@ -43,6 +47,20 @@ const (
 	hudPrefix  = "panorama/images/hud/"
 	iconSuffix = ".vsvg_c"
 	iconExt    = ".svg"
+	// mapIconPrefix is the THIRD family's dir: the game's per-map square
+	// logos at panorama/images/map_icons/map_icon_<map>.vsvg_c — 26 files
+	// in the 2026-11-16 probe of pak01_dir.vpk, square (32×32, two night
+	// variants 32×33, cs_italy 31×31), and the SAME 6-byte CRC32 + SVG
+	// container as the equipment silhouettes, so decodeVSVG decodes them
+	// with no new decoder (CS2.md "Map icon logos in a CS2 install").
+	mapIconPrefix = "panorama/images/map_icons/"
+	// mapIconFilePrefix is the stem BOTH sides of this family share: the
+	// VPK basename (map_icon_<map>.vsvg_c) and the extracted file
+	// (map_icon_<map>.svg). Keeping the stem verbatim means a map icon
+	// can never collide with an equipment/notice stem in the one
+	// extracted-files namespace, and the name stays inside the
+	// ValidIconFileBase whitelist the /api/icons route enforces.
+	mapIconFilePrefix = "map_icon_"
 )
 
 // iconTable is the ONE canonical-name → VPK-basename table (keys are
@@ -232,14 +250,116 @@ func iconVPKPath(name string) string {
 	return iconPrefix + iconTable[name] + iconSuffix
 }
 
-// ExtractIcons extracts every icon in extractTable (all families) from
-// the CS2 install at cs2Dir into outDir (created if needed) as
-// <basename>.svg files. Idempotent — re-running after a game update
-// refreshes the icons. A canonical name whose file is missing from the
-// VPK lands in errs (the manifest simply omits it); only a failure to
-// open the VPK itself is fatal. Returns the canonical names written,
-// sorted for determinism. opts.Progress, when set, fires once per
-// canonical icon attempted (ExtractOption).
+// mapIconFile is the extracted file name for a map icon key: the VPK
+// basename's stem kept verbatim (map_icon_de_mirage.svg), so the name is
+// namespaced away from every equipment/notice stem and stays whitelist
+// safe (ValidIconFileBase).
+func mapIconFile(key string) string {
+	return mapIconFilePrefix + key + iconExt
+}
+
+// mapIconKeyProblem is THE map-icon guard, shared by both halves of the
+// family (the extraction path deriving a key from a VPK path, and the
+// listing path deriving one from an extracted file name): a map name is
+// servable only when its file passes the /api/icons whitelist
+// (ValidIconFileBase — lowercase, no path segments, ≤64 bytes) and the
+// key does not collide with the static extractTable's manifest-key
+// namespace (a collision would silently shadow a canonical name in the
+// one flat manifest). Returns "" when servable, else the problem the
+// caller reports before skipping — an unservable file is never written
+// and never listed.
+func mapIconKeyProblem(key string) string {
+	if key == "" {
+		return "map icon file has an empty map name"
+	}
+	if !ValidIconFileBase(mapIconFile(key)) {
+		return "map icon file name is not servable"
+	}
+	if _, dup := extractTable[key]; dup {
+		return "map name already used by an icon key"
+	}
+	return ""
+}
+
+// mapIconKey derives a map icon's manifest key (the map name, e.g.
+// "de_mirage") from its VPK path under mapIconPrefix. Two miss shapes:
+//
+//	("", "")      the entry is not a map icon (no map_icon_ stem) —
+//	              skipped silently, it is another asset in that dir
+//	              (the install ships e.g. mapgroup_icon_rush.vsvg_c);
+//	("", problem) it IS a map icon but cannot be served — a subdirectory
+//	              entry or a key mapIconKeyProblem rejects. The caller
+//	              reports the problem and skips it.
+func mapIconKey(path string) (key string, problem string) {
+	rest, ok := strings.CutPrefix(path, mapIconPrefix)
+	if !ok {
+		return "", "" // not under the map-icons dir (defensive)
+	}
+	stem, ok := strings.CutSuffix(rest, iconSuffix)
+	if !ok {
+		return "", "" // not a compiled SVG — not this family's asset
+	}
+	if strings.Contains(stem, "/") {
+		return "", "map icon sits in a subdirectory"
+	}
+	stem, ok = strings.CutPrefix(stem, mapIconFilePrefix)
+	if !ok {
+		return "", "" // another asset in the dir — not a map icon
+	}
+	if problem = mapIconKeyProblem(stem); problem != "" {
+		return "", problem
+	}
+	return stem, ""
+}
+
+// mapIconFileKey derives the map name from an EXTRACTED file name
+// ("map_icon_de_mirage.svg" → "de_mirage"), or "" when the name is not
+// a servable map icon (the same mapIconKeyProblem guard, so IconFiles
+// only ever lists files the /api/icons route will actually serve).
+func mapIconFileKey(file string) string {
+	stem, ok := strings.CutPrefix(file, mapIconFilePrefix)
+	if !ok || !strings.HasSuffix(stem, iconExt) {
+		return ""
+	}
+	key := strings.TrimSuffix(stem, iconExt)
+	if mapIconKeyProblem(key) != "" {
+		return ""
+	}
+	return key
+}
+
+// IsMapIconFile reports whether an extracted file name belongs to the
+// map-icon family — the routing predicate buildIconManifest splits the
+// flat IconFiles listing with (map icons → IconManifest.Maps, everything
+// else → Icons).
+func IsMapIconFile(file string) bool {
+	return mapIconFileKey(file) != ""
+}
+
+// iconJob is ONE ExtractIcons attempt: the manifest key it writes under
+// (a canonical equipment/notice name or a map name), the file it writes,
+// and the VPK path it reads. The whole job list is built before the loop
+// so the progress denominator counts exactly what this run attempts —
+// the static table (sorted) plus the map icons the VPK actually carries
+// (v.names is sorted too).
+type iconJob struct {
+	name    string // manifest key
+	file    string // extracted file name (<base>.svg)
+	vpkPath string // full VPK path to read
+}
+
+// ExtractIcons extracts every icon the manifest serves — the static
+// extractTable (equipment silhouettes + death-notice glyphs) AND every
+// map icon the VPK carries (mapIconPrefix) — from the CS2 install at
+// cs2Dir into outDir (created if needed) as <basename>.svg files.
+// Idempotent — re-running after a game update refreshes the icons. A
+// canonical name whose file is missing from the VPK lands in errs (the
+// manifest simply omits it); a map-icon entry that cannot be served is
+// reported and skipped the same way; only a failure to open the VPK
+// itself is fatal. Returns the canonical names written, sorted for
+// determinism. opts.Progress, when set, fires once per job attempted
+// (ExtractOption), against the full job count known before the first
+// one.
 func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOption) (names []string, errs []string, err error) {
 	extractMu.Lock()
 	defer extractMu.Unlock()
@@ -260,53 +380,78 @@ func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOption) (names []string,
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	for i, name := range extractTableNames {
-		if msg := extractIcon(v, outDir, name); msg != "" {
+
+	// The job list is complete BEFORE the loop (after openVPK — the map
+	// half is enumerated from the VPK's own tree), so the progress
+	// denominator is honest from the first call. Map entries that cannot
+	// be served are reported here and never become jobs.
+	jobs := make([]iconJob, 0, len(extractTableNames))
+	for _, name := range extractTableNames {
+		jobs = append(jobs, iconJob{
+			name:    name,
+			file:    extractTable[name] + iconExt,
+			vpkPath: iconVPKPath(name),
+		})
+	}
+	for _, path := range v.names(mapIconPrefix, iconSuffix) {
+		key, problem := mapIconKey(path)
+		if problem != "" {
+			errs = append(errs, fmt.Sprintf("%s: %s", path, problem))
+			continue
+		}
+		if key == "" {
+			continue // another asset in the dir — not a map icon
+		}
+		jobs = append(jobs, iconJob{name: key, file: mapIconFile(key), vpkPath: path})
+	}
+	for i, job := range jobs {
+		if msg := extractIcon(v, outDir, job); msg != "" {
 			errs = append(errs, msg)
 		} else {
-			names = append(names, name)
+			names = append(names, job.name)
 		}
 		if cfg.progress != nil {
-			cfg.progress(i+1, len(extractTableNames))
+			cfg.progress(i+1, len(jobs))
 		}
 	}
+	sort.Strings(names)
 	if len(names) == 0 && len(errs) > 0 {
 		return nil, errs, fmt.Errorf("couldn't read the icons — your game files may have changed format (%d errors)", len(errs))
 	}
 	return names, errs, nil
 }
 
-// extractIcon does ONE canonical icon's read → decode → write — the body
-// of the ExtractIcons loop, split out so the loop can report progress
-// after EVERY item (the failure paths are returns here, not `continue`s,
+// extractIcon does ONE job's read → decode → write — the body of the
+// ExtractIcons loop, split out so the loop can report progress after
+// EVERY item (the failure paths are returns here, not `continue`s,
 // which would skip it). Returns the message to record in errs, or "" when
 // the icon was written.
-func extractIcon(v *vpk, outDir, name string) string {
-	base := extractTable[name]
-	raw, found, rerr := v.read(iconVPKPath(name))
+func extractIcon(v *vpk, outDir string, job iconJob) string {
+	raw, found, rerr := v.read(job.vpkPath)
 	if rerr != nil {
-		return fmt.Sprintf("%s: %v", name, rerr)
+		return fmt.Sprintf("%s: %v", job.name, rerr)
 	}
 	if !found {
-		return fmt.Sprintf("%s: %s%s not in VPK", name, base, iconSuffix)
+		return fmt.Sprintf("%s: %s not in VPK", job.name, filepath.Base(job.vpkPath))
 	}
 	svg, derr := decodeVSVG(raw)
 	if derr != nil {
-		return fmt.Sprintf("%s: %v", name, derr)
+		return fmt.Sprintf("%s: %v", job.name, derr)
 	}
-	if werr := writeFileAtomic(filepath.Join(outDir, base+iconExt), svg); werr != nil {
-		return fmt.Sprintf("%s: %v", name, werr)
+	if werr := writeFileAtomic(filepath.Join(outDir, job.file), svg); werr != nil {
+		return fmt.Sprintf("%s: %v", job.name, werr)
 	}
 	return ""
 }
 
 // IconFiles lists the extracted icons in dir: manifest key → filename
-// ("ak47.svg", "blind_kill.svg" — both families resolve through the one
-// reverse index), rebuilt from a fresh
-// directory listing on every call
-// so the served manifest never goes stale. Files that aren't in the
-// reverse table (strays, older game versions, the retired elevation
-// glyphs) are ignored.
+// ("ak47.svg", "blind_kill.svg" — both static families resolve through
+// the one reverse index; "map_icon_de_mirage.svg" resolves through the
+// map-icon pattern instead, since that family's set is enumerated per
+// install and has no static index), rebuilt from a fresh directory
+// listing on every call so the served manifest never goes stale. Files
+// that are neither table-known nor a servable map icon (strays, older
+// game versions, the retired elevation glyphs) are ignored.
 func IconFiles(dir string) map[string]string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -319,6 +464,13 @@ func IconFiles(dir string) map[string]string {
 		}
 		if name, ok := iconFileToName[e.Name()]; ok {
 			out[name] = e.Name()
+			continue
+		}
+		// The map-icon family: a pattern branch, so the static reverse
+		// index stays exactly extractTable (TestNoElevIconTable pins
+		// that 1:1) while map icons still list for the manifest.
+		if key := mapIconFileKey(e.Name()); key != "" {
+			out[key] = e.Name()
 		}
 	}
 	return out

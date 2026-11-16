@@ -381,11 +381,152 @@ func TestExtractIconsNoInstall(t *testing.T) {
 	}
 }
 
+// TestExtractMapIconsSynthetic runs the THIRD family's half of the
+// pipeline against a synthetic install whose VPK carries one map icon:
+// the map name becomes a manifest key, the file keeps the VPK basename
+// (map_icon_<map>.svg, byte-identical payload), IconFiles lists it — and
+// it adds NO error (errs stays the static table's missing-file count, so
+// a map icon can never make a run look broken).
+func TestExtractMapIconsSynthetic(t *testing.T) {
+	install := t.TempDir()
+	csgo := filepath.Join(install, "game", "csgo")
+	if err := os.MkdirAll(csgo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const akSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>` + "\n"
+	const mapSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M0 0h32v32H0z"/></svg>` + "\n"
+	buildVPK(t, csgo, map[string][]byte{
+		iconPrefix + "ak47" + iconSuffix: buildVSVG(t, akSVG),
+		// The map-icon family: enumerated from the VPK under
+		// mapIconPrefix, keyed by map name.
+		mapIconPrefix + mapIconFilePrefix + "de_mirage" + iconSuffix: buildVSVG(t, mapSVG),
+	})
+
+	out := t.TempDir()
+	names, errs, err := ExtractIcons(install, out)
+	if err != nil {
+		t.Fatalf("ExtractIcons: %v", err)
+	}
+	// Sorted: "AK-47" < "de_mirage" — the map key rides the same pass.
+	want := []string{"AK-47", "de_mirage"}
+	if len(names) != len(want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	for i, n := range want {
+		if names[i] != n {
+			t.Errorf("names[%d] = %q, want %q", i, names[i], n)
+		}
+	}
+	// The map icon is NOT an error and does not inflate the static
+	// missing-file count: exactly the table's absent entries report.
+	if len(errs) != len(extractTable)-1 {
+		t.Errorf("errs = %d entries, want %d (the absent static icons only)", len(errs), len(extractTable)-1)
+	}
+
+	// The written file keeps its exact payload under the VPK basename.
+	data, err := os.ReadFile(filepath.Join(out, "map_icon_de_mirage.svg"))
+	if err != nil {
+		t.Fatalf("map icon not written: %v", err)
+	}
+	if string(data) != mapSVG {
+		t.Errorf("map_icon_de_mirage.svg = %q, want %q", data, mapSVG)
+	}
+	// …and the manifest routes it by MAP NAME through the pattern branch
+	// (the static reverse index has no entry for it).
+	files := IconFiles(out)
+	if files["de_mirage"] != "map_icon_de_mirage.svg" {
+		t.Errorf(`IconFiles["de_mirage"] = %q, want "map_icon_de_mirage.svg"`, files["de_mirage"])
+	}
+	if files["AK-47"] != "ak47.svg" {
+		t.Errorf(`IconFiles["AK-47"] = %q, want "ak47.svg"`, files["AK-47"])
+	}
+	if !IsMapIconFile("map_icon_de_mirage.svg") {
+		t.Error("IsMapIconFile(map_icon_de_mirage.svg) = false, want true")
+	}
+	if IsMapIconFile("ak47.svg") || IsMapIconFile("map_icon_.svg") || IsMapIconFile("flair0.svg") {
+		t.Error("IsMapIconFile must only claim servable map_icon_*.svg names")
+	}
+}
+
+// TestExtractMapIconGuards pins the "never write an unservable file"
+// rule (mapIconKeyProblem — THE shared guard): a subdirectory entry, an
+// over-long stem and a key the static extractTable already owns are all
+// reported in errs and skipped, while a well-formed sibling still
+// extracts. The listing side rejects the same collision, so a hand-
+// dropped colliding file can never shadow a canonical manifest key.
+func TestExtractMapIconGuards(t *testing.T) {
+	install := t.TempDir()
+	csgo := filepath.Join(install, "game", "csgo")
+	if err := os.MkdirAll(csgo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const okSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>` + "\n"
+	longKey := strings.Repeat("x", 60) // map_icon_ + 60 + .svg > the 64-byte cap
+	buildVPK(t, csgo, map[string][]byte{
+		mapIconPrefix + mapIconFilePrefix + "de_mirage" + iconSuffix: buildVSVG(t, okSVG),
+		// A nested entry under the same dir (defensive — like radarBase).
+		mapIconPrefix + "sub/" + mapIconFilePrefix + "de_sub" + iconSuffix: buildVSVG(t, okSVG),
+		// Over-long stem: ValidIconFileBase rejects the file it names.
+		mapIconPrefix + mapIconFilePrefix + longKey + iconSuffix: buildVSVG(t, okSVG),
+		// Key collision with the static table ('headshot' is a notice
+		// glyph's manifest key — one flat manifest, no shadowing).
+		mapIconPrefix + mapIconFilePrefix + "headshot" + iconSuffix: buildVSVG(t, okSVG),
+	})
+
+	out := t.TempDir()
+	names, errs, err := ExtractIcons(install, out)
+	if err != nil {
+		t.Fatalf("ExtractIcons: %v", err)
+	}
+	// The well-formed sibling still extracts; the three bad entries do
+	// not become names.
+	if len(names) != 1 || names[0] != "de_mirage" {
+		t.Errorf("names = %v, want [de_mirage] (guards skip, never fail the run)", names)
+	}
+	// Each guard problem is REPORTED (they reach the manifest note) with
+	// its entry named.
+	joined := strings.Join(errs, "\n")
+	for _, want := range []string{
+		"sub/" + mapIconFilePrefix + "de_sub" + iconSuffix + ":",
+		mapIconFilePrefix + longKey + iconSuffix + ":",
+		mapIconFilePrefix + "headshot" + iconSuffix + ":",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("errs should report %q:\n%s", want, joined)
+		}
+	}
+	// …and none of the three is ever written (no unservable file).
+	for _, file := range []string{
+		mapIconFilePrefix + longKey + ".svg",
+		mapIconFilePrefix + "headshot.svg",
+	} {
+		if _, err := os.Stat(filepath.Join(out, file)); err == nil {
+			t.Errorf("%s must never be written", file)
+		} else if !os.IsNotExist(err) {
+			t.Errorf("stat %s: %v", file, err)
+		}
+	}
+	// The listing side applies the SAME collision guard: a hand-dropped
+	// colliding file is a stray, never a manifest key.
+	if err := os.WriteFile(filepath.Join(out, mapIconFilePrefix+"headshot.svg"), []byte(okSVG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := IconFiles(out)
+	if files["headshot"] != "" {
+		t.Errorf(`IconFiles["headshot"] = %q — a colliding map icon must not shadow a canonical key`, files["headshot"])
+	}
+	if files["de_mirage"] != mapIconFilePrefix+"de_mirage.svg" {
+		t.Errorf(`IconFiles["de_mirage"] = %q, want the well-formed map icon`, files["de_mirage"])
+	}
+}
+
 func TestValidIconFileBase(t *testing.T) {
 	good := []string{
 		"ak47.svg", "armor_helmet.svg", "c4.svg", "usp_silencer.svg", "a.svg",
 		// the death-notice glyphs: lowercase + underscore only
 		"icon_headshot.svg", "blind_kill.svg",
+		// the map logos keep the VPK basename verbatim (map_icon_ + map)
+		"map_icon_de_mirage.svg", "map_icon_lobby_mapveto.svg", "map_icon_rush_001.svg",
 	}
 	for _, s := range good {
 		if !ValidIconFileBase(s) {

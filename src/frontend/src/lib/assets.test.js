@@ -65,6 +65,21 @@ test('extractAllAssets: fixed step order, dir forwarded, counts-only result', as
   assert.equal(out.error, '');
 });
 
+test('extractAllAssets: the icons count folds in the map logos (never under-reports)', async () => {
+  bindings.resetCalls();
+  bindings.handlers.ExtractMapPacks = () => ({ maps: ['de_mirage'], errors: [] });
+  // Go's IconManifest splits the family: count = equipment + notice,
+  // mapCount = the map logos. The result line reports what the run
+  // WROTE, so both halves add up.
+  bindings.handlers.ExtractIcons = () => ({ count: 55, mapCount: 26, note: '' });
+  bindings.handlers.ExtractSounds = () => ({ count: 45, note: '' });
+
+  const out = await assets.extractAllAssets({ dir: '' });
+
+  assert.equal(out.msg, 'Extracted 1 map pack, 81 icons, 45 sounds.');
+  assert.equal(out.error, '');
+});
+
 test('extractAllAssets: a failing family is aggregated, the rest still run', async () => {
   bindings.resetCalls();
   bindings.handlers.ExtractMapPacks = () => ({ maps: [], errors: ["de_mirage: decode failed"] });

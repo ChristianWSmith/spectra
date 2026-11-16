@@ -1637,3 +1637,23 @@ at the end of the section.
   https://github.com/advancedfx/advancedfx/issues/1172 (build 23296257 /
   PatchVersion 1.41.6.2 / ClientVersion 2000827); local probes: install
   `steam.inf` + read-only query of spectra' library (2026-11-12).
+
+- **Map icon logos in a CS2 install** — where the per-map square logos
+  live for extraction (the Library's Map column icon). In `pak01_dir.vpk`
+  under `panorama/images/map_icons/`: `map_icon_<map>.vsvg_c` — 26
+  compiled SVGs, one per map (`de_mirage`, `de_dust2`, `de_nuke`,
+  `de_cache`, … plus `lobby_mapveto`, `rush_001`),
+  `<svg width="32" height="32" viewBox="0 0 32 32">` (two night variants
+  32×33, `cs_italy` 31×31) — **square**, colored vector paths, no
+  gradients/`<image>`/`<text>`, 4.5–344 KB. Same `.vsvg_c` container as
+  the weapon silhouettes (6-byte CRC32 prefix + raw SVG) → decodes with
+  the existing `decodeVSVG`, no new decoder; the map name is the key
+  (extracted file `map_icon_<map>.svg`). Coverage: every
+  `resource/overviews/` map has one except alternate-overview variants of
+  the same base map; 8 icon-only maps lack an overview. The same dir also
+  carries `mapgroup_icon_rush.vsvg_c` (no `map_icon_` stem — not a map
+  logo). Rejected alternatives: `map_icons/screenshots/{360p,720p,1080p}/<map>_png.vtex_c` are WIDE (640×360 / 1280×720 / 1920×1080,
+  format 18 = PNG_DXT5, unsupported by `decodeVTex`);
+  `map_icon_none_png.vtex_c` is an 80×80 placeholder; the VPK holds **no
+  loose png/jpg/tga** (137,845 entries).
+  **Source** — local probe of pak01_dir.vpk (2026-11-16).
