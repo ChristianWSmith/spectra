@@ -652,6 +652,19 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
   );
 }
 
+// reports-card (2026-11-15): the view's content consolidated to ONE card —
+// the template/target block and the stats appendix now share a single
+// `<section class="panel">` (both section headings stay inside it). The
+// mount shape is the pin; a second panel would mean a split regressed.
+{
+  const panels = root.querySelectorAll('section.panel');
+  check(
+    'exactly ONE section.panel renders (both sections live in the single card)',
+    panels.length === 1,
+    `${panels.length} panels`,
+  );
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) await unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
