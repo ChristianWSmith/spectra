@@ -85,6 +85,13 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsMetricOrderProfileKey != "metric_order_profile" {
 		t.Errorf("metric order (profile) key = %q, want %q", prefsMetricOrderProfileKey, "metric_order_profile")
 	}
+	// The replay loop-length pref (Settings' Replay panel writes it, the
+	// replay transport and every event-level replay link read it; Go never
+	// consumes it). One key rename silently reverts every stored choice
+	// to the default.
+	if prefsLoopSecsKey != "loop_secs" {
+		t.Errorf("loop-length key = %q, want %q", prefsLoopSecsKey, "loop_secs")
+	}
 }
 
 // The copy toggle is one of the few prefs Go CONSUMES (library.Options

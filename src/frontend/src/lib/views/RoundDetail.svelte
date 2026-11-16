@@ -7,13 +7,21 @@
     getScoreboard,
     getEconomy,
     getTeamNames,
+    getPref,
     errText,
   } from '../services.js';
+  import { onMount } from 'svelte';
   import { fmtDuration, fmtInt, fmtClock, tickSeconds, chatClock, chatTag } from '../fmt.js';
   import { roundIndexLabel, scoreThrough } from '../rounds.js';
   import { sideAtRound } from '../sideparity.js';
   import { playerSideAt, playerSideClassAt } from '../teams.js';
-  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
+  import {
+    replayHash,
+    entryLoopSpan,
+    entryLoopAround,
+    LOOP_SECS_DEFAULT,
+    prefLoopSecs,
+  } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -50,6 +58,20 @@
   // share) — "" per side = no stored side-class row (unanalyzed match),
   // rendered as the honest `unknown` chip, never a read-time guess.
   let econRows = $state([]);
+
+  // Event-level loop length: the `loop_secs` pref (Settings → Replay),
+  // read ONCE at mount — nav.prefLoopSecs coerces it (unset/corrupt →
+  // LOOP_SECS_DEFAULT), so every event ▶ here stamps the same width the
+  // replay's quick-range button arms. Round-level links are untouched:
+  // they promise the round's own span.
+  let loopSecs = LOOP_SECS_DEFAULT;
+  onMount(() => {
+    getPref('loop_secs')
+      .then((v) => (loopSecs = prefLoopSecs(v)))
+      .catch(() => {
+        /* keep the default */
+      });
+  });
 
   // Per-round SIDE color class for a name surface — every name on this
   // view belongs to exactly THIS round, so the color follows the side the
@@ -246,8 +268,9 @@
   // per-event seeks live in the canonical feed now). `loop` is the
   // entry-only ?loop= range stamped BESIDE the seek (undefined = none,
   // which buildHash drops): the round's start→end span for the header's
-  // "Watch round", ±10 s around the event tick for the kill-feed and
-  // bomb-timeline ▶ buttons (nav.entryLoopSpan / nav.entryLoopAround).
+  // "Watch round", the loop length (the loop_secs pref) around the event
+  // tick for the kill-feed and bomb-timeline ▶ buttons (nav.entryLoopSpan
+  // / nav.entryLoopAround).
   // `follow` is ENTRY CONTEXT (never a filter): the actor of the ROW the
   // link came from — the killer for a kill row, the planter/defuser for
   // a bomb row — so the replay's camera lands on them. Absent actor →
@@ -360,7 +383,7 @@
     <!-- Round analysis: the round's result, kill feed and bomb timeline
          (the round-detail read's typed events), with economy and this
          round's chat alongside. Every event row drills into the replay
-         at its tick (watchTick — ▶ rows stamp a ±10 s ?loop= range AND
+         at its tick (watchTick — ▶ rows stamp the loop-length ?loop= range AND
          the row's actor as ?follow=, the header the round's own span and
          no follow); outside this view nothing links this round through a
          landmark FILTER — buttons seek, never filter. -->
@@ -477,7 +500,7 @@
                           aria-label={k.attacker
                             ? `Watch from tick ${k.tick} — follow ${k.attackerName || k.attacker}`
                             : `Watch from tick ${k.tick} in the replay`}
-                          onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate), k.attacker)}
+                          onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate, loopSecs), k.attacker)}
                           ><span class="codicon codicon-play" aria-hidden="true"></span></button
                         >
                       </td>
@@ -525,7 +548,7 @@
                           class="btn small ghost"
                           title={bombWatch(e).title}
                           aria-label={bombWatch(e).label}
-                          onclick={() => watchTick(e.tick, entryLoopAround(e.tick, tickRate), e.attacker)}
+                          onclick={() => watchTick(e.tick, entryLoopAround(e.tick, tickRate, loopSecs), e.attacker)}
                           ><span class="codicon codicon-play" aria-hidden="true"></span></button
                         >
                       </td>

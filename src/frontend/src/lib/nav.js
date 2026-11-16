@@ -87,17 +87,21 @@ export function expandReplayHash(replayHashValue, backPath) {
 // states its loop:
 //   round-level   — the round IS the sequence: ?loop= is the round's own
 //                   start→end span (entryLoopSpan over the round row's
-//                   startTick/endTick — freeze included; ±10 s around the
-//                   round's edges would bleed into the previous round's
-//                   end / the next round's freeze, so the round span is
-//                   the right bound). Sites: RoundDetail's "Watch round",
-//                   CompareRounds' "Replay start", Economy's stat-card
-//                   drill.
-//   long event    — first-occurrence −10 s → last-occurrence +10 s (a
+//                   startTick/endTick — freeze included; padding the
+//                   round's edges by the loop length would bleed into
+//                   the previous round's end / the next round's freeze,
+//                   so the round span is the right bound). Sites:
+//                   RoundDetail's "Watch round", CompareRounds' "Replay
+//                   start", Economy's stat-card drill.
+//   long event    — first-occurrence −loop → last-occurrence +loop (a
 //                   clutch, an engagement sequence): entryLoopSpanAround
 //                   below.
-//   singular event — the event tick ±10 s (a kill, a nade throw, a bomb
+//   singular event — the event tick ±loop (a kill, a nade throw, a bomb
 //                   event, a damage event): entryLoopAround below.
+// The loop LENGTH in the last two categories is the user's `loop_secs`
+// setting (LOOP_SECS_DEFAULT / prefLoopSecs below) — never the engine's
+// own toggleLoop default, which belongs to a different feature (record
+// clip).
 // No loop at all: filter/nav-only entries (Heatmaps' region drill, the
 // palette's saved filter, player rows with no tick) and fresh entries
 // (Match's header "Watch replay") stamp no ?loop= — they navigate, they
@@ -107,8 +111,8 @@ export function expandReplayHash(replayHashValue, backPath) {
 // half of the replayHash contract above): "<fromTick>,<toTick>" — the
 // ROUND-LEVEL stamper (the caller states the round's own bounds exactly;
 // an unknown bound yields undefined rather than a guess) and the closing
-// half of the long-event pair (callers that need the ±10 s padding use
-// entryLoopSpanAround). Bounds that cannot be stated exactly — absent
+// half of the long-event pair (callers that need the loop-length padding
+// use entryLoopSpanAround). Bounds that cannot be stated exactly — absent
 // (null/"" — Number(null) would silently read 0), non-finite, negative
 // or inverted (from > to) — yield undefined, which buildHash drops: a
 // link never promises a loop it cannot state (the seek still happens on
@@ -127,42 +131,64 @@ function asTick(v) {
   return v == null || v === '' ? NaN : Number(v);
 }
 
-// EVENT_LOOP_SECONDS is the engine's own default loop width (toggleLoop
-// arms "10 s from the current frame" — engine.js): every EVENT anchor
-// link spans ± this around the event tick, so a linked loop feels the
-// same as a manually armed one. THE conformance constant of the owner's
-// watch rule — a singular event loops event tick ±10 s.
-const EVENT_LOOP_SECONDS = 10;
+// LOOP_SECS_DEFAULT — THE default loop length in SECONDS: the width an
+// event-level ?loop= anchor pads around its tick, and the default of the
+// user's `loop_secs` pref (Settings → Replay — a frontend-owned kvstore
+// key, the font_size pattern: Go registers it, never reads it). One home
+// for the number: Settings' control, the replay transport's quick-range
+// button and every event ▶ link below all read the pref through
+// prefLoopSecs and fall back here.
+export const LOOP_SECS_DEFAULT = 5;
+
+// The pref's bounds — the SAME ones Settings' control advertises
+// (min=1 / max=60), spelled here so the coercer below and the markup
+// can never drift apart.
+const LOOP_SECS_MIN = 1;
+const LOOP_SECS_MAX = 60;
+
+// prefLoopSecs — THE one coercer of a raw `loop_secs` pref value: a
+// finite NUMBER rounds to whole seconds and clamps into [1, 60]; anything
+// else (unset, null, a string, an array — including the econ-tables
+// auto-stub's `[]` answer — a boolean, NaN, Infinity) is not this pref's
+// shape and reads as LOOP_SECS_DEFAULT. Never NaN, never 0, never out of
+// range: a corrupt pref can only ever mean the default, never a surprise
+// loop width. Pure (nav.js stays services-free — R2).
+export function prefLoopSecs(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LOOP_SECS_DEFAULT;
+  return Math.min(Math.max(Math.round(v), LOOP_SECS_MIN), LOOP_SECS_MAX);
+}
 
 // entryLoopAround stamps the ?loop= extra for an EVENT link — the
-// SINGULAR-EVENT category: ±10 s (EVENT_LOOP_SECONDS) around the event
-// tick at the match tick rate, floored at 0 — a negative bound is never
-// legal and is the ONLY clamp (the range may legitimately run past the
-// round's edge; it is never reshaped to it).
-export function entryLoopAround(tick, tickRate) {
+// SINGULAR-EVENT category: ±seconds (the loop_secs pref — default
+// LOOP_SECS_DEFAULT) around the event tick at the match tick rate,
+// floored at 0 — a negative bound is never legal and is the ONLY clamp
+// (the range may legitimately run past the round's edge; it is never
+// reshaped to it).
+export function entryLoopAround(tick, tickRate, seconds = LOOP_SECS_DEFAULT) {
   const t = asTick(tick);
   if (!Number.isFinite(t) || t < 0) return undefined;
-  const half = Math.round(EVENT_LOOP_SECONDS * normTickRate(tickRate));
+  const half = Math.round(prefLoopSecs(seconds) * normTickRate(tickRate));
   return entryLoopSpan(Math.max(0, Math.round(t - half)), Math.round(t + half));
 }
 
 // entryLoopSpanAround stamps the ?loop= extra for a LONG event — the
-// owner's rule verbatim: "10 seconds before the first [occurrence] … to
-// 10 seconds after the last [occurrence]" of the sequence (a clutch, an
-// engagement sequence): ±EVENT_LOOP_SECONDS padded onto BOTH ends of the
-// occurrence span [firstTick, lastTick] — first − half → last + half —
-// at the match tick rate, floored at 0 like entryLoopAround. Either
-// bound unstatable (absent/non-finite/negative) or an inverted span
-// (first > last) yields undefined — same never-a-promise contract as
+// owner's rule shape: `seconds` before the first [occurrence] … to
+// `seconds` after the last [occurrence] of the sequence (a clutch, an
+// engagement sequence), the seconds coming from the same loop_secs pref
+// as entryLoopAround (default LOOP_SECS_DEFAULT): ±half padded onto BOTH
+// ends of the occurrence span [firstTick, lastTick] — first − half →
+// last + half — at the match tick rate, floored at 0 like entryLoopAround.
+// Either bound unstatable (absent/non-finite/negative) or an inverted
+// span (first > last) yields undefined — same never-a-promise contract as
 // entryLoopSpan. A single-occurrence span (first === last) is legal and
-// degenerates to the ±10 s singular-event anchor.
-export function entryLoopSpanAround(firstTick, lastTick, tickRate) {
+// degenerates to the singular-event anchor of that same width.
+export function entryLoopSpanAround(firstTick, lastTick, tickRate, seconds = LOOP_SECS_DEFAULT) {
   const first = asTick(firstTick);
   const last = asTick(lastTick);
   if (!Number.isFinite(first) || !Number.isFinite(last) || first < 0 || last < 0 || first > last) {
     return undefined;
   }
-  const half = Math.round(EVENT_LOOP_SECONDS * normTickRate(tickRate));
+  const half = Math.round(prefLoopSecs(seconds) * normTickRate(tickRate));
   return entryLoopSpan(Math.max(0, Math.round(first - half)), Math.round(last + half));
 }
 

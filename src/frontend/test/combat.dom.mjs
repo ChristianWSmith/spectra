@@ -6,7 +6,8 @@
 // no-"all"-button and all-off = no-filter default pins, and the
 // grouping-key precision in E/F), the `traded` kind chip + toggle (I),
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
-// its long-event replay loop (H: solo's kill span ±10 s, padded-span
+// its long-event replay loop (H: solo's kill span at the loop length,
+// padded-span
 // fallback, unstatable → no ?loop=), and the RD{n} round labels (J).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
@@ -127,6 +128,9 @@ export const getMetricValuesForMatch = () => wait(d().metricValues || []);
 export const getMetricComputeState = () => wait(d().metricStates || []);
 export const subscribeMetricProgress = () => () => {};
 export const onMetricDone = () => () => {};
+// The one pref read at mount (the loop length) — unset, so the view
+// seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
+export const getPref = () => Promise.resolve(undefined);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -260,8 +264,8 @@ const base = {
     // 10960 — the making kill → the resolution) is far wider than the
     // SOLO's kills inside it (10700, 10900 — killTicks, ClutchRow's
     // "solo's kills after start"). The ▶ keeps the anchor SEEK
-    // (replayAnchorTick) but loops the KILL span padded ±10 s
-    // (10700−640, 10900+640) — never the raw span.
+    // (replayAnchorTick) but loops the KILL span padded by the loop
+    // length (default 5 s — 10700−320, 10900+320) — never the raw span.
     { id: 2, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600, startTick: 10200, endTick: 10960, killTicks: '[10700,10900]' },
   ],
 };
@@ -329,8 +333,9 @@ check(
   ),
 );
 
-// (B) the engagement ▶ keeps its seek tick, stamps the ±10 s entry
-// loop (nav.entryLoopAround — 10 s × 64 tick = 640 either side) AND the
+// (B) the engagement ▶ keeps its seek tick, stamps the loop-length entry
+// loop (nav.entryLoopAround — the default 5 s × 64 tick = 320 either
+// side) AND the
 // KILLER as the camera follow (the owner's rule for kill rows).
 check(
   'engagement ▶ is icon-only play with a follow-aware title',
@@ -342,10 +347,10 @@ click(engPlayBtn);
 await sleep();
 const navEng = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'engagement ▶ links tick + a ±10 s loop + follow=the killer, no filter',
+  'engagement ▶ links tick + the loop-length loop + follow=the killer, no filter',
   !!navEng &&
     navEng.includes('tick=10640') &&
-    navEng.includes('loop=10000,11280') &&
+    navEng.includes('loop=10320,10960') &&
     navEng.includes('follow=A') &&
     !navEng.includes('cat='),
   navEng || 'no navigation',
@@ -375,8 +380,9 @@ check(
 
 // (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick) and follows
 // the CLUTCH's solo — but the ?loop= is the LONG-EVENT rule: the solo's
-// kill span (killTicks 10700 → 10900) padded ±10 s = 640 ticks at 64
-// tick → 10060,11540. The raw span (10200,10960 — the making kill →
+// kill span (killTicks 10700 → 10900) padded by the loop length
+// (default 5 s = 320 ticks at 64
+// tick) → 10380,11220. The raw span (10200,10960 — the making kill →
 // the resolution) must NOT appear: golden round 7's creating kill
 // (~13:34) is the teammate's death, not the solo's first kill (~14:10).
 const clutchPlay = clutchRows[0]?.querySelector('td button');
@@ -390,10 +396,10 @@ click(clutchPlay);
 await sleep();
 const navClutch = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'clutch ▶ links tick + the KILL span ±10 s loop (not the raw span) + follow=the solo',
+  'clutch ▶ links tick + the KILL-span loop (not the raw span) + follow=the solo',
   !!navClutch &&
     navClutch.includes('tick=10600') &&
-    navClutch.includes('loop=10060,11540') &&
+    navClutch.includes('loop=10380,11220') &&
     !navClutch.includes('loop=10200,10960') &&
     navClutch.includes('follow=C') &&
     !navClutch.includes('cat='),
@@ -692,13 +698,14 @@ check(
   JSON.stringify((globalThis.__nav || []).slice(-1)),
 );
 
-console.log('H. clutch loop edges: no-kill span is PADDED ±10 s; unstatable bounds stamp no loop=');
+console.log('H. clutch loop edges: no-kill span is PADDED by the loop length; unstatable bounds stamp no loop=');
 document.body.removeChild(rootG);
 const rootH = await render({
   ...base,
   clutches: [
     // Won clutch whose solo recorded NO kill in-span (bomb/time win):
-    // the fallback is the raw span PADDED ±10 s (10480−640, 10960+640)
+    // the fallback is the raw span PADDED by the loop length (default
+    // 5 s — 10480−320, 10960+320)
     // — never the bare span. killTicks is Go's NIL-slice wire form
     // ("null" — json.Marshal of a nil []int); "[]", "" and garbage all
     // take this same no-kills path (clutchKillTicks never guesses).
@@ -715,7 +722,7 @@ await sleep();
 const navH1 = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
   'solo without kills → PADDED span loop (entryLoopSpanAround), not the raw span',
-  !!navH1 && navH1.includes('loop=9840,11600') && !navH1.includes('loop=10480,10960'),
+  !!navH1 && navH1.includes('loop=10160,11280') && !navH1.includes('loop=10480,10960'),
   navH1 || 'no navigation',
 );
 click(hRows[1]?.querySelector('td button'));

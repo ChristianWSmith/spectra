@@ -21,8 +21,10 @@
     getMetricComputeState,
     subscribeMetricProgress,
     onMetricDone,
+    getPref,
     errText,
   } from '../services.js';
+  import { onMount } from 'svelte';
   import { fmtInt, fmtPercent, fmtMetric, roundClock } from '../fmt.js';
   import {
     metricPresentation,
@@ -31,7 +33,13 @@
     metricProgressFrac,
     metricProgressStage,
   } from '../metricstate.js';
-  import { replayHash, entryLoopSpanAround, entryLoopAround } from '../nav.js';
+  import {
+    replayHash,
+    entryLoopSpanAround,
+    entryLoopAround,
+    LOOP_SECS_DEFAULT,
+    prefLoopSecs,
+  } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
@@ -123,6 +131,20 @@
   // the engagement row clock (roundClock: time INTO the round).
   let rounds = $state([]);
   let tickRate = $state(64);
+
+  // Event-level loop length: the `loop_secs` pref (Settings → Replay),
+  // read ONCE at mount — nav.prefLoopSecs coerces it (unset/corrupt →
+  // LOOP_SECS_DEFAULT), so the engagement ▶ (singular event) and the
+  // clutch ▶ (long event) both stamp the width the replay's quick-range
+  // button arms.
+  let loopSecs = LOOP_SECS_DEFAULT;
+  onMount(() => {
+    getPref('loop_secs')
+      .then((v) => (loopSecs = prefLoopSecs(v)))
+      .catch(() => {
+        /* keep the default */
+      });
+  });
 
   // number→row lookup behind the engagement row clock — the canonical
   // builder lib/replay/landmarks.js roundsByNumber (same as Utility's).
@@ -451,9 +473,10 @@
   }
 
   // Deep link into the replay at a tick, with an optional entry-only
-  // ?loop= range stamped beside it (undefined = none): ±10 s around an
-  // engagement tick (singular event), the clutch's kill-span padded ±10 s
-  // (long event — clutchLoop below). `follow` is the ROW'S ACTOR (entry
+  // ?loop= range stamped beside it (undefined = none): the loop length
+  // around an engagement tick (singular event), the clutch's kill-span
+  // padded by the same length (long event — clutchLoop below), both
+  // from the `loop_secs` pref. `follow` is the ROW'S ACTOR (entry
   // context, never a filter): the engagement's killer, the clutch's solo
   // — absent actor → undefined, which buildHash drops (never a guessed
   // follow).
@@ -505,10 +528,11 @@
     return v.map(Number).filter((n) => Number.isFinite(n) && n >= 0);
   }
 
-  // The clutch row's ?loop= — the owner's LONG-EVENT rule: 10 s before
-  // the FIRST kill of the clutch to 10 s after the LAST kill of it
-  // (nav.entryLoopSpanAround is THE stamper for that shape; both bounds
-  // padded at the match tick rate, floored at 0, undefined when a bound
+  // The clutch row's ?loop= — the owner's LONG-EVENT rule: the loop
+  // length before the FIRST kill of the clutch to the same length after
+  // the LAST kill of it (nav.entryLoopSpanAround is THE stamper for that
+  // shape; the length is the `loop_secs` pref — loopSecs above — padded
+  // at the match tick rate, floored at 0, undefined when a bound
   // is unstatable — buildHash then drops ?loop= entirely, never a
   // partial promise).
   //
@@ -521,18 +545,18 @@
   // first kill is ~14:10 and the last ~14:18 — the creating kill is NOT
   // the solo's, so killTicks (attacker === solo, tick > startTick) can
   // never include it, and the wanted loop 14:00–14:28 falls out of
-  // first−10 s / last+10 s without a special case. A won clutch whose
+  // first−loop / last+loop without a special case. A won clutch whose
   // solo has NO kill in the span (bomb/time wins) has an empty killTicks
-  // → fall back to the raw clutch span padded the SAME ±10 s (owner's
-  // fallback ruling) — never the bare span.
+  // → fall back to the raw clutch span padded the SAME loop length
+  // (owner's fallback ruling) — never the bare span.
   function clutchLoop(c) {
     const kills = clutchKillTicks(c.killTicks);
     if (kills.length > 0) {
       const first = Math.min(...kills);
       const last = Math.max(...kills);
-      return entryLoopSpanAround(first, last, tickRate);
+      return entryLoopSpanAround(first, last, tickRate, loopSecs);
     }
-    return entryLoopSpanAround(c.startTick, c.endTick, tickRate);
+    return entryLoopSpanAround(c.startTick, c.endTick, tickRate, loopSecs);
   }
 
   // KAST% cell click → per-round K/A/T/S grid for that player. The modal
@@ -731,7 +755,7 @@
                     label={g.aSteam
                       ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
                       : `Watch tick ${g.tick} in the replay`}
-                    onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate), g.aSteam)}
+                    onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
                   />
                 </td>
                 <!-- The Round cell is TEXT, not a control (owner ruling:
@@ -834,7 +858,7 @@
                   <td>
                     {#if c.replayAnchorTick > 0}
                       <!-- Row ▶ follows the CLUTCH's solo (the row actor);
-                           the loop is the KILL-span ±10 s (clutchLoop). -->
+                           the loop is the KILL-span at the loop length (clutchLoop). -->
                       <EventPlay
                         tick={c.replayAnchorTick}
                         title={c.steamId

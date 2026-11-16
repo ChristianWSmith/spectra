@@ -101,9 +101,9 @@ writeFileSync(
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 
-// No kvstore stand-in anymore: RoundStrip reads no preference key (the
-// knife/warmup visibility setting is retired), so there is no binding
-// import to rewrite below.
+// The kvstore stand-in serves a FRESH profile (every key unset) — the
+// view's one pref read, `loop_secs`, therefore resolves undefined and
+// the loop length seeds its default. No binding import to rewrite below.
 
 // The view's data source is scripted, never a live Wails backend: the
 // driver sets globalThis.__roundDetail before each mount.
@@ -122,6 +122,9 @@ export const getMatch = () => wait(d().match || null);
 export const getScoreboard = () => wait(d().scoreboard || []);
 export const getEconomy = () => wait(d().econ || []);
 export const getTeamNames = () => wait(d().teams || null);
+// The one pref read at mount (the loop length) — unset, so the view
+// seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
+export const getPref = () => Promise.resolve(undefined);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -371,10 +374,12 @@ click(killBtn);
 await sleep();
 const navKill = (globalThis.__nav || []).at(-1);
 check(
-  'kill ▶ seeks with a ±10 s loop AND follows the killer, no filter',
+  // The loop width is the `loop_secs` pref — unset here, so the default
+  // 5 s (±320 ticks at 64) stamps 8100∓320 … 8100+320.
+  'kill ▶ seeks with the loop-length loop (default 5 s) AND follows the killer, no filter',
   !!navKill &&
     navKill.includes('tick=8100') &&
-    navKill.includes('loop=7460,8740') &&
+    navKill.includes('loop=7780,8420') &&
     navKill.includes('follow=76561198012345678') &&
     !navKill.includes('cat='),
   navKill || 'no navigation',

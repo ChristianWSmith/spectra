@@ -1,5 +1,6 @@
 // jsdom driver for CompareRounds: the event-sequence ▶ is an icon-only
-// play that seeks WITH the ±10 s loop and follows the ROW'S ACTOR when
+// play that seeks WITH the loop-length loop (the `loop_secs` pref —
+// default 5 s) and follows the ROW'S ACTOR when
 // it has one (a kill's killer — `attacker`), actor-less rows (round
 // starts) keep the default seek copy and stamp no follow, and the
 // round-level "Replay start" control is icon-only play with NO follow.
@@ -114,6 +115,9 @@ export const getRoundDetail = (id, round) =>
   globalThis.__cmpError
     ? Promise.reject(new Error(globalThis.__cmpError))
     : wait((d().details || {})[round] || null);
+// The one pref read at mount (the loop length) — unset, so the view
+// seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
+export const getPref = () => Promise.resolve(undefined);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -300,7 +304,7 @@ check(
 // stamper RoundDetail's "Watch round" uses (its driver pins the same
 // helper with its own fixture), so the two round-level buttons cannot
 // drift apart. The round IS the sequence (owner's watch rule): the loop
-// is the round's own start→end span, never an event-style ±10 s anchor.
+// is the round's own start→end span, never an event-style pad anchor.
 const { entryLoopSpan } = await import('../src/lib/nav.js');
 const r5 = base.rounds.find((r) => r.number === 5);
 check(
@@ -309,8 +313,10 @@ check(
   navStart || 'no navigation',
 );
 check(
-  'the round span is NOT padded (no ±10 s bleed into the previous round / next freeze)',
-  !!navStart && navStart.includes('loop=1000,9999') && !navStart.includes('loop=360,'),
+  // 360 was the ±10 s arithmetic (1000−640); the loop length's default
+  // 5 s would read 680 (1000−320) — neither may appear.
+  'the round span is NOT padded (no event-length bleed into the previous round / next freeze)',
+  !!navStart && navStart.includes('loop=1000,9999') && !navStart.includes('loop=680,'),
   navStart || 'no navigation',
 );
 // Cross-view source pin: RoundDetail's round-level button stamps the
@@ -348,10 +354,10 @@ click(killPlay);
 await sleep();
 const navKill = (globalThis.__nav || []).at(-1);
 check(
-  'kill ▶ stamps tick + ±10 s loop + sel + follow=the killer, NO filter',
+  'kill ▶ stamps tick + the loop-length loop + sel + follow=the killer, NO filter',
   !!navKill &&
     navKill.includes('tick=1500') &&
-    navKill.includes('loop=860,2140') &&
+    navKill.includes('loop=1180,1820') &&
     navKill.includes('sel=e%3A2') &&
     navKill.includes('follow=76561198012345678') &&
     !navKill.includes('cat=') &&
