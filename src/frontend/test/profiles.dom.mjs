@@ -23,15 +23,16 @@
 //      caption names the patch-ordered sequence — the chart must not
 //      read as a played-on timeline — and the K/D/A cell composes per
 //      half (raw K/D, metric-backed assists, null → the honest dash);
-//   I. PlayerProfile's "Career metrics" panel (stored-metrics design
-//      §1a/§5): the profile-scope pins (spectra:pinned-profile-metrics)
-//      read the STORED career rows through the canonical read — fresh
-//      renders the value with its n, a non-fresh state renders the chip
-//      and never a number, a match-scope metric never surfaces here, and
-//      no rendered output carries a version number.
+//   I. PlayerProfile's headline block (stored-metrics design §1a/§5,
+//      the Career-metrics panel dissolved into it by P1): the
+//      profile-scope pins (spectra:pinned-profile-metrics) read the
+//      STORED career rows through the canonical read — fresh renders the
+//      value with its n, a non-fresh state renders the chip and never a
+//      number, a match-scope metric never surfaces here, and no
+//      rendered output carries a version number.
 //   J. inferred-conversion W3a: the profile surface after BOTH card
-//      conversions — exactly 2 fixed cards (Matches, Win%) followed by
-//      the Career metrics panel rendering the eleven DEFAULT pins
+//      conversions — ONE `.stat-grid.prof-stats` block whose fixed pair
+//      (Matches, Win%) LEADS the eleven DEFAULT-pinned metric tiles
 //      (the Opening-duels rate and the Clutches count among them) in
 //      DEFAULT order over a reversed catalog, and the Profiles list's
 //      ADR column reading the stored `career_adr` bucket row (value,
@@ -632,7 +633,7 @@ console.log('H. rung-3 loading lines render the canonical block spinner (never a
   invalidate();
 }
 
-console.log('I. PlayerProfile Career metrics: profile pins read STORED career rows with state chips');
+console.log('I. PlayerProfile headline block: profile pins read STORED career rows with state chips');
 {
   // The profile-scope pin key (design §3's scope-routed pin — Builder's
   // single button writes it) plus the stored career rows and the state
@@ -675,14 +676,16 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
   });
   await sleep(120);
 
-  const panel = [...iTarget.querySelectorAll('section.panel')].find((s) =>
-    s.textContent.includes('Career metrics'),
-  );
-  check('the Career metrics panel renders for the profile pins', !!panel, 'no panel');
-  // The career surface is a card GRID now (one .prof-career-card per
-  // pin) — children[0] the metric name, children[1] the value slot,
-  // same order the table's two columns had.
-  const rows = panel ? [...panel.querySelectorAll('.prof-career-card')] : [];
+  // The Career-metrics PANEL dissolved into the headline block (P1,
+  // 2026-11-16): ONE `.stat-grid.prof-stats` container holds the two
+  // fixed cards first and the pinned metric TILES after them (rendered
+  // through the canonical StatCard — children[0] the label with its own
+  // doc tooltip, children[1] the value slot running the state machine,
+  // the cell's own `title` carrying n=/state). The pins are therefore
+  // the .stat-cell tiles AFTER the fixed pair.
+  const grid = iTarget.querySelector('.stat-grid.prof-stats');
+  check('the merged headline block renders the profile pins', !!grid, 'no .stat-grid.prof-stats');
+  const rows = grid ? [...grid.querySelectorAll('.stat-cell')].slice(2) : [];
   check(
     'exactly the two profile-scope pins list (a match-scope metric never surfaces here)',
     rows.length === 2 &&
@@ -691,44 +694,46 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
     JSON.stringify(rows.map((r) => r.textContent.trim())),
   );
   {
-    const cell = rows[0]?.children[1];
+    const tile = rows[0];
+    const cell = tile?.children[1];
     check(
       'fresh renders the STORED value with n in the tooltip',
       !!cell && cell.textContent.trim() === '1.5' && !cell.querySelector('.chip.status') &&
-        (cell.getAttribute('title') || '').includes('sample size n=40'),
-      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+        (tile.getAttribute('title') || '').includes('sample size n=40'),
+      cell ? `${cell.textContent.trim()} title=${tile.getAttribute('title')}` : 'no cell',
     );
   }
   {
-    const cell = rows[1]?.children[1];
+    const tile = rows[1];
+    const cell = tile?.children[1];
     const chip = cell?.querySelector('.chip.status');
     check(
       'behind renders the chip with the design copy, never a number',
       !!chip &&
         chip.classList.contains('idle') &&
         chip.textContent.trim() === 'behind' &&
-        cell.getAttribute('title') === 'value not available yet — recompute pending' &&
+        tile.getAttribute('title') === 'value not available yet — recompute pending' &&
         !/\d/.test(cell.textContent),
       cell ? `${chip ? chip.className : 'no chip'} "${cell.textContent.trim()}"` : 'no cell',
     );
   }
   check(
     "another player's bucket row never renders on this profile",
-    !panel?.textContent.includes('2.5'),
-    panel?.textContent.replace(/\s+/g, ' ').slice(0, 200),
+    !grid?.textContent.includes('2.5'),
+    grid?.textContent.replace(/\s+/g, ' ').slice(0, 200),
   );
   {
     const leaks = [];
     const re = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
-    // `[title]` (was `td[title]`): the career cells are card divs now —
-    // scanning every titled element in the panel, not just table cells.
-    for (const el of panel ? panel.querySelectorAll('.chip, [title]') : []) {
+    // `[title]` (was `td[title]`): the career tiles are card elements —
+    // scanning every titled element in the block, not just table cells.
+    for (const el of grid ? grid.querySelectorAll('.chip, [title]') : []) {
       const tip = el.getAttribute('title') || '';
       if (re.test(tip)) leaks.push(`title: ${tip}`);
       if (re.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim()}`);
     }
     check(
-      'no version number or timestamp appears in the Career metrics output',
+      'no version number or timestamp appears in the headline block\'s metric output',
       leaks.length === 0,
       leaks.join(' | '),
     );
@@ -739,7 +744,7 @@ console.log('I. PlayerProfile Career metrics: profile pins read STORED career ro
 }
 
 console.log(
-  'J. inferred W3a: 2 fixed cards + the eleven default-pinned metric rows, and the Profiles ADR column is metric-backed',
+  'J. inferred W3a: the merged block — 2 fixed cards + the eleven default-pinned metric tiles, and the Profiles ADR column is metric-backed',
 );
 {
   // The profile-scope catalog in REVERSE default order (plus an
@@ -835,7 +840,7 @@ console.log(
   bindings.MetricsService.GetMetricComputeState = () =>
     Promise.resolve(ELEVEN.map((id) => ({ metricId: id, state: 'fresh' })));
 
-  // --- J1: the profile surface = 2 fixed cards + 11 default-pinned rows
+  // --- J1: the profile surface = 2 fixed cards + 11 default-pinned tiles
   invalidate(); // flush section I's stubs (same read-cache keys)
   const j1 = document.createElement('div');
   document.body.appendChild(j1);
@@ -845,36 +850,42 @@ console.log(
   });
   await sleep(140); // mount + getProfile + listMetrics + the career read
 
-  const grid = j1.querySelector('.stat-grid');
+  // P1 (2026-11-16): the fixed pair and the pinned metric tiles live in
+  // ONE `.stat-grid.prof-stats` block now (the Career-metrics panel is
+  // gone) — the fixed pair LEADS, the metricorder-composed tiles follow.
+  const grid = j1.querySelector('.stat-grid.prof-stats');
   const cardLabels = grid
     ? [...grid.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
     : [];
+  const fixedLabels = cardLabels.slice(0, 2);
   check(
-    'the fixed block is exactly Matches, Win% (every other card became a metric row)',
-    JSON.stringify(cardLabels) === JSON.stringify(['Matches', 'Win%']),
+    'the fixed pair leads the merged block (Matches, Win% first — the pinned metric tiles follow it)',
+    JSON.stringify(fixedLabels) === JSON.stringify(['Matches', 'Win%']) &&
+      cardLabels.length === 2 + 11,
     JSON.stringify(cardLabels),
   );
   {
-    // W3a's swap: the Opening duels and Clutches cards left the grid —
-    // their numbers now live in the Career metrics panel (checked below),
-    // so no stat may render twice.
+    // W3a's swap: the Opening duels and Clutches cards left the FIXED
+    // block — their numbers live as metric tiles (checked below), so no
+    // stat may render twice (fixed card AND metric tile).
     for (const gone of [
       'ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage',
       'Opening duels', 'Clutches',
     ]) {
-      check(`the converted card "${gone}" is gone from the grid`, !cardLabels.includes(gone));
+      check(
+        `the converted card "${gone}" never renders twice (fixed card AND metric tile)`,
+        !fixedLabels.includes(gone) && cardLabels.filter((l) => l === gone).length <= 1,
+        JSON.stringify(cardLabels),
+      );
     }
   }
 
-  const j1Panel = [...j1.querySelectorAll('section.panel')].find((s) =>
-    s.textContent.includes('Career metrics'),
-  );
-  const j1Rows = j1Panel ? [...j1Panel.querySelectorAll('.prof-career-card')] : [];
+  const j1Rows = grid ? [...grid.querySelectorAll('.stat-cell')].slice(2) : [];
   const j1Titles = j1Rows.map(
     (r) => r.children[0]?.textContent.trim(),
   );
   check(
-    'the Career metrics panel renders the eleven default pins in DEFAULT order (catalog order is reversed above)',
+    'the metric tiles render the eleven default pins in DEFAULT order (catalog order is reversed above)',
     JSON.stringify(j1Titles) ===
       JSON.stringify([
         'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Opening duels', 'Trade rate',
@@ -883,28 +894,29 @@ console.log(
     JSON.stringify(j1Titles),
   );
   check(
-    'the two converted cards render their numbers as rows (the count and the rate)',
+    'the two converted cards render their numbers as tiles (the count and the rate)',
     j1Rows[5]?.children[1]?.textContent.trim() === '50%' &&
       j1Rows[7]?.children[1]?.textContent.trim() === '1',
     JSON.stringify(j1Titles.map((t, i) => [t, j1Rows[i]?.children[1]?.textContent.trim()])),
   );
   check(
     'the unpinned profile metric and the match-scope metric never render',
-    !j1Panel?.textContent.includes('Career bonus'),
-    j1Panel?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no panel',
+    !grid?.textContent.includes('Career bonus'),
+    grid?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no block',
   );
   {
-    const cell = j1Rows[0]?.children[1];
+    const tile = j1Rows[0];
+    const cell = tile?.children[1];
     check(
-      'the ADR row renders amy\'s STORED value with n in the tooltip',
+      'the ADR tile renders amy\'s STORED value with n in the tooltip',
       !!cell && cell.textContent.trim() === '63.5' &&
-        (cell.getAttribute('title') || '').includes('sample size n=42'),
-      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+        (tile.getAttribute('title') || '').includes('sample size n=42'),
+      cell ? `${cell.textContent.trim()} title=${tile.getAttribute('title')}` : 'no cell',
     );
     check(
       "another player's bucket row never renders on this profile",
-      !j1Panel?.textContent.includes('55.0') && !j1Panel?.textContent.includes('40.0'),
-      j1Panel?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no panel',
+      !grid?.textContent.includes('55.0') && !grid?.textContent.includes('40.0'),
+      grid?.textContent.replace(/\s+/g, ' ').slice(0, 240) ?? 'no block',
     );
   }
   document.body.removeChild(j1);

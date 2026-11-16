@@ -19,7 +19,7 @@ export const builder = {
   heading: 'Metric builder',
   headNotePinned: 'Saved metrics are appended to match reports in Reports · pinned (',
   headNoteScopes:
-    ')\n        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as Career\n        metrics on a player profile.',
+    ')\n        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as stat cards\n        on a player profile.',
   metricLanguageHelp: 'Metric language help',
   retry: 'Retry',
 

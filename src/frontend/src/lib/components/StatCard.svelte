@@ -12,12 +12,22 @@
   // the name text itself opens the profile while the rest of the cell
   // keeps its own drill. A click (or Enter) inside the sub line belongs
   // to that link and never fires the cell's onclick.
+  // `valueSlot` is the value's own twin (additive, same contract):
+  // rendered INSTEAD of the `value` string when present — the profile's
+  // career tiles pass their state-machine body there (value / honest
+  // dash / state chip), which needs markup a string cannot carry.
+  // `labelTitle` is an additive tooltip on the LABEL span alone — the
+  // career tiles carry two tooltips (the name's metric doc lives here,
+  // the value's n=/state rides the cell's own `title`), and a nested
+  // element's own title always wins over its ancestor's.
   let {
     label,
     value,
     sub = '',
     subSlot = null,
+    valueSlot = null,
     title = undefined,
+    labelTitle = undefined,
     cls = '',
     subCls = '',
     onclick = null,
@@ -46,8 +56,8 @@
 </script>
 
 {#snippet body()}
-  <span class="field-label">{label}{#if badge}{@render badge()}{/if}</span>
-  <span class="stat-value">{value}</span>
+  <span class="field-label" title={labelTitle}>{label}{#if badge}{@render badge()}{/if}</span>
+  <span class="stat-value">{#if valueSlot}{@render valueSlot()}{:else}{value}{/if}</span>
   <span class="stat-sub {subCls}"
     >{#if subSlot}{@render subSlot()}{:else}{sub}{/if}</span
   >

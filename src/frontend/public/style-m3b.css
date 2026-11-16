@@ -290,53 +290,46 @@ label.filt-lab {
   width: 220px;
 }
 
-/* The career grid: one square card per pinned metric — the metric's
-   name over its value, centered and wrapping (it replaced a
-   Metric/Value table). */
-.prof-career {
+/* The profile's headline block — ONE container for the two fixed cards
+   (Matches, Win%) and the pinned career tiles: the Career-metrics panel
+   dissolved into it (2026-11-16), so .stat-grid's grid is overridden
+   HERE (style-m3b loads after style.css — same specificity, later
+   wins) with a center-wrapping flex row: every card, fixed or career,
+   grows outward from the center. The cards are SQUARE through ONE knob
+   — --prof-stat-side, in rem so it scales with the font-size setting —
+   set to ≈ the fixed cards' content height (label + value + sub + 20px
+   padding at the body's 1.45 line-height); tune it after a visual
+   pass. */
+.prof-stats {
+  --prof-stat-side: 5.7rem;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
 }
 
-.prof-career-card {
-  width: clamp(140px, 12vw, 160px);
+.prof-stats .stat-cell {
+  width: var(--prof-stat-side);
   aspect-ratio: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px;
   overflow: hidden;
-  text-align: center;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 /* Long metric names clamp to two lines inside the square instead of
-   pushing the value out of it. */
-.prof-career-name {
-  font-size: 0.8rem;
-  line-height: 1.25;
-  color: var(--muted);
-  overflow-wrap: anywhere;
+   pushing the value out of it — the tile's label tooltip carries the
+   full text. */
+.prof-stats .field-label {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-.prof-career-val {
-  font-weight: 600;
-  max-width: 100%;
-}
-
-/* A state chip in the value slot keeps its own copy inside the card. */
-.prof-career-val .chip {
+/* The value — and the state chip standing in for it — never spill out
+   of the square. */
+.prof-stats .stat-value,
+.prof-stats .stat-value .chip {
   max-width: 100%;
 }
 

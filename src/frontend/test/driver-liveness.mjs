@@ -218,7 +218,19 @@ const EXPECTED = {
   // gap computing there — jsdom cannot compute a var()-coloured
   // border-top shorthand, so the border is pinned as source + selector
   // match, never as a computed width).
-  'docs.dom.mjs': 75,
+  // docs 75 → 83 (2026-11-16, M1 manual search — match stepping): +8 —
+  // section A's header-order pin now also covers NO match-stepper
+  // buttons under an empty query (+1); section G +7 — the
+  // zero-body-match leg (both stepper buttons DISABLED with Enter still
+  // keeping the sheet open), the 5-child header order under a needle
+  // (h1 | prev | next | input | close with the catalog title/aria-label
+  // pairs and the chevron glyphs), Enter stepping to the next mark
+  // (sheet open, focus on the input, the offsetTop − 8 scroll and the
+  // step's section taking the TOC highlight), Shift+Enter stepping back,
+  // wrap-around at BOTH ends over the offsetTop model, and the buttons
+  // stepping with focus returned to the input. Section C's Escape
+  // contract untouched.
+  'docs.dom.mjs': 83,
   // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
@@ -321,6 +333,16 @@ const EXPECTED = {
   // picked TITLE in the field, the NAME on the series read, the
   // sparkline's aria-label); sections I/J moved from `tbody tr` to the
   // new `.prof-career-card` grid in place (no count change).
+  // profiles 79 → 79 (2026-11-16, P1 career-metrics dissolution — the
+  // count is UNCHANGED, the pins were re-pointed in place): section I
+  // left the "Career metrics" panel lookup for the merged
+  // `.stat-grid.prof-stats` block (pins = the .stat-cell tiles AFTER the
+  // fixed pair; the n=/state tooltip assertion moved from the value
+  // child to the tile's own `title`, StatCard's anatomy otherwise
+  // intact), section J re-scoped to "the fixed pair LEADS, the pinned
+  // metric tiles follow" (13 labels) with the six converted-card
+  // checks now pinning "never renders twice (fixed card AND metric
+  // tile)", and the eleven-pin order pin rides `.stat-cell`.slice(2).
   'profiles.dom.mjs': 79,
   'progress-presentation.dom.mjs': 19,
   // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the

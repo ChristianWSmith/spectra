@@ -38,7 +38,7 @@ The bar on the left edge is the way around:
 Two more things are worth knowing on day one:
 
 - **Ctrl+K opens the command palette.** Jump to any of those views, or search matches, players, saved filters, metrics and saved queries in one box.
-- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference. The view headers carry their own \`?\` too — **Replay**, **Match**, **Library**, **Reports**, **Settings** and the **SQL console** open the guide at the section that covers what you are looking at, and Match's follows the tab you are on. The contents list on the left groups every section under its chapter: a chapter that has subsections carries a chevron to fold them away, the header search narrows the list and marks the matching text in it, in the section headings and in the matching body text, and the list always shows the chapter and the section you are reading.
+- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference. The view headers carry their own \`?\` too — **Replay**, **Match**, **Library**, **Reports**, **Settings** and the **SQL console** open the guide at the section that covers what you are looking at, and Match's follows the tab you are on. The contents list on the left groups every section under its chapter: a chapter that has subsections carries a chevron to fold them away, the header search narrows the list and marks the matching text in it, in the section headings and in the matching body text — press \`Enter\` for the next match, \`Shift+Enter\` for the previous one, or use the two arrow buttons beside the search box — and the list always shows the chapter and the section you are reading.
 
 Nothing in Spectra needs the network to work. The one thing it will reach out for, on its own and
 silently, is a newer version of itself (see **Getting started**); you can also ask it to check
@@ -361,9 +361,11 @@ match "…"*.
 A player page opens with a back button (to wherever you came from), the player's name and Steam
 id, and a player search box to jump to someone else. Then:
 
-- **Headline cards** — Matches (with wins) and Win%; the profile's other headline numbers
-  (opening-duels win rate, clutches, ADR, KAST%, …) render as cards in **Career metrics** below.
-- **Career metrics** — every profile-scope metric you have pinned, as name/value cards with the usual honest states (a number, a dash when there is no data for this player, or a state chip while a value is recomputing). This panel appears once something is pinned.
+- **Headline and career cards** — Matches (with wins) and Win% lead one block of square
+  name/value cards, followed by every profile-scope metric you have pinned (opening-duels win
+  rate, clutches, ADR, KAST%, …) with the usual honest states (a number, a dash when there is
+  no data for this player, or a state chip while a value is recomputing). The cards wrap
+  outward from the center; with nothing pinned you get just the two headline cards.
 - **Trend** — any match-scope metric you have (ADR, KAST%, K/D, HS%, …) across the player's
   matches: search the metric picker for the one you want, then click a point to open that match.
 - **Sides** — CT vs T rounds, win rate, ADR, KAST, K/D.

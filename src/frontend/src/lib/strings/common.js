@@ -8,6 +8,8 @@ export const common = {
   closeHelp: 'Close help',
   tocLabel: 'Contents',
   searchSections: 'Search sections', // header input: placeholder + aria-label
+  searchPrev: 'Previous match', // match-stepper button: title + aria-label
+  searchNext: 'Next match', // match-stepper button: title + aria-label
   noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter
   guideComingSoon: 'Coming soon — this part of the guide isn\'t written yet.',
   // manual TOC subsection toggle (manual-console wave, 2026-11-14) — the
