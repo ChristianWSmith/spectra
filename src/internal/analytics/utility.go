@@ -39,19 +39,34 @@ func utilKind(weapon string) string {
 // Utility pairs grenade throws with their detonations and attributes
 // damage/flashes. One row is emitted per detonation:
 //
-//	Tick          detonation tick
+//	Tick          detonation tick (a detonation is what emits the row)
+//	ThrowTick     the paired throw's own tick — 0 when no throw paired
+//	              (never an interpolated throw time)
+//	ThrowX/ThrowY the paired throw's origin, nil when unknown/unpaired
 //	Damage        Σ damage events of the matching weapon kind within the
 //	              burn window after the detonation (HE 4 s — measured
 //	              golden-demo spread; molotov/incendiary 7 s; smoke/flash/
-//	              decoy none)
+//	              decoy none) — detonation-derived by nature: the damage
+//	              lands in the POST-blast window
 //	FlashMs       Σ flash durations (blind events by this thrower within 5 s
 //	              of a flash detonation; duration from the extractor's
-//	              flashDurationMs detail field)
+//	              flashDurationMs detail field) — likewise post-blast
 //	Affected      JSON array of distinct victim SteamIDs (damage victims +
 //	              blind victims in the attribution windows)
+//	DetX/DetY     the detonation event's position — stored honestly; the
+//	              row's PLACE cell reads the THROW origin instead
 //	Site          the detonation event's site field ("" for grenades)
 //	TrajectoryRef "" in v1 — M2 sidecar trajectories are streamed, not
 //	              referenced per-grenade yet
+//
+// Everything with a time or place is THROW-based (the row's ordering key
+// and every rendered tick/coordinate); damage/blind/affected stay
+// detonation-derived because they occur in post-blast windows, kind
+// because pairing already equates throw and detonation kinds
+// (Molotov ≡ Incendiary), and thrower because it is the paired throw's
+// attacker. Rows order within a round by EffectiveTick (the paired
+// throw's tick, the detonation tick when unpaired) with the detonation
+// tick as tiebreak.
 //
 // Throws that never detonate are skipped; detonations without a known
 // throw still emit (thrower from the detonation event's attacker).
@@ -109,9 +124,16 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 		for _, e := range dets {
 			kind := utilKind(e.Weapon)
 			// Nearest preceding same-thrower/same-kind throw within the
-			// pair window (seq-sorted: last eligible wins).
+			// pair window (seq-sorted: last eligible wins). The MATCHED
+			// throw is captured — its own tick and origin are the row's
+			// throw-side facts (owner ruling: everything with a time or
+			// place is throw-based). The pairing rule itself is
+			// unchanged: the existing 30 s same-thrower/same-kind/
+			// same-round window, zero new rule and no side-channel.
 			throwTick := -1
-			for _, th := range throws {
+			var matched *models.Event
+			for i := range throws {
+				th := &throws[i]
 				if th.Attacker != e.Attacker || utilKind(th.Weapon) != kind {
 					continue
 				}
@@ -119,15 +141,21 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 					continue
 				}
 				throwTick = th.Tick
+				matched = th
 			}
+			// The thrower is already throw-based — the paired throw's
+			// attacker (the pairing requires the same attacker, so a
+			// paired row lands on the detonation's own attacker; an
+			// unpaired row keeps it).
 			thrower := e.Attacker
-			if thrower == "" && throwTick >= 0 {
-				for _, th := range throws {
-					if th.Tick == throwTick {
-						thrower = th.Attacker
-						break
-					}
-				}
+			if matched != nil {
+				thrower = matched.Attacker
+			}
+			// The paired throw's origin, nil when unpaired or when the
+			// throw carried no position — never a guessed coordinate.
+			var throwX, throwY *float64
+			if matched != nil {
+				throwX, throwY = matched.PosX, matched.PosY
 			}
 
 			burn := burnWindow(kind)
@@ -165,12 +193,24 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 			sort.Strings(affected)
 			affectedJSON, _ := json.Marshal(affected)
 
+			// An unpaired detonation stores throw_tick 0 and nil throw
+			// coordinates: a throw that was never observed is never
+			// invented (owner ruling — every cell stays individually
+			// true; the render falls back to the detonation tick and
+			// dashes the place cell).
+			storedThrowTick := 0
+			if throwTick >= 0 {
+				storedThrowTick = throwTick
+			}
 			out = append(out, UtilityEvent{
 				Tick:        e.Tick,
+				ThrowTick:   storedThrowTick,
 				Round:       e.Round,
 				Thrower:     thrower,
 				ThrowerName: names[thrower],
 				Kind:        kind,
+				ThrowX:      throwX,
+				ThrowY:      throwY,
 				DetX:        e.PosX,
 				DetY:        e.PosY,
 				Damage:      damage,
@@ -180,9 +220,21 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 			})
 		}
 	}
+	// Within a round the rows order by the EFFECTIVE throw tick — the
+	// paired throw's tick, the detonation tick for an unpaired row (the
+	// honest fallback, never an interpolated throw time) — with the
+	// detonation tick as the secondary tiebreak (two rows sharing one
+	// throw keep their detonation order). Stable, so equal keys keep
+	// emission order. `seq` is written from this slice order by
+	// store.ReplaceUtility, so it now follows THROW chronology rather
+	// than detonation chronology; its consumers are display order and the
+	// (match_id, seq) PK only — nothing assumes seq ≈ detonation ticks.
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Round != out[j].Round {
 			return out[i].Round < out[j].Round
+		}
+		if ei, ej := out[i].EffectiveTick(), out[j].EffectiveTick(); ei != ej {
+			return ei < ej
 		}
 		return out[i].Tick < out[j].Tick
 	})

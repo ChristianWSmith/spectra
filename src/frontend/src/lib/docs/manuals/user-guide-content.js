@@ -252,7 +252,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 - **Utility damage per round** — a bar per round, split by thrower team.
 - **Blind time per round** — the same bars for the total blind time each team's flashes applied (marked **inferred**: calculated from the demo's blind events).
-- **The throw log** — one card at the bottom, holding the **Kind**, **Thrower** and **Round** filters with a live *n of m grenades* count. The Round filter shows one round at a time — the first round with throws is selected to keep the log compact — and **All rounds** shows every throw in the filter: kind, thrower, time into the round, damage, total blind time, affected players and the detonation coordinates, each with a ▶ that seeks to the throw (±10 s loop) and follows the thrower.
+- **The throw log** — one card at the bottom, holding the **Kind**, **Thrower** and **Round** filters with a live *n of m grenades* count. The Round filter shows one round at a time — the first round with throws is selected to keep the log compact — and **All rounds** shows every throw in the filter: kind, thrower, time into the round, damage, total blind time, affected players and the throw coordinates, each with a ▶ that seeks to the throw, loops around it for your loop length, and follows the thrower.
 
 # Combat
 

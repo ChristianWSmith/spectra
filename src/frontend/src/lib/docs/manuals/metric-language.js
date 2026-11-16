@@ -127,9 +127,9 @@ One row per detected 1vN situation: how many opponents the lone player was up ag
 
 # utility_events
 
-One row per grenade throw paired with its detonation: who threw it (\`thrower\`), what kind (\`he\`, \`flash\`, \`smoke\`, \`molotov\`, \`decoy\`), where it detonated, how much damage it did, how long the flash blinded, and the site.
+One row per grenade throw paired with its detonation: who threw it (\`thrower\`), what kind (\`he\`, \`flash\`, \`smoke\`, \`molotov\`, \`decoy\`), where and when it was thrown (\`throw_x\`, \`throw_y\`, \`throw_tick\`), where and when it detonated (\`det_x\`, \`det_y\`, \`tick\`), how much damage it did, how long the flash blinded, and the site. A detonation with no matched throw keeps \`throw_tick\` at 0 and its throw coordinates empty — a throw that was never observed is never invented.
 
-**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`thrower\`, \`thrower_name\`, \`kind\`, \`det_x\`, \`det_y\`, \`damage\`, \`flash_ms\`, \`site\`
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`thrower\`, \`thrower_name\`, \`kind\`, \`throw_tick\`, \`throw_x\`, \`throw_y\`, \`det_x\`, \`det_y\`, \`damage\`, \`flash_ms\`, \`site\`
 
 # chat
 
@@ -167,7 +167,7 @@ The same duel records as \`engagements\` — one row per duel — but anchored o
 
 **Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`a_steam\`, \`a_name\`, \`b_steam\`, \`b_name\`, \`distance\`, \`won_by\`
 
-> **Not available as columns:** payload columns that hold JSON or lists (for example the per-weapon damage breakdowns) are deliberately excluded; a metric is a single number, and there is no way to break a value down by category inside the language.`,
+> **Not available as columns:** payload columns that hold JSON or lists (for example the per-weapon damage breakdowns) are deliberately excluded; a metric is a single number, and there is no way to break a value down by category inside the language. Two stored columns of \`utility_events\` are therefore named nowhere above: \`affected\` (the JSON list of players a throw hit) and \`trajectory_ref\` (a per-throw trajectory reference nothing fills yet).`,
   },
   {
     id: 'player-anchor',

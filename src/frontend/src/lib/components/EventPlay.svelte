@@ -1,9 +1,10 @@
 <script>
-  // The one ghost ▶ replay action cell for table rows — Combat's
-  // engagement rows use it today (title/aria-label wording varies per row
-  // context, so it rides as props). Landmark rows keep their own ▶: a
-  // <button> may not nest inside the row's main button — see
-  // LandmarkRow.svelte.
+  // The one ghost ▶ replay action cell — the canonical play cell: table
+  // rows (Combat's engagements, Match's) and LIST rows (Utility's throw
+  // log, where it is the row's leading cell) all render it (title/
+  // aria-label wording varies per row context, so it rides as props).
+  // Landmark rows keep their own ▶: a <button> may not nest inside the
+  // row's main button — see LandmarkRow.svelte.
   let {
     tick = 0,
     title = `Watch at tick ${tick} in replay`,

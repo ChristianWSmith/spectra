@@ -5,9 +5,13 @@
 // dot the CSS twin), the blind-time chart's TWIN channels and its honest
 // label (C8), the owner's zero → em-dash rule (damage / affected / blind
 // time read "—" at 0 while the throw-log count stays numeric), the
-// coordinate carve-out (dashes only when BOTH components are 0), the dead
-// site column's removal (markup + CSS), the retired events button, the
-// icon-only throw ▶ (tick + the loop-length loop — the `loop_secs` pref,
+// coordinate carve-out over the THROW origin (dashes only when BOTH
+// components are 0 — an unpaired row has no origin and dashes), the
+// throw-based cells (a paired row's clock/tooltip/▶ stamp/labels show the
+// PAIRED THROW's tick, an unpaired row falls back to the detonation's —
+// never an interpolated throw time), the dead site column's removal
+// (markup + CSS), the retired events button, the icon-only throw ▶ as the
+// row's LEADING cell (tick + the loop-length loop — the `loop_secs` pref,
 // default 5 s — + the thrower as the camera follow — never a filter), the
 // C9 hint-line removal, and the C7 consolidation: ONE bottom card
 // carrying the filters + count, with the round scope in ONE <select> that
@@ -129,7 +133,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['ProfileLink', 'StatusChip']) {
+for (const name of ['ProfileLink', 'StatusChip', 'EventPlay']) {
   svelteCompile(
     readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
     `${name}.svelte`,
@@ -200,19 +204,30 @@ const scoreboard = [
   { steamId: 'B', name: 'bob', side: 't', kills: 1 },
   { steamId: 'C', name: 'carol', side: 'ct', kills: 1 },
 ];
-// UtilityEvent rows (models.UtilityEvent): `site` is carried on purpose —
-// the extractor never writes it and the column is retired, so the field
-// must be IGNORED (no .util-site cell renders).
+// Utility rows (AnalyticsService.UtilityRow over models.UtilityEvent):
+// `site` is carried on purpose — the extractor never writes it and the
+// column is retired, so the field must be IGNORED (no .util-site cell
+// renders). Every row carries its THROW-side facts in the store's row
+// order (effective throw tick within a round): row 1 is the UNPAIRED
+// fallback (throwTick 0 + zeroed throw coordinates — exactly what the
+// service sends when no throw paired: its tick cells fall back to the
+// detonation tick and its place cell dashes, never an interpolated throw
+// time). The paired rows' detX/detY deliberately DIFFER from their
+// throwX/throwY, so a pin over the rendered cell proves the THROW
+// position is what shows and the stored detonation coordinates never do.
 const rows = [
   // round 1 — era 0: Alpha (final CT) on T, Beta (final T) on CT.
-  { seq: 1, tick: 1500, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', detX: 5, detY: 12, damage: 40, flashMsTotal: 0, affected: '["B"]', site: 'A' },
-  // zero damage + zero affected + the both-zero coordinate carve-out.
-  { seq: 2, tick: 2000, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', detX: 0, detY: 0, damage: 0, flashMsTotal: 0, affected: '', site: 'A' },
-  // flash row: blind time dashes are the precedent (kept); its 1500 ms is
-  // also the ONE non-zero value behind the blind-time chart (section K).
-  { seq: 3, tick: 1700, round: 1, thrower: 'A', throwerName: 'alice', kind: 'flash', detX: 10, detY: 20, damage: 0, flashMsTotal: 1500, affected: '', site: '' },
+  // UNPAIRED: detonation facts only (its stored det (5, 12) is not shown).
+  { seq: 1, tick: 1500, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', throwTick: 0, throwX: 0, throwY: 0, detX: 5, detY: 12, damage: 40, flashMsTotal: 0, affected: '["B"]', site: 'A' },
+  // Paired flash: its throw (1650) LEADS its detonation (1700), so every
+  // throw-based cell must read 1650, never 1700. Its 1500 ms is also the
+  // ONE non-zero value behind the blind-time chart (section K).
+  { seq: 2, tick: 1700, round: 1, thrower: 'A', throwerName: 'alice', kind: 'flash', throwTick: 1650, throwX: 8, throwY: 15, detX: 10, detY: 20, damage: 0, flashMsTotal: 1500, affected: '', site: '' },
+  // zero damage + zero affected + the both-zero coordinate carve-out,
+  // on the THROW coordinates (0, 0 dashes).
+  { seq: 3, tick: 2000, round: 1, thrower: 'A', throwerName: 'alice', kind: 'he', throwTick: 1960, throwX: 0, throwY: 0, detX: 0, detY: 0, damage: 0, flashMsTotal: 0, affected: '', site: 'A' },
   // round 13 — era 1: sides back to the final sides.
-  { seq: 4, tick: 25500, round: 13, thrower: 'B', throwerName: 'bob', kind: 'smoke', detX: -100, detY: 300, damage: 30, flashMsTotal: 0, affected: '["A","B"]', site: '' },
+  { seq: 4, tick: 25500, round: 13, thrower: 'B', throwerName: 'bob', kind: 'smoke', throwTick: 25410, throwX: -95, throwY: 295, detX: -100, detY: 300, damage: 30, flashMsTotal: 0, affected: '["A","B"]', site: '' },
 ];
 const match = { id: 3, tickRate: 64, sideSwitches: 1 };
 const teams = { ct: 'Alpha', t: 'Beta' };
@@ -408,16 +423,28 @@ check(
   JSON.stringify(nadeCells('[title="total blind time"]')),
 );
 
-console.log('F. coordinates: dash ONLY when both components are 0');
+console.log('F. coordinates: the THROW origin renders, dash only when both components are 0');
 const coords = nadeCells('.util-coord');
 check(
-  'coordinates (5, 12) / (10, 20) / (-100, 300) render, (0, 0) dashes',
-  JSON.stringify(coords) === JSON.stringify(['(5, 12)', '—', '(10, 20)', '(-100, 300)']),
+  'throw coordinates (8, 15) / (-95, 295) render; the unpaired row and the both-zero throw dash — the stored det coords never show',
+  JSON.stringify(coords) === JSON.stringify(['—', '(8, 15)', '—', '(-95, 295)']),
   JSON.stringify(coords),
 );
 
 console.log('G. the dead site column is gone (markup + CSS)');
 check('no .util-site cell renders (the fixture even carries site values)', !$('.util-site'));
+// The ▶ LEADS the row (owner ruling): .util-actions is the row's FIRST
+// child, before the kind chip — the class stays, so every selector over
+// it still resolves.
+const leadNade = $('.util-nade');
+check(
+  "the actions cell is the row's FIRST child (▶ precedes the kind chip)",
+  !!leadNade &&
+    leadNade.firstElementChild?.classList.contains('util-actions') &&
+    !!leadNade.querySelector('.util-actions button') &&
+    leadNade.children[1]?.classList.contains('util-kind'),
+  leadNade ? [...leadNade.children].map((c) => c.className).join(' | ') : 'no .util-nade row',
+);
 check(
   'no button says "events" (retired with "buttons seek, never filter")',
   !$$('button').some((b) => /events/i.test(b.textContent)),
@@ -434,6 +461,9 @@ check(
 );
 
 console.log("H. the throw ▶ seeks + follows the THROWER (icon-only, no filter)");
+// The FIRST row is the UNPAIRED fixture row (throwTick 0): its stamp
+// therefore reads the detonation tick — the honest fallback, never an
+// interpolated throw time (the paired row's own cells are pinned in H2).
 const throwBtn = $('.util-nade .util-actions button');
 check('a throw ▶ rendered', !!throwBtn, 'no .util-actions button');
 check(
@@ -459,6 +489,46 @@ check(
     !navThrow.includes('cat=') &&
     !navThrow.includes('roundFrom'),
   navThrow || 'no navigation',
+);
+
+console.log('H2. throw-based cells: a paired row shows its THROW tick, an unpaired row falls back to the detonation’s');
+const cellRow = (i) => $$('.util-nade')[i];
+// The flash row pairs throw 1650 with detonation 1700 — every throw-based
+// cell must read 1650, and the clock discriminates (0:26 vs 0:27).
+const pairedTick = cellRow(1)?.querySelector('.util-tick');
+check(
+  'paired row: clock + tooltip read the THROW tick (0:26 / "tick 1650 …"), not the detonation’s 1700',
+  pairedTick?.textContent.trim() === '0:26' &&
+    pairedTick?.getAttribute('title') === 'tick 1650 — time into round 1',
+  `${pairedTick?.textContent} [${pairedTick?.getAttribute('title')}]`,
+);
+const pairedBtn = cellRow(1)?.querySelector('.util-actions button');
+check(
+  'paired row: the ▶ title + aria-label keep the shipped wording with the throw tick inside',
+  pairedBtn?.getAttribute('title') === 'Watch this throw — follow alice' &&
+    pairedBtn?.getAttribute('aria-label') === 'Watch this throw at tick 1650 — follow alice',
+  `${pairedBtn?.getAttribute('title')} / ${pairedBtn?.getAttribute('aria-label')}`,
+);
+pairedBtn?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+await sleep();
+const navPaired = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'paired row: ▶ stamps tick=1650 with the loop around IT (1330,1970) + follow — never the detonation tick',
+  !!navPaired &&
+    navPaired.includes('tick=1650') &&
+    navPaired.includes('loop=1330,1970') &&
+    navPaired.includes('follow=A') &&
+    !navPaired.includes('tick=1700'),
+  navPaired || 'no navigation',
+);
+// The unpaired row's own clock/tooltip (its stamp + loop are the H pins
+// above): the detonation tick stays, no throw time is invented.
+const unpairedTick = cellRow(0)?.querySelector('.util-tick');
+check(
+  'unpaired row (no throw tick): clock + tooltip keep the detonation tick (0:23 / "tick 1500 …")',
+  unpairedTick?.textContent.trim() === '0:23' &&
+    unpairedTick?.getAttribute('title') === 'tick 1500 — time into round 1',
+  `${unpairedTick?.textContent} [${unpairedTick?.getAttribute('title')}]`,
 );
 
 console.log('I. the throw-log count stays NUMERIC when nothing matches (the table’s N)');
@@ -645,6 +715,11 @@ check(
   'the .util-site rule and the 44px grid track are gone',
   !css.includes('.util-site') &&
     !/44px/.test(ruleBody('.util-nade {') || ''),
+  ruleBody('.util-nade {') || 'no .util-nade rule',
+);
+check(
+  "the .util-nade grid LEADS with the play cell's auto track (▶ first, kind second)",
+  /grid-template-columns:\s*auto\s+74px\s+minmax\(90px,\s*1fr\)/.test(ruleBody('.util-nade {') || ''),
   ruleBody('.util-nade {') || 'no .util-nade rule',
 );
 check(

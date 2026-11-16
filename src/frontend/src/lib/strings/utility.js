@@ -49,5 +49,7 @@ export const utility = {
   blindTimeTitle: 'total blind time',
   affectedTitle: 'affected players (blinded or damaged by this throw)',
   watchThrowFallback: 'Watch this throw in the replay',
-  coordTitle: 'detonation world coordinates',
+  // The place cell shows the THROW origin (the throw-based ruling) — an
+  // unpaired row, whose origin was never observed, dashes instead.
+  coordTitle: 'throw world coordinates',
 };

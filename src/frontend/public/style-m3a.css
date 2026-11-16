@@ -623,9 +623,10 @@
 
 .util-nade {
   display: grid;
-  /* kind · thrower · clock · dmg · blind · aff · actions · coords —
-     the dead site column is gone (the extractor never wrote it) */
-  grid-template-columns: 74px minmax(90px, 1fr) 78px 76px 74px 62px auto 96px;
+  /* ▶ · kind · thrower · clock · dmg · blind · aff · coords — the play
+     cell LEADS the row (owner ruling) and the dead site column is gone
+     (the extractor never wrote it) */
+  grid-template-columns: auto 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
   gap: 8px;
   align-items: center;
   padding: 5px 12px;
@@ -688,10 +689,12 @@
   text-align: right;
 }
 
+/* The leading play cell: left-aligned under the row's auto track (the ▶
+   sits in the row's first column, not at the row's end). */
 .util-actions {
   display: flex;
   gap: 4px;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .util-coord {
@@ -700,6 +703,9 @@
 }
 
 @media (max-width: 1100px) {
+  /* The row wraps onto three columns; the leading ▶ (grid-column 1 / -1)
+     takes the FIRST row full-width, so the play cell still reads as the
+     row's head and the data cells wrap beneath it. */
   .util-nade {
     grid-template-columns: 74px 1fr auto;
     grid-auto-rows: auto;

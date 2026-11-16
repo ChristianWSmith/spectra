@@ -547,14 +547,24 @@ CREATE TABLE IF NOT EXISTS engagements (
 CREATE INDEX IF NOT EXISTS idx_engagements_match_kind ON engagements(match_id, kind);
 CREATE INDEX IF NOT EXISTS idx_engagements_player ON engagements(match_id, a_steam);
 
+-- Utility rows: one row per grenade DETONATION paired with its throw.
+-- Throw-side facts are throw-based (throw_tick + throw_x/throw_y — 0/NULL
+-- when no throw paired, never an interpolated throw time); det_x/det_y
+-- stay the honest detonation position (stored, no longer displayed).
+-- Baseline only (pre-first-release): a column added here cannot reach an
+-- existing database, since the baseline only ever CREATEs — the answer
+-- is wipe + re-import (make deep-clean CONFIRM=1), never an ALTER path.
 CREATE TABLE IF NOT EXISTS utility_events (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	seq INTEGER NOT NULL,
 	tick INTEGER NOT NULL DEFAULT 0,
+	throw_tick INTEGER NOT NULL DEFAULT 0,
 	round INTEGER NOT NULL DEFAULT 0,
 	thrower TEXT NOT NULL DEFAULT '',
 	thrower_name TEXT NOT NULL DEFAULT '',
 	kind TEXT NOT NULL DEFAULT '',
+	throw_x REAL,
+	throw_y REAL,
 	det_x REAL,
 	det_y REAL,
 	damage INTEGER NOT NULL DEFAULT 0,

@@ -69,8 +69,8 @@ var sourceColumns = map[string]map[string]bool{
 		"end_tick", "bomb_state", "hp_left", "equip", "won", "replay_anchor",
 	),
 	"utility_events": colSet(
-		"match_id", "seq", "tick", "round", "thrower", "thrower_name", "kind",
-		"det_x", "det_y", "damage", "flash_ms", "site",
+		"match_id", "seq", "tick", "throw_tick", "round", "thrower", "thrower_name",
+		"kind", "throw_x", "throw_y", "det_x", "det_y", "damage", "flash_ms", "site",
 	),
 	"chat": colSet(
 		"id", "match_id", "tick", "round", "steam_id", "name", "text", "kind", "channel",
