@@ -42,6 +42,10 @@ type Template struct {
 // Metrics carries the metric-backed display cells (design §3.6's Go
 // read-back — MetricCells): ADR/HS%/KD plus every converting scoreboard
 // cell (A, Openings, Trades), keyed by the scoreboard row's SteamID.
+// Utility rows flow as stored; the match template's Tick column renders
+// models.UtilityEvent.EffectiveTick (the paired throw's own tick, the
+// detonation tick when unpaired), so the report's tick column is
+// throw-based like every other time the utility log shows.
 type MatchReport struct {
 	Match       models.Match
 	CTName      string

@@ -162,17 +162,25 @@ type Engagement struct {
 }
 
 // UtilityEvent is one utility_events row: a grenade throw paired with its
-// nearest same-thrower/same-kind detonation. DetX/DetY are
-// nil when the detonation had no position. Affected is a JSON array of
-// victim SteamID strings.
+// nearest same-thrower/same-kind detonation. Tick is always the
+// DETONATION tick (a detonation is what emits a row); ThrowTick is the
+// paired throw's own tick — 0 when no throw paired, never an interpolated
+// throw time — and ThrowX/ThrowY the throw's origin (nil when unknown).
+// DetX/DetY stay the honest detonation position (nil when the detonation
+// recorded none); readers display the THROW position instead (the
+// detonation coordinates are stored data, not the row's place cell).
+// Affected is a JSON array of victim SteamID strings.
 type UtilityEvent struct {
 	MatchID       int64    `json:"matchId"`
 	Seq           int      `json:"seq"`
-	Tick          int      `json:"tick"` // detonation tick (throw tick when unpaired)
+	Tick          int      `json:"tick"`      // detonation tick
+	ThrowTick     int      `json:"throwTick"` // paired throw's tick; 0 = unpaired
 	Round         int      `json:"round"`
 	Thrower       string   `json:"thrower"`
 	ThrowerName   string   `json:"throwerName"`
 	Kind          string   `json:"kind"` // he|flash|smoke|molotov|incendiary|decoy
+	ThrowX        *float64 `json:"throwX,omitempty"`
+	ThrowY        *float64 `json:"throwY,omitempty"`
 	DetX          *float64 `json:"detX,omitempty"`
 	DetY          *float64 `json:"detY,omitempty"`
 	Damage        int      `json:"damage"`
@@ -180,6 +188,19 @@ type UtilityEvent struct {
 	Affected      string   `json:"affected"` // JSON array of steamIDs
 	Site          string   `json:"site"`
 	TrajectoryRef string   `json:"trajectoryRef"`
+}
+
+// EffectiveTick is the row's throw-based tick — THE display/ordering
+// tick: the paired throw's own tick when one is stored (ThrowTick > 0),
+// the detonation tick otherwise (the unpaired row's honest fallback — a
+// known fact; a throw time that was never observed is never invented).
+// The frontend twin is Utility.svelte's effTick() and the report
+// template renders this method in its Tick column.
+func (u UtilityEvent) EffectiveTick() int {
+	if u.ThrowTick > 0 {
+		return u.ThrowTick
+	}
+	return u.Tick
 }
 
 // CombatStat is one per-player combat deep-dive row derived from stored

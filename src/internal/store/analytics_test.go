@@ -116,9 +116,16 @@ func TestAnalyticsReplaceAndGetters(t *testing.T) {
 		BSteam: "200", BName: "bob", Distance: 12.5, WonBy: "ct",
 	}}
 	utils := []models.UtilityEvent{{
-		Tick: 120, Round: 1, Thrower: "100", ThrowerName: "alice", Kind: "he",
-		DetX: pf(1.5), DetY: pf(-2.5), Damage: 45, FlashMs: 0,
-		Affected: `["200"]`, Site: "", TrajectoryRef: "",
+		// Paired row: the throw-side facts (tick + origin) round-trip
+		// beside the detonation's own position.
+		Tick: 120, ThrowTick: 100, Round: 1, Thrower: "100", ThrowerName: "alice", Kind: "he",
+		ThrowX: pf(7.5), ThrowY: pf(-8.25), DetX: pf(1.5), DetY: pf(-2.5),
+		Damage: 45, FlashMs: 0, Affected: `["200"]`, Site: "", TrajectoryRef: "",
+	}, {
+		// Unpaired row: throw_tick 0 and nil throw coordinates — the NULL
+		// path must read back as nil, never as a fabricated 0 position.
+		Tick: 300, Round: 1, Thrower: "100", ThrowerName: "alice", Kind: "smoke",
+		DetX: pf(9), DetY: nil, Damage: 0, FlashMs: 0, Affected: "", Site: "", TrajectoryRef: "",
 	}}
 
 	for _, step := range []struct {
@@ -179,8 +186,20 @@ func TestAnalyticsReplaceAndGetters(t *testing.T) {
 		t.Errorf("GetEngagements(trade) = %+v, %v", gotEngs, err)
 	}
 	gotUtil, err := s.GetUtility(id)
-	if err != nil || len(gotUtil) != 1 || gotUtil[0].Damage != 45 || gotUtil[0].DetX == nil || *gotUtil[0].DetX != 1.5 {
+	if err != nil || len(gotUtil) != 2 || gotUtil[0].Damage != 45 || gotUtil[0].DetX == nil || *gotUtil[0].DetX != 1.5 {
 		t.Errorf("GetUtility = %+v, %v", gotUtil, err)
+	}
+	// Paired row: the throw facts round-trip (tick + origin) and the
+	// effective tick is the throw's.
+	if u := gotUtil[0]; u.ThrowTick != 100 || u.ThrowX == nil || *u.ThrowX != 7.5 ||
+		u.ThrowY == nil || *u.ThrowY != -8.25 || u.EffectiveTick() != 100 {
+		t.Errorf("paired utility row = %+v, want throw tick 100 at (7.5, -8.25), effective 100", u)
+	}
+	// Unpaired row: throw_tick 0 + nil throw positions (NULL round-trip),
+	// effective tick falling back to the detonation's.
+	if u := gotUtil[1]; u.ThrowTick != 0 || u.ThrowX != nil || u.ThrowY != nil ||
+		u.DetX == nil || *u.DetX != 9 || u.DetY != nil || u.EffectiveTick() != 300 {
+		t.Errorf("unpaired utility row = %+v, want throw tick 0, nil throw coords, effective 300", u)
 	}
 
 	// Replace semantics: a second call swaps the rows.

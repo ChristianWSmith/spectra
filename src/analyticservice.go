@@ -56,18 +56,24 @@ type ClutchRow struct {
 }
 
 // UtilityRow is one grenade with position/impact detail (utility_events).
-// KEPT (not models.UtilityEvent): DetX/DetY are value floats — a missing
-// detonation position reads 0, while models.UtilityEvent carries
+// KEPT (not models.UtilityEvent): DetX/DetY/ThrowX/ThrowY are value floats
+// — a missing position reads 0, which the utility grid's coordinate
+// carve-out renders as the dash, while models.UtilityEvent carries
 // *float64 + omitempty, which would drop the key and render NaN in the
-// utility grid.
+// utility grid. Tick is the detonation tick; ThrowTick is the paired
+// throw's own tick (0 = unpaired — the view falls back to Tick, never an
+// interpolated throw time).
 type UtilityRow struct {
-	Tick        int     `json:"tick"`
+	Tick        int     `json:"tick"`      // detonation tick
+	ThrowTick   int     `json:"throwTick"` // paired throw's tick; 0 = unpaired
 	Round       int     `json:"round"`
 	Thrower     string  `json:"thrower"`
 	ThrowerName string  `json:"throwerName"`
 	Kind        string  `json:"kind"` // he|flash|smoke|molotov|incendiary|decoy
 	DetX        float64 `json:"detX"`
 	DetY        float64 `json:"detY"`
+	ThrowX      float64 `json:"throwX"` // throw origin (0 = unknown → dash)
+	ThrowY      float64 `json:"throwY"`
 	Damage      int     `json:"damage"`
 	FlashMs     int     `json:"flashMsTotal"`
 	Affected    string  `json:"affected"` // JSON array of steamIDs
@@ -813,8 +819,15 @@ func (s *AnalyticsService) GetUtility(matchID int64) ([]UtilityRow, error) {
 	out := make([]UtilityRow, len(rows))
 	for i, r := range rows {
 		u := UtilityRow{
-			Tick: r.Tick, Round: r.Round, Thrower: r.Thrower, ThrowerName: r.ThrowerName,
-			Kind: r.Kind, Damage: r.Damage, FlashMs: r.FlashMs, Affected: r.Affected, Site: r.Site,
+			Tick: r.Tick, ThrowTick: r.ThrowTick, Round: r.Round, Thrower: r.Thrower,
+			ThrowerName: r.ThrowerName, Kind: r.Kind, Damage: r.Damage, FlashMs: r.FlashMs,
+			Affected: r.Affected, Site: r.Site,
+		}
+		if r.ThrowX != nil {
+			u.ThrowX = *r.ThrowX
+		}
+		if r.ThrowY != nil {
+			u.ThrowY = *r.ThrowY
 		}
 		if r.DetX != nil {
 			u.DetX = *r.DetX

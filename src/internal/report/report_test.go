@@ -235,6 +235,51 @@ func TestRenderMatchSnapshot(t *testing.T) {
 	}
 }
 
+// TestUtilityTickColumnIsEffective pins the match template's Utility
+// table: its Tick column renders models.UtilityEvent.EffectiveTick — the
+// paired throw's own tick, the detonation tick when unpaired — so the
+// report's tick column is throw-based like the utility log itself. Every
+// other report fixture carries NO utility rows (the range body never
+// executes there), so this is the one place the template's method call
+// runs: without it a rename would only fail at render time, in front of
+// a user.
+func TestUtilityTickColumnIsEffective(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	id := seedMatch(t, st)
+	if err := st.ReplaceUtility(id, []models.UtilityEvent{
+		{Seq: 0, Tick: 150, ThrowTick: 100, Round: 1, Thrower: "A00", ThrowerName: "player0", Kind: "he"},
+		{Seq: 1, Tick: 250, Round: 1, Thrower: "A00", ThrowerName: "player0", Kind: "smoke"},
+	}); err != nil {
+		t.Fatalf("ReplaceUtility: %v", err)
+	}
+	data, err := BuildMatchData(st, id)
+	if err != nil {
+		t.Fatalf("BuildMatchData: %v", err)
+	}
+	tpl, err := Find(Builtins(), "match.md")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	out, err := Render(tpl.ID, tpl.Body, data)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	// Paired row → the throw's tick (100, not its detonation's 150);
+	// unpaired row → the detonation tick it honestly knows (250).
+	for _, want := range []string{
+		"| 0 | 100 | player0 | he |",
+		"| 1 | 250 | player0 | smoke |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("match.md utility table missing %q\n---\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderPlayerAndRound(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {

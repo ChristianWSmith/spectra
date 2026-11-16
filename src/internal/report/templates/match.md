@@ -34,7 +34,7 @@
 
 | Seq | Tick | Thrower | Kind | Damage | Flash ms | Site |
 | --- | --- | --- | --- | --- | --- | --- |
-{{range .Utility}}| {{.Seq}} | {{.Tick}} | {{.ThrowerName}} | {{.Kind}} | {{.Damage}} | {{.FlashMs}} | {{.Site}} |
+{{range .Utility}}| {{.Seq}} | {{.EffectiveTick}} | {{.ThrowerName}} | {{.Kind}} | {{.Damage}} | {{.FlashMs}} | {{.Site}} |
 {{end}}
 ---
 

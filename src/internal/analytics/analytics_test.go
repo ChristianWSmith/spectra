@@ -553,7 +553,9 @@ func TestUtilityPairingAndFlash(t *testing.T) {
 		9: `{"flashDurationMs":999}`,
 	}
 	events := []models.Event{
-		ev(0, 100, 1, models.EventGrenadeThrow, "A", "", withWeapon("HE Grenade")),
+		ev(0, 100, 1, models.EventGrenadeThrow, "A", "", withWeapon("HE Grenade"), func(e *models.Event) {
+			e.PosX, e.PosY = pf(12.5), pf(-7) // the throw's origin — the row's place cell
+		}),
 		ev(1, 150, 1, models.EventGrenade, "A", "", withWeapon("HE Grenade")),
 		ev(2, 151, 1, models.EventDamage, "A", "X", withWeapon("HE Grenade"), withDmg(30)),
 		ev(3, 160, 1, models.EventDamage, "A", "Y", withWeapon("HE Grenade"), withDmg(20)),
@@ -588,6 +590,23 @@ func TestUtilityPairingAndFlash(t *testing.T) {
 	if he.Thrower != "A" || he.ThrowerName != "Alice" || he.Tick != 150 {
 		t.Errorf("HE row = %+v, want thrower A/Alice tick 150", he)
 	}
+	// The paired throw's own tick + origin are the row's throw-side facts
+	// (the pairing is the existing 30 s same-thrower/same-kind rule).
+	if he.ThrowTick != 100 || he.EffectiveTick() != 100 {
+		t.Errorf("HE throw tick = %d (effective %d), want 100", he.ThrowTick, he.EffectiveTick())
+	}
+	if he.ThrowX == nil || *he.ThrowX != 12.5 || he.ThrowY == nil || *he.ThrowY != -7 {
+		t.Errorf("HE throw origin = (%v, %v), want (12.5, -7) from the MATCHED throw", he.ThrowX, he.ThrowY)
+	}
+	// The detonation position stays stored on its own columns.
+	if he.DetX != nil || he.DetY != nil {
+		t.Errorf("HE det position = (%v, %v), want nil (the detonation carried none)", he.DetX, he.DetY)
+	}
+	// The flash throw carried no position: paired tick, nil origin —
+	// never a guessed coordinate.
+	if flash.ThrowTick != 200 || flash.ThrowX != nil || flash.ThrowY != nil {
+		t.Errorf("flash row = %+v, want throw tick 200 with nil throw origin", flash)
+	}
 	var affected []string
 	if err := json.Unmarshal([]byte(he.Affected), &affected); err != nil || len(affected) != 2 {
 		t.Errorf("HE affected = %q, want 2 victims", he.Affected)
@@ -614,6 +633,57 @@ func TestUtilityDetWithoutThrow(t *testing.T) {
 	}
 	if got[0].DetX == nil || *got[0].DetX != 10 {
 		t.Errorf("det position = %v, want x=10", got[0].DetX)
+	}
+	// Unpaired row: no throw was observed, so nothing throw-side is
+	// invented — throw_tick 0, nil throw origin, and the effective tick
+	// falls back to the detonation's own (a known fact).
+	if got[0].ThrowTick != 0 || got[0].ThrowX != nil || got[0].ThrowY != nil {
+		t.Errorf("unpaired throw facts = tick %d (%v, %v), want 0 and nil", got[0].ThrowTick, got[0].ThrowX, got[0].ThrowY)
+	}
+	if got[0].EffectiveTick() != 500 {
+		t.Errorf("effective tick = %d, want the detonation tick 500", got[0].EffectiveTick())
+	}
+}
+
+// TestUtilitySortEffectiveThrowTick pins the within-round ORDER: the
+// effective throw tick (the paired throw's own tick, the detonation tick
+// when unpaired) leads, the detonation tick breaks ties. The fixture
+// inverts detonation chronology — the earlier detonation pairs with the
+// LATER throw (different thrower) — so an order keyed on detonations
+// alone would come out backwards.
+func TestUtilitySortEffectiveThrowTick(t *testing.T) {
+	players := []PlayerRef{
+		{SteamID: "A", Side: "ct"},
+		{SteamID: "B", Side: "t"},
+	}
+	events := []models.Event{
+		ev(0, 100, 1, models.EventGrenadeThrow, "A", "", withWeapon("Smoke Grenade")),
+		ev(1, 500, 1, models.EventGrenadeThrow, "B", "", withWeapon("Smoke Grenade")),
+		ev(2, 550, 1, models.EventGrenade, "B", "", withWeapon("Smoke Grenade")), // → throw 500
+		ev(3, 600, 1, models.EventGrenade, "A", "", withWeapon("Smoke Grenade")), // → throw 100
+		// Two detonations sharing ONE throw: same effective key, so the
+		// detonation tick breaks the tie.
+		ev(4, 700, 1, models.EventGrenadeThrow, "A", "", withWeapon("Smoke Grenade")),
+		ev(5, 750, 1, models.EventGrenade, "A", "", withWeapon("Smoke Grenade")),
+		ev(6, 800, 1, models.EventGrenade, "A", "", withWeapon("Smoke Grenade")),
+	}
+	got := Utility(events, players, testCfg, nil)
+	want := []struct {
+		tick      int // detonation tick
+		throwTick int
+	}{
+		{600, 100}, // effective 100 — before the 550 detonation (effective 500)
+		{550, 500},
+		{750, 700}, // tie on 700 → detonation order
+		{800, 700},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("utility rows = %d (%+v), want %d", len(got), got, len(want))
+	}
+	for i, w := range want {
+		if got[i].Tick != w.tick || got[i].ThrowTick != w.throwTick {
+			t.Errorf("row %d = (det %d, throw %d), want (det %d, throw %d)", i, got[i].Tick, got[i].ThrowTick, w.tick, w.throwTick)
+		}
 	}
 }
 

@@ -55,8 +55,8 @@ const (
 
 	engagementCols = `seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by`
 
-	utilityCols = `seq, tick, round, thrower, thrower_name, kind, det_x, det_y, damage,
-		flash_ms, affected, site, trajectory_ref`
+	utilityCols = `seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y,
+		damage, flash_ms, affected, site, trajectory_ref`
 
 	playerCareerCols = `steam_id, name, matches, wins, updated_at`
 
@@ -226,8 +226,9 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
 			if _, err := stmt.Exec(
-				matchID, i, r.Tick, r.Round, scrub(r.Thrower), scrub(r.ThrowerName), scrub(r.Kind),
-				nvl(r.DetX), nvl(r.DetY), r.Damage, r.FlashMs, scrub(r.Affected), scrub(r.Site), scrub(r.TrajectoryRef),
+				matchID, i, r.Tick, r.ThrowTick, r.Round, scrub(r.Thrower), scrub(r.ThrowerName), scrub(r.Kind),
+				nvl(r.ThrowX), nvl(r.ThrowY), nvl(r.DetX), nvl(r.DetY), r.Damage, r.FlashMs,
+				scrub(r.Affected), scrub(r.Site), scrub(r.TrajectoryRef),
 			); err != nil {
 				return fmt.Errorf("%s: %w", op, err)
 			}
@@ -480,13 +481,15 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 	for rows.Next() {
 		var r models.UtilityEvent
 		r.MatchID = matchID
-		var detX, detY sql.NullFloat64
+		var throwX, throwY, detX, detY sql.NullFloat64
 		if err := rows.Scan(
-			&r.Seq, &r.Tick, &r.Round, &r.Thrower, &r.ThrowerName, &r.Kind, &detX, &detY,
+			&r.Seq, &r.Tick, &r.ThrowTick, &r.Round, &r.Thrower, &r.ThrowerName, &r.Kind,
+			&throwX, &throwY, &detX, &detY,
 			&r.Damage, &r.FlashMs, &r.Affected, &r.Site, &r.TrajectoryRef,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the utility: %w", err)
 		}
+		r.ThrowX, r.ThrowY = nullFloat(throwX), nullFloat(throwY)
 		r.DetX, r.DetY = nullFloat(detX), nullFloat(detY)
 		out = append(out, r)
 	}

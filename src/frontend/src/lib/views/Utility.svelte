@@ -25,6 +25,7 @@
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import EventPlay from '../components/EventPlay.svelte';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work. `go` is what the
@@ -197,17 +198,28 @@
 
   // Coordinate cell — the owner's carve-out from the zero-dash rule: a
   // world position is identity/positional, so it dashes ONLY when BOTH
-  // components are 0 (and when the detonation recorded no position at
-  // all — DetX/DetY are omitempty, so a missing one would otherwise
-  // render "(NaN, NaN)"). Any real coordinate renders as-is, including
-  // a single zero: (5, 0).
+  // components are 0 (and when the row recorded no position at all —
+  // ThrowX/ThrowY arrive as value floats, so a missing one would
+  // otherwise render "(NaN, NaN)"). The cell shows the THROW origin (the
+  // owner's throw-based ruling); an unpaired row (no throw origin) dashes
+  // — the detonation coordinates are stored data (detX/detY) and are no
+  // longer displayed. Any real coordinate renders as-is, including a
+  // single zero: (5, 0).
   function coordCell(r) {
-    const x = r.detX;
-    const y = r.detY;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return '—'; // no position recorded
+    const x = r.throwX;
+    const y = r.throwY;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return '—'; // no throw position recorded
     if (x === 0 && y === 0) return '—';
     return `(${Math.round(x)}, ${Math.round(y)})`;
   }
+
+  // The row's EFFECTIVE tick — THE throw-based time: the paired throw's
+  // own tick (throwTick > 0), the detonation tick otherwise (the
+  // unpaired row's honest fallback — a known fact; a throw time that was
+  // never observed is never invented). Drives the clock, the tick
+  // tooltip, the ▶ stamp + loop and the play button's labels; the Go
+  // twin is models.UtilityEvent.EffectiveTick.
+  const effTick = (r) => (r.throwTick > 0 ? r.throwTick : r.tick);
 
   const kindOptions = $derived(
     [...new Set(rows.map((r) => r.kind).filter(Boolean))].sort(),
@@ -317,18 +329,21 @@
     }
   }
 
-  // The throw's row ▶ — ICON-ONLY play (the one canonical tick-link
-  // glyph; no label text). It stamps the throw's own tick with a
-  // loop-length entry loop around it (nav.entryLoopAround — the
-  // `loop_secs` pref, loopSecs above) AND the THROWER as the camera
-  // follow: entry context, never a filter — an absent thrower stamps no
-  // follow (buildHash drops it). The ONE way this view enters the
-  // replay: buttons SEEK, never set a landmark filter (the retired
-  // round "events" filter button stays gone).
+  // The throw's row ▶ — ICON-ONLY play (EventPlay, the one canonical
+  // tick-link glyph; no label text). It stamps the row's EFFECTIVE tick
+  // (effTick: the paired throw's own tick, the detonation tick when
+  // unpaired — never an interpolated throw time) with a loop-length
+  // entry loop around it (nav.entryLoopAround — the `loop_secs` pref,
+  // loopSecs above) AND the THROWER as the camera follow: entry
+  // context, never a filter — an absent thrower stamps no follow
+  // (buildHash drops it). The ONE way this view enters the replay:
+  // buttons SEEK, never set a landmark filter (the retired round
+  // "events" filter button stays gone).
   function openReplay(r) {
     // `|| undefined` — an absent thrower stamps NOTHING (buildHash keeps
     // an empty string as `follow=`, which is not "no stamp").
-    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate, loopSecs), follow: r.thrower || undefined, back }));
+    const t = effTick(r);
+    go(replayHash(id, {}, { tick: t, loop: entryLoopAround(t, tickRate, loopSecs), follow: r.thrower || undefined, back }));
   }
 
   const barW = 1000;
@@ -631,6 +646,22 @@
             <ul class="util-nades">
               {#each list as r, i (r.tick + ':' + i)}
                 <li class="util-nade">
+                  <!-- The row's ONE ▶ LEADS the row (owner ruling): the
+                       <li> has NO row-click handler — only the
+                       error-dismiss ✕ and this button carry onclick —
+                       so no stopPropagation is needed here. -->
+                  <span class="util-actions">
+                    <EventPlay
+                      tick={effTick(r)}
+                      title={r.thrower
+                        ? `Watch this throw — follow ${r.throwerName || r.thrower}`
+                        : S.utility.watchThrowFallback}
+                      label={r.thrower
+                        ? `Watch this throw at tick ${effTick(r)} — follow ${r.throwerName || r.thrower}`
+                        : `Watch this throw at tick ${effTick(r)}`}
+                      onclick={() => openReplay(r)}
+                    />
+                  </span>
                   <span class="chip util-kind {r.kind}">{r.kind}</span>
                   <ProfileLink
                     steam={r.thrower}
@@ -641,8 +672,8 @@
                   />
                   <span
                     class="mono muted util-tick"
-                    title={S.fill(S.utility.tickTitle, { tick: r.tick, round: roundIndexLabel(rbn.get(r.round) ?? r.round) })}
-                    >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
+                    title={S.fill(S.utility.tickTitle, { tick: effTick(r), round: roundIndexLabel(rbn.get(r.round) ?? r.round) })}
+                    >{roundClock(effTick(r), rbn.get(r.round), tickRate)}</span
                   >
                   <span class="util-num" title={S.utility.damageDealtTitle}
                     >{fmtZeroDash(r.damage, 'dmg')}</span
@@ -657,19 +688,6 @@
                     title={S.utility.affectedTitle}
                     >{fmtZeroDash(affectedCount(r.affected), 'aff')}</span
                   >
-                  <span class="util-actions">
-                    <button
-                      class="btn small ghost"
-                      title={r.thrower
-                        ? `Watch this throw — follow ${r.throwerName || r.thrower}`
-                        : S.utility.watchThrowFallback}
-                      aria-label={r.thrower
-                        ? `Watch this throw at tick ${r.tick} — follow ${r.throwerName || r.thrower}`
-                        : `Watch this throw at tick ${r.tick}`}
-                      onclick={() => openReplay(r)}
-                      ><span class="codicon codicon-play" aria-hidden="true"></span></button
-                    >
-                  </span>
                   <span
                     class="util-coord muted mono"
                     title={S.utility.coordTitle}

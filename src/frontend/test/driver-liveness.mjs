@@ -653,7 +653,18 @@ const EXPECTED = {
   // the row checks read) — same count there. Section M's `.util-toggles`
   // layout pin became the absence pin over the retired `.util-toggle*`
   // rules (1 check, same slot).
-  'utility.dom.mjs': 68,
+  // utility 68 → 74 (2026-11-16, W10 utility throw-log): +6 — the
+  // throw-based cells over the paired/unpaired fixture rows (H2, +4: the
+  // paired row's clock/tooltip, its ▶ title/aria-label and its
+  // stamp+loop all read the throw tick 1650 — never the detonation
+  // 1700 — while the unpaired row's clock/tooltip keep the detonation
+  // tick), +1 section G (the actions cell is the row's FIRST child,
+  // before the kind chip), +1 section M (the .util-nade grid leads with
+  // the play cell's auto track). Section F's coordinate pin was
+  // REWRITTEN in place for the throw origin (paired coordinates render,
+  // unpaired/both-zero dash, the stored detonation coordinates never
+  // show) — same slot; the H fallback pins stay on the unpaired row.
+  'utility.dom.mjs': 74,
   'voice-engine.dom.mjs': 7,
 };
 
