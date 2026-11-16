@@ -26,6 +26,7 @@ export const common = {
   appExpandReplayLabel: 'Expand replay', // collapsed dock wrapper: title + aria-label
   appCloseReplayLabel: 'Close replay', // dock close X: aria-label
   appCloseReplayTitle: 'Close the replay — it reloads when reopened', // dock close X: title
+  navMatchDisabled: 'Open a match first', // disabled sidebar Match tab: title (why it is greyed)
 
   // command palette (CommandPalette.svelte — Ctrl/Cmd-K overlay)
   commandPaletteLabel: 'Command palette', // Dialog accessible name

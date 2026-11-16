@@ -369,6 +369,60 @@ export function profileBackTarget(query, originHash) {
   return '/profiles';
 }
 
+// MATCH_FAMILY — THE set of route names that are the match view: its
+// shell (#/match/:id[/<tab>]), a round page (#/match/:id/round/:n), the
+// event browser (#/replay/:id) and the round comparison (#/compare/:id).
+// It is THE nav-level partition behind the sidebar's Match action (L4):
+// Library claims `library` alone, Match claims exactly this set, so
+// exactly one action lights up per route. The same set gates the Match
+// action's target memory — active() and isNavEnabled() below share this
+// one criterion (lead ruling: they must never diverge).
+export const MATCH_FAMILY = new Set(['match', 'round', 'replay', 'compare']);
+
+// resolveNavTarget / isNavEnabled — THE shared decision pair for a nav
+// action's click, consumed by BOTH surfaces (App.svelte's rail and
+// CommandPalette's Actions section) so they can never disagree about
+// where an action goes or whether it is live (L4). `ctx` is
+// { lastMatchHash }: App's SESSION-SCOPED memory of the last
+// match-family hash — the FULL path+query, so the Match tab returns to
+// the exact tab/round/filter the user left (no pref, no viewstate, no
+// route query; a link-shaped value lives in the URL, and this is a
+// "where was I" breadcrumb, not one).
+//   - every action without `memory` is always enabled and targets its
+//     own `hash` (nothing changes for Library/Profiles/Builder/…);
+//   - the Match action (`memory: true`, no fixed destination) is enabled
+//     only while the memory names a REAL match — id > 0, since `#/match`
+//     without an id already parses to the library route (router.js) and
+//     `#/match/0` is no match — and then targets that remembered hash
+//     VERBATIM (full hash: Replay/Compare land where the user left off).
+//     With no usable memory it falls back to its `hash` (the Library) —
+//     unreachable in practice: the rail disables the button and the
+//     palette omits the row entirely (dead rows are worse than absent
+//     ones), so the fallback only keeps a stray click honest.
+export function isNavEnabled(action, ctx) {
+  if (!action || !action.memory) return true;
+  return rememberedMatchHash(ctx) !== null;
+}
+
+export function resolveNavTarget(action, ctx) {
+  if (!action) return '/library';
+  if (!action.memory) return action.hash;
+  return rememberedMatchHash(ctx) || action.hash;
+}
+
+// rememberedMatchHash — the memory as a USABLE target: a non-empty hash
+// that still parses to a match-family route with a real match id. The
+// parse is the whole check (no second shape knowledge here): a stale or
+// hand-edited memory that no longer parses simply disables the action,
+// and one that parses to a since-deleted match lands on the Match view's
+// own "not found" (accepted: a stale memory is the user's own trail).
+function rememberedMatchHash(ctx) {
+  const raw = ctx && ctx.lastMatchHash;
+  if (!raw) return null;
+  const r = parseHash(String(raw));
+  return MATCH_FAMILY.has(r.name) && r.id > 0 ? String(raw) : null;
+}
+
 // NAV_ACTIONS is the one sidebar action list: App.svelte renders it as
 // the sidebar buttons (active(route) drives the highlight) and
 // CommandPalette renders it as its Actions section (run closes over the
@@ -383,19 +437,28 @@ export function profileBackTarget(query, originHash) {
 // renders every action inline in array order. Explorer and Reports are
 // gone from the nav list (they are match-view tabs now); their standalone
 // #/explorer and #/reports routes still parse and render.
+// `memory: true` marks the ONE memory-backed action (Match) — see
+// resolveNavTarget/isNavEnabled above; such an action's `hash` is only
+// its no-memory fallback, never its live target.
 export const NAV_ACTIONS = [
   {
     label: 'Library',
     icon: 'codicon-library',
     hash: '/library',
-    // The Library is the hub: every in-app match detail view (match,
-    // round, replay, compare) is reached from it.
-    active: (r) =>
-      r.name === 'library' ||
-      r.name === 'match' ||
-      r.name === 'round' ||
-      r.name === 'replay' ||
-      r.name === 'compare',
+    // The Library is the list itself — the hub every match detail view is
+    // reached FROM, but no longer the tab those views light up: the Match
+    // action below owns the match family (MATCH_FAMILY).
+    active: (r) => r.name === 'library',
+  },
+  {
+    label: 'Match',
+    icon: 'codicon-history', // "return to where you were": this tab goes back to the last match view
+    hash: '/library', // fallback only — the live target is the remembered hash (see above)
+    memory: true,
+    // Lights up over the whole match family, by NAME (the exactly-one-
+    // action invariant is a name partition; the id>0 gate belongs to
+    // isNavEnabled, which decides where the click GOES).
+    active: (r) => MATCH_FAMILY.has(r.name),
   },
   {
     label: 'Profiles',

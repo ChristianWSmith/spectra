@@ -250,7 +250,7 @@ const TIER2_MAX = 200;
 // stale EXEMPTIONS are not (they must match a live site).
 const VERB_ALLOWLIST = {
   Search: 'the search idiom — the box finds rows the library already has (Search players…, Search metrics…, Search sections)',
-  Filter: 'the facet idiom — narrows an already-listed set (Filter matches…, Filter by map (e.g. de_mirage)…)',
+  Filter: 'the facet idiom — narrows an already-listed set (Filter matches…, Filter by map...)',
   Type: 'free-text entry that is neither a path nor a value (Type a command or search…)',
   Enter: 'typed-value entry fields — paths, names and labels the user supplies (Enter a plugin path or manifest.json…)',
   Select: 'pickers asking for a choice among offered options (Select match… — MatchPicker’s own default hint)',

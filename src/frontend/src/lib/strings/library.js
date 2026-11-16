@@ -39,7 +39,7 @@ export const library = {
   dropHint: 'or drop .dem / .dem.zst files',
   filtersLabel: 'Library filters',
   mapLabel: 'Map',
-  mapPlaceholder: 'Filter by map (e.g. de_mirage)…',
+  mapPlaceholder: 'Filter by map...',
   mapAriaLabel: 'Filter by map',
   playerLabel: 'Player',
   clearFiltersTitle: 'Clear the map and player filters',

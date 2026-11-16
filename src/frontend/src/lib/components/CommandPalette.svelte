@@ -11,14 +11,17 @@
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
   import { fmtDate } from '../fmt.js';
-  import { NAV_ACTIONS, replayHash } from '../nav.js';
+  import { NAV_ACTIONS, replayHash, isNavEnabled, resolveNavTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { parseLandmarkFilter } from '../replay/landmarks.js';
   import Dialog from './Dialog.svelte';
   import StatusChip from './StatusChip.svelte';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
-  let { nav = () => {} } = $props();
+  // ctx — App's nav context ({ lastMatchHash }, the Match tab's session
+  // memory), passed down so the palette resolves actions through the SAME
+  // lib/nav.js helpers the rail uses (one decision, two surfaces).
+  let { nav = () => {}, ctx = { lastMatchHash: '' } } = $props();
 
   let open = $state(false);
   let query = $state('');
@@ -32,9 +35,15 @@
   // The sidebar's action list (lib/nav.js) rendered for the palette:
   // same membership, order and labels as App.svelte's sidebar buttons
   // (the rail pins `bottom` entries such as Settings at its foot — the
-  // palette lists them inline like everything else).
+  // palette lists them inline like everything else). A DISABLED action
+  // is OMITTED, never rendered as a dead row (lead ruling): the rail
+  // shows it greyed with its why-tooltip instead, and the target comes
+  // from the shared resolveNavTarget so both surfaces always agree.
   function navActions() {
-    return NAV_ACTIONS.map((a) => ({ label: a.label, run: () => nav(a.hash) }));
+    return NAV_ACTIONS.filter((a) => isNavEnabled(a, ctx)).map((a) => ({
+      label: a.label,
+      run: () => nav(resolveNavTarget(a, ctx)),
+    }));
   }
 
   // Subsequence fuzzy match: consecutive + word-start bonuses, shorter

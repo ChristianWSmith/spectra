@@ -33,6 +33,13 @@
 // nothing-beneath behavior, and the overlay/collapsed CSS rules are
 // source-pinned (jsdom has no layout AND does not reflect el.inert to
 // an attribute, so the IDL property + the rules are the observables).
+// Section G — the Match sidebar tab (L4, 2026-11-16): the session memory
+// (App's lastMatchHash) resolves the tab's click back to the FULL
+// remembered hash — path AND query — and style.css's disabled/hover
+// rules are source-pinned (jsdom has no layout and never applies :hover).
+// The BOOT leg of the same feature (the tab disabled while no match has
+// been opened — the one moment the memory is empty) is pinned right
+// after the mount, before section A.
 //
 // SCOPE: App's wiring only. The views are inert stubs (Replay's stub
 // counts mounts and mirrors the App-passed props as data attributes) —
@@ -273,6 +280,30 @@ try {
   process.exit(1);
 }
 await sleep(); // onMount: the hashchange listener is registered
+
+// L4 (R2, 2026-11-16): the Match sidebar tab's session memory — pinned at
+// BOOT, the ONE moment the memory is still empty (once a match has been
+// opened this session it never empties again; the empty/invalid legs of
+// isNavEnabled are pure-unit pins in nav.test.js). The tab explains its
+// disabled state in the tooltip (strings/common.js navMatchDisabled).
+const navBtn = (label) =>
+  [...document.querySelectorAll('.sidebar .nav-item')].find(
+    (b) => b.getAttribute('aria-label') === label,
+  );
+{
+  const match = navBtn('Match');
+  const lib = navBtn('Library');
+  check(
+    'boot on the Library: the Match tab is DISABLED with its why-tooltip',
+    match?.disabled === true && match?.getAttribute('title') === 'Open a match first',
+    `${match?.disabled} / ${match?.getAttribute('title')}`,
+  );
+  check(
+    'boot on the Library: the Library tab beside it is enabled',
+    lib?.disabled === false,
+    `disabled=${lib?.disabled}`,
+  );
+}
 
 console.log('A. off the replay route there is no dock; the replay route mounts the instance (no DOCK X — the top bar cluster is Replay\'s own)');
 check('no keep-alive wrapper on the library route', !wrapper(), wrapper() ? 'wrapper present' : '');
@@ -570,6 +601,45 @@ check(
   'style.css: the base rule is still display:contents (the ACTIVE in-flow state survived)',
   /\.rp-keepalive\s*\{\s*display:\s*contents/s.test(cssF),
   'no .rp-keepalive { display: contents } rule',
+);
+
+console.log('G. the Match sidebar tab (L4): the session memory resolves the click, and the disabled state is styled');
+// The remembered target is the FULL hash — tab AND query, so the return
+// trip lands exactly where the user left off.
+await go('#/match/5/scoreboard?roundFrom=3&roundTo=7');
+const matchTab = navBtn('Match');
+check(
+  'on a match route the Match tab is enabled and lit',
+  matchTab?.disabled === false && matchTab?.classList.contains('active'),
+  `${matchTab?.disabled} / ${matchTab?.className}`,
+);
+await go('#/profiles');
+check(
+  'away from the match the tab stays ENABLED (the session memory holds) and only Profiles lights up',
+  navBtn('Match')?.disabled === false && !navBtn('Match')?.classList.contains('active') &&
+    navBtn('Profiles')?.classList.contains('active'),
+  `${navBtn('Match')?.disabled} / ${navBtn('Match')?.className} / ${navBtn('Profiles')?.className}`,
+);
+click(navBtn('Match'));
+await sleep();
+check(
+  'clicking it returns to the remembered FULL hash (tab + query, via resolveNavTarget)',
+  location.hash === '#/match/5/scoreboard?roundFrom=3&roundTo=7',
+  location.hash,
+);
+// jsdom has no layout and never applies :hover, so the RULES are the pins
+// (the .rp-keepalive-close precedent in section D): a disabled action is
+// greyed, and its hover wash is neutralized — WebKit matches :hover on a
+// disabled button, hence the :not(:disabled) on the hover rule.
+check(
+  'style.css: a disabled nav item is greyed (muted, no pointer) after the active rule',
+  /\.nav-item:disabled\s*\{[^}]*background:\s*none[^}]*color:\s*var\(--muted\)[^}]*cursor:\s*default/s.test(cssF),
+  'no .nav-item:disabled { background:none; color:var(--muted); cursor:default } rule',
+);
+check(
+  'style.css: the nav hover wash is neutralized for a disabled item',
+  /\.nav-item:hover:not\(:disabled\)/.test(cssF),
+  'no .nav-item:hover:not(:disabled) rule',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

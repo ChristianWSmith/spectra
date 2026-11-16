@@ -765,6 +765,17 @@
          SuggestInput's kind="player" default is the standard
          "Search players..." hint (the same one Profiles wears). -->
     <div class="lib-filters" role="group" aria-label={S.library.filtersLabel}>
+      <!-- Clear goes FIRST (L2): .lib-filters is a flex row, so DOM order
+           IS visual order — the reset sits left of the facets it resets.
+           Existing pins are position-agnostic; the order pin is in
+           test/library.dom.mjs. -->
+      {#if mapFilter || playerFilter}
+        <button
+          class="btn small ghost"
+          title={S.library.clearFiltersTitle}
+          onclick={clearFilters}>{S.library.clearFilters}</button
+        >
+      {/if}
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-map">{S.library.mapLabel}</label>
         <SuggestInput
@@ -789,13 +800,6 @@
           onselect={(p) => (playerFilter = p.steamId || p.name)}
         />
       </span>
-      {#if mapFilter || playerFilter}
-        <button
-          class="btn small ghost"
-          title={S.library.clearFiltersTitle}
-          onclick={clearFilters}>{S.library.clearFilters}</button
-        >
-      {/if}
     </div>
     <!-- The view's help affordance (HelpButton.svelte): the header's
          LAST element, right of the .spacer and the facets it shares the

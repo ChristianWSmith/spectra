@@ -400,7 +400,11 @@ check(
   playerInput().placeholder === 'Search players...',
   playerInput().placeholder,
 );
-check('map facet keeps its own hint', mapInput().placeholder === 'Filter by map (e.g. de_mirage)…', mapInput().placeholder);
+// L1 (R2, 2026-11-16): the map facet's own hint is the SHORT form —
+// ASCII `...`, exactly as the adjacent player facet spells its own hint
+// ("Search players..."): local consistency governs the ellipsis (lead
+// ruling). The aria-label below stays the same phrase.
+check('map facet keeps its own hint', mapInput().placeholder === 'Filter by map...', mapInput().placeholder);
 check('map facet marked active', mapInput().classList.contains('active'));
 // The header `?` (help-buttons wave, 2026-11-15): the shared
 // HelpButton is the header's LAST element — right of the .spacer and
@@ -429,6 +433,25 @@ check(
 );
 check('player facet marked active', playerInput().classList.contains('active'));
 check('clear button present', clearBtn().length === 1, String(clearBtn().length));
+// L2 (R2, 2026-11-16): the Clear button sits at the LEFT of the filter
+// row — .lib-filters is a flex container, so DOM order IS visual order
+// (no CSS change). Both halves are pinned: it is the row's FIRST element
+// and it precedes the map input in document order.
+{
+  const clear = clearBtn()[0];
+  const row = clear && clear.parentElement;
+  check(
+    'clear button is the first element of .lib-filters, before the map input',
+    !!clear &&
+      !!row &&
+      row.classList.contains('lib-filters') &&
+      row.firstElementChild === clear &&
+      !!(clear.compareDocumentPosition(mapInput()) & Node.DOCUMENT_POSITION_FOLLOWING),
+    clear
+      ? `first=${row.firstElementChild?.className || row.firstElementChild?.tagName} / pos=${clear.compareDocumentPosition(mapInput())}`
+      : 'no clear button',
+  );
+}
 // Placement: the two facets are the Library's ONLY search and they live
 // where the free-text box used to be — in the header row, next to
 // Import… — with the old facet row under the header gone.
