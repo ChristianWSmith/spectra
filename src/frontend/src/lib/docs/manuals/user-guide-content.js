@@ -414,16 +414,18 @@ export const guideSectionsAfterManual = [
 **Template & target** — pick one of the templates: **Match report**, **Match report (HTML)**,
 **Player report**, **Round report** (plus any a plugin contributes); each card shows its scope
 and format. Then pick the target the template needs — the match, a player, or a round number —
-and press **Generate report**.
+and press **Save report** (at the top of this panel) to write the document to disk.
 
-**Stats appendix** — search a row to pick a match-scoped stat and append its table under the
-report, scoped to that match; **+** adds another row and **−** removes one, and a row you clear
-appends nothing. A stat that is still computing shows its state chip instead of a number; the
-appendix follows the same order as everywhere else.
+**Stats appendix** — type into the stats field to search the match-scoped stats and pick one:
+it lands as a chip, and each picked stat earns a line under the field carrying its expression
+and its row count — while it has no computed number for this match, that line shows its state
+chip instead. Remove a chip with its ✕, or with Backspace while the field is empty; with no
+chips the saved document carries no appendix. Picked stats and their sections follow the same
+order as everywhere else.
 
-**Preview** shows the generated document (HTML templates render, markdown templates show as
-text), with the template, scope and format above it. *Press Generate report to create the
-report.*`,
+**Save report** renders the template's body, composes every picked stat's table onto it and
+hands the whole document to the save dialog; the filename ends in .md or .html to match the
+template's format.`,
   },
   {
     id: 'sql-console',

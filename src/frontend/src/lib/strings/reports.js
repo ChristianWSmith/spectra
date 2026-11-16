@@ -1,5 +1,5 @@
 // strings/reports.js — Reports view chrome (template/target, stats
-// appendix, preview)
+// appendix, save)
 // Extracted from views/Reports.svelte (Strings Stage 3, Sweep-B); values
 // are plain strings with {arg} placeholders — compose at the call site
 // with S.fill(...).
@@ -10,7 +10,7 @@ export const reports = {
   subtitle: 'Templated match / player / round reports.',
   retry: 'Retry',
   templateAndTarget: 'Template & target',
-  generateReport: 'Generate report ',
+  generateReport: 'Save report ',
   originTitle: 'Origin',
   noTemplates: 'No report templates available.',
   noMatches: 'No matches in the library yet.',
@@ -20,16 +20,12 @@ export const reports = {
   roundLabel: 'Round',
   statsAppendix: 'Stats appendix',
   appendixHint:
-    'Pick the stats to append under the report (scoped to this match): search to choose, add with +, remove with −. The tables are composed with the report and shown in the Preview below.',
+    'Pick the stats to append under this match’s report: type to search and pick — each becomes a chip. Remove it with the chip’s ✕ or Backspace on an empty field; the save composes them into the file.',
   metricHint: 'Search stats…',
   metricAria: 'Stat to append',
-  addStat: 'Add stat',
-  removeStat: 'Remove stat',
+  removeStatAria: 'Remove {name}',
   failedLabel: 'failed',
   rowsSuffix: ' rows',
   noMatchScopedStats: 'No match-scoped stats yet — profile-scoped ones live on profiles.',
   noCustomStats: 'No custom stats yet — build one in the Builder.',
-  previewHeading: 'Preview',
-  appendixSuffix: ' + appendix',
-  pressGenerate: 'Press Generate report to create the report.',
 };

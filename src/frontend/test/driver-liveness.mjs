@@ -241,7 +241,16 @@ const EXPECTED = {
   // (the new row offers only the stats no other row holds) and +1
   // section G (no rows → no appendix: the − sweep drops the preview's
   // "+ appendix" suffix with only the add button left); C/F/H unchanged.
-  'reports.dom.mjs': 24,
+  // reports 24 → 31 (2026-11-15, appendix chip field + Save report): the
+  // checkbox/SuggestInput rows became TokenSelect — picks land as chips
+  // with their own ✕ (D gained the remove → re-offerable pin), G gained
+  // the registry-restore, chip-sequence, Backspace-removes-last and
+  // remaining-✕ pins, B gained the chip-with-remove-button pin, and C
+  // became the save path: the preview panel died, so its "renders"
+  // checks now read back the downloadText bytes (filename/mime pin, the
+  // appendix line and the saved rows ride the file). A/D dedupe and E/F/H
+  // keep their shape.
+  'reports.dom.mjs': 31,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
