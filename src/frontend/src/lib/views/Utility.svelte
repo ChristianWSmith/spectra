@@ -34,8 +34,8 @@
   let loading = $state(true);
   let error = $state('');
 
-  // View-local filter/selection state (kind + thrower filters, collapsed
-  // rounds) restores per match through the process-scoped registry
+  // View-local state (kind + thrower filters, the per-round show/hide
+  // map) restores per match through the process-scoped registry
   // (viewstate.svelte.js): the key carries the match id (matchKey), so
   // match A's filters never seed into match B. App's {#if} chain reuses
   // Match's children across an id change (no remount), so ONE combined
@@ -43,7 +43,14 @@
   // otherwise — self-ordering: the write branch runs only while the key
   // is unchanged, so the old match's values can never land under the
   // new key. Loading/error stay transient.
-  const utilDefaults = () => ({ kindF: '', throwerF: '', closed: {} });
+  //
+  // The round map is INVERTED from the retired `closed` key (round →
+  // shown, default all OFF — the owner's C7 ruling): same registry key
+  // slot, but the default flips and the field name says what it means.
+  // The registry is process-scoped and never serialized, so no stale
+  // `closed` record can survive into this shape — seed() reads only the
+  // defaults' own keys, and an unknown field never reaches `shown`.
+  const utilDefaults = () => ({ kindF: '', throwerF: '', shown: {} });
   const utilKey = $derived(matchKey('utility', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
   // (Svelte's documented state_referenced_locally fix); the snapshot carries
@@ -54,7 +61,7 @@
   const utilSeed = utilInit();
   let kindF = $state(utilSeed.kindF);
   let throwerF = $state(utilSeed.throwerF);
-  let closed = $state(utilSeed.closed); // round -> true = collapsed
+  let shown = $state(utilSeed.shown); // round -> true = its throws are listed
   let utilLastKey = utilSeed.key;
   $effect(() => {
     const k = utilKey;
@@ -68,10 +75,10 @@
       const s = seed(k, utilDefaults());
       kindF = s.kindF;
       throwerF = s.throwerF;
-      closed = s.closed;
+      shown = s.shown;
       return;
     }
-    remember(k, { kindF, throwerF, closed });
+    remember(k, { kindF, throwerF, shown });
   });
   // Match tickrate for the tick → clock conversion (unknown until the
   // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
@@ -133,15 +140,15 @@
     return m;
   });
 
-  // Identity colors of the two teams (final-side keyed) — now only the
-  // LEGEND dots and the flash-card labels (identity context, the
-  // EconCurve legend precedent); the damage bars take their COLOR from
-  // the side at that round (barSide below).
+  // Identity colors of the two teams (final-side keyed) — only the
+  // LEGEND dots of both charts carry them (identity context, the
+  // EconCurve legend precedent); the bars themselves take their COLOR
+  // from the side at that round (barSide below).
   const clsCT = $derived(teamStartClass('ct', sideSwitches));
   const clsT = $derived(teamStartClass('t', sideSwitches));
 
-  // --- Damage bars: COLOR = side at that round, PATTERN = team identity ---
-  // COLOR: a bar is one TEAM's damage (final-side keyed) but its hue is
+  // --- Bars (damage + blind time): COLOR = side at that round, PATTERN = team identity ---
+  // COLOR: a bar is one TEAM's total (final-side keyed) but its hue is
   // the side that team held IN THAT round — resolved through the
   // canonical parity helper (lib/sideparity.js sideAtRound), so the hue
   // swaps at every side switch with the teams. An unresolvable round →
@@ -194,6 +201,11 @@
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
 
+  // Any round turned on? The consolidated card has TWO empty states and
+  // they say different things: no grenades in the filter at all vs
+  // grenades present but every round still OFF (the C7 default).
+  const anyShown = $derived(groups.some(([round]) => shown[round]));
+
   // Round lookup behind the row clock: each row's time is how far INTO
   // that round the throw happened (roundClock + the canonical
   // number→row map builder, lib/replay/landmarks.js roundsByNumber) —
@@ -219,27 +231,31 @@
     return { per, max: max || 1 };
   });
 
-  // Flash effectiveness per throwing TEAM: total blind milliseconds + count
-  // of affected players. Blinds are recorded events, but "effectiveness"
-  // aggregates them → heuristic label per PRD §6.1.
-  const flash = $derived.by(() => {
-    let ctMs = 0;
-    let tMs = 0;
-    let ctAff = 0;
-    let tAff = 0;
-    for (const r of filtered) {
-      if (r.kind !== 'flash') continue;
-      const team = teamBySteam.get(r.thrower) || '';
-      const aff = affectedCount(r.affected);
-      if (team === 'ct') {
-        ctMs += r.flashMsTotal || 0;
-        ctAff += aff;
-      } else if (team === 't') {
-        tMs += r.flashMsTotal || 0;
-        tAff += aff;
+  // Blind time per round by THROWER TEAM — the damage series' twin over
+  // the stored per-throw blind milliseconds (r.flashMsTotal), so the two
+  // charts share one geometry, one color rule and one stripe pattern
+  // convention. HONESTY: the total is NOT enemy-gated — it is every
+  // blind the throw applied (the enemy-only gate applies to the affected
+  // COUNTS in the throw rows) — hence the chart's label below, worded
+  // after the shipped blind-time metric.
+  const flashBars = $derived.by(() => {
+    const per = groups.map(([round, list]) => {
+      let ct = 0;
+      let t = 0;
+      for (const r of list) {
+        const team = teamBySteam.get(r.thrower) || '';
+        if (team === 'ct') ct += r.flashMsTotal || 0;
+        else if (team === 't') t += r.flashMsTotal || 0;
       }
-    }
-    return { ctMs, tMs, ctAff, tAff };
+      return { round, ct, t };
+    });
+    let max = 0;
+    for (const p of per) max = Math.max(max, p.ct, p.t);
+    // `any` separates the two empty states: no rounds at all in the
+    // current filter, and rounds present but no blind time among them
+    // (a Kind filter with no flashes) — both read the one honest
+    // "no blind time" line instead of a chart of zero-height bars.
+    return { per, max: max || 1, any: max > 0 };
   });
 
   function affectedCount(json) {
@@ -252,8 +268,11 @@
     }
   }
 
+  // The throw-log toggles: a round's throws list ONLY while the user has
+  // turned that round on — every round starts OFF (the owner's C7
+  // default), so the card opens as a single line of round buttons.
   function toggleRound(round) {
-    closed = { ...closed, [round]: !closed[round] };
+    shown = { ...shown, [round]: !shown[round] };
   }
 
   // The throw's row ▶ — ICON-ONLY play (the one canonical tick-link
@@ -287,36 +306,11 @@
   {#if loading}
     <p class="muted" role="status"><StatusChip block detail={S.utility.loadingDetail} /></p>
   {:else}
-    <div class="util-filters toolbar">
-      <label class="util-field" for="util-kind">
-        <span class="field-label">{S.utility.kindLabel}</span>
-        <select class="input" id="util-kind" bind:value={kindF}>
-          <option value="">{S.utility.allKinds}</option>
-          {#each kindOptions as k (k)}
-            <option value={k}>{k}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="util-field" for="util-thrower">
-        <span class="field-label">{S.utility.throwerLabel}</span>
-        <select class="input" id="util-thrower" bind:value={throwerF}>
-          <option value="">{S.utility.allPlayers}</option>
-          {#each players as p (p.steamId)}
-            <option value={p.steamId}>{p.name}</option>
-          {/each}
-        </select>
-      </label>
-      <span class="muted"
-        >{filtered.length} of {rows.length}{S.utility.grenadeSuffix}{rows.length === 1
-          ? ''
-          : 's'}</span
-      >
-      <span class="spacer"></span>
-      <span class="muted util-hint">{S.utility.hint}</span>
-    </div>
-
+    <!-- Summary charts first, the consolidated throw log LAST (the
+         owner's C7 ruling: the card carrying the filters, the count and
+         the round toggles is the bottom card). -->
     <div class="util-summary">
-      <section class="panel">
+      <section class="panel util-card-damage">
         <h2>{S.utility.damagePerRoundHeading}</h2>
         {#if damageBars.per.length === 0}
           <p class="muted" role="status">{S.utility.noDamage}</p>
@@ -359,7 +353,11 @@
               {@const hT = (p.t / damageBars.max) * (barH - 4)}
               {@const ctX = x + slot * 0.08}
               {@const tX = x + slot * 0.08 + bw + 2}
-              <!-- COLOR = the side each team held IN THIS ROUND -->
+              <!-- COLOR = the side each team held IN THIS ROUND. The
+                   {" "} between the team and its value is LOAD-BEARING:
+                   Svelte drops a whitespace-only text node between two
+                   expressions inside SVG, so a plain space would render
+                   "Alpha40 damage". -->
               <rect
                 class="util-bar {barSide(p.round, 'ct')}"
                 x={ctX}
@@ -367,7 +365,7 @@
                 width={bw}
                 height={hCt}
               >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct} {p.ct}{S.utility.damageSuffix}</title>
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{p.ct}{S.utility.damageSuffix}</title>
               </rect>
               {#if STRIPED_KEY === 'ct'}
                 <rect
@@ -387,7 +385,7 @@
                 width={bw}
                 height={hT}
               >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t} {p.t}{S.utility.damageSuffix}</title>
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{p.t}{S.utility.damageSuffix}</title>
               </rect>
               {#if STRIPED_KEY === 't'}
                 <rect
@@ -426,63 +424,166 @@
         {/if}
       </section>
 
-      <section class="panel">
-        <h2>{S.utility.flashHeading}</h2>
-        <div class="util-flash-grid">
-          <div class="util-flash-cell" title={S.utility.flashCellTitle}>
-            <span class="field-label {clsCT}">{names.ct}{S.utility.blindsSuffix}</span>
-            <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
-            <span class="muted">{flash.ctAff}{S.utility.affectedSuffix}</span>
-          </div>
-          <div class="util-flash-cell" title={S.utility.flashCellTitle}>
-            <span class="field-label {clsT}">{names.t}{S.utility.blindsSuffix}</span>
-            <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
-            <span class="muted">{flash.tAff}{S.utility.affectedSuffix}</span>
-          </div>
-        </div>
-        <p class="util-flash-note">
-          <span
-            class="chip badge-inferred"
-            title={S.utility.inferredTitle}
-            >{S.utility.badgeInferred}</span
+      <!-- C8: the flash-effectiveness totals card is replaced by the
+           damage chart's comparative twin over blind time — same
+           geometry, same COLOR = side-at-that-round rule, same stripe
+           convention (its own pattern id: two SVGs in one document must
+           never share one). The label is the honest semantics of the
+           stored total: blind time from THIS TEAM's flashes, not an
+           enemy-only figure. -->
+      <section class="panel util-card-blind">
+        <h2>{S.utility.flashPerRoundHeading}</h2>
+        {#if !flashBars.any}
+          <p class="muted" role="status">{S.utility.noFlashTime}</p>
+        {:else}
+          <svg
+            class="util-bars"
+            viewBox="0 0 {barW} {barH}"
+            preserveAspectRatio="none"
+            aria-label={S.utility.flashBarsLabel}
           >
-          <span class="muted"
-            >{S.utility.flashNote}</span
-          >
-        </p>
+            <defs>
+              <pattern
+                id="util-stripe-blind"
+                patternUnits="userSpaceOnUse"
+                width="7"
+                height="7"
+                patternTransform="rotate(45)"
+              >
+                <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
+              </pattern>
+            </defs>
+            {#each flashBars.per as p, i (p.round)}
+              {@const slot = barW / flashBars.per.length}
+              {@const x = i * slot}
+              {@const bw = Math.max(2, slot * 0.32)}
+              {@const hCt = (p.ct / flashBars.max) * (barH - 4)}
+              {@const hT = (p.t / flashBars.max) * (barH - 4)}
+              {@const ctX = x + slot * 0.08}
+              {@const tX = x + slot * 0.08 + bw + 2}
+              <!-- COLOR = the side each team held IN THIS ROUND; the
+                   {" "} is the load-bearing space noted above the
+                   damage chart (Svelte drops a whitespace-only text node
+                   between expressions inside SVG). -->
+              <rect
+                class="util-bar {barSide(p.round, 'ct')}"
+                x={ctX}
+                y={barH - hCt}
+                width={bw}
+                height={hCt}
+              >
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{fmtMs(p.ct)}{S.utility.flashSuffix}</title>
+              </rect>
+              {#if STRIPED_KEY === 'ct'}
+                <rect
+                  class="util-bar-stripe"
+                  x={ctX}
+                  y={barH - hCt}
+                  width={bw}
+                  height={hCt}
+                  fill="url(#util-stripe-blind)"
+                  pointer-events="none"
+                />
+              {/if}
+              <rect
+                class="util-bar {barSide(p.round, 't')}"
+                x={tX}
+                y={barH - hT}
+                width={bw}
+                height={hT}
+              >
+                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{fmtMs(p.t)}{S.utility.flashSuffix}</title>
+              </rect>
+              {#if STRIPED_KEY === 't'}
+                <rect
+                  class="util-bar-stripe"
+                  x={tX}
+                  y={barH - hT}
+                  width={bw}
+                  height={hT}
+                  fill="url(#util-stripe-blind)"
+                  pointer-events="none"
+                />
+              {/if}
+            {/each}
+          </svg>
+          <div class="util-legend">
+            <span
+              ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
+              >{names.ct}</span
+            >
+            <span
+              ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
+              >{names.t}</span
+            >
+            <span class="chip badge-inferred" title={S.utility.inferredTitle}
+              >{S.utility.badgeInferred}</span
+            >
+            <span class="muted"
+              title={S.utility.flashTitle}
+              >{S.utility.maxPrefix}{fmtMs(flashBars.max)}{S.utility.flashMaxSuffix}</span
+            >
+          </div>
+        {/if}
       </section>
     </div>
 
-    {#if groups.length === 0}
-      <p class="muted" role="status">{S.utility.noGrenades}</p>
-    {:else}
-      <div class="util-groups">
+    <!-- ONE consolidated card at the BOTTOM (C7, owner 2026-11-15): the
+         kind/thrower filters and the live count moved in here, a single
+         line of per-round show/hide toggles (every round starts OFF),
+         and the throw list of only the rounds the user turns on. It
+         replaces the per-round collapsible cards. -->
+    <section class="panel util-throwlog">
+      <h2>{S.utility.throwLogHeading}</h2>
+      <div class="util-filters toolbar">
+        <label class="util-field" for="util-kind">
+          <span class="field-label">{S.utility.kindLabel}</span>
+          <select class="input" id="util-kind" bind:value={kindF}>
+            <option value="">{S.utility.allKinds}</option>
+            {#each kindOptions as k (k)}
+              <option value={k}>{k}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="util-field" for="util-thrower">
+          <span class="field-label">{S.utility.throwerLabel}</span>
+          <select class="input" id="util-thrower" bind:value={throwerF}>
+            <option value="">{S.utility.allPlayers}</option>
+            {#each players as p (p.steamId)}
+              <option value={p.steamId}>{p.name}</option>
+            {/each}
+          </select>
+        </label>
+        <span class="muted"
+          >{filtered.length} of {rows.length}{S.utility.grenadeSuffix}{rows.length === 1
+            ? ''
+            : 's'}</span
+        >
+      </div>
+      <div class="util-toggles">
         {#each groups as [round, list] (round)}
-          {@const ctDmg = list.reduce(
-            (a, r) => a + (teamBySteam.get(r.thrower) === 'ct' ? r.damage || 0 : 0),
-            0,
-          )}
-          {@const tDmg = list.reduce(
-            (a, r) => a + (teamBySteam.get(r.thrower) === 't' ? r.damage || 0 : 0),
-            0,
-          )}
-          <section class="util-group">
-            <button
-              class="util-group-head"
-              aria-expanded={!closed[round]}
-              onclick={() => toggleRound(round)}
+          <button
+            class="btn small util-toggle"
+            class:primary={!!shown[round]}
+            aria-pressed={!!shown[round]}
+            title={S.utility.toggleTitle}
+            onclick={() => toggleRound(round)}
+          >
+            <span class="util-toggle-label"
+              >{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(round) ?? round)}</span
             >
-              <span class="util-group-title">{S.utility.groupTitlePrefix}{roundIndexLabel(rbn.get(round) ?? round)}</span>
-              <span class="chip round-chip">{list.length}</span>
-              <span
-                class="muted mono"
-                title={S.utility.roundDamageTitle}
-                >{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)}{S.utility.dmgSuffix}</span
-              >
-              <span class="spacer"></span>
-              <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
-            </button>
-            {#if !closed[round]}
+            <span class="chip round-chip">{list.length}</span>
+          </button>
+        {/each}
+      </div>
+      {#if groups.length === 0}
+        <p class="muted" role="status">{S.utility.noGrenades}</p>
+      {:else if !anyShown}
+        <p class="muted" role="status">{S.utility.noRoundShown}</p>
+      {:else}
+        <div class="util-lists">
+          {#each groups as [round, list] (round)}
+            {#if shown[round]}
               <ul class="util-nades">
                 {#each list as r, i (r.tick + ':' + i)}
                   <li class="util-nade">
@@ -534,9 +635,9 @@
                 {/each}
               </ul>
             {/if}
-          </section>
-        {/each}
-      </div>
-    {/if}
+          {/each}
+        </div>
+      {/if}
+    </section>
   {/if}
 </div>

@@ -477,13 +477,13 @@
   gap: 3px;
 }
 
-.util-hint {
-  font-size: 0.8em;
-}
-
+/* The two summary charts STACK (damage on top, blind time below it) —
+   the owner's C8 layout. One column at every width, so the 1100px
+   re-flow rule this container used to carry is gone with the second
+   column. */
 .util-summary {
   display: grid;
-  grid-template-columns: 1.7fr 1fr;
+  grid-template-columns: 1fr;
   gap: 16px;
   align-items: start;
 }
@@ -494,7 +494,7 @@
   display: block;
 }
 
-/* --- Damage bars: COLOR = side at that round, PATTERN = team identity ---
+/* --- Bars (damage + blind time): COLOR = side at that round, PATTERN = team identity ---
    (the derivation lives in Utility.svelte: barSide / STRIPED_KEY) */
 
 /* The stripe token — ONE spelling shared by the SVG <pattern> overlay
@@ -526,8 +526,9 @@
 }
 
 /* PATTERN: the stripe overlay painted on the STRIPED team's bars (the
-   <pattern id="util-stripe"> in Utility.svelte) — identity rides the
-   stripe, the hue underneath stays the side color. */
+   <pattern id="util-stripe"> / id="util-stripe-blind"> pair in
+   Utility.svelte — one per chart, never a shared id) — identity rides
+   the stripe, the hue underneath stays the side color. */
 .util-stripe-line {
   fill: var(--util-stripe);
 }
@@ -572,71 +573,40 @@
   );
 }
 
-.util-flash-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* --- The consolidated throw log (C7, owner 2026-11-15) — ONE card at
+   the bottom of the view: the kind/thrower filters + the live count, a
+   single line of per-round show/hide toggles (all OFF by default), and
+   the throw lists of only the rounds turned on. It replaces the
+   per-round collapsible cards — their .util-group* rules are retired
+   with them. The card itself rides .panel (flex column + 10px gap), so
+   this class is the marker both the view and the driver address. */
+
+/* The round toggles: one line when they fit, wrapping only when the
+   match carries more rounds than the row can hold (the fallback). The
+   ON state rides .btn.primary via class:primary — never a second
+   accent spelling. */
+.util-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.util-flash-cell {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 10px;
+.util-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.util-toggle-label {
+  font-weight: 600;
+}
+
+/* The lists of the rounds turned on — one <ul> per round, each drawn
+   apart by its own hairline. */
+.util-lists {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.util-flash-value {
-  font-size: 1.15em;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.util-flash-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.82em;
-  flex-wrap: wrap;
-}
-
-.util-groups {
-  display: flex;
-  flex-direction: column;
   gap: 10px;
-}
-
-.util-group {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.util-group-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  row-gap: 4px;
-  gap: 10px;
-  width: 100%;
-  background: none;
-  border: none;
-  color: inherit;
-  padding: 8px 12px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.util-group-head:hover {
-  background: var(--list-hover);
-}
-
-.util-group-title {
-  font-weight: 600;
-  font-size: 0.92em;
 }
 
 .util-nades {
@@ -723,10 +693,6 @@
 }
 
 @media (max-width: 1100px) {
-  .util-summary {
-    grid-template-columns: 1fr;
-  }
-
   .util-nade {
     grid-template-columns: 74px 1fr auto;
     grid-auto-rows: auto;

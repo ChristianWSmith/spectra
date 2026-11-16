@@ -267,7 +267,21 @@ const EXPECTED = {
   // flash-effectiveness cells' card tooltip and the per-round team-damage
   // line's formula tooltip (the AGENTS view-aggregate rule: the formula
   // lives in the card title or tooltip, not only in the section note).
-  'utility.dom.mjs': 41,
+  // utility 41 → 69 (2026-11-15, wave utility-tab = C7+C8+C9): the
+  // per-round group cards became ONE bottom throw log (+9 section D —
+  // card order, selectors/count inside, the all-off toggle default and
+  // the "toggle round on" preamble the row checks now need; +6 section L
+  // — lists render only for the rounds turned on, both empty states
+  // distinct), the flash-effectiveness card became the blind-time chart
+  // (+10 section K — its own heading, bars, era-flip hue, own pattern id,
+  // stripe, legend, honest label + tooltip, the no-blind-time empty state
+  // and its restore), C9 added its 2 absence pins (section J), section A
+  // gained the SVG title-space pin (the {" "} that keeps "Alpha 40
+  // damage" from collapsing), section I its filter-restore pin, section M
+  // 3 CSS pins (stacked charts, the single-line toggle row, the retired
+  // rules gone) and section E lost the group-header/flash-card checks it
+  // replaced. Error-path section re-pinned to the throw-log card.
+  'utility.dom.mjs': 69,
   'voice-engine.dom.mjs': 7,
 };
 

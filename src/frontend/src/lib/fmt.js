@@ -202,11 +202,11 @@ export function fmtMs(ms) {
 // non-numeric input (null, undefined, NaN, '') — a cell with no measured
 // value shows the dash, never a fabricated 0 (the unit goes with it: a
 // dash never carries "dmg"). Deliberately OUT of scope, by the owner's
-// carve-out: clock times (0:00 is a real time), the toolbar's row counts
+// carve-out: clock times (0:00 is a real time), the throw-log count
 // (a 0 there is the table's N, not a value), identity fields (kind,
 // thrower — and the coordinate cell's own both-zero rule lives in
-// Utility.svelte) and the Flash-effectiveness card (a summary card, not
-// a table). Negative values render as themselves — never a dash; no
+// Utility.svelte) and the summary charts (charts, not tables — their bar
+// tooltips render the raw value). Negative values render as themselves — never a dash; no
 // cell produces one today (counts are ≥ 0).
 export function fmtZeroDash(value, unit = '') {
   const n = Number(value);
