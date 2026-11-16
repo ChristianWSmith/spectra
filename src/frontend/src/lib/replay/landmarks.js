@@ -622,8 +622,9 @@ export const WEAPON_KINDS = [
 //   headshot  — the `kill` kind is enabled (headshot only written on
 //               kill rows).
 //   bbox      — the event source is enabled (the bbox predicate lives in
-//               eventWhere over typed rows only; the chip additionally
-//               keeps its own `{#if f.bbox}` value check).
+//               eventWhere over typed rows only; the Position row is
+//               field-gated exactly like every other row — it renders
+//               whenever this says true, seeded from f.bbox).
 //
 // ALWAYS visible (never keyed off the selection): the Categories
 // dropdown, ROUND from–to, the saved-filter chrome and Reset. Accepts
@@ -913,6 +914,31 @@ export function clearInapplicableFields(f, catIds) {
   return f;
 }
 
+// parseBboxInputs — THE manual-entry parse for the Position row (C20),
+// the input-side twin of parseLandmarkFilter's `?bbox=` reader (which
+// handles the URL's single comma string; this one handles the row's FOUR
+// typed values, so neither re-implements the other's input shape). Takes
+// the four raw strings in rect order [minX, minY, maxX, maxY] and
+// returns a commit decision:
+//
+//   all four blank  → null        (clear the rect)
+//   four FINITE numbers → {minX,…} (commit as typed)
+//   anything else   → undefined   (partial or invalid: the row does NOT
+//                                  commit — the prior rect stays)
+//
+// Deliberately NOT FilterBar's num(), which clamps to >0: world
+// coordinates go negative. min > max is ACCEPTED (the store's BETWEEN
+// then matches nothing → an honest 0 rows), and 0 is a real coordinate,
+// never "unset". Whitespace-only counts as blank; `Number('')` is 0, so
+// the blank test runs BEFORE Number().
+export function parseBboxInputs(vals) {
+  const s = (vals || []).map((v) => String(v == null ? '' : v).trim());
+  if (s.length !== 4) return undefined; // wrong arity — never half-commit
+  if (s.every((v) => v === '')) return null;
+  if (!s.every((v) => v !== '' && Number.isFinite(Number(v)))) return undefined;
+  return { minX: Number(s[0]), minY: Number(s[1]), maxX: Number(s[2]), maxY: Number(s[3]) };
+}
+
 // parseLandmarkFilter builds a complete filter from a parsed route
 // query. Unknown/absent keys fall back to DEFAULT_FILTER — a deep link
 // with no params is the sparse default (round starts), never
@@ -930,10 +956,10 @@ export function parseLandmarkFilter(query) {
   f.distMax = num(q.distMax);
   f.headshotOnly = q.hs === '1';
   if (q.bbox) {
-    const p = String(q.bbox).split(',').map(Number);
-    if (p.length === 4 && p.every(Number.isFinite)) {
-      f.bbox = { minX: p[0], minY: p[1], maxX: p[2], maxY: p[3] };
-    }
+    // The URL carries ONE comma string; parseBboxInputs is the shared
+    // 4-finite-numbers rule (an absent/incomplete rect never lands).
+    const p = parseBboxInputs(String(q.bbox).split(','));
+    if (p !== undefined && p !== null) f.bbox = p;
   }
   f.side = sideVal(q.side);
   f.team = sideVal(q.team);

@@ -1029,9 +1029,15 @@
     }
   }
 
-  // Scrubber/list seek — in-place, no navigation.
+  // Scrubber/list seek — in-place, no navigation. A seek also PAUSES
+  // (C19): both seek buttons (the feed row's ▶ and the detail pane's
+  // "Seek to event") land you LOOKING AT the moment. This is view glue
+  // only — engine.seekTick itself stays position-only (section K's
+  // "seek never touches play/pause" pins own that), and no wasPlaying
+  // write either: the keep-alive re-records it from the engine at leave.
   function seekTo(tick) {
     engine?.seekTick(tick);
+    engine?.pause();
   }
 
   // M4 comms-around: seek TO the event with playback + voice on — the

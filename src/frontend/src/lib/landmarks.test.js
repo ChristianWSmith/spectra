@@ -34,6 +34,7 @@ import {
   normalizeChat,
   normalizeGeneric,
   parseLandmarkFilter,
+  parseBboxInputs,
   serializeLandmarkFilter,
   filtersEqual,
   shouldRevealFeed,
@@ -729,8 +730,9 @@ test('applicableFilterFields: the owner rule table (kind-level applicability)', 
   const on = (cats) => applicableFilterFields(cats);
   // Default selection (Round starts only) → every value field hides —
   // exactly the empty-list footgun the ruling complained about. The
-  // event source is on, so bbox APPLIES (the chip keeps its own value
-  // check and only renders when a bbox exists).
+  // event source is on, so bbox APPLIES (C20: the Position row is
+  // field-gated like every other row — it renders here, empty and
+  // manually enterable, instead of only when a drill left a value).
   assert.deepEqual(on(['round_starts']), {
     player: false, side: false, team: false, weapon: false, dist: false, headshot: false, bbox: true,
   });
@@ -835,9 +837,10 @@ test('clearInapplicableFields at BOTH choke points: arrivals parse clean, writes
   });
   assert.deepEqual(stale, defaultFilter());
   assert.deepEqual(serializeLandmarkFilter(stale), {});
-  // …while the bbox chip keeps its OWN conditional: cleared only when the
-  // event source is off (round_starts keeps the value; footsteps/buys
-  // drop it — the chip then hides because f.bbox is null).
+  // …while the POSITION field keeps its OWN conditional: cleared only
+  // when the event source is off (round_starts keeps the value;
+  // footsteps/buys drop it — the row then unmounts with the field, and
+  // under an applicable selection re-seeds from the null rect).
   assert.deepEqual(
     parseLandmarkFilter({ cat: 'round_starts', bbox: '1,2,3,4' }).bbox,
     { minX: 1, minY: 2, maxX: 3, maxY: 4 },
@@ -1091,6 +1094,28 @@ test('parse edge cases: empty cat = none, junk falls back, no shared arrays', ()
   assert.equal(parseLandmarkFilter({}).roundTo, 0);
   // A malformed bbox is ignored rather than half-applied.
   assert.equal(parseLandmarkFilter({ bbox: '1,2,3' }).bbox, null);
+  // C20 — the Position row's manual-entry parse (parseBboxInputs), the
+  // input-side twin of the ?bbox= reader above: all four blank clears
+  // the rect (whitespace-only counts as blank — the blank test runs
+  // BEFORE Number(), whose Number('') is 0), four finite numbers commit
+  // it AS TYPED (world coordinates go negative; min > max is accepted —
+  // the store's BETWEEN then matches nothing), and a partial or
+  // non-numeric row commits NOTHING: undefined ≠ null, the caller keeps
+  // the prior rect instead of clearing it.
+  assert.equal(parseBboxInputs(['', '', '', '']), null);
+  assert.equal(parseBboxInputs(['  ', ' ', '', '\t']), null);
+  assert.deepEqual(parseBboxInputs(['-1000', '-900', '100', '200']), {
+    minX: -1000, minY: -900, maxX: 100, maxY: 200,
+  });
+  assert.deepEqual(parseBboxInputs(['100', '200', '-1000', '-900']), {
+    minX: 100, minY: 200, maxX: -1000, maxY: -900,
+  }); // min > max kept as typed
+  assert.deepEqual(parseBboxInputs(['0', '0', '0', '0']), {
+    minX: 0, minY: 0, maxX: 0, maxY: 0,
+  }); // 0 is a coordinate, never "unset"
+  assert.equal(parseBboxInputs(['', '', '', '200']), undefined); // partial
+  assert.equal(parseBboxInputs(['1', 'x', '3', '4']), undefined); // invalid
+  assert.equal(parseBboxInputs(['1', '2', '3']), undefined); // wrong arity
   // Each parse gets fresh arrays (callers may mutate freely).
   const a = parseLandmarkFilter({});
   const b = parseLandmarkFilter({});

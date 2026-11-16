@@ -334,7 +334,18 @@ const EXPECTED = {
   // skip_freeze pin). The quick-range label and both window checks
   // re-pinned IN PLACE for the default 5 s (label ±5 s; 0:05–0:09 at tick
   // 640, 0:00–0:05 at tick 0), so only the new pin moved the count.
-  'replay.dom.mjs': 453,
+  // replay 453 → 463 (2026-11-16, replay-feed C19+C20): +4 section N2
+  // (C19 — the row ▶ seeks AND pauses: baseline row+playing glyph, the
+  // seek delta to the event tick, pause +1 with no extra play, and the
+  // uiPlaying glyph offering Play again). +4 section G3 (C20 — the
+  // Position row: a partial row never commits, four finite bounds gain
+  // bbox=minX,minY,maxX,maxY, they read back through the URL→prop
+  // round trip, and the clear ✕ drops both). +2 beside the default-hides
+  // re-pin (the field-gated Position row now SHOWS under the sparse
+  // default: seeded empty, and carrying aria-labels with no
+  // placeholders). The default-hides check itself, the landing-URL
+  // re-pin and the label-sequence re-pin (…· POSITION) moved IN PLACE.
+  'replay.dom.mjs': 463,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
