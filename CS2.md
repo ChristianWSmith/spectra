@@ -1656,4 +1656,11 @@ at the end of the section.
   format 18 = PNG_DXT5, unsupported by `decodeVTex`);
   `map_icon_none_png.vtex_c` is an 80×80 placeholder; the VPK holds **no
   loose png/jpg/tga** (137,845 entries).
-  **Source** — local probe of pak01_dir.vpk (2026-11-16).
+  **Source** — local probe of pak01_dir.vpk (2026-11-16); corroborated:
+  Source 2 wiki loading-screen guide (a custom map icon is
+  `content/panorama/images/map_icons/map_icon_<map>.svg` compiled to
+  `.vsvg_c` in `game/…`, shown as the map logo,
+  https://www.source2.wiki/CommunityGuides/s2ze/PortingGuide/ExploitingS2/loading)
+  and MurkyYT/cs2-map-icons (map icons scraped straight from the game
+  depot, `vsvg-converter.js` included,
+  https://github.com/MurkyYT/cs2-map-icons) (both retrieved 2026-11-16).
