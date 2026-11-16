@@ -379,48 +379,71 @@ export function profileBackTarget(query, originHash) {
 // one criterion (lead ruling: they must never diverge).
 export const MATCH_FAMILY = new Set(['match', 'round', 'replay', 'compare']);
 
+// PROFILE_FAMILY — the same partition for the Profiles action: the
+// player directory and a player's own page. The whole FAMILY is what
+// the action remembers (lead ruling: the last PLACE in the tab, list or
+// player), and — like MATCH_FAMILY — active() and the memory store and
+// validate below share this ONE set, so they can never diverge (the
+// wave's own ruling: no second `route name === 'player'` branch exists
+// anywhere in the helpers).
+export const PROFILE_FAMILY = new Set(['profiles', 'player']);
+
 // resolveNavTarget / isNavEnabled — THE shared decision pair for a nav
 // action's click, consumed by BOTH surfaces (App.svelte's rail and
 // CommandPalette's Actions section) so they can never disagree about
 // where an action goes or whether it is live (L4). `ctx` is
-// { lastMatchHash }: App's SESSION-SCOPED memory of the last
-// match-family hash — the FULL path+query, so the Match tab returns to
-// the exact tab/round/filter the user left (no pref, no viewstate, no
-// route query; a link-shaped value lives in the URL, and this is a
-// "where was I" breadcrumb, not one).
-//   - every action without `memory` is always enabled and targets its
-//     own `hash` (nothing changes for Library/Profiles/Builder/…);
-//   - the Match action (`memory: true`, no fixed destination) is enabled
-//     only while the memory names a REAL match — id > 0, since `#/match`
-//     without an id already parses to the library route (router.js) and
-//     `#/match/0` is no match — and then targets that remembered hash
-//     VERBATIM (full hash: Replay/Compare land where the user left off).
-//     With no usable memory it falls back to its `hash` (the Library) —
-//     unreachable in practice: the rail disables the button and the
-//     palette omits the row entirely (dead rows are worse than absent
-//     ones), so the fallback only keeps a stray click honest.
+// { lastMatchHash, lastProfilesHash }: App's SESSION-SCOPED memory of
+// the last hash in each memory-backed action's family — the FULL
+// path+query, so the tab returns to the exact page/tab/filter the user
+// left (no pref, no viewstate, no route query; a link-shaped value
+// lives in the URL, and this is a "where was I" breadcrumb, not one).
+// The policy lives ON the action, never in a helper branch on its
+// label — declared data, so a future memory-backed action states its
+// own shape:
+//   - an action without `memory` is always enabled and targets its own
+//     `hash` (nothing changes for Library/Builder/SQL/Settings);
+//   - `memory: 'gate'` (Match) is enabled only while its memory names a
+//     REAL match — id > 0, since `#/match` without an id already parses
+//     to the library route (router.js) and `#/match/0` is no match —
+//     and then targets that remembered hash VERBATIM (full hash:
+//     Replay/Compare land where the user left off). With no usable
+//     memory it falls back to its `hash` (the Library) — unreachable in
+//     practice: the rail disables the button and the palette omits the
+//     row entirely (dead rows are worse than absent ones), so the
+//     fallback only keeps a stray click honest;
+//   - `memory: 'fallback'` (Profiles) is ALWAYS enabled — there is
+//     always a directory to go to — and targets its remembered hash
+//     when that memory is usable, else its own `hash` (the list).
+//     Booting on (or visiting) any PROFILE_FAMILY route stores that
+//     full hash; anything else leaves the memory alone.
 export function isNavEnabled(action, ctx) {
   if (!action || !action.memory) return true;
-  return rememberedMatchHash(ctx) !== null;
+  if (action.memory === 'fallback') return true;
+  return rememberedFor(action, ctx) !== null;
 }
 
 export function resolveNavTarget(action, ctx) {
   if (!action) return '/library';
   if (!action.memory) return action.hash;
-  return rememberedMatchHash(ctx) || action.hash;
+  return rememberedFor(action, ctx) || action.hash;
 }
 
-// rememberedMatchHash — the memory as a USABLE target: a non-empty hash
-// that still parses to a match-family route with a real match id. The
-// parse is the whole check (no second shape knowledge here): a stale or
-// hand-edited memory that no longer parses simply disables the action,
-// and one that parses to a since-deleted match lands on the Match view's
-// own "not found" (accepted: a stale memory is the user's own trail).
-function rememberedMatchHash(ctx) {
-  const raw = ctx && ctx.lastMatchHash;
+// rememberedFor — the memory named by the ACTION's own family as a
+// USABLE target: a non-empty hash that still parses to a route of that
+// family (plus the memory's own extra rule — Match's real-id gate; the
+// profile family has none: the directory itself is a valid target, so
+// a stored `#/profiles` is usable). The parse is the whole check (no
+// second shape knowledge here): a stale or hand-edited memory that no
+// longer parses simply falls back, and one that parses to a
+// since-deleted record lands on the view's own "not found" (accepted: a
+// stale memory is the user's own trail).
+function rememberedFor(action, ctx) {
+  const raw = ctx && ctx[action.memoryKey];
   if (!raw) return null;
   const r = parseHash(String(raw));
-  return MATCH_FAMILY.has(r.name) && r.id > 0 ? String(raw) : null;
+  if (!(action.family || new Set()).has(r.name)) return null;
+  if (action.needsId && !(r.id > 0)) return null;
+  return String(raw);
 }
 
 // NAV_ACTIONS is the one sidebar action list: App.svelte renders it as
@@ -437,9 +460,14 @@ function rememberedMatchHash(ctx) {
 // renders every action inline in array order. Explorer and Reports are
 // gone from the nav list (they are match-view tabs now); their standalone
 // #/explorer and #/reports routes still parse and render.
-// `memory: true` marks the ONE memory-backed action (Match) — see
-// resolveNavTarget/isNavEnabled above; such an action's `hash` is only
-// its no-memory fallback, never its live target.
+// `memory` marks the memory-backed actions (Match, Profiles) — see
+// resolveNavTarget/isNavEnabled above. Its VALUE is the POLICY and the
+// rest is declared data, so the helpers never branch on an action's
+// identity: `family` is the route-name set the action owns (also what
+// active() claims — ONE set, so highlight and memory can never
+// diverge), `memoryKey` is the ctx field App stores it under, `needsId`
+// adds Match's real-id gate (the only extra usability rule), and the
+// action's `hash` is its no-memory fallback, never its live target.
 export const NAV_ACTIONS = [
   {
     label: 'Library',
@@ -454,7 +482,10 @@ export const NAV_ACTIONS = [
     label: 'Match',
     icon: 'codicon-history', // "return to where you were": this tab goes back to the last match view
     hash: '/library', // fallback only — the live target is the remembered hash (see above)
-    memory: true,
+    memory: 'gate',
+    family: MATCH_FAMILY,
+    memoryKey: 'lastMatchHash',
+    needsId: true,
     // Lights up over the whole match family, by NAME (the exactly-one-
     // action invariant is a name partition; the id>0 gate belongs to
     // isNavEnabled, which decides where the click GOES).
@@ -463,11 +494,16 @@ export const NAV_ACTIONS = [
   {
     label: 'Profiles',
     icon: 'codicon-person',
-    hash: '/profiles',
-    // The player directory — its own route; a row click drills into the
-    // player profile (#/player/:steamid), which is Profiles-active: the
-    // profile's back button returns to this list (profileBackTarget).
-    active: (r) => r.name === 'profiles' || r.name === 'player',
+    hash: '/profiles', // fallback only — the live target is the remembered hash (see above)
+    memory: 'fallback', // always enabled: the directory itself is always a target
+    family: PROFILE_FAMILY,
+    memoryKey: 'lastProfilesHash',
+    // The player directory AND a player's own page are this action's
+    // family: a row click drills into the player profile
+    // (#/player/:steamid), which is Profiles-active — and clicking the
+    // tab again returns to the last place in it (the profile's back
+    // button still returns to the list, profileBackTarget).
+    active: (r) => PROFILE_FAMILY.has(r.name),
   },
   { label: 'Builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
   { label: 'SQL console', icon: 'codicon-terminal', hash: '/sql', active: (r) => r.name === 'sql' },

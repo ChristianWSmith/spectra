@@ -18,10 +18,12 @@
   import StatusChip from './StatusChip.svelte';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
-  // ctx — App's nav context ({ lastMatchHash }, the Match tab's session
-  // memory), passed down so the palette resolves actions through the SAME
-  // lib/nav.js helpers the rail uses (one decision, two surfaces).
-  let { nav = () => {}, ctx = { lastMatchHash: '' } } = $props();
+  // ctx — App's nav context ({ lastMatchHash, lastProfilesHash }, the
+  // memory-backed tabs' session memories), passed down so the palette
+  // resolves actions through the SAME lib/nav.js helpers the rail uses
+  // (one decision, two surfaces) — so the Profiles row targets the
+  // remembered hash for free.
+  let { nav = () => {}, ctx = { lastMatchHash: '', lastProfilesHash: '' } } = $props();
 
   let open = $state(false);
   let query = $state('');
