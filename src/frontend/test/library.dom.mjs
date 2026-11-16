@@ -23,8 +23,9 @@
 // this fixture is never-extracted) and by a running parse (Cancel only +
 // "reading demo 42%" determinate bar), the never-extracted FAILED row
 // (— cells, Re-parse/Delete live again — the cancel-then-retry
-// presentation), a REPROCESS mid-parse (old values kept + the 3-button
-// set — the anti-regression pin for the extracted_at gate), the
+// presentation), a REPROCESS mid-parse (old values kept + EXACTLY the
+// live Cancel button — the disabled Re-parse/Delete pair hides on every
+// mid-job row, owner 2026-11-16), the
 // import-dir row flipping to the live job with Import swapped for
 // Remove, and the multi-path ImportDialog hand-off (N paths → ONE
 // ImportPaths call).
@@ -1024,8 +1025,9 @@ const failedFreshRow = {
 };
 // REPROCESS mid-parse WITH prior data — the anti-regression pin for the
 // extracted_at gate: nothing clears the old values (Reprocess only flips
-// status), so the row keeps its W/L score, rounds/duration/matchup and the
-// reference 3-button set (Cancel live, Re-parse/Delete disabled).
+// status), so the row keeps its W/L score, rounds/duration/matchup — and
+// (owner, 2026-11-16) EXACTLY the live Cancel button, the disabled
+// Re-parse/Delete pair hidden while the row is mid-job.
 const reprocessParsingRow = {
   id: 6,
   path: '/d/old.dem',
@@ -1102,8 +1104,8 @@ const cancelCalls = () => bindings.calls.filter((c) => c.method === 'CancelJob')
   // RE-PIN (deliberate behavior change): the never-extracted running row
   // renders EXACTLY the enabled Cancel control — its disabled
   // Re-parse/Delete pair is gone (owner ruling). The 42% chip pins above
-  // are untouched; the pair's disabled form survives on a reprocess with
-  // prior data (pinned in the reprocess block below).
+  // are untouched; since 2026-11-16 NO parsing/queued row renders the
+  // pair, prior data or not (the reprocess block below pins that too).
   // Re-pinned to aria-label 2026-11-16 (library-buttons): the row
   // buttons are icon-only, so the visible word lives on aria-label.
   check(
@@ -1174,8 +1176,8 @@ await sleep(350); // past the 250 ms debounce
   // (extractedAt is the Go zero, scores/rounds/duration 0) despite its
   // reprocess job, so the extracted_at gate gives it the one-control
   // presentation — "if it's never-extracted, re-pin to 1". A reprocess
-  // WITH prior data keeps the 3-button set mid-parse — pinned in the
-  // reprocess block below.
+  // WITH prior data renders the same one control since 2026-11-16 —
+  // pinned in the reprocess block below.
   check(
     'queued match row: exactly Remove, live (RE-PIN: was Remove + 2 disabled)',
     mBtns.length === 1 &&
@@ -1285,9 +1287,9 @@ await sleep(350); // past the 250 ms debounce
 {
   // REPROCESS mid-parse WITH prior data — the anti-regression pin for
   // the extracted_at gate: old values stay on screen (W/L score,
-  // rounds/duration/matchup) and the row keeps the reference 3-button
-  // set — Cancel live, Re-parse/Delete disabled — exactly as before the
-  // never-extracted presentation was introduced.
+  // rounds/duration/matchup). Button set RE-PINNED (owner, 2026-11-16):
+  // a parsing row renders EXACTLY one button — the live Cancel — and
+  // Re-parse/Delete/Free copy are ABSENT from the DOM, not disabled.
   const prevRowsForFacetRep = rowsForFacet;
   rowsForFacet = (f) =>
     f && f.map === 'reprocessing' ? [reprocessParsingRow] : prevRowsForFacetRep(f);
@@ -1308,14 +1310,15 @@ await sleep(350); // past the 250 ms debounce
     JSON.stringify(cells),
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
-  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
-  // buttons — Cancel is the first button's label, the pair still disabled.
+  // RE-PIN (owner, 2026-11-16, parsing-row buttons): the mid-parse row's
+  // ONLY button is the live Cancel — length 1 pins Re-parse/Delete/Free
+  // copy ABSENT (never merely disabled; the aria-label re-pin of
+  // 2026-11-16 rides the same assertion).
   check(
-    'reprocess parsing row keeps the 3-button set (Cancel live, pair disabled)',
-    btns.length === 3 &&
+    'reprocess parsing row: EXACTLY one button — live Cancel, no disabled pair (RE-PIN: was 3-button set)',
+    btns.length === 1 &&
       btns[0].getAttribute('aria-label') === 'Cancel' &&
-      !btns[0].disabled &&
-      btns.slice(1).every((b) => b.disabled),
+      !btns[0].disabled,
     JSON.stringify(btns.map((b) => [b.getAttribute('aria-label'), b.disabled])),
   );
   const pct = tr.querySelector('.chip-pct');

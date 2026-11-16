@@ -650,19 +650,16 @@
   // failure state (the failed StatusChip carries match.error in its
   // title), and a reprocess failure keeps any previously extracted rows
   // on screen. The row's own Reprocess/Delete buttons stopPropagation on
-  // click. While the row is NOT openable (parsing/queued) they render
-  // disabled with a title hint saying why — but ONLY when prior
-  // extracted data exists (a reprocess mid-parse, old values on screen):
-  // a NEVER-EXTRACTED row renders neither one (before the first extract
-  // there is nothing to re-run and nothing to delete, and that disabled
-  // pair is exactly what made a parsing row read as dead beside the
-  // synthetic queued row — owner ruling), leaving its Cancel/Remove
-  // control as the one button (the way out of the state — see
-  // onCancelJob); with no job in the jobs snapshot such a row has no
-  // buttons at all (a row no job owns is not actionable — no fallback
-  // control is invented). Enter on a button must not navigate the row
-  // either (the keydown bubbles up to the <tr>), hence the target check
-  // in the keydown handler.
+  // click. While the row is NOT openable (parsing/queued) they do not
+  // render AT ALL (owner, 2026-11-16 — the disabled pair read as dead;
+  // before the first extract there is nothing to re-run or delete, and
+  // mid-reparse the row is not actionable until the job resolves), so a
+  // mid-job row's one control is its Cancel/Remove (the way out of the
+  // state — see onCancelJob); with no job in the jobs snapshot such a
+  // row has no buttons at all (a row no job owns is not actionable — no
+  // fallback control is invented). Enter on a button must not navigate
+  // the row either (the keydown bubbles up to the <tr>), hence the
+  // target check in the keydown handler.
   function isOpenable(m) {
     return m.status !== 'parsing' && m.status !== 'queued';
   }
@@ -1038,19 +1035,21 @@
                     <span class="codicon codicon-close" aria-hidden="true"></span>
                   </button>
                 {/if}
-                <!-- Re-parse/Delete render EXCEPT on a never-extracted
-                     row still queued/parsing: before the first extract
-                     there is nothing to re-run and nothing to delete,
-                     and their disabled pair is what made a parsing row
-                     read as dead beside the synthetic queued row (owner
-                     ruling). The cancel control above is such a row's
-                     one button — or none at all when no job in the jobs
-                     snapshot owns it (a row no job owns is not
-                     actionable). A reprocess mid-parse (old values still
-                     on screen) keeps the pair disabled, and failed/ready
-                     rows keep it live (retry) — both fall out of the
-                     same neverExtracted gate. -->
-                {#if !neverExt || isOpenable(m)}
+                <!-- Re-parse/Free copy/Delete render ONLY while the row
+                     is openable (ready/failed) — a parsing/queued row is
+                     mid-job, so all three would be disabled, and the
+                     disabled pair is exactly what made such a row read as
+                     dead beside the synthetic queued row (owner ruling,
+                     2026-11-16: hide them, keep ONLY the cancel control
+                     above — or none at all when no job in the jobs
+                     snapshot owns the row; a row no job owns is not
+                     actionable). Never-extracted FAILED rows stay
+                     openable, so the pair keeps rendering live there
+                     (retry) — the extracted_at gate still owns the
+                     row's CELLS. The buttons keep their own
+                     disabled/why-title form as the guard this gate now
+                     carries. -->
+                {#if isOpenable(m)}
                   <button
                     class="btn small"
                     disabled={!isOpenable(m)}
@@ -1063,11 +1062,11 @@
                     <span class="codicon codicon-sync" aria-hidden="true"></span>
                   </button>
                   <!-- Free copy: rendered only while the fs-derived state
-                       says a managed copy exists AND the row is openable —
-                       a parsing/queued row never shows it (and a
-                       never-extracted one renders neither it nor the
-                       pair — see the gate above). -->
-                  {#if m.copyState === 'copied' && isOpenable(m)}
+                       says a managed copy exists — the openable gate
+                       above already keeps it off every parsing/queued
+                       row (its openable conjunct used to live here too,
+                       folded into that one gate 2026-11-16). -->
+                  {#if m.copyState === 'copied'}
                     <button
                       class="btn small"
                       title={S.library.freeCopyTitle}
