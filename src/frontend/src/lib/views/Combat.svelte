@@ -3,10 +3,11 @@
   // Combat tab: per-player damage/trade stats, the engagement deep-dive
   // (round → time-into-round → killer vs victim → distance in metres —
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
-  // traded — share the one row, both chips in its Kind cell) and the
-  // clutches (won/lost toggle — won ON, lost OFF by default). Every
-  // inferred metric carries the badge with its definition in the title
-  // attribute.
+  // traded — share the one row, both chips in its Kind cell; the kind
+  // TOGGLES are independent/OR'd and ALL OFF by default = no filter,
+  // every row) and the clutches (won/lost toggle — won ON, lost OFF by
+  // default). Every inferred metric carries the badge with its
+  // definition in the title attribute.
   import {
     getCombatStats,
     getClutches,
@@ -99,7 +100,9 @@
   // models.go). "traded" is the victim-side ANSWERED fact — the natural
   // pair of untraded — so every kill yields ≥ 1 row: exactly one
   // victim-side row (traded OR untraded) plus the killer-side facts.
-  const ENG_KINDS = ['', 'opening', 'trade', 'traded', 'untraded'];
+  // No '' / "all" entry: the toggles below are independent selections
+  // and every toggle OFF is the no-filter default.
+  const ENG_KINDS = ['opening', 'trade', 'traded', 'untraded'];
 
   let clutches = $state([]);
   let engagements = $state([]);
@@ -147,7 +150,11 @@
   // the key is unchanged, so the old match's values can never land
   // under the new key. KAST drill-down, busy/error stay transient.
   const combDefaults = () => ({
-    engKind: '',
+    // Engagements: an ARRAY of active kind toggles — [] (all off) is
+    // the no-filter default (every row), not an empty card. A stale
+    // scalar `engKind` entry fails sameKind's array check and is
+    // whitelisted away — no migration.
+    engKinds: [],
     clutchWon: true,
     clutchLost: false,
     // The default ordering follows the KAST slot — now a METRIC column
@@ -162,7 +169,7 @@
   // change — URL stays the sole durable record; registry semantics unchanged.
   const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
   const combSeed = combInit();
-  let engKind = $state(combSeed.engKind);
+  let engKinds = $state(combSeed.engKinds);
   // Clutches card outcome toggle — LOCAL state only: never stamped into
   // the URL (the route-query retention ruling resolved to the
   // process-scoped registry below): won ON and lost OFF by default, i.e.
@@ -184,13 +191,13 @@
       // values).
       combLastKey = k;
       const s = seed(k, combDefaults());
-      engKind = s.engKind;
+      engKinds = s.engKinds;
       clutchWon = s.clutchWon;
       clutchLost = s.clutchLost;
       statSort = s.statSort;
       return;
     }
-    remember(k, { engKind, clutchWon, clutchLost, statSort });
+    remember(k, { engKinds, clutchWon, clutchLost, statSort });
   });
 
   // KAST drill-down modal (per-round K/A/T/S grid).
@@ -390,12 +397,24 @@
     return [...groups.values()];
   });
 
-  // The kind chips FILTER the merged rows: a row matches when it
-  // CONTAINS that kind — a trade+untraded kill shows under either chip
-  // (and once, not twice, under "all").
+  // The kind TOGGLES filter the merged rows as an OR UNION: a row
+  // matches when it CONTAINS ANY selected kind — a trade+untraded kill
+  // shows under either toggle and once (not twice) under both. With
+  // every toggle off (the default) there is no filter at all: every
+  // row shows. The filter only narrows — it preserves the fetch order
+  // of engagementRows.
   const visibleEngagements = $derived(
-    engKind ? engagementRows.filter((g) => g.kinds.includes(engKind)) : engagementRows,
+    engKinds.length === 0
+      ? engagementRows
+      : engagementRows.filter((g) => g.kinds.some((k) => engKinds.includes(k))),
   );
+
+  // Each click adds its kind to the selection or removes it (the
+  // Clutches card's independent-toggle shape): deselecting everything
+  // lands back on the all-off default = no filter.
+  function toggleEngKind(k) {
+    engKinds = engKinds.includes(k) ? engKinds.filter((x) => x !== k) : [...engKinds, k];
+  }
 
   const sortedStats = $derived.by(() => {
     const { key, desc } = statSort;
@@ -678,9 +697,10 @@
         {#each ENG_KINDS as k (k)}
           <button
             class="btn small comb-kind"
-            class:active={engKind === k}
-            onclick={() => (engKind = k)}
-          >{k || 'all'}</button>
+            class:active={engKinds.includes(k)}
+            aria-pressed={engKinds.includes(k)}
+            onclick={() => toggleEngKind(k)}
+          >{k}</button>
         {/each}
       </div>
       <div class="table-scroll">
@@ -769,11 +789,13 @@
       <h2>
         {S.combat.clutchesPrefix}<span class="chip provenance" title={S.combat.clutchTitle}>{S.combat.clutchChipLabel}</span>
       </h2>
-      <!-- Outcome TOGGLES — chip-style like the Engagements card's kind
-           chips, but independent (each flips its own boolean): won+lost = all
-           rows, won-only = the default/historical list, lost-only = the lost
-           rows, neither = the empty state below. Local $state only — never
-           route-query state (retention ruling pending). -->
+      <!-- Outcome TOGGLES — the same independent-toggle shape as the
+           Engagements card's kind chips (each flips its own boolean):
+           won+lost = all rows, won-only = the default/historical list,
+           lost-only = the lost rows, neither = the empty state below.
+           The one divergence: the Engagements toggles treat ALL OFF as
+           NO FILTER (every row), never an empty card. Local $state only
+           — never route-query state (retention ruling pending). -->
       <div class="comb-kinds" role="group" aria-label={S.combat.filterClutchesLabel}>
         <button
           class="btn small comb-kind"
