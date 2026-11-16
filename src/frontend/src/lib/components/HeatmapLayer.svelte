@@ -52,6 +52,13 @@
     gridLayer = 0,
     kind = '',
     onRegion = () => {},
+    // V8e bridge — the composite canvas (radar + overlay, exactly what
+    // draw() paints) is PRIVATE to this component; the view reaches it
+    // only through this callback so its floating Save button can
+    // rasterize the very pixels the user sees. No global state: the
+    // handle is handed over on mount/replace and withdrawn (null) on
+    // teardown (effect below), so the view never holds a dead element.
+    onCanvas = () => {},
   } = $props();
 
   // The ONE drill affordance predicate (lib/heatkinds.js — generic: any
@@ -63,6 +70,14 @@
   let radar = $state(null); // decoded radar image | null
   let boxW = $state(0); // wrapper content width (CSS px)
   let dpr = $state(1); // window devicePixelRatio
+
+  // Hand the composite canvas to the view (the onCanvas bridge above):
+  // fires once bind:this lands the element, re-fires if it is ever
+  // re-created, and withdraws (null) on teardown.
+  $effect(() => {
+    onCanvas(canvas);
+    return () => onCanvas(null);
+  });
 
   const xf = $derived(pack && pack.transform ? pack.transform : null);
   // The pack's radar panels (makeTransform's ONE pack→layers reader):

@@ -39,9 +39,22 @@ const TYPE_LABELS = {
   decoy: 'Decoy',
 };
 
-// heatKindLabel — selector text for a raw kind id: "kd" reads "K/D",
-// grenade ids read "<Type> thrown" / "<Type> detonation", anything else
-// reads as-is (presence/kills/deaths/damage already read as their ids).
+// Display names for the core kinds — TITLE CASE selector text (the
+// dropdown reads as English, not raw ids). An id not listed here passes
+// through verbatim (see heatKindLabel), so an unknown/future id renders
+// as itself rather than blank.
+const CORE_LABELS = {
+  presence: 'Presence',
+  kills: 'Kills',
+  deaths: 'Deaths',
+  damage: 'Damage',
+};
+
+// heatKindLabel — selector text for a raw kind id, title-cased: "kd"
+// reads "K/D" (an abbreviation — its slash form is never case-touched),
+// grenade ids read "<Type> Thrown" / "<Type> Detonation", the core kinds
+// read their title-cased name (presence → Presence, …), anything else
+// reads as-is (an unknown id renders verbatim, never blank).
 export function heatKindLabel(kind) {
   if (kind === 'kd') return 'K/D';
   const i = kind.lastIndexOf('_');
@@ -49,10 +62,10 @@ export function heatKindLabel(kind) {
     const type = TYPE_LABELS[kind.slice(0, i)];
     const flavor = kind.slice(i + 1);
     if (type && (flavor === 'thrown' || flavor === 'det')) {
-      return `${type} ${flavor === 'thrown' ? 'thrown' : 'detonation'}`;
+      return `${type} ${flavor === 'thrown' ? 'Thrown' : 'Detonation'}`;
     }
   }
-  return kind;
+  return CORE_LABELS[kind] ?? kind;
 }
 
 // heatRegionCats — landmark categories (lib/replay/landmarks.js

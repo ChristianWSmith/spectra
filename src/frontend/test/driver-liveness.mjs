@@ -324,7 +324,30 @@ const EXPECTED = {
   // cap on .heat-canvas-wrap — (100vh − 330px) × --heat-aspect, which the
   // view sets — and the three .heat-view centering rules). Sections A–O
   // untouched; N's toolbar/progress pins stay green by construction.
-  'heatmap-layer.dom.mjs': 82,
+  // heatmap-layer 82 → 92 (2026-11-16, matchview V8 — heatmaps a–f): +10.
+  // H rewrote IN PLACE for roundScoreLabel (the two round-range options
+  // compose the canonical `RD<n> | <ct>-<t>` helper — same2 checks plus
+  // the import pin, +1). Section N kept its count (toolbar→progress row
+  // order is unchanged; only its comment notes the V8b move). The selbox
+  // pins rewrote IN PLACE for V8f (white border + translucent white fill,
+  // never --ct/--t/accent/dashed; pointer-events none — same 3). P gained
+  // +1 the V8c absence pin (no .heat-empty row, no emptyState catalog
+  // key) and its card-shape pair inverted/re-scoped in place for V8b
+  // (toolbar + block progress INSIDE the single panel; order toolbar →
+  // progress → legend → radar → hint with emptyAt === -1), its centering
+  // pins re-pointed at the descendant `.heat-view .heat-controls`
+  // combinator and the hint-only rule (same 2), and gained +4 NEW Save
+  // pins (markup gated on grid && heatCanvas inside the card,
+  // downloadCanvasPNG + dated heatmap-<map>-<date>.png name, the
+  // onCanvas canvas bridge with no global state, the
+  // `.heat-view .panel { position: relative }` + `.heat-save`
+  // bottom-right positioning) plus +2 title-cased kind-label pins
+  // (Presence/Damage/K/D spellings and "<Type> Thrown/Detonation", read
+  // through heatKindLabel at the option site), and +2 NEW mounted checks
+  // in section Q (the onCanvas bridge actually hands the view the LIVE
+  // <canvas> element, exactly once — a stable callback, not one hand-off
+  // per render).
+  'heatmap-layer.dom.mjs': 92,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
   // and the matchup names were RE-PINNED to the START-side colour rule
