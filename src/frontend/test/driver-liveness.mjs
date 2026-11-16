@@ -128,7 +128,14 @@ const EXPECTED = {
   // handle-driven DnD check died with the drag path (rows are no longer
   // draggable and carry no grip); the grabber pin was rewritten IN PLACE
   // as the "no drag source anywhere" pin, which moves no count.
-  'builder.dom.mjs': 111,
+  // builder 111 → 118 (2026-11-15, preview N-sort — merged atop the 111
+  // re-pin): +7 section E — the preview table's client-side sort (default
+  // N highest-first; Value highest then lowest first by VALUE not its
+  // percent text; N's first click high-first with the header marked and
+  // its sample-size tooltip kept, second click low-first; a text column
+  // A→Z). The stored-value stub now returns three rows for the previewed
+  // metric so an ORDER is observable at all (it was single-row before).
+  'builder.dom.mjs': 118,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

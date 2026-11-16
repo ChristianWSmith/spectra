@@ -10,13 +10,26 @@
 // server-side by the driver's progress handler, and reads stop at the row
 // cap. This package composes them and owns the console-facing policy:
 // defaults (5 000 rows / 5 000 ms), history FIFO depth
-// (100, newest kept), and the schema notes for known tables.
+// (100, newest kept), the rejection of statements carrying parameters
+// (the console supplies no values — store.HasParameters), and the schema
+// notes for known tables.
 package query
 
 import (
+	"errors"
+
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
+
+// errStatementParams is the console's parameterized-statement rejection.
+// The session executes with NO values (Run below passes none), so a
+// statement carrying markers could only fail inside the driver with its
+// raw "missing argument with index 1" — say what to do instead, in the
+// user's own domain (a pasted metric's compiled SQL is the common way to
+// get here; its values are written into the statement on the Builder's
+// provenance view). Tier-2 length (≤200), no package prefix.
+var errStatementParams = errors.New("this statement has parameters — replace them with values")
 
 const (
 	// DefaultLimit / DefaultTimeoutMS are the console defaults (bounded by
@@ -40,14 +53,29 @@ func New(st *store.Store) *Session { return &Session{st: st} }
 
 // Run validates sqlText (single statement, read verbs only), executes it
 // read-only with the row cap and statement timeout, and appends a history
-// entry — success or failure. The result is models.QueryResult (row-major
+// entry — success or failure. A statement carrying parameters is refused
+// with errStatementParams (this session supplies no values — see below).
+// The result is models.QueryResult (row-major
 // JSON scalars + timing + truncation + an Err string instead of a rejected
 // call, so history can record failures too). Defaults are the store's
 // (limit ≤0 → DefaultLimit = store.DefaultRowLimit, timeoutMS ≤0 →
 // DefaultTimeoutMS): RunReadOnly owns the normalization, this session only
 // re-exports the numbers so they have one owner.
 func (s *Session) Run(sqlText string, limit, timeoutMS int) models.QueryResult {
-	res, err := s.st.RunReadOnly(sqlText, nil, limit, timeoutMS)
+	// Parameters first: this session supplies no values, so a statement
+	// carrying markers is refused HERE (clear, user-facing) instead of
+	// reaching the driver and failing with its raw missing-argument text.
+	// Everything else — including statements that DO carry markers when a
+	// caller passes values through RunReadOnly — keeps the store's layers.
+	var (
+		res store.ROResult
+		err error
+	)
+	if store.HasParameters(sqlText) {
+		err = errStatementParams
+	} else {
+		res, err = s.st.RunReadOnly(sqlText, nil, limit, timeoutMS)
+	}
 	out := models.QueryResult{
 		Columns:   res.Columns,
 		Rows:      res.Rows,

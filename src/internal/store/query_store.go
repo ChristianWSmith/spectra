@@ -356,6 +356,37 @@ func lexSQL(q string) ([]sqlTok, error) {
 	return toks, nil
 }
 
+// HasParameters reports whether q carries SQLite parameter markers (`?`,
+// `:name`, `@name`, `$name`). It reuses the SAME lexer as the validator,
+// so a `?` inside a string literal, a quoted identifier or a comment is
+// text and never a marker (`WHERE map LIKE '%?%'` is not parameterized).
+// The console never supplies values for markers, so it rejects them with
+// a clear message (internal/query) instead of letting the driver fail
+// with its raw "missing argument with index 1"; plan execution passes
+// real args and is unaffected.
+func HasParameters(q string) bool {
+	toks, err := lexSQL(q)
+	if err != nil {
+		return false // malformed input: the validator reports the real error
+	}
+	for i, t := range toks {
+		if t.kind != 'p' {
+			continue
+		}
+		switch t.text {
+		case "?":
+			return true
+		case ":", "@", "$":
+			// A marker is the sigil immediately followed by a name
+			// (`:name`); a bare sigil is malformed SQL, never a marker.
+			if i+1 < len(toks) && (toks[i+1].kind == 'i' || toks[i+1].kind == 'n') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ValidateReadOnlySQL enforces the console statement policy (layer 1):
 // exactly one statement, a read-only leading keyword, no write verbs
 // anywhere (tokenizer-aware), and PRAGMA limited to the read allowlist.

@@ -82,6 +82,47 @@ func TestValidateReadOnlySQL(t *testing.T) {
 	}
 }
 
+// TestHasParameters: the console's parameterized-statement detector is
+// tokenizer-aware like the validator — `?`/`:name`/`@name`/`$name`
+// outside literals and comments are markers; the same characters inside
+// a string, a quoted identifier or a comment are text (a LIKE pattern
+// must never be mistaken for a parameterized statement).
+func TestHasParameters(t *testing.T) {
+	markers := []string{
+		"SELECT id FROM matches WHERE id = ?",
+		"SELECT ? AS a, ? AS b",
+		"SELECT id FROM matches WHERE id = :match_id",
+		"SELECT id FROM matches WHERE id = @match_id",
+		"SELECT id FROM matches WHERE id = $match_id",
+		"SELECT ?1 AS a", // numbered marker
+	}
+	for _, q := range markers {
+		if !HasParameters(q) {
+			t.Errorf("HasParameters(%q) = false, want true", q)
+		}
+	}
+	plain := []string{
+		"SELECT 1",
+		"SELECT 'a?b' AS s",
+		`SELECT "a?b" AS s`,
+		"SELECT path FROM matches WHERE path LIKE '%?%'",
+		"SELECT replace(path, 'a?', 'b') FROM matches",
+		"SELECT 1 -- ? and :name",
+		"SELECT 1 /* ? :name @name */",
+		"SELECT name FROM matches WHERE map = 'de_cache'", // '=' is not a marker
+	}
+	for _, q := range plain {
+		if HasParameters(q) {
+			t.Errorf("HasParameters(%q) = true, want false", q)
+		}
+	}
+	// Malformed input is not this detector's report — the validator owns
+	// that error (it lexes again and says what is wrong).
+	if HasParameters("SELECT 'unterminated") {
+		t.Error("HasParameters flagged an unterminated literal")
+	}
+}
+
 // openROFileStore is openFileStore plus read-only handle cleanup (the
 // side table outlives Close otherwise; matters on Windows temp removal).
 func openROFileStore(t *testing.T) *Store {

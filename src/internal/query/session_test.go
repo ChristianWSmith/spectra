@@ -127,6 +127,48 @@ func TestSessionRejectsWrites(t *testing.T) {
 	}
 }
 
+// TestSessionRejectsParameterizedStatements: the console supplies no
+// values, so a statement carrying parameters (the shape of a metric's
+// compiled SQL pasted in) is refused with the clear message instead of
+// the driver's raw "missing argument with index 1" — history records the
+// failure, a `?` inside a string is still just text, and a plain
+// statement runs.
+func TestSessionRejectsParameterizedStatements(t *testing.T) {
+	st := seededStore(t)
+	s := query.New(st)
+
+	const want = "this statement has parameters — replace them with values"
+	res := s.Run(`SELECT id FROM matches WHERE id = ?`, 0, 0)
+	if res.Err != want {
+		t.Errorf("err = %q, want %q", res.Err, want)
+	}
+	if res.RowCount != 0 || len(res.Columns) != 0 {
+		t.Errorf("rows = %d cols = %v, want an empty result", res.RowCount, res.Columns)
+	}
+	hist, err := st.ListQueryHistory(10)
+	if err != nil || len(hist) != 1 || hist[0].OK {
+		t.Fatalf("history = %+v (err %v), want one failed entry", hist, err)
+	}
+
+	// A '?' inside a string literal is text, not a marker — it runs.
+	res = s.Run(`SELECT '?' AS s`, 0, 0)
+	if res.Err != "" {
+		t.Errorf("quoted '?' rejected: %s", res.Err)
+	}
+	// A plain statement still runs (and records its success).
+	res = s.Run(`SELECT kind FROM events GROUP BY kind ORDER BY kind`, 0, 0)
+	if res.Err != "" {
+		t.Fatalf("plain run error: %s", res.Err)
+	}
+	if res.RowCount != 3 {
+		t.Errorf("rowCount = %d, want 3", res.RowCount)
+	}
+	hist, err = st.ListQueryHistory(10)
+	if err != nil || len(hist) != 3 || !hist[0].OK || !hist[1].OK || hist[2].OK {
+		t.Fatalf("history = %+v (err %v), want newest-first: success, success, failure", hist, err)
+	}
+}
+
 // TestSessionTimeout: the default-less explicit timeout interrupts the
 // recursive-CTE bomb (driver progress handler) within slack.
 func TestSessionTimeout(t *testing.T) {
