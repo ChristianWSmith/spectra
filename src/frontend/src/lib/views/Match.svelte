@@ -153,11 +153,13 @@
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
 
-  // Analytics (M3): per-round classification chips for the Rounds tab.
+  // Analytics (M3): per-side buy classes for the Rounds tab — the
+  // store.GetEconomy rows keyed by round (the canonical per-side-class
+  // read, shared with the Economy tab and RoundDetail's Economy card).
   // The per-player KAST path (combatBySteam + its fetch + the combatError
   // panel) died with the dogfooding conversion (W2) — KAST% is a pinned
   // metric column now (the Combat tab still warms getCombatStats below).
-  let classByRound = $state(new Map());
+  let econByRound = $state(new Map());
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4).
   let compareSel = $state(selSeed.compareSel);
@@ -391,13 +393,17 @@
     return () => (live = false);
   });
 
-  // Round classification chips (label + explanation + rule version).
+  // Per-side buy classes for the Rounds tab (label + why + rules version,
+  // read verbatim from round_side_classes through getEconomy — the SAME
+  // read the Economy tab and RoundDetail use, so the three surfaces can
+  // never disagree). The alert keeps its round-types wording: a failed
+  // read is exactly what it reports.
   $effect(() => {
     let live = true;
     classError = '';
-    getRoundClasses(id)
+    getEconomy(id)
       .then((rows) => {
-        if (live) classByRound = new Map((rows || []).map((r) => [r.round, r]));
+        if (live) econByRound = new Map((rows || []).map((r) => [r.round, r]));
       })
       .catch((e) => {
         if (live) classError = errText(e);
@@ -1345,15 +1351,13 @@
               <th scope="col" class="num">{S.match.colDuration}</th>
               <th scope="col">{S.match.colSite}</th>
               <th scope="col">{S.match.colMvp}</th>
-              <th scope="col" class="num">{S.match.colEquipCt}</th>
-              <th scope="col" class="num">{S.match.colEquipT}</th>
               <th scope="col">{S.match.firstBloodLabel}</th>
               <th scope="col" class="num">{S.match.colKills}</th>
             </tr>
           </thead>
           <tbody>
             {#each rounds as r, ri (r.number)}
-              {@const cls = classByRound.get(r.number)}
+              {@const econ = econByRound.get(r.number)}
               <tr
                 class="clickable"
                 class:split-before={ri > 0 && sepFlags[ri - 1]}
@@ -1381,11 +1385,26 @@
                   <WinnerCell winner={r.winner} name={winnerName(r)} />
                 </td>
                 <td>
-                  {#if cls}
+                  {#if econ}
+                    <!-- Per-side buy classes (owner C6): one chip per team
+                         for THIS round, side-labelled so the pair reads
+                         unambiguously — the shared .cmp-class palette over
+                         the STORED side class (`unknown` when the match
+                         carries none), never a read-time re-classification.
+                         The tooltip is why + rules version only: a side
+                         chip carries no round-level confidence and
+                         promises no click. -->
+                    <span class="chip side ct">{S.match.sideCt}</span>
                     <span
-                      class="chip cmp-class {cls.label || 'unknown'}"
-                      title={S.fill(S.match.classChipTitle, { what: cls.explanation || 'classified', v: cls.ruleVersion, pct: Math.round((cls.confidence || 0) * 100) })}
-                      >{cls.label || 'unknown'}</span
+                      class="chip cmp-class {econ.classCT || 'unknown'}"
+                      title={S.fill(S.match.sideClassTitle, { why: econ.classWhyCT || S.economy.noExplanation, rule: econ.ruleVersion ?? '—' })}
+                      >{econ.classCT || 'unknown'}</span
+                    >
+                    <span class="chip side t">{S.match.sideT}</span>
+                    <span
+                      class="chip cmp-class {econ.classT || 'unknown'}"
+                      title={S.fill(S.match.sideClassTitle, { why: econ.classWhyT || S.economy.noExplanation, rule: econ.ruleVersion ?? '—' })}
+                      >{econ.classT || 'unknown'}</span
                     >
                   {:else}
                     <span class="muted">—</span>
@@ -1407,8 +1426,6 @@
                     —
                   {/if}
                 </td>
-                <td class="num"><span class="chip side ct">{r.equipCT}</span></td>
-                <td class="num"><span class="chip side t">{r.equipT}</span></td>
                 <td>
                   {#if r.firstKillName && r.firstDeathName}
                     <ProfileLink

@@ -286,7 +286,9 @@ const economyRows = (n) =>
       classT: number % 2 ? 'eco' : 'force',
       classWhyCT: 'two rifles held over',
       classWhyT: 'low buy after a loss',
-      ruleVersion: 'v1',
+      // Go's RuleVersion is an int (models.EconomyRow) — the side-chip
+      // tooltip composes "(rules v{rule})", so the fixture must too.
+      ruleVersion: 1,
       equipCT: 4000 + i * 100,
       equipT: 3800 + i * 100,
       moneyCT: 1500,
@@ -360,8 +362,9 @@ const headerTexts = (table) =>
   [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
 // The Winner cell chip: the `.chip.side` span inside the WINNER column —
 // column 3 of the Rounds table (Cmp · RD · Winner · …), column 2 of the
-// buy-types table (RD · Winner · …). The Rounds table's Equip CT/T cells
-// also carry `.chip side ct|t` chips, so the column index matters.
+// buy-types table (RD · Winner · …). The Rounds table's Equip CT/T
+// columns are gone (owner C6) but its per-side Class cell now carries
+// `.chip side ct|t` label chips too, so the column index matters.
 const winnerChips = (table, winnerCol) =>
   rowsOf(table)
     .filter((tr) => !tr.classList.contains('econ-why-row'))
@@ -468,58 +471,78 @@ table = root.querySelector('.data-table');
 check('15 rows render (3 legacy + 12 counted)', rowsOf(table).length === 15, String(rowsOf(table).length));
 check('no split-before row exists', splitRows(table).length === 0, JSON.stringify(splitRows(table).map(roundOf)));
 
-console.log('C2. Rounds tab: the buy-class chip wears THE palette (raw key as class, shared CSS)');
-// The four .cmp-class sites (this tab, RoundDetail, Compare ×2) render the
-// RAW classification label as an extra class — and the raw value IS the
-// palette key (models.RoundClassification.label: pistol|eco|force|full|save;
-// empty → `unknown`, the same `|| 'unknown'` idiom Economy's classChip
-// uses). style-m3a.css's THE buy-class palette covers `.cmp-class.<key>`
-// at specificity (0,2,0), which beats m3b's flat `.cmp-class` accent
-// (0,1,0) — by specificity, NOT load order (m3b loads last), so the
-// palette value always shows and is never forked.
-const classRows = [
-  { round: 1, label: 'pistol', confidence: 1, ruleVersion: 1, explanation: 'half start' },
-  { round: 2, label: 'force', confidence: 1, ruleVersion: 1, explanation: 'equip over threshold' },
-  { round: 3, label: '', confidence: 1, ruleVersion: 1, explanation: 'nothing recorded' },
-];
+console.log('C2. Rounds tab: per-team buy-class chips wear THE palette (raw key as class, shared CSS)');
+// The .cmp-class sites (the Rounds tab's Class cell — TWO side-labelled
+// chips per round now, owner C6 — RoundDetail's Economy card, Compare
+// ×2) render the RAW stored side class as an extra class — and the raw
+// value IS the palette key (round_side_classes classCT/classT:
+// pistol|eco|force|full|save; empty → `unknown`, the same `|| 'unknown'`
+// idiom CompareRounds' per-side chips use). style-m3a.css's THE
+// buy-class palette covers `.cmp-class.<key>` at specificity (0,2,0),
+// which beats m3b's flat `.cmp-class` accent (0,1,0) — by specificity,
+// NOT load order (m3b loads last), so the palette value always shows and
+// is never forked.
+//
+// The Class cell reads getEconomy now (owner C6): script one round whose
+// stored CT class is EMPTY (→ the dashed `unknown` chip) and drop one
+// round's row entirely (→ the honest `—`).
 const roundsData = dataFor(13);
 const classedData = {
   ...roundsData,
-  getRoundClasses: classRows,
+  getEconomy: economyRows(13)
+    .map((r) => (r.round === 3 ? { ...r, classCT: '' } : r))
+    .filter((r) => r.round !== 7),
 };
 root = await showMatch(classedData, { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
-const clsChips = [...table.querySelectorAll('.chip.cmp-class')];
+const chipsOf = (n) => [...(rowFor(table, n)?.querySelectorAll('.chip.cmp-class') || [])];
+const r1chips = chipsOf(1);
 check(
-  'classified rounds render exactly one chip each (rounds 1–3)',
-  clsChips.length === 3,
-  String(clsChips.length),
+  'each classified round renders TWO chips (round 1: CT + T)',
+  r1chips.length === 2,
+  String(r1chips.length),
 );
 check(
-  'round 1 chip carries the RAW palette key as a class',
-  !!clsChips[0] && clsChips[0].classList.contains('pistol') && clsChips[0].textContent.trim() === 'pistol',
-  clsChips[0] ? clsChips[0].className : 'missing',
+  'CT chip carries the RAW palette key as a class',
+  !!r1chips[0] && r1chips[0].classList.contains('full') && r1chips[0].textContent.trim() === 'full',
+  r1chips[0] ? r1chips[0].className : 'missing',
 );
 check(
-  'round 2 chip carries the RAW palette key as a class',
-  !!clsChips[1] && clsChips[1].classList.contains('force') && clsChips[1].textContent.trim() === 'force',
-  clsChips[1] ? clsChips[1].className : 'missing',
+  'T chip carries the RAW palette key as a class',
+  !!r1chips[1] && r1chips[1].classList.contains('eco') && r1chips[1].textContent.trim() === 'eco',
+  r1chips[1] ? r1chips[1].className : 'missing',
+);
+const r1labels = [...(rowFor(table, 1)?.children[3]?.querySelectorAll('.chip.side') || [])];
+check(
+  'each chip is side-labelled (CT label then T label)',
+  r1labels.length === 2 &&
+    r1labels[0].textContent.trim() === 'CT' && r1labels[0].className.includes('side ct') &&
+    r1labels[1].textContent.trim() === 'T' && r1labels[1].className.includes('side t'),
+  r1labels.map((c) => c.textContent.trim()).join(','),
+);
+const r2chips = chipsOf(2);
+check(
+  'round 2 chip pair carries its own palette keys',
+  !!r2chips[0] && r2chips[0].classList.contains('eco') &&
+    !!r2chips[1] && r2chips[1].classList.contains('force'),
+  r2chips.map((c) => c.className).join(' | '),
+);
+const r3ct = chipsOf(3)[0];
+check(
+  'empty stored class falls back to the `unknown` key (the dashed one)',
+  !!r3ct && r3ct.classList.contains('unknown') && r3ct.textContent.trim() === 'unknown',
+  r3ct ? r3ct.className : 'missing',
 );
 check(
-  'empty label falls back to the `unknown` key (the dashed one)',
-  !!clsChips[2] && clsChips[2].classList.contains('unknown') && clsChips[2].textContent.trim() === 'unknown',
-  clsChips[2] ? clsChips[2].className : 'missing',
+  "the side chips' tooltip = that side's why + rules version (no round-level confidence)",
+  r1chips[0]?.getAttribute('title') === 'two rifles held over (rules v1)' &&
+    r1chips[1]?.getAttribute('title') === 'low buy after a loss (rules v1)',
+  r1chips[0]?.getAttribute('title'),
 );
 check(
-  'the explanation + rules-version + confidence tooltip is intact',
-  clsChips[0]?.getAttribute('title') === 'half start (rules v1 — 100% sure)' &&
-    clsChips[1]?.getAttribute('title') === 'equip over threshold (rules v1 — 100% sure)',
-  clsChips[0]?.getAttribute('title'),
-);
-check(
-  'a round with no classification row still reads — (never a guessed chip)',
-  rowsOf(table)[6]?.children[3]?.textContent.trim() === '—',
-  rowsOf(table)[6]?.children[3]?.textContent.trim(),
+  'a round with no economy row still reads — (never a guessed chip)',
+  rowFor(table, 7)?.children[3]?.textContent.trim() === '—',
+  rowFor(table, 7)?.children[3]?.textContent.trim(),
 );
 // The Details tab is technicals-only now (owner ruling, 2026-11-15): the
 // First blood fact (gameplay-derived) left Key facts. Absence pin, flipped
@@ -961,9 +984,13 @@ const dismissInPlace = async (r, needle, stillThere) => {
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-// (c) classError on the Rounds tab ("Round types unavailable").
+// (c) classError on the Rounds tab ("Round types unavailable") — the
+// failure source is getEconomy now: the per-side Class cells read the
+// same canonical economy read the Economy tab does, so a dead read is
+// what this alert reports (the table itself still renders, class cells
+// dashed).
 {
-  const d = { ...dataFor(13), getRoundClasses: new Error('class backend down') };
+  const d = { ...dataFor(13), getEconomy: new Error('class backend down') };
   root = await showMatch(d, { routeTab: 'Rounds' });
   const p = alertP(root, 'Round types unavailable');
   check('round-types failure renders its own alert', !!p && p.textContent.includes('class backend down'), p ? p.textContent.trim() : 'no alert');

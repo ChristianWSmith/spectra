@@ -1,14 +1,18 @@
-// jsdom driver for RoundDetail: the round SUMMARY view's header cuts
-// (owner-named: reason / kill count / start–stop seconds / winner chip /
-// equip CT-T pair are gone; duration, bomb site, classification chip and
-// the MVP line stay), the retired "Events in Replay" filter button (a
-// Watch round seek link is the header's only replay entry), the centered
-// icon-only round-transport ribbon, and the ERA-AWARE team names — the
-// economy card's side column and the Round result card's winner both
-// resolve a round side through sideparity.sideAtRound (teams is keyed by
-// FINAL side, the round's winner/side are the sides played IN THAT
-// ROUND), so a first-half round names a different team than a second-half
-// round with the same winner side.
+// jsdom driver for RoundDetail: the round SUMMARY view's header (owner
+// rulings C5: the <h1> round label STAYS as the view title; the muted
+// meta line — duration · site · MVP + reason — moved into the renamed
+// Round info card, the buy-class chip left the header for the Economy
+// card's per-team Class column, and First kill was removed outright),
+// the ribbon at the TOP of the content with both transport buttons
+// always rendered (disabled at the ends instead of absent, so the strip
+// keeps its centered seat), the retired "Events in Replay" filter button
+// (a Watch round seek link is the header's only replay entry), and the
+// ERA-AWARE team names — the economy card's side column and the Round
+// info card's winner both resolve a round side through
+// sideparity.sideAtRound (teams is keyed by FINAL side, the round's
+// winner/side are the sides played IN THAT ROUND), so a first-half round
+// names a different team than a second-half round with the same winner
+// side.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -116,7 +120,7 @@ export const getRoundDetail = (id, round) => wait((d().details || {})[round] || 
 export const getRounds = () => wait(d().rounds || []);
 export const getMatch = () => wait(d().match || null);
 export const getScoreboard = () => wait(d().scoreboard || []);
-export const getRoundClasses = () => wait(d().classes || []);
+export const getEconomy = () => wait(d().econ || []);
 export const getTeamNames = () => wait(d().teams || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
@@ -242,53 +246,62 @@ const detailFor = (n, extra = {}) => ({
   ...extra,
 });
 const base = {
-  details: { 5: detailFor(5), 15: detailFor(15) },
+  details: { 1: detailFor(1), 5: detailFor(5), 15: detailFor(15) },
   rounds: ROUNDS,
   match: { tickRate: 64, sideSwitches: 1 },
   scoreboard: [
     { steamId: '76561198012345678', name: 'donk', side: 'ct' },
     { steamId: '76561198012345679', name: 'zweih', side: 't' },
   ],
-  classes: [
-    { round: 5, label: 'full', confidence: 0.9, ruleVersion: 1, explanation: 'both teams full buy' },
-    { round: 15, label: 'force', confidence: 0.8, ruleVersion: 1, explanation: 'force buy' },
+  // store.GetEconomy's shape for these rounds: the STORED per-side buy
+  // classes (round_side_classes — read verbatim, never re-classified at
+  // read time) the Economy card's Class column renders. classWhy* feeds
+  // the chip tooltip, ruleVersion its rules version.
+  econ: [
+    { round: 1, classCT: 'pistol', classT: 'pistol', classWhyCT: 'round start', classWhyT: 'round start', ruleVersion: 1 },
+    { round: 5, classCT: 'full', classT: 'force', classWhyCT: 'two rifles held over', classWhyT: 'force buy after a loss', ruleVersion: 1 },
+    { round: 15, classCT: 'eco', classT: 'full', classWhyCT: 'low buy after a loss', classWhyT: 'two rifles held over', ruleVersion: 1 },
   ],
   teams: TEAM,
 };
 
-console.log('A. header keeps ONLY the named fields (reason/kills/start–stop/winner chip/equip cut)');
+console.log('A. header = view title only; meta line + buy-class chip live in the Round info card');
 const root = await render(base, 5);
 const header = root.querySelector('header.view-header');
 check('header rendered', !!header);
 const htext = header?.textContent || '';
-check('round label kept', htext.includes('Round 5'), htext.slice(0, 160));
-check('duration kept', htext.includes('1m45s'), htext.slice(0, 200));
-check('bomb site kept', htext.includes('site A'), htext.slice(0, 200));
-check('MVP name + reason kept', htext.includes('donk') && htext.includes('(killed 3)'), htext.slice(0, 240));
-check('classification chip kept', !!header?.querySelector('h1 .chip.cmp-class'), htext.slice(0, 200));
-// Buy-class chips wear the shared palette: the RAW label is the palette
-// key (fixture round 5 → `full`) carried as a class, so
-// style-m3a.css's `.cmp-class.full` (0,2,0) paints it.
-const rdChip = header?.querySelector('h1 .chip.cmp-class');
+check('round label kept as the view title', htext.includes('Round 5'), htext.slice(0, 160));
+// Owner C5: everything else the header carried MOVED OUT — the muted
+// meta line into the Round info card, the buy-class chip into the
+// Economy card's per-team Class column (the <h1> label alone stays).
 check(
-  'classification chip carries the RAW palette key as a class',
-  !!rdChip && rdChip.classList.contains('full') && rdChip.textContent.trim() === 'full',
-  rdChip ? rdChip.className : 'missing',
+  'meta line CUT from the header (duration / site / MVP)',
+  !htext.includes('1m45s') && !htext.includes('site A') && !htext.includes('donk'),
+  htext.slice(0, 240),
 );
-check(
-  'classification chip keeps its explanation + rules-version + confidence tooltip',
-  rdChip?.getAttribute('title') === 'both teams full buy (rules v1 — 90% sure)',
-  rdChip?.getAttribute('title'),
-);
+check('buy-class chip CUT from the header', !header?.querySelector('.chip.cmp-class'), (header?.querySelector('h1') || {}).outerHTML);
 check('reason CUT from the header', !htext.includes('target bombed'), htext.slice(0, 240));
 check('kill count CUT from the header', !/5 kills/.test(htext), htext.slice(0, 240));
 check('start/stop seconds CUT from the header', !htext.includes('125.0s') && !htext.includes('156.2s'), htext.slice(0, 240));
 check('equip pair CUT from the header', !htext.includes('4200') && !htext.includes('3800'), htext.slice(0, 240));
 check('winner chip CUT from the <h1>', !header?.querySelector('h1 .chip.side'), (header?.querySelector('h1') || {}).outerHTML);
-// The cuts live in their CARDS, not the view: reason + score + first kill
-// in Round result, equip in the Economy card.
-const result = sections(root, 'Round result')[0];
-check('Round result card still carries the reason', result?.textContent.includes('target bombed'), result?.textContent.slice(0, 200));
+// The card is RENAMED "Round info" and carries what the header gave up.
+const info = sections(root, 'Round info')[0];
+check('Round info card renders (renamed from Round result)', !!info);
+check('Round result card name is gone', !sections(root, 'Round result').length, '');
+check('meta line moved in: duration', info?.textContent.includes('1m45s'), info?.textContent.slice(0, 200));
+check('meta line moved in: bomb site', info?.textContent.includes('site A'), info?.textContent.slice(0, 200));
+check(
+  'meta line moved in: MVP link + reason',
+  info?.textContent.includes('donk') && info?.textContent.includes('(killed 3)'),
+  info?.textContent.slice(0, 240),
+);
+check('Round info still carries the reason fact', info?.textContent.includes('target bombed'), info?.textContent.slice(0, 200));
+check(
+  'First kill row REMOVED (the Kills card shows it first, no row here)',
+  !!info && !info.textContent.includes('First kill') && !info.textContent.includes('zweih'),
+  info?.textContent.slice(0, 240),
+);
 check('Economy card still carries equip', sections(root, 'Economy')[0]?.textContent.includes('4200'), '');
 
 console.log('B. "Events in Replay" is gone; every tick link is an icon-only play (follow where a row has an actor)');
@@ -383,9 +396,17 @@ await sleep();
 const navDefuse = (globalThis.__nav || []).at(-1);
 check('bomb defuse ▶ seeks AND follows the defuser', !!navDefuse && navDefuse.includes('tick=9500') && navDefuse.includes('follow=76561198012345679'), navDefuse || 'no navigation');
 
-console.log('C. ribbon: centered row, icon-only chevron transport');
+console.log('C. ribbon: TOP of the content, centered row, icon-only chevron transport');
 const nav2 = root.querySelector('.round-nav');
 check('.round-nav rendered', !!nav2);
+// Owner C5: the ribbon moved from the foot to the TOP of the round
+// content — above the card grid, inside the detail gate.
+const grid2 = root.querySelector('.round-grid');
+check(
+  'ribbon sits ABOVE the round-grid (top of the content, not the foot)',
+  !!nav2 && !!grid2 && !!(nav2.compareDocumentPosition(grid2) & 4 /* FOLLOWING */),
+  '',
+);
 const css = readFileSync('public/style.css', 'utf8');
 const rnBlock = (css.match(/\.round-nav\s*\{[^}]*\}/) || [''])[0];
 check('.round-nav carries justify-content: center', rnBlock.includes('justify-content: center'), rnBlock);
@@ -405,6 +426,11 @@ check('current round highlighted', !!nav2?.querySelector('.round-cell[aria-curre
 const prev = nav2?.querySelector('button[title="Previous round"]');
 const next = nav2?.querySelector('button[title="Next round"]');
 check('prev/next present with transport titles', !!prev && !!next);
+check(
+  'round 5 has both neighbours → both transport buttons ENABLED',
+  !!prev && !!next && !prev.disabled && !next.disabled,
+  JSON.stringify([!!prev && prev.disabled, !!next && next.disabled]),
+);
 check('prev is icon-only (no text label)', !!prev && prev.textContent.trim() === '', prev?.textContent);
 check('next is icon-only (no text label)', !!next && next.textContent.trim() === '', next?.textContent);
 check('prev uses the chevron glyph', !!prev?.querySelector('.codicon-chevron-left'), prev?.outerHTML);
@@ -415,7 +441,7 @@ click(prev);
 await sleep();
 check('prev navigates to round 4 keeping ?back=', (globalThis.__nav || []).at(-1) === '/match/3/round/4?back=match/3', JSON.stringify(globalThis.__nav));
 
-console.log('D. economy card side column = era-aware team names (round 5, era 0)');
+console.log('D. economy card side column = era-aware team names + per-team buy class (round 5, era 0)');
 const ecoRows = [...(sections(root, 'Economy')[0]?.querySelectorAll('tbody tr') || [])];
 check('two economy rows', ecoRows.length === 2, String(ecoRows.length));
 const ecoCells = ecoRows.map((r) => r.querySelector('td .chip'));
@@ -425,18 +451,61 @@ check(
   ecoCells.map((c) => c?.textContent).join(','),
 );
 check('chips keep their SIDE color classes', ecoCells[0]?.className.includes('side ct') && ecoCells[1]?.className.includes('side t'), ecoCells[0]?.className);
+// Owner C5: the buy class left the header for THIS table, one chip per
+// SIDE row — the stored round_side_classes values read through
+// getEconomy (classCT/classT), never the round-level classification.
+const ecoHead = [...(sections(root, 'Economy')[0]?.querySelectorAll('thead th') || [])].map((th) => th.textContent.trim());
+check(
+  'economy table gained a Class column (Side | Class | Equip | Money)',
+  JSON.stringify(ecoHead) === JSON.stringify(['Side', 'Class', 'Equip', 'Money']),
+  JSON.stringify(ecoHead),
+);
+const classChips = ecoRows.map((r) => r.children[1]?.querySelector('.chip.cmp-class'));
+check(
+  'each side row carries its buy-class chip',
+  classChips.length === 2 && !!classChips[0] && !!classChips[1],
+  classChips.map((c) => c?.textContent).join(','),
+);
+check(
+  'CT row chip = the stored CT class, RAW palette key as class',
+  !!classChips[0] && classChips[0].classList.contains('full') && classChips[0].textContent.trim() === 'full',
+  classChips[0] ? classChips[0].className : 'missing',
+);
+check(
+  'T row chip = the stored T class, RAW palette key as class',
+  !!classChips[1] && classChips[1].classList.contains('force') && classChips[1].textContent.trim() === 'force',
+  classChips[1] ? classChips[1].className : 'missing',
+);
+check(
+  'side chip tooltip = that side\'s why + rules version (no round-level confidence, no click promise)',
+  classChips[0]?.getAttribute('title') === 'two rifles held over (rules v1)' &&
+    classChips[1]?.getAttribute('title') === 'force buy after a loss (rules v1)',
+  classChips[0]?.getAttribute('title'),
+);
+// The empty-state row spans every column the table now has (colspan 3 → 4).
+{
+  const noEcon = { ...base, details: { 5: detailFor(5, { economy: [] }) } };
+  const rootD = await render(noEcon, 5);
+  const emptyCells = sections(rootD, 'Economy')[0]?.querySelectorAll('tbody tr td') || [];
+  check(
+    'empty economy state spans all four columns',
+    emptyCells.length === 1 && emptyCells[0].getAttribute('colspan') === '4',
+    String(emptyCells.length),
+  );
+  document.body.removeChild(rootD);
+}
 
-console.log('E. Round result winner = the team that WON the round (era-aware)');
-const winnerDd = result?.querySelector('dl.facts div dd .chip');
-check('result card shows a team name', winnerDd?.textContent === 'Bravo', winnerDd?.textContent);
+console.log('E. Round info winner = the team that WON the round (era-aware)');
+const winnerDd = info?.querySelector('dl.facts div dd .chip');
+check('info card shows a team name', winnerDd?.textContent === 'Bravo', winnerDd?.textContent);
 check('never the final-side-keyed team for this round', winnerDd?.textContent !== 'Alpha', winnerDd?.textContent);
 
 document.body.removeChild(root);
 
 console.log('F. post-switch round (era 1, sideSwitches 1): the OTHER resolution');
 const root2 = await render(base, 15);
-const result2 = sections(root2, 'Round result')[0];
-const winner2 = result2?.querySelector('dl.facts div dd .chip');
+const info2 = sections(root2, 'Round info')[0];
+const winner2 = info2?.querySelector('dl.facts div dd .chip');
 check(
   'round 15 winner ct → the team that finished ct (last era reads straight)',
   winner2?.textContent === 'Alpha',
@@ -446,12 +515,33 @@ const ecoRows2 = [...(sections(root2, 'Economy')[0]?.querySelectorAll('tbody tr'
 const eco2 = ecoRows2.map((r) => r.querySelector('td .chip')?.textContent);
 check('round 15 economy names straight through', eco2[0] === 'Alpha' && eco2[1] === 'Bravo', eco2.join(','));
 check('header label for round 15', /Round 15/.test(root2.querySelector('header.view-header')?.textContent || ''), '');
+// Owner C5: a missing neighbour DISABLES its transport button (the seat
+// stays reserved — the strip never shifts), never removes it.
 const prev2 = root2.querySelector('.round-nav button[title="Previous round"]');
+const next2 = root2.querySelector('.round-nav button[title="Next round"]');
 check(
-  'round 15 is the last row → prev offered, next gone (index walk, not ±1)',
-  !!prev2 && !root2.querySelector('.round-nav button[title="Next round"]'),
-  JSON.stringify([!!prev2, !!root2.querySelector('.round-nav button[title="Next round"]')]),
+  'round 15 is the last round → prev present+enabled, next present but DISABLED (index walk, not ±1)',
+  !!prev2 && !prev2.disabled && !!next2 && next2.disabled,
+  JSON.stringify([!!prev2, prev2?.disabled, !!next2, next2?.disabled]),
 );
+
+console.log('F2. first round → prev DISABLED (reserved seat), next enabled');
+{
+  const rootF = await render(base, 1);
+  const prevF = rootF.querySelector('.round-nav button[title="Previous round"]');
+  const nextF = rootF.querySelector('.round-nav button[title="Next round"]');
+  check(
+    'round 1 has no predecessor → prev present but DISABLED, next present+enabled',
+    !!prevF && prevF.disabled && !!nextF && !nextF.disabled,
+    JSON.stringify([!!prevF, prevF?.disabled, !!nextF, nextF?.disabled]),
+  );
+  check(
+    'round 1 still renders its Round info card',
+    sections(rootF, 'Round info').length === 1,
+    String(sections(rootF, 'Round info').length),
+  );
+  document.body.removeChild(rootF);
+}
 
 // ---------------------------------------------------------------------------
 // Section G: the cold-start loading gate (loading ladder rung 3). Without
@@ -465,7 +555,7 @@ console.log('G. cold start: never a blank page while the round reads are in flig
   check(
     'mid-load: loading line up, no round content',
     rootG.textContent.includes('Loading round…') &&
-      !rootG.textContent.includes('Round result') &&
+      !rootG.textContent.includes('Round info') &&
       !rootG.textContent.includes('Round 5'),
     rootG.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
@@ -483,7 +573,7 @@ console.log('G. cold start: never a blank page while the round reads are in flig
   check(
     'after the fetch lands: gate gone, the round renders',
     !rootG.textContent.includes('Loading round…') &&
-      sections(rootG, 'Round result').length === 1 &&
+      sections(rootG, 'Round info').length === 1 &&
       /Round 5/.test(rootG.querySelector('header.view-header')?.textContent || ''),
     rootG.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
@@ -506,7 +596,7 @@ console.log('H. a failed round read carries a Retry that clears the message in p
   );
   check(
     'no round content behind the failure (never a blank claim)',
-    !rootH.textContent.includes('Round result'),
+    !rootH.textContent.includes('Round info'),
     rootH.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
   // Restore the fixture and Retry: the SAME reads re-run, the message
@@ -517,8 +607,8 @@ console.log('H. a failed round read carries a Retry that clears the message in p
   check('error cleared in place', !hErr(), hErr()?.textContent);
   check(
     'the round renders in the SAME root after Retry',
-    sections(rootH, 'Round result').length === 1,
-    String(sections(rootH, 'Round result').length),
+    sections(rootH, 'Round info').length === 1,
+    String(sections(rootH, 'Round info').length),
   );
   document.body.removeChild(rootH);
 }
