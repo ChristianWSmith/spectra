@@ -28,7 +28,7 @@ export const profiles = {
   statMatchesTitle: 'Matches in the library for this player',
   statWinPctLabel: 'Win%',
   statWinPctTitle: 'Share of matches won',
-  careerErrorLead: 'Career metrics unavailable: ',
+  careerErrorLead: 'Profile metrics unavailable: ',
   trendHeading: 'Trend',
   // The trend card's metric picker (the shared SuggestInput): the one
   // place a metric NAME is chosen for the sparkline.
