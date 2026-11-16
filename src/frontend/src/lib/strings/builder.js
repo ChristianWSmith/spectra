@@ -66,7 +66,7 @@ export const builder = {
     'Plugin metrics are immutable — saving stores a copy of this definition as your own metric.',
   pluginReadOnlyChip: 'read-only source',
   fieldName: 'Name',
-  namePlaceholder: 'Enter a metric name (e.g. slug_name)…',
+  namePlaceholder: 'Enter a metric name…',
   fieldTitle: 'Title',
   titlePlaceholder: 'Enter a display label…',
   fieldShortName: 'Short name (optional)',

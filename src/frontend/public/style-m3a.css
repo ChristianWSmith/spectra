@@ -1269,10 +1269,6 @@ canvas.heat-canvas {
   background: var(--editor-sel);
 }
 
-.sql-hint {
-  font-size: 0.8em;
-}
-
 .sql-running {
   color: var(--accent);
   border-color: var(--accent-50);
@@ -1315,10 +1311,6 @@ canvas.heat-canvas {
 .sql-null {
   color: var(--muted);
   opacity: 0.7;
-}
-
-.sql-note {
-  font-size: 0.8em;
 }
 
 /* One column, saved queries first (SQLConsole): the two lists stack, so a
@@ -1460,6 +1452,44 @@ canvas.heat-canvas {
   width: 130px;
   padding: 3px 8px;
   font-size: 0.85em;
+}
+
+/* The statement card's ONE toolbar parks its right cluster (the Export
+   popover host + Run, Run rightmost) at the far end while the save
+   inputs stay left-justified — the .match-replay right-park precedent
+   (style.css), spelled inside the sql- prefix; at a narrow width the
+   cluster wraps onto its own line, where margin-left:auto still parks
+   it right. */
+.sql-actions-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Export popover (SQL console): the canonical Popover's anchor + panel —
+   the .bld-filter-host / .rp-pop-host spelling, never a borrowed
+   prefix. The host hugs its trigger (position: relative so the panel
+   attaches) and the panel drops below it as the JSON/CSV stack. */
+.sql-pop-host {
+  position: relative;
+  display: inline-flex;
+}
+
+.sql-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 6px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
 @media (max-width: 1000px) {

@@ -5,8 +5,10 @@
 //      Save is disabled and the status slot reads "No changes" (never a
 //      recompute note); any edit of the four fields arms Save; reverting
 //      disarms again. The four fields are present, Save is the card's
-//      only button, and the card renders NO rules-version display
-//      (internal-only since 2026-11-15) and no dirty-state hint.
+//      only button and it rides a .row-between with the status slot at
+//      left (a direct panel child would stretch full width), and the
+//      card renders NO rules-version display (internal-only since
+//      2026-11-15) and no dirty-state hint.
 //   B. The re-run UI is gone: no "Re-run analysis…" subsection, no
 //      Re-run-all button, no per-row list, no Load more, no behind
 //      count line — and the view performs NO behind fetches at all
@@ -257,6 +259,19 @@ console.log('A. pristine gating + card shape: Save disabled, "No changes", no ve
     'honest "No changes" copy shown',
     body().includes('No changes — the rules above are already saved.'),
   );
+  {
+    // T1 layout pin: a direct panel child would stretch full width, so
+    // the status and the button share ONE .row-between — the button
+    // sizes to its label and parks right with the status at left.
+    const row = save?.closest('.row-between');
+    check(
+      'Save rides a .row-between with the status slot at left (never full width)',
+      !!row && row.lastElementChild === save &&
+        [...row.children].length >= 2 &&
+        /No changes/.test(row.textContent),
+      row ? [...row.children].map((c) => c.className || c.tagName).join(' | ') : 'no row',
+    );
+  }
   check('no recompute hint while pristine', !body().includes('Saving applies these rules'));
   check('no rules-version display (internal-only)', !body().includes('Rules version'));
   check(

@@ -16,12 +16,19 @@
   import { seed, remember } from '../viewstate.svelte.js';
   import StatusChip from '../components/StatusChip.svelte';
   import HelpButton from '../components/HelpButton.svelte';
+  import Popover from '../components/Popover.svelte';
 
   let { nav = () => {}, openDocs = () => {} } = $props();
 
   // Server defaults echoed in the header (query.DefaultLimit / DefaultTimeoutMS).
   const DEFAULTS = 'rows cap 5,000 · timeout 5 s';
-  const GRID_CAP = 2000; // render cap for very wide results; exports always carry every row
+  // Results page size: the grid renders ONE page of returned rows at a
+  // time and the footer walks every row (there is no render cap and no
+  // "first N rows" note — exports already carry the whole result, and
+  // the server cap is the only truncation). The page index is TRANSIENT
+  // view-local state: never the registry, never the route query (State
+  // placement) — it resets to page 1 on every run.
+  const RESULT_PAGE = 10;
   // Tooltip cap for the list rows' title attributes: the full statement
   // loads into the editor on click, so a hover preview never puts a
   // multi-MB raw SQL string into a DOM attribute (cellTitle gates on
@@ -41,6 +48,9 @@
   $effect(() => remember('sql', { sql }));
 
   let result = $state(null);
+  // Which page of `result` the grid shows — transient view-local state
+  // (never the registry, never the route query): reset to 1 on every run.
+  let resultPage = $state(1);
   let runError = $state('');
   let running = $state(false);
   let slow = $state(false);
@@ -62,9 +72,6 @@
   let saveName = $state('');
   let saveDescription = $state('');
   let saveError = $state('');
-  // The name input's node — the history row's Save hands it focus after
-  // loading the line into the form (saveFromHistory).
-  let nameInput = $state(null);
   // saveTarget is the SAVE TIE: {id, name} of the saved row the editor
   // fields were loaded from (or last produced). Null = a fresh editor →
   // Save inserts. Loading a saved row sets it; editing its SQL keeps it
@@ -152,6 +159,7 @@
     running = true;
     slow = false;
     runError = '';
+    resultPage = 1; // every run starts its grid at the first page
     const timer = setTimeout(() => (slow = true), 200);
     try {
       const r = await runQuery(sql, 0, 0);
@@ -224,14 +232,6 @@
     saveDescription = '';
     saveTarget = null;
     saveError = ''; // a fresh form never carries the previous one's error
-  }
-
-  // saveFromHistory is a history row's Save button: load the line into
-  // the form (above) and hand it focus — the only thing left to type is
-  // the name.
-  function saveFromHistory(h) {
-    loadHistory(h);
-    requestAnimationFrame(() => nameInput?.focus());
   }
 
   // saveCurrent routes Save by the tie and the CURRENT name field:
@@ -307,10 +307,21 @@
     }
   }
 
-  // --- Result grid cell rendering --------------------------------------------
+  // --- Result grid page rendering -------------------------------------------
 
-  const gridRows = $derived(result ? result.rows.slice(0, GRID_CAP) : []);
-  const gridOverflow = $derived(result ? Math.max(0, result.rows.length - GRID_CAP) : 0);
+  // One page of the returned rows: pageCount walks EVERY returned row (no
+  // render cap — the server's cap is the only truncation), pageRows
+  // slices the current window, and the grid keys each row by its
+  // ABSOLUTE index so a row never reuses its neighbour's identity when
+  // the page moves.
+  const pageCount = $derived(result ? Math.max(1, Math.ceil(result.rows.length / RESULT_PAGE)) : 1);
+  const pageStart = $derived(result ? (resultPage - 1) * RESULT_PAGE + 1 : 0);
+  const pageEnd = $derived(result ? Math.min(resultPage * RESULT_PAGE, result.rows.length) : 0);
+  const pageRows = $derived(
+    result ? result.rows.slice((resultPage - 1) * RESULT_PAGE, resultPage * RESULT_PAGE) : [],
+  );
+
+  // --- Result grid cell rendering --------------------------------------------
 
   function cellText(v) {
     if (v === null || v === undefined) return '∅';
@@ -332,8 +343,29 @@
   }
 
   // --- CSV / JSON export (acceptance walkthrough #2) ---------------------------
-  // Native save dialog via lib/save.js: cancel resolves to "" silently;
-  // this view has no export status strip, so failures log to the console.
+  // Native save dialog via lib/save.js: cancel resolves to "" silently.
+  // Both formats ride ONE Export popover in the statement card's toolbar
+  // (the canonical Popover idiom — anchor span, aria-haspopup/expanded/
+  // controls, Escape returns focus to the trigger).
+
+  // The popover's open state + its anchor/trigger nodes (the
+  // bind:this pair Popover needs; the trigger keeps focus handling the
+  // consumer's job, exactly like Builder's filter panel).
+  let exportOpen = $state(false);
+  let exportAnchor = $state(null);
+  let exportTrigger = $state(null);
+
+  function closeExport() {
+    exportOpen = false;
+    exportTrigger?.focus();
+  }
+
+  // A pointerdown outside closes WITHOUT stealing focus back: the click
+  // that lands there must go where the user aimed it (Builder's
+  // closeFiltersOutside contract).
+  function closeExportOutside() {
+    exportOpen = false;
+  }
 
   function stamp() {
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
@@ -343,7 +375,7 @@
   // dialog's cancel resolves to "" — a cancel is NOT an error and stays
   // silent by contract; only a real failure (write error, backend
   // rejection) lands in the statement panel's error slot, right under the
-  // Export buttons that produced it.
+  // Export control that produced it.
   async function download(text, mime, ext) {
     runError = ''; // clears-on-retry: a new export starts with a clean slot
     try {
@@ -467,17 +499,20 @@
             }
           }}
         ></textarea>
-        <!-- The save form lives in the STATEMENT card (owner, 2026-11-15):
-             name/description belong with the statement they name, above
-             the Run/Export row. `sql-save-bar` travels with it — its CSS
-             is card-agnostic. -->
+        <!-- The save form lives in the STATEMENT card (owner,
+             2026-11-15): name/description belong with the statement they
+             name, and they share the card's ONE toolbar with Export and
+             Run — the save group left-justified, the right cluster
+             parking Export then Run, Run rightmost. `sql-save-bar`
+             travels with the card; its CSS is card-agnostic. saveError
+             stays this toolbar's nextElementSibling (the form's error
+             slot). -->
         <div class="toolbar sql-save-bar">
           <input
             class="input"
             placeholder="name…"
             aria-label="Query name"
             bind:value={saveName}
-            bind:this={nameInput}
             onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
           />
           <input
@@ -488,18 +523,65 @@
             onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
           />
           <button class="btn small" onclick={saveCurrent} disabled={!sql.trim()}>Save</button>
+          <span class="sql-actions-right">
+            <!-- Export = ONE control offering both formats (JSON first),
+                 as the canonical Popover (Replay's speed / Builder's
+                 filters): the host span is the anchor, the trigger
+                 carries the aria trio, Escape returns focus to it. -->
+            <span class="sql-pop-host" bind:this={exportAnchor}>
+              <button
+                class="btn"
+                bind:this={exportTrigger}
+                disabled={!result}
+                aria-haspopup="true"
+                aria-expanded={exportOpen}
+                aria-controls={exportOpen ? 'sql-export-pop' : null}
+                title="Export every returned row as JSON or CSV"
+                onclick={() => (exportOpen = !exportOpen)}
+                >Export <span class="codicon codicon-chevron-down"></span></button
+              >
+              <Popover
+                open={exportOpen}
+                anchor={exportAnchor}
+                onClose={closeExport}
+                onOutside={closeExportOutside}
+              >
+                <div
+                  class="sql-pop"
+                  id="sql-export-pop"
+                  role="group"
+                  aria-label="Export format"
+                >
+                  <button
+                    class="btn small"
+                    onclick={() => {
+                      closeExport();
+                      exportJSON();
+                    }}>JSON</button
+                  >
+                  <button
+                    class="btn small"
+                    onclick={() => {
+                      closeExport();
+                      exportCSV();
+                    }}>CSV</button
+                  >
+                </div>
+              </Popover>
+            </span>
+            <button
+              class="btn primary"
+              title="Ctrl/Cmd+Enter runs the statement."
+              onclick={run}
+              disabled={running || !sql.trim()}
+            >
+              {#if running}Running…{:else}Run <span class="codicon codicon-play"></span>{/if}
+            </button>
+          </span>
         </div>
         {#if saveError}
           <p class="error" role="alert">{saveError}</p>
         {/if}
-        <div class="toolbar">
-          <button class="btn primary" onclick={run} disabled={running || !sql.trim()}>
-            {#if running}Running…{:else}Run <span class="codicon codicon-play"></span>{/if}
-          </button>
-          <button class="btn" disabled={!result} onclick={exportCSV}>Export CSV</button>
-          <button class="btn" disabled={!result} onclick={exportJSON}>Export JSON</button>
-          <span class="muted sql-hint">Ctrl/Cmd+Enter runs the statement.</span>
-        </div>
         {#if runError}
           <p class="error" role="alert">
             {runError}
@@ -539,7 +621,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each gridRows as row, ri (ri)}
+                  {#each pageRows as row, ri ((resultPage - 1) * RESULT_PAGE + ri)}
                     <tr>
                       {#each row as v, ci (ci)}
                         <td class={cellClass(v)} title={cellTitle(v)}>{cellText(v)}</td>
@@ -549,11 +631,28 @@
                 </tbody>
               </table>
             </div>
-            {#if gridOverflow > 0}
-              <p class="muted sql-note">
-                Showing the first {GRID_CAP} rows in the grid ({result.rowCount} returned) —
-                exports include every returned row.
-              </p>
+            <!-- Pager footer — hidden while one page holds every row: the
+                 range is ABSOLUTE over the returned rows (the muted left
+                 slot), Prev/Next park right and each disables at its own
+                 end. -->
+            {#if pageCount > 1}
+              <div class="row-between">
+                <span class="muted" role="status"
+                  >Rows {pageStart}–{pageEnd} of {result.rows.length}</span
+                >
+                <span class="toolbar">
+                  <button
+                    class="btn small"
+                    disabled={resultPage <= 1}
+                    onclick={() => (resultPage -= 1)}>Prev</button
+                  >
+                  <button
+                    class="btn small"
+                    disabled={resultPage >= pageCount}
+                    onclick={() => (resultPage += 1)}>Next</button
+                  >
+                </span>
+              </div>
             {/if}
           {/if}
         {:else if !running && !runError}
@@ -627,10 +726,12 @@
           {/if}
           <div class="sql-hist-list">
             {#each history as h (h.id)}
-              <!-- One history line = a ROW plus three buttons (the
+              <!-- One history line = a ROW plus two buttons (the
                    saved-queries row pattern): nested <button> is invalid,
                    so the loadable body is the .sql-hist-load button and
-                   Save/Remove ride beside it as ghost buttons. -->
+                   Remove rides beside it as a ghost button. Loading the
+                   line is a click on the body — it lands in the editor as
+                   a FRESH save form (loadHistory), no Save button here. -->
               <div class="sql-hist as-row">
                 <button
                   class="sql-hist-load"
@@ -646,13 +747,6 @@
                   <span class="mono sql-hist-sql">{short(truncateSql(h.sql), 100)}</span>
                   <span class="sql-hist-meta num">{h.ms} ms · {h.rows} rows</span>
                 </button>
-                <button
-                  class="btn small ghost"
-                  title="Save this line as a query"
-                  aria-label="Save history line: {short(truncateSql(h.sql), 40)}"
-                  onclick={() => saveFromHistory(h)}
-                  ><span class="codicon codicon-save"></span></button
-                >
                 <button
                   class="btn small ghost"
                   title="Remove this line from history"

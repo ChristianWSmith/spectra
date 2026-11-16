@@ -408,7 +408,11 @@ const EXPECTED = {
   // both ways (99 → 60, 0 → 1, garbage → the default) each with the
   // input snapping to what was stored. Sections A–F kept their check
   // counts (F's whole-run error check just runs after G now).
-  'settings.dom.mjs': 65,
+  // settings 65 → 66 (2026-11-16, sql-settings T1): +1 section A — the
+  // analysis-rules Save rides a .row-between with the status slot at
+  // left (a direct panel child stretches full width; the button sizes
+  // to its label and parks right in all three states).
+  'settings.dom.mjs': 66,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so
@@ -430,7 +434,25 @@ const EXPECTED = {
   // the line's id, the row leaves, no error) +3; G (the schema
   // accordion — noted entries collapsed by default, expand/collapse, the
   // column chips and the click-to-insert) +5.
-  'sqlconsole.dom.mjs': 30,
+  // sqlconsole 30 → 47 (2026-11-16, sql-settings S1–S3): the statement
+  // card's two toolbars became ONE — C 5 → 8 (exactly one toolbar, the
+  // right cluster with the Export host first and Run rightmost carrying
+  // the shortcut on its title, the export trigger's aria trio + disabled
+  // until a result exists, the .sql-hint span gone, and the save error
+  // re-pinned as the merged toolbar's nextElementSibling); D re-pinned
+  // IN PLACE (the row's ONE ghost is Remove — the per-row Save died,
+  // same 5 checks); E −1 (the focus hand-off died with Save; the body
+  // click, the cleared form and the stale-tie INSERT pins stay, 7 → 6);
+  // F re-pointed at the row's first ghost (same 3); G untouched. +8 the
+  // NEW section H (a scripted 25-row run: one page of 10 rows with the
+  // absolute range footer, Prev/Next with disabled ends, the render-cap
+  // note gone, the re-run reset to page 1, and no pager at all on a
+  // single page) and +7 the NEW section I (the Export popover: the armed
+  // trigger, the JSON-then-CSV stack under its host, the aria open
+  // state, Escape closing with focus returned to the trigger, and both
+  // formats reaching the save dialog with the JSON carrying every
+  // returned row, not just the page on screen).
+  'sqlconsole.dom.mjs': 47,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage

@@ -1,17 +1,21 @@
 // jsdom driver for the SQL console (help-buttons wave, 2026-11-15, then
-// the sql-history wave = changes.txt C2 + C3, 2026-11-15). Sections A/B
-// are the shared HelpButton's mount coverage — the `?` is the header's
-// LAST element, right of the .spacer (and the running chip while a query
-// is in flight), and clicking it hands App's openDocs the `sql-console`
-// section id. C–G pin the console's own surface: the save form living in
-// the Statement card above the Run/Export row, history lines as rows with
-// per-line Save (load-into-form with a CLEARED save tie — a stale tie
-// would silently update another saved row) and per-line Remove (a server
-// delete), and the schema accordion.
+// the sql-history wave = changes.txt C2 + C3, 2026-11-15, then the
+// sql-settings wave = S1–S3, 2026-11-16). Sections A/B are the shared
+// HelpButton's mount coverage — the `?` is the header's LAST element,
+// right of the .spacer (and the running chip while a query is in
+// flight), and clicking it hands App's openDocs the `sql-console`
+// section id. C–I pin the console's own surface: the save form, the
+// Export popover and Run sharing ONE toolbar in the Statement card,
+// history lines as rows with a click-to-load body (a FRESH save form —
+// a stale tie would silently update another saved row) and per-line
+// Remove (a server delete), the results grid paging its rows through
+// the footer's Prev/Next (the export still carries every returned row),
+// and the schema accordion.
 //
-// The console's three mount-time reads (schema, history, saved queries)
-// are scripted; no query is ever RUN here — the engine is pinned in Go
-// (session_test.go / query_store_test.go), the loading lines in
+// The console's reads are scripted: the three mount-time reads (schema,
+// history, saved queries) plus ONE run over a 25-row fixture (sections
+// H/I) — the engine itself is pinned in Go (session_test.go /
+// query_store_test.go), the loading lines in
 // progress-presentation.dom.mjs.
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
@@ -134,6 +138,28 @@ bindings.handlers.UpdateQuery = (id, name, q, description) => ({
 bindings.handlers.DeleteQuery = () => null;
 bindings.handlers.DeleteHistory = () => null;
 bindings.handlers.ClearHistory = () => null;
+// The ONE scripted run (sections H/I): 25 rows so a three-page grid and
+// an export over every row are observable at all — the grid's paging is
+// what the checks drive, never the engine.
+const runFixture = () => ({
+  columns: ['id'],
+  rows: Array.from({ length: 25 }, (_, i) => [i + 1]),
+  ms: 4,
+  rowCount: 25,
+  truncated: false,
+});
+bindings.handlers.Run = runFixture;
+// The export path ends at the native save dialog (lib/save.js): the
+// dialog resolves a path, WriteFile lands the bytes — both recorded so
+// sections H/I can read back what was offered and written.
+bindings.DialogService.SaveFile = (name, exts) => {
+  bindings.calls.push({ method: 'SaveFile', args: [name, exts] });
+  return Promise.resolve('/x/out');
+};
+bindings.DialogService.WriteFile = (path, data) => {
+  bindings.calls.push({ method: 'WriteFile', args: [path, data] });
+  return Promise.resolve(null);
+};
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'sqlconsole');
 mkdirSync(dir, { recursive: true });
@@ -147,6 +173,13 @@ svelteCompile(
   readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
+);
+// Popover — the export panel's anchor/dismissal component (no imports
+// of its own, so a plain compile is the whole bundle).
+svelteCompile(
+  readFileSync('src/lib/components/Popover.svelte', 'utf8'),
+  'Popover.svelte',
+  join(dir, 'popover.js'),
 );
 // HelpButton — the shared header `?` (the one canonical idiom): its
 // strings catalog resolves from the real tree like every other ../ module.
@@ -167,6 +200,7 @@ for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js'
 }
 sqlSrc = sqlSrc.split("from '../components/StatusChip.svelte'").join("from './statuschip.js'");
 sqlSrc = sqlSrc.split("from '../components/HelpButton.svelte'").join("from './helpbutton.js'");
+sqlSrc = sqlSrc.split("from '../components/Popover.svelte'").join("from './popover.js'");
 svelteCompile(sqlSrc, 'SqlConsole.svelte', join(dir, 'sqlconsole-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
@@ -231,7 +265,7 @@ check(
 );
 check('the route did not move (the console stays put behind the sheet)', location.hash === hash0, location.hash);
 
-console.log('C. the save form lives in the Statement card, above the Run/Export row');
+console.log('C. the save form, the Export control and Run share ONE toolbar in the Statement card');
 const stmtCard = panelByHeading('Statement');
 const editor = document.querySelector('.sql-editor');
 const saveBar = stmtCard?.querySelector('.sql-save-bar');
@@ -243,20 +277,44 @@ check(
   `${document.querySelectorAll('.sql-save-bar').length} save bar(s), inStatement=${stmtCard?.contains(saveBar)}`,
 );
 check(
-  'the form sits between the textarea and the Run/Export toolbar (its own toolbar, save first)',
-  cardToolbars.length === 2 &&
+  'the card has exactly ONE toolbar — the save bar — sitting after the textarea',
+  cardToolbars.length === 1 &&
     cardToolbars[0] === saveBar &&
-    kids.indexOf(editor) < kids.indexOf(saveBar) &&
-    kids.indexOf(saveBar) < kids.indexOf(cardToolbars[1]) &&
-    !!cardToolbars[1].querySelector('button.primary'),
+    kids.indexOf(editor) >= 0 &&
+    kids.indexOf(editor) < kids.indexOf(saveBar),
   cardToolbars.map((t) => t.className).join(' | '),
 );
 check(
-  'it carries the name and description inputs and the Save button',
+  'it carries the name and description inputs and the Save button (save group first)',
   !!saveBar?.querySelector('input[aria-label="Query name"]') &&
     !!saveBar.querySelector('input[aria-label="Query description"]') &&
     [...saveBar.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Save'),
 );
+// The right cluster: the Export host first, Run LAST (rightmost), with
+// the keyboard shortcut living on Run's tooltip — the old .sql-hint
+// span is gone with the second toolbar.
+const rightCluster = saveBar?.querySelector('.sql-actions-right');
+const runBtn = rightCluster?.querySelector('button.primary');
+const exportBtn = rightCluster?.querySelector('button[aria-haspopup="true"]');
+check(
+  'the right cluster parks Export then Run (Run rightmost) with the shortcut on Run’s title',
+  !!rightCluster &&
+    !!rightCluster.firstElementChild?.classList.contains('sql-pop-host') &&
+    !!runBtn &&
+    rightCluster.lastElementChild === runBtn &&
+    /Ctrl\/Cmd\+Enter/.test(runBtn.getAttribute('title') || ''),
+  rightCluster ? [...rightCluster.children].map((c) => c.className).join(' | ') : 'no cluster',
+);
+check(
+  'the Export trigger is the canonical popover host (aria trio, disabled until a result exists)',
+  !!exportBtn &&
+    exportBtn.disabled &&
+    exportBtn.getAttribute('aria-expanded') === 'false' &&
+    !exportBtn.hasAttribute('aria-controls') &&
+    (exportBtn.getAttribute('title') || '').length > 0,
+  exportBtn ? `disabled=${exportBtn.disabled} expanded=${exportBtn.getAttribute('aria-expanded')}` : 'no trigger',
+);
+check('no .sql-hint shortcut span anywhere (the shortcut is Run’s title)', !document.querySelector('.sql-hint'));
 const savedCard = panelByHeading('Saved queries');
 check(
   'the saved-queries card keeps only its heading, list and footer — no save form',
@@ -272,13 +330,13 @@ click([...saveBar.querySelectorAll('button')].find((b) => b.textContent.trim() =
 await sleep();
 const saveErr = saveBar.nextElementSibling;
 check(
-  'a save error renders in the Statement card, right under the save bar',
+  'a save error renders in the Statement card, as the merged toolbar’s next sibling',
   !!saveErr && saveErr.classList.contains('error') &&
     /name is required/i.test(saveErr.textContent) && stmtCard.contains(saveErr),
   saveErr ? `${saveErr.className} ${saveErr.textContent.trim()}` : 'none',
 );
 
-console.log('D. each history line is a row: a load body plus Save and Remove');
+console.log('D. each history line is a row: a load body plus Remove');
 const histCard = panelByHeading('History (last 50)');
 const histRows = () => [...(histCard?.querySelectorAll('.sql-hist.as-row') || [])];
 const savedRows = () => [...(savedCard?.querySelectorAll('.sql-hist.as-row') || [])];
@@ -289,10 +347,10 @@ check(
   histRows().map((r) => r.tagName).join(','),
 );
 check(
-  'each row = one load button + two ghost buttons, with no button inside a button',
+  'each row = one load button + ONE ghost button (Remove), with no button inside a button',
   histRows().every((r) => {
     const load = r.querySelector(':scope > .sql-hist-load');
-    return !!load && ghosts(r).length === 2 && !load.querySelector('button');
+    return !!load && ghosts(r).length === 1 && !load.querySelector('button');
   }),
 );
 check(
@@ -303,11 +361,10 @@ check(
     (histRows()[1].querySelector('.sql-hist-sql')?.textContent || '').includes('SELECT * FROM rounds'),
 );
 check(
-  'the buttons are Save (save glyph) and Remove (close glyph), titled in the user’s terms',
-  !!ghosts(histRows()[0])[0]?.querySelector('.codicon-save') &&
-    ghosts(histRows()[0])[0].title === 'Save this line as a query' &&
-    !!ghosts(histRows()[0])[1]?.querySelector('.codicon-close') &&
-    ghosts(histRows()[0])[1].title === 'Remove this line from history',
+  'the one ghost button is Remove (close glyph), titled in the user’s terms',
+  !!ghosts(histRows()[0])[0]?.querySelector('.codicon-close') &&
+    ghosts(histRows()[0])[0].title === 'Remove this line from history',
+  ghosts(histRows()[0]).map((b) => b.title).join(' | '),
 );
 check(
   'the card keeps its heading and its Clear button',
@@ -327,18 +384,13 @@ check(
   `${nameIn.value} / ${descIn.value}`,
 );
 bindings.resetCalls();
-click(ghosts(histRows()[0])[0]); // the line's Save — the load-into-form flow
+click(histRows()[0].querySelector('.sql-hist-load')); // the line's BODY — the only load path left
 await sleep();
-check('the line’s Save loads its statement into the editor', editor.value === historyFix[0].sql, editor.value);
+check('a history line’s body loads its statement into the editor', editor.value === historyFix[0].sql, editor.value);
 check(
-  '…clears name + description (a history line starts a fresh save)',
+  '…and clears name + description (a history line starts a fresh save form)',
   nameIn.value === '' && descIn.value === '',
   JSON.stringify([nameIn.value, descIn.value]),
-);
-check(
-  '…and hands focus to the name field',
-  document.activeElement === nameIn,
-  document.activeElement?.getAttribute?.('aria-label') || document.activeElement?.tagName || 'none',
 );
 type(nameIn, 'openings'); // an EXISTING saved name: only a cleared tie inserts here
 type(descIn, 'first bloods');
@@ -353,10 +405,10 @@ check(
 );
 check('the insert carries the loaded line’s statement', saves[0]?.args?.[1] === historyFix[0].sql, String(saves[0]?.args?.[1]));
 type(nameIn, 'typed by hand');
-click(ghosts(histRows()[1])[0]);
+click(histRows()[1].querySelector('.sql-hist-load'));
 await sleep();
 check(
-  'the row’s load button loads its statement and clears the form too',
+  'the other line’s body loads its statement and clears the form too',
   editor.value === historyFix[1].sql && nameIn.value === '',
   `${editor.value} / ${nameIn.value}`,
 );
@@ -364,7 +416,7 @@ check(
 console.log('F. a line’s Remove deletes it server-side (history is persisted)');
 bindings.resetCalls();
 const doomed = histRows()[0];
-click(ghosts(doomed)[1]);
+click(ghosts(doomed)[0]); // the row's ONE ghost button — Remove
 await sleep();
 const dels = bindings.calls.filter((c) => c.method === 'DeleteHistory');
 check(
@@ -417,6 +469,146 @@ type(editor, 'SELECT 1');
 click([...tables[0].querySelectorAll('.sql-col')].find((c) => c.querySelector('.mono')?.textContent === 'id'));
 await sleep();
 check('a column click inserts its name into the statement', editor.value.includes('id'), editor.value);
+
+console.log('H. the results grid pages its rows — one page at a time, every row reachable');
+bindings.resetCalls();
+click(runBtn);
+await sleep(80);
+const resultPanel = panelByHeading('Results');
+const gridRows = () => [...resultPanel.querySelectorAll('tbody tr')];
+// The card has TWO .row-between children: the heading/chips header and
+// the pager footer — the footer is the LAST one.
+const footerRows = () => [...resultPanel.querySelectorAll(':scope > .row-between')];
+const pager = () => footerRows()[footerRows().length - 1];
+const pagerText = () => pager()?.querySelector('.muted')?.textContent.replace(/\s+/g, ' ').trim();
+const pagerBtn = (label) =>
+  [...(pager()?.querySelectorAll('button') || [])].find((b) => b.textContent.trim() === label);
+const firstCell = () => gridRows()[0]?.querySelector('td')?.textContent;
+check(
+  'running renders ONE page of the result — 10 of 25 rows, footer naming the absolute range',
+  gridRows().length === 10 && pagerText() === 'Rows 1–10 of 25' && firstCell() === '1',
+  `${gridRows().length} rows / ${pagerText()} / first=${firstCell()}`,
+);
+check(
+  'Prev waits at the first page while Next steps on',
+  !!pagerBtn('Prev') && pagerBtn('Prev').disabled && !pagerBtn('Next').disabled,
+  `prev=${pagerBtn('Prev')?.disabled} next=${pagerBtn('Next')?.disabled}`,
+);
+check(
+  'the grid carries no render-cap note (the pager walks every returned row)',
+  !resultPanel.querySelector('.sql-note') && !/first 2,000|first 2000/.test(document.body.textContent),
+);
+click(pagerBtn('Next'));
+await sleep();
+check(
+  'Next → rows 11–20 with Prev armed',
+  gridRows().length === 10 && pagerText() === 'Rows 11–20 of 25' &&
+    firstCell() === '11' && !pagerBtn('Prev').disabled,
+  `${gridRows().length} / ${pagerText()} / first=${firstCell()}`,
+);
+click(pagerBtn('Next'));
+await sleep();
+check(
+  'the last page holds the remainder and disarms Next',
+  gridRows().length === 5 && pagerText() === 'Rows 21–25 of 25' &&
+    firstCell() === '21' && pagerBtn('Next').disabled,
+  `${gridRows().length} / ${pagerText()} / first=${firstCell()}`,
+);
+click(pagerBtn('Prev'));
+await sleep();
+check('Prev walks back to the middle page', pagerText() === 'Rows 11–20 of 25', pagerText());
+click(runBtn);
+await sleep(80);
+check(
+  'a re-run resets the grid to the first page',
+  pagerText() === 'Rows 1–10 of 25' && pagerBtn('Prev').disabled,
+  pagerText(),
+);
+bindings.handlers.Run = () => ({
+  columns: ['id'],
+  rows: [[1], [2], [3]],
+  ms: 1,
+  rowCount: 3,
+  truncated: false,
+});
+click(runBtn);
+await sleep(80);
+check(
+  'a single-page result shows no pager at all',
+  footerRows().length === 1 && gridRows().length === 3,
+  `${footerRows().length} .row-between, ${gridRows().length} rows`,
+);
+
+console.log('I. the Export control is ONE popover offering JSON then CSV (the canonical idiom)');
+// Back on the 25-row result: H's last run left the single-page fixture,
+// and the export pins read what actually crosses the save dialog.
+bindings.handlers.Run = runFixture;
+click(runBtn);
+await sleep(80);
+check('the Export trigger arms once a result exists', !!exportBtn && !exportBtn.disabled, String(exportBtn?.disabled));
+click(exportBtn);
+await sleep();
+const pop = document.getElementById('sql-export-pop');
+check(
+  'the panel opens under its host as the JSON-then-CSV stack',
+  !!pop && pop.classList.contains('sql-pop') &&
+    pop.closest('.sql-pop-host') === rightCluster.firstElementChild &&
+    [...pop.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' → ') === 'JSON → CSV',
+  pop ? [...pop.querySelectorAll('button')].map((b) => b.textContent.trim()).join(',') : 'no panel',
+);
+check(
+  'the trigger reports the open state (aria-expanded + aria-controls)',
+  exportBtn.getAttribute('aria-expanded') === 'true' &&
+    exportBtn.getAttribute('aria-controls') === 'sql-export-pop',
+  `expanded=${exportBtn.getAttribute('aria-expanded')} controls=${exportBtn.getAttribute('aria-controls')}`,
+);
+document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+await sleep();
+check(
+  'Escape closes the panel and returns focus to the trigger',
+  !document.getElementById('sql-export-pop') && document.activeElement === exportBtn,
+  document.activeElement?.tagName || 'none',
+);
+bindings.resetCalls();
+click(exportBtn);
+await sleep();
+click(
+  [...document.getElementById('sql-export-pop').querySelectorAll('button')].find(
+    (b) => b.textContent.trim() === 'JSON',
+  ),
+);
+await sleep();
+const jsonSaves = bindings.calls.filter((c) => c.method === 'SaveFile');
+const jsonWrite = bindings.calls.find((c) => c.method === 'WriteFile');
+const jsonPayload = jsonWrite
+  ? JSON.parse(Buffer.from(jsonWrite.args[1], 'base64').toString('utf8'))
+  : null;
+check(
+  'picking JSON closes the panel and offers a .json name to the save dialog',
+  jsonSaves.length === 1 && /\.json$/.test(jsonSaves[0].args[0]) &&
+    !document.getElementById('sql-export-pop'),
+  JSON.stringify(jsonSaves.map((c) => c.args[0])),
+);
+check(
+  'the JSON carries EVERY returned row, not just the page on screen',
+  !!jsonPayload && jsonPayload.columns[0] === 'id' && jsonPayload.rows.length === 25,
+  jsonPayload ? String(jsonPayload.rows.length) : 'no payload',
+);
+bindings.resetCalls();
+click(exportBtn);
+await sleep();
+click(
+  [...document.getElementById('sql-export-pop').querySelectorAll('button')].find(
+    (b) => b.textContent.trim() === 'CSV',
+  ),
+);
+await sleep();
+const csvSaves = bindings.calls.filter((c) => c.method === 'SaveFile');
+check(
+  'picking CSV offers a .csv name through the same dialog',
+  csvSaves.length === 1 && /\.csv$/.test(csvSaves[0].args[0]),
+  JSON.stringify(csvSaves.map((c) => c.args[0])),
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 await unmount(inst);

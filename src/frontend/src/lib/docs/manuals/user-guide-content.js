@@ -457,10 +457,10 @@ rejected before they run.
 
 - **Schema** (left) — every table with its note; expand one to see its columns and types, and click a column name to insert it into your statement.
 - **Statement** — the editor; **Run** or **Ctrl/Cmd+Enter**. The stated limits are *rows cap 5,000 · timeout 5 s*. A statement carrying parameters (\`?\`, \`:name\`) is refused with *this statement has parameters — replace them with values* — the console is never given values, so put them in yourself; a metric's **compiled SQL** already has its values written in (see *The metric Builder*), so a single statement of it runs as pasted.
-- **Results** — the row grid with the query time, the row count, and a *truncated* chip when the cap was hit. The grid renders the first 2,000 rows; exports always carry every returned row.
-- **Export CSV / Export JSON** — saves the result of the last run.
-- **Saved queries** — the queries you have saved: click one to load it, with its name and description, back into the statement, or delete one you no longer need. Its **name**, **description** and **Save** fields live in the **Statement** card just above **Run** — that is where the current statement gets named and saved.
-- **History (last 50)** — the statements you have run, newest first. Click a line to load it; a line's **Save** loads it with the name and description cleared so you can name it afresh, and **Remove** drops that one line — **Clear** still drops them all.`,
+- **Results** — the row grid with the query time, the row count, and a *truncated* chip when the cap was hit. The grid pages through every returned row: a footer names the rows on screen, with **Prev** / **Next** to step through them (each dimmed at its own end). Exports always carry every returned row.
+- **Export** — saves the result of the last run as **JSON** or **CSV**; the control sits in the **Statement** card, beside **Run**.
+- **Saved queries** — the queries you have saved: click one to load it, with its name and description, back into the statement, or delete one you no longer need. Its **name**, **description** and **Save** fields live in the **Statement** card — that is where the current statement gets named and saved.
+- **History (last 50)** — the statements you have run, newest first. Click a line to load it into the statement with the name and description cleared, so you can name it afresh; **Remove** drops that one line — **Clear** still drops them all.`,
   },
   {
     id: 'settings',
@@ -474,7 +474,7 @@ rejected before they run.
 - **CS2 assets** — detects your Counter-Strike 2 install and reports what has been extracted (radar packs, equipment icons, replay sounds), with **Choose folder…** and **Extract all CS2 assets**. Safe to re-run; worth re-running after a CS2 update.
 - **Appearance** — theme (**Dark** / **Light**) and font size (small / medium / large — the whole UI scales). Both apply immediately and are remembered.
 - **Plugins** — install a bundle from a path (a directory with a plugin manifest, or a single manifest file); enable, disable and remove them. They contribute metrics and report templates on the next list — no restart. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
-- **Audio & voice** — a **Run audio self-test** that checks Spectra can open your audio device, and the same six volume faders the replay uses (they stay in sync). Sound effects are extracted from your local CS2 install; voice is decoded as the replay plays. Voice-to-text transcription isn't available yet.
+- **Audio & voice** — a **Run audio self-test** that checks Spectra can open your audio device, and the same six volume faders the replay uses (they stay in sync). Sound effects are extracted from your local CS2 install; voice is decoded as the replay plays.
 - **Replay** — **Loop length (seconds)**: how long a loop spans around the playhead or an event (1–60, default 5). The transport's loop popover quick-range button and every event ▶ link in the analysis views arm exactly this width.
 - **Analysis rules** — the thresholds that decide Spectra's analysis: **Trade window (seconds)**, **Full-buy threshold (equip $)**, **Trade-opportunity distance (units)** and **Force threshold (equip $)**. **Save rules** stores them and, when a rule actually changed, recomputes the matches behind the new rules in the background — their numbers refresh as each match finishes, so there is no manual re-run step.`,
   },

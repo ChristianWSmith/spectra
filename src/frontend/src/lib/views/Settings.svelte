@@ -1215,9 +1215,6 @@
     <p class="muted">
       {S.settings.voiceDecodeNote}
     </p>
-    <p class="muted">
-      {S.settings.voiceToTextNote}
-    </p>
   </section>
 
   <!-- Replay: the loop-length setting — ONE number behind the transport
@@ -1308,16 +1305,24 @@
       </div>
     </div>
     <!-- Save is honest about dirtiness: pristine (loaded/saved values)
-         → disabled + "No changes" below, never a nudge. A save that
-         bumped the rules kicks the background recompute (saveCfg). -->
-    <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}
-      >{S.settings.saveRules}</button
-    >
-    {#if cfgMsg}
-      <p class="sett-msg" role="status">{cfgMsg}</p>
-    {:else if !cfgLoading && !cfgError && !cfgDirty}
-      <p class="muted" role="status">{S.settings.noChanges}</p>
-    {/if}
+         → disabled, its status slot reading "No changes", never a
+         nudge. A save that bumped the rules kicks the background
+         recompute (saveCfg). The status and the button share ONE
+         .row-between so the button sizes to its label and parks right
+         in every state: the post-save message, the pristine "No
+         changes", or an empty left slot while the form is dirty. -->
+    <div class="row-between">
+      {#if cfgMsg}
+        <p class="sett-msg" role="status">{cfgMsg}</p>
+      {:else if !cfgLoading && !cfgError && !cfgDirty}
+        <p class="muted" role="status">{S.settings.noChanges}</p>
+      {:else}
+        <span></span>
+      {/if}
+      <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}
+        >{S.settings.saveRules}</button
+      >
+    </div>
   </section>
 
   <ConfirmDialog bind:this={confirmDlg} />

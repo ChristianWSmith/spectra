@@ -128,7 +128,6 @@ export const settings = {
     'Sound effects are extracted from your local CS2 install (CS2 assets\n      above); the replay plays gun, utility, C4, announcer and footstep\n      sounds when they are available.',
   voiceDecodeNote:
     'Voice is decoded as the replay plays and streamed in small pieces — no\n      extra disk space, always in sync with the replay.',
-  voiceToTextNote: "Voice-to-text transcription isn't available yet.",
 
   // Replay panel — the loop-length setting (the `loop_secs` pref): the
   // ONE knob behind the loop popover's quick-range button and every
