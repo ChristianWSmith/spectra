@@ -6,7 +6,6 @@
     isBareClick,
     clientToWorld,
     dragWorldBox,
-    intersectGrid,
     overlayRect,
     cellAt,
   } from '../heatselect.js';
@@ -51,6 +50,9 @@
     layer = 0,
     gridLayer = 0,
     kind = '',
+    // Region drill callback: (bbox, value, source) — `source` is 'drag'
+    // (the drawn world rect, queried as-is) or 'cell' (the clicked cell,
+    // which the view expands by grid.pad). See Heatmaps.onRegion.
     onRegion = () => {},
     // V8e bridge — the composite canvas (radar + overlay, exactly what
     // draw() paints) is PRIVATE to this component; the view reaches it
@@ -296,15 +298,18 @@
   // wrong scale here); all of that math is lib/heatselect.js — one formula
   // shared by the bare click and the rubber-band drag.
   //
-  // Two gestures, one drill:
+  // Two gestures, one drill — the callback's THIRD argument names which
+  // (Heatmaps.onRegion pads only a 'cell'):
   //   • a BARE CLICK (pointer down + up with under 4px of movement) emits
   //     the CELL containing the point — exactly what the map did before the
   //     drag existed, snapped to cell size;
-  //   • a DRAG emits the world box it spans, clipped to the raster's bounds
-  //     (an empty intersection falls back to the anchor's own cell — a
-  //     selection over no data drills where the gesture started, never an
-  //     invented region). The overlay's presence means "this release selects
-  //     a region": a sub-threshold wobble draws no box at all.
+  //   • a DRAG emits the world box it spans, AS DRAWN (owner fix
+  //     2026-11-16: no clip to the raster's bounds, no anchor-cell
+  //     fallback — the user drew this box, so the filter is what they
+  //     drew; a box over a non-playable margin honestly queries, and can
+  //     honestly return, nothing). The overlay's presence means "this
+  //     release selects a region": a sub-threshold wobble draws no box at
+  //     all.
   //
   // No bbox for this kind (heatRegionTakesBBox — the view's nav gate is the
   // same predicate) → the gesture does nothing: a drill that navigated
@@ -319,8 +324,10 @@
   // cell (> 0 killers stood here, < 0 victims fell here —
   // heatmap.go combineSignedHeatmaps, kills − deaths). A cell outside
   // the grid reads undefined (no signal — never a fabricated 0). A drag
-  // carries the ANCHOR cell's value for the same reason: it is where the
-  // gesture started reading from.
+  // carries the ANCHOR cell's value — the SECOND argument only, never
+  // its bbox as a substitute region — because it is where the gesture
+  // started reading from; a gesture that starts off the raster thus
+  // carries an undefined value while the region stays the drawn box.
   //
   // The gesture state below is transient component $state — never viewstate,
   // never the URL (State placement: a half-finished drag never restores).
@@ -382,11 +389,20 @@
       emitCell(e.clientX, e.clientY, a.rect);
       return;
     }
+    // A DRAG emits EXACTLY the world rect it spans (owner fix 2026-11-16 —
+    // see the gesture contract above): no intersectGrid clip, no
+    // anchor-cell fallback. The old clip existed only to serve the view's
+    // cell pad, and it could both shrink the drawn box (dropping valid
+    // either-endpoint rows — the kills raster plots the attacker while the
+    // store predicate matches either endpoint) and replace a margin
+    // selection outright with the cell under the drag start.
     const box = dragWorldBox(baseTf, a.rect, W, H, a.x, a.y, e.clientX, e.clientY);
-    const region = box && intersectGrid(grid, box);
+    if (!box) return;
+    // The anchor cell contributes its VALUE only (the kd sign source the
+    // view reads) — cellAt returns null only for a degenerate grid, in
+    // which case the value is missing, never fabricated.
     const anchorCell = cellAt(grid, clientToWorld(baseTf, a.rect, a.x, a.y, W, H));
-    if (!anchorCell) return;
-    onRegion(region || anchorCell.bbox, anchorCell.value);
+    onRegion(box, anchorCell ? anchorCell.value : undefined, 'drag');
   }
 
   function cancelDrag() {
@@ -396,11 +412,13 @@
 
   // The bare click: the cell containing the point (heatselect's cellAt —
   // row-major, row 0 at grid.minY, missing value outside the raster).
+  // 'cell' tags the emission so the view applies grid.pad to THIS shape
+  // only (the pad's contract is the clicked cell — see Heatmaps.onRegion).
   function emitCell(clientX, clientY, rect) {
     const world = clientToWorld(baseTf, rect, clientX, clientY, W, H);
     const cell = world && cellAt(grid, world);
     if (!cell) return;
-    onRegion(cell.bbox, cell.value);
+    onRegion(cell.bbox, cell.value, 'cell');
   }
 </script>
 

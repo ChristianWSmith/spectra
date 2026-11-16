@@ -12,9 +12,12 @@
 // The drill pins both gesture shapes: a bare press (down + up, no move —
 // the pre-drag click) emits the CELL under the cursor, while a drag past
 // the 4px threshold shows the `.heat-selbox` overlay and emits the world
-// box it spans, clipped to the raster (an empty intersection falls back
-// to the anchor cell). Pointer events are constructed on dom.window —
-// jsdom's PointerEvent is NOT in the driver's global copy list.
+// box it spans AS DRAWN (owner fix 2026-11-16: no clip to the raster, no
+// anchor-cell fallback — the old clip/fallback existed only to serve the
+// view's cell pad). Every emission carries its gesture tag ('cell' |
+// 'drag'), which is what tells the view to pad grid.pad to a clicked cell
+// only. Pointer events are constructed on dom.window — jsdom's
+// PointerEvent is NOT in the driver's global copy list.
 //
 // jsdom has no canvas renderer and no image decoder, so the driver
 // records what the component paints: getContext returns a recording 2d
@@ -430,6 +433,11 @@ check(
     hit.bbox.minY === 25 && hit.bbox.maxY === 50,
   JSON.stringify(hit && hit.bbox),
 );
+check(
+  "kills: the click is tagged source 'cell' (only a cell gets grid.pad — J)",
+  hit && hit.source === 'cell',
+  String(hit && hit.source),
+);
 const canvasEl = document.querySelector('canvas.heat-canvas');
 check('kills: drill affordance present (title)', /Drag a box/.test(canvasEl.title), canvasEl.title);
 check(
@@ -459,7 +467,7 @@ check(
 globalThis.__setKind('kills');
 await sleep();
 
-console.log('J. Heatmaps.onRegion source pins: pad expansion + the no-bbox no-nav gate');
+console.log('J. Heatmaps.onRegion source pins: cell-only pad expansion + the no-bbox no-nav gate');
 // No driver mounts the Heatmaps VIEW (mounting it would drag in the whole
 // service surface), so its region composition is source-pinned here — the
 // same precedent as section H.
@@ -477,14 +485,21 @@ check(
   `return@${onRegionSrc.indexOf('return;')} replayHash@${onRegionSrc.indexOf('replayHash(')}`,
 );
 check(
-  'the drill bbox expands the cell by grid.pad on all four sides',
-  /bbox\.minX - pad/.test(onRegionSrc) &&
+  'the cell bbox expands by grid.pad on all four sides — ONLY for a cell emission',
+  /source === 'cell' && grid && Number\.isFinite\(grid\.pad\) \? grid\.pad : 0/.test(onRegionSrc) &&
+    /bbox\.minX - pad/.test(onRegionSrc) &&
     /bbox\.minY - pad/.test(onRegionSrc) &&
     /bbox\.maxX \+ pad/.test(onRegionSrc) &&
     /bbox\.maxY \+ pad/.test(onRegionSrc),
 );
 check(
-  'regionNote states the APPLIED (padded) rect — never the raw cell',
+  'a drag is never padded — its applied rect is the drawn bbox verbatim',
+  !/source === 'drag' \?/.test(onRegionSrc) &&
+    !/pad = grid && Number\.isFinite/.test(onRegionSrc) &&
+    /source === 'cell'/.test(onRegionSrc),
+);
+check(
+  'regionNote states the APPLIED rect — never the raw cell',
   /regionNote = `bbox \(\$\{Math\.round\(applied\.minX\)\}/.test(onRegionSrc) &&
     !/regionNote = `bbox \(\$\{Math\.round\(bbox\.minX\)\}/.test(onRegionSrc),
 );
@@ -574,7 +589,10 @@ console.log('M. kd sign → cats mapping (source pin over Heatmaps.onRegion)');
 // The override lives at the click site (Heatmaps.onRegion) — heatRegionCats
 // keeps its pinned ['kills'] default for kd (heatkinds.test.js untouched).
 const onRegionNorm = onRegionSrc.replace(/\s+/g, ' ');
-check('onRegion receives the cell value', /function onRegion\(\w+, value\)/.test(heatSrc));
+check(
+  'onRegion receives the cell value AND the gesture source',
+  /function onRegion\(\w+, value, source\)/.test(heatSrc),
+);
 check(
   'kd maps value > 0 → cats kills, value < 0 → cats deaths',
   /src\.kind === 'kd'/.test(onRegionNorm) &&
@@ -627,11 +645,14 @@ check(
 console.log('O. rubber-band drag: overlay while held, region on release');
 // The gesture has two shapes (heatselect.js): a BARE PRESS (down + up with
 // under 4px of movement) keeps the old cell drill; a DRAG past the
-// threshold draws .heat-selbox and emits the world box it spans, clipped to
-// the raster. The overlay's presence therefore means "this release selects
-// a region" — a sub-threshold wobble draws nothing. All geometry runs over
-// the harness fixture: the 1024×1024 stub rect, transform pos_x −50 /
-// pos_y 50 / scale 1, the 4×4 grid over [−50, 50]² (cells i + 1).
+// threshold draws .heat-selbox and emits the world box it spans AS DRAWN
+// (owner fix 2026-11-16 — re-pinned here: no clip to the raster, no
+// anchor-cell fallback, and the emission is tagged 'drag' so the view
+// never pads it; grid.pad is the clicked cell's splat reach only). The
+// overlay's presence therefore means "this release selects a region" — a
+// sub-threshold wobble draws nothing. All geometry runs over the harness
+// fixture: the 1024×1024 stub rect, transform pos_x −50 / pos_y 50 /
+// scale 1, the 4×4 grid over [−50, 50]² (cells i + 1).
 reset();
 globalThis.__regions.length = 0; // section L's out-of-raster click left one behind
 globalThis.__set(0, 0);
@@ -668,15 +689,22 @@ await sleep();
     globalThis.__regions.length === 1,
     String(globalThis.__regions.length),
   );
-  // Corners (10,10) → world (−40, 40) and (510,510) → (460, −460): the box
-  // is clipped to the raster on the sides that overrun — the view pads THAT
-  // by grid.pad (pinned in J), never the raw gesture.
+  // Corners (10,10) → world (−40, 40) and (510,510) → (460, −460): the
+  // region is the DRAWN box on every side (re-pinned 2026-11-16: the old
+  // expectation clipped it to the raster's [−50, 50]² bounds, and the view
+  // padded THAT — both halves died with the pad-on-drag fix; a 'cell'
+  // emission is the only one the view pads, source-pinned in J).
   check(
-    'drag: the region is the world box clipped to the raster bounds',
+    'drag: the region is the drawn world box AS-IS (no raster clip)',
     hit &&
-      hit.bbox.minX === -40 && hit.bbox.maxX === 50 &&
-      hit.bbox.minY === -50 && hit.bbox.maxY === 40,
+      hit.bbox.minX === -40 && hit.bbox.maxX === 460 &&
+      hit.bbox.minY === -460 && hit.bbox.maxY === 40,
     JSON.stringify(hit && hit.bbox),
+  );
+  check(
+    "drag: the emission is tagged source 'drag' (the view pads it never)",
+    hit && hit.source === 'drag',
+    String(hit && hit.source),
   );
   check(
     'drag: the anchor cell value rides along (the kd sign source)',
@@ -698,9 +726,10 @@ await sleep();
 {
   const hit = globalThis.__regions[0];
   check(
-    'sub-threshold: the release emits the single cell (the pre-drag click)',
+    'sub-threshold: the release emits the single cell, tagged cell (the pre-drag click)',
     globalThis.__regions.length === 1 &&
       hit &&
+      hit.source === 'cell' &&
       hit.bbox.minX === -50 && hit.bbox.maxX === -25 &&
       hit.bbox.minY === 25 && hit.bbox.maxY === 50,
     JSON.stringify(hit && hit.bbox),
@@ -776,10 +805,12 @@ check(
 globalThis.__setKind('kills');
 await sleep();
 
-// EMPTY grid intersection → the ANCHOR CELL fallback: a gesture that never
-// reaches the raster drills where it started — the same out-of-raster cell
-// a click there emits (value missing, never a fabricated 0), never an
-// invented region and never a silent no-op.
+// A gesture that NEVER reaches the raster (re-pinned 2026-11-16, owner
+// fix Q2): the HONEST RAW RECT is emitted as-is — a selection over no
+// data queries exactly what was drawn and may return nothing, which is
+// the truth. The old anchor-cell fallback (a cell under the drag start,
+// which the view then padded into playable space) is GONE: it invented a
+// region the user never drew.
 globalThis.__regions.length = 0;
 dragStart(500, 500); // world (450, −450) — outside the [−50, 50]² raster
 dragMove(900, 900);
@@ -788,25 +819,31 @@ await sleep();
 {
   const hit = globalThis.__regions[0];
   check(
-    'empty intersection: the anchor cell is emitted instead (one region)',
+    'miss: the off-raster drag still emits exactly one region',
     globalThis.__regions.length === 1,
     String(globalThis.__regions.length),
   );
   check(
-    'empty intersection: the anchor cell is out-of-raster with a MISSING value',
+    'miss: the region is the RAW drawn rect — never the anchor cell',
     hit &&
-      hit.bbox.minX === 450 && hit.bbox.maxX === 475 &&
-      hit.bbox.minY === -450 && hit.bbox.maxY === -425 &&
-      'value' in hit && hit.value === undefined,
+      hit.bbox.minX === 450 && hit.bbox.maxX === 850 &&
+      hit.bbox.minY === -850 && hit.bbox.maxY === -450 &&
+      hit.source === 'drag',
     JSON.stringify(hit),
   );
-  check('empty intersection: the overlay is gone after the fallback', !selBox(), selBox() ? 'present' : '');
+  check(
+    'miss: the anchor value is MISSING (out of raster — never a fabricated 0)',
+    hit && 'value' in hit && hit.value === undefined,
+    JSON.stringify(hit && hit.value),
+  );
+  check('miss: the overlay is gone after release', !selBox(), selBox() ? 'present' : '');
 }
 
-// A perfectly straight drag (zero width) still REACHES the raster, so it
-// yields the line-shaped box rather than falling back — the view's pad
-// expansion turns it into a real region. (Falling back here would ignore a
-// 500px gesture and drill one cell.)
+// A perfectly straight drag (zero width) is still a DRAG: it emits the
+// line-shaped DRAWN box verbatim — no clip, no cell substitution
+// (re-pinned 2026-11-16: the old expectation clipped minY to the
+// raster's −50 edge; the raw gesture's minY is the drag's own −460, and
+// the view pads a 'cell' only — J).
 globalThis.__regions.length = 0;
 dragStart(10, 10);
 dragMove(10, 510);
@@ -815,13 +852,82 @@ await sleep();
 {
   const hit = globalThis.__regions[0];
   check(
-    'straight drag: a zero-width box reaches the raster (line, not the cell)',
+    'straight drag: a zero-width drag emits the drawn line verbatim (never a cell)',
     globalThis.__regions.length === 1 &&
       hit &&
       hit.bbox.minX === -40 && hit.bbox.maxX === -40 &&
-      hit.bbox.minY === -50 && hit.bbox.maxY === 40,
+      hit.bbox.minY === -460 && hit.bbox.maxY === 40,
     JSON.stringify(hit && hit.bbox),
   );
+}
+
+// --- O2: known-region fixture over the REAL de_cache meta ------------------
+// The owner's repro map: pos_x −2000, pos_y 3250, scale 5.5, 1024² radar →
+// world x ∈ [−2000, 3632], y ∈ [−2382, 3250]; the defect box sat in the
+// map's NON-playable top-left margin (the art's opaque content starts at
+// y = 2288 — margins thinner than the 450u cell pad). The old pipeline
+// clipped/substituted the drawn rect (intersectGrid + the anchor-cell
+// fallback) and Heatmaps padded whatever came out by grid.pad, so a margin
+// box queried a rect that reached into the map. Both halves are gone: the
+// component emits the drawn rect tagged 'drag', and the view pads only a
+// 'cell' (source-pinned in J) — so the rects below ARE what the view
+// queries. The transform is read through the SAME makeTransform copy the
+// harness builds its packs with.
+{
+  const { makeTransform } = await import(
+    pathToFileURL(join(dir, 'components', 'mapxform.js')).href
+  );
+  const meta = {
+    transform: { pos_x: -2000, pos_y: 3250, scale: 5.5 },
+    radar: { file: 'de_cache.png', width: 1024, height: 1024 },
+  };
+  globalThis.__setPack({ meta, transform: makeTransform(meta), base: '/api/mappack/de_cache' });
+  await sleep();
+
+  // Drag A — a known px rect (10, 20) → (210, 320). Hand-computed corners
+  // (world = px·5.5 + pos_x, pos_y − py·5.5): (10, 20) → (−1945, 3140);
+  // (210, 320) → (−845, 1490).
+  globalThis.__regions.length = 0;
+  await dragCanvas(10, 20, 210, 320);
+  {
+    const hit = globalThis.__regions[0];
+    check(
+      'de_cache: the drawn px rect maps to its hand-computed world corners',
+      globalThis.__regions.length === 1 &&
+        hit &&
+        hit.bbox.minX === -1945 && hit.bbox.minY === 1490 &&
+        hit.bbox.maxX === -845 && hit.bbox.maxY === 3140,
+      JSON.stringify(hit && hit.bbox),
+    );
+    check(
+      "de_cache: the view receives exactly that rect — tagged 'drag', never ±450",
+      hit && hit.source === 'drag',
+      String(hit && hit.source),
+    );
+  }
+
+  // Drag B — the NON-playable regression: a drag confined to world
+  // y > 2288 (above the art's opaque content) may never reach INTO
+  // playable space (y ≤ 2288). px (0, 0) → (100, 174): world y runs
+  // 3250 → 3250 − 174·5.5 = 2293. With the old pad the query would have
+  // been minY 1843 (deep inside the map) and maxY 3700 (off the map).
+  globalThis.__regions.length = 0;
+  await dragCanvas(0, 0, 100, 174);
+  {
+    const hit = globalThis.__regions[0];
+    check(
+      'non-playable: the emitted rect never reaches into playable space (y ≤ 2288)',
+      hit && hit.bbox.minY > 2288 && hit.bbox.maxY <= 3250,
+      JSON.stringify(hit && hit.bbox),
+    );
+    check(
+      'non-playable: the emitted rect IS the drawn rect (maxY ≤ drawn maxY, no pad)',
+      hit &&
+        hit.bbox.minX === -2000 && hit.bbox.maxX === -1450 &&
+        hit.bbox.minY === 2293 && hit.bbox.maxY === 3250,
+      JSON.stringify(hit && hit.bbox),
+    );
+  }
 }
 
 // The overlay's STYLE is an owner ruling too (match-view V8f, restating
