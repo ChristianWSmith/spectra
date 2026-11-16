@@ -1029,23 +1029,38 @@
     }
   }
 
-  // Scrubber/list seek — in-place, no navigation. A seek also PAUSES
-  // (C19): both seek buttons (the feed row's ▶ and the detail pane's
-  // "Seek to event") land you LOOKING AT the moment. This is view glue
-  // only — engine.seekTick itself stays position-only (section K's
-  // "seek never touches play/pause" pins own that), and no wasPlaying
-  // write either: the keep-alive re-records it from the engine at leave.
-  function seekTo(tick) {
+  // armLoopAroundSeek — THE one path behind every event-card play button:
+  // the feed row's ▶, the detail pane's "Watch this event" and "Hear around
+  // the event". Seek to the event, START PLAYBACK (owner ruling: once the
+  // loop is armed, PLAY — the old C19 "seek then pause" no longer holds
+  // for these buttons, and it now agrees with every external watch link:
+  // startEngine autoplays a fresh entry with its loop armed), then arm
+  // the loop-length window around it (armLoopAroundTick below).
+  //
+  // The ORDER: seek first, then arm — the same order startEngine's entry
+  // ?loop= apply uses (seek → bounds → arm). engine.seekTick's loop-exit
+  // guard (cancelLoopIfOutside) cancels an armed range the seek lands
+  // OUTSIDE of, so arming after the seek is the side that can never be
+  // undone by the very seek it follows.
+  //
+  // This is view glue only — engine.seekTick itself stays position-only
+  // (section K's "seek never touches play/pause" pins own that), and no
+  // wasPlaying write either: the keep-alive re-records it from the engine
+  // at leave. The optional voice leg is the M4 comms-around button: the
+  // same path with the voice engine re-armed first, so the audio engine
+  // starts from the event (in-panel) and its "around" claim is loop-true.
+  function armLoopAroundSeek(tick, { voice = false } = {}) {
     engine?.seekTick(tick);
-    engine?.pause();
+    if (voice && voiceEngine) voiceEngine.setEnabled(true).catch(() => {});
+    engine?.play();
+    armLoopAroundTick(tick);
   }
 
-  // M4 comms-around: seek TO the event with playback + voice on — the
-  // audio engine starts from there (in-panel).
+  // hearTick — "Hear around the event": the armLoopAroundSeek path with
+  // voice on (kept as its own name because the detail pane reads as a
+  // comms button, not a plain watch).
   function hearTick(tick) {
-    engine?.seekTick(tick);
-    if (voiceEngine) voiceEngine.setEnabled(true).catch(() => {});
-    engine?.play();
+    armLoopAroundSeek(tick, { voice: true });
   }
 
   // --- Round ribbon (spec 13) + HUD score/round context ---------------------
@@ -2625,27 +2640,37 @@
     engine?.toggleLoop();
   }
 
-  // loop10 — arm the loop-length window AROUND the playhead in one click
-  // (the loop popover's quick-range button, beside the Loop toggle): the
-  // width is uiLoopSecs — the `loop_secs` pref, the same number the
-  // button's label and tooltip state — at the match tick rate. The window
-  // CLAMPS at the stream edges — frameForTick floors at 0 and the `to`
-  // side clamps to the last frame — so it SHRINKS near an edge, never
-  // wraps. Unlike a bound EDIT (loopBoundEdited — whose job is to
-  // disable) this never disarms first: bounds, then arm, exactly the
+  // armLoopAroundTick — the ONE in-view loop armer: the loop-length window
+  // (uiLoopSecs — the `loop_secs` pref read at load, NEVER a literal second
+  // count) AROUND a tick, at the match tick rate. The window CLAMPS at the
+  // stream edges — frameForTick floors at 0 and the `to` side clamps to the
+  // last frame — so it SHRINKS near an edge, never wraps. This is the
+  // in-session twin of nav.entryLoopAround (THE ?loop= stamper for the
+  // singular-event category — same ±half arithmetic, same loop_secs width,
+  // cross-referenced here rather than re-derived from a second rule): it
+  // states the range as ENGINE bounds instead of a URL string, because
+  // stamping the URL from inside Replay would re-mint it and drop the
+  // filter / `sel` state. Unlike a bound EDIT (loopBoundEdited — whose job
+  // is to disable) this never disarms first: bounds, then arm, exactly the
   // entry ?loop='s order (startEngine's apply above), and the URL's
   // promise is dropped on the way (an edit owns the URL: a refresh must
   // not resurrect the pre-click range) — but only when there was one, so
   // a session without ?loop= keeps its hash byte-identical.
-  function loop10() {
+  function armLoopAroundTick(tick) {
     if (!engine || !data) return;
     const tr = normTickRate(meta?.tickRate);
     const half = uiLoopSecs * tr;
-    const f0 = engine.frameForTick(uiTick - half); // clamps to 0
-    const f1 = Math.min(data.frames - 1, engine.frameForTick(uiTick + half));
+    const f0 = engine.frameForTick(tick - half); // clamps to 0
+    const f1 = Math.min(data.frames - 1, engine.frameForTick(tick + half));
     engine.setLoop(f0, f1); // never enables by itself
     if (query.loop) navigateFilter(filter, { keepLoop: false });
     engine.setLoopEnabled(true); // arm, like the entry ?loop= apply
+  }
+
+  // loop10 — the loop popover's quick-range button, beside the Loop
+  // toggle: arm the loop-length window around the PLAYHEAD in one click.
+  function loop10() {
+    armLoopAroundTick(uiTick);
   }
 
   // enterTheater — the ONLY way into theater mode (the top bar's
@@ -4112,7 +4137,7 @@
             {rounds}
             selected={selected?.key === row.key}
             onselect={select}
-            onseek={(r) => seekTo(r.tick)}
+            onseek={(r) => armLoopAroundSeek(r.tick)}
           />
         {:else}
           <li class="muted lm-empty" role="status">
@@ -4298,7 +4323,7 @@
             </div>
           {/if}
           <div class="lm-detail-actions">
-            <button class="btn small primary" onclick={() => seekTo(selected.tick)}>
+            <button class="btn small primary" onclick={() => armLoopAroundSeek(selected.tick)}>
               <span class="codicon codicon-play"></span> {S.replay.seekToEvent}
             </button>
           </div>

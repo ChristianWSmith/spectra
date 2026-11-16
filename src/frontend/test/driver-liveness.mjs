@@ -505,7 +505,17 @@ const EXPECTED = {
   // the `?` heads the right wing), and section C gained +2 stylesheet
   // pins for the equal-width wing rules that center the ribbon cell
   // (jsdom has no layout — the rules are the pin).
-  'replay.dom.mjs': 465,
+  // replay 465 → 467 (2026-11-16, W12 event-card loop): section N2
+  // rewrote IN PLACE under the owner ruling (arming the loop PLAYS —
+  // superseding C19's pause for the row ▶ and the detail buttons): +2 —
+  // a pause SETUP leg (the transport's own toggle, which the stub never
+  // counts) so the play call below is a real transition instead of a
+  // no-op against an already-running stub, and the loop-range arm pin
+  // (`loop: 0:00–0:07` + the Loop button's aria-pressed — the loop_secs
+  // pref's default width armed around the event tick). The baseline
+  // row/playing pin, the seek delta and the glyph mirror kept
+  // their shape; the old pause-delta leg became the play-delta leg.
+  'replay.dom.mjs': 467,
   // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when

@@ -190,7 +190,7 @@
 
   // The row ▶'s own tooltip (passed to LandmarkRow): names the follow so
   // the icon-only button says what it does; actor-less rows keep the
-  // component's default seek copy.
+  // component's default watch copy.
   function seekCopy(row) {
     const who = row.attackerName || row.attacker;
     return row.attacker

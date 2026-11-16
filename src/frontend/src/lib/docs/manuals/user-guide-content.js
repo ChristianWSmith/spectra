@@ -287,7 +287,7 @@ install required.
 # Opening it
 
 - **Watch replay** in a match header.
-- Any ▶ or watch button in the analysis views, round detail or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start.
+- Any ▶ or watch button in the analysis views, round detail or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start. The replay's own event feed does the same in place, without leaving the replay.
 - A roster or scoreboard row click — opens the replay following that player.
 
 Leaving the replay does not stop it: it collapses into a small dock in the bottom-right corner
@@ -341,8 +341,9 @@ distance range, headshot and a **Position** row where the world-space bounds are
 directly (minimum and maximum on each axis) or cleared, plus **saved filter presets** (save, apply,
 delete, reset). The loaded feed exports as **CSV or JSON**. Selecting an event opens its detail
 pane with the participants, a filter over its payload keys and a raw-JSON toggle. The row's play
-button — and **Seek to event** in that pane — jump the replay to the event and pause there, so
-you land looking at the moment.
+button — and **Watch this event** in that pane — jump the replay to the event, start playing and
+loop it for the length set in **Settings → Replay**; **Hear around the event** does the same with
+voice on.
 
 # Keyboard shortcuts
 

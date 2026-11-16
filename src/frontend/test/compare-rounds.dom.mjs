@@ -2,7 +2,7 @@
 // play that seeks WITH the loop-length loop (the `loop_secs` pref —
 // default 5 s) and follows the ROW'S ACTOR when
 // it has one (a kill's killer — `attacker`), actor-less rows (round
-// starts) keep the default seek copy and stamp no follow, and the
+// starts) keep the default watch copy and stamp no follow, and the
 // round-level "Replay start" control is icon-only play with NO follow.
 // Every link stays filter-free (buttons seek, never filter).
 //
@@ -335,8 +335,12 @@ check('two event rows render in the column (round start + kill)', rows.length ==
 const startPlay = rows[0]?.querySelector('.lm-play');
 const killPlay = rows[1]?.querySelector('.lm-play');
 check(
-  'actor-less row keeps the DEFAULT seek copy (no follow claim)',
-  (startPlay?.getAttribute('title') || '').startsWith('Seek replay to tick'),
+  // 2026-11-16 (W12 loop-play): the default copy went loop-honest — a
+  // bare "Seek replay to tick" was already wrong for these rows (they
+  // stamp the entry ?loop= around the tick), and wrong again for Replay's
+  // feed, which now arms the loop in place.
+  'actor-less row keeps the DEFAULT watch copy (no follow claim)',
+  (startPlay?.getAttribute('title') || '').startsWith('Watch this event'),
   startPlay?.getAttribute('title'),
 );
 check(
