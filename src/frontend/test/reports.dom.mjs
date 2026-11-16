@@ -249,13 +249,16 @@ const openBox = async (root) => {
   return [...root.querySelectorAll('.tk-opt')];
 };
 const optLabels = (opts) => opts.map((o) => o.textContent.trim());
-// The seven raw recorded-value items in their fixed-block order (N5) —
+// The six raw recorded-value items in their fixed-block order (N5) —
 // they LEAD the universe (metricorder.composedSequence's fixed
 // positions), so every option-list pin below composes with them.
 // W13b (2026-11-16): the raw items carry the label table's FULL names
 // (the appendix chips and the exported headings read "Kills"), never
 // the bare scoreboard shorts.
-const RAW_LABELS = ['Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score'];
+// w13d (2026-11-16): KDA left with @KDA — the scoreboard's KDA column
+// is the seeded `kda` metric now, so it offers through the metric
+// catalog instead (this fixture scripts no `kda` metric).
+const RAW_LABELS = ['Kills', 'Deaths', 'Damage', 'Utility damage', 'MVPs', 'Score'];
 
 // --- The save ----------------------------------------------------------------
 // The Generate/Save button (its busy shape — {#if rendering}Generating…
@@ -318,7 +321,7 @@ bindings.handlers.GetMetricComputeState = () => [
 bindings.handlers.GetScoreboard = () => [
   {
     steamId: '76561198000000001', name: 'amy', side: 'ct', isBot: false,
-    kills: 20, deaths: 5, kda: 4.2, totalDamage: 1750, utilityDamage: 120,
+    kills: 20, deaths: 5, totalDamage: 1750, utilityDamage: 120,
     mvps: 3, score: 48, roundsPlayed: 24,
   },
 ];
@@ -360,15 +363,16 @@ console.log('A. the item universe behind the field is the raw recorded values pl
 {
   const opts = await openBox(r);
   const labels = optLabels(opts);
-  // N5: the seven raw recorded values lead (the fixed block's
+  // N5: the six raw recorded values lead (the fixed block's
   // positions), then the match-scope metric definitions — a
   // profile-scope metric never enters a per-match appendix. W13b: the
-  // raw labels are the table's FULL names.
+  // raw labels are the table's FULL names. w13d: KDA left with @KDA
+  // (it offers as a metric now, and this fixture scripts none).
   check(
     'the raw recorded values AND the match-scope metrics offer themselves (a profile-scope metric never does)',
     JSON.stringify(labels) ===
       JSON.stringify([
-        'Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score',
+        'Kills', 'Deaths', 'Damage', 'Utility damage', 'MVPs', 'Score',
         'Match stat', 'Behind stat',
       ]) &&
       !r.textContent.includes('Career stat'),

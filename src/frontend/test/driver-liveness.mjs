@@ -218,6 +218,14 @@ const EXPECTED = {
   // data-mo-name lists and every other section-J pin were re-pointed in
   // place (they read .mo-title/data-mo-name, which keep their shapes) —
   // same counts. Sections A–I untouched.
+  // builder 148 → 148 (2026-11-16, w13d — KDA and Opening K/D leave
+  // the fixed block: the count is UNCHANGED, section J was re-pointed
+  // in place): the five `dNames('match')` data-mo-name lists lost
+  // @KDA and @Opening K/D (ten fixed entries → eight), the row-set
+  // counts 13 → 11 (8 fixed + 3 pinned metrics), the fixed/metric
+  // slice boundaries 10 → 8, the eye count 9 → 7, and the ADR /
+  // Plugin stat row indices re-based (10/12 → 8/10). Sections A–I
+  // untouched.
   'builder.dom.mjs': 148,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
@@ -391,6 +399,20 @@ const EXPECTED = {
   // their place (the fixed-leads default above stays the absent-key
   // pin; the harness's services stub grew a function-valued read so ONE
   // getPref can answer per-key — plain value fixtures behave as before).
+  // econ-tables 150 → 150 (2026-11-16, w13d — KDA and Opening K/D
+  // convert: the count is UNCHANGED, the pins were re-pointed in
+  // place): section K re-pinned for the fourteen-column swap — the
+  // fixed block drops KDA and Opening K/D (ten → eight headers), the
+  // converted tail gains KDA, Open K and Open D (twelve → fourteen,
+  // m5-mth cap count with it), the two compound-cell checks became the
+  // Open K / Open D metric-column checks (same two slots: the numbers
+  // 12/9 and the covered-player dash with its state title), and the
+  // N4 hidden-K slice re-based onto the seven visible fixed stats.
+  // Section M re-pinned in place: six stat rows instead of eight, the
+  // transposed renderer pin lost its Opening K/D leg, the
+  // pinned-metric row list dropped the two retired keys, and the
+  // sb3/sbMixed fixtures dropped their dead `kda` fields. Sections
+  // A–J untouched (J's static 'K' header is still there).
   'econ-tables.dom.mjs': 150,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
@@ -631,6 +653,13 @@ const EXPECTED = {
   // items now leading every option list (same check counts — only their
   // expectations grew), and the section-F leak scan widened to the whole
   // `.rep-metric` readout row.
+  // reports 42 → 42 (2026-11-16, w13d — KDA leaves the recorded
+  // values: the count is UNCHANGED, the pins were re-pointed in
+  // place): RAW_LABELS lost KDA (six raw items now), section A's
+  // option-list pin re-pointed onto it (G2 already rides RAW_LABELS),
+  // and the GetScoreboard fixture dropped its dead `kda` field. The
+  // stale-`raw:kda`-pick contract is pinned in metricorder.test.js
+  // (the item universe filters the selection, never the reverse).
   'reports.dom.mjs': 42,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:

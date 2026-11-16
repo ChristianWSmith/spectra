@@ -69,13 +69,18 @@ export const HIDDEN_KEYS = Object.freeze({
 // converted columns; anything unranked (user/plugin metrics, not-yet
 // seeded names) has rank ∞ and enters in catalog order.
 //
-// Match: the twelve scoreboard columns that render as metrics keep
-// today's exact relative order — the original 23-column scoreboard's
+// Match: the fourteen scoreboard columns that render as metrics keep
+// their exact relative order — the original 23-column scoreboard's
 // positions: A #5 < ADR #6 < KAST% #7 < HS% #8 < K/D #9 < 2K #13 <
-// 3K #14 < 4K #15 < 5K #16 < Entry #17 < Trade #18 < Streak #20 (the
+// 3K #14 < 4K #15 < 5K #16 < Open K #17 < Trade #18 < Streak #20 (the
 // W2a swap converted the eight SCORE_COLS entries that sat among the
-// fixed block; dogfood W2 had already converted the tail four);
-// everything else was never on the scoreboard (rank ∞).
+// fixed block; dogfood W2 had already converted the tail four). w13d
+// (owner, 2026-11-16) added kda beside K/D (rank 6 — the scoreboard's
+// KDA column left the fixed block for the metric system) and
+// entry_deaths beside entry_kills (rank 12 — the halves of the retired
+// compound cell now stand as their own columns), shifting two_k …
+// best_streak up by one; everything else was never on the scoreboard
+// (rank ∞).
 export const DEFAULT_RANKS = Object.freeze({
   match: Object.freeze({
     assists: 1,
@@ -83,13 +88,15 @@ export const DEFAULT_RANKS = Object.freeze({
     kast: 3,
     hs_pct: 4,
     kd: 5,
-    two_k: 6,
-    three_k: 7,
-    four_k: 8,
-    five_k: 9,
-    entry_kills: 10,
-    trade_kills: 11,
-    best_streak: 12,
+    kda: 6,
+    two_k: 7,
+    three_k: 8,
+    four_k: 9,
+    five_k: 10,
+    entry_kills: 11,
+    entry_deaths: 12,
+    trade_kills: 13,
+    best_streak: 14,
   }),
   // Profile: today's StatCards grid order (PlayerProfile.svelte) minus
   // the cards that stay Go — Matches and Win% are fixed-block entries
@@ -123,11 +130,16 @@ export const DEFAULT_RANKS = Object.freeze({
 // (pre-release no-versioning policy). PINs are METRIC ids only: the
 // fixed stats are sequence entries, never a selection.
 //
-// match = the twelve always-on scoreboard columns: the four that
+// match = the fourteen always-on scoreboard columns: the four that
 // converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
-// moved (NOT trade_rate — today it is not a scoreboard column;
-// entry_deaths stays unpinned because it only ever renders inside the
-// Opening K/D pair cell's fixed named slot). profile = the eleven
+// moved (NOT trade_rate — today it is not a scoreboard column), plus
+// w13d's two (owner, 2026-11-16): kda — the scoreboard's KDA column
+// as a metric — and entry_deaths, which the comment this replaces kept
+// unpinned ONLY because it rendered inside the Opening K/D pair cell
+// (that cell is gone: both halves stand as their own columns now).
+// Instances that already saved a pins pref will NOT pick these two up:
+// a present key is the stored selection verbatim — pre-release, no
+// migration (re-pin by hand or clear the pref). profile = the eleven
 // rank-1..11 names above (the always-on card set: the nine dogfood
 // cards plus W3a's Opening-duels rate and Clutches count).
 export const DEFAULT_PINS = Object.freeze({
@@ -137,11 +149,13 @@ export const DEFAULT_PINS = Object.freeze({
     'kast',
     'hs_pct',
     'kd',
+    'kda',
     'two_k',
     'three_k',
     'four_k',
     'five_k',
     'entry_kills',
+    'entry_deaths',
     'trade_kills',
     'best_streak',
   ]),
@@ -177,16 +191,16 @@ export const DEFAULT_PINS = Object.freeze({
 // policy).
 //
 // match: SCORE_COLS (Match.svelte) minus every entry that renders as
-// a metric — adr/kast/hs_pct/kd (dogfood W2) and A, 2K–5K, Entry,
-// Trade, Streak (the W2a swap) — leaving the ten entries whose
-// `short`s are Name, Team, K, D, KDA, DMG, Opening K/D, Util, MVPs,
-// Score (their `name`s read Kills / Deaths / Damage / Utility damage
-// where the two differ). Opening K/D STAYS fixed: it
-// keeps its fixed position (design Q2) while its cell composes the
-// entry_kills / entry_deaths metric halves. (The Rnds row left with the
-// owner's C14 scoreboard change — the column is gone from SCORE_COLS
-// too, so this list stays its mirror; rounds played itself remains a
-// store column and a metric input.)
+// a metric — adr/kast/hs_pct/kd (dogfood W2), A, 2K–5K, Open K,
+// Trade, Streak (the W2a swap) and, per the owner ruling of 2026-11-16
+// (w13d), KDA (now the seeded `kda` metric) and Opening K/D (its
+// entry_kills / entry_deaths halves stand as their own metric columns
+// now) — leaving the eight entries whose `short`s are Name, Team, K,
+// D, DMG, Util, MVPs, Score (their `name`s read Kills / Deaths /
+// Damage / Utility damage where the two differ). (The Rnds row left
+// with the owner's C14 scoreboard change — the column is gone from
+// SCORE_COLS too, so this list stays its mirror; rounds played itself
+// remains a store column and a metric input.)
 // profile: the StatCards grid (PlayerProfile.svelte) minus every card
 // that renders as a metric — ADR ± σ, K/D, HS%, KAST%, Trade rate, the
 // Clutches win-% sub, Avg enemies flashed and Avg util damage (the
@@ -200,9 +214,7 @@ export const FIXED_BLOCK = Object.freeze({
     Object.freeze({ key: '@Team', name: 'Team', short: 'Team', field: null }),
     Object.freeze({ key: '@K', name: 'Kills', short: 'K', field: 'kills' }),
     Object.freeze({ key: '@D', name: 'Deaths', short: 'D', field: 'deaths' }),
-    Object.freeze({ key: '@KDA', name: 'KDA', short: 'KDA', field: 'kda' }),
     Object.freeze({ key: '@DMG', name: 'Damage', short: 'DMG', field: 'totalDamage' }),
-    Object.freeze({ key: '@Opening K/D', name: 'Opening K/D', short: 'Opening K/D', field: null }),
     Object.freeze({ key: '@Util', name: 'Utility damage', short: 'Util', field: 'utilityDamage' }),
     Object.freeze({ key: '@MVPs', name: 'MVPs', short: 'MVPs', field: 'mvps' }),
     Object.freeze({ key: '@Score', name: 'Score', short: 'Score', field: 'score' }),
@@ -239,21 +251,21 @@ export function fixedKeys(scope) {
 }
 
 // FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
-// scope, in canonical order (-10 … -1 for the scoreboard's ten columns,
-// -2/-1 for the profile pair). Negative so the fixed block leads the
-// default sequence exactly as today's code prefix did, and so a stored
+// scope, in canonical order (−10 … −1 across the scoreboard's eight
+// surviving columns — w13d, owner 2026-11-16, removed @KDA and
+// @Opening K/D and left every remaining key's value untouched, since
+// only the sign and the relative order ever matter; −2/−1 for the
+// profile pair). Negative so the fixed block leads the default
+// sequence exactly as today's code prefix did, and so a stored
 // metric-name-only array re-inserts every fixed entry ahead of every
-// metric (composition note above). Metric ranks are untouched and stay
-// positive.
+// metric (composition note above). Metric ranks stay positive.
 export const FIXED_RANKS = Object.freeze({
   match: Object.freeze({
     '@Name': -10,
     '@Team': -9,
     '@K': -8,
     '@D': -7,
-    '@KDA': -6,
     '@DMG': -5,
-    '@Opening K/D': -4,
     '@Util': -3,
     '@MVPs': -2,
     '@Score': -1,
@@ -271,9 +283,14 @@ export const FIXED_RANKS = Object.freeze({
 // the fixed block minus this table is exactly the entries with no raw
 // counterpart or no numeric cell:
 //   Name / Team       — descriptors, not values
-//   Opening K/D       — a compound cell (lead ruling: its halves are
-//                       metrics and the compound fights the table)
 //   Matches / Win%    — profile-scope descriptors (no scoreboard row)
+// w13d (owner, 2026-11-16): @KDA and @Opening K/D left the fixed block
+// (KDA is the seeded `kda` metric now; Opening K/D's halves are the
+// entry_kills / entry_deaths columns), so `raw:kda` left this table
+// with them. A stale pick of it in a saved selection drops SILENTLY BY
+// CONSTRUCTION: a selection never resolves items — `picked` filters the
+// ITEM UNIVERSE (appendixItems) by the selection, so an id no universe
+// carries simply never matches, no writer and no migration needed.
 export const RAW_FIELDS = Object.freeze(
   Object.fromEntries(
     Object.values(FIXED_BLOCK)

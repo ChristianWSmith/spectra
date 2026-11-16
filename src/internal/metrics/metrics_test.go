@@ -509,10 +509,11 @@ func TestSumChainCompileShapes(t *testing.T) {
 		{"career_opening_rate", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
 			"1.0*(SUM(opening_kills)) / NULLIF((SUM(opening_kills + opening_deaths)), 0)"},
 		// Capability proofs for the shared two-column wall (audit N1/N3
-		// shapes) — NOT seeded (outside the owner greenlight). N1 is the
-		// FLOORED spelling (w13e): the scalar max() floors the
-		// denominator, so a zero-death subject can never divide by zero
-		// (the bind is the bound `1`).
+		// shapes). N1 is the FLOORED spelling (w13e): the scalar max()
+		// floors the denominator, so a zero-death subject can never
+		// divide by zero (the bind is the bound `1`). w13d seeded N1 as
+		// the `kda` builtin (the scoreboard's KDA conversion) — this
+		// pin stays the compile surface that seed needs, at both scopes.
 		{"n1_kda_shape", "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))",
 			"1.0*(SUM(kills + assists)) / NULLIF((MAX(SUM(deaths), ?)), 0)"},
 		{"n3_rate_shape", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))", ""},

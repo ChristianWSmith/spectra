@@ -337,8 +337,9 @@ const scoreboard = [
   // The raw fields the Q2 conversions must NOT read anymore sit beside
   // their metric twins on purpose: bob's raw assists=5 renders as the
   // honest dash because no assists row exists for him.
-  // Opening K/D renders from the metrics with no openingKills/
-  // openingDeaths fields on the row at all.
+  // Open K / Open D (the old Opening K/D halves) render from the
+  // metrics with no openingKills/openingDeaths fields on the row at
+  // all — they are metric columns since w13d.
   {
     steamId: 'A', name: 'alice', side: 'ct', kills: 20, deaths: 12, assists: 4,
     adr: 90, mvps: 3, utilityDamage: 150,
@@ -1405,21 +1406,24 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-console.log('K. Scoreboard order: the fixed block first, then the twelve converted metric columns (W2a)');
+console.log('K. Scoreboard order: the fixed block first, then the fourteen converted metric columns (W2a + w13d)');
 {
-  // The twelve converted columns (design §4.2/§4.3): they left
-  // SCORE_COLS and arrive as PINNED METRIC columns at the tail, in
-  // today's relative order. Pins are set EXPLICITLY here (a present key
-  // renders the stored selection verbatim — the absent→DEFAULT_PINS
-  // rule resolves a fresh install to these same twelve ids in this same
-  // order, pinned in metricorder.test.js); under the ABSENT order pref
-  // the fixed block leads exactly as the old code prefix did (its
-  // negative ranks — metricorder.FIXED_RANKS), and the pins never
-  // reorder it. The catalog also carries the
-  // fixed named slots the compound cells read PINS-INDEPENDENT
-  // (design §6.1): entry_deaths for the Opening K/D halves, assists
-  // for the roster triples — none of them pinned, none of them columns.
-  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4,5,6,7,8,9,10,11,12]');
+  // The fourteen converted columns (design §4.2/§4.3 + w13d, owner
+  // 2026-11-16): they left SCORE_COLS and arrive as PINNED METRIC
+  // columns at the tail, in today's relative order. Pins are set
+  // EXPLICITLY here (a present key renders the stored selection
+  // verbatim — the absent→DEFAULT_PINS rule resolves a fresh install to
+  // these same fourteen ids in this same order, pinned in
+  // metricorder.test.js); under the ABSENT order pref the fixed block
+  // leads exactly as the old code prefix did (its negative ranks —
+  // metricorder.FIXED_RANKS), and the pins never reorder it. w13d
+  // removed KDA and Opening K/D from the fixed block: KDA is a metric
+  // column now and the compound cell's halves are the Open K / Open D
+  // columns. The catalog also carries the fixed named slot the roster
+  // triples read PINS-INDEPENDENT (design §6.1) — assists, which this
+  // fixture pins too (a slot may be a column as well); entry_deaths
+  // lost that slot with the compound cell.
+  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4,5,6,7,8,9,10,11,12,13,14]');
   const mk = (id, name, label, format) => ({
     id, name, title: label, shortName: label, scope: 'match', format,
     doc: `Formula: ${name}`,
@@ -1432,15 +1436,15 @@ console.log('K. Scoreboard order: the fixed block first, then the twelve convert
       mk(3, 'kast', 'KAST%', 'percent'),
       mk(4, 'hs_pct', 'HS%', 'percent'),
       mk(5, 'kd', 'K/D', 'float2'),
-      mk(6, 'two_k', '2K', 'int'),
-      mk(7, 'three_k', '3K', 'int'),
-      mk(8, 'four_k', '4K', 'int'),
-      mk(9, 'five_k', '5K', 'int'),
-      mk(10, 'entry_kills', 'Entry', 'int'),
-      mk(11, 'trade_kills', 'Trade', 'int'),
-      mk(12, 'best_streak', 'Streak', 'int'),
-      // The fixed named slots (never pinned → never columns).
-      mk(13, 'entry_deaths', 'Entry deaths', 'int'),
+      mk(6, 'kda', 'KDA', 'float2'),
+      mk(7, 'two_k', '2K', 'int'),
+      mk(8, 'three_k', '3K', 'int'),
+      mk(9, 'four_k', '4K', 'int'),
+      mk(10, 'five_k', '5K', 'int'),
+      mk(11, 'entry_kills', 'Open K', 'int'),
+      mk(12, 'entry_deaths', 'Open D', 'int'),
+      mk(13, 'trade_kills', 'Trade', 'int'),
+      mk(14, 'best_streak', 'Streak', 'int'),
     ],
     // Fresh rows for alice only — bob's metric cells render the honest
     // dash (the unit IS covered, he just has no row).
@@ -1450,38 +1454,38 @@ console.log('K. Scoreboard order: the fixed block first, then the twelve convert
       { metricId: 3, steamId: 'A', value: 0.71, n: 13 },
       { metricId: 4, steamId: 'A', value: 0.5, n: 13 },
       { metricId: 5, steamId: 'A', value: 1.67, n: 13 },
-      { metricId: 6, steamId: 'A', value: 3, n: 13 },
-      { metricId: 7, steamId: 'A', value: 1, n: 13 },
-      { metricId: 8, steamId: 'A', value: 0, n: 13 },
+      { metricId: 6, steamId: 'A', value: 2.33, n: 13 },
+      { metricId: 7, steamId: 'A', value: 3, n: 13 },
+      { metricId: 8, steamId: 'A', value: 1, n: 13 },
       { metricId: 9, steamId: 'A', value: 0, n: 13 },
-      { metricId: 10, steamId: 'A', value: 12, n: 13 },
-      { metricId: 11, steamId: 'A', value: 5, n: 13 },
-      { metricId: 12, steamId: 'A', value: 7, n: 13 },
-      // The fixed named slots' rows (the ONE unioned stored read).
-      { metricId: 13, steamId: 'A', value: 9, n: 13 },
+      { metricId: 10, steamId: 'A', value: 0, n: 13 },
+      { metricId: 11, steamId: 'A', value: 12, n: 13 },
+      { metricId: 12, steamId: 'A', value: 9, n: 13 },
+      { metricId: 13, steamId: 'A', value: 5, n: 13 },
+      { metricId: 14, steamId: 'A', value: 7, n: 13 },
     ],
-    getMetricComputeState: Array.from({ length: 13 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
+    getMetricComputeState: Array.from({ length: 14 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
   const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
   const labelOf = (th) => (th.querySelector('.th-sort')?.textContent || th.textContent || '').trim();
   const labels = ths.map(labelOf);
-  const fixed = ['Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score'];
-  const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Streak'];
+  const fixed = ['Name', 'Team', 'K', 'D', 'DMG', 'Util', 'MVPs', 'Score'];
+  const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', 'KDA', '2K', '3K', '4K', '5K', 'Open K', 'Open D', 'Trade', 'Streak'];
   check(
     'the fixed block leads in store order (no converted column inside it)',
     JSON.stringify(labels.slice(0, fixed.length)) === JSON.stringify(fixed),
     JSON.stringify(labels),
   );
   check(
-    'the twelve converted columns follow, in today’s relative order',
+    'the fourteen converted columns follow, in today’s relative order',
     JSON.stringify(labels.slice(fixed.length)) === JSON.stringify(converted),
     JSON.stringify(labels.slice(fixed.length)),
   );
   check(
-    'exactly those twelve headers wear m5-mth (fixed ones never do)',
-    ths.filter((t) => t.classList.contains('m5-mth')).length === 12 &&
+    'exactly those fourteen headers wear m5-mth (fixed ones never do)',
+    ths.filter((t) => t.classList.contains('m5-mth')).length === 14 &&
       ths.slice(0, fixed.length).every((t) => !t.classList.contains('m5-mth')),
     String(ths.filter((t) => t.classList.contains('m5-mth')).length),
   );
@@ -1491,39 +1495,53 @@ console.log('K. Scoreboard order: the fixed block first, then the twelve convert
   const cellAt = (i) => (alice ? alice.children[i].textContent.trim() : 'no alice row');
   const first = fixed.length;
   check(
-    'the metric cells render through fmtMetric (4 / 90.0 / 71% / 50% / 1.67 / 3 / 1 / 0 / 0 / 12 / 5 / 7)',
+    'the metric cells render through fmtMetric (4 / 90.0 / 71% / 50% / 1.67 / 2.33 / 3 / 1 / 0 / 0 / 12 / 9 / 5 / 7)',
     cellAt(first) === '4' &&
       cellAt(first + 1) === '90.0' &&
       cellAt(first + 2) === '71%' &&
       cellAt(first + 3) === '50%' &&
       cellAt(first + 4) === '1.67' &&
-      cellAt(first + 5) === '3' &&
-      cellAt(first + 6) === '1' &&
-      cellAt(first + 7) === '0' &&
+      cellAt(first + 5) === '2.33' &&
+      cellAt(first + 6) === '3' &&
+      cellAt(first + 7) === '1' &&
       cellAt(first + 8) === '0' &&
-      cellAt(first + 9) === '12' &&
-      cellAt(first + 10) === '5' &&
-      cellAt(first + 11) === '7',
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => cellAt(first + i)).join(' | '),
+      cellAt(first + 9) === '0' &&
+      cellAt(first + 10) === '12' &&
+      cellAt(first + 11) === '9' &&
+      cellAt(first + 12) === '5' &&
+      cellAt(first + 13) === '7',
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((i) => cellAt(first + i)).join(' | '),
   );
 
-  // Q2 compound cell #1 — Opening K/D keeps its fixed SCORE_COLS
-  // position while both halves render the entry_kills / entry_deaths
-  // metrics (the row carries NO openingKills/openingDeaths fields, so
-  // '12/9' can only come from the metric read) in the unchanged
-  // ${k}/${d} format, with no tooltip while every half is fresh.
-  const kdIdx = labels.indexOf('Opening K/D');
+  // w13d (owner, 2026-11-16): the Opening K/D compound cell is GONE —
+  // its halves are ordinary metric columns now (Open K / Open D), so
+  // the numbers the compound used to compose (12/9) render as two
+  // cells in the metric tail, and a covered player with no metric rows
+  // gets the honest dash with the state in the title exactly like
+  // every other metric column (the row still carries NO
+  // openingKills/openingDeaths fields, so '12'/'9' can only come from
+  // the metric read).
+  const openKIdx = labels.indexOf('Open K');
+  const openDIdx = labels.indexOf('Open D');
   check(
-    'Opening K/D composes the entry_kills/entry_deaths halves (12/9), fixed position, no tooltip',
-    kdIdx > 0 && alice.children[kdIdx].textContent.trim() === '12/9' &&
-      !alice.children[kdIdx].hasAttribute('title'),
-    alice && kdIdx > 0 ? alice.children[kdIdx].textContent.trim() : 'no cell',
+    'w13d: the compound cell is gone — Open K / Open D render as their own metric columns (12 / 9 for alice)',
+    openKIdx >= fixed.length &&
+      openDIdx >= fixed.length &&
+      alice.children[openKIdx].textContent.trim() === '12' &&
+      alice.children[openDIdx].textContent.trim() === '9',
+    alice && openKIdx >= 0
+      ? `${alice.children[openKIdx].textContent.trim()} / ${alice.children[openDIdx].textContent.trim()}`
+      : 'no cells',
   );
   check(
-    'a covered player with no metric rows gets the honest dash in both halves (—/—) with the state in the title',
-    bob.children[kdIdx].textContent.trim() === '—/—' &&
-      bob.children[kdIdx].getAttribute('title') === 'no data for this player',
-    bob.children[kdIdx].textContent.trim() + ' title=' + bob.children[kdIdx].getAttribute('title'),
+    'a covered player with no metric rows gets the honest dash in both halves (—) with the state in the title',
+    openKIdx >= 0 &&
+      bob.children[openKIdx].textContent.trim() === '—' &&
+      bob.children[openKIdx].getAttribute('title') === 'no data for this player' &&
+      bob.children[openDIdx].textContent.trim() === '—',
+    openKIdx >= 0 && bob
+      ? bob.children[openKIdx].textContent.trim() + ' title=' + bob.children[openKIdx].getAttribute('title')
+      : 'no cell',
   );
 
   // Q2 compound cell #2 — the Overview roster triples: raw K + raw D
@@ -1566,11 +1584,11 @@ console.log('K. Scoreboard order: the fixed block first, then the twelve convert
     check(
       'N4: hiding K drops exactly the K column — the other fixed stats and every metric keep their place',
       !hiddenLabels.includes('K') &&
-        JSON.stringify(hiddenLabels.slice(0, 9)) ===
+        JSON.stringify(hiddenLabels.slice(0, 7)) ===
           JSON.stringify([
-            'Name', 'Team', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score',
+            'Name', 'Team', 'D', 'DMG', 'Util', 'MVPs', 'Score',
           ]) &&
-        JSON.stringify(hiddenLabels.slice(9)) === JSON.stringify(converted),
+        JSON.stringify(hiddenLabels.slice(7)) === JSON.stringify(converted),
       JSON.stringify(hiddenLabels),
     );
   }
@@ -1647,9 +1665,9 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
   // the store order for this fixture is kills DESC (GetScoreboard's
   // default) — bob 20, carol 15, alice 10.
   const sb3 = [
-    { steamId: '76561198000000002', name: 'bob', side: 't', kills: 20, deaths: 5, kda: 3.2, totalDamage: 100, utilityDamage: 60, mvps: 1, score: 11 },
-    { steamId: '76561198000000003', name: 'carol', side: 'ct', kills: 15, deaths: 3, kda: 4.1, totalDamage: 200, utilityDamage: 50, mvps: 1, score: 12 },
-    { steamId: '76561198000000001', name: 'alice', side: 'ct', kills: 10, deaths: 5, kda: 3.4, totalDamage: 300, utilityDamage: 40, mvps: 1, score: 13 },
+    { steamId: '76561198000000002', name: 'bob', side: 't', kills: 20, deaths: 5, totalDamage: 100, utilityDamage: 60, mvps: 1, score: 11 },
+    { steamId: '76561198000000003', name: 'carol', side: 'ct', kills: 15, deaths: 3, totalDamage: 200, utilityDamage: 50, mvps: 1, score: 12 },
+    { steamId: '76561198000000001', name: 'alice', side: 'ct', kills: 10, deaths: 5, totalDamage: 300, utilityDamage: 40, mvps: 1, score: 13 },
   ];
   localStorage.removeItem('spectra:pinned-metrics');
 
@@ -1783,9 +1801,9 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
     );
   }
   check(
-    'one row per stat, in the COLUMN order (fixed block minus Name/Team)',
+    'one row per stat, in the COLUMN order (fixed block minus Name/Team — w13d dropped KDA and Opening K/D)',
     JSON.stringify(statLabels()) ===
-      JSON.stringify(['K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score']),
+      JSON.stringify(['K', 'D', 'DMG', 'Util', 'MVPs', 'Score']),
     JSON.stringify(statLabels()),
   );
   check(
@@ -1794,19 +1812,18 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
       (tr) => tr.querySelector('th[scope="row"]') && tr.children[0].tagName === 'TH',
     ) &&
       table().querySelectorAll('tbody .th-sort').length === 0 &&
-      table().querySelectorAll('tbody tr').length === 8,
+      table().querySelectorAll('tbody tr').length === 6,
     `rows=${table().querySelectorAll('tbody tr').length} sortbtns=${table().querySelectorAll('tbody .th-sort').length}`,
   );
   check(
-    'transposed cells keep their renderers (K 10/20/15 · DMG 300/100/200 · Opening K/D —/—)',
+    'transposed cells keep their renderers (K 10/20/15 · DMG 300/100/200)',
     cellOf('K', 'alice') === '10' &&
       cellOf('K', 'bob') === '20' &&
       cellOf('K', 'carol') === '15' &&
       cellOf('DMG', 'alice') === '300' &&
       cellOf('DMG', 'bob') === '100' &&
-      cellOf('DMG', 'carol') === '200' &&
-      cellOf('Opening K/D', 'alice') === '—/—',
-    `K=${cellOf('K', 'alice')}/${cellOf('K', 'bob')}/${cellOf('K', 'carol')} DMG=${cellOf('DMG', 'alice')}/${cellOf('DMG', 'bob')}/${cellOf('DMG', 'carol')} okd=${cellOf('Opening K/D', 'alice')}`,
+      cellOf('DMG', 'carol') === '200',
+    `K=${cellOf('K', 'alice')}/${cellOf('K', 'bob')}/${cellOf('K', 'carol')} DMG=${cellOf('DMG', 'alice')}/${cellOf('DMG', 'bob')}/${cellOf('DMG', 'carol')}`,
   );
   {
     const playerThs = [...table().querySelectorAll('thead th.sb-player')];
@@ -1968,7 +1985,7 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
   check(
     'the pinned metrics follow the fixed block as stat rows, in the metricorder sequence',
     JSON.stringify(statLabels()) ===
-      JSON.stringify(['K', 'D', 'KDA', 'DMG', 'Opening K/D', 'Util', 'MVPs', 'Score', 'One', 'Two']),
+      JSON.stringify(['K', 'D', 'DMG', 'Util', 'MVPs', 'Score', 'One', 'Two']),
     JSON.stringify(statLabels()),
   );
   check(
@@ -1994,7 +2011,7 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
     const sbMixed = [
       ...sb3,
       {
-        steamId: 'X', name: 'zed', side: 'ct', kills: 5, deaths: 5, kda: 1,
+        steamId: 'X', name: 'zed', side: 'ct', kills: 5, deaths: 5,
         totalDamage: 10, utilityDamage: 0, mvps: 0, score: 1,
       },
     ];

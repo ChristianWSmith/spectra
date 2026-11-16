@@ -194,10 +194,11 @@ profile from a tab, go back, and you land on that same tab again.
 opens**, **Most MVPs**) and both rosters with K/D/A and ADR. Clicking a card or a roster row
 opens the replay with the camera on that player; clicking a player's name opens their profile.
 
-**Scoreboard** — the sortable per-player table: the fixed columns (name, team, K, D, KDA,
-damage, opening K/D, utility damage, MVPs, score), then **one column per metric you have
-pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, the multi-kill counts (2K–5K),
-entries, trades and best streak), each with an ⓘ carrying its formula, and sortable. Sorting
+**Scoreboard** — the sortable per-player table: the fixed columns (name, team, K, D,
+damage, utility damage, MVPs, score), then **one column per metric you have
+pinned** (the defaults pin A, ADR, KAST%, HS%, K/D, KDA, the multi-kill counts (2K–5K),
+opening kills and opening deaths, trades and best streak), each with an ⓘ carrying its
+formula, and sortable. Sorting
 builds on the order you already see: sort a second stat and the first one's order still holds
 inside it, so nothing you sorted by is lost. The transpose button in the top-left cell flips the
 table to one row per stat and one column per player, keeping the players in the order they were
@@ -460,7 +461,7 @@ and press **Save report** (at the top of this panel) to write the document to di
 lands as a highlighted chip in the field, and each picked stat earns a line under the field
 carrying its expression and its row count — while it has no computed number for this match, that
 line shows its state chip instead. The field also offers the match's **recorded values** — the
-scoreboard numbers themselves (kills, deaths, K/D/A, damage, utility damage, MVPs, score) — which
+scoreboard numbers themselves (kills, deaths, damage, utility damage, MVPs, score) — which
 are not metrics: a recorded pick carries a *Recorded value* chip instead of an expression or a
 state, and its exported section says so plainly, with each player's stored round count beside the
 value. Remove a chip with its ✕, or with Backspace while the field is

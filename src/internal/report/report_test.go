@@ -337,7 +337,7 @@ func TestRenderPlayerAndRound(t *testing.T) {
 }
 
 // TestReportMetricReadBack pins the design §3.6 Go read-back end to end:
-// the builtin match/player templates render ADR / HS% / KD from the
+// the builtin match/player templates render ADR / HS% / KD / KDA from the
 // STORED fresh metric rows (one canonical read — never a recomputation),
 // formatted through the format convention the trend/history series read
 // established (percent stores a 0..1 fraction and renders ×100 — the
@@ -363,7 +363,7 @@ func TestReportMetricReadBack(t *testing.T) {
 		}
 		return d
 	}
-	adrDef, hsDef, kdDef := def("adr"), def("hs_pct"), def("kd")
+	adrDef, hsDef, kdDef, kdaDef := def("adr"), def("hs_pct"), def("kd"), def("kda")
 
 	render := func(t *testing.T) string {
 		t.Helper()
@@ -397,11 +397,14 @@ func TestReportMetricReadBack(t *testing.T) {
 	}
 
 	// 2) Fresh rows → the formatted numbers: adr float1 (42.5), hs_pct
-	// percent (0.2 ×100 → 20), kd float2 (2.5 → 2.50). A subject with no
-	// row keeps the dash beside them.
+	// percent (0.2 ×100 → 20), kd float2 (2.5 → 2.50), kda float2
+	// (1.5 → 1.50 — w13d's conversion: player.md reads the stored
+	// `kda` row where it used to printf Go's computed ratio). A
+	// subject with no row keeps the dash beside them.
 	insert(adrDef, adrDef.Version, "A00", 42.5)
 	insert(hsDef, hsDef.Version, "A00", 0.2)
 	insert(kdDef, kdDef.Version, "A00", 2.5)
+	insert(kdaDef, kdaDef.Version, "A00", 1.5)
 	out := render(t)
 	if !strings.Contains(out, "| 42.5 | 20 | 2.50 |") {
 		t.Errorf("match.md fresh metric cells missing \"| 42.5 | 20 | 2.50 |\":\n%s", out)
@@ -423,7 +426,7 @@ func TestReportMetricReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render player.md: %v", err)
 	}
-	for _, want := range []string{"KD 2.50, KDA", "ADR 42.5 · HS% 20"} {
+	for _, want := range []string{"KD 2.50, KDA 1.50", "ADR 42.5 · HS% 20"} {
 		if !strings.Contains(pout, want) {
 			t.Errorf("player.md missing %q\n---\n%s", want, pout)
 		}
@@ -453,7 +456,7 @@ func TestReportMetricReadBack(t *testing.T) {
 // halves — the match tables' A / Openings / Trades, the player
 // report's K/D/A A-half, both opening pairs, Trades, Best streak and
 // Enemies flashed — read the STORED fresh rows through the SAME
-// canonical read as ADR/HS%/KD (store.GetMetricValuesForMatch); the
+// canonical read as ADR/HS%/KD/KDA (store.GetMetricValuesForMatch); the
 // raw halves (K, D, Rounds, MVPs, Utility damage…) keep the stored
 // fields; and a metric half with no fresh row — absent OR behind —
 // renders the honest dash: never the stored column, never a fabricated
@@ -550,7 +553,10 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	pout := playerDoc(t)
 	for _, want := range []string{
 		"K/D/A: **10/0/—**",
-		"Openings —/— · Entry —/— · Trades — · Best streak —",
+		// w13d: the KDA half reads the stored `kda` row too — with no
+		// rows it is the honest dash beside KD's.
+		"(KD —, KDA —)",
+		"Openings —/— · Open K/D —/— · Trades — · Best streak —",
 		"Enemies flashed —",
 	} {
 		if !strings.Contains(pout, want) {
@@ -583,7 +589,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	pout = playerDoc(t)
 	for _, want := range []string{
 		"K/D/A: **10/0/7**",
-		"Openings 3/4 · Entry 3/4 · Trades 9 · Best streak 6",
+		"Openings 3/4 · Open K/D 3/4 · Trades 9 · Best streak 6",
 		"Enemies flashed 8",
 		// Raw line members stay raw (not converting cells).
 		"Utility damage 30",
@@ -621,7 +627,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 		t.Errorf("match.md leaked the behind entry_deaths value:\n%s", out)
 	}
 	pout = playerDoc(t)
-	if !strings.Contains(pout, "Openings 3/— · Entry 3/— · Trades 9 · Best streak 6") {
+	if !strings.Contains(pout, "Openings 3/— · Open K/D 3/— · Trades 9 · Best streak 6") {
 		t.Errorf("player.md pairs not composed per half:\n%s", pout)
 	}
 	if strings.Contains(pout, "888") {

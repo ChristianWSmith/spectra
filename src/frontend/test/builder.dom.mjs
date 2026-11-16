@@ -1860,7 +1860,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     !!sec('match') &&
       JSON.stringify(dNames('match')) ===
         JSON.stringify([
-          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+          '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
         ]) &&
       !!sec('match').querySelector('[role="listbox"]') &&
       !sec('match').querySelector('p[role="status"]'),
@@ -1909,7 +1909,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
         list?.getAttribute('aria-labelledby') === secEl?.querySelector('.mo-sec-title')?.id &&
         list?.getAttribute('aria-describedby') === cap?.id &&
         /Fixed stats lead/.test(cap?.textContent || '') &&
-        rows.length === 13 &&
+        rows.length === 11 &&
         rows.every((x) => x.getAttribute('role') === 'option' && x.getAttribute('aria-selected') === 'false'),
       !fixed && list
         ? `rows=${rows.length} cap="${cap?.textContent.trim()}" desc=${list.getAttribute('aria-describedby')}`
@@ -1920,7 +1920,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     'the list = the fixed stats (canonical order) then the pinned metrics in sequence order — the unpinned trade_rate never appears',
     JSON.stringify(dNames('match')) ===
       JSON.stringify([
-        '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+        '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
         'adr_avg', 'my_kd', 'plug_stat',
       ]) &&
       !dRows('match').some((x) => x.dataset.moName === 'trade_rate'),
@@ -1937,9 +1937,9 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     const toggleFor = (row) => row.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
     check(
       'every hideable fixed row carries a Show/Hide toggle; the Name column is exempt; metric rows never carry one',
-      rows.slice(1, 10).every((x) => x.dataset.moKind === 'fixed' && !!toggleFor(x)) &&
+      rows.slice(1, 8).every((x) => x.dataset.moKind === 'fixed' && !!toggleFor(x)) &&
         !toggleFor(rows[0]) &&
-        rows.slice(10).every((x) => x.dataset.moKind === 'metric' && !toggleFor(x)),
+        rows.slice(8).every((x) => x.dataset.moKind === 'metric' && !toggleFor(x)),
       rows
         .map((x) => `${x.dataset.moName}:${x.dataset.moKind}:${toggleFor(x)?.getAttribute('aria-label') ?? '-'}`)
         .join(', '),
@@ -1957,7 +1957,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     const rows = dRows('match');
     check(
       'no drag source anywhere: nothing in the dialog is draggable and no row carries a grip handle — the ↑/↓ buttons are the only move path',
-      rows.length === 13 &&
+      rows.length === 11 &&
         !dlg.querySelector('[draggable]') &&
         rows.every((x) => !x.hasAttribute('draggable') && !x.querySelector('.mo-grip')),
       rows
@@ -1973,10 +1973,10 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     const label = (row) => row.querySelector('.mo-title')?.textContent.trim();
     const upFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} up"]`);
     const downFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} down"]`);
-    const up0 = rows[10]?.querySelector('[aria-label="Move ADR average up"]');
-    const down0 = rows[10]?.querySelector('[aria-label="Move ADR average down"]');
-    const upLast = rows[12]?.querySelector('[aria-label="Move Plugin stat up"]');
-    const downLast = rows[12]?.querySelector('[aria-label="Move Plugin stat down"]');
+    const up0 = rows[8]?.querySelector('[aria-label="Move ADR average up"]');
+    const down0 = rows[8]?.querySelector('[aria-label="Move ADR average down"]');
+    const upLast = rows[10]?.querySelector('[aria-label="Move Plugin stat up"]');
+    const downLast = rows[10]?.querySelector('[aria-label="Move Plugin stat down"]');
     check(
       'every row carries labelled ↑/↓ buttons (named for the row’s visible label); the boundary ones are disabled',
       !!upFirst && upFirst.disabled &&
@@ -2033,7 +2033,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
       'ArrowDown on the focused metric row moves it one slot down (the fixed rows above stay put)',
       JSON.stringify(dNames('match')) ===
         JSON.stringify([
-          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+          '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
           'my_kd', 'adr_avg', 'plug_stat',
         ]),
       JSON.stringify(dNames('match')),
@@ -2045,7 +2045,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
       !!set &&
         JSON.stringify(set.args[1]) ===
           JSON.stringify([
-            '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+            '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
             'trade_rate', 'my_kd', 'adr_avg', 'plug_stat',
           ]),
       set ? JSON.stringify(set.args) : 'no SetPref call',
@@ -2065,8 +2065,8 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     check(
       'focus follows the row moved by its button',
       document.activeElement?.dataset?.moName === 'plug_stat' &&
-        dNames('match').slice(10).join(',') === 'my_kd,plug_stat,adr_avg',
-      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match').slice(10))}`,
+        dNames('match').slice(8).join(',') === 'my_kd,plug_stat,adr_avg',
+      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match').slice(8))}`,
     );
   }
   {
@@ -2094,7 +2094,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
         teamAfter.classList.contains('mo-hidden') &&
         teamAfter.querySelector('[aria-label="Show Team"]') !== null &&
         /hidden/.test(teamAfter.textContent) &&
-        dRows('match').length === 13 &&
+        dRows('match').length === 11 &&
         bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match').length === ordersBefore,
       teamAfter
         ? `class=${teamAfter.className} label=${teamAfter.querySelector('button[aria-label^="Sh"]')?.getAttribute('aria-label')} set=${JSON.stringify(hiddenSet && hiddenSet.args)}`
@@ -2124,7 +2124,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
             pinOf(x)?.getAttribute('title') === 'Unpin from scoreboard',
         ) &&
         fixedRows.every((x) => !pinOf(x)) &&
-        eyes.length === 9 &&
+        eyes.length === 7 &&
         eyes.every((b) => !/pin/i.test(b.getAttribute('aria-label') || '')),
       rows
         .map(
@@ -2156,7 +2156,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
       'the list snaps back to the DEFAULT sequence (fixed stats + the pinned metrics, default order) after reset',
       JSON.stringify(dNames('match')) ===
         JSON.stringify([
-          '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+          '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
           'adr_avg', 'my_kd', 'plug_stat',
         ]),
       JSON.stringify(dNames('match')),

@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the FIFTY-EIGHT schema-seeded builtins (schema.sql —
+// builtinSeed maps the FIFTY-NINE schema-seeded builtins (schema.sql —
 // name/expr/scope/format/short_name/denominator are LOCKED to the
 // baseline seed by this table) onto their hand-computed seed
 // expectations. interpretation records how the seeded expression states
@@ -124,6 +124,19 @@ var builtinSeed = []struct {
 		name: "kd", expr: "from player_stats: ratio(sum(kills), sum(deaths))",
 		scope: "match", format: "float2", shortName: "K/D", denominator: "",
 		interpretation: "kills per death (corpus: kills = 2×deaths → 2)",
+		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// w13d: the scoreboard's KDA conversion — the scalar max()
+		// value form floors the denominator exactly like the Go
+		// spelling GetScoreboard served ((kills+assists)/MAX(deaths,1)),
+		// which scoreboard_equivalence_test.go pins as its oracle.
+		// Corpus math: (2i + 0)/max(i, 1) = 2 (assists = 0, deaths = i
+		// ≥ 1 — the zero-death floor has no subject here, so that edge
+		// is the equivalence test's, with its own zero-death row).
+		name: "kda", expr: "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))",
+		scope: "match", format: "float2", shortName: "KDA", denominator: "",
+		interpretation: "kills plus assists per floored death (corpus: kills = 2×deaths, assists = 0 → 2)",
 		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
 	},
 	{
@@ -233,13 +246,13 @@ var builtinSeed = []struct {
 	},
 	{
 		name: "entry_kills", expr: "from player_stats: sum(entry_kills)",
-		scope: "match", format: "int", shortName: "Entry", denominator: "",
+		scope: "match", format: "int", shortName: "Open K", denominator: "",
 		interpretation: "first bloods (column absent → 0; the corpus writes opening_kills instead, which is why the I4 direct form diverges here)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
 		name: "entry_deaths", expr: "from player_stats: sum(entry_deaths)",
-		scope: "match", format: "int", shortName: "", denominator: "",
+		scope: "match", format: "int", shortName: "Open D", denominator: "",
 		interpretation: "first-blood victims (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},

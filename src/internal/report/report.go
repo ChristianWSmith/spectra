@@ -40,8 +40,9 @@ type Template struct {
 // ClassWhy*, PistolRound) exactly as store.GetEconomy reads them — no
 // report-side enrichment, so report and app agree by construction.
 // Metrics carries the metric-backed display cells (design §3.6's Go
-// read-back — MetricCells): ADR/HS%/KD plus every converting scoreboard
-// cell (A, Openings, Trades), keyed by the scoreboard row's SteamID.
+// read-back — MetricCells): ADR/HS%/KD/KDA plus every converting
+// scoreboard cell (A, Openings, Trades), keyed by the scoreboard row's
+// SteamID.
 // Utility rows flow as stored; the match template's Tick column renders
 // models.UtilityEvent.EffectiveTick (the paired throw's own tick, the
 // detonation tick when unpaired), so the report's tick column is
@@ -72,7 +73,7 @@ type PlayerReport struct {
 // MetricCells is one report subject's metric-backed display cells — the
 // Go read-back (dogfooding design §3.6, extended by the inferred
 // conversion's Q2 per-half rule, §3.1): the builtin templates render
-// ADR / HS% / KD AND every converting compound half — the match
+// ADR / HS% / KD / KDA AND every converting compound half — the match
 // tables' A / Openings / Trades cells, the player report's K/D/A
 // A-half, both opening pairs, Trades, Best streak and Enemies flashed
 // — from the STORED fresh metric rows (one canonical read,
@@ -80,7 +81,7 @@ type PlayerReport struct {
 // never from the scoreboard's passthrough columns. Each cell is
 // already formatted for the document — the format-keyed display scale
 // (store.MetricDisplayScale: percent ×100) plus the printf precision
-// today's templates spelled (ADR %.1f, HS% %.0f, KD %.2f; the int
+// today's templates spelled (ADR %.1f, HS% %.0f, KD %.2f, KDA %.2f; the int
 // seeds render their plain count) — and a subject with NO fresh row
 // carries the honest dash "—": absent or behind renders the missing
 // marker, never a recomputed number and never a fabricated 0 (Q8).
@@ -91,6 +92,11 @@ type MetricCells struct {
 	ADR   string
 	HSPct string
 	KD    string
+	// KDA is w13d's conversion: player.md rendered Go's
+	// (kills+assists)/MAX(deaths,1) here, and the stored `kda` metric
+	// row is that number now (the floored seed closes Q1's edge — a
+	// deathless subject divides by 1 on both sides).
+	KDA string
 	// The W3b converting cells (design §3.1/§6.1). EntryKills/
 	// EntryDeaths fill BOTH of player.md's pairs — opening_kills and
 	// entry_kills (likewise the deaths halves) are the identical stored
@@ -115,6 +121,9 @@ var reportMetricSeeds = []struct {
 	{seed: "adr", fill: func(c *MetricCells, s string) { c.ADR = s }},
 	{seed: "hs_pct", fill: func(c *MetricCells, s string) { c.HSPct = s }},
 	{seed: "kd", fill: func(c *MetricCells, s string) { c.KD = s }},
+	// w13d: player.md's KDA half — the stored `kda` metric row is the
+	// number Go's (kills+assists)/MAX(deaths,1) used to print here.
+	{seed: "kda", fill: func(c *MetricCells, s string) { c.KDA = s }},
 	// W3b (design §3.1/§6.1): the converting compound cells' metric
 	// halves — the scoreboard A / Openings / Trades, the player report's
 	// K/D/A A-half, both opening pairs, Trades, Best streak, Enemies
@@ -138,7 +147,7 @@ const reportCellDash = "—"
 // the roster) keeps the dash, per half (Q8: never a fabricated 0).
 func dashCells() MetricCells {
 	return MetricCells{
-		ADR: reportCellDash, HSPct: reportCellDash, KD: reportCellDash,
+		ADR: reportCellDash, HSPct: reportCellDash, KD: reportCellDash, KDA: reportCellDash,
 		Assists: reportCellDash, EntryKills: reportCellDash, EntryDeaths: reportCellDash,
 		TradeKills: reportCellDash, BestStreak: reportCellDash, EnemiesFlashed: reportCellDash,
 	}
@@ -148,10 +157,11 @@ func dashCells() MetricCells {
 // format-keyed display scale (store.MetricDisplayScale — percent
 // stores a 0..1 fraction and renders 0..100) and the printf precision
 // the templates used to spell over GetScoreboard's Go-computed columns
-// (ADR %.1f, HS% %.0f, KD %.2f — exactly the seeds' float1/percent/
-// float2 tags). The default arm serves the `int` seeds (A, Openings,
-// Trades, Best streak, Enemies flashed): a whole count renders plain,
-// no rounding invented for an integer the format tag already pins.
+// (ADR %.1f, HS% %.0f, KD %.2f, KDA %.2f — exactly the seeds'
+// float1/percent/float2 tags). The default arm serves the `int` seeds
+// (A, Openings, Trades, Best streak, Enemies flashed): a whole count
+// renders plain, no rounding invented for an integer the format tag
+// already pins.
 func reportCell(v float64, format string, scale float64) string {
 	switch format {
 	case "percent":
@@ -262,7 +272,7 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	ctName, tName := teamNames(st, matchID, sb)
 	// The metric-backed display cells (design §3.6's Go read-back, Q2's
 	// per-half conversion): ONE canonical read of the stored fresh rows
-	// for this match fills ADR/HS%/KD and every converting cell.
+	// for this match fills ADR/HS%/KD/KDA and every converting cell.
 	cells, err := metricCells(st, matchID, sb)
 	if err != nil {
 		return nil, err
@@ -361,7 +371,7 @@ func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerRep
 		return nil, err
 	}
 	// Same read-back as the match scope (design §3.6 + Q2): the player's
-	// metric cells (ADR/HS%/KD and the converting K/D/A, Openings,
+	// metric cells (ADR/HS%/KD/KDA and the converting K/D/A, Openings,
 	// Trades, Best streak, Enemies flashed halves) come from the stored
 	// fresh rows for this match.
 	cells, err := metricCells(st, matchID, sb)

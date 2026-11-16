@@ -648,16 +648,18 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- one site: Match's scoreboard metric header), title || name everywhere
 -- else.
 --
--- Builtins (origin='builtin') are seeded below: exactly FIFTY-EIGHT —
--- trade_rate (owner ruling) plus the dogfooding set (design §3.0: 7
+-- Builtins (origin='builtin') are seeded below: exactly FIFTY-NINE —
+-- trade_rate (owner ruling) plus the dogfooding set (design §3.0: 8
 -- match / 9 profile scopes) — trade_rate + adr, entry_rate, hs_pct,
--- kast, kd, trade_rate_deaths (match) and the nine career_* rows
--- (profile, inert until their surface switches) — plus the 42-row
--- inferred set: 38 match-scope restatements (27 single-source rows over
+-- kast, kd, trade_rate_deaths + kda (match; kda is w13d's scoreboard
+-- KDA conversion from a Go calculation, and its row sits at the end of
+-- the INSERT below) and the nine career_* rows (profile, inert until
+-- their surface switches) — plus the 42-row inferred set: 38
+-- match-scope restatements (27 single-source rows over
 -- the per-match player stats, rounds, duels, clutches, grenades and
 -- drops; 10 over the stored round/side buy classifications; 1
 -- victim-side duel count) and 4 profile-scope rows (career_clutches +
--- the three opening-duel rows). Scope split: 45 match / 13 profile.
+-- the three opening-duel rows). Scope split: 46 match / 13 profile.
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -706,17 +708,21 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 	created_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly fifty-eight — trade_rate
--- (the original owner ruling), the dogfooding set (six more match-scope
--- rows and nine profile-scope rows) and the inferred set (42 rows: 38
--- match / 4 profile), each with the interpretation recorded in its doc.
+-- THE builtins, seeded (see header): exactly fifty-nine — trade_rate
+-- (the original owner ruling), the dogfooding set (seven more match-
+-- scope rows and nine profile-scope rows) and the inferred set (42
+-- rows: 38 match / 4 profile), each with the interpretation recorded
+-- in its doc. The eighth match-scope dogfooding row (kda, w13d's
+-- scoreboard KDA conversion) sits at the END of this INSERT — row
+-- order here is presentation only (ListMetrics orders builtins by
+-- name), so its position changes nothing but the numbering.
 -- INSERT OR IGNORE keyed on the UNIQUE name: re-applying the baseline
 -- on every Open must not duplicate or reset a row — it is also the one
--- path by which rows 17…58 reach a database seeded before them.
+-- path by which rows 17…59 reach a database seeded before them.
 -- short_name is written explicitly: header labels ONLY — the
 -- dogfooding set's scoreboard/Combat labels and, among the inferred
--- set, the eight width-constrained scoreboard columns (A, Entry,
--- Streak, 2K, 3K, 4K, 5K, Trade); every other row ships empty ('' —
+-- set, the nine width-constrained scoreboard columns (A, Open K, Open
+-- D, Streak, 2K, 3K, 4K, 5K, Trade); every other row ships empty ('' —
 -- its header falls back to title; display criterion
 -- short_name || title || name — Match's scoreboard metric header).
 -- Every short_name is at most SIX characters — the same cap
@@ -832,15 +838,15 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'match', 'int',
  'Formula: sum(player_stats.enemies_flashed) — enemies blinded by this player''s flashes (each counted once), addressed per player — the Enemies flashed count in the expanded player row.',
  'builtin', '', CURRENT_TIMESTAMP),
-('entry_kills', 'Entry kills', 'Entry',
+('entry_kills', 'Opening kills', 'Open K',
  'from player_stats: sum(entry_kills)',
  'match', 'int',
- 'Formula: sum(player_stats.entry_kills) — round-opening first-blood kills, addressed per player — the scoreboard''s Entry column (same recording as opening kills).',
+ 'Formula: sum(player_stats.entry_kills) — round-opening first-blood kills, addressed per player — the scoreboard''s Open K column (same recording as opening kills).',
  'builtin', '', CURRENT_TIMESTAMP),
-('entry_deaths', 'Entry deaths', '',
+('entry_deaths', 'Opening deaths', 'Open D',
  'from player_stats: sum(entry_deaths)',
  'match', 'int',
- 'Formula: sum(player_stats.entry_deaths) — round-opening first-blood victims, addressed per player — the Opening K/D column''s deaths half, pinnable on its own.',
+ 'Formula: sum(player_stats.entry_deaths) — round-opening first-blood victims, addressed per player — the scoreboard''s Open D column, beside Open K.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('best_streak', 'Best streak', 'Streak',
  'from player_stats: max(best_streak)',
@@ -1035,6 +1041,18 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'from player_stats: sum(opening_kills)',
  'profile', 'int',
  'Formula: sum(player_stats.opening_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- addendum: the KDA conversion (w13d, 1 row, match scope) — the
+-- scoreboard's KDA column left the Go calculation for the metric
+-- system (adoption means migration: GetScoreboard's kda alias and the
+-- Go report's KDA cell died with it). The scalar max() value form
+-- (w13e) spells the floored denominator the old Go spelling used, so
+-- the number the scoreboard showed is the number the metric stores —
+-- a deathless subject divides by 1, never NULL.
+('kda', 'KDA', 'KDA',
+ 'from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))',
+ 'match', 'float2',
+ 'Formula: sum(player_stats.kills + player_stats.assists) / max(sum(player_stats.deaths), 1) — kills plus assists per death, addressed per player — a deathless subject divides by 1, like the scoreboard.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

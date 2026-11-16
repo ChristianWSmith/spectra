@@ -34,7 +34,13 @@ import (
 //     store's FLOORED per-match spelling (kdPerMatchSQL, test-only since
 //     dogfooding W4 removed the scoreboard's kd column), where Q1's one
 //     deliberate divergence lives (zero deaths: ratio's NULLIF → value 0
-//     beside N, where the floor MAX(deaths, 1) → the kill count).
+//     beside N, where the floor MAX(deaths, 1) → the kill count) — and
+//     the kda seed (w13d's conversion) against the FLOORED arithmetic
+//     GetScoreboard's retired `kda` alias used to serve
+//     ((kills+assists)/MAX(deaths, 1)). The floored seed CLOSES Q1's
+//     edge for KDA: max(sum(deaths), 1) floors the denominator exactly
+//     like that spelling, so the zero-death subject agrees on both
+//     sides instead of diverging.
 
 // seedExpr reads a schema-seeded builtin's expression from the store —
 // the SEED is what these tests prove, never a test-local copy of it.
@@ -171,7 +177,9 @@ func TestFixtureCorpusScoreboardEquivalence(t *testing.T) {
 // for a real demo), every scoreboard seed equals the column
 // GetScoreboard serves — the stored-column proof the design's
 // acceptance asks for (adr == stored ps.adr, hs_pct == stored hs_pct,
-// kast == kastPerMatchSQL) — and kd carries Q1's one ruled divergence.
+// kast == kastPerMatchSQL) — kd carries Q1's one ruled divergence, and
+// kda (w13d) equals the retired floored arithmetic exactly, the
+// zero-death subject included.
 func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "equivalence.db"))
 	if err != nil {
@@ -207,7 +215,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	players := []models.Player{
 		{SteamID: "100", Name: "alice", Side: "ct"},
 		{SteamID: "200", Name: "bob", Side: "t"},
-		{SteamID: "300", Name: "carol", Side: "ct"}, // zero deaths — Q1's edge
+		{SteamID: "300", Name: "carol", Side: "ct"}, // zero deaths — Q1's kd edge; the kda floor's agreement
 	}
 	base := []models.PlayerStats{
 		{SteamID: "100", Side: "ct", Name: "alice", Kills: 10, Deaths: 2, Assists: 4, Headshots: 5, TotalDamage: 1320, RoundsPlayed: 24},
@@ -325,16 +333,49 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 		t.Errorf("zero-death kd = metric %v vs floored %v, want 0 (NULLIF) vs 7 (MAX(deaths,1)) — Q1's ruled edge",
 			kd["300"], floored["300"])
 	}
+
+	// kda (w13d's conversion): the seeded metric equals the FLOORED
+	// arithmetic GetScoreboard's retired `kda` alias used to serve —
+	// (kills+assists)/MAX(deaths, 1), spelled here as the independent
+	// oracle the old Go SELECT computed — subject for subject, INCLUDING
+	// the zero-death subject: the seed's scalar max(sum(deaths), 1)
+	// floors exactly like the retired spelling, so Q1's kd divergence
+	// does NOT repeat (that is the whole point of the floored seed).
+	kda := previewAt(t, st, seedExpr(t, st, "kda"), scope)
+	flooredKDA := oracle(t, st,
+		`SELECT steam_id, CAST(kills + assists AS REAL) / MAX(deaths, 1)
+		 FROM player_stats WHERE match_id = ?`,
+		id)
+	if len(flooredKDA) != 3 {
+		t.Fatalf("kda oracle rows = %d, want 3 (the roster)", len(flooredKDA))
+	}
+	for sid, want := range flooredKDA {
+		got, ok := kda[sid]
+		if !ok {
+			t.Errorf("kda: subject %s missing from the preview", sid)
+			continue
+		}
+		if got != want {
+			t.Errorf("kda[%s] = %v, want the retired (kills+assists)/MAX(deaths,1) spelling %v", sid, got, want)
+		}
+	}
+	// The zero-death subject, explicit: carol's 7 kills + 1 assist over
+	// MAX(0,1) = 1 → 8 from BOTH sides (never a NULLIF dash).
+	if kda["300"] != 8 || flooredKDA["300"] != 8 {
+		t.Errorf("zero-death kda = metric %v vs the floored spelling %v, want 8 on both sides (the floor closes Q1's edge for KDA)",
+			kda["300"], flooredKDA["300"])
+	}
 }
 
 // TestStoredColumnSeedsEquivalence: the eleven stored-column seeds the
 // W2a scoreboard swap converts equal, subject for subject, the
 // GetScoreboard field every converted cell served (design §6.3 tier 1 —
-// the semantic proof that no displayed number moves): A, 2K–5K, Entry,
+// the semantic proof that no displayed number moves): A, 2K–5K, Open K,
 // Trade and Streak left SCORE_COLS for metric columns over these very
-// columns, and the store keeps serving them as passthroughs (design
-// §5.2 — the sort contract, the top-stats argmax and the roster's raw
-// halves still read them).
+// columns (Open D joined them as its own pinned column in w13d), and
+// the store keeps serving them as passthroughs (design §5.2 — the sort
+// contract, the top-stats argmax and the roster's raw halves still read
+// them).
 func TestStoredColumnSeedsEquivalence(t *testing.T) {
 	st := seededStore(t)
 	cols := []struct {

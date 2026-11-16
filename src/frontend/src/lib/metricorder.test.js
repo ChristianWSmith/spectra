@@ -82,21 +82,32 @@ test('HIDDEN_KEYS are the two bare visibility keys (no version marker)', () => {
   assert.ok(!Object.values(HIDDEN_KEYS).some((k) => Object.values(ORDER_KEYS).includes(k)));
 });
 
-test('DEFAULT_RANKS.match replicates today\'s scoreboard: the twelve converted columns in display order', () => {
+test('DEFAULT_RANKS.match replicates today\'s scoreboard: the fourteen converted columns in display order (w13d, 2026-11-16)', () => {
+  // w13d (owner, 2026-11-16): kda joins beside kd (rank 6 — the
+  // scoreboard's KDA column left the fixed block) and entry_deaths
+  // beside entry_kills (rank 12 — the Opening K/D compound split into
+  // its halves), shifting two_k … best_streak up by one. Every rank is
+  // POSITIVE: metric ranks are what make a metric a metric here.
   assert.deepEqual(DEFAULT_RANKS.match, {
     assists: 1,
     adr: 2,
     kast: 3,
     hs_pct: 4,
     kd: 5,
-    two_k: 6,
-    three_k: 7,
-    four_k: 8,
-    five_k: 9,
-    entry_kills: 10,
-    trade_kills: 11,
-    best_streak: 12,
+    kda: 6,
+    two_k: 7,
+    three_k: 8,
+    four_k: 9,
+    five_k: 10,
+    entry_kills: 11,
+    entry_deaths: 12,
+    trade_kills: 13,
+    best_streak: 14,
   });
+  assert.ok(
+    Object.values(DEFAULT_RANKS.match).every((r) => r > 0),
+    'metric ranks stay positive (only the fixed block ranks negative)',
+  );
 });
 
 test('DEFAULT_RANKS.profile replicates today\'s card grid (eleven converted cards)', () => {
@@ -115,18 +126,20 @@ test('DEFAULT_RANKS.profile replicates today\'s card grid (eleven converted card
   });
 });
 
-test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profile = the eleven cards', () => {
+test('DEFAULT_PINS: match = the fourteen always-on columns (NOT trade_rate), profile = the eleven cards', () => {
   assert.deepEqual(DEFAULT_PINS.match, [
     'assists',
     'adr',
     'kast',
     'hs_pct',
     'kd',
+    'kda',
     'two_k',
     'three_k',
     'four_k',
     'five_k',
     'entry_kills',
+    'entry_deaths',
     'trade_kills',
     'best_streak',
   ]);
@@ -139,19 +152,20 @@ test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profi
 
 test('FIXED_BLOCK: structured {key, name, short, field} entries — full names over UNCHURNED identity (W13b, 2026-11-16)', () => {
   // Rnds is gone with the owner's C14 scoreboard change (the column
-  // left SCORE_COLS too — metricorder mirrors it, never leads it).
-  // `key` and `short` are byte-identical to the flat label the table
-  // shipped as before W13b, so every stored pref, FIXED_RANKS key,
-  // data-mo-name, colByLabel key and RAW_FIELDS key keeps working —
-  // identity never churns (pre-release no-versioning policy).
+  // left SCORE_COLS too — metricorder mirrors it, never leads it);
+  // @KDA and @Opening K/D left with w13d (owner, 2026-11-16 — KDA is
+  // the seeded `kda` metric, the compound cell's halves are metric
+  // columns), leaving the eight entries below. `key` and `short` stay
+  // byte-identical to the flat label the table shipped as before W13b,
+  // so every stored pref, FIXED_RANKS key, data-mo-name, colByLabel key
+  // and RAW_FIELDS key keeps working — identity never churns
+  // (pre-release no-versioning policy).
   assert.deepEqual(FIXED_BLOCK.match, [
     { key: '@Name', name: 'Name', short: 'Name', field: null },
     { key: '@Team', name: 'Team', short: 'Team', field: null },
     { key: '@K', name: 'Kills', short: 'K', field: 'kills' },
     { key: '@D', name: 'Deaths', short: 'D', field: 'deaths' },
-    { key: '@KDA', name: 'KDA', short: 'KDA', field: 'kda' },
     { key: '@DMG', name: 'Damage', short: 'DMG', field: 'totalDamage' },
-    { key: '@Opening K/D', name: 'Opening K/D', short: 'Opening K/D', field: null },
     { key: '@Util', name: 'Utility damage', short: 'Util', field: 'utilityDamage' },
     { key: '@MVPs', name: 'MVPs', short: 'MVPs', field: 'mvps' },
     { key: '@Score', name: 'Score', short: 'Score', field: 'score' },
@@ -194,14 +208,15 @@ test('fixedKeys: every fixed entry is its "@"+short namespaced key, in canonical
 });
 
 test('FIXED_RANKS: negative, one per fixed entry, in canonical order (absent pref ⇒ fixed leads)', () => {
+  // w13d (2026-11-16) removed @KDA and @Opening K/D; the surviving
+  // keys keep their values (only the sign and the order ever matter),
+  // so the holes at −6/−4 are deliberate.
   assert.deepEqual(FIXED_RANKS.match, {
     '@Name': -10,
     '@Team': -9,
     '@K': -8,
     '@D': -7,
-    '@KDA': -6,
     '@DMG': -5,
-    '@Opening K/D': -4,
     '@Util': -3,
     '@MVPs': -2,
     '@Score': -1,
@@ -237,7 +252,7 @@ test('absent pref → the default sequence (fixed block first, then rank asc, ca
   // keep their CATALOG order after the ranked ones.
   const catalog = ['kd', 'u_second', 'adr', 'u_first', 'kast', 'plug_a', 'hs_pct'];
   assert.deepEqual(resolveOrder(null, catalog, 'match'), [
-    '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+    '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
     'adr', 'kast', 'hs_pct', 'kd', 'u_second', 'u_first', 'plug_a',
   ]);
   // The metric half alone is the pre-W6 default sequence (the contract
@@ -266,7 +281,7 @@ test('a stored METRIC-NAME-ONLY array re-inserts every fixed entry ahead of it (
   // half (the §1.4 seed rule, unchanged).
   const catalog = ['kd', 'adr', 'kast'];
   assert.deepEqual(resolveOrder(['kast', 'kd'], catalog, 'match'), [
-    '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+    '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
     'adr', 'kast', 'kd',
   ]);
   assert.deepEqual(resolveOrder(['career_kd'], ['career_kd'], 'profile'), [
@@ -286,7 +301,7 @@ test('a saved pref may move a FIXED entry — its stored position wins over its 
   // contract), so a later read replays the arrangement verbatim —
   // nothing is left for step 3 to insert and the moved '@K' stands.
   const moved = [
-    '@K', '@Name', '@Team', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+    '@K', '@Name', '@Team', '@D', '@DMG', '@Util', '@MVPs', '@Score',
     'kd', 'adr',
   ];
   assert.deepEqual(resolveOrder(moved, catalog, 'match'), moved);
@@ -294,7 +309,7 @@ test('a saved pref may move a FIXED entry — its stored position wins over its 
   // their negative ranks under §1.4's first-greater-rank rule and the
   // block re-assembles in canonical order, metrics still trailing.
   assert.deepEqual(resolveOrder(['@K', 'kd'], catalog, 'match'), [
-    '@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+    '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
     'adr', 'kd',
   ]);
   // …and a fixed key this scope does not carry is not a sequence entry.
@@ -302,7 +317,7 @@ test('a saved pref may move a FIXED entry — its stored position wins over its 
 });
 
 test('a newly seeded metric inserts before its default-rank successor wherever it sits', () => {
-  // kast (rank 2) lands immediately before hs_pct (rank 3), wherever
+  // kast (rank 3) lands immediately before hs_pct (rank 4), wherever
   // the pref put hs_pct — the user's arrangement is not reset.
   const catalog = ['hs_pct', 'adr', 'kast', 'kd'];
   assert.deepEqual(metricsOnly(['hs_pct'], catalog, 'match'), ['adr', 'kast', 'hs_pct', 'kd']);
@@ -343,6 +358,27 @@ test('a scope-changed name never enters the other scope\'s sequence', () => {
   // The profile side picks the new name up at its default rank.
   const profileCatalog = ['career_kd'];
   assert.deepEqual(metricsOnly(null, profileCatalog, 'profile'), ['career_kd']);
+});
+
+test('w13d retires @KDA and @Opening K/D: stray saved keys degrade harmlessly (no migration)', () => {
+  // Owner ruling 2026-11-16: both entries left the fixed block (KDA is
+  // the seeded `kda` metric; the Opening K/D compound cell's halves are
+  // metric columns). A pref written before the wave still carries their
+  // keys — they are outside the universe, so step 1 (saved ∩ universe)
+  // drops them: no error, no residue, no writer that has to know about
+  // them. The same holds for a stray VISIBILITY key: hideable() answers
+  // false for a key no fixed block carries, so it never hides anything.
+  const catalog = ['kd', 'adr'];
+  const seq = resolveOrder(['@KDA', '@Opening K/D', 'kd'], catalog, 'match');
+  assert.deepEqual(seq, [
+    '@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score', 'adr', 'kd',
+  ]);
+  assert.ok(!seq.includes('@KDA') && !seq.includes('@Opening K/D'), 'the retired keys never re-enter');
+  assert.equal(hideable('match', '@KDA'), false, 'a retired key is never hideable');
+  assert.equal(hideable('match', '@Opening K/D'), false);
+  const composed = composedSequence('match', null, [], ['@KDA', '@Opening K/D', '@K']);
+  assert.ok(composed.every((e) => !e.hidden || e.key === '@K'), 'a stray hidden key marks nothing (only @K hides)');
+  assert.ok(composed.some((e) => e.key === '@K' && e.hidden), 'a LIVE key beside them still hides normally');
 });
 
 test('dedupe: duplicate saved names collapse to their first occurrence', () => {
@@ -386,7 +422,7 @@ test('absent pins key → DEFAULT_PINS resolved by name through the catalog', ()
     { id: 3, name: 'kd' },
     { id: 1, name: 'adr' },
   ];
-  // DEFAULT_PINS order (not catalog order): ten of the twelve default
+  // DEFAULT_PINS order (not catalog order): twelve of the fourteen default
   // names are absent from this catalog → resolve to nothing; the
   // resolved ids keep the DEFAULT order.
   assert.deepEqual(resolvePinIds('match', null, catalog), [1, 3]);
@@ -457,7 +493,7 @@ test('composedSequence: fixed stats and metrics as ONE ordered entry list', () =
   const seq = composedSequence('match', null, defs);
   assert.deepEqual(
     seq.map((e) => e.key),
-    ['@Name', '@Team', '@K', '@D', '@KDA', '@DMG', '@Opening K/D', '@Util', '@MVPs', '@Score',
+    ['@Name', '@Team', '@K', '@D', '@DMG', '@Util', '@MVPs', '@Score',
       'adr', 'u1'],
     'fixed block leads (negative ranks), metrics follow in sequence order',
   );
@@ -510,14 +546,19 @@ test('composedSequence: a hidden fixed entry stays IN the sequence and is marked
 test('rawItems: the fixed stats that carry a raw scoreboard field, labelled with the FULL name from the one table (W13b)', () => {
   assert.deepEqual(
     rawItems('match').map((r) => r.label),
-    ['Kills', 'Deaths', 'KDA', 'Damage', 'Utility damage', 'MVPs', 'Score'],
+    ['Kills', 'Deaths', 'Damage', 'Utility damage', 'MVPs', 'Score'],
     'every label is a FIXED_BLOCK entry name — the one label table, never its short',
   );
   // Exactly the exclusions N5 ruled: Name/Team are descriptors with no
-  // raw value, Opening K/D is a compound cell.
+  // raw value, Opening K/D was a compound cell (and left the fixed
+  // block entirely in w13d) — as did KDA, whose `raw:kda` id left this
+  // table with @KDA. A stale pick of `raw:kda` in a saved selection can
+  // never resolve: `picked` filters the ITEM UNIVERSE by the selection,
+  // never the reverse, so an id no universe carries never matches.
   for (const gone of ['Name', 'Team', 'Opening K/D']) {
     assert.ok(!rawItems('match').some((r) => r.label === gone), `${gone} has no raw item`);
   }
+  assert.ok(!rawItems('match').some((r) => r.id === 'raw:kda'), 'raw:kda left with @KDA (w13d)');
   // The ids are namespaced strings over the PlayerStatsRow JSON field,
   // and every field is the field of the label-table entry that carries
   // that name (RAW_FIELDS is keyed by that entry's `short`).
@@ -537,12 +578,14 @@ test('rawItems: the fixed stats that carry a raw scoreboard field, labelled with
 });
 
 test('RAW_FIELDS derives from the fixed table — keyed by short, exactly the entries carrying a field (W13b)', () => {
-  // Today's exported shape, byte-identical (rawItems/Reports/tests keep
-  // one source: the derivation below, not a second hand-written list).
+  // Today's exported shape (rawItems/Reports/tests keep one source:
+  // the derivation below, not a second hand-written list). w13d dropped
+  // `KDA: 'kda'` with @KDA — the `kda` JSON field left PlayerStatsRow
+  // in the same wave (the stored `kda` metric is THE value now), so no
+  // fixed entry can offer it as a recorded value any more.
   assert.deepEqual(RAW_FIELDS, {
     K: 'kills',
     D: 'deaths',
-    KDA: 'kda',
     DMG: 'totalDamage',
     Util: 'utilityDamage',
     MVPs: 'mvps',
@@ -558,7 +601,7 @@ test('RAW_FIELDS derives from the fixed table — keyed by short, exactly the en
     .flat()
     .filter((e) => !e.field)
     .map((e) => e.name);
-  assert.deepEqual(noField, ['Name', 'Team', 'Opening K/D', 'Matches', 'Win%']);
+  assert.deepEqual(noField, ['Name', 'Team', 'Matches', 'Win%']);
 });
 
 // --- read / write / reset route the scope keys (§1.2) -----------------------

@@ -36,7 +36,6 @@
     fmtBytes,
     fmtDate,
     fmt1,
-    fmt2,
     fmtInt,
     fmtMetric,
     fmtPatch,
@@ -100,14 +99,14 @@
   // this array stays the fixed half's cell renderers + sort keys, and
   // the transposed corner still reads nameCol below.
   // ADR / KAST% / HS% / K/D left SCORE_COLS with the dogfooding
-  // conversion (W2); A, 2K–5K, Entry, Trade and Streak left with the
-  // inferred-conversion swap (W2a): all twelve render as PINNED METRIC
-  // columns (composed into sbCols below — sourced from the stored
-  // metric rows through the five-state machine), in today's relative
-  // order once the default pins/sequence land (metricorder.js).
-  // Opening K/D keeps its fixed position AND its sort key — only its
-  // cell changed: it composes the entry_kills / entry_deaths metric
-  // halves (design Q2).
+  // conversion (W2); A, 2K–5K, Open K, Trade and Streak left with the
+  // inferred-conversion swap (W2a); KDA and Opening K/D left with w13d
+  // (owner, 2026-11-16 — KDA became the seeded `kda` metric and the
+  // Opening K/D compound split into the entry_kills / entry_deaths
+  // metric columns): all fourteen render as PINNED METRIC columns
+  // (composed into sbCols below — sourced from the stored metric rows
+  // through the five-state machine), in today's relative order once the
+  // default pins/sequence land (metricorder.js).
   // Every key here sorts CLIENT-side over the displayed sequence (the
   // fold below): the fetch is id-keyed (one GetScoreboard call per
   // match, kills DESC) and no sort ever re-requests a row order from the
@@ -120,13 +119,7 @@
     { key: 'side', label: 'Team' },
     { key: 'kills', label: 'K' },
     { key: 'deaths', label: 'D' },
-    { key: 'kda', label: 'KDA' },
     { key: 'total_damage', label: 'DMG' },
-    // Fixed position, metric-composed cell (design Q2): both halves
-    // read the fixed named slots entry_kills / entry_deaths — the
-    // identical stored columns this cell used to render raw. The body
-    // branch below owns the cell (value-or-dash halves, never a chip).
-    { key: 'opening_kills', label: 'Opening K/D' },
     { key: 'utility_damage', label: 'Util' },
     { key: 'mvps', label: 'MVPs' },
     { key: 'score', label: 'Score' },
@@ -248,11 +241,13 @@
   // live progress feed decide whether a cell shows the number or the
   // state chip (lib/metricstate.js — design §5's state machine).
   let metricCols = $state([]);
-  // The W2a fixed named slots (design §6.1): the compound cells' halves
-  // read these metrics BY NAME — pins-independent, unioned into the ONE
-  // stored read below (an unpinned metric still fills its cell — the
-  // kast precedent).
-  const FIXED_SLOTS = ['assists', 'entry_kills', 'entry_deaths'];
+  // The W2a fixed named slot (design §6.1): the roster K/D/A triples
+  // read the assists metric BY NAME — pins-independent, unioned into
+  // the ONE stored read below (an unpinned metric still fills its cell —
+  // the kast precedent). The entry_kills / entry_deaths slots left with
+  // w13d (owner, 2026-11-16): the Opening K/D compound cell they fed is
+  // gone and both halves render as their own pinned metric columns.
+  const FIXED_SLOTS = ['assists'];
   // name → columnOf() data for each fixed slot the catalog carried
   // (empty until the read lands; a name the catalog lacks stays absent
   // → the honest dash, never a guessed number).
@@ -487,10 +482,11 @@
       // nothing (what the pre-C14 "return scoreboard" did, per step).
       return col ? metricSortVal(col, p) : null;
     }
-    // kda sorts as the RAW number: cellText formats it through fmt2 for
-    // display, and a formatted string would sort lexicographically
-    // (10.00 before 9.00).
-    if (key === 'kda') return Number.isFinite(p.kda) ? p.kda : null;
+    // Every fixed key sorts on its raw field value: cellText returns
+    // the row's field verbatim for all of them (kda was the only
+    // formatter — it printed through fmt2, so it needed this raw
+    // branch; the column left SCORE_COLS for the metric `m:` path in
+    // w13d).
     return cellText({ key }, p);
   }
 
@@ -699,11 +695,12 @@
   }
 
   // --- W2a fixed named slots (design §6.1) --------------------------------
-  // The compound cells (Opening K/D pair, Overview roster K/D/A
-  // triples) read their metrics BY NAME from `fixedCols` — pins-
-  // independent (an unpinned metric still fills its cell), resolved from
-  // the SAME catalog read and served by the SAME ONE stored read as the
-  // pinned columns.
+  // The compound cell left with w13d (owner, 2026-11-16): the Overview
+  // roster K/D/A triples still read their assists metric BY NAME from
+  // `fixedCols` — pins-independent (an unpinned metric still fills its
+  // cell), resolved from the SAME catalog read and served by the SAME
+  // ONE stored read as the pinned columns. (The Opening K/D pair fed
+  // the same machinery; its halves are pinned metric columns now.)
   function fixedPres(name, p) {
     const mc = fixedCols.get(name);
     // Slot not resolved yet (read in flight / name absent from the
@@ -746,22 +743,10 @@
     return '';
   }
 
-  // The Opening K/D cell (fixed SCORE_COLS position — design Q2): the
-  // entry_kills / entry_deaths halves — the identical stored columns
-  // the cell used to render raw — in the unchanged ${k}/${d} format.
-  function openingKd(p) {
-    const halves = [
-      { name: 'entry_kills', pres: fixedPres('entry_kills', p) },
-      { name: 'entry_deaths', pres: fixedPres('entry_deaths', p) },
-    ];
-    return {
-      text: halves.map((h) => halfText(h.name, h.pres)).join('/'),
-      title: compoundTitle(halves),
-    };
-  }
-
   // The roster K/D/A line (design Q2): raw K + raw D + the assists
   // metric half, read by NAME so an unpinned assists still fills it.
+  // (It is the only compound cell left: the Opening K/D pair — the
+  // other one — died with w13d, owner 2026-11-16.)
   function rosterKda(p) {
     const a = { name: 'assists', pres: fixedPres('assists', p) };
     return {
@@ -800,18 +785,12 @@
 
   // Cell display for a scoreboard column: map the snake_case sort key
   // onto the row's camelCase field. Every column that carried its own
-  // display (the converted metrics, incl. Opening K/D's ${k}/${d}) left
-  // SCORE_COLS with the conversions — those cells render through the
-  // metric machinery above; kda keeps its case (Go-computed,
-  // inexpressible, N1).
+  // display (the converted metrics, incl. Opening K/D's ${k}/${d} and,
+  // since w13d, KDA) left SCORE_COLS with the conversions — those cells
+  // render through the metric machinery above.
   function cellText(col, p) {
     const field = col.key.replace(/_(\w)/g, (_, c) => c.toUpperCase());
-    switch (col.key) {
-      case 'kda':
-        return fmt2(p.kda);
-      default:
-        return p[field];
-    }
+    return p[field];
   }
 
   // The origin path for drill-down return trips (?back=…) — RoundDetail,
@@ -1237,19 +1216,12 @@
         </button>
       {/snippet}
       <!-- One fixed stat cell, shared by BOTH shapes: the normal body's
-           else-branch and every transposed stat row. Opening K/D is the
-           fixed position, metric-composed cell (design Q2) — each half is
-           the fresh entry_kills / entry_deaths number in the unchanged
-           ${k}/${d} format, or the honest dash with that half's state in
-           the title (never a chip inside a compound cell — invariant 9);
-           everything else maps through cellText. -->
+           else-branch and every transposed stat row — a plain
+           cellText render (the Opening K/D compound cell this snippet
+           used to branch on left with w13d, owner 2026-11-16; its
+           halves are metric columns now). -->
       {#snippet fixedCell(col, p)}
-        {#if col.key === 'opening_kills'}
-          {@const kd = openingKd(p)}
-          <td class="num" title={kd.title || undefined}>{kd.text}</td>
-        {:else}
-          <td class="num">{cellText(col, p)}</td>
-        {/if}
+        <td class="num">{cellText(col, p)}</td>
       {/snippet}
       <!-- One pinned metric cell, shared by BOTH shapes (design §5's
            state machine: value / honest dash / chip, never a number in

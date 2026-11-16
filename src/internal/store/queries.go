@@ -117,12 +117,14 @@ var matchListSort = map[string]string{
 }
 
 // scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
-// `kda` is GetScoreboard's SELECT alias for the computed ratio
-// expression — ORDER BY reaches it only through the alias (see the
-// GetScoreboard doc comment; without it SQLite reports "no such column:
-// kda"). There is no `kd` key any more: the K/D column left the
-// scoreboard with the report read-back (dogfooding W4) — the frontend
-// sorts K/D through the metric columns' `m:` path instead.
+// There is no `kda` key any more: the scoreboard's KDA column left the
+// Go calculation for the seeded `kda` metric (w13d), so the SELECT
+// alias and the computed ratio died with it — the frontend sorts the
+// KDA column through the metric columns' `m:` path like every other
+// converted column. There is no `kd` key either: the K/D column left the
+// scoreboard with the report read-back (dogfooding W4). Both names are
+// unknown keys now and fall back to the fixed default below (pinned by
+// TestGetScoreboardKDASortKeyRetired).
 var scoreboardSort = map[string]string{
 	"name":            "p.name",
 	"side":            "ps.side",
@@ -132,7 +134,6 @@ var scoreboardSort = map[string]string{
 	"headshots":       "ps.headshots",
 	"hs_pct":          "ps.hs_pct",
 	"adr":             "ps.adr",
-	"kda":             "kda",
 	"total_damage":    "ps.total_damage",
 	"damage_taken":    "ps.damage_taken",
 	"rounds_played":   "ps.rounds_played",
@@ -748,16 +749,13 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 
 // GetScoreboard returns one player's-aggregate rows for a match, joined
 // with identity, sorted by a whitelisted sortKey (default kills DESC).
-// KDA = (kills+assists)/max(deaths,1) — derived but inexpressible in the
-// metric grammar (N1), so it stays Go; it is aliased `kda` in the SELECT:
-// the scoreboardSort map orders by that bare identifier, and ORDER BY can
-// only reach a computed expression through its result-column alias (the
-// alias is applied here, at the use site — kdPerMatchSQL/kastPerMatchSQL
-// stay unaliased for their reference-oracle role in the store's tests).
-// The former `kd` select/sort key left with the report read-back
-// (dogfooding W4): reports render the stored `kd` metric rows now, no
-// caller sorts by it, and the frontend stopped reading row.kd in W2.
-// Pinned by TestGetScoreboardKDASorting.
+// There is NO KDA expression here any more (w13d): the scoreboard's KDA
+// column converted to the seeded `kda` metric — GetScoreboard serves
+// stored passthrough columns only, and `kda` is an unknown sort key that
+// falls back to the default (the former `kd` key left the same way with
+// the report read-back in dogfooding W4: reports render the stored `kd`
+// metric rows now, no caller sorts by it, and the frontend reads
+// `m:`-keyed metric columns). Pinned by TestGetScoreboardKDASortKeyRetired.
 // BOTS ARE EXCLUDED (HumanOnly) — this is THE roster read, so every
 // consumer inherits the exclusion (Match's tables/cards and top-stats,
 // the Combat/Utility/Heatmaps/Economy/CompareRounds/RoundDetail/Reports/
@@ -777,7 +775,6 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
 			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
-			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1) AS kda,
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
 			ps.two_k, ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.enemies_flashed,
@@ -799,7 +796,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		if err := rows.Scan(
 			&r.SteamID, &r.Name, &r.IsBot, &r.Side, &r.FinalStatePresent,
 			&r.RoundsPlayed, &r.Kills, &r.Deaths,
-			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KDA, &r.TotalDamage,
+			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.TotalDamage,
 			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
 			&r.TradeKills, &r.BestStreak, &r.TwoK, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
 			&r.EnemiesFlashed, &r.BombPlants, &r.BombDefuses, &r.MVPs,
