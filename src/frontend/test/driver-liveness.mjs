@@ -258,7 +258,17 @@ const EXPECTED = {
   // value), the straight zero-width drag reaching the raster as a line, and
   // the owner's styling ruling (solid accent, never side colours, never
   // dashed, pointer-events none) as a CSS-text pin.
-  'heatmap-layer.dom.mjs': 71,
+  // heatmap-layer 71 → 82 (2026-11-15, heat-layout C16+C18): +11 the new
+  // section P (source pins over the Heatmaps VIEW, which still has no
+  // driver — the floor BUTTON group became one native #heat-floor select
+  // bound to `layer` with its options from `layers` and the showLayers
+  // gate intact, the .sett-seg group is gone, the content moved into the
+  // single section.panel while the literal toolbar opening tag and the
+  // block StatusChip still precede it, plus CSS-text pins for the height
+  // cap on .heat-canvas-wrap — (100vh − 330px) × --heat-aspect, which the
+  // view sets — and the three .heat-view centering rules). Sections A–O
+  // untouched; N's toolbar/progress pins stay green by construction.
+  'heatmap-layer.dom.mjs': 82,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
   // and the matchup names were RE-PINNED to the START-side colour rule
