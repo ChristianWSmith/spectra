@@ -47,10 +47,11 @@ type ProfileSide struct {
 	KD          float64 `json:"kd"`
 }
 
-// ProfileMap is the per-map split. ADR is the mean of the match-history
-// rows' STORED `adr` metric values for that map — nil when no match on
-// the map carries a fresh row (the profile renders "—"), never a
-// fabricated 0.
+// ProfileMap is the per-map split. ADR is the pooled per-map micro-average
+// (store.GetPlayerMapADR: Σ damage over the map's matches ÷ their counted
+// rounds — owner rule 2026-11-16, never the unweighted mean of the
+// per-match ADR values) — nil when the map's matches carry no stored
+// rounds (the profile renders "—"), never a fabricated 0.
 type ProfileMap struct {
 	Map     string   `json:"map"`
 	Matches int      `json:"matches"`
@@ -157,15 +158,16 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		})
 	}
 
-	// Per-map fold over the history. The ADR column is the mean of the
-	// history rows' STORED `adr` metric values — a row with no fresh
-	// metric row contributes nothing (and a map whose rows all lack one
-	// keeps ADR nil → "—"), so the divisor is the number of rows that
-	// actually carried a value, never the raw match count.
+	// Per-map fold over the history. The ADR cell is the POOLED per-map
+	// micro-average from store.GetPlayerMapADR — Σ(their damage on the
+	// map's matches) ÷ Σ(those matches' counted rounds), owner rule
+	// 2026-11-16 — never the unweighted mean of the history rows'
+	// per-match ADR values. It reads the SAME match set as the Matches
+	// cell (playerHistoryFrom), so the two always describe the same
+	// matches; a map whose matches carry no rounds keeps ADR nil → "—",
+	// never a fabricated 0.
 	type mapAggT struct {
 		ProfileMap
-		adrSum float64
-		adrN   int
 	}
 	mapAgg := map[string]*mapAggT{}
 	for _, h := range history {
@@ -178,16 +180,17 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		if h.Win {
 			m.Wins++
 		}
-		if h.ADR != nil {
-			m.adrSum += *h.ADR
-			m.adrN++
+	}
+	mapADR, err := s.st.GetPlayerMapADR(steamID)
+	if err != nil {
+		return Profile{}, err
+	}
+	for _, row := range mapADR {
+		if m := mapAgg[row.Map]; m != nil {
+			m.ADR = row.ADR
 		}
 	}
 	for _, m := range mapAgg {
-		if m.adrN > 0 {
-			adr := m.adrSum / float64(m.adrN)
-			m.ADR = &adr
-		}
 		p.Maps = append(p.Maps, m.ProfileMap)
 	}
 	sort.Slice(p.Maps, func(i, j int) bool {

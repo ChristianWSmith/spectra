@@ -22,13 +22,14 @@ import (
 //     kast == kastPerMatchSQL and hs_pct == the stored ps.hs_pct hold
 //     exactly. adr's stored column cannot serve as its oracle THERE —
 //     seed.sql's adr column is an independent hand-written gradient
-//     (player_stats carries total_damage=100, rounds_played=24 →
-//     extract's formula gives 4.17 while the column says 55), so that
-//     corpus pins adr against extract's FORMULA instead, and the
-//     stored-column adr proof runs on the extract-shaped corpus below.
+//     (player_stats carries total_damage=100 while the column says 55),
+//     so that corpus pins adr against extract's FORMULA — damage ÷ the
+//     match's counted rounds (the seed carries it as the `rounds`
+//     denominator) — and the stored-column adr proof runs on the
+//     extract-shaped corpus below.
 //   - TestExtractShapedScoreboardEquivalence builds the corpus extract
-//     actually writes (ADR = total_damage/rounds_played — extract/
-//     build.go:117-119; HSPct = 100·hs/k — extract/helpers.go pct) and
+//     actually writes (ADR = total_damage ÷ the match's counted rounds —
+//     extract/build.go; HSPct = 100·hs/k — extract/helpers.go pct) and
 //     proves the stored-column seeds (adr, hs_pct, kast) equal the
 //     columns GetScoreboard serves — plus the kd seed against the
 //     store's FLOORED per-match spelling (kdPerMatchSQL, test-only since
@@ -42,30 +43,33 @@ import (
 //     like that spelling, so the zero-death subject agrees on both
 //     sides instead of diverging.
 
-// seedExpr reads a schema-seeded builtin's expression from the store —
-// the SEED is what these tests prove, never a test-local copy of it.
-func seedExpr(t *testing.T, st *store.Store, name string) string {
+// seedDef reads a schema-seeded builtin's DEFINITION (expression +
+// denominator) from the store — the SEED is what these tests prove,
+// never a test-local copy of it. The denominator is part of the proof:
+// the `rounds` seeds only produce their values when the row's own
+// denominator rides along.
+func seedDef(t *testing.T, st *store.Store, name string) Def {
 	t.Helper()
-	res, err := st.RunReadOnly(`SELECT expr FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
+	res, err := st.RunReadOnly(`SELECT expr, denominator FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
 	if err != nil {
 		t.Fatalf("read seed %q: %v", name, err)
 	}
 	if len(res.Rows) != 1 {
 		t.Fatalf("seed %q: %d rows, want 1", name, len(res.Rows))
 	}
-	return res.Rows[0][0].(string)
+	return Def{Expr: res.Rows[0][0].(string), Denominator: res.Rows[0][1].(string)}
 }
 
-// previewAt runs one seeded expression at the given scope (the
+// previewAt runs one seeded definition at the given scope (the
 // scoreboard's grain) and keys the rows by subject.
-func previewAt(t *testing.T, st *store.Store, expr, scope string) map[string]float64 {
+func previewAt(t *testing.T, st *store.Store, def Def, scope string) map[string]float64 {
 	t.Helper()
-	pv, perr, err := RunPreview(st, Def{Expr: expr}, scope, 500)
+	pv, perr, err := RunPreview(st, def, scope, 500)
 	if perr != nil {
-		t.Fatalf("parse %q: %v", expr, perr)
+		t.Fatalf("parse %q: %v", def.Expr, perr)
 	}
 	if err != nil {
-		t.Fatalf("run %q (scope %q): %v (sql: %s)", expr, scope, err, pv.SQL)
+		t.Fatalf("run %q (scope %q): %v (sql: %s)", def.Expr, scope, err, pv.SQL)
 	}
 	out := make(map[string]float64, len(pv.Rows))
 	for _, r := range pv.Rows {
@@ -95,13 +99,14 @@ func oracle(t *testing.T, st *store.Store, q string, args ...any) map[string]flo
 //	kast  × 100 == kastPerMatchSQL (store/queries.go: the same
 //	                100.0 × AVG(player_round_stats.kast) per match),
 //	hs_pct × 100 == the stored ps.hs_pct column,
-//	adr         == extract's stored-column formula
-//	                (total_damage / rounds_played — build.go:117-119).
+//	adr         == extract's formula (damage ÷ the match's counted
+//	                rounds — the seed's `rounds` denominator;
+//	                extract/build.go).
 func TestFixtureCorpusScoreboardEquivalence(t *testing.T) {
 	st := seededStore(t)
-	kastExpr := seedExpr(t, st, "kast")
-	hsExpr := seedExpr(t, st, "hs_pct")
-	adrExpr := seedExpr(t, st, "adr")
+	kastDef := seedDef(t, st, "kast")
+	hsDef := seedDef(t, st, "hs_pct")
+	adrDef := seedDef(t, st, "adr")
 
 	for _, matchID := range []int64{1, 2, 3} {
 		scope := "match:" + itoa(matchID)
@@ -109,7 +114,7 @@ func TestFixtureCorpusScoreboardEquivalence(t *testing.T) {
 			// kast: metric (0..1 fraction) × 100 vs the store's
 			// per-match KAST% spelling — this is the number the
 			// scoreboard's KAST% column showed via combat stats.
-			kast := previewAt(t, st, kastExpr, scope)
+			kast := previewAt(t, st, kastDef, scope)
 			kastSQL := oracle(t, st,
 				`SELECT steam_id, 100.0 * AVG(kast) FROM player_round_stats WHERE match_id = ? GROUP BY steam_id`,
 				matchID)
@@ -129,7 +134,7 @@ func TestFixtureCorpusScoreboardEquivalence(t *testing.T) {
 
 			// hs_pct: metric × 100 vs the stored column the
 			// scoreboard's HS% cell served.
-			hs := previewAt(t, st, hsExpr, scope)
+			hs := previewAt(t, st, hsDef, scope)
 			stored := oracle(t, st,
 				`SELECT steam_id, hs_pct FROM player_stats WHERE match_id = ?`,
 				matchID)
@@ -149,12 +154,15 @@ func TestFixtureCorpusScoreboardEquivalence(t *testing.T) {
 
 			// adr: the corpus's stored adr column is NOT extract-shaped
 			// (see the file header) — pin the seed against extract's
-			// FORMULA, which is the identity extract itself guarantees.
-			adr := previewAt(t, st, adrExpr, scope)
+			// FORMULA, which is the identity extract itself guarantees:
+			// damage ÷ the match's counted rounds (the seed's `rounds`
+			// denominator over the fixture's 24 stored rounds per
+			// match), never damage ÷ the rounds the player played.
+			adr := previewAt(t, st, adrDef, scope)
 			formula := oracle(t, st,
-				`SELECT steam_id, 1.0 * SUM(total_damage) / NULLIF(SUM(rounds_played), 0)
+				`SELECT steam_id, 1.0 * SUM(total_damage) / NULLIF((SELECT COUNT(*) FROM rounds WHERE match_id = ?), 0)
 				 FROM player_stats WHERE match_id = ? GROUP BY steam_id`,
-				matchID)
+				matchID, matchID)
 			if len(adr) != len(formula) {
 				t.Errorf("adr preview rows = %d, formula rows = %d", len(adr), len(formula))
 			}
@@ -195,15 +203,19 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	}
 
 	// extractADR / extractHSPct are internal/extract's formulas
-	// (build.go:117-119 — ADR = total_damage / rounds_played;
-	// helpers.go pct — HS% = 100 · headshots / kills, 0 kills → 0),
-	// applied here so the fixture's stored columns are EXACTLY what a
-	// real import writes: that is the corpus's whole point.
+	// (build.go — ADR = total_damage ÷ THE MATCH'S COUNTED ROUNDS,
+	// never ÷ the rounds the player played; helpers.go pct — HS% =
+	// 100 · headshots / kills, 0 kills → 0), applied here so the
+	// fixture's stored columns are EXACTLY what a real import writes:
+	// that is the corpus's whole point. The match's round count comes
+	// from the rounds rows this corpus saves below — the same rows the
+	// seed's match-scope `rounds` denominator counts.
+	matchRounds := 24
 	extractADR := func(ps models.PlayerStats) float64 {
-		if ps.RoundsPlayed == 0 {
+		if matchRounds == 0 {
 			return 0
 		}
-		return float64(ps.TotalDamage) / float64(ps.RoundsPlayed)
+		return float64(ps.TotalDamage) / float64(matchRounds)
 	}
 	extractHSPct := func(ps models.PlayerStats) float64 {
 		if ps.Kills == 0 {
@@ -220,13 +232,23 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	base := []models.PlayerStats{
 		{SteamID: "100", Side: "ct", Name: "alice", Kills: 10, Deaths: 2, Assists: 4, Headshots: 5, TotalDamage: 1320, RoundsPlayed: 24},
 		{SteamID: "200", Side: "t", Name: "bob", Kills: 8, Deaths: 3, Assists: 2, Headshots: 3, TotalDamage: 960, RoundsPlayed: 24},
-		{SteamID: "300", Side: "ct", Name: "carol", Kills: 7, Deaths: 0, Assists: 1, Headshots: 0, TotalDamage: 480, RoundsPlayed: 16},
+		{SteamID: "300", Side: "ct", Name: "carol", Kills: 7, Deaths: 0, Assists: 1, Headshots: 0, TotalDamage: 480, RoundsPlayed: 16}, // late join: 16 of the match's 24 rounds — the ADR divergence row
 	}
 	stats := make([]models.PlayerStats, len(base))
 	for i, ps := range base {
 		ps.ADR = extractADR(ps)
 		ps.HSPct = extractHSPct(ps)
 		stats[i] = ps
+	}
+	// The match's counted rounds — the seed's match-scope `rounds`
+	// denominator counts THESE rows (over an empty rounds table the
+	// denominator NULLs every subject to 0 beside N, which is exactly
+	// the false pass this corpus must not produce), and extractADR
+	// divides by the same count: carol's late-join case below reads
+	// 480/24 = 20 from BOTH sides because of it.
+	rounds := make([]models.Round, 0, matchRounds)
+	for r := 1; r <= matchRounds; r++ {
+		rounds = append(rounds, models.Round{Number: r})
 	}
 	em := &models.ExtractedMatch{
 		Match: models.Match{
@@ -235,6 +257,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 		},
 		Players:     players,
 		PlayerStats: stats,
+		Rounds:      rounds,
 	}
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
@@ -266,7 +289,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	scope := "match:" + itoa(id)
 
 	// adr metric == the stored ps.adr column GetScoreboard serves.
-	adr := previewAt(t, st, seedExpr(t, st, "adr"), scope)
+	adr := previewAt(t, st, seedDef(t, st, "adr"), scope)
 	for _, row := range board {
 		got, ok := adr[row.SteamID]
 		if !ok {
@@ -277,9 +300,19 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 			t.Errorf("adr[%s] = %v, want stored ps.adr %v (the scoreboard's ADR cell)", row.SteamID, got, row.ADR)
 		}
 	}
+	// carol is the synthetic late-join case the real library lacks: she
+	// played only 16 of the match's 24 rounds (RoundsPlayed 16) but
+	// dealt 480 damage. Since the flip both sides divide by THE MATCH's
+	// counted rounds — 480/24 = 20, pinned exactly here so a shared
+	// regression to ÷ rounds_played (480/16 = 30) fails even though the
+	// metric and the column would still agree with each other.
+	if adr["300"] != 20 || byID["300"].ADR != 20 {
+		t.Errorf("carol adr = metric %v vs stored ps.adr %v, want 20 on both sides (480 ÷ the match's 24 rounds)",
+			adr["300"], byID["300"].ADR)
+	}
 
 	// hs_pct metric × 100 == the stored ps.hs_pct column.
-	hs := previewAt(t, st, seedExpr(t, st, "hs_pct"), scope)
+	hs := previewAt(t, st, seedDef(t, st, "hs_pct"), scope)
 	for _, row := range board {
 		got, ok := hs[row.SteamID]
 		if !ok {
@@ -294,7 +327,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	// kast metric × 100 == kastPerMatchSQL (store/queries.go: the
 	// per-match100.0 × AVG(player_round_stats.kast) the KAST% column
 	// was sourced from before it converted).
-	kast := previewAt(t, st, seedExpr(t, st, "kast"), scope)
+	kast := previewAt(t, st, seedDef(t, st, "kast"), scope)
 	kastSQL := oracle(t, st,
 		`SELECT steam_id, 100.0 * AVG(kast) FROM player_round_stats WHERE match_id = ? GROUP BY steam_id`,
 		id)
@@ -320,7 +353,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	// spelled inline here the same way the kast oracle above is — the
 	// const itself survives as the store package tests' reference
 	// oracle (metric_series_read_test.go).
-	kd := previewAt(t, st, seedExpr(t, st, "kd"), scope)
+	kd := previewAt(t, st, seedDef(t, st, "kd"), scope)
 	floored := oracle(t, st,
 		`SELECT steam_id, CAST(kills AS REAL) / MAX(deaths, 1)
 		 FROM player_stats WHERE match_id = ?`,
@@ -341,7 +374,7 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 	// the zero-death subject: the seed's scalar max(sum(deaths), 1)
 	// floors exactly like the retired spelling, so Q1's kd divergence
 	// does NOT repeat (that is the whole point of the floored seed).
-	kda := previewAt(t, st, seedExpr(t, st, "kda"), scope)
+	kda := previewAt(t, st, seedDef(t, st, "kda"), scope)
 	flooredKDA := oracle(t, st,
 		`SELECT steam_id, CAST(kills + assists AS REAL) / MAX(deaths, 1)
 		 FROM player_stats WHERE match_id = ?`,
@@ -405,7 +438,7 @@ func TestStoredColumnSeedsEquivalence(t *testing.T) {
 				t.Fatal("scoreboard is empty")
 			}
 			for _, col := range cols {
-				got := previewAt(t, st, seedExpr(t, st, col.seed), scope)
+				got := previewAt(t, st, seedDef(t, st, col.seed), scope)
 				for _, row := range board {
 					want := col.field(row)
 					v, ok := got[row.SteamID]
@@ -436,11 +469,11 @@ func TestStoredColumnSeedsEquivalence(t *testing.T) {
 // remains the whole oracle.
 func TestMissedTradesEquivalence(t *testing.T) {
 	st := seededStore(t)
-	expr := seedExpr(t, st, "missed_trades")
+	seed := seedDef(t, st, "missed_trades")
 	for _, matchID := range []int64{1, 2, 3} {
 		scope := "match:" + itoa(matchID)
 		t.Run(scope, func(t *testing.T) {
-			got := previewAt(t, st, expr, scope)
+			got := previewAt(t, st, seed, scope)
 			// GetCombatStats' rule spelled in plain SQL: the human
 			// roster (base query's INNER players join + is_bot = 0)
 			// LEFT JOINed to the stored counts, missing → 0.
@@ -516,7 +549,7 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 		   AND NOT EXISTS (SELECT 1 FROM players p
 			WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1)
 		 GROUP BY c.steam_id`)
-	got := previewAt(t, st, seedExpr(t, st, "career_clutches"), "")
+	got := previewAt(t, st, seedDef(t, st, "career_clutches"), "")
 	for i := 1; i <= 8; i++ {
 		sid := fmt.Sprintf("7656119800000000%d", i)
 		// want[sid] is 0 for every subject with no clutch rows.
@@ -548,9 +581,9 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 // is spelled here) — the number the conversion must not move.
 func TestCareerOpeningEquivalence(t *testing.T) {
 	st := seededStore(t)
-	openings := previewAt(t, st, seedExpr(t, st, "career_openings"), "")
-	wins := previewAt(t, st, seedExpr(t, st, "career_opener_wins"), "")
-	rate := previewAt(t, st, seedExpr(t, st, "career_opening_rate"), "")
+	openings := previewAt(t, st, seedDef(t, st, "career_openings"), "")
+	wins := previewAt(t, st, seedDef(t, st, "career_opener_wins"), "")
+	rate := previewAt(t, st, seedDef(t, st, "career_opening_rate"), "")
 	if len(openings) != 8 || len(wins) != 8 || len(rate) != 8 {
 		t.Fatalf("preview rows = %d/%d/%d, want 8 subjects each (%v/%v/%v)", len(openings), len(wins), len(rate), openings, wins, rate)
 	}
@@ -596,11 +629,11 @@ func TestCareerOpeningEquivalence(t *testing.T) {
 // fabricated one).
 func TestUntradedDeathsEquivalence(t *testing.T) {
 	st := seededStore(t)
-	expr := seedExpr(t, st, "untraded_deaths")
+	seed := seedDef(t, st, "untraded_deaths")
 	for _, matchID := range []int64{1, 2, 3} {
 		scope := "match:" + itoa(matchID)
 		t.Run(scope, func(t *testing.T) {
-			got := previewAt(t, st, expr, scope)
+			got := previewAt(t, st, seed, scope)
 			want := oracle(t, st,
 				`SELECT b_steam, COUNT(*) FROM engagements
 				 WHERE match_id = ? AND kind = 'untraded' GROUP BY b_steam`,

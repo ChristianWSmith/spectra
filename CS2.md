@@ -158,22 +158,42 @@ at the end of the section.
   blood/opening likewise requires a distinct enemy victim. Deaths
   include them. **Source** — awpy stats.rs (2026-11-01).
 
-- **ADR** — average damage per round: Σ over ENEMY hits of
-  MIN(hit damage, victim's remaining HP before the hit) ÷ rounds the
-  player played (knife/warmup excluded). Overkill is not damage dealt — a
-  115-damage AWP hit on a 10-HP player credits 10. Track each victim's HP
-  per round starting at 100 and update it from the player_hurt `health`
-  field (the victim's HP AFTER the hit — authoritative; a pure
-  `before − dmg` simulation drifts on world/team damage the extractor does
-  not attribute the same way). demoinfocs' `HealthDamageTaken` is the same
-  quantity when the server build emits it. Verified against the golden
-  demo's external scoreboard screenshot: all ten players match to ±0.05
-  (forever2kELO 116.9, was 144.3 on the raw-damage basis).
-  **Source** — the external scoreboard screenshot (formerly donk.png,
-  removed from the repo 2026-11-07); demoinfocs v6
-  `events.PlayerHurt` doc comments;
+- **ADR — the divisor is the MATCH's rounds; career ADR is pooled** —
+  average damage per round: Σ over ENEMY hits of MIN(hit damage,
+  victim's remaining HP before the hit) ÷ **the counted rounds of the
+  match** — NOT the rounds the player personally played: a player
+  present for one round of a 24-round match who dealt 100 damage has
+  ADR = 100/24 ≈ 4.2. awpy states the convention outright: "Every
+  player is treated as having played every round, so **KAST / ADR
+  denominators are the match's round count** and players who join or
+  leave mid-match are approximate" — KAST%'s denominator is the same
+  unit. Across matches (career) ADR is a POOLED micro-average —
+  Σ(damage over those matches) ÷ Σ(their rounds), i.e. the
+  rounds-weighted mean `(ADR₁×rounds₁ + ADR₂×rounds₂ + …) /
+  (rounds₁ + rounds₂ + …)` (exactly Leetify's published weighting) —
+  never the unweighted mean of per-match ADRs. Overkill is not damage
+  dealt — a 115-damage AWP hit on a 10-HP player credits 10; track each
+  victim's HP per round starting at 100 and update it from the
+  player_hurt `health` field (the victim's HP AFTER the hit —
+  authoritative; a pure `before − dmg` simulation drifts on world/team
+  damage the extractor does not attribute the same way). demoinfocs'
+  `HealthDamageTaken` is the same quantity when the server build emits
+  it. The golden demo's external-scoreboard verification (all ten
+  players ±0.05, forever2kELO 116.9) confirms the damage BASIS only —
+  it cannot distinguish the divisor (every player played every counted
+  round there). **Supersedes** the earlier wording "÷ rounds the player
+  played" (retracted 2026-11-16; beginner guides that say "÷ rounds
+  played" do not address partial participation and read the same in the
+  normal case). **Source** — awpy reference docs, "Player stats (stats)"
+  ("KAST / ADR denominators are the match's round count",
+  https://awpy.readthedocs.io/en/latest/reference.html); Leetify
+  Performance Metric Tool Guidelines ("(ADR in Each Game × Num Rounds in
+  Each Game) / (Num Rounds Every Game)",
+  https://leetify.com/blog/performance-metric-tool-guidelines/);
+  demoinfocs v6 `events.PlayerHurt` doc comments;
   https://awpy.readthedocs.io,
-  https://prosettings.net/blog/cs2-scoreboard/ (2026-11-02).
+  https://prosettings.net/blog/cs2-scoreboard/ (damage basis,
+  2026-11-02); owner ruling 2026-11-16, sources retrieved 2026-11-16.
 
 - **Loss bonus** — a per-TEAM loss count: +1 after every loss, −1 after
   every win (min 0, max 4). `mp_consecutive_loss_aversion` defaults to 1:

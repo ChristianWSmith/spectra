@@ -743,16 +743,25 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- match-scope dogfooding set (D1/D4/D5/D6/D7/D8): the four converted
 -- scoreboard columns plus the Combat Entry%/Trade% pair — recompute
 -- from the raw stored inputs, never a query-time calculation.
+-- ADR, Entry% and career_adr carry the `rounds` DENOMINATOR (owner
+-- ruling 2026-11-16): CS2 per-round statistics divide by the match's
+-- rounds, never by the rounds the player personally played (100 damage
+-- in 1 of 24 rounds is ADR ≈ 4.2), and career ADR is the POOLED
+-- micro-average Σ damage ÷ Σ rounds of those matches — never an
+-- unweighted mean of per-match ADRs (that older ruling is superseded).
+-- The engine supplies the divisor from the denominator column: match
+-- scope counts the match's rounds, profile scope the subject's
+-- player_round_stats rows (roster × every counted round).
 ('adr', 'ADR', 'ADR',
- 'from player_stats: ratio(sum(total_damage), sum(rounds_played))',
+ 'from player_stats: sum(total_damage)',
  'match', 'float1',
- 'Formula: sum(player_stats.total_damage) / sum(player_stats.rounds_played) — enemy damage per round played, addressed per player — recomputed from raw damage and rounds (same number on imported data).',
- 'builtin', '', CURRENT_TIMESTAMP),
+ 'Formula: sum(player_stats.total_damage) / the match''s counted rounds (denominator: rounds) — enemy damage per round of the match, addressed per player — never the rounds that player personally played.',
+ 'builtin', 'rounds', CURRENT_TIMESTAMP),
 ('entry_rate', 'Entry%', 'Entry%',
- 'from player_stats: ratio(sum(entry_kills), sum(rounds_played))',
+ 'from player_stats: sum(entry_kills)',
  'match', 'percent',
- 'Formula: sum(player_stats.entry_kills) / sum(player_stats.rounds_played) — entry (first-blood) kills ÷ rounds played, addressed per player — a percent; at most one first blood per round.',
- 'builtin', '', CURRENT_TIMESTAMP),
+ 'Formula: sum(player_stats.entry_kills) / the match''s rounds (denominator: rounds) — entry (first-blood) kills ÷ the match''s rounds, addressed per player — a percent; at most one first blood per round.',
+ 'builtin', 'rounds', CURRENT_TIMESTAMP),
 ('hs_pct', 'HS%', 'HS%',
  'from player_stats: ratio(sum(headshots), sum(kills))',
  'match', 'percent',
@@ -776,10 +785,10 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- profile-scope dogfooding set (D2/D3/D5/D6/D9/D10/D11/D12): inert
 -- until their surface converts — nothing reads a profile-scope seed yet.
 ('career_adr', 'ADR', 'ADR',
- 'from player_stats: avg(adr)',
+ 'from player_stats: sum(total_damage)',
  'profile', 'float1',
- 'Formula: avg(player_stats.adr) — the mean of the player''s per-match ADR values over their career, addressed per player — a mean of ratios, not the pooled form.',
- 'builtin', '', CURRENT_TIMESTAMP),
+ 'Formula: sum(player_stats.total_damage) / the rounds of their matches (denominator: rounds) — enemy damage per round of those matches, addressed per player — pooled, never a mean of per-match ADRs.',
+ 'builtin', 'rounds', CURRENT_TIMESTAMP),
 ('career_adr_sigma', 'ADR σ', 'ADR σ',
  'from player_stats: stddev(adr)',
  'profile', 'float1',

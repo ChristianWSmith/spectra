@@ -47,7 +47,10 @@ func seededStore(t *testing.T) *store.Store {
 // The expectations are hand-computed over the committed corpus
 // (testdata/seed.sql — 3 identical matches × 8 players × 24 rounds;
 // formulas in its header): player_stats carries kills = 2i, deaths = i,
-// headshots = i, total_damage = 100i, adr = 50+5i, rounds_played = 24,
+// headshots = i, total_damage = 100i, adr = 50+5i (the hand-written
+// gradient only career_adr_sigma still reads — every ADR seed now
+// recomputes from total_damage with the `rounds` denominator, owner
+// rule 2026-11-16), rounds_played = 24 (no seed reads it any more),
 // trade_kills = i per match for player i (1..8), entry_kills /
 // utility_damage / enemies_flashed are absent → 0, and every player has
 // 72 player_round_stats rows with a 0.5 KAST mean (36 of 72). The
@@ -83,24 +86,30 @@ var builtinSeed = []struct {
 		wantLabels: eightLabels,
 	},
 	{
-		// D1: sum(total_damage)/sum(rounds_played) = 300i/72 per player
-		// across the three identical matches — NOT the corpus's
-		// hand-written adr column (an independent gradient for the
-		// avg(adr)/stddev fixtures; see scoreboard_equivalence_test.go).
-		name: "adr", expr: "from player_stats: ratio(sum(total_damage), sum(rounds_played))",
-		scope: "match", format: "float1", shortName: "ADR", denominator: "",
-		interpretation: "damage per round re-computed from raw inputs (extract's adr formula)",
+		// D1: sum(total_damage) with the `rounds` DENOMINATOR = 300i/72
+		// per player across the three identical matches — the divisor is
+		// the rounds count, never the rounds the player played (owner
+		// rule 2026-11-16), and at this run's library scope the career
+		// denominator counts the subject's 72 player_round_stats rows —
+		// numerically the 72 the old sum(rounds_played) totaled, so the
+		// values did not move. The corpus's hand-written adr column is
+		// an independent gradient (55…90) and is NOT this seed's oracle
+		// — see scoreboard_equivalence_test.go).
+		name: "adr", expr: "from player_stats: sum(total_damage)",
+		scope: "match", format: "float1", shortName: "ADR", denominator: "rounds",
+		interpretation: "damage per round of the match re-computed from raw inputs (extract's adr formula)",
 		rows:           8,
 		wantValues:     []float64{300.0 / 72, 600.0 / 72, 900.0 / 72, 1200.0 / 72, 1500.0 / 72, 1800.0 / 72, 2100.0 / 72, 2400.0 / 72},
 		wantN:          3, wantLabels: eightLabels,
 	},
 	{
 		// D7: entry_kills is absent from the corpus's INSERTs → 0 for
-		// everyone; the denominator (72 rounds) is non-NULL, so the
-		// ratio is a plain 0, not NULL-beside-N.
-		name: "entry_rate", expr: "from player_stats: ratio(sum(entry_kills), sum(rounds_played))",
-		scope: "match", format: "percent", shortName: "Entry%", denominator: "",
-		interpretation: "first-bloods per round played (0 — the corpus records no entry kills)",
+		// everyone; the `rounds` denominator (the subject's 72 career
+		// rounds) is non-NULL, so the value is a plain 0, not
+		// NULL-beside-N.
+		name: "entry_rate", expr: "from player_stats: sum(entry_kills)",
+		scope: "match", format: "percent", shortName: "Entry%", denominator: "rounds",
+		interpretation: "entry (first-blood) kills per round of the match (0 — the corpus records no entry kills)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
@@ -148,13 +157,19 @@ var builtinSeed = []struct {
 		rows:           8, wantAll: 1, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		// D2: AVG over the three identical per-match adr rows → the
-		// corpus's adr column itself (50+5i).
-		name: "career_adr", expr: "from player_stats: avg(adr)",
-		scope: "profile", format: "float1", shortName: "ADR", denominator: "",
-		interpretation: "mean of per-match ADR (owner ruling Q2: mean-of-ratios, never pooled)",
+		// D2: sum(total_damage) with the `rounds` DENOMINATOR at profile
+		// scope = the POOLED micro-average 300i/72 (Σ damage ÷ Σ rounds
+		// of the three identical matches). Owner rule 2026-11-16
+		// superseded the mean-of-ratios ruling this row used to carry —
+		// avg(adr) over the corpus's hand-written column gradient read
+		// 50+5i, which is exactly why the expected values MOVED to the
+		// pooled form. career_adr_sigma still reads stddev(adr): the
+		// dispersion of per-match ADRs is unchanged by the ruling.
+		name: "career_adr", expr: "from player_stats: sum(total_damage)",
+		scope: "profile", format: "float1", shortName: "ADR", denominator: "rounds",
+		interpretation: "pooled career damage per round (Σ damage ÷ Σ rounds — never a mean of per-match ADRs)",
 		rows:           8,
-		wantValues:     []float64{55, 60, 65, 70, 75, 80, 85, 90},
+		wantValues:     []float64{300.0 / 72, 600.0 / 72, 900.0 / 72, 1200.0 / 72, 1500.0 / 72, 1800.0 / 72, 2100.0 / 72, 2400.0 / 72},
 		wantN:          3, wantLabels: eightLabels,
 	},
 	{

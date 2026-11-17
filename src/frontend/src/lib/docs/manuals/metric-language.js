@@ -355,15 +355,15 @@ Both are computed per player; the scope only decides **how much of the library**
 **One rule, two readings — the denominator always counts the units of the scope, for that player:**
 
 - **Match scope:** it counts the units of *that match* — how many rounds were played in it. Every player in the match shares that same count, which is correct for a per-player rate in one match. (With \`matches\` at match scope the count is that one match, so the value is unchanged.)
-- **Career scope:** it counts *that player's* units — the rounds they personally played, or the matches they personally played.
+- **Career scope:** it counts *that player's* units — the rounds of the matches they played, or the matches they played.
 
 Examples:
 
 | Expression | Denominator | Scope | The value means |
 |---|---|---|---|
-| \`from player_stats: sum(kills)\` | \`rounds\` | match | kills ÷ the rounds played in that match |
+| \`from player_stats: sum(kills)\` | \`rounds\` | match | kills ÷ the rounds of that match |
 | \`from player_stats: sum(kills)\` | \`matches\` | career | kills ÷ the matches this player played |
-| \`from player_stats: sum(total_damage)\` | \`rounds\` | career | damage ÷ the rounds this player played |
+| \`from player_stats: sum(total_damage)\` | \`rounds\` | career | damage ÷ the rounds of the matches this player played |
 
 Two details worth remembering:
 
@@ -492,7 +492,7 @@ from player_stats: count() AS matches                          -- optional label
 \`\`\`
 from player_stats: ratio(sum(kills), sum(deaths))              -- K/D
 from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1)) -- KDA, floored at one death
-from player_stats: ratio(sum(total_damage), sum(rounds_played)) -- ADR
+from player_stats: sum(total_damage)                            -- ADR (with the rounds denominator)
 from player_round_stats: avg(kast)                             -- KAST%
 from clutches: avg(won)                                        -- clutch win share
 from player_stats: ratio(sum(headshots), sum(kills))           -- HS%

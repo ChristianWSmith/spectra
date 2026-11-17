@@ -305,11 +305,14 @@ func TestParseGolden(t *testing.T) {
 		t.Errorf("forever2kELO kills = %d, want 25", forever.Kills)
 	}
 	// ADR = enemy damage capped per hit at the victim's remaining HP
-	// (overkill is not damage dealt), divided by the player's counted
-	// rounds (every stored round is counted — the discard already
-	// removed knife/warmup play). 116.9 is the external scoreboard's
-	// official value for this demo (its external scoreboard screenshot) —
-	// the extractor now matches it for all ten players.
+	// (overkill is not damage dealt), divided by THE MATCH's counted
+	// rounds — every player divides by the same count since w16 (every
+	// stored round is counted — the discard already removed knife/warmup
+	// play — and in this demo every player played all of them, so the
+	// divisor matches the player's own rounds here). 116.9 is the
+	// external scoreboard's official value for this demo (its external
+	// scoreboard screenshot) — the extractor now matches it for all ten
+	// players.
 	if math.Abs(forever.ADR-116.9) > 0.05 {
 		t.Errorf("forever2kELO ADR = %.4f, want ≈116.9", forever.ADR)
 	}

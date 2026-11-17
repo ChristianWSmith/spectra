@@ -111,7 +111,8 @@
   // fold below): the fetch is id-keyed (one GetScoreboard call per
   // match, kills DESC) and no sort ever re-requests a row order from the
   // store again. The Rnds column is gone (owner C14) — rounds played is
-  // still a store column and a metric input, just no longer a column.
+  // still a store column, just no longer one of these (ADR and Entry%
+  // divide by the match's rounds, not by it).
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
     // "Team" column: the key stays `side` but the cell shows the TEAM's

@@ -359,7 +359,12 @@
 //   - library/profile scope (""): the subject's CAREER units —
 //     correlated on the subject: rounds →
 //     `COUNT(*) FROM player_round_stats WHERE steam_id = <subject>`
-//     (one row per player-round), matches →
+//     (one row per player-round — and player_round_stats is the
+//     ROSTER × every counted round: analytics.PlayerRounds emits a row
+//     for each player in each counted round whether or not they were
+//     present for it, so a career `rounds` denominator reads as the
+//     rounds of the matches the subject played, never the rounds they
+//     personally took part in), matches →
 //     `COUNT(*) FROM player_stats WHERE steam_id = <subject>` (one row
 //     per player-match ⇒ matches played). The career table is aliased
 //     (`AS d`) so the outer subject reference can never resolve to it

@@ -200,7 +200,9 @@ export const DEFAULT_PINS = Object.freeze({
 // Damage / Utility damage where the two differ). (The Rnds row left
 // with the owner's C14 scoreboard change — the column is gone from
 // SCORE_COLS too, so this list stays its mirror; rounds played itself
-// remains a store column and a metric input.)
+// remains a store column (still legal inside an expression, but no
+// seeded metric reads it: ADR and Entry% divide by the match's rounds
+// since w16).)
 // profile: the StatCards grid (PlayerProfile.svelte) minus every card
 // that renders as a metric — ADR ± σ, K/D, HS%, KAST%, Trade rate, the
 // Clutches win-% sub, Avg enemies flashed and Avg util damage (the

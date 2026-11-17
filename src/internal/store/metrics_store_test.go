@@ -1017,7 +1017,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	seedScopedMetric(t, s, "per_round", "match", "rounds")
 	seedScopedMetric(t, s, "per_match", "match", "matches")
 	seedScopedMetric(t, s, "plain_count", "match", "")
-	ref := metricRowsRef(t, s) // every seeded builtin (all denominator-less) + 3 users
+	ref := metricRowsRef(t, s) // every seeded builtin (adr, entry_rate and career_adr now carry the `rounds` denominator — w16) + 3 users
 	// The vocabulary itself: THE canonical bucket order every accepted
 	// subset word is composed in (the rejections below depend on it).
 	if got, want := strings.Join(metricDenomTokens, ","), "rounds,matches,none"; got != want {
@@ -1104,12 +1104,18 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=rounds): %v", err)
 	}
-	if len(roundsOnly.Rows) != 1 || roundsOnly.Rows[0].Name != "per_round" {
-		names := make([]string, 0, len(roundsOnly.Rows))
-		for _, m := range roundsOnly.Rows {
-			names = append(names, m.Name)
-		}
-		t.Errorf("rounds-only window = %v, want just [per_round] (the denominator-less rows dropped)", names)
+	// The rounds-only window, pinned by NAME: w16's three `rounds`
+	// seeds (adr, entry_rate, career_adr — CS2 per-round statistics
+	// divide by the match's rounds) beside the fixture's own per_round
+	// user row. A seed that gains or loses a denominator moves this
+	// list; a denominator-less row appearing here is the overturn
+	// breaking.
+	roundsNames := make([]string, 0, len(roundsOnly.Rows))
+	for _, m := range roundsOnly.Rows {
+		roundsNames = append(roundsNames, m.Name)
+	}
+	if got, want := strings.Join(roundsNames, ","), "adr,career_adr,entry_rate,per_round"; got != want {
+		t.Errorf("rounds-only window = [%s], want [%s] (exactly the denominated rows)", got, want)
 	}
 	noneOnly, err := s.ListMetricsPage("", "", "", "none", "", 0, 500)
 	if err != nil {

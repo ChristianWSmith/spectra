@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -365,5 +366,104 @@ func TestListPlayersCarriesNoADR(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("alice missing from %s", raw)
+	}
+}
+
+// TestGetProfileMapADRPooled pins the Maps card's ADR cell (owner rule
+// 2026-11-16): the POOLED micro-average over the map's matches —
+// Σ(their damage) ÷ Σ(those matches' counted rounds) — never the
+// unweighted mean of the per-match ADR values (which would read 200
+// for de_dust2 below, where the pooled answer is 250), and never a
+// fabricated 0 when the map's matches carry no stored rounds (the
+// honest "—").
+func TestGetProfileMapADRPooled(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	save := func(n int, mapName string, rounds, damage int) {
+		t.Helper()
+		path := fmt.Sprintf("/d/map%d.dem", n)
+		sha := fmt.Sprintf("sha-map%d", n)
+		id, err := st.CreateMatchRow(path, sha, 42)
+		if err != nil {
+			t.Fatalf("CreateMatchRow: %v", err)
+		}
+		roundRows := make([]models.Round, 0, rounds)
+		for r := 1; r <= rounds; r++ {
+			roundRows = append(roundRows, models.Round{Number: r})
+		}
+		em := &models.ExtractedMatch{
+			Match: models.Match{
+				Path: path, SHA256: sha, Size: 42,
+				Map: mapName, TickRate: 64, ScoreCT: 13, ScoreT: 10,
+				ExtractedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC).Add(time.Duration(n) * time.Hour),
+			},
+			Players: []models.Player{{SteamID: "100", Name: "alice", Side: "ct"}},
+			PlayerStats: []models.PlayerStats{
+				{SteamID: "100", Side: "ct", Name: "alice", TotalDamage: damage, RoundsPlayed: rounds},
+			},
+			Rounds: roundRows,
+		}
+		if err := st.SaveExtracted(id, em); err != nil {
+			t.Fatalf("SaveExtracted: %v", err)
+		}
+	}
+	// de_dust2: 900 damage over 3 rounds + 100 over 1 round → pooled
+	// 1000/4 = 250; the unweighted mean of the per-match ADRs would be
+	// (300 + 100)/2 = 200 — the two spellings differ exactly here.
+	save(1, "de_dust2", 3, 900)
+	save(2, "de_dust2", 1, 100)
+	// de_inferno: one match, 500 over 2 rounds → 250 (per-map grouping).
+	save(3, "de_inferno", 2, 500)
+	// de_nuke: a match with NO stored rounds → nil ("—"), never 0.
+	save(4, "de_nuke", 0, 100)
+	if err := st.RebuildCareer(); err != nil {
+		t.Fatalf("RebuildCareer: %v", err)
+	}
+
+	svc := &ProfileService{st: st}
+	p, err := svc.GetProfile("100")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	byMap := map[string]ProfileMap{}
+	for _, m := range p.Maps {
+		byMap[m.Map] = m
+	}
+	if len(p.Maps) != 3 {
+		t.Errorf("maps = %+v, want 3 rows (one per map)", p.Maps)
+	}
+
+	dust2, ok := byMap["de_dust2"]
+	if !ok {
+		t.Fatalf("maps = %+v, want a de_dust2 row", p.Maps)
+	}
+	if dust2.Matches != 2 || dust2.Wins != 2 {
+		t.Errorf("de_dust2 matches/wins = %d/%d, want 2/2 (both 13-10 ct wins)", dust2.Matches, dust2.Wins)
+	}
+	if dust2.ADR == nil {
+		t.Fatal("de_dust2 ADR = nil, want the pooled 250")
+	}
+	if *dust2.ADR != 250 {
+		t.Errorf("de_dust2 ADR = %v, want 250 (1000 damage ÷ 4 counted rounds — pooled, never the mean-of-per-match 200)", *dust2.ADR)
+	}
+
+	inferno, ok := byMap["de_inferno"]
+	if !ok {
+		t.Fatalf("maps = %+v, want a de_inferno row", p.Maps)
+	}
+	if inferno.ADR == nil || *inferno.ADR != 250 {
+		t.Errorf("de_inferno ADR = %v, want 250 (500 ÷ 2)", inferno.ADR)
+	}
+
+	nuke, ok := byMap["de_nuke"]
+	if !ok {
+		t.Fatalf("maps = %+v, want a de_nuke row", p.Maps)
+	}
+	if nuke.ADR != nil {
+		t.Errorf("de_nuke ADR = %v, want nil (no stored rounds → the card's honest —)", *nuke.ADR)
 	}
 }

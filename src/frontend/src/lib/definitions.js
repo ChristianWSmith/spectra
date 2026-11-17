@@ -100,7 +100,7 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // Percent scale: 0..100 — the metric stores a 0..1 fraction and the
 // column renders it ×100 (fmtPercent).
 export const ENTRY_DEF =
-  'Entry rate — entry kills ÷ rounds played, as a percent of rounds played (0–100): the share of rounds where this player drew first blood.';
+  'Entry rate — entry kills ÷ the match’s rounds, as a percent (0–100): the share of the match’s rounds where this player drew first blood.';
 
 // Trade% (Combat scoreboard column) — the `trade_rate_deaths` metric's
 // tooltip (the column is metric-backed since dogfooding W2; the formula

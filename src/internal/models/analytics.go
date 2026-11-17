@@ -339,6 +339,16 @@ type ProfileSideSplit struct {
 	KASTPct float64 `json:"kastPct"`
 }
 
+// ProfileMapADR is one map's pooled ADR (store.GetPlayerMapADR) — the
+// profile's Maps card cell. ADR is the POOLED micro-average over that
+// map's matches: Σ(their damage) ÷ Σ(those matches' counted rounds) —
+// never the unweighted mean of the per-match ADR values. nil = the
+// matches carry no rounds (the card renders "—"), never a fabricated 0.
+type ProfileMapADR struct {
+	Map string   `json:"map"`
+	ADR *float64 `json:"adr"`
+}
+
 // WinFor reports whether side won the match with the given final score —
 // the ONE Go implementation of the win predicate (a tie is not a win; an
 // unknown side never wins). Its SQL twin lives in store.RebuildCareer's

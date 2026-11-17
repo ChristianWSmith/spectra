@@ -1220,6 +1220,18 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 	return out, nil
 }
 
+// playerHistoryFrom is the match set every per-match profile fold reads:
+// the player's extracted matches (one player_stats row each), most
+// recent first, capped at 100 — the history table's window. Both
+// GetPlayerHistory and GetPlayerMapADR build on it, so a Maps-card row's
+// Matches cell and its ADR cell always describe the SAME matches (one
+// spelling of the window, never two that can drift apart).
+const playerHistoryFrom = `FROM player_stats ps
+	 JOIN matches m ON m.id = ps.match_id
+	 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
+	 ORDER BY m.extracted_at DESC, m.id DESC
+	 LIMIT 100`
+
 // GetPlayerHistory returns one player's per-match history (most recent
 // first, ≤100): every raw/inferred column the history table shows plus
 // StartSide — the freeze-end
@@ -1249,11 +1261,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
 			ps.kills, ps.deaths
-		 FROM player_stats ps
-		 JOIN matches m ON m.id = ps.match_id
-		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
-		 ORDER BY m.extracted_at DESC, m.id DESC
-		 LIMIT 100`, scrub(steamID),
+		 `+playerHistoryFrom, scrub(steamID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the player history: %w", err)
@@ -1347,6 +1355,48 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 				out[i].KASTPct = &scaled
 			}
 		}
+	}
+	return out, nil
+}
+
+// GetPlayerMapADR rolls a player's stored damage up per map — the
+// profile's Maps-card ADR cell (ProfileService.GetProfile folds it next
+// to the Matches/Win counts). The value is the POOLED micro-average over
+// that map's matches — SUM(player_stats.total_damage) ÷ the counted
+// rounds of those matches (owner rule 2026-11-16: never the unweighted
+// mean of the per-match ADR values, and never the rounds the player
+// personally played) — computed over playerHistoryFrom, the SAME match
+// set GetPlayerHistory returns, so a map row's Matches cell and its ADR
+// cell always describe the same matches. A map whose matches carry no
+// stored rounds divides by NULLIF's zero → SQL NULL → nil (the card's
+// honest "—"), never a fabricated 0.
+func (s *Store) GetPlayerMapADR(steamID string) ([]models.ProfileMapADR, error) {
+	rows, err := s.db.Query(
+		`SELECT map, 1.0 * SUM(damage) / NULLIF(SUM(rounds), 0) FROM (
+			SELECT m.map AS map, ps.total_damage AS damage,
+				(SELECT COUNT(*) FROM rounds r WHERE r.match_id = m.id) AS rounds
+			`+playerHistoryFrom+`
+		 ) h GROUP BY map ORDER BY map`, scrub(steamID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
+	}
+	defer rows.Close()
+	var out []models.ProfileMapADR
+	for rows.Next() {
+		var r models.ProfileMapADR
+		var adr sql.NullFloat64
+		if err := rows.Scan(&r.Map, &adr); err != nil {
+			return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
+		}
+		if adr.Valid {
+			v := adr.Float64
+			r.ADR = &v
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
 	}
 	return out, nil
 }

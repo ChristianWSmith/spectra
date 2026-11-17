@@ -71,6 +71,12 @@ func (a *agg) build() *models.ExtractedMatch {
 		},
 	}
 
+	// The match's counted round count — the ADR divisor for every
+	// player (a.rounds holds ONLY counted rounds: renumber() above has
+	// already folded the ingest numbering onto them and the discarded
+	// knife/warmup/post-match rounds never entered the slice).
+	matchRounds := len(a.rounds)
+
 	keys := make([]uint64, 0, len(a.players))
 	for k := range a.players {
 		keys = append(keys, k)
@@ -110,13 +116,19 @@ func (a *agg) build() *models.ExtractedMatch {
 		if rs := a.participation[key]; rs != nil {
 			roundsPlayed = len(rs)
 		}
-		// ADR = enemy damage per round the player played. Damage is
-		// capped per hit at the victim's remaining HP while parsing (see
-		// agg.capDamage) — the external-board basis the golden demo's
-		// official values were checked against.
+		// ADR = enemy damage per ROUND OF THE MATCH: every player
+		// divides by the match's counted round count, never by the
+		// rounds they personally played (owner rule 2026-11-16 — the
+		// roster ADR cells, the Best ADR card and the `adr` metric all
+		// read this column, so they must agree on every demo; a player
+		// present for one round of a 24-round match who dealt 100
+		// damage has ADR ≈ 4.2, not 100). Damage is capped per hit at
+		// the victim's remaining HP while parsing (see agg.capDamage)
+		// — the external-board basis the golden demo's official values
+		// were checked against.
 		adr := 0.0
-		if roundsPlayed > 0 {
-			adr = float64(p.totalDamage) / float64(roundsPlayed)
+		if matchRounds > 0 {
+			adr = float64(p.totalDamage) / float64(matchRounds)
 		}
 
 		out.PlayerStats = append(out.PlayerStats, models.PlayerStats{
