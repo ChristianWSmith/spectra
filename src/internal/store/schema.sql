@@ -648,7 +648,7 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- one site: Match's scoreboard metric header), title || name everywhere
 -- else.
 --
--- Builtins (origin='builtin') are seeded below: exactly FIFTY-NINE —
+-- Builtins (origin='builtin') are seeded below: exactly SIXTY-ONE —
 -- trade_rate (owner ruling) plus the dogfooding set (design §3.0: 8
 -- match / 9 profile scopes) — trade_rate + adr, entry_rate, hs_pct,
 -- kast, kd, trade_rate_deaths + kda (match; kda is w13d's scoreboard
@@ -659,7 +659,11 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- the per-match player stats, rounds, duels, clutches, grenades and
 -- drops; 10 over the stored round/side buy classifications; 1
 -- victim-side duel count) and 4 profile-scope rows (career_clutches +
--- the three opening-duel rows). Scope split: 46 match / 13 profile.
+-- the three opening-duel rows) — plus the M3 combat-damage addendum
+-- (dmg_no_kill + kill_conversion, plan §7 M3; 2026-11-17 re-pin of the
+-- FIFTY-NINE count and the scope split it sanctions: the plan's §8
+-- seed list names both rows as numeric match seeds). Scope split: 48
+-- match / 13 profile (2026-11-17, same plan row: +2 match).
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -741,10 +745,12 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly fifty-nine — trade_rate
+-- THE builtins, seeded (see header): exactly sixty-one — trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
--- scope rows and nine profile-scope rows) and the inferred set (42
--- rows: 38 match / 4 profile), each with the interpretation recorded
+-- scope rows and nine profile-scope rows), the inferred set (42
+-- rows: 38 match / 4 profile) and the M3 combat-damage addendum (2
+-- match rows, dmg_no_kill + kill_conversion — plan §7 M3/§8, the
+-- 2026-11-17 count re-pin), each with the interpretation recorded
 -- in its doc. The eighth match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of this INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1083,6 +1089,29 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'from player_stats: sum(opening_kills)',
  'profile', 'int',
  'Formula: sum(player_stats.opening_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- addendum: the M3 combat-damage conversions (2 rows, match
+-- scope, 2026-11-17 — plan §7 M3 / §8): Damage-no-kill and Kill
+-- conversion % left the retired store.GetCombatStats SQL for the
+-- EXISTS construct (plan §6.2/D7 — same-tick, same-attacker, same-
+-- victim kill detection spelled in the expression). Friendly fire has
+-- NO seed: the grammar has no source carrying the VICTIM's side (events
+-- has no side column; the side-carrying sources join only on the row's
+-- own subject; exists()'s inner scan is the primary alone), so the
+-- final-side equality stays Go-side in the equivalence oracle —
+-- internal/metrics/combat_equivalence_test.go (plan §7 M3's "else
+-- stays, noted"). Scale: kill_conversion is a percent in the engine's
+-- 0..1 convention (the retired read-DTO carried 0..100); the
+-- equivalence test pins value × 100 == the retired number.
+('dmg_no_kill', 'Damage no kill', '',
+ 'from events: sum(where kind = ''damage'' and not exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg)',
+ 'match', 'int',
+ 'Formula: sum(events.dmg over damage events WHERE no same-tick, same-actor kill exists) — damage that did not convert into a kill, addressed per player.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('kill_conversion', 'Kill conversion %', '',
+ 'from events: ratio(sum(where kind = ''damage'' and exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg), sum(where kind = ''damage'', dmg))',
+ 'match', 'percent',
+ 'Formula: sum(events.dmg with a same-tick, same-actor kill) / sum(events.dmg over damage events) — the share of this player''s damage that converts into kills, addressed per player — a percent.',
  'builtin', '', CURRENT_TIMESTAMP),
 -- ---- addendum: the KDA conversion (w13d, 1 row, match scope) — the
 -- scoreboard's KDA column left the Go calculation for the metric

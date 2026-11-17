@@ -42,10 +42,10 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: the fifty-nine schema-seeded builtins
-// (trade_rate + the dogfooding set + the inferred set) each compile and
-// run on a fresh library — the DoD "demonstrably expressible" loop end
-// to end.
+// TestM5BuiltinMetricsPreview: the sixty-one schema-seeded builtins
+// (trade_rate + the dogfooding set + the inferred set + the plan §7 M3
+// combat-damage addendum) each compile and run on a fresh library — the
+// DoD "demonstrably expressible" loop end to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
 	// group_by is gone from the DDL (stored-metrics W1) and the groupBy
@@ -59,8 +59,8 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 59 {
-		t.Fatalf("builtins = %d, want 59 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row)", len(res.Rows))
+	if len(res.Rows) != 61 {
+		t.Fatalf("builtins = %d, want 61 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair — the 2026-11-17 re-pin)", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -102,11 +102,12 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 46 match / 13
+	// The scope split is part of the seed contract: 48 match / 13
 	// profile (the profile rows land inert — their surface converts in
-	// W3; w13d's kda row is the match-scope 46th).
-	if scopes["match"] != 46 || scopes["profile"] != 13 {
-		t.Errorf("scope split = %d match / %d profile, want 46 / 13", scopes["match"], scopes["profile"])
+	// W3; w13d's kda row and the plan §7 M3 combat pair are match
+	// scope — the 2026-11-17 re-pin).
+	if scopes["match"] != 48 || scopes["profile"] != 13 {
+		t.Errorf("scope split = %d match / %d profile, want 48 / 13", scopes["match"], scopes["profile"])
 	}
 }
 

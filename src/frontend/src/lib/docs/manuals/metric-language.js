@@ -216,7 +216,7 @@ from rounds, events: count()               -- refused: rounds leads
 | \`ratio(a, b)\` | \`a ÷ b\`, with a zero denominator answered honestly (see below) |
 | \`metric('name')\` | another saved metric's value — see [Metric references](#metric-references) |
 
-Anything else is refused at that position, with the list of valid operators in the message.
+Anything else is refused at that position: an unknown name gets the list of valid operators in the message, while \`exists(...)\` gets a message of its own — it is a condition and can never be a value (see [Conditions and filters](#conditions-and-filters)).
 
 # count
 
@@ -297,7 +297,15 @@ from events: count(where dmg >= 50 and (kind = 'kill' or not headshot))
 from player_stats: sum(where side = 'ct', total_damage)
 \`\`\`
 
-Conditions are row-by-row tests over the source's own columns, so **arithmetic and \`metric()\` are not allowed inside them**: \`count(where a + b > 0)\` is a syntax error, and a \`metric()\` reference in a condition is refused with \`metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)\`.`,
+Conditions are row-by-row tests over the source's own columns — with ONE exception, \`exists(<condition>)\`: it asks whether **another row of the same source** matches the condition. Inside its parentheses the bare columns name that other row, \`outer.<column>\` names the row being tested, and the app pairs the two rows on the same match by itself:
+
+\`\`\`
+from events: count(where kind = 'damage' and exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim))
+\`\`\`
+
+That counts damage whose kill landed on the same tick for the same attacker and victim — this player's damage that converted into a kill. \`exists()\` is accepted exactly where a condition is (a \`count(...)\` argument or a \`where\` filter), never nests inside itself, and never appears as a value.
+
+Everywhere else the row-by-row rule holds, so **arithmetic and \`metric()\` are not allowed inside conditions**: \`count(where a + b > 0)\` is a syntax error, and a \`metric()\` reference in a condition is refused with \`metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)\`.`,
   },
   {
     id: 'combining-sources',

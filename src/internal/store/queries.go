@@ -161,8 +161,8 @@ var scoreboardSort = map[string]string{
 
 // playersJoin renders the ONE players-join idiom (roster display names by
 // (match, SteamID)): pass joinLeft for the name-bearing form, joinInner
-// where a row without a roster entry must be dropped (GetScoreboard /
-// GetCombatStats' base rows), and guard=true to skip an empty SteamID —
+// where a row without a roster entry must be dropped (GetScoreboard's
+// base rows), and guard=true to skip an empty SteamID —
 // the fragment then tests the column for non-empty BEFORE the lookup, so a
 // world/absent actor never picks up the single players row a match may
 // carry with an empty steam_id. Every LEFT JOIN is guarded (that is the
@@ -204,7 +204,7 @@ func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
 // (players.is_bot, written from demoinfocs' Player.IsBot at import —
 // extract's synthetic 0xFF-prefixed id, see extract.isBotKey) are
 // excluded from EVERY roster/aggregate/selection read: GetScoreboard,
-// GetCombatStats' base rows, the ListMatches player facet, the career
+// the ListMatches player facet, the career
 // rollup (RebuildCareer) and its list/read (ListPlayers, GetCareer) plus
 // GetTrend (the one profile read reachable without GetCareer's guard),
 // and — through the exported form — the metrics layer's `player` group
@@ -217,7 +217,7 @@ func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
 // (isHuman/listedPlayers):
 //
 //   - HumanOnly(alias) — a players row is already joined under alias
-//     (GetScoreboard / GetCombatStats WHERE, the player facet's EXISTS,
+//     (GetScoreboard's WHERE, the player facet's EXISTS,
 //     RebuildCareer's players join);
 //   - HumanOnlyBySteamID(steamExpr, matchExpr) — the read is keyed by a
 //     steam_id expression with no joined row (player_career). matchExpr

@@ -13,7 +13,7 @@
 // version numbers here — rule versions are internal and never surfaced).
 //
 // Verified against the Go side:
-//   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL,
+//   - internal/store/analytics.go   — RebuildCareer SQL,
 //     plus the profile queries (GetPlayerSideSplits, GetPlayerHistory)
 //   - internal/extract/agg.go       — entry/opening/trade attribution
 //   - internal/analytics/engagements.go — opening|trade|traded|untraded kinds

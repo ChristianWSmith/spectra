@@ -203,22 +203,6 @@ func (u UtilityEvent) EffectiveTick() int {
 	return u.Tick
 }
 
-// CombatStat is one per-player combat deep-dive row derived from stored
-// rows — the damage-conversion and friendly-fire residual of the Combat
-// tab's table (audit N7–N9: neither the same-tick EXISTS split nor the
-// final-side equality is expressible as a metric expression). The former
-// EntryRate/TradeRate/KASTPct fields are gone (dogfooding W2) and the
-// UntradedDeaths/TradeOppMissed fields left with the W2b metric
-// conversion: the Combat tab reads the entry_rate / trade_rate_deaths /
-// kast / missed_trades / untraded_deaths builtin metric rows instead.
-type CombatStat struct {
-	SteamID    string  `json:"steamId"`
-	Name       string  `json:"name"`
-	DMGNoKill  int     `json:"dmgNoKill"`
-	DMGConvPct float64 `json:"dmgConvPct"`
-	FFDamage   int     `json:"ffDamage"`
-}
-
 // EconomyRow is the raw per-round economy view (rounds ⋈ round_economy ⋈
 // round_classifications ⋈ round_side_classes) with loss-bonus
 // reconstruction applied. ClassCT/ClassT/ClassWhy* are the STORED per-side

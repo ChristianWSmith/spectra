@@ -718,9 +718,11 @@ func TestUtilKindUsesModelsUtilitySet(t *testing.T) {
 	}
 }
 
-// Combat-stats semantics (including the documented SQL decisions) are
-// pinned in internal/store/analytics_test.go: TestGetCombatStatsFromStoredRows
-// and TestGetCombatStatsSQLDecisions.
+// Combat-stats semantics (including the documented read decisions) are
+// pinned in internal/metrics/combat_equivalence_test.go: the seeds
+// against the retired store.GetCombatStats SQL kept there as a
+// reference oracle (the reader retired with the m3 migration,
+// 2026-11-17 — plan §7 M3).
 
 // Per-side buy classes (pistol/full/force/eco/save + the REQUIRED why
 // strings) are pinned in eco_equivalence_test.go: the STORED

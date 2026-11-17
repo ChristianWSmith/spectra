@@ -27,8 +27,9 @@ import (
 func TestExistsMatrix(t *testing.T) {
 	accept := []struct{ name, expr string }{
 		// The N2 shape: damage rows whose kill is on the same tick,
-		// attacker and victim (analytics.go GetCombatStats' correlated
-		// split, spelled in the grammar).
+		// attacker and victim (the retired store.GetCombatStats'
+		// correlated split — kept as the reference oracle in
+		// combat_equivalence_test.go — spelled in the grammar).
 		{"n2 kill-conversion condition",
 			"from events: count(where kind = 'damage' and exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim))"},
 		// NOT EXISTS — the damage-without-kill half.
