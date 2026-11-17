@@ -351,6 +351,53 @@ const scoreboard = [
 ];
 const summary = { id: 3, ctName: 'Alpha', tName: 'Beta' };
 
+// The five SEEDED fixed cells' catalog (owner ruling 2026-11-17 — the
+// metrics system IS the gameplay-statistics layer): the scoreboard
+// K/D/DMG/Util/MVPs cells read their seed rows, so the default fixture
+// carries the definitions those fixed slots resolve BY NAME. None of
+// these names is a default pin (DEFAULT_PINS.match carries assists,
+// adr, …), so the rendered column set stays exactly the fixed block —
+// the seeds fill cells, they never add columns. Ids are the 100-series
+// so a section's local catalog (1–14, 77, 91–95) never collides.
+const SEED_FIELDS = Object.freeze({
+  kills: 'kills',
+  deaths: 'deaths',
+  total_damage: 'totalDamage',
+  utility_damage: 'utilityDamage',
+  mvps: 'mvps',
+});
+const SEED_DEFS = Object.entries(SEED_FIELDS).map(([name, field], i) => ({
+  id: 101 + i,
+  name,
+  title: name,
+  shortName: name,
+  scope: 'match',
+  format: 'int',
+  doc: `Formula: sum(player_stats.${field}) — the ${name} cell's seed`,
+}));
+// The canonical read over the CURRENT scoreboard fixture: one row per
+// requested seed id × player whose raw field the seed sums (equal by
+// construction — that very column is the seed's input), keyed by
+// subjectKey. A scripted FUNCTION (the stub's live-read shape — the
+// call is getMetricValuesForMatch(matchID, ids), so ids is arg 2), so a
+// section that swaps getScoreboard gets rows for ITS players without
+// re-scripting the read.
+const seedValues = (matchID, ids) => {
+  const sb = (globalThis.__svc && globalThis.__svc.getScoreboard) || [];
+  const nameById = new Map(SEED_DEFS.map((d) => [d.id, d.name]));
+  const out = [];
+  for (const id of ids || []) {
+    const name = nameById.get(id);
+    const field = name ? SEED_FIELDS[name] : '';
+    if (!field) continue;
+    for (const p of sb) {
+      const v = p[field];
+      if (Number.isFinite(v)) out.push({ metricId: id, subjectKey: p.steamId, value: v, n: 13 });
+    }
+  }
+  return out;
+};
+
 const dataFor = (countedN) => ({
   getMatch: match,
   getMatchSummary: summary,
@@ -362,11 +409,13 @@ const dataFor = (countedN) => ({
   getWarnings: { messages: [], total: 0 },
   getRoundClasses: [],
   // The pinned-column reads (stored-metrics design §5): the canonical
-  // stored-value read + the compute-state read. Defaults = no pins
-  // asked for rows and no state landed (the section fixtures below
-  // script their own); an unscripted name resolves [] through the stub.
-  listMetrics: [],
-  getMetricValuesForMatch: [],
+  // stored-value read + the compute-state read. Defaults = the seeded
+  // fixed cells' rows (SEED_DEFS above) and no state landed (a fresh
+  // ROW renders its value whatever the state map says); an unscripted
+  // name resolves [] through the stub, and a section that scripts its
+  // own catalog/read replaces both wholesale (the sections below).
+  listMetrics: SEED_DEFS,
+  getMetricValuesForMatch: seedValues,
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
@@ -1491,9 +1540,16 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
       mk(12, 'entry_deaths', 'Open D', 'int'),
       mk(13, 'trade_kills', 'Trade', 'int'),
       mk(14, 'best_streak', 'Streak', 'int'),
+      // The roster triple's K and D halves are SEEDED cells now (owner
+      // ruling 2026-11-17) — the fixed slots resolve them by name from
+      // this catalog, pins-independent, exactly like the A half.
+      mk(15, 'kills', 'Kills', 'int'),
+      mk(16, 'deaths', 'Deaths', 'int'),
     ],
     // Fresh rows for alice only — bob's metric cells render the honest
-    // dash (the unit IS covered, he just has no row).
+    // dash (the unit IS covered, he just has no row) — plus the roster
+    // triple's K/D seed rows for BOTH players (the halves render their
+    // stored values; bob's missing assists row keeps dashing his A).
     getMetricValuesForMatch: [
       { metricId: 1, subjectKey: 'A', value: 4, n: 13 },
       { metricId: 2, subjectKey: 'A', value: 90, n: 13 },
@@ -1509,6 +1565,10 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
       { metricId: 12, subjectKey: 'A', value: 9, n: 13 },
       { metricId: 13, subjectKey: 'A', value: 5, n: 13 },
       { metricId: 14, subjectKey: 'A', value: 7, n: 13 },
+      { metricId: 15, subjectKey: 'A', value: 20, n: 13 },
+      { metricId: 16, subjectKey: 'A', value: 12, n: 13 },
+      { metricId: 15, subjectKey: 'B', value: 18, n: 13 },
+      { metricId: 16, subjectKey: 'B', value: 13, n: 13 },
     ],
     getMetricComputeState: Array.from({ length: 14 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
@@ -1590,9 +1650,12 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
       : 'no cell',
   );
 
-  // Q2 compound cell #2 — the Overview roster triples: raw K + raw D
-  // + the assists METRIC half (bob's raw assists=5 renders as the dash
-  // because no metric row exists for him — the source switch, pinned).
+  // Q2 compound cell #2 — the Overview roster triples: ALL THREE
+  // halves read their seed rows now (owner ruling 2026-11-17 — the
+  // fixture scripts kills/deaths rows beside the raw fields, so the
+  // numbers here can only come from the metric read), and bob's raw
+  // assists=5 still renders as the dash because no assists row exists
+  // for him — the source switch, pinned.
   root = await showMatch(d, { routeTab: 'Overview' });
   await sleep();
   const rosterSections = [...root.querySelectorAll('.roster-grid section')];
@@ -1604,7 +1667,7 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
   const aliceKda = rosterCell(0, 'alice');
   const bobKda = rosterCell(1, 'bob');
   check(
-    'the roster triple renders raw K/D + the metric A half (20/12/4), no tooltip while fresh',
+    'the roster triple renders the seeded K/D + the metric A half (20/12/4), no tooltip while fresh',
     aliceKda?.textContent.trim() === '20/12/4' && !aliceKda.hasAttribute('title'),
     aliceKda ? aliceKda.textContent.trim() : 'no cell',
   );
@@ -2210,7 +2273,7 @@ console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, em
   );
 }
 
-console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-identical display for equal values');
+console.log('P. ME0/M9: roster ADR chip reads the adr seed — byte-identical to the pinned metric column (owner ruling 2026-11-17)');
 {
   const mk = (id, name) => ({ id, name, title: name, doc: `Formula: ${name}`, format: 'float1' });
   const d = {
@@ -2223,14 +2286,16 @@ console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-
     // M9's agreement fixture: the raw column and the stored metric row
     // carry the SAME value (both are damage ÷ the match's counted rounds
     // since the denominator wave — the Go-side value pin is
-    // internal/metrics TestExtractShapedScoreboardEquivalence); this
-    // pins the two DISPLAY paths over it.
+    // internal/metrics TestExtractShapedScoreboardEquivalence); the
+    // roster chip and the metric column now BOTH read that stored row
+    // (the chip left ps.adr with the owner ruling of 2026-11-17), so the
+    // two display paths agree by construction — this pins it.
     getMetricValuesForMatch: [{ metricId: 77, subjectKey: 'A', value: 42.56, n: 13 }],
     getMetricComputeState: [{ metricId: 77, state: 'fresh' }],
   };
   localStorage.setItem('spectra:pinned-metrics', '["adr"]');
 
-  // Raw side: the Overview roster chip (fmt1(p.adr) over the column).
+  // The roster chip (the seed row through fmtMetric's float1 tag).
   root = await showMatch(d, { routeTab: '' });
   await sleep();
   const chipRow = [...root.querySelectorAll('tbody tr')].find(
@@ -2238,7 +2303,7 @@ console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-
   );
   const chipText = chipRow?.querySelector('.chip.adr')?.textContent ?? '';
   check(
-    'M9: roster ADR chip renders the raw column through fmt1 (42.56 → 42.6)',
+    'M9: roster ADR chip renders the stored seed row through float1 (42.56 → 42.6)',
     chipText === '42.6',
     chipText || 'no chip',
   );
@@ -2346,6 +2411,194 @@ console.log('Q. import-warnings render cap: bounded <li> count + honest "and {n}
     !!chipDetail && chipDetail.textContent.includes('Loading'),
     chipDetail ? chipDetail.textContent : 'no chip-detail inside the warnings panel',
   );
+}
+
+// ---------------------------------------------------------------------------
+// Section R: the seeded fixed cells (owner ruling, 2026-11-17 — the
+// metrics system IS the gameplay-statistics layer): the scoreboard's
+// K/D/DMG/Util/MVPs cells and the Overview roster's K/D/A triple + ADR
+// chip read their STORED seed rows through the five-state machine —
+// never the raw row field. The fixture deliberately carries raw fields
+// with NO seed row beside them (alice's kills=20, mvps=3; bob's
+// assists=5, adr=85): a cell with no fresh row must show the honest
+// dash/state, never the raw number — that is the no-raw-fallback pin.
+console.log('R. seeded fixed cells: seed value + Formula title, the five states, no raw fallback, score stays raw');
+{
+  const mk = (id, name, label, format) => ({
+    id, name, title: label, scope: 'match', format,
+    doc: `Formula: sum(player_stats.${name}) — the ${label} cell's seed`,
+  });
+  const catalog = [
+    mk(201, 'kills', 'K', 'int'),
+    mk(202, 'deaths', 'D', 'int'),
+    mk(203, 'total_damage', 'DMG', 'int'),
+    mk(204, 'utility_damage', 'Util', 'int'),
+    mk(205, 'mvps', 'MVPs', 'int'),
+    mk(206, 'assists', 'A', 'int'),
+    mk(207, 'adr', 'ADR', 'float1'),
+  ];
+  const d = {
+    ...dataFor(13),
+    getScoreboard: [
+      {
+        steamId: 'A', name: 'alice', side: 'ct', kills: 20, deaths: 12, assists: 4,
+        adr: 90, mvps: 3, utilityDamage: 150, totalDamage: 1000, score: 13,
+      },
+      {
+        steamId: 'B', name: 'bob', side: 't', kills: 18, deaths: 13, assists: 5,
+        adr: 85, mvps: 2, utilityDamage: 120, totalDamage: 900, score: 11,
+      },
+    ],
+    listMetrics: catalog,
+    // Fresh rows only where a value must render; every other subject/
+    // metric pair runs the state below (or the plain no-row dash).
+    getMetricValuesForMatch: [
+      { metricId: 201, subjectKey: 'B', value: 18, n: 13 }, // K: bob fresh
+      { metricId: 203, subjectKey: 'A', value: 1000, n: 13 }, // DMG: alice (processing beats it)
+      { metricId: 206, subjectKey: 'A', value: 4, n: 13 }, // roster A half
+      { metricId: 207, subjectKey: 'A', value: 90, n: 13 }, // roster ADR chip
+    ],
+    getMetricComputeState: [
+      { metricId: 201, state: 'fresh' },
+      { metricId: 202, state: 'behind' },
+      { metricId: 203, state: 'processing' },
+      { metricId: 204, state: 'failed', error: 'engine exploded' },
+      { metricId: 205, state: 'no-data' },
+      { metricId: 206, state: 'fresh' },
+      { metricId: 207, state: 'fresh' },
+    ],
+  };
+  localStorage.removeItem('spectra:pinned-metrics');
+
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
+  const idxOf = (label) =>
+    ths.findIndex((t) => (t.querySelector('.th-sort')?.textContent || '').trim() === label);
+  const rowsOfSb = [...root.querySelectorAll('.data-table.scoreboard tbody tr')];
+  const cellAt = (label, player) => {
+    const i = idxOf(label);
+    const row = rowsOfSb.find((r) =>
+      (r.querySelector('.name-cell')?.textContent || '').includes(player),
+    );
+    return i >= 0 && row ? row.children[i] : null;
+  };
+  const chipIn = (cell) => cell?.querySelector('.chip.status');
+
+  {
+    const cell = cellAt('K', 'bob');
+    check(
+      'the seeded K cell renders the stored seed value (18) with the Formula tooltip from the seed doc',
+      !!cell && cell.textContent.trim() === '18' &&
+        (cell.getAttribute('title') || '').startsWith('Formula: sum(player_stats.kills)'),
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('K', 'alice');
+    check(
+      'NO raw fallback: a K cell with no seed row shows the honest dash — never the raw field (20)',
+      !!cell && cell.textContent.trim() === '—' &&
+        cell.getAttribute('title') === 'no data for this player',
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('D', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'behind renders the idle chip with the design copy, never a number',
+      !!chip && chip.classList.contains('idle') && chip.textContent.trim() === 'behind' &&
+        cell.getAttribute('title') === 'value not available yet — recompute pending' &&
+        !/\d/.test(cell.textContent),
+      cell ? `${chip ? chip.className : 'no chip'} ${cell.textContent.trim()}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('DMG', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'processing renders the busy chip in lieu of the stored number (no digit reaches the cell)',
+      !!chip && chip.classList.contains('busy') && chip.textContent.includes('processing') &&
+        !/\d/.test(cell.textContent),
+      cell ? `${chip ? chip.className : 'no chip'} ${cell.textContent.trim()}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('Util', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'failed renders the bad chip and carries the engine error as its title',
+      !!chip && chip.classList.contains('bad') && chip.textContent.trim() === 'failed' &&
+        cell.getAttribute('title') === 'engine exploded',
+      cell ? `${chip ? chip.className : 'no chip'} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('MVPs', 'alice');
+    check(
+      'no-data renders the dash with its copy — the raw field (3) never fabricates a 0',
+      !!cell && cell.textContent.trim() === '—' &&
+        cell.getAttribute('title') === 'no data for this player',
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('Score', 'alice');
+    check(
+      'score has no seed and keeps its raw field read (13)',
+      !!cell && cell.textContent.trim() === '13' && !cell.hasAttribute('title'),
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+
+  // The Overview roster: the K/D/A triple composes all three halves
+  // from seed rows (a non-value half dashes its slot and puts the state
+  // in the title — invariant 9), and the ADR chip reads the adr seed.
+  root = await showMatch(d, { routeTab: 'Overview' });
+  await sleep();
+  const rosterSections = [...root.querySelectorAll('.roster-grid section')];
+  const rosterRow = (sectionIdx, name) => {
+    const rows = [...(rosterSections[sectionIdx]?.querySelectorAll('tbody tr') || [])];
+    return rows.find((r) => r.textContent.includes(name)) || null;
+  };
+  {
+    const tr = rosterRow(0, 'alice');
+    const kda = tr ? tr.children[1] : null;
+    check(
+      'roster triple: seeded K/D halves dash (raw 20/12 ignored) while the fresh A half renders 4',
+      !!kda && kda.textContent.trim() === '—/—/4' &&
+        kda.getAttribute('title') === 'no data for this player',
+      kda ? `${kda.textContent.trim()} title=${kda.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const tr = rosterRow(1, 'bob');
+    const kda = tr ? tr.children[1] : null;
+    check(
+      'roster triple: a fresh K half renders 18, the behind D half dashes with its state in the title',
+      !!kda && kda.textContent.trim() === '18/—/—' &&
+        kda.getAttribute('title') === 'value not available yet — recompute pending',
+      kda ? `${kda.textContent.trim()} title=${kda.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const aliceChip = rosterRow(0, 'alice')?.querySelector('.chip.adr');
+    check(
+      'roster ADR chip renders the seeded value through float1 (90 → 90.0, byte-identical to the old display)',
+      !!aliceChip && aliceChip.textContent.trim() === '90.0',
+      aliceChip ? aliceChip.textContent.trim() : 'no chip',
+    );
+    const bobRow = rosterRow(1, 'bob');
+    const bobCell = bobRow ? bobRow.children[2] : null;
+    check(
+      'NO raw fallback: a roster ADR cell with no seed row dashes — never the raw field (85)',
+      !!bobCell && bobCell.textContent.trim() === '—' &&
+        !bobCell.querySelector('.chip.adr'),
+      bobCell ? bobCell.textContent.trim() : 'no cell',
+    );
+  }
+  localStorage.removeItem('spectra:pinned-metrics');
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

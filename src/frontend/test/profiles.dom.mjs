@@ -1195,6 +1195,82 @@ console.log('K. PlayerProfile trend: the picker offers ANY match-scope metric an
   document.body.removeChild(k);
 }
 
+// ---------------------------------------------------------------------------
+// Section L: the fixed Matches card's VALUE is the `career_matches`
+// seed row (owner ruling, 2026-11-17 — the count seeds' profile twin):
+// fresh → the stored count with the seed's Formula/n tooltip, no row →
+// the honest state — NEVER profile.matches behind it (the fixture's
+// profile carries matches: 2, so a raw fallback prints 2 where the seed
+// says 7). The card's sub line keeps the raw wins count (wins have no
+// seed), and the Win% card stays raw (no winPct seed — inventory note).
+console.log('L. the Matches card reads the career_matches seed row (never profile.matches)');
+{
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+  bindings.MetricsService.ListMetrics = () =>
+    Promise.resolve([
+      {
+        id: 81, name: 'career_matches', title: 'Matches played', scope: 'profile',
+        format: 'int', doc: 'Formula: count(player_stats) over the library', origin: 'builtin',
+      },
+    ]);
+  bindings.MetricsService.GetMetricValuesForPlayer = () =>
+    Promise.resolve([{ metricId: 81, subjectKey: '76561198000000001', value: 7, n: 7 }]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([{ metricId: 81, state: 'fresh' }]);
+  invalidate();
+  const mountProfile = async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mount(profileMod.default, {
+      target,
+      props: { steamId: '76561198000000001', nav: () => {} },
+    });
+    await sleep(140); // mount + getProfile + listMetrics + the career read
+    return target;
+  };
+  const cardOf = (target) =>
+    [...target.querySelectorAll('.stat-grid.prof-stats .stat-cell')].find(
+      (c) => c.querySelector('.field-label')?.textContent.trim() === 'Matches',
+    );
+
+  const fresh = await mountProfile();
+  const freshCard = cardOf(fresh);
+  const freshValue = freshCard?.querySelector('.stat-value');
+  check(
+    'the Matches card renders the STORED career_matches value (7) — profile.matches (2) never prints',
+    !!freshValue && freshValue.textContent.trim() === '7',
+    freshValue ? freshValue.textContent.trim() : 'no Matches card',
+  );
+  check(
+    'the card carries the seed Formula on its label and the sample size on the cell',
+    (freshCard?.querySelector('.field-label')?.getAttribute('title') || '').startsWith(
+      'Formula: count(player_stats)',
+    ) &&
+      (freshCard?.getAttribute('title') || '').includes('sample size n=7'),
+    `label=${freshCard?.querySelector('.field-label')?.getAttribute('title')} cell=${freshCard?.getAttribute('title')}`,
+  );
+  document.body.removeChild(fresh);
+
+  // No fresh row for the subject → the state, never the raw number.
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve([]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([{ metricId: 81, state: 'behind' }]);
+  invalidate();
+  const behind = await mountProfile();
+  const behindCard = cardOf(behind);
+  const behindChip = behindCard?.querySelector('.stat-value .chip.status');
+  check(
+    'NO raw fallback: without a seed row the card shows the behind chip — never profile.matches (2)',
+    !!behindChip &&
+      behindChip.classList.contains('idle') &&
+      behindChip.textContent.trim() === 'behind' &&
+      !behindCard?.querySelector('.stat-value')?.textContent.includes('2'),
+    behindCard ? behindCard.querySelector('.stat-value')?.textContent.trim() : 'no Matches card',
+  );
+  document.body.removeChild(behind);
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

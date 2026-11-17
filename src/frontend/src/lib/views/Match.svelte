@@ -125,6 +125,27 @@
     { key: 'score', label: 'Score' },
   ];
 
+  // The SCORE_COLS cells whose VALUE now comes from a seeded metric row
+  // (owner ruling, 2026-11-17 — the metrics system IS the gameplay-
+  // statistics layer, so every consumer of a seeded stat reads the
+  // seed): the five count seeds' names are byte-identical to these
+  // keys, so the cell resolves its slot in `fixedCols` by the key
+  // itself (FIXED_SLOTS below unions their ids into the ONE stored
+  // read). `score` has no seed (game-internal composite — its sum has
+  // no honest reading) and keeps its raw field read; Name/Team are
+  // descriptors, not values. A key here never falls back to the raw
+  // field: no slot (read in flight / name absent from the catalog) is
+  // the honest dash, a non-fresh state its chip (invariant 9 — the
+  // state machine of lib/metricstate.js, exactly like the pinned
+  // metric columns).
+  const SEEDED_FIXED = new Set([
+    'kills',
+    'deaths',
+    'total_damage',
+    'utility_damage',
+    'mvps',
+  ]);
+
   // The fixed block's `short` → its SCORE_COLS entry (the composed
   // sequence's fixed entries speak metricorder's `short` headers —
   // their `label` is the full name the dialog/Reports read; this map is
@@ -296,13 +317,18 @@
   // live progress feed decide whether a cell shows the number or the
   // state chip (lib/metricstate.js — design §5's state machine).
   let metricCols = $state([]);
-  // The W2a fixed named slot (design §6.1): the roster K/D/A triples
-  // read the assists metric BY NAME — pins-independent, unioned into
-  // the ONE stored read below (an unpinned metric still fills its cell —
-  // the kast precedent). The entry_kills / entry_deaths slots left with
-  // w13d (owner, 2026-11-16): the Opening K/D compound cell they fed is
-  // gone and both halves render as their own pinned metric columns.
-  const FIXED_SLOTS = ['assists'];
+  // The W2a fixed named slot (design §6.1): cells that render from a
+  // seed WITHOUT being a pinned column read their metric BY NAME —
+  // pins-independent, unioned into the ONE stored read below (an
+  // unpinned metric still fills its cell — the kast precedent). Today:
+  // `assists` (the roster K/D/A triples), the five SEEDED_FIXED counts
+  // (the scoreboard K/D/DMG/Util/MVPs cells — owner ruling 2026-11-17)
+  // and `adr` (the roster ADR chips — the M9 item: the chip reads the
+  // seed row, never `ps.adr`). The entry_kills / entry_deaths slots
+  // left with w13d (owner, 2026-11-16): the Opening K/D compound cell
+  // they fed is gone and both halves render as their own pinned metric
+  // columns.
+  const FIXED_SLOTS = ['assists', 'kills', 'deaths', 'total_damage', 'utility_damage', 'mvps', 'adr'];
   // name → columnOf() data for each fixed slot the catalog carried
   // (empty until the read lands; a name the catalog lacks stays absent
   // → the honest dash, never a guessed number).
@@ -772,12 +798,19 @@
   }
 
   // fixedTitle — one fixed slot's tooltip (the Combat slot pattern):
-  // fresh → title + sample size, dash → the no-data copy, a state →
-  // its state title (failed carries the engine's error text).
+  // fresh → the seed's OWN `doc` (the Formula — the tooltip medium the
+  // tiering rule measures wholesale; owner ruling 2026-11-17: a seeded
+  // fixed cell documents itself exactly like a metric cell's header),
+  // falling back to the title + sample-size form when the definition
+  // carries no doc; dash → the no-data copy; a state → its state title
+  // (failed carries the engine's error text).
   function fixedTitle(name, pres) {
     const mc = fixedCols.get(name);
     const label = mc ? mc.def.title || mc.def.name : name;
-    if (pres.kind === 'value') return `${label} — sample size n=${pres.n}`;
+    if (pres.kind === 'value') {
+      if (mc && mc.def.doc) return mc.def.doc;
+      return `${label} — sample size n=${pres.n}`;
+    }
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, (mc && mc.error) || '');
   }
@@ -804,15 +837,23 @@
     return '';
   }
 
-  // The roster K/D/A line (design Q2): raw K + raw D + the assists
-  // metric half, read by NAME so an unpinned assists still fills it.
+  // The roster K/D/A line (design Q2): ALL THREE halves read their seed
+  // BY NAME — K and D joined the A half with the owner ruling of
+  // 2026-11-17 (the metrics system IS the gameplay-statistics layer),
+  // so an unpinned seed still fills its half, a not-yet-swept match
+  // shows the honest dash, and the first non-value half's state reaches
+  // the cell through the title (invariant 9 — never a chip inside a
+  // compound cell, never a raw field).
   // (It is the only compound cell left: the Opening K/D pair — the
   // other one — died with w13d, owner 2026-11-16.)
   function rosterKda(p) {
-    const a = { name: 'assists', pres: fixedPres('assists', p) };
+    const halves = ['kills', 'deaths', 'assists'].map((name) => ({
+      name,
+      pres: fixedPres(name, p),
+    }));
     return {
-      text: `${p.kills}/${p.deaths}/${halfText(a.name, a.pres)}`,
-      title: compoundTitle([a]),
+      text: halves.map((h) => halfText(h.name, h.pres)).join('/'),
+      title: compoundTitle(halves),
     };
   }
 
@@ -1142,17 +1183,37 @@
         {/each}
       </div>
 
-      <!-- Roster rows: K, D and the ADR chip are event-derived for EVERY
-           player (extract's applyFinal never overwrites them — one
-           convention per player, see internal/extract/agg.go); the
-           K/D/A line's A half reads the assists metric instead (design
-           Q2 — a value triple composes each half from its own source),
-           so there is no snapshot-vs-events distinction left to mark on
-           this tab. The old
-           "derived" chip + row dim keyed on finalStatePresent advertised a
-           retired M1 assumption and mislabeled exact event counts as
-           guesses; finalStatePresent stays in the data model as provenance
-           for the snapshot-only identity fields (score, ping, crosshair…). -->
+      <!-- Roster rows: every stat cell reads its SEED (owner ruling
+           2026-11-17) — the K/D/A triple composes all three halves
+           from stored metric rows (design Q2's per-half rule, the A
+           half's precedent extended to K and D) and the ADR chip reads
+           the `adr` seed instead of duplicating it over ps.adr (the M9
+           item). A not-yet-swept match shows the honest dash with the
+           state in the title — never a raw number. finalStatePresent
+           stays in the data model as provenance for the snapshot-only
+           identity fields (score, ping, crosshair…). -->
+      <!-- One roster ADR cell: the chip's value comes from the `adr`
+           seed row through the same five-state machine — fresh keeps
+           the .chip.adr shape and the seed's format tag (byte-
+           identical to the old fmt1 display for equal values),
+           otherwise the honest dash or the state chip. -->
+      {#snippet rosterAdr(p)}
+        {@const pres = fixedPres('adr', p)}
+        <td class="num" title={fixedTitle('adr', pres)}>
+          {#if pres.kind === 'value'}
+            <span class="chip adr">{fmtMetric(pres.value, (fixedCols.get('adr')?.def.format) || '')}</span>
+          {:else if pres.kind === 'nodata'}
+            —
+          {:else}
+            <StatusChip
+              status={pres.state}
+              title={fixedTitle('adr', pres)}
+              progress={metricProgressFrac(metricProgress, fixedCols.get('adr')?.def.id)}
+              stage={metricProgressStage(metricProgress, fixedCols.get('adr')?.def.id)}
+            />
+          {/if}
+        </td>
+      {/snippet}
       <div class="roster-grid">
         <section class="panel">
           <h2 class={teamCls('ct')}>{teams.ct} {S.match.rosterSuffix}</h2>
@@ -1189,7 +1250,7 @@
                     />
                   </td>
                   <td class="num" title={kda.title || undefined}>{kda.text}</td>
-                  <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
+                  {@render rosterAdr(p)}
                 </tr>
               {/each}
             </tbody>
@@ -1230,7 +1291,7 @@
                     />
                   </td>
                   <td class="num" title={kda.title || undefined}>{kda.text}</td>
-                  <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
+                  {@render rosterAdr(p)}
                 </tr>
               {/each}
             </tbody>
@@ -1253,7 +1314,7 @@
                       <ProfileLink steam={p.steamId} name={p.name} {nav} title={S.fill(S.match.openProfile, { name: p.name })} />
                     </td>
                     <td class="num" title={kda.title || undefined}>{kda.text}</td>
-                    <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
+                    {@render rosterAdr(p)}
                   </tr>
                 {/each}
               </tbody>
@@ -1280,12 +1341,37 @@
         </button>
       {/snippet}
       <!-- One fixed stat cell, shared by BOTH shapes: the normal body's
-           else-branch and every transposed stat row — a plain
-           cellText render (the Opening K/D compound cell this snippet
-           used to branch on left with w13d, owner 2026-11-16; its
-           halves are metric columns now). -->
+           else-branch and every transposed stat row. A SEEDED_FIXED key
+           (owner ruling 2026-11-17) renders through the five-state
+           machine from its STORED seed row — value / honest dash / state
+           chip, the Formula tooltip from the seed's `doc` — and never
+           the raw field (no raw fallback: an absent slot is the dash);
+           every other fixed key keeps the plain cellText render (score
+           has no seed; the Opening K/D compound cell this snippet used
+           to branch on left with w13d, owner 2026-11-16 — its halves
+           are metric columns now). -->
       {#snippet fixedCell(col, p)}
-        <td class="num">{cellText(col, p)}</td>
+        {#if SEEDED_FIXED.has(col.key)}
+          {@const pres = fixedPres(col.key, p)}
+          <td class="num" title={fixedTitle(col.key, pres)}>
+            {#if pres.kind === 'value'}
+              {fmtMetric(pres.value, (fixedCols.get(col.key)?.def.format) || '')}
+            {:else if pres.kind === 'nodata'}
+              —
+            {:else}
+              <!-- State chip in lieu of a number (design §5):
+                   processing / failed / behind. -->
+              <StatusChip
+                status={pres.state}
+                title={fixedTitle(col.key, pres)}
+                progress={metricProgressFrac(metricProgress, fixedCols.get(col.key)?.def.id)}
+                stage={metricProgressStage(metricProgress, fixedCols.get(col.key)?.def.id)}
+              />
+            {/if}
+          </td>
+        {:else}
+          <td class="num">{cellText(col, p)}</td>
+        {/if}
       {/snippet}
       <!-- One pinned metric cell, shared by BOTH shapes (design §5's
            state machine: value / honest dash / chip, never a number in

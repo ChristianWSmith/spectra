@@ -67,8 +67,10 @@ func TestKDAZeroDeathDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render player.md: %v", err)
 	}
-	// The whole KDA line, byte for byte: raw halves 10/0/1 (D6: raw
-	// stays raw), the kd metric's zero-death edge rendering 0.00
+	// The whole KDA line, byte for byte: the seeded K/D halves 10/0
+	// (the sweep stores their seeds — owner ruling 2026-11-17; same
+	// numbers the raw fields carried) plus the assists half 1, the kd
+	// metric's zero-death edge rendering 0.00
 	// (ratio's NULLIF — Q1's RULED divergence), and the floored kda
 	// rendering 11.00 (MAX(deaths,1) — the floor closes the edge for
 	// KDA). This is the display the collapsed ME1 (scalar max, no

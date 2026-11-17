@@ -186,6 +186,14 @@
   // state machine: fresh → the value, no-data → '—', anything else → the
   // state chip — never a fabricated 0, never a version number.
   const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
+  // The fixed cards' SEED slots (owner ruling, 2026-11-17): a fixed
+  // entry whose stat W35 seeded reads its `career_*` row PINS-
+  // INDEPENDENTLY — the slot id is unioned into the ONE career read
+  // below, exactly like Match's FIXED_SLOTS. Today: @Matches →
+  // career_matches (whose seed doc names this very card). The Win% card
+  // has no seed (wins are not sum-expressible) and keeps its raw
+  // profile fields — see the template branch.
+  const CAREER_SLOTS = ['career_matches'];
   let careerPins = $state([]);
   let careerCols = $state([]);
   let careerError = $state('');
@@ -218,7 +226,9 @@
     careerCols = [];
     careerError = '';
     if (!sid) return;
-    if (stored && stored.length === 0) return; // present-empty: nothing pinned
+    // No early return on a present-empty selection: the fixed cards'
+    // SEED slots (CAREER_SLOTS) still need their read — only an empty
+    // id list (no pins AND no resolvable slot) skips it below.
     Promise.all([listMetrics(), readOrder('profile')])
       .then(([defs, order]) => {
         if (!live) return;
@@ -227,16 +237,22 @@
         // (design §1.6); present ⇒ the stored names verbatim.
         const pinNames = resolvePins('profile', stored, rows);
         careerPins = pinNames;
-        if (pinNames.length === 0) return;
         // THE composition (lib/metricorder.js — the ONE site): the
         // profile sequence filtered to the pinned set — the pins array
         // orders nothing.
         const picked = pinnedInSequence('profile', order, rows, pinNames);
-        if (picked.length === 0) return;
-        const ids = picked.map((d) => d.id);
-        // ONE stored read for every profile pin (the whole career bucket
-        // — rows for other players are this unit's coverage, never
-        // displayed here) beside the one compute-state read.
+        const byName = new Map(rows.map((d) => [d.name, d]));
+        const slots = CAREER_SLOTS.map((n) => byName.get(n)).filter(Boolean);
+        const wanted = [...picked];
+        for (const s of slots) {
+          if (!wanted.some((d) => d.id === s.id)) wanted.push(s);
+        }
+        const ids = wanted.map((d) => d.id);
+        if (ids.length === 0) return;
+        // ONE stored read for every profile pin AND every fixed-card
+        // slot (the whole career bucket — rows for other players are
+        // this unit's coverage, never displayed here) beside the one
+        // compute-state read.
         return Promise.all([getMetricValuesForPlayer('', ids), getMetricComputeState()]).then(
           ([values, states]) => {
             const byMetric = new Map();
@@ -246,7 +262,7 @@
             }
             const stateById = new Map((states || []).map((s) => [s.metricId, s]));
             if (live) metricStates = stateById;
-            return picked.map((def) => {
+            return wanted.map((def) => {
               const unit = byMetric.get(def.id) || [];
               return {
                 def,
@@ -322,6 +338,23 @@
     if (pres.kind === 'value') return `${col.def.title || col.def.name} — sample size n=${pres.n}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, col.error);
+  }
+
+  // The fixed cards' seed slot (CAREER_SLOTS above): the col the ONE
+  // career read produced for that name, or null while the read is in
+  // flight / the catalog lacks the name — the card then renders the
+  // honest dash (never the raw profile field behind it, owner ruling
+  // 2026-11-17: no raw fallback).
+  function careerSlot(name) {
+    return careerCols.find((c) => c.def.name === name) || null;
+  }
+
+  // THE state machine for one fixed-card slot (lib/metricstate.js) —
+  // the career tile twin over a slot col.
+  function careerSlotPres(col) {
+    if (!col) return metricPresentation('', null, false);
+    const st = liveMetricState(metricProgress, metricStates, col.def.id);
+    return metricPresentation(st, col.row, col.unitHasRows);
   }
 
   function pick(steam) {
@@ -492,8 +525,37 @@
           {:else if card.fixed === '@Matches'}
             <!-- W13b: the fixed card's title comes from the ONE label
                  table through composedSequence (card.label = the entry's
-                 full name), never a second strings copy of it. -->
-            <StatCard label={card.label} value={profile.matches} sub={`${profile.wins} wins`} title={S.profiles.statMatchesTitle} />
+                 full name), never a second strings copy of it. The VALUE
+                 reads the `career_matches` SEED row through the same
+                 state machine as the metric tiles (owner ruling
+                 2026-11-17): fresh → the stored count, otherwise the
+                 honest dash/state chip — never profile.matches behind
+                 it (no raw fallback); the label keeps the seed's doc as
+                 its tooltip, the cell its n=/state title. The sub line
+                 stays the raw wins count (wins have no seed). -->
+            {@const mcol = careerSlot('career_matches')}
+            {@const mpres = careerSlotPres(mcol)}
+            <StatCard
+              label={card.label}
+              labelTitle={mcol ? mcol.def.doc || mcol.def.name : undefined}
+              sub={`${profile.wins} wins`}
+              title={mcol ? careerTitle(mcol, mpres) : S.profiles.statMatchesTitle}
+            >
+              {#snippet valueSlot()}
+                {#if mpres.kind === 'value'}
+                  {fmtMetric(mpres.value, mcol.def.format)}
+                {:else if mpres.kind === 'nodata'}
+                  —
+                {:else}
+                  <StatusChip
+                    status={mpres.state}
+                    title={careerTitle(mcol, mpres)}
+                    progress={metricProgressFrac(metricProgress, mcol.def.id)}
+                    stage={metricProgressStage(metricProgress, mcol.def.id)}
+                  />
+                {/if}
+              {/snippet}
+            </StatCard>
           {:else}
             <StatCard label={card.label} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
           {/if}

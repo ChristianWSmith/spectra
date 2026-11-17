@@ -10,7 +10,7 @@
 
 | Player | Side | K | D | A | ADR | HS% | KD | Rounds | Openings | Trades | MVPs |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-{{range .Scoreboard}}| {{.Name}} | {{.Side}} | {{.Kills}} | {{.Deaths}} | {{(index $.Metrics .SteamID).Assists}} | {{(index $.Metrics .SteamID).ADR}} | {{(index $.Metrics .SteamID).HSPct}} | {{(index $.Metrics .SteamID).KD}} | {{.RoundsPlayed}} | {{(index $.Metrics .SteamID).EntryKills}}/{{(index $.Metrics .SteamID).EntryDeaths}} | {{(index $.Metrics .SteamID).TradeKills}} | {{.MVPs}} |
+{{range .Scoreboard}}| {{.Name}} | {{.Side}} | {{(index $.Metrics .SteamID).Kills}} | {{(index $.Metrics .SteamID).Deaths}} | {{(index $.Metrics .SteamID).Assists}} | {{(index $.Metrics .SteamID).ADR}} | {{(index $.Metrics .SteamID).HSPct}} | {{(index $.Metrics .SteamID).KD}} | {{(index $.Metrics .SteamID).RoundsPlayed}} | {{(index $.Metrics .SteamID).EntryKills}}/{{(index $.Metrics .SteamID).EntryDeaths}} | {{(index $.Metrics .SteamID).TradeKills}} | {{(index $.Metrics .SteamID).MVPs}} |
 {{end}}
 ## Rounds
 

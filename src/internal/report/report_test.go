@@ -451,16 +451,18 @@ func TestReportMetricReadBack(t *testing.T) {
 }
 
 // TestReportCompoundCellsComposePerHalf pins the inferred-conversion
-// W3b read-back (design §3.1 / Q2, invariant 9): every converting
-// report cell composes each half from ITS OWN source. The metric
-// halves — the match tables' A / Openings / Trades, the player
-// report's K/D/A A-half, both opening pairs, Trades, Best streak and
-// Enemies flashed — read the STORED fresh rows through the SAME
-// canonical read as ADR/HS%/KD/KDA (store.GetMetricValuesForMatch); the
-// raw halves (K, D, Rounds, MVPs, Utility damage…) keep the stored
-// fields; and a metric half with no fresh row — absent OR behind —
-// renders the honest dash: never the stored column, never a fabricated
-// 0, never a chip inside the cell.
+// W3b read-back (design §3.1 / Q2, invariant 9) as the owner ruling of
+// 2026-11-17 left it: every report cell composes from ITS OWN stored
+// seed row. The metric halves — the match tables' A / Openings /
+// Trades, the player report's K/D/A A-half, both opening pairs,
+// Trades, Best streak and Enemies flashed — read the STORED fresh rows
+// through the SAME canonical read as ADR/HS%/KD/KDA
+// (store.GetMetricValuesForMatch); the count cells (K, D, Rounds,
+// MVPs, Utility damage) read THEIR seeds the same way now — the raw
+// scoreboard passthrough they used to print is gone from the templates;
+// and a cell with no fresh row — absent OR behind — renders the honest
+// dash: never the stored column, never a fabricated 0, never a chip
+// inside the cell.
 func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -485,6 +487,8 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	tradeDef := def("trade_kills")
 	streakDef, flashDef := def("best_streak"), def("enemies_flashed")
 	adrDef, hsDef, kdDef := def("adr"), def("hs_pct"), def("kd")
+	killsDef, deathsDef := def("kills"), def("deaths")
+	roundsDef, mvpsDef, utilDef := def("rounds_played"), def("mvps"), def("utility_damage")
 
 	insert := func(d models.MetricRow, version int, steamID string, v float64) {
 		t.Helper()
@@ -543,37 +547,44 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 		return out
 	}
 
-	// 1) No stored rows at all (the unanalyzed fixture): every metric
-	// half is the honest dash while the raw halves still render the
-	// stored fields — player0 is K 10 / D 0 with 5 rounds and 1 MVP.
-	const noRows = "| player0 | ct | 10 | 0 | — | — | — | — | 5 | —/— | — | 1 |"
+	// 1) No stored rows at all (the unanalyzed fixture): EVERY cell is
+	// the honest dash — the count cells included (owner ruling
+	// 2026-11-17): player0's stored K 10 / D 0 / 5 rounds / 1 MVP no
+	// longer reach the document without their seed rows (the no-raw-
+	// fallback pin: the stored field is right there and never prints).
+	const noRows = "| player0 | ct | — | — | — | — | — | — | — | —/— | — | — |"
 	if out := matchDoc(t); !strings.Contains(out, noRows) {
 		t.Errorf("match.md without rows lost the per-half dashes:\n%s", out)
 	}
 	pout := playerDoc(t)
 	for _, want := range []string{
-		"K/D/A: **10/0/—**",
+		"K/D/A: **—/—/—**",
 		// w13d: the KDA half reads the stored `kda` row too — with no
 		// rows it is the honest dash beside KD's.
 		"(KD —, KDA —)",
 		"Openings —/— · Open K/D —/— · Trades — · Best streak —",
 		"Enemies flashed —",
+		"Rounds played: —",
+		"Utility damage —",
 	} {
 		if !strings.Contains(pout, want) {
 			t.Errorf("player.md without rows missing %q\n---\n%s", want, pout)
 		}
 	}
 
-	// 2) Fresh rows → every metric half renders its formatted number
-	// (the int seeds render the plain count) and the raw halves keep
-	// their stored fields byte-for-byte. A second subject with no rows
-	// keeps every dash beside theirs.
+	// 2) Fresh rows → every cell renders its formatted number (the int
+	// seeds render the plain count) from the STORED rows — the count
+	// cells included: player0 is K 10 / D 0 / 5 rounds / 1 MVP / 30
+	// utility damage exactly as the seeds store them. A second subject
+	// with no rows keeps every dash beside theirs (its raw fields —
+	// K 9 / D 1 / 5 rounds / 1 MVP — never print).
 	for _, in := range []struct {
 		d models.MetricRow
 		v float64
 	}{
 		{assistsDef, 7}, {ekDef, 3}, {edDef, 4}, {tradeDef, 9},
 		{streakDef, 6}, {flashDef, 8}, {adrDef, 42.5}, {hsDef, 0.2}, {kdDef, 2.5},
+		{killsDef, 10}, {deathsDef, 0}, {roundsDef, 5}, {mvpsDef, 1}, {utilDef, 30},
 	} {
 		insert(in.d, in.d.Version, "A00", in.v)
 	}
@@ -582,7 +593,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	if !strings.Contains(out, freshRow) {
 		t.Errorf("match.md fresh converting cells missing %q:\n%s", freshRow, out)
 	}
-	const otherRow = "| player1 | ct | 9 | 1 | — | — | — | — | 5 | —/— | — | 1 |"
+	const otherRow = "| player1 | ct | — | — | — | — | — | — | — | —/— | — | — |"
 	if !strings.Contains(out, otherRow) {
 		t.Errorf("match.md subject without rows lost its dashes:\n%s", out)
 	}
@@ -591,8 +602,10 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 		"K/D/A: **10/0/7**",
 		"Openings 3/4 · Open K/D 3/4 · Trades 9 · Best streak 6",
 		"Enemies flashed 8",
-		// Raw line members stay raw (not converting cells).
+		// The count line members are seeded cells now (owner ruling
+		// 2026-11-17) — same numbers, one canonical read.
 		"Utility damage 30",
+		"Rounds played: 5",
 	} {
 		if !strings.Contains(pout, want) {
 			t.Errorf("player.md missing %q\n---\n%s", want, pout)
@@ -634,9 +647,9 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 		t.Errorf("player.md leaked the behind entry_deaths value:\n%s", pout)
 	}
 
-	// 4) The triple's A half behind → 10/0/— : raw K/D keep their
-	// stored fields, the metric half dashes, and the behind number
-	// never reaches either document (Q8's 20/5/— semantics).
+	// 4) The triple's A half behind → 10/0/— : the seeded K/D halves
+	// keep their stored rows, the metric half dashes, and the behind
+	// number never reaches either document (Q8's 20/5/— semantics).
 	if err := st.ClearMetricValues(assistsDef.ID); err != nil {
 		t.Fatalf("ClearMetricValues: %v", err)
 	}

@@ -40,9 +40,10 @@ type Template struct {
 // ClassWhy*, PistolRound) exactly as store.GetEconomy reads them — no
 // report-side enrichment, so report and app agree by construction.
 // Metrics carries the metric-backed display cells (design §3.6's Go
-// read-back — MetricCells): ADR/HS%/KD/KDA plus every converting
-// scoreboard cell (A, Openings, Trades), keyed by the scoreboard row's
-// SteamID.
+// read-back — MetricCells): ADR/HS%/KD/KDA, every converting
+// scoreboard cell (A, Openings, Trades) and the count-seed cells
+// (K, D, MVPs, Rounds, … — owner ruling 2026-11-17), keyed by the
+// scoreboard row's SteamID.
 // Utility rows flow as stored; the match template's Tick column renders
 // models.UtilityEvent.EffectiveTick (the paired throw's own tick, the
 // detonation tick when unpaired), so the report's tick column is
@@ -72,22 +73,26 @@ type PlayerReport struct {
 
 // MetricCells is one report subject's metric-backed display cells — the
 // Go read-back (dogfooding design §3.6, extended by the inferred
-// conversion's Q2 per-half rule, §3.1): the builtin templates render
-// ADR / HS% / KD / KDA AND every converting compound half — the match
-// tables' A / Openings / Trades cells, the player report's K/D/A
+// conversion's Q2 per-half rule, §3.1, and by the owner ruling of
+// 2026-11-17 that closed the count exemption): the builtin templates
+// render ADR / HS% / KD / KDA, every converting compound half — the
+// match tables' A / Openings / Trades cells, the player report's K/D/A
 // A-half, both opening pairs, Trades, Best streak and Enemies flashed
-// — from the STORED fresh metric rows (one canonical read,
-// store.GetMetricValuesForMatch), never from a Go computation and
-// never from the scoreboard's passthrough columns. Each cell is
-// already formatted for the document — the format-keyed display scale
-// (store.MetricDisplayScale: percent ×100) plus the printf precision
-// today's templates spelled (ADR %.1f, HS% %.0f, KD %.2f, KDA %.2f; the int
-// seeds render their plain count) — and a subject with NO fresh row
-// carries the honest dash "—": absent or behind renders the missing
-// marker, never a recomputed number and never a fabricated 0 (Q8).
-// The RAW halves (K, D, Rounds, MVPs…) stay on the scoreboard's stored
-// fields — which source a cell reads is a per-half fact, and no cell
-// ever renders a chip (invariant 9).
+// — AND the count cells (K, D, MVPs, Rounds, Damage, Damage taken,
+// Utility damage, Plants, Defuses, Money) from the STORED fresh metric
+// rows (one canonical read, store.GetMetricValuesForMatch), never from
+// a Go computation and never from the scoreboard's passthrough columns.
+// Each cell is already formatted for the document — the format-keyed
+// display scale (store.MetricDisplayScale: percent ×100) plus the
+// printf precision today's templates spelled (ADR %.1f, HS% %.0f, KD
+// %.2f, KDA %.2f; the int seeds render their plain count) — and a
+// subject with NO fresh row carries the honest dash "—": absent or
+// behind renders the missing marker, never a recomputed number, never
+// the raw column and never a fabricated 0 (Q8). Which source a cell
+// reads is a per-half fact, and no cell ever renders a chip
+// (invariant 9). Identity/descriptor fields (Name, Side) and the
+// round/event rows (the Rounds, Economy, Utility, per-round tables)
+// are records, not stat cells — they keep their stored fields.
 type MetricCells struct {
 	ADR   string
 	HSPct string
@@ -107,6 +112,22 @@ type MetricCells struct {
 	TradeKills     string
 	BestStreak     string
 	EnemiesFlashed string
+	// The count-seed cells (owner ruling, 2026-11-17 — every consumer
+	// of a seeded stat reads the seed): the scoreboard K/D/MVPs/Rounds
+	// columns and player.md's K/D/A, Damage, Utility damage, Plants,
+	// Defuses and Money figures render these stored rows — the raw
+	// PlayerStatsRow passthrough they used to print is gone from every
+	// builtin template (a subject with no fresh row keeps the dash).
+	Kills         string
+	Deaths        string
+	MVPs          string
+	RoundsPlayed  string
+	TotalDamage   string
+	DamageTaken   string
+	UtilityDamage string
+	BombPlants    string
+	BombDefuses   string
+	MoneySpent    string
 }
 
 // reportMetricSeeds are the seed names the builtin templates render,
@@ -135,6 +156,20 @@ var reportMetricSeeds = []struct {
 	{seed: "trade_kills", fill: func(c *MetricCells, s string) { c.TradeKills = s }},
 	{seed: "best_streak", fill: func(c *MetricCells, s string) { c.BestStreak = s }},
 	{seed: "enemies_flashed", fill: func(c *MetricCells, s string) { c.EnemiesFlashed = s }},
+	// The count seeds (owner ruling, 2026-11-17): the templates' raw
+	// K / D / MVPs / Rounds / Damage / Utility / Plants / Defuses /
+	// Money reads converted to their stored rows — same canonical
+	// read, same honest dash when a subject has no fresh row.
+	{seed: "kills", fill: func(c *MetricCells, s string) { c.Kills = s }},
+	{seed: "deaths", fill: func(c *MetricCells, s string) { c.Deaths = s }},
+	{seed: "mvps", fill: func(c *MetricCells, s string) { c.MVPs = s }},
+	{seed: "rounds_played", fill: func(c *MetricCells, s string) { c.RoundsPlayed = s }},
+	{seed: "total_damage", fill: func(c *MetricCells, s string) { c.TotalDamage = s }},
+	{seed: "damage_taken", fill: func(c *MetricCells, s string) { c.DamageTaken = s }},
+	{seed: "utility_damage", fill: func(c *MetricCells, s string) { c.UtilityDamage = s }},
+	{seed: "bomb_plants", fill: func(c *MetricCells, s string) { c.BombPlants = s }},
+	{seed: "bomb_defuses", fill: func(c *MetricCells, s string) { c.BombDefuses = s }},
+	{seed: "money_spent_total", fill: func(c *MetricCells, s string) { c.MoneySpent = s }},
 }
 
 // reportCellDash is what a cell renders when the store carries no fresh
@@ -144,12 +179,17 @@ const reportCellDash = "—"
 // dashCells is one subject's starting cells: EVERY cell at the honest
 // dash until the canonical read fills it — a subject, seed or value the
 // read produced no fresh row for (absent, behind, or filtered out of
-// the roster) keeps the dash, per half (Q8: never a fabricated 0).
+// the roster) keeps the dash, per half (Q8: never a fabricated 0, never
+// the raw column behind it).
 func dashCells() MetricCells {
 	return MetricCells{
 		ADR: reportCellDash, HSPct: reportCellDash, KD: reportCellDash, KDA: reportCellDash,
 		Assists: reportCellDash, EntryKills: reportCellDash, EntryDeaths: reportCellDash,
 		TradeKills: reportCellDash, BestStreak: reportCellDash, EnemiesFlashed: reportCellDash,
+		Kills: reportCellDash, Deaths: reportCellDash, MVPs: reportCellDash,
+		RoundsPlayed: reportCellDash, TotalDamage: reportCellDash, DamageTaken: reportCellDash,
+		UtilityDamage: reportCellDash, BombPlants: reportCellDash, BombDefuses: reportCellDash,
+		MoneySpent: reportCellDash,
 	}
 }
 
@@ -271,8 +311,10 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	}
 	ctName, tName := teamNames(st, matchID, sb)
 	// The metric-backed display cells (design §3.6's Go read-back, Q2's
-	// per-half conversion): ONE canonical read of the stored fresh rows
-	// for this match fills ADR/HS%/KD/KDA and every converting cell.
+	// per-half conversion, and the 2026-11-17 count-seed conversion):
+	// ONE canonical read of the stored fresh rows for this match fills
+	// ADR/HS%/KD/KDA, every converting cell and the K/D/MVPs/Rounds
+	// count cells.
 	cells, err := metricCells(st, matchID, sb)
 	if err != nil {
 		return nil, err
@@ -370,10 +412,11 @@ func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerRep
 	if err != nil {
 		return nil, err
 	}
-	// Same read-back as the match scope (design §3.6 + Q2): the player's
-	// metric cells (ADR/HS%/KD/KDA and the converting K/D/A, Openings,
-	// Trades, Best streak, Enemies flashed halves) come from the stored
-	// fresh rows for this match.
+	// Same read-back as the match scope (design §3.6 + Q2 + the
+	// 2026-11-17 count-seed conversion): the player's metric cells
+	// (ADR/HS%/KD/KDA, the converting K/D/A/Openings/Trades/Best
+	// streak/Enemies flashed halves AND the K/D/MVPs/Rounds/Damage
+	// count cells) come from the stored fresh rows for this match.
 	cells, err := metricCells(st, matchID, sb)
 	if err != nil {
 		return nil, err
