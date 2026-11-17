@@ -57,7 +57,7 @@ backgrounds), the equipment icons, and the replay's sound effects. The prompt sa
 *nothing from Counter-Strike ships with the app, and nothing is uploaded; your game files are read
 locally and the extracted assets are stored in Spectra's data folder.* You get three choices:
 
-- **Extract all CS2 assets** — runs the extraction with honest progress.
+- **Extract all CS2 assets** — the prompt closes right away and the extraction carries on in the background: its honest progress shows in the floating work indicator at the bottom right of every view, and that indicator's ✕ hides it without stopping anything.
 - **Choose folder…** — point Spectra at your CS2 install yourself, if it wasn't found.
 - **Not now** — dismiss for this launch. The prompt returns on the next launch as long as any of the three families is still missing; extracting them is what ends the loop for good.
 

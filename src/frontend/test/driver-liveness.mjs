@@ -108,7 +108,20 @@ const EXPECTED = {
   // to) and +1 the new section H (enter the family with a full player
   // hash + query, leave it, click Profiles → the remembered FULL hash
   // verbatim through the same resolveNavTarget the palette shares).
-  'app-dock.dom.mjs': 68,
+  // app-dock 68 → 85 (2026-11-17, w29 — the floating background-work
+  // indicator): +17 the new section I over App's .wk-pill +
+  // lib/workstate.svelte.js (job start shows the pill with the chip's
+  // determinate point + the catalog label; the ✕'s aria-label/title
+  // pair; ✕ hides while the job is live and same-source updates never
+  // re-show it; a NEW source does re-show; last job-done stays visible
+  // inside the settle window then hides; the next run shows fresh —
+  // dismissal reset at hide; a held failure opens the pill with the
+  // failed chip + message and is never settled away, the ✕ dismisses
+  // it; and the two style.css source pins — fixed right 26px /
+  // bottom 264px / z-index 45, and the cover 40 < pill 45 < probe 50 <
+  // dialogs 60 ladder). StatusChip became App's first real component
+  // (compiled into the harness as a leaf) — no check of A–H moved.
+  'app-dock.dom.mjs': 85,
   // builder 72 → 95 (2026-11-14, metrics UI-A + B): UI-A rewrote the
   // filter/editor sections (72 → 91 with section J at its base 16) and
   // UI-B reworked section J 16 → 20 (pins-only list, help line + empty
@@ -611,7 +624,20 @@ const EXPECTED = {
   // icon pin — the file-add codicon LEADS the label (text pins
   // unaffected: textContent.trim() still reads "Import…").
   'library.dom.mjs': 187,
-  'map-pack-prompt.dom.mjs': 48,
+  // map-pack-prompt 48 → 43 (2026-11-17, w29 — close-on-extract): −5.
+  // The accept legs went 24 → 19: the popup's progress-display pins
+  // (StatusChip block shown, the per-step details text, the family
+  // emitter legs — ring/percentage/count advances) and G's
+  // counts-line / no-error / auto-close trio died with the widget and
+  // the success line; the new legs are close-at-Extract with every
+  // family still gated in flight (plus the full-success twin), the
+  // widget/label ABSENCES (no chip-block anywhere, asset-progress
+  // drives nothing, no "Extracting…" label), the assets.js →
+  // reportWorkError wiring pin (the aggregated failure reaches the
+  // indicator) and the no-result-line absences. The busy-button /
+  // Not-now / Escape / backdrop / busy-cleared pins RE-PINNED IN PLACE
+  // over a reopen-mid-run (same shapes, same counts); A–E/H untouched.
+  'map-pack-prompt.dom.mjs': 43,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,
   'player-card.dom.mjs': 174,
@@ -653,6 +679,11 @@ const EXPECTED = {
   // key: the grid renders the fixed pair alone (no metric selected) and
   // the stored bytes survive the read untouched.
   'profiles.dom.mjs': 83,
+  // progress-presentation 19 → 19 (2026-11-17, w29 — close-on-extract):
+  // the count is UNCHANGED; the byte-identity pin (Settings mpDetail vs
+  // MapPackPrompt stepDetail) flipped IN PLACE to the absence form —
+  // the prompt has no stepDetail copy left (its progress moved to the
+  // floating indicator) while Settings keeps its own derived.
   'progress-presentation.dom.mjs': 19,
   // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the
   // header `?` rides the top bar right of the ribbon — immediately

@@ -24,6 +24,11 @@ import {
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
 import { resetIconManifest } from './replay/icons.js';
 import { resetSoundManifest } from './replay/sfx.js';
+// Background-work aggregation (the floating indicator): THE one source
+// wrapper runWork — see lib/workstate.svelte.js for the module contract
+// and the source list. The deliberate ⇄ cycle with this file is documented
+// there (neither side calls across at module-eval time).
+import { runWork } from './workstate.svelte.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -325,9 +330,12 @@ export function setParallelWork(n) {
 
 // listDemoFiles scans the configured import dirs; rows are demos NOT
 // already in the library (recognised imports are omitted, newest first),
-// so deleting the match brings its file back on the next scan.
+// so deleting the match brings its file back on the next scan. Wrapped
+// with runWork: the walk/stat/hash is background work the floating
+// indicator shows (the scan's own spectra:scan-progress is progress-only,
+// never a begin signal — the call itself is the begin).
 export function listDemoFiles() {
-  return LibraryService.ListDemoFiles();
+  return runWork('scan', LibraryService.ListDemoFiles());
 }
 
 // deleteDemoFile removes a demo file from disk — the import-dir row's
@@ -1053,7 +1061,13 @@ export function buildPluginBundle(name, version, metricIDs, templateIDs) {
 // local — see internal/mappack). Packs load through loadMapPack().
 
 export function getMapPackStatus() { return MapPackService.GetMapPackStatus(); }
-export function extractMapPacks(cs2Dir) { return MapPackService.ExtractMapPacks(cs2Dir || ''); }
+// The three extractors wrap with runWork('assets', …) — the ONE source
+// wrapper (lib/workstate.svelte.js): extraction is background work the
+// floating indicator shows, so this covers EVERY caller (extractAllAssets
+// behind the prompt/Settings AND Replay's direct auto-extract of icons).
+export function extractMapPacks(cs2Dir) {
+  return runWork('assets', MapPackService.ExtractMapPacks(cs2Dir || ''));
+}
 // setCS2Dir validates + persists a manually chosen CS2 folder — the
 // second half of chooseCS2Dir, used by both "Choose folder…" buttons.
 // (The old setMapPackPromptState(state, path) is gone with the retired
@@ -1074,10 +1088,13 @@ export function chooseCS2Dir() { return MapPackService.ChooseCS2Dir(); }
 
 export function getIconManifest() { return IconService.GetIconManifest(); }
 export function extractIcons(cs2Dir) {
-  return IconService.ExtractIcons(cs2Dir || '').then((r) => {
-    resetIconManifest();
-    return r;
-  });
+  return runWork(
+    'assets',
+    IconService.ExtractIcons(cs2Dir || '').then((r) => {
+      resetIconManifest();
+      return r;
+    }),
+  );
 }
 
 // --- SoundService ------------------------------------------------------------
@@ -1091,10 +1108,13 @@ export function extractIcons(cs2Dir) {
 
 export function getSoundManifest() { return SoundService.GetSoundManifest(); }
 export function extractSounds(cs2Dir) {
-  return SoundService.ExtractSounds(cs2Dir || '').then((r) => {
-    resetSoundManifest();
-    return r;
-  });
+  return runWork(
+    'assets',
+    SoundService.ExtractSounds(cs2Dir || '').then((r) => {
+      resetSoundManifest();
+      return r;
+    }),
+  );
 }
 
 // --- DialogService (native file dialogs) --------------------------------------

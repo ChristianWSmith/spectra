@@ -337,11 +337,14 @@ compileSvelte(bldSrc, 'Builder.svelte', localURL('builder-bundle.js'));
 
 // App.svelte: the blanket stub rewrite, then point the two REAL
 // components at their local bundles (the stub tree has no
-// DocsPopup.js and deliberately no Builder.js).
+// DocsPopup.js and deliberately no Builder.js). StatusChip joins them
+// as App's THIRD real component (the floating background-work indicator
+// renders it inline) — its bundle is the one compiled beside Builder's.
 const appSrc = readFileSync('src/App.svelte', 'utf8')
   .replace(/from '(\.\/lib\/(?:views|components)\/\w+)\.svelte'/g, "from '$1.js'")
   .replace("from './lib/views/Builder.js'", `from '${localURL('builder-bundle.js')}'`)
-  .replace("from './lib/components/DocsPopup.js'", `from '${localURL('docspopup.js')}'`);
+  .replace("from './lib/components/DocsPopup.js'", `from '${localURL('docspopup.js')}'`)
+  .replace("from './lib/components/StatusChip.js'", `from '${localURL('statuschip.js')}'`);
 compileSvelte(appSrc, 'App.svelte', localURL('App.js'));
 
 // --- Scripted backend (the shared bindings stub) ----------------------------

@@ -2909,3 +2909,53 @@ mark {
   pointer-events: none;
   user-select: none;
 }
+
+/* --- Floating background-work indicator (App's .wk-pill) — owner 2026-11-17 ---
+   ONE aggregated pill for every background source (lib/workstate.svelte.js),
+   fixed bottom-right so it follows the user across views.
+   Position arithmetic (fixed offsets, NO dynamic coupling to the dock or
+   the Compare float): the collapsed replay mini-dock (.rp-keepalive-mini)
+   occupies bottom 26px up through 26 + its 1px borders + the 220px
+   .rp-keepalive-mini .replay-view = 248px, 320px wide from the right —
+   bottom 264px parks the pill's bottom edge 16px above that, and the pill
+   (~34px tall) therefore clears the dock entirely; .cmp-float
+   (style-m3b.css, bottom 26px) is cleared with far more room. z-index 45
+   sits above the expanded keep-alive cover (40) — so the pill rides over
+   every view including the replay overlay — below the operator probe HUD
+   (50) and the modal dialogs (60): the ladder is literals in this file,
+   no vars. The error line ellipsizes at one width; its title carries the
+   full message (long aggregated failures stay readable on hover). */
+.wk-pill {
+  position: fixed;
+  right: 26px;
+  bottom: 264px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(460px, calc(100vw - 72px));
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 8px 28px var(--overlay-55);
+}
+
+.wk-pill .wk-label {
+  font-size: 0.85em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wk-pill .wk-error {
+  font-size: 0.85em;
+  color: var(--danger);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wk-pill .wk-dismiss {
+  flex: 0 0 auto;
+}

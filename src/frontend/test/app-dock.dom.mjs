@@ -40,6 +40,16 @@
 // The BOOT leg of the same feature (the tab disabled while no match has
 // been opened — the one moment the memory is empty) is pinned right
 // after the mount, before section A.
+// Section I — the floating background-work indicator (owner 2026-11-17):
+// App's .wk-pill over lib/workstate.svelte.js — job-progress brings the
+// pill up with its determinate chip point, the ✕ hides the INDICATOR
+// while the job keeps running (same-source updates never re-show a
+// dismissed pill), a NEW source does re-show it, the last job-done hides
+// only after the settle window (resetting dismissal so the next run
+// shows fresh), a held failure opens the pill with the failed chip and
+// is never settled away (the ✕ dismisses it), and style.css's fixed
+// bottom-right + z-45 ladder are source-pinned (jsdom has no layout —
+// the rules are the pin).
 //
 // SCOPE: App's wiring only. The views are inert stubs (Replay's stub
 // counts mounts and mirrors the App-passed props as data attributes) —
@@ -234,7 +244,15 @@ writeStub(
 // App.svelte → its ./lib/**/*.svelte imports resolve to the stubs above
 // (rewritten to .js like every other harness); everything else (svelte,
 // the bindings, the real pure lib files) resolves through the hooks /
-// the copied tree.
+// the copied tree. StatusChip is the ONE real component App links now —
+// the floating background-work indicator renders it inline (a leaf, no
+// imports → local bundle, exactly builder.dom.mjs's discipline), written
+// where the blanket rewrite points (lib/components/StatusChip.js).
+compileSvelte(
+  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
+  'StatusChip.svelte',
+  join(dir, 'lib', 'components', 'StatusChip.js'),
+);
 const appSrc = readFileSync('src/App.svelte', 'utf8').replace(
   /from '(\.\/lib\/(?:views|components)\/\w+)\.svelte'/g,
   "from '$1.js'",
@@ -659,6 +677,98 @@ check(
   'clicking Profiles away from the family returns to the remembered FULL hash (the player page + its query)',
   location.hash === '#/player/76561198012345678?back=match/5/scoreboard',
   location.hash,
+);
+
+console.log('I. the floating background-work indicator (workstate → App .wk-pill)');
+// The SAME module instances App links: workstate from the copied tree,
+// the event bus through the driver's @wailsio/runtime stub (fire()).
+const work = await import(pathToFileURL(join(dir, 'lib', 'workstate.svelte.js')).href);
+const { fire } = await import(pathToFileURL(join('test', 'stubs', 'wails-runtime.mjs')).href);
+const cssI = readFileSync('public/style.css', 'utf8');
+const pill = () => document.querySelector('.wk-pill');
+
+work.resetWorkState();
+await sleep();
+check('no pill while nothing is running', !pill());
+
+fire('spectra:job-progress', { jobId: 901, stage: 'parse', progress: 0.42 });
+await sleep();
+check('a job starting brings the pill up', !!pill());
+check(
+  'the chip carries the job’s determinate point',
+  (pill()?.querySelector('.chip-pct')?.textContent || '').includes('42%'),
+  pill()?.textContent || '',
+);
+check(
+  'the pill carries its short catalog label',
+  (pill()?.querySelector('.wk-label')?.textContent || '') === 'Background work',
+  pill()?.textContent || '',
+);
+
+// The ✕ hides the INDICATOR while the job keeps running (Q1).
+const dismissBtn = pill()?.querySelector('.wk-dismiss');
+check(
+  'the icon-only ✕ carries its catalog aria-label + title',
+  !!dismissBtn &&
+    dismissBtn.getAttribute('aria-label') === 'Hide indicator' &&
+    dismissBtn.getAttribute('title') === 'Hide the indicator — background work keeps running',
+);
+click(dismissBtn);
+await sleep();
+check('the ✕ hides the pill while the job is live', !pill());
+fire('spectra:job-progress', { jobId: 901, stage: 'parse', progress: 0.7 });
+await sleep();
+check('same-source progress never re-shows a dismissed pill', !pill());
+
+// A NEW source starting re-shows it (Q3).
+fire('spectra:metric-progress', { metricId: 'wk1', stage: 'compute', done: 2, total: 4 });
+await sleep();
+check('a NEW source re-shows the dismissed pill', !!pill());
+
+fire('spectra:metric-done');
+await sleep();
+check('the pill stays while the job is still live', !!pill());
+fire('spectra:job-done', { jobId: 901 });
+await sleep();
+check('all work done → still up inside the settle window', !!pill());
+await sleep(500);
+check('settle window elapsed → hidden', !pill());
+fire('spectra:job-progress', { jobId: 902, stage: 'hash', progress: 0 });
+await sleep();
+check('the next run shows fresh (dismissal reset at hide)', !!pill());
+fire('spectra:job-done', { jobId: 902 });
+await sleep(500);
+
+// A held failure (Q2): the failed chip + message, never settled away.
+work.reportWorkError('icons: VPK unreadable.');
+await sleep();
+check(
+  'a failure opens the pill with the failed chip + the message',
+  !!pill() &&
+    !!pill()?.querySelector('.chip.status.bad') &&
+    (pill()?.querySelector('.wk-error')?.textContent || '') === 'icons: VPK unreadable.',
+  pill()?.textContent || '',
+);
+await sleep(500);
+check('the failure is never hidden by the settle window', !!pill());
+click(pill()?.querySelector('.wk-dismiss'));
+await sleep();
+check('the ✕ dismisses the held failure', !pill());
+
+// Positioning + the z ladder — the RULES are the pin (jsdom has no
+// layout): fixed bottom-right clear of the mini-dock, 45 between the
+// keep-alive cover (40) and the probe HUD (50).
+check(
+  'style.css: the pill is fixed right 26px / bottom 264px (clear of the 248px mini-dock) / z-index 45',
+  /\.wk-pill\s*\{[^}]*position:\s*fixed[^}]*right:\s*26px[^}]*bottom:\s*264px[^}]*z-index:\s*45/s.test(cssI),
+  'no .wk-pill { position:fixed; right:26px; bottom:264px; z-index:45 } rule',
+);
+check(
+  'style.css: the ladder keeps cover 40 < pill 45 < probe HUD 50 < dialogs 60',
+  /\.rp-keepalive\.rp-keepalive-cover\s*\{[^}]*z-index:\s*40/s.test(cssI) &&
+    /\.probe-hud\s*\{[^}]*z-index:\s*50/s.test(cssI) &&
+    /\.dlg-back\s*\{[^}]*z-index:\s*60/s.test(cssI),
+  'cover/probe/dialog z-index literals moved',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

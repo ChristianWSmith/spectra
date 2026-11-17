@@ -10,7 +10,9 @@
 //     library.dom.mjs Section G;
 //   - harness-backed views pin their own loading states in their own
 //     drivers (library L, combat K, round-detail G, compare-rounds,
-//     profiles H, econ-tables for Match, map-pack-prompt F/F2);
+//     profiles H, econ-tables for Match; map-pack-prompt F/F2 pin the
+//     prompt's side of the 2026-11-17 rework — NO progress widget left
+//     in the popup, the floating indicator owns extraction progress);
 //   - Heatmaps lives in heatmap-layer.dom.mjs (section N);
 //   - Settings (settings.dom.mjs) and Explorer (payload-tree.dom.mjs)
 //     have harnesses but never HOLD a loading or extraction window —
@@ -128,10 +130,12 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
       !/Extracting \{mpStep\}…/.test(sett),
     '',
   );
-  // Copy byte-preservation: mpDetail must be byte-identical to
-  // MapPackPrompt's stepDetail (the identical site the progress pass
-  // already converted) once the mp* identifiers are renamed — so the
-  // rendered words cannot drift between the two callers.
+  // Copy byte-preservation: mpDetail used to be byte-identical to
+  // MapPackPrompt's stepDetail (the two identical extraction-details
+  // sites). The prompt's progress widget died with the close-on-extract
+  // rework (owner 2026-11-17): the prompt renders NO details copy at all
+  // any more, so this pin flipped IN PLACE to the absence + Settings
+  // still carrying its own derived — same check count, EXPECTED stays 19.
   const derivedBody = (s, name) => {
     const m = new RegExp(`const ${name} = \\$derived\\(([\\s\\S]*?)\\n  \\);`).exec(s);
     return m ? m[1].replace(/mpStepProgress/g, 'stepProgress').replace(/mpStep/g, 'step') : '';
@@ -139,9 +143,9 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
   const settDetail = derivedBody(sett, 'mpDetail');
   const promptDetail = derivedBody(src('components/MapPackPrompt.svelte'), 'stepDetail');
   check(
-    'Settings mpDetail is byte-identical to MapPackPrompt stepDetail',
-    !!settDetail && settDetail === promptDetail,
-    `${JSON.stringify(settDetail.slice(0, 120))} vs ${JSON.stringify(promptDetail.slice(0, 120))}`,
+    'MapPackPrompt has no stepDetail copy left (progress moved to the work indicator) while Settings keeps its own',
+    promptDetail === '' && !!settDetail,
+    `${JSON.stringify(promptDetail.slice(0, 80))} vs ${JSON.stringify(settDetail.slice(0, 120))}`,
   );
 
   // Deliberate leave-alones (owner rulings) — pinned so a later pass

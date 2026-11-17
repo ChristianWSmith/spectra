@@ -28,6 +28,11 @@ export const common = {
   appCloseReplayTitle: 'Close the replay — it reloads when reopened', // dock close X: title
   navMatchDisabled: 'Open a match first', // disabled sidebar Match tab: title (why it is greyed)
 
+  // Floating background-work indicator (App.svelte's .wk-pill)
+  workIndicatorLabel: 'Background work', // the pill's short label beside the chip
+  workIndicatorDismissLabel: 'Hide indicator', // the pill's icon-only ✕: aria-label
+  workIndicatorDismissTitle: 'Hide the indicator — background work keeps running', // the ✕: title
+
   // command palette (CommandPalette.svelte — Ctrl/Cmd-K overlay)
   commandPaletteLabel: 'Command palette', // Dialog accessible name
   commandPalettePlaceholder: 'Type a command or search…', // search input placeholder
