@@ -2,31 +2,35 @@
   // Player selector for the Reports target panel — the native <select>
   // ("rep-player") replacement, styled to MatchPicker: the trigger shows
   // the current selection, the popover lists players the way the app
-  // presents them elsewhere (name, side + scoreboard line when the player
-  // appears in the selected match, career matches from the profile list
-  // and the stored career ADR metric row)
+  // presents them elsewhere (name, side + the statline when the player
+  // appears in the selected match, the career line when they do not)
   // behind a filter box.
   //
   // Keyboard follows MatchPicker/CommandPalette: the filter input owns
   // focus, ↑↓ move the highlight, Enter selects, Esc closes (and returns
   // focus to the trigger); clicking outside closes. Rows are real buttons;
   // aria-activedescendant on the combobox points at the highlighted option.
-  import { fmt1, fmtMetric } from '../fmt.js';
-  import { careerAdrRows, onMetricDone } from '../services.js';
+  import { fmtMetric } from '../fmt.js';
+  import { careerRows, onMetricDone } from '../services.js';
+  import { metricPresentation, metricStateTitle } from '../metricstate.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   // players: ProfileSummary rows (ProfileService.ListPlayers) — steamId,
-  // name, matches, lastSeen (no ADR: the Go DTO dropped adrAvg in
-  // dogfooding W4 — this picker's career line reads the stored
-  // `career_adr` metric row instead). stats: steamId → PlayerStatsRow
-  // from MatchService.GetScoreboard for the report's match (may be empty).
-  // assists: steamId → {value, format} — the match-scope `assists`
-  // METRIC row Reports fetches beside stats (design §3.1/Q2): the
-  // K/D/A triple composes per half — K and D stay the raw scoreboard
-  // fields, the A half reads this stored row, and no fresh row → the
-  // honest dash, never the stored column, never a fabricated 0 (the
-  // same rule as the career-ADR line below).
-  let { players = [], stats = {}, assists = new Map(), value = '', onselect = () => {}, id = '' } = $props();
+  // name, matches, lastSeen (neither a career count nor ADR: the Go DTO
+  // carries no gameplay stat this picker may show — the career line reads
+  // the stored `career_matches` / `career_adr` metric rows instead).
+  // stats: steamId → PlayerStatsRow from MatchService.GetScoreboard for
+  // the report's match (may be empty) — the row's IDENTITY fields only
+  // (side, presence): every STATISTIC below comes from a seed row.
+  // seeds: seed name → {def, bySteam: steamId → {value, n, format}} —
+  // the match-scope reads Reports fetches beside sbBySteam (design
+  // §3.1/Q2's compound-per-half rule, the owner ruling of 2026-11-17:
+  // every half reads its seed). The CAREER pair below is this picker's
+  // own batched bucket read, exactly as its career ADR line always was.
+  // states: metricId → {state, error} — the compute-state read Reports
+  // already holds, so a half with no fresh row renders the state word
+  // in its title instead of the raw column behind it.
+  let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '' } = $props();
 
   let open = $state(false);
   let query = $state('');
@@ -39,39 +43,109 @@
   const cur = $derived(players.find((p) => p.steamId === value) || null);
   const curRow = $derived(stats[value] || null);
 
-  // The career ADR line reads the STORED `career_adr` metric rows (the
-  // one canonical career read — services.careerAdrRows), never a
-  // Go-computed field on the summary row: ProfileSummary dropped adrAvg
-  // in dogfooding W4 and this was its other last reader. No fresh row →
-  // the honest dash (absent or behind alike — never a fabricated 0).
-  let adrRows = $state(new Map());
-  let adrReload = $state(0);
-  $effect(() => onMetricDone(() => (adrReload += 1)));
+  // --- THE statline halves (every number below is a seed row) ----------
+  const KDA_HALVES = ['kills', 'deaths', 'assists'];
+  const CAREER_SEEDS = ['career_matches', 'career_adr'];
+
+  // The career pair: the ONE batched bucket read (services.careerRows —
+  // never per-player calls), refetched when the caller's list changes
+  // and when a sweep replaces the stored rows. A failed read (or a seed
+  // the catalog does not carry) leaves the map EMPTY: those halves are
+  // the honest dash, never a number from the summary row.
+  let career = $state(new Map()); // seed name → {def, bySteam}
+  let careerReload = $state(0);
+  $effect(() => onMetricDone(() => (careerReload += 1)));
   $effect(() => {
     players; // refetch when the caller's list changes
-    adrReload; // …and when a sweep replaces the stored rows
+    careerReload; // …and when a sweep replaces the stored rows
     let live = true;
-    careerAdrRows()
-      .then((rows) => {
-        if (live) adrRows = rows;
+    career = new Map();
+    careerRows(CAREER_SEEDS)
+      .then((m) => {
+        if (live) career = m;
       })
       .catch(() => {
-        if (live) adrRows = new Map();
+        if (live) career = new Map();
       });
     return () => (live = false);
   });
-  function adrText(p) {
-    const row = adrRows.get(p.steamId);
-    return row ? fmt1(row.value) : '—';
-  }
 
-  // The triple's A half (design §3.1/Q2 — compound cells compose per
-  // half): the stored assists row's value through the metric's OWN
-  // format tag. No fresh row (absent or behind — the read serves fresh
-  // rows only) → the honest dash, never the raw stored column.
-  function assistText(p) {
-    const row = assists.get(p.steamId);
-    return row ? fmtMetric(row.value, row.format) : '—';
+  // One seed's entry, whichever grain carries it (the names never
+  // collide: the match-scope five above, the career pair below).
+  function seedEntry(name) {
+    return seeds.get(name) || career.get(name) || null;
+  }
+  function seedRow(name, p) {
+    const e = seedEntry(name);
+    return e ? e.bySteam.get(p.steamId) || null : null;
+  }
+  // unitHasRows — the sibling coverage the state machine needs: does the
+  // read produce ANY row for this seed? (For the career pair that is the
+  // whole bucket, exactly like the value reads' coverage.)
+  function seedHasRows(name) {
+    const e = seedEntry(name);
+    return !!e && e.bySteam.size > 0;
+  }
+  // THE state machine for one half (lib/metricstate.js — design §5):
+  // fresh → the stored value, no fresh row → the dash, a live/behind/
+  // failed state → the state word (which reaches the cell through the
+  // TITLE — never a chip inside a picker row, invariant 9).
+  function seedPres(name, p) {
+    const e = seedEntry(name);
+    const st = e && states.get(e.def.id) ? states.get(e.def.id).state : '';
+    return metricPresentation(st, seedRow(name, p), seedHasRows(name));
+  }
+  // One half's rendered number: the fresh value through the seed's OWN
+  // format tag, the honest dash otherwise — never the raw scoreboard or
+  // profile field behind it, never a fabricated 0.
+  function seedText(name, p) {
+    const pres = seedPres(name, p);
+    if (pres.kind !== 'value') return '—';
+    const e = seedEntry(name);
+    return fmtMetric(pres.value, e ? e.def.format : '');
+  }
+  // A single-seed cell's tooltip: fresh → the seed's OWN `doc` (the
+  // Formula — the tooltip medium the tiering rule measures wholesale),
+  // dash → the no-data copy, a state → its state word (failed carries
+  // the engine's error text).
+  function seedTitle(name, p) {
+    const pres = seedPres(name, p);
+    const e = seedEntry(name);
+    if (pres.kind === 'value') {
+      if (e && e.def.doc) return e.def.doc;
+      return `${(e && e.def.title) || name} — sample size n=${pres.n}`;
+    }
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, (e && states.get(e.def.id) && states.get(e.def.id).error) || '');
+  }
+  // The rounds half keeps its "24r" shape on a value and the plain dash
+  // otherwise (an "—r" would read as a unit the number never had).
+  function roundsText(p) {
+    const pres = seedPres('rounds_played', p);
+    return pres.kind === 'value' ? `${seedText('rounds_played', p)}r` : '—';
+  }
+  // The K/D/A line is the compound form (design Q2): the fresh value
+  // through each seed's format tag, the dash otherwise, and the state
+  // word in the TITLE — the cell's own chrome label while every half
+  // shows its number (it carried that tooltip before the conversion),
+  // the first non-value half's state word otherwise (invariant 9: never
+  // a chip inside a compound cell, never a raw field).
+  function kdaText(p) {
+    return KDA_HALVES.map((n) => seedText(n, p)).join('/');
+  }
+  function kdaTitle(p) {
+    for (const n of KDA_HALVES) {
+      if (seedPres(n, p).kind !== 'value') return seedTitle(n, p);
+    }
+    return S.common.playerPickerKdaTitle;
+  }
+  // The career pair's value gate: the career-matches half's own number
+  // (the old `p.matches > 0` gate on the ADR line, now the seed's) — a
+  // gap never claims "they have played matches", so the ADR line stays
+  // hidden behind it exactly as before.
+  function careerMatchesPositive(p) {
+    const pres = seedPres('career_matches', p);
+    return pres.kind === 'value' && pres.value > 0;
   }
 
   const filtered = $derived.by(() => {
@@ -233,17 +307,25 @@
                 {/if}
                 <span class="spacer"></span>
                 {#if row}
-                  <span class="muted num" title={S.common.playerPickerKdaTitle}
-                    >{row.kills}/{row.deaths}/{assistText(p)}</span
-                  >
-                  <span class="num" title={S.common.playerPickerAdrTitle}>{fmt1(row.adr)}</span>
-                  <span class="muted num" title={S.common.playerPickerRoundsTitle}>{row.roundsPlayed}r</span>
+                  <!-- Every half reads its SEED row (design §3.1/Q2 —
+                       compound per half; the owner ruling of 2026-11-17:
+                       the metrics system IS the gameplay-statistics
+                       layer): the stored value through the seed's own
+                       format tag, the honest dash otherwise. The raw
+                       scoreboard fields behind the row (kills, deaths,
+                       adr, roundsPlayed) are identity here and NEVER
+                       render — no raw fallback. -->
+                  <span class="muted num pp-kda" title={kdaTitle(p)}>{kdaText(p)}</span>
+                  <span class="num pp-adr" title={seedTitle('adr', p)}>{seedText('adr', p)}</span>
+                  <span class="muted num pp-rounds" title={seedTitle('rounds_played', p)}>{roundsText(p)}</span>
                 {:else}
-                  <span class="muted num" title={S.common.playerPickerMatchesTitle}
-                    >{p.matches ?? 0}{S.common.playerPickerMatchesSuffix}</span
+                  <span class="muted num" title={seedTitle('career_matches', p)}
+                    >{seedPres('career_matches', p).kind === 'value'
+                      ? seedText('career_matches', p) + S.common.playerPickerMatchesSuffix
+                      : '—'}</span
                   >
-                  {#if p.matches > 0}
-                    <span class="muted num" title={S.common.playerPickerCareerAdrTitle}>{adrText(p)}{S.common.playerPickerAdrSuffix}</span>
+                  {#if careerMatchesPositive(p)}
+                    <span class="muted num" title={seedTitle('career_adr', p)}>{seedText('career_adr', p)}{S.common.playerPickerAdrSuffix}</span>
                   {/if}
                 {/if}
               </span>

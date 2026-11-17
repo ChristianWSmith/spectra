@@ -669,6 +669,23 @@ func (s *MetricsService) GetMetricValuesForPlayer(steamID string, metricIDs []in
 	return s.st.GetMetricValuesForPlayer(steamID, metricIDs)
 }
 
+// GetMetricSeries is the MATCH-grain SERIES read — the third canonical
+// grain of the same stored-value contract: one player's fresh rows across
+// matches (store.GetPlayerMetricSeries, the read the trend and the
+// profile history already use), for the caller's metric set (metricIDs
+// empty = every metric). steamID is required — a series is always one
+// subject, and an empty id matches no subject key, so it serves an empty
+// series rather than a population (store.GetPlayerMetricSeries's guard).
+// Fresh rows only, like the two reads above: a match with no fresh row
+// comes back as NO POINT, and the view renders the state — never a
+// fallback number. Values are the stored numbers as they stand (the
+// 0..1 percent convention included): the frontend's fmtMetric applies the
+// display scale from the format tag, exactly as it does for the value
+// reads.
+func (s *MetricsService) GetMetricSeries(steamID string, metricIDs []int64) ([]models.MetricSeriesPoint, error) {
+	return s.st.GetPlayerMetricSeries(steamID, metricIDs)
+}
+
 // CompileMetric compiles WITHOUT executing (design §5's no-execution
 // Compile): the provenance SQL a clean-saved Builder preview shows
 // beside its stored rows — provenance without calculating a value, so

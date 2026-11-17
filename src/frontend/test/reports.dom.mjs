@@ -150,6 +150,7 @@ svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'))
 const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   // plumbing (Strings Stage 3): the picker imports the strings catalog.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
@@ -765,18 +766,29 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
   viewstate.resetViewState();
 }
 
-console.log('H. the player picker triple composes per half — raw K/D + the assists metric half (absent → —)');
+console.log('H. the player picker statline composes per half — every half is a seed row');
 {
   // Re-script the backend for a PLAYER-scoped target: one roster player,
-  // one scoreboard row whose raw `assists` column is 9 (it must NEVER
-  // render), and the seeded match-scope `assists` definition. The picker
-  // reads the metric row Reports fetches beside sbBySteam — value 7
-  // renders in the A half; with no fresh row the half is the dash.
-  const ASSISTS_METRIC = {
-    id: 4, name: 'assists', title: 'Assists', scope: 'match',
+  // one scoreboard row whose raw stats (kills 20, deaths 5, assists 9,
+  // adr 70.5, roundsPlayed 24) must NEVER render, and the seeded
+  // match-scope definitions for all five halves. The picker reads the
+  // rows Reports fetches beside sbBySteam — the stored values render,
+  // and a half with no fresh row is the dash.
+  const KILLS = { id: 1, name: 'kills', title: 'Kills', scope: 'match', format: 'int',
+    doc: 'Formula: sum(player_stats.kills)', origin: 'builtin' };
+  const DEATHS = { id: 2, name: 'deaths', title: 'Deaths', scope: 'match', format: 'int',
+    doc: 'Formula: sum(player_stats.deaths)', origin: 'builtin' };
+  const ASSISTS_METRIC = { id: 4, name: 'assists', title: 'Assists', scope: 'match',
     format: 'int', doc: 'Formula: sum(player_stats.assists)', origin: 'builtin',
-    expr: 'from player_stats: sum(assists)', shortName: 'A', denominator: '', pluginId: '',
-  };
+    expr: 'from player_stats: sum(assists)', shortName: 'A', denominator: '', pluginId: '' };
+  const ADR = { id: 5, name: 'adr', title: 'ADR', scope: 'match', format: 'float1',
+    doc: 'Formula: ratio(sum(total_damage), sum(rounds_played))', origin: 'builtin' };
+  const ROUNDS = { id: 6, name: 'rounds_played', title: 'Rounds played', scope: 'match',
+    format: 'int', doc: 'Formula: sum(player_stats.rounds_played)', origin: 'builtin' };
+  // The FRESH stored rows per metric id — deliberately different from
+  // the raw assists column (9): the stored assists value 7 renders, the
+  // raw one never does. A null entry is "no fresh row for that seed".
+  const statline = { 1: 20, 2: 5, 4: 7, 5: 70.5, 6: 24 };
   bindings.handlers.ListReportTemplates = () => [
     { id: 't2', title: 'Player summary', scope: 'player', format: 'md', origin: 'builtin' },
   ];
@@ -789,13 +801,18 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
       kills: 20, deaths: 5, assists: 9, adr: 70.5, roundsPlayed: 24,
     },
   ];
-  bindings.handlers.ListMetrics = () => [ASSISTS_METRIC];
-  bindings.handlers.GetMetricComputeState = () => [{ metricId: 4, state: 'fresh' }];
-  let assistsRow = { value: 7, n: 24 };
+  bindings.handlers.ListMetrics = () => [KILLS, DEATHS, ASSISTS_METRIC, ADR, ROUNDS];
+  bindings.handlers.GetMetricComputeState = () =>
+    [KILLS, DEATHS, ASSISTS_METRIC, ADR, ROUNDS].map((d) => ({ metricId: d.id, state: 'fresh' }));
   bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) =>
-    assistsRow && (metricIDs || []).includes(4)
-      ? [{ metricId: 4, subjectKey: '76561198000000001', value: assistsRow.value, n: assistsRow.n }]
-      : [];
+    Object.keys(statline)
+      .filter((id) => statline[id] != null && (metricIDs || []).includes(Number(id)))
+      .map((id) => ({
+        metricId: Number(id),
+        subjectKey: '76561198000000001',
+        value: statline[id],
+        n: 24,
+      }));
   // The read-through cache holds the previous handlers' answers — flush
   // it so this section's re-scripted reads are the ones the view gets.
   services.invalidate();
@@ -806,20 +823,39 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
     if (!trigger) return null;
     trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     await sleep(60);
-    return root.querySelector('.pp-opt [title="K / D / A in this match"]');
+    return root.querySelector('.pp-opt .pp-kda');
   };
 
   const r4 = await mountReports();
   const kda = await openTriple(r4);
   check(
-    'the triple renders raw K/D with the assists METRIC half (the stored column never renders)',
+    'the triple renders the stored K/D/A seed rows (the raw scoreboard 20/5/9 never renders)',
     !!kda && kda.textContent === '20/5/7',
     kda ? kda.textContent : 'no triple cell',
   );
+  check(
+    'the fresh compound cell keeps its chrome label (no state word while every half shows a number)',
+    kda?.getAttribute('title') === 'K / D / A in this match',
+    kda?.getAttribute('title') ?? '',
+  );
+  {
+    // The popover is still open from openTriple above — query in place
+    // (clicking the trigger again would TOGGLE it shut).
+    const adr = r4.querySelector('.pp-opt .pp-adr');
+    const rounds = r4.querySelector('.pp-opt .pp-rounds');
+    check(
+      'the ADR and rounds halves render their seed values with the SEED Formula as the tooltip',
+      adr?.textContent.trim() === '70.5' &&
+        (adr?.getAttribute('title') || '').startsWith('Formula: ratio(sum(total_damage)') &&
+        rounds?.textContent.trim() === '24r' &&
+        (rounds?.getAttribute('title') || '').startsWith('Formula: sum(player_stats.rounds_played)'),
+      `adr=${adr?.textContent}/${adr?.getAttribute('title')} rounds=${rounds?.textContent}/${rounds?.getAttribute('title')}`,
+    );
+  }
 
   // No fresh row for this match (absent or behind alike — the canonical
-  // read serves fresh rows only): the A half dashes, K/D keep stored.
-  assistsRow = null;
+  // read serves fresh rows only): the A half dashes, K/D still render.
+  statline[4] = null;
   services.invalidate();
   const r5 = await mountReports();
   const kda2 = await openTriple(r5);
@@ -827,6 +863,50 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
     'an absent assists row renders 20/5/— — never the stored 9, never a 0',
     !!kda2 && kda2.textContent === '20/5/—',
     kda2 ? kda2.textContent : 'no triple cell',
+  );
+  check(
+    'the dash half carries the no-data copy in the title (the state lives in the tooltip, never a chip in a compound cell)',
+    kda2?.getAttribute('title') === 'no data for this player',
+    kda2?.getAttribute('title') ?? '',
+  );
+
+  // NO RAW FALLBACK: with the K and D seeds themselves uncomputed the
+  // halves dash — the raw scoreboard fields behind them (20 / 5) never
+  // print.
+  statline[1] = null;
+  statline[2] = null;
+  statline[4] = 7; // the A half back on its fresh row — only K/D are gaps
+  services.invalidate();
+  const r6 = await mountReports();
+  const kda3 = await openTriple(r6);
+  check(
+    'a half with no seed row dashes — the raw kills/deaths columns (20/5) never print',
+    !!kda3 && kda3.textContent === '—/—/7',
+    kda3 ? kda3.textContent : 'no triple cell',
+  );
+
+  // A BEHIND seed: the state word reaches the cell through the title
+  // (invariant 9 — never a chip inside a compound cell, never a number).
+  // The kills row is ABSENT here — a fresh row would (correctly) win the
+  // machine's precedence and render the value.
+  statline[1] = null;
+  statline[2] = 5; // deaths back on its fresh row — kills is the behind half
+  bindings.handlers.GetMetricComputeState = () => [
+    { metricId: 1, state: 'behind' },
+    { metricId: 2, state: 'fresh' },
+    { metricId: 4, state: 'fresh' },
+    { metricId: 5, state: 'fresh' },
+    { metricId: 6, state: 'fresh' },
+  ];
+  services.invalidate();
+  const r7 = await mountReports();
+  const kda4 = await openTriple(r7);
+  check(
+    'a BEHIND K seed renders the state word in the title and a dash — never the raw 20',
+    !!kda4 &&
+      kda4.textContent.startsWith('—/') &&
+      kda4.getAttribute('title') === 'value not available yet — recompute pending',
+    kda4 ? `${kda4.textContent} title=${kda4.getAttribute('title')}` : 'no triple cell',
   );
 }
 

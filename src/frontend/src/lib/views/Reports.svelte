@@ -222,53 +222,62 @@
   // scopes never need it, so it is only fetched — and kept — for
   // player-scoped templates.
   //
-  // assistsBySteam is the picker's K/D/A triple's A half (design §3.1/Q2):
-  // the match-scope `assists` METRIC rows read by NAME beside sbBySteam —
-  // the ONE canonical stored read (getMetricValuesForMatch, fresh rows
-  // only), resolved through the catalog this view already loads. K and D
-  // stay the raw scoreboard fields; a player with no fresh row (absent or
-  // behind) renders the honest dash in the A half, never the stored
-  // column, never a fabricated 0.
+  // The picker's statline — every gameplay-stat half its option rows
+  // show reads a STORED seed row now (the owner ruling of 2026-11-17:
+  // the metrics system IS the gameplay-statistics layer): the five
+  // match-scope seeds (kills / deaths / assists / adr / rounds_played)
+  // resolve by NAME through the catalog this view already loads and ride
+  // the ONE canonical stored read beside sbBySteam
+  // (getMetricValuesForMatch, fresh rows only). Shape: seed name →
+  // {def, bySteam: steamId → {value, n, format}}. A player with no
+  // FRESH row for a seed has no entry there — that half renders the
+  // honest dash with the state word in its title, never the scoreboard
+  // column behind it, never a fabricated 0. The picker owns the CAREER
+  // pair (career_matches / career_adr) through the same batched bucket
+  // read it has always used — the two grains never mix inside one row.
+  const STATLINE_SEEDS = ['kills', 'deaths', 'assists', 'adr', 'rounds_played'];
   let sbBySteam = $state({});
-  let assistsBySteam = $state(new Map());
+  let seeds = $state(new Map());
 
   $effect(() => {
     const id = matchId;
     const scope = tpl && tpl.scope;
     if (!id || scope !== 'player') {
       sbBySteam = {};
-      assistsBySteam = new Map();
+      seeds = new Map();
       return;
     }
     let live = true;
     // The catalog lands with loadMetricsList (and reloads on every
     // metric-done — the sweep that replaced these rows), so reading it
-    // here both fills the half once the definitions are known and
+    // here both fills the halves once the definitions are known and
     // refetches when a sweep moves the rows.
-    const assistsDef = (metrics || []).find(
-      (d) => d && d.name === 'assists' && (d.scope || 'match') === 'match',
+    const catalog = new Map((metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
+    const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter(
+      (d) => d && (d.scope || 'match') === 'match',
     );
+    const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
     Promise.all([
       getScoreboard(id, '', false),
-      assistsDef ? getMetricValuesForMatch(id, [assistsDef.id]) : Promise.resolve([]),
+      matchDefs.length ? getMetricValuesForMatch(id, matchDefs.map((d) => d.id)) : Promise.resolve([]),
     ])
       .then(([rows, values]) => {
         if (!live) return;
         const m = {};
         for (const r of listedPlayers(rows) || []) m[r.steamId] = r;
         sbBySteam = m;
-        const a = new Map();
-        if (assistsDef) {
-          for (const v of values || []) {
-            if (v.metricId === assistsDef.id) a.set(v.subjectKey, { value: v.value, format: assistsDef.format });
-          }
+        const nameById = new Map(matchDefs.map((d) => [d.id, d.name]));
+        for (const v of values || []) {
+          const name = nameById.get(v.metricId);
+          const entry = name && out.get(name);
+          if (entry) entry.bySteam.set(v.subjectKey, { value: v.value, n: v.n, format: entry.def.format });
         }
-        assistsBySteam = a;
+        seeds = out;
       })
       .catch(() => {
         if (live) {
           sbBySteam = {};
-          assistsBySteam = new Map();
+          seeds = new Map();
         }
       });
     return () => (live = false);
@@ -719,7 +728,8 @@
             <PlayerPicker
               {players}
               stats={sbBySteam}
-              assists={assistsBySteam}
+              {seeds}
+              states={metricStates}
               value={steamId}
               id="rep-player"
               onselect={(sid) => (steamId = sid)}

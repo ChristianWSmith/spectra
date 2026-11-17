@@ -408,6 +408,40 @@ await sleep(40);
 
 console.log('E. PlayerProfile: "Imported" history header + patch-first trend tooltips');
 document.body.removeChild(root);
+// The read-cache flush the sections below drive (services.invalidate —
+// every cachedRead key) — declared HERE because E's series/catalog
+// stubs must land before its mount.
+const { invalidate } = await import(pathToFileURL('src/lib/services.js').href);
+// The K/D/A halves read the match-grain SERIES now (the owner ruling of
+// 2026-11-17 — the metrics system IS the gameplay-statistics layer), so
+// the catalog and the series read must be in place BEFORE this mount:
+// sections A–D already cached a null catalog answer, so flush first.
+// The series values are deliberately NOT the raw ps.kills / ps.deaths
+// columns behind the DTO (10/5 and 5/12): a cell that prints 17/4 is
+// proof the seed row — not the stored column — is the source.
+bindings.MetricsService.ListMetrics = () =>
+  Promise.resolve([
+    { id: 5, name: 'kills', title: 'Kills', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.kills)', origin: 'builtin' },
+    { id: 6, name: 'deaths', title: 'Deaths', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.deaths)', origin: 'builtin' },
+    { id: 7, name: 'assists', title: 'Assists', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.assists)', origin: 'builtin' },
+  ]);
+bindings.MetricsService.GetMetricSeries = () =>
+  Promise.resolve([
+    { metricId: 5, matchId: 1, value: 17, n: 24 },
+    { metricId: 6, matchId: 1, value: 4, n: 24 },
+    { metricId: 5, matchId: 2, value: 3, n: 22 },
+    { metricId: 6, matchId: 2, value: 9, n: 22 },
+  ]);
+bindings.MetricsService.GetMetricComputeState = () =>
+  Promise.resolve([
+    { metricId: 5, state: 'fresh' },
+    { metricId: 6, state: 'fresh' },
+    { metricId: 7, state: 'fresh' },
+  ]);
+invalidate();
 const pTarget = document.createElement('div');
 document.body.appendChild(pTarget);
 mount(profileMod.default, {
@@ -437,20 +471,23 @@ await sleep(100); // mount + getProfile + getCareerTrend + listPlayers
     histTable.querySelector('tbody tr td').textContent,
   );
   {
-    // W3a's per-half triple: K and D are raw columns, the A half is the
-    // stored `assists` metric row — the first history row has one, the
-    // second carries none and must render the honest dash (never 0).
+    // The per-half triple after the seed conversion: K and D read the
+    // match-grain SERIES rows (values 17/4 and 3/9 — the raw ps.kills /
+    // ps.deaths columns behind the DTO are 10/5 and 5/12 and must never
+    // print), the A half is the stored `assists` metric row — the first
+    // history row has one, the second carries none and must render the
+    // honest dash (never 0).
     const kda = [...histTable.querySelectorAll('tbody tr')].map(
       (tr) => tr.querySelectorAll('td')[5]?.textContent.trim(),
     );
     check(
-      'the K/D/A cell renders raw K/D with the metric-backed assists value',
-      kda[0] === '10/5/2',
+      'the K/D/A cell renders the stored SERIES K/D with the metric-backed assists value (never the raw columns)',
+      kda[0] === '17/4/2',
       JSON.stringify(kda),
     );
     check(
-      'a match with no fresh assists row renders the honest dash, never a 0',
-      kda[1] === '5/12/—',
+      'a match with no fresh assists row renders the honest dash, never a 0 (the series K/D still renders)',
+      kda[1] === '3/9/—',
       JSON.stringify(kda),
     );
   }
@@ -486,7 +523,6 @@ document.body.removeChild(pTarget);
 // listPlayers is read-cached (services.js cachedRead) — flush first or
 // sections A–E's successful read would answer in the stub's place.
 bindings.ProfileService.ListPlayers = () => Promise.reject(new Error('players read failed'));
-const { invalidate } = await import(pathToFileURL('src/lib/services.js').href);
 invalidate();
 const fTarget = document.createElement('div');
 document.body.appendChild(fTarget);
@@ -1269,6 +1305,217 @@ console.log('L. the Matches card reads the career_matches seed row (never profil
   );
   document.body.removeChild(behind);
   localStorage.removeItem('spectra:pinned-profile-metrics');
+}
+
+// ---------------------------------------------------------------------------
+// Section M: the two statlines w36 left on raw columns — the list's
+// Matches column (owner ruling, 2026-11-17: the metrics system IS the
+// gameplay-statistics layer) and the history table's K/D halves. Both
+// read their SEED rows through a canonical read (the batched career
+// bucket read / the match-grain series read): the raw counts behind
+// them (the list read's `matches`, ps.kills / ps.deaths) are the
+// characterization these pins prove gone.
+console.log('M. the Profiles Matches column and the history K/D halves read their seed rows');
+{
+  const CATALOG = [
+    { id: 61, name: 'career_adr', title: 'ADR', scope: 'profile', format: 'float1',
+      doc: 'Formula: avg(player_stats.adr)', origin: 'builtin' },
+    { id: 81, name: 'career_matches', title: 'Matches played', scope: 'profile', format: 'int',
+      doc: 'Formula: count(player_stats) over the library', origin: 'builtin' },
+    { id: 5, name: 'kills', title: 'Kills', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.kills)', origin: 'builtin' },
+    { id: 6, name: 'deaths', title: 'Deaths', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.deaths)', origin: 'builtin' },
+    { id: 7, name: 'assists', title: 'Assists', scope: 'match', format: 'int',
+      doc: 'Formula: sum(player_stats.assists)', origin: 'builtin' },
+  ];
+  // amy's seed counts DIFFER from the list read's own `matches` field
+  // (amy: seed 7 vs list 1) so a raw fallback prints the wrong number;
+  // dan gets NO row — the honest gap (never a fabricated 0).
+  const CAREER_ROWS = [
+    { metricId: 61, subjectKey: '76561198000000001', value: 63.5, n: 42 },
+    { metricId: 81, subjectKey: '76561198000000001', value: 7, n: 7 },
+    { metricId: 81, subjectKey: '76561198000000002', value: 5, n: 5 },
+    { metricId: 81, subjectKey: '76561198000000003', value: 5, n: 5 },
+  ];
+  bindings.ProfileService.ListPlayers = () => Promise.resolve(PLAYERS);
+  bindings.MetricsService.ListMetrics = () => Promise.resolve(CATALOG);
+  let bucketReads = 0; // calls with the WHOLE career bucket (steam "")
+  let perPlayerReads = 0; // calls narrowed to ONE player — an N+1 storm
+  bindings.MetricsService.GetMetricValuesForPlayer = (steam, ids) => {
+    if (steam) perPlayerReads++;
+    else if ((ids || []).includes(81)) bucketReads++;
+    return Promise.resolve(CAREER_ROWS);
+  };
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([
+      { metricId: 61, state: 'fresh' },
+      { metricId: 81, state: 'fresh' },
+      { metricId: 5, state: 'fresh' },
+      { metricId: 6, state: 'fresh' },
+      { metricId: 7, state: 'fresh' },
+    ]);
+  let seriesReads = [];
+  bindings.MetricsService.GetMetricSeries = (steam, ids) => {
+    seriesReads.push([steam, ids]);
+    return Promise.resolve([
+      { metricId: 5, matchId: 1, value: 17, n: 24 },
+      { metricId: 6, matchId: 1, value: 4, n: 24 },
+    ]);
+  };
+  invalidate(); // flush sections A–L's stubs (same read-cache keys)
+
+  const cellOf = (target, name, idx) => {
+    const row = [...target.querySelectorAll('table.data-table tbody tr')].find(
+      (tr) => tr.querySelector('.pf-name')?.textContent.trim() === name,
+    );
+    return row ? row.children[idx] : null;
+  };
+
+  // --- M1: the list's Matches column -----------------------------------
+  const m1 = document.createElement('div');
+  document.body.appendChild(m1);
+  mount(profilesMod.default, { target: m1, props: { nav: () => {} } });
+  await sleep(160); // mount + listPlayers + the catalog + the ONE career read
+  {
+    const matches = cellOf(m1, 'amy', 1);
+    check(
+      'the Matches cell renders the STORED career_matches row (7) — the list read\'s own count (1) never prints',
+      !!matches && matches.textContent.trim() === '7',
+      matches ? matches.textContent.trim() : 'no Matches cell',
+    );
+    check(
+      'the fresh cell carries the SEED Formula as its tooltip',
+      (matches?.getAttribute('title') || '').startsWith('Formula: count(player_stats)'),
+      matches?.getAttribute('title') ?? '',
+    );
+    const dan = cellOf(m1, 'dan', 1);
+    check(
+      'a player with no fresh row renders the honest dash (never a fabricated 0, never the raw count)',
+      !!dan && dan.textContent.trim() === '—',
+      dan ? dan.textContent.trim() : 'no cell',
+    );
+    check(
+      'ONE batched bucket read serves the whole list — never a per-player call',
+      bucketReads === 1 && perPlayerReads === 0,
+      `bucket=${bucketReads} perPlayer=${perPlayerReads}`,
+    );
+    check(
+      'the ADR column keeps reading its own seed out of the same read',
+      cellOf(m1, 'amy', 2)?.textContent.trim() === '63.5',
+      cellOf(m1, 'amy', 2)?.textContent.trim(),
+    );
+  }
+  // A BEHIND career_matches: the state WORD in the cell, never a number
+  // (the list read's raw count stays behind it, unrendered).
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve([]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([{ metricId: 61, state: 'fresh' }, { metricId: 81, state: 'behind' }]);
+  invalidate();
+  const m1b = document.createElement('div');
+  document.body.appendChild(m1b);
+  mount(profilesMod.default, { target: m1b, props: { nav: () => {} } });
+  await sleep(160);
+  {
+    const cells = [...m1b.querySelectorAll('table.data-table tbody tr')].map(
+      (tr) => tr.children[1],
+    );
+    const chips = cells.map((c) => c?.querySelector('.chip.status'));
+    check(
+      'a BEHIND career_matches renders the state word in every Matches cell, never a number',
+      cells.length === 4 &&
+        chips.every((c) => c && c.textContent.trim() === 'behind') &&
+        cells.every((c) => !/\d/.test(c.textContent)),
+      JSON.stringify(cells.map((c) => c?.textContent.trim())),
+    );
+  }
+  document.body.removeChild(m1b);
+  document.body.removeChild(m1);
+
+  // --- M2: the history table's K/D halves read the SERIES read ---------
+  bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(CAREER_ROWS);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([
+      { metricId: 81, state: 'fresh' },
+      { metricId: 5, state: 'fresh' },
+      { metricId: 6, state: 'fresh' },
+      { metricId: 7, state: 'fresh' },
+    ]);
+  seriesReads = [];
+  invalidate();
+  const m2 = document.createElement('div');
+  document.body.appendChild(m2);
+  mount(profileMod.default, {
+    target: m2,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(180); // mount + getProfile + catalog + the ONE series read
+  const histCells = () => {
+    const table = [...m2.querySelectorAll('table.data-table')].find((t) =>
+      t.textContent.includes('KAST%'),
+    );
+    return table ? [...table.querySelectorAll('tbody tr')].map((tr) => tr.children[5]) : [];
+  };
+  {
+    const cells = histCells();
+    check(
+      'the series read went out ONCE for the player with the requested seed ids (never one call per match)',
+      seriesReads.length === 1 &&
+        seriesReads[0][0] === '76561198000000001' &&
+        [5, 6, 7].every((id) => seriesReads[0][1].includes(id)),
+      JSON.stringify(seriesReads),
+    );
+    check(
+      'the history K/D halves render the stored series values (raw ps.kills/ps.deaths 10/5 never prints)',
+      cells[0]?.textContent.trim() === '17/4/2',
+      cells[0]?.textContent.trim(),
+    );
+    check(
+      'a match with no fresh series row renders the honest dash for both halves (raw 5/12 never prints)',
+      cells[1]?.textContent.trim() === '—/—/—',
+      cells[1]?.textContent.trim(),
+    );
+    check(
+      'a dash half carries the no-data copy in the title (the state lives in the tooltip, never a chip in a compound cell)',
+      cells[1]?.getAttribute('title') === 'no data for this player',
+      cells[1]?.getAttribute('title') ?? '',
+    );
+  }
+  document.body.removeChild(m2);
+
+  // A BEHIND K/D seed: the state word reaches the cell through the
+  // title — the raw columns behind the DTO never surface.
+  seriesReads = [];
+  bindings.MetricsService.GetMetricSeries = () => Promise.resolve([]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([
+      { metricId: 81, state: 'fresh' },
+      { metricId: 5, state: 'behind' },
+      { metricId: 6, state: 'behind' },
+      { metricId: 7, state: 'fresh' },
+    ]);
+  invalidate();
+  const m3 = document.createElement('div');
+  document.body.appendChild(m3);
+  mount(profileMod.default, {
+    target: m3,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(180);
+  {
+    const cells = [...m3.querySelectorAll('table.data-table')]
+      .find((t) => t.textContent.includes('KAST%'))
+      ?.querySelectorAll('tbody tr');
+    const first = cells ? cells[0]?.children[5] : null;
+    check(
+      'a BEHIND K/D seed renders the state word in the title and a dash — never the raw 10/5',
+      !!first &&
+        first.textContent.trim() === '—/—/2' &&
+        first.getAttribute('title') === 'value not available yet — recompute pending',
+      first ? `${first.textContent.trim()} title=${first.getAttribute('title')}` : 'no cell',
+    );
+  }
+  document.body.removeChild(m3);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

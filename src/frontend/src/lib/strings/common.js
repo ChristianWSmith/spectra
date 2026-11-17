@@ -206,11 +206,7 @@ export const common = {
   playerPickerFilterLabel: 'Filter players', // the filter input's aria-label
   playerPickerListLabel: 'Players', // the listbox's aria-label
   playerPickerKdaTitle: 'K / D / A in this match', // the K/D/A cell's tooltip
-  playerPickerAdrTitle: 'ADR in this match', // the match ADR cell's tooltip
-  playerPickerRoundsTitle: 'Rounds played', // the rounds cell's tooltip
-  playerPickerMatchesTitle: 'Matches in the library', // the career-matches cell's tooltip
   playerPickerMatchesSuffix: ' matches', // after the career-matches count
-  playerPickerCareerAdrTitle: 'Career ADR', // the career ADR cell's tooltip
   playerPickerAdrSuffix: ' ADR', // after the career ADR value
   playerPickerInMatch: 'in this match', // the line-2 state, player appears in the selected match
   playerPickerNotInMatch: 'not in this match', // the line-2 state, player absent from the match

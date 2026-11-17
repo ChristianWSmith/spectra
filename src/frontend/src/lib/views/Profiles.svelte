@@ -11,10 +11,11 @@
   // 17-digit Steam id (isSteam — bots/rows without one are inert).
   // The TABLE is sortable on every column and defaults to matches DESC
   // (owner ruling: a player seen in many matches is the common case in a
-  // single-player import list, so they sit on top). The ADR column is
-  // metric-backed: it reads the stored `career_adr` metric rows (the
-  // canonical career read) — `player_career` holds raw counts only, so
-  // the player list read carries no ADR at all.
+  // single-player import list, so they sit on top). The ADR AND Matches
+  // columns are metric-backed: they read the stored `career_adr` /
+  // `career_matches` metric rows (the canonical career read, ONE batched
+  // read for the whole list) — `player_career` holds raw counts only, so
+  // the player list read carries neither number.
   import {
     listPlayers,
     listMetrics,
@@ -78,21 +79,28 @@
     loadPlayers();
   });
 
-  // --- The ADR column reads the STORED career metric row --------------
-  // the list's ADR is the `career_adr` metric — the canonical career
-  // read; the player list read carries no ADR column at all
-  // (`player_career` holds raw counts only) — ONE batched
-  // getMetricValuesForPlayer('', [career_adr]) read for the WHOLE list
-  // (the career bucket returns every player's row; never per-player
-  // calls), merged into a steamId → row map. Every cell then renders
-  // through lib/metricstate.js — the same five-word state machine every
-  // other metric value slot uses: fresh → the value, no fresh row → '—'
-  // (a gap is never a fabricated 0), anything else → the state chip.
+  // --- The ADR AND Matches columns read the STORED career metric rows --
+  // both columns are metrics now (the owner ruling of 2026-11-17: the
+  // metrics system IS the gameplay-statistics layer) — `career_adr` for
+  // ADR, `career_matches` for Matches, each resolved by NAME through the
+  // catalog and served by ONE batched getMetricValuesForPlayer('',
+  // [ids]) read for the WHOLE list (the career bucket returns every
+  // player's row; never per-player calls), split into a steamId → row map
+  // per metric. Every cell then renders through lib/metricstate.js — the
+  // same five-word state machine every other metric value slot uses:
+  // fresh → the value, no fresh row → '—' (a gap is never a fabricated
+  // 0), anything else → the state chip. The list read itself carries no
+  // ADR column and no honest matches substitute: `player_career` holds
+  // raw counts only, so a metric with no seed row never falls back to a
+  // raw field.
   // Refetched on spectra:metric-done (the sweep's outcome replaced the
   // rows the read cache already flushed).
   let adrMetric = $state(null); // the resolved definition (null = not in the catalog)
   let adrRows = $state(new Map()); // steamId → the fresh stored row
   let adrHasRows = $state(false); // unit coverage: does this metric have ANY row?
+  let matchesMetric = $state(null); // …the `career_matches` twin
+  let matchesRows = $state(new Map());
+  let matchesHasRows = $state(false);
   let adrStates = $state(new Map()); // metricId → {state, error}
   let adrProgress = $state(new Map()); // metricId → the live k/N feed
   let adrError = $state('');
@@ -107,29 +115,51 @@
     adrMetric = null;
     adrRows = new Map();
     adrHasRows = false;
+    matchesMetric = null;
+    matchesRows = new Map();
+    matchesHasRows = false;
     adrStates = new Map();
     adrError = '';
     Promise.all([listMetrics(), getMetricComputeState()])
       .then(([defs, states]) => {
         if (!live) return null;
         const rows = defs || [];
-        const def = rows.find((d) => d && d.name === 'career_adr' && (d.scope || 'match') === 'profile');
+        const bySeed = (name) =>
+          rows.find((d) => d && d.name === name && (d.scope || 'match') === 'profile') || null;
+        const adrDef = bySeed('career_adr');
+        const matchesDef = bySeed('career_matches');
         adrStates = new Map((states || []).map((s) => [s.metricId, s]));
-        if (!def) return null; // definition gone → every cell renders '—'
-        return getMetricValuesForPlayer('', [def.id]).then((values) => ({ def, values }));
+        const wanted = [adrDef, matchesDef].filter(Boolean);
+        // Neither seed in the catalog → every cell renders '—' (a
+        // definition gone is not an error, and never a raw fallback).
+        if (!wanted.length) return null;
+        return getMetricValuesForPlayer('', wanted.map((d) => d.id)).then((values) => ({
+          adrDef,
+          matchesDef,
+          values,
+        }));
       })
       .then((res) => {
         if (!live || !res) return;
-        // Key by subject key but keep only THIS metric's rows: the read is
-        // already narrowed server-side, and filtering here keeps the
-        // map honest if a read ever returns a wider set.
-        const bySteam = new Map();
-        for (const v of res.values || []) {
-          if (v.metricId === res.def.id) bySteam.set(v.subjectKey, v);
-        }
-        adrMetric = res.def;
-        adrRows = bySteam;
-        adrHasRows = bySteam.size > 0;
+        // Key by subject key but keep only EACH metric's own rows: the
+        // read is already narrowed server-side, and filtering here keeps
+        // the maps honest if a read ever returns a wider set.
+        const split = (def) => {
+          const bySteam = new Map();
+          if (!def) return bySteam;
+          for (const v of res.values || []) {
+            if (v.metricId === def.id) bySteam.set(v.subjectKey, v);
+          }
+          return bySteam;
+        };
+        const adrBySteam = split(res.adrDef);
+        const matchesBySteam = split(res.matchesDef);
+        adrMetric = res.adrDef;
+        adrRows = adrBySteam;
+        adrHasRows = adrBySteam.size > 0;
+        matchesMetric = res.matchesDef;
+        matchesRows = matchesBySteam;
+        matchesHasRows = matchesBySteam.size > 0;
       })
       .catch((e) => {
         if (live) adrError = errText(e);
@@ -152,6 +182,26 @@
 
   function adrTitle(pres) {
     if (pres.kind === 'value') return `${(adrMetric && adrMetric.title) || 'ADR'} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, adrError);
+  }
+
+  // The Matches column's twins over `career_matches` — the same state
+  // machine, the same read, the seed's OWN `doc` as the value tooltip
+  // (the Formula is the tooltip medium the tiering rule measures
+  // wholesale — a seeded cell documents itself exactly like a metric
+  // cell's header), falling back to the title + n form when the
+  // definition carries no doc.
+  function matchesPres(p) {
+    const st = liveMetricState(adrProgress, adrStates, matchesMetric ? matchesMetric.id : undefined);
+    return metricPresentation(st, matchesRows.get(p.steamId) || null, matchesHasRows);
+  }
+
+  function matchesTitle(pres) {
+    if (pres.kind === 'value') {
+      if (matchesMetric && matchesMetric.doc) return matchesMetric.doc;
+      return `${(matchesMetric && matchesMetric.title) || 'Matches'} — sample size n=${pres.n}`;
+    }
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, adrError);
   }
@@ -183,7 +233,12 @@
   // Search first, THEN sort: `filtered` narrows the fetched list and the
   // sort orders what survives it. Sort semantics per column — Player →
   // p.name (localeCompare; an empty name '' sorts first ascending and
-  // renders '—'), Matches → p.matches numeric, ADR → the STORED
+  // renders '—'), Matches → p.matches numeric — SORTING IS NOT DISPLAY,
+  // the same deliberate decision the scoreboard's raw-field sort rests
+  // on: the CELL renders the stored `career_matches` row while the ORDER
+  // keeps the list read's own count, so the default DESC order holds
+  // before the metric read lands and for a player whose seed row is a
+  // gap, ADR → the STORED
   // `career_adr` metric value for that player (adrValue — never the
   // fmt1 string in the cell; the player list read carries no ADR at all,
   // since `player_career` holds raw counts only), the import-date column
@@ -325,6 +380,7 @@
           <tbody>
             {#each sorted as p (p.steamId)}
               {@const pres = adrPres(p)}
+              {@const mp = matchesPres(p)}
               <tr
                 class:clickable={isSteam(p.steamId)}
                 title={isSteam(p.steamId) ? `Open ${p.name || p.steamId}’s profile` : p.steamId}
@@ -338,7 +394,25 @@
                   <span class="pf-name">{p.name || '—'}</span>
                   <span class="muted mono pf-steam">{p.steamId}</span>
                 </td>
-                <td class="num">{p.matches}</td>
+                <!-- The stored `career_matches` metric row, through the
+                     same state machine as ADR: fresh → the value, no
+                     fresh row → '—', otherwise the state chip (never a
+                     fabricated 0, never the list read's raw count — a
+                     missing seed row is a gap, not a number). -->
+                <td class="num" title={matchesTitle(mp)}>
+                  {#if mp.kind === 'value'}
+                    {fmtMetric(mp.value, matchesMetric ? matchesMetric.format : 'int')}
+                  {:else if mp.kind === 'nodata'}
+                    —
+                  {:else}
+                    <StatusChip
+                      status={mp.state}
+                      title={matchesTitle(mp)}
+                      progress={metricProgressFrac(adrProgress, matchesMetric ? matchesMetric.id : undefined)}
+                      stage={metricProgressStage(adrProgress, matchesMetric ? matchesMetric.id : undefined)}
+                    />
+                  {/if}
+                </td>
                 <!-- The stored `career_adr` metric row, through the one
                      state machine: fresh → the value, no fresh row → '—',
                      otherwise the state chip (never a fabricated 0). -->
