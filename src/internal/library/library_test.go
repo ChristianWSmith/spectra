@@ -63,7 +63,9 @@ func newTestImporterWith(t *testing.T, o Options) (*Importer, *store.Store) {
 
 // fakeParse reads the stream (proving it is a valid reader), feeds the
 // progress + position sinks the pipeline wired up, and returns a minimal
-// ExtractedMatch.
+// ExtractedMatch — WITH the one player and one round that make it a
+// VALID extraction (Importer.process rejects a content-less parse: see
+// the no-players/no-rounds guard in library.go).
 func fakeParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
 	if _, err := io.ReadAll(r); err != nil {
 		return nil, err
@@ -82,7 +84,11 @@ func fakeParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*mo
 			}
 		}
 	}
-	return &models.ExtractedMatch{Match: models.Match{Map: "de_test", TickRate: 64}}, nil
+	return &models.ExtractedMatch{
+		Match:   models.Match{Map: "de_test", TickRate: 64},
+		Players: []models.Player{{SteamID: "100", Name: "tester", Side: "ct"}},
+		Rounds:  []models.Round{{Number: 1, StartTick: 1, EndTick: 64}},
+	}, nil
 }
 
 func writeDemo(t *testing.T, name, content string) string {

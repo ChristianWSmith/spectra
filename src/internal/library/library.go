@@ -1048,6 +1048,32 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 
+	// An extraction with no players or no rounds must NOT be stored as a
+	// "ready" match (2026-11-17, owner bug: a demo whose entity stream
+	// the parser cannot digest still "succeeds" — the parser recovers
+	// per packet, game events parse, but no player/round state ever
+	// materializes, so the extractor accumulates nothing). A content-less
+	// ready row is a zombie on every surface: blank library/scoreboard,
+	// and — worse — UN-HEALABLE metrics: store.MetricCoverage treats every
+	// ready match as a unit owing a fresh row per match-scope metric, so
+	// the sweeps (import body + startup) would re-attempt forever and
+	// write nothing, leaving the metrics behind permanently. Failing here
+	// keeps the established honest failure shape: failJob marks the match
+	// failed with a player-language message, the deferred delete-on-fail
+	// drops the copy this job made, and the sidecar is removed with the
+	// rest of the half-written state. Either side empty is enough: no
+	// rounds (warmup/knife-only recordings, all rounds discarded at
+	// ingest) or no players leaves the same blank, un-freshenable match.
+	if len(em.Players) == 0 || len(em.Rounds) == 0 {
+		cleanupSidecar()
+		msg := "no rounds were found in this demo"
+		if len(em.Rounds) > 0 {
+			msg = "no players were found in this demo"
+		}
+		im.failJob(jobID, matchID, models.StageParse, msg, false)
+		return
+	}
+
 	meta, err := sw.Close(em.Match.TickRate)
 	if err != nil {
 		cleanupSidecar()
