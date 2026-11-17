@@ -35,11 +35,14 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the SIXTY-ONE schema-seeded builtins (schema.sql —
+// builtinSeed maps the EIGHTY-THREE schema-seeded builtins (schema.sql —
 // name/expr/scope/format/short_name/denominator are LOCKED to the
 // baseline seed by this table) onto their hand-computed seed
 // expectations. (2026-11-17 re-pin of the FIFTY-NINE count: plan §7 M3
-// / §8 adds the dmg_no_kill + kill_conversion match rows.) interpretation records how the seeded expression states
+// / §8 adds the dmg_no_kill + kill_conversion match rows; the same
+// day's owner Option A extension adds the 22-row count addendum —
+// EIGHTY-THREE / 64 match + 19 profile — an owner amendment the
+// plan's §8 does not list.) interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). There is no groupBy input: since W2 every
 // statement is subject-grouped by the engine, which is exactly the
@@ -537,8 +540,9 @@ var builtinSeed = []struct {
 		wantLabels: eightLabels,
 	},
 	// ---- addendum: the M3 combat-damage conversions (match) —
-	// plan §7 M3/§8, the 2026-11-17 re-pin (SIXTY-ONE builtins /
-	// 48 match + 13 profile).
+	// plan §7 M3/§8, the 2026-11-17 re-pin (EIGHTY-THREE builtins /
+	// 64 match + 19 profile after the same day's owner Option A
+	// count-addendum extension).
 	{
 		// The corpus's damage and kill rows never share a tick (kills
 		// at round*3000+{0..40}, damage at +{100..119}), so NOTHING
@@ -568,6 +572,147 @@ var builtinSeed = []struct {
 		scope: "match", format: "percent", shortName: "", denominator: "",
 		interpretation: "share of this player's damage that converts into kills (corpus: 0 — no shared tick)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
+	},
+	// ---- addendum: the Option A count addendum (16 match + 6 profile
+	// rows) — owner Option A extension, 2026-11-17 (EIGHTY-THREE
+	// builtins / 64 match + 19 profile; the plan's §8 does not list
+	// these — an owner amendment). Corpus math: player_stats carries
+	// kills = 2i, deaths = i, headshots = i, mvps = 1, total_damage =
+	// 100i, damage_taken = 50i, rounds_played = 24, money_spent_total =
+	// 150000 per match per player; teamkills/suicides/shots/hits/
+	// flashed_times/bomb_plants/bomb_defuses/utility_damage are absent
+	// → 0 (schema DEFAULT), every sum N = the 3 player_stats rows.
+	{
+		name: "kills", expr: "from player_stats: sum(kills)",
+		scope: "match", format: "int", shortName: "K", denominator: "",
+		interpretation: "kill count (corpus: 6i over the three identical matches)",
+		rows:           8, wantValues: []float64{6, 12, 18, 24, 30, 36, 42, 48}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "deaths", expr: "from player_stats: sum(deaths)",
+		scope: "match", format: "int", shortName: "D", denominator: "",
+		interpretation: "death count (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "mvps", expr: "from player_stats: sum(mvps)",
+		scope: "match", format: "int", shortName: "MVPs", denominator: "",
+		interpretation: "MVP award count (corpus: 1 per match → 3)",
+		rows:           8, wantAll: 3, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "total_damage", expr: "from player_stats: sum(total_damage)",
+		scope: "match", format: "int", shortName: "DMG", denominator: "",
+		interpretation: "damage dealt (corpus: 300i)",
+		rows:           8, wantValues: []float64{300, 600, 900, 1200, 1500, 1800, 2100, 2400}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "utility_damage", expr: "from player_stats: sum(utility_damage)",
+		scope: "match", format: "int", shortName: "Util", denominator: "",
+		interpretation: "scoreboard Util total (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "headshots", expr: "from player_stats: sum(headshots)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "headshot kills (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "teamkills", expr: "from player_stats: sum(teamkills)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "team-kill count (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "suicides", expr: "from player_stats: sum(suicides)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "suicide count (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "damage_taken", expr: "from player_stats: sum(damage_taken)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "damage absorbed (corpus: 150i)",
+		rows:           8, wantValues: []float64{150, 300, 450, 600, 750, 900, 1050, 1200}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "shots", expr: "from player_stats: sum(shots)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "shots fired (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "hits", expr: "from player_stats: sum(hits)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "shots that connected (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "rounds_played", expr: "from player_stats: sum(rounds_played)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds the player appeared in (corpus: 24 per match → 72)",
+		rows:           8, wantAll: 72, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "flashed_times", expr: "from player_stats: sum(flashed_times)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "times blinded (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "bomb_plants", expr: "from player_stats: sum(bomb_plants)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "bomb plants (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "bomb_defuses", expr: "from player_stats: sum(bomb_defuses)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "bomb defuses (corpus: column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "money_spent_total", expr: "from player_stats: sum(money_spent_total)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "money spent (corpus: 150000 per match → 450000)",
+		rows:           8, wantAll: 450000, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_kills", expr: "from player_stats: sum(kills)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career kill count (corpus: 6i — the match seed's library twin)",
+		rows:           8, wantValues: []float64{6, 12, 18, 24, 30, 36, 42, 48}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_deaths", expr: "from player_stats: sum(deaths)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career death count (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_assists", expr: "from player_stats: sum(assists)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career cross-team assists (corpus: 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_mvps", expr: "from player_stats: sum(mvps)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career MVP awards (corpus: 1 per match → 3)",
+		rows:           8, wantAll: 3, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_total_damage", expr: "from player_stats: sum(total_damage)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career damage dealt (corpus: 300i)",
+		rows:           8, wantValues: []float64{300, 600, 900, 1200, 1500, 1800, 2100, 2400}, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_matches", expr: "from player_stats: count()",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "matches the player appears in (corpus: 3)",
+		rows:           8, wantAll: 3, wantN: 3, wantLabels: eightLabels,
 	},
 }
 
