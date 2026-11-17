@@ -86,8 +86,10 @@ export const settings = {
   pluginManifestName: 'spectra-plugin.json',
   pluginsNoteTail:
     '(plus optional metric /\n      report-template definitions) or a single manifest JSON. Enabled plugins\n      contribute metrics and report templates on the next list — no restart.',
-  pluginPathPlaceholder: 'Enter a plugin path or manifest.json…',
   pluginPathAria: 'Plugin source path',
+  browsePlugin: 'Browse…',
+  choosePluginFileLabel: 'Choose manifest file',
+  choosePluginFileTitle: 'Choose a single manifest file instead of a bundle folder',
   installing: 'Installing…',
   installFromPath: 'Install from path',
   noPluginsYet: 'No plugins installed yet.',
@@ -101,6 +103,8 @@ export const settings = {
   enabled: 'Enabled',
   disabled: 'Disabled',
   failed: 'failed',
+  removePluginLabel: 'Remove plugin',
+  removePluginTitle: 'Remove this plugin and its bundle from disk',
   trustModelNote:
     'Trust model: install only bundles you built or got from someone you\n      trust — manifests may pin a sha256 hash; there is no auto-update.',
 

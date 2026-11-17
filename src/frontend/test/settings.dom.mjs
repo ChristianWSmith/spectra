@@ -1,6 +1,7 @@
 // jsdom driver for the Settings view — the analysis-rules card's save
-// flow (save = recompute, the metrics-save precedent) and the surfaces
-// this wave removed:
+// flow (save = recompute, the metrics-save precedent), the surfaces
+// this wave removed, and (w20) the icon-button wave + the plugin row
+// and source row the plugin fixture finally makes observable:
 //   A. Pristine gating + card shape: with the loaded rules unchanged,
 //      Save is disabled and the status slot reads "No changes" (never a
 //      recompute note); any edit of the four fields arms Save; reverting
@@ -33,7 +34,32 @@
 //      pref read (unset → the default 5), NO write on a plain mount,
 //      an in-range value written verbatim, and the clamps (above the
 //      ceiling → 60, below the floor → 1, garbage → the default).
-//      G runs just BEFORE F's whole-run error check (F stays last).
+//      G runs just BEFORE F's whole-run error check (F stays last —
+//      H, I and J sit in front of it too).
+//   H. Settings action buttons (w20 icon-wave): the About/Data/
+//      Import-dirs/CS2-assets/Audio/Analysis-rules buttons — every
+//      label still present WITH its decorative glyph (codicon-sync/
+//      trash/folder/discard/download/check/save), its gating (disabled
+//      while pristine / no install / defaults in effect / empty demo
+//      list) and its title, except the import-dir remove row, which is
+//      ICON-ONLY (empty textContent, codicon-trash, the dir aria-label
+//      kept, the word surviving verbatim as its title).
+//   I. Plugin rows (the pin gap this section closes — ListPlugins was
+//      stubbed EMPTY, so a plugin row never rendered): a fixture
+//      renders one row — its structure, the enable toggle's TEXT form
+//      (aria-pressed + title, exempt from the icon rule), the Remove
+//      action now ICON-ONLY (codicon-trash + aria-label + title, empty
+//      textContent) — deliberately — and the shared ConfirmDialog flow
+//      (cancel removes nothing; confirm calls RemovePlugin with the id
+//      and the row leaves).
+//   J. The plugin source row: the READ-ONLY path display (no free
+//      typing — the placeholder input is gone) and BOTH native pickers
+//      (the addendum: no dialog on our platforms mixes files and
+//      folders) — Browse… with its search glyph for the bundle
+//      directory and the icon-only manifest-file button (codicon-file,
+//      aria-label + title) filling the SAME display (one display, one
+//      picked path) — with Install handing the shown path to
+//      InstallPlugin in each round.
 //
 // Backend semantics live in AnalyticsService.SetConfig (the no-bump)
 // and RecomputeAll (server-side behind-set resolution) — this covers
@@ -129,7 +155,45 @@ bindings.LibraryService.SetParallelWork = (n) => {
   bindings.calls.push({ method: 'SetParallelWork', args: [n] });
   return Promise.resolve();
 };
-bindings.PlatformService.ListPlugins = () => Promise.resolve([]);
+// Plugin fixture (w20 icon-wave): ListPlugins was stubbed EMPTY until
+// this wave, so a plugin row never rendered and the row's controls had
+// no pins at all. One valid, enabled plugin makes the row observable;
+// RemovePlugin empties the fixture so the confirm flow below can pin the
+// row actually leaving (the list is re-read after every mutation).
+const PLUGIN = {
+  manifest: { id: 'demo', name: 'Demo', version: '1.0.0', metrics: [], reportTpls: [] },
+  path: '/plugins/demo',
+  enabled: true,
+  error: '',
+};
+let pluginList = [PLUGIN];
+bindings.PlatformService.ListPlugins = () => Promise.resolve(pluginList);
+bindings.PlatformService.RemovePlugin = (id) => {
+  bindings.calls.push({ method: 'RemovePlugin', args: [id] });
+  pluginList = []; // the real Remove deletes the bundle → the next list is empty
+  return Promise.resolve();
+};
+// The plugin-source picker + install (w20): the browse click hands back
+// a picked path, Install echoes it back as a validated install state.
+bindings.PlatformService.ChoosePluginSource = () => {
+  bindings.calls.push({ method: 'ChoosePluginSource', args: [] });
+  return Promise.resolve('/srv/plug');
+};
+bindings.PlatformService.InstallPlugin = (p) => {
+  bindings.calls.push({ method: 'InstallPlugin', args: [p] });
+  return Promise.resolve({
+    manifest: { id: 'demo', name: 'Demo', version: '1.0.0', metrics: [], reportTpls: [] },
+    path: '/plugins/demo',
+    enabled: true,
+    error: '',
+  });
+};
+// The manifest-file picker (w20 addendum): the icon-only twin of the
+// directory picker, filling the SAME read-only display.
+bindings.PlatformService.ChoosePluginFile = () => {
+  bindings.calls.push({ method: 'ChoosePluginFile', args: [] });
+  return Promise.resolve('/srv/spectra-plugin.json');
+};
 bindings.MapPackService.GetMapPackStatus = () =>
   Promise.resolve({ found: false, path: '', manual: false, maps: [] });
 bindings.IconService.GetIconManifest = () => Promise.resolve({ count: 0, note: '' });
@@ -509,6 +573,273 @@ console.log('G. replay loop length: the 1..60 numeric control in its own Replay 
   await sleep(20);
   check('non-numeric falls back to the default 5', lsSets().length === 4 && JSON.stringify(lsSets()[3].args) === '["loop_secs",5]', JSON.stringify(lsSets().map((c) => c.args)));
   check('input snaps to 5', lsInput().value === '5', lsInput().value);
+}
+
+console.log('H. Settings action buttons (w20 icon-wave: the label keeps its glyph, the remove row goes icon-only)');
+{
+  const byText = (t) => $('button').find((b) => b.textContent.includes(t));
+  const glyph = (btn, name) =>
+    !!btn && !!btn.querySelector(`.codicon.codicon-${name}[aria-hidden="true"]`);
+  // 16 — About
+  const upd = byText('Check for Updates…');
+  check(
+    'About: Check for Updates… keeps its label and gains codicon-sync',
+    !!upd &&
+      upd.classList.contains('btn') &&
+      !upd.disabled &&
+      glyph(upd, 'sync') &&
+      upd.textContent.includes('Check for Updates…'),
+    upd ? upd.outerHTML.slice(0, 220) : 'missing',
+  );
+  // 15 — Data
+  const free = byText('Free all demo copies');
+  check(
+    'Data: Free all demo copies keeps its label + codicon-trash, .btn.danger, its title, disabled on an empty list',
+    !!free &&
+      free.classList.contains('danger') &&
+      free.title === 'No demo copies to free' &&
+      free.disabled &&
+      glyph(free, 'trash') &&
+      free.textContent.includes('Free all demo copies'),
+    free ? `${free.className} · title=${free.title} · disabled=${free.disabled}` : 'missing',
+  );
+  // 12 — Import dirs remove row (ICON-ONLY: the word survives as aria-label + title)
+  const dirRow = $('.sett-dir-row')[0];
+  const dirRm = dirRow && dirRow.querySelector('button');
+  check(
+    'Import dirs: the row remove is icon-only — codicon-trash, no text, dir aria-label kept, the word as its title',
+    !!dirRm &&
+      !dirRm.textContent.trim() &&
+      glyph(dirRm, 'trash') &&
+      dirRm.classList.contains('danger') &&
+      dirRm.getAttribute('aria-label') === 'Remove /demos' &&
+      dirRm.title === 'Remove',
+    dirRm ? dirRm.outerHTML.slice(0, 260) : 'no import-dir row',
+  );
+  // 13 / 14 — Add folder… / Reset to defaults
+  const add = byText('Add folder…');
+  check(
+    'Import dirs: Add folder… keeps its label and gains codicon-folder',
+    !!add && !add.disabled && glyph(add, 'folder') && add.textContent.includes('Add folder…'),
+    add ? add.outerHTML.slice(0, 220) : 'missing',
+  );
+  const reset = byText('Reset to defaults');
+  check(
+    'Import dirs: Reset to defaults keeps its label + codicon-discard, disabled while the defaults are in effect',
+    !!reset && reset.disabled && glyph(reset, 'discard') && reset.textContent.includes('Reset to defaults'),
+    reset ? `disabled=${reset.disabled}` : 'missing',
+  );
+  // 10 / 11 — CS2 assets
+  const choose = byText('Choose folder…');
+  check(
+    'CS2 assets: Choose folder… keeps its label and gains codicon-folder',
+    !!choose && !choose.disabled && glyph(choose, 'folder') && choose.textContent.includes('Choose folder…'),
+    choose ? choose.outerHTML.slice(0, 220) : 'missing',
+  );
+  const extract = byText('Extract all CS2 assets');
+  check(
+    'CS2 assets: Extract all CS2 assets keeps its label + codicon-download (disabled: no install found)',
+    !!extract &&
+      extract.disabled &&
+      glyph(extract, 'download') &&
+      extract.textContent.includes('Extract all CS2 assets'),
+    extract ? `disabled=${extract.disabled}` : 'missing',
+  );
+  // 8 — Audio
+  const audio = byText('Run audio self-test');
+  check(
+    'Audio: Run audio self-test keeps its label and gains codicon-check',
+    !!audio && !audio.disabled && glyph(audio, 'check') && audio.textContent.includes('Run audio self-test'),
+    audio ? audio.outerHTML.slice(0, 220) : 'missing',
+  );
+  // 7 — Analysis rules (the shared saveBtn() finder is text-based)
+  const save = saveBtn();
+  check(
+    'Analysis rules: Save rules keeps its label + codicon-save (disabled while pristine)',
+    !!save && save.disabled && glyph(save, 'save') && save.textContent.includes('Save rules'),
+    save ? `disabled=${save.disabled}` : 'missing',
+  );
+}
+
+console.log('I. plugin rows (the fixture renders them — structure, the text toggle, the icon-only Remove, the confirm flow)');
+{
+  const rows = $('.plugin-row');
+  check('the fixture renders exactly one plugin row', rows.length === 1, String(rows.length));
+  const row = rows[0];
+  const btns = row ? [...row.querySelectorAll('button')] : [];
+  check(
+    'the row offers exactly two controls (the enable toggle + the Remove action)',
+    btns.length === 2,
+    btns.map((b) => b.textContent.trim() || b.getAttribute('aria-label')).join(' | '),
+  );
+  const toggle = btns[0];
+  const rm = btns[1];
+  check(
+    'the toggle keeps its TEXT form: "Enabled" + aria-pressed + its hint title + .warn',
+    !!toggle &&
+      toggle.textContent.trim() === 'Enabled' &&
+      toggle.getAttribute('aria-pressed') === 'true' &&
+      toggle.title === 'Disable plugin' &&
+      toggle.classList.contains('warn'),
+    toggle ? toggle.outerHTML.slice(0, 240) : 'no toggle',
+  );
+  check(
+    'the row names the plugin and both contributed counts',
+    !!row &&
+      row.textContent.includes('Demo') &&
+      row.textContent.includes('demo · v1.0.0') &&
+      row.textContent.includes('0 metrics') &&
+      row.textContent.includes('0 templates'),
+    row ? row.textContent.replace(/\s+/g, ' ').slice(0, 160) : 'no row',
+  );
+  check(
+    'the Remove action is ICON-ONLY: codicon-trash, empty text, aria-label + title carrying the word',
+    !!rm &&
+      !rm.textContent.trim() &&
+      rm.classList.contains('danger') &&
+      !!rm.querySelector('.codicon.codicon-trash[aria-hidden="true"]') &&
+      rm.getAttribute('aria-label') === 'Remove plugin' &&
+      rm.title === 'Remove this plugin and its bundle from disk',
+    rm ? rm.outerHTML.slice(0, 300) : 'no Remove button',
+  );
+
+  // The confirm flow (doRemove → the shared ConfirmDialog): dismissal is
+  // always cancel; only the confirm button reaches RemovePlugin.
+  click(rm);
+  await sleep(20);
+  const cfBtn = (label) => {
+    const bar = $('.cf-actions')[0];
+    return bar && [...bar.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+  };
+  check(
+    'Remove opens the shared ConfirmDialog naming the plugin and its id',
+    $('.cf-actions').length === 1 &&
+      body().includes('Remove plugin?') &&
+      body().includes('(demo)'),
+    String($('.cf-actions').length),
+  );
+  click(cfBtn('Cancel'));
+  await sleep(20);
+  check(
+    'Cancel dismisses the prompt and removes nothing (row intact, no call)',
+    $('.cf-actions').length === 0 &&
+      callCount('RemovePlugin') === 0 &&
+      $('.plugin-row').length === 1,
+    `dlg=${$('.cf-actions').length} calls=${callCount('RemovePlugin')} rows=${$('.plugin-row').length}`,
+  );
+  const rm2 = $('.plugin-row')[0]?.querySelectorAll('button')[1];
+  click(rm2);
+  await sleep(20);
+  const confirmBtn = [...$('.cf-actions')[0].querySelectorAll('button')].find((b) =>
+    b.classList.contains('danger'),
+  );
+  check(
+    'the confirm button keeps the caller’s label ("Remove") and the danger class',
+    !!confirmBtn && confirmBtn.textContent.trim() === 'Remove',
+    confirmBtn ? confirmBtn.outerHTML.slice(0, 160) : 'no confirm button',
+  );
+  click(confirmBtn);
+  await sleep(50);
+  const removed = bindings.calls.filter((c) => c.method === 'RemovePlugin');
+  check(
+    'confirming calls RemovePlugin with the plugin id and the row leaves',
+    removed.length === 1 &&
+      removed[0].args[0] === 'demo' &&
+      $('.plugin-row').length === 0,
+    JSON.stringify({ calls: removed.map((c) => c.args), rows: $('.plugin-row').length }),
+  );
+}
+
+console.log('J. the plugin source row: the read-only display, BOTH pickers and the install flow');
+{
+  const input = $('.sett-plugin-path')[0];
+  check(
+    'the source is a READ-ONLY display — no free typing, no placeholder left',
+    !!input && input.readOnly && input.placeholder === '',
+    input ? input.outerHTML.slice(0, 240) : 'missing',
+  );
+  const browse = $('button').find((b) => b.textContent.includes('Browse…'));
+  check(
+    'Browse… carries its label and the codicon-search glyph',
+    !!browse &&
+      !browse.disabled &&
+      !!browse.querySelector('.codicon.codicon-search[aria-hidden="true"]') &&
+      browse.textContent.includes('Browse…'),
+    browse ? browse.outerHTML.slice(0, 260) : 'missing',
+  );
+  // The manifest-file picker (w20 addendum): the icon-only twin of
+  // Browse… — no native dialog on our platforms mixes files and folders,
+  // so each source kind gets its own affordance.
+  const fileBtn = $('button').find((b) => b.getAttribute('aria-label') === 'Choose manifest file');
+  check(
+    'the manifest-file button is icon-only: codicon-file, no text, aria-label + title carrying the word',
+    !!fileBtn &&
+      !fileBtn.disabled &&
+      !fileBtn.textContent.trim() &&
+      !!fileBtn.querySelector('.codicon.codicon-file[aria-hidden="true"]') &&
+      fileBtn.title === 'Choose a single manifest file instead of a bundle folder',
+    fileBtn ? fileBtn.outerHTML.slice(0, 320) : 'missing',
+  );
+  const install = $('button').find((b) => b.textContent.includes('Install from path'));
+  check(
+    'Install from path is unchanged and gated on a picked path',
+    !!install && install.disabled,
+    install ? `disabled=${install.disabled}` : 'missing',
+  );
+
+  // Round 1: the directory pick, then the file pick REPLACING it in the
+  // same display (one display, one picked path — the two pickers never
+  // both run), then the install of whichever path is showing.
+  click(browse);
+  await sleep(20);
+  check(
+    'the bundle-directory pick lands in the read-only display and arms Install',
+    !!input && input.value === '/srv/plug' && !!install && !install.disabled,
+    `value=${input && input.value} disabled=${install && install.disabled}`,
+  );
+  click(fileBtn);
+  await sleep(20);
+  check(
+    'the file pick REPLACES it in the same display (one display, one picked path) and arms Install',
+    !!input &&
+      input.value === '/srv/spectra-plugin.json' &&
+      !!install &&
+      !install.disabled &&
+      callCount('ChoosePluginSource') === 1 &&
+      callCount('ChoosePluginFile') === 1,
+    `value=${input && input.value} dir=${callCount('ChoosePluginSource')} file=${callCount('ChoosePluginFile')}`,
+  );
+  click(install);
+  await sleep(50);
+  let installs = bindings.calls.filter((c) => c.method === 'InstallPlugin');
+  check(
+    'Install hands the manifest-file path to InstallPlugin',
+    installs.length === 1 && installs[0].args[0] === '/srv/spectra-plugin.json',
+    JSON.stringify(installs.map((c) => c.args)),
+  );
+  check(
+    'the display clears after the install and the status says what landed',
+    !!input && input.value === '' && body().includes('Installed demo.'),
+    `value=${input && input.value}`,
+  );
+
+  // Round 2: the directory picker still drives the same row after a
+  // file pick, and its path reaches InstallPlugin too.
+  click(browse);
+  await sleep(20);
+  check(
+    'a second bundle-directory pick lands in the same display and re-arms Install',
+    !!input && input.value === '/srv/plug' && !!install && !install.disabled,
+    `value=${input && input.value}`,
+  );
+  click(install);
+  await sleep(50);
+  installs = bindings.calls.filter((c) => c.method === 'InstallPlugin');
+  check(
+    'the second install hands the bundle path to InstallPlugin',
+    installs.length === 2 && installs[1].args[0] === '/srv/plug',
+    JSON.stringify(installs.map((c) => c.args)),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

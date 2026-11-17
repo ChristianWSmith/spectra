@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -303,6 +304,49 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	}
 	if list, err := svc.ListPlugins(); err != nil || len(list) != 0 {
 		t.Fatalf("ListPlugins after remove: %v, %+v", err, list)
+	}
+}
+
+// TestChoosePluginSource pins the bundle-directory picker's contract
+// through the promptPluginPick seam: a choice passes through verbatim,
+// while a cancel ("" + nil) and a dialog failure both read as "" — the
+// same contract as ChooseDemoDir/ChooseCS2Dir, and no real dialog ever
+// opens in a test.
+func TestChoosePluginSource(t *testing.T) {
+	svc := &PlatformService{
+		promptPluginPick: func() (string, error) { return "/srv/plug", nil },
+	}
+	if got := svc.ChoosePluginSource(); got != "/srv/plug" {
+		t.Errorf("choice: got %q, want /srv/plug", got)
+	}
+	svc.promptPluginPick = func() (string, error) { return "", nil }
+	if got := svc.ChoosePluginSource(); got != "" {
+		t.Errorf("cancel: got %q, want \"\"", got)
+	}
+	svc.promptPluginPick = func() (string, error) { return "", errors.New("dialog broke") }
+	if got := svc.ChoosePluginSource(); got != "" {
+		t.Errorf("dialog failure: got %q, want \"\"", got)
+	}
+}
+
+// TestChoosePluginFile is the manifest-file twin: the same three-case
+// contract on the SECOND affordance (w20 addendum — no native dialog on
+// Linux/Windows mixes files and folders, so the two source kinds get a
+// picker each).
+func TestChoosePluginFile(t *testing.T) {
+	svc := &PlatformService{
+		promptPluginPick: func() (string, error) { return "/srv/spectra-plugin.json", nil },
+	}
+	if got := svc.ChoosePluginFile(); got != "/srv/spectra-plugin.json" {
+		t.Errorf("choice: got %q, want /srv/spectra-plugin.json", got)
+	}
+	svc.promptPluginPick = func() (string, error) { return "", nil }
+	if got := svc.ChoosePluginFile(); got != "" {
+		t.Errorf("cancel: got %q, want \"\"", got)
+	}
+	svc.promptPluginPick = func() (string, error) { return "", errors.New("dialog broke") }
+	if got := svc.ChoosePluginFile(); got != "" {
+		t.Errorf("dialog failure: got %q, want \"\"", got)
 	}
 }
 

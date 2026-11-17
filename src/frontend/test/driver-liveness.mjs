@@ -817,7 +817,39 @@ const EXPECTED = {
   // analysis-rules Save rides a .row-between with the status slot at
   // left (a direct panel child stretches full width; the button sizes
   // to its label and parks right in all three states).
-  'settings.dom.mjs': 66,
+  // settings 66 → 90 (2026-11-16, w20 icon-wave + plugins browse): +24
+  // across three NEW sections. The driver stubbed ListPlugins EMPTY, so
+  // a plugin row never rendered and none of these surfaces had a pin —
+  // H (+9) pins the About/Data/Import-dirs/CS2-assets/Audio/Analysis-rules
+  // action buttons: each label keeps its text WITH a decorative glyph
+  // (codicon-sync/trash/folder/discard/download/check/save) and its
+  // gating, except the import-dir remove row, which is icon-only
+  // (codicon-trash, empty text, the dir aria-label kept, the word as its
+  // title); I (+9) renders a fixture row — structure, the toggle's TEXT
+  // form (aria-pressed + title, exempt from the icon rule), the
+  // plugin-row Remove now icon-only (glyph + aria-label + title, empty
+  // text) and the shared ConfirmDialog flow (cancel removes nothing,
+  // confirm calls RemovePlugin with the id and the row leaves); J (+6)
+  // the plugin source row — the read-only path display with no
+  // placeholder left, Browse… with its codicon-search arming Install,
+  // Install handing the picked path to InstallPlugin and the display
+  // clearing afterwards. The old free-typing pins (typable input,
+  // Install gated on a typed path, typing arms it) were re-pinned IN
+  // PLACE onto the read-only display, and J grew +3 around them (the
+  // Browse… label+glyph pin, the browse→display→armed-Install flow, the
+  // Install→InstallPlugin hand-off + the display clearing).
+  // settings 90 → 94 (2026-11-16, w20 addendum 9b — BOTH picker
+  // affordances ship): +4 inside §J. The platform finding was ruled on:
+  // no native dialog on Linux/Windows mixes files and folders, so the
+  // manifest-file install gets its own icon-only button beside
+  // Browse… — +1 static pin (codicon-file, empty text, aria-label
+  // "Choose manifest file" + its title), +1 the file pick REPLACING the
+  // directory pick in the SAME read-only display with each picker
+  // called exactly once (one display, one picked path), +2 the two
+  // install rounds (InstallPlugin gets the manifest-file path first,
+  // then the bundle path on the second round). The three §J pins from
+  // the first commit are untouched.
+  'settings.dom.mjs': 94,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so
