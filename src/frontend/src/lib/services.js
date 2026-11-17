@@ -347,6 +347,10 @@ export function deleteDemoFile(path) {
   return LibraryService.DeleteDemoFile(path);
 }
 
+// getWarnings returns the match-warnings PAGE: {messages, total} — the
+// messages are the store's fetch-capped window (seq order), total is
+// the match's full warning count (the honest number the view's cap
+// line states).
 export function getWarnings(id) {
   return LibraryService.GetWarnings(id);
 }

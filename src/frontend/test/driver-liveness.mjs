@@ -499,7 +499,14 @@ const EXPECTED = {
   // player rows (the default is off). Section N resetViewState()s FIRST
   // (this driver's registry was never reset and section M left the shape
   // ON); sections A–M untouched.
-  'econ-tables.dom.mjs': 153,
+  // econ-tables re-pinned 153 → 175 (2026-11-17, import-warnings render
+  // cap): +5 mine — section Q pins the panel's bounded <li> count over
+  // a caller-passed flood, the honest "and {n} more" remainder line, the
+  // under-cap full-list/no-line case, and the untouched Loading leg
+  // while the capped fetch is in flight (the floor had also lagged the
+  // driver's real count — 170 executed at base — so the pin is now the
+  // true count). Lead reconciles if a parallel wave re-pins this line.
+  'econ-tables.dom.mjs': 175,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the

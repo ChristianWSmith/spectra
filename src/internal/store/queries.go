@@ -1631,25 +1631,44 @@ func (s *Store) GetGenericHistogram(id int64) ([]models.NameCount, error) {
 	return out, nil
 }
 
-// GetWarnings returns a match's extraction warnings ordered by seq.
-func (s *Store) GetWarnings(id int64) ([]string, error) {
-	rows, err := s.db.Query(`SELECT message FROM warnings WHERE match_id = ? ORDER BY seq`, id)
+// WarningsFetchLimit caps the rows GetWarnings returns for one match —
+// a parse can legitimately emit six figures of warnings (the
+// demoinfocs rc.1 flood: 170,894 rows), and neither IPC nor the match
+// view can carry them all. Total still reports the full count, so the
+// caller states the truncation honestly. Keep in sync with Match.svelte's
+// WARNINGS_RENDER_CAP — the render layer's independent belt-and-braces
+// cap (this one bounds the fetch, that one bounds the DOM).
+const WarningsFetchLimit = 200
+
+// GetWarnings returns a match's extraction warnings ordered by seq —
+// the first WarningsFetchLimit rows of the emit order, with Total set
+// to the match's full warning count (never silently truncated: the page
+// always tells the whole truth, it just doesn't ship every row).
+func (s *Store) GetWarnings(id int64) (models.WarningListPage, error) {
+	var page models.WarningListPage
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM warnings WHERE match_id = ?`, id).Scan(&page.Total); err != nil {
+		return models.WarningListPage{}, fmt.Errorf("couldn't count the warnings: %w", err)
+	}
+	rows, err := s.db.Query(
+		`SELECT message FROM warnings WHERE match_id = ? ORDER BY seq LIMIT ?`,
+		id, WarningsFetchLimit,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't load the warnings: %w", err)
+		return models.WarningListPage{}, fmt.Errorf("couldn't load the warnings: %w", err)
 	}
 	defer rows.Close()
-	var out []string
+	page.Messages = make([]string, 0, min(page.Total, WarningsFetchLimit))
 	for rows.Next() {
 		var msg string
 		if err := rows.Scan(&msg); err != nil {
-			return nil, fmt.Errorf("couldn't load the warnings: %w", err)
+			return models.WarningListPage{}, fmt.Errorf("couldn't load the warnings: %w", err)
 		}
-		out = append(out, msg)
+		page.Messages = append(page.Messages, msg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("couldn't load the warnings: %w", err)
+		return models.WarningListPage{}, fmt.Errorf("couldn't load the warnings: %w", err)
 	}
-	return out, nil
+	return page, nil
 }
 
 func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) {

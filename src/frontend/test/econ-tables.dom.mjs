@@ -357,7 +357,9 @@ const dataFor = (countedN) => ({
   getRounds: [...preMatch, ...counted(countedN)],
   getScoreboard: scoreboard,
   getVoicePresence: null,
-  getWarnings: [],
+  // The warnings page shape ({messages,total} — the fetch-capped
+  // window + the honest full count, models.WarningListPage).
+  getWarnings: { messages: [], total: 0 },
   getCombatStats: [],
   getRoundClasses: [],
   // The pinned-column reads (stored-metrics design §5): the canonical
@@ -2263,6 +2265,88 @@ console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-
     `${chipText} vs ${metricText}`,
   );
   localStorage.removeItem('spectra:pinned-metrics');
+}
+
+// ---------------------------------------------------------------------------
+// Section Q: the import-warnings panel's RENDER CAP. The list renders at
+// most WARNINGS_RENDER_CAP (200) <li> whatever a fetch hands it (the
+// belt-and-braces twin of the store's fetch cap — store.WarningsFetchLimit,
+// same value), and the cap line states the TRUE remainder (total − shown)
+// so a huge parse is never a silent truncation (the 170k-warning demo
+// froze this view on 170k <li> nodes). The panel only opens for a match
+// whose warningsCount > 0 (the content guard upstream), so each fixture
+// scripts both the match and the page.
+console.log('Q. import-warnings render cap: bounded <li> count + honest "and {n} more" line');
+{
+  const capLine = (r) =>
+    [...r.querySelectorAll('.warnings-panel p.muted')]
+      .map((p) => p.textContent.trim())
+      .find((t) => t.startsWith('and ')) ?? '';
+
+  // (a) Over the cap: the caller passes MORE rows than the fetch
+  // contract allows (300) and a total far beyond the window — exactly
+  // the cap's rows render, and the line carries the honest remainder.
+  const total = 170894;
+  root = await showMatch(
+    {
+      ...dataFor(13),
+      getMatch: { ...match, warningsCount: total },
+      getWarnings: { messages: Array.from({ length: 300 }, (_, i) => `flood warning ${i}`), total },
+    },
+    { routeTab: 'Rounds' },
+  );
+  await sleep();
+  const floodLis = root.querySelectorAll('.warnings-panel li');
+  check(
+    'over the cap: exactly 200 <li> render (never the caller’s 300)',
+    floodLis.length === 200,
+    String(floodLis.length),
+  );
+  const more = capLine(root);
+  check(
+    'over the cap: the cap line states the TRUE remainder (total − shown)',
+    more === 'and 170,694 more',
+    more || 'no cap line',
+  );
+
+  // (b) At/under the fetch cap: every row renders and NO cap line —
+  // there is no remainder to state (nothing hidden, nothing invented).
+  const few = ['first warning', 'second warning', 'third warning'];
+  root = await showMatch(
+    {
+      ...dataFor(13),
+      getMatch: { ...match, warningsCount: 3 },
+      getWarnings: { messages: few, total: 3 },
+    },
+    { routeTab: 'Rounds' },
+  );
+  await sleep();
+  const fewLis = [...root.querySelectorAll('.warnings-panel li')].map((li) => li.textContent);
+  check(
+    'under the cap: every row renders, in order',
+    fewLis.length === 3 && fewLis[0] === 'first warning' && fewLis[2] === 'third warning',
+    JSON.stringify(fewLis),
+  );
+  check('under the cap: NO cap line (no remainder to state)', capLine(root) === '', capLine(root));
+
+  // (c) The loading leg is untouched by the cap: while the capped fetch
+  // is in flight (warnings == null) the panel holds the Loading chip;
+  // the content guard upstream means content-less matches never reach
+  // this view at all.
+  root = await showMatch(
+    {
+      ...dataFor(13),
+      getMatch: { ...match, warningsCount: 1 },
+      getWarnings: () => new Promise(() => {}), // in flight for the whole mount
+    },
+    { routeTab: 'Rounds' },
+  );
+  const chipDetail = root.querySelector('.warnings-panel .chip-detail');
+  check(
+    'loading leg: the panel shows the Loading chip while the capped fetch is in flight',
+    !!chipDetail && chipDetail.textContent.includes('Loading'),
+    chipDetail ? chipDetail.textContent : 'no chip-detail inside the warnings panel',
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

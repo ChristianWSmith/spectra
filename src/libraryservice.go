@@ -318,8 +318,10 @@ func (s *LibraryService) GetGenericHistogram(id int64) ([]models.NameCount, erro
 	return s.st.GetGenericHistogram(id)
 }
 
-// GetWarnings returns a match's extraction warnings in order.
-func (s *LibraryService) GetWarnings(id int64) ([]string, error) {
+// GetWarnings returns a match's warnings page: the fetch-capped window
+// in emit order plus the full count (see models.WarningListPage — one
+// bounded IPC payload, no row flood).
+func (s *LibraryService) GetWarnings(id int64) (models.WarningListPage, error) {
 	return s.st.GetWarnings(id)
 }
 
