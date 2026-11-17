@@ -134,6 +134,7 @@ func (m *Manager) stateFor(row store.PluginRow) State {
 }
 
 // Install validates sourcePath (bundle dir or single manifest JSON file),
+// refuses a metric naming a built-in (see CheckBuiltinMetricCollisions),
 // verifies manifest.hash when provided, copies the bundle into the plugin
 // directory, records the registry row, and upserts the plugin's metric
 // rows (enabled installs only). Reinstalling keeps the previous enabled
@@ -158,6 +159,14 @@ func (m *Manager) Install(sourcePath string) (State, error) {
 		return State{}, err
 	}
 	if err := validateMetricExprs(man); err != nil {
+		return State{}, err
+	}
+	// The builtin-collision guard BEFORE anything is written: the bundle
+	// copy and the registry row below must not land for a bundle whose
+	// metric would replace a built-in row (ReplacePluginMetrics runs the
+	// same check as the writer's choke point — this early one keeps a
+	// refused install from half-installing).
+	if err := m.st.CheckBuiltinMetricCollisions(metricDefs(man)); err != nil {
 		return State{}, err
 	}
 	if man.Hash != "" {

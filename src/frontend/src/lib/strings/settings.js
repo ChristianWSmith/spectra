@@ -108,6 +108,27 @@ export const settings = {
   trustModelNote:
     'Trust model: install only bundles you built or got from someone you\n      trust — manifests may pin a sha256 hash; there is no auto-update.',
 
+  // Build plugin… (the w23 dialog): the name/version line over the two
+  // TokenSelect chip inputs (user-origin report templates + metrics
+  // only), then the native save of the composed single-file manifest.
+  buildPlugin: 'Build plugin…',
+  buildDialogTitle: 'Build a plugin to share',
+  buildPluginNote: 'Bundle your own metrics and report templates into one file to share.',
+  buildNameLabel: 'Name',
+  buildNamePlaceholder: 'Name this plugin…',
+  buildVersionLabel: 'Version',
+  buildTplsLabel: 'Report templates',
+  buildTplsAria: 'Report templates to bundle',
+  buildTplsPlaceholder: 'Search report templates…',
+  buildMetricsLabel: 'Metrics',
+  buildMetricsAria: 'Metrics to bundle',
+  buildMetricsPlaceholder: 'Search metrics…',
+  buildNoTpls: 'No report templates of your own yet.',
+  buildNoMetrics: 'No custom metrics of your own yet.',
+  buildSave: 'Save plugin',
+  buildSaving: 'Saving…',
+  buildSaved: 'Saved {name} to {path}',
+
   // Audio & voice panel
   audioSelfTestHint: 'Audio self-test — checks Spectra can open your audio device.',
   audioPass: 'PASS — audio device open at',

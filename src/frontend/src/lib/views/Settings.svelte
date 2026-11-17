@@ -44,6 +44,7 @@
   // consumer like the replay transport and the event ▶ links.
   import { LOOP_SECS_DEFAULT, prefLoopSecs } from '../nav.js';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import PluginBuildDialog from '../components/PluginBuildDialog.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import HelpButton from '../components/HelpButton.svelte';
 
@@ -297,6 +298,9 @@
   let installBusy = $state(false);
   let pluginMsg = $state('');
   let pluginOp = $state({}); // plugin id → 'busy' | error text
+  // The Build-plugin dialog (w23) — transient open state; its own
+  // component owns the compose/save flow.
+  let buildOpen = $state(false);
 
   // CS2 assets: the THREE asset families the app consumes from a local CS2
   // install — radar map packs (internal/mappack), equipment-icon SVG
@@ -1065,7 +1069,16 @@
   </section>
 
   <section class="panel">
-    <h2>Plugins</h2>
+    <!-- The card header row (the Reports-builder header idiom): the
+         heading beside the Build-plugin trigger (w23) — clear of the
+         source/install row below, which stays the install path. -->
+    <div class="row-between">
+      <h2>Plugins</h2>
+      <button class="btn small" onclick={() => (buildOpen = true)}>
+        <span class="codicon codicon-export" aria-hidden="true"></span>
+        {S.settings.buildPlugin}
+      </button>
+    </div>
     <p class="muted">
       {S.settings.pluginsNoteLead}
       <span class="mono">{S.settings.pluginManifestName}</span> {S.settings.pluginsNoteTail}
@@ -1390,4 +1403,7 @@
   </section>
 
   <ConfirmDialog bind:this={confirmDlg} />
+  <!-- The Build-plugin dialog (w23): its own component owns the flow;
+       Escape/outside-click/focus-return ride Dialog.svelte. -->
+  <PluginBuildDialog open={buildOpen} onClose={() => (buildOpen = false)} />
 </div>

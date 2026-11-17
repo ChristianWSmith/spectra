@@ -161,3 +161,57 @@ func TestPluginMetricsRows(t *testing.T) {
 		t.Fatalf("after delete rows = %d, want 0", n)
 	}
 }
+
+// TestReplacePluginMetricsRefusesBuiltinCollision pins the w23
+// install-side guard: a bundled metric naming a BUILT-IN is refused
+// BEFORE any write (the by-name upsert would overwrite the immutable
+// built-in row — it only comes back on a wipe), the refusal names the
+// problem in user copy, and nothing is mutated — no plugin rows land and
+// the built-in row keeps its origin. A fresh name still lands through the
+// same writer (the guard partitions by origin, it does not gate plugin
+// metrics wholesale).
+func TestReplacePluginMetricsRefusesBuiltinCollision(t *testing.T) {
+	s := openMem(t)
+	// Fixture sanity: trade_rate is one of the schema-seeded builtins.
+	builtin, err := s.GetMetricByName("trade_rate")
+	if err != nil {
+		t.Fatalf("GetMetricByName(trade_rate): %v", err)
+	}
+	if builtin.Origin != "builtin" {
+		t.Fatalf("trade_rate origin = %q, want builtin", builtin.Origin)
+	}
+
+	err = s.ReplacePluginMetrics("p1", []PluginMetricDef{
+		{Name: "plug_ok", Title: "Ok", Expr: "from events: count()"},
+		{Name: "trade_rate", Title: "Hijack", Expr: "from events: count()"},
+	})
+	if err == nil {
+		t.Fatal("ReplacePluginMetrics with a builtin name succeeded, want the collision refusal")
+	}
+	if !strings.Contains(err.Error(), "built-in") || !strings.Contains(err.Error(), "rename") {
+		t.Errorf("collision error = %q, want user copy naming the built-in and the fix", err)
+	}
+	// Nothing was written — the refusal runs before the transaction: no
+	// rows for the plugin (not even the non-colliding def beside it) …
+	if n, err := s.CountPluginMetrics("p1"); err != nil || n != 0 {
+		t.Fatalf("plugin rows after refusal = %d, %v, want 0", n, err)
+	}
+	// … and the built-in row is untouched.
+	after, err := s.GetMetricByName("trade_rate")
+	if err != nil {
+		t.Fatalf("GetMetricByName(after refusal): %v", err)
+	}
+	if after.Origin != "builtin" || after.ID != builtin.ID {
+		t.Fatalf("builtin row after refusal = %+v, want the untouched seeded row", after)
+	}
+
+	// A fresh name still lands through the same writer.
+	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
+		{Name: "plug_ok", Title: "Ok", Expr: "from events: count()"},
+	}); err != nil {
+		t.Fatalf("ReplacePluginMetrics(fresh name): %v", err)
+	}
+	if n, err := s.CountPluginMetrics("p1"); err != nil || n != 1 {
+		t.Fatalf("plugin rows after a fresh name = %d, %v, want 1", n, err)
+	}
+}

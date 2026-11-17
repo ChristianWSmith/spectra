@@ -191,6 +191,34 @@ func (s *Store) DeletePluginRow(id string) error {
 	return affectedOrNotFound(res, "deleting the plugin")
 }
 
+// CheckBuiltinMetricCollisions refuses defs whose name already belongs to
+// a BUILT-IN metric: the plugin writer upserts by name, so a bundled
+// metric naming one would silently overwrite the immutable built-in row
+// (it only comes back on a wipe) on the recipient's machine. The check is
+// the install-side guard for that one origin — user-vs-plugin name
+// collisions keep the upsert's existing behavior (pre-existing, out of
+// scope here). It is called BEFORE any write by ReplacePluginMetrics (the
+// choke point Install and SetEnabled both funnel through) and ahead of the
+// bundle copy by plugin.Manager.Install, so a refused install mutates
+// nothing; the error is user copy surfaced through errText verbatim.
+func (s *Store) CheckBuiltinMetricCollisions(defs []PluginMetricDef) error {
+	if err := s.ensureMetricsTable(); err != nil {
+		return err
+	}
+	for _, d := range defs {
+		var n int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM metrics WHERE origin = 'builtin' AND name = ?`, scrub(d.Name),
+		).Scan(&n); err != nil {
+			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
+		}
+		if n > 0 {
+			return fmt.Errorf("the plugin metric %q would replace a built-in metric of the same name — rename it in the plugin first", scrub(d.Name))
+		}
+	}
+	return nil
+}
+
 // ReplacePluginMetrics swaps one plugin's metrics rows: deletes every row
 // with plugin_id, then upserts defs keyed by name (origin='plugin').
 // Pass nil/empty to just clear. Creates the metrics table when missing.
@@ -201,12 +229,20 @@ func (s *Store) DeletePluginRow(id string) error {
 // normalized to 'match' here, the same omitted-field rule CreateMetric
 // and UpdateMetric apply, so the CHECK always sees a legal value.
 //
+// Before any write the builtin-collision check below runs: the upsert is
+// keyed by name, so a bundled metric naming a BUILT-IN would silently
+// overwrite the immutable built-in row (it only comes back on a wipe).
+// User-vs-plugin name collisions keep the upsert's existing behavior.
+//
 // Deliberately NOT replaceMatchRows: the delete keys on plugin_id (not
 // match_id), the INSERT carries a literal 'plugin' for origin (9 of its
 // 10 placeholders) plus an ON CONFLICT upsert clause — neither fits the
 // helper's `WHERE match_id = ?` + plain-VALUES body.
 func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) error {
 	if err := s.ensureMetricsTable(); err != nil {
+		return err
+	}
+	if err := s.CheckBuiltinMetricCollisions(defs); err != nil {
 		return err
 	}
 	tx, err := s.db.Begin()

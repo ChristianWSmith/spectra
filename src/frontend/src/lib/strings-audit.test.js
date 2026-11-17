@@ -183,6 +183,7 @@ const HINT_KEYS = {
   'settings.themeHint': 'hint under the theme picker (default + persistence)',
   'settings.fontSizeHint': 'hint under the font-size picker (scale + persistence)',
   'settings.pluginsNoteTail': 'footnote tail for the plugin formats line',
+  'settings.buildPluginNote': 'in-place note under the Build-plugin dialog title (what the dialog bundles)',
   'settings.trustModelNote': 'footnote stating the trust model (no auto-update)',
   'settings.volAnnouncerHint': 'hint under the announcer-volume slider (which lines)',
   'settings.volFootstepsHint': 'hint under the footsteps-volume slider (default state)',

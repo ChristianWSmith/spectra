@@ -60,6 +60,18 @@
 //      aria-label + title) filling the SAME display (one display, one
 //      picked path) — with Install handing the shown path to
 //      InstallPlugin in each round.
+//   K. Build plugin… (w23): the card-header trigger (codicon-export +
+//      label riding the .row-between beside the Plugins heading), the
+//      dialog's anatomy (the name field with its hint, the 1.0.0
+//      version default, both TokenSelect fields with their
+//      placeholders/aria), the USER-ORIGIN-ONLY offer (a mixed-origin
+//      fixture never offers a built-in or plugin row in either picker),
+//      chip picks landing in the fields, the Save gating (a name AND at
+//      least one pick; codicon-save leads the label), the
+//      BuildPluginBundle hand-off with exactly the picked ids and the
+//      version, the native save receiving spectra-plugin.json (a cancel
+//      resolving "" is a silent no-op) and the server-failure error
+//      line. K runs after J, just before the whole-run error tail.
 //
 // Backend semantics live in AnalyticsService.SetConfig (the no-bump)
 // and RecomputeAll (server-side behind-set resolution) — this covers
@@ -194,6 +206,51 @@ bindings.PlatformService.ChoosePluginFile = () => {
   bindings.calls.push({ method: 'ChoosePluginFile', args: [] });
   return Promise.resolve('/srv/spectra-plugin.json');
 };
+// --- Build plugin… fixture (w23) --------------------------------------------
+// Mixed-origin catalogs: the dialog must offer ONLY the user rows in
+// both pickers (built-ins are immutable, plugin rows belong to their own
+// bundle). The build call records the exact payload the Save button
+// hands Go and answers composed JSON; bundleFail flips it to a rejection
+// for the server-failure pin. The native save dialog answers a path
+// (saveFileResult) so saveText lands the file — "" exercises the cancel
+// contract.
+const USER_METRIC = {
+  id: 11, name: 'my_count', title: 'My count', scope: 'match',
+  format: '', doc: '', origin: 'user', expr: 'from events: count()',
+  shortName: '', denominator: '', pluginId: '',
+};
+const BUILTIN_METRIC = {
+  id: 1, name: 'trade_rate', title: 'Trade rate', scope: 'match',
+  format: 'percent', doc: '', origin: 'builtin', expr: 'from events: count()',
+  shortName: '', denominator: '', pluginId: '',
+};
+const PLUGIN_METRIC = {
+  id: 22, name: 'plug_stat', title: 'Plug stat', scope: 'match',
+  format: '', doc: '', origin: 'plugin', expr: 'from events: count()',
+  shortName: '', denominator: '', pluginId: 'demo',
+};
+bindings.handlers.ListMetrics = () => [BUILTIN_METRIC, USER_METRIC, PLUGIN_METRIC];
+bindings.handlers.ListReportTemplates = () => [
+  { id: 'match.md', title: 'Match report', scope: 'match', format: 'md', origin: 'builtin', body: 'x' },
+  { id: 'my-report', title: 'My report', scope: 'match', format: 'md', origin: 'user', body: 'y' },
+  { id: 'plug-tpl', title: 'Plug tpl', scope: 'match', format: 'md', origin: 'plugin', body: 'z' },
+];
+let bundleFail = false;
+bindings.PlatformService.BuildPluginBundle = (name, version, metricIDs, templateIDs) => {
+  bindings.calls.push({ method: 'BuildPluginBundle', args: [name, version, metricIDs, templateIDs] });
+  if (bundleFail) return Promise.reject(new Error('the plugin metric "x" would replace a built-in metric'));
+  return Promise.resolve('{"id":"my-plugin","name":"My Plugin","version":"1.0.0"}');
+};
+// The native save dialog + writer (save.js's SaveFile → WriteFile pair).
+let saveFileResult = '/out/spectra-plugin.json';
+bindings.DialogService.SaveFile = (name, exts) => {
+  bindings.calls.push({ method: 'SaveFile', args: [name, exts] });
+  return Promise.resolve(saveFileResult);
+};
+bindings.DialogService.WriteFile = (path, data) => {
+  bindings.calls.push({ method: 'WriteFile', args: [path, data] });
+  return Promise.resolve();
+};
 bindings.MapPackService.GetMapPackStatus = () =>
   Promise.resolve({ found: false, path: '', manual: false, maps: [] });
 bindings.IconService.GetIconManifest = () => Promise.resolve({ count: 0, note: '' });
@@ -259,6 +316,28 @@ svelteCompile(
   join(dir, 'helpbutton.js'),
 );
 
+// Build-plugin dialog (w23): Popover is TokenSelect's leaf (compiled
+// like reports.dom.mjs), TokenSelect the chip input, and
+// PluginBuildDialog the dialog itself — Dialog resolves to the local
+// bundle above, everything else (strings, services, save) to the real
+// tree so the driver drives the same module instances the view does.
+svelteCompile(
+  readFileSync('src/lib/components/Popover.svelte', 'utf8'),
+  'Popover.svelte',
+  join(dir, 'popover.js'),
+);
+const tokenSelectSrc = readFileSync('src/lib/components/TokenSelect.svelte', 'utf8')
+  .replace("from './Popover.svelte'", "from './popover.js'")
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
+svelteCompile(tokenSelectSrc, 'TokenSelect.svelte', join(dir, 'tokenselect.js'));
+const buildDlgSrc = readFileSync('src/lib/components/PluginBuildDialog.svelte', 'utf8')
+  .replace("from './Dialog.svelte'", "from './dialog.js'")
+  .replace("from './TokenSelect.svelte'", "from './tokenselect.js'")
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../save.js'", `from '${fileURL('src/lib/save.js')}'`)
+  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
+svelteCompile(buildDlgSrc, 'PluginBuildDialog.svelte', join(dir, 'plugindialog.js'));
+
 // Settings → its plain-ESM imports resolve from the real module
 // locations (absolute URLs); its components from the local bundles.
 // The bindings import ('../../../bindings/github.com/…') is caught by
@@ -274,6 +353,7 @@ for (const rel of [
 settSrc = rewrite(settSrc, '../components/StatusChip.svelte', './statuschip.js');
 settSrc = rewrite(settSrc, '../components/ConfirmDialog.svelte', './confirmdialog.js');
 settSrc = rewrite(settSrc, '../components/HelpButton.svelte', './helpbutton.js');
+settSrc = rewrite(settSrc, '../components/PluginBuildDialog.svelte', './plugindialog.js');
 svelteCompile(settSrc, 'Settings.svelte', join(dir, 'settings-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
@@ -840,6 +920,201 @@ console.log('J. the plugin source row: the read-only display, BOTH pickers and t
     installs.length === 2 && installs[1].args[0] === '/srv/plug',
     JSON.stringify(installs.map((c) => c.args)),
   );
+}
+
+console.log('K. Build plugin… (w23): the trigger, the dialog anatomy, the user-only offer, the save hand-off');
+{
+  const dlg = () => document.querySelector('[role="dialog"]');
+  const openDialog = async () => {
+    const trig = $('button').find((b) => b.textContent.includes('Build plugin…'));
+    click(trig);
+    await sleep(150); // the dialog mount + both catalog reads
+    return dlg();
+  };
+
+  // 1/2 — the trigger: label + codicon-export leading it, riding the
+  // Plugins card's header row (the .row-between beside the heading),
+  // clear of the Browse/file/Install source row.
+  const trig = $('button').find((b) => b.textContent.includes('Build plugin…'));
+  check(
+    'the Build plugin… trigger carries its label with codicon-export leading',
+    !!trig &&
+      !!trig.querySelector('.codicon.codicon-export[aria-hidden="true"]') &&
+      trig.textContent.includes('Build plugin…'),
+    trig ? trig.outerHTML.slice(0, 220) : 'missing',
+  );
+  {
+    const headRow = trig && trig.closest('.row-between');
+    const card = $('section.panel').find((s) => s.textContent.includes('Install from path'));
+    const pathInput = card && card.querySelector('.sett-plugin-path');
+    const installRow = pathInput && pathInput.closest('.row-between');
+    check(
+      'the trigger rides the card header row beside the Plugins heading, not the install row',
+      !!headRow &&
+        !!headRow.querySelector('h2') &&
+        headRow.querySelector('h2').textContent.includes('Plugins') &&
+        !!installRow &&
+        !installRow.contains(trig),
+      headRow ? headRow.textContent.replace(/\s+/g, ' ').slice(0, 80) : 'no header row',
+    );
+  }
+
+  const d = await openDialog();
+  // 3–6 — the anatomy: labelled dialog, the name field with its hint,
+  // the 1.0.0 version default, both chip fields with their hints/aria.
+  check(
+    'the dialog opens with its own accessible name',
+    !!d && d.getAttribute('aria-label') === 'Build a plugin to share',
+    d ? d.getAttribute('aria-label') : 'no dialog',
+  );
+  const nameIn = d && d.querySelector('#bp-name');
+  check(
+    'the name field is present with the verb-like hint',
+    !!nameIn && nameIn.placeholder === 'Name this plugin…',
+    nameIn ? nameIn.placeholder : 'missing',
+  );
+  const verIn = d && d.querySelector('#bp-version');
+  check('the version field defaults to 1.0.0', !!verIn && verIn.value === '1.0.0', verIn && verIn.value);
+  {
+    const tpls = d && d.querySelector('#bp-tpls');
+    const mets = d && d.querySelector('#bp-metrics');
+    check(
+      'both chip fields are present with their placeholders and aria labels',
+      !!tpls &&
+        tpls.placeholder === 'Search report templates…' &&
+        tpls.getAttribute('aria-label') === 'Report templates to bundle' &&
+        !!mets &&
+        mets.placeholder === 'Search metrics…' &&
+        mets.getAttribute('aria-label') === 'Metrics to bundle',
+      `${tpls && tpls.placeholder} | ${mets && mets.placeholder}`,
+    );
+  }
+
+  // 7/8 — the USER-ORIGIN-ONLY offer: the mixed fixture carries a
+  // built-in and a plugin row in each catalog; neither picker may offer
+  // them (built-ins are immutable, plugin rows belong to their bundle).
+  const options = async (inputId) => {
+    d.querySelector(inputId).dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
+    await sleep(60);
+    const pop = document.getElementById(`${inputId.slice(1)}-list`);
+    return pop ? [...pop.querySelectorAll('.tk-opt')].map((o) => o.textContent.trim()) : [];
+  };
+  const tplOpts = await options('#bp-tpls');
+  check(
+    'the template picker offers ONLY your own templates (built-in + plugin rows absent)',
+    tplOpts.includes('My report') &&
+      !tplOpts.includes('Match report') &&
+      !tplOpts.includes('Plug tpl') &&
+      tplOpts.length === 1,
+    JSON.stringify(tplOpts),
+  );
+  const metricOpts = await options('#bp-metrics');
+  check(
+    'the metric picker offers ONLY your own metrics (built-in + plugin rows absent)',
+    metricOpts.includes('My count') &&
+      !metricOpts.includes('Trade rate') &&
+      !metricOpts.includes('Plug stat') &&
+      metricOpts.length === 1,
+    JSON.stringify(metricOpts),
+  );
+
+  // 9 — Save needs a name AND at least one pick: a name with nothing to
+  // bundle stays disarmed.
+  const saveBtn = () => [...d.querySelectorAll('button')].find((b) => b.textContent.includes('Save plugin'));
+  type(nameIn, 'My Plugin');
+  await sleep(20);
+  check(
+    'Save stays disabled with a name but no picks',
+    saveBtn() && saveBtn().disabled,
+    saveBtn() ? `disabled=${saveBtn().disabled}` : 'missing',
+  );
+
+  // 10/11 — the picks land as chips and arm Save (codicon-save leading).
+  const pick = async (inputId, label) => {
+    const pop = document.getElementById(`${inputId.slice(1)}-list`);
+    const opt = pop && [...pop.querySelectorAll('.tk-opt')].find((o) => o.textContent.trim() === label);
+    if (opt) click(opt);
+    await sleep(40);
+  };
+  await pick('#bp-tpls', 'My report');
+  await pick('#bp-metrics', 'My count');
+  const chips = [...d.querySelectorAll('.tk-tok')].map((c) => c.textContent.replace(/\s+/g, ' ').trim());
+  check(
+    'picking one of each lands a chip in each field',
+    chips.length === 2 && chips.some((c) => c.includes('My report')) && chips.some((c) => c.includes('My count')),
+    JSON.stringify(chips),
+  );
+  check(
+    'Save arms on name + picks and the save icon leads its label',
+    !!saveBtn() && !saveBtn().disabled &&
+      !!saveBtn().querySelector('.codicon.codicon-save[aria-hidden="true"]'),
+    saveBtn() ? saveBtn().outerHTML.slice(0, 220) : 'missing',
+  );
+
+  // 12–14 — the hand-off: exactly the picked ids reach the server, the
+  // native save receives spectra-plugin.json, and the composed text
+  // lands on the chosen path with a quiet status line.
+  click(saveBtn());
+  await sleep(80);
+  {
+    const builds = bindings.calls.filter((c) => c.method === 'BuildPluginBundle');
+    check(
+      'Save hands the server exactly the picked set (name, version, metric ids, template ids)',
+      builds.length === 1 &&
+        JSON.stringify(builds[0].args) === JSON.stringify(['My Plugin', '1.0.0', [11], ['my-report']]),
+      JSON.stringify(builds.map((c) => c.args)),
+    );
+    const saves = bindings.calls.filter((c) => c.method === 'SaveFile');
+    check(
+      'the native save dialog receives spectra-plugin.json with the json filter',
+      saves.length === 1 && saves[0].args[0] === 'spectra-plugin.json' &&
+        JSON.stringify(saves[0].args[1]) === '["json"]',
+      JSON.stringify(saves.map((c) => c.args)),
+    );
+    const writes = bindings.calls.filter((c) => c.method === 'WriteFile');
+    const landed = writes.length === 1 && Buffer.from(writes[0].args[1], 'base64').toString('utf8');
+    check(
+      'the file lands with the composed manifest text and a quiet status line says so',
+      !!landed && landed.includes('"id":"my-plugin"') &&
+        !!d.querySelector('.bp-status[role="status"]') &&
+        d.querySelector('.bp-status').textContent.includes('Saved My Plugin to /out/spectra-plugin.json'),
+      `${String(landed).slice(0, 60)} | ${d.querySelector('.bp-status') && d.querySelector('.bp-status').textContent}`,
+    );
+  }
+
+  // 15 — cancel: SaveFile resolving "" is a silent no-op (save.js's
+  // contract) — no status, no error.
+  saveFileResult = '';
+  click(saveBtn());
+  await sleep(60);
+  check(
+    'a cancelled save dialog is silent: no status line and no error',
+    !d.querySelector('.bp-status') && !d.querySelector('.error'),
+    `status=${!!d.querySelector('.bp-status')} error=${!!d.querySelector('.error')}`,
+  );
+  saveFileResult = '/out/spectra-plugin.json';
+
+  // 16 — a server-side validation failure surfaces through the dialog's
+  // error slot and never reaches the save dialog.
+  bundleFail = true;
+  click(saveBtn());
+  await sleep(60);
+  check(
+    'a failed build shows the error line and never opens the save dialog',
+    !!d.querySelector('.error[role="alert"]') &&
+      d.querySelector('.error').textContent.includes('would replace a built-in metric') &&
+      bindings.calls.filter((c) => c.method === 'SaveFile').length === 2,
+    d.querySelector('.error') ? d.querySelector('.error').textContent : 'no error line',
+  );
+  bundleFail = false;
+
+  // 17 — the head ✕ closes it (Dialog owns the dismissal machinery).
+  const closeBtn = [...d.querySelectorAll('.bp-head button')].find(
+    (b) => b.getAttribute('aria-label') === 'Dismiss',
+  );
+  click(closeBtn);
+  await sleep(40);
+  check('the head ✕ closes the dialog', !document.querySelector('[role="dialog"]'));
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

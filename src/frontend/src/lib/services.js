@@ -1012,6 +1012,16 @@ export function renderReportDraft(scope, body, matchId, steamId, round) {
   return PlatformService.RenderReportDraft(scope, body || '', matchId || 0, steamId || '', round || 0);
 }
 
+// --- Build plugin (the Settings "Build plugin…" dialog) ----------------------
+// buildPluginBundle composes + validates the single-file plugin manifest
+// SERVER-side from the picked ids (stored user-origin metrics and user
+// report templates only — the frontend never decides what goes in) and
+// returns the exact JSON text to hand to saveText. Plain call: it stores
+// nothing, so there is nothing to invalidate.
+export function buildPluginBundle(name, version, metricIDs, templateIDs) {
+  return PlatformService.BuildPluginBundle(name, version, metricIDs || [], templateIDs || []);
+}
+
 // --- MapPackService -----------------------------------------------------------
 // Radar extraction from the user's local CS2 install (Valve IP stays
 // local — see internal/mappack). Packs load through loadMapPack().

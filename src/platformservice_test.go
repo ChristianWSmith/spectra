@@ -13,6 +13,7 @@ import (
 
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
+	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/plugin"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
@@ -584,5 +585,207 @@ func TestReportTemplateLifecycleViaService(t *testing.T) {
 	rows, err = st.ListReportTemplates()
 	if err != nil || len(rows) != 1 || rows[0].ID != "match-summary-2" {
 		t.Fatalf("stored rows after a draft = %+v, %v, want exactly one", rows, err)
+	}
+}
+
+// TestBuildPluginBundle pins the Settings "Build plugin…" save-time
+// contract (w23): the picked ids are re-resolved SERVER-side against
+// stored rows (user-origin metrics only — a builtin id is refused, an
+// unknown id is refused), the single-file manifest comes back with its
+// metrics + reportTpls inlined and hash EMPTY, the id auto-derives as a
+// slug of the name, version defaults to 1.0.0, and every expression
+// passes the metrics engine before any text is returned. The composed
+// file is then installed back through the ordinary InstallPlugin path —
+// what we hand the save dialog must be installable by construction.
+func TestBuildPluginBundle(t *testing.T) {
+	useTempXDG(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	svc := &PlatformService{st: st}
+
+	// Fixtures: one user metric, one user template (through the service,
+	// so the stored row carries the shape a real save writes).
+	m, err := st.CreateMetric(models.MetricRow{
+		Name: "my_count", Title: "My count", Expr: "from events: count()",
+		Scope: "match", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("CreateMetric: %v", err)
+	}
+	tpl, err := svc.SaveReportTemplate(ReportTemplate{
+		Title: "My report", Scope: "match", Format: "md", Body: "map={{.Match.Map}}",
+	})
+	if err != nil {
+		t.Fatalf("SaveReportTemplate: %v", err)
+	}
+
+	// Happy path: an empty version lands on the default, the id derives
+	// from the name, both selections are inlined, and hash stays empty.
+	out, err := svc.BuildPluginBundle("My Plugin", "", []int64{m.ID}, []string{tpl.ID})
+	if err != nil {
+		t.Fatalf("BuildPluginBundle: %v", err)
+	}
+	man, err := plugin.ValidateManifest([]byte(out))
+	if err != nil {
+		t.Fatalf("composed output fails the manifest validator: %v", err)
+	}
+	if man.ID != "my-plugin" {
+		t.Errorf("derived id = %q, want my-plugin (the name's slug)", man.ID)
+	}
+	if man.Version != "1.0.0" {
+		t.Errorf("version = %q, want the 1.0.0 default", man.Version)
+	}
+	if man.Hash != "" {
+		t.Errorf("hash = %q, want empty (a single-file manifest can never pin its own hash)", man.Hash)
+	}
+	if !strings.Contains(out, `"reportTpls"`) || !strings.Contains(out, `"metrics"`) {
+		t.Errorf("composed JSON missing the inlined sections:\n%s", out)
+	}
+	if len(man.Metrics) != 1 || man.Metrics[0].Name != "my_count" ||
+		man.Metrics[0].Expr != "from events: count()" || man.Metrics[0].Scope != "match" {
+		t.Errorf("inlined metrics = %+v, want the one stored user metric", man.Metrics)
+	}
+	if len(man.ReportTpls) != 1 || man.ReportTpls[0].ID != tpl.ID ||
+		man.ReportTpls[0].Body != "map={{.Match.Map}}" || man.ReportTpls[0].Scope != "match" {
+		t.Errorf("inlined templates = %+v, want the one stored user template", man.ReportTpls)
+	}
+	if pe := metrics.Validate(man.Metrics[0].Expr); pe != nil {
+		t.Errorf("inlined expression fails the engine: %s", pe.Message)
+	}
+
+	// The composed file installs back cleanly (the save dialog's payload
+	// is a valid single-file bundle end to end).
+	mp := filepath.Join(t.TempDir(), plugin.ManifestName)
+	if err := os.WriteFile(mp, []byte(out), 0o644); err != nil {
+		t.Fatalf("write composed manifest: %v", err)
+	}
+	got, err := svc.InstallPlugin(mp)
+	if err != nil {
+		t.Fatalf("InstallPlugin(composed): %v", err)
+	}
+	if got.Manifest.ID != "my-plugin" {
+		t.Fatalf("installed id = %q, want my-plugin", got.Manifest.ID)
+	}
+	if n, err := st.CountPluginMetrics("my-plugin"); err != nil || n != 1 {
+		t.Fatalf("installed metric rows = %d, %v, want 1", n, err)
+	}
+
+	// Validation failures, all server-side:
+	//   a name that folds to a slug shorter than the 2-char floor,
+	//   a name with no letters or digits at all,
+	//   an id naming no stored metric,
+	//   a BUILTIN metric id (eligibility: built-ins are immutable and a
+	//   bundled builtin name would replace the recipient's row),
+	//   an expression the metrics engine rejects.
+	for _, bad := range []struct {
+		name, version string
+		metricIDs     []int64
+		templateIDs   []string
+		want          string
+	}{
+		{"A", "", nil, nil, "letters or digits"},
+		{"!!!", "", nil, nil, "letters or digits"},
+		{"Fine", "", []int64{999999}, nil, "no metric with that id"},
+		{"Fine", "", []int64{firstBuiltinMetricID(t, st)}, nil, "only your own metrics"},
+	} {
+		if _, err := svc.BuildPluginBundle(bad.name, bad.version, bad.metricIDs, bad.templateIDs); err == nil {
+			t.Errorf("BuildPluginBundle(%q, %v) succeeded, want %q", bad.name, bad.metricIDs, bad.want)
+		} else if !strings.Contains(err.Error(), bad.want) {
+			t.Errorf("BuildPluginBundle(%q) error = %q, want it to mention %q", bad.name, err, bad.want)
+		}
+	}
+	// A broken expression reaches the engine's own validation, named with
+	// the metric (the stored row carries it — nothing validates exprs at
+	// the raw store write).
+	badRow, err := st.CreateMetric(models.MetricRow{
+		Name: "bad_expr", Title: "Bad", Expr: "nonsense", Scope: "match", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("CreateMetric(bad expr): %v", err)
+	}
+	if _, err := svc.BuildPluginBundle("Fine", "", []int64{badRow.ID}, nil); err == nil {
+		t.Fatal("a bundle with an engine-invalid expression succeeded")
+	}
+	// An unknown template id is refused the same way.
+	if _, err := svc.BuildPluginBundle("Fine", "", nil, []string{"no-such-template"}); err == nil {
+		t.Fatal("a bundle naming no stored template succeeded")
+	}
+	// The unknown-scope gate: stored rows are CHECK-constrained to their
+	// vocabularies, so no stored row can carry a bad scope — the negative
+	// lives at the SAME ValidateManifest call this method round-trips its
+	// output through (plugin_test.go pins the gate itself; this documents
+	// it as THIS method's chain).
+	if _, err := plugin.ValidateManifest([]byte(
+		`{"id":"scope-plug","name":"S","version":"1","reportTpls":[{"id":"tpl-x","title":"t","scope":"career","format":"md","body":"x"}]}`,
+	)); err == nil || !strings.Contains(err.Error(), "match|player|round") {
+		t.Errorf("manifest gate let an unknown template scope through: %v", err)
+	}
+}
+
+// firstBuiltinMetricID returns the id of any schema-seeded builtin metric
+// (the eligibility fixture above — every fresh store carries them).
+func firstBuiltinMetricID(t *testing.T, st *store.Store) int64 {
+	t.Helper()
+	rows, err := st.ListMetrics()
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	for _, r := range rows {
+		if r.Origin == "builtin" {
+			return r.ID
+		}
+	}
+	t.Fatal("no builtin metric in the fixture store")
+	return 0
+}
+
+// TestInstallRefusesBuiltinMetricCollision pins the install-side refusal
+// end to end (w23): a bundle whose metric names a built-in fails the
+// install with the store's clear error and mutates NOTHING — no registry
+// row, no bundle copy, the built-in row untouched.
+func TestInstallRefusesBuiltinMetricCollision(t *testing.T) {
+	useTempXDG(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	svc := &PlatformService{st: st}
+
+	const hijack = `{
+  "id": "hijack-plug",
+  "name": "Hijack",
+  "version": "1.0.0",
+  "metrics": [
+    {"name": "trade_rate", "title": "Not really", "expr": "from events: count()"}
+  ]
+}`
+	bundle := filepath.Join(t.TempDir(), "hijack-plug")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, plugin.ManifestName), []byte(hijack), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	if _, err := svc.InstallPlugin(bundle); err == nil {
+		t.Fatal("installing a builtin-colliding bundle succeeded")
+	} else if !strings.Contains(err.Error(), "built-in") {
+		t.Errorf("install error = %q, want the built-in collision refusal", err)
+	}
+	// Nothing landed: no registry row …
+	if list, err := svc.ListPlugins(); err != nil || len(list) != 0 {
+		t.Fatalf("ListPlugins after refusal = %+v, %v, want empty", list, err)
+	}
+	// … and the built-in row keeps its origin and its expression.
+	row, err := st.GetMetricByName("trade_rate")
+	if err != nil {
+		t.Fatalf("GetMetricByName(trade_rate): %v", err)
+	}
+	if row.Origin != "builtin" {
+		t.Fatalf("trade_rate origin after refusal = %q, want builtin", row.Origin)
 	}
 }

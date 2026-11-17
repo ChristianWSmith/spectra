@@ -849,7 +849,19 @@ const EXPECTED = {
   // install rounds (InstallPlugin gets the manifest-file path first,
   // then the bundle path on the second round). The three §J pins from
   // the first commit are untouched.
-  'settings.dom.mjs': 94,
+  // settings 94 → 111 (2026-11-17, w23 Build plugin…): +17 the new
+  // section K — the card-header trigger (codicon-export + label on the
+  // .row-between beside the Plugins heading, clear of the install row),
+  // the dialog anatomy (name field + verb hint, the 1.0.0 version
+  // default, both TokenSelect fields' placeholders/aria), the
+  // USER-ORIGIN-ONLY offer (a mixed-origin fixture: each picker offers
+  // exactly its one user row, built-in and plugin rows absent), the chip
+  // picks, the Save gating (name AND ≥1 pick; codicon-save leads), the
+  // BuildPluginBundle hand-off with exactly the picked ids, the native
+  // save receiving spectra-plugin.json with the composed text landing
+  // (plus the status line), the silent cancel, the server-failure error
+  // line (no save dialog), and the head ✕ closing the dialog.
+  'settings.dom.mjs': 111,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so

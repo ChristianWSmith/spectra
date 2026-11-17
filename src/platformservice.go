@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/plugin"
 	"github.com/ChristianWSmith/spectra/internal/report"
@@ -607,17 +609,13 @@ func (s *PlatformService) reportTemplateIDsInUse() (func(string) bool, error) {
 // merely check it.
 const reportTemplateSlugMax = 40
 
-// mintReportTemplateID turns a title into the id a new user template is
-// stored under: lowercased, everything outside [a-z0-9] folded to single
-// hyphens, trimmed and clamped to the slug ceiling — the plugin manifest's
-// `^[a-z0-9-]{2,40}$` contract (plugin.ValidSlug), so a saved template is
-// bundle-able later without re-shaping its id. `taken` reports the ids
-// already in use; the first free one wins, suffixing -2, -3, … (the base
-// is truncated to keep the suffixed id inside the ceiling). A title that
-// folds to nothing ("!!!") falls back to a fixed base, which the same
-// de-dupe then numbers. The loop terminates: the taken set is finite and
-// every iteration mints a distinct id.
-func mintReportTemplateID(title string, taken func(string) bool) string {
+// slugFold lowercases title and folds every separator (space, punctuation,
+// any non-ASCII rune) to ONE hyphen, never leading with one — the fold half
+// of the plugin manifest's `^[a-z0-9-]{2,40}$` contract (plugin.ValidSlug),
+// shared by the report-template id mint below and BuildPluginBundle's
+// name→id derivation. The result may be empty (a title with no letters or
+// digits); callers apply their own fallback and the slug ceiling.
+func slugFold(title string) string {
 	var b strings.Builder
 	lastDash := false
 	for _, r := range strings.ToLower(title) {
@@ -634,7 +632,21 @@ func mintReportTemplateID(title string, taken func(string) bool) string {
 			lastDash = true
 		}
 	}
-	base := strings.Trim(b.String(), "-")
+	return strings.Trim(b.String(), "-")
+}
+
+// mintReportTemplateID turns a title into the id a new user template is
+// stored under: slugFold (see above) plus a fallback base and the slug
+// ceiling — the plugin manifest's `^[a-z0-9-]{2,40}$` contract
+// (plugin.ValidSlug), so a saved template is bundle-able later without
+// re-shaping its id. `taken` reports the ids
+// already in use; the first free one wins, suffixing -2, -3, … (the base
+// is truncated to keep the suffixed id inside the ceiling). A title that
+// folds to nothing ("!!!") falls back to a fixed base, which the same
+// de-dupe then numbers. The loop terminates: the taken set is finite and
+// every iteration mints a distinct id.
+func mintReportTemplateID(title string, taken func(string) bool) string {
+	base := slugFold(title)
 	if base == "" {
 		base = "report"
 	}
@@ -738,4 +750,116 @@ func renderTemplateDoc(st *store.Store, tpl report.Template, matchID int64, stea
 	default:
 		return "", fmt.Errorf("template %q has an unknown scope %q", tpl.ID, tpl.Scope)
 	}
+}
+
+// --- Build plugin (the Settings "Build plugin…" dialog) ----------------------
+
+// BuildPluginBundle composes the single-file spectra-plugin.json a shared
+// plugin ships as, from the ids the Build-plugin dialog picked, and returns
+// the exact text to hand to the native save dialog. The selection is
+// re-resolved server-side against STORED rows — only user-origin metrics
+// and the stored user report templates qualify (built-ins are immutable and
+// a bundled built-in name would replace the recipient's built-in row on
+// install; plugin rows belong to their own bundle), so the frontend never
+// decides what goes in. The composed bytes are validated exactly like an
+// incoming bundle: plugin.ValidateManifest (id slug, name, version, metric
+// names/exprs/scopes, template ids/scope/format/body) plus the metrics
+// engine's Validate on every expression — a failure is returned verbatim
+// through errText. version defaults to 1.0.0. hash stays EMPTY on purpose:
+// a single file hashes to its own bytes, so a pin it carried could never
+// match ComputeBundleHash and every install would fail on a mismatch.
+func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []int64, templateIDs []string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("a plugin needs a name")
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = "1.0.0"
+	}
+	// The id auto-derives from the name through the SAME slug contract the
+	// manifest enforces (slugFold above): clamped to the ceiling, then
+	// checked against plugin.ValidSlug so a name that folds to fewer than
+	// two characters fails here with friendly copy instead of the raw
+	// regexp the manifest would quote.
+	id := slugFold(name)
+	if len(id) > reportTemplateSlugMax {
+		id = strings.TrimRight(id[:reportTemplateSlugMax], "-")
+	}
+	if !plugin.ValidSlug(id) {
+		return "", fmt.Errorf("a plugin name needs at least 2 letters or digits")
+	}
+
+	man := plugin.Manifest{ID: id, Name: name, Version: version}
+	seenMetrics := map[int64]bool{}
+	for _, mid := range metricIDs {
+		if seenMetrics[mid] {
+			continue // TokenSelect already de-dupes; belt for a repeated id
+		}
+		seenMetrics[mid] = true
+		row, err := s.st.GetMetric(mid)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("no metric with that id in your library")
+			}
+			return "", fmt.Errorf("couldn't load the metrics: %w", err)
+		}
+		// The eligibility rule: a bundled builtin name would UPSERT over
+		// the recipient's immutable built-in row on install, and a plugin
+		// row belongs to its own bundle — only yours go in.
+		if row.Origin != "user" {
+			return "", fmt.Errorf("only your own metrics can go into a plugin (built-in and plugin metrics stay with their source)")
+		}
+		man.Metrics = append(man.Metrics, plugin.MetricDef{
+			Name: row.Name, Title: row.Title, Expr: row.Expr, Scope: row.Scope,
+			Format: row.Format, Doc: row.Doc, Denominator: row.Denominator,
+		})
+	}
+	// The stored report_templates table holds ONE origin's rows (every
+	// insert writes origin 'user'), so a found row is user-origin by
+	// construction — no second origin gate to re-check (the store's own
+	// report-template contract).
+	rows, err := s.st.ListReportTemplates()
+	if err != nil {
+		return "", fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	seenTpls := map[string]bool{}
+	for _, tid := range templateIDs {
+		if seenTpls[tid] {
+			continue
+		}
+		seenTpls[tid] = true
+		var found bool
+		for _, r := range rows {
+			if r.ID != tid {
+				continue
+			}
+			found = true
+			man.ReportTpls = append(man.ReportTpls, plugin.ReportTemplate{
+				ID: r.ID, Title: r.Title, Scope: r.Scope, Format: r.Format, Body: r.Body,
+			})
+		}
+		if !found {
+			return "", fmt.Errorf("no report template with that id")
+		}
+	}
+
+	// The metrics engine's full grammar check — the same pass
+	// plugin.Manager.Install runs on an incoming bundle, so a plugin that
+	// would fail to install can never be written out.
+	for _, d := range man.Metrics {
+		if pe := metrics.Validate(d.Expr); pe != nil {
+			return "", fmt.Errorf("metric %q: %s", d.Name, pe.Message)
+		}
+	}
+	data, err := json.MarshalIndent(man, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("couldn't compose the plugin file: %w", err)
+	}
+	// Round-trip the composed bytes through the SAME validator an incoming
+	// bundle faces — the output is installable by construction.
+	if _, err := plugin.ValidateManifest(data); err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
