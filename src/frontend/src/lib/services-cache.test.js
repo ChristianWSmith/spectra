@@ -518,6 +518,117 @@ test('deleteMetric invalidates on success (metric mutator)', async () => {
   assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the delete');
 });
 
+// installPlugin/setPluginEnabled/removePlugin are mutating wrappers like
+// saveMetric/deleteMetric: Go emits no spectra:* event for a plugin op,
+// so the wrapper itself must flush the read cache on SUCCESS — otherwise
+// listMetrics/listMetricsPage serve the pre-mutation promise and a
+// re-enabled plugin's metrics appear as ghosts (or new ones never show)
+// until an unrelated flush. The flush is the FULL invalidate(), so the
+// paged window refetches too; an ERROR does not flush (the mutation did
+// not land). The Go side also schedules the metrics sweep for these ops
+// (platformservice.go's afterPluginOp) — its spectra:metric-done
+// lands later and flushes again when the values land; this wrapper's
+// flush covers the definition-list change at op time.
+test('installPlugin invalidates on success (plugin mutator)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.InstallPlugin = (p) => ({ manifest: { id: 'p1' }, path: p, enabled: true });
+  try {
+    const firstList = services.listMetrics();
+    const firstPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    await Promise.all([firstList, firstPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 1);
+    assert.equal(bindings.callCount('ListMetricsPage'), 1);
+
+    const st = await services.installPlugin('/tmp/p1');
+    assert.equal(st.enabled, true, 'the wrapper returns the server result untouched');
+
+    const afterList = services.listMetrics();
+    const afterPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    assert.notEqual(afterList, firstList, 'an install must flush the cached list');
+    assert.notEqual(afterPage, firstPage, 'an install must flush the paged window');
+    await Promise.all([afterList, afterPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the install');
+    assert.equal(bindings.callCount('ListMetricsPage'), 2, 'paged refetch after the install');
+  } finally {
+    delete bindings.handlers.InstallPlugin;
+  }
+});
+
+test('setPluginEnabled invalidates on success (plugin mutator)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.SetPluginEnabled = (id, enabled) => ({ manifest: { id }, enabled });
+  try {
+    const firstList = services.listMetrics();
+    const firstPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    await Promise.all([firstList, firstPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 1);
+    assert.equal(bindings.callCount('ListMetricsPage'), 1);
+
+    const st = await services.setPluginEnabled('p1', false);
+    assert.equal(st.enabled, false, 'the wrapper returns the server result untouched');
+
+    const afterList = services.listMetrics();
+    const afterPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    assert.notEqual(afterList, firstList, 'a toggle must flush the cached list');
+    assert.notEqual(afterPage, firstPage, 'a toggle must flush the paged window');
+    await Promise.all([afterList, afterPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the toggle');
+    assert.equal(bindings.callCount('ListMetricsPage'), 2, 'paged refetch after the toggle');
+  } finally {
+    delete bindings.handlers.SetPluginEnabled;
+  }
+});
+
+test('removePlugin invalidates on success (plugin mutator)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.RemovePlugin = () => undefined;
+  try {
+    const firstList = services.listMetrics();
+    const firstPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    await Promise.all([firstList, firstPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 1);
+    assert.equal(bindings.callCount('ListMetricsPage'), 1);
+
+    await services.removePlugin('p1'); // RemovePlugin emits nothing in Go
+
+    const afterList = services.listMetrics();
+    const afterPage = services.listMetricsPage('', '', '', '', '', 0, 100);
+    assert.notEqual(afterList, firstList, 'a remove must flush the cached list');
+    assert.notEqual(afterPage, firstPage, 'a remove must flush the paged window');
+    await Promise.all([afterList, afterPage]);
+    assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the remove');
+    assert.equal(bindings.callCount('ListMetricsPage'), 2, 'paged refetch after the remove');
+  } finally {
+    delete bindings.handlers.RemovePlugin;
+  }
+});
+
+// The error path of a plugin op must NOT flush: the mutation did not
+// land, so the pre-op cached reads are still the right answers (the
+// rejection propagates untouched).
+test('a failed plugin op does not flush (error path)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.InstallPlugin = () => Promise.reject(new Error('hash mismatch'));
+  try {
+    const first = services.listMetrics();
+    await first;
+    assert.equal(bindings.callCount('ListMetrics'), 1);
+
+    await assert.rejects(() => services.installPlugin('/tmp/bad'), /hash mismatch/);
+
+    const after = services.listMetrics();
+    assert.equal(after, first, 'a failed install must not flush');
+    await after;
+    assert.equal(bindings.callCount('ListMetrics'), 1, 'still one call');
+  } finally {
+    delete bindings.handlers.InstallPlugin;
+  }
+});
+
 // listMetricsPage is the Builder list's keyset window behind the SAME
 // cachedRead: identical (query, originFilter, scopeFilter, denomFilter,
 // formatFilter, afterID, limit) shares one promise, any arg change

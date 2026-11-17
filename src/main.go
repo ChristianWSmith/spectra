@@ -229,7 +229,7 @@ func main() {
 	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
 	app.RegisterService(application.NewService(metricsSvc))
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
-	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
+	app.RegisterService(application.NewService(&PlatformService{st: st, app: app, afterPluginOp: metricsSvc.scheduleSweep}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app, budget: b}))
 	app.RegisterService(application.NewService(&IconService{kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&SoundService{kvs: kvs, app: app}))
