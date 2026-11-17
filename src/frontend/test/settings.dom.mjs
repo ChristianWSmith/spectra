@@ -69,9 +69,14 @@
 //      chip picks landing in the fields, the Save gating (a name AND at
 //      least one pick; codicon-save leads the label), the
 //      BuildPluginBundle hand-off with exactly the picked ids and the
-//      version, the native save receiving spectra-plugin.json (a cancel
-//      resolving "" is a silent no-op) and the server-failure error
-//      line. K runs after J, just before the whole-run error tail.
+//      version, the native save receiving spectra-plugin.json with the
+//      composed text landing and a successful save CLOSING the dialog
+//      behind it (w26 — the native dialog closing is the confirmation;
+//      no status line remains), a cancel resolving "" leaving the
+//      dialog OPEN and silent with its state intact, the server-failure
+//      error line keeping the dialog open (no save dialog invoked), and
+//      the head ✕ closing the dialog. K runs after J, just before the
+//      whole-run error tail.
 //
 // Backend semantics live in AnalyticsService.SetConfig (the no-bump)
 // and RecomputeAll (server-side behind-set resolution) — this covers
@@ -922,7 +927,7 @@ console.log('J. the plugin source row: the read-only display, BOTH pickers and t
   );
 }
 
-console.log('K. Build plugin… (w23): the trigger, the dialog anatomy, the user-only offer, the save hand-off');
+console.log('K. Build plugin… (w23): the trigger, anatomy, user-only offer; the save hand-off closes on success (w26), cancel/error stay open');
 {
   const dlg = () => document.querySelector('[role="dialog"]');
   const openDialog = async () => {
@@ -1020,7 +1025,13 @@ console.log('K. Build plugin… (w23): the trigger, the dialog anatomy, the user
 
   // 9 — Save needs a name AND at least one pick: a name with nothing to
   // bundle stays disarmed.
-  const saveBtn = () => [...d.querySelectorAll('button')].find((b) => b.textContent.includes('Save plugin'));
+  // Live dialog lookup: the success save CLOSES the dialog (w26), so
+  // legs after the first save address the reopened element, never the
+  // mount-time `d`.
+  const saveBtn = () => {
+    const cur = document.querySelector('[role="dialog"]');
+    return cur && [...cur.querySelectorAll('button')].find((b) => b.textContent.includes('Save plugin'));
+  };
   type(nameIn, 'My Plugin');
   await sleep(20);
   check(
@@ -1053,7 +1064,9 @@ console.log('K. Build plugin… (w23): the trigger, the dialog anatomy, the user
 
   // 12–14 — the hand-off: exactly the picked ids reach the server, the
   // native save receives spectra-plugin.json, and the composed text
-  // lands on the chosen path with a quiet status line.
+  // lands on the chosen path — behind which the dialog CLOSES (w26):
+  // the native save dialog closing is the confirmation, so no
+  // in-dialog success state remains.
   click(saveBtn());
   await sleep(80);
   {
@@ -1074,42 +1087,69 @@ console.log('K. Build plugin… (w23): the trigger, the dialog anatomy, the user
     const writes = bindings.calls.filter((c) => c.method === 'WriteFile');
     const landed = writes.length === 1 && Buffer.from(writes[0].args[1], 'base64').toString('utf8');
     check(
-      'the file lands with the composed manifest text and a quiet status line says so',
+      'the file lands with the composed manifest text and the dialog closes behind it',
       !!landed && landed.includes('"id":"my-plugin"') &&
-        !!d.querySelector('.bp-status[role="status"]') &&
-        d.querySelector('.bp-status').textContent.includes('Saved My Plugin to /out/spectra-plugin.json'),
-      `${String(landed).slice(0, 60)} | ${d.querySelector('.bp-status') && d.querySelector('.bp-status').textContent}`,
+        !document.querySelector('[role="dialog"]'),
+      `${String(landed).slice(0, 60)} | dialog=${!!document.querySelector('[role="dialog"]')}`,
     );
   }
 
   // 15 — cancel: SaveFile resolving "" is a silent no-op (save.js's
-  // contract) — no status, no error.
+  // contract) and the dialog STAYS OPEN — no error. The success above
+  // closed it, so reopen and refill (the open resets state, w23).
   saveFileResult = '';
+  const d2 = await openDialog();
+  type(d2.querySelector('#bp-name'), 'My Plugin');
+  await sleep(20);
+  for (const [inputId, label] of [['#bp-tpls', 'My report'], ['#bp-metrics', 'My count']]) {
+    d2.querySelector(inputId).dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
+    await sleep(60);
+    const pop = document.getElementById(`${inputId.slice(1)}-list`);
+    const opt = pop && [...pop.querySelectorAll('.tk-opt')].find((o) => o.textContent.trim() === label);
+    if (opt) click(opt);
+    await sleep(40);
+  }
   click(saveBtn());
   await sleep(60);
-  check(
-    'a cancelled save dialog is silent: no status line and no error',
-    !d.querySelector('.bp-status') && !d.querySelector('.error'),
-    `status=${!!d.querySelector('.bp-status')} error=${!!d.querySelector('.error')}`,
-  );
+  {
+    const cur = document.querySelector('[role="dialog"]');
+    check(
+      'a cancelled save dialog stays open and silent: no error line',
+      !!cur && !cur.querySelector('.error'),
+      `open=${!!cur} error=${cur && cur.querySelector('.error') ? cur.querySelector('.error').textContent : 'none'}`,
+    );
+    const chips2 = cur ? [...cur.querySelectorAll('.tk-tok')].map((c) => c.textContent.replace(/\s+/g, ' ').trim()) : [];
+    check(
+      'the surviving dialog keeps its state after the cancel (name, both chips, Save armed)',
+      !!cur && cur.querySelector('#bp-name').value === 'My Plugin' &&
+        chips2.length === 2 && !!saveBtn() && !saveBtn().disabled,
+      JSON.stringify(chips2),
+    );
+  }
   saveFileResult = '/out/spectra-plugin.json';
 
   // 16 — a server-side validation failure surfaces through the dialog's
-  // error slot and never reaches the save dialog.
+  // error slot, keeps the dialog OPEN, and never reaches the save
+  // dialog (SaveFile still at 2: the success + the cancel above).
   bundleFail = true;
   click(saveBtn());
   await sleep(60);
-  check(
-    'a failed build shows the error line and never opens the save dialog',
-    !!d.querySelector('.error[role="alert"]') &&
-      d.querySelector('.error').textContent.includes('would replace a built-in metric') &&
-      bindings.calls.filter((c) => c.method === 'SaveFile').length === 2,
-    d.querySelector('.error') ? d.querySelector('.error').textContent : 'no error line',
-  );
+  {
+    const cur = document.querySelector('[role="dialog"]');
+    check(
+      'a failed build keeps the dialog open with the error line and never opens the save dialog',
+      !!cur &&
+        !!cur.querySelector('.error[role="alert"]') &&
+        cur.querySelector('.error').textContent.includes('would replace a built-in metric') &&
+        bindings.calls.filter((c) => c.method === 'SaveFile').length === 2,
+      cur && cur.querySelector('.error') ? cur.querySelector('.error').textContent : 'no error line',
+    );
+  }
   bundleFail = false;
 
   // 17 — the head ✕ closes it (Dialog owns the dismissal machinery).
-  const closeBtn = [...d.querySelectorAll('.bp-head button')].find(
+  const curDlg = document.querySelector('[role="dialog"]');
+  const closeBtn = curDlg && [...curDlg.querySelectorAll('.bp-head button')].find(
     (b) => b.getAttribute('aria-label') === 'Dismiss',
   );
   click(closeBtn);

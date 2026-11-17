@@ -15,7 +15,11 @@
   // buildPluginBundle → PlatformService.BuildPluginBundle resolves the
   // picked ids against stored rows and runs the manifest validator and
   // the metrics engine), then save.js writes the returned text through
-  // the native save dialog; a cancel resolves "" and is a silent no-op.
+  // the native save dialog (w26): a non-empty path — a picked location
+  // with the file written — CLOSES the dialog (the native dialog
+  // closing is the confirmation, so there is no in-dialog success
+  // state); a cancel resolves "" and is a silent no-op that leaves the
+  // dialog open, as does any error.
   import Dialog from './Dialog.svelte';
   import TokenSelect from './TokenSelect.svelte';
   import { listMetrics, listReportTemplates, buildPluginBundle, errText } from '../services.js';
@@ -35,7 +39,6 @@
   let tplSel = $state([]); // picked template ids (render order)
   let metricSel = $state([]); // picked metric ids (render order)
   let loadError = $state('');
-  let status = $state('');
   let error = $state('');
   let busy = $state(false);
   // One load sequence per open (the loadMore/refreshList pattern): a
@@ -49,7 +52,6 @@
     version = '1.0.0';
     tplSel = [];
     metricSel = [];
-    status = '';
     error = '';
     loadError = '';
     load();
@@ -108,15 +110,17 @@
   async function save() {
     if (!canSave) return;
     busy = true;
-    status = '';
     error = '';
     try {
       const text = await buildPluginBundle(name.trim(), version.trim(), metricSel, tplSel);
-      // The native save dialog: default spectra-plugin.json. Cancel
-      // resolves "" — a silent no-op (save.js's contract), never an
-      // error line.
+      // The native save dialog: default spectra-plugin.json. A picked
+      // location (a non-empty path) means the file was written — the
+      // native dialog closing IS the confirmation, so the dialog closes
+      // behind it via the canonical onClose (the same path the ✕ and
+      // Escape take). "" (the user cancelled) is a silent no-op
+      // (save.js's contract), never an error line, and stays open.
       const path = await saveText('spectra-plugin.json', 'json', text, 'application/json');
-      if (path) status = S.fill(S.settings.buildSaved, { name: name.trim(), path });
+      if (path) onClose();
     } catch (e) {
       error = errText(e);
     } finally {
@@ -193,13 +197,12 @@
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
-  <!-- Status left, Save right on ONE row (the Analysis-rules save row's
-       shape): the busy shape stays plain text, the save icon LEADS the
-       label. -->
+  <!-- Save right on its row (the Analysis-rules save row's shape):
+       the busy shape stays plain text, the save icon LEADS the label.
+       No status line: a successful save closes the dialog (the native
+       save dialog closing is the confirmation), so only failure ever
+       reports here — through the error slot above. -->
   <div class="toolbar bp-foot">
-    {#if status}
-      <p class="bp-status" role="status">{status}</p>
-    {/if}
     <span class="spacer"></span>
     <button class="btn primary" disabled={!canSave} onclick={save}>
       {#if busy}
@@ -253,14 +256,5 @@
   }
   .bp-foot {
     flex: 0 0 auto;
-  }
-  .bp-status {
-    margin: 0;
-    color: var(--success);
-    font-size: 0.88em;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

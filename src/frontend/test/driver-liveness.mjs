@@ -861,7 +861,15 @@ const EXPECTED = {
   // save receiving spectra-plugin.json with the composed text landing
   // (plus the status line), the silent cancel, the server-failure error
   // line (no save dialog), and the head ✕ closing the dialog.
-  'settings.dom.mjs': 111,
+  // settings 111 → 112 (2026-11-17, w26 save-dismiss): §K's success leg
+  // re-pinned — a save that lands the file now CLOSES the dialog (the
+  // native dialog closing is the confirmation; the success status line
+  // is gone with it), the cancel leg re-pinned to the REOPENED dialog
+  // staying open and silent, +1 its state-intact leg (name, both chips,
+  // Save armed), the server-failure leg re-pinned to the dialog staying
+  // open with the error line (SaveFile still at 2), and the ✕ leg
+  // addressing the live dialog.
+  'settings.dom.mjs': 112,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so
