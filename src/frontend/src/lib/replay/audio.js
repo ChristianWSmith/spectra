@@ -33,17 +33,15 @@ import {
   buildVoiceWindowIndex,
   windowHasVoice,
 } from './voicewindows.js';
+// THE resume retry (gesture listeners + the RESUME_MS race) — shared
+// with replay/sfx.js; see audioresume.js's header.
+import { createResumeRetry } from './audioresume.js';
 
 const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
 const CACHE_MAX = 128;    // decoded-window cache entries, LRU (~2 min of
                           // windows; every entry holds real speech — the
                           // server-exact map keeps chunk-less windows out)
 const DRIFT_S = 0.05;     // resync threshold
-// A browser without a user gesture may keep ctx.resume()'s promise
-// pending forever; race it against this timeout before concluding the
-// context is still suspended (merely suspended is NOT a failure — see
-// setEnabled's silent-retry contract).
-const RESUME_MS = 750;
 // Shared tail of both AudioContext-failed messages: WebKitGTK's audio
 // output needs the GStreamer plugin set. Exported for replay/sfx.js —
 // the sound-effect engine reports the same device failure (one spelling
@@ -134,9 +132,8 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   // un-muting restores exactly their previous audibility.
   let mutedAll = false;
   // Retry listeners: parked while the context is suspended and the
-  // engine is enabled (see installRetry) — silent autoplay retry, never
-  // a pending UI state.
-  let retryOff = null;
+  // engine is enabled (audioresume.js installGesture) — silent autoplay
+  // retry, never a pending UI state.
   // enableWanted latches the LAST setEnabled request so an in-flight
   // resume (issued by setEnabled or a retry listener) cannot flip the
   // engine back on after setEnabled(false)/destroy().
@@ -356,9 +353,9 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     if (!enabled || !ctx || ctx.state !== 'running') {
       // Silent resume retry on the play-START edge: the platform may
       // grant the context by now — no hint and no error while merely
-      // suspended (a rejected resume surfaces through attemptResume).
+      // suspended (a rejected resume surfaces through the retry).
       // Only while suspended, so startRunning's re-entry can never loop.
-      if (enabled && ctx && st.playing && !lastPlayState) attemptResume();
+      if (enabled && ctx && st.playing && !lastPlayState) retry.attempt();
       lastPlayState = st.playing;
       wasPlaying = false;
       return;
@@ -398,96 +395,34 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     }
   }
 
-  // tryResume calls ctx.resume() SYNCHRONOUSLY (a retry listener must
-  // invoke it inside the user gesture) and resolves to whether the
-  // context ended up running. resume()'s own promise may stay pending
-  // forever when autoplay is blocked, so it is raced against RESUME_MS —
-  // the loser is already subscribed by Promise.race (no hang, no
-  // unhandled rejection). A resume() that REJECTS propagates: a
-  // rejecting resume IS the device failure, and attemptResume reports it
-  // with the GStreamer hint. A lost race resolves to the running check —
-  // "still suspended", which is NOT an error.
-  function tryResume() {
-    if (!ctx) return Promise.resolve(false);
-    if (ctx.state === 'running') return Promise.resolve(true);
-    let p;
-    try {
-      p = Promise.resolve(ctx.resume());
-    } catch (e) {
-      return Promise.reject(e);
-    }
-    const timeout = new Promise((r) => setTimeout(() => r(undefined), RESUME_MS));
-    return Promise.race([p, timeout]).then(() => !!ctx && ctx.state === 'running');
-  }
-
-  function clearRetry() {
-    if (retryOff) {
-      retryOff();
-      retryOff = null;
-    }
-  }
-
-  // installRetry parks document-level pointerdown/keydown capture
-  // listeners that retry the resume on EVERY interaction while the
-  // context is suspended — persistent, not one-time: they stay until the
-  // context runs, the enable is withdrawn, the engine fails, or
-  // destroy() runs. No pending flag, no UI and no error while merely
-  // suspended — the autoplay policy is not a failure, voice simply
-  // starts on the first interaction (or by itself where the platform
-  // allows it).
-  function installRetry() {
-    if (retryOff || typeof document === 'undefined' || !document.addEventListener) return;
-    const handler = () => attemptResume();
-    document.addEventListener('pointerdown', handler, true);
-    document.addEventListener('keydown', handler, true);
-    retryOff = () => {
-      document.removeEventListener('pointerdown', handler, true);
-      document.removeEventListener('keydown', handler, true);
-    };
-  }
-
-  // attemptResume — ONE silent resume attempt: running → the retry
-  // listeners come down and the engine starts; still suspended → keep
-  // them and stay SILENT; a REJECTED resume() → the device is broken,
-  // report it through failEnable (onError/state — the GStreamer hint).
-  function attemptResume() {
-    if (!enableWanted || !ctx) return;
-    if (ctx.state === 'running') {
-      clearRetry();
-      startRunning();
+  // THE resume retry (audioresume.js — THE canonical gesture-retry
+  // home, shared with replay/sfx.js): the gesture listeners park from
+  // setEnabled and stay until running/failure/destroy; the OUTCOMES
+  // stay engine-specific. attempt is fire-and-forget: it races
+  // RESUME_MS, is never awaited and never throws.
+  const retry = createResumeRetry({
+    getCtx: () => ctx,
+    active: () => enableWanted,
+    onRunning: (alreadyRunning) => {
+      // The entry branch (the context was already running) re-anchors
+      // unconditionally; a resume the PROMISE just brought up must not
+      // re-anchor a second time when the engine is already up clean —
+      // the schedulers gate on ctx.state alone and the next onChange
+      // re-anchors off wasPlaying.
+      if (alreadyRunning || !enabled || error !== '') startRunning();
       emit();
-      return;
-    }
-    tryResume().then(
-      (ok) => {
-        if (!enableWanted || !ctx) return; // turned off while the attempt ran
-        if (ok) {
-          clearRetry();
-          // A stale attempt landing after another one already brought
-          // the engine up (enabled, no error) must not re-anchor a
-          // second time — the schedulers gate on ctx.state alone and
-          // the next onChange re-anchors off wasPlaying.
-          if (!enabled || error !== '') startRunning();
-          emit();
-        } else if (ctx.state === 'closed') {
-          clearRetry();
-          failEnable(`Failed to start the audio device (AudioContext is closed). ` + GST_AUDIO_HINT);
-          emit();
-        } else {
-          installRetry(); // merely suspended — silent, the retry stays armed
-        }
-      },
-      () => {
-        if (!enableWanted || !ctx) return;
-        clearRetry();
-        failEnable(
-          `Failed to start the audio device (AudioContext state "${ctx ? ctx.state : 'none'}"). ` +
-            GST_AUDIO_HINT,
-        );
-        emit();
-      },
-    );
-  }
+    },
+    onClosed: () => {
+      failEnable(`Failed to start the audio device (AudioContext is closed). ` + GST_AUDIO_HINT);
+      emit();
+    },
+    onFailure: (state) => {
+      failEnable(
+        `Failed to start the audio device (AudioContext state "${state}"). ` + GST_AUDIO_HINT,
+      );
+      emit();
+    },
+  });
 
   // startRunning: the context is running — flip the switch and (if the
   // replay is already playing) re-anchor + schedule from the current tick.
@@ -535,14 +470,14 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
       emit();
       // The retry listeners are armed from this moment (cleared on
       // running/failure/disable/destroy) so an interaction during the
-      // attempt window is never missed; attemptResume is fire-and-forget:
+      // attempt window is never missed; the attempt is fire-and-forget:
       // it races RESUME_MS, is never awaited, and never throws.
-      installRetry();
-      attemptResume();
+      retry.arm();
+      retry.attempt();
       return;
     }
     enabled = false;
-    clearRetry();
+    retry.clear();
     cancelAll();
     emit();
   }
@@ -610,7 +545,7 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
       enabled = false;
       enableWanted = false;
       winIndex = null;
-      clearRetry(); // never leak the parked retry listeners
+      retry.clear(); // never leak the parked retry listeners
       offChange();
       cancelAll();
       const c = ctx;

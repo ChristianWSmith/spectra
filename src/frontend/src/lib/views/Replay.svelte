@@ -63,6 +63,8 @@
   } from '../replay/feed.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
+  // The early-context prime at load() entry (first-load audio timing).
+  import { primeAudioContext } from '../replay/audioresume.js';
   import { voiceWindowTicks } from '../replay/voicewindows.js';
   import { slotStateAt } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
@@ -217,6 +219,12 @@
   let uiAnnouncerMuted = $state(false);
   let uiStepsMuted = $state(true); // footsteps ship muted (session-only)
   let sfx = null;
+  // The EARLY sfx AudioContext primed at load() entry (see load()'s
+  // sound-manifest prime): created within the opening click's user
+  // activation window so the first resume attempt is not born outside
+  // it, then handed to the first createSfxEngine call — never re-used;
+  // closed by closePrimeContext() when no engine ever adopts it.
+  let primeCtx = null;
   let sfxErr = $state('');
   // The volume popover: one Popover anchored to the unmute-codicon
   // button, exactly like the loop control below.
@@ -1881,6 +1889,30 @@
   function cleanup() {
     live = false;
     teardown();
+    closePrimeContext(); // an un-adopted primed context must not outlive the view
+  }
+
+  // takePrimeContext hands the early sfx AudioContext (primed at load()
+  // entry) to the FIRST engine construction — once taken it belongs to
+  // the engine (destroy closes it).
+  function takePrimeContext() {
+    const c = primeCtx;
+    primeCtx = null;
+    return c;
+  }
+  // closePrimeContext closes a primed context no engine ever adopted
+  // (load aborted, sounds never extracted). teardown() cannot own this:
+  // the context is created before any engine exists.
+  function closePrimeContext() {
+    const c = primeCtx;
+    primeCtx = null;
+    if (c) {
+      try {
+        c.close();
+      } catch {
+        /* already closed */
+      }
+    }
   }
 
   // Icon pipeline (handoff C): read the manifest; when it reports no
@@ -1987,6 +2019,24 @@
     // preload — a slow CS2 scan must never delay first paint, and the
     // cards stay reactive to the late iconMap either way.
     loadIcons().catch(() => {});
+    // Sound-manifest PRIME (first-load audio): start the cold manifest
+    // fetch NOW so it overlaps the bundle/sidecar reads below instead of
+    // serializing after startEngine — the session memo means every later
+    // load hits a warm promise and skips this entirely. Once the manifest
+    // proves NON-EMPTY, create the sfx AudioContext EARLY (within the
+    // opening click's user activation window) and attempt one silent
+    // resume: the CONTEXT is what must be born inside that window, not
+    // the engine — startEngine still constructs the engine behind the
+    // same sm.count gate and adopts this context through
+    // createSfxEngine's audioContext param. Not awaited: the engine
+    // stays off this critical path. No sounds → no context; cleanup()
+    // closes a context no engine ever adopted.
+    loadSoundManifest()
+      .then((sm) => {
+        if (!live || primeCtx || !sm || !sm.count) return;
+        primeCtx = primeAudioContext();
+      })
+      .catch(() => {});
     try {
       // The load-time prefs are read FRESH — deliberately NOT off the
       // bundle (preload.js): kvstore writes emit NO flush event, so a
@@ -2227,6 +2277,9 @@
     } catch (e) {
       if (live) {
         loadError = errText(e);
+        // A load that dies before startEngine never adopts the primed
+        // context — close it here (cleanup() is the unmount backstop).
+        closePrimeContext();
         // A SURFACED failure drops its memo entry (only a rejected one
         // can go — see dropRejectedReplayPreload): this visit's error
         // stands alone — load() runs once per mount, so there is no
@@ -2417,22 +2470,29 @@
       voiceEngine.setEnabled(true).catch(() => {});
     }
     // Sound effects (guns + utility + C4 + announcer — the sound half
-    // of the
-    // replay): the manifest read is MEMOIZED (one fetch per page load;
-    // load() ran it first), and an EMPTY manifest — sounds never
-    // extracted — skips creation entirely: no AudioContext, no retry
-    // listener, silent cues. The engine then takes the same inputs the
-    // renderer gets (drawNorm, the bullets.js rows + the rounds freeze
-    // gate) and the popover's persisted fader levels. Construction is
-    // deferred to the microtask, so the entry seek below has already
-    // happened and the engine's first change seeds instead of replaying
-    // it.
+    // of the replay): the manifest read is MEMOIZED and PRIMED at load()
+    // entry (one fetch per page load — the cold fetch overlaps the
+    // bundle/sidecar reads, so load() ran it first), and an EMPTY
+    // manifest — sounds never extracted — skips creation entirely: no
+    // AudioContext, no retry listener, silent cues. The engine then
+    // takes the same inputs the renderer gets (drawNorm, the bullets.js
+    // rows + the rounds freeze gate) and the popover's persisted fader
+    // levels. Construction is deferred to the microtask, so the entry
+    // seek below has already happened and the engine's first change
+    // seeds instead of replaying it; the AudioContext itself was primed
+    // EARLIER (load()'s prime — inside the opening click's activation
+    // window) and is adopted here through audioContext.
     const startedEngine = engine;
     loadSoundManifest().then((sm) => {
-      if (!live || engine !== startedEngine || sfx || !sm || !sm.count) return;
+      if (!live || engine !== startedEngine || sfx || !sm) return;
+      if (!sm.count) {
+        closePrimeContext(); // no sounds → the primed context is never adopted
+        return;
+      }
       sfx = createSfxEngine({
         engine: startedEngine,
         matchId: id,
+        audioContext: takePrimeContext(),
         onError: (msg) => {
           sfxErr = msg;
         },

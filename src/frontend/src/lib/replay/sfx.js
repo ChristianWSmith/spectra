@@ -129,6 +129,9 @@ import { inFreezeTime, isCounted } from '../rounds.js';
 import { DETONATION_BUCKETS } from './landmarks.js';
 import { bombEndTick, ACTION_KINDS } from './bomb.js';
 import { GST_AUDIO_HINT } from './audio.js';
+// THE resume retry (gesture listeners + the RESUME_MS race) — shared
+// with replay/audio.js; see audioresume.js's header.
+import { createResumeRetry } from './audioresume.js';
 
 // Default fader level for the five 0.8-default categories — the kvstore
 // prefs voice_volume/guns_volume/utility_volume/c4_volume/announcer_volume
@@ -200,9 +203,8 @@ const LIVE_CAP = 32;
 // Bounded fetch/decode pool for the preload pass.
 const PRELOAD_POOL = 6;
 // A browser without a user gesture may keep ctx.resume()'s promise
-// pending forever; race it against this timeout before concluding the
-// context is still suspended (same window as audio.js RESUME_MS).
-const RESUME_MS = 750;
+// pending forever; the RESUME_MS race that concludes "still suspended"
+// lives in audioresume.js (THE resume-retry home, shared with audio.js).
 // C4 beep scheduler constants — the voice engine's lookahead scale
 // (audio.js LOOKAHEAD / DRIFT_S): beeps are queued this far ahead of
 // the replay clock against an anchor, and the anchor is rebuilt when the
@@ -1400,7 +1402,7 @@ export function pickVariant(buffers, rand = Math.random) {
 // Setup never throws: per-file preload failures are swallowed (the
 // FIRST one is reported through onError), and a cue whose buffer is not
 // decoded yet is silently skipped — a sound must never break playback.
-export function createSfxEngine({ engine, matchId, onError }) {
+export function createSfxEngine({ engine, matchId, onError, audioContext }) {
   // matchId mirrors createVoiceEngine's signature (kept for parity —
   // every sound is a shared static file, so nothing is keyed per match).
   void matchId;
@@ -1417,7 +1419,6 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let stepGain = null;
   let destroyed = false;
   let error = '';
-  let retryOff = null; // tears down the parked retry listeners
   let reported = false; // onError fires at most once (first failure)
   let gunVol = AUDIO_VOL_DEFAULT;
   let utilVol = AUDIO_VOL_DEFAULT;
@@ -1512,95 +1513,34 @@ export function createSfxEngine({ engine, matchId, onError }) {
     if (stepGain) stepGain.gain.value = stepMuted ? 0 : stepVol * STEP_GAIN_SCALE;
   }
 
-  // tryResume calls ctx.resume() SYNCHRONOUSLY (a listener must invoke
-  // it inside the user gesture) and resolves to whether the context
-  // ended up running — resume()'s promise may stay pending forever when
-  // autoplay is blocked, so it is raced against RESUME_MS (the pattern
-  // audio.js's tryResume uses). A resume() that REJECTS propagates: a
-  // rejecting resume IS the device failure, and attemptResume reports it
-  // with the GStreamer hint. A lost race resolves to the running check —
-  // "still suspended", which is NOT an error.
-  function tryResume() {
-    if (!ctx) return Promise.resolve(false);
-    if (ctx.state === 'running') return Promise.resolve(true);
-    let p;
-    try {
-      p = Promise.resolve(ctx.resume());
-    } catch (e) {
-      return Promise.reject(e);
-    }
-    const timeout = new Promise((r) => setTimeout(() => r(undefined), RESUME_MS));
-    return Promise.race([p, timeout]).then(() => !!ctx && ctx.state === 'running');
-  }
-
-  function clearRetry() {
-    if (retryOff) {
-      retryOff();
-      retryOff = null;
-    }
-  }
-
-  // installRetry parks document-level pointerdown/keydown capture
-  // listeners that retry the resume on EVERY interaction while the
-  // context is suspended — persistent, not one-time: they stay until the
-  // context runs or the engine fails/destroys. No pending flag, no UI
-  // and no error while merely suspended — the autoplay policy is not a
-  // failure, the sounds simply start on the first interaction (or by
-  // themselves where the platform allows it).
-  function installRetry() {
-    if (retryOff || typeof document === 'undefined' || !document.addEventListener) return;
-    const handler = () => attemptResume();
-    document.addEventListener('pointerdown', handler, true);
-    document.addEventListener('keydown', handler, true);
-    retryOff = () => {
-      document.removeEventListener('pointerdown', handler, true);
-      document.removeEventListener('keydown', handler, true);
-    };
-  }
-
-  // attemptResume — ONE silent resume attempt: running → the retry
-  // listeners come down; still suspended → keep them and stay SILENT;
-  // a REJECTED resume() → the device is broken, report it once with the
-  // GStreamer hint (the only error this engine ever surfaces for audio).
-  function attemptResume() {
-    if (destroyed || !ctx) return;
-    if (ctx.state === 'running') {
-      clearRetry();
-      return;
-    }
-    tryResume().then(
-      (ok) => {
-        if (destroyed || !ctx) return;
-        if (ok) {
-          clearRetry();
-          return;
-        }
-        if (ctx.state === 'closed') {
-          clearRetry(); // destroy closed it mid-flight
-          return;
-        }
-        // Merely suspended — retry stays armed, unless a device failure
-        // already surfaced (`reported`): a stale attempt must never
-        // re-arm the listeners after the engine reported a broken device.
-        if (!reported) installRetry();
-      },
-      () => {
-        if (destroyed || !ctx) return;
-        clearRetry();
-        fail(
-          `Failed to start the audio device (AudioContext state "${ctx ? ctx.state : 'none'}"). ` +
-            GST_AUDIO_HINT,
-        );
-      },
-    );
-  }
+  // THE resume retry (audioresume.js — THE canonical gesture-retry
+  // home, shared with replay/audio.js): the gesture listeners park at
+  // construction and stay until running/failure/destroy. Merely
+  // suspended stays SILENT — no pending flag, no UI, no error (the
+  // autoplay policy is not a failure, the sounds simply start on the
+  // first interaction or by themselves where the platform allows it) —
+  // and a REJECTED resume() reports the device failure exactly once
+  // through fail() with the GStreamer hint.
+  const retry = createResumeRetry({
+    getCtx: () => ctx,
+    active: () => !destroyed,
+    rearm: () => !reported, // a reported failure never re-arms the listeners
+    onFailure: (state) =>
+      fail(
+        `Failed to start the audio device (AudioContext state "${state}"). ` + GST_AUDIO_HINT,
+      ),
+  });
 
   // Own context: created only when the engine is (i.e. sounds EXIST —
   // matches without extracted audio never get here), independent of the
-  // voice engine so gun/utility audio works with no voice at all.
+  // voice engine so gun/utility audio works with no voice at all. An
+  // EARLY context primed by the Replay (load() entry — created within
+  // the opening click's user activation window, so the first resume
+  // attempt is not born outside it) is adopted as-is; a missing or
+  // closed one falls back to a fresh construction.
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    ctx = new Ctx();
+    ctx = audioContext && audioContext.state !== 'closed' ? audioContext : new Ctx();
     gunGain = ctx.createGain();
     utilGain = ctx.createGain();
     c4Gain = ctx.createGain();
@@ -1624,8 +1564,8 @@ export function createSfxEngine({ engine, matchId, onError }) {
   // the retry listeners are armed from the start so an interaction
   // during the attempt window is never missed (cleared on success).
   if (ctx) {
-    installRetry();
-    attemptResume();
+    retry.arm();
+    retry.attempt();
   }
 
   // --- preload -------------------------------------------------------------
@@ -2072,8 +2012,8 @@ export function createSfxEngine({ engine, matchId, onError }) {
     if (destroyed) return;
     // Silent resume retry when playback (re)starts: the platform may
     // grant the context by now — never a hint, never an error (a
-    // rejected resume surfaces through attemptResume).
-    if (st.playing && !lastPlaying) attemptResume();
+    // rejected resume surfaces through the retry).
+    if (st.playing && !lastPlaying) retry.attempt();
     lastPlaying = st.playing;
     const jump = cueGapJump(st.tick, prevTick, st.speed, tr);
     const running = !!ctx && ctx.state === 'running';
@@ -2245,7 +2185,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     },
     destroy() {
       destroyed = true;
-      clearRetry(); // never leak the parked retry listeners
+      retry.clear(); // never leak the parked retry listeners
       offChange();
       // Every tracked source, cue and QUEUED beep alike — a scheduled
       // beep must not outlive its engine.

@@ -227,6 +227,31 @@ test('destroy() removes the retry listeners (no leaks)', async () => {
   }
 });
 
+test('withdrawing the enable tears the retry down (no listener resurrects it)', async () => {
+  resumeMode = 'blocked';
+  const engine = makeEngine();
+  const { ve, errors } = await makeVoice(engine);
+  await ve.setEnabled(true);
+  assert.equal(ve.state.ctxState, 'suspended');
+
+  // Withdraw the enable while suspended: the shared retry (the same
+  // clear() destroy uses) comes down with it, and the withdrawal itself
+  // is never a failure.
+  await ve.setEnabled(false);
+  assert.equal(ve.state.enabled, false, 'the enable is withdrawn');
+  assert.equal(ve.state.error, '', 'withdrawing is not a failure');
+  assert.equal(errors.length, 0);
+
+  // A later gesture with a working device must NOT resurrect the
+  // withdrawn enable — no parked listener is left to retry it.
+  resumeMode = 'running';
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await flush();
+  assert.equal(ve.state.ctxState, 'suspended', 'no listener resurrected the withdrawal');
+  assert.equal(errors.length, 0);
+  ve.destroy();
+});
+
 test('a REJECTED resume surfaces the GStreamer hint (device failure still reported)', async () => {
   resumeMode = 'blocked';
   const engine = makeEngine();
