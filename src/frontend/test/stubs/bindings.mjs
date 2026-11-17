@@ -45,6 +45,8 @@ export const MetricsService = {
   // value reads are cachedRead, the state read deliberately is not).
   GetMetricValuesForMatch: rec('GetMetricValuesForMatch'),
   GetMetricValuesForPlayer: rec('GetMetricValuesForPlayer'),
+  // The match-grain SERIES read (the profile history's per-match halves).
+  GetMetricSeries: rec('GetMetricSeries'),
   GetMetricComputeState: rec('GetMetricComputeState'),
   // The no-execution Compile (provenance for a clean-saved preview) +
   // the one-definition read the scope-routed pin resolves through.

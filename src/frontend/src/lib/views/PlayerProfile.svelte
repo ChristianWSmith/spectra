@@ -8,6 +8,7 @@
     getCareerTrend,
     listMetrics,
     getMetricValuesForPlayer,
+    getMetricSeries,
     getMetricComputeState,
     subscribeMetricProgress,
     onMetricDone,
@@ -282,6 +283,120 @@
       });
     return () => (live = false);
   });
+
+  // --- The match-history K/D halves (the match-grain SERIES read) -------
+  // One history ROW is one match, so the halves come from the series
+  // read (services.getMetricSeries — store.GetPlayerMetricSeries) instead
+  // of one value read per row: ONE read for the player's whole window,
+  // keyed match id → metric id, refetched when the catalog lands and on
+  // spectra:metric-done (the sweep replaced the rows the cache flushed).
+  // The A half stays the Go fold's stored `assists` row
+  // (store.GetPlayerHistory) — Q2's compound-per-half rule composes the
+  // three below. A seed the catalog does not carry, or a match with no
+  // FRESH row for it, leaves that half a dash: the raw `ps.kills` /
+  // `ps.deaths` columns behind the DTO never render here (owner ruling
+  // 2026-11-17 — no raw fallback).
+  let seriesDefs = $state(new Map()); // seed name → the resolved definition
+  let historySeries = $state(new Map()); // matchId → Map(metricId → point)
+  let seriesHasRows = $state(new Map()); // metricId → does the series carry ANY point?
+
+  $effect(() => {
+    careerReload; // spectra:metric-done → refetch (the cache flushed)
+    const sid = steamId;
+    const catalog = trendDefs; // the full catalog (listMetrics) — match-scope rows below
+    let live = true;
+    seriesDefs = new Map();
+    historySeries = new Map();
+    seriesHasRows = new Map();
+    if (!sid) return;
+    const defs = (catalog || []).filter(
+      (d) => d && ['kills', 'deaths', 'assists'].includes(d.name) && (d.scope || 'match') === 'match',
+    );
+    if (!defs.length) return; // no seed in the catalog → every half is the honest dash
+    const byName = new Map(defs.map((d) => [d.name, d]));
+    seriesDefs = byName;
+    getMetricSeries(sid, defs.map((d) => d.id))
+      .then((points) => {
+        if (!live) return;
+        const byMatch = new Map();
+        const has = new Map(defs.map((d) => [d.id, false]));
+        for (const p of points || []) {
+          let per = byMatch.get(p.matchId);
+          if (!per) {
+            per = new Map();
+            byMatch.set(p.matchId, per);
+          }
+          per.set(p.metricId, p);
+          if (has.has(p.metricId)) has.set(p.metricId, true);
+        }
+        historySeries = byMatch;
+        seriesHasRows = has;
+      })
+      .catch(() => {
+        /* a failed series read leaves every half a dash — never a raw column */
+      });
+    return () => (live = false);
+  });
+
+  // One history half's presentation (lib/metricstate.js — design §5):
+  // the stored series point for THIS match through the state machine,
+  // with the metric's own compute state as the state source.
+  function historyHalf(name, h) {
+    const def = seriesDefs.get(name);
+    const per = historySeries.get(h.matchId);
+    const row = per && def ? per.get(def.id) || null : null;
+    const st = def && metricStates.get(def.id) ? metricStates.get(def.id).state : '';
+    return metricPresentation(st, row, !!(def && seriesHasRows.get(def.id)));
+  }
+
+  // The A half: the Go fold's stored `assists` value (nil = the fold
+  // found no fresh row), with the compute state in front of it exactly
+  // like the machine's precedence — a live/behind/failed word never
+  // hides behind a number the fold did not produce.
+  function historyAssistHalf(h) {
+    const def = seriesDefs.get('assists');
+    const st = def && metricStates.get(def.id) ? metricStates.get(def.id).state : '';
+    if (st === 'processing' || st === 'failed' || st === 'behind') return { kind: 'chip', state: st };
+    return h.assists != null ? { kind: 'value', value: h.assists, n: 0 } : { kind: 'nodata' };
+  }
+
+  // One half's rendered number: the fresh value through the seed's own
+  // format tag, the honest dash otherwise — never the raw column.
+  function historyHalfText(name, h) {
+    const pres = historyHalf(name, h);
+    if (pres.kind !== 'value') return '—';
+    const def = seriesDefs.get(name);
+    return fmtMetric(pres.value, def ? def.format : '');
+  }
+
+  function historyAssistText(h) {
+    const pres = historyAssistHalf(h);
+    return pres.kind === 'value' ? fmtMetric(pres.value, '') : '—';
+  }
+
+  // The compound cell's tooltip, in the roster triple's shape
+  // (Match.svelte compoundTitle): EMPTY while every half shows its
+  // number — the cell carried no tooltip before the conversion, so the
+  // rendered output stays byte-identical — otherwise the first
+  // non-value half's state word (invariant 9: the state lives in the
+  // title, never a chip inside a compound cell).
+  function historyKdaTitle(h) {
+    const halves = [
+      { name: 'kills', pres: historyHalf('kills', h) },
+      { name: 'deaths', pres: historyHalf('deaths', h) },
+      { name: 'assists', pres: historyAssistHalf(h) },
+    ];
+    for (const x of halves) {
+      if (x.pres.kind === 'value') continue;
+      if (x.pres.kind === 'nodata') return 'no data for this player';
+      const def = seriesDefs.get(x.name);
+      return metricStateTitle(
+        x.pres.state,
+        (def && metricStates.get(def.id) && metricStates.get(def.id).error) || '',
+      );
+    }
+    return '';
+  }
 
   // The profile surface's SEQUENCE + VISIBILITY reads (N4): the order
   // pref and the hidden fixed-entry set, read once per mount beside the
@@ -770,12 +885,18 @@
                     {(h.startSide || '—').toUpperCase()}
                   </span>
                 </td>
-                <!-- K/D/A per Q2's per-half rule: K and D are raw
-                     stored columns, the A half is the match-scope
-                     `assists` metric row (store.GetPlayerHistory) —
-                     a match with no fresh row renders the honest dash,
-                     never a fabricated 0. -->
-                <td class="num">{h.kills}/{h.deaths}/{h.assists ?? '—'}</td>
+                <!-- K/D/A per Q2's per-half rule: ALL THREE halves read
+                     their seed now — K and D from the match-grain
+                     series read (services.getMetricSeries), the A half
+                     from the stored `assists` row the Go fold carries
+                     (store.GetPlayerHistory). A half with no fresh row
+                     renders the honest dash and the first non-value
+                     half's state word reaches the cell through the
+                     title — never a fabricated 0, never the raw stored
+                     columns behind the DTO. -->
+                <td class="num" title={historyKdaTitle(h)}>
+                  {historyHalfText('kills', h)}/{historyHalfText('deaths', h)}/{historyAssistText(h)}
+                </td>
                 <td class="num">{fmt1(h.adr)}</td>
                 <td class="num">{fmtPercent(h.kastPct)}</td>
               </tr>

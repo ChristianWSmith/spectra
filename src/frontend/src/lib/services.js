@@ -850,30 +850,60 @@ export function getMetricValuesForPlayer(steamID, metricIDs) {
     MetricsService.GetMetricValuesForPlayer(steamID || '', metricIDs || []),
   );
 }
-// careerAdrRows is THE one fetch of the stored `career_adr` bucket for a
-// roster-sized surface (the player suggestions and the report picker's
-// career line — dogfooding W4): the definition resolved by NAME through
-// the catalog, then ONE batched career-grain read for the WHOLE bucket
-// (steamID "" — never per-player calls, the same shape Profiles' ADR
-// column uses), keyed steamId → {value, n}. Both underlying reads are
-// the cachedRead wrappers above, so concurrent widgets share one
-// backend call and a spectra:* flush is picked up by the next ask.
-// A definition missing from the catalog (or a failed read) yields an
-// EMPTY map: the caller renders the honest dash — never a Go-computed
-// number, never a fabricated 0.
-export function careerAdrRows() {
+// getMetricSeries is the MATCH-grain SERIES read — the third canonical
+// grain of the same stored-value contract: one player's fresh rows across
+// many matches, for the caller's metric set (the profile history table's
+// per-match halves). Same honesty as the value reads: fresh rows only, a
+// match with no fresh row comes back as NO point, so the view renders the
+// state — never a fallback number. steamID rides the key (a series is one
+// subject), metricIDs the requested id set.
+export function getMetricSeries(steamID, metricIDs) {
+  return cachedRead('GetMetricSeries', [steamID || '', metricIDs || []], () =>
+    MetricsService.GetMetricSeries(steamID || '', metricIDs || []),
+  );
+}
+// careerRows is THE one batched career-bucket fetch for a roster-sized
+// surface: resolve each seed NAME through the catalog (a name the catalog
+// does not carry drops out — its slot renders the honest state, never a
+// number), then ONE steamID "" read of the whole bucket for every
+// resolved id — never per-player calls. Returns name → {def, bySteam:
+// steamId → row ({value, n, format})} so a caller can both render the
+// value through fmtMetric and carry the definition's Formula/title.
+// careerAdrRows below is the career_adr projection of this same read;
+// both underlying reads are the cachedRead wrappers, so concurrent
+// widgets share one backend call and a spectra:* flush is picked up by
+// the next ask. A failed read rejects: callers render the honest dash —
+// never a Go-computed number, never a fabricated 0.
+export function careerRows(names) {
   return listMetrics().then((defs) => {
-    const def = (defs || []).find(
-      (d) => d && d.name === 'career_adr' && (d.scope || 'match') === 'profile',
-    );
-    if (!def) return new Map();
-    return getMetricValuesForPlayer('', [def.id]).then((values) => {
-      const rows = new Map();
+    const byName = new Map((defs || []).map((d) => [d && d.name, d]));
+    const wanted = names
+      .map((n) => byName.get(n))
+      .filter((d) => d && (d.scope || 'match') === 'profile');
+    if (!wanted.length) return new Map();
+    return getMetricValuesForPlayer('', wanted.map((d) => d.id)).then((values) => {
+      const out = new Map(wanted.map((d) => [d.name, { def: d, bySteam: new Map() }]));
       for (const v of values || []) {
-        if (v.metricId === def.id) rows.set(v.subjectKey, v);
+        for (const d of wanted) {
+          if (v.metricId === d.id) {
+            out.get(d.name).bySteam.set(v.subjectKey, { value: v.value, n: v.n, format: d.format });
+          }
+        }
       }
-      return rows;
+      return out;
     });
+  });
+}
+// careerAdrRows is THE one fetch of the stored `career_adr` bucket for a
+// roster-sized surface (the player suggestions — dogfooding W4): the
+// careerRows projection of that one seed, keyed steamId → row. A
+// definition missing from the catalog (or a failed read) yields an EMPTY
+// map: the caller renders the honest dash — never a Go-computed number,
+// never a fabricated 0.
+export function careerAdrRows() {
+  return careerRows(['career_adr']).then((m) => {
+    const e = m.get('career_adr');
+    return e ? e.bySteam : new Map();
   });
 }
 // getPlayerRefs is one match's roster (identity + final side + bot

@@ -119,6 +119,7 @@ svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'))
 const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
 const helpButtonSrc = readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
