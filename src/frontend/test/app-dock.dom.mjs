@@ -756,12 +756,18 @@ await sleep();
 check('the ✕ dismisses the held failure', !pill());
 
 // Positioning + the z ladder — the RULES are the pin (jsdom has no
-// layout): fixed bottom-right clear of the mini-dock, 45 between the
-// keep-alive cover (40) and the probe HUD (50).
+// layout): fixed at the window's bottom-right corner (right 26 /
+// bottom 26) with the CONDITIONAL raise to bottom 264 while an
+// occupant (.rp-keepalive / .cmp-float) holds that corner — w30,
+// 2026-11-17 — and 45 between the keep-alive cover (40) and the probe
+// HUD (50).
 check(
-  'style.css: the pill is fixed right 26px / bottom 264px (clear of the 248px mini-dock) / z-index 45',
-  /\.wk-pill\s*\{[^}]*position:\s*fixed[^}]*right:\s*26px[^}]*bottom:\s*264px[^}]*z-index:\s*45/s.test(cssI),
-  'no .wk-pill { position:fixed; right:26px; bottom:264px; z-index:45 } rule',
+  'style.css: the pill sits at the window corner (fixed right 26px / bottom 26px / z-index 45) and raises to bottom 264px while .rp-keepalive or .cmp-float holds the corner',
+  /\.wk-pill\s*\{[^}]*position:\s*fixed[^}]*right:\s*26px[^}]*bottom:\s*26px[^}]*z-index:\s*45/s.test(cssI) &&
+    /\.shell:has\(\.rp-keepalive\)\s+\.wk-pill,\s*\.shell:has\(\.cmp-float\)\s+\.wk-pill\s*\{\s*bottom:\s*264px;\s*\}/s.test(
+      cssI,
+    ),
+  'no corner-default .wk-pill rule or conditional 264px raise rule',
 );
 check(
   'style.css: the ladder keeps cover 40 < pill 45 < probe HUD 50 < dialogs 60',

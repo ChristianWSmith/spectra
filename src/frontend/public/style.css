@@ -2912,23 +2912,38 @@ mark {
 
 /* --- Floating background-work indicator (App's .wk-pill) — owner 2026-11-17 ---
    ONE aggregated pill for every background source (lib/workstate.svelte.js),
-   fixed bottom-right so it follows the user across views.
-   Position arithmetic (fixed offsets, NO dynamic coupling to the dock or
-   the Compare float): the collapsed replay mini-dock (.rp-keepalive-mini)
-   occupies bottom 26px up through 26 + its 1px borders + the 220px
-   .rp-keepalive-mini .replay-view = 248px, 320px wide from the right —
-   bottom 264px parks the pill's bottom edge 16px above that, and the pill
-   (~34px tall) therefore clears the dock entirely; .cmp-float
-   (style-m3b.css, bottom 26px) is cleared with far more room. z-index 45
-   sits above the expanded keep-alive cover (40) — so the pill rides over
-   every view including the replay overlay — below the operator probe HUD
-   (50) and the modal dialogs (60): the ladder is literals in this file,
-   no vars. The error line ellipsizes at one width; its title carries the
-   full message (long aggregated failures stay readable on hover). */
+   fixed so it follows the user across views.
+   Default position = the window's bottom-RIGHT CORNER (owner 2026-11-17:
+   the W29 build parked the pill permanently at bottom 264px — the dock
+   clearance — which read as "way too high, it isn't in the bottom right";
+   right 26px was already correct, so the corner offsets below match
+   .rp-keepalive-mini and .cmp-float — 26px is now the DEFAULT and the
+   clearance below is CONDITIONAL).
+   Corner occupancy (fixed offsets, NO polling and no coupling to either
+   component's internals): the keep-alive block (.rp-keepalive — the
+   collapsed mini-dock AND the expanded cover, App's `alive` flag) and the
+   Compare float (.cmp-float, style-m3b.css) both park at right 26 /
+   bottom 26. While EITHER holds the corner the pill takes the RAISED
+   clearance (bottom 264px): the collapsed dock occupies bottom 26 up
+   through 26 + its 1px borders + the 220px
+   .rp-keepalive-mini .replay-view = 248px, 320px wide from the right, so
+   264 parks the pill's bottom edge 16px above it — one value clears the
+   taller occupant and .cmp-float alike, with no precedence to get wrong.
+   The signal is :has() over the occupants' OWN classes — the same
+   classes this file already positions — so the raise tracks the actual
+   rendered occupant (present or future), not a mirrored flag; :has() is
+   already load-bearing here (see .rp-keepalive-mini
+   .replay-main:has(> .replay-body) — supported by both Wails WebView
+   targets: WebKitGTK 6 and WebView2/Chromium). z-index 45 sits above the
+   expanded keep-alive cover (40) — so the pill rides over every view
+   including the replay overlay — below the operator probe HUD (50) and
+   the modal dialogs (60): the ladder is literals in this file, no vars.
+   The error line ellipsizes at one width; its title carries the full
+   message (long aggregated failures stay readable on hover). */
 .wk-pill {
   position: fixed;
   right: 26px;
-  bottom: 264px;
+  bottom: 26px; /* the window corner — the default (see the block above) */
   z-index: 45;
   display: flex;
   align-items: center;
@@ -2939,6 +2954,14 @@ mark {
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: 0 8px 28px var(--overlay-55);
+}
+
+/* Corner occupied → raise (the block comment above: the keep-alive
+   block or the Compare float holds right 26 / bottom 26; one rule for
+   either or both, so there is no order to get wrong). */
+.shell:has(.rp-keepalive) .wk-pill,
+.shell:has(.cmp-float) .wk-pill {
+  bottom: 264px;
 }
 
 .wk-pill .wk-label {
