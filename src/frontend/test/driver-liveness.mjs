@@ -226,7 +226,27 @@ const EXPECTED = {
   // slice boundaries 10 → 8, the eye count 9 → 7, and the ADR /
   // Plugin stat row indices re-based (10/12 → 8/10). Sections A–I
   // untouched.
-  'builder.dom.mjs': 148,
+  // builder 148 → 157 (2026-11-16, w19 Builder — row/editor/order
+  // restructure + the 23c/23d fixes; the count is the executed ok/FAIL
+  // lines): +1 section A (the row's DOM order — title text → raw mono
+  // name → ⓘ on line 1, chips only on line 2), +1 section A (23d source
+  // pin — the .bld-valid flexible-slot/ellipsis rule; jsdom has no
+  // layout), +1 section E (the preview panel's state chip sits
+  // immediately LEFT of the Preview button — 23c), +3 section D (the
+  // user row's delete wears the trash glyph; the editor footer carries
+  // NO delete for a loaded built-in and keeps its two slots; the compact
+  // state chip rides the editor header BEFORE the built-in chip), +1
+  // section D (the same footer absence for a plugin metric), +1 section
+  // F (the editor delete PRECEDES Save — the N6 anatomy checks
+  // themselves re-pinned in place for the three-slot user-row footer:
+  // delete → validity slot → hint→Pin→Save cluster), +1 section I
+  // (processing keeps the BLOCK form only — the header carries no state
+  // chip while it is up). Re-pinned IN PLACE (same counts): the
+  // denominator-less row now states the 'none' word in its
+  // always-present chip (section A), the N6 slot indices (section F),
+  // and the Order dialog's metric short slot — ADR under "ADR
+  // average", none for a short-less metric (section J, item 5).
+  'builder.dom.mjs': 157,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

@@ -255,6 +255,16 @@
   // state: idle | pending | valid | error
   let exprCheck = $state({ state: 'idle' });
   let exprSeq = 0;
+  // The error line's full text — ONE spelling for the visible message
+  // AND for the slot's title tooltip (w19 23d: the validity slot
+  // ellipsizes a long line inside the actions row instead of pushing
+  // the right-side cluster onto a second line, so the whole message
+  // stays reachable on hover).
+  const exprErrorText = $derived(
+    exprCheck.state === 'error'
+      ? `${exprCheck.msg}${exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}`
+      : '',
+  );
 
   let preview = $state(null); // {rows, format, sql, ms?, truncated?, match?, scope?}
   let previewAdhoc = $state(false);
@@ -1033,22 +1043,30 @@
 </script>
 
 {#snippet rowMain(m)}
+  <!-- Line 1 = the display title, the raw metric name, then the doc
+       info icon; line 2 holds ONLY chips (w19 row restructure). The
+       mono name's double-print guard follows the Order dialog's
+       short !== label pattern: when the title IS the name (empty title
+       falls back to it), the name already renders as the title, so the
+       mono slot stays out. -->
   <span class="bld-row-title">
     {m.title || m.name}
+    {#if m.title && m.title !== m.name}
+      <span class="mono">{m.name}</span>
+    {/if}
     {#if m.doc}
       <span class="m5-ib" title={m.doc}><span class="codicon codicon-info"></span></span>
     {/if}
   </span>
   <span class="bld-row-sub">
-    <span class="mono">{m.name}</span>
     <span class="chip">{m.scope || 'match'}</span>
-    <!-- The denominator chip (owner wave): the SAME plain .chip the
-         scope chip renders — no new concept class — and only when the
-         metric carries a denominator at all (absence is honest: a count
-         or plain sum has none). -->
-    {#if m.denominator}
-      <span class="chip">{m.denominator}</span>
-    {/if}
+    <!-- The denominator chip (w19 owner ruling): ALWAYS visible — the
+         SAME plain .chip the scope chip renders (no new concept
+         class), and a denominator-less row states the vocabulary's own
+         denominator-less word (lib/metricdenoms.js METRIC_DENOMS'
+         'none' bucket — the same word the editor's Denominator select
+         shows) instead of dropping the chip. -->
+    <span class="chip">{m.denominator || S.builder.denomNone}</span>
     <span class="chip">{m.format || 'raw'}</span>
     <!-- The compute-state surface (design §4/§5): EVERY list item wears
          its state chip through StatusChip — processing quantifies with
@@ -1095,13 +1113,15 @@
       >
       <!-- Delete is the user-row control: built-ins are guarded
            server-side (SaveMetric/DeleteMetric) and plugins are the
-           loader's territory, so neither ever shows one. -->
+           loader's territory, so neither ever shows one. The trash
+           glyph is the ONE app-wide destructive glyph (w19 23b — it
+           used to be the ✕, which reads "dismiss"). -->
       {#if m.origin === 'user'}
         <button
           class="btn small ghost"
           title={S.builder.deleteMetric}
           aria-label={S.fill(S.builder.deleteAria, { name: m.name })}
-          onclick={() => removeMetric(m)}><span class="codicon codicon-close"></span></button
+          onclick={() => removeMetric(m)}><span class="codicon codicon-trash"></span></button
         >
       {/if}
     </span>
@@ -1396,39 +1416,47 @@
       <section class="panel">
         <div class="row-between">
           <h2>{form.id ? S.builder.editMetric : S.builder.newMetric}</h2>
-          {#if builtinLoaded}
-            <!-- A built-in loads read-only (owner wave): the chip names
-                 it in the user's words, mirroring the plugin chip. -->
-            <span class="chip bld-readonly" title={S.builder.builtinReadOnly}
-              >{S.builder.builtinChip}</span>
-          {:else if readOnly}
-            <!-- Plugin rows: immutable through Save — saving stores a
-                 copy of this definition as your own metric. -->
-            <span class="chip bld-readonly" title={S.builder.pluginImmutable}
-              >{S.builder.pluginReadOnlyChip}</span>
-          {/if}
+          <!-- The header's right slot holds the compact state chip FIRST
+               (w19 item 2), then the read-only chip — every state word
+               but processing renders here, top-right, left of the
+               built-in/plugin chip (processing keeps its BLOCK form
+               below: PRODUCT.md "Progress presentation" — never both,
+               one progress widget). -->
+          <div class="toolbar">
+            {#if form.id > 0 && stateOf(form.id) && stateOf(form.id) !== 'processing'}
+              <StatusChip
+                status={stateOf(form.id)}
+                title={metricStateTitle(stateOf(form.id), stateErrorOf(form.id))}
+              />
+            {/if}
+            {#if builtinLoaded}
+              <!-- A built-in loads read-only (owner wave): the chip names
+                   it in the user's words, mirroring the plugin chip. -->
+              <span class="chip bld-readonly" title={S.builder.builtinReadOnly}
+                >{S.builder.builtinChip}</span>
+            {:else if readOnly}
+              <!-- Plugin rows: immutable through Save — saving stores a
+                   copy of this definition as your own metric. -->
+              <span class="chip bld-readonly" title={S.builder.pluginImmutable}
+                >{S.builder.pluginReadOnlyChip}</span>
+            {/if}
+          </div>
         </div>
 
         <!-- The editor card's compute state (design §4): processing is
              the BLOCK form — centered indicator with the honest k/N
              underneath (PRODUCT.md "Progress presentation": outside a
-             table cell) — every other state is the compact chip. Never
-             both: one progress widget. -->
-        {#if form.id > 0 && stateOf(form.id)}
-          {#if stateOf(form.id) === 'processing'}
-            <div class="bld-card-prog">
-              <StatusChip
-                block
-                progress={metricProgressFrac(metricProgress, form.id)}
-                detail={computeDetail(form.id)}
-              />
-            </div>
-          {:else}
+             table cell). Every OTHER state is the compact chip in the
+             header above (w19 item 2) — never both: one progress
+             widget. -->
+        {#if form.id > 0 && stateOf(form.id) === 'processing'}
+          <div class="bld-card-prog">
             <StatusChip
-              status={stateOf(form.id)}
-              title={metricStateTitle(stateOf(form.id), stateErrorOf(form.id))}
+              block
+              progress={metricProgressFrac(metricProgress, form.id)}
+              detail={computeDetail(form.id)}
             />
-          {/if}
+          </div>
         {/if}
 
         <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
@@ -1533,16 +1561,39 @@
              exactly ONE validity indicator (the block below moved here
              from under the Expression textarea — never a second one; the
              short-name length error stays up in saveError with the other
-             save guards, so this slot is expression-only). -->
+             save guards, so this slot is expression-only). The row's
+             DESTRUCTIVE action leads it (w19 item 23): the editor delete
+             sits at the line's left edge while the positive actions
+             (hint, Pin, Save) stay right — USER metrics only, the list
+             row's criterion (built-ins are guarded server-side, plugins
+             are the loader's territory), and it routes through the SAME
+             removeMetric path, so the delete-blocked-while-referenced
+             error still surfaces through saveError unchanged. The
+             validity slot is also the row's FLEXIBLE item (w19 23d —
+             the .bld-valid rule): a long error ellipsizes inside it
+             instead of pushing the cluster to a second line, with the
+             full text on the message's title. -->
         <div class="row-between bld-actions">
+          {#if form.id > 0 && form.origin === 'user'}
+            <button
+              class="btn danger"
+              title={S.builder.deleteMetric}
+              aria-label={S.fill(S.builder.deleteAria, { name: form.name })}
+              onclick={() => removeMetric(form)}
+            >
+              <span class="codicon codicon-trash"></span>
+            </button>
+          {/if}
           <span class="bld-valid">
             {#if exprCheck.state === 'pending'}
               <span class="bld-expr-state muted">{S.builder.exprChecking}</span>
             {:else if exprCheck.state === 'valid'}
               <span class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</span>
             {:else if exprCheck.state === 'error'}
-              <span class="bld-expr-state bad">
-                <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
+              <!-- w19 23d: the full line rides the title — the slot
+                   ellipsizes a long error in place. -->
+              <span class="bld-expr-state bad" title={exprErrorText}>
+                <span class="codicon codicon-error"></span> {exprErrorText}
               </span>
             {/if}
           </span>
@@ -1569,6 +1620,7 @@
               disabled={saveDisabled}
               title={builtinLoaded ? S.builder.builtinReadOnly : undefined}
             >
+              <span class="codicon codicon-save"></span>
               {saving
                 ? S.builder.saving
                 : !builtinLoaded && form.id && !dirty
@@ -1583,7 +1635,22 @@
         <div class="row-between">
           <h2>{S.builder.previewHeading}</h2>
           <div class="toolbar">
+            <!-- The preview panel's state chip sits immediately LEFT of
+                 the Preview button (w19 item 23c — the owner's ruling),
+                 the same cluster order as hint → Pin → Save in the
+                 editor's actions line. Position only: the chip's markup
+                 and wording are untouched, and the ms/truncated chips
+                 keep their slots after the button. -->
+            {#if preview && !previewAdhoc && previewKey}
+              <StatusChip
+                status={stateOf(previewKey.id)}
+                title={metricStateTitle(stateOf(previewKey.id), stateErrorOf(previewKey.id))}
+                progress={metricProgressFrac(metricProgress, previewKey.id)}
+                stage={metricProgressStage(metricProgress, previewKey.id)}
+              />
+            {/if}
             <button class="btn primary" onclick={() => runPreview()} disabled={previewBusy}>
+              <span class="codicon codicon-play"></span>
               {previewBusy ? S.builder.running : S.builder.preview}
             </button>
             <!-- Timing is provenance ONLY for an ad-hoc run (it genuinely
@@ -1594,14 +1661,6 @@
             {/if}
             {#if preview && preview.truncated}
               <span class="chip">{S.builder.previewTruncated}</span>
-            {/if}
-            {#if preview && !previewAdhoc && previewKey}
-              <StatusChip
-                status={stateOf(previewKey.id)}
-                title={metricStateTitle(stateOf(previewKey.id), stateErrorOf(previewKey.id))}
-                progress={metricProgressFrac(metricProgress, previewKey.id)}
-                stage={metricProgressStage(metricProgress, previewKey.id)}
-              />
             {/if}
           </div>
         </div>

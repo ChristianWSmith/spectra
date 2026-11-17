@@ -273,9 +273,12 @@
                FULL name (e.label), the mono slot carries the entry's
                SHORT (e.short) only when the two differ (Team never
                doubles to "Team Team"), and a hidden fixed stat keeps
-               its in-place mark. A metric row carries NO mono slot —
-               its title alone identifies it (the old title+name
-               doubling, "Assists assists", is gone). -->
+               its in-place mark. A metric row's slot (w19 item 5) reads
+               the metric's own short name (e.def.shortName — the same
+               six-character field the editor's Short name input writes)
+               under the same rule: only when it is set and differs from
+               the label, so a metric with no short name carries no slot
+               and a short equal to the title never doubles. -->
           {#if e.kind === 'fixed'}
             {#if e.short !== e.label}
               <span class="mono mo-name">{e.short}</span>
@@ -285,6 +288,8 @@
                    leaves the list (owner requirement). -->
               <span class="mono mo-name">{S.common.metricOrderHiddenMark}</span>
             {/if}
+          {:else if e.def.shortName && e.def.shortName !== e.label}
+            <span class="mono mo-name">{e.def.shortName}</span>
           {/if}
           <!-- M1: ONE right-aligned cluster — the row's controls (eye,
                pin, ↑↓) sit together at the row's right edge instead of

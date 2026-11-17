@@ -409,9 +409,15 @@ The **editor** on the right has:
 - **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
 - **Expression** — the formula itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
 
+The editor heading carries the metric's state chip — *fresh*, *behind*, *failed* or *no-data* — to
+the left of the *built-in* / *read-only source* chip; while a sweep is running, the card shows the
+progress block underneath instead.
+
 **Save metric** stores it; the button reads *Saved* while nothing has changed. **Pin** places the
 metric: a match-scoped metric becomes a column on the scoreboard, a profile-scoped one a row on
-the player's profile. Saved metrics are appended to match reports in Reports.
+the player's profile. Saved metrics are appended to match reports in Reports. For a metric you
+created, that actions line opens with a **trash** button that deletes it; built-in and plugin
+metrics show none (neither here nor on their list row).
 
 **Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
 metrics can't be edited*), but you can still preview, reference and pin them. Plugin metrics

@@ -25,6 +25,9 @@ export const builder = {
   unpinFromProfile: 'Unpin from player profile',
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
+  // Both delete sites compose these (w19 item 23): the list row's
+  // glyph button and the editor footer's destructive action — one
+  // word, one aria shape, whichever surface shows the control.
 
   // header
   heading: 'Metric builder',
@@ -98,7 +101,7 @@ export const builder = {
   scopeMatchOption: 'match — this player in this match',
   scopeProfileOption: "profile — this player's career",
   fieldFormat: 'Format',
-  denomNone: 'none',
+  denomNone: 'none', // also the list row's denominator-less chip word (w19)
   denomRounds: 'rounds',
   denomMatches: 'matches',
   fieldDoc: 'Doc (formula, required)',
