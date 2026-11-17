@@ -175,7 +175,8 @@ back to the last match you had open. It is a header, a round strip, and a row of
 The two team names and the final scoreline, then **Watch replay** (the primary action — it opens
 the replay at its default starting point), followed by the map, the match duration, the patch,
 and the match's status chip. If the import produced warnings, a dismissible **Import warnings**
-panel lists them; when there are none it says *None — this demo imported cleanly.*
+panel lists them — a very long list shows its opening entries and says how many more there are;
+when there are none it says *None — this demo imported cleanly.*
 
 # The round strip
 

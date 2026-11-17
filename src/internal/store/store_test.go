@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -594,8 +595,62 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetWarnings: %v", err)
 	}
-	if len(warns) != 1 || warns[0] != "nullbyte warning" {
-		t.Errorf("warnings = %v, want [nullbyte warning]", warns)
+	if len(warns.Messages) != 1 || warns.Messages[0] != "nullbyte warning" || warns.Total != 1 {
+		t.Errorf("warnings = %+v, want {Messages:[nullbyte warning] Total:1}", warns)
+	}
+}
+
+// TestGetWarningsCapsWindowAndReportsTotal pins the warnings fetch cap
+// (the IPC flood guard): a match with more than WarningsFetchLimit
+// warnings yields a bounded window — the FIRST limit rows in seq (emit)
+// order, never a random suffix — while Total reports the full count, so
+// the view can state the remainder honestly instead of shipping six
+// figures of rows over IPC. An under-cap match is untouched by the
+// limit: every row, Total == len.
+func TestGetWarningsCapsWindowAndReportsTotal(t *testing.T) {
+	s := openMem(t)
+	const sha = "sha-warn-cap"
+	id, err := s.CreateMatchRow("/d/w.dem", sha, 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	em := testExtracted(sha, time.Now())
+	const total = WarningsFetchLimit + 70
+	em.Warnings = make([]string, total)
+	for i := range em.Warnings {
+		em.Warnings[i] = fmt.Sprintf("warning %04d", i)
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	page, err := s.GetWarnings(id)
+	if err != nil {
+		t.Fatalf("GetWarnings: %v", err)
+	}
+	if page.Total != total {
+		t.Errorf("Total = %d, want the full count %d", page.Total, total)
+	}
+	if len(page.Messages) != WarningsFetchLimit {
+		t.Fatalf("Messages = %d rows, want the capped %d", len(page.Messages), WarningsFetchLimit)
+	}
+	if page.Messages[0] != "warning 0000" ||
+		page.Messages[WarningsFetchLimit-1] != fmt.Sprintf("warning %04d", WarningsFetchLimit-1) {
+		t.Errorf("window = %q…%q, want the FIRST %d rows in seq order",
+			page.Messages[0], page.Messages[WarningsFetchLimit-1], WarningsFetchLimit)
+	}
+
+	// An under-cap match carries every row — the limit never bites.
+	em.Warnings = []string{"only one", "only two"}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted (under cap): %v", err)
+	}
+	page, err = s.GetWarnings(id)
+	if err != nil {
+		t.Fatalf("GetWarnings (under cap): %v", err)
+	}
+	if page.Total != 2 || len(page.Messages) != 2 || page.Messages[0] != "only one" || page.Messages[1] != "only two" {
+		t.Errorf("under-cap page = %+v, want both rows and Total 2", page)
 	}
 }
 
@@ -623,7 +678,7 @@ func TestSaveExtractedReplaces(t *testing.T) {
 		{"rounds", len(mustRounds(t, s, id))},
 		{"events", len(mustEvents(t, s, models.EventFilter{MatchID: id}))},
 		{"chat", len(mustChat(t, s, id, -1))},
-		{"warnings", len(mustWarnings(t, s, id))},
+		{"warnings", len(mustWarnings(t, s, id).Messages)},
 		{"histogram", len(mustHist(t, s, id))},
 	}
 	want := map[string]int{"board": 2, "rounds": 1, "events": 5, "chat": 2, "warnings": 1, "histogram": 2}
@@ -1643,7 +1698,7 @@ func mustChat(t *testing.T, s *Store, id int64, round int) []models.ChatRow {
 	return c
 }
 
-func mustWarnings(t *testing.T, s *Store, id int64) []string {
+func mustWarnings(t *testing.T, s *Store, id int64) models.WarningListPage {
 	t.Helper()
 	w, err := s.GetWarnings(id)
 	if err != nil {

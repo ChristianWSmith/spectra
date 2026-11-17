@@ -192,7 +192,13 @@
   // change — URL stays the sole durable record; registry semantics unchanged.
   const selInit = () => ({ ...seed(selKey, selDefaults()), key: selKey });
   const selSeed = selInit();
-  let warnings = $state(null); // null = not loaded
+  let warnings = $state(null); // null = not loaded; then the page {messages,total}
+  // Render cap for the warnings list: the DOM NEVER grows unbounded
+  // whatever a fetch returns (independent of the store's fetch cap —
+  // store.WarningsFetchLimit, same value — belt and braces), and the
+  // cap line below states the TRUE remainder (total − shown): no silent
+  // truncation, however long the parse's warning list is.
+  const WARNINGS_RENDER_CAP = 200;
   // Warnings render directly (no header button): the panel is open by
   // default whenever the match has warnings, and the dismiss X hides it
   // for the rest of this mounted session.
@@ -427,16 +433,27 @@
     warnings = null;
     getWarnings(id)
       .then((w) => {
-        if (live) warnings = w || [];
+        if (live) warnings = w || { messages: [], total: 0 };
       })
       .catch((e) => {
         if (live) {
-          warnings = [];
+          warnings = { messages: [], total: 0 };
           error = errText(e);
         }
       });
     return () => (live = false);
   });
+
+  // The rows the list actually renders (capped) and the honest
+  // remainder the cap line states — both derived from the page, so a
+  // caller passing MORE rows than the fetch contract allows still never
+  // renders past WARNINGS_RENDER_CAP.
+  const shownWarnings = $derived(
+    warnings == null ? [] : (warnings.messages || []).slice(0, WARNINGS_RENDER_CAP),
+  );
+  const warningsHidden = $derived(
+    warnings == null ? 0 : Math.max(0, (warnings.total || 0) - shownWarnings.length),
+  );
 
   // Deep-linked tab from App's route (#/match/:id/<slug>): select the
   // tab whenever the route carries one — runs on mount before first
@@ -1064,14 +1081,17 @@
         </div>
         {#if warnings == null}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
-        {:else if warnings.length === 0}
+        {:else if warnings.messages.length === 0}
           <p class="muted" role="status">{S.match.warningsNone}</p>
         {:else}
           <ul class="warning-list">
-            {#each warnings as w, i (i)}
+            {#each shownWarnings as w, i (i)}
               <li>{w}</li>
             {/each}
           </ul>
+          {#if warningsHidden > 0}
+            <p class="muted">{S.fill(S.match.warningsMore, { n: fmtInt(warningsHidden) })}</p>
+          {/if}
         {/if}
       </div>
     {/if}

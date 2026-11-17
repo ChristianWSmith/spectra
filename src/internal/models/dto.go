@@ -328,3 +328,15 @@ type NameCount struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
+
+// WarningListPage is the match-warnings panel's read: Messages is the
+// fetch-capped window (at most store.WarningsFetchLimit rows, in seq =
+// emit order), Total is the match's FULL warning count. A pathological
+// parse can emit six figures of warnings (the demoinfocs rc.1 flood —
+// 170k rows), so the page carries a bounded window plus the honest
+// truth rather than every row over IPC; the view states the remainder
+// itself ("and {n} more") instead of silently truncating.
+type WarningListPage struct {
+	Messages []string `json:"messages"`
+	Total    int      `json:"total"`
+}

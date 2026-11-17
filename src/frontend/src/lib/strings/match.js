@@ -18,6 +18,9 @@ export const match = {
   importWarnings: 'Import warnings',
   dismissWarnings: 'Dismiss warnings',
   warningsNone: 'None — this demo imported cleanly.',
+  // Cap line under a long warnings list: {n} is the honest remainder
+  // (total − shown), so a capped list never silently truncates.
+  warningsMore: 'and {n} more',
 
   // tab bar + Overview rosters
   matchSectionsAria: 'Match sections',
