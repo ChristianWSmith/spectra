@@ -214,6 +214,13 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   style tooling. Keep `make lint` green. `build/` is excluded from lint —
   it is stock/regenerated Wails scaffolding, not application code.
 - **Tests:** `-short` must skip anything network-bound (`testing.Short()`).
+- **No session leakage** (owner, 2026-11-17): committed file and test
+  names describe the DOMAIN they cover, never the ad-hoc wave/session/
+  branch that produced them (`w27_…` / `me0_…` / `r13_…` style is a
+  no-no — the name must still mean something in a week). Dated wave
+  references inside comments (the ledger style, e.g. the
+  `driver-liveness.mjs` history comments) are history and stay. Pinned
+  mechanically by `TestNoSessionLeakageInFileNames`.
 - **`deep-clean` stays opt-in:** never make it a prerequisite of build/test
   targets; it deletes the selected instance's library DB (`spectra.db`) by
   design, gated behind `CONFIRM=1` (see "Instance isolation (XDG)").

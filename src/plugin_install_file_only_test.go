@@ -1,6 +1,6 @@
 package main
 
-// W27: plugin install takes a manifest FILE (owner ruling) — and the
+// Plugin install takes a manifest FILE (owner ruling, 2026-11-17) — and the
 // regression for the reported stall ("importing … says 'installing' and
 // stalls forever"): a FOLDER source used to be walked and copied in full
 // (the owner's 1.8 GB Desktop ran ~110s of silent hashing + copying
