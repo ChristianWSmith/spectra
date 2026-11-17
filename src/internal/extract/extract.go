@@ -25,7 +25,7 @@ import (
 )
 
 // ParserVersion is recorded per match (matches.parser_version).
-const ParserVersion = "demoinfocs/v6@v6.0.0-rc.1"
+const ParserVersion = "demoinfocs/v6@v6.0.0-rc.2"
 
 // progressEvery throttles the progress callback to ~every 1000 frames
 // (plus the one final call made after the parse ends).
