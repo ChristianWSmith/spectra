@@ -244,6 +244,41 @@ func chooseFileOrDirectory(app *application.App, title string) (string, error) {
 	return abs, nil
 }
 
+// chooseFile opens the native picker for a source that must be a FILE
+// under title (CanChooseFiles(true), directories refused) and returns
+// the chosen path (absolute, like SaveFile). "" with a nil error means
+// cancel — the same contract as chooseFileOrDirectory; a dialog failure
+// is an error instead.
+//
+// This is the manifest-file half of THE plugin-source picker: no native
+// dialog on our two supported platforms can offer files AND folders at
+// once (the Linux backend resolves any canChooseDirectories request to
+// the folder chooser and never reads canChooseFiles; the Windows
+// Common Item Dialog cannot mix them either — directories take
+// precedence), so plugin sources get one affordance each —
+// chooseFileOrDirectory for the bundle directory, this for the single
+// spectra-plugin.json.
+func chooseFile(app *application.App, title string) (string, error) {
+	path, err := app.Dialog.OpenFile().
+		CanChooseFiles(true).
+		CanChooseDirectories(false).
+		SetTitle(title).
+		PromptForSingleSelection()
+	if err != nil {
+		return "", fmt.Errorf("couldn't open the file picker: %w", err)
+	}
+	if path == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		// Dialog output is already absolute in practice; fall back to it
+		// rather than failing a choice the user already made (chooseFileOrDirectory).
+		return path, nil
+	}
+	return abs, nil
+}
+
 // saveFilters derives native dialog filters from requested extensions:
 // ["png"] → [{PNG, *.png}], ["png", "jpg"] → [{PNG/JPG, *.png;*.jpg}].
 // Entries are normalized (leading "."/"*" stripped, lowercased) and empty

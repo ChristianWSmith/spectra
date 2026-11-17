@@ -110,12 +110,14 @@ type ReportTemplate struct {
 type PlatformService struct {
 	st  *store.Store
 	app *application.App
-	// promptPluginSource picks the plugin source path; nil = the native
-	// dialog (dialogs.go chooseFileOrDirectory). Tests inject a fake so
-	// ChoosePluginSource's cancel/failure contract can be exercised
-	// without opening a real dialog (the DialogService.promptSave
-	// precedent).
-	promptPluginSource func() (string, error)
+	// promptPluginPick picks a plugin source path; nil = the native
+	// dialogs.go pickers (chooseFileOrDirectory for ChoosePluginSource —
+	// the bundle directory — and chooseFile for ChoosePluginFile — the
+	// manifest file; the two affordances exist because no native dialog
+	// on Linux/Windows offers files AND folders at once). Tests inject a
+	// fake so BOTH cancel/failure contracts can be exercised without
+	// opening a real dialog (the DialogService.promptSave precedent).
+	promptPluginPick func() (string, error)
 }
 
 // --- Data explorer -----------------------------------------------------------
@@ -297,26 +299,42 @@ func (s *PlatformService) InstallPlugin(sourcePath string) (PluginState, error) 
 	}, nil
 }
 
-// ChoosePluginSource opens the native plugin-source picker — a bundle
-// directory or a single spectra-plugin.json — and returns the chosen
-// path; an empty string means cancel or dialog failure, the same
-// contract as LibraryService.ChooseDemoDir and MapPackService.ChooseCS2Dir.
-// The picker itself is dialogs.go's chooseFileOrDirectory, reached
-// through the promptPluginSource seam so tests can exercise that
-// contract without opening a real dialog (the DialogService.promptSave
-// precedent).
-func (s *PlatformService) ChoosePluginSource() string {
-	choose := s.promptPluginSource
+// choosePluginPath runs one plugin-source picker through the seam and
+// folds its result into the contract both public pickers share: the
+// chosen path verbatim, or "" on cancel AND on dialog failure — the
+// LibraryService.ChooseDemoDir / MapPackService.ChooseCS2Dir contract.
+func (s *PlatformService) choosePluginPath(native func() (string, error)) string {
+	choose := s.promptPluginPick
 	if choose == nil {
-		choose = func() (string, error) {
-			return chooseFileOrDirectory(s.app, "Choose a plugin bundle")
-		}
+		choose = native
 	}
 	path, err := choose()
 	if err != nil || path == "" {
 		return ""
 	}
 	return path
+}
+
+// ChoosePluginSource opens the native BUNDLE-DIRECTORY picker — the
+// common case, a plugin source being a bundle directory or a single
+// spectra-plugin.json — and returns the chosen path; an empty string
+// means cancel or dialog failure. ChoosePluginFile is its manifest-file
+// twin: the two affordances exist because no native dialog on our two
+// supported platforms can offer files AND folders at once (see
+// dialogs.go chooseFile for the platform finding).
+func (s *PlatformService) ChoosePluginSource() string {
+	return s.choosePluginPath(func() (string, error) {
+		return chooseFileOrDirectory(s.app, "Choose a plugin bundle")
+	})
+}
+
+// ChoosePluginFile opens the native MANIFEST-FILE picker — file only,
+// the leg both platform dialogs implement — and returns the chosen
+// path; the same "" contract as ChoosePluginSource.
+func (s *PlatformService) ChoosePluginFile() string {
+	return s.choosePluginPath(func() (string, error) {
+		return chooseFile(s.app, "Choose a plugin manifest file")
+	})
 }
 
 // SetPluginEnabled toggles a plugin (metrics/templates appear/disappear on

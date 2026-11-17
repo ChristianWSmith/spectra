@@ -88,6 +88,8 @@ export const settings = {
     '(plus optional metric /\n      report-template definitions) or a single manifest JSON. Enabled plugins\n      contribute metrics and report templates on the next list — no restart.',
   pluginPathAria: 'Plugin source path',
   browsePlugin: 'Browse…',
+  choosePluginFileLabel: 'Choose manifest file',
+  choosePluginFileTitle: 'Choose a single manifest file instead of a bundle folder',
   installing: 'Installing…',
   installFromPath: 'Install from path',
   noPluginsYet: 'No plugins installed yet.',

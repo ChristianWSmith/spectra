@@ -10,6 +10,7 @@
     listPlugins,
     installPlugin,
     choosePluginSource,
+    choosePluginFile,
     setPluginEnabled,
     removePlugin,
     getMapPackStatus,
@@ -465,10 +466,25 @@
   }
 
   async function browsePlugin() {
-    // The picker is file OR directory (both InstallPlugin source kinds);
-    // cancel resolves "" and leaves the current selection alone.
+    // The bundle-directory picker (the common case); cancel resolves ""
+    // and leaves the current selection alone. browsePluginFile below is
+    // its manifest-file twin — no native dialog on our platforms mixes
+    // files and folders, so each source kind gets a picker.
     try {
       const chosen = await choosePluginSource();
+      if (chosen) installPath = chosen;
+    } catch (e) {
+      pluginsError = errText(e);
+    }
+  }
+
+  async function browsePluginFile() {
+    // The manifest-file twin of browsePlugin (no native dialog on our
+    // platforms mixes files and folders): same read-only display, same
+    // arming, and it REPLACES any path the directory picker left — one
+    // display, one picked path.
+    try {
+      const chosen = await choosePluginFile();
       if (chosen) installPath = chosen;
     } catch (e) {
       pluginsError = errText(e);
@@ -1054,12 +1070,13 @@
       {S.settings.pluginsNoteLead}
       <span class="mono">{S.settings.pluginManifestName}</span> {S.settings.pluginsNoteTail}
     </p>
-    <!-- The source row is a READ-ONLY display + a native picker (w20):
-         no free typing — Browse… opens the plugin-source picker (the
-         file-or-directory variant in dialogs.go) into the path below,
-         and Install hands that path straight to
-         PlatformService.InstallPlugin (a bundle directory or a single
-         spectra-plugin.json). -->
+    <!-- The source row is a READ-ONLY display + TWO native pickers (w20
+         + addendum): no free typing, and no native dialog on our
+         platforms can offer files AND folders at once — Browse… picks
+         the bundle directory (the common case), the icon-only file
+         button picks a single spectra-plugin.json, both fill the SAME
+         path below (one display, one picked path), and Install hands it
+         straight to PlatformService.InstallPlugin. -->
     <div class="row-between">
       <input
         class="input sett-plugin-path"
@@ -1072,6 +1089,13 @@
           <span class="codicon codicon-search" aria-hidden="true"></span>
           {S.settings.browsePlugin}
         </button>
+        <button
+          class="btn"
+          title={S.settings.choosePluginFileTitle}
+          aria-label={S.settings.choosePluginFileLabel}
+          onclick={browsePluginFile}
+          ><span class="codicon codicon-file" aria-hidden="true"></span></button
+        >
         <button class="btn primary" disabled={installBusy || !installPath.trim()} onclick={doInstall}
           >{installBusy ? S.settings.installing : S.settings.installFromPath}</button
         >

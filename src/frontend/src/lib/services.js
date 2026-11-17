@@ -982,6 +982,10 @@ export function listPlugins() { return PlatformService.ListPlugins(); }
 // directory or a single spectra-plugin.json — both InstallPlugin source
 // kinds); resolves to "" on cancel (the chooseDemoDir pattern).
 export function choosePluginSource() { return PlatformService.ChoosePluginSource(); }
+// choosePluginFile is the manifest-file twin of choosePluginSource — no
+// native dialog on Linux/Windows offers files AND folders at once, so
+// the two source kinds get a picker each. Same ""-on-cancel contract.
+export function choosePluginFile() { return PlatformService.ChoosePluginFile(); }
 export function installPlugin(path) { return PlatformService.InstallPlugin(path); }
 export function setPluginEnabled(id, enabled) { return PlatformService.SetPluginEnabled(id, enabled); }
 export function removePlugin(id) { return PlatformService.RemovePlugin(id); }

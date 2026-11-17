@@ -717,7 +717,18 @@ const EXPECTED = {
   // PLACE onto the read-only display, and J grew +3 around them (the
   // Browse… label+glyph pin, the browse→display→armed-Install flow, the
   // Install→InstallPlugin hand-off + the display clearing).
-  'settings.dom.mjs': 90,
+  // settings 90 → 94 (2026-11-16, w20 addendum 9b — BOTH picker
+  // affordances ship): +4 inside §J. The platform finding was ruled on:
+  // no native dialog on Linux/Windows mixes files and folders, so the
+  // manifest-file install gets its own icon-only button beside
+  // Browse… — +1 static pin (codicon-file, empty text, aria-label
+  // "Choose manifest file" + its title), +1 the file pick REPLACING the
+  // directory pick in the SAME read-only display with each picker
+  // called exactly once (one display, one picked path), +2 the two
+  // install rounds (InstallPlugin gets the manifest-file path first,
+  // then the bundle path on the second round). The three §J pins from
+  // the first commit are untouched.
+  'settings.dom.mjs': 94,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so
