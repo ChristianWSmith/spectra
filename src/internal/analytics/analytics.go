@@ -81,6 +81,18 @@ type Config struct {
 // unset.
 const DefaultTickRate = 64.0
 
+// WorldWeapon is the stored weapon name of a world kill — the
+// disconnect/kick-time self-kill (killer == victim, weapon World) that is
+// NOT a death (ruling, lead 2026-11-17, owner's reconnect-takeover
+// report): extract's agg.kill and PlayerRounds both gate their stat
+// exclusion on this exact spelling, so it is ONE shared constant
+// (extract imports it beside its kill pipeline). The value is
+// demoinfocs' EquipmentType.String() for the game event's `world`
+// weapon, observed on every disconnect self-kill of the owner's repro
+// demo (ticks 81343 / 89867 / 91080 and the post-match tail) and of the
+// golden demo's trailing suicides.
+const WorldWeapon = "World"
+
 // ConfigFrom builds the analytics rules input from a stored config row
 // (models.AnalysisConfig) — the ONE constructor shared by the import
 // pipeline (library.analyze), AnalyticsService.RecomputeAnalysis and

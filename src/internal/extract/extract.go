@@ -271,9 +271,13 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			if pl == nil {
 				return // src -1 or a non-player source: skip, never guess
 			}
+			// Takeover remap: a sound emitted through the substitute
+			// bot's pawn resolves to the bot's controller — the life it
+			// belongs to is the controlling human's (takeover.go).
+			who, _ := newRemap(gs).pair(pl)
 			a.soundEvent(models.SoundEvent{
 				Tick:       gs.IngameTick(),
-				SteamID:    keyStr(playerKey(pl)),
+				SteamID:    keyStr(playerKey(who)),
 				Kind:       def.kind,
 				Material:   def.material,
 				TeamPrefix: def.team,
@@ -301,12 +305,18 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	// Reused across frames: the sinks consume their slices synchronously.
 	frameBuf := make([]PositionPlayer, 0, 10)
 	stateBuf := make([]StatePlayer, 0, 10)
+	targetBuf := make([]identityTarget, 0, 10)
 	// Round-start seeds for the state stream: the first frame after each
 	// round-counter change carries seed=true (see StateSink).
 	seeds := roundSeeds{}
 	p.RegisterEventHandler(func(events.FrameDone) {
 		frames++
 		a.flushRaw()
+		// Deferred disconnect-time World self-kills (agg.flushWorldSelf):
+		// the frame's player_disconnect has dispatched by now in EITHER
+		// order relative to the kill (both orders observed on the owner's
+		// repro demo), so the same-tick criterion can be decided exactly.
+		a.flushWorldSelf()
 		// Sanitization gate (owner ruling, 2026-11-12): the sidecar
 		// timeline (positions + state) and the voice stream START AT THE
 		// FIRST COUNTED round's start tick — no pre-pistol byte is ever
@@ -327,30 +337,21 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 		gateOpen := len(a.rounds) > 0
 		if sink := opts.Positions; gateOpen && sink != nil && sinkErr == nil {
 			gs := p.GameState()
+			// Takeover routing (takeover.go appendTargets): during a
+			// reconnect takeover the human's own pawn is the stale
+			// pre-disconnect corpse — reading it blacked out the whole
+			// window (owner's repro: 1840/1840 frames with no sample)
+			// while the live bot's steamId-0 key could not be stored —
+			// so the sample runs through the controlled pawn and is
+			// keyed with the controlling human's SteamID64.
+			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
 			frameBuf = frameBuf[:0]
-			for _, pl := range gs.Participants().Playing() {
-				if pl == nil || !pl.IsAlive() {
+			for _, t := range targetBuf {
+				row, ok := positionRow(t)
+				if !ok {
 					continue
 				}
-				pos := pl.Position()
-				// ViewDirectionX is yaw (0..360); normalize to the
-				// -180..180 range the sidecar codec expects.
-				// (ViewDirectionY is pitch — feeding it here drew
-				// garbage view cones.)
-				yaw := pl.ViewDirectionX()
-				if yaw > 180 {
-					yaw -= 360
-				}
-				frameBuf = append(frameBuf, PositionPlayer{
-					SteamID: pl.SteamID64,
-					X:       float32(pos.X),
-					Y:       float32(pos.Y),
-					Z:       float32(pos.Z),
-					Yaw:     yaw,
-					Air:     pl.IsAirborne(),
-					Duck:    pl.IsDucking(),
-					Side:    sideString(pl.Team),
-				})
+				frameBuf = append(frameBuf, row)
 			}
 			if err := sink.AddFrame(int32(gs.IngameTick()), frameBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: position sink: %w", err)
@@ -358,22 +359,24 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			}
 		}
 		// State stream (see StateSink): every playing participant, dead
-		// included (hp 0 is a sample, not an inference). Runs AFTER the
-		// position sink so the shared slot table locks on position
-		// samples first. Gated together with the position sink: both
-		// sinks must advance in lockstep (sidecar's frames counter), and
-		// seeds.take is NOT called while the gate is closed — the zero
-		// value stays armed, so the boundary frame's round-counter change
-		// makes the first written record a seed (plus the state writer's
-		// !prev.valid forces full records on the first record anyway).
+		// included (hp 0 is a sample, not an inference) — through the
+		// same takeover routing as the position sink (the human's row is
+		// sampled through the controlled bot's LIVE pawn, keyed with the
+		// human's SteamID; the covered bot emits no second row). Runs
+		// AFTER the position sink so the shared slot table locks on
+		// position samples first. Gated together with the position sink:
+		// both sinks must advance in lockstep (sidecar's frames counter),
+		// and seeds.take is NOT called while the gate is closed — the
+		// zero value stays armed, so the boundary frame's round-counter
+		// change makes the first written record a seed (plus the state
+		// writer's !prev.valid forces full records on the first record
+		// anyway).
 		if sink := opts.State; gateOpen && sink != nil && sinkErr == nil {
 			gs := p.GameState()
+			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
 			stateBuf = stateBuf[:0]
-			for _, pl := range gs.Participants().Playing() {
-				if pl == nil {
-					continue
-				}
-				stateBuf = append(stateBuf, sampleStatePlayer(pl))
+			for _, t := range targetBuf {
+				stateBuf = append(stateBuf, sampleStatePlayer(t.identity, t.pawn))
 			}
 			if err := sink.AddState(seeds.take(a.currentRound), stateBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: state sink: %w", err)
@@ -416,6 +419,10 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 
 	// Pair typed events dispatched after the last frame with their payloads.
 	a.flushRaw()
+	// Drain any deferred World self-kill that never saw a disconnect
+	// (genuine world-hazard death — it is a real death; the exclusion
+	// needs the same-tick disconnect).
+	a.flushWorldSelf()
 
 	// Final-state snapshot: end-of-demo roster (provenance flag + scoreboard
 	// overwrites), teams, and header-derived match metadata. The roster is
@@ -549,20 +556,28 @@ func (rs *roundSeeds) take(round int) bool {
 }
 
 // sampleStatePlayer reads one participant's authoritative per-frame state
-// (cheap prop reads, once per frame per player — see StatePlayer). The
-// weapon/ammo fields and the reload flag are only read while the pawn is
-// alive; Money/Helmet are read on every frame like HP/Armor (they persist
+// (cheap prop reads, once per frame per player — see StatePlayer),
+// split across the takeover pair: the row is KEYED with the identity (the
+// controlling human's SteamID64 — the sidecar slot table only stores
+// human keys, so keying the bot's steamId-0 would drop the whole window),
+// while every pawn-carried read (alive/HP/armor/weapons/reload/buttons)
+// runs through the pawn — the controlled bot's during a takeover, the
+// participant's own otherwise (identical reads when identity == pawn).
+// Money stays with the identity: it is a controller property (the
+// identity's own account, as read — never a guess). The weapon/ammo
+// fields and the reload flag are only read while the pawn is alive;
+// Money/Helmet are read on every frame like HP/Armor (they persist
 // through death).
-func sampleStatePlayer(pl *common.Player) StatePlayer {
-	alive := pl.IsAlive()
+func sampleStatePlayer(identity, pawn *common.Player) StatePlayer {
+	alive := pawn.IsAlive()
 	var inventory []string
 	weapon, mag, reserve := "", 0, 0
 	mainMag, mainReserve, reloading := 0, 0, false
 	if alive {
-		active := pl.ActiveWeapon()
+		active := pawn.ActiveWeapon()
 		weapon = wepName(active)
 		var main *common.Equipment
-		inventory, main = scanWeapons(pl.Weapons())
+		inventory, main = scanWeapons(pawn.Weapons())
 		if active != nil {
 			mag = active.AmmoInMagazine()
 			reserve = active.AmmoReserve()
@@ -571,10 +586,10 @@ func sampleStatePlayer(pl *common.Player) StatePlayer {
 			mainMag = main.AmmoInMagazine()
 			mainReserve = main.AmmoReserve()
 		}
-		reloading = pl.IsReloading
+		reloading = pawn.IsReloading
 	}
-	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), pl.Money(), pl.HasHelmet(),
-		weapon, inventory, mag, reserve, mainMag, mainReserve, pl.IsPressingButton(common.ButtonAttack), reloading)
+	return buildStateSample(identity.SteamID64, alive, pawn.Health(), pawn.Armor(), identity.Money(), pawn.HasHelmet(),
+		weapon, inventory, mag, reserve, mainMag, mainReserve, pawn.IsPressingButton(common.ButtonAttack), reloading)
 }
 
 // scanWeapons walks one participant's weapon list IN ORDER (pl.Weapons()

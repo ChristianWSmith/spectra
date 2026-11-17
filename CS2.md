@@ -279,6 +279,36 @@ at the end of the section.
   reconnect) and https://www.reddit.com/r/GlobalOffensive/comments/17arh9b/
   (substitutes removed) (all 2026-11-09).
 
+- **Reconnect takeover — one life, two identities in the demo** — when a
+  reconnecting player takes over the substitute bot's pawn, BOTH player
+  objects stay connected (human controller gets `m_bControllingBot`;
+  `m_hOriginalControllerOfCurrentPawn` → the bot's controller; the bot is
+  kicked later, sometimes only at the next round boundary — not always
+  same-tick as the reconnect). Game events split identity across
+  resolution domains: **userid-keyed** events (`player_death`,
+  `player_hurt`) name the reconnecting human; **pawn-keyed** events
+  (`bomb_pickup` carries only `userid_pawn`) name the BOT; and the human
+  controller keeps its own **dead** `m_hPlayerPawn`, so
+  health/position/inventory reads through it stay at the pre-disconnect
+  corpse while the bot's live pawn is steamId 0. Spectra: identity remap
+  on takeover (extract `activeIdentity`/`pairIdentity` — identity of a
+  life is the controlling human, pawn reads follow the controlled bot;
+  the connected-controller gate keeps a bot that plays on after its
+  human's SECOND disconnect its own identity), disconnect-time `World`
+  self-kills excluded from stats (event row kept — the feed records what
+  happened), no self-kill kill credit (unknown sides included), bots
+  carry no per-round stat rows. **Source** — demoinfocs-golang
+  v6@v6.0.0-rc.2 `game_events.go` (`botTakeover`, `playerDeath`,
+  `bombPickup`), `datatables.go` (`getOrCreatePlayerFromControllerEntity`,
+  `applyControllerConnectionState`), `common/player.go`
+  (`ControlledBot`, `PlayerPawnEntity`) read 2026-11-17;
+  https://cs2.poggu.me/dumped-data/game-events/ (`bot_takeover`,
+  `bomb_pickup.userid_pawn`; 2026-11-09). *Game-side m_hPlayerPawn
+  behavior (the stale-corpse read path) and whose account (human
+  controller vs bot controller `m_iAccount`) is authoritative while
+  controlling: inferred from observed demo output — needs a dedicated
+  source.*
+
 - **Radar transform convention** — `px=(worldX−pos_x)/scale`,
   `py=(pos_y−worldY)/scale` where `pos_x/pos_y` = world coords of the
   radar image's top-left and scale = world units per image pixel

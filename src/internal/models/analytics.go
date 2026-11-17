@@ -69,10 +69,14 @@ type PlayerRef struct {
 	Name    string `json:"name"`
 	Side    string `json:"side"` // final side "ct" | "t" ("" unknown)
 	// IsBot is players.is_bot (extract's demoinfocs Player.IsBot). The
-	// analytics pass keeps computing bot rows; the flag rides along so
-	// the REPLAY roster can apply the replay exception (a bot is listed
-	// only while it is filling in for a disconnected human — see
-	// frontend lib/replay/playercard.js presentAt).
+	// analytics pass drops bots from PlayerRounds entirely (ruling
+	// 2026-11-17: no per-round rows for rounds a bot never existed —
+	// every consumer of player_round_stats is per-player-addressed and
+	// no picker can address a bot); the flag rides along so the REPLAY
+	// roster can apply the replay exception (a bot is listed only while
+	// it is filling in for a disconnected human — see frontend
+	// lib/replay/playercard.js presentAt) and so the drop rule has its
+	// input at hand.
 	IsBot bool `json:"isBot"`
 }
 
