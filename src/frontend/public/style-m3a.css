@@ -742,28 +742,42 @@
   gap: 3px;
 }
 
+/* W17 (owner, 2026-11-16): Generate keeps its fixed width — it is a
+   floating cluster member now (below), and the busy label needs the
+   room. */
 .heat-generate {
   min-width: 110px;
 }
 
-/* V8e — positioning context for the floating Save (bottom-right of the
-   card): .panel carries no position of its own, and the rule is scoped
-   to .heat-view so no other panel in the app becomes a containing block. */
+/* V8e — positioning context for the floating CLUSTER (bottom-right of
+   the card): .panel carries no position of its own, and the rule is
+   scoped to .heat-view so no other panel in the app becomes a
+   containing block. */
 .heat-view .panel {
   position: relative;
 }
 
-/* V8e — the floating Save, parked in the card's bottom-right corner once
-   a heatmap exists (Heatmaps gates it on `grid`). It rides ON the card
-   (absolute → out of the panel's flex flow, so the legend/radar/hint rows
-   never shift), above the radar art, with the overlay shadow the floating
-   buttons share (.cmp-float) so it reads as actionable over any map. */
-.heat-save {
+/* W17 (owner, 2026-11-16) — the floating bottom-right CLUSTER replaces
+   .heat-save's own absolute park: Generate rides it from the first
+   render (the card's primary action) and Save image sits to its LEFT
+   once a raster exists (Heatmaps gates it on `grid && heatCanvas`).
+   Absolute → out of the panel's flex flow, so the legend/radar/hint
+   rows never shift; the cluster rides ON the card above the radar art,
+   with the overlay shadow the floating buttons share (.cmp-float) so
+   both read as actionable over any map. */
+.heat-float {
   position: absolute;
   right: 12px;
   bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   z-index: 1;
-  /* opaque over any radar art (the shared .btn background is transparent) */
+}
+
+/* The Save member stays opaque over any radar art (the shared .btn
+   background is transparent). */
+.heat-save {
   background: var(--panel);
   box-shadow: 0 8px 28px var(--overlay-55);
 }

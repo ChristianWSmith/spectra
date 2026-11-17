@@ -257,7 +257,19 @@ const EXPECTED = {
   // heading ('RD7' → '7', same check counts); the KAST `RD{n}` labels
   // KEEP (V7 does not touch the grid) and the kind-toggle row shape
   // survives untouched.
-  'combat.dom.mjs': 95,
+  // combat 95 → 96 (2026-11-16, W17 G5-20 — the Engagements round
+  // scope becomes the sanctioned TokenSelect MULTI-select): section N
+  // re-pinned to SET semantics, 6 → 7 checks — the token field carries
+  // aria-label 'Round' with no visible label left behind, its
+  // suggestions are the canonical RD | score labels with NO "All rounds"
+  // row (the empty set IS all rounds), the default empty set shows
+  // every row, picking RD6 narrows to its kill with the chip reading
+  // back, adding RD7 ORs both rounds in (two chips), removing both
+  // chips returns every row, and the Clutches card carries no round
+  // control (no .tk). Section J re-pinned IN PLACE, same count: the
+  // view now carries NO <select> at all (0, was 1 — the round control
+  // left the select vocabulary) while #comb-round-filter stays.
+  'combat.dom.mjs': 96,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the
@@ -478,7 +490,17 @@ const EXPECTED = {
   // into playable space and IS the drawn rect — maxY ≤ drawn maxY, never
   // ±450). Sections A–H, K–Q untouched; M's onRegion signature pin
   // re-pointed at `value, source` in place.
-  'heatmap-layer.dom.mjs': 100,
+  // heatmap-layer 100 → 101 (2026-11-16, W17 G4-19 — Generate moves to
+  // the floating bottom-right cluster beside Save image): +1 the NEW
+  // V8e cluster-markup pin (Generate always renders OUT of the toolbar,
+  // the gated Save sits to its LEFT, both inside the card); the
+  // positioning CSS pin re-pinned IN PLACE (.heat-float now carries the
+  // `position: absolute; right: 12px; bottom: 10px` park and .heat-save
+  // keeps only the opaque member styling — the old .heat-save park is
+  // pinned ABSENT). Sections A–O, Q untouched; N's toolbar/progress and
+  // busy-label pins stay green by construction (the label expression
+  // moved with the button, unchanged).
+  'heatmap-layer.dom.mjs': 101,
   'landmark-row.dom.mjs': 33,
   // library 167 → 169 (2026-11-15, library-side-color): the score cells
   // and the matchup names were RE-PINNED to the START-side colour rule
@@ -524,7 +546,10 @@ const EXPECTED = {
   // finders were re-pointed — count unchanged; the td.row-actions
   // min-width kept its `calc(` form (value re-derived 11rem + 90px →
   // 3rem + 88px for glyph-only buttons, comment rewritten with it).
-  'library.dom.mjs': 186,
+  // library 186 → 187 (2026-11-16, W17 G4-17): +1 the header Import…
+  // icon pin — the file-add codicon LEADS the label (text pins
+  // unaffected: textContent.trim() still reads "Import…").
+  'library.dom.mjs': 187,
   'map-pack-prompt.dom.mjs': 48,
   'match-picker.dom.mjs': 43,
   'payload-tree.dom.mjs': 21,
@@ -660,7 +685,15 @@ const EXPECTED = {
   // and the GetScoreboard fixture dropped its dead `kda` field. The
   // stale-`raw:kda`-pick contract is pinned in metricorder.test.js
   // (the item universe filters the selection, never the reverse).
-  'reports.dom.mjs': 42,
+  // reports 42 → 44 (2026-11-16, W17 G4-18 — the save button moves to
+  // the stats-inputs line): +2 the NEW section A2 — the stats field and
+  // the button share ONE .row-between with the button at its right end
+  // (the view's only row-between now), and the button leads with the
+  // SAVE codicon, never play. The busy shape ({#if rendering}Generating…
+  // {:else}) is progress-presentation's pin and stays green; the
+  // no-template behavior (the whole appendix block — button included —
+  // is {#if tpl}) is covered by this fixture scripting a template.
+  'reports.dom.mjs': 44,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:
   // renamed card, meta line landed, First kill absence), +2 ribbon pins
@@ -736,7 +769,12 @@ const EXPECTED = {
   // state, Escape closing with focus returned to the trigger, and both
   // formats reaching the save dialog with the JSON carrying every
   // returned row, not just the page on screen).
-  'sqlconsole.dom.mjs': 47,
+  // sqlconsole 47 → 48 (2026-11-16, W17 G2 — the Run button): +1 the
+  // icon-placement pin — codicon-run LEADS the label (the play glyph is
+  // gone), the busy "Running…" branch stays plain text, and the
+  // right-cluster pin (Export then Run, shortcut on Run's title) is
+  // untouched.
+  'sqlconsole.dom.mjs': 48,
   'stat-card.dom.mjs': 12,
   // utility 39 → 41 (2026-11-15, I30 view-aggregate tooltips): +2 — the
   // flash-effectiveness cells' card tooltip and the per-round team-damage
@@ -777,6 +815,15 @@ const EXPECTED = {
   // REWRITTEN in place for the throw origin (paired coordinates render,
   // unpaired/both-zero dash, the stored detonation coordinates never
   // show) — same slot; the H fallback pins stay on the unpaired row.
+  // utility 74 → 74 (2026-11-16, W17 G5-21 — the throw log moves to the
+  // TOP and the summary cards auto-hide): count UNCHANGED, pins
+  // re-pinned IN PLACE — section D's "throw log is the LAST card" pin
+  // became the FIRST-card pin over the order throwlog → damage → blind,
+  // section K's "No blind time…" placeholder pin became the blind
+  // card's ABSENCE (damage chart still drawing) with its restore
+  // re-strengthened (card back + 4 bars), and section I's empty-filter
+  // check gained the both-cards-hide condition (returning with the
+  // clear). Sections A–H, J, L–N keep their counts.
   'utility.dom.mjs': 74,
   'voice-engine.dom.mjs': 7,
 };

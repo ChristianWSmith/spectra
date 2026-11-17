@@ -289,7 +289,12 @@
     });
     let max = 0;
     for (const p of per) max = Math.max(max, p.ct, p.t);
-    return { per, max: max || 1 };
+    // `any` mirrors the blind chart's flag below (W17, owner
+    // 2026-11-16): "empty" for BOTH cards means no DRAWABLE data, so
+    // the card hides entirely instead of rendering its placeholder —
+    // a filter with rounds but no damage among them (e.g. kind=flash)
+    // hides the damage card too, rather than drawing zero-height bars.
+    return { per, max: max || 1, any: max > 0 };
   });
 
   // Blind time per round by THROWER TEAM — the damage series' twin over
@@ -312,10 +317,13 @@
     });
     let max = 0;
     for (const p of per) max = Math.max(max, p.ct, p.t);
-    // `any` separates the two empty states: no rounds at all in the
-    // current filter, and rounds present but no blind time among them
-    // (a Kind filter with no flashes) — both read the one honest
-    // "no blind time" line instead of a chart of zero-height bars.
+    // `any` is the blind card's drawability flag (W17, owner
+    // 2026-11-16): no rounds at all in the current filter, or rounds
+    // present but no blind time among them (a Kind filter with no
+    // flashes) — both mean NO drawable data, so the card hides
+    // entirely (it returns the moment a throw with blind time lands
+    // in the filter) instead of a chart of zero-height bars. The
+    // damage chart's twin flag is damageBars.any above.
     return { per, max: max || 1, any: max > 0 };
   });
 
@@ -363,235 +371,10 @@
   {#if loading}
     <p class="muted" role="status"><StatusChip block detail={S.utility.loadingDetail} /></p>
   {:else}
-    <!-- Summary charts first, the consolidated throw log LAST (the
-         owner's C7 ruling: the card carrying the filters, the count and
-         the round selector is the bottom card). -->
-    <div class="util-summary">
-      <section class="panel util-card-damage">
-        <h2>{S.utility.damagePerRoundHeading}</h2>
-        {#if damageBars.per.length === 0}
-          <p class="muted" role="status">{S.utility.noDamage}</p>
-        {:else}
-          <svg
-            class="util-bars"
-            viewBox="0 0 {barW} {barH}"
-            preserveAspectRatio="none"
-            aria-label={S.utility.barsLabel}
-          >
-            <defs>
-              <!-- The identity STRIPE (the design language's first
-                   striped implementation): a neutral diagonal overlay
-                   painted ONLY over the STRIPED team's bars (STRIPED_KEY
-                   in the script) — hue stays the side color on the bar
-                   beneath (color = side at that round), the stripe
-                   marks the team (pattern = identity). userSpaceOnUse
-                   keeps the tile in bar units; preserveAspectRatio="none"
-                   stretches the viewBox non-uniformly, so the 45° angle
-                   skews a few degrees with the panel's aspect ratio —
-                   accepted and documented, still unambiguously stripes.
-                   The overlay color is the view's --util-stripe token
-                   (style-m3a.css) so the SVG pattern and the legend
-                   dot's CSS twin can never drift apart. -->
-              <pattern
-                id="util-stripe"
-                patternUnits="userSpaceOnUse"
-                width="7"
-                height="7"
-                patternTransform="rotate(45)"
-              >
-                <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
-              </pattern>
-            </defs>
-            {#each damageBars.per as p, i (p.round)}
-              {@const slot = barW / damageBars.per.length}
-              {@const x = i * slot}
-              {@const bw = Math.max(2, slot * 0.32)}
-              {@const hCt = (p.ct / damageBars.max) * (barH - 4)}
-              {@const hT = (p.t / damageBars.max) * (barH - 4)}
-              {@const ctX = x + slot * 0.08}
-              {@const tX = x + slot * 0.08 + bw + 2}
-              <!-- COLOR = the side each team held IN THIS ROUND. The
-                   {" "} between the team and its value is LOAD-BEARING:
-                   Svelte drops a whitespace-only text node between two
-                   expressions inside SVG, so a plain space would render
-                   "Alpha40 damage". -->
-              <rect
-                class="util-bar {barSide(p.round, 'ct')}"
-                x={ctX}
-                y={barH - hCt}
-                width={bw}
-                height={hCt}
-              >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{p.ct}{S.utility.damageSuffix}</title>
-              </rect>
-              {#if STRIPED_KEY === 'ct'}
-                <rect
-                  class="util-bar-stripe"
-                  x={ctX}
-                  y={barH - hCt}
-                  width={bw}
-                  height={hCt}
-                  fill="url(#util-stripe)"
-                  pointer-events="none"
-                />
-              {/if}
-              <rect
-                class="util-bar {barSide(p.round, 't')}"
-                x={tX}
-                y={barH - hT}
-                width={bw}
-                height={hT}
-              >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{p.t}{S.utility.damageSuffix}</title>
-              </rect>
-              {#if STRIPED_KEY === 't'}
-                <rect
-                  class="util-bar-stripe"
-                  x={tX}
-                  y={barH - hT}
-                  width={bw}
-                  height={hT}
-                  fill="url(#util-stripe)"
-                  pointer-events="none"
-                />
-              {/if}
-            {/each}
-          </svg>
-          <div class="util-legend">
-            <!-- The dots are the legend's identity context (named teams,
-                 EconCurve's swatch precedent): they keep the team-
-                 identity colors and carry the STRIPE as the CSS twin of
-                 the bar pattern (style-m3a.css) for whichever team the
-                 bars stripe — labels stay plain text (never patterned
-                 text). -->
-            <span
-              ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
-              >{names.ct}
-              <span class="chip badge-computed">{S.utility.badgeComputed}</span></span
-            >
-            <span
-              ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
-              >{names.t}</span
-            >
-            <span class="muted"
-              title={S.utility.damageTitle}
-              >{S.utility.maxPrefix}{damageBars.max}{S.utility.maxSuffix}</span
-            >
-          </div>
-        {/if}
-      </section>
-
-      <!-- C8: the flash-effectiveness totals card is replaced by the
-           damage chart's comparative twin over blind time — same
-           geometry, same COLOR = side-at-that-round rule, same stripe
-           convention (its own pattern id: two SVGs in one document must
-           never share one). The label is the honest semantics of the
-           stored total: blind time from THIS TEAM's flashes, not an
-           enemy-only figure. -->
-      <section class="panel util-card-blind">
-        <h2>{S.utility.flashPerRoundHeading}</h2>
-        {#if !flashBars.any}
-          <p class="muted" role="status">{S.utility.noFlashTime}</p>
-        {:else}
-          <svg
-            class="util-bars"
-            viewBox="0 0 {barW} {barH}"
-            preserveAspectRatio="none"
-            aria-label={S.utility.flashBarsLabel}
-          >
-            <defs>
-              <pattern
-                id="util-stripe-blind"
-                patternUnits="userSpaceOnUse"
-                width="7"
-                height="7"
-                patternTransform="rotate(45)"
-              >
-                <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
-              </pattern>
-            </defs>
-            {#each flashBars.per as p, i (p.round)}
-              {@const slot = barW / flashBars.per.length}
-              {@const x = i * slot}
-              {@const bw = Math.max(2, slot * 0.32)}
-              {@const hCt = (p.ct / flashBars.max) * (barH - 4)}
-              {@const hT = (p.t / flashBars.max) * (barH - 4)}
-              {@const ctX = x + slot * 0.08}
-              {@const tX = x + slot * 0.08 + bw + 2}
-              <!-- COLOR = the side each team held IN THIS ROUND; the
-                   {" "} is the load-bearing space noted above the
-                   damage chart (Svelte drops a whitespace-only text node
-                   between expressions inside SVG). -->
-              <rect
-                class="util-bar {barSide(p.round, 'ct')}"
-                x={ctX}
-                y={barH - hCt}
-                width={bw}
-                height={hCt}
-              >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{fmtMs(p.ct)}{S.utility.flashSuffix}</title>
-              </rect>
-              {#if STRIPED_KEY === 'ct'}
-                <rect
-                  class="util-bar-stripe"
-                  x={ctX}
-                  y={barH - hCt}
-                  width={bw}
-                  height={hCt}
-                  fill="url(#util-stripe-blind)"
-                  pointer-events="none"
-                />
-              {/if}
-              <rect
-                class="util-bar {barSide(p.round, 't')}"
-                x={tX}
-                y={barH - hT}
-                width={bw}
-                height={hT}
-              >
-                <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{fmtMs(p.t)}{S.utility.flashSuffix}</title>
-              </rect>
-              {#if STRIPED_KEY === 't'}
-                <rect
-                  class="util-bar-stripe"
-                  x={tX}
-                  y={barH - hT}
-                  width={bw}
-                  height={hT}
-                  fill="url(#util-stripe-blind)"
-                  pointer-events="none"
-                />
-              {/if}
-            {/each}
-          </svg>
-          <div class="util-legend">
-            <span
-              ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
-              >{names.ct}</span
-            >
-            <span
-              ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
-              >{names.t}</span
-            >
-            <span class="chip badge-inferred" title={S.utility.inferredTitle}
-              >{S.utility.badgeInferred}</span
-            >
-            <span class="muted"
-              title={S.utility.flashTitle}
-              >{S.utility.maxPrefix}{fmtMs(flashBars.max)}{S.utility.flashMaxSuffix}</span
-            >
-          </div>
-        {/if}
-      </section>
-    </div>
-
-    <!-- ONE consolidated card at the BOTTOM (C7, owner 2026-11-15): the
-         kind/thrower/round filters and the live count moved in here, and
-         the throw list shows ONE round at a time — the round selector
-         preselects the first round with throws and offers "All rounds"
-         (owner answer Q1, 2026-11-16, replacing the per-round
-         show/hide toggle row). It replaces the per-round collapsible
-         cards. -->
+    <!-- The consolidated throw log LEADS the view (owner, 2026-11-16 —
+         this reverses the 2026-11-15 C7 bottom-card ruling): the card
+         carrying the filters, the count and the round selector is the
+         first card now. -->
     <section class="panel util-throwlog">
       <h2>{S.utility.throwLogHeading}</h2>
       <div class="util-filters toolbar">
@@ -700,5 +483,226 @@
         </div>
       {/if}
     </section>
+    <!-- The two summary charts FOLLOW the throw log (owner, 2026-11-16 —
+         this reverses the 2026-11-15 C7 bottom-card ruling) and each
+         card now HIDES ENTIRELY when it has nothing to draw
+         (damageBars.any / flashBars.any — W17): no placeholder line,
+         no chart of zero-height bars. The card returns the moment data
+         appears under the current filter. -->
+    <div class="util-summary">
+      {#if damageBars.any}
+      <section class="panel util-card-damage">
+        <h2>{S.utility.damagePerRoundHeading}</h2>
+        <svg
+          class="util-bars"
+          viewBox="0 0 {barW} {barH}"
+          preserveAspectRatio="none"
+          aria-label={S.utility.barsLabel}
+        >
+          <defs>
+            <!-- The identity STRIPE (the design language's first
+                 striped implementation): a neutral diagonal overlay
+                 painted ONLY over the STRIPED team's bars (STRIPED_KEY
+                 in the script) — hue stays the side color on the bar
+                 beneath (color = side at that round), the stripe
+                 marks the team (pattern = identity). userSpaceOnUse
+                 keeps the tile in bar units; preserveAspectRatio="none"
+                 stretches the viewBox non-uniformly, so the 45° angle
+                 skews a few degrees with the panel's aspect ratio —
+                 accepted and documented, still unambiguously stripes.
+                 The overlay color is the view's --util-stripe token
+                 (style-m3a.css) so the SVG pattern and the legend
+                 dot's CSS twin can never drift apart. -->
+            <pattern
+              id="util-stripe"
+              patternUnits="userSpaceOnUse"
+              width="7"
+              height="7"
+              patternTransform="rotate(45)"
+            >
+              <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
+            </pattern>
+          </defs>
+          {#each damageBars.per as p, i (p.round)}
+            {@const slot = barW / damageBars.per.length}
+            {@const x = i * slot}
+            {@const bw = Math.max(2, slot * 0.32)}
+            {@const hCt = (p.ct / damageBars.max) * (barH - 4)}
+            {@const hT = (p.t / damageBars.max) * (barH - 4)}
+            {@const ctX = x + slot * 0.08}
+            {@const tX = x + slot * 0.08 + bw + 2}
+            <!-- COLOR = the side each team held IN THIS ROUND. The
+                 {" "} between the team and its value is LOAD-BEARING:
+                 Svelte drops a whitespace-only text node between two
+                 expressions inside SVG, so a plain space would render
+                 "Alpha40 damage". -->
+            <rect
+              class="util-bar {barSide(p.round, 'ct')}"
+              x={ctX}
+              y={barH - hCt}
+              width={bw}
+              height={hCt}
+            >
+              <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{p.ct}{S.utility.damageSuffix}</title>
+            </rect>
+            {#if STRIPED_KEY === 'ct'}
+              <rect
+                class="util-bar-stripe"
+                x={ctX}
+                y={barH - hCt}
+                width={bw}
+                height={hCt}
+                fill="url(#util-stripe)"
+                pointer-events="none"
+              />
+            {/if}
+            <rect
+              class="util-bar {barSide(p.round, 't')}"
+              x={tX}
+              y={barH - hT}
+              width={bw}
+              height={hT}
+            >
+              <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{p.t}{S.utility.damageSuffix}</title>
+            </rect>
+            {#if STRIPED_KEY === 't'}
+              <rect
+                class="util-bar-stripe"
+                x={tX}
+                y={barH - hT}
+                width={bw}
+                height={hT}
+                fill="url(#util-stripe)"
+                pointer-events="none"
+              />
+            {/if}
+          {/each}
+        </svg>
+        <div class="util-legend">
+          <!-- The dots are the legend's identity context (named teams,
+               EconCurve's swatch precedent): they keep the team-
+               identity colors and carry the STRIPE as the CSS twin of
+               the bar pattern (style-m3a.css) for whichever team the
+               bars stripe — labels stay plain text (never patterned
+               text). -->
+          <span
+            ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
+            >{names.ct}
+            <span class="chip badge-computed">{S.utility.badgeComputed}</span></span
+          >
+          <span
+            ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
+            >{names.t}</span
+          >
+          <span class="muted"
+            title={S.utility.damageTitle}
+            >{S.utility.maxPrefix}{damageBars.max}{S.utility.maxSuffix}</span
+          >
+        </div>
+      </section>
+      {/if}
+
+      <!-- C8: the flash-effectiveness totals card is replaced by the
+           damage chart's comparative twin over blind time — same
+           geometry, same COLOR = side-at-that-round rule, same stripe
+           convention (its own pattern id: two SVGs in one document must
+           never share one). The label is the honest semantics of the
+           stored total: blind time from THIS TEAM's flashes, not an
+           enemy-only figure. -->
+      {#if flashBars.any}
+      <section class="panel util-card-blind">
+        <h2>{S.utility.flashPerRoundHeading}</h2>
+        <svg
+          class="util-bars"
+          viewBox="0 0 {barW} {barH}"
+          preserveAspectRatio="none"
+          aria-label={S.utility.flashBarsLabel}
+        >
+          <defs>
+            <pattern
+              id="util-stripe-blind"
+              patternUnits="userSpaceOnUse"
+              width="7"
+              height="7"
+              patternTransform="rotate(45)"
+            >
+              <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
+            </pattern>
+          </defs>
+          {#each flashBars.per as p, i (p.round)}
+            {@const slot = barW / flashBars.per.length}
+            {@const x = i * slot}
+            {@const bw = Math.max(2, slot * 0.32)}
+            {@const hCt = (p.ct / flashBars.max) * (barH - 4)}
+            {@const hT = (p.t / flashBars.max) * (barH - 4)}
+            {@const ctX = x + slot * 0.08}
+            {@const tX = x + slot * 0.08 + bw + 2}
+            <!-- COLOR = the side each team held IN THIS ROUND; the
+                 {" "} is the load-bearing space noted above the
+                 damage chart (Svelte drops a whitespace-only text node
+                 between expressions inside SVG). -->
+            <rect
+              class="util-bar {barSide(p.round, 'ct')}"
+              x={ctX}
+              y={barH - hCt}
+              width={bw}
+              height={hCt}
+            >
+              <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{" "}{fmtMs(p.ct)}{S.utility.flashSuffix}</title>
+            </rect>
+            {#if STRIPED_KEY === 'ct'}
+              <rect
+                class="util-bar-stripe"
+                x={ctX}
+                y={barH - hCt}
+                width={bw}
+                height={hCt}
+                fill="url(#util-stripe-blind)"
+                pointer-events="none"
+              />
+            {/if}
+            <rect
+              class="util-bar {barSide(p.round, 't')}"
+              x={tX}
+              y={barH - hT}
+              width={bw}
+              height={hT}
+            >
+              <title>{S.utility.roundTitlePrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{" "}{fmtMs(p.t)}{S.utility.flashSuffix}</title>
+            </rect>
+            {#if STRIPED_KEY === 't'}
+              <rect
+                class="util-bar-stripe"
+                x={tX}
+                y={barH - hT}
+                width={bw}
+                height={hT}
+                fill="url(#util-stripe-blind)"
+                pointer-events="none"
+              />
+            {/if}
+          {/each}
+        </svg>
+        <div class="util-legend">
+          <span
+            ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
+            >{names.ct}</span
+          >
+          <span
+            ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
+            >{names.t}</span
+          >
+          <span class="chip badge-inferred" title={S.utility.inferredTitle}
+            >{S.utility.badgeInferred}</span
+          >
+          <span class="muted"
+            title={S.utility.flashTitle}
+            >{S.utility.maxPrefix}{fmtMs(flashBars.max)}{S.utility.flashMaxSuffix}</span
+          >
+        </div>
+      </section>
+      {/if}
+    </div>
+
   {/if}
 </div>

@@ -660,17 +660,10 @@
   {/if}
 
   <section class="panel">
-    <div class="row-between">
-      <h2>{S.reports.templateAndTarget}</h2>
-      <!-- Save lives with its inputs: template + target pick the scope,
-           this button produces the document they both address and hands
-           it to the save dialog. The busy shape is pinned by
-           progress-presentation.dom.mjs — a save that renders the body
-           first is still "Generating…". -->
-      <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
-        {#if rendering}Generating…{:else}{S.reports.generateReport}<span class="codicon codicon-play"></span>{/if}
-      </button>
-    </div>
+    <!-- The save button is NOT here (W17, owner 2026-11-16): it moved
+         down to the stats-appendix line, beside the field whose picks it
+         exports — see the .row-between around the TokenSelect below. -->
+    <h2>{S.reports.templateAndTarget}</h2>
     {#if docError}
       <!-- The one error slot for render + save (cancel stays silent). -->
       <p class="error" role="alert">{docError}</p>
@@ -774,19 +767,30 @@
       <!-- One field, not N rows: type to search, pick → a chip (the two
            id sets live in `stats`/`rawStats`; TokenSelect renders them
            in the composed sequence — recorded values and metrics
-           interleaved by the one ordering mechanism). -->
-      <TokenSelect
-        id="rep-stats"
-        items={appendixItems}
-        text={itemText}
-        tokens={picked.map((m) => ({ id: m.id, label: itemText(m) }))}
-        placeholder={S.reports.metricHint}
-        ariaLabel={S.reports.metricAria}
-        removeAria={S.reports.removeStatAria}
-        align="start"
-        onselect={addStat}
-        onremove={removeStat}
-      />
+           interleaved by the one ordering mechanism).
+           W17 (owner, 2026-11-16): the save button sits at this line's
+           RIGHT end, beside the field whose picks it exports — it left
+           the panel header. Save icon LEADS the label (it is a save
+           now, never a play), and the busy shape stays plain text —
+           pinned by progress-presentation.dom.mjs: a save that renders
+           the body first is still "Generating…". -->
+      <div class="row-between">
+        <TokenSelect
+          id="rep-stats"
+          items={appendixItems}
+          text={itemText}
+          tokens={picked.map((m) => ({ id: m.id, label: itemText(m) }))}
+          placeholder={S.reports.metricHint}
+          ariaLabel={S.reports.metricAria}
+          removeAria={S.reports.removeStatAria}
+          align="start"
+          onselect={addStat}
+          onremove={removeStat}
+        />
+        <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
+          {#if rendering}Generating…{:else}<span class="codicon codicon-save" aria-hidden="true"></span> {S.reports.generateReport}{/if}
+        </button>
+      </div>
       <!-- The per-picked-stat readout: the honesty line each stat earns
            — expression + row count or STATE chip for a metric (never a
            fabricated number), a static provenance chip for a RECORDED

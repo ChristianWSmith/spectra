@@ -251,22 +251,23 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 # Utility
 
-- **Utility damage per round** — a bar per round, split by thrower team.
-- **Blind time per round** — the same bars for the total blind time each team's flashes applied (marked **inferred**: calculated from the demo's blind events).
-- **The throw log** — one card at the bottom, holding the **Kind**, **Thrower** and **Round** filters with a live *n of m grenades* count. The Round filter shows one round at a time — the first round with throws is selected to keep the log compact — and **All rounds** shows every throw in the filter: kind, thrower, time into the round, damage, total blind time, affected players and the throw coordinates, each with a ▶ that seeks to the throw, loops around it for your loop length, and follows the thrower.
+- **The throw log** — the first card, holding the **Kind**, **Thrower** and **Round** filters with a live *n of m grenades* count. The Round filter shows one round at a time — the first round with throws is selected to keep the log compact — and **All rounds** shows every throw in the filter: kind, thrower, time into the round, damage, total blind time, affected players and the throw coordinates, each with a ▶ that seeks to the throw, loops around it for your loop length, and follows the thrower.
+- **Utility damage per round** — a bar per round, split by thrower team; while the current filter leaves nothing to plot, the card hides itself instead.
+- **Blind time per round** — the same bars for the total blind time each team's flashes applied (marked **inferred**: calculated from the demo's blind events); it hides itself too while the filter carries no blind time, and both cards return as soon as there is something to draw.
 
 # Combat
 
 - **Combat stats** — damage dealt without a kill, kill conversion %, friendly-fire damage, Entry%, Trade%, untraded deaths, missed trades, and KAST% (click KAST% for that player's per-round K/A/T/S grid).
-- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** filter beside them that narrows the list to one round (**All rounds** by default), with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
+- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** field beside them — a type-to-search multi-select whose picked rounds land as chips and combine as OR too, while an empty field (the default) shows every round, with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
 - **Clutches** — the detected 1vN situations (found by counting who is still alive when a side drops to one player), with size, player, outcome, bomb state and HP left; **won** / **lost** toggles filter the list, and ▶ follows the lone player.
 
 # Heatmaps
 
 Pick a **Kind**, choose **Floor** (on multi-floor maps), narrow by **Player**, **Side** and a
-round range, then **Generate** — heatmaps are computed on demand, and changing a control marks
-the one on screen as needing a **Regenerate**. The controls sit on the map card itself, with
-the round options labelled by their scoreline (**RD7 | 4-3**). Kinds are grouped as:
+round range, then press **Generate** — heatmaps are computed on demand, and changing a control marks
+the one on screen as needing a **Regenerate**. The filter controls sit on the map card itself,
+and **Generate** waits in the card's bottom-right corner from the first open onward — beside
+**Save image** once a heatmap exists — with the round options labelled by their scoreline (**RD7 | 4-3**). Kinds are grouped as:
 
 - **Overview** — Presence, Kills, Deaths, Damage and K/D.
 - **Grenade thrown** — one per grenade type.
@@ -455,7 +456,8 @@ export const guideSectionsAfterManual = [
 **Template & target** — pick one of the templates: **Match report**, **Match report (HTML)**,
 **Player report**, **Round report** (plus any a plugin contributes); each card shows its scope
 and format. Then pick the target the template needs — the match, a player, or a round number —
-and press **Save report** (at the top of this panel) to write the document to disk.
+and press **Save report** — beside the stats field further down this panel — to write the
+document to disk.
 
 **Stats appendix** — type into the stats field to search and pick what goes under the report: it
 lands as a highlighted chip in the field, and each picked stat earns a line under the field

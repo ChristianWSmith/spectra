@@ -655,9 +655,10 @@
           {/each}
         </select>
       </div>
-      <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
-        {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
-      </button>
+      <!-- W17 (owner, 2026-11-16): Generate is NOT a toolbar control —
+           it moved out to the floating bottom-right cluster with Save
+           image (see .heat-float at the card's end), visible from the
+           first render so the primary action never hides behind a grid. -->
     </div>
     <!-- The ONE progress widget (StatusChip block mode) — deliberately
          its OWN row beneath the toolbar (now inside the card, travelling
@@ -722,14 +723,24 @@
       </p>
     {/if}
 
-    {#if grid && heatCanvas}
-      <!-- V8e — the floating Save, bottom-right of the card: it hands
-           HeatmapLayer's private composite canvas (radar + overlay — the
-           very pixels on screen, via the onCanvas bridge) to the
-           canonical downloadCanvasPNG. Gated on `grid` so it appears
-           only once a heatmap has been generated — there is nothing to
-           save before Generate. -->
-      <button class="btn heat-save" onclick={saveRaster}>{S.heatmaps.saveImage}</button>
-    {/if}
+    <!-- W17 (owner, 2026-11-16): the floating bottom-right CLUSTER —
+         Generate rides it from the first render (the card's primary
+         action, no grid needed) with Save image to its LEFT once the
+         raster exists (grid && heatCanvas). Save hands HeatmapLayer's
+         private composite canvas (radar + overlay — the very pixels on
+         screen, via the onCanvas bridge) to the canonical
+         downloadCanvasPNG; the cluster is out of the panel's flex flow,
+         so the legend/radar/hint rows never shift either way. -->
+    <div class="heat-float">
+      {#if grid && heatCanvas}
+        <button class="btn heat-save" onclick={saveRaster}
+          ><span class="codicon codicon-save" aria-hidden="true"></span> {S.heatmaps.saveImage}</button
+        >
+      {/if}
+      <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
+        <span class="codicon codicon-play" aria-hidden="true"></span>
+        {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
+      </button>
+    </div>
   </section>
 </div>

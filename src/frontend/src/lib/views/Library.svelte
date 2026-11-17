@@ -747,7 +747,9 @@
 <div class="view" data-file-drop-target>
   <header class="view-header">
     <h1>{S.library.title}</h1>
-    <button class="btn primary" onclick={doImport}>{S.library.importButton}</button>
+    <button class="btn primary" onclick={doImport}
+      ><span class="codicon codicon-file-add" aria-hidden="true"></span> {S.library.importButton}</button
+    >
     <span class="muted">{S.library.dropHint}</span>
     <div class="spacer"></div>
     <!-- The Library's ONLY search controls, sitting where the free-text

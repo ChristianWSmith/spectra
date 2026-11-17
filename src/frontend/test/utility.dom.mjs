@@ -13,11 +13,14 @@
 // (markup + CSS), the retired events button, the icon-only throw ▶ as the
 // row's LEADING cell (tick + the loop-length loop — the `loop_secs` pref,
 // default 5 s — + the thrower as the camera follow — never a filter), the
-// C9 hint-line removal, and the C7 consolidation: ONE bottom card
-// carrying the filters + count, with the round scope in ONE <select> that
-// preselects the first round with throws and offers "All rounds" (owner
-// answer Q1, 2026-11-16 — it replaced the per-round toggle row) whose
-// throw lists render for exactly the round(s) in scope.
+// C9 hint-line removal, and the C7 consolidation: ONE card carrying the
+// filters + count — W17 (owner, 2026-11-16) moved it to the FRONT of
+// the view (reversing C7's bottom-card ruling) and made the two summary
+// charts hide themselves when the filter leaves them nothing to draw —
+// with the round scope in ONE <select> that preselects the first round
+// with throws and offers "All rounds" (owner answer Q1, 2026-11-16 — it
+// replaced the per-round toggle row) whose throw lists render for
+// exactly the round(s) in scope.
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --test test/utility.dom.mjs
@@ -338,14 +341,16 @@ check(
   !$('.util-card-damage .util-legend').querySelector('u, s, strike, del'),
 );
 
-// --- C7: the consolidation ---------------------------------------------
-// The view is now two summary charts on top and ONE throw-log card at the
-// bottom carrying the filters, the count and the ONE round selector. This
-// section pins the new chrome AND doubles as the preamble for every row
-// check below: the selector preselects the first round with throws (the
-// owner's Q1 answer), so the driver switches it to "All rounds" before
-// E…K read every row.
-console.log('D. C7 structure: ONE bottom card, filters + round selector inside, first throwing round preselected');
+// --- C7 as revised by W17: the consolidation ----------------------------
+// The throw-log card (filters, count, ONE round selector) now LEADS the
+// view — owner, 2026-11-16, reversing the 2026-11-15 C7 bottom-card
+// ruling — and the two summary charts follow it, each hiding itself
+// when the filter leaves it nothing to draw. This section pins the new
+// chrome AND doubles as the preamble for every row check below: the
+// selector preselects the first round with throws (the owner's Q1
+// answer), so the driver switches it to "All rounds" before E…K read
+// every row.
+console.log('D. C7/W17 structure: throw log FIRST, charts follow, filters + round selector inside, first throwing round preselected');
 const setSel = async (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -353,14 +358,16 @@ const setSel = async (el, value) => {
 };
 const panels = $$('section.panel');
 check(
-  'exactly three panels: two summary charts + the throw log',
+  'exactly three panels: the throw log + two summary charts',
   panels.length === 3,
   panels.map((p) => p.className).join(' | '),
 );
 check(
-  'the consolidated throw log is the LAST card of the view',
-  panels[panels.length - 1]?.classList.contains('util-throwlog'),
-  panels[panels.length - 1]?.className || 'no panels',
+  'the consolidated throw log is the FIRST card of the view (W17 — the owner moved it)',
+  panels[0]?.classList.contains('util-throwlog') &&
+    panels[1]?.classList.contains('util-card-damage') &&
+    panels[2]?.classList.contains('util-card-blind'),
+  panels.map((p) => p.className).join(' | ') || 'no panels',
 );
 check(
   'the kind, thrower AND round selectors moved INTO the card',
@@ -618,24 +625,27 @@ check(
     (fmax?.textContent || '').includes('max 1.5s blind/round'),
   `${fmax?.getAttribute('title')} :: ${fmax?.textContent}`,
 );
-// Empty state: a filter with no flashes must say so instead of drawing a
-// chart of zero-height bars — while the damage chart keeps drawing.
+// Empty state (W17, owner 2026-11-16): a filter with no blind time
+// HIDES the whole blind card — no placeholder line, no chart of
+// zero-height bars — while the damage chart keeps drawing (kind=he
+// carries damage, so damageBars.any stays true).
 const kindSel = $('#util-kind');
 kindSel.value = 'he';
 kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check(
-  'no blind time in the filter → "No blind time…" while the damage chart still draws',
-  ($('.util-card-blind')?.textContent || '').includes('No blind time in this selection.') &&
+  'no blind time in the filter → the blind card hides entirely (no placeholder line) while the damage chart still draws',
+  !$('.util-card-blind') &&
+    !root.textContent.includes('No blind time in this selection.') &&
     $$('.util-card-damage .util-bar').length > 0,
-  ($('.util-card-blind')?.textContent || '').replace(/\s+/g, ' ').slice(0, 120),
+  `blind=${!!$('.util-card-blind')} damageBars=${$$('.util-card-damage .util-bar').length}`,
 );
 kindSel.value = '';
 kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check(
-  'clearing the filter brings the chart back (4 bars)',
-  $$('.util-card-blind .util-bar').length === 4,
+  'clearing the filter brings the card back (4 bars)',
+  !!$('.util-card-blind') && $$('.util-card-blind .util-bar').length === 4,
   String($$('.util-card-blind .util-bar').length),
 );
 
@@ -663,14 +673,20 @@ check(
 // The ONE empty state: a filter matching nothing. The "turn on a round"
 // line died with the per-round toggle row (owner answer Q1) — the
 // selector's own option list only ever carries throwing rounds, so no
-// selection can empty the list on its own.
+// selection can empty the list on its own. W17 (owner, 2026-11-16): a
+// filter with nothing to plot hides BOTH summary cards entirely (no
+// drawable data = damageBars.any / flashBars.any false) — this is the
+// damage card's hide case, the kind=he case above being the blind
+// card's.
 throwerSel.value = 'C';
 throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check(
-  'no grenades in the filter → its own line, and the retired "Turn on a round" copy never renders',
+  'no grenades in the filter → its own line, both summary cards hide, and the retired "Turn on a round" copy never renders',
   ($('.util-throwlog')?.textContent || '').includes('No grenades match the current filters.') &&
     $$('.util-nade').length === 0 &&
+    !$('.util-card-damage') &&
+    !$('.util-card-blind') &&
     !($('.util-throwlog')?.textContent || '').includes('Turn on a round'),
   ($('.util-throwlog')?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
 );
@@ -678,8 +694,12 @@ throwerSel.value = '';
 throwerSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check(
-  'clearing the filter restores the selector’s options (All rounds + both throwing rounds)',
-  !!roundSel && [...roundSel.options].length === 3 && roundSel.value === '1',
+  'clearing the filter restores the selector’s options AND both summary cards (data is back)',
+  !!roundSel &&
+    [...roundSel.options].length === 3 &&
+    roundSel.value === '1' &&
+    !!$('.util-card-damage') &&
+    !!$('.util-card-blind'),
   roundSel ? `${[...roundSel.options].length} options / value=${roundSel.value}` : 'missing',
 );
 

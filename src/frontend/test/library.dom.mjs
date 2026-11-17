@@ -831,6 +831,18 @@ check('clear button gone', clearBtn().length === 0, String(clearBtn().length));
       (b) => b.textContent.trim() === 'Import…',
     ),
   );
+  // W17 (owner, 2026-11-16): the header Import… carries the file-add
+  // codicon BEFORE its label (the import-dir row's icon-button
+  // precedent) — the visible word is unchanged, so the text pins above
+  // and below stay green; only the glyph's placement is new.
+  check(
+    'header Import… leads with the file-add codicon (icon before the label)',
+    [...document.querySelectorAll('.view-header .btn')].some(
+      (b) =>
+        b.textContent.trim() === 'Import…' &&
+        b.firstElementChild?.classList.contains('codicon-file-add'),
+    ),
+  );
 }
 
 console.log('E. a parsing row: never-extracted presentation, honest date, no navigation');

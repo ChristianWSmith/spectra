@@ -575,7 +575,7 @@
               onclick={run}
               disabled={running || !sql.trim()}
             >
-              {#if running}Running…{:else}Run <span class="codicon codicon-play"></span>{/if}
+              {#if running}Running…{:else}<span class="codicon codicon-run" aria-hidden="true"></span> Run{/if}
             </button>
           </span>
         </div>
