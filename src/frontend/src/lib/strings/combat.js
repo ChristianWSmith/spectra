@@ -1,5 +1,4 @@
-// strings/combat.js — Combat view chrome (stats table, engagements,
-// clutches, the KAST drill dialog)
+// strings/combat.js — Combat view chrome (engagements, clutches)
 // Extracted from views/Combat.svelte (Strings Stage 3, Sweep-B); values
 // are plain strings with {arg} placeholders — compose at the call site
 // with S.fill(S.combat.slot, { arg }).
@@ -16,7 +15,6 @@ export const combat = {
   kastCellTitle: '{def} — click for the per-round K/A/T/S grid',
   noCombatStats: 'No combat stats.',
   noteLead: 'Dotted headers and ',
-  noteTail: ' badges\n        mark stats Spectra calculates rather than reads from the demo — hover for\n        the rule.',
   engagementsHeading: 'Engagements',
   filterEngagementsLabel: 'Filter engagements by kind or round',
   roundFilterLabel: 'Round',

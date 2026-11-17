@@ -1,39 +1,24 @@
 <script>
   import * as S from '../strings/index.js';
-  // Combat tab: per-player damage/trade stats, the engagement deep-dive
+  // Combat tab: the engagement deep-dive
   // (round → time-into-round → killer vs victim → distance in metres —
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
   // traded — share the one row, both chips in its Kind cell; the kind
   // TOGGLES are independent/OR'd and ALL OFF by default = no filter,
   // every row; the round <select> narrows the same list — 'all' by
   // default — and rides the Engagements card only) and the clutches
-  // (won/lost toggle — won ON, lost OFF by default). Every inferred
-  // metric carries the badge with its definition in the title attribute.
+  // (won/lost toggle — won ON, lost OFF by default).
   import {
-    getCombatStats,
     getClutches,
     getEngagements,
-    getPlayerRounds,
     getRounds,
     getScoreboard,
     getMatch,
-    listMetrics,
-    getMetricValuesForMatch,
-    getMetricComputeState,
-    subscribeMetricProgress,
-    onMetricDone,
     getPref,
     errText,
   } from '../services.js';
   import { onMount } from 'svelte';
-  import { fmtInt, fmtPercent, fmtMetric, roundClock } from '../fmt.js';
-  import {
-    metricPresentation,
-    liveMetricState,
-    metricStateTitle,
-    metricProgressFrac,
-    metricProgressStage,
-  } from '../metricstate.js';
+  import { roundClock } from '../fmt.js';
   import {
     replayHash,
     entryLoopSpanAround,
@@ -44,67 +29,18 @@
   import { listedPlayers } from '../players.js';
   import { roundScoreLabel } from '../rounds.js';
   import { roundsByNumber } from '../replay/landmarks.js';
-  import { playerStartClass, playerSideClassAt } from '../teams.js';
+  import { playerSideClassAt } from '../teams.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   import {
-    KAST_DEF,
-    DMG_CONV_DEF,
-    ENTRY_DEF,
-    TRADE_DEF,
-    UNTRADED_DEF,
-    TRADE_OPP_MISSED_DEF,
     ENG_DIST_DEF,
     ENG_KIND_TITLES,
   } from '../definitions.js';
-  import Dialog from '../components/Dialog.svelte';
-  import SortTh from '../components/SortTh.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import TokenSelect from '../components/TokenSelect.svelte';
 
   let { id = 0, nav = () => {} } = $props();
-
-  // The five converted stats are FIXED-SLOT metric columns (design §1.3:
-  // this view is NOT sequenced — the owner named scoreboard and profile
-  // only): same positions as before, values from the ONE canonical
-  // stored read. Their keys are `m:<metric name>` — the metric's STABLE
-  // identity (ids churn on plugin replace) — which also lets the default
-  // statSort below name the KAST slot statically. Missed trades (I14) and
-  // Untraded deaths (I20) joined the set in W2b: both now read the
-  // `missed_trades` / `untraded_deaths` builtin rows (their Go
-  // computation left GetCombatStats with the switch); the header badges
-  // and provenance chips are unchanged — provenance did not move.
-  const STAT_COLS = [
-    { key: 'name', label: 'Player', fmt: (r) => r.name },
-    { key: 'dmgNoKill', label: 'Damage (no kill)', fmt: (r) => fmtInt(r.dmgNoKill) },
-    {
-      key: 'dmgConvPct',
-      label: 'Kill conversion %',
-      fmt: (r) => fmtPercent(r.dmgConvPct),
-      title: DMG_CONV_DEF,
-    },
-    { key: 'ffDamage', label: 'FF', fmt: (r) => fmtInt(r.ffDamage) },
-    { key: 'm:entry_rate', metric: 'entry_rate', label: 'Entry%', title: ENTRY_DEF },
-    { key: 'm:trade_rate_deaths', metric: 'trade_rate_deaths', label: 'Trade%', title: TRADE_DEF },
-    { key: 'm:untraded_deaths', metric: 'untraded_deaths', label: 'Untraded deaths', title: UNTRADED_DEF },
-    {
-      key: 'm:missed_trades',
-      metric: 'missed_trades',
-      label: 'Missed trades',
-      title: TRADE_OPP_MISSED_DEF,
-      badge: TRADE_OPP_MISSED_DEF,
-      inferred: true,
-    },
-    { key: 'm:kast', metric: 'kast', label: 'KAST%', title: KAST_DEF, kast: true },
-  ];
-
-  // The KAST slot's column — the drill-down button and its dialog read
-  // the same fixed entry.
-  const kastCol = STAT_COLS.find((c) => c.kast);
-  // The metric names the five slots resolve through (the catalog lookup
-  // keys the read below).
-  const metricSlots = new Set(STAT_COLS.filter((c) => c.metric).map((c) => c.metric));
 
   // The engagement kinds the backend produces (analytics/engagements.go:
   // opening | trade | traded | untraded — "entry" is deferred, see
@@ -117,7 +53,6 @@
 
   let clutches = $state([]);
   let engagements = $state([]);
-  let stats = $state([]);
   let error = $state('');
   // Rung 3 of the loading ladder: without it every panel below renders as an
   // empty table while the one Promise.all above is in flight — a false
@@ -153,27 +88,21 @@
   // builder lib/replay/landmarks.js roundsByNumber (same as Utility's).
   const rbn = $derived(roundsByNumber(rounds));
 
-  // Per-MATCH color for a name surface (the stats table, the KAST modal
-  // header) — the team's start side, which never changes mid-match.
-  function playerCls(steamId, name) {
-    return playerStartClass(players, sideSwitches, steamId, name);
-  }
-
   // Per-ROUND color for a row that belongs to ONE round (an engagement or
   // a clutch) — the side that player had in that round.
   function playerRoundCls(roundNumber, steamId, name) {
     return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
-  // View-local filter/sort state (kind chips, the round scope, clutch
-  // won/lost, stat sort) restores per match through the process-scoped
+  // View-local filter state (kind chips, the round scope, clutch
+  // won/lost) restores per match through the process-scoped
   // registry (viewstate.svelte.js): the key carries the match id
   // (matchKey), so match A's filters never seed into match B. App's {#if}
   // chain reuses this component when only the id changes (no remount), so
   // ONE combined effect both RE-SEEDS when the key changes and writes
   // through otherwise — self-ordering: the write branch runs only while
   // the key is unchanged, so the old match's values can never land under
-  // the new key. KAST drill-down, busy/error stay transient.
+  // the new key. busy/error stay transient.
   const combDefaults = () => ({
     // Engagements: an ARRAY of active kind toggles — [] (all off) is
     // the no-filter default (every row), not an empty card. A stale
@@ -182,8 +111,8 @@
     engKinds: [],
     // The engagements ROUND scope (owner answer Q2, 2026-11-16; W17
     // multi-select, owner 2026-11-16): an ARRAY of picked rounds on the
-    // Engagements card ONLY — the Clutches card and the KAST
-    // grid/dialog get none (the criterion is that the round picker
+    // Engagements card ONLY — the Clutches card
+    // gets none (the criterion is that the round picker
     // scopes the kill-by-kill list it sits on). [] (the default) is the
     // no-filter value — the kind toggles' all-off rule applies here
     // too: a fresh card shows every row — and a picked set ORs those
@@ -194,9 +123,6 @@
     engRounds: [],
     clutchWon: true,
     clutchLost: false,
-    // The default ordering follows the KAST slot — now a METRIC column
-    // (m:<name> keys), so the default names it statically.
-    statSort: { key: 'm:kast', desc: true },
   });
   const combKey = $derived(matchKey('combat', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
@@ -219,7 +145,6 @@
   // every clutch and both OFF empties the card.
   let clutchWon = $state(combSeed.clutchWon);
   let clutchLost = $state(combSeed.clutchLost);
-  let statSort = $state(combSeed.statSort);
   let combLastKey = combSeed.key;
   $effect(() => {
     const k = combKey;
@@ -236,37 +161,22 @@
       engRounds = s.engRounds;
       clutchWon = s.clutchWon;
       clutchLost = s.clutchLost;
-      statSort = s.statSort;
       return;
     }
-    remember(k, { engKinds, engRounds, clutchWon, clutchLost, statSort });
+    remember(k, { engKinds, engRounds, clutchWon, clutchLost });
   });
-
-  // KAST drill-down modal (per-round K/A/T/S grid).
-  let kastSteam = $state('');
-  let kastName = $state('');
-  // The KAST cell's PRESENTATION when the dialog opened — the header
-  // reads exactly what the column rendered (fresh → the value, a state →
-  // the chip, otherwise the honest dash); the client-side fallback %
-  // (audit N18) died with the metric conversion.
-  let kastPres = $state(null);
-  let kastRows = $state([]);
-  let kastLoading = $state(false);
-  let kastError = $state('');
 
   $effect(() => {
     let live = true;
     Promise.all([
-      getCombatStats(id),
       getClutches(id),
       getEngagements(id, ''),
       getScoreboard(id, 'kills', true).catch(() => []),
       getMatch(id).catch(() => null),
       getRounds(id).catch(() => []),
     ])
-      .then(([cs, cl, en, sb, m, rd]) => {
+      .then(([cl, en, sb, m, rd]) => {
         if (!live) return;
-        stats = listedPlayers(cs) || [];
         clutches = cl || [];
         engagements = en || [];
         players = listedPlayers(sb) || [];
@@ -284,108 +194,6 @@
       });
     return () => (live = false);
   });
-
-  // --- the five converted stat slots: metric-value-backed (W2/W2b) ----
-  // ONE listMetrics → ONE getMetricValuesForMatch for the five seeds →
-  // the compute-state read, composed through THE state machine
-  // (lib/metricstate.js) exactly like Match's scoreboard cells. The
-  // slots are fixed (this view is not sequenced), so a failed read keeps
-  // them on the honest dash behind a dismissible alert — never a
-  // fabricated number, never a silent degradation.
-  let metricByName = $state(new Map()); // metric name → {def, map, unitHasRows, error}
-  let metricStates = $state(new Map());
-  let metricProgress = $state(new Map());
-  let metricReload = $state(0);
-  let metricError = $state('');
-
-  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
-  $effect(() => onMetricDone(() => (metricReload += 1)));
-
-  $effect(() => {
-    id;
-    metricReload; // spectra:metric-done → refetch (the cache flushed)
-    let live = true;
-    metricByName = new Map();
-    metricError = '';
-    listMetrics()
-      .then((defs) => {
-        const picked = (defs || []).filter((d) => metricSlots.has(d.name));
-        if (picked.length === 0) return new Map();
-        const ids = picked.map((d) => d.id);
-        return Promise.all([getMetricValuesForMatch(id, ids), getMetricComputeState()]).then(
-          ([values, states]) => {
-            const byMetric = new Map();
-            for (const v of values || []) {
-              if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
-              byMetric.get(v.metricId).push(v);
-            }
-            const stateById = new Map((states || []).map((s) => [s.metricId, s]));
-            if (live) metricStates = stateById;
-            const out = new Map();
-            for (const def of picked) {
-              const rows = byMetric.get(def.id) || [];
-              out.set(def.name, {
-                def,
-                map: new Map(rows.map((r) => [r.steamId, r])),
-                unitHasRows: rows.length > 0,
-                error: (stateById.get(def.id) || {}).error || '',
-              });
-            }
-            return out;
-          },
-        );
-      })
-      .then((cols) => {
-        if (live) metricByName = cols;
-      })
-      .catch((e) => {
-        if (live) metricError = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  // slot — one fixed metric slot's resolved column data (undefined until
-  // the read lands).
-  function slot(col) {
-    return metricByName.get(col.metric);
-  }
-
-  // slotPres — THE state machine (lib/metricstate.js) over a fixed slot:
-  // the same composition Match's scoreboard cells use, view-local like
-  // PlayerProfile's career cells — the RULE itself is never re-spelled
-  // here. No column data yet → the neutral dash (never a guessed chip
-  // and never a number).
-  function slotPres(col, r) {
-    const mc = slot(col);
-    if (!mc) return metricPresentation('', null, false);
-    const st = liveMetricState(metricProgress, metricStates, mc.def.id);
-    return metricPresentation(st, mc.map.get(r.steamId) || null, mc.unitHasRows);
-  }
-
-  function slotTitle(col, pres) {
-    const mc = slot(col);
-    const name = mc ? mc.def.title || mc.def.name : col.label;
-    if (pres.kind === 'value') return `${name} — sample size n=${pres.n}`;
-    if (pres.kind === 'nodata') return 'no data for this player';
-    return metricStateTitle(pres.state, (mc && mc.error) || '');
-  }
-
-  // slotText — the cell's text half: the stored number through the
-  // metric's format tag, the honest dash, or nothing (a state chip
-  // renders instead).
-  function slotText(col, pres) {
-    if (pres.kind === 'nodata') return '—';
-    if (pres.kind !== 'value') return '';
-    const mc = slot(col);
-    return fmtMetric(pres.value, (mc && mc.def.format) || '');
-  }
-
-  // cellValue — one player's fresh value for a slot's metric (null when
-  // the player has no row: the honest missing that sorts last).
-  function cellValue(mc, r) {
-    const row = mc.map.get(r.steamId);
-    return row && Number.isFinite(row.value) ? row.value : null;
-  }
 
   // ONE rendered row per KILL. analytics/engagements.go emits up to
   // FOUR rows for a single kill event — opening / trade / traded /
@@ -477,40 +285,6 @@
     engRounds = engRounds.includes(n) ? engRounds.filter((x) => x !== n) : [...engRounds, n];
   }
 
-  const sortedStats = $derived.by(() => {
-    const { key, desc } = statSort;
-    const rows = [...stats];
-    rows.sort((a, b) => {
-      if (key.startsWith('m:')) {
-        // The metric slots sort client-side with NULLS LAST (the m:
-        // pattern from Match's scoreboard): a player with no fresh row
-        // for the metric always lands after one with a value.
-        const mc = metricByName.get(key.slice(2));
-        const va = mc ? cellValue(mc, a) : null;
-        const vb = mc ? cellValue(mc, b) : null;
-        if (va == null && vb == null) return 0;
-        if (va == null) return 1;
-        if (vb == null) return -1;
-        return desc ? vb - va : va - vb;
-      }
-      const av = a[key];
-      const bv = b[key];
-      let c;
-      if (typeof av === 'string' || typeof bv === 'string') {
-        c = String(av ?? '').localeCompare(String(bv ?? ''));
-      } else {
-        c = (av ?? 0) - (bv ?? 0);
-      }
-      return desc ? -c : c;
-    });
-    return rows;
-  });
-
-  function toggleStatSort(key) {
-    if (statSort.key === key) statSort = { key, desc: !statSort.desc };
-    else statSort = { key, desc: true };
-  }
-
   // Deep link into the replay at a tick, with an optional entry-only
   // ?loop= range stamped beside it (undefined = none): the loop length
   // around an engagement tick (singular event), the clutch's kill-span
@@ -597,45 +371,6 @@
     }
     return entryLoopSpanAround(c.startTick, c.endTick, tickRate, loopSecs);
   }
-
-  // KAST% cell click → per-round K/A/T/S grid for that player. The modal
-  // header shows THIS row's KAST slot presentation — the exact thing the
-  // column renders — so the two can never disagree; the per-round grid
-  // below is the breakdown behind it.
-  async function openKast(row) {
-    kastSteam = row.steamId;
-    kastName = row.name;
-    kastPres = slotPres(kastCol, row);
-    kastRows = [];
-    kastError = '';
-    kastLoading = true;
-    try {
-      const rows = await getPlayerRounds(id, row.steamId);
-      kastRows = (rows || []).slice().sort((a, b) => a.round - b.round);
-    } catch (e) {
-      kastError = errText(e);
-    } finally {
-      kastLoading = false;
-    }
-  }
-
-  function closeKast() {
-    kastSteam = '';
-    kastPres = null;
-    kastRows = [];
-    kastError = '';
-  }
-
-  function kastDotTitle(r, part) {
-    const bits = [
-      `round ${r.round}`,
-      `${r.kills}K/${r.assists}A/${r.deaths}D`,
-      r.traded ? 'traded' : null,
-      r.survived ? 'survived' : null,
-      r.kast ? 'KAST' : 'not KAST',
-    ];
-    return `${bits.filter(Boolean).join(' · ')} — ${part}`;
-  }
 </script>
 
 <div class="view comb-view">
@@ -649,111 +384,12 @@
   {/if}
 
   {#if loading}
-    <!-- All three panels below come from ONE Promise.all: until it
+    <!-- Both panels below come from ONE Promise.all: until it
          settles, empty tables would be a false "no data" state — rung 3
          of the loading ladder (the bare fallback's centered spinner +
          details underneath, transient). -->
     <p class="muted" role="status"><StatusChip block detail={S.combat.loadingDetail} /></p>
   {:else}
-    {#if metricError}
-      <!-- The metric read failed: the five fixed slots keep rendering
-           the honest dash behind it (never a fabricated number), and the
-           failure itself is dismissible in place (house rule). -->
-      <p class="error" role="alert">
-        {S.combat.metricErrorLead}{metricError}
-        <button class="btn small" aria-label={S.combat.dismissMetricError} onclick={() => (metricError = '')}>
-          <span class="codicon codicon-close"></span>
-        </button>
-      </p>
-    {/if}
-    <section class="panel comb-sec">
-      <h2>{S.combat.combatStatsHeading}</h2>
-      <!-- A metric slot's state chip (processing / failed / behind) —
-           the five-state presentation's markup half; the RULE lives in
-           lib/metricstate.js. Rendered inside the slot's cell (the KAST
-           slot wraps it in its drill-down button). -->
-      {#snippet metricChip(col, pres)}
-        <StatusChip
-          status={pres.state}
-          title={slotTitle(col, pres)}
-          progress={metricProgressFrac(metricProgress, slot(col)?.def.id)}
-          stage={metricProgressStage(metricProgress, slot(col)?.def.id)}
-        />
-      {/snippet}
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              {#each STAT_COLS as col (col.key)}
-                <SortTh
-                  label={col.label}
-                  cls={col.title ? 'num def' : 'num'}
-                  title={col.title || ''}
-                  active={statSort.key === col.key}
-                  desc={statSort.desc}
-                  onclick={() => toggleStatSort(col.key)}
-                >
-                  {#if col.inferred}
-                    <span class="chip badge-inferred" title={col.badge}>{S.combat.badgeInferred}</span>
-                  {/if}
-                </SortTh>
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each sortedStats as r (r.steamId)}
-              <tr>
-                {#each STAT_COLS as col (col.key)}
-                  {#if col.key === 'name'}
-                    <td>
-                      <ProfileLink
-                        steam={r.steamId}
-                        name={r.name}
-                        {nav}
-                        cls={playerCls(r.steamId, r.name)}
-                        title={S.combat.openPlayerProfile}
-                      />
-                    </td>
-                  {:else if col.metric}
-                    <!-- Metric-value-backed fixed slot: the same
-                         five-state presentation as Match's scoreboard
-                         cells (value / honest dash / state chip). -->
-                    {@const pres = slotPres(col, r)}
-                    {#if col.kast}
-                      <td class="num">
-                        <button
-                          class="comb-kast-btn"
-                          title={S.fill(S.combat.kastCellTitle, { def: KAST_DEF })}
-                          onclick={() => openKast(r)}
-                          >{slotText(col, pres)}{#if pres.kind === 'chip'}{@render metricChip(col, pres)}{/if}</button
-                        >
-                      </td>
-                    {:else}
-                      <td class="num" title={slotTitle(col, pres)}
-                        >{slotText(col, pres)}{#if pres.kind === 'chip'}{@render metricChip(col, pres)}{/if}</td
-                      >
-                    {/if}
-                  {:else}
-                    <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
-                  {/if}
-                {/each}
-              </tr>
-            {:else}
-              <!-- Honesty gate: a FAILED load must not claim the match
-                   has no combat stats (the error above says why nothing
-                   is here); the claim returns once error is cleared. -->
-              {#if !error}
-                <tr><td colspan={STAT_COLS.length} class="muted">{S.combat.noCombatStats}</td></tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <p class="muted comb-note">
-        {S.combat.noteLead}<span class="chip badge-inferred">{S.combat.badgeInferred}</span>{S.combat.noteTail}
-      </p>
-    </section>
-
     <section class="panel comb-sec">
       <h2>{S.combat.engagementsHeading}</h2>
       <div class="comb-kinds" role="group" aria-label={S.combat.filterEngagementsLabel}>
@@ -766,7 +402,7 @@
           >{k}</button>
         {/each}
         <!-- The ONE round scope (owner answer Q2): Engagements only —
-             the Clutches card and the KAST grid/dialog carry none. W17
+             the Clutches card carries none. W17
              (owner, 2026-11-16): the single <select> became the
              sanctioned TokenSelect MULTI-select — picked rounds land as
              chips in the field (type to search the canonical
@@ -967,62 +603,4 @@
       {/if}
     </section>
   {/if}
-
-  <Dialog open={!!kastSteam} label={S.fill(S.combat.kastDialogTitle, { name: kastName })} panelClass="wide" onClose={closeKast}>
-    <div class="row-between">
-      <h2>
-        {S.combat.kastHeading}
-        <ProfileLink
-          steam={kastSteam}
-          name={kastName}
-          {nav}
-          cls={playerCls(kastSteam, kastName)}
-          title={S.fill(S.combat.openProfile, { name: kastName })}
-        />
-      </h2>
-      <button class="btn small" aria-label={S.combat.closeLabel} onclick={closeKast}><span class="codicon codicon-close"></span></button>
-    </div>
-    <p class="muted" title={KAST_DEF}>
-      {#if kastRows.length > 0}
-        <!-- The SAME presentation the KAST cell rendered when the dialog
-             opened: fresh → the value, a state → the chip, otherwise the
-             honest dash. The client-side fallback % (audit N18) is gone
-             with the metric conversion. -->
-        {#if kastPres && kastPres.kind === 'value'}
-          {fmtMetric(kastPres.value, (slot(kastCol) && slot(kastCol).def.format) || 'percent')}
-          {S.combat.kastOverPrefix}{kastRows.length}{S.combat.kastSuffix}
-        {:else if kastPres && kastPres.kind === 'chip'}
-          <StatusChip
-            status={kastPres.state}
-            title={metricStateTitle(kastPres.state, (slot(kastCol) && slot(kastCol).error) || '')}
-          />
-          {S.combat.kastOverPrefix}{kastRows.length}{S.combat.kastSuffix}
-        {:else}
-          {S.combat.kastElsePrefix}{kastRows.length}{S.combat.kastSuffix}
-        {/if}
-      {/if}
-      {S.combat.kastLegend}
-    </p>
-    {#if kastError}
-      <p class="error" role="alert">{kastError}</p>
-    {:else if kastLoading}
-      <p class="muted" role="status"><StatusChip block detail={S.combat.loading} /></p>
-    {:else}
-      <div class="comb-kast-grid">
-        {#each kastRows as r (r.round)}
-          <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, S.combat.kastDotAll)}>
-            <span class="mono comb-round-n">RD{r.round}</span>
-            <span class="comb-dots">
-              <span class="comb-dot" class:on={r.kills > 0} title={kastDotTitle(r, 'kill')}>K</span>
-              <span class="comb-dot" class:on={r.assists > 0} title={kastDotTitle(r, 'assist')}>A</span>
-              <span class="comb-dot" class:on={r.traded} title={kastDotTitle(r, 'traded')}>T</span>
-              <span class="comb-dot" class:on={r.survived} title={kastDotTitle(r, 'survived')}>S</span>
-            </span>
-          </div>
-        {:else}
-          <p class="muted" role="status">{S.combat.noKastRows}</p>
-        {/each}
-      </div>
-    {/if}
-  </Dialog>
 </div>

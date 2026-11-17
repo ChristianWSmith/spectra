@@ -157,7 +157,6 @@ const PREFIX_EXEMPT = {
 // tooltip, footnote or in-place explanatory note, never as a label.
 const HINT_KEYS = {
   'builder.headNoteScopes': 'in-form note under the scope picker — a footnote explaining scope granularity',
-  'combat.noteTail': 'footnote tail under the calculated-badges legend',
   'common.mapPackNotFoundIntro': 'asset-prompt explanatory copy — the paragraph guiding the no-radar decision',
   'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
   'common.mapPackFoundIntro': 'asset-prompt explanatory copy — the paragraph listing what extraction reads',

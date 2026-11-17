@@ -151,8 +151,7 @@ label.filt-lab {
    visible "Round" label rides the control's aria-label (W7), so this
    wrapper carries no label element — it only keeps the field a
    shrink-to-fit flex item beside the toggles. The Clutches card's
-   .comb-kinds row deliberately has none. NOT `.comb-round`: that class
-   is the KAST grid's per-round cell (below) and must stay untouched. */
+   .comb-kinds row deliberately has none. */
 .comb-round-filter {
   display: inline-flex;
   align-items: center;
@@ -211,80 +210,6 @@ label.filt-lab {
   text-decoration: none;
   cursor: default;
   opacity: 1;
-}
-
-.comb-kast-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-
-.comb-kast-btn:hover {
-  color: #ffc955;
-}
-
-.comb-note {
-  font-size: 0.82em;
-}
-
-/* KAST per-round modal — backdrop/panel come from Dialog.svelte
-   (.dlg-back / .dlg-panel.wide in style.css). */
-
-.comb-kast-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.comb-round {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 5px 7px;
-  min-width: 64px;
-  background: var(--inset);
-}
-
-.comb-round.kast {
-  border-color: var(--accent-50);
-}
-
-.comb-round-n {
-  font-size: 0.75em;
-  color: var(--muted);
-}
-
-.comb-dots {
-  display: flex;
-  gap: 3px;
-}
-
-.comb-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  font-size: 0.6em;
-  font-weight: 600;
-  background: var(--divider);
-  color: var(--muted);
-  cursor: help;
-}
-
-.comb-dot.on {
-  background: var(--accent);
-  color: #1a160a;
 }
 
 /* --- Player profile (prof-) ---------------------------------------------- */
@@ -1025,11 +950,6 @@ label.filt-lab {
 /* No dark base rule: light-only hover affordance. */
 [data-theme="light"] .cp-item:hover {
   background: var(--list-hover);
-}
-
-/* Base uses --divider; light swaps to the softer --inset wash. */
-[data-theme="light"] .comb-dot {
-  background: var(--inset);
 }
 
 [data-theme="light"] .dlg-panel {

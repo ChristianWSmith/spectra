@@ -7,7 +7,6 @@
     getScoreboard,
     getRounds,
     getWarnings,
-    getCombatStats,
     getRoundClasses,
     getEconomy,
     getClutches,
@@ -193,7 +192,7 @@
   // fetched here — only warmed through the analytics warm below.
   // The per-player KAST path (combatBySteam + its fetch + the combatError
   // panel) died with the dogfooding conversion (W2) — KAST% is a pinned
-  // metric column now (the Combat tab still warms getCombatStats below).
+  // metric column now.
   // Rounds-tab compare picker: round numbers (max 4).
   let compareSel = $state(selSeed.compareSel);
   // The scoreboard's transposed shape (owner C14) — registry-owned and
@@ -342,7 +341,6 @@
     void Promise.allSettled([
       getEconomy(mid),
       getRoundClasses(mid),
-      getCombatStats(mid),
       getClutches(mid),
       getEngagements(mid, ''),
       getUtility(mid),
