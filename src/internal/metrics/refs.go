@@ -89,10 +89,44 @@ func DistinctNames(refs []MetricRef) []string {
 // outdated upstream drops the dependent's row (INNER — absent = unknown,
 // never 0; design §2).
 type RefTarget struct {
-	ID          int64
-	Scope       string
+	ID    int64
+	Scope string
+	// Subject is the referenced metric's declared subject (metrics
+	// expansion §3 — player | match | team; "" reads as the historical
+	// player default): it decides the ref join's subject_key key and
+	// gates the §3.1 containment rule (the SERVICE fills it from the
+	// catalog row, beside Scope).
+	Subject     string
 	Version     int
 	RuleVersion int
+}
+
+// refSubjectContained is THE subject × subject ref rule (metrics
+// expansion §3.1 key containment): the DEPENDENT's stored row key must
+// supply every key column of the dependency's row key, so a reference
+// may point at the same subject or one the reading metric's rows
+// already pinpoint:
+//
+//	ref player   only a player dependent (its subject key IS a SteamID64)
+//	ref match    any dependent (every stored key carries match_id — a
+//	             CAREER dependent is additionally refused by the save's
+//	             cross-scope rule: match_id 0 pins no match)
+//	ref team     only a team dependent (only its key carries the team)
+//
+// Both the compile-time join refusal (compile.go) and the save-time
+// validation (metricservice resolveRefs) read this ONE spelling; their
+// messages differ only in copy style (positioned ExprError vs the
+// §3.1 service copy).
+func RefSubjectContained(depSubject, refSubject string) bool {
+	switch refSubject {
+	case "player":
+		return depSubject == "player"
+	case "match":
+		return true
+	case "team":
+		return depSubject == "team"
+	}
+	return false
 }
 
 // RenameRefs rewrites expr's metric('old') literals to metric('new')

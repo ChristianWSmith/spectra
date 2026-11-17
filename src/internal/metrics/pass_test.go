@@ -19,7 +19,7 @@ import (
 func TestCompilePassMatchAddressMode(t *testing.T) {
 	// Single-source batch: unqualified leading address column, grouped
 	// by (mid, grp), NO scope predicate (one statement, whole library).
-	plan, perr := CompilePassMatch("from events: count()", "", nil)
+	plan, perr := CompilePassMatch("from events: count()", "", Address{}, nil)
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
@@ -41,7 +41,7 @@ func TestCompilePassMatchAddressMode(t *testing.T) {
 
 	// Joined source: the address column is primary-qualified (the join
 	// forces qualification — match_id is ambiguous across sources).
-	joined, perr := CompilePassMatch("from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", "", nil)
+	joined, perr := CompilePassMatch("from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", "", Address{}, nil)
 	if perr != nil {
 		t.Fatalf("compile joined: %v", perr)
 	}
@@ -51,7 +51,7 @@ func TestCompilePassMatchAddressMode(t *testing.T) {
 
 	// Match denominator: the SAME match count, correlated on the row's
 	// match — primary-qualified (the shadowing guard) and never bound.
-	denom, perr := CompilePassMatch("from events: count()", "rounds", nil)
+	denom, perr := CompilePassMatch("from events: count()", "rounds", Address{}, nil)
 	if perr != nil {
 		t.Fatalf("compile denom: %v", perr)
 	}
@@ -64,7 +64,7 @@ func TestCompilePassMatchAddressMode(t *testing.T) {
 
 	// Percentile: the RAW fetch carries the same leading address column
 	// (the pass partitions (match_id, subject)).
-	pctl, perr := CompilePassMatch("from events: percentile(0.95, dmg)", "", nil)
+	pctl, perr := CompilePassMatch("from events: percentile(0.95, dmg)", "", Address{}, nil)
 	if perr != nil {
 		t.Fatalf("compile percentile: %v", perr)
 	}
@@ -81,7 +81,7 @@ func TestCompilePassMatchAddressMode(t *testing.T) {
 // MatchAddress false and their exact shapes — the pass-only mode must
 // not leak into RunPreview's statements.
 func TestCompileRefsPreviewShapesUnchanged(t *testing.T) {
-	scoped, perr := Compile("from events: count()", "", "match:7")
+	scoped, perr := Compile("from events: count()", "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("compile scoped: %v", perr)
 	}
@@ -95,7 +95,7 @@ func TestCompileRefsPreviewShapesUnchanged(t *testing.T) {
 		t.Errorf("scoped args = %v, want [7]", scoped.Args)
 	}
 
-	library, perr := Compile("from events: count()", "", "")
+	library, perr := Compile("from events: count()", "", "", Address{})
 	if perr != nil {
 		t.Fatalf("compile library: %v", perr)
 	}
@@ -113,7 +113,7 @@ func TestCompileRefsPreviewShapesUnchanged(t *testing.T) {
 // the equivalence test's stored rows key on (match_id, subject)).
 func TestBatchedExecutionRowShape(t *testing.T) {
 	st := seededStore(t)
-	plan, perr := CompilePassMatch("from events: count()", "", nil)
+	plan, perr := CompilePassMatch("from events: count()", "", Address{}, nil)
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}

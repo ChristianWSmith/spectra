@@ -47,10 +47,12 @@ import (
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
-	Group string  `json:"group"` // group key ("" for none)
-	Label string  `json:"label"` // display name (player name etc when resolvable)
-	Value float64 `json:"value"`
-	N     int     `json:"n"` // sample size behind the value (PRD §5.16)
+	MatchID int64   `json:"matchId"` // the row's match address (team-subject rows at library scope; 0 otherwise)
+	Group   string  `json:"group"`   // subject key ("" for none)
+	Dim     string  `json:"dim"`     // partition value ("" = unpartitioned)
+	Label   string  `json:"label"`   // display name (player name etc when resolvable)
+	Value   float64 `json:"value"`
+	N       int     `json:"n"` // sample size behind the value (PRD §5.16)
 }
 
 // MetricPreview is a preview response. Metric is models.MetricRow — the
@@ -202,7 +204,7 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 //
 // Returns (*ParseError, nil) for parse/resolution failures (the ExprError
 // contract — positioned) and (nil, err) for store failures.
-func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, known map[string]metrics.RefTarget) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
+func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope, dependentSubject string, known map[string]metrics.RefTarget) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
 	found := metrics.MetricRefs(spec)
 	if len(found) == 0 {
 		return map[string]metrics.RefTarget{}, nil, nil
@@ -232,7 +234,7 @@ func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, k
 			if err != nil {
 				return nil, nil, err
 			}
-			t = metrics.RefTarget{ID: row.ID, Scope: row.Scope, Version: row.Version}
+			t = metrics.RefTarget{ID: row.ID, Scope: row.Scope, Subject: row.Subject, Version: row.Version}
 			out[r.Name] = t
 		}
 		// Cross-scope rule (design §2): a PROFILE metric may read a
@@ -247,6 +249,21 @@ func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, k
 				"metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
 				r.Name)
 		}
+		// Subject × subject rule (metrics expansion §3.1): the
+		// DEPENDENT's subject key must contain the referenced metric's
+		// — the SAME containment the compile's join refusal spells
+		// (metrics.RefSubjectContained), in the save's message style.
+		// An empty dependent subject is authoring state (a draft), same
+		// as the empty scope above — the save always has both.
+		refSubject := t.Subject
+		if refSubject == "" {
+			refSubject = "player"
+		}
+		if dependentSubject != "" && !metrics.RefSubjectContained(dependentSubject, refSubject) {
+			return nil, nil, fmt.Errorf(
+				"metric '%s' is %s-subject and cannot be used inside a %s-subject metric (a reference's subject must be contained by the reading metric's subject)",
+				r.Name, refSubject, dependentSubject)
+		}
 		t.RuleVersion = cfg.RuleVersion
 		out[r.Name] = t
 	}
@@ -255,12 +272,12 @@ func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, k
 
 // resolveRefsExpr is resolveRefs over an expression string (parse first)
 // — the shape PreviewMetric and ValidateExpr need.
-func (s *MetricsService) resolveRefsExpr(expr, dependentScope string) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
+func (s *MetricsService) resolveRefsExpr(expr, dependentScope, dependentSubject string) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
 	spec, perr := metrics.Parse(expr)
 	if perr != nil {
 		return nil, perr, nil
 	}
-	return s.resolveRefs(spec, dependentScope, nil)
+	return s.resolveRefs(spec, dependentScope, dependentSubject, nil)
 }
 
 // checkMetricCycle walks {existing metric_deps edges} ∪ {the saved
@@ -347,6 +364,28 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if m.Scope != "match" && m.Scope != "profile" {
 		return models.MetricRow{}, fmt.Errorf("unknown scope %q (valid: match, profile)", m.Scope)
 	}
+	// Subject × partition (metrics expansion §3.1/§3.2): the addressing
+	// vocabulary validates beside Scope/Format with the same friendly
+	// shape, an omitted subject reads as the DDL default ("player" —
+	// rows that predate the field), and the matrix's INVALID
+	// combinations get their own message (plan §3.1: rejected at save
+	// time; the career case additionally refuses at compile time, so a
+	// swept row can never exist either way).
+	m.Subject = strings.TrimSpace(m.Subject)
+	if m.Subject == "" {
+		m.Subject = "player"
+	}
+	if m.Subject != "player" && m.Subject != "match" && m.Subject != "team" {
+		return models.MetricRow{}, fmt.Errorf("unknown subject %q (valid: player, match, team)", m.Subject)
+	}
+	m.Partition = strings.TrimSpace(m.Partition)
+	if m.Partition != "" && m.Partition != "side" && m.Partition != "map" && m.Partition != "weapon" {
+		return models.MetricRow{}, fmt.Errorf("unknown partition %q (valid: side, map, weapon, or none)", m.Partition)
+	}
+	if m.Scope == "profile" && m.Subject != "player" {
+		return models.MetricRow{}, fmt.Errorf(
+			"a %s-subject metric can't be profile-scoped (a match or team has no career — pick match scope)", m.Subject)
+	}
 	// API path: origin forced to user; plugin rows are the loader's
 	// territory (platform_store.ReplacePluginMetrics) and cannot be
 	// created or hijacked through here.
@@ -402,21 +441,24 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 		ownVersion = existing.Version
 	}
 	known := map[string]metrics.RefTarget{
-		m.Name: {ID: m.ID, Scope: m.Scope, Version: ownVersion},
+		m.Name: {ID: m.ID, Scope: m.Scope, Subject: m.Subject, Version: ownVersion},
 	}
-	// Reference resolution: existence + the cross-scope rule, and the
-	// targets Compile binds into the ref joins.
-	refs, perr, err := s.resolveRefs(spec, m.Scope, known)
+	// Reference resolution: existence + the cross-scope and subject ×
+	// subject rules, and the targets Compile binds into the ref joins.
+	refs, perr, err := s.resolveRefs(spec, m.Scope, m.Subject, known)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
 	if perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
-	// Validate expression (+denominator) BEFORE any write. CompileRefs
-	// also enforces the player anchor (a primary without a subject is
-	// rejected), so a player-less definition never lands.
-	if _, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", refs); perr != nil {
+	// Validate expression (+denominator + addressing) BEFORE any write.
+	// CompileRefs enforces the subject anchor (a primary without one is
+	// rejected), the subject × scope matrix (profile is player-only) and
+	// the partition column rule, so a definition that could never
+	// compute never lands.
+	addr := metrics.Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
+	if _, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", addr, refs); perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
 	depNames := metrics.DistinctNames(metrics.MetricRefs(spec))
@@ -450,14 +492,15 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 				if perr != nil {
 					return models.MetricRow{}, exprErrorErr(perr)
 				}
-				depRefs, perr, err := s.resolveRefs(depSpec, dep.Scope, known)
+				depRefs, perr, err := s.resolveRefs(depSpec, dep.Scope, dep.Subject, known)
 				if err != nil {
 					return models.MetricRow{}, err
 				}
 				if perr != nil {
 					return models.MetricRow{}, exprErrorErr(perr)
 				}
-				if _, perr := metrics.CompileRefs(newExpr, dep.Denominator, "", depRefs); perr != nil {
+				depAddr := metrics.Address{Subject: dep.Subject, Partition: dep.Partition, Profile: dep.Scope == "profile"}
+				if _, perr := metrics.CompileRefs(newExpr, dep.Denominator, "", depAddr, depRefs); perr != nil {
 					return models.MetricRow{}, exprErrorErr(perr)
 				}
 				rewrites = append(rewrites, store.DependentRewrite{
@@ -550,25 +593,33 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 // literals — Preview.DisplaySQL); the run itself used the binds.
 func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limit int) (MetricPreview, error) {
 	var (
-		def      metrics.Def
-		echo     models.MetricRow
-		depScope string // the dependent's stored scope ("" for a draft)
+		def        metrics.Def
+		echo       models.MetricRow
+		depScope   string // the dependent's stored scope ("" for a draft)
+		depSubject string // the dependent's stored subject ("" for a draft)
 	)
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
 			return MetricPreview{}, err
 		}
-		def = metrics.Def{Expr: full.Expr, Denominator: full.Denominator}
+		def = metrics.Def{
+			Expr: full.Expr, Denominator: full.Denominator,
+			Subject: full.Subject, Partition: full.Partition,
+			Profile: full.Scope == "profile",
+		}
 		echo = full
 		depScope = full.Scope
+		depSubject = full.Subject
 	} else {
 		// Ad-hoc expression: no denominator (rates are a property of the
-		// saved definition); the subject addressing is the engine's.
+		// saved definition); the subject addressing is the engine's — a
+		// draft previews as the player default (the Builder's subject
+		// control lands with the partition plumbing).
 		def = metrics.Def{Expr: expr}
 		echo = models.MetricRow{ID: id, Expr: expr}
 	}
-	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope)
+	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope, depSubject)
 	if err != nil {
 		return MetricPreview{}, err
 	}
@@ -587,7 +638,7 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 	}
 	rows := make([]MetricPreviewRow, len(pv.Rows))
 	for i, r := range pv.Rows {
-		rows[i] = MetricPreviewRow{Group: r.Group, Label: r.Label, Value: r.Value, N: r.N}
+		rows[i] = MetricPreviewRow{MatchID: r.MatchID, Group: r.Group, Dim: r.Dim, Label: r.Label, Value: r.Value, N: r.N}
 	}
 	return MetricPreview{
 		Metric: echo, Rows: rows, MS: pv.MS, SQL: pv.DisplaySQL(), Truncated: pv.Truncated,
@@ -637,20 +688,26 @@ func (s *MetricsService) GetMetricValuesForPlayer(steamID string, metricIDs []in
 // than inlined wrong.
 func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (string, error) {
 	var (
-		def      metrics.Def
-		depScope string // the dependent's stored scope ("" for a draft)
+		def        metrics.Def
+		depScope   string // the dependent's stored scope ("" for a draft)
+		depSubject string // the dependent's stored subject ("" for a draft)
 	)
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
 			return "", err
 		}
-		def = metrics.Def{Expr: full.Expr, Denominator: full.Denominator}
+		def = metrics.Def{
+			Expr: full.Expr, Denominator: full.Denominator,
+			Subject: full.Subject, Partition: full.Partition,
+			Profile: full.Scope == "profile",
+		}
 		depScope = full.Scope
+		depSubject = full.Subject
 	} else {
 		def = metrics.Def{Expr: expr}
 	}
-	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope)
+	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope, depSubject)
 	if err != nil {
 		return "", err
 	}
@@ -658,7 +715,8 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 		return "", exprErrorErr(perr)
 	}
 	def.Refs = refs
-	plan, perr := metrics.CompileRefs(def.Expr, def.Denominator, scope, def.Refs)
+	plan, perr := metrics.CompileRefs(def.Expr, def.Denominator, scope,
+		metrics.Address{Subject: def.Subject, Partition: def.Partition, Profile: def.Profile}, def.Refs)
 	if perr != nil {
 		return "", exprErrorErr(perr)
 	}
@@ -675,14 +733,14 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 // carries no scope argument (a draft's scope is authoring state), so
 // that definition-level rule stays with the save.
 func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
-	refs, perr, err := s.resolveRefsExpr(expr, "")
+	refs, perr, err := s.resolveRefsExpr(expr, "", "")
 	if err != nil {
 		return false, ExprError{}, err
 	}
 	if perr != nil {
 		return false, exprError(perr), nil
 	}
-	if _, perr := metrics.CompileRefs(expr, "", "", refs); perr != nil {
+	if _, perr := metrics.CompileRefs(expr, "", "", metrics.Address{}, refs); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil

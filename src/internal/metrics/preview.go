@@ -28,17 +28,30 @@ const (
 type Def struct {
 	Expr        string
 	Denominator string
-	Refs        map[string]RefTarget
+	// Subject / Partition / Profile are the definition's declared
+	// addressing (metrics expansion §3 — the service reads them off the
+	// saved row; ""/false is the player, unpartitioned, match-extent
+	// default an ad-hoc draft previews as).
+	Subject   string
+	Partition string
+	Profile   bool
+	Refs      map[string]RefTarget
 }
 
-// PreviewRow is one preview result (Label resolved — see Preview). Group
-// is the row's ADDRESS — the subject column of the statement (a
-// SteamID64 for every player-addressed row).
+// PreviewRow is one preview result (Label resolved — see Preview).
+// MatchID is the row's match address (the team subject's rows carry
+// theirs even at library scope; 0 otherwise), Group is the row's
+// ADDRESS — the subject key of the statement (a SteamID64 for every
+// player-addressed row, the match id for a match subject, a team key
+// for a team subject), and Dim the partition value (” = unpartitioned)
+// — the stored row's shape, ready for its surface (§6.7).
 type PreviewRow struct {
-	Group string
-	Label string
-	Value float64
-	N     int
+	MatchID int64
+	Group   string
+	Dim     string
+	Label   string
+	Value   float64
+	N       int
 }
 
 // Preview is a compiled-and-run metric preview.
@@ -50,17 +63,19 @@ type Preview struct {
 	Truncated bool
 }
 
-// RunPreview compiles def, runs it against the whole library (scope "") or a
-// single match ("match:<id>") with a row cap of limit (≤0 → 200), and maps
-// subjects. Returns (*ParseError, nil) for validation failures, (nil, err)
-// for execution failures. Subject values that look like SteamID64 resolve to
-// the players-table name (scoped match, else library-wide latest); every
-// other group falls back to its raw key as Label.
+// RunPreview compiles def (with its declared addressing), runs it
+// against the whole library (scope "") or a single match
+// ("match:<id>") with a row cap of limit (≤0 → 200), and maps subject
+// keys. Returns (*ParseError, nil) for validation failures, (nil, err)
+// for execution failures. Subject values that look like SteamID64
+// resolve to the players-table name (scoped match, else library-wide
+// latest); every other group falls back to its raw key as Label.
 func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *ParseError, error) {
 	if limit <= 0 {
 		limit = PreviewDefaultRow
 	}
-	plan, perr := CompileRefs(def.Expr, def.Denominator, scope, def.Refs)
+	addr := Address{Subject: def.Subject, Partition: def.Partition, Profile: def.Profile}
+	plan, perr := CompileRefs(def.Expr, def.Denominator, scope, addr, def.Refs)
 	if perr != nil {
 		return Preview{}, perr, nil
 	}
@@ -83,48 +98,105 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 	matchID, _ := ParseScope(scope) // already validated by Compile
 	switch plan.Mode {
 	case ModeGrouped:
+		// Row shape (§6.3/§6.5): [mid] grp [dim] values… n — the
+		// offsets come from the plan's declared addressing, the row cap
+		// logic (the fetch above) unchanged.
+		grpIdx := 0
+		if plan.MatchAddress {
+			grpIdx = 1
+		}
+		valIdx := grpIdx + 1
+		if plan.Partition != "" {
+			valIdx++
+		}
 		for _, r := range res.Rows {
-			if len(r) < 2 {
+			if len(r) < valIdx+2 {
 				continue
 			}
-			pv.Rows = append(pv.Rows, PreviewRow{
-				Group: toKey(r[0]),
-				Value: toFloat(r[1]),
+			row := PreviewRow{
+				Group: toKey(r[grpIdx]),
+				Value: toFloat(r[valIdx]),
 				N:     toN(r[len(r)-1]),
-			})
+			}
+			if plan.Partition != "" {
+				row.Dim = toKey(r[grpIdx+1])
+			}
+			switch {
+			case plan.MatchAddress:
+				if f, ok := numeric(r[0]); ok {
+					row.MatchID = int64(f)
+				}
+			case plan.Subject == "match":
+				// non-batched match subject: the group IS the match id
+				if f, ok := numeric(r[grpIdx]); ok {
+					row.MatchID = int64(f)
+				}
+			}
+			pv.Rows = append(pv.Rows, row)
 		}
 	case ModePercentile:
-		// Partition the raw fetch by the row's ADDRESS — the subject. A
+		// Partition the raw fetch by the row's ADDRESS — (subject, dim)
+		// with the match address leading when the shape carries one. A
 		// match-scoped run sees one match, so the subject alone is the
-		// address; "" scope partitions the whole library by subject (the
-		// batched pass addresses (match, subject) the same way). Each
+		// address; "" scope partitions the whole library by subject
+		// (the batched pass addresses (match, subject) the same way,
+		// and a team subject always keeps its match in the key). Each
 		// partition is THE subject's rows in scope: the p-quantile over
 		// its own sample, N = the numeric values behind it, and the
 		// denominator taken from the partition's OWN row (correlated on
 		// the subject at profile scope, a shared scalar at match scope).
-		// A subject the statement produced no row for has no partition (no
-		// row); a partition whose rows carry no numeric value yields value
-		// 0 with N 0 — the missing-data indicator, never a fabricated
-		// number. Keys sort like phase1's ORDER BY grp.
+		// A subject the statement produced no row for has no partition
+		// (no row); a partition whose rows carry no numeric value yields
+		// value 0 with N 0 — the missing-data indicator, never a
+		// fabricated number. Keys sort like phase1's ORDER BY grp.
 		type partition struct {
 			vals     []float64
 			denom    float64
 			denomSet bool
 		}
-		parts := make(map[string]*partition)
-		keys := make([]string, 0, len(res.Rows))
+		type partKey struct {
+			mid int64
+			grp string
+			dim string
+		}
+		grpIdx := 0
+		if plan.MatchAddress {
+			grpIdx = 1
+		}
+		xIdx := grpIdx + 1
+		if plan.Partition != "" {
+			xIdx++
+		}
+		parts := make(map[partKey]*partition)
+		keys := make([]partKey, 0, len(res.Rows))
 		for _, r := range res.Rows {
-			if len(r) < 2 {
+			if len(r) < xIdx+1 {
 				continue
 			}
-			key := toKey(r[0])
+			var key partKey
+			if plan.MatchAddress {
+				f, ok := numeric(r[0])
+				if !ok {
+					continue
+				}
+				key.mid = int64(f)
+			} else if plan.Subject == "match" {
+				// non-batched match subject: the group IS the match id
+				if f, ok := numeric(r[grpIdx]); ok {
+					key.mid = int64(f)
+				}
+			}
+			key.grp = toKey(r[grpIdx])
+			if plan.Partition != "" {
+				key.dim = toKey(r[grpIdx+1])
+			}
 			p := parts[key]
 			if p == nil {
 				p = &partition{}
 				parts[key] = p
 				keys = append(keys, key)
 			}
-			if v, ok := numeric(r[1]); ok {
+			if v, ok := numeric(r[xIdx]); ok {
 				p.vals = append(p.vals, v)
 			}
 			if plan.HasDenom && !p.denomSet {
@@ -132,7 +204,15 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 				p.denomSet = true
 			}
 		}
-		sort.Strings(keys)
+		sort.Slice(keys, func(i, j int) bool {
+			if keys[i].grp != keys[j].grp {
+				return keys[i].grp < keys[j].grp
+			}
+			if keys[i].dim != keys[j].dim {
+				return keys[i].dim < keys[j].dim
+			}
+			return keys[i].mid < keys[j].mid
+		})
 		for _, key := range keys {
 			p := parts[key]
 			sort.Float64s(p.vals)
@@ -144,7 +224,10 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 					v = 0
 				}
 			}
-			pv.Rows = append(pv.Rows, PreviewRow{Group: key, Value: v, N: len(p.vals)})
+			pv.Rows = append(pv.Rows, PreviewRow{
+				MatchID: key.mid, Group: key.grp, Dim: key.dim,
+				Value: v, N: len(p.vals),
+			})
 		}
 	}
 

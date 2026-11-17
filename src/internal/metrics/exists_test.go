@@ -66,7 +66,7 @@ func TestExistsMatrix(t *testing.T) {
 				t.Fatalf("Validate(%q): %v", c.expr, perr)
 			}
 			for _, scope := range []string{"", "match:3"} {
-				if _, perr := Compile(c.expr, "", scope); perr != nil {
+				if _, perr := Compile(c.expr, "", scope, Address{}); perr != nil {
 					t.Fatalf("Compile(%q, scope %q): %v", c.expr, scope, perr)
 				}
 			}
@@ -137,7 +137,7 @@ func TestExistsMatrix(t *testing.T) {
 			// Compile.
 			perr := Validate(c.expr)
 			if perr == nil {
-				if _, cerr := Compile(c.expr, "", ""); cerr == nil {
+				if _, cerr := Compile(c.expr, "", "", Address{}); cerr == nil {
 					t.Fatalf("Compile(%q) unexpectedly accepted", c.expr)
 				} else {
 					perr = cerr
@@ -189,7 +189,7 @@ func TestExistsRespectsConditionDepth(t *testing.T) {
 func TestExistsEmissionAndBinds(t *testing.T) {
 	plan, perr := Compile(
 		"from events: count(where kind = 'damage' and exists(kind = 'kill' and tick = outer.tick and dmg > 42))",
-		"", "match:7")
+		"", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}

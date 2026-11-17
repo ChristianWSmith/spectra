@@ -169,7 +169,7 @@
 //
 //	INNER JOIN metric_values md0 ON md0.metric_id = ?
 //	  AND md0.match_id = <0 | the row's match>
-//	  AND md0.subject_key = <the statement's subject>
+//	  AND md0.subject_key = <the depended-on rows' subject key>
 //	  AND md0.metric_version = ? AND md0.rule_version = ?
 //
 // The row key is the dependent's subject address — which is why a ref
@@ -180,6 +180,15 @@
 // career scalar); a MATCH dependency inside a profile metric is a save
 // error — *"metric 'x' is match-scoped and cannot be used inside a
 // profile-scoped metric (a career value cannot read a per-match value)"*.
+// SUBJECT × SUBJECT (metrics expansion §3.1 — RefSubjectContained, the
+// SAME containment over subjects, enforced at BOTH the compile and the
+// save): the md rows' subject_key shape is the REFERENCE's (a player ref
+// pins a SteamID64, a match ref ”, a team ref a team key), so a player
+// metric reads player metrics, a match metric only match metrics, and a
+// team metric match or team metrics — each illegal pair refuses with its
+// own copy, e.g. *"metric 'x' is team-subject and cannot be used inside a
+// player-subject metric (a reference's subject must be contained by the
+// reading metric's subject key)"*.
 // The INNER join is deliberate and separate from the sources' sparse-row
 // rule: a missing or outdated upstream DROPS the dependent's row —
 // absent = unknown, never 0 (both stamps must be live, so an outdated
@@ -314,35 +323,51 @@
 // source still declares its population (all-players vs humans-only;
 // match_trade_opps is the first humans-only member — analytics.Compute
 // never stores bot rows), but compile no longer branches on it. Every
-// statement emits `subject <> ”` beside store.HumanOnly over its
-// subject, so both populations align by construction: a bot row (or an
-// actor-less row) never reaches a value, whichever source list it came
-// from. Pinned by TestJoinedPopulationAlignment (joined source sets) and
+// statement emits its addressing condition beside store.HumanOnly over
+// the lead's PLAYER column whenever it has one (metrics expansion §3.4:
+// the population rule is about SOURCE ROWS — a team/match value counts
+// humans only too), so both populations align by construction: a bot row
+// (or an actor-less row) never reaches a value, whichever source list it
+// came from. Pinned by TestJoinedPopulationAlignment (joined source sets) and
 // TestSubjectStatementExcludesBots (the single-source and scoped
 // boundaries).
 //
 // # Subject addressing (the anchor)
 //
-// A metric is always ONE number addressed to a player, so every
-// statement is subject-addressed. The PRIMARY source must carry a
-// SUBJECT column (whitelist.go sourceSubject): events → attacker,
-// engagements → a_steam, engagements_victim → b_steam (its curated
-// alias — the same table, the victim as subject), utility_events →
-// thrower, and player_stats / player_round_stats / clutches / chat /
-// match_trade_opps / round_player_sides → steam_id.
-// rounds, round_economy, round_classifications and round_side_classes
-// have NO subject (mvp is an attribute of a won round; round_economy is
-// side-grained; the round label and the per-side class are round-grain
-// outputs). A primary without a subject is rejected right after the
-// source check, positioned at the
-// source clause:
+// A metric is always ONE number addressed to a SUBJECT (metrics
+// expansion §3): `player` (the original rule), `match` or `team`. The
+// declared address rides every compile (Address — subject, partition,
+// and the Profile flag the career path refuses anything but player
+// with: *"profile scope is player-only: a <subject>-subject metric has
+// no career"*), and the PRIMARY source must be ANCHORED FOR IT
+// (§3.4):
 //
-//	expression is not player-anchored: primary source "rounds" has no
-//	player subject — a metric's value must be per player (player
-//	sources: events, engagements, player_stats, player_round_stats,
-//	clutches, chat, utility_events, match_trade_opps, round_player_sides,
-//	engagements_victim; round-grain sources can only join a
-//	player-anchored expression)
+//		player  a PLAYER column (whitelist.go sourceSubject): events →
+//		        attacker, engagements → a_steam, engagements_victim → b_steam
+//		        (its curated alias — the same table, the victim as subject),
+//		        utility_events → thrower, and player_stats /
+//		        player_round_stats / clutches / chat / match_trade_opps /
+//		        round_player_sides → steam_id. rounds, round_economy,
+//		        round_classifications and round_side_classes have NO player
+//		        subject (mvp is an attribute of a won round; round_economy is
+//		        side-grained; the round label and the per-side class are
+//		        round-grain outputs). A player-less primary is rejected right
+//	       after the source check, positioned at the source clause:
+//
+//		expression is not player-anchored: primary source "rounds" has no
+//		player subject — a metric's value must be per player (player
+//		sources: events, engagements, player_stats, player_round_stats,
+//		clutches, chat, utility_events, match_trade_opps, round_player_sides,
+//		engagements_victim; round-grain sources can only join a
+//		player-anchored expression)
+//
+//		match  match grain — ANY source (all carry match_id); round-grain
+//		       sources are legal LEADS for a match subject
+//		team   the §5 stamped team column (whitelist.go teamSources:
+//		       player_stats, round_economy, round_side_classes,
+//		       round_player_sides); anything else is rejected with
+//		       *"expression is not team-anchored: primary source … has no
+//		       team column (team sources: …)"*
 //
 // The criterion is PRIMARY-OWNS (owner confirm-or-veto note 1): the
 // subject comes from the primary only — the same ownership as scope
@@ -354,11 +379,18 @@
 // enforce it identically — a player-less draft errors exactly like any
 // invalid expression.
 //
-// The compiled statement GROUPS its output by the subject (the `grp`
-// column) and restricts its rows with `subject <> ”` + humans-only, so
-// a preview row is one player's value: "" scope = the whole library (one
-// row per player the statement produced), "match:<id>" = one match's
-// per-player rows. Retired with the groupBy parameter: the token set,
+// The compiled statement GROUPS its output by the DECLARED subject's
+// key (the `grp` column: the player column, the row's match for a match
+// subject — stored subject_key ” — or the team column) and restricts
+// its rows with the addressing conditions above (`key <> ”` + the
+// humans-only source-row rule), so a preview row is one subject's value:
+// "" scope = the whole library (one row per player the statement
+// produced; a team subject always leads with its match address — a
+// team's key is (match, team)), "match:<id>" = one match's rows. A
+// partitioned statement adds the `dim` column to the shape: EVERY source
+// must carry the partition column (§6.5 — *"… every source of a
+// partitioned expression must carry the partition column"*, positioned
+// at the first source missing it), and `dim` joins the GROUP BY. Retired with the groupBy parameter: the token set,
 // the per-source group mapping table, the percentile-with-group
 // constraint and every "match scalar without a player" surface (no
 // match-level stat strip, no player-less pinning).
@@ -369,8 +401,15 @@
 // matches (owner ruling: "match and one of round … are the only
 // meaningful denominators to a CS2 player"; the player_rounds alias was
 // retired — player_round_stats remains a metric SOURCE, only the
-// denominator option is gone). ONE rule, two units: the denominator
-// counts the SCOPE's units for the subject.
+// denominator option is gone). ONE rule, per subject (§6.6): the
+// denominator counts the SCOPE's units FOR THE SUBJECT — a match
+// subject divides by that match's units (the same scalar bound at
+// "match:<id>", correlated on the row's match otherwise), a team
+// subject by that team's rounds in the row's match
+// (COUNT(DISTINCT round) over round_player_sides' §5 team stamp — the
+// always-correlated form, both teams sharing a match; its `matches`
+// denominator counts the row's own match), and a player subject as
+// below.
 //
 //   - match scope (`match:<id>`): the match's units — the scalar
 //     `1.0*(<value>) / NULLIF((SELECT COUNT(*) FROM <rounds|matches>

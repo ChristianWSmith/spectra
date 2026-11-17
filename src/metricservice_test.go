@@ -488,3 +488,150 @@ func TestListMetricsPageArity(t *testing.T) {
 		}
 	}
 }
+
+// TestSaveMetricSubjectScopeMatrix pins the §3.1 save-time half of the
+// subject axis: the addressing vocabulary validates beside Scope/Format
+// with its own friendly messages, the INVALID subject × scope
+// combinations are rejected with their own copy (a match or team has no
+// career), valid rows round-trip subject + partition through the write,
+// and the ref key-containment rule (§3.1) reaches the save beside the
+// pre-existing cross-scope rule — same refusal, the save's message.
+// The compile enforces the same matrix on every path (metrics package
+// pins), so a swept row can exist only through this door.
+func TestSaveMetricSubjectScopeMatrix(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "subject-scope.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	// Valid: a match-subject round-grain metric saves and round-trips
+	// its addressing (the anchor is the match grain — any source).
+	matchSubj, err := svc.SaveMetric(models.MetricRow{
+		Name: "rounds_total", Title: "Rounds total", Expr: "from rounds: count()",
+		Format: "int", Scope: "match", Subject: "match", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("SaveMetric(match subject): %v", err)
+	}
+	if matchSubj.Subject != "match" || matchSubj.Partition != "" {
+		t.Errorf("saved = subject %q partition %q, want match/'' (round-trip)", matchSubj.Subject, matchSubj.Partition)
+	}
+
+	// Valid: a team-subject metric with a declared partition round-trips.
+	teamSubj, err := svc.SaveMetric(models.MetricRow{
+		Name: "team_equip", Title: "Team equip", Expr: "from round_economy: sum(equip_value)",
+		Format: "currency", Scope: "match", Subject: "team", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("SaveMetric(team subject): %v", err)
+	}
+	if teamSubj.Subject != "team" {
+		t.Errorf("saved subject = %q, want team", teamSubj.Subject)
+	}
+
+	// Invalid combinations — one message each (§3.1's per-combination rule).
+	for _, subject := range []string{"match", "team"} {
+		_, err := svc.SaveMetric(models.MetricRow{
+			Name: "bad_career", Expr: "from rounds: count()", Format: "int",
+			Scope: "profile", Subject: subject, Origin: "user",
+		})
+		if err == nil || !strings.Contains(err.Error(), "can't be profile-scoped") {
+			t.Errorf("%s subject at profile scope: err = %v, want the subject × scope refusal", subject, err)
+		}
+	}
+	// Vocabulary — friendly pre-write errors, the Format pattern.
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "bad_subject", Expr: "from events: count()", Format: "int",
+		Scope: "match", Subject: "squad", Origin: "user",
+	}); err == nil || !strings.Contains(err.Error(), "unknown subject") {
+		t.Errorf("unknown subject: err = %v, want the friendly vocabulary error", err)
+	}
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "bad_partition", Expr: "from events: count()", Format: "int",
+		Scope: "match", Partition: "floor", Origin: "user",
+	}); err == nil || !strings.Contains(err.Error(), "unknown partition") {
+		t.Errorf("unknown partition: err = %v, want the friendly vocabulary error", err)
+	}
+	// The partition column rule reaches the save like any invalid
+	// expression (events carries no side).
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "bad_partition_col", Expr: "from events: count()", Format: "int",
+		Scope: "match", Partition: "side", Origin: "user",
+	}); err == nil || !strings.Contains(err.Error(), "must carry the partition column") {
+		t.Errorf("partitionless source: err = %v, want the §6.5 refusal", err)
+	}
+
+	// Ref containment at SAVE (§3.1): a player metric cannot read the
+	// team-subject metric above — the save's copy (not the compile's
+	// "...subject key)" spelling).
+	_, err = svc.SaveMetric(models.MetricRow{
+		Name: "player_reads_team", Expr: "from events: metric('team_equip')", Format: "int",
+		Scope: "match", Subject: "player", Origin: "user",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used inside a player-subject metric") ||
+		!strings.Contains(err.Error(), "reading metric's subject)") {
+		t.Errorf("player→team ref: err = %v, want the save-side containment refusal", err)
+	}
+	// Allowed the other way: a team metric may read the match-subject
+	// metric (its row key pins the match) — saves clean.
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "team_reads_match", Expr: "from round_economy: metric('rounds_total')",
+		Format: "int", Scope: "match", Subject: "team", Origin: "user",
+	}); err != nil {
+		t.Fatalf("team→match ref save: %v", err)
+	}
+	// A match-subject metric reading the team metric must be refused
+	// (a match row cannot point at one of its two teams).
+	_, err = svc.SaveMetric(models.MetricRow{
+		Name: "match_reads_team", Expr: "from rounds: metric('team_equip')", Format: "int",
+		Scope: "match", Subject: "match", Origin: "user",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be used inside a match-subject metric") {
+		t.Errorf("match→team ref: err = %v, want the containment refusal", err)
+	}
+}
+
+// TestPreviewMetricSubjectShapes pins §6.7's preview row SHAPE at the
+// service seam: the compiled statement groups by the declared subject's
+// key (a team statement leads with its match address — the row shape is
+// subject key + address, ready for its surface).
+func TestPreviewMetricSubjectShapes(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "subject-preview.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	matchSubj, err := svc.SaveMetric(models.MetricRow{
+		Name: "pv_rounds", Title: "PV rounds", Expr: "from rounds: count()",
+		Format: "int", Scope: "match", Subject: "match", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("SaveMetric: %v", err)
+	}
+	pv, err := svc.PreviewMetric(matchSubj.ID, "", "", 10)
+	if err != nil {
+		t.Fatalf("PreviewMetric(match subject): %v", err)
+	}
+	if !strings.Contains(pv.SQL, "match_id AS grp") {
+		t.Errorf("match-subject preview not grouped by the match address:\n%s", pv.SQL)
+	}
+
+	teamSubj, err := svc.SaveMetric(models.MetricRow{
+		Name: "pv_team", Title: "PV team", Expr: "from round_economy: sum(equip_value)",
+		Format: "currency", Scope: "match", Subject: "team", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("SaveMetric: %v", err)
+	}
+	pv, err = svc.PreviewMetric(teamSubj.ID, "", "", 10)
+	if err != nil {
+		t.Fatalf("PreviewMetric(team subject): %v", err)
+	}
+	if !strings.Contains(pv.SQL, "match_id AS mid, team AS grp") {
+		t.Errorf("team-subject preview row shape lacks the match address + team key:\n%s", pv.SQL)
+	}
+}

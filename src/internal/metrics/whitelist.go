@@ -54,6 +54,10 @@ var sourceColumns = map[string]map[string]bool{
 		"opening_deaths", "trade_kills", "best_streak", "two_k", "three_k",
 		"four_k", "five_k", "utility_damage", "enemies_flashed", "flashed_times",
 		"bomb_plants", "bomb_defuses", "money_spent_total",
+		// Row stamps (§5, 2026-11-17): team (the team-subject anchor /
+		// filter), won (the 0/1 match result the win seeds sum), map
+		// (the map-partition column).
+		"team", "won", "map",
 	),
 	"player_round_stats": colSet(
 		"match_id", "round", "steam_id", "name", "kills", "assists", "deaths",
@@ -63,6 +67,7 @@ var sourceColumns = map[string]map[string]bool{
 	"round_economy": colSet(
 		"match_id", "round", "side", "equip_value", "money_sampled_sum",
 		"money_samples", "spent", "free_pistol_value",
+		"team", // §5 stamp — the team-subject anchor for economy leads
 	),
 	"clutches": colSet(
 		"match_id", "round", "size", "steam_id", "name", "start_tick",
@@ -91,9 +96,11 @@ var sourceColumns = map[string]map[string]bool{
 	),
 	"round_side_classes": colSet(
 		"match_id", "round", "side", "class", "why",
+		"team", // §5 stamp — the team-subject anchor for class leads
 	),
 	"round_player_sides": colSet(
 		"match_id", "round", "steam_id", "side",
+		"team", // §5 stamp — the team-subject anchor / team denominator key
 	),
 	// engagements_victim is the engagements table under a SECOND,
 	// victim-anchored subject (the curated-alias design — sourceTable
@@ -174,6 +181,31 @@ var sourceSubject = map[string]string{
 // Its set is pinned to sourceSubject's keys by TestSchemaConsistency
 // (schema_consistency_test.go), so the two cannot drift.
 const playerSources = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps, round_player_sides, engagements_victim"
+
+// teamSources is the TEAM-subject anchor list (§3.4): exactly the
+// sources carrying the §5 team stamp — the anchor error renders it
+// VERBATIM, and TestSubjectAxisAnchors pins its set to "every source
+// whose column whitelist carries `team`", so the list, the anchor check
+// (sourceColumns[..]["team"]) and the DDL stamps cannot drift apart.
+// A round-grain member without the stamp (rounds,
+// round_classifications) is deliberately absent: a round's team is
+// behind its side, never stamped on the round itself.
+var teamSources = []string{"player_stats", "round_economy", "round_side_classes", "round_player_sides"}
+
+// teamSourcesMsg renders the team-anchor list for the refusal message.
+func teamSourcesMsg() string { return strings.Join(teamSources, ", ") }
+
+// partitionColumns maps the declared partition (metrics expansion §3.2)
+// to the column every source must carry (§6.5's validation reads this):
+// side/map/weapon mirror the DDL stamps — side is a per-round fact on
+// the side-grained rows (player_stats' final side among them), map the
+// §5 match stamp on player_stats, weapon the events column. Pinned to
+// the DDL by TestSubjectAxisAnchors.
+var partitionColumns = map[string]string{
+	"side":   "side",
+	"map":    "map",
+	"weapon": "weapon",
+}
 
 // sourceDims maps source → join dimension → the fixed column that
 // carries it (round and side only — `match` is every source's match_id

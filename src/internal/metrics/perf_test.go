@@ -257,7 +257,7 @@ func TestPerfCompile(t *testing.T) {
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
 		e := exprs[i%len(exprs)]
-		if _, perr := Compile(e.expr, e.denom, ""); perr != nil {
+		if _, perr := Compile(e.expr, e.denom, "", Address{}); perr != nil {
 			t.Fatalf("compile: %v", perr)
 		}
 	}

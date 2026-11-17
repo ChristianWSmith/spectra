@@ -97,7 +97,7 @@ func TestDisplaySQLInlineMatchesAcrossPaths(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := Compile(c.expr, "", "match:4567")
+			plan, perr := Compile(c.expr, "", "match:4567", Address{})
 			if perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}

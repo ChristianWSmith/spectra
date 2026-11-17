@@ -54,6 +54,30 @@ const metricValueFreshCond = `v.metric_version >= m.version AND v.rule_version >
 //	         OR ∃ match-scope unit (a ready match) with NO fresh row — source axis
 //	         OR (profile) the career bucket has no fresh row WHILE the
 //	            library has player data to compute it over
+//	         OR (partitioned) an input-carried dim value has NO fresh
+//	            row for its unit                                — dim axis
+//
+// SUBJECT-AWARE branches (metrics expansion §6): the match-scope clause
+// IS the subject rule for every subject at match extent — a match or
+// team subject is "behind iff a fresh row exists for that match" exactly
+// as a player subject is (the clause never constrains subject_key, so
+// ANY fresh row for the match answers it), and the career clause is
+// reachable only by player subjects (the compile-time refusal keeps
+// match/team out of profile scope). PINNED by
+// TestMetricCoverageSubjectBranches.
+//
+// DIM AXIS — the pinned rule: behind iff ANY expected dim row is
+// missing (the simplest honest reading — plan §6): a unit's expected
+// dims are the partition values its INPUTS currently carry (side: each
+// side a human played; map: the stamped maps; weapon: the weapons
+// human-actor events recorded), each guarded so work that does not
+// exist never reports permanent behindness (the library-empty guard's
+// criterion, applied per dim — a dim no human input carries is not
+// expected, and a metric that cannot produce it was refused at compile
+// time by §6.5's column validation). New inputs that ADD a dim value
+// (a new map, a newly seen weapon) mark the metric behind without
+// invalidating the rows that are already fresh — the case the version
+// axis cannot see. PINNED by TestMetricCoveragePartitionDimRule.
 //
 // The unit clauses are what make the work list resumable and honest: a
 // newly imported match has no rows yet (nothing to stamp), and the
@@ -73,6 +97,40 @@ const metricValueFreshCond = `v.metric_version >= m.version AND v.rule_version >
 // an upstream behind forces its dependents into the work list even when
 // their own stamps still look live.
 func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
+	// partitionBehind builds the dim-axis clause for one scope: every
+	// expected dim of every unit of that scope must have a fresh row.
+	// The carrier table is the partition's canonical input (whitelist.go
+	// partitionColumns): side → player_stats' side stamp, map → its map
+	// stamp, weapon → events' weapon column; human-only guards mirror
+	// the statement's own population rule (§3.4 — a value row counts
+	// humans only, so a dim only humans carried is the expectation).
+	partitionBehind := func(matchScoped bool) string {
+		carrierMatch, eventMatch, metricMatch := "", "", " AND v.match_id = 0"
+		if matchScoped {
+			carrierMatch, eventMatch, metricMatch = " AND ps.match_id = mt.id", " AND e.match_id = mt.id", " AND v.match_id = mt.id"
+		}
+		missingDim := func(dimExpr string) string {
+			return "NOT EXISTS (SELECT 1 FROM metric_values v WHERE v.metric_id = m.id" +
+				metricMatch + " AND v.dim = " + dimExpr + " AND " + metricValueFreshCond + ")"
+		}
+		humanSide := func(side string) string {
+			return "EXISTS (SELECT 1 FROM player_stats ps WHERE ps.side = '" + side + "'" + carrierMatch +
+				" AND " + HumanOnlyBySteamID("ps.steam_id", "ps.match_id") + ") AND " + missingDim("'"+side+"'")
+		}
+		side := "(" + humanSide("ct") + ") OR (" + humanSide("t") + ")"
+		mapDim := "EXISTS (SELECT 1 FROM player_stats ps WHERE ps.map <> ''" + carrierMatch +
+			" AND " + HumanOnlyBySteamID("ps.steam_id", "ps.match_id") +
+			" AND " + missingDim("ps.map") + ")"
+		weaponDim := "EXISTS (SELECT 1 FROM events e WHERE e.weapon <> ''" + eventMatch +
+			" AND " + HumanOnlyBySteamID("e.attacker", "e.match_id") +
+			" AND " + missingDim("e.weapon") + ")"
+		inner := "((" + "m.partition = 'side' AND (" + side + ")) OR (m.partition = 'map' AND " + mapDim +
+			") OR (m.partition = 'weapon' AND " + weaponDim + "))"
+		if matchScoped {
+			return "m.partition <> '' AND m.scope = 'match' AND EXISTS (SELECT 1 FROM matches mt WHERE mt.status = 'ready' AND " + inner + ")"
+		}
+		return "m.partition <> '' AND m.scope = 'profile' AND EXISTS (SELECT 1 FROM player_stats) AND " + inner
+	}
 	rows, err := s.db.Query(
 		`SELECT m.id,
 			CASE WHEN (
@@ -88,11 +146,15 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 					AND NOT EXISTS (SELECT 1 FROM metric_values v
 						WHERE v.metric_id = m.id AND v.match_id = 0
 						  AND `+metricValueFreshCond+`))
+				OR (`+partitionBehind(true)+`)
+				OR (`+partitionBehind(false)+`)
 			) THEN 1 ELSE 0 END AS behind,
 			(SELECT COUNT(*) FROM metric_values v
 				WHERE v.metric_id = m.id AND `+metricValueFreshCond+`) AS fresh
 		FROM metrics m
 		ORDER BY `+metricOrder,
+		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
+		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
 		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
 	)
 	if err != nil {
@@ -119,11 +181,16 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 // (phase 2). MatchID 0 is the profile (career) grain; SubjectKey is the
 // row's subject — a player's SteamID64 (humans only — the statement
 // already applied store.HumanOnly + subject <> ”, so the pass never
-// filters here), a team key, or ” for a match subject.
+// filters here), a team key, or ” for a match subject (its address IS
+// MatchID); Dim is the partition value (” = unpartitioned — §6.5) and
+// ValueKey the identity slot (identity metrics only; every
+// number-valued row writes ” — the Phase 5 argmax writer fills it).
 type MetricValueRow struct {
 	MatchID    int64
 	SubjectKey string
+	Dim        string
 	Value      float64
+	ValueKey   string
 	N          int
 }
 
@@ -187,8 +254,8 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(
-		`INSERT INTO metric_values (metric_id, match_id, subject_key, value, n, metric_version, rule_version, computed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, n, metric_version, rule_version, computed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
@@ -196,7 +263,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	defer stmt.Close()
 	now := time.Now()
 	for _, r := range rows {
-		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SubjectKey), r.Value, r.N, metricVersion, ruleVersion, now); err != nil {
+		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SubjectKey), scrub(r.Dim), r.Value, scrub(r.ValueKey), r.N, metricVersion, ruleVersion, now); err != nil {
 			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
 	}

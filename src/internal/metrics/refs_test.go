@@ -43,7 +43,7 @@ func TestRefLegalPositions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := CompileRefs(c.expr, "", "match:7", refTargets())
+			plan, perr := CompileRefs(c.expr, "", "match:7", Address{}, refTargets())
 			if perr != nil {
 				t.Fatalf("CompileRefs(%q): %v", c.expr, perr)
 			}
@@ -106,7 +106,7 @@ func TestRefDeniedPositions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, perr := Compile(c.expr, "", "")
+			_, perr := Compile(c.expr, "", "", Address{})
 			if perr == nil {
 				t.Fatalf("Compile(%q) succeeded, want %q", c.expr, c.want)
 			}
@@ -191,7 +191,7 @@ func TestRefJoinShape(t *testing.T) {
 				t2.Scope = "profile"
 				targets["a"] = t2
 			}
-			plan, perr := CompileRefs(c.expr, "", c.scope, targets)
+			plan, perr := CompileRefs(c.expr, "", c.scope, Address{}, targets)
 			if perr != nil {
 				t.Fatalf("CompileRefs(%q): %v", c.expr, perr)
 			}
@@ -216,7 +216,7 @@ func TestRefJoinShape(t *testing.T) {
 	}
 
 	t.Run("one join per distinct name, aliases in first-appearance order", func(t *testing.T) {
-		plan, perr := CompileRefs("from events: metric('b'), metric('a'), metric('b')", "", "", refTargets())
+		plan, perr := CompileRefs("from events: metric('b'), metric('a'), metric('b')", "", "", Address{}, refTargets())
 		if perr != nil {
 			t.Fatalf("CompileRefs: %v", perr)
 		}
@@ -233,7 +233,7 @@ func TestRefJoinShape(t *testing.T) {
 	})
 
 	t.Run("ref-free plans stay byte-stable (no join, no forced qualification)", func(t *testing.T) {
-		plan, perr := Compile("from events: count(where kind='kill')", "", "")
+		plan, perr := Compile("from events: count(where kind='kill')", "", "", Address{})
 		if perr != nil {
 			t.Fatalf("Compile: %v", perr)
 		}
@@ -255,7 +255,7 @@ func TestRefJoinShape(t *testing.T) {
 func TestUnknownMetricReference(t *testing.T) {
 	const expr = "from events: metric('ghost')"
 	wantPos := strings.Index(expr, "'ghost'")
-	if _, perr := Compile(expr, "", ""); perr == nil {
+	if _, perr := Compile(expr, "", "", Address{}); perr == nil {
 		t.Fatal("Compile (nil refs) accepted a reference")
 	} else if perr.Message != `unknown metric reference "ghost"` || perr.Pos != wantPos {
 		t.Errorf("Compile error = (%q, %d), want (%q, %d)", perr.Message, perr.Pos, `unknown metric reference "ghost"`, wantPos)
@@ -263,7 +263,7 @@ func TestUnknownMetricReference(t *testing.T) {
 	// A partially filled map fails on the MISSING name only.
 	targets := refTargets()
 	delete(targets, "a")
-	if _, perr := CompileRefs(expr, "", "", targets); perr == nil || perr.Pos != wantPos {
+	if _, perr := CompileRefs(expr, "", "", Address{}, targets); perr == nil || perr.Pos != wantPos {
 		t.Errorf("CompileRefs with a partial map = %v, want the missing name at %d", perr, wantPos)
 	}
 }

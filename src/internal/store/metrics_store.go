@@ -467,10 +467,18 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 	if m.Scope == "" {
 		m.Scope = "match"
 	}
+	// Subject is omitted the same way ('' → the DDL DEFAULT 'player';
+	// the CHECK rejects '' — the subject × scope matrix lives at the
+	// save service and the compile, this write stays a plain carrier).
+	// Partition's '' IS the CHECK's vocabulary (unpartitioned).
+	if m.Subject == "" {
+		m.Subject = "player"
+	}
 	res, err := q.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, plugin_id, denominator, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
+		scrub(m.Subject), scrub(m.Partition),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
 		scrub(m.Denominator), time.Now(),
 	)
@@ -504,10 +512,14 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 	if existing.Origin != "user" {
 		return fmt.Errorf("the %s metric %q cannot be modified", existing.Origin, existing.Name)
 	}
+	if m.Subject == "" {
+		m.Subject = "player"
+	}
 	if _, err := q.Exec(
-		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, format = ?,
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, subject = ?, partition = ?, format = ?,
 			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
+		scrub(m.Subject), scrub(m.Partition),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {

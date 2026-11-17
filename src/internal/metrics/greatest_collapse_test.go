@@ -40,7 +40,7 @@ func TestScalarMaxCoversGreatestContexts(t *testing.T) {
 			if perr := Validate(c.expr); perr != nil {
 				t.Fatalf("Validate(%q): %v", c.expr, perr)
 			}
-			if _, perr := Compile(c.expr, "", ""); perr != nil {
+			if _, perr := Compile(c.expr, "", "", Address{}); perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}
 		})
@@ -52,7 +52,7 @@ func TestScalarMaxCoversGreatestContexts(t *testing.T) {
 		expr := "from player_stats: greatest(sum(deaths), 1)"
 		perr := Validate(expr)
 		if perr == nil {
-			if _, cerr := Compile(expr, "", ""); cerr == nil {
+			if _, cerr := Compile(expr, "", "", Address{}); cerr == nil {
 				t.Fatalf("Compile(%q) unexpectedly accepted — greatest() must not exist beside max()", expr)
 			} else {
 				perr = cerr

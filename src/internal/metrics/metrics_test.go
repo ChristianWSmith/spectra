@@ -71,7 +71,7 @@ func TestParseAndCompileValid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := Compile(c.expr, c.denom, c.scope)
+			plan, perr := Compile(c.expr, c.denom, c.scope, Address{})
 			if perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}
@@ -140,7 +140,7 @@ func TestParseAndCompileInvalid(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, perr := Compile(c.expr, c.denom, c.scope)
+			_, perr := Compile(c.expr, c.denom, c.scope, Address{})
 			if perr == nil {
 				t.Fatalf("Compile(%q) succeeded, want error containing %q", c.expr, c.wantMsg)
 			}
@@ -172,7 +172,7 @@ func TestAnchorValidation(t *testing.T) {
 			if perr != nil {
 				t.Fatalf("parse: %v", perr)
 			}
-			_, perr = Compile(c.expr, "", "")
+			_, perr = Compile(c.expr, "", "", Address{})
 			if perr == nil {
 				t.Fatalf("Compile(%q) succeeded, want anchor rejection", c.expr)
 			}
@@ -190,7 +190,7 @@ func TestAnchorValidation(t *testing.T) {
 	// PRIMARY-OWNS: a round-grain source stays legal as the join PARTNER
 	// of an anchored primary wherever joinKey allows (the rule
 	// partitions by what the OUTPUT is, not by a source whitelist).
-	if _, perr := Compile("from engagements, rounds: count()", "", ""); perr != nil {
+	if _, perr := Compile("from engagements, rounds: count()", "", "", Address{}); perr != nil {
 		t.Errorf("round-grain join partner rejected: %v", perr)
 	}
 }
@@ -213,7 +213,7 @@ func TestSubjectAddressingEmitted(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := Compile(c.expr, "", c.scope)
+			plan, perr := Compile(c.expr, "", c.scope, Address{})
 			if perr != nil {
 				t.Fatalf("compile: %v", perr)
 			}
@@ -226,7 +226,7 @@ func TestSubjectAddressingEmitted(t *testing.T) {
 	}
 	// A mixed plan carries the condition in BOTH statements (the phase-2
 	// fetch and its phase-1 companion).
-	plan, perr := Compile("from events: percentile(0.5, dmg), count()", "", "")
+	plan, perr := Compile("from events: percentile(0.5, dmg), count()", "", "", Address{})
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
@@ -262,7 +262,7 @@ func TestDenominatorEmitsByScope(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := Compile(c.expr, c.denom, c.scope)
+			plan, perr := Compile(c.expr, c.denom, c.scope, Address{})
 			if perr != nil {
 				t.Fatalf("compile: %v", perr)
 			}
@@ -425,7 +425,7 @@ func TestParseScope(t *testing.T) {
 // the whitelists). The only string literal in the text is the engine's
 // own `subject <> ”`.
 func TestCompiledSQLIsParameterized(t *testing.T) {
-	plan, perr := Compile("from events: count(where kind='kill' and dmg >= 50)", "", "match:7")
+	plan, perr := Compile("from events: count(where kind='kill' and dmg >= 50)", "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
@@ -450,7 +450,7 @@ func TestCompiledSQLIsParameterized(t *testing.T) {
 // appear in the FROM/JOIN positions.
 func TestJoinedSQLIsParameterized(t *testing.T) {
 	const expr = "from player_stats, match_trade_opps: count(where kills > 5 and opps >= 10)"
-	plan, perr := Compile(expr, "", "match:7")
+	plan, perr := Compile(expr, "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
@@ -524,7 +524,7 @@ func TestSumChainCompileShapes(t *testing.T) {
 				t.Fatalf("Validate(%q): %v", c.expr, perr)
 			}
 			for _, scope := range []string{"", "match:3"} {
-				plan, perr := Compile(c.expr, "", scope)
+				plan, perr := Compile(c.expr, "", scope, Address{})
 				if perr != nil {
 					t.Fatalf("Compile(%q, scope %q): %v", c.expr, scope, perr)
 				}
@@ -557,7 +557,7 @@ func TestSumChainGrammarMatrix(t *testing.T) {
 			if perr := Validate(c.expr); perr != nil {
 				t.Fatalf("Validate(%q): %v", c.expr, perr)
 			}
-			if _, perr := Compile(c.expr, "", ""); perr != nil {
+			if _, perr := Compile(c.expr, "", "", Address{}); perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}
 		})
@@ -579,7 +579,7 @@ func TestSumChainGrammarMatrix(t *testing.T) {
 			// Compile, not Parse) counts too — Validate runs Compile.
 			perr := Validate(c.expr)
 			if perr == nil {
-				if _, cerr := Compile(c.expr, "", ""); cerr == nil {
+				if _, cerr := Compile(c.expr, "", "", Address{}); cerr == nil {
 					t.Fatalf("Compile(%q) unexpectedly accepted", c.expr)
 				} else {
 					perr = cerr
@@ -655,7 +655,7 @@ func TestScalarMinMaxMatrix(t *testing.T) {
 			if perr := Validate(c.expr); perr != nil {
 				t.Fatalf("Validate(%q): %v", c.expr, perr)
 			}
-			if _, perr := Compile(c.expr, "", ""); perr != nil {
+			if _, perr := Compile(c.expr, "", "", Address{}); perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}
 		})
@@ -690,7 +690,7 @@ func TestScalarMinMaxMatrix(t *testing.T) {
 			// Compile.
 			perr := Validate(c.expr)
 			if perr == nil {
-				if _, cerr := Compile(c.expr, "", ""); cerr == nil {
+				if _, cerr := Compile(c.expr, "", "", Address{}); cerr == nil {
 					t.Fatalf("Compile(%q) unexpectedly accepted", c.expr)
 				} else {
 					perr = cerr
@@ -712,7 +712,7 @@ func TestScalarMinMaxMatrix(t *testing.T) {
 // — and the binds keep strict textual order (the nested filter's
 // literal first, the scalar literal second, the scope id last).
 func TestScalarMinMaxBinds(t *testing.T) {
-	plan, perr := Compile("from player_stats: max(sum(where side='ct', deaths), 42)", "", "match:7")
+	plan, perr := Compile("from player_stats: max(sum(where side='ct', deaths), 42)", "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}

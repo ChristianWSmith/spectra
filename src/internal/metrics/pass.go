@@ -297,6 +297,11 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress)) (
 		// Compile ONCE for execution — the plan itself carries every
 		// validation (a failure here IS the validation failure; the
 		// compiler is pure and cheap, so error and plan ride one path).
+		// The metric's declared addressing rides every compile: subject
+		// and partition from the stored row, Profile from its scope —
+		// the career path's player-only rule (§3.1) refuses HERE, at
+		// compile time, with the Address.normalize message.
+		addr := Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
 		var plan Plan
 		var cperr *ParseError
 		if m.Scope == "profile" {
@@ -304,9 +309,9 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress)) (
 			// career grain, one row per subject at match_id = 0 (design
 			// §3: a career value is stored directly, never rolled up
 			// from per-match rows).
-			plan, cperr = CompileRefs(m.Expr, m.Denominator, "", refs)
+			plan, cperr = CompileRefs(m.Expr, m.Denominator, "", addr, refs)
 		} else {
-			plan, cperr = CompilePassMatch(m.Expr, m.Denominator, refs)
+			plan, cperr = CompilePassMatch(m.Expr, m.Denominator, addr, refs)
 		}
 		if cperr != nil {
 			fail(cperr.Message)
@@ -463,35 +468,50 @@ func containsID(ids []int64, id int64) bool {
 }
 
 // valuesFromPlan turns a plan's fetched rows into the metric_values
-// insert set — the pass's row-shape adapter (the ONE place the stored
+// insert set — the pass's row-shape adapter (THE one place the stored
 // layout is derived from a Plan):
 //
-//	ModeGrouped     [match_id, subject, v0..vK, n] (MatchAddress) or
-//	                [subject, v0..vK, n] — the stored value is the
-//	                FIRST aggregation (the same row Value Preview
-//	                surfaces), n the trailing sample size, the match
-//	                key 0 for the profile grain.
+//	ModeGrouped     [match_id,] subject_key [, dim] v0..vK, n — the
+//	                stored value is the FIRST aggregation (the same row
+//	                Value Preview surfaces), n the trailing sample
+//	                size, the match key 0 for the profile grain. The
+//	                subject_key is the DECLARED subject's key (§6.3): a
+//	                player's SteamID64, a team key, or '' for a match
+//	                subject (its address IS the row's match — mapped
+//	                from the match id the shape carries); dim is the
+//	                partition value ('' = unpartitioned — §6.5).
 //	ModePercentile   raw rows partitioned by the row's address —
-//	                (match_id, subject) batched, subject at profile
-//	                scope — the p-quantile over each partition's own
-//	                sample, denominator from the partition's OWN row
-//	                (career-correlated at profile scope, the row's
-//	                match scalar in the batch), N = the numeric values
-//	                behind it. Mirrors RunPreview's percentile branch
-//	                exactly — preview and stored agree by construction.
+//	                (match_id, subject_key, dim) when the shape
+//	                carries the match (batched pass, team subject),
+//	                subject_key alone at player scope — the p-quantile
+//	                over each partition's own sample, denominator from
+//	                the partition's OWN row (career-correlated at
+//	                profile scope, the row's match scalar in the batch),
+//	                N = the numeric values behind it. Mirrors
+//	                RunPreview's percentile branch exactly — preview
+//	                and stored agree by construction.
 //
+// value_key is written ” here: identity metrics (the argmax value
+// slot) land with the Phase 5 writer — MetricValueRow carries the slot
+// so the shape reaches the insert once that writer exists.
 // A row too short to carry its shape is skipped (defensive — the
 // emitter always emits the full shape).
 func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 	out := make([]store.MetricValueRow, 0, len(rows))
+	// The row-shape offsets from the plan's declared addressing (the
+	// same derivation RunPreview applies).
+	grpIdx := 0
+	if plan.MatchAddress {
+		grpIdx = 1
+	}
+	valueIdx := grpIdx + 1
+	if plan.Partition != "" {
+		valueIdx++
+	}
 	switch plan.Mode {
 	case ModeGrouped:
-		valueIdx := 1
-		if plan.MatchAddress {
-			valueIdx = 2
-		}
 		for _, r := range rows {
-			if len(r) < valueIdx+2 { // subject, value, n — never shorter
+			if len(r) < valueIdx+2 { // [mid] subject, [dim], value, n — never shorter
 				continue
 			}
 			var mid int64
@@ -502,21 +522,41 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 				}
 				mid = int64(f)
 			}
+			var subjectKey string
+			switch plan.Subject {
+			case "match":
+				// The match subject's key IS its match: the group column
+				// repeats the id the address carries, and the stored
+				// subject_key is '' (schema.sql metric_values).
+				if plan.MatchAddress {
+					// mid already parsed above
+				} else if f, ok := numeric(r[grpIdx]); ok {
+					mid = int64(f)
+				}
+			default:
+				subjectKey = toKey(r[grpIdx])
+			}
+			var dim string
+			if plan.Partition != "" {
+				dim = toKey(r[grpIdx+1])
+			}
 			out = append(out, store.MetricValueRow{
 				MatchID:    mid,
-				SubjectKey: toKey(r[valueIdx-1]),
+				SubjectKey: subjectKey,
+				Dim:        dim,
 				Value:      toFloat(r[valueIdx]),
 				N:          toN(r[len(r)-1]),
 			})
 		}
 		return out, nil
 	case ModePercentile:
-		// Partition address: (match_id, subject) batched, subject at
-		// profile scope — a struct key keeps the two apart without
-		// string surgery.
+		// Partition address: (match_id, subject_key, dim) when the shape
+		// carries the match — a struct key keeps the parts apart
+		// without string surgery.
 		type partKey struct {
 			mid     int64
 			subject string
+			dim     string
 		}
 		type partition struct {
 			vals     []float64
@@ -525,10 +565,9 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 		}
 		parts := map[partKey]*partition{}
 		for _, r := range rows {
-			if len(r) < 2 {
+			if len(r) < grpIdx+2 {
 				continue
 			}
-			offset := 0
 			var mid int64
 			if plan.MatchAddress {
 				f, ok := numeric(r[0])
@@ -536,18 +575,30 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 					continue
 				}
 				mid = int64(f)
-				offset = 1
 			}
-			if len(r) < offset+2 {
+			var subjectKey string
+			if plan.Subject == "match" {
+				if !plan.MatchAddress {
+					if f, ok := numeric(r[grpIdx]); ok {
+						mid = int64(f)
+					}
+				}
+			} else {
+				subjectKey = toKey(r[grpIdx])
+			}
+			if len(r) < valueIdx+1 { // the x column must exist
 				continue
 			}
-			key := partKey{mid: mid, subject: toKey(r[offset])}
+			key := partKey{mid: mid, subject: subjectKey}
+			if plan.Partition != "" {
+				key.dim = toKey(r[grpIdx+1])
+			}
 			p := parts[key]
 			if p == nil {
 				p = &partition{}
 				parts[key] = p
 			}
-			if v, ok := numeric(r[offset+1]); ok {
+			if v, ok := numeric(r[valueIdx]); ok {
 				p.vals = append(p.vals, v)
 			}
 			if plan.HasDenom && !p.denomSet {
@@ -568,6 +619,7 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 			out = append(out, store.MetricValueRow{
 				MatchID:    key.mid,
 				SubjectKey: key.subject,
+				Dim:        key.dim,
 				Value:      v,
 				N:          len(p.vals),
 			})

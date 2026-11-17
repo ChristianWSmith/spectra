@@ -114,7 +114,7 @@ func TestJoinedFanOutIdentity(t *testing.T) {
 				}
 			}
 			// The join must actually have executed.
-			plan, perr := Compile(c.join, "", "")
+			plan, perr := Compile(c.join, "", "", Address{})
 			if perr != nil {
 				t.Fatalf("compile: %v", perr)
 			}
@@ -314,7 +314,7 @@ func TestJoinedClassificationPairs(t *testing.T) {
 	}
 	for _, c := range accepted {
 		t.Run(c.name, func(t *testing.T) {
-			plan, perr := Compile(c.expr, "", "")
+			plan, perr := Compile(c.expr, "", "", Address{})
 			if perr != nil {
 				t.Fatalf("Compile(%q): %v", c.expr, perr)
 			}
@@ -330,7 +330,7 @@ func TestJoinedClassificationPairs(t *testing.T) {
 	}
 	for _, c := range rejected {
 		t.Run(c.name, func(t *testing.T) {
-			if _, perr := Compile(c.expr, "", ""); perr == nil {
+			if _, perr := Compile(c.expr, "", "", Address{}); perr == nil {
 				t.Fatalf("Compile(%q) succeeded, want rejection containing %q", c.expr, c.wantMsg)
 			} else if !strings.Contains(perr.Message, c.wantMsg) {
 				t.Errorf("message = %q, want substring %q", perr.Message, c.wantMsg)
@@ -346,7 +346,7 @@ func TestJoinedClassificationPairs(t *testing.T) {
 // bare `engagements` reference (identity sources' text is untouched by
 // construction: an alias is the ONLY thing that flips the branch).
 func TestAliasSourceEmission(t *testing.T) {
-	plan, perr := Compile("from engagements_victim: count(where kind = 'untraded')", "", "match:7")
+	plan, perr := Compile("from engagements_victim: count(where kind = 'untraded')", "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("Compile: %v", perr)
 	}
@@ -363,7 +363,7 @@ func TestAliasSourceEmission(t *testing.T) {
 	}
 	// The untraded A-side twin still emits its own identity FROM — the
 	// alias never leaks into the plain engagements source.
-	plain, perr := Compile("from engagements: count(where kind = 'untraded')", "", "match:7")
+	plain, perr := Compile("from engagements: count(where kind = 'untraded')", "", "match:7", Address{})
 	if perr != nil {
 		t.Fatalf("Compile(twin): %v", perr)
 	}

@@ -23,6 +23,53 @@ const (
 	ModePercentile
 )
 
+// Address is a compiled statement's DECLARED addressing (metrics
+// expansion §3): which subject keys its rows, how a partitioned
+// statement splits them, and whether the statement serves a
+// profile-scope (career) definition — the compile-time half of the
+// subject × scope matrix (plan §3.1 / §6.3). The zero value is the
+// pre-expansion shape: an unpartitioned player statement at match
+// extent, which is what every legacy call site keeps.
+type Address struct {
+	// Subject is "player" | "match" | "team" ("" reads as "player"): the
+	// key every emitted row is grouped and stored by (§3.4 anchor rule).
+	Subject string
+	// Partition is "" | "side" | "map" | "weapon" ("" = unpartitioned):
+	// the dim every emitted row additionally splits by (§6.5 — every
+	// source must carry the partition column).
+	Partition string
+	// Profile marks the career statement (the match_id = 0 bucket): the
+	// profile path is PLAYER-ONLY — a match or team has no career —
+	// refused at compile time with its own message (§3.1).
+	Profile bool
+}
+
+// normalize validates the declared address vocabulary and applies the
+// subject × scope legality rule (§3.1): profile scope admits the player
+// subject alone. Failures are *ParseError (ExprError shape) at Pos 0 —
+// an address problem is statement-level, never expression-positional.
+func (a Address) normalize() (Address, *ParseError) {
+	if a.Subject == "" {
+		a.Subject = "player"
+	}
+	switch a.Subject {
+	case "player", "match", "team":
+	default:
+		return Address{}, errf(0, "unknown subject %q (valid: player, match, team)", a.Subject)
+	}
+	if a.Partition != "" {
+		if _, ok := partitionColumns[a.Partition]; !ok {
+			return Address{}, errf(0, "unknown partition %q (valid: side, map, weapon, or none)", a.Partition)
+		}
+	}
+	if a.Profile && a.Subject != "player" {
+		return Address{}, errf(0,
+			"profile scope is player-only: a %s-subject metric has no career — match and team values always belong to a match (metrics expansion §3.1)",
+			a.Subject)
+	}
+	return a, nil
+}
+
 // Plan is a compiled metric: one executable parameterized statement plus
 // (when the metric mixes percentile with other aggregations) a companion
 // statement kept for provenance only — SQL never contains a user literal
@@ -41,30 +88,42 @@ type Plan struct {
 	SQLAggs     int // value columns in the phase-1 statement (before trailing n)
 	PercentileP float64
 	HasDenom    bool
-	// MatchAddress marks the PASS-ONLY batched mode (CompilePassMatch):
-	// every row carries its match_id as the LEADING column (the address
-	// Go partitions the pass's fetch by — (match_id, subject)), and a
-	// match-scope denominator correlates on the row's match. false = the
-	// preview shapes: a scoped run binds one match id, scope "" groups by
-	// subject alone (profile/career values store at match_id = 0).
+	// Subject is the declared subject the statement groups by (player |
+	// match | team — Address.Subject): valuesFromPlan and Preview map
+	// the row's subject key from it (a match subject stores subject_key
+	// '', its address IS the row's match).
+	Subject string
+	// Partition is the declared partition ("" | side | map | weapon —
+	// Address.Partition): when set, every row carries its dim beside
+	// the subject key (§6.5).
+	Partition string
+	// MatchAddress marks rows that LEAD with their match_id column: the
+	// PASS-ONLY batched mode (CompilePassMatch — the address Go
+	// partitions the pass's fetch by, (match_id, subject), with a
+	// match-scope denominator correlating on the row's match) and every
+	// team-subject statement (a team's key is (match, team), so even a
+	// preview must group its rows per match — §6.3). false = the player
+	// preview shapes: a scoped run binds one match id, scope "" groups
+	// by subject alone (profile/career values store at match_id = 0).
 	MatchAddress bool
 }
 
-// Compile parses + validates (grammar, sources, the player anchor, join
-// keys, columns, scope, denominator, percentile, population rules) and
-// emits parameterized SQL. Every statement is subject-addressed: the
-// PRIMARY must carry a subject column, rows without one are dropped,
-// humans-only applies to the subject unconditionally, and the output is
-// grouped by it. Any validation failure is a *ParseError carrying
-// Message/Pos (the ExprError contract).
+// Compile parses + validates (grammar, sources, the subject anchor per
+// §3.4, join keys, columns, scope, denominator, percentile, population
+// rules) and emits parameterized SQL. Every statement is
+// subject-addressed: rows group by the DECLARED subject's key, rows
+// without a usable key are dropped, humans-only applies to the source
+// rows unconditionally, and the output is grouped by the key (+
+// partition dim when the address declares one). Any validation failure
+// is a *ParseError carrying Message/Pos (the ExprError contract).
 //
 // Compile is the REF-FREE entry point: an expression holding a
 // metric() reference must compile through CompileRefs with the
 // resolution the service looked up (a nil map reports the ref as
 // unresolvable — this wrapper exists so every existing call site keeps
 // its shape).
-func Compile(expr, denominator, scope string) (Plan, *ParseError) {
-	return CompileRefs(expr, denominator, scope, nil)
+func Compile(expr, denominator, scope string, addr Address) (Plan, *ParseError) {
+	return CompileRefs(expr, denominator, scope, addr, nil)
 }
 
 // CompileRefs is Compile plus the metric() references (design §2): refs
@@ -78,8 +137,16 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 //
 //	INNER JOIN metric_values md0 ON md0.metric_id = ?
 //	  AND md0.match_id = <0 | primary.match_id>
-//	  AND md0.subject_key = <primary's subject>
+//	  AND md0.subject_key = <the dependent's subject key expression>
 //	  AND md0.metric_version = ? AND md0.rule_version = ?
+//
+// The subject_key key condition is the subject axis's ref rule (plan
+// §6.8 / §3.1 key containment): the DEPENDENT's row key must contain
+// the referenced metric's row key, so a dependent can only read the
+// same subject or a coarser one (a player metric may ride a match-grain
+// dependency on its own match; a team metric may read match or team
+// values; anything else is refused HERE with the join's own message —
+// the save path spells the same rule with the §3.1 copy).
 //
 // INNER is the designed semantics: a missing or outdated upstream DROPS
 // the dependent's row — absent = unknown, never 0 (sources keep their
@@ -94,8 +161,8 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 // ref-bearing preview over a not-yet-computed upstream honestly returns
 // NO rows (upstream absent → dependent dropped). That is the INNER
 // contract working, not a defect.
-func CompileRefs(expr, denominator, scope string, refs map[string]RefTarget) (Plan, *ParseError) {
-	return compileRefs(expr, denominator, scope, refs, false)
+func CompileRefs(expr, denominator, scope string, addr Address, refs map[string]RefTarget) (Plan, *ParseError) {
+	return compileRefs(expr, denominator, scope, addr, refs, false)
 }
 
 // CompilePassMatch is the PASS-ONLY address mode (stored-metrics design
@@ -105,13 +172,15 @@ func CompileRefs(expr, denominator, scope string, refs map[string]RefTarget) (Pl
 // Plan.MatchAddress marks the leading address column — and a
 // match-scope denominator correlates on the ROW's match instead of
 // binding one scope id, so one statement produces every match's
-// per-player values. The single-match "match:<id>" form stays the
-// preview's mode; a profile-scope compute passes through CompileRefs at
-// scope "" (the career statement — GROUP BY subject over the whole
-// library), because a career value is stored directly at the career
-// grain (design §1b: match_id = 0), not rolled up from per-match rows.
-func CompilePassMatch(expr, denominator string, refs map[string]RefTarget) (Plan, *ParseError) {
-	return compileRefs(expr, denominator, "", refs, true)
+// per-subject values (design §3). The single-match "match:<id>" form
+// stays the preview's mode; a profile-scope compute passes through
+// CompileRefs at scope "" (the career statement — GROUP BY subject over
+// the whole library), because a career value is stored directly at the
+// career grain (design §1b: match_id = 0), not rolled up from per-match
+// rows — and that path is player-only (Address.Profile: a match or team
+// subject refuses it at compile time).
+func CompilePassMatch(expr, denominator string, addr Address, refs map[string]RefTarget) (Plan, *ParseError) {
+	return compileRefs(expr, denominator, "", addr, refs, true)
 }
 
 // tableFor (whitelist.go) resolves a source name to the physical store
@@ -128,8 +197,16 @@ func CompilePassMatch(expr, denominator string, refs map[string]RefTarget) (Plan
 //
 // compileRefs is the one implementation CompileRefs and CompilePassMatch
 // share (batched selects the pass-only address mode above).
-func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, batched bool) (Plan, *ParseError) {
+func compileRefs(expr, denominator, scope string, addr Address, refs map[string]RefTarget, batched bool) (Plan, *ParseError) {
 	spec, perr := Parse(expr)
+	if perr != nil {
+		return Plan{}, perr
+	}
+	// Declared addressing first (§6.3): subject/partition vocabulary,
+	// then the subject × scope legality rule — a profile statement with
+	// a match/team subject is refused HERE, before any source check, so
+	// save, preview, sweep and validation can never disagree about it.
+	addr, perr = addr.normalize()
 	if perr != nil {
 		return Plan{}, perr
 	}
@@ -149,21 +226,59 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 		}
 	}
 	primary := srcs[0].Name
-	// Player-relativity (owner criterion: the expression's output must be
-	// player-addressed; mechanically, the PRIMARY source's player mapping
-	// must be a SUBJECT column). PRIMARY-OWNS — the subject comes from the
-	// primary only, the same ownership as scope binding and the population
-	// anchor. Checked right after knownSource so SaveMetric, ad-hoc
-	// PreviewMetric and ValidateExpr all funnel through here and a
-	// player-less draft errors exactly like any invalid expression.
-	// Round/match-grain sources stay legal as JOIN PARTNERS of an anchored
-	// primary wherever joinKey allows (engagements, rounds) — the rule
-	// partitions by what the OUTPUT is, not by a source whitelist.
+	// Subject addressing (owner criterion, §3.4): the PRIMARY must be
+	// ANCHORED FOR THE DECLARED SUBJECT — PRIMARY-OWNS, the same
+	// ownership as scope binding and the population anchor. Checked
+	// right after knownSource so SaveMetric, ad-hoc PreviewMetric and
+	// ValidateExpr all funnel through here and a bad draft errors
+	// exactly like any invalid expression:
+	//
+	//	player  a player column (the pre-expansion rule, byte-stable
+	//	        refusal text)
+	//	match   match grain — any source (every source carries match_id;
+	//	        round-grain sources are legal LEADS for a match subject)
+	//	team    the stamped team column (§5 — team sources)
+	//
+	// `subject` stays the primary's PLAYER column ("" for a round-grain
+	// lead): writeSubject applies humans-only through it for every
+	// subject — the population rule is about source rows, not about the
+	// subject (§3.4) — while the GROUP key comes from the declared
+	// subject (emitter.subjectKeyExpr).
 	subject := sourceSubject[primary]
-	if subject == "" {
-		return Plan{}, errf(spec.SourcePos,
-			"expression is not player-anchored: primary source %q has no player subject — a metric's value must be per player (player sources: %s; round-grain sources can only join a player-anchored expression)",
-			primary, playerSources)
+	switch addr.Subject {
+	case "player":
+		if subject == "" {
+			return Plan{}, errf(spec.SourcePos,
+				"expression is not player-anchored: primary source %q has no player subject — a metric's value must be per player (player sources: %s; round-grain sources can only join a player-anchored expression)",
+				primary, playerSources)
+		}
+	case "match":
+		if !sourceColumns[primary]["match_id"] {
+			return Plan{}, errf(spec.SourcePos,
+				"expression is not match-anchored: primary source %q carries no match_id column (every match-grain source does)", primary)
+		}
+	case "team":
+		if !sourceColumns[primary]["team"] {
+			return Plan{}, errf(spec.SourcePos,
+				"expression is not team-anchored: primary source %q has no team column (team sources: %s)",
+				primary, teamSourcesMsg())
+		}
+	}
+
+	// Partition validation (§6.5): the partition column must be carried
+	// by EVERY source of the expression — a source without it has no dim
+	// value for the row it contributes, and the emitted GROUP BY dim
+	// would silently NULL-partition those rows. Refusal names the first
+	// source missing the column (positioned on its source ref).
+	if addr.Partition != "" {
+		col := partitionColumns[addr.Partition]
+		for _, s := range srcs {
+			if !sourceColumns[s.Name][col] {
+				return Plan{}, errf(s.Pos,
+					"partition %q needs the column %q, which source %q does not carry — every source of a partitioned expression must carry the partition column",
+					addr.Partition, col, s.Name)
+			}
+		}
 	}
 
 	// Engine-derived joins (design (c)): every secondary pairs with the
@@ -231,13 +346,46 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 		// Force qualification: metric_values carries match_id and the
 		// subject key, so every primary column reference must name its table.
 		res.joined = true
+		// First-occurrence position per name — the containment refusal
+		// is positioned on the ref literal itself.
+		posOf := map[string]int{}
+		for _, r := range refsFound {
+			if _, ok := posOf[r.Name]; !ok {
+				posOf[r.Name] = r.Pos
+			}
+		}
 		for _, name := range DistinctNames(refsFound) {
 			t := refs[name]
+			// Subject × subject rule (§6.8 / §3.1 key containment): the
+			// referenced rows' key must be addressable from the
+			// dependent's own rows. The md rows' subject_key shape is
+			// the REFERENCE's (player → a SteamID64, match → '',
+			// team → a team key), so the join's key condition follows
+			// the ref's subject and the legality check below gates which
+			// dependent may read it. An empty RefTarget.Subject reads as
+			// the historical player default (the catalog always fills
+			// it; the zero value keeps legacy call sites compiling).
+			refSubject := t.Subject
+			if refSubject == "" {
+				refSubject = "player"
+			}
+			if !RefSubjectContained(addr.Subject, refSubject) {
+				return Plan{}, errf(posOf[name],
+					"metric '%s' is %s-subject and cannot be used inside a %s-subject metric (a reference's subject must be contained by the reading metric's subject key)",
+					name, refSubject, addr.Subject)
+			}
+			keyCond := primary + "." + subject
+			switch refSubject {
+			case "match":
+				keyCond = "''"
+			case "team":
+				keyCond = primary + ".team"
+			}
 			alias := "md" + strconv.Itoa(len(refAliases))
 			refAliases[name] = alias
 			from += " INNER JOIN metric_values " + alias + " ON " +
 				alias + ".metric_id = ? AND " + alias + ".match_id = " + refMatchExpr(t, primary) +
-				" AND " + alias + ".subject_key = " + primary + "." + subject +
+				" AND " + alias + ".subject_key = " + keyCond +
 				" AND " + alias + ".metric_version = ? AND " + alias + ".rule_version = ?"
 			// Bind order follows the join's textual order: id, then the
 			// two stamps (the match key is a constant/column, never a
@@ -276,13 +424,15 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 		AggCount:     len(spec.Aggs),
 		SQLAggs:      len(sqlAggs),
 		HasDenom:     denomTable != "",
-		MatchAddress: batched,
+		Subject:      addr.Subject,
+		Partition:    addr.Partition,
+		MatchAddress: batched || addr.Subject == "team",
 	}
 	newEmitter := func() *emitter {
 		return &emitter{
 			res: res, from: from, fromArgs: refArgs, matchID: matchID,
 			denom: denomTable, subject: subject, refAliases: refAliases,
-			batched: batched,
+			batched: batched, addr: addr,
 		}
 	}
 
@@ -327,7 +477,7 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 // unresolvable; drafts go through the service (ValidateExpr), which
 // resolves references against the saved metrics first.
 func Validate(expr string) *ParseError {
-	_, perr := Compile(expr, "", "")
+	_, perr := Compile(expr, "", "", Address{})
 	return perr
 }
 
@@ -585,8 +735,13 @@ type emitter struct {
 	// statement carries match_id as a leading SELECT/GROUP BY column
 	// (every row addressed by (match_id, subject)) and a match-scope
 	// denominator correlates on the ROW's match instead of binding one
-	// scope id. false = the preview shapes (byte-stable emission).
+	// scope id. false = the preview shapes (byte-stable emission for
+	// player subjects).
 	batched bool
+	// addr is the declared addressing (§6.3/§6.5): it selects the GROUP
+	// key (subjectKeyExpr), the partition dim, and whether the row shape
+	// leads with the match address (emitMid).
+	addr Address
 	// inExists > 0 while emitting inside an exists() subquery: bare
 	// columns name the INNER scan (x0-qualified — unqualified would be
 	// ambiguous the moment the outer query also owns the name, and the
@@ -633,41 +788,138 @@ func (e *emitter) subjectExpr() string {
 	return e.subject
 }
 
-// writeSubject writes the subject-addressing condition with the right
-// WHERE connector (phase1 and phase2 share this — one spelling, both
-// sides): `subject <> ”` (a no-actor bucket — an event with no
-// attacker — never becomes a value) beside THE humans-only condition
-// (store.HumanOnlyBySteamID over the subject, match-scoped so the
-// lookup rides the players PK). UNCONDITIONAL: every statement is
-// subject-addressed, so the former mixed-population and player-group
-// special cases collapsed into this one condition.
-func (e *emitter) writeSubject(wroteWhere bool) {
-	if wroteWhere {
-		e.sb.WriteString(" AND ")
-	} else {
-		e.sb.WriteString(" WHERE ")
+// subjectKeyExpr renders the row's GROUP key — the DECLARED subject's
+// key column (§6.3):
+//
+//	player  the primary's player column (subjectExpr — byte-stable)
+//	match   the row's match address (matchIDExpr): a match subject's
+//	        address IS its match, so the stored subject_key is ''
+//	        (valuesFromPlan maps it) while preview groups read the id
+//	team    the stamped team column, qualified when joined (column
+//	        resolution cannot own it — both the primary and a
+//	        secondary may carry `team`, so the anchor's owner qualifies
+//	        it directly, like the player subject)
+func (e *emitter) subjectKeyExpr() string {
+	switch e.addr.Subject {
+	case "match":
+		return e.matchIDExpr()
+	case "team":
+		if e.res.joined {
+			return e.res.primary + ".team"
+		}
+		return "team"
+	default:
+		return e.subjectExpr()
 	}
-	e.sb.WriteString(e.subjectExpr())
-	e.sb.WriteString(" <> '' AND ")
-	e.sb.WriteString(store.HumanOnlyBySteamID(e.res.primary+"."+e.subject, e.res.primary+".match_id"))
 }
 
-// phase1 emits the aggregate statement: the subject as the group column,
-// every SQL aggregation as a value column (first = previewed value,
-// wrapped by the denominator when set), trailing COUNT(*) sample size,
-// FROM (+ engine LEFT JOINs), scope WHERE on the primary (+ the subject
-// addressing condition), GROUP BY subject ORDER BY subject. In the
-// pass-only batched mode (CompilePassMatch) the row's match_id leads
-// both the SELECT and the GROUP BY — one statement, every match's
-// per-player values (design §3).
+// emitMid reports whether the row shape LEADS with its match_id column
+// (Plan.MatchAddress): the batched pass always (the (match_id, subject)
+// address), and every team-subject statement — a team's key is
+// (match, team), so even a library-scope preview keeps its rows per
+// match instead of pooling identical team keys across matches (§6.3).
+func (e *emitter) emitMid() bool {
+	return e.batched || e.addr.Subject == "team"
+}
+
+// partitionKeyExpr renders the dim column for SELECT/GROUP BY (§6.5):
+// the PRIMARY's partition column, qualified when joined (compile
+// validated that EVERY source carries it, so direct qualification — the
+// subject keys' rule — is the unambiguous spelling).
+func (e *emitter) partitionKeyExpr() string {
+	col := partitionColumns[e.addr.Partition]
+	if e.res.joined {
+		return e.res.primary + "." + col
+	}
+	return col
+}
+
+// subjectConds is THE source-row addressing condition set (one spelling,
+// phase1 and phase2 share it). The humans-only rule is about SOURCE
+// ROWS — every subject alike (§3.4: a team/match value still counts
+// humans only) — while the "no empty key" clause keys off the declared
+// subject:
+//
+//	player  `subject <> ''` (a no-actor bucket never becomes a value)
+//	        beside THE humans-only condition over the subject column
+//	        (store.HumanOnlyBySteamID, match-scoped so the lookup rides
+//	        the players PK) — byte-stable pre-expansion emission.
+//	team    `team <> ''` first (an unknown-side row never joins a
+//	        team-subject grouping — schema.sql metric_values) beside
+//	        humans-only over the primary's PLAYER column when it has
+//	        one (a side-grained lead like round_economy records sides,
+//	        not players — no player column, no humans-only clause).
+//	match   humans-only over the primary's player column when it has
+//	        one; a round-grain lead (rounds, round_economy) carries no
+//	        player column, so NO condition — every row IS the match's
+//	        own record and there is no human/bot axis on it.
+//
+// UNCONDITIONAL (every statement sets it), so the former
+// mixed-population and player-group special cases collapsed into these
+// conditions. Pinned by TestSubjectAddressingEmitted,
+// TestJoinedPopulationAlignment, TestSubjectStatementExcludesBots
+// (player) and the subject-axis emission/refusal tests (match/team).
+func (e *emitter) subjectConds() []string {
+	humansOnly := func() string {
+		return store.HumanOnlyBySteamID(e.res.primary+"."+e.subject, e.res.primary+".match_id")
+	}
+	switch e.addr.Subject {
+	case "player":
+		return []string{e.subjectExpr() + " <> ''", humansOnly()}
+	case "team":
+		conds := []string{e.subjectKeyExpr() + " <> ''"}
+		if e.subject != "" {
+			conds = append(conds, humansOnly())
+		}
+		return conds
+	default: // match
+		if e.subject == "" {
+			return nil
+		}
+		return []string{humansOnly()}
+	}
+}
+
+// writeSubject writes the subject-addressing condition with the right
+// WHERE connector (phase1 and phase2 share this — one spelling, both
+// sides) and returns whether a WHERE keyword now stands in the
+// statement (a match-subject round-grain lead has NO condition — the
+// caller must not assume one was written).
+func (e *emitter) writeSubject(wroteWhere bool) bool {
+	for _, c := range e.subjectConds() {
+		if wroteWhere {
+			e.sb.WriteString(" AND ")
+		} else {
+			e.sb.WriteString(" WHERE ")
+		}
+		e.sb.WriteString(c)
+		wroteWhere = true
+	}
+	return wroteWhere
+}
+
+// phase1 emits the aggregate statement: the row shape's address columns
+// (match_id when emitMid, the declared subject's key as grp, the
+// partition dim when declared), every SQL aggregation as a value column
+// (first = previewed value, wrapped by the denominator when set),
+// trailing COUNT(*) sample size, FROM (+ engine LEFT JOINs), scope WHERE
+// on the primary (+ the subject addressing condition), GROUP BY the row
+// shape ORDER BY the same. In the pass-only batched mode
+// (CompilePassMatch) the row's match_id leads both the SELECT and the
+// GROUP BY — one statement, every match's per-subject values (design
+// §3).
 func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 	e.sb.WriteString("SELECT ")
-	if e.batched {
+	if e.emitMid() {
 		e.sb.WriteString(e.matchIDExpr())
 		e.sb.WriteString(" AS mid, ")
 	}
-	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(e.subjectKeyExpr())
 	e.sb.WriteString(" AS grp, ")
+	if e.addr.Partition != "" {
+		e.sb.WriteString(e.partitionKeyExpr())
+		e.sb.WriteString(" AS dim, ")
+	}
 	for i, a := range aggs {
 		if i > 0 {
 			e.sb.WriteString(", ")
@@ -692,12 +944,25 @@ func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 		e.sb.WriteString(e.bind(e.matchID))
 		wroteWhere = true
 	}
-	e.writeSubject(wroteWhere)
-	if e.batched {
-		e.sb.WriteString(" GROUP BY mid, grp ORDER BY mid, grp")
-		return
+	e.writeSubject(wroteWhere) // may add no condition (match-subject round-grain lead)
+	group := e.groupCols()
+	e.sb.WriteString(" GROUP BY " + strings.Join(group, ", ") + " ORDER BY " + strings.Join(group, ", "))
+}
+
+// groupCols is THE row-shape group list (phase1's GROUP BY and ORDER
+// BY — one spelling so the two can never diverge): the match address
+// when the shape leads with it, the declared subject's key, the
+// partition dim when declared.
+func (e *emitter) groupCols() []string {
+	var cols []string
+	if e.emitMid() {
+		cols = append(cols, "mid")
 	}
-	e.sb.WriteString(" GROUP BY grp ORDER BY grp")
+	cols = append(cols, "grp")
+	if e.addr.Partition != "" {
+		cols = append(cols, "dim")
+	}
+	return cols
 }
 
 // phase2 emits the raw-value statement for a percentile value: the
@@ -711,12 +976,16 @@ func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 // the row's match_id — the pass partitions (match_id, subject).
 func (e *emitter) phase2(a *Agg, withDenom bool) {
 	e.sb.WriteString("SELECT ")
-	if e.batched {
+	if e.emitMid() {
 		e.sb.WriteString(e.matchIDExpr())
 		e.sb.WriteString(" AS mid, ")
 	}
-	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(e.subjectKeyExpr())
 	e.sb.WriteString(" AS grp, ")
+	if e.addr.Partition != "" {
+		e.sb.WriteString(e.partitionKeyExpr())
+		e.sb.WriteString(" AS dim, ")
+	}
 	e.sb.WriteString(e.res.qualify(a.Col))
 	e.sb.WriteString(" AS x")
 	if withDenom {
@@ -733,8 +1002,7 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 		e.sb.WriteString(e.bind(e.matchID))
 		wroteWhere = true
 	}
-	e.writeSubject(wroteWhere)
-	wroteWhere = true
+	wroteWhere = e.writeSubject(wroteWhere)
 	if a.Where != nil {
 		if wroteWhere {
 			e.sb.WriteString(" AND ")
@@ -747,25 +1015,63 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 	}
 }
 
-// emitDenom writes the denominator subquery — ONE rule, two units: the
-// denominator counts the SCOPE's units for the subject.
+// emitDenom writes the denominator subquery — ONE rule, per subject
+// (metrics expansion §6.6): the denominator counts the SCOPE's units
+// FOR THE SUBJECT.
 //
-//   - match scope (`match:<id>`): the match's units — the scalar
+//   - player subject (every branch below — unchanged emission):
+//     match scope (`match:<id>`): the match's units — the scalar
 //     `SELECT COUNT(*) FROM <rounds|matches> WHERE match_id = ?`, every
-//     player in the match sharing it (the emission is unchanged from the
-//     pre-subject engine).
-//   - pass-only batched mode (CompilePassMatch): the SAME match-scope
-//     count, correlated on the ROW's match instead of a bound scope id —
-//     one statement still computes every match's rate (design §3).
-//   - library/profile scope (""): the subject's CAREER units, correlated
-//     on the subject — rounds → the subject's player_round_stats rows
-//     (one per player-round), matches → the subject's player_stats rows
-//     (one per player-match ⇒ matches played). The career table is
-//     ALIASED so the outer subject reference can never resolve to it
-//     when the primary and the career table are the same table, and the
-//     outer reference is always primary-qualified (inside a subquery an
-//     unqualified name would resolve to the inner table).
+//     player in the match sharing it; pass-only batched mode: the SAME
+//     match-scope count, correlated on the ROW's match instead of a
+//     bound scope id — one statement computes every match's rate
+//     (design §3); library/profile scope (""): the subject's CAREER
+//     units, correlated on the subject — rounds → the subject's
+//     player_round_stats rows, matches → its player_stats rows. The
+//     career table is ALIASED so the outer subject reference can never
+//     resolve to it when the primary and the career table are the same
+//     table, and the outer reference is always primary-qualified.
+//
+//   - match subject: THAT match's units — the same scalar at bound
+//     match scope (the existing rule), correlated on the row's match
+//     otherwise (batched pass and library preview alike; a match value
+//     has no career divisor). The inner table is ALIASED (`d`): a
+//     round-grain lead may BE the denominator table, and an inner table
+//     in scope would swallow the outer qualification.
+//
+//   - team subject: that TEAM's rounds in the row's match — the §5 team
+//     stamp on round_player_sides: COUNT(DISTINCT round) over the
+//     team's freeze-end side samples (the rows are per player, so the
+//     distinct count restores the round unit; unknown-side rows carry
+//     team ” and drop out rather than guess); the `matches`
+//     denominator counts the row's own match — a team value spans
+//     exactly one match. Always correlated (both teams share a match).
 func (e *emitter) emitDenom() {
+	matchRide := e.res.primary + ".match_id"
+	switch e.addr.Subject {
+	case "team":
+		if e.denom == "rounds" {
+			e.sb.WriteString("(SELECT COUNT(DISTINCT d.round) FROM round_player_sides AS d WHERE d.match_id = ")
+			e.sb.WriteString(matchRide)
+			e.sb.WriteString(" AND d.team = ")
+			e.sb.WriteString(e.res.primary + ".team)")
+			return
+		}
+		e.sb.WriteString("(SELECT COUNT(*) FROM matches AS d WHERE d.match_id = ")
+		e.sb.WriteString(matchRide)
+		e.sb.WriteString(")")
+		return
+	case "match":
+		if e.matchID == 0 {
+			e.sb.WriteString("(SELECT COUNT(*) FROM ")
+			e.sb.WriteString(e.denom)
+			e.sb.WriteString(" AS d WHERE d.match_id = ")
+			e.sb.WriteString(matchRide)
+			e.sb.WriteString(")")
+			return
+		}
+		// bound match scope: the same scalar as the player rule below
+	}
 	e.sb.WriteString("(SELECT COUNT(*) FROM ")
 	switch {
 	case e.batched:

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -447,5 +448,149 @@ func TestBumpMetricAndDependentsCascade(t *testing.T) {
 	}
 	if up2.Version != 3 || other2.Version != 2 {
 		t.Errorf("cycle bump versions: up=%d other=%d, want up=3 other=2 (each member once)", up2.Version, other2.Version)
+	}
+}
+
+// TestMetricCoverageSubjectBranches pins THE behind predicate's
+// subject-aware branches (metrics expansion §6): a match- or
+// team-subject metric at match extent is behind iff a fresh row exists
+// for that ready match — the same clause a player subject rides (it
+// never constrains subject_key, so ANY fresh row for the match answers
+// it, ONE team row included: per-team completeness is the emit's job,
+// not the predicate's), and a newly imported uncovered match moves it
+// behind again.
+func TestMetricCoverageSubjectBranches(t *testing.T) {
+	s, _ := openFileStore(t)
+	t.Cleanup(func() { _ = s.CloseRO() })
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	live := cfg.RuleVersion
+
+	matchA := seedReadyMatch(t, s, "subj-axis-1")
+	subjMetric := func(name, subject string) models.MetricRow {
+		t.Helper()
+		m, err := s.CreateMetric(models.MetricRow{
+			Name: name, Title: name, Expr: "from rounds: count()",
+			Scope: "match", Subject: subject, Origin: "user",
+		})
+		if err != nil {
+			t.Fatalf("CreateMetric(%s): %v", name, err)
+		}
+		return m
+	}
+	mm := subjMetric("cov_match_subject", "match")
+	mt := subjMetric("cov_team_subject", "team")
+
+	// Absent on a ready match → behind for both subjects.
+	if c := coverageOf(t, s, mm.ID, live); !c.Behind {
+		t.Errorf("absent match-subject = %+v, want behind", c)
+	}
+	if c := coverageOf(t, s, mt.ID, live); !c.Behind {
+		t.Errorf("absent team-subject = %+v, want behind", c)
+	}
+
+	// One fresh row for the match answers the clause — subject_key ''
+	// for the match subject, ONE team key for the team subject (the
+	// pinned "a fresh row exists for that match" rule).
+	if err := s.InsertMetricValues(mm.ID, mm.Version, live, []MetricValueRow{
+		{MatchID: matchA, SubjectKey: "", Value: 24, N: 1},
+	}); err != nil {
+		t.Fatalf("insert match-subject: %v", err)
+	}
+	if c := coverageOf(t, s, mm.ID, live); c.Behind {
+		t.Errorf("match-subject with its match row = %+v, want fresh", c)
+	}
+	if err := s.InsertMetricValues(mt.ID, mt.Version, live, []MetricValueRow{
+		{MatchID: matchA, SubjectKey: "ct", Value: 5, N: 12},
+	}); err != nil {
+		t.Fatalf("insert team-subject: %v", err)
+	}
+	if c := coverageOf(t, s, mt.ID, live); c.Behind {
+		t.Errorf("team-subject with one team row for the match = %+v, want fresh (any fresh row answers the match clause)", c)
+	}
+
+	// A second ready match with no rows → behind again (the import
+	// trigger's clause, subject-agnostic).
+	seedReadyMatch(t, s, "subj-axis-2")
+	if c := coverageOf(t, s, mm.ID, live); !c.Behind {
+		t.Errorf("match-subject on a new uncovered match = %+v, want behind", c)
+	}
+	if c := coverageOf(t, s, mt.ID, live); !c.Behind {
+		t.Errorf("team-subject on a new uncovered match = %+v, want behind", c)
+	}
+}
+
+// TestMetricCoveragePartitionDimRule pins the dim-axis rule (metrics
+// expansion §6 — "behind iff ANY expected dim row is missing", the
+// simplest honest reading): a partitioned metric's expected dims per
+// unit are the partition values its INPUTS currently carry (side: each
+// side human rows played), each guarded so work that does not exist
+// never reads as behind (the library-empty guard's criterion per dim).
+func TestMetricCoveragePartitionDimRule(t *testing.T) {
+	s, _ := openFileStore(t)
+	t.Cleanup(func() { _ = s.CloseRO() })
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	live := cfg.RuleVersion
+
+	matchID := seedReadyMatch(t, s, "dim-rule-1")
+	// Human input on BOTH sides (no players row marks them bot).
+	for i, side := range []string{"ct", "t"} {
+		if _, err := s.db.Exec(`INSERT INTO player_stats (match_id, steam_id, side) VALUES (?, ?, ?)`,
+			matchID, fmt.Sprintf("7656119800000000%d", i+1), side); err != nil {
+			t.Fatalf("seed player_stats side %s: %v", side, err)
+		}
+	}
+	m, err := s.CreateMetric(models.MetricRow{
+		Name: "cov_side_partition", Title: "cov_side_partition",
+		Expr: "from player_stats: sum(kills)", Scope: "match",
+		Partition: "side", Origin: "user",
+	})
+	if err != nil {
+		t.Fatalf("CreateMetric: %v", err)
+	}
+
+	// Both input sides expect a fresh dim row: absent → behind (the
+	// match clause alone already says so; the dim axis takes over once
+	// SOME rows exist).
+	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
+		{MatchID: matchID, SubjectKey: "76561198000000001", Dim: "ct", Value: 3, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000002", Dim: "t", Value: 4, N: 1},
+	}); err != nil {
+		t.Fatalf("insert both dims: %v", err)
+	}
+	if c := coverageOf(t, s, m.ID, live); c.Behind {
+		t.Errorf("both dims fresh = %+v, want fresh", c)
+	}
+
+	// THE RULE: drop ONE input-carried dim row → behind (any dim row
+	// missing), even though the match still has a fresh row.
+	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND dim = 't'`, m.ID); err != nil {
+		t.Fatalf("delete dim row: %v", err)
+	}
+	if c := coverageOf(t, s, m.ID, live); !c.Behind {
+		t.Errorf("one input side without a dim row = %+v, want behind", c)
+	}
+
+	// Guard: a side NO human input carries is not expected — restoring
+	// only ct and dropping the t INPUT leaves the metric fresh, never a
+	// permanent-behind loop over work that does not exist.
+	if _, err := s.db.Exec(`DELETE FROM player_stats WHERE match_id = ? AND side = 't'`, matchID); err != nil {
+		t.Fatalf("delete t input: %v", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND dim = 'ct'`, m.ID); err != nil {
+		t.Fatalf("reset dim rows: %v", err)
+	}
+	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
+		{MatchID: matchID, SubjectKey: "76561198000000001", Dim: "ct", Value: 3, N: 1},
+	}); err != nil {
+		t.Fatalf("insert ct dim: %v", err)
+	}
+	if c := coverageOf(t, s, m.ID, live); c.Behind {
+		t.Errorf("only the input-carried side present = %+v, want fresh (the absent side is not expected work)", c)
 	}
 }
