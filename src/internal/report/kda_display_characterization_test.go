@@ -15,8 +15,10 @@ import (
 // read back through MetricCells, rendered by player.md. seedMatch's
 // player A00 is the zero-death corner (10 kills + 1 assist, 0 deaths),
 // so this pins value 11 ((10+1)/MAX(0,1) — the floored seed) AND the
-// byte-identical float2 display "KDA 11.00". ME1's greatest() rewrite
-// of the seed expression must keep both pins unchanged.
+// byte-identical float2 display "KDA 11.00". ME1 Phase 1 COLLAPSED into
+// w13e's scalar max() (no seed rewrite — see metrics' greatest_collapse
+// pin), so this display is final; any future seed edit must keep both
+// pins unchanged.
 func TestKDAZeroDeathDisplay(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -69,7 +71,8 @@ func TestKDAZeroDeathDisplay(t *testing.T) {
 	// stays raw), the kd metric's zero-death edge rendering 0.00
 	// (ratio's NULLIF — Q1's RULED divergence), and the floored kda
 	// rendering 11.00 (MAX(deaths,1) — the floor closes the edge for
-	// KDA). This is the display ME1's greatest() rewrite must not move.
+	// KDA). This is the display the collapsed ME1 (scalar max, no
+	// greatest()) must not move.
 	want := "K/D/A: **10/0/1** (KD 0.00, KDA 11.00)"
 	if !strings.Contains(pout, want) {
 		t.Errorf("player.md missing %q:\n%s", want, pout)
