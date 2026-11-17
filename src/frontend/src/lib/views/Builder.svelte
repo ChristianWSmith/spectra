@@ -1766,7 +1766,7 @@
                              stays plain text. -->
                         <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
                       </td>
-                      <td class="num">{fmtMetric(r.value, previewFormat)}</td>
+                      <td class="num">{fmtMetric(r.value, previewFormat, r.valueKey, () => r.label)}</td>
                       <td class="num">{fmtInt(r.n)}</td>
                     </tr>
                   {/each}

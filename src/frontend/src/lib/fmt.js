@@ -174,7 +174,19 @@ export function fmtMoney(v) {
 // metric arrives ALREADY scaled (the series read serves 0..100), so it
 // diverts percent to fmtPercent(v) and delegates every other tag here —
 // fmtMetric's percent branch would multiply that value by 100 again.
-export function fmtMetric(v, format) {
+//
+// identity (the key-valued format, metrics expansion §3.3/§9): the
+// value is a KEY, not a number — `key` is the stored value_key and
+// `resolveName` maps it to the display name. Unresolved renders the
+// dash: no key, no resolver, an empty name, or a resolver that falls
+// back to the key itself (a raw SteamID64 is never display text —
+// the user-domain text rule). The companion numeric value does not
+// ride this function; the identity IS what it renders.
+export function fmtMetric(v, format, key, resolveName) {
+  if (format === 'identity') {
+    const name = key && typeof resolveName === 'function' ? resolveName(key) : '';
+    return name && name !== key ? name : '—';
+  }
   if (!Number.isFinite(v)) return '—';
   switch (format) {
     case 'int':

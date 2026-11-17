@@ -108,7 +108,7 @@ func TestSaveMetricFormatEnum(t *testing.T) {
 	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
 	svc := &MetricsService{st: st}
 
-	for _, format := range []string{"", "int", "float1", "float2", "percent", "currency"} {
+	for _, format := range []string{"", "int", "float1", "float2", "percent", "currency", "identity"} {
 		saved, err := svc.SaveMetric(models.MetricRow{
 			Name: "fmt_" + orName(format), Expr: "from events: count()",
 			Format: format, Scope: "match", Origin: "user",

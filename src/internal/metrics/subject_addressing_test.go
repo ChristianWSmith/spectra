@@ -105,8 +105,9 @@ func mustCompileWithDenom(t *testing.T, expr, denom string, addr Address) Plan {
 // the stored subject_key/dim come from the plan's declared addressing —
 // a match subject stores ” with its match address, a team subject its
 // team key beside the match the shape carries, and a partitioned row
-// carries its dim (value_key stays ” until the Phase 5 identity
-// writer).
+// carries its dim (a numeric row's value_key stays ” — the identity
+// writer maps it only on an argmax plan, pinned in
+// TestValuesFromPlanIdentityMapping).
 func TestValuesFromPlanSubjectMapping(t *testing.T) {
 	// match subject, batched: [mid, grp(=match), value, n] → subject_key ''.
 	plan := Plan{Mode: ModeGrouped, MatchAddress: true, Subject: "match"}

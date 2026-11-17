@@ -47,12 +47,13 @@ import (
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
-	MatchID int64   `json:"matchId"` // the row's match address (team-subject rows at library scope; 0 otherwise)
-	Group   string  `json:"group"`   // subject key ("" for none)
-	Dim     string  `json:"dim"`     // partition value ("" = unpartitioned)
-	Label   string  `json:"label"`   // display name (player name etc when resolvable)
-	Value   float64 `json:"value"`
-	N       int     `json:"n"` // sample size behind the value (PRD §5.16)
+	MatchID  int64   `json:"matchId"` // the row's match address (team-subject rows at library scope; 0 otherwise)
+	Group    string  `json:"group"`   // subject key ("" for none)
+	Dim      string  `json:"dim"`     // partition value ("" = unpartitioned)
+	Label    string  `json:"label"`   // display name (player name etc when resolvable; an identity row labels its WINNER)
+	Value    float64 `json:"value"`
+	ValueKey string  `json:"valueKey"` // identity winner's key (argmax rows only — §3.3; "" on numeric rows)
+	N        int     `json:"n"`        // sample size behind the value (PRD §5.16; for an identity, the pool)
 }
 
 // MetricPreview is a preview response. Metric is models.MetricRow — the
@@ -129,12 +130,14 @@ func exprErrorErr(perr *metrics.ParseError) error {
 // a two-decimal tail unconditionally (Q6 — the K/D seeds render2.00,
 // never the auto-format's "2"); it is a display tag only, no DDL and no
 // grammar change. identity (the key-valued format — metrics expansion
-// §4 readiness, 2026-11-17) marks a metric whose value is a KEY in
-// metric_values.value_key rather than a number; no seed carries it and
-// the editor select / store format filter (store.metricFormatTokens —
-// this vocabulary minus identity, plus its filter-only `auto` alias for
-// ”) do not offer it until an identity metric's surface first ships.
-// The filter never lists a token this map lacks.
+// §4/§9) marks a metric whose value is a KEY in metric_values.value_key
+// rather than a number — the M1 identity seeds carry it (plan §8), and
+// fmtMetric renders it through the value_key → name lookup (unresolved
+// ⇒ dash, never a raw key). The editor select / store format filter
+// (store.metricFormatTokens — this vocabulary minus identity, plus its
+// filter-only `auto` alias for ”) do not offer the token until the
+// identity surface ships (plan §9 gates the Builder control). The
+// filter never lists a token this map lacks.
 var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true, "identity": true}
 
 // ListMetrics returns all definitions (builtin first).
@@ -638,7 +641,7 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 	}
 	rows := make([]MetricPreviewRow, len(pv.Rows))
 	for i, r := range pv.Rows {
-		rows[i] = MetricPreviewRow{MatchID: r.MatchID, Group: r.Group, Dim: r.Dim, Label: r.Label, Value: r.Value, N: r.N}
+		rows[i] = MetricPreviewRow{MatchID: r.MatchID, Group: r.Group, Dim: r.Dim, Label: r.Label, Value: r.Value, ValueKey: r.ValueKey, N: r.N}
 	}
 	return MetricPreview{
 		Metric: echo, Rows: rows, MS: pv.MS, SQL: pv.DisplaySQL(), Truncated: pv.Truncated,
@@ -649,8 +652,8 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 //
 // ONE read per value surface, straight through to the store's canonical
 // read: fresh rows only, canonical metric order, DTO exactly
-// {metricId, subjectKey, value, n} (no stamps — internal-only by
-// construction). These are what every view reads for a SAVED metric;
+// {metricId, subjectKey, value, valueKey, n} (no stamps — internal-only
+// by construction). These are what every view reads for a SAVED metric;
 // PreviewMetric stays the on-demand calculator for unsaved/dirty
 // drafts, which have no stored rows to read.
 

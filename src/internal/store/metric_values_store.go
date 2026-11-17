@@ -183,8 +183,9 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 // already applied store.HumanOnly + subject <> ”, so the pass never
 // filters here), a team key, or ” for a match subject (its address IS
 // MatchID); Dim is the partition value (” = unpartitioned — §6.5) and
-// ValueKey the identity slot (identity metrics only; every
-// number-valued row writes ” — the Phase 5 argmax writer fills it).
+// ValueKey the identity slot (§3.3): the argmax winner's player key on
+// an identity row, ” on every number-valued row (valuesFromPlan maps
+// it from the plan's idkey column).
 type MetricValueRow struct {
 	MatchID    int64
 	SubjectKey string
@@ -284,9 +285,10 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
 // caller can ever render a stale value. The DTO is exactly
-// {metricId, subjectKey, value, n}: no stamps, no computed_at (they are
-// INTERNAL-ONLY — models.MetricValue carries no such field, so a stamp
-// cannot reach a view, tooltip or export by construction). Rows come
+// {metricId, subjectKey, value, valueKey, n}: no stamps, no
+// computed_at (they are INTERNAL-ONLY — models.MetricValue carries no
+// such field, so a stamp cannot reach a view, tooltip or export by
+// construction). Rows come
 // back in the canonical metric order (metricOrder — builtin → user →
 // plugin, name ASC) then subject_key, so a caller zips them against
 // ListMetrics without a second sort.
@@ -294,8 +296,9 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 // metricValueFreshSQL is the read's row clause: a row is fresh iff it
 // was computed under the metric's CURRENT version and the CURRENT
 // analysis rule version — metricValueFreshCond, prefixed with the join
-// it needs (m.version).
-const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.value, v.n
+// it needs (m.version). value_key rides every row (the identity slot —
+// §3.3 — ” on numeric rows).
+const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.value, v.value_key, v.n
 	FROM metric_values v
 	JOIN metrics m ON m.id = v.metric_id
 	WHERE ` + metricValueFreshCond
@@ -321,7 +324,7 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 	var out []models.MetricValue
 	for rows.Next() {
 		var v models.MetricValue
-		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Value, &v.N); err != nil {
+		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Value, &v.ValueKey, &v.N); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

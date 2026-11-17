@@ -35,7 +35,7 @@ const (
 var aggOps = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
 	"stddev": true, "percentile": true, "median": true, "ratio": true,
-	"metric": true,
+	"metric": true, "argmax": true,
 }
 
 // ratioNestedOps restricts ratio()'s arguments — AND the min()/max()
@@ -466,7 +466,7 @@ func (p *parser) parseAgg(top bool) (Agg, *ParseError) {
 	}
 	op := strings.ToLower(t.text)
 	if !aggOps[op] {
-		return Agg{}, errf(t.pos, "unknown aggregation %q (valid: count, sum, avg, min, max, stddev, percentile, median, ratio, metric)", t.text)
+		return Agg{}, errf(t.pos, "unknown aggregation %q (valid: count, sum, avg, min, max, stddev, percentile, median, ratio, metric, argmax)", t.text)
 	}
 	agg := Agg{Op: op, Pos: t.pos}
 	if perr := p.expectPunct("("); perr != nil {
@@ -564,6 +564,14 @@ func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
 			return Agg{}, perr
 		}
 		return p.parseColArg(agg, "percentile")
+	case "argmax":
+		// The identity operator (metrics expansion §6.4): one ranking
+		// column over the pool — parseColArg gives it the single-column
+		// shape, the value-column rule and every denied-position copy
+		// (metric()/exists()/keyword refusals) the other column ops
+		// share. Compile enforces the rest of its contract (subject,
+		// lead, sole aggregation — each with its own message).
+		return p.parseColArg(agg, "argmax")
 	case "ratio":
 		num, perr := p.parseAgg(false)
 		if perr != nil {
