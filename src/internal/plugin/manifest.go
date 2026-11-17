@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,65 +161,29 @@ func ValidateManifest(data []byte) (Manifest, error) {
 	return m, nil
 }
 
-// ComputeBundleHash returns the sha256 hex digest of a bundle: for a
-// directory, every regular file except the root manifest, in sorted
-// relative-path order, hashed as relpath (slash form) + 0x00 + contents
-// (the manifest carries the hash, so it cannot hash itself); for a single
-// file, the file's bytes as-is. This is the share/pin format recorded in
-// manifest.hash and the registry.
+// ComputeBundleHash returns the sha256 hex digest of a bundle manifest
+// FILE — the file's bytes as-is (the install source is file-only since
+// w27). This is the share/pin format recorded in manifest.hash and the
+// registry; a single file cannot pin its OWN digest (the digest covers
+// the pin field), so a manifest carrying a pin can never verify and is
+// refused on install — BuildPluginBundle therefore ships hash empty.
 func ComputeBundleHash(sourcePath string) (string, error) {
-	st, err := os.Stat(sourcePath)
-	if err != nil {
-		return "", fmt.Errorf("couldn't read %s: %w", sourcePath, err)
-	}
 	h := sha256.New()
-	if !st.IsDir() {
-		f, err := os.Open(sourcePath)
-		if err != nil {
-			return "", fmt.Errorf("couldn't open %s: %w", sourcePath, err)
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(h, f); err != nil {
-			return "", fmt.Errorf("couldn't read %s: %w", sourcePath, err)
-		}
-		return hex.EncodeToString(h.Sum(nil)), nil
-	}
-	err = filepath.WalkDir(sourcePath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(sourcePath, path)
-		if err != nil {
-			return err
-		}
-		if rel == ManifestName {
-			return nil // the manifest carries the pin; excluded by design
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.WriteString(h, filepath.ToSlash(rel)); err != nil {
-			return err
-		}
-		if _, err := h.Write([]byte{0}); err != nil {
-			return err
-		}
-		_, err = io.Copy(h, f)
-		return err
-	})
+	f, err := os.Open(sourcePath)
 	if err != nil {
-		return "", fmt.Errorf("couldn't hash the plugin bundle at %s: %w", sourcePath, err)
+		return "", fmt.Errorf("couldn't open %s: %w", sourcePath, err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("couldn't read %s: %w", sourcePath, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// LoadManifest reads + validates the manifest of a bundle directory (or a
-// single manifest JSON file).
+// LoadManifest reads + validates the manifest at sourcePath: an installed
+// bundle FOLDER (the registry's stored path — the installed layout is
+// always a folder holding spectra-plugin.json) or a single manifest JSON
+// file (the install source, which Install refuses to take as a folder).
 func LoadManifest(sourcePath string) (Manifest, error) {
 	st, err := os.Stat(sourcePath)
 	if err != nil {

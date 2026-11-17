@@ -900,6 +900,15 @@ const EXPECTED = {
   // Save armed), the server-failure leg re-pinned to the dialog staying
   // open with the error line (SaveFile still at 2), and the ✕ leg
   // addressing the live dialog.
+  // settings 112 → 112 (2026-11-17, w27 file-only plugin install): §J
+  // re-pinned in place with the SAME check count — ONE picker now (the
+  // folder picker and the icon-only file button are both gone: the
+  // source row is exactly Browse… + Install, Browse… carries the
+  // manifest-file tooltip), one file-pick round instead of the
+  // dir-pick-then-file-replace pair, and the new stall regression (the
+  // button must leave "Installing…" once InstallPlugin resolves). The
+  // retired folder-picker pins died with the control; §K untouched.
+  // (w27's delta is 0 — its 111 was based pre-w26; lead rebased to 112.)
   'settings.dom.mjs': 112,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines

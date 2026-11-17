@@ -3,8 +3,6 @@ package plugin
 import (
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -133,12 +131,12 @@ func (m *Manager) stateFor(row store.PluginRow) State {
 	return st
 }
 
-// Install validates sourcePath (bundle dir or single manifest JSON file),
-// refuses a metric naming a built-in (see CheckBuiltinMetricCollisions),
-// verifies manifest.hash when provided, copies the bundle into the plugin
-// directory, records the registry row, and upserts the plugin's metric
-// rows (enabled installs only). Reinstalling keeps the previous enabled
-// state.
+// Install validates sourcePath (a single manifest JSON file — folder
+// sources are refused at the top, see below), refuses a metric naming a
+// built-in (see CheckBuiltinMetricCollisions), verifies manifest.hash when
+// provided, copies the manifest into the plugin directory as the installed
+// bundle, records the registry row, and upserts the plugin's metric rows
+// (enabled installs only). Reinstalling keeps the previous enabled state.
 // validateMetricExprs runs the real metrics-engine grammar on every bundled
 // metric so a plugin cannot persist expressions the engine would reject at
 // preview time (structural manifest checks live in manifest.go). Compile's
@@ -154,6 +152,20 @@ func validateMetricExprs(man Manifest) error {
 }
 
 func (m *Manager) Install(sourcePath string) (State, error) {
+	src, err := os.Stat(sourcePath)
+	if err != nil {
+		return State{}, fmt.Errorf("couldn't read %s: %w", sourcePath, err)
+	}
+	// The source is ONE manifest file (owner ruling, w27): a folder
+	// source used to walk + copy the ENTIRE folder (the owner's Desktop
+	// made one install run ~110s of silent hashing/copying — the reported
+	// "installing forever" stall), and no code ever read a bundle's
+	// non-manifest files. The installed bundle on disk stays a folder
+	// (LoadManifest below still reads those); only the SOURCE is
+	// file-only, so this refuses before any work happens.
+	if src.IsDir() {
+		return State{}, fmt.Errorf("plugin source %q is a folder — choose the spectra-plugin.json file itself", sourcePath)
+	}
 	man, err := LoadManifest(sourcePath)
 	if err != nil {
 		return State{}, err
@@ -281,56 +293,20 @@ func metricDefs(man Manifest) []store.PluginMetricDef {
 	return defs
 }
 
-// copyBundle copies a bundle directory (recursive) or a single manifest
-// file into dest (created).
+// copyBundle writes the single manifest file into dest (created) — the
+// installed bundle layout. Install refuses folder sources, so there is no
+// recursive copy: a bundle is ONE self-contained spectra-plugin.json (w27
+// file-only ruling; nothing ever read a bundle's other files).
 func copyBundle(sourcePath, dest string) error {
-	st, err := os.Stat(sourcePath)
+	data, err := os.ReadFile(sourcePath)
 	if err != nil {
-		return fmt.Errorf("couldn't read the plugin file: %w", err)
+		return fmt.Errorf("couldn't read the plugin manifest: %w", err)
 	}
-	if !st.IsDir() {
-		if err := os.MkdirAll(dest, 0o755); err != nil {
-			return fmt.Errorf("couldn't create the plugin folder: %w", err)
-		}
-		data, err := os.ReadFile(sourcePath)
-		if err != nil {
-			return fmt.Errorf("couldn't read the plugin manifest: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(dest, ManifestName), data, 0o644); err != nil {
-			return fmt.Errorf("couldn't write the plugin manifest: %w", err)
-		}
-		return nil
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return fmt.Errorf("couldn't create the plugin folder: %w", err)
 	}
-	err = filepath.WalkDir(sourcePath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(sourcePath, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dest, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		src, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = src.Close() }()
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		dst, err := os.Create(target)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = dst.Close() }()
-		_, err = io.Copy(dst, src)
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("couldn't copy the plugin files: %w", err)
+	if err := os.WriteFile(filepath.Join(dest, ManifestName), data, 0o644); err != nil {
+		return fmt.Errorf("couldn't write the plugin manifest: %w", err)
 	}
 	return nil
 }
