@@ -45,7 +45,7 @@ const (
 
 	roundClassCols = `round, label, confidence, rule_version, explanation`
 
-	roundSideClassCols = `round, side, class, why`
+	roundSideClassCols = `round, side, class, why, team`
 
 	playerRoundCols = `round, steam_id, name, kills, assists, deaths, traded, survived,
 		kast, dmg, util_dmg, money_start, equip, spent, rule_version`
@@ -341,7 +341,7 @@ func (s *Store) ReplaceRoundSideClasses(matchID int64, rows []models.RoundSideCl
 	return s.replaceMatchRows(op, "round_side_classes", "match_id, "+roundSideClassCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
-			if _, err := stmt.Exec(matchID, r.Round, scrub(r.Side), scrub(r.Class), scrub(r.Why)); err != nil {
+			if _, err := stmt.Exec(matchID, r.Round, scrub(r.Side), scrub(r.Class), scrub(r.Why), scrub(r.Team)); err != nil {
 				return fmt.Errorf("%s: %w", op, err)
 			}
 			return nil

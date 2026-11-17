@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -121,6 +122,32 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	}
 
 	classes, sideClasses := Classify(eco, rounds, cfg)
+	// Team stamp (metrics expansion §5): round_side_classes is a
+	// side-grained row — it names ONE team, unlike the round-grain
+	// classification above — so it carries the sideparity teamKeyAt key
+	// (the team's final side; '' for an unknown side, excluded from
+	// team-subject grouping rather than guessed). Stamped HERE, beside
+	// the class that owns the row (the rule-stamp convention: stored at
+	// analyze time, rules bump ⇒ recompute). The ingest-owned tables
+	// (round_economy, round_player_sides, player_stats) take their
+	// stamps with the row at SaveExtracted; `rounds` — a row that
+	// contains BOTH teams — is deliberately never stamped. The counted
+	// index is the round's position among the stored counted rounds
+	// (extract's knife/warmup discard numbers them densely from 1 — the
+	// map keeps a non-dense fixture honest too); a side class for a
+	// round no stored round carries gets no team, never a guessed one.
+	countedIndex := make(map[int]int, len(rounds))
+	for i, r := range rounds {
+		countedIndex[r.Number] = i
+	}
+	for i := range sideClasses {
+		idx, ok := countedIndex[sideClasses[i].Round]
+		if !ok {
+			sideClasses[i].Team = ""
+			continue
+		}
+		sideClasses[i].Team = rules.TeamKeyAt(sideClasses[i].Side, idx, len(rounds), m.SideSwitches)
+	}
 	prs := PlayerRounds(evs, rounds, players, cfg, sides)
 	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)

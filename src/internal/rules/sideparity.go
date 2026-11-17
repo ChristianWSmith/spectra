@@ -10,11 +10,14 @@
 // tie (see CS2.md "MR12 regulation + MR3 overtime"). The JavaScript twin
 // lives in frontend/src/lib/sideparity.js; both are pinned to the same
 // fixture (testdata/sideparity.json — see sideparity_test.go and
-// frontend/src/lib/sideparity.test.js).
+// frontend/src/lib/sideparity.test.js), and TeamKeyAt is the stamp source
+// for the stored `team` column on the round-scoped rows (round_economy,
+// round_player_sides, round_side_classes).
 //
-// Production callers today: rules.OtherSide (analytics.Clutches) and
+// Production callers today: rules.OtherSide (analytics.Clutches),
 // rules.StartSide (store.queryEvents' Team key — the replay filter's
-// start-side identity). Every import stores round_player_sides, so data
+// start-side identity) and rules.TeamKeyAt (the team stamp beside each
+// row it describes). Every import stores round_player_sides, so data
 // lacking exact per-round sides gets NO parity guess — there is no
 // fallback pass. FlipIndexes/SideAt are fixture-pinned references the
 // frontend twin is tested against; do not reintroduce a fallback that
@@ -100,14 +103,72 @@ func OtherSide(side string) string {
 // ("", "CT", anything but ct/t) stay "" — missing data never gets a
 // guessed identity.
 func StartSide(finalSide string, switches int) string {
+	return sideInEra(finalSide, switches, 0)
+}
+
+// sideInEra returns the side the team that ENDED on finalSide played in
+// half `era` (0 = first half): the team's side in the LAST era is
+// finalSide, so era e is finalSide flipped (eras - 1 - e) times where
+// eras = switches + 1 — only the parity of that count matters (and the
+// absolute value ignores the sign, so an era past the last one still
+// resolves, exactly like the JS twin sideInEra). Unknown sides stay "".
+// Frontend twin: sideInEra in frontend/src/lib/sideparity.js.
+func sideInEra(finalSide string, switches, era int) string {
 	if finalSide != "ct" && finalSide != "t" {
 		return ""
 	}
 	if switches < 0 {
 		switches = 0 // the JS twin's max(1, s+1) normalizes negatives to "no flip"
 	}
-	if switches%2 == 1 {
-		return OtherSide(finalSide)
+	flips := era - switches // (eras - 1) with eras = switches + 1
+	if flips < 0 {
+		flips = -flips
 	}
-	return finalSide
+	if flips%2 == 0 {
+		return finalSide
+	}
+	return OtherSide(finalSide)
+}
+
+// TeamKeyAt maps the SIDE a team played in the counted round at `index`
+// (0-based into the counted rounds — stored round numbers are dense, so
+// index = round number - 1) to that TEAM's key: the team's FINAL side
+// ('ct' | 't'), the teamKeyAt convention of frontend/src/lib/sideparity.js
+// — the key lib/teams.js names and identity colors, the Economy view's
+// per-team rollups and winnerTeamKey all resolve through. Sides swap at
+// every half, so 'ct' names one team before a switch and the other after
+// it: any per-TEAM rollup (never per-side) maps each round's side through
+// this instead of treating a side as a team. `counted` is the match's
+// counted-round count (FlipIndexes' n) and `switches` its recorded side
+// switches.
+//
+// An unknown side maps to "": missing data never gets a guessed team, so
+// a stamped row carries an empty team key and drops out of team-subject
+// grouping (the sideparity rule — never a guessed team).
+//
+// TeamKeyAt is the stamp source for the stored `team` column on the
+// round-scoped rows (round_economy / round_player_sides /
+// round_side_classes — a round row itself carries BOTH teams and is
+// deliberately never stamped). It is fixture-pinned on both sides of the
+// twin: testdata/sideparity.json's teamKeyCt column is asserted here and
+// by frontend/src/lib/sideparity.test.js, so the Go stamp and the
+// Economy view's JavaScript cannot drift apart.
+//
+// Frontend twin: teamKeyAt in frontend/src/lib/sideparity.js.
+func TeamKeyAt(side string, index, counted, switches int) string {
+	if side != "ct" && side != "t" {
+		return ""
+	}
+	era := 0
+	for _, fl := range FlipIndexes(counted, switches) {
+		if fl <= index {
+			era++
+		}
+	}
+	// The side the final-CT team played in this era IS `side` → the row
+	// belongs to the final-CT team ('ct'), else to the final-T team.
+	if sideInEra("ct", switches, era) == side {
+		return "ct"
+	}
+	return "t"
 }

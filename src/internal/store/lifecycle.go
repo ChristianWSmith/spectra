@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // GetMatchBySHA reports the id of the match previously imported from a demo
@@ -264,13 +265,14 @@ const (
 		teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
 		rounds_played, entry_kills, entry_deaths, opening_kills, opening_deaths, trade_kills,
 		best_streak, two_k, three_k, four_k, five_k, utility_damage, enemies_flashed, flashed_times,
-		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon`
+		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon,
+		team, won, map`
 
 	roundCols = `number, winner, reason, duration_s, start_tick, end_tick,
 		mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
 		first_kill_steam, first_death_steam`
 
-	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value`
+	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value, team`
 
 	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
 		headshot, wallbang, noscope, through_smoke, attacker_blind, attacker_inair, assisted_flash, distance,
@@ -337,9 +339,49 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		}
 	}
 
+	// Ingest-owned row stamps (metrics expansion §5): these three
+	// tables are written ONLY by SaveExtracted, so their stamps travel
+	// WITH the row they describe — a reprocess re-stamps them with the
+	// row, and a rules bump never rewrites them (they are match facts,
+	// not analysis-rule outputs). team resolves every round-scoped side
+	// through the sideparity teamKeyAt formula over THIS extract's own
+	// side switches and counted rounds (rules.TeamKeyAt — the same key
+	// the Economy view derives client-side; unknown side ⇒ '' ⇒ the row
+	// drops out of team-subject grouping, never a guessed team).
+	// player_stats' team runs its final side through the same formula:
+	// under the teamKeyAt vocabulary a team's key IS its final side, so
+	// the round-scoped parity mapping collapses to the row's own side
+	// (and a non-side value normalizes to ''). won comes from
+	// models.WinFor — the ONE win predicate — over the stored score (tie
+	// or unknown side is not a win); map is the match row's map.
+	counted := len(em.Rounds)
+	switches := em.Match.SideSwitches
+	// The counted index of a stored round (position among the extract's
+	// counted rounds — the same length RoundStrip feeds flipIndexes, and
+	// the dense 1..N numbering makes it round-1; the map keeps the
+	// synthetic non-dense fixture honest too).
+	countedIndex := make(map[int]int, counted)
+	for i, r := range em.Rounds {
+		countedIndex[r.Number] = i
+	}
+	teamOfRound := func(side string, round int) string {
+		idx, ok := countedIndex[round]
+		if !ok {
+			return "" // a row for a round the extract never stored carries no team — never guessed
+		}
+		return rules.TeamKeyAt(side, idx, counted, switches)
+	}
+	// A whole-match row's team: its final side IS the team key under the
+	// teamKeyAt vocabulary, and the last counted round's index resolves
+	// it through the same formula (any era does — the mapping is
+	// identity at the final era).
+	teamOfPlayer := func(side string) string {
+		return rules.TeamKeyAt(side, counted-1, counted, switches)
+	}
+
 	statsStmt, err := tx.Prepare(
 		`INSERT INTO player_stats (match_id, ` + playerStatsCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -353,6 +395,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			ps.EntryDeaths, ps.OpeningKills, ps.OpeningDeaths, ps.TradeKills, ps.BestStreak, ps.TwoK,
 			ps.ThreeK, ps.FourK, ps.FiveK, ps.UtilityDamage, ps.EnemiesFlashed, ps.FlashedTimes, ps.BombPlants,
 			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
+			teamOfPlayer(ps.Side), b2i(models.WinFor(ps.Side, em.Match.ScoreCT, em.Match.ScoreT)),
+			scrub(em.Match.Map),
 		); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
 		}
@@ -377,28 +421,28 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	sidesStmt, err := tx.Prepare(
-		`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO round_player_sides (match_id, round, steam_id, side, team) VALUES (?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer sidesStmt.Close()
 	for _, rs := range em.RoundSides {
-		if _, err := sidesStmt.Exec(matchID, rs.Round, scrub(rs.SteamID), scrub(rs.Side)); err != nil {
+		if _, err := sidesStmt.Exec(matchID, rs.Round, scrub(rs.SteamID), scrub(rs.Side), teamOfRound(rs.Side, rs.Round)); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}
 
 	econStmt, err := tx.Prepare(
 		`INSERT INTO round_economy (match_id, ` + roundEconomyCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer econStmt.Close()
 	for _, e := range em.RoundEconomy {
-		if _, err := econStmt.Exec(matchID, e.Round, scrub(e.Side), e.EquipValue, e.MoneySampledSum, e.MoneySamples, e.Spent, e.FreePistolValue); err != nil {
+		if _, err := econStmt.Exec(matchID, e.Round, scrub(e.Side), e.EquipValue, e.MoneySampledSum, e.MoneySamples, e.Spent, e.FreePistolValue, teamOfRound(e.Side, e.Round)); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}

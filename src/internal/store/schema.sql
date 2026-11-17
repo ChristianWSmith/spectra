@@ -130,6 +130,19 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	-- CS2.md "Multi-kill columns" entry, verified against the golden
 	-- demo's external scoreboard screenshot, removed from the repo).
 	two_k INTEGER NOT NULL DEFAULT 0,
+	-- Row stamps (metrics expansion §5, 2026-11-17): team is the
+	-- player's TEAM key — the sideparity teamKeyAt vocabulary (the
+	-- team's FINAL side; '' when the side is unknown, so an unknown row
+	-- never joins a team-subject grouping), won the 0/1 match result
+	-- stamped from models.WinFor over the stored score (tie or unknown
+	-- side is not a win — the career rollup's SQL twin agrees), and map
+	-- the match's map from the match row (denormalized for the
+	-- map-partitioned metrics). All three are written WITH the row at
+	-- ingest (store.SaveExtracted): they are match facts, not
+	-- analysis-rule derived, so a rules bump never rewrites them.
+	team TEXT NOT NULL DEFAULT '',
+	won INTEGER NOT NULL DEFAULT 0,
+	map TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, steam_id)
 );
 
@@ -158,12 +171,17 @@ CREATE TABLE IF NOT EXISTS rounds (
 -- Per-round freeze-end side samples: side is a per-round fact (teams
 -- switch at halftime), so the final roster snapshot alone is unreliable
 -- (3/10 players on the golden demo). The extractor writes one row per
--- player per round.
+-- player per round. `team` (metrics expansion §5) stamps the TEAM behind
+-- that round's side through the sideparity teamKeyAt formula
+-- (rules.TeamKeyAt — the team's final side; '' for an unknown side,
+-- excluded from team-subject grouping rather than guessed); a round row
+-- itself would carry BOTH teams and is never stamped.
 CREATE TABLE IF NOT EXISTS round_player_sides (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,
 	steam_id TEXT NOT NULL,
 	side TEXT NOT NULL,
+	team TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, round, steam_id)
 );
 
@@ -180,6 +198,12 @@ CREATE TABLE IF NOT EXISTS round_economy (
 	-- value, so net worth includes them — CS2.md "Free spawn-issued
 	-- default pistol").
 	free_pistol_value INTEGER NOT NULL DEFAULT 0,
+	-- `team` (metrics expansion §5): the TEAM behind this round's side
+	-- through the sideparity teamKeyAt formula (rules.TeamKeyAt — the
+	-- team's final side; '' for an unknown side), stamped with the row
+	-- at ingest (store.SaveExtracted — ingest-owned column). The
+	-- Economy view's per-team rollups are the same key client-side.
+	team TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, round, side)
 );
 
@@ -348,12 +372,17 @@ CREATE TABLE IF NOT EXISTS round_classifications (
 -- migrated). A NEW TABLE reaches every existing DB at Open; adding these
 -- as columns on round_classifications would NOT (the baseline only
 -- CREATEs), which is why the shape is a table.
+-- `team` (metrics expansion §5) is stamped in the SAME Compute pass
+-- through the sideparity teamKeyAt formula (rules.TeamKeyAt — the team's
+-- final side; '' for an unknown side): this row is side-grained, so it
+-- names one team, unlike the round-grain classification above it.
 CREATE TABLE IF NOT EXISTS round_side_classes (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,
 	side TEXT NOT NULL,
 	class TEXT NOT NULL DEFAULT '',
 	why TEXT NOT NULL DEFAULT '',
+	team TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, round, side)
 );
 

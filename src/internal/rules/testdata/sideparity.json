@@ -1,20 +1,20 @@
 {
-  "description": "Canonical CS2 side-parity (half-switch) fixture. For N counted rounds and S side switches: flips[k] is the 0-based counted-round index where switch k+1 happens — the cadence is 12 (after counted round 12), then 27 + 3*(k-2) for k >= 2 (no switch at OT start), keeping only boundaries inside (0, N); era[i] is the half (era) index of counted round i, i.e. how many flips are <= i. One fixture, two runners: internal/rules/sideparity_test.go (Go) and frontend/src/lib/sideparity.test.js (node --test). Both must agree with frontend/src/lib/components/RoundStrip.svelte, which renders using era[].",
+  "description": "Canonical CS2 side-parity (half-switch) fixture. For N counted rounds and S side switches: flips[k] is the 0-based counted-round index where switch k+1 happens — the cadence is 12 (after counted round 12), then 27 + 3*(k-2) for k >= 2 (no switch at OT start), keeping only boundaries inside (0, N); era[i] is the half (era) index of counted round i, i.e. how many flips are <= i; teamKeyCt[i] is teamKeyAt(\"ct\", i) — the TEAM key (the team's final side) behind the ct side of counted round i, pinned so the Go team stamp (rules.TeamKeyAt) and the Economy view's rollups cannot diverge. One fixture, two runners: internal/rules/sideparity_test.go (Go) and frontend/src/lib/sideparity.test.js (node --test). Both must agree with frontend/src/lib/components/RoundStrip.svelte, which renders using era[].",
   "cases": [
-    { "rounds": 24, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 23, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 13, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] },
-    { "rounds": 12, "switches": 1, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { "rounds": 0, "switches": 1, "flips": [], "era": [] },
-    { "rounds": 5, "switches": 0, "flips": [], "era": [0, 0, 0, 0, 0] },
-    { "rounds": 2, "switches": 2, "flips": [], "era": [0, 0] },
-    { "rounds": 1, "switches": 2, "flips": [], "era": [0] },
-    { "rounds": 10, "switches": 2, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { "rounds": 23, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 25, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 26, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 28, "switches": 2, "flips": [12, 27], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2] },
-    { "rounds": 37, "switches": 3, "flips": [12, 27, 30], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3] },
-    { "rounds": 48, "switches": 4, "flips": [12, 27, 30, 33], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
+    { "rounds": 24, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "teamKeyCt": ["t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct"] },
+    { "rounds": 23, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "teamKeyCt": ["t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct"] },
+    { "rounds": 13, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], "teamKeyCt": ["t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct"] },
+    { "rounds": 12, "switches": 1, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "teamKeyCt": ["t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"] },
+    { "rounds": 0, "switches": 1, "flips": [], "era": [], "teamKeyCt": [] },
+    { "rounds": 5, "switches": 0, "flips": [], "era": [0, 0, 0, 0, 0], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct"] },
+    { "rounds": 2, "switches": 2, "flips": [], "era": [0, 0], "teamKeyCt": ["ct", "ct"] },
+    { "rounds": 1, "switches": 2, "flips": [], "era": [0], "teamKeyCt": ["ct"] },
+    { "rounds": 10, "switches": 2, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct"] },
+    { "rounds": 23, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"] },
+    { "rounds": 25, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"] },
+    { "rounds": 26, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"] },
+    { "rounds": 28, "switches": 2, "flips": [12, 27], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct"] },
+    { "rounds": 37, "switches": 3, "flips": [12, 27, 30], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3], "teamKeyCt": ["t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "ct", "ct", "ct", "ct", "ct", "ct", "ct"] },
+    { "rounds": 48, "switches": 4, "flips": [12, 27, 30, 33], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4], "teamKeyCt": ["ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "ct", "ct", "ct", "t", "t", "t", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct", "ct"] }
   ]
 }

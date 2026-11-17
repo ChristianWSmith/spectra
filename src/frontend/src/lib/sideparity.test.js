@@ -136,6 +136,33 @@ test('teamKeyAt: a round\'s side resolves to the TEAM that played it', () => {
   assert.equal(teamKeyAt('ct2', 0, 23, 1), null);
 });
 
+test('teamKeyAt matches the shared fixture — the stored team stamp twin', () => {
+  // teamKeyCt[i] is the TEAM key (the team's final side) behind the ct
+  // side of counted round i. The backend stamps the same values into the
+  // `team` column of round_economy / round_player_sides /
+  // round_side_classes through rules.TeamKeyAt, so a drift here on either
+  // side would silently re-key the Economy view's per-team rollups.
+  for (const c of fixture.cases) {
+    assert.ok(
+      Array.isArray(c.teamKeyCt) && c.teamKeyCt.length === c.rounds,
+      `teamKeyCt present and round-length for rounds=${c.rounds}, switches=${c.switches}`,
+    );
+    for (let i = 0; i < c.rounds; i++) {
+      assert.equal(
+        teamKeyAt('ct', i, c.rounds, c.switches),
+        c.teamKeyCt[i],
+        `ct @ ${i} of rounds=${c.rounds}, switches=${c.switches}`,
+      );
+      const other = c.teamKeyCt[i] === 'ct' ? 't' : 'ct';
+      assert.equal(
+        teamKeyAt('t', i, c.rounds, c.switches),
+        other,
+        `t @ ${i} of rounds=${c.rounds}, switches=${c.switches}`,
+      );
+    }
+  }
+});
+
 // A match's round rows the way the views hold them: the negative-numbered
 // warmup/knife rows a pre-reprocess match still carries ahead of `counted`
 // real rounds (the first real round is 1, so these never count).

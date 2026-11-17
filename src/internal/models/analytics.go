@@ -94,13 +94,18 @@ type RoundClassification struct {
 // analytics.Classify → store.ReplaceRoundSideClasses — and read back by
 // store.GetEconomy; never re-classified at read time (AGENTS.md
 // "Analysis-rule derived values": read-time thresholding of rule outputs
-// is forbidden). Side is "ct" | "t".
+// is forbidden). Side is "ct" | "t". Team (metrics expansion §5) is the
+// sideparity teamKeyAt key of that side in that round — the team's FINAL
+// side, stamped in Compute beside the class that owns it (” for an
+// unknown side: excluded from team-subject grouping, never guessed); a
+// round-grain row would carry both teams and gets no team.
 type RoundSideClass struct {
 	MatchID int64  `json:"matchId"`
 	Round   int    `json:"round"`
 	Side    string `json:"side"`
 	Class   string `json:"class"` // pistol|eco|force|full|save (v1)
 	Why     string `json:"why"`
+	Team    string `json:"team"` // team key: the team's final side ('ct'|'t'), '' = unknown
 }
 
 // PlayerRoundStat is one player_round_stats row: per-player-per-round combat

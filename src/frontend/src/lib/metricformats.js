@@ -7,10 +7,11 @@
 // editor's Format select renders from it, and formatFilterWord composes
 // filter words from the SAME order — one list, both consumers, never a
 // re-spelled token. It is the frontend twin of the Go contracts:
-// metricservice.go's metricFormats (accepted Format values) and
-// store.metricFormatTokens (the filter word's canonical order), which
-// is what makes a subset word canonical instead of merely valid.
-// "auto" is the form's own Auto: its stored value is the format
+// metricservice.go's metricFormats (accepted Format values — the Go map
+// also accepts 'identity', the key-valued format no editor or filter
+// offers yet) and store.metricFormatTokens (the filter word's canonical
+// order), which is what makes a subset word canonical instead of merely
+// valid. "auto" is the form's own Auto: its stored value is the format
 // column's '' — the store binds that token as `format = ?` with the
 // empty string (store.ListMetricsPage's FORMAT FILTER).
 export const METRIC_FORMATS = [

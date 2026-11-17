@@ -15,10 +15,11 @@ import (
 // rules.OtherSide (analytics.Clutches); FlipIndexes/SideAt are pinned here
 // for the frontend twin.
 type sideparityCase struct {
-	Rounds   int   `json:"rounds"`
-	Switches int   `json:"switches"`
-	Flips    []int `json:"flips"`
-	Era      []int `json:"era"`
+	Rounds    int      `json:"rounds"`
+	Switches  int      `json:"switches"`
+	Flips     []int    `json:"flips"`
+	Era       []int    `json:"era"`
+	TeamKeyCt []string `json:"teamKeyCt"`
 }
 
 type sideparityFixture struct {
@@ -150,6 +151,48 @@ func TestOtherSide(t *testing.T) {
 	}
 	if OtherSide("") != "" || OtherSide("CT") != "" {
 		t.Errorf("OtherSide must return \"\" for unknown input")
+	}
+}
+
+// TestTeamKeyAtFixture pins the team stamp's vocabulary against the
+// SHARED fixture: teamKeyCt[i] IS teamKeyAt('ct', i) — the team's FINAL
+// side behind the ct side of counted round i — and the t side resolves
+// to the other team. This is the pin that keeps rules.TeamKeyAt (the
+// source of the stored `team` column on round_economy /
+// round_player_sides / round_side_classes) and frontend sideparity.js
+// teamKeyAt (the Economy view's per-team rollups) from drifting apart:
+// a stamp that moved here while the JS stayed would silently re-key the
+// Economy view's force/lost detail lines. Unknown sides resolve to the
+// empty key — a stamped row then carries no team and drops out of
+// team-subject grouping, never a guessed team (the sideparity rule).
+func TestTeamKeyAtFixture(t *testing.T) {
+	for _, tc := range loadSideparity(t).Cases {
+		if len(tc.TeamKeyCt) != tc.Rounds {
+			t.Errorf("case (%d, %d): teamKeyCt has %d entries, want %d",
+				tc.Rounds, tc.Switches, len(tc.TeamKeyCt), tc.Rounds)
+			continue
+		}
+		for i, want := range tc.TeamKeyCt {
+			if got := TeamKeyAt("ct", i, tc.Rounds, tc.Switches); got != want {
+				t.Errorf("TeamKeyAt(ct, %d, %d, %d) = %q, want %q",
+					i, tc.Rounds, tc.Switches, got, want)
+			}
+			other := "t"
+			if want == "t" {
+				other = "ct"
+			}
+			if got := TeamKeyAt("t", i, tc.Rounds, tc.Switches); got != other {
+				t.Errorf("TeamKeyAt(t, %d, %d, %d) = %q, want %q",
+					i, tc.Rounds, tc.Switches, got, other)
+			}
+		}
+	}
+	// The exclusion rule at the stamp's edge: anything but ct/t yields
+	// the EMPTY key (the JS twin's null) — missing data is never a team.
+	for _, side := range []string{"", "CT", "ct2"} {
+		if got := TeamKeyAt(side, 0, 24, 1); got != "" {
+			t.Errorf("TeamKeyAt(%q, 0, 24, 1) = %q, want \"\"", side, got)
+		}
 	}
 }
 
