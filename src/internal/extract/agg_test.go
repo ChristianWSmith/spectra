@@ -719,6 +719,13 @@ func TestPregameRoundDiscard(t *testing.T) {
 
 // TestSuicideTeamkillCredit: suicides and teamkills never credit kills or
 // first blood; deaths/suicides/teamkills still count.
+//
+// Re-pinned 2026-11-17 (owner's reconnect-takeover report): a World
+// self-kill's stat application is DEFERRED to flushWorldSelf (the
+// disconnect-time criterion needs the frame's player_disconnect, which
+// may dispatch after the kill), so the flush call below stands in for
+// FrameDone — with no disconnect at tick 10 this is a genuine world
+// suicide and counts exactly as before the ruling.
 func TestSuicideTeamkillCredit(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, false, 115, "BOMB TARGET")
@@ -729,6 +736,7 @@ func TestSuicideTeamkillCredit(t *testing.T) {
 		victimKey: 1, victimName: "s", victimSide: "ct",
 		weapon: "World",
 	})
+	a.flushWorldSelf() // frame end: no disconnect at tick 10 → real suicide
 	p := a.players[1]
 	if p == nil || p.kills != 0 || p.deaths != 1 || p.suicides != 1 {
 		t.Fatalf("suicide accounting = %+v, want 0 kills / 1 death / 1 suicide", p)

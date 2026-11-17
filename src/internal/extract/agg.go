@@ -171,6 +171,26 @@ type rawWant struct {
 	name string
 }
 
+// pendingWorldKill is one deferred World self-kill awaiting the
+// disconnect-time criterion (agg.kill defers, flushWorldSelf decides):
+// only the fields the victim bookkeeping needs, copied at dispatch.
+type pendingWorldKill struct {
+	tick       int
+	victimKey  uint64
+	victimName string
+	victimSide string
+}
+
+// takeoverRec is one bot_takeover transition — tick-accurate bookkeeping
+// only (no user-visible output yet; see agg.takeovers).
+type takeoverRec struct {
+	tick      int
+	takerKey  uint64
+	takerName string
+	botKey    uint64
+	botName   string
+}
+
 // agg is the match accumulator. Every demoinfocs handler funnels into one of
 // its methods with plain value params, so the round state machine and the
 // aggregation math are unit-testable without a parser.
@@ -232,6 +252,31 @@ type agg struct {
 	// the other per-round state (ONE home: roundStart).
 	lastHeldUtil map[uint64]string
 
+	// disconnectTick is each identity's LAST observed disconnect tick —
+	// the first half of the disconnect-time World self-kill criterion
+	// (kill / flushWorldSelf): a self-kill at exactly this tick for this
+	// key is the fake death the game fires when a player leaves or a
+	// substitute bot is kicked (ruling, lead 2026-11-17, owner's
+	// reconnect-takeover report). A SET of ticks would be over-precise:
+	// flushWorldSelf decides within the same frame, so the map only ever
+	// holds the current or an older tick and the equality check does the
+	// rest.
+	disconnectTick map[uint64]int
+
+	// pendingWorldSelf holds World self-kills awaiting that criterion's
+	// decision: the kill may dispatch BEFORE the player_disconnect within
+	// the same frame (both orders observed on the owner's repro demo —
+	// 81343 kill-first, 89867 disconnect-first), so the stat application
+	// is deferred to flushWorldSelf at frame end, when both are in.
+	pendingWorldSelf []pendingWorldKill
+
+	// takeovers logs every bot_takeover transition (tick + both
+	// identities) — tick-accurate bookkeeping with no user-visible
+	// output yet (owner's 2026-11-17 takeover ruling): the remap itself
+	// is resolved live from the controller props on every read, this log
+	// pins WHEN control changed hands.
+	takeovers []takeoverRec
+
 	roundSides []models.RoundPlayerSide
 
 	economy  []models.RoundEconomy
@@ -282,26 +327,27 @@ type agg struct {
 
 func newAgg() *agg {
 	return &agg{
-		players:       make(map[uint64]*playerAgg),
-		finalPresent:  make(map[uint64]bool),
-		participation: make(map[uint64]map[int]bool),
-		victimHP:      make(map[uint64]int),
-		tradeWindow:   make(map[uint64]tradeRec),
-		roundKills:    make(map[int]map[uint64]int),
-		lastMVP:       make(map[uint64]int),
-		lastSpent:     make(map[uint64]int),
-		lastHeldUtil:  make(map[uint64]string),
-		economy:       make([]models.RoundEconomy, 0, 64),
-		roundSides:    make([]models.RoundPlayerSide, 0, 256),
-		events:        make([]models.Event, 0, 512),
-		generic:       make([]models.GenericEvent, 0, 21000),
-		chatRows:      make([]models.Chat, 0, 64),
-		warnings:      make([]string, 0, 8),
-		soundEvents:   make([]models.SoundEvent, 0, 1024),
-		bounceSeen:    make(map[bounceKey]bool, 512),
-		blastSeen:     make(map[blastKey]bool, 128),
-		rawLatest:     make(map[string]string),
-		frameQueue:    make(map[string][]string),
+		players:        make(map[uint64]*playerAgg),
+		finalPresent:   make(map[uint64]bool),
+		participation:  make(map[uint64]map[int]bool),
+		victimHP:       make(map[uint64]int),
+		tradeWindow:    make(map[uint64]tradeRec),
+		roundKills:     make(map[int]map[uint64]int),
+		lastMVP:        make(map[uint64]int),
+		lastSpent:      make(map[uint64]int),
+		lastHeldUtil:   make(map[uint64]string),
+		disconnectTick: make(map[uint64]int),
+		economy:        make([]models.RoundEconomy, 0, 64),
+		roundSides:     make([]models.RoundPlayerSide, 0, 256),
+		events:         make([]models.Event, 0, 512),
+		generic:        make([]models.GenericEvent, 0, 21000),
+		chatRows:       make([]models.Chat, 0, 64),
+		warnings:       make([]string, 0, 8),
+		soundEvents:    make([]models.SoundEvent, 0, 1024),
+		bounceSeen:     make(map[bounceKey]bool, 512),
+		blastSeen:      make(map[blastKey]bool, 128),
+		rawLatest:      make(map[string]string),
+		frameQueue:     make(map[string][]string),
 	}
 }
 
@@ -782,6 +828,35 @@ func (a *agg) kill(k killInfo) {
 		return
 	}
 
+	// Disconnect-time World self-kills are NOT deaths/suicides (ruling,
+	// lead 2026-11-17, owner's reconnect-takeover report): criterion
+	// killer == victim ∧ weapon World ∧ the victim's disconnect landed
+	// on this exact tick. The event row is already stored above — the
+	// feed keeps recording what happened — but no stat may exist: the
+	// game fires this fake death when a player leaves (81343/91080) or
+	// a substitute bot is kicked (89867), and counting it inflated
+	// deaths/suicides (bvcket: 2 fake deaths + 2 suicides in round 12).
+	// Applies to humans' disconnect kills, bots' kick-time kills and
+	// post-match disconnect kills alike; analytics.PlayerRounds gates
+	// the same rows (analytics.WorldWeapon is the one spelling).
+	//
+	// The disconnect may dispatch BEFORE or AFTER the kill inside the
+	// same frame (both orders observed), so an unconfirmed kill is
+	// DEFERRED to flushWorldSelf at frame end — by then both dispatches
+	// are in and the criterion is decidable exactly.
+	if k.samePlayer && k.weapon == analytics.WorldWeapon {
+		if a.disconnectTick[k.victimKey] == k.tick {
+			return // confirmed fake death: no side, no death, no suicide
+		}
+		a.pendingWorldSelf = append(a.pendingWorldSelf, pendingWorldKill{
+			tick:       k.tick,
+			victimKey:  k.victimKey,
+			victimName: k.victimName,
+			victimSide: k.victimSide,
+		})
+		return
+	}
+
 	// Live side observation: the freshest side truth for identity.
 	if k.victimSide == "ct" || k.victimSide == "t" {
 		a.ensure(k.victimKey, k.victimName).side = k.victimSide
@@ -900,6 +975,38 @@ func (a *agg) kill(k killInfo) {
 			ap.assists++
 		}
 	}
+}
+
+// flushWorldSelf decides the deferred World self-kills (kill's
+// disconnect-time criterion): called at every FrameDone and once after
+// the parse ends, by which point the frame's player_disconnect has
+// dispatched in EITHER order relative to the kill (both orders observed
+// on the owner's repro demo), so the same-tick test is exact —
+//
+//   - disconnect seen on the kill's tick → the fake death is dropped
+//     entirely (no side observation, no death, no suicide: the event row
+//     stored by kill is the only trace — the feed records what happened,
+//     the stats stay honest);
+//   - no such disconnect → a genuine world-hazard self-kill, counted
+//     exactly like any other death (the deferral costs nothing: the
+//     player cannot act between their own death and this frame's end).
+func (a *agg) flushWorldSelf() {
+	for _, p := range a.pendingWorldSelf {
+		if a.discarding || a.disconnectTick[p.victimKey] == p.tick {
+			continue
+		}
+		if p.victimSide == "ct" || p.victimSide == "t" {
+			a.ensure(p.victimKey, p.victimName).side = p.victimSide
+		}
+		if p.victimKey == 0 {
+			continue
+		}
+		vp := a.ensure(p.victimKey, p.victimName)
+		vp.deaths++
+		vp.killStreak = 0
+		vp.suicides++
+	}
+	a.pendingWorldSelf = a.pendingWorldSelf[:0]
 }
 
 // hurtInfo carries the plain values a PlayerHurt handler extracts. real
@@ -1400,12 +1507,31 @@ func (a *agg) connect(tick int, key uint64, name string, bot bool) {
 }
 
 func (a *agg) disconnect(tick int, key uint64, name string) {
+	// First half of the disconnect-time World self-kill criterion (see
+	// kill): recorded even for a discarded round (the stat gate lives
+	// with the kill, and a discarded round never reaches it).
+	if key != 0 {
+		a.disconnectTick[key] = tick
+	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventDisconnect,
 		Attacker:   keyStr(key),
 		DetailJSON: detailJSON(map[string]any{"name": name}),
 	}, "")
+}
+
+// botTakeover records a bot_takeover transition (handlers.go) — tick-
+// accurate bookkeeping only, no row and no stat (owner's 2026-11-17
+// takeover ruling; see agg.takeovers).
+func (a *agg) botTakeover(tick int, takerKey uint64, takerName string, botKey uint64, botName string) {
+	a.takeovers = append(a.takeovers, takeoverRec{
+		tick:      tick,
+		takerKey:  takerKey,
+		takerName: takerName,
+		botKey:    botKey,
+		botName:   botName,
+	})
 }
 
 func (a *agg) chat(tick int, steam, name, text, channel string) {

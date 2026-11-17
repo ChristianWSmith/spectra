@@ -1,0 +1,355 @@
+package extract
+
+import (
+	"testing"
+
+	"github.com/golang/geo/r3"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events"
+
+	"github.com/ChristianWSmith/spectra/internal/analytics"
+	"github.com/ChristianWSmith/spectra/internal/models"
+)
+
+// Reconnect-takeover identity tests (owner's report 2026-11-17; CS2.md
+// "Reconnect takeover — one life, two identities in the demo"). Synthetic
+// fakes only — the repro demo is never a test dependency. The package's
+// fake style is plain &common.Player{} literals (final_roster_test.go):
+// their entity-backed reads are nil-safe zeros and demoinfocs' real
+// entities/provider cannot be constructed outside its internal stfake, so
+// the control/position reads are injected seams (pairIdentity's
+// controls, remap's posOf, positionRow's pawnAlive) — the RULES are
+// pinned here, the entity plumbing end-to-end on the owner's demo.
+
+// takeoverPair is the repro's trio: the reconnecting human, the
+// substitute bot he controls, and an enemy.
+func takeoverPair() (human, bot, enemy *common.Player) {
+	human = &common.Player{
+		Name: "bvcket", SteamID64: 76561198012685780, EntityID: 10,
+		IsConnected: true, Team: common.TeamCounterTerrorists,
+	}
+	bot = &common.Player{
+		Name: "Rebel", EntityID: 11, IsBot: true,
+		Team: common.TeamCounterTerrorists,
+	}
+	enemy = &common.Player{
+		Name: "IImmortall", SteamID64: 76561199008407830, EntityID: 12,
+		IsConnected: true, Team: common.TeamTerrorists,
+	}
+	return human, bot, enemy
+}
+
+// fakeControls builds the injected control read: human → bot.
+func fakeControls(pairs ...[2]*common.Player) func(*common.Player) *common.Player {
+	m := map[*common.Player]*common.Player{}
+	for _, p := range pairs {
+		m[p[0]] = p[1]
+	}
+	return func(p *common.Player) *common.Player { return m[p] }
+}
+
+// testRemap assembles a remap with injected control/position reads —
+// positions are DISTINCT per player so the read's SOURCE is observable.
+func testRemap(controls func(*common.Player) *common.Player, all []*common.Player, pos map[*common.Player]r3.Vector) *remap {
+	return &remap{
+		controls: controls,
+		all:      all,
+		posOf: func(p *common.Player) r3.Vector {
+			if p == nil {
+				return r3.Vector{}
+			}
+			return pos[p]
+		},
+	}
+}
+
+func TestActiveIdentityTakeoverPairing(t *testing.T) {
+	human, bot, enemy := takeoverPair()
+	alone := &common.Player{Name: "Ricksaw", EntityID: 13, IsBot: true}
+	all := []*common.Player{human, bot, enemy, alone}
+	controls := fakeControls([2]*common.Player{human, bot})
+
+	// Controlling human: identity stays the human, pawn becomes the bot
+	// (every pawn-carried read follows the controlled pawn).
+	if id, pawn := pairIdentity(human, controls, all); id != human || pawn != bot {
+		t.Errorf("controlling human → (%v, %v), want (human, bot)", id, pawn)
+	}
+	// Bot under a connected human's control: identity collapses onto the
+	// human (the event row belongs to the human's life), pawn stays the
+	// bot.
+	if id, pawn := pairIdentity(bot, controls, all); id != human || pawn != bot {
+		t.Errorf("controlled bot → (%v, %v), want (human, bot)", id, pawn)
+	}
+	// Lone bot (nobody controls it): its own life, untouched.
+	if id, pawn := pairIdentity(alone, controls, all); id != alone || pawn != alone {
+		t.Errorf("lone bot → (%v, %v), want (bot, bot)", id, pawn)
+	}
+	// An uninvolved human: untouched.
+	if id, pawn := pairIdentity(enemy, controls, all); id != enemy || pawn != enemy {
+		t.Errorf("uninvolved human → (%v, %v), want (enemy, enemy)", id, pawn)
+	}
+	// Nil participant → nil pair (every consumer nil-guards on it).
+	if id, pawn := pairIdentity(nil, controls, all); id != nil || pawn != nil {
+		t.Errorf("nil → (%v, %v), want (nil, nil)", id, pawn)
+	}
+	// A bot controlling itself is not a takeover (defensive: the prop
+	// pair could theoretically resolve to the same object).
+	selfish := &common.Player{Name: "odd", EntityID: 14, IsBot: true}
+	selfControls := fakeControls([2]*common.Player{selfish, selfish})
+	if id, pawn := pairIdentity(selfish, selfControls, all); id != selfish || pawn != selfish {
+		t.Errorf("self-control → (%v, %v), want (bot, bot)", id, pawn)
+	}
+}
+
+// TestDemoinfocsControlsGates pins the connected/not-controlling gates
+// with entity-free fakes: a disconnected controller never yields its bot
+// (the repro's 91080..91334 window — bvcket keeps m_bControllingBot
+// while the bot plays on alone), and a connected participant without
+// m_bControllingBot yields nil. Both reads are nil-entity safe.
+func TestDemoinfocsControlsGates(t *testing.T) {
+	if got := demoinfocsControls(nil); got != nil {
+		t.Errorf("nil controller → %v, want nil", got)
+	}
+	if got := demoinfocsControls(&common.Player{Name: "gone", IsConnected: false}); got != nil {
+		t.Errorf("disconnected controller → %v, want nil (bot plays on alone)", got)
+	}
+	if got := demoinfocsControls(&common.Player{Name: "here", IsConnected: true}); got != nil {
+		t.Errorf("connected non-controlling participant → %v, want nil", got)
+	}
+}
+
+func TestTakeoverDeathUsesControllingPawnPosition(t *testing.T) {
+	human, bot, enemy := takeoverPair()
+	all := []*common.Player{human, bot, enemy}
+	// The repro's two candidate death positions: the stale pre-disconnect
+	// corpse (what e.Victim.Position() returned through the human's own
+	// dead pawn) vs the life's real spot (the paired bomb_drop evidence
+	// at tick 93172).
+	stale := r3.Vector{X: -1675.62, Y: 351.70, Z: -63.97}
+	live := r3.Vector{X: 414.16, Y: 1881.41, Z: 136.14}
+	r := testRemap(
+		fakeControls([2]*common.Player{human, bot}),
+		all,
+		map[*common.Player]r3.Vector{human: stale, bot: live, enemy: {}},
+	)
+
+	// userid-keyed death of the controlling human (the repro's tick
+	// 93172): identity stays the human, the POSITION is read through the
+	// LIVE controlled pawn — the owner's "wrong position (byte-identical
+	// stale corpse)" bug.
+	k := killInfoFor(events.Kill{Victim: human, Killer: enemy}, r)
+	if k.victimKey != human.SteamID64 || k.victimName != "bvcket" {
+		t.Errorf("victim = %d/%q, want the human's identity", k.victimKey, k.victimName)
+	}
+	if k.posX == nil || *k.posX != live.X || k.posY == nil || *k.posY != live.Y {
+		t.Errorf("victim pos = (%v,%v,%v), want the controlled pawn's live spot (%v,%v)",
+			k.posX, k.posY, k.posZ, live.X, live.Y)
+	}
+	if k.samePlayer {
+		t.Error("enemy kill flagged samePlayer")
+	}
+
+	// A pawn-keyed resolution to the bot (bomb_pickup's domain — the
+	// same split player_death-vs-bomb_pickup showed) collapses onto the
+	// human's identity with the bot's position.
+	k2 := killInfoFor(events.Kill{Victim: bot, Killer: enemy}, r)
+	if k2.victimKey != human.SteamID64 || k2.victimName != "bvcket" {
+		t.Errorf("bot-resolved victim = %d/%q, want the controlling human", k2.victimKey, k2.victimName)
+	}
+	if k2.posX == nil || *k2.posX != live.X {
+		t.Errorf("bot-resolved victim pos = %v, want %v", k2.posX, live.X)
+	}
+
+	// Attacker side of the same rule: a killer read through a takeover
+	// pair takes the human's identity and the controlled pawn's spot.
+	k3 := killInfoFor(events.Kill{Victim: enemy, Killer: human}, r)
+	if k3.killerKey != human.SteamID64 {
+		t.Errorf("killer = %d, want the human's key", k3.killerKey)
+	}
+	if k3.attackerPosX == nil || *k3.attackerPosX != live.X {
+		t.Errorf("attacker pos = %v, want the controlled pawn's %v", k3.attackerPosX, live.X)
+	}
+
+	// Identity-level samePlayer: killer resolving to the bot IS the
+	// human's own life — one life, never a cross-kill.
+	k4 := killInfoFor(events.Kill{Victim: human, Killer: bot}, r)
+	if !k4.samePlayer {
+		t.Error("takeover pair (bot killer, human victim) must collapse to one life (samePlayer)")
+	}
+}
+
+func TestTakeoverBombPickupAttributedToControllingHuman(t *testing.T) {
+	human, bot, enemy := takeoverPair()
+	all := []*common.Player{human, bot, enemy}
+	live := r3.Vector{X: 120.0, Y: 240.0, Z: 128.0}
+	r := testRemap(
+		fakeControls([2]*common.Player{human, bot}),
+		all,
+		map[*common.Player]r3.Vector{human: {}, bot: live, enemy: {}},
+	)
+
+	// handlers.go BombPickup: bomb_pickup carries only userid_pawn, so
+	// demoinfocs hands us the substitute BOT's controller while the C4
+	// is in the reconnecting human's hands (repro tick 92916 landed on
+	// the bot's key before this rule). participantRow is the row the
+	// handler stores: identity from the controlling human, position from
+	// the controlled pawn.
+	key, name, side, pos := participantRow(bot, r)
+	if key != human.SteamID64 || name != "bvcket" {
+		t.Errorf("pickup row = %d/%q, want the controlling human's identity", key, name)
+	}
+	if side != "ct" {
+		t.Errorf("pickup side = %q, want ct (identity's side)", side)
+	}
+	if pos != live {
+		t.Errorf("pickup pos = %v, want the controlled pawn's %v", pos, live)
+	}
+}
+
+func TestTakeoverStateStreamShowsControllingHumanAlive(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	all := []*common.Player{human, bot}
+	controls := fakeControls([2]*common.Player{human, bot})
+
+	// The frame yields ONE target for the pair — the human's, sampled
+	// through the BOT's pawn (the live one: the human's own pawn is the
+	// stale pre-disconnect corpse, so reading it kept hp=0 for the whole
+	// window). The covered bot emits no second row (its steamId-0 key
+	// could not be stored anyway).
+	targets := appendTargets(nil, all, controls)
+	if len(targets) != 1 {
+		t.Fatalf("targets = %d, want 1 (the pair collapses to the human's entry)", len(targets))
+	}
+	if targets[0].identity != human || targets[0].pawn != bot {
+		t.Fatalf("target = (identity %v, pawn %v), want (human, bot)", targets[0].identity, targets[0].pawn)
+	}
+	// The row is KEYED with the human — the sidecar slot table stores
+	// human SteamIDs, so this is what keeps the takeover window from
+	// going dark (the repro: 1840/1840 frames with no bvcket sample).
+	row := sampleStatePlayer(targets[0].identity, targets[0].pawn)
+	if row.SteamID != human.SteamID64 {
+		t.Errorf("state SteamID = %d, want the human's %d", row.SteamID, human.SteamID64)
+	}
+	// Alive/HP/weapon are read through the pawn the target carries —
+	// the bot's, which is the live one (end-to-end hp is verified on the
+	// owner's repro demo; a nil-entity fake can only read dead).
+	if targets[0].pawn != bot {
+		t.Error("state sample must run through the controlled pawn")
+	}
+}
+
+func TestTakeoverSamplesCarryHumanKey(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	all := []*common.Player{human, bot}
+	controls := fakeControls([2]*common.Player{human, bot})
+
+	// Only the controlled pawn is alive this frame — the takeover window
+	// as the sidecar sees it (the human's own pawn is dead, the bot's is
+	// live). Swapped under t.Cleanup; production never touches it.
+	was := pawnAlive
+	pawnAlive = func(p *common.Player) bool { return p == bot }
+	t.Cleanup(func() { pawnAlive = was })
+
+	targets := appendTargets(nil, all, controls)
+	row, ok := positionRow(targets[0])
+	if !ok {
+		t.Fatal("no position row while the controlled pawn is alive — the window would go dark")
+	}
+	// THE pin: the remapped sample carries the HUMAN's key (never the
+	// bot's steamId-0), so the sidecar's slot table keeps it.
+	if row.SteamID != human.SteamID64 {
+		t.Errorf("position SteamID = %d, want the human's %d", row.SteamID, human.SteamID64)
+	}
+	if row.Side != "ct" {
+		t.Errorf("position side = %q, want the identity's ct", row.Side)
+	}
+}
+
+func TestDisconnectWorldKillNotCountedAsDeathOrSuicide(t *testing.T) {
+	world := analytics.WorldWeapon
+
+	// Order A: the kill dispatches BEFORE the disconnect in the frame
+	// (repro tick 81343). The stat must not exist before frame end, and
+	// the same-tick disconnect must drop it at flush — while the event
+	// row stays (the feed records what happened).
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+	a.kill(killInfo{
+		tick: 100, tickRate: 64, real: true, samePlayer: true,
+		killerKey: 1, killerName: "bvcket", killerSide: "ct",
+		victimKey: 1, victimName: "bvcket", victimSide: "ct",
+		weapon: world,
+	})
+	if p := a.players[1]; p != nil {
+		t.Fatalf("deferred kill counted before frame end: %+v", p)
+	}
+	a.disconnect(100, 1, "bvcket")
+	a.flushWorldSelf()
+	if p := a.players[1]; p != nil && (p.deaths != 0 || p.suicides != 0) {
+		t.Fatalf("disconnect World self-kill counted: %+v, want 0 deaths / 0 suicides", p)
+	}
+	kills, disconnects := 0, 0
+	for _, e := range a.events {
+		switch e.Kind {
+		case models.EventKill:
+			kills++
+		case models.EventDisconnect:
+			disconnects++
+		}
+	}
+	if kills != 1 || disconnects != 1 {
+		t.Errorf("event rows = %d kills / %d disconnects, want 1/1 (the feed keeps the record)", kills, disconnects)
+	}
+
+	// Order B: the disconnect dispatches FIRST (repro tick 89867) —
+	// excluded immediately, no deferral needed.
+	b := newAgg()
+	b.roundStart(0, false, false, 115, "BOMB TARGET")
+	b.disconnect(200, 18374686479671623694, "Rebel")
+	b.kill(killInfo{
+		tick: 200, tickRate: 64, real: true, samePlayer: true,
+		killerKey: 18374686479671623694, killerName: "Rebel", killerSide: "t",
+		victimKey: 18374686479671623694, victimName: "Rebel", victimSide: "t",
+		weapon: world,
+	})
+	b.flushWorldSelf()
+	if p := b.players[18374686479671623694]; p != nil && (p.deaths != 0 || p.suicides != 0) {
+		t.Fatalf("bot kick-time World kill counted: %+v, want 0/0", p)
+	}
+
+	// A genuine world-hazard self-kill (no disconnect on the tick) still
+	// counts as a real death+suicide — the criterion is the PAIR, not
+	// the weapon.
+	c := newAgg()
+	c.roundStart(0, false, false, 115, "BOMB TARGET")
+	c.kill(killInfo{
+		tick: 300, tickRate: 64, real: true, samePlayer: true,
+		killerKey: 7, killerName: "faller", killerSide: "ct",
+		victimKey: 7, victimName: "faller", victimSide: "ct",
+		weapon: world,
+	})
+	c.flushWorldSelf()
+	if p := c.players[7]; p == nil || p.deaths != 1 || p.suicides != 1 {
+		t.Fatalf("genuine World self-kill accounting = %+v, want 1 death / 1 suicide", p)
+	}
+}
+
+func TestBotTakenOverBookkeeping(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	a := newAgg()
+	// Tick-accurate transition log only — no row, no stat (owner's
+	// 2026-11-17 ruling: no user-visible output yet). Every field is read
+	// here so the log stays a used, pinned structure.
+	a.botTakeover(91334, human.SteamID64, human.Name, playerKey(bot), bot.Name)
+	if len(a.takeovers) != 1 {
+		t.Fatalf("takeovers = %d, want 1", len(a.takeovers))
+	}
+	got := a.takeovers[0]
+	if got.tick != 91334 || got.takerKey != human.SteamID64 || got.takerName != "bvcket" ||
+		got.botKey != playerKey(bot) || got.botName != "Rebel" {
+		t.Errorf("takeover = %+v, want the 91334 bvcket←Rebel transition", got)
+	}
+	if len(a.events) != 0 {
+		t.Errorf("bookkeeping leaked %d event rows, want none", len(a.events))
+	}
+}

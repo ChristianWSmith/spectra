@@ -8,7 +8,9 @@ import (
 // decomposition from a match's typed events:
 //
 //	K        kill credited to the player (kill event attacker; suicides
-//	         and teamkills excluded)
+//	         and teamkills excluded — no self-kill is ever kill credit,
+//	         unknown sides included: e.Attacker != e.Victim is
+//	         unconditional, ruling 2026-11-17)
 //	A        assist (kill event assister, AssistedFlash excluded — the
 //	         external-scoreboard convention)
 //	S        survived — no death event for them in the round
@@ -17,13 +19,25 @@ import (
 //	         deaths only — a teamkill death is never traded)
 //	kast     K || A || T || S
 //
+// A disconnect-time World self-kill (killer == victim, weapon World, the
+// victim's player_disconnect on the same tick) is NOT a death: the row
+// stays in events (the feed records what happened) but earns no stat —
+// the extractor's agg.kill drops the same rows, so player_round_stats
+// agrees with player_stats (ruling, lead 2026-11-17, owner's
+// reconnect-takeover report).
+//
 // DMG/UtilDmg aggregate damage events (attacker side; util = the utility
 // set in models.IsUtilityWeapon). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
-// no price — see package doc). Rows are emitted for EVERY player × every
-// counted round (round ASC, players sorted by SteamID for stable output).
-// sides carries the extractor's exact per-round freeze-end side samples;
-// a round without them leaves every side unknown — kills/assists stay
-// permissive (an unknown side never matches) and no trade is claimed.
+// no price — see package doc). Rows are emitted for EVERY HUMAN player ×
+// every counted round (round ASC, players sorted by SteamID for stable
+// output) — bots are dropped entirely (ruling 2026-11-17: a bot's
+// roster×round row existed in rounds it never played; every consumer of
+// player_round_stats is per-player-addressed and no surface can address
+// a bot, so presence-scoped bot rows would only ever be read by tests —
+// see the emission loop). sides carries the extractor's exact per-round
+// freeze-end side samples; a round without them leaves every side unknown —
+// kills/assists stay permissive (an unknown side never matches) and no
+// trade is claimed.
 func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string) []PlayerRound {
 	real := CountedRounds(rounds)
 	if len(real) == 0 {
@@ -32,6 +46,19 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 	byRound := map[int][]models.Event{}
 	for _, e := range sortedEvents(events) {
 		byRound[e.Round] = append(byRound[e.Round], e)
+	}
+	// Every (player, tick) carrying a player_disconnect row — the second
+	// half of the disconnect-time World self-kill criterion below (both
+	// halves are required: a player may disconnect several times, so the
+	// lookup is a tick SET, not a last-tick map).
+	disconnects := map[string]map[int]bool{}
+	for _, e := range events {
+		if e.Kind == models.EventDisconnect && e.Attacker != "" {
+			if disconnects[e.Attacker] == nil {
+				disconnects[e.Attacker] = map[int]bool{}
+			}
+			disconnects[e.Attacker][e.Tick] = true
+		}
 	}
 
 	sorted := sortedPlayerRefs(players)
@@ -47,10 +74,21 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 		for _, e := range roundEvents {
 			switch e.Kind {
 			case models.EventKill:
+				// Disconnect-time World self-kill: not a death, not a
+				// suicide — no stat at all (ruling, lead 2026-11-17).
+				// The row itself is never removed from `events`; the feed
+				// is a record of what happened, the stats stay honest.
+				if e.Victim != "" && e.Attacker == e.Victim &&
+					e.Weapon == WorldWeapon && disconnects[e.Victim][e.Tick] {
+					continue
+				}
 				kt, vt := teamR[e.Attacker], teamR[e.Victim]
 				// Enemy kills only (suicides/teamkills excluded); an
-				// unknown side is permissive — count it.
-				if e.Attacker != "" && !sameSide(kt, vt) {
+				// unknown side is permissive — count it. The
+				// attacker != victim half is UNCONDITIONAL (ruling
+				// 2026-11-17): without it a self-kill in a round whose
+				// sides are unknown credited the victim's own kill.
+				if e.Attacker != "" && e.Attacker != e.Victim && !sameSide(kt, vt) {
 					kills[e.Attacker]++
 				}
 				// Assists: cross-team, non-flash (external convention).
@@ -103,7 +141,16 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			}
 		}
 		for _, p := range sorted {
-			if p.SteamID == "" {
+			// (d) ruling 2026-11-17: bots carry NO per-round rows. The
+			// roster×rounds matrix is a HUMAN stats surface: every
+			// consumer of player_round_stats is per-player-addressed
+			// (the store's profile/ADR/KAST reads, the per-player metric
+			// seeds, report.go's per-player round table) and no picker
+			// can address a bot (frontend listedPlayers filters them), so
+			// a bot's rows were read by nothing while claiming
+			// survived/kast for rounds the bot never existed. Bots keep
+			// their player_stats row (their real participation).
+			if p.SteamID == "" || p.IsBot {
 				continue
 			}
 			k := kills[p.SteamID] > 0

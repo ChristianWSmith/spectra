@@ -136,51 +136,10 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.Kill) {
 		gs := p.GameState()
-		k := killInfo{
-			tick:          gs.IngameTick(),
-			real:          realPeriod(gs),
-			tickRate:      p.TickRate(),
-			weapon:        wepName(e.Weapon),
-			headshot:      e.IsHeadshot,
-			wallbang:      e.IsWallBang(),
-			noscope:       e.NoScope,
-			throughSmoke:  e.ThroughSmoke,
-			attackerBlind: e.AttackerBlind,
-			assistedFlash: e.AssistedFlash,
-			distance:      float64(e.Distance),
-		}
-		if e.Killer != nil {
-			k.killerKey = playerKey(e.Killer)
-			k.killerName = e.Killer.Name
-			k.killerSide = sideString(e.Killer.Team)
-			k.attackerPosX, k.attackerPosY, k.attackerPosZ = posPtrs(e.Killer.Position())
-		}
-		if e.Victim != nil {
-			k.victimKey = playerKey(e.Victim)
-			k.victimName = e.Victim.Name
-			k.victimSide = sideString(e.Victim.Team)
-			k.samePlayer = e.Killer != nil && e.Killer.EntityID == e.Victim.EntityID
-			k.posX, k.posY, k.posZ = posPtrs(e.Victim.Position())
-			// Death-drop evidence: the victim's inventory AT the kill
-			// tick (ammo included). Characterized on all seven golden
-			// demos — drops_diag_test.go TestDiagDropInventoryAtKill:
-			// 1174/1174 kills dispatched with a non-empty, unmutated
-			// inventory identical to the last frame's sample, so this
-			// read is authoritative (no last-known fallback path).
-			k.inv = dropInventory(e.Victim.Weapons())
-			// Defuse-kit possession rides the SAME dispatch instant: the
-			// kit is not inventory (HasDefuseKit reads the pawn's
-			// m_pItemServices.m_bHasDefuser), so it needs its own read —
-			// characterized in the same diag run (victim alive at
-			// dispatch, so the pawn property is still there to read;
-			// counts reported by TestDiagDropInventoryAtKill).
-			k.hasKit = e.Victim.HasDefuseKit()
-		}
-		if e.Assister != nil {
-			k.assisterKey = playerKey(e.Assister)
-			k.assisterName = e.Assister.Name
-			k.assisterSide = sideString(e.Assister.Team)
-		}
+		k := killInfoFor(e, newRemap(gs))
+		k.tick = gs.IngameTick()
+		k.real = realPeriod(gs)
+		k.tickRate = p.TickRate()
 		// Trade-opportunity proximity input: the victim's living
 		// teammates' positions at this death tick (config-independent —
 		// measured once here, gated later against analysis_config).
@@ -190,33 +149,9 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
 		gs := p.GameState()
-		wn := wepName(e.Weapon)
-		if e.WeaponString != "" && (e.Weapon == nil || e.Weapon.Type == common.EqUnknown) {
-			wn = e.WeaponString
-		}
-		h := hurtInfo{
-			tick:              gs.IngameTick(),
-			real:              realPeriod(gs),
-			weapon:            wn,
-			healthDamage:      e.HealthDamage,
-			healthDamageTaken: e.HealthDamageTaken,
-			health:            e.Health,
-			hitgroup:          hitGroupName(e.HitGroup),
-		}
-		if e.Weapon != nil && isUtilityEquipment(e.Weapon.Type) {
-			h.isUtility = true
-		}
-		if e.Attacker != nil {
-			h.attackerKey = playerKey(e.Attacker)
-			h.attackerName = e.Attacker.Name
-			h.attackerSide = sideString(e.Attacker.Team)
-		}
-		if e.Player != nil {
-			h.victimKey = playerKey(e.Player)
-			h.victimName = e.Player.Name
-			h.victimSide = sideString(e.Player.Team)
-			h.posX, h.posY, h.posZ = posPtrs(e.Player.Position())
-		}
+		h := hurtInfoFor(e, newRemap(gs))
+		h.tick = gs.IngameTick()
+		h.real = realPeriod(gs)
 		a.hurt(h)
 	})
 
@@ -225,7 +160,8 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Shooter == nil || !realPeriod(gs) {
 			return
 		}
-		a.shot(playerKey(e.Shooter), e.Shooter.Name)
+		who, _ := newRemap(gs).pair(e.Shooter)
+		a.shot(playerKey(who), who.Name)
 	})
 
 	p.RegisterEventHandler(func(e events.PlayerFlashed) {
@@ -233,18 +169,18 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			return
 		}
 		gs := p.GameState()
+		r := newRemap(gs)
+		key, name, side, _ := participantRow(e.Player, r)
 		b := blindInfo{
 			tick:       gs.IngameTick(),
 			real:       realPeriod(gs),
-			playerKey:  playerKey(e.Player),
-			playerName: e.Player.Name,
-			playerSide: sideString(e.Player.Team),
+			playerKey:  key,
+			playerName: name,
+			playerSide: side,
 			flashMs:    int(e.FlashDuration().Milliseconds()),
 		}
 		if e.Attacker != nil {
-			b.attackerKey = playerKey(e.Attacker)
-			b.attackerName = e.Attacker.Name
-			b.attackerSide = sideString(e.Attacker.Team)
+			b.attackerKey, b.attackerName, b.attackerSide, _ = participantRow(e.Attacker, r)
 		}
 		a.blind(b)
 	})
@@ -253,11 +189,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.BombPlanted) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		key, name, _, _ := participantRow(e.Player, newRemap(gs))
 		bx, by, bz := bombPos(gs)
 		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name, realPeriod(gs), bx, by, bz)
 	})
@@ -277,52 +209,45 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// either — addEvent drops every row while agg.discarding is set.
 	p.RegisterEventHandler(func(e events.BombPlantBegin) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		key, name, _, _ := participantRow(e.Player, newRemap(gs))
 		a.bombPlantBegin(gs.IngameTick(), bombSite(e.Site), key, name)
 	})
 
 	p.RegisterEventHandler(func(e events.BombPlantAborted) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		key, name, _, _ := participantRow(e.Player, newRemap(gs))
 		a.bombPlantAborted(gs.IngameTick(), key, name)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDefuseStart) {
 		gs := p.GameState()
-		key, name, hasKit := uint64(0), "", false
+		r := newRemap(gs)
+		key, name, _, _ := participantRow(e.Player, r)
+		hasKit := false
 		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-			hasKit = e.Player.HasDefuseKit()
+			// The kit lives on the PAWN — read through the controlled
+			// bot's during a takeover (participantRow's identity side
+			// does not carry it).
+			_, pawn := r.pair(e.Player)
+			hasKit = pawn.HasDefuseKit()
 		}
 		a.bombDefuseStart(gs.IngameTick(), bombSite(e.Site), key, name, hasKit)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDefuseAborted) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		key, name, _, _ := participantRow(e.Player, newRemap(gs))
 		a.bombDefuseAborted(gs.IngameTick(), key, name)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDefused) {
 		gs := p.GameState()
-		key, name, hasKit := uint64(0), "", false
+		r := newRemap(gs)
+		key, name, _, _ := participantRow(e.Player, r)
+		hasKit := false
 		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-			hasKit = e.Player.HasDefuseKit()
+			_, pawn := r.pair(e.Player)
+			hasKit = pawn.HasDefuseKit()
 		}
 		bx, by, bz := bombPos(gs)
 		a.bombDefused(gs.IngameTick(), bombSite(e.Site), key, name, hasKit, realPeriod(gs), bx, by, bz)
@@ -336,11 +261,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.BombDropped) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		key, name, _, carrierPos := participantRow(e.Player, newRemap(gs))
 		// Evidence (dropped-C4 positions): the CARRIER's position at
 		// this instant is the drop site — BombDropped fires when the C4
 		// loses its owner (release time; death drops included — see the
@@ -350,7 +271,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		// zero-vector convention as posPtrs).
 		var px, py, pz *float64
 		if e.Player != nil {
-			px, py, pz = posPtrs(e.Player.Position())
+			px, py, pz = posPtrs(carrierPos)
 		}
 		bx, by, bz := bombPos(gs)
 		a.bombDropped(gs.IngameTick(), key, name, px, py, pz, bx, by, bz)
@@ -358,11 +279,12 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.BombPickup) {
 		gs := p.GameState()
-		key, name := uint64(0), ""
-		if e.Player != nil {
-			key = playerKey(e.Player)
-			name = e.Player.Name
-		}
+		// bomb_pickup carries ONLY userid_pawn, so demoinfocs resolves it
+		// to the substitute BOT's controller while the C4 is in the
+		// reconnecting human's hands — the takeover remap collapses the
+		// two resolution domains onto the controlling human (owner's
+		// repro: tick 92916 landed on the bot's key before this rule).
+		key, name, _, playerPos := participantRow(e.Player, newRemap(gs))
 		// Evidence: where the pickup happened — the bomb entity's
 		// position, falling back to the pickup player's pawn when the
 		// entity has no known location; DetailJSON `source` records
@@ -372,7 +294,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if px == nil {
 			source = "player"
 			if e.Player != nil {
-				px, py, pz = posPtrs(e.Player.Position())
+				px, py, pz = posPtrs(playerPos)
 			}
 		}
 		a.bombPickedUp(gs.IngameTick(), key, name, px, py, pz, source)
@@ -427,11 +349,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Projectile == nil {
 			return
 		}
-		key, name := uint64(0), ""
-		if e.Projectile.Thrower != nil {
-			key = playerKey(e.Projectile.Thrower)
-			name = e.Projectile.Thrower.Name
-		}
+		key, name, _, _ := participantRow(e.Projectile.Thrower, newRemap(p.GameState()))
 		weapon := "Unknown"
 		if e.Projectile.WeaponInstance != nil {
 			weapon = e.Projectile.WeaponInstance.Type.String()
@@ -461,14 +379,22 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// N reads the frame N-1 sample (the victim is dead by this frame's
 	// FrameDone, so a held grenade is never overwritten by the death
 	// itself). Reset per round in agg.roundStart (ONE home with the
-	// other per-round resets).
+	// other per-round resets). targetBuf is reused across frames (the
+	// parse is sequential — MsgQueueBufferSize(0)).
+	targetBuf := make([]identityTarget, 0, 10)
 	p.RegisterEventHandler(func(events.FrameDone) {
-		for _, pl := range p.GameState().Participants().Playing() {
-			if pl == nil || !pl.IsAlive() {
+		// Same takeover routing as the position/state sinks: the held
+		// util of a life controlled through a bot is read from the
+		// controlled pawn and noted under the controlling human's key
+		// (the death-drop util rule keys the victim of a later kill —
+		// which during a takeover is the human).
+		targetBuf = appendTargets(targetBuf[:0], p.GameState().Participants().Playing(), demoinfocsControls)
+		for _, t := range targetBuf {
+			if !t.pawn.IsAlive() {
 				continue
 			}
-			if w := pl.ActiveWeapon(); w != nil && isUtilityEquipment(w.Type) {
-				a.noteHeldUtil(playerKey(pl), wepName(w))
+			if w := t.pawn.ActiveWeapon(); w != nil && isUtilityEquipment(w.Type) {
+				a.noteHeldUtil(playerKey(t.identity), wepName(w))
 			}
 		}
 	})
@@ -500,8 +426,9 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			return
 		}
 		gs := p.GameState()
-		px, py, pz := posPtrs(e.Player.Position())
-		a.weaponPickedUp(gs.IngameTick(), playerKey(e.Player), e.Player.Name, name, cat, px, py, pz)
+		key, pname, _, pos := participantRow(e.Player, newRemap(gs))
+		px, py, pz := posPtrs(pos)
+		a.weaponPickedUp(gs.IngameTick(), key, pname, name, cat, px, py, pz)
 	})
 
 	// ---- people, chat ----
@@ -525,6 +452,26 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			return
 		}
 		a.disconnect(p.GameState().IngameTick(), playerKey(e.Player), e.Player.Name)
+	})
+
+	// bot_takeover: the reconnecting human takes the substitute bot's
+	// pawn over. Tick-accurate transition bookkeeping only (owner's
+	// 2026-11-17 takeover ruling — no user-visible output yet): the
+	// remap itself is resolved live from the controller props by
+	// activeIdentity/pairIdentity on every read, this log pins WHEN
+	// control changed hands (demoinfocs asserts the taker is a
+	// non-bot with IsControllingBot + ControlledBot at dispatch).
+	p.RegisterEventHandler(func(e events.BotTakenOver) {
+		if e.Taker == nil {
+			return
+		}
+		gs := p.GameState()
+		botKey, botName := uint64(0), ""
+		if bot := e.Taker.ControlledBot(); bot != nil {
+			botKey = playerKey(bot)
+			botName = bot.Name
+		}
+		a.botTakeover(gs.IngameTick(), playerKey(e.Taker), e.Taker.Name, botKey, botName)
 	})
 
 	// Player chat is read from SayText2, NOT from events.ChatMessage:
@@ -576,6 +523,108 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 }
 
+// killInfoFor builds the kill row's identity / position / inventory
+// inputs from a typed kill event — the takeover remap runs HERE so the
+// owner's two resolution domains collapse onto one life: a userid-keyed
+// participant (the reconnecting human) and a pawn-keyed one (the
+// substitute bot) resolve to the SAME identity, and every pawn-carried
+// read runs through the controlled bot's pawn (position, death-drop
+// inventory, defuse kit — the human's own pawn is the stale
+// pre-disconnect corpse, CS2.md "Reconnect takeover"). gs-dependent
+// inputs (tick, real, tickRate, matePos) stay in the handler.
+func killInfoFor(e events.Kill, r *remap) killInfo {
+	k := killInfo{
+		weapon:        wepName(e.Weapon),
+		headshot:      e.IsHeadshot,
+		wallbang:      e.IsWallBang(),
+		noscope:       e.NoScope,
+		throughSmoke:  e.ThroughSmoke,
+		attackerBlind: e.AttackerBlind,
+		assistedFlash: e.AssistedFlash,
+		distance:      float64(e.Distance),
+	}
+	var killerWho, victimWho *common.Player
+	if e.Killer != nil {
+		var pawn *common.Player
+		killerWho, pawn = r.pair(e.Killer)
+		k.killerKey = playerKey(killerWho)
+		k.killerName = killerWho.Name
+		k.killerSide = sideString(killerWho.Team)
+		k.attackerPosX, k.attackerPosY, k.attackerPosZ = posPtrs(r.pos(pawn))
+	}
+	if e.Victim != nil {
+		var pawn *common.Player
+		victimWho, pawn = r.pair(e.Victim)
+		k.victimKey = playerKey(victimWho)
+		k.victimName = victimWho.Name
+		k.victimSide = sideString(victimWho.Team)
+		k.posX, k.posY, k.posZ = posPtrs(r.pos(pawn))
+		// Death-drop evidence: the victim's inventory AT the kill tick
+		// (ammo included) — through the controlled pawn during a
+		// takeover, so the drops are the items the life actually
+		// carried. Characterized on all seven golden demos —
+		// drops_diag_test.go TestDiagDropInventoryAtKill: 1174/1174
+		// kills dispatched with a non-empty, unmutated inventory
+		// identical to the last frame's sample, so this read is
+		// authoritative (no last-known fallback path).
+		k.inv = dropInventory(pawn.Weapons())
+		// Defuse-kit possession rides the SAME dispatch instant: the
+		// kit is not inventory (HasDefuseKit reads the pawn's
+		// m_pItemServices.m_bHasDefuser), so it needs its own read —
+		// characterized in the same diag run (victim alive at dispatch,
+		// so the pawn property is still there to read; counts reported
+		// by TestDiagDropInventoryAtKill).
+		k.hasKit = pawn.HasDefuseKit()
+	}
+	// Identity-level self-kill: the resolved identities are one life (a
+	// takeover pair resolving both sides to the human IS the same life —
+	// never a cross-kill). Stated on the identities, not the raw event
+	// players, so the remap cannot split one life into two entities.
+	k.samePlayer = killerWho != nil && victimWho != nil && killerWho.EntityID == victimWho.EntityID
+	if e.Assister != nil {
+		who, _ := r.pair(e.Assister)
+		k.assisterKey = playerKey(who)
+		k.assisterName = who.Name
+		k.assisterSide = sideString(who.Team)
+	}
+	return k
+}
+
+// hurtInfoFor builds the damage row's identity / victim-position inputs
+// from a typed player_hurt event — the same takeover remap as the kill
+// pipeline (both resolution domains → one identity; position through the
+// controlled pawn). gs-dependent inputs (tick, real) stay in the handler.
+func hurtInfoFor(e events.PlayerHurt, r *remap) hurtInfo {
+	wn := wepName(e.Weapon)
+	if e.WeaponString != "" && (e.Weapon == nil || e.Weapon.Type == common.EqUnknown) {
+		wn = e.WeaponString
+	}
+	h := hurtInfo{
+		weapon:            wn,
+		healthDamage:      e.HealthDamage,
+		healthDamageTaken: e.HealthDamageTaken,
+		health:            e.Health,
+		hitgroup:          hitGroupName(e.HitGroup),
+	}
+	if e.Weapon != nil && isUtilityEquipment(e.Weapon.Type) {
+		h.isUtility = true
+	}
+	if e.Attacker != nil {
+		who, _ := r.pair(e.Attacker)
+		h.attackerKey = playerKey(who)
+		h.attackerName = who.Name
+		h.attackerSide = sideString(who.Team)
+	}
+	if e.Player != nil {
+		who, pawn := r.pair(e.Player)
+		h.victimKey = playerKey(who)
+		h.victimName = who.Name
+		h.victimSide = sideString(who.Team)
+		h.posX, h.posY, h.posZ = posPtrs(r.pos(pawn))
+	}
+	return h
+}
+
 // chatChannel maps a SayText2 MsgName onto the chat channel stored per
 // row (models.Chat.Channel): "all" | "team" | "" (not chat). The MsgName
 // vocabulary is the one demoinfocs switches on in net_messages.go —
@@ -618,8 +667,7 @@ func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser) blast
 		g.entity = ge.Projectile.Entity.ID()
 	}
 	if ge.Thrower != nil {
-		g.throwerKey = playerKey(ge.Thrower)
-		g.throwerName = ge.Thrower.Name
+		g.throwerKey, g.throwerName, _, _ = participantRow(ge.Thrower, newRemap(p.GameState()))
 	}
 	return g
 }
