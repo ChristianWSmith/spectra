@@ -978,9 +978,35 @@ export function clearQueryHistory() { return QueryService.ClearHistory(); }
 export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
 export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
 export function listPlugins() { return PlatformService.ListPlugins(); }
-export function installPlugin(path) { return PlatformService.InstallPlugin(path); }
-export function setPluginEnabled(id, enabled) { return PlatformService.SetPluginEnabled(id, enabled); }
-export function removePlugin(id) { return PlatformService.RemovePlugin(id); }
+// installPlugin/setPluginEnabled/removePlugin are mutating wrappers like
+// saveMetric/deleteMetric: no event fires when the op itself resolves,
+// so the wrapper must flush the read cache on SUCCESS — otherwise
+// listMetrics/listMetricsPage serve the pre-mutation promise and a
+// re-enabled plugin's metrics appear as ghosts (or new ones never show)
+// until an unrelated flush. Go schedules the metrics recompute sweep for
+// these ops (platformservice.go's afterPluginOp), but its
+// spectra:metric-done lands later — and only when the sweep attempts
+// work — so it cannot cover the definition-list change; this
+// invalidate() closes that window. The flush is the FULL invalidate();
+// a rejected op changes nothing and does not flush.
+export function installPlugin(path) {
+  return PlatformService.InstallPlugin(path).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+export function setPluginEnabled(id, enabled) {
+  return PlatformService.SetPluginEnabled(id, enabled).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+export function removePlugin(id) {
+  return PlatformService.RemovePlugin(id).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 export function listReportTemplates() { return PlatformService.ListReportTemplates(); }
 export function renderReport(templateId, matchId, steamId, round) {
   return PlatformService.RenderReport(templateId, matchId || 0, steamId || '', round || 0);

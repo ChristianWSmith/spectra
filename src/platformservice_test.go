@@ -204,6 +204,21 @@ const rootTestPlugin = `{
   ]
 }`
 
+// writeRootPluginBundle writes rootTestPlugin's bundle to a temp dir and
+// returns its path (the lifecycle test and the sweep-trigger tests share
+// it — one spelling of the bundle-on-disk setup).
+func writeRootPluginBundle(t *testing.T) string {
+	t.Helper()
+	bundle := filepath.Join(t.TempDir(), "root-plug")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "spectra-plugin.json"), []byte(rootTestPlugin), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	return bundle
+}
+
 func TestPluginLifecycleViaService(t *testing.T) {
 	useTempXDG(t)
 	st, err := store.Open(":memory:")
@@ -214,13 +229,7 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	id := seedPlatformMatch(t, st)
 	svc := &PlatformService{st: st}
 
-	bundle := filepath.Join(t.TempDir(), "root-plug")
-	if err := os.MkdirAll(bundle, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(bundle, "spectra-plugin.json"), []byte(rootTestPlugin), 0o644); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
+	bundle := writeRootPluginBundle(t)
 
 	got, err := svc.InstallPlugin(bundle)
 	if err != nil {
@@ -303,6 +312,212 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	if list, err := svc.ListPlugins(); err != nil || len(list) != 0 {
 		t.Fatalf("ListPlugins after remove: %v, %+v", err, list)
 	}
+}
+
+// --- The owner ruling (2026-11-16): plugin ops trigger the metric sweep ---
+
+// waitForSweepIdle waits for the background sweep loop to drain — fixture
+// cleanup closes the store, so no sweep goroutine may outlive the test
+// (the pattern from TestSweepCoalescesTriggers in metricpass_test.go).
+func waitForSweepIdle(t *testing.T, f *depsFixture) {
+	t.Helper()
+	waitFor(t, "the sweep scheduler to go idle", func() bool {
+		f.svc.mu.Lock()
+		defer f.svc.mu.Unlock()
+		return !f.svc.sweepRunning
+	})
+}
+
+// TestPluginOpsTriggerTheMetricSweep pins the TRIGGER side of the ruling:
+// every plugin mutation hands the metrics sweep a trigger through the
+// hand-wired afterPluginOp hook (main wires it to
+// MetricsService.scheduleSweep — the same scheduler the startup sweep
+// and a metric save use). The hook fires once per attempt — install,
+// disable, enable, remove — and on FAILED attempts too: the manager
+// mutates metric rows before some of its own failure points (SetEnabled
+// re-inserts/deletes rows before the registry write; Remove deletes rows
+// before the registry/file steps), so an error return can already have
+// changed metric data — a sweep with no work is a cheap no-op, a missed
+// sweep leaves the stale rows this hook exists to prevent. A nil hook
+// (the bare construction every other test here uses) must stay a no-op.
+func TestPluginOpsTriggerTheMetricSweep(t *testing.T) {
+	useTempXDG(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	fired := 0
+	svc := &PlatformService{st: st, afterPluginOp: func() { fired++ }}
+	bundle := writeRootPluginBundle(t)
+
+	if _, err := svc.InstallPlugin(bundle); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
+	if fired != 1 {
+		t.Errorf("hook fires after install = %d, want 1", fired)
+	}
+	if _, err := svc.SetPluginEnabled("root-plug", false); err != nil {
+		t.Fatalf("SetPluginEnabled(false): %v", err)
+	}
+	if fired != 2 {
+		t.Errorf("hook fires after disable = %d, want 2", fired)
+	}
+	if _, err := svc.SetPluginEnabled("root-plug", true); err != nil {
+		t.Fatalf("SetPluginEnabled(true): %v", err)
+	}
+	if fired != 3 {
+		t.Errorf("hook fires after enable = %d, want 3", fired)
+	}
+	if err := svc.RemovePlugin("root-plug"); err != nil {
+		t.Fatalf("RemovePlugin: %v", err)
+	}
+	if fired != 4 {
+		t.Errorf("hook fires after remove = %d, want 4", fired)
+	}
+
+	// Failed attempts fire too (see the field doc): the manager can
+	// mutate metric rows before its own failure points, and a sweep over
+	// unchanged rows is a cheap no-op.
+	if _, err := svc.SetPluginEnabled("root-plug", true); err == nil {
+		t.Fatal("SetPluginEnabled on a removed plugin succeeded")
+	}
+	if fired != 5 {
+		t.Errorf("hook fires after a failed enable = %d, want 5", fired)
+	}
+	if err := svc.RemovePlugin("root-plug"); err == nil {
+		t.Fatal("RemovePlugin on a removed plugin succeeded")
+	}
+	if fired != 6 {
+		t.Errorf("hook fires after a failed remove = %d, want 6", fired)
+	}
+	if _, err := svc.InstallPlugin(filepath.Join(t.TempDir(), "no-such-bundle")); err == nil {
+		t.Fatal("InstallPlugin of a missing bundle succeeded")
+	}
+	if fired != 7 {
+		t.Errorf("hook fires after a failed install = %d, want 7", fired)
+	}
+
+	// A nil hook (the bare construction every other test here uses) is a
+	// no-op, never a panic.
+	bare := &PlatformService{st: st}
+	if err := bare.RemovePlugin("root-plug"); err == nil {
+		t.Fatal("bare RemovePlugin of a missing plugin succeeded")
+	}
+}
+
+// TestPluginEnableRecomputesPluginMetrics pins owner outcome (a): after a
+// re-enable the plugin's metric rows come back WITHOUT stored values (the
+// old rows cascade-died with the deleted metric), the behind predicate
+// selects them, and the sweep the op triggered computes them to FRESH —
+// not stuck behind for the session. The hook is wired exactly as main
+// wires it (afterPluginOp → scheduleSweep over the useSweeps(nil, nil)
+// unbudgeted seam); waitFor tolerates the async hop.
+func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
+	useTempXDG(t)
+	f := newSeededFixture(t)
+	f.svc.useSweeps(nil, nil) // the unbudgeted seam — main wires a pool
+	svc := &PlatformService{st: f.st, afterPluginOp: f.svc.scheduleSweep}
+	bundle := writeRootPluginBundle(t)
+
+	// Install (enabled by default) → hook → sweep → fresh with values.
+	if _, err := svc.InstallPlugin(bundle); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
+	upID := mustID(t, f.st, "root_count")
+	waitFor(t, "the installed plugin metric to compute", func() bool {
+		return stateOf(t, f.svc, upID).State == MetricStateFresh
+	})
+	if n := storedRows(t, f.st, upID); n == 0 {
+		t.Fatal("installed plugin metric has no stored rows after the sweep")
+	}
+
+	// Disable → the row and its values are gone entirely.
+	if _, err := svc.SetPluginEnabled("root-plug", false); err != nil {
+		t.Fatalf("SetPluginEnabled(false): %v", err)
+	}
+	if n, err := f.st.CountPluginMetrics("root-plug"); err != nil || n != 0 {
+		t.Fatalf("plugin metric rows after disable = %d, %v, want 0", n, err)
+	}
+
+	// Re-enable → a NEW row (re-resolved by name — the id churns) with
+	// no values → hook → sweep → fresh, not stuck behind (the pre-fix
+	// behaviour: nothing scheduled a sweep, so the state read behind for
+	// the whole session).
+	if _, err := svc.SetPluginEnabled("root-plug", true); err != nil {
+		t.Fatalf("SetPluginEnabled(true): %v", err)
+	}
+	upID = mustID(t, f.st, "root_count") // delete + re-insert churns the id
+	waitFor(t, "the re-enabled plugin metric to compute", func() bool {
+		return stateOf(t, f.svc, upID).State == MetricStateFresh
+	})
+	if n := storedRows(t, f.st, upID); n == 0 {
+		t.Fatal("re-enabled plugin metric has no stored rows after the sweep")
+	}
+	waitForSweepIdle(t, f)
+}
+
+// TestPluginRemovalFailsDanglingDependents pins owner outcome (b): after
+// a disable/remove, a user metric whose expression referenced the removed
+// plugin metric ends FAILED with the engine's honest
+// `unknown metric reference` copy and ZERO stored rows — it must never
+// keep rendering its stored values as fresh. No version bump of
+// dependents is involved: metrics.Sweep pulls a metric whose dep_name
+// dangles into the work list UNCONDITIONALLY (internal/metrics/pass.go),
+// so scheduling the sweep — this hook's whole job — is the whole fix.
+// Re-enabling heals it back to fresh: the name resolves again and the
+// rows recompute.
+func TestPluginRemovalFailsDanglingDependents(t *testing.T) {
+	useTempXDG(t)
+	f := newSeededFixture(t)
+	f.svc.useSweeps(nil, nil)
+	svc := &PlatformService{st: f.st, afterPluginOp: f.svc.scheduleSweep}
+	bundle := writeRootPluginBundle(t)
+
+	if _, err := svc.InstallPlugin(bundle); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
+	upID := mustID(t, f.st, "root_count")
+	waitFor(t, "the plugin metric to compute", func() bool {
+		return stateOf(t, f.svc, upID).State == MetricStateFresh
+	})
+
+	// A user metric composed over the plugin metric — fresh WITH stored
+	// values first, so there is something stale to be honest about.
+	dep := f.save(t, models.MetricRow{
+		Name: "plug_dep",
+		Expr: "from events: ratio(sum(dmg), metric('root_count'))",
+	})
+	waitFor(t, "the dependent to compute", func() bool {
+		return stateOf(t, f.svc, dep.ID).State == MetricStateFresh
+	})
+	if n := storedRows(t, f.st, dep.ID); n == 0 {
+		t.Fatal("dependent has no stored rows before the disable — fixture broken")
+	}
+
+	// Disable → the hook's sweep dangles the dependent: phase 1 clears
+	// its rows and the compile fails honestly.
+	if _, err := svc.SetPluginEnabled("root-plug", false); err != nil {
+		t.Fatalf("SetPluginEnabled(false): %v", err)
+	}
+	waitFor(t, "the dependent to fail honestly", func() bool {
+		s := stateOf(t, f.svc, dep.ID)
+		return s.State == MetricStateFailed &&
+			strings.Contains(s.Error, `unknown metric reference "root_count"`)
+	})
+	if n := storedRows(t, f.st, dep.ID); n != 0 {
+		t.Errorf("dependent stored rows after the failed sweep = %d, want 0 (stale values must not survive)", n)
+	}
+
+	// Re-enable heals: the name resolves again and both recompute.
+	if _, err := svc.SetPluginEnabled("root-plug", true); err != nil {
+		t.Fatalf("SetPluginEnabled(true): %v", err)
+	}
+	waitFor(t, "the dependent to heal after re-enable", func() bool {
+		return stateOf(t, f.svc, dep.ID).State == MetricStateFresh
+	})
+	waitForSweepIdle(t, f)
 }
 
 func TestHandleExportRoutes(t *testing.T) {

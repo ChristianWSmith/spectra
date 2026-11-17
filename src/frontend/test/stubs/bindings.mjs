@@ -69,11 +69,16 @@ export const QueryService = {
 };
 // PlatformService: ListPlugins is the Builder mount's fire-and-forget
 // plugin-state read (a missing method would throw at mount); the two
-// report reads drive test/reports.dom.mjs.
+// report reads drive test/reports.dom.mjs; the three plugin mutators are
+// the invalidate-on-success wrappers services-cache pins (Go emits no
+// event for a plugin op, so the wrapper itself flushes).
 export const PlatformService = {
   ListPlugins: rec('ListPlugins'),
   ListReportTemplates: rec('ListReportTemplates'),
   RenderReport: rec('RenderReport'),
+  InstallPlugin: rec('InstallPlugin'),
+  SetPluginEnabled: rec('SetPluginEnabled'),
+  RemovePlugin: rec('RemovePlugin'),
 };
 export const LibraryService = {
   ImportDialog: rec('ImportDialog'),

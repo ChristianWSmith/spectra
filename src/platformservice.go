@@ -110,6 +110,35 @@ type ReportTemplate struct {
 type PlatformService struct {
 	st  *store.Store
 	app *application.App
+	// afterPluginOp, when set (main wires metricsSvc.scheduleSweep — the
+	// same scheduler the startup sweep and a metric save use), runs after
+	// EVERY install/enable/disable/remove attempt. It fires on error
+	// returns too: the manager mutates metric rows before some of its own
+	// failure points (SetEnabled re-inserts/deletes rows before the
+	// registry write; Remove deletes rows before the registry/file
+	// steps), so an error return can already have changed metric data —
+	// and a sweep with no work is a cheap no-op, while a missed sweep
+	// leaves exactly the stale rows this hook exists to prevent. This is
+	// the whole fix for the owner ruling (2026-11-16): a re-enabled
+	// plugin's rows come back with no stored values (the old ones
+	// cascade-died) → the behind predicate selects them → the scheduled
+	// sweep computes them to fresh; a user metric whose upstream a
+	// disable/remove just took away is selected by metrics.Sweep's
+	// dangling-dep clause UNCONDITIONALLY (no version bump needed — see
+	// internal/metrics/pass.go), so the scheduled sweep phase-1s its
+	// stale rows and fails it honestly with `unknown metric reference`
+	// instead of leaving it rendering stored values as fresh.
+	// scheduleSweep only spawns a goroutine, so the op never waits on
+	// the sweep (the startup precedent). Nil in package tests.
+	afterPluginOp func()
+}
+
+// pluginOpDone runs the optional after-plugin-op hook (nil in package
+// tests, which construct the service bare).
+func (s *PlatformService) pluginOpDone() {
+	if s.afterPluginOp != nil {
+		s.afterPluginOp()
+	}
 }
 
 // --- Data explorer -----------------------------------------------------------
@@ -278,8 +307,15 @@ func (s *PlatformService) ListPlugins() ([]PluginState, error) {
 // id/name/version, hash mismatch when provided (M5 §7.5 trust model).
 // Metric expressions get a structural check here; the metrics engine
 // validates them fully on preview/use.
+//
+// The sweep trigger fires even on an error return (one rule for all three
+// plugin ops): a failed install leaves the metric rows unchanged (the
+// replace is transactional), so the sweep is a cheap no-op — while
+// SetPluginEnabled/RemovePlugin below CAN fail after their metric-row
+// write, where the trigger is load-bearing.
 func (s *PlatformService) InstallPlugin(sourcePath string) (PluginState, error) {
 	st, err := s.pluginManager().Install(sourcePath)
+	s.pluginOpDone()
 	if err != nil {
 		return PluginState{}, err
 	}
@@ -292,9 +328,12 @@ func (s *PlatformService) InstallPlugin(sourcePath string) (PluginState, error) 
 }
 
 // SetPluginEnabled toggles a plugin (metrics/templates appear/disappear on
-// the next list — no restart, acceptance walkthrough 6).
+// the next list — no restart, acceptance walkthrough 6). The sweep trigger
+// fires on both paths like InstallPlugin's: SetEnabled re-inserts or
+// deletes the metric rows before the registry write that can still fail.
 func (s *PlatformService) SetPluginEnabled(id string, enabled bool) (PluginState, error) {
 	st, err := s.pluginManager().SetEnabled(id, enabled)
+	s.pluginOpDone()
 	if err != nil {
 		return PluginState{}, err
 	}
@@ -307,8 +346,14 @@ func (s *PlatformService) SetPluginEnabled(id string, enabled bool) (PluginState
 }
 
 // RemovePlugin deletes an installed plugin (metrics rows, registry row and
-// bundle directory).
-func (s *PlatformService) RemovePlugin(id string) error { return s.pluginManager().Remove(id) }
+// bundle directory). The sweep trigger fires on both paths: the metric-row
+// delete runs first inside the manager, so even a later failure (registry
+// row, bundle files) leaves changed rows behind.
+func (s *PlatformService) RemovePlugin(id string) error {
+	err := s.pluginManager().Remove(id)
+	s.pluginOpDone()
+	return err
+}
 
 // manifestFromPlugin converts the loader's manifest to the service type.
 func manifestFromPlugin(m plugin.Manifest) PluginManifest {
