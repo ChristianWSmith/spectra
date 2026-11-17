@@ -864,7 +864,8 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- unweighted mean of per-match ADRs (that older ruling is superseded).
 -- The engine supplies the divisor from the denominator column: match
 -- scope counts the match's rounds, profile scope the subject's
--- player_round_stats rows (roster × every counted round).
+-- player_round_stats rows (human roster × every counted round — bots
+-- carry no per-round rows, 2026-11-17).
 ('adr', 'ADR', 'ADR',
  'from player_stats: sum(total_damage)',
  'match', 'float1',
