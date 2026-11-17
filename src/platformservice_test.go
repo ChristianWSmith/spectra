@@ -207,19 +207,18 @@ const rootTestPlugin = `{
   ]
 }`
 
-// writeRootPluginBundle writes rootTestPlugin's bundle to a temp dir and
-// returns its path (the lifecycle test and the sweep-trigger tests share
-// it — one spelling of the bundle-on-disk setup).
-func writeRootPluginBundle(t *testing.T) string {
+// writeRootPluginFile writes rootTestPlugin as a single-file bundle
+// SOURCE (the only install source since w27 — folder sources are
+// refused) to a temp dir and returns its path (the lifecycle test and the
+// sweep-trigger tests share it — one spelling of the manifest-on-disk
+// setup).
+func writeRootPluginFile(t *testing.T) string {
 	t.Helper()
-	bundle := filepath.Join(t.TempDir(), "root-plug")
-	if err := os.MkdirAll(bundle, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(bundle, "spectra-plugin.json"), []byte(rootTestPlugin), 0o644); err != nil {
+	f := filepath.Join(t.TempDir(), plugin.ManifestName)
+	if err := os.WriteFile(f, []byte(rootTestPlugin), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	return bundle
+	return f
 }
 
 func TestPluginLifecycleViaService(t *testing.T) {
@@ -232,9 +231,9 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	id := seedPlatformMatch(t, st)
 	svc := &PlatformService{st: st}
 
-	bundle := writeRootPluginBundle(t)
+	src := writeRootPluginFile(t)
 
-	got, err := svc.InstallPlugin(bundle)
+	got, err := svc.InstallPlugin(src)
 	if err != nil {
 		t.Fatalf("InstallPlugin: %v", err)
 	}
@@ -396,9 +395,9 @@ func TestPluginOpsTriggerTheMetricSweep(t *testing.T) {
 
 	fired := 0
 	svc := &PlatformService{st: st, afterPluginOp: func() { fired++ }}
-	bundle := writeRootPluginBundle(t)
+	src := writeRootPluginFile(t)
 
-	if _, err := svc.InstallPlugin(bundle); err != nil {
+	if _, err := svc.InstallPlugin(src); err != nil {
 		t.Fatalf("InstallPlugin: %v", err)
 	}
 	if fired != 1 {
@@ -465,10 +464,10 @@ func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
 	f := newSeededFixture(t)
 	f.svc.useSweeps(nil, nil) // the unbudgeted seam — main wires a pool
 	svc := &PlatformService{st: f.st, afterPluginOp: f.svc.scheduleSweep}
-	bundle := writeRootPluginBundle(t)
+	src := writeRootPluginFile(t)
 
 	// Install (enabled by default) → hook → sweep → fresh with values.
-	if _, err := svc.InstallPlugin(bundle); err != nil {
+	if _, err := svc.InstallPlugin(src); err != nil {
 		t.Fatalf("InstallPlugin: %v", err)
 	}
 	upID := mustID(t, f.st, "root_count")
@@ -519,9 +518,9 @@ func TestPluginRemovalFailsDanglingDependents(t *testing.T) {
 	f := newSeededFixture(t)
 	f.svc.useSweeps(nil, nil)
 	svc := &PlatformService{st: f.st, afterPluginOp: f.svc.scheduleSweep}
-	bundle := writeRootPluginBundle(t)
+	src := writeRootPluginFile(t)
 
-	if _, err := svc.InstallPlugin(bundle); err != nil {
+	if _, err := svc.InstallPlugin(src); err != nil {
 		t.Fatalf("InstallPlugin: %v", err)
 	}
 	upID := mustID(t, f.st, "root_count")
@@ -978,15 +977,13 @@ func TestInstallRefusesBuiltinMetricCollision(t *testing.T) {
     {"name": "trade_rate", "title": "Not really", "expr": "from events: count()"}
   ]
 }`
-	bundle := filepath.Join(t.TempDir(), "hijack-plug")
-	if err := os.MkdirAll(bundle, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(bundle, plugin.ManifestName), []byte(hijack), 0o644); err != nil {
+	// w27: the source is the manifest FILE itself.
+	src := filepath.Join(t.TempDir(), plugin.ManifestName)
+	if err := os.WriteFile(src, []byte(hijack), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	if _, err := svc.InstallPlugin(bundle); err == nil {
+	if _, err := svc.InstallPlugin(src); err == nil {
 		t.Fatal("installing a builtin-colliding bundle succeeded")
 	} else if !strings.Contains(err.Error(), "built-in") {
 		t.Errorf("install error = %q, want the built-in collision refusal", err)

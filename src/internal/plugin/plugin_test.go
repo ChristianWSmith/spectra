@@ -36,19 +36,30 @@ const goodManifest = `{
   ]
 }`
 
-func writeGoodBundle(t *testing.T, dir string, manifestJSON string) string {
+// writeGoodManifest writes manifestJSON as a SINGLE-FILE bundle source —
+// the only install source since w27 (folder sources are refused by
+// Install) — in dir and returns its path.
+func writeGoodManifest(t *testing.T, dir string, manifestJSON string) string {
 	t.Helper()
-	bundle := filepath.Join(dir, "test-plug")
-	if err := os.MkdirAll(bundle, 0o755); err != nil {
-		t.Fatalf("mkdir bundle: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(bundle, ManifestName), []byte(manifestJSON), 0o644); err != nil {
+	f := filepath.Join(dir, ManifestName)
+	if err := os.WriteFile(f, []byte(manifestJSON), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(bundle, "data.json"), []byte(`{"k":1}`), 0o644); err != nil {
-		t.Fatalf("write data file: %v", err)
+	return f
+}
+
+// writeOrphanBundle writes an ON-DISK bundle FOLDER straight into the
+// manager's plugin dir — the installed layout List() scans for orphans
+// (never an Install source, so it stays folder-shaped).
+func writeOrphanBundle(t *testing.T, dir string, manifestJSON string) {
+	t.Helper()
+	b := filepath.Join(dir, "test-plug")
+	if err := os.MkdirAll(b, 0o755); err != nil {
+		t.Fatalf("mkdir bundle: %v", err)
 	}
-	return bundle
+	if err := os.WriteFile(filepath.Join(b, ManifestName), []byte(manifestJSON), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
 }
 
 func metricCount(t *testing.T, st *store.Store, pluginID string) int {
@@ -63,9 +74,9 @@ func metricCount(t *testing.T, st *store.Store, pluginID string) int {
 func TestInstallGoodBundle(t *testing.T) {
 	st := openStore(t)
 	mgr := NewManager(st, t.TempDir())
-	bundle := writeGoodBundle(t, t.TempDir(), goodManifest)
+	src := writeGoodManifest(t, t.TempDir(), goodManifest)
 
-	got, err := mgr.Install(bundle)
+	got, err := mgr.Install(src)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -117,7 +128,7 @@ func TestInstallGoodBundle(t *testing.T) {
 	}
 
 	// Reinstall keeps enabled state and revalidates.
-	if _, err := mgr.Install(bundle); err != nil {
+	if _, err := mgr.Install(src); err != nil {
 		t.Fatalf("reinstall: %v", err)
 	}
 	if n := metricCount(t, st, "test-plug"); n != 1 {
@@ -151,8 +162,8 @@ func TestPluginMetricScopeWriteThrough(t *testing.T) {
     {"name": "plug_match", "title": "Match", "expr": "from events: count()", "doc": "counts events"}
   ]
 }`
-	bundle := writeGoodBundle(t, t.TempDir(), manifest)
-	if _, err := mgr.Install(bundle); err != nil {
+	src := writeGoodManifest(t, t.TempDir(), manifest)
+	if _, err := mgr.Install(src); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	rows, err := st.ListMetrics()
@@ -198,14 +209,12 @@ func TestInstallValidationMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := filepath.Join(src, tc.name)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				t.Fatalf("mkdir: %v", err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte(tc.manifest), 0o644); err != nil {
+			// w27: the source is the manifest FILE itself.
+			f := filepath.Join(src, tc.name+".json")
+			if err := os.WriteFile(f, []byte(tc.manifest), 0o644); err != nil {
 				t.Fatalf("write: %v", err)
 			}
-			_, err := mgr.Install(dir)
+			_, err := mgr.Install(f)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("Install err = %v, want contains %q", err, tc.wantErr)
 			}
@@ -232,25 +241,21 @@ func TestInstallHashPinning(t *testing.T) {
 		return string(data)
 	}
 
-	// Mismatch: manifest pins 64 zeros over a bundle that hashes to
-	// something else.
-	bundle := writeGoodBundle(t, src, withHash(strings.Repeat("0", 64)))
+	// A pin can never verify for a SINGLE-FILE source (the digest covers
+	// the pin field itself — platformservice.go BuildPluginBundle ships
+	// hash empty for exactly this reason), so a manifest carrying one is
+	// refused as a mismatch. The directory-era "correct pin" flow died
+	// with the file-only source (w27).
+	bundle := writeGoodManifest(t, src, withHash(strings.Repeat("0", 64)))
 	if _, err := mgr.Install(bundle); err == nil || !strings.Contains(err.Error(), "hash mismatch") {
 		t.Fatalf("Install(mismatched hash) err = %v, want hash mismatch", err)
 	}
 
-	// Correct pin: compute the real hash of the pinned-manifest bundle's
-	// files (the manifest itself is excluded from the digest), then embed.
-	good := writeGoodBundle(t, src, goodManifest)
-	hash, err := ComputeBundleHash(good)
-	if err != nil {
-		t.Fatalf("ComputeBundleHash: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(good, ManifestName), []byte(withHash(hash)), 0o644); err != nil {
-		t.Fatalf("rewrite manifest: %v", err)
-	}
+	// The same manifest WITHOUT the pin installs cleanly (the shipped
+	// single-file shape).
+	good := writeGoodManifest(t, src, goodManifest)
 	if _, err := mgr.Install(good); err != nil {
-		t.Fatalf("Install(pinned) err = %v, want success", err)
+		t.Fatalf("Install(unpinned) err = %v, want success", err)
 	}
 }
 
@@ -274,8 +279,8 @@ func TestListInvalidManifestKept(t *testing.T) {
 	st := openStore(t)
 	dir := t.TempDir()
 	mgr := NewManager(st, dir)
-	bundle := writeGoodBundle(t, t.TempDir(), goodManifest)
-	if _, err := mgr.Install(bundle); err != nil {
+	src := writeGoodManifest(t, t.TempDir(), goodManifest)
+	if _, err := mgr.Install(src); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	// Corrupt the INSTALLED manifest: the row must survive with Error set.
@@ -318,7 +323,7 @@ func TestListOrphanBundle(t *testing.T) {
 	st := openStore(t)
 	dir := t.TempDir()
 	mgr := NewManager(st, dir)
-	writeGoodBundle(t, dir, goodManifest) // on disk, never installed
+	writeOrphanBundle(t, dir, goodManifest) // on disk, never installed
 	list, err := mgr.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
