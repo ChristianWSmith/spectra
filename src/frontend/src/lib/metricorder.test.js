@@ -50,7 +50,8 @@ const {
   composedSequence,
   rawItems,
   isRawId,
-  resolvePinIds,
+  resolvePins,
+  parseStoredPins,
   readOrder,
   writeOrder,
   resetOrder,
@@ -424,12 +425,14 @@ test('absent pins key → DEFAULT_PINS resolved by name through the catalog', ()
   ];
   // DEFAULT_PINS order (not catalog order): twelve of the fourteen default
   // names are absent from this catalog → resolve to nothing; the
-  // resolved ids keep the DEFAULT order.
-  assert.deepEqual(resolvePinIds('match', null, catalog), [1, 3]);
+  // resolved selection keeps the DEFAULT order and carries NAMES (w22 —
+  // re-pinned from the id form [1, 3] the pre-w22 reader returned: same
+  // two metrics, same order, name-keyed).
+  assert.deepEqual(resolvePins('match', null, catalog), ['adr', 'kd']);
   // A catalog with no default names in it → [] — the honest
   // "nothing resolves" fallback, same shape as an empty selection.
-  assert.deepEqual(resolvePinIds('match', null, []), []);
-  assert.deepEqual(resolvePinIds('profile', null, []), []);
+  assert.deepEqual(resolvePins('match', null, []), []);
+  assert.deepEqual(resolvePins('profile', null, []), []);
 });
 
 test('present pins key → the stored selection verbatim, even empty', () => {
@@ -437,9 +440,9 @@ test('present pins key → the stored selection verbatim, even empty', () => {
     { id: 1, name: 'adr' },
     { id: 3, name: 'kd' },
   ];
-  assert.deepEqual(resolvePinIds('match', [], catalog), [], "explicit '[]' is never overridden");
-  assert.deepEqual(resolvePinIds('match', [7], catalog), [7], 'even a non-default id');
-  assert.deepEqual(resolvePinIds('match', [3, 1], catalog), [3, 1], 'stored order kept (selection, not sequence)');
+  assert.deepEqual(resolvePins('match', [], catalog), [], "explicit '[]' is never overridden");
+  assert.deepEqual(resolvePins('match', ['trade_rate'], catalog), ['trade_rate'], 'even a non-default name');
+  assert.deepEqual(resolvePins('match', ['kd', 'adr'], catalog), ['kd', 'adr'], 'stored order kept (selection, not sequence)');
 });
 
 // --- The composition: resolveOrder ∩ pins (§1.3) ----------------------------
@@ -470,16 +473,76 @@ test('pinnedInSequence: pins SELECT, the sequence ORDERS (pins array order ignor
   ];
   // Pinned in the "wrong" order — render order is still the sequence:
   // adr (rank 1) then u1 (∞); kast is not pinned, so it never renders.
+  // The selection carries NAMES (w22 — re-pinned from the id form
+  // [2, 1] the pre-w22 reader passed: same metrics, same order).
   assert.deepEqual(
-    pinnedInSequence('match', null, defs, [2, 1]).map((d) => d.name),
+    pinnedInSequence('match', null, defs, ['u1', 'adr']).map((d) => d.name),
     ['adr', 'u1'],
   );
   // Unpinning re-selects without rewriting the sequence; a later pin
   // appears exactly where the sequence puts it (not appended).
   assert.deepEqual(
-    pinnedInSequence('match', null, defs, [3, 2]).map((d) => d.name),
+    pinnedInSequence('match', null, defs, ['kast', 'u1']).map((d) => d.name),
     ['kast', 'u1'],
   );
+});
+
+// --- w22: NAME-keyed pins (owner, 2026-11-16) -------------------------------
+// The pre-w22 storage was id-keyed; the id-content pins above were
+// re-pinned in place (old → new, noted there). The three invariants
+// below pin the NEW contract directly: the old id behavior WAS the
+// defect (a pinned plugin metric silently unpinned across a
+// disable → re-enable, because ReplacePluginMetrics hands plugin
+// metrics fresh ids), so there is no characterization of it to keep.
+
+test('parseStoredPins: drop, never migrate — an old id-array reads as no selection, and reads never write', () => {
+  // Absent ⇒ null (the DEFAULT_PINS branch resolves through resolvePins).
+  assert.equal(parseStoredPins(null), null);
+  // THE old format: a numeric id array. Every entry drops through this
+  // SAME read that carries current names — no format flag, no version,
+  // no conversion pass — so the selection resolves to NOTHING and the
+  // user re-pins once.
+  assert.deepEqual(parseStoredPins('[7,12]'), []);
+  assert.deepEqual(parseStoredPins('[42]'), []);
+  // A mixed array keeps its names only (ids can never be names).
+  assert.deepEqual(parseStoredPins('["kd",7,"adr"]'), ['kd', 'adr']);
+  // Present-but-now-empty stays PRESENT: resolvePins never lets
+  // DEFAULT_PINS override it — the old array reads as an explicit
+  // "nothing selected", not as a default selection.
+  assert.deepEqual(resolvePins('match', parseStoredPins('[7]'), [{ id: 7, name: 'kd' }]), []);
+  // The read is PURE: nothing in this module touches storage, so the
+  // old bytes sit in localStorage until the next real pin toggle
+  // overwrites them (the write side is Builder.writePins alone).
+  // Corrupt / non-array content reads as ABSENT (falls to the default
+  // rule) instead of breaking the surface.
+  assert.equal(parseStoredPins('nonsense'), null);
+  assert.equal(parseStoredPins('{"kd":1}'), null);
+  // Current format rides through: names deduped, order kept.
+  assert.deepEqual(parseStoredPins('["kd","adr","kd"]'), ['kd', 'adr']);
+});
+
+test('a pinned NAME still selects after an id churn — the plugin disable → re-enable proof', () => {
+  // The stored selection from BEFORE the plugin churn…
+  const stored = parseStoredPins('["plug_stat"]');
+  // …and the same metric after re-enable: same name, FRESH database id
+  // (ReplacePluginMetrics). Name-keyed pins select the metric, whatever
+  // id it carries — the pre-w22 id-keyed selection selected nothing here
+  // (the silent-unpin defect).
+  const reenabled = [{ id: 44, name: 'plug_stat', scope: 'match' }];
+  const picked = pinnedInSequence('match', null, reenabled, resolvePins('match', stored, reenabled));
+  assert.deepEqual(picked.map((d) => [d.id, d.name]), [[44, 'plug_stat']]);
+  // A name no live metric carries renders NOWHERE (the defs
+  // intersection every reader performs)…
+  const live = [{ id: 2, name: 'kd', scope: 'match' }];
+  assert.deepEqual(
+    pinnedInSequence('match', null, live, resolvePins('match', ['deleted_one'], live)),
+    [],
+  );
+  // …but rides along verbatim on the next READ: the drop happens at the
+  // render intersection, never at a write — that is exactly what keeps
+  // a plugin metric's pin across the window its plugin is disabled and
+  // its name is absent from the catalog.
+  assert.deepEqual(resolvePins('match', ['deleted_one'], live), ['deleted_one']);
 });
 
 // --- composedSequence: THE merged entry list (W6) ---------------------------

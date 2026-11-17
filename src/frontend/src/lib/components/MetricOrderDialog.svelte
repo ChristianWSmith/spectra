@@ -56,6 +56,8 @@
 
   let {
     open = false,
+    // The NAME-keyed pin selection per scope (w22 — metric names, the
+    // same identity the sequence uses; never ids).
     pinnedMatch = [],
     pinnedProfile = [],
     onTogglePin = () => {},
@@ -93,7 +95,7 @@
       });
   });
 
-  function pinnedIds(scope) {
+  function pinnedNames(scope) {
     return scope === 'match' ? pinnedMatch : pinnedProfile;
   }
 
@@ -108,9 +110,9 @@
   // listed) plus the pinned metrics. Every gesture index — keyboard and
   // the ↑/↓ buttons — is an index into THIS list, not into the catalog.
   function seqOf(scope) {
-    const pins = new Set(pinnedIds(scope));
+    const pins = new Set(pinnedNames(scope));
     return composedSequence(scope, orders[scope], defs, hidden[scope]).filter(
-      (e) => e.kind === 'fixed' || pins.has(e.def.id),
+      (e) => e.kind === 'fixed' || pins.has(e.def.name),
     );
   }
 
@@ -174,6 +176,8 @@
     const shown = seqOf(scope);
     const i = shown.findIndex((x) => x.key === entry.key);
     const neighbour = shown[i + 1] || shown[i - 1] || null;
+    // w22: the id stays the CALL shape (Builder.togglePin is the one id
+    // → name conversion site — the storage is name-keyed).
     await onTogglePin(entry.def.id, scope); // Builder's writer resolves before the list updates
     await tick();
     if (neighbour) {

@@ -82,7 +82,9 @@
 //      cluster (M1 — eye/pin/↑↓ in one .mo-acts span, no title on the
 //      eye), the drag-free list (no handle, nothing draggable),
 //      keyboard/button moves that write the WHOLE sequence through
-//      (SetPref), Reset → FOUR deletes (both pref PAIRS), and the
+//      (SetPref), Reset → FOUR deletes (both pref PAIRS), the w22
+//      name-keyed delete-scrub (deleting a pinned metric drops its
+//      NAME from both pin keys — names only, never an id), and the
 //      header ✕ closing it.
 //
 // Section A opens with the N1 list-scroll pins and section F carries
@@ -2378,6 +2380,32 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
         editorBtn.textContent.trim() === 'Pin' &&
         !editorBtn.classList.contains('bld-pin-on'),
       `row title=${rowBtn?.getAttribute('title')} class=${rowBtn?.className} editor="${editorBtn?.textContent.trim()}" class=${editorBtn?.className}`,
+    );
+  }
+  {
+    // w22 (2026-11-16) — NAME-keyed pins: deleting a PINNED user metric
+    // scrubs its NAME from BOTH pin keys (the delete-scrub survives the
+    // id → name flip) and the write carries names only — never an id.
+    // my_kd is pinned from the row-pin loop above and unpinned only for
+    // adr_avg by M6, so it is the live pinned user metric here.
+    const pinsKey = 'spectra:pinned-metrics';
+    const profileKey = 'spectra:pinned-profile-metrics';
+    const pinsBefore = JSON.parse(localStorage.getItem(pinsKey) || '[]');
+    const delBtn = rowNamed(r, 'my_kd')?.querySelector('[aria-label="Delete my_kd"]');
+    click(delBtn);
+    await sleep(80);
+    const pinsAfter = JSON.parse(localStorage.getItem(pinsKey) || '[]');
+    const profAfter = JSON.parse(localStorage.getItem(profileKey) || '[]');
+    check(
+      'deleting a pinned metric scrubs its NAME from BOTH pin keys (the write is names-only, and DeleteMetric got the id)',
+      !!delBtn &&
+        pinsBefore.includes('my_kd') &&
+        !pinsAfter.includes('my_kd') &&
+        pinsAfter.every((x) => pinsBefore.includes(x)) &&
+        !profAfter.includes('my_kd') &&
+        pinsAfter.every((x) => typeof x === 'string') &&
+        bindings.calls.some((c) => c.method === 'DeleteMetric' && c.args[0] === 3),
+      `pins ${JSON.stringify(pinsBefore)} → ${JSON.stringify(pinsAfter)} profile=${JSON.stringify(profAfter)} delBtn=${!!delBtn}`,
     );
   }
   {

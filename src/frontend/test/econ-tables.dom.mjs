@@ -1116,9 +1116,10 @@ const dismissInPlace = async (r, needle, stillThere) => {
 }
 
 // (b) metricError ("Pinned stats unavailable") — needs a pinned metric so
-// the pins effect actually runs, then a failing ListMetrics.
+// the pins effect actually runs, then a failing ListMetrics. (w22: pins
+// are name-keyed — the fixture pins BY NAME.)
 {
-  localStorage.setItem('spectra:pinned-metrics', '[7]');
+  localStorage.setItem('spectra:pinned-metrics', '["util_dmg"]');
   const d = { ...dataFor(13), listMetrics: new Error('metrics backend down') };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   const p = alertP(root, 'Pinned stats unavailable');
@@ -1153,7 +1154,8 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   // th's title tooltip must survive untouched.
   // jsdom has no layout, so the cap RULE itself is pinned from the
   // stylesheet source (section G's precedent).
-  localStorage.setItem('spectra:pinned-metrics', '[7]');
+  // w22: pins are name-keyed — the fixture pins BY NAME (id 7's name).
+  localStorage.setItem('spectra:pinned-metrics', '["util_dmg"]');
   const d = {
     ...dataFor(13),
     listMetrics: [
@@ -1232,7 +1234,8 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 // below is the cell's own title attribute — the criterion partitions by
 // the medium, not by a table whitelist).
 {
-  localStorage.setItem('spectra:pinned-metrics', '[8]');
+  // w22: pins are name-keyed — the fixture pins BY NAME (id 8's name).
+  localStorage.setItem('spectra:pinned-metrics', '["util_dmg"]');
   const d = {
     ...dataFor(13),
     listMetrics: [
@@ -1273,7 +1276,11 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 // renders the honest dash — and no rendered metric output ever carries
 // a version number or a timestamp (the no-version pin).
 {
-  localStorage.setItem('spectra:pinned-metrics', '[91,92,93,94,95]');
+  // w22: pins are name-keyed — the fixture pins the five names below.
+  localStorage.setItem(
+    'spectra:pinned-metrics',
+    '["m_processing","m_failed","m_behind","m_fresh","m_nodata"]',
+  );
   const mk = (id, name) => ({ id, name, title: name, doc: `Formula: ${name}` });
   const d = {
     ...dataFor(13),
@@ -1413,8 +1420,9 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
   // columns at the tail, in today's relative order. Pins are set
   // EXPLICITLY here (a present key renders the stored selection
   // verbatim — the absent→DEFAULT_PINS rule resolves a fresh install to
-  // these same fourteen ids in this same order, pinned in
-  // metricorder.test.js); under the ABSENT order pref the fixed block
+  // these same fourteen names in this same order, pinned in
+  // metricorder.test.js; w22: pins are name-keyed, so the fixture pins
+  // BY NAME); under the ABSENT order pref the fixed block
   // leads exactly as the old code prefix did (its negative ranks —
   // metricorder.FIXED_RANKS), and the pins never reorder it. w13d
   // removed KDA and Opening K/D from the fixed block: KDA is a metric
@@ -1423,7 +1431,14 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
   // triples read PINS-INDEPENDENT (design §6.1) — assists, which this
   // fixture pins too (a slot may be a column as well); entry_deaths
   // lost that slot with the compound cell.
-  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4,5,6,7,8,9,10,11,12,13,14]');
+  localStorage.setItem(
+    'spectra:pinned-metrics',
+    JSON.stringify([
+      'assists', 'adr', 'kast', 'hs_pct', 'kd', 'kda', 'two_k',
+      'three_k', 'four_k', 'five_k', 'entry_kills', 'entry_deaths',
+      'trade_kills', 'best_streak',
+    ]),
+  );
   const mk = (id, name, label, format) => ({
     id, name, title: label, shortName: label, scope: 'match', format,
     doc: `Formula: ${name}`,
@@ -1958,7 +1973,8 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
 
   // Transposed METRIC rows: the same pinned-metric sequence and the same
   // cell renderers (value / honest dash / state chip) on the stat axis.
-  localStorage.setItem('spectra:pinned-metrics', '[91,92]');
+  // w22: pins are name-keyed — the fixture pins BY NAME (ids 91/92's names).
+  localStorage.setItem('spectra:pinned-metrics', '["m_one","m_two"]');
   const mk = (id, name, label) => ({
     id,
     name,

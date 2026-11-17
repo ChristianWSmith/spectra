@@ -60,7 +60,7 @@
   import WinnerCell from '../components/WinnerCell.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
-  import { readOrder, readHidden, resolvePinIds, composedSequence } from '../metricorder.js';
+  import { readOrder, readHidden, resolvePins, parseStoredPins, composedSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
@@ -231,11 +231,11 @@
   const sepFlags = $derived(separatorFlags(rounds));
 
   // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON
-  // array of metric ids — written by Builder's scope-routed pin toggles
+  // array of metric NAMES — written by Builder's scope-routed pin toggles
   // (match scope only; profile-scope pins live under
   // 'spectra:pinned-profile-metrics' and surface on PlayerProfile), read
-  // here when a scoreboard renders. Ids resolve through listMetrics() on
-  // load (a deleted metric drops out, and only scope='match' metrics
+  // here when a scoreboard renders. Names resolve through listMetrics() on
+  // load (a deleted name drops out of the render, and only scope='match' metrics
   // ever become a column — design §5's pin-picker filter). The VALUES
   // come from the ONE canonical read (getMetricValuesForMatch — stored
   // rows, never a query-time calculation); the compute state and the
@@ -509,18 +509,14 @@
   // stopped being an ordering source — and the hidden pref (metric_-
   // hidden_match) removes fixed entries from THIS view only.
   function readPins() {
-    // The RAW stored selection — null when the key is ABSENT (the
-    // absent-vs-present rule lives in metricorder.resolvePinIds:
+    // The RAW stored selection — null when the key is ABSENT. The parse
+    // AND the format drop live in metricorder.parseStoredPins (THE one
+    // pins read — drop-never-migrate: an old id-array drops to "no
+    // selection" through this SAME path, see its comment); this site
+    // only performs the sanctioned localStorage call. The
+    // absent-vs-present rule lives in metricorder.resolvePins:
     // absent ⇒ DEFAULT_PINS through the catalog, present ⇒ verbatim).
-    try {
-      const raw = localStorage.getItem('spectra:pinned-metrics');
-      if (raw == null) return null;
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return null;
-      return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
-    } catch {
-      return null;
-    }
+    return parseStoredPins(localStorage.getItem('spectra:pinned-metrics'));
   }
 
   // sbSeq — the composed render sequence as LOOKUP ENTRIES: a visible
@@ -609,8 +605,8 @@
         // (design §1.6); present ⇒ verbatim, even '[]' — a stored "pin
         // nothing" is never overridden (and never silences the fixed
         // slots either — they are not a selection).
-        const pinIds = resolvePinIds('match', stored, rows);
-        const pinSet = new Set(pinIds);
+        const pinNames = resolvePins('match', stored, rows);
+        const pinSet = new Set(pinNames);
         // THE composition (lib/metricorder.js — the ONE site): fixed
         // stats and metrics in one ordered entry list. A hidden fixed
         // entry drops out of THIS render (it stays in the sequence and
@@ -625,7 +621,7 @@
             const col = colByLabel.get(e.short);
             if (col) seq.push({ key: `f:${col.key}`, col });
           } else {
-            if (!pinSet.has(e.def.id)) continue;
+            if (!pinSet.has(e.def.name)) continue;
             seq.push({ key: `m:${e.def.id}`, def: e.def });
             picked.push(e.def);
           }

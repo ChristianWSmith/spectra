@@ -23,7 +23,7 @@
   import * as S from '../strings/index.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
-  import { readOrder, readHidden, resolvePinIds, pinnedInSequence, inSequence, composedSequence } from '../metricorder.js';
+  import { readOrder, readHidden, resolvePins, parseStoredPins, pinnedInSequence, inSequence, composedSequence } from '../metricorder.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -179,7 +179,7 @@
   // Profile-scope pins live under their OWN localStorage key —
   // 'spectra:pinned-profile-metrics' — written scope-routed by Builder's
   // single pin button (design §3: one mechanism, scope-routed); the
-  // scoreboard key never carries them and vice versa. Ids resolve through
+  // scoreboard key never carries them and vice versa. Names resolve through
   // listMetrics (scope='profile' only) and read the CAREER grain through
   // the canonical read (match_id = 0 rows; the bucket read also carries
   // the unit coverage the state machine needs). Rendered per the design's
@@ -196,18 +196,14 @@
   let careerReload = $state(0);
 
   function readProfilePins() {
-    // The RAW stored selection — null when the key is ABSENT (the
-    // absent-vs-present rule lives in metricorder.resolvePinIds:
+    // The RAW stored selection — null when the key is ABSENT. The parse
+    // AND the format drop live in metricorder.parseStoredPins (THE one
+    // pins read — drop-never-migrate: an old id-array drops to "no
+    // selection" through this SAME path, see its comment); this site
+    // only performs the sanctioned localStorage call. The
+    // absent-vs-present rule lives in metricorder.resolvePins:
     // absent ⇒ DEFAULT_PINS through the catalog, present ⇒ verbatim).
-    try {
-      const raw = localStorage.getItem(PROFILE_PINS_KEY);
-      if (raw == null) return null;
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return null;
-      return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
-    } catch {
-      return null;
-    }
+    return parseStoredPins(localStorage.getItem(PROFILE_PINS_KEY));
   }
 
   $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
@@ -228,14 +224,14 @@
         if (!live) return;
         const rows = defs || [];
         // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
-        // (design §1.6); present ⇒ the stored selection verbatim.
-        const pinIds = resolvePinIds('profile', stored, rows);
-        careerPins = pinIds;
-        if (pinIds.length === 0) return;
+        // (design §1.6); present ⇒ the stored names verbatim.
+        const pinNames = resolvePins('profile', stored, rows);
+        careerPins = pinNames;
+        if (pinNames.length === 0) return;
         // THE composition (lib/metricorder.js — the ONE site): the
         // profile sequence filtered to the pinned set — the pins array
         // orders nothing.
-        const picked = pinnedInSequence('profile', order, rows, pinIds);
+        const picked = pinnedInSequence('profile', order, rows, pinNames);
         if (picked.length === 0) return;
         const ids = picked.map((d) => d.id);
         // ONE stored read for every profile pin (the whole career bucket
@@ -308,7 +304,7 @@
       if (e.hidden) continue;
       if (e.kind === 'fixed') {
         out.push({ key: e.key, fixed: e.key, label: e.label, col: null });
-      } else if (pinned.has(e.def.id)) {
+      } else if (pinned.has(e.def.name)) {
         const col = byName.get(e.name);
         if (col) out.push({ key: `m:${e.def.id}`, fixed: '', label: e.label, col });
       }

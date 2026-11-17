@@ -640,7 +640,50 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   // read. Only amy's profile is mounted; only HER row may render even
   // though the read is the whole career bucket (other players' rows are
   // this unit's coverage, never displayed).
-  localStorage.setItem('spectra:pinned-profile-metrics', '[51,52]');
+  //
+  // w22 (2026-11-16) — DROP, NEVER MIGRATE, pinned FIRST (the reader is
+  // read-only, so this is the pure read half of the contract): an OLD
+  // id-array under the profile key reads through the SAME path as
+  // current names — the numeric entry drops at read (an id can never be
+  // a metric name), so the block selects NOTHING …
+  localStorage.setItem('spectra:pinned-profile-metrics', '[51]');
+  bindings.MetricsService.ListMetrics = () =>
+    Promise.resolve([
+      {
+        id: 51, name: 'career_kd', title: 'Career K/D', scope: 'profile',
+        format: 'float1', doc: 'Formula: kills / deaths', origin: 'user',
+      },
+    ]);
+  invalidate();
+  const w22Target = document.createElement('div');
+  document.body.appendChild(w22Target);
+  mount(profileMod.default, {
+    target: w22Target,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(120);
+  const w22Grid = w22Target.querySelector('.stat-grid.prof-stats');
+  const w22Cells = w22Grid ? [...w22Grid.querySelectorAll('.stat-cell')] : [];
+  // …the block still renders with the FIXED pair only (a live mount,
+  // never a guessed tile) …
+  check(
+    'w22: an old id-array under the profile pins key selects NOTHING — the grid renders the fixed pair alone',
+    w22Cells.length === 2,
+    `cells=${JSON.stringify(w22Cells.map((c) => c.textContent.trim()))}`,
+  );
+  // …and the stored bytes are left byte-for-byte untouched: no format
+  // flag, no version, no conversion pass — the next real pin toggle
+  // writes names over them.
+  check(
+    'w22: the old-format bytes survive the read untouched (drop, never migrate)',
+    localStorage.getItem('spectra:pinned-profile-metrics') === '[51]',
+    String(localStorage.getItem('spectra:pinned-profile-metrics')),
+  );
+  document.body.removeChild(w22Target);
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+  // The section proper, re-pinned for the name-keyed format (w22 —
+  // old '[51,52]' → the two fixture names, ids 51/52).
+  localStorage.setItem('spectra:pinned-profile-metrics', '["career_kd","career_avg"]');
   bindings.MetricsService.ListMetrics = () =>
     Promise.resolve([
       {

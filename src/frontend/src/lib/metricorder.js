@@ -124,11 +124,13 @@ export const DEFAULT_RANKS = Object.freeze({
 // mechanism that makes the conversion visually transparent: these are
 // today's always-on derived columns / cards, so post-conversion they
 // reappear as metric entries in default order. The pins reader
-// (resolvePinIds below) applies it ONLY when the key is absent — a
+// (resolvePins below) applies it ONLY when the key is absent — a
 // present key (even '[]') is the stored selection verbatim; an
 // explicit "pin nothing" is never overridden. No migration marker
-// (pre-release no-versioning policy). PINs are METRIC ids only: the
-// fixed stats are sequence entries, never a selection.
+// (pre-release no-versioning policy). PINs are METRIC NAMES only (w22,
+// owner 2026-11-16 — the same identity the order prefs use: ids churn
+// on plugin replace, names don't): the fixed stats are sequence
+// entries, never a selection.
 //
 // match = the fourteen always-on scoreboard columns: the four that
 // converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
@@ -451,14 +453,16 @@ export function inSequence(scope, saved, defs) {
     .filter(Boolean);
 }
 
-// pinnedInSequence(scope, saved, defs, pinIds) — THE composition of
+// pinnedInSequence(scope, saved, defs, pinNames) — THE composition of
 // design §1.3: `resolveOrder ∩ pins`. Pins SELECT what renders; the
 // sequence decides where the selection renders (the pins array's own
 // order is never consulted — a newly pinned metric appears exactly
-// where the sequence puts it, not appended).
-export function pinnedInSequence(scope, saved, defs, pinIds) {
-  const pinned = new Set(pinIds || []);
-  return inSequence(scope, saved, defs).filter((d) => pinned.has(d.id));
+// where the sequence puts it, not appended). The selection carries
+// metric NAMES (w22), so a name with no live def here drops out — the
+// defs intersection IS the render-side drop.
+export function pinnedInSequence(scope, saved, defs, pinNames) {
+  const pinned = new Set(pinNames || []);
+  return inSequence(scope, saved, defs).filter((d) => pinned.has(d.name));
 }
 
 // composedSequence(scope, saved, defs, hiddenKeys) — THE merged
@@ -555,24 +559,61 @@ export function resetHidden(scope) {
   return Promise.resolve(deletePref(HIDDEN_KEYS[scope]));
 }
 
-// resolvePinIds(scope, stored, catalog) — THE absent-vs-present pins
+// parseStoredPins(raw) — THE pins READ: the localStorage getItem string
+// → the stored NAME selection (or null when the key is ABSENT —
+// missing, unparseable or a non-array, so a broken key falls to the
+// default rule instead of breaking the surface). Shared by the three
+// sanctioned localStorage sites (Builder the writer, Match and
+// PlayerProfile the readers — AGENTS "One canonical way": the parse and
+// the format live HERE, the sites only perform their getItem call).
+//
+// DROP, NEVER MIGRATE (owner, 2026-11-16 — pre-release no-versioning
+// policy): pins used to be stored as METRIC-ID arrays, and plugin
+// metrics get FRESH database ids on every disable→re-enable
+// (ReplacePluginMetrics), so pins are keyed by the metric NAME now —
+// the same identity metric_order_* already uses. There is NO format
+// flag, NO version, NO conversion pass: an entry that is not a string
+// is dropped by this same read path that carries current names — a
+// numeric id can never be a metric name (names are `[a-z0-9][a-z0-9_-]*`
+// slugs, ids are numbers), so an old id-array resolves to "no
+// selection" naturally and the user re-pins once. Reads never write:
+// the old bytes stay in localStorage untouched until the next real pin
+// toggle overwrites them with names.
+export function parseStoredPins(raw) {
+  if (raw == null) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return null;
+    return [...new Set(arr.filter((n) => typeof n === 'string'))];
+  } catch {
+    return null;
+  }
+}
+
+// resolvePins(scope, stored, catalog) — THE absent-vs-present pins
 // rule (design §1.6), the pins readers' shared reader (Builder, Match,
-// PlayerProfile):
+// PlayerProfile), fed by parseStoredPins above:
 //   stored null  (key ABSENT)  ⇒ DEFAULT_PINS[scope] resolved by NAME
 //     through the catalog — names not yet seeded resolve to nothing,
 //     so before W2's seeds an absent key behaves exactly like today's
 //     "absent ⇒ []";
-//   stored array (key PRESENT) ⇒ the stored selection verbatim, even
-//     '[]' — an explicit "pin nothing" is never overridden.
+//   stored array (key PRESENT) ⇒ the stored NAME selection verbatim,
+//     even '[]' — an explicit "pin nothing" is never overridden. A
+//     name no live metric carries rides along here untouched and is
+//     dropped where the selection meets the defs (every reader
+//     intersects the catalog — pinnedInSequence / composedSequence
+//     above), NEVER by a write: that read-side drop is what keeps a
+//     plugin metric's pin across the window its plugin is disabled and
+//     its name is absent from the catalog.
 // localStorage stays where it is (webstorage.test.js pins the three
 // durable-pref sites); this function only maps the raw read.
-export function resolvePinIds(scope, stored, catalog) {
+export function resolvePins(scope, stored, catalog) {
   if (Array.isArray(stored)) return [...stored];
   const byName = new Map((catalog || []).map((d) => [d.name, d]));
   const out = [];
   for (const n of DEFAULT_PINS[scope] || []) {
     const d = byName.get(n);
-    if (d && Number.isFinite(d.id)) out.push(d.id);
+    if (d && Number.isFinite(d.id)) out.push(d.name);
   }
   return out;
 }

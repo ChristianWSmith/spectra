@@ -19,7 +19,7 @@
     listPlugins,
     errText,
   } from '../services.js';
-  import { resolvePinIds } from '../metricorder.js';
+  import { resolvePins, parseStoredPins } from '../metricorder.js';
   import {
     liveMetricState,
     metricStateTitle,
@@ -44,10 +44,14 @@
   //   'spectra:pinned-metrics'           match scope  → Match scoreboard
   //   'spectra:pinned-profile-metrics'   profile scope → PlayerProfile's
   //                                              Career metrics panel
-  // Builder owns every write (the pin toggles below); the views read
-  // their own key and resolve ids through listMetrics() (a deleted
-  // metric drops out there), and deleteMetric drops its id from BOTH
-  // keys so an array can never keep a ghost.
+  // Builder owns every write (the pin toggles below); each key holds a
+  // JSON array of metric NAMES (w22, owner 2026-11-16 — the pin
+  // identity is the NAME, the same one metric_order_* already uses: a
+  // plugin metric's id changes on every disable→re-enable, its name
+  // does not). The views read their own key and resolve the names
+  // through listMetrics() (a deleted name drops out of the render
+  // there), and deleteMetric drops its name from BOTH keys so an array
+  // can never keep a ghost.
   const PINS_KEY = 'spectra:pinned-metrics';
   const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
 
@@ -73,8 +77,8 @@
   // still empty).
   let loading = $state(true);
   let loadingMore = $state(false);
-  let pins = $state([]); // match-scope pin ids (PINS_KEY)
-  let profilePins = $state([]); // profile-scope pin ids (PROFILE_PINS_KEY)
+  let pins = $state([]); // match-scope pin NAMES (PINS_KEY)
+  let profilePins = $state([]); // profile-scope pin NAMES (PROFILE_PINS_KEY)
   let disabledPlugins = $state(new Set());
   let listError = $state('');
   // The library-wide catalog the ABSENT pins key resolves its
@@ -371,47 +375,44 @@
   }
 
   // readPins: the RAW stored selection — null when the key is ABSENT.
-  // The absent-vs-present rule lives in metricorder.resolvePinIds
-  // (design §1.6): absent ⇒ DEFAULT_PINS resolved by name through the
-  // catalog, present (even '[]') ⇒ the stored selection verbatim.
+  // The parse AND the format drop live in metricorder.parseStoredPins
+  // (THE one pins read — its drop-never-migrate comment there: an old
+  // id-array drops to "no selection" through this SAME path, never a
+  // conversion pass); this site only performs the sanctioned
+  // localStorage call. The absent-vs-present rule lives in
+  // metricorder.resolvePins (design §1.6): absent ⇒ DEFAULT_PINS
+  // resolved by name through the catalog, present (even '[]') ⇒ the
+  // stored names verbatim.
   function readPins(key) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw == null) return null;
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return null;
-      return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
-    } catch {
-      return null;
-    }
+    return parseStoredPins(localStorage.getItem(key));
   }
 
   // effectivePins — the selection this surface ACTUALLY shows (and the
   // base every toggle writes FROM, so a first pin toggle can never
-  // silently drop the defaults): the stored ids when the key is
-  // present, DEFAULT_PINS (name → id through the loaded catalog) when
-  // it is absent. A still-empty catalog resolves defaults to [] — the
+  // silently drop the defaults): the stored NAMES when the key is
+  // present, DEFAULT_PINS (by name through the loaded catalog) when it
+  // is absent. A still-empty catalog resolves defaults to [] — the
   // mount effect re-applies this once listMetrics lands.
   function effectivePins(key, scope) {
-    const stored = readPins(key);
-    if (stored !== null) return stored;
-    return resolvePinIds(scope, null, catalog);
+    return resolvePins(scope, readPins(key), catalog);
   }
 
-  function writePins(key, ids) {
+  function writePins(key, names) {
     try {
-      localStorage.setItem(key, JSON.stringify(ids));
+      localStorage.setItem(key, JSON.stringify(names));
     } catch {
       /* storage unavailable — pins stay session-local */
     }
   }
 
-  // pinnedIn reports which key owns the id ("" = unpinned): a metric
+  // pinnedIn reports which key owns the NAME ("" = unpinned): a metric
   // lives in exactly ONE key, so the icon/label never has to guess a
-  // surface.
-  function pinnedIn(id) {
-    if (pins.includes(id)) return 'match';
-    if (profilePins.includes(id)) return 'profile';
+  // surface. Call sites pass the metric's NAME — the pin identity (the
+  // id-based entry points — list rows, the editor card, the Order
+  // dialog — all convert inside togglePin).
+  function pinnedIn(name) {
+    if (pins.includes(name)) return 'match';
+    if (profilePins.includes(name)) return 'profile';
     return '';
   }
 
@@ -421,7 +422,7 @@
   // strings catalog (strings/builder.js) — the Order dialog's metric
   // row composes the same keys, so both pin sites stay in step.
   function pinTitle(m) {
-    const on = pinnedIn(m.id) !== '';
+    const on = pinnedIn(m.name) !== '';
     if (m.scope === 'profile') return on ? S.builder.unpinFromProfile : S.builder.pinToProfile;
     return on ? S.builder.unpinFromScoreboard : S.builder.pinToScoreboard;
   }
@@ -436,6 +437,18 @@
   const GROUP_LABEL = { builtin: 'Builtins', user: 'Yours', plugin: 'Plugins' };
 
   const dirty = $derived(snapshot(form) !== baseline);
+  // The editor's pin button keys off the SAVED name — the identity the
+  // pin actually selects — never the live form field: a dirty rename is
+  // an unsaved identity, so it must not flip the button's state (and
+  // saving a rename severs the pin at the next read, by the name-keyed
+  // design — w22).
+  const savedName = $derived.by(() => {
+    try {
+      return JSON.parse(baseline).name || '';
+    } catch {
+      return '';
+    }
+  });
   // readOnly — a loaded definition the API never updates in place: a
   // PLUGIN row forks on save (payload id 0 → a new user copy), a
   // BUILT-IN row is not savable at all (saveDisabled below). Both wear
@@ -525,7 +538,7 @@
     if (pinFilter === '') return metrics;
     if (pinFilter === 'none') return []; // both boxes off — nothing passes
     const wantPinned = pinFilter === 'pinned';
-    return metrics.filter((m) => (pinnedIn(m.id) !== '') === wantPinned);
+    return metrics.filter((m) => (pinnedIn(m.name) !== '') === wantPinned);
   });
 
   const runs = $derived.by(() => {
@@ -593,8 +606,8 @@
   // write goes through writePins first (localStorage is the session's
   // truth).
   $effect(() => {
-    pins = readPins(PINS_KEY) ?? [];
-    profilePins = readPins(PROFILE_PINS_KEY) ?? [];
+    pins = effectivePins(PINS_KEY, 'match');
+    profilePins = effectivePins(PROFILE_PINS_KEY, 'profile');
     loadPluginStates();
     catalogP = listMetrics()
       .then((rows) => {
@@ -765,35 +778,44 @@
     saveError = '';
   }
 
-  // Id-based (not row-based): the edit card's Pin acts on form.id, which
-  // may sit beyond the windows fetched so far — a paged list must not
-  // make the toggle silently no-op. Scope-routed (design §3): an
-  // already-pinned id toggles OFF wherever it lives; an unpinned one
-  // lands in the key its SCOPE owns — a list row passes its saved
-  // scope, the editor resolves the SAVED scope through getMetric (so a
-  // dirty scope select can never mis-file the pin), and a metric is
-  // always moved OUT of the other key (one mechanism, one home).
+  // Id-based (not row-based) at the door: the edit card's Pin acts on
+  // form.id, which may sit beyond the windows fetched so far — a paged
+  // list must not make the toggle silently no-op — and the Order dialog
+  // hands in entry.def.id too. The STORAGE is NAME-keyed (w22, owner
+  // 2026-11-16: a plugin metric's id changes on every disable→
+  // re-enable, its name does not), so the id → NAME conversion happens
+  // HERE, once — no other site maps ids into a pin array. The name and
+  // the saved scope come from getMetric (the canonical read: never the
+  // paged window, never a stale mount catalog).
+  // Scope-routed (design §3): an already-pinned name toggles OFF
+  // wherever it lives; an unpinned one lands in the key its SCOPE owns —
+  // a list row passes its saved scope, the editor resolves the SAVED
+  // scope through getMetric (so a dirty scope select can never mis-file
+  // the pin), and a metric is always moved OUT of the other key (one
+  // mechanism, one home).
   async function togglePin(id, scope) {
-    let s = pinnedIn(id) || scope;
-    if (!s) {
-      try {
-        s = (await getMetric(id)).scope || 'match';
-      } catch {
-        s = 'match';
-      }
-    }
     // An absent key resolves its defaults through the catalog — wait
     // for the mount read so a first toggle can never drop them.
     await catalogP;
+    let def = null;
+    try {
+      def = await getMetric(id);
+    } catch {
+      def = null; // an id no live metric carries — a ghost never pins
+    }
+    if (!def?.name) return;
+    const name = def.name;
+    let s = pinnedIn(name) || scope;
+    if (!s) s = def.scope || 'match';
     const key = s === 'profile' ? PROFILE_PINS_KEY : PINS_KEY;
     const otherKey = key === PROFILE_PINS_KEY ? PINS_KEY : PROFILE_PINS_KEY;
     const otherScope = s === 'profile' ? 'match' : 'profile';
     const cur = effectivePins(key, s);
-    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    // The OTHER scope's effective selection minus this id — writing it
+    const next = cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name];
+    // The OTHER scope's effective selection minus this name — writing it
     // materializes that key too (same rule as the order's first move:
     // the write carries the selection the other surface already shows).
-    const other = effectivePins(otherKey, otherScope).filter((x) => x !== id);
+    const other = effectivePins(otherKey, otherScope).filter((x) => x !== name);
     writePins(key, next);
     writePins(otherKey, other);
     if (key === PROFILE_PINS_KEY) {
@@ -809,12 +831,13 @@
     saveError = '';
     try {
       await deleteMetric(m.id);
-      if (pins.includes(m.id) || profilePins.includes(m.id)) {
-        // Both keys: the id must leave EVERY array (a scope-routed pin
+      if (pins.includes(m.name) || profilePins.includes(m.name)) {
+        // Both keys: the NAME must leave EVERY array (a scope-routed pin
         // lives in exactly one, but a stale array must not keep a
-        // ghost either).
-        pins = pins.filter((x) => x !== m.id);
-        profilePins = profilePins.filter((x) => x !== m.id);
+        // ghost either) — the delete-scrub, unchanged by the id → name
+        // keying (w22).
+        pins = pins.filter((x) => x !== m.name);
+        profilePins = profilePins.filter((x) => x !== m.name);
         writePins(PINS_KEY, pins);
         writePins(PROFILE_PINS_KEY, profilePins);
       }
@@ -1106,7 +1129,7 @@
       >
       <button
         class="btn small ghost"
-        class:bld-pin-on={pinnedIn(m.id) !== ''}
+        class:bld-pin-on={pinnedIn(m.name) !== ''}
         title={pinTitle(m)}
         aria-label={S.fill(S.builder.togglePinAria, { name: m.name })}
         onclick={() => togglePin(m.id, m.scope)}><span class="codicon codicon-pin"></span></button
@@ -1607,12 +1630,12 @@
             </span>
             <button
               class="btn"
-              class:bld-pin-on={form.id > 0 && pinnedIn(form.id) !== ''}
+              class:bld-pin-on={form.id > 0 && pinnedIn(savedName) !== ''}
               disabled={form.id === 0}
               onclick={() => togglePin(form.id)}
             >
               <span class="codicon codicon-pin"></span>
-              {form.id > 0 && pinnedIn(form.id) !== '' ? S.builder.pinned : S.builder.pin}
+              {form.id > 0 && pinnedIn(savedName) !== '' ? S.builder.pinned : S.builder.pin}
             </button>
             <button
               class="btn primary"
@@ -1773,7 +1796,8 @@
   </div>
 
   <!-- ONE dialog, two stacked sections (design §2.2); its open state
-       is transient (openOrder above). Pins ride as props, and the
+       is transient (openOrder above). Pins ride as props (name arrays —
+       the NAME-keyed selection, w22), and the
        dialog's pin toggle (M6) routes back through the ONE pins
        writer — togglePin writes both pin keys and never the order
        pref, so this view stays the only place prefs are written. -->

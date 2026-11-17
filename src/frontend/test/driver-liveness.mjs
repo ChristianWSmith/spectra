@@ -246,7 +246,10 @@ const EXPECTED = {
   // always-present chip (section A), the N6 slot indices (section F),
   // and the Order dialog's metric short slot — ADR under "ADR
   // average", none for a short-less metric (section J, item 5).
-  'builder.dom.mjs': 157,
+  // builder 157 → 158 (2026-11-16, w22 name-keyed pins): +1 section J —
+  // the delete-scrub: deleting a PINNED user metric scrubs its NAME
+  // from BOTH pin keys (the write is names-only, never an id).
+  'builder.dom.mjs': 158,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -607,7 +610,11 @@ const EXPECTED = {
   // removes that card from the VIEW while every metric tile keeps its
   // place (the hidden entry stays listed in the ordering dialog —
   // visibility is view-display only).
-  'profiles.dom.mjs': 81,
+  // profiles 81 → 83 (2026-11-16, w22 name-keyed pins): +2 section I —
+  // the DROP-NEVER-MIGRATE pins over an OLD id-array under the profile
+  // key: the grid renders the fixed pair alone (no metric selected) and
+  // the stored bytes survive the read untouched.
+  'profiles.dom.mjs': 83,
   'progress-presentation.dom.mjs': 19,
   // replay 450 → 452 (2026-11-15, help-buttons): +2 section A (the
   // header `?` rides the top bar right of the ribbon — immediately
