@@ -8,78 +8,27 @@
   // extracted → no prompt), so "Not now" only skips this launch; there
   // is no persisted suppression. Escape/backdrop dismissal is
   // session-only the same way. "Choose folder…" covers non-Steam
-  // installs. Valve IP never ships — internal/mappack.
+  // installs. Extract closes the prompt at once — the run and its
+  // progress surface in the floating work indicator (App's .wk-pill).
+  // Valve IP never ships — internal/mappack.
   import {
     getMapPackStatus,
     getIconManifest,
     getSoundManifest,
     setCS2Dir,
     chooseCS2Dir,
-    onAssetProgress,
     errText,
   } from '../services.js';
-  import { extractAllAssets, assetFamilyForStep } from '../assets.js';
+  import { extractAllAssets } from '../assets.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
   import Dialog from './Dialog.svelte';
-  import StatusChip from './StatusChip.svelte';
 
   let open = $state(false);
   let notFound = $state(false); // CS2 missing → the not-found variant
   let status = $state(null); // MapPackStatus once loaded
   let busy = $state(false);
   let error = $state('');
-  let msg = $state(''); // aggregated result line after extraction
   let pickedDir = $state(''); // manual folder override
-  // Live extraction progress: step names the family currently running
-  // (set by extractAllAssets' onStep before each awaited call), progress
-  // holds the last spectra:asset-progress payload — every family emits
-  // one now (mappackservice.go's shared emitter), so each step renders
-  // the determinate bar from its own numbers.
-  let step = $state('');
-  let progress = $state(null);
-
-  // The payload of the step CURRENTLY running, gated on that step's own
-  // family (assets.js assetFamilyForStep): a stale payload from the
-  // previous step or a concurrent run's payload for another family never
-  // drives this display. Null between steps → StatusChip's indeterminate
-  // spinner (block mode, progress 0) — never a pretended percentage.
-  const stepProgress = $derived(
-    progress && progress.family === assetFamilyForStep(step) ? progress : null,
-  );
-
-  // 0 = the indeterminate spinner (StatusChip block mode), a real 0..1 =
-  // the ring plus its percentage in the details line underneath.
-  const pct = $derived(
-    stepProgress && stepProgress.total > 0
-      ? Math.min(1, stepProgress.done / stepProgress.total)
-      : 0,
-  );
-
-  // The details line under the block-mode indicator: the running step's
-  // name plus its honest counts — the counts only while that step's own
-  // payload has any (between steps the line is the step name alone).
-  const stepDetail = $derived(
-    step
-      ? `Extracting ${step}…${
-          stepProgress && stepProgress.done > 0
-            ? ` ${stepProgress.done} of ${stepProgress.total}`
-            : ''
-        }`
-      : '',
-  );
-
-  // Subscribe for the whole component lifetime; the unsubscribe is the
-  // $effect cleanup (the pattern documented at services.js onEvent).
-  // Only the RUNNING step's family is accepted: a concurrent run's
-  // payloads (Replay's background icon auto-extract) and the previous
-  // step's closing payload can never clobber this step's numbers —
-  // worst case the bar stays indeterminate, never wrong.
-  $effect(() => {
-    const off = onAssetProgress((p) => {
-      if (p && p.family === assetFamilyForStep(step)) progress = p;
-    });
-    return off;
-  });
 
   export async function maybePrompt() {
     try {
@@ -104,9 +53,6 @@
       pickedDir = (st && st.path) || '';
       notFound = !st || !st.found;
       error = '';
-      msg = '';
-      step = '';
-      progress = null;
       open = true;
     } catch (e) {
       // Detection failure must never block app startup — and it must not
@@ -121,9 +67,6 @@
       status = null;
       notFound = true;
       error = `Couldn’t check the CS2 asset status: ${errText(e)}`;
-      msg = '';
-      step = '';
-      progress = null;
       open = true;
     }
   }
@@ -135,29 +78,25 @@
   async function accept() {
     busy = true;
     error = '';
-    msg = '';
-    step = '';
-    // Drop any progress a previous run left behind — the first
-    // spectra:asset-progress of THIS run replaces it; without this the
-    // bar could open at a stale "18 of 18".
-    progress = null;
+    // Close on Extract (owner 2026-11-17): the run continues in the
+    // background and the floating work indicator (App's .wk-pill, driven
+    // by lib/workstate.svelte.js) is its surface — begin, honest
+    // progress, completion and any failure. The popup's own progress
+    // widget and its success line left with this; `busy` still gates the
+    // dialog should it be open again while the run is in flight, and is
+    // reset in finally as before.
+    close();
     try {
       const out = await extractAllAssets({
         dir: pickedDir || (status && status.path) || '',
-        onStep: (label) => (step = label),
       });
-      msg = out.msg;
+      // Only observable if the dialog is open again by the time the run
+      // lands (the launch probe re-ran); the indicator holds the same
+      // aggregated failure either way (assets.js reportWorkError).
       error = out.error;
-      if (msg && !error) {
-        // Full success: every family extracted → presence now holds and
-        // the loop ends; close on the same beat Settings shows its line.
-        setTimeout(close, 900);
-      }
     } catch (e) {
       error = errText(e);
     } finally {
-      step = '';
-      progress = null;
       busy = false;
     }
   }
@@ -211,21 +150,11 @@
       <p class="muted pk-fine">
         {S.common.mapPackFoundFine}
       </p>
-      <!-- Live extraction progress: the app's ONE progress widget
-           (StatusChip) in BLOCK mode — the centered ring/spinner with
-           its details text underneath, the presentation every progress
-           display outside a table cell uses (PRODUCT.md "### Defaults").
-           Every family drives it with real numbers from
-           spectra:asset-progress (gated to the running step's family);
-           between steps the indicator stays the indeterminate spinner. -->
-      {#if busy && step}
-        <p class="muted" role="status">
-          <StatusChip block progress={pct} detail={stepDetail} />
-        </p>
-      {/if}
-      {#if msg}
-        <p class="pk-result" role="status">{msg}</p>
-      {/if}
+      <!-- Extraction progress deliberately has NO surface here any more
+           (owner 2026-11-17): the popup closes the moment Extract is
+           pressed and the floating work indicator (App's .wk-pill) is
+           THE progress display for the run — StatusChip stays the ONE
+           progress widget, just not inside this dialog. -->
       {#if error}
         <p class="error" role="alert">{error}</p>
       {/if}
@@ -272,9 +201,6 @@
   .pk-fine {
     font-size: 0.85em;
     opacity: 0.75;
-  }
-  .pk-result {
-    font-size: 0.9em;
   }
   .pk-actions {
     margin-top: 14px;

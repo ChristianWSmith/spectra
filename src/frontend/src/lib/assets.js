@@ -12,6 +12,11 @@
 // auto-extract or another surface's run. Valve IP stays local — see
 // internal/mappack.
 import { extractMapPacks, extractIcons, extractSounds, errText } from './services.js';
+// The held failure line behind the floating indicator (Q2): the three
+// extractors are wrapped runWork('assets', …) inside services.js, but
+// THIS function resolves {error} instead of rejecting, so the aggregated
+// outcome is reported here — the one place it is computed.
+import { reportWorkError } from './workstate.svelte.js';
 
 // The three families in extraction order. `label` is the step text the
 // caller shows while the family runs; `family` is the payload family
@@ -98,5 +103,9 @@ export async function extractAllAssets({ dir = '', onStep = () => {} } = {}) {
     : !done.length && !failed.length
       ? 'Nothing extracted.'
       : '';
+  // Failures are never hidden (Q2): a partial or total failure rides the
+  // indicator's error line until the user dismisses it. Silent success —
+  // the callers' result lines and notes stay their own business.
+  if (error) reportWorkError(error);
   return { msg, error };
 }

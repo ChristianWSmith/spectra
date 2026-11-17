@@ -1,9 +1,11 @@
 // jsdom driver for MapPackPrompt: the presence-driven launch prompt —
 // gate logic (any asset family missing → open, all present → closed),
 // the not-found variant, "Not now" persisting NOTHING across remounts,
-// the busy gate on Escape/backdrop dismissal, the StatusChip BLOCK-mode
-// progress pattern (centered ring/spinner + details text underneath),
-// and the counts-only result line from lib/assets.js.
+// the busy gate on Escape/backdrop dismissal, and close-ON-EXTRACT (the
+// owner's 2026-11-17 rework: the popup has NO progress widget any more —
+// the run continues behind the closed prompt and the floating work
+// indicator owns its progress; failures reach the indicator through
+// lib/assets.js's reportWorkError, recorded here by the workstate stub).
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --conditions browser test/map-pack-prompt.dom.mjs
@@ -111,28 +113,39 @@ const svelteCompile = (src, filename, out) => {
   return out;
 };
 
-// Dialog + StatusChip (no imports) → local bundles; MapPackPrompt's
-// imports rewritten to the local bundles/stub/assets copy; lib/assets.js
-// (plain JS) rewritten to the stub; harness → local bundle.
+// Dialog (no imports) → local bundle; MapPackPrompt's imports rewritten
+// to the local bundle/stub/assets copy; lib/assets.js (plain JS) rewritten
+// to the stub services + a workstate stub (assets reports its aggregated
+// failure there — the stub RECORDS the calls so the driver can pin the
+// indicator wiring); harness → local bundle. MapPackPrompt no longer
+// renders StatusChip (progress moved to the floating indicator), so no
+// chip bundle is compiled here any more.
 svelteCompile(
   readFileSync('src/lib/components/Dialog.svelte', 'utf8'),
   'Dialog.svelte',
   join(dir, 'dialog.js'),
 );
-svelteCompile(
-  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
-  'StatusChip.svelte',
-  join(dir, 'statuschip.js'),
+writeFileSync(
+  join(dir, 'workstate-stub.js'),
+  `// Records the failure messages assets.js hands the work indicator.
+export function runWork(source, promise) {
+  return Promise.resolve(promise);
+}
+export function reportWorkError(msg) {
+  (globalThis.__workErrors ||= []).push(String(msg));
+}
+`,
 );
 writeFileSync(
   join(dir, 'assets.js'),
-  readFileSync('src/lib/assets.js', 'utf8').replace("'./services.js'", "'./services-stub.js'"),
+  readFileSync('src/lib/assets.js', 'utf8')
+    .replace("'./services.js'", "'./services-stub.js'")
+    .replace("'./workstate.svelte.js'", "'./workstate-stub.js'"),
 );
 const promptSrc = readFileSync('src/lib/components/MapPackPrompt.svelte', 'utf8')
   .replace("'../services.js'", "'./services-stub.js'")
   .replace("'../assets.js'", "'./assets.js'")
   .replace("'./Dialog.svelte'", "'./dialog.js'")
-  .replace("'./StatusChip.svelte'", "'./statuschip.js'")
   // plumbing (Strings Stage 3): the prompt imports the strings catalog —
   // resolve it from the real tree.
   .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
@@ -280,10 +293,10 @@ check('reopens after a remount (no suppression)', open());
 click(notNow());
 await sleep();
 
-console.log('F. accept: busy gate + StatusChip block progress + counts-only result');
-// One gate PER FAMILY so the driver can hold each step open while it
-// feeds that step's spectra:asset-progress payloads (all three families
-// emit now — mappackservice.go's shared emitter).
+console.log('F. accept closes the popup AT ONCE — the extraction continues behind it');
+// One gate PER FAMILY so the driver can hold the run open while proving
+// the prompt is gone BEFORE any family resolves — close happens ahead of
+// the first awaited extraction (owner 2026-11-17).
 let releaseMaps, releaseIcons, releaseSounds;
 const gateMaps = new Promise((r) => (releaseMaps = r));
 const gateIcons = new Promise((r) => (releaseIcons = r));
@@ -304,10 +317,38 @@ globalThis.__stub = {
     return { count: 5, note: '' };
   },
 };
+globalThis.__workErrors = [];
 await maybePrompt();
 check('opens', open());
 click(primary());
 await sleep(60);
+check(
+  'closes at once on Extract — while every family is still gated in flight',
+  !open(),
+  JSON.stringify(document.querySelector('.dlg-back')?.textContent?.slice(0, 80)),
+);
+check(
+  'the popup renders no progress widget anywhere (the floating indicator owns progress now)',
+  !document.querySelector('.chip-block'),
+  document.body.textContent.slice(0, 120),
+);
+// spectra:asset-progress still fires — the prompt subscribes to nothing:
+// it must drive NO widget in the popup.
+emitProgress({ family: 'map-packs', stage: 'extract', done: 1, total: 4 });
+await sleep();
+check(
+  'an asset-progress payload drives nothing in the popup (no subscriber left)',
+  !document.querySelector('.chip-block'),
+);
+check(
+  'no "Extracting…" button label anywhere while the run is in flight',
+  ![...document.querySelectorAll('button')].some((b) => (b.textContent || '').includes('Extracting…')),
+  document.body.textContent.slice(0, 160),
+);
+
+console.log('F2. the busy gate still holds if the prompt is open again mid-run');
+await maybePrompt(); // the launch probe re-opening while the run is in flight
+check('the prompt can be open again while the run is in flight', open());
 check('extract button disabled while busy', primary()?.disabled === true);
 // The busy-button exemption (owner ruling): a busy BUTTON keeps its
 // plain "Extracting…" label — no spinner, no ring inside the button.
@@ -318,114 +359,54 @@ check(
   JSON.stringify(primary()?.textContent),
 );
 check('Not now disabled while busy', notNow()?.disabled === true);
-const block = panel()?.querySelector('.chip-block');
-const blockText = () => panel()?.querySelector('.chip-block')?.textContent || '';
-check('StatusChip shown while extracting (block mode)', !!block, panel()?.textContent.slice(0, 120));
-check(
-  'step text names the running family (the details line underneath)',
-  (panel()?.textContent || '').includes('Extracting radar map packs'),
-  panel()?.textContent.slice(0, 160),
-);
 key(backdrop(), 'Escape');
 await sleep();
 check('Escape ignored while busy', open());
 click(backdrop());
 await sleep();
 check('backdrop click ignored while busy', open());
-emitProgress({ family: 'map-packs', stage: 'extract', done: 1, total: 4 });
-await sleep();
 check(
-  'determinate display shows 25% in the details line under the ring',
-  !!panel()?.querySelector('.chip-block .chip-ring') &&
-    (panel()?.querySelector('.chip-detail')?.textContent || '').includes('25%'),
-  panel()?.querySelector('.chip-detail')?.textContent,
+  'no per-step copy left in the popup (the old details line died with the widget)',
+  !(panel()?.textContent || '').includes('Extracting radar map packs'),
+  panel()?.textContent.slice(0, 160),
 );
 
-console.log('F2. icon/sound steps: their own emitters drive the indicator');
+console.log('F3. run lands: the popup keeps its error slot, the failure reaches the indicator');
 releaseMaps();
-await sleep();
-check(
-  'step advances to equipment icons',
-  (panel()?.textContent || '').includes('Extracting equipment icons'),
-  panel()?.textContent.slice(0, 160),
-);
-// The previous step's payload must NOT drive this step's display: it
-// stays the indeterminate spinner until an icons payload lands.
-check(
-  'icons step starts indeterminate (stale map-packs payload gated out)',
-  !!panel()?.querySelector('.chip-block .chip-spin') &&
-    !panel()?.querySelector('.chip-block .chip-ring') &&
-    !(panel()?.textContent || '').includes(' of '),
-  panel()?.textContent.slice(0, 200),
-);
-emitProgress({ family: 'icons', stage: 'extract', done: 60, total: 120 });
-await sleep();
-check(
-  'icons emitter → ring shows 50% in the details line',
-  !!panel()?.querySelector('.chip-block .chip-ring') && blockText().includes('50%'),
-  blockText(),
-);
-check(
-  'details line shows 60 of 120',
-  (panel()?.textContent || '').includes('60 of 120'),
-  panel()?.textContent.slice(0, 200),
-);
-// A stale payload for another family (here: the finished map-pack run)
-// must never retarget this step's display OR clobber its numbers: the
-// listener filters on the running step's family (assets.js).
-emitProgress({ family: 'map-packs', stage: 'extract', done: 4, total: 4 });
-await sleep();
-check(
-  'stale map-packs payload ignored during the icons step',
-  (panel()?.textContent || '').includes('60 of 120') && blockText().includes('50%'),
-  blockText(),
-);
 releaseIcons();
-await sleep();
-check(
-  'step advances to replay sounds',
-  (panel()?.textContent || '').includes('Extracting replay sounds'),
-  panel()?.textContent.slice(0, 160),
-);
-emitProgress({ family: 'sounds', stage: 'extract', done: 45, total: 45 });
-await sleep();
-check(
-  'sounds emitter → closing payload renders 45 of 45',
-  (panel()?.textContent || '').includes('45 of 45'),
-  panel()?.textContent.slice(0, 200),
-);
-
 releaseSounds();
 await sleep(100);
 check(
-  'counts-only result line',
-  resultLine() === 'Extracted 1 map pack, 5 sounds.',
-  JSON.stringify(resultLine()),
+  'aggregated error line (partial failure — still rendered by the reopened prompt)',
+  errorLine() === 'icons: VPK unreadable.',
+  JSON.stringify(errorLine()),
 );
-check('aggregated error line', errorLine() === 'icons: VPK unreadable.', JSON.stringify(errorLine()));
+check(
+  'the SAME aggregated failure was reported to the work indicator',
+  (globalThis.__workErrors || []).includes('icons: VPK unreadable.'),
+  JSON.stringify(globalThis.__workErrors),
+);
 check('stays open after a partial failure', open());
 check('busy cleared — buttons enabled again', primary()?.disabled === false);
 check(
-  'progress row gone after the run',
-  !(panel()?.textContent || '').includes('Extracting'),
+  'no counts/result line (the success line left with the popup)',
+  !resultLine(),
+  JSON.stringify(resultLine()),
+);
+check(
+  'no progress row after the run either',
+  !document.querySelector('.chip-block') && !(panel()?.textContent || '').includes('Extracting radar'),
 );
 
-console.log('G. full success → counts line + auto-close');
+console.log('G. a second Extract closes at once too (the success auto-close died with the popup)');
 globalThis.__stub = {
   ...globalThis.__stub,
   extractIcons: async () => ({ count: 120, note: '' }),
   extractSounds: async () => ({ count: 45, note: '' }),
 };
 click(primary());
-await sleep(100);
-check(
-  'full counts line',
-  resultLine() === 'Extracted 1 map pack, 120 icons, 45 sounds.',
-  JSON.stringify(resultLine()),
-);
-check('no error line', !errorLine());
-await sleep(1100);
-check('auto-closed after full success', !open());
+await sleep(60);
+check('closes at once on a full-success run too', !open());
 
 console.log('H. probe failure routes into the dialog error slot — never the console');
 // A REAL rejection only: the resolved "family absent" states keep their

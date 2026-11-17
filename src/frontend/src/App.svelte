@@ -15,6 +15,10 @@
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import MapPackPrompt from './lib/components/MapPackPrompt.svelte';
   import DocsPopup from './lib/components/DocsPopup.svelte';
+  // The floating background-work indicator's chip — App-level inline
+  // markup (no wrapper component): StatusChip is THE progress widget
+  // (never a second bar), rendered here in its inline mode.
+  import StatusChip from './lib/components/StatusChip.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
@@ -28,6 +32,10 @@
   } from './lib/nav.js';
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
   import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
+  // THE background-work aggregate behind the floating indicator — plain
+  // module state read through subscribeWork into the $state below (the
+  // services.js store pattern; see the module header for the rules).
+  import { subscribeWork, dismissWork } from './lib/workstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
   import * as S from './lib/strings/index.js'; // chrome copy (strings-audit Check B)
   // The ?probe=1 operator readout (frameprobe.js — its entry comment is
@@ -105,6 +113,14 @@
   let lastProfilesHash = $state(PROFILE_FAMILY.has(firstRoute.name) ? location.hash : '');
   let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
+
+  // Floating background-work indicator snapshot — TRANSIENT by State
+  // placement (busy/error never restore): subscribeWork hands the pill's
+  // whole display record (visible/status/progress/stage/error) from the
+  // workstate aggregate; the ✕ calls dismissWork (hides the INDICATOR,
+  // never the work). Mounted in .shell below every view swap — the pill
+  // follows the user across pages.
+  let work = $state({ visible: false, error: '', status: 'running', progress: 0, stage: '' });
 
   // Documentation popup (the user guide) — TRANSIENT by State placement:
   // dialogs never restore, so open/target live only in this $state (no
@@ -386,6 +402,16 @@
     };
   });
 
+  // The workstate subscription — the store pattern: register once (no
+  // reactive deps → runs once after mount), copy every snapshot into the
+  // $state above, unsubscribe on destroy.
+  $effect(() => {
+    const off = subscribeWork((snap) => {
+      work = snap;
+    });
+    return off;
+  });
+
   function nav(hash) {
     location.hash = hash;
   }
@@ -575,6 +601,37 @@
   <!-- The help side-sheet — transient overlay state (see openDocs
        above), mounted beside the other App-level overlays. -->
   <DocsPopup open={docsOpen} section={docsSection} token={docsToken} onClose={closeDocs} />
+  <!-- Floating background-work indicator (the owner's 2026-11-17 item 1):
+       ONE aggregated pill at .shell level, so it follows the user across
+       every view swap. Inline App markup + lib/workstate.svelte.js — no
+       wrapper component. StatusChip in its INLINE mode is THE progress
+       widget (chip + its bar — never a second bespoke bar): determinate
+       when a single jobs/metrics entry is the only live source, the
+       indeterminate bar otherwise; a held failure swaps it for the failed
+       chip + the message (never hidden — the ✕ dismisses). The ✕ hides
+       the INDICATOR only, never the work. Transient state (never
+       restored). z-index/offsets live in style.css (.wk-pill) — the
+       ladder there: cover 40 < pill 45 < probe HUD 50 < dialogs 60. -->
+  {#if work.visible}
+    <div class="wk-pill">
+      {#if work.error}
+        <StatusChip status="failed" />
+        <span class="wk-error" role="alert" title={work.error}>{work.error}</span>
+      {:else}
+        <StatusChip status={work.status} progress={work.progress} stage={work.stage} />
+        <span class="wk-label">{S.common.workIndicatorLabel}</span>
+      {/if}
+      <button
+        type="button"
+        class="btn small wk-dismiss"
+        aria-label={S.common.workIndicatorDismissLabel}
+        title={S.common.workIndicatorDismissTitle}
+        onclick={dismissWork}
+      >
+        <span class="codicon codicon-close" aria-hidden="true"></span>
+      </button>
+    </div>
+  {/if}
   <!-- Frame-probe HUD — the ?probe=1 operator readout (frameprobe.js;
        gated by probeLatched above — it renders ONLY with the param).
        Diagnostics, not product UI: aria-hidden, pointer-events: none

@@ -23,6 +23,11 @@
   import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
+  // The ONE background-work wrapper (lib/workstate.svelte.js): generate
+  // is heavy work the floating indicator shows — wrapping the call site
+  // covers BOTH binding paths (GetHeatmap below and GetHeatmapKD) in one
+  // spot, since services.getHeatmap is only ever this non-kd path.
+  import { runWork } from '../workstate.svelte.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -370,11 +375,14 @@
         includeUnknownZ: sel === 0,
       };
       // kd is the signed kills−deaths raster (heatmap.go GetHeatmapKD);
-      // every other kind shares GetHeatmap.
-      grid =
+      // every other kind shares GetHeatmap. One runWork around the whole
+      // fetch so EITHER path marks the heatmap source busy.
+      grid = await runWork(
+        'heatmap',
         kind === 'kd'
-          ? await AnalyticsService.GetHeatmapKD(id, filter)
-          : await getHeatmap(id, kind, filter);
+          ? AnalyticsService.GetHeatmapKD(id, filter)
+          : getHeatmap(id, kind, filter),
+      );
       gridLayer = sel;
       lastKey = filterKey(kind, player, team, roundFrom, roundTo, sel);
       // …and the population that fetch selected travels WITH the raster
