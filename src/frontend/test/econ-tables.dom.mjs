@@ -360,7 +360,6 @@ const dataFor = (countedN) => ({
   // The warnings page shape ({messages,total} — the fetch-capped
   // window + the honest full count, models.WarningListPage).
   getWarnings: { messages: [], total: 0 },
-  getCombatStats: [],
   getRoundClasses: [],
   // The pinned-column reads (stored-metrics design §5): the canonical
   // stored-value read + the compute-state read. Defaults = no pins

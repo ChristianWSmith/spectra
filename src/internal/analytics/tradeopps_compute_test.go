@@ -76,7 +76,9 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 
 	// A zero-round match (bare lifecycle row, no extract) writes NOTHING:
 	// reads must treat the absence as 0 (the same rule as a missing
-	// player_stats row).
+	// player_stats row). The bare-match combat-rows half of this check
+	// left with the m3 retirement of the combat read (plan §7 M3,
+	// 2026-11-17) — the stored-count half below is what remains.
 	bare, err := st.CreateMatchRow("/d/bare-tradeopps.dem", "sha-bare-tradeopps", 1)
 	if err != nil {
 		t.Fatalf("CreateMatchRow(bare): %v", err)
@@ -86,13 +88,6 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	}
 	if n := storedOpps(t, st, "100"); n != 8 {
 		t.Errorf("alice opps after zero-round compute = %d, want 8 (the bare match added no rows)", n)
-	}
-	rows, err := st.GetCombatStats(bare)
-	if err != nil {
-		t.Fatalf("GetCombatStats(bare): %v", err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("bare match combat rows = %d, want 0", len(rows))
 	}
 }
 

@@ -145,10 +145,9 @@ export const AnalyticsService = {
   // SetConfig is the mutating wrapper the flush pin drives.
   GetConfig: rec('GetConfig'),
   SetConfig: rec('SetConfig'),
-  // The per-match analytics family (the six read-cached wrappers).
+  // The per-match analytics family (the five read-cached wrappers).
   GetEconomy: rec('GetEconomy'),
   GetRoundClasses: rec('GetRoundClasses'),
-  GetCombatStats: rec('GetCombatStats'),
   GetClutches: rec('GetClutches'),
   GetEngagements: rec('GetEngagements'),
   GetUtility: rec('GetUtility'),

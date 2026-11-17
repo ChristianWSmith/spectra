@@ -56,9 +56,11 @@ import (
 //     wrote match_trade_opps' neighbors wrote them): a traded/opening
 //     death never reaches this count.
 //
-// HUMANS ONLY: rows are written for is_bot = 0 players only. Both read
-// surfaces drop bots anyway (GetCombatStats decision 5 — base rows are
-// HumansOnly; profiles are human) — the retired queries computed a
+// HUMANS ONLY: rows are written for is_bot = 0 players only. The read
+// surfaces drop bots anyway (roster reads are HumansOnly; profiles are
+// human; the retired combat read's humans-only base rows — its
+// decision 5 — left with the m3 migration, plan §7 M3) — the retired
+// queries computed a
 // bot's count and then discarded it; it is simply not stored now
 // (pinned by the equivalence test's bot case).
 //

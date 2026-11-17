@@ -50,12 +50,15 @@ func seedBotMatch(t *testing.T, s *Store) int64 {
 }
 
 // TestBotsExcludedFromRosterReads pins the product rule: a bot never
-// appears on a roster/aggregate/selection surface (scoreboard, combat
-// base rows, the career rollup + list, the library player facet), while
+// appears on a roster/aggregate/selection surface (scoreboard, the
+// career rollup + list, the library player facet), while
 // event-shaped reads (round MVP/first-blood names, kill-feed attacker/
 // victim cells) KEEP it and the replay roster carries it WITH its is_bot
 // flag (the replay exception needs the flag to pair the bot with the
-// player it replaces).
+// player it replaces). The combat read this test used to walk retired
+// with the m3 migration (plan §7 M3); its humans-only half lives in
+// internal/metrics (TestSubjectStatementExcludesBots + the seed
+// equivalence's bot pin).
 func TestBotsExcludedFromRosterReads(t *testing.T) {
 	s := openMem(t)
 	id := seedBotMatch(t, s)
@@ -71,19 +74,6 @@ func TestBotsExcludedFromRosterReads(t *testing.T) {
 		// No over-filtering: both humans stay.
 		if len(board) != 2 || !hasSteam(board, "100") || !hasSteam(board, "200") {
 			t.Errorf("GetScoreboard = %+v, want the two human rows", board)
-		}
-	})
-
-	t.Run("combat base rows", func(t *testing.T) {
-		rows, err := s.GetCombatStats(id)
-		if err != nil {
-			t.Fatalf("GetCombatStats: %v", err)
-		}
-		if hasCombatSteam(rows, botSteamID) {
-			t.Errorf("GetCombatStats lists the bot (%d rows), want humans only", len(rows))
-		}
-		if len(rows) != 2 {
-			t.Errorf("GetCombatStats rows = %d, want 2 humans", len(rows))
 		}
 	})
 
@@ -179,16 +169,6 @@ func TestBotsExcludedFromRosterReads(t *testing.T) {
 
 // hasSteam reports whether a scoreboard carries the id.
 func hasSteam(rows []models.PlayerStatsRow, sid string) bool {
-	for _, r := range rows {
-		if r.SteamID == sid {
-			return true
-		}
-	}
-	return false
-}
-
-// hasCombatSteam reports whether a combat-stats result carries the id.
-func hasCombatSteam(rows []models.CombatStat, sid string) bool {
 	for _, r := range rows {
 		if r.SteamID == sid {
 			return true

@@ -60,7 +60,7 @@ func parseGolden(t *testing.T) *models.ExtractedMatch {
 //     trade-opportunity distance (the metric degenerated to all-zero
 //     when the gate radius sat inside the range where teammates trade
 //     automatically) — both counts read directly from their stored rows
-//     since the W2b conversion (GetCombatStats carries neither field).
+//     (the retired combat read carried neither field).
 //   - The folded per-weapon headshots must equal player_stats.headshots
 //     per player (same eligibility extract used to credit them).
 //   - The profile trend series kd/hs must be non-zero — the values are
@@ -114,20 +114,21 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 
 	// W2b: the Combat tab's "Missed trades" / "Untraded deaths" columns
 	// are fixed metric slots now (m:missed_trades / m:untraded_deaths),
-	// so GetCombatStats carries neither field. The GATE meaning is
+	// and the combat read that once carried neither field retired with
+	// the m3 migration (plan §7 M3). The GATE meaning is
 	// unchanged — the two counts are re-pinned here as direct stored
 	// reads over the same rows the seeds read: missed =
 	// match_trade_opps.missed (analytics.Compute's analyze-time gate),
 	// untraded = COUNT(*) of kind='untraded' engagement rows grouped by
 	// the victim (b_steam — the untraded_deaths seed's source). The
-	// roster the per-player assertions walk stays GetCombatStats (the
-	// humans-only base rows, decision 5 — names for the messages).
-	stats, err := st.GetCombatStats(id)
+	// roster the per-player assertions walk is the scoreboard's
+	// humans-only rows (names for the messages).
+	board, err := st.GetScoreboard(id, "name", false)
 	if err != nil {
-		t.Fatalf("GetCombatStats: %v", err)
+		t.Fatalf("GetScoreboard: %v", err)
 	}
-	if len(stats) == 0 {
-		t.Fatal("no combat rows")
+	if len(board) == 0 {
+		t.Fatal("no scoreboard rows")
 	}
 	missedRes, err := st.RunReadOnly(
 		`SELECT steam_id, missed FROM match_trade_opps WHERE match_id = ?`,
@@ -178,7 +179,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	untradedBy := countBySteam(untradedRes, "untraded engagements")
 
 	var oppTotal, untradedTotal int
-	for _, r := range stats {
+	for _, r := range board {
 		missed, untraded := missedBy[r.SteamID], untradedBy[r.SteamID]
 		oppTotal += missed
 		untradedTotal += untraded
@@ -199,14 +200,11 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 		t.Errorf("trade opp total = %d of %d untraded deaths — gate admits under a quarter",
 			oppTotal, untradedTotal)
 	}
-	t.Logf("trade opp missed: %d of %d untraded deaths across %d players", oppTotal, untradedTotal, len(stats))
+	t.Logf("trade opp missed: %d of %d untraded deaths across %d players", oppTotal, untradedTotal, len(board))
 
 	// Per-weapon headshots: the folded JSON must reproduce the headshots
-	// extract credited to player_stats for every player.
-	board, err := st.GetScoreboard(id, "name", false)
-	if err != nil {
-		t.Fatalf("GetScoreboard: %v", err)
-	}
+	// extract credited to player_stats for every player (the scoreboard
+	// roster fetched above).
 	anyWeaponHS := 0
 	for _, p := range board {
 		rows, err := st.GetPlayerWeaponJSONs(p.SteamID)

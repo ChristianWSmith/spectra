@@ -28,7 +28,7 @@ import (
 //
 // Row vocabulary: every derived view is served AS a models type
 // (models.AnalysisConfig, EconomyRow, RoundClassification, PlayerRoundStat,
-// Engagement, CombatStat, SavedFilterRow) — their JSON tags are the
+// Engagement, SavedFilterRow) — their JSON tags are the
 // frontend contract and the store returns them directly, so there is no
 // copy loop to drift. Two twins are deliberately kept below, each for a
 // shape the models type does not have.
@@ -838,13 +838,6 @@ func (s *AnalyticsService) GetUtility(matchID int64) ([]UtilityRow, error) {
 		out[i] = u
 	}
 	return out, nil
-}
-
-// GetCombatStats returns per-player damage/FF deep-dive rows (computed
-// from stored rows — the Combat tab's residual columns; every converted
-// stat reads its builtin metric rows instead).
-func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
-	return s.st.GetCombatStats(matchID)
 }
 
 // GetHeatmap computes a raster for kind presence|kills|deaths|damage or

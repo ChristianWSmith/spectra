@@ -666,9 +666,6 @@ export function getEngagements(matchId, kind) {
 export function getUtility(matchId) {
   return cachedRead('GetUtility', [matchId], () => AnalyticsService.GetUtility(matchId));
 }
-export function getCombatStats(matchId) {
-  return cachedRead('GetCombatStats', [matchId], () => AnalyticsService.GetCombatStats(matchId));
-}
 export function getHeatmap(matchId, kind, filter) { return AnalyticsService.GetHeatmap(matchId, kind, filter || {}); }
 export function listSavedFilters() { return AnalyticsService.ListSavedFilters(); }
 export function saveFilter(name, scope, filterJson) { return AnalyticsService.SaveFilter(name, scope, filterJson); }

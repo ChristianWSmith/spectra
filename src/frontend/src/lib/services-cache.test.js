@@ -247,9 +247,9 @@ test('setAnalysisConfig invalidates on success (mutating wrapper)', async () => 
   bindings.resetCalls();
   bindings.handlers.SetConfig = (c) => ({ ...c, ruleVersion: 3 });
   try {
-    const first = services.getCombatStats(7);
+    const first = services.getEconomy(7);
     await first;
-    assert.equal(bindings.callCount('GetCombatStats'), 1);
+    assert.equal(bindings.callCount('GetEconomy'), 1);
 
     const saved = await services.setAnalysisConfig({
       tradeWindowS: 6,
@@ -259,10 +259,10 @@ test('setAnalysisConfig invalidates on success (mutating wrapper)', async () => 
     });
     assert.equal(saved.ruleVersion, 3, 'the wrapper returns the server row untouched');
 
-    const after = services.getCombatStats(7);
+    const after = services.getEconomy(7);
     assert.notEqual(after, first, 'a rules save must flush the read cache');
     await after;
-    assert.equal(bindings.callCount('GetCombatStats'), 2, 'refetch after the save');
+    assert.equal(bindings.callCount('GetEconomy'), 2, 'refetch after the save');
   } finally {
     delete bindings.handlers.SetConfig;
   }
@@ -419,7 +419,6 @@ test('analytics family is read-cached (item: warm per-match analytics)', async (
   const pairs = [
     ['GetEconomy', services.getEconomy(7), services.getEconomy(7)],
     ['GetRoundClasses', services.getRoundClasses(7), services.getRoundClasses(7)],
-    ['GetCombatStats', services.getCombatStats(7), services.getCombatStats(7)],
     ['GetClutches', services.getClutches(7), services.getClutches(7)],
     ['GetEngagements', services.getEngagements(7, ''), services.getEngagements(7)],
     ['GetUtility', services.getUtility(7), services.getUtility(7)],
@@ -438,10 +437,10 @@ test('analytics family is read-cached (item: warm per-match analytics)', async (
 
   // A spectra:* data event flushes them like every other cached read.
   fire('spectra:job-done', { jobId: 1 });
-  const again = services.getCombatStats(7);
+  const again = services.getClutches(7);
   assert.notEqual(again, pairs[2][1], 'event must flush the analytics entry');
   await again;
-  assert.equal(bindings.callCount('GetCombatStats'), 2);
+  assert.equal(bindings.callCount('GetClutches'), 2);
 });
 
 test('listPlayers/listMetrics are library-wide reads behind cachedRead (item 3)', async () => {
