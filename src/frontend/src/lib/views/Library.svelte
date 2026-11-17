@@ -137,9 +137,10 @@
   // Demos sitting in the configured import dirs (Settings → "Import
   // dirs") that are not in the library yet — each with a one-click
   // Import that runs through the same pipeline as drag-and-drop, plus a
-  // confirmed delete-from-disk for the file itself. A file the queue is
-  // already working on flips to the live job's chip with Import replaced
-  // by Remove/Cancel (pendingDemoPaths) — see the row markup below.
+  // confirmed delete-from-disk for the file itself. A file the queue
+  // owns (pendingDemoPaths) is NOT listed here at all: it appears only
+  // as the synthetic job row in the table above (demoRows below) —
+  // never on both tables (owner, 2026-11-17).
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // The scan's progress point (spectra:scan-progress → StatusChip): 0 while
@@ -370,6 +371,23 @@
       .slice(0, PROBLEM_MAX),
   );
 
+  // Recent import problems — dismissal (owner, 2026-11-17):
+  // session-transient view state, exactly Match's warningsDismissed
+  // pattern (plain $state — no pref, no URL, no registry; the next
+  // launch shows the panel again if problems remain). The dismissal
+  // covers the problem ids present when it was set: the panel re-shows
+  // the moment the set gains an entry no dismissal ever saw — a NEW
+  // import problem is never silently suppressed (the background
+  // indicator's clearDismissed rule, kept local to this panel).
+  let dismissedProblems = $state(null); // null = nothing dismissed
+  const problemsShown = $derived(
+    problemJobs.length > 0 &&
+      !(dismissedProblems && problemJobs.every((j) => dismissedProblems.has(j.id))),
+  );
+  function dismissProblems() {
+    dismissedProblems = new Set(problemJobs.map((j) => j.id));
+  }
+
   function jobView(j) {
     const live = jobProgress.get(j.id);
     return live
@@ -402,12 +420,19 @@
       .map(jobView),
   );
 
-  // The pending import for an import-dir path — the row's "queued" flip
-  // (the file has no match row yet, which is exactly why the scan still
-  // lists it). Keyed by the exact path string the pipeline stores: the
-  // dir row's Import hands the same string to importPaths, and Enqueue
-  // dedupes on it.
+  // The pending import for an import-dir path — a path with an entry
+  // here is owned by the table ABOVE (its synthetic row), never by the
+  // scan table: demoRows filters on it, so the two tables can never
+  // show the file at once (owner, 2026-11-17). Keyed by the exact path
+  // string the pipeline stores: the dir row's Import hands the same
+  // string to importPaths, and Enqueue dedupes on it.
   const pendingDemoPaths = $derived(new Map(pendingImports.map((j) => [j.path, j])));
+
+  // The rows the import-dir table renders: every scanned file EXCEPT
+  // the ones a queued/running import owns (pendingDemoPaths — the same
+  // source the synthetic rows above render from, so the pairing is
+  // exact: excluded here ⇔ listed there).
+  const demoRows = $derived(demoFiles.filter((f) => !pendingDemoPaths.has(f.path)));
 
   // Cancel vs Remove: one backend call (cancelJob), two labels — a
   // queued job is waiting in line (Remove takes it out), a running one
@@ -451,12 +476,20 @@
     importError = '';
     try {
       await importPaths(paths);
-      await refreshJobs();
-      await refreshList();
-      await refreshDemoFiles();
     } catch (e) {
+      // The existing error path — the banner at the top of the view.
+      // The return value tells callers the enqueue failed (the
+      // import-dir row restores itself on false; owner, 2026-11-17).
       importError = errText(e);
+      return false;
     }
+    // Each refresh catches internally (error/demoError slots), so only
+    // importPaths can fail the call — same behavior as the old single
+    // try, with the outcome now reported to the caller.
+    await refreshJobs();
+    await refreshList();
+    await refreshDemoFiles();
+    return true;
   }
 
   // Rescan the configured import dirs (Settings → "Import dirs"). The
@@ -533,9 +566,21 @@
   // Import one demo straight from the import-dir list: the same
   // pipeline as the Import… dialog and drag-and-drop (hash dedupe decides
   // duplicates, the row indicator shows progress).
+  //
+  // Transfer (owner, 2026-11-17): the row leaves THIS table at click
+  // time — spliced out synchronously, before the enqueue is awaited, so
+  // the queued job appearing in the table above never has a twin here
+  // (demoRows keeps it out once the jobs snapshot knows the path). If
+  // the enqueue fails, the row is put back at its old index — a failed
+  // import never silently swallows the row (the error banner says why).
   async function doImportFile(f, ev) {
     ev.stopPropagation();
-    await doImportPaths([f.path]);
+    const at = demoFiles.findIndex((x) => x.path === f.path);
+    if (at >= 0) demoFiles.splice(at, 1);
+    const ok = await doImportPaths([f.path]);
+    if (!ok && at >= 0 && !demoFiles.some((x) => x.path === f.path)) {
+      demoFiles.splice(Math.min(at, demoFiles.length), 0, f);
+    }
   }
 
   // Delete an import-dir demo from disk — always behind a confirmation,
@@ -825,9 +870,24 @@
     <p class="muted" role="status">{notice}</p>
   {/if}
 
-  {#if problemJobs.length > 0}
+  {#if problemsShown}
     <section class="panel problems" aria-label={S.library.problemsLabel}>
-      <h2>{S.library.problemsHeading}</h2>
+      <div class="row-between">
+        <h2>{S.library.problemsHeading}</h2>
+        <!-- Session-transient dismiss (owner, 2026-11-17): the house
+             icon-only ✕ (Match's warnings-dismiss shape). Dismissal
+             covers today's problems only — a new one re-shows the
+             panel (dismissedProblems above), so an error indication is
+             dismissible, never permanently muted. -->
+        <button
+          class="btn small"
+          aria-label={S.library.dismissProblems}
+          title={S.library.dismissProblemsTitle}
+          onclick={dismissProblems}
+        >
+          <span class="codicon codicon-close" aria-hidden="true"></span>
+        </button>
+      </div>
       {#each problemJobs as job (job.id)}
         <div class="problem-row">
           <StatusChip status={job.status} />
@@ -1123,12 +1183,13 @@
 
   <!-- Import dirs: .dem / .dem.zst files under the dirs configured in
        Settings → "Import dirs" that are not in the library yet — the
-       backend omits recognised imports, so deleting a match brings its
-       demo back here. One Import button per row runs the ordinary
-       pipeline (hash dedupe, row status chip); a file with a pending job
-       flips to that job's chip and swaps Import for its Remove/Cancel
-       (pendingDemoPaths, sourced from store.FindPendingJobByPath); Delete
-       from disk removes the file itself, behind a confirmation. -->
+       backend omits recognised imports and zero-byte files, so deleting
+       a match brings its demo back here. One Import button per row runs
+       the ordinary pipeline (hash dedupe, row status chip); a file with
+       a queued/running job is NOT listed here — it lives only as the
+       synthetic job row in the table above (demoRows, pendingDemoPaths),
+       and clicking Import takes the row out at once (doImportFile).
+       Delete from disk removes the file itself, behind a confirmation. -->
   <section class="panel" aria-label={S.library.demosLabel}>
     <div class="row-between">
       <h2>{S.library.demosHeading}</h2>
@@ -1152,7 +1213,7 @@
     {#if demoError}
       <p class="error" role="alert">{demoError}</p>
     {/if}
-    {#if demoScanning && demoFiles.length === 0}
+    {#if demoScanning && demoRows.length === 0}
       <!-- The scan's ONE progress widget (StatusChip — block mode: the
            centered ring/spinner + details underneath that PRODUCT.md
            "### Defaults" requires OUTSIDE a table cell). spectra:scan-progress
@@ -1163,7 +1224,7 @@
       <p class="muted" role="status">
         <StatusChip block progress={scanProgress} detail={S.library.scanningDetail} />
       </p>
-    {:else if demoFiles.length === 0}
+    {:else if demoRows.length === 0}
       <p class="muted" role="status">
         {S.library.noDemosFound}
       </p>
@@ -1176,21 +1237,18 @@
             <th scope="col" class="num">{S.library.thSize}</th>
             <th scope="col">{S.library.thModified}</th>
             <!-- The import-dir table's status column is the SAME reserved
-                 column as the match table's (lib-status-col): the cell flips
-                 between the "not imported" chip and a live job chip (bar +
-                 stage text) as a file gets enqueued mid-parse. -->
+                 column as the match table's (lib-status-col). -->
             <th scope="col" class="lib-status-col">{S.library.thLibrary}</th>
             <th scope="col"><span class="sr-only">{S.library.thActions}</span></th>
           </tr>
         </thead>
         <tbody>
-          {#each demoFiles as f (f.path)}
-            <!-- A pending import for this exact path flips the row: the
-                 chip shows the live job (queued → running) and Import is
-                 replaced by its Remove/Cancel — the same control the
-                 synthetic row above offers, so the file can never be
-                 enqueued twice from here. -->
-            {@const pj = pendingDemoPaths.get(f.path)}
+          {#each demoRows as f (f.path)}
+            <!-- A queued/running import for this path never renders here
+                 (demoRows filters pendingDemoPaths) — the file shows only
+                 as the synthetic row above, so it is never on both
+                 tables (owner, 2026-11-17; was: an in-place flip to the
+                 job chip). -->
             <tr>
               <td>
                 <span class="mono lib-demo-name" title={f.path}>{basename(f.path)}</span>
@@ -1203,43 +1261,23 @@
               <td class="num">{fmtBytes(f.size)}</td>
               <td>{fmtDate(f.modTime)}</td>
               <td class="lib-status-col">
-                {#if pj}
-                  <StatusChip
-                    status={pj.status}
-                    progress={pj.progress}
-                    stage={pj.stage}
-                    title={pj.error || S.library.alreadyImporting}
-                  />
-                {:else}
-                  <span
-                    class="chip idle"
-                    title={f.hashed
-                      ? S.library.notInLibrary
-                      : S.library.notComparedTitle}
-                    >{S.library.notImported}</span
-                  >
-                {/if}
+                <span
+                  class="chip idle"
+                  title={f.hashed
+                    ? S.library.notInLibrary
+                    : S.library.notComparedTitle}
+                  >{S.library.notImported}</span
+                >
               </td>
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
-                {#if pj}
-                  <button
-                    class="btn small"
-                    title={cancelTitle(pj.status)}
-                    aria-label={cancelLabel(pj.status)}
-                    onclick={(e) => onCancelJob(pj.id, e)}
-                  >
-                    <span class="codicon codicon-close" aria-hidden="true"></span>
-                  </button>
-                {:else}
-                  <button
-                    class="btn small primary"
-                    title={S.library.importRowTitle}
-                    aria-label={S.library.importRow}
-                    onclick={(e) => doImportFile(f, e)}
-                  >
-                    <span class="codicon codicon-file-add" aria-hidden="true"></span>
-                  </button>
-                {/if}
+                <button
+                  class="btn small primary"
+                  title={S.library.importRowTitle}
+                  aria-label={S.library.importRow}
+                  onclick={(e) => doImportFile(f, e)}
+                >
+                  <span class="codicon codicon-file-add" aria-hidden="true"></span>
+                </button>
                 <button
                   class="btn small danger"
                   title={S.library.deleteDemoFileTitle}

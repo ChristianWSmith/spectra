@@ -919,7 +919,7 @@ await sleep(350); // past the 250 ms debounce
 // Section F: the queue made visible. The handlers below replace the
 // mount-time stubs; spectra:library-changed re-runs the view's refetches
 // (jobs + match list + import-dir scan) exactly like the backend would.
-console.log('F. queued state: synthetic rows, cancel controls, dir flip, multi-path import');
+console.log('F. queued state: synthetic rows, cancel controls, dir-row transfer, problems dismiss, multi-path import');
 
 const queuedMatch = {
   id: 3,
@@ -1065,7 +1065,11 @@ bindings.LibraryService.ListJobs = () =>
   ]);
 bindings.LibraryService.ListDemoFiles = () =>
   Promise.resolve([
+    // new.dem is the queued job's path (pendingImportJob) — w31
+    // (2026-11-17) it must NOT list here (it lives as the synthetic row
+    // above); ready.dem has no job and keeps the listable row.
     { path: '/imports/new.dem', root: '/imports', size: 1234, modTime: '2026-01-01T00:00:00Z', hashed: false },
+    { path: '/imports/ready.dem', root: '/imports', size: 4321, modTime: '2026-01-02T00:00:00Z', hashed: true },
   ]);
 const prevRowsForFacet = rowsForFacet;
 rowsForFacet = (f) => (f && f.map === 'queued' ? [queuedMatch] : prevRowsForFacet(f));
@@ -1081,6 +1085,78 @@ check(
   !document.querySelector('.problems'),
   document.querySelector('.problems')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
 );
+
+{
+  // Recent import problems — dismiss (owner, 2026-11-17): session-
+  // transient plain view state (Match's warningsDismissed pattern — no
+  // pref, no URL, no registry), and a NEW problem re-shows the panel so
+  // a later error is never silently muted. The main ListJobs stub
+  // carries no failed job, so this block scripts its own snapshots and
+  // restores the stub after.
+  const prevJobsD = bindings.LibraryService.ListJobs;
+  const failedJob = {
+    id: 16,
+    kind: 'import',
+    path: '/imports/broken.dem',
+    status: 'failed',
+    progress: 0,
+    stage: 'failed',
+    error: 'no replay data in that file',
+    matchId: 0,
+    createdAt: '2026-01-05T00:00:05Z',
+    startedAt: '2026-01-05T00:00:05Z',
+    finishedAt: new Date().toISOString(),
+  };
+  const panel = () => document.querySelector('.problems');
+  const withJobs = (extra) => () =>
+    Promise.resolve([
+      pendingImportJob,
+      queuedReprocessJob,
+      runningImportJob,
+      dequeuedJob,
+      reprocessRunningJob,
+      ...extra,
+    ]);
+  bindings.LibraryService.ListJobs = withJobs([failedJob]);
+  fire('spectra:library-changed');
+  await sleep(80);
+  const p1 = panel();
+  check(
+    'a failed import lands on the problems panel — never the pure dequeue',
+    !!p1 && p1.textContent.includes('broken.dem') && !p1.textContent.includes('gone.dem'),
+    p1 ? p1.textContent.replace(/\s+/g, ' ').slice(0, 120) : 'no panel',
+  );
+  const x = p1 && p1.querySelector('.row-between .btn');
+  check(
+    'the panel wears the house dismiss control (icon-only ✕, aria + title)',
+    !!x &&
+      x.classList.contains('small') &&
+      !!x.querySelector('.codicon-close') &&
+      !!x.getAttribute('aria-label') &&
+      !!x.getAttribute('title') &&
+      x.textContent.trim() === '',
+    x ? x.outerHTML.slice(0, 160) : 'missing',
+  );
+  click(x);
+  await sleep(20);
+  check('dismiss hides the panel (session-transient view state)', !panel());
+  const failedJob2 = { ...failedJob, id: 17, path: '/imports/corrupt.dem' };
+  bindings.LibraryService.ListJobs = withJobs([failedJob, failedJob2]);
+  fire('spectra:library-changed');
+  await sleep(80);
+  const p2 = panel();
+  check(
+    'a NEW import problem re-shows a dismissed panel (never silently muted)',
+    !!p2 && p2.textContent.includes('corrupt.dem'),
+    p2 ? p2.textContent.replace(/\s+/g, ' ').slice(0, 120) : 'still dismissed',
+  );
+  // Baseline for the sections below: the original job snapshot (no
+  // failed job) — the panel is gone again and stays gone.
+  bindings.LibraryService.ListJobs = prevJobsD;
+  fire('spectra:library-changed');
+  await sleep(400);
+  check('restored baseline: no problems panel', !panel());
+}
 
 // Both tables exist now: the match list and the import-dir list.
 const matchRows = () => [...document.querySelectorAll('.dropzone .data-table tbody tr')];
@@ -1208,27 +1284,126 @@ await sleep(350); // past the 250 ms debounce
 }
 
 {
-  // Import-dir row for the SAME pending path: chip flips, Import is
-  // swapped for the job's Remove.
+  // w31 transfer (owner, 2026-11-17): a queued file leaves the
+  // import-dir table — RE-PIN of the three flip pins (was: the row
+  // stayed and flipped to the job chip, putting it on both tables). The
+  // fixture's job-less file keeps the listable row with Import.
   const rows = dirRows();
-  check('import-dir row lists the pending file', rows.length === 1 && rows[0].textContent.includes('new.dem'), String(rows.length));
-  const chip = rows[0].querySelector('.chip.status');
   check(
-    'import-dir row flipped to the pending job chip',
-    !!chip && chip.textContent.includes('queued'),
-    chip ? chip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+    'a queued file is absent from the import-dir table (RE-PIN: was "lists the pending file")',
+    rows.length === 1 && rows[0].textContent.includes('ready.dem') &&
+      !rows[0].textContent.includes('new.dem'),
+    JSON.stringify(rows.map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
   );
-  const btns = [...rows[0].querySelectorAll('.row-actions button')];
-  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
-  // buttons — "Import hidden" is now "no button is labelled Import".
   check(
-    'Import hidden — replaced by Remove (Delete from disk stays)',
+    'the listed row shows the plain "not imported" chip, never a live-job chip (RE-PIN: was the queued flip)',
+    !!rows[0] && !rows[0].querySelector('.chip.status') && rows[0].textContent.includes('not imported'),
+    rows[0] ? rows[0].textContent.replace(/\s+/g, ' ').slice(0, 80) : 'no row',
+  );
+  const btns = rows[0] ? [...rows[0].querySelectorAll('.row-actions button')] : [];
+  // Re-pinned to aria-label 2026-11-16 (library-buttons): icon-only row
+  // buttons. w31: the queued file's row is gone entirely, so the listed
+  // row keeps Import + Delete (was: "Import hidden — replaced by Remove").
+  check(
+    'listed row offers Import + Delete from disk, no Remove (RE-PIN: was "Import hidden — replaced by Remove")',
     btns.length === 2 &&
-      btns[0].getAttribute('aria-label') === 'Remove' &&
-      btns[1].getAttribute('aria-label') === 'Delete from disk' &&
-      !btns.some((b) => b.getAttribute('aria-label') === 'Import'),
+      btns[0].getAttribute('aria-label') === 'Import' &&
+      btns[1].getAttribute('aria-label') === 'Delete from disk',
     JSON.stringify(btns.map((b) => b.getAttribute('aria-label'))),
   );
+}
+
+{
+  // w31 transfer (owner, 2026-11-17): Import click takes the row out
+  // of the scan table SYNCHRONOUSLY (the enqueue below is held open),
+  // and once the jobs snapshot owns the path the row stays out while
+  // its synthetic row shows above — never both. A FAILED enqueue puts
+  // the row back; the existing error banner carries the reason.
+  const rowFor = (name) => dirRows().find((tr) => tr.textContent.includes(name));
+  const importBtnFor = (name) => {
+    const r = rowFor(name);
+    return r && [...r.querySelectorAll('.row-actions button')].find((b) => b.getAttribute('aria-label') === 'Import');
+  };
+  let releaseImport;
+  bindings.handlers.ImportPaths = () => new Promise((res) => (releaseImport = () => res(null)));
+  const scanCalls = () => bindings.calls.filter((c) => c.method === 'ListDemoFiles').length;
+  const scans0 = scanCalls();
+  const btn = importBtnFor('ready.dem');
+  check('the job-less dir row offers Import before the click', !!btn, String(!!btn));
+  click(btn);
+  await sleep(30); // Svelte flush — the enqueue has NOT resolved
+  check(
+    'row GONE from the scan table while the enqueue is still pending (optimistic removal)',
+    !rowFor('ready.dem'),
+    JSON.stringify(dirRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
+  );
+  check(
+    'no rescan produced the removal (the scan stub was not called again)',
+    scanCalls() === scans0,
+    String(scanCalls() - scans0),
+  );
+  // Release the enqueue with a jobs snapshot that now owns the path:
+  // refreshJobs lands the synthetic row above; the dir row must STAY
+  // gone even though the scan still lists the file.
+  const prevListJobsT = bindings.LibraryService.ListJobs;
+  bindings.LibraryService.ListJobs = () =>
+    Promise.resolve([
+      pendingImportJob,
+      queuedReprocessJob,
+      runningImportJob,
+      dequeuedJob,
+      reprocessRunningJob,
+      {
+        id: 18,
+        kind: 'import',
+        path: '/imports/ready.dem',
+        status: 'queued',
+        progress: 0,
+        stage: 'queued',
+        error: '',
+        matchId: 0,
+        createdAt: '2026-01-05T00:00:06Z',
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]);
+  releaseImport();
+  await sleep(80); // refreshJobs + refreshList + refreshDemoFiles
+  const above = matchRows().filter((tr) => tr.hasAttribute('data-pending-import'));
+  check(
+    'the queued file shows as the synthetic row in the table above (as today)',
+    above.some((tr) => tr.textContent.includes('ready.dem')),
+    JSON.stringify(above.map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 60))),
+  );
+  check(
+    'and is STILL gone from the scan table — never on both at once',
+    !rowFor('ready.dem'),
+    JSON.stringify(dirRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
+  );
+  // Failure leg: the enqueue rejects → the row comes back and the
+  // error banner says why (a failed import never swallows the row).
+  bindings.LibraryService.ListJobs = prevListJobsT;
+  fire('spectra:library-changed');
+  await sleep(400); // jobs restore + the debounced rescan settle
+  bindings.handlers.ImportPaths = () => Promise.reject(new Error('queue unavailable'));
+  const btn2 = importBtnFor('ready.dem');
+  check('the row is listable again for the failure leg', !!btn2, String(!!btn2));
+  click(btn2);
+  await sleep(50);
+  check(
+    'a failed enqueue restores the row to the scan table',
+    !!rowFor('ready.dem'),
+    JSON.stringify(dirRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
+  );
+  const banner = [...document.querySelectorAll('.error')].map((e) => e.textContent).join(' ');
+  check(
+    'the existing error banner carries the failure reason',
+    banner.includes('queue unavailable'),
+    banner.slice(0, 140),
+  );
+  delete bindings.handlers.ImportPaths; // back to the default resolving stub
+  fire('spectra:library-changed');
+  await sleep(400);
 }
 
 {

@@ -46,6 +46,10 @@ export const library = {
   clearFilters: 'Clear filters',
   problemsLabel: 'Recent import problems',
   problemsHeading: 'Recent import problems',
+  // Dismiss control on that panel (owner, 2026-11-17): icon-only ✕ —
+  // the aria is tier 1, the title a tier-2 hint (title= derivation).
+  dismissProblems: 'Dismiss import problems',
+  dismissProblemsTitle: 'Hide these problems — a new import problem brings them back',
   noDetails: 'no details',
   loadingDetail: 'Loading…',
   emptyStateTitle: 'No matches yet',
@@ -95,7 +99,6 @@ export const library = {
   thFolder: 'Folder',
   thModified: 'Modified',
   thLibrary: 'Library',
-  alreadyImporting: 'This demo is already being imported',
   notInLibrary: 'Not in the library yet',
   notComparedTitle: 'Not compared with the library yet — importing is safe; Spectra spots duplicates itself',
   notImported: 'not imported',

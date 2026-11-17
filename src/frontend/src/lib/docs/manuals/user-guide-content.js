@@ -87,7 +87,7 @@ type (expected .dem or .dem.zst)"*. There are three ways in.
 
 - **Import…** (Library header) — opens your system's file picker; select one or several demos.
 - **Drop files** anywhere on the Library panel — the whole panel is a drop target.
-- **Import dirs** — folders you nominate in **Settings → Import dirs**. The Library lists the \`.dem\` / \`.dem.zst\` files found under them in the **Demos from your import dirs** panel, each with its own one-click **Import** and a **Refresh** to rescan. Subfolders are scanned up to four levels deep; hidden folders are skipped; demos already in the library are left out. Until you customize it, the defaults are your Downloads folder and CS2's own replay folder, where the client saves downloaded matches.
+- **Import dirs** — folders you nominate in **Settings → Import dirs**. The Library lists the \`.dem\` / \`.dem.zst\` files found under them in the **Demos from your import dirs** panel, each with its own one-click **Import** and a **Refresh** to rescan. Subfolders are scanned up to four levels deep; hidden folders are skipped; empty files are skipped; demos already in the library are left out. Until you customize it, the defaults are your Downloads folder and CS2's own replay folder, where the client saves downloaded matches.
 
 Your original files are **never moved, modified or deleted** — importing only reads them.
 

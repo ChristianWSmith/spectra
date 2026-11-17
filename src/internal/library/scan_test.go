@@ -78,7 +78,6 @@ func TestScanFiltersAndDepth(t *testing.T) {
 		filepath.Join(root, "sub", "one.dem"),
 		filepath.Join(root, "sub", "deep", "two.dem.zst"),
 		filepath.Join(root, "a", "b", "c", "d", "four.dem"),
-		filepath.Join(root, "empty.dem"),
 	}
 	if len(got) != len(want) {
 		var names []string
@@ -96,10 +95,38 @@ func TestScanFiltersAndDepth(t *testing.T) {
 		filepath.Join(root, "notes.txt"),
 		filepath.Join(root, "a", "b", "c", "d", "e", "five.dem"),
 		filepath.Join(root, ".hidden", "gone.dem"),
+		// RE-PIN (owner, 2026-11-17, zero-byte filter): a 0-byte .dem
+		// is never offered for import — it used to list here.
+		filepath.Join(root, "empty.dem"),
 	} {
 		if _, ok := got[bad]; ok {
 			t.Errorf("Scan returned excluded file %s", bad)
 		}
+	}
+}
+
+// TestScanSkipsZeroByteFiles pins the walk's size filter (owner,
+// 2026-11-17): a 0-byte .dem (failed download, placeholder) is never
+// offered for import, while a non-empty file beside it still lists —
+// the filter is size-based, not a name or content accident. The file
+// stays on disk; this is a listing rule only (nothing is deleted).
+func TestScanSkipsZeroByteFiles(t *testing.T) {
+	root := t.TempDir()
+	empty := filepath.Join(root, "empty.dem")
+	real := filepath.Join(root, "real.dem")
+	writeScanFile(t, empty, "")
+	writeScanFile(t, real, "demo-bytes")
+	sc, _ := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
+	files, err := sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	got := foundPaths(files)
+	if _, ok := got[empty]; ok {
+		t.Errorf("0-byte file must not be listed: %s", empty)
+	}
+	if _, ok := got[real]; !ok {
+		t.Errorf("non-empty file must still be listed: %s", real)
 	}
 }
 

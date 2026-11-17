@@ -623,7 +623,20 @@ const EXPECTED = {
   // library 186 → 187 (2026-11-16, W17 G4-17): +1 the header Import…
   // icon pin — the file-add codicon LEADS the label (text pins
   // unaffected: textContent.trim() still reads "Import…").
-  'library.dom.mjs': 187,
+  // library 187 → 200 (2026-11-17, import-dirs row transfer + problems
+  // dismiss): +13 — the scan-table flip's three pins were RE-PINNED in
+  // place (a queued file is now ABSENT from the dir table — never on
+  // both tables — the listed row keeps the plain "not imported" chip
+  // and Import + Delete; count unchanged), +8 the transfer block (Import
+  // click removes the row while the enqueue is held open, no rescan
+  // involved, the synthetic row lands above and the row stays out, and
+  // a rejected enqueue restores the row with the error banner), +5 the
+  // problems-panel dismiss block (failed job lists on the panel but the
+  // pure dequeue never does, the house icon-only ✕ hides it, a NEW
+  // problem re-shows it, and the baseline restore). Sections A–E, G–R
+  // untouched; the F fixture gained a job-less file so the dir table
+  // still has a listable row.
+  'library.dom.mjs': 200,
   // map-pack-prompt 48 → 43 (2026-11-17, w29 — close-on-extract): −5.
   // The accept legs went 24 → 19: the popup's progress-display pins
   // (StatusChip block shown, the per-step details text, the family

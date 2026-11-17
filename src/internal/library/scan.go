@@ -241,7 +241,9 @@ func (sc *Scanner) importIndex() (importIndex, error) {
 //
 // Skip rules: hidden directories (dot-prefixed), anything under the app's
 // own data root, symlinks (WalkDir never follows them), non-regular
-// files, and files already imported. Only .dem / .dem.zst names qualify
+// files, zero-byte files (failed downloads / placeholders — never
+// offered for import), and files already imported. Only .dem / .dem.zst
+// names qualify
 // (the same rule the import pipeline validates with). Recognition runs
 // twice: by stored path during the walk — no hashing needed, and
 // skipping there keeps the file budget for rows that are listable — and
@@ -398,6 +400,14 @@ func (sc *Scanner) collect(roots []string, imported map[string]bool) ([]DemoFile
 			seen[abs] = true
 			info, err := d.Info()
 			if err != nil {
+				return nil
+			}
+			if info.Size() == 0 {
+				// Zero-byte files (failed downloads, placeholders) are
+				// never listable demos: the walk stats them anyway, so
+				// they are dropped right here — the file stays on disk,
+				// it is simply never offered for import (owner,
+				// 2026-11-17). Listing rule only; nothing is deleted.
 				return nil
 			}
 			out = append(out, DemoFile{
