@@ -110,6 +110,12 @@ type ReportTemplate struct {
 type PlatformService struct {
 	st  *store.Store
 	app *application.App
+	// promptPluginSource picks the plugin source path; nil = the native
+	// dialog (dialogs.go chooseFileOrDirectory). Tests inject a fake so
+	// ChoosePluginSource's cancel/failure contract can be exercised
+	// without opening a real dialog (the DialogService.promptSave
+	// precedent).
+	promptPluginSource func() (string, error)
 }
 
 // --- Data explorer -----------------------------------------------------------
@@ -289,6 +295,28 @@ func (s *PlatformService) InstallPlugin(sourcePath string) (PluginState, error) 
 		Enabled:  st.Enabled,
 		Error:    st.Error,
 	}, nil
+}
+
+// ChoosePluginSource opens the native plugin-source picker — a bundle
+// directory or a single spectra-plugin.json — and returns the chosen
+// path; an empty string means cancel or dialog failure, the same
+// contract as LibraryService.ChooseDemoDir and MapPackService.ChooseCS2Dir.
+// The picker itself is dialogs.go's chooseFileOrDirectory, reached
+// through the promptPluginSource seam so tests can exercise that
+// contract without opening a real dialog (the DialogService.promptSave
+// precedent).
+func (s *PlatformService) ChoosePluginSource() string {
+	choose := s.promptPluginSource
+	if choose == nil {
+		choose = func() (string, error) {
+			return chooseFileOrDirectory(s.app, "Choose a plugin bundle")
+		}
+	}
+	path, err := choose()
+	if err != nil || path == "" {
+		return ""
+	}
+	return path
 }
 
 // SetPluginEnabled toggles a plugin (metrics/templates appear/disappear on

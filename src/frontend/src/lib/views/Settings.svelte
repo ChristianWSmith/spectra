@@ -9,6 +9,7 @@
     recomputeAll,
     listPlugins,
     installPlugin,
+    choosePluginSource,
     setPluginEnabled,
     removePlugin,
     getMapPackStatus,
@@ -463,6 +464,17 @@
     }
   }
 
+  async function browsePlugin() {
+    // The picker is file OR directory (both InstallPlugin source kinds);
+    // cancel resolves "" and leaves the current selection alone.
+    try {
+      const chosen = await choosePluginSource();
+      if (chosen) installPath = chosen;
+    } catch (e) {
+      pluginsError = errText(e);
+    }
+  }
+
   async function doInstall() {
     const path = installPath.trim();
     if (!path) return;
@@ -757,6 +769,7 @@
         >{S.settings.updateCheckHint}</span
       >
       <button class="btn" disabled={updateBusy} onclick={checkForUpdates}>
+        <span class="codicon codicon-sync" aria-hidden="true"></span>
         {updateBusy ? S.settings.checking : S.settings.checkForUpdates}
       </button>
     </div>
@@ -804,6 +817,7 @@
               : S.settings.freeCopiesTitle}
           onclick={onFreeAllCopies}
         >
+          <span class="codicon codicon-trash" aria-hidden="true"></span>
           {dataBusy ? S.settings.freeing : S.settings.freeAllCopies}
         </button>
       </div>
@@ -840,7 +854,9 @@
             <button
               class="btn small danger"
               aria-label={`Remove ${dir}`}
-              onclick={() => removeDemoDir(dir)}>{S.settings.remove}</button
+              title={S.settings.remove}
+              onclick={() => removeDemoDir(dir)}
+              ><span class="codicon codicon-trash" aria-hidden="true"></span></button
             >
           </div>
         {/each}
@@ -859,9 +875,13 @@
           : S.settings.defaultsEffect}
       </span>
       <div class="sett-seg">
-        <button class="btn" onclick={addDemoDir}>{S.settings.addFolder}</button>
+        <button class="btn" onclick={addDemoDir}
+          ><span class="codicon codicon-folder" aria-hidden="true"></span>
+          {S.settings.addFolder}</button
+        >
         <button class="btn" disabled={!demoDirsCustom} onclick={onResetDemoDirs}
-          >{S.settings.resetDefaults}</button
+          ><span class="codicon codicon-discard" aria-hidden="true"></span>
+          {S.settings.resetDefaults}</button
         >
       </div>
     </div>
@@ -981,9 +1001,11 @@
         >{S.settings.extractHint}</span>
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
+          <span class="codicon codicon-folder" aria-hidden="true"></span>
           {S.settings.chooseFolder}
         </button>
         <button class="btn primary" disabled={mpBusy || !mpStatus?.found} onclick={doExtract}>
+          <span class="codicon codicon-download" aria-hidden="true"></span>
           {mpBusy ? 'Extracting…' : 'Extract all CS2 assets'}
         </button>
       </div>
@@ -1032,17 +1054,28 @@
       {S.settings.pluginsNoteLead}
       <span class="mono">{S.settings.pluginManifestName}</span> {S.settings.pluginsNoteTail}
     </p>
+    <!-- The source row is a READ-ONLY display + a native picker (w20):
+         no free typing — Browse… opens the plugin-source picker (the
+         file-or-directory variant in dialogs.go) into the path below,
+         and Install hands that path straight to
+         PlatformService.InstallPlugin (a bundle directory or a single
+         spectra-plugin.json). -->
     <div class="row-between">
       <input
         class="input sett-plugin-path"
-        placeholder={S.settings.pluginPathPlaceholder}
-        bind:value={installPath}
-        onkeydown={(e) => e.key === 'Enter' && doInstall()}
+        readonly
+        value={installPath}
         aria-label={S.settings.pluginPathAria}
       />
-      <button class="btn primary" disabled={installBusy || !installPath.trim()} onclick={doInstall}
-        >{installBusy ? S.settings.installing : S.settings.installFromPath}</button
-      >
+      <div class="sett-seg">
+        <button class="btn" onclick={browsePlugin}>
+          <span class="codicon codicon-search" aria-hidden="true"></span>
+          {S.settings.browsePlugin}
+        </button>
+        <button class="btn primary" disabled={installBusy || !installPath.trim()} onclick={doInstall}
+          >{installBusy ? S.settings.installing : S.settings.installFromPath}</button
+        >
+      </div>
     </div>
     {#if pluginsError}
       <p class="error" role="alert">
@@ -1091,8 +1124,13 @@
               <span class="error-text" title={op}>{S.settings.failed}</span>
             {/if}
             <span class="spacer"></span>
-            <button class="btn small danger" disabled={op === 'busy'} onclick={() => doRemove(p)}
-              >{S.settings.remove}</button
+            <button
+              class="btn small danger"
+              disabled={op === 'busy'}
+              title={S.settings.removePluginTitle}
+              aria-label={S.settings.removePluginLabel}
+              onclick={() => doRemove(p)}
+              ><span class="codicon codicon-trash" aria-hidden="true"></span></button
             >
             {#if p.error}
               <p class="plugin-err error-text">{p.error}</p>
@@ -1111,9 +1149,10 @@
     <div class="row-between">
       <span class="muted"
         >{S.settings.audioSelfTestHint}</span>
-      <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
-        >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
-      >
+      <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}>
+        <span class="codicon codicon-check" aria-hidden="true"></span>
+        {audioRunning ? 'Testing…' : 'Run audio self-test'}
+      </button>
     </div>
     {#if audioProbe}
       {#if audioProbe.ok}
@@ -1319,9 +1358,10 @@
       {:else}
         <span></span>
       {/if}
-      <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}
-        >{S.settings.saveRules}</button
-      >
+      <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}>
+        <span class="codicon codicon-save" aria-hidden="true"></span>
+        {S.settings.saveRules}
+      </button>
     </div>
   </section>
 

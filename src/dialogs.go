@@ -216,6 +216,34 @@ func chooseDirectory(app *application.App, title string) (string, error) {
 	return abs, nil
 }
 
+// chooseFileOrDirectory opens the native picker for a source that may be
+// EITHER a file or a directory under title and returns the chosen path
+// (absolute, like SaveFile). "" with a nil error means cancel — the same
+// contract as chooseDirectory; a dialog failure is an error instead.
+// This is THE plugin-source picker: PlatformService.ChoosePluginSource
+// is its one caller, and a plugin source is a bundle directory or a
+// single spectra-plugin.json.
+func chooseFileOrDirectory(app *application.App, title string) (string, error) {
+	path, err := app.Dialog.OpenFile().
+		CanChooseFiles(true).
+		CanChooseDirectories(true).
+		SetTitle(title).
+		PromptForSingleSelection()
+	if err != nil {
+		return "", fmt.Errorf("couldn't open the plugin picker: %w", err)
+	}
+	if path == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		// Dialog output is already absolute in practice; fall back to it
+		// rather than failing a choice the user already made (chooseDirectory).
+		return path, nil
+	}
+	return abs, nil
+}
+
 // saveFilters derives native dialog filters from requested extensions:
 // ["png"] → [{PNG, *.png}], ["png", "jpg"] → [{PNG/JPG, *.png;*.jpg}].
 // Entries are normalized (leading "."/"*" stripped, lowercased) and empty

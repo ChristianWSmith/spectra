@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -302,6 +303,28 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	}
 	if list, err := svc.ListPlugins(); err != nil || len(list) != 0 {
 		t.Fatalf("ListPlugins after remove: %v, %+v", err, list)
+	}
+}
+
+// TestChoosePluginSource pins the picker contract through the
+// promptPluginSource seam: a choice passes through verbatim, while a
+// cancel ("" + nil) and a dialog failure both read as "" — the same
+// contract as ChooseDemoDir/ChooseCS2Dir, and no real dialog ever opens
+// in a test.
+func TestChoosePluginSource(t *testing.T) {
+	svc := &PlatformService{
+		promptPluginSource: func() (string, error) { return "/srv/plug", nil },
+	}
+	if got := svc.ChoosePluginSource(); got != "/srv/plug" {
+		t.Errorf("choice: got %q, want /srv/plug", got)
+	}
+	svc.promptPluginSource = func() (string, error) { return "", nil }
+	if got := svc.ChoosePluginSource(); got != "" {
+		t.Errorf("cancel: got %q, want \"\"", got)
+	}
+	svc.promptPluginSource = func() (string, error) { return "", errors.New("dialog broke") }
+	if got := svc.ChoosePluginSource(); got != "" {
+		t.Errorf("dialog failure: got %q, want \"\"", got)
 	}
 }
 
