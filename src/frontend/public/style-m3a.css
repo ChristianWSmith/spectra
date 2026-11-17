@@ -1062,6 +1062,16 @@ canvas.heat-canvas {
   align-items: center;
 }
 
+/* The raw metric name rides line 1 beside the display title (w19 row
+   restructure): secondary beside the 600-weight title, sized like the
+   Order dialog's .mo-name — .mono's own 0.92em lands on ~0.85em of the
+   row once .bld-row-title's 0.92em is paid, which is exactly mo-name's
+   0.85em, so only the treatment needs pinning here. */
+.bld-row-title .mono {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 .bld-row-sub {
   display: flex;
   gap: 5px;
@@ -1158,6 +1168,29 @@ canvas.heat-canvas {
 
 .bld-expr-state.bad {
   color: var(--danger);
+}
+
+/* w19 23d — a LONG validation error must not push the right-side
+   cluster (hint → Pin → Save) onto a second line. The validity slot is
+   the row's flexible item with flex-basis 0: with a base of 0 it never
+   competes for the shrink phase, so the cluster keeps its own content
+   width on the line whenever the row fits, and the slot simply absorbs
+   whatever width is left over (space-between then has no free space to
+   hand out — which is also what pins the delete to the left edge and
+   the cluster flush right). The message takes the CANONICAL single-line
+   treatment for a text slot that shares a flex row with a sibling
+   cluster (the .sql-saved-name spelling): min-width: 0 lets the slot
+   shrink below its content, overflow + text-overflow ellipsize it in
+   place, nowrap keeps the actions line ONE line, and the full text
+   rides the title tooltip — nothing is hidden without a way to read
+   it. When the row is too narrow for the cluster alone, the cluster
+   falls back to its own internal wrap exactly as it did before. */
+.bld-valid {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bld-note {

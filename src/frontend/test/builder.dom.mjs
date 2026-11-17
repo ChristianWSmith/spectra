@@ -37,7 +37,9 @@
 //      (format '' rows), subsets and all-off;
 //   D. the built-in EDITOR load: a builtin row is a button like every
 //      other and fills the form read-only — Save disabled with the
-//      end-user reason, chip present, delete absent, pin/preview live —
+//      end-user reason, chip present, delete absent (on the row AND in
+//      the editor footer — w19 item 23 made the footer's delete
+//      user-metric-only), pin/preview live —
 //      Save stays disabled through an edit (dirty never re-enables it)
 //      and loading a user row, a plugin row or New fully restores the
 //      editable state; the short-name field caps at SIX characters and
@@ -84,7 +86,8 @@
 //      header ✕ closing it.
 //
 // Section A opens with the N1 list-scroll pins and section F carries
-// the N6 one-line actions-row anatomy pins (validity slot + the
+// the N6 one-line actions-row anatomy pins (the delete that now leads
+// the line on a user metric, then the validity slot + the
 // hint→Pin→Save cluster).
 //
 // Backend semantics — the SQL partitions + keyset tiling
@@ -475,12 +478,14 @@ async function mountBuilder() {
 }
 
 const rowsOf = (r) => [...r.querySelectorAll('.bld-row')];
+// The raw metric name rides line 1 (.bld-row-title) since the w19 row
+// restructure — it used to live in .bld-row-sub.
 const namesOf = (r) =>
-  rowsOf(r).map((x) => x.querySelector('.bld-row-sub .mono')?.textContent.trim());
+  rowsOf(r).map((x) => x.querySelector('.bld-row-title .mono')?.textContent.trim());
 const headersOf = (r) =>
   [...r.querySelectorAll('.bld-group h3')].map((h) => h.textContent.trim());
 const rowNamed = (r, name) =>
-  rowsOf(r).find((x) => x.querySelector('.bld-row-sub .mono')?.textContent.trim() === name);
+  rowsOf(r).find((x) => x.querySelector('.bld-row-title .mono')?.textContent.trim() === name);
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 // The filter multi-select (replaces the three toggle lines): the
 // trigger owns the canonical Popover's anchor, so openFilters/closeFilters
@@ -539,8 +544,8 @@ const type = (el, value) => {
 };
 const heading = (r) => r.querySelector('.bld-right h2')?.textContent.trim();
 // The row's CHIPS minus the compute-state one (StatusChip) — the static
-// identity chips in render order: scope, denominator (when present),
-// format, plugin.
+// identity chips in render order: scope, denominator (ALWAYS — the
+// none word for a denominator-less row since w19), format, plugin.
 const chipsOf = (r, name) =>
   [...(rowNamed(r, name)?.querySelectorAll('.bld-row-sub .chip:not(.status)') || [])].map((c) =>
     c.textContent.trim(),
@@ -589,6 +594,18 @@ let r = await mountBuilder();
     !!r.querySelector('.bld-actions > .bld-valid') &&
       r.querySelector('.bld-actions > .bld-valid').textContent.trim() === '',
     r.querySelector('.bld-actions > .bld-valid')?.textContent ?? 'no .bld-valid slot',
+  );
+  // w19 23d — jsdom has no layout, so the overflow fix pins its RULE
+  // (the N1 source-pin precedent): the validity slot is the row's
+  // flexible item (basis 0, min-width 0) with the canonical single-line
+  // ellipsis, which is what keeps a long error from pushing the
+  // right-side cluster onto a second line.
+  check(
+    'N6: .bld-valid is the flexible slot (flex 1 1 0, min-width 0) with the canonical single-line ellipsis — a long error can never shove the cluster to a second line',
+    /\.bld-valid\s*\{[^}]*flex:\s*1\s+1\s+0[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap[^}]*\}/s.test(
+      m3aCss,
+    ),
+    'no .bld-valid { flex: 1 1 0; min-width: 0; … text-overflow: ellipsis; white-space: nowrap } rule',
   );
 }
 check(
@@ -666,11 +683,42 @@ check(
   JSON.stringify(chipsOf(r, 'my_kd')),
 );
 check(
-  'a denominator-less metric shows NO denominator chip (absence is honest) — the auto-format row wears its raw format chip',
-  JSON.stringify(chipsOf(r, 'adr_avg')) === JSON.stringify(['match', 'raw']) &&
-    JSON.stringify(chipsOf(r, 'plug_stat')) === JSON.stringify(['match', 'int', 'plugin']),
+  // w19 owner ruling: the denominator tag is ALWAYS visible — a
+  // denominator-less row states the vocabulary's own denominator-less
+  // word ('none') instead of dropping the chip, and the auto-format
+  // row still wears its raw format chip.
+  'a denominator-less metric states the none word in its always-present denominator chip',
+  JSON.stringify(chipsOf(r, 'adr_avg')) === JSON.stringify(['match', 'none', 'raw']) &&
+    JSON.stringify(chipsOf(r, 'plug_stat')) === JSON.stringify(['match', 'none', 'int', 'plugin']),
   JSON.stringify(chipsOf(r, 'adr_avg')) + ' / ' + JSON.stringify(chipsOf(r, 'plug_stat')),
 );
+{
+  // The w19 row restructure, pinned as DOM ORDER: line 1 runs title
+  // text → raw mono name → the ⓘ doc icon (the mono slot only when the
+  // title is not already the name — the double-print guard), line 2
+  // holds chips ONLY (never a second copy of the name).
+  const row = rowNamed(r, 'adr_avg');
+  const title = row?.querySelector('.bld-row-title');
+  const sub = row?.querySelector('.bld-row-sub');
+  const kids = title ? [...title.children] : [];
+  check(
+    'the row runs title → mono name → ⓘ on line 1, and line 2 holds chips only',
+    !!title &&
+      title.firstChild?.nodeType === 3 &&
+      title.firstChild.textContent.includes('ADR average') &&
+      kids.length === 2 &&
+      kids[0].classList.contains('mono') &&
+      kids[0].textContent.trim() === 'adr_avg' &&
+      kids[1].classList.contains('m5-ib') &&
+      !!sub &&
+      sub.children.length > 0 &&
+      [...sub.children].every((el) => el.classList.contains('chip')) &&
+      !sub.querySelector('.mono'),
+    title
+      ? `title-kids=${kids.map((k) => k.className || k.tagName).join('|')} sub=${sub?.textContent.replace(/\s+/g, ' ')}`
+      : 'no .bld-row-title',
+  );
+}
 check(
   'the server-side search box is rendered',
   !!r.querySelector('input[type="search"][aria-label="Search metrics"]'),
@@ -995,6 +1043,14 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     !!uRow && !!uRow.querySelector('[aria-label="Delete adr_avg"]'),
     uRow ? [...uRow.children].map((c) => c.className || c.tagName).join(' | ') : 'no row',
   );
+  check(
+    // w19 23b: the row's destructive glyph is the ONE app-wide trash
+    // icon (it was the ✕, which reads "dismiss").
+    'the user row delete wears the trash glyph, never the ✕',
+    !!uRow?.querySelector('[aria-label="Delete adr_avg"] .codicon-trash') &&
+      !uRow?.querySelector('[aria-label="Delete adr_avg"] .codicon-close'),
+    uRow?.querySelector('[aria-label="Delete adr_avg"]')?.innerHTML ?? 'no delete',
+  );
   // The builtin still pins (round trip — the pin state is left as found).
   const pinBtn = bRow.querySelector('[aria-label="Toggle pin for trade_rate"]');
   click(pinBtn);
@@ -1109,6 +1165,40 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       ? `disabled=${saveBtn().disabled} text="${saveBtn().textContent.trim()}" title=${saveBtn().getAttribute('title')}`
       : 'no Save button',
   );
+  // w19 item 23: the editor delete is USER-metric-only — a loaded
+  // built-in gets neither the control nor the extra slot (the footer
+  // keeps exactly its two children, validity slot first).
+  {
+    const actions = r.querySelector('.bld-actions');
+    const kids = actions ? [...actions.children] : [];
+    check(
+      'the editor footer carries NO delete control for a loaded built-in (two slots, validity slot first)',
+      kids.length === 2 &&
+        kids[0].classList.contains('bld-valid') &&
+        kids[1].classList.contains('toolbar') &&
+        !actions.querySelector('[aria-label^="Delete"]'),
+      JSON.stringify(kids.map((k) => k.className)),
+    );
+  }
+  {
+    // w19 item 2: the compact state chip rides the EDITOR HEADER, left
+    // of the built-in chip (fresh here) — compareDocumentPosition pins
+    // the ORDER, not just the presence.
+    const head = r.querySelector('.bld-right > section.panel > .row-between');
+    const status = head?.querySelector('.chip.status');
+    const ro = head?.querySelector('.bld-readonly');
+    check(
+      'the state chip renders in the editor header, before the built-in chip',
+      !!head &&
+        !!status &&
+        !!ro &&
+        (status.compareDocumentPosition(ro) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+        status.textContent.trim() === 'fresh',
+      status
+        ? `status="${status.textContent.trim()}" ro=${!!ro}`
+        : 'no status chip in the editor header',
+    );
+  }
   check(
     // N6: the hint keeps its .bld-actions .bld-note home — it moved
     // from AFTER the buttons to the front of the right cluster, so the
@@ -1172,6 +1262,17 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       !saveBtn().disabled,
     `name=${r.querySelector('#bld-name')?.value} chip=${chip() && chip().textContent.trim()} disabled=${saveBtn().disabled}`,
   );
+  {
+    // w19 item 23: plugins are the loader's territory — the editor
+    // footer carries no delete control for them either.
+    const actions = r.querySelector('.bld-actions');
+    const kids = actions ? [...actions.children] : [];
+    check(
+      'the editor footer carries NO delete control for a plugin metric (two slots)',
+      kids.length === 2 && !actions.querySelector('[aria-label^="Delete"]'),
+      JSON.stringify(kids.map((k) => k.className)),
+    );
+  }
 
   // --- N3: the short-name cap -----------------------------------------------
   // maxlength stops new typing at six characters; this guard is what
@@ -1258,6 +1359,22 @@ compileCalls.length = 0;
       ![...r.querySelectorAll('.bld-preview .toolbar .chip')].some((c) => /ms$/.test(c.textContent.trim())),
     r.querySelector('.bld-preview .toolbar')?.textContent.replace(/\s+/g, ' '),
   );
+  {
+    // w19 23c: the preview panel's state chip sits immediately LEFT of
+    // the Preview button (position only — the chip itself is unchanged,
+    // and the button's own finder above still resolves it).
+    const chip = r.querySelector('.bld-preview .toolbar .chip.status');
+    const btn = [...r.querySelectorAll('.bld-preview .toolbar button')].find((b) =>
+      b.textContent.includes('Preview'),
+    );
+    check(
+      'the preview panel state chip sits immediately left of the Preview button',
+      !!chip && !!btn && btn.previousElementSibling === chip,
+      chip && btn
+        ? `prev=${btn.previousElementSibling?.className} chip=${chip.className}`
+        : `chip=${!!chip} btn=${!!btn}`,
+    );
+  }
   check(
     'previewing a builtin still does NOT load the form',
     heading(r) === 'New metric' && r.querySelector('#bld-name')?.value === '',
@@ -1357,25 +1474,48 @@ console.log('F. a user row still loads the form for editing (unaffected)');
 
   // --- N6: ONE actions line (the lead's W1/T1 pattern) ----------------------
   // The validity indicator and the hint + Pin + Save cluster share a
-  // single row: the left slot ALWAYS renders, the cluster is its LAST
-  // child, and the indicator lives there (never under the textarea —
-  // there is exactly ONE).
+  // single row; the cluster is its LAST child, and the indicator lives
+  // there (never under the textarea — there is exactly ONE). w19 item
+  // 23 added a third slot on a USER metric: the editor delete LEADS
+  // the line (destructive left, positive actions right), so on this
+  // loaded user row the children are delete → validity slot → cluster.
   const actions = r.querySelector('.bld-actions');
   const aKids = actions ? [...actions.children] : [];
   check(
-    'N6: the actions row is one line — the validity slot is its FIRST child, the hint→Pin→Save cluster its LAST',
-    aKids.length === 2 &&
-      aKids[0].classList.contains('bld-valid') &&
-      aKids[1].classList.contains('toolbar'),
+    'N6: the actions row is one line — on a user metric the delete leads it, then the validity slot, then the hint→Pin→Save cluster LAST',
+    aKids.length === 3 &&
+      !!aKids[0]?.querySelector('.codicon-trash') &&
+      aKids[0].classList.contains('danger') &&
+      aKids[0].getAttribute('aria-label') === 'Delete adr_avg' &&
+      aKids[0].getAttribute('title') === 'Delete metric' &&
+      aKids[1].classList.contains('bld-valid') &&
+      aKids[2].classList.contains('toolbar'),
     JSON.stringify(aKids.map((k) => k.className)),
   );
   check(
-    'N6: the validity indicator moved INTO that slot — nothing renders under the Expression textarea',
-    !!aKids[0]?.querySelector('.bld-expr-state.ok') && !r.querySelector('.bld-fields .bld-expr-state'),
+    'N6: the validity indicator lives in its own slot — nothing renders under the Expression textarea',
+    !!aKids[1]?.querySelector('.bld-expr-state.ok') && !r.querySelector('.bld-fields .bld-expr-state'),
     r.querySelector('.bld-fields .bld-expr-state') ? 'still under the textarea' : 'moved',
   );
+  check(
+    // w19 item 23: DOM order — the destructive action precedes Save
+    // (Save itself keeps its codicon-save, checked in the cluster pin
+    // below).
+    'the editor delete precedes Save in the actions line',
+    (() => {
+      const del = aKids[0];
+      const save = actions?.querySelector('.toolbar .btn.primary');
+      return (
+        !!del &&
+        !!save &&
+        !!del.querySelector('.codicon-trash') &&
+        (del.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+      );
+    })(),
+    JSON.stringify(aKids.map((k) => k.className)),
+  );
   {
-    const cluster = aKids[1] ? [...aKids[1].children] : [];
+    const cluster = aKids[2] ? [...aKids[2].children] : [];
     check(
       'N6: the cluster runs hint → Pin → Save, no divider and no separator',
       cluster.length === 3 &&
@@ -1384,6 +1524,7 @@ console.log('F. a user row still loads the form for editing (unaffected)');
         /^Pin(ned)?$/.test(cluster[1].textContent.trim()) &&
         cluster[2].classList.contains('btn') &&
         cluster[2].classList.contains('primary') &&
+        !!cluster[2].querySelector('.codicon-save') &&
         !actions.querySelector('.toolbar-sep') &&
         !/\|/.test(actions.textContent),
       JSON.stringify(
@@ -1620,6 +1761,16 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
       'editor card: processing shows the block indicator with "computing 2 of 5 metrics" underneath',
       !!prog && prog.textContent.includes('computing 2 of 5 metrics'),
       prog ? prog.textContent.replace(/\s+/g, ' ') : 'no block progress',
+    );
+    check(
+      // w19 item 2: every state word but processing renders in the
+      // header — so while the block form is up, the header carries NO
+      // state chip (one progress widget, never both).
+      'processing keeps the BLOCK form only — the editor header carries no state chip',
+      !editorPanel()?.querySelector(':scope > .row-between .chip.status') &&
+        !!editorPanel()?.querySelector('.bld-card-prog'),
+      editorPanel()?.querySelector(':scope > .row-between')?.textContent.replace(/\s+/g, ' ') ??
+        'no header',
     );
     const chip = chipOf('adr_avg');
     check(
@@ -1992,25 +2143,30 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     // W13b (2026-11-16) — the structured {name, short} fixed entries:
     // the row TITLE reads the FULL name (Kills), the mono slot carries
     // the SHORT (K) only when the two differ (Team never doubles to
-    // "Team Team"), and a metric row carries NO mono slot — its title
-    // alone identifies it (the old "Assists assists" title+name
-    // doubling). The aria labels derive from the same visible full
-    // name (Hide Kills / Move Kills up) while data-mo-name keeps the
-    // '@'-key identity (pinned by the dNames lists above — unchanged).
+    // "Team Team"). w19 item 5: a METRIC row now carries the same slot
+    // from the metric's own short name (e.def.shortName) under the same
+    // rule — ADR shows under "ADR average", while a metric with no
+    // short name (my_kd) keeps NO slot (its title alone identifies it;
+    // the old "Assists assists" title+name doubling stays dead). The
+    // aria labels derive from the same visible full name (Hide Kills /
+    // Move Kills up) while data-mo-name keeps the '@'-key identity
+    // (pinned by the dNames lists above — unchanged).
     const rows = dRows('match');
     const kRow = rows.find((x) => x.dataset.moName === '@K');
     const teamRow = rows.find((x) => x.dataset.moName === '@Team');
     const metricRow = rows.find((x) => x.dataset.moName === 'adr_avg');
+    const shortRow = rows.find((x) => x.dataset.moName === 'my_kd');
     const monos = (row) =>
       [...(row?.querySelectorAll('.mo-name') || [])].map((s) => s.textContent.trim());
     check(
-      'the mono short slot shows K under Kills and nothing under Team (never "Team Team"); a metric row carries no mono name slot',
+      'the mono short slot shows K under Kills, nothing under Team (never "Team Team"), the metric short under its title, and nothing when a metric has no short name',
       kRow?.querySelector('.mo-title')?.textContent.trim() === 'Kills' &&
         JSON.stringify(monos(kRow)) === JSON.stringify(['K']) &&
         teamRow?.querySelector('.mo-title')?.textContent.trim() === 'Team' &&
         monos(teamRow).length === 0 &&
-        JSON.stringify(monos(metricRow)) === JSON.stringify([]),
-      `Kills title="${kRow?.querySelector('.mo-title')?.textContent ?? 'no row'}" monos=${JSON.stringify(monos(kRow))} Team monos=${JSON.stringify(monos(teamRow))} metric monos=${JSON.stringify(monos(metricRow))}`,
+        JSON.stringify(monos(metricRow)) === JSON.stringify(['ADR']) &&
+        JSON.stringify(monos(shortRow)) === JSON.stringify([]),
+      `Kills title="${kRow?.querySelector('.mo-title')?.textContent ?? 'no row'}" monos=${JSON.stringify(monos(kRow))} Team monos=${JSON.stringify(monos(teamRow))} adr monos=${JSON.stringify(monos(metricRow))} my_kd monos=${JSON.stringify(monos(shortRow))}`,
     );
     check(
       "the fixed rows' aria labels derive from the visible FULL name — Hide Kills / Move Kills up and down; Team keeps Hide Team",
