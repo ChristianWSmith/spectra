@@ -137,7 +137,7 @@ test('PROFILE_FAMILY holds exactly {profiles, player} and active() agrees', () =
   }
   // …and nothing else lights it up (the exactly-one invariant below
   // covers the other side).
-  for (const name of ['library', 'match', 'round', 'replay', 'compare', 'builder', 'sql', 'settings']) {
+  for (const name of ['library', 'match', 'round', 'replay', 'compare', 'builder', 'reportbuilder', 'sql', 'settings']) {
     assert.equal(profilesAction.active({ name }), false, `Profiles on ${name}`);
   }
   // The memory policy is declared ON the action — the helpers never
@@ -157,6 +157,7 @@ test('sidebar active(): exactly one action lights up per route', () => {
     'player',
     'profiles',
     'builder',
+    'reportbuilder',
     'sql',
     'settings',
   ];
@@ -176,7 +177,9 @@ test('isNavEnabled: Match is the only gated action — the other memory-backed o
   const byLabel = Object.fromEntries(NAV_ACTIONS.map((a) => [a.label, a]));
   const withHash = { lastMatchHash: '#/match/5/scoreboard?roundFrom=3' };
   // Every fixed-target action is enabled whatever the memory says.
-  for (const label of ['Library', 'Builder', 'SQL console', 'Settings']) {
+  // The Reports builder rides the same list: a single-route action with
+  // no `memory` field is always enabled and always targets its own hash.
+  for (const label of ['Library', 'Builder', 'Reports builder', 'SQL console', 'Settings']) {
     assert.equal(isNavEnabled(byLabel[label], { lastMatchHash: '' }), true, `${label} empty`);
     assert.equal(isNavEnabled(byLabel[label], withHash), true, `${label} with memory`);
     assert.equal(isNavEnabled(byLabel[label], undefined), true, `${label} no ctx`);
@@ -218,6 +221,7 @@ test('resolveNavTarget: fixed actions ignore the memory; the memory-backed actio
   // Fixed targets are the action's own hash, memory or not.
   assert.equal(resolveNavTarget(byLabel.Library, withHash), '/library');
   assert.equal(resolveNavTarget(byLabel.Settings, { lastMatchHash: '' }), '/settings');
+  assert.equal(resolveNavTarget(byLabel['Reports builder'], withHash), '/reportbuilder');
   // The Match action lands on the WHOLE remembered hash — path AND query
   // (the tab, round and URL filters survive the round trip).
   assert.equal(resolveNavTarget(byLabel.Match, withHash), '#/replay/5?cat=chat&tick=100');

@@ -708,6 +708,39 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 	created_at DATETIME NOT NULL
 );
 
+-- User report templates — the Reports Builder's authored documents.
+-- Document-shaped like saved_queries above (one row = one document: a
+-- unique identity + the payload + a timestamp), NOT the metrics origin
+-- partition: this table holds ONE origin's rows (every insert writes
+-- origin = 'user'), so it needs no origin rank, no plugin_id and no
+-- version counter — `origin` exists so ListReportTemplates can attribute
+-- EVERY template (builtin / user / plugin) through one field, which is
+-- where attribution rides (platformservice.go reportTplFromPlugin).
+--
+-- `id` is the template's IDENTITY as a slug, not a row number: it must
+-- satisfy the plugin manifest's slug contract ^[a-z0-9-]{2,40}$
+-- (internal/plugin/manifest.go slugRe) so a saved template is
+-- bundle-able by a later wave without re-shaping its id — the service
+-- slugifies the title on create and de-dupes against every id already
+-- in play (platformservice.go SaveReportTemplate). scope/format carry
+-- the same CHECK vocabulary the plugin manifest validates, so a stored
+-- row can never hold a value the renderer's switch rejects.
+--
+-- One baseline, no versioning (AGENTS "Version nothing until the first
+-- release"): this table is part of THE schema.sql applied on every Open
+-- — there is no schema_version and no upgrade path; a schema-reach
+-- problem is resolved by wipe + re-import, never by an ALTER.
+CREATE TABLE IF NOT EXISTS report_templates (
+	id TEXT PRIMARY KEY,
+	title TEXT NOT NULL,
+	scope TEXT NOT NULL CHECK (scope IN ('match', 'player', 'round')),
+	format TEXT NOT NULL CHECK (format IN ('md', 'html')),
+	body TEXT NOT NULL,
+	origin TEXT NOT NULL DEFAULT 'user',
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+);
+
 -- THE builtins, seeded (see header): exactly fifty-nine — trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows) and the inferred set (42

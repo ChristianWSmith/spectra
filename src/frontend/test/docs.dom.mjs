@@ -4,7 +4,7 @@
 // Section labels below match the run's console.log letters:
 //   A. the sidebar Help icon — nav-chrome chrome between the spacer and
 //      Settings, never active/aria-current across routes, the popup
-//      opens at the guide top with the full TOC (26 sections since the
+//      opens at the guide top with the full TOC (27 sections since the
 //      2026-11-14 content onboarding — Introduction leads) and no manual
 //      switcher (only one manual ships), the near-fullscreen geometry
 //      (centred backdrop with its uniform margin, panel = viewport −
@@ -206,7 +206,7 @@ const writeStub = (rel, src) => {
 };
 for (const name of [
   'Library', 'Match', 'RoundDetail', 'Settings', 'SqlConsole', 'Explorer',
-  'Reports', 'Profiles', 'PlayerProfile', 'CompareRounds',
+  'Reports', 'ReportsBuilder', 'Profiles', 'PlayerProfile', 'CompareRounds',
 ]) {
   writeStub(
     `lib/views/${name}.svelte`,
@@ -481,8 +481,10 @@ check(
 check(
   // Re-pinned 2026-11-14 (user-manual content onboarding): 22 → 26
   // entries; the researched draft's Introduction now leads the guide.
-  'the full TOC renders (26 section entries, the guide opens at its first section)',
-  tocItems().length === 26 && tocCurrent()?.textContent.trim() === 'Introduction',
+  // 26 → 27 (w21, reports-builder): the Reports builder gained its own
+  // section beside `reports`.
+  'the full TOC renders (27 section entries, the guide opens at its first section)',
+  tocItems().length === 27 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -815,7 +817,7 @@ check(
 );
 check(
   'the filter is TOC-only: the body still renders every section while it is active',
-  docBody().querySelectorAll('.doc-section').length === 26,
+  docBody().querySelectorAll('.doc-section').length === 27,
   docBody().querySelectorAll('.doc-section').length + ' body sections',
 );
 check(
@@ -885,8 +887,8 @@ check(
 );
 await typeQuery('');
 check(
-  'clearing the input restores the full TOC (26 entries, no empty-state line)',
-  tocItems().length === 26 && !emptyTocLine(),
+  'clearing the input restores the full TOC (27 entries, no empty-state line)',
+  tocItems().length === 27 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
 
@@ -1007,8 +1009,8 @@ check(
 click(toggleOf('Metric language'));
 await sleep();
 check(
-  'folding the chapter hides its minors (13 entries remain) and flips aria-expanded to false',
-  tocItems().length === 13 &&
+  'folding the chapter hides its minors (14 entries remain) and flips aria-expanded to false',
+  tocItems().length === 14 &&
     toggleOf('Metric language')?.getAttribute('aria-expanded') === 'false' &&
     document.querySelectorAll('.doc-toc-children').length === 0,
   `${tocItems().length} entries / children containers ${document.querySelectorAll('.doc-toc-children').length}`,
@@ -1016,8 +1018,8 @@ check(
 click(toggleOf('Metric language'));
 await sleep();
 check(
-  'unfolding restores every entry (26) and aria-expanded back to true',
-  tocItems().length === 26 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  'unfolding restores every entry (27) and aria-expanded back to true',
+  tocItems().length === 27 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
   `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
 );
 click(tocItems().find((b) => b.textContent.trim() === 'Denominators'));
@@ -1058,8 +1060,8 @@ check(
 );
 await typeQuery('');
 check(
-  'clearing the query keeps the user’s fold state (the chapter stays folded: 13 entries)',
-  tocItems().length === 13,
+  'clearing the query keeps the user’s fold state (the chapter stays folded: 14 entries)',
+  tocItems().length === 14,
   `${tocItems().length} entries`,
 );
 await typeQuery('INTRODUCTION');

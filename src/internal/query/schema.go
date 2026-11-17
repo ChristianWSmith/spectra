@@ -39,12 +39,13 @@ var tableNotes = map[string]string{
 	"voice_presence": "per-match voice index summary (chunk/player/caster counts, key_found)",
 
 	// M5 (this milestone).
-	"metrics":       "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",
-	"metric_values": "stored metric VALUES: one number per saved metric per player — match grain (match_id > 0) or career grain (match_id = 0); value 0 always beside n (sample size), a group the statement did not produce has no row",
-	"metric_deps":   "metric→metric dependency edges (which metrics each metric's expression references by name)",
-	"saved_queries": "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
-	"query_history": "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
-	"plugins":       "declarative plugin registry",
+	"metrics":          "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",
+	"metric_values":    "stored metric VALUES: one number per saved metric per player — match grain (match_id > 0) or career grain (match_id = 0); value 0 always beside n (sample size), a group the statement did not produce has no row",
+	"metric_deps":      "metric→metric dependency edges (which metrics each metric's expression references by name)",
+	"saved_queries":    "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
+	"query_history":    "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
+	"report_templates": "user report templates authored in the Reports builder (slug id, scope, format, template body)",
+	"plugins":          "declarative plugin registry",
 }
 
 // columnNotes maps table → column → note.

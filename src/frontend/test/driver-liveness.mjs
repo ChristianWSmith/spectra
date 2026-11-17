@@ -739,7 +739,30 @@ const EXPECTED = {
   // {:else}) is progress-presentation's pin and stays green; the
   // no-template behavior (the whole appendix block — button included —
   // is {#if tpl}) is covered by this fixture scripting a template.
-  'reports.dom.mjs': 44,
+  // reports-builder (2026-11-16, w21): NEW at 51 — a NEW driver for the
+  // template-authoring view (views/ReportsBuilder.svelte): A the mount
+  // shape + the header `?` opening the guide at reports-builder; B the
+  // list rows carrying title/scope/format/ORIGIN chips in the served
+  // order with a trash button on user rows only; C the origin group and
+  // title search narrowing client-side with each empty state distinct;
+  // D the editor's field order and scope/format vocabularies; E the
+  // built-in read-only set (chip title, disabled Save, readonly fields,
+  // no delete) and the plugin fork (payload id ""); F the delete as the
+  // user-row control bottom-LEFT while Preview + Save stay right; G the
+  // create flow (New → fields → Save with id "" → the row lands, clean
+  // row reads Saved); H the preview gate (disabled with no target, the
+  // DRAFT body through RenderReportDraft, an edit clearing the stale
+  // document, the player/round field gates) and I the registry
+  // round-trip + resetViewState() defaults.
+  'reports-builder.dom.mjs': 51,
+  // reports 44 → 50 (2026-11-16, w21 reports-builder): +6 the NEW
+  // section J — the template CARDS' origin surfacing, now that the
+  // Reports builder adds user templates to this catalog: one card per
+  // origin (builtin/user/plugin) each carrying its origin chip beside
+  // scope + format, a plugin card selecting on click with Save then
+  // calling RenderReport with THAT id, and a stale stored tplId naming a
+  // vanished template self-healing to a live one (loadTemplates' guard).
+  'reports.dom.mjs': 50,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:
   // renamed card, meta line landed, First kill absence), +2 ribbon pins

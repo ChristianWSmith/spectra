@@ -7,6 +7,7 @@
   import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
   import Builder from './lib/views/Builder.svelte';
+  import ReportsBuilder from './lib/views/ReportsBuilder.svelte';
   import SqlConsole from './lib/views/SqlConsole.svelte';
   import Explorer from './lib/views/Explorer.svelte';
   import Reports from './lib/views/Reports.svelte';
@@ -553,6 +554,8 @@
                no back. -->
         {:else if viewRoute.name === 'builder'}
           <Builder {nav} {openDocs} />
+        {:else if viewRoute.name === 'reportbuilder'}
+          <ReportsBuilder {openDocs} />
         {:else if viewRoute.name === 'sql'}
           <SqlConsole {nav} {openDocs} />
         {:else if viewRoute.name === 'profiles'}

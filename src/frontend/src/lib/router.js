@@ -46,7 +46,7 @@
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
-//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/settings
+//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/reportbuilder | #/settings
 //
 // Legacy raw-event routes resolve to the canonical Replay landmark feed
 // with the equivalent scope (the Timeline tab, the Match Chat tab and the
@@ -58,9 +58,9 @@
 //   #/match/:id/context            → #/replay/:id?cat=connects (the only
 //                                     survivor of chat,connects,team_changes)
 //
-// Prefix routes (builder/sql/profiles/explorer/reports/settings) match
-// with startsWith, so "#/settings/foo" is still Settings; every other
-// shape falls through to the library default.
+// Prefix routes (builder/reportbuilder/sql/profiles/explorer/reports/
+// settings) match with startsWith, so "#/settings/foo" is still Settings;
+// every other shape falls through to the library default.
 
 // Canonical match-tab list (display order). Shared by Match.svelte's tab
 // bar and the route table so a deep link can never drift from the tabs
@@ -192,6 +192,11 @@ export function parseHash(hash) {
   m = path.match(/^\/replay\/(\d+)$/);
   if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
   if (path.startsWith('/builder')) return withQuery({ name: 'builder' });
+  // The Reports builder's own route — deliberately NOT /reports… (that
+  // prefix belongs to the Reports view above; a /reports-prefixed path
+  // would swallow it) and not a /reports sub-path either: it is a
+  // sibling top-level view, parsed on its own name.
+  if (path.startsWith('/reportbuilder')) return withQuery({ name: 'reportbuilder' });
   if (path.startsWith('/sql')) return withQuery({ name: 'sql' });
   // The player directory (the sidebar's Profiles entry) — prefix route,
   // no params; a row click drills into /player/:steamid instead.

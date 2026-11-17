@@ -42,6 +42,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"pluginCols", "plugins", pluginCols},
 		{"queryHistoryCols", "query_history", queryHistoryCols},
 		{"savedQueryCols", "saved_queries", savedQueryCols},
+		{"reportTemplateCols", "report_templates", reportTemplateCols},
 		{"savedFilterCols", "saved_filters", savedFilterCols},
 		{"chatCols", "chat", chatCols},
 		{"soundEventsCols", "sound_events", soundEventsCols},

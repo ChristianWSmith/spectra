@@ -74,6 +74,11 @@ export const PlatformService = {
   ListPlugins: rec('ListPlugins'),
   ListReportTemplates: rec('ListReportTemplates'),
   RenderReport: rec('RenderReport'),
+  // The Reports builder's mutators + the draft render (drivers script
+  // these on top, like every other method here).
+  SaveReportTemplate: rec('SaveReportTemplate'),
+  DeleteReportTemplate: rec('DeleteReportTemplate'),
+  RenderReportDraft: rec('RenderReportDraft'),
 };
 export const LibraryService = {
   ImportDialog: rec('ImportDialog'),

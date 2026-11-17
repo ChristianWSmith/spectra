@@ -27,6 +27,7 @@ export { settings } from './settings.js';
 export { builder } from './builder.js';
 export { profiles } from './profiles.js';
 export { reports } from './reports.js';
+export { reportbuilder } from './reportbuilder.js';
 export { economy } from './economy.js';
 export { combat } from './combat.js';
 export { utility } from './utility.js';
