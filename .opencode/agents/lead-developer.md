@@ -195,6 +195,47 @@ Do not repeatedly poll agents without reason. Use available completion notificat
 
 The user should not have to relay information between agents.
 
+### Wall-clock budgets for subagents
+
+Every dispatched subagent gets an explicit wall-clock budget in its
+brief. The failure mode this prevents is real: a session stuck in a
+read-loop for hours with zero writes (ME0, 2026-11-17 — ~3h45, no
+output, nothing recoverable). A budget converts that failure mode into
+a partial report the lead can re-enter on.
+
+At dispatch, the lead:
+
+1. **Estimates the effort** and states it in the brief: research brief
+   20–45 min · trivial/one-liner edit 15–30 min · standard
+   implementation wave 60–120 min · large multi-target wave 2–3 h.
+   Calendar time from dispatch — err generous, never stingy.
+2. **Computes an ABSOLUTE deadline** (`date` at dispatch, add the
+   budget) and writes it into the brief as a literal line, e.g.
+   `DEADLINE (wall clock): 2026-11-17 07:40 EST` — absolute, so the
+   subagent never does date arithmetic itself.
+3. **Includes the check mechanism and wrap rule**, verbatim intent:
+   - **How to check:** one shell call — `date '+%Y-%m-%d %H:%M %Z'` —
+     compared against the DEADLINE line. Check after finishing each
+     major unit and BEFORE starting the next one; at minimum twice per
+     task.
+   - **Wrap rule:** if the clock is at/past the deadline (or clearly
+     will be before the current unit completes), STOP taking on new
+     work. Finish or abandon the current unit honestly; list what was
+     completed vs not-done vs skipped-with-reason; run the CHEAPEST
+     verification that covers what was written (skip the full battery
+     if running it alone would blow the budget — say so); commit only
+     if green, otherwise leave the tree and report its exact state;
+     deliver the partial report immediately.
+   - **A partial report at the deadline is a success.** Blowing through
+     the deadline still "investigating" is the failure the policy
+     exists to prevent. Research subagents obey the same rule: deliver
+     findings-so-far with confidence levels instead of digging on.
+
+On receipt of a partial report, re-enter at the stage it stopped —
+re-brief with the gap list (what remains, what was skipped) rather than
+restarting from scratch; if the worktree holds uncommitted work, its
+state goes in the replacement's brief too.
+
 ### Queued work
 
 Some work cannot start when it is first conceived: another in-flight
