@@ -199,7 +199,7 @@ The user should not have to relay information between agents.
 
 Every dispatched subagent gets an explicit wall-clock budget in its
 brief. The failure mode this prevents is real: a session stuck in a
-read-loop for hours with zero writes (ME0, 2026-11-17 — ~3h45, no
+read-loop for hours with zero writes (2026-11-17 — ~3h45, no
 output, nothing recoverable). A budget converts that failure mode into
 a partial report the lead can re-enter on.
 

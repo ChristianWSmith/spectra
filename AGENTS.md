@@ -217,10 +217,13 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **No session leakage** (owner, 2026-11-17): committed file and test
   names describe the DOMAIN they cover, never the ad-hoc wave/session/
   branch that produced them (`w27_…` / `me0_…` / `r13_…` style is a
-  no-no — the name must still mean something in a week). Dated wave
-  references inside comments (the ledger style, e.g. the
-  `driver-liveness.mjs` history comments) are history and stay. Pinned
-  mechanically by `TestNoSessionLeakageInFileNames`.
+  no-no — the name must still mean something in a week). Durable docs
+  (this file, agent configs, PRODUCT/README) cite incidents by date and
+  description, never by wave/session token — the pattern examples in
+  this rule and the worktree-naming convention are shapes, not
+  citations. Dated wave references inside code comments (the ledger
+  style, e.g. the `driver-liveness.mjs` history comments) are history
+  and stay. Pinned mechanically by `TestNoSessionLeakageInFileNames`.
 - **`deep-clean` stays opt-in:** never make it a prerequisite of build/test
   targets; it deletes the selected instance's library DB (`spectra.db`) by
   design, gated behind `CONFIRM=1` (see "Instance isolation (XDG)").
@@ -312,7 +315,7 @@ Canonical homes (extend these, don't fork them):
 | Concern | Canonical home |
 |---|---|
 | Negative-round filter semantics | `store.queryEvents` — `exactRound` for round detail; `RoundFrom`/`RoundTo` inclusive range with 0 = open bound |
-| KAST / K-D expressions | `store/queries.go` consts — `kastPerMatchSQL`/`kdPerMatchSQL` are RETIRED from production (W3/W4: trend, history and the report read-back serve stored metric rows) and survive only as the reference oracles in `metric_series_read_test.go`; the career-layer twins (`kastCareerSQL`/`kdCareerSQL`) died with the career dual-write removal — `RebuildCareer` writes raw counts only and every derived career number is a stored metric row |
+| KAST / K-D expressions | `store/queries.go` consts — `kastPerMatchSQL`/`kdPerMatchSQL` are RETIRED from production (trend, history and the report read-back serve stored metric rows) and survive only as the reference oracles in `metric_series_read_test.go`; the career-layer twins (`kastCareerSQL`/`kdCareerSQL`) died with the career dual-write removal — `RebuildCareer` writes raw counts only and every derived career number is a stored metric row |
 | Player-name joins | `store.playersJoin` — builds the join fragments; LEFT joins carry the empty-steam guard, INNER deliberately do not |
 | Column lists | one `<table>Cols` const per table in `internal/store`, pinned to the DDL by `TestColumnListConstsMatchSchema` |
 | Delete-then-insert writers | `store.replaceMatchRows` — voice/plugin/`SaveExtracted` keep bespoke tx (atomicity/upsert reasons in code) |
