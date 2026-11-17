@@ -42,11 +42,11 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: the sixty-one schema-seeded builtins
+// TestBuiltinMetricsPreview: the sixty-one schema-seeded builtins
 // (trade_rate + the dogfooding set + the inferred set + the plan §7 M3
 // combat-damage addendum) each compile and run on a fresh library — the
 // DoD "demonstrably expressible" loop end to end.
-func TestM5BuiltinMetricsPreview(t *testing.T) {
+func TestBuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
 	// group_by is gone from the DDL (stored-metrics W1) and the groupBy
 	// parameter with the W2 grammar wave: the row is locked by scope and
@@ -111,10 +111,10 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 	}
 }
 
-// TestM5ConsoleSafety composes the console session against the same
+// TestConsoleSafety composes the console session against the same
 // library: reads work, injection shapes die before execution, data stays
 // intact, history records every run, and the timeout interrupts.
-func TestM5ConsoleSafety(t *testing.T) {
+func TestConsoleSafety(t *testing.T) {
 	st := openSeededLibrary(t)
 	s := query.New(st)
 

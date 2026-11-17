@@ -216,7 +216,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **Tests:** `-short` must skip anything network-bound (`testing.Short()`).
 - **No session leakage** (owner, 2026-11-17): committed file and test
   names describe the DOMAIN they cover, never the ad-hoc wave/session/
-  branch that produced them (`w27_…` / `me0_…` / `r13_…` style is a
+  branch that produced them nor a plan-item number (wave/session/plan
+  tokens: `w27_…` / `me0_…` / `r13_…` / `m5_…` style is a
   no-no — the name must still mean something in a week). Durable docs
   (this file, agent configs, PRODUCT/README) cite incidents by date and
   description, never by wave/session token — the pattern examples in
