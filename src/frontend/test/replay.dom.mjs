@@ -177,6 +177,10 @@ for (const rel of [
   // audio-real.js copy below re-exports GST_AUDIO_HINT through) imports —
   // copy it or the audio graph fails to link above.
   'voicewindows.js',
+  // audioresume.js is THE AudioContext resume retry both replay engines
+  // import (gesture listeners + the RESUME_MS race) — copy it or the
+  // sfx.js and audio-real.js graphs fail to link above.
+  'audioresume.js',
   'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js', 'bomb.js', 'roundcut.js',
   // kits.js is the defuse-kit evidence Replay builds (buildKitEvidence
   // over the draw feed + the buytime_ended read) and pushes through

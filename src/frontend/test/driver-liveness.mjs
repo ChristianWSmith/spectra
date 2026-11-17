@@ -930,6 +930,20 @@ const EXPECTED = {
   // retired folder-picker pins died with the control; §K untouched.
   // (w27's delta is 0 — its 111 was based pre-w26; lead rebased to 112.)
   'settings.dom.mjs': 112,
+  // sfx-engine.dom.mjs is NEW at 5 (2026-11-17, first-load audio resume):
+  // the sound-effect engine's liveness contract, mirroring voice-engine
+  // — A: a suspended-at-construction context starts SILENTLY on the
+  // first document pointerdown (no pending field, no error, cues then
+  // flow); B: destroy() removes every retry listener (no leaks — a
+  // post-destroy gesture attempts no resume and the context stays
+  // closed); C: a REJECTED resume reports the GStreamer hint exactly
+  // once and never re-arms (no second report, no listener resurrection);
+  // D: cues NEVER spawn while the context is suspended (silence, never
+  // a backlog — several playing changes across the fuse, zero sources);
+  // E: the bounded gesture-free backoff reaches running with NO DOM
+  // event at all (fake timers drive the ladder — the first-context
+  // device-init race recovers with no user action).
+  'sfx-engine.dom.mjs': 5,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines
   // are source-pinned in progress-presentation, its engine in Go), so
@@ -1025,7 +1039,14 @@ const EXPECTED = {
   // check gained the both-cards-hide condition (returning with the
   // clear). Sections A–H, J, L–N keep their counts.
   'utility.dom.mjs': 74,
-  'voice-engine.dom.mjs': 7,
+  // voice-engine 7 → 8 (2026-11-17, first-load audio resume): +1 the
+  // enable-withdrawal pin — setEnabled(false) while suspended tears the
+  // shared retry down through the SAME clear() destroy uses (the parked
+  // listeners come down with it: a later gesture with a working device
+  // cannot resurrect the withdrawn enable, and the withdrawal itself is
+  // never an error). The retry mechanics moved from audio.js into the
+  // shared audioresume.js helper; this pins the disable path through it.
+  'voice-engine.dom.mjs': 8,
 };
 
 const driverFiles = () =>

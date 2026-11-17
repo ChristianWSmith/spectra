@@ -1522,9 +1522,14 @@ test('c4BeepGroup: deterministic site → tone key — an unknown site is silenc
 // a seek or a resolved bomb silences the queue (re-seeds drop what they
 // crossed, never queue it twice).
 
+// Scripted AudioContext (the voice harness's modes — both engines are
+// scripted the same way): starts SUSPENDED and flips to 'running' on
+// resume() unless the test parks it in 'blocked' (pending promise —
+// the autoplay policy) or 'broken' (REJECTS — a dead audio device).
+let resumeMode = 'running';
 class FakeAudioContext {
   constructor() {
-    this.state = 'running';
+    this.state = 'suspended';
     this.currentTime = 0;
     this.destination = { name: 'destination' };
     this.gains = []; // creation order in sfx.js: guns, utility, C4, announcer
@@ -1574,7 +1579,12 @@ class FakeAudioContext {
     return Promise.resolve({ url, duration: SOUND_DURATIONS[url] });
   }
   resume() {
-    return Promise.resolve();
+    if (resumeMode === 'running') {
+      this.state = 'running';
+      return Promise.resolve();
+    }
+    if (resumeMode === 'broken') return Promise.reject(new Error('audio device failed'));
+    return new Promise(() => {}); // blocked: pending forever
   }
   close() {
     this.state = 'closed';
@@ -2384,6 +2394,60 @@ test('engine: footsteps default = fader 0.8 + muted → gain 0; unmute → 0.8 �
     sfx.destroy();
   } finally {
     restoreFetch();
+  }
+});
+
+// --- suspension / device-failure contract (the voice harness's modes) ---
+// The two non-running resume modes pin the liveness contract at the
+// unit level: a SUSPENDED context spawns no cue (every play path gates
+// on running — silence, never a queued backlog) and a REJECTED resume
+// reports the GStreamer hint exactly once — a later play-edge attempt
+// must never re-report or resurrect the retry.
+
+test('engine: a suspended context spawns no cue (silence, never a backlog)', async () => {
+  const prevMode = resumeMode;
+  resumeMode = 'blocked';
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    assert.equal(ctx.state, 'suspended', 'a blocked resume keeps the context suspended');
+    sfx.setLandmarks(c4Rows('A'));
+    engine.emit({ playing: true, speed: 8, tick: C4_PLANT });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(ctx.sources.length, 0, 'no beep (and no cue) while suspended');
+    assert.equal(sfx.state.error, '', 'mere suspension is never an error');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+    resumeMode = prevMode;
+  }
+});
+
+test('engine: a REJECTED resume reports the GStreamer hint exactly once', async () => {
+  const prevMode = resumeMode;
+  resumeMode = 'broken';
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const engine = fakeEngine();
+    const errors = [];
+    // Constructed by hand (not makeSfx): the construction attempt is
+    // ALREADY the device failure here, so makeSfx's zero-errors
+    // precondition does not apply.
+    const sfx = createSfxEngine({ engine, matchId: 1, onError: (m) => errors.push(m) });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(errors.length, 1, 'the broken device is reported once');
+    assert.match(sfx.state.error, /gst-plugins-good|GStreamer/);
+    // A later play-edge attempt (the engine retries on every play
+    // start) must neither re-report nor re-arm the retry.
+    engine.emit({ playing: true, speed: 1, tick: 0 });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(errors.length, 1, 'exactly one report — no second failure');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+    resumeMode = prevMode;
   }
 });
 
