@@ -2040,6 +2040,70 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
+// w25 — the shape pref's SEED side (Match's pref-gated selection seed).
+// This driver's registry is never reset anywhere else and the harness id
+// is fixed (match:3:selection), so section M's transpose flips are still
+// in it — every fresh-registry pin below starts with resetViewState() on
+// the SAME instance Match links (combat.dom.mjs's copied-tree import).
+const viewstate = await import(pathToFileURL(join(dir, 'viewstate.svelte.js')).href);
+
+console.log('N. the scoreboard-opens-transposed pref (w25): the shape a match opens in, session record wins, default off');
+{
+  // Scripted through the per-key getPref function (the N4 hidden-column
+  // idiom above): absent keys fall through to undefined ⇒ off.
+  let prefReads = 0;
+  const sbOn = {
+    ...dataFor(13),
+    getPref: (k) => {
+      if (k === 'scoreboard_starts_transposed') {
+        prefReads += 1;
+        return true;
+      }
+      return undefined;
+    },
+  };
+  const table = () => root.querySelector('.data-table.scoreboard');
+  const tBtn = () => table()?.querySelector('thead th:first-child .sb-transpose');
+  const isTransposed = () => !!table() && table().classList.contains('transposed');
+  const pressed = () => tBtn()?.getAttribute('aria-pressed');
+
+  // (1) fresh registry + pref ON → the scoreboard opens TRANSPOSED with
+  // NO click at all (the pref-gated seed applies the pref default).
+  viewstate.resetViewState();
+  root = await showMatch(sbOn, { routeTab: 'Scoreboard' });
+  await sleep();
+  check(
+    '(1) pref ON + fresh registry → the scoreboard opens TRANSPOSED with no click (the button reads pressed)',
+    isTransposed() && pressed() === 'true' && prefReads >= 1,
+    `transposed=${isTransposed()} pressed=${pressed()} prefReads=${prefReads}`,
+  );
+
+  // (3) a session RECORD wins over the pref: flip back to player rows
+  // (recorded through the write-through), then remount with the pref
+  // still ON → it stays player rows. Runs BEFORE (2): the record it
+  // asserts must survive from (1), and (2)'s fresh reset would wipe it.
+  const readsAfterFirst = prefReads;
+  clickEl(tBtn());
+  await sleep();
+  root = await showMatch(sbOn, { routeTab: 'Scoreboard' });
+  await sleep();
+  check(
+    '(3) a session record wins over the pref — flipped to player rows, remount with the pref still ON stays player rows',
+    !isTransposed() && pressed() === 'false' && prefReads > readsAfterFirst,
+    `transposed=${isTransposed()} pressed=${pressed()} prefReads=${prefReads} (was ${readsAfterFirst})`,
+  );
+
+  // (2) fresh registry + pref ABSENT → player rows (the default is OFF).
+  viewstate.resetViewState();
+  root = await showMatch(dataFor(13), { routeTab: 'Scoreboard' });
+  await sleep();
+  check(
+    '(2) pref absent + fresh registry → NOT transposed (the default is off)',
+    !isTransposed() && pressed() === 'false',
+    `transposed=${isTransposed()} pressed=${pressed()}`,
+  );
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

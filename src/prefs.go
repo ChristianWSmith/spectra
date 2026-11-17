@@ -54,6 +54,18 @@ const (
 	prefsMetricHiddenMatchKey   = "metric_hidden_match"
 	prefsMetricHiddenProfileKey = "metric_hidden_profile"
 
+	// prefsScoreboardStartsTransposedKey is the ordering dialog's THIRD
+	// pref (metricorder.js STARTS_TRANSPOSED_KEY): whether a match's
+	// scoreboard opens TRANSPOSED (players as columns). Boolean,
+	// DEFAULT false (unset/corrupt ⇒ player rows — the frontend reads
+	// only the literal true). Written by the dialog's "Scoreboard starts
+	// transposed" checkbox, read by the Match view once per mount as the
+	// shape a match opens in — it is NOT part of the order sequence and
+	// NOT visibility, so Reset order never touches it. Same
+	// frontend-written / Go-never-consumes contract as the pair above
+	// (font_size precedent).
+	prefsScoreboardStartsTransposedKey = "scoreboard_starts_transposed"
+
 	// The knife/warmup display pref (show knife + warmup rounds in the
 	// round lists) is RETIRED: the extractor discards knife/warmup
 	// rounds at ingest, so every stored round is a counted round and

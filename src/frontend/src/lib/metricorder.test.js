@@ -6,8 +6,9 @@
 // '@'-namespaced sequence entries with negative ranks + metrics), the
 // absent-vs-present pins rule (§1.6), the compositions (the metric-only
 // ∩ pins, and the one merged composedSequence), the visibility pref
-// pair, and the read/write/reset routing over the kvstore pref keys
-// (§1.2).
+// pair, the read/write/reset routing over the kvstore pref keys
+// (§1.2), and the dialog's third pref — the scoreboard's opening shape
+// (w25: a boolean, absent ⇒ off, no reset path).
 //
 // services.js loads against the shared TEST STUBS for its bindings
 // (the same redirect services-cache.test.js uses) — the real bindings
@@ -36,6 +37,7 @@ const bindings = await import('../../test/stubs/bindings.mjs');
 const {
   ORDER_KEYS,
   HIDDEN_KEYS,
+  STARTS_TRANSPOSED_KEY,
   DEFAULT_RANKS,
   DEFAULT_PINS,
   FIXED_BLOCK,
@@ -57,6 +59,8 @@ const {
   readHidden,
   writeHidden,
   resetHidden,
+  readStartsTransposed,
+  writeStartsTransposed,
 } = mo;
 
 // The METRIC half of a resolved sequence — the fixed keys stripped,
@@ -682,6 +686,58 @@ test('resetHidden deletes the visibility key (its own reset — resetOrder never
     { method: 'Delete', args: ['metric_hidden_match'] },
     { method: 'Delete', args: ['metric_hidden_profile'] },
   ]);
+});
+
+// --- The dialog's THIRD pref: the scoreboard's opening shape (w25) -----------
+
+test('STARTS_TRANSPOSED_KEY is the dialog\'s third pref — a bare boolean key outside the order/hidden tables', () => {
+  assert.equal(STARTS_TRANSPOSED_KEY, 'scoreboard_starts_transposed');
+  // NOT a sequence entry and not visibility: it never rides either scope
+  // table (a collision would make Reset order or a visibility write hit
+  // the shape), and like every other pref here it carries no version
+  // marker (pre-release no-versioning policy).
+  assert.ok(!Object.values(ORDER_KEYS).includes(STARTS_TRANSPOSED_KEY));
+  assert.ok(!Object.values(HIDDEN_KEYS).includes(STARTS_TRANSPOSED_KEY));
+  assert.ok(!/\bv\d\b|version|_v/.test(STARTS_TRANSPOSED_KEY));
+});
+
+test('readStartsTransposed: only the literal true reads as on; absent/corrupt ⇒ false', async () => {
+  bindings.resetCalls();
+  bindings.handlers.GetPref = (key) =>
+    key === 'scoreboard_starts_transposed' ? true : undefined;
+  assert.equal(await readStartsTransposed(), true, 'a stored true reads as on');
+  bindings.handlers.GetPref = (key) =>
+    key === 'scoreboard_starts_transposed' ? 'yes' : undefined;
+  assert.equal(await readStartsTransposed(), false, 'a non-boolean pref reads as off');
+  delete bindings.handlers.GetPref;
+  bindings.resetCalls();
+  assert.equal(await readStartsTransposed(), false, 'ABSENT ⇒ off (the default, player rows)');
+  assert.deepEqual(
+    bindings.calls.map((c) => [c.method, c.args]),
+    [['GetPref', ['scoreboard_starts_transposed']]],
+    'one GetPref with the bare key',
+  );
+});
+
+test('writeStartsTransposed persists a strict boolean under the shape key (no reset path)', async () => {
+  bindings.resetCalls();
+  await writeStartsTransposed(true);
+  await writeStartsTransposed(false);
+  await writeStartsTransposed('yes'); // never stored verbatim — the reader is `v === true`
+  assert.deepEqual(bindings.calls, [
+    { method: 'SetPref', args: ['scoreboard_starts_transposed', true] },
+    { method: 'SetPref', args: ['scoreboard_starts_transposed', false] },
+    { method: 'SetPref', args: ['scoreboard_starts_transposed', false] },
+  ]);
+  // Reset order deletes only the two pref PAIRS — the shape key is never
+  // deleted from here (there is deliberately no resetStartsTransposed).
+  await resetOrder('match');
+  await resetHidden('match');
+  assert.deepEqual(
+    bindings.calls.filter((c) => c.args[0] === 'scoreboard_starts_transposed').map((c) => c.method),
+    ['SetPref', 'SetPref', 'SetPref'],
+    'no Delete ever targets the shape key',
+  );
 });
 
 test('defaultRanker: unranked/user names are ∞, unknown scopes rank everything ∞', () => {
