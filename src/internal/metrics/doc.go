@@ -116,6 +116,27 @@
 // the source set's whitelist before compilation, unknown →
 // ExprError{Message,Pos}.
 //
+// exists(<cond>) is the one condition CONSTRUCT (plan §6.2 / D7): a
+// correlated existence test — `exists(<cond>)` holds for the row being
+// tested when ANOTHER row of the expression's PRIMARY source matches
+// <cond> (N2: damage rows whose kill is on the same tick/attacker/
+// victim). It is legal exactly where a condition is (count()'s argument,
+// a where filter — every VALUE position refuses it with its own message)
+// and never nests. Inside its parentheses the two operand kinds split:
+// bare columns name the INNER scan and are validated against the
+// PRIMARY source's whitelist only (a secondary's column would silently
+// bind the outer row inside the subquery), and `outer.<column>` names
+// the row being tested — the construct's one qualifier; the expression's
+// own source cannot qualify itself (the subquery already scans it) and
+// no other qualifier exists. Emission aliases the inner scan (x0) so an
+// outer reference can never resolve to it, and the engine correlates
+// the two rows on match_id with no user text (the join-ON discipline),
+// so a match-scoped predicate can never bleed across matches. The
+// current row is a candidate like any other (SQL EXISTS semantics);
+// the condition itself distinguishes it (N2's kind predicate). Depth
+// counts toward maxCondDepth; the statement runs on the same
+// read-only session under the same row cap as any other.
+//
 // # Metric references (metric('name'))
 //
 // A ref reads ANOTHER saved metric's value: `ratio(sum(dmg),
