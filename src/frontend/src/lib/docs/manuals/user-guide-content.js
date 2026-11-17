@@ -502,6 +502,32 @@ a player or a round where the scope needs one — and **Preview** renders the bo
 unsaved, showing the document exactly as it would be written out. Nothing is chosen for you: the
 preview stays off until you pick a target.
 
+**Inside the braces** — every \`{{ … }}\` names one value by its path from the top of the data:
+\`{{.Match.Map}}\` is the match's map, \`{{.Detail.Round.Number}}\` a round's number. What sits at
+the top follows the template's **Scope**:
+
+- **match** — \`{{.Match}}\` (the match itself: map, file, score, round count, duration, tick rate,
+  import details), \`{{.CTName}}\` / \`{{.TName}}\` (the teams' display names), \`{{.Scoreboard}}\`
+  (a row per player), \`{{.Rounds}}\` (a row per round), \`{{.Economy}}\` (each round's buys:
+  equipment, money and loss bonus per side, buy class), \`{{.Clutches}}\` (round, player, size,
+  outcome, HP left), \`{{.Utility}}\` (each throw: tick, thrower, kind, damage, flash, site),
+  \`{{.Metrics}}\`, \`{{.GeneratedAt}}\` (when it rendered).
+- **player** — \`{{.Match}}\`, \`{{.SteamID}}\`, \`{{.Player}}\` (that player's own scoreboard row),
+  \`{{.Rounds}}\` (their per-round rows), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\`.
+- **round** — \`{{.Match}}\`, \`{{.GeneratedAt}}\` and \`{{.Detail}}\`: \`{{.Detail.Round}}\` (winner,
+  reason, duration, site, MVP, first kill, equipment, ticks), \`{{.Detail.Economy}}\` (a row per
+  side), \`{{.Detail.Events}}\` (tick, kind, attacker, victim, weapon, damage) and
+  \`{{.Detail.Chat}}\` (tick, name, channel, text).
+
+To walk a list, \`{{range .Scoreboard}} … {{end}}\` loops it and \`.\` becomes the row being
+printed (\`{{.Name}}\`, \`{{.Kills}}\`), with \`$\` still meaning the top of the data.
+\`{{.Metrics}}\` (match and player scopes) is looked up instead of looped: it carries the stat
+values the built-ins print — ADR, HS%, KD, KDA, assists, openings, trades, best streak, enemies
+flashed — under each player's \`SteamID\`, a dash where a value isn't current, fetched as
+\`{{index $.Metrics .SteamID}}\`. Number formatting (\`{{printf "%.1f" .DurationS}}\`) and value
+tests (\`{{if eq .Channel "all"}}\`) appear in the built-ins as well — and each built-in's body
+loads read-only in the editor, so the templates are worked examples to copy from.
+
 **Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
 templates can't be edited*), but you can still read and preview them. Plugin templates carry a
 *read-only source* chip; saving one stores a copy as your own. Only your own templates can be
