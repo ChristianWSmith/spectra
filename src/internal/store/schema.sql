@@ -713,9 +713,16 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- seed list names both rows as numeric match seeds) — plus the Option
 -- A count addendum (22 rows: 16 match raw player_stats count rows + 6
 -- profile rows — owner Option A extension, 2026-11-17, an owner
--- amendment the plan's §8 does not list). Scope split: 64 match / 19
+-- amendment the plan's §8 does not list) — plus the subject-axis
+-- addendum (4 rows with an explicit subject in their own INSERT: 3
+-- match-scope — lost_equip (match subject) + team_force_win_rate and
+-- team_lost_equip (team subjects) — and 1 profile win_pct; plan §8
+-- (M8/M4 rows), 2026-11-17 — the M8/M4 rows the grammar expresses;
+-- pistol_hold and avg_equip_gap are NOT expressible in the current
+-- grammar (no next-round window, no per-row subtraction) and are
+-- reported rather than approximated). Scope split: 67 match / 20
 -- profile (2026-11-17: +2 match M3, then +16 match +6 profile Option
--- A).
+-- A, then +3 match +1 profile subject-axis).
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -807,15 +814,18 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly eighty-three — trade_rate
+-- THE builtins, seeded (see header): exactly eighty-seven — trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
 -- rows: 38 match / 4 profile), the M3 combat-damage addendum (2
 -- match rows, dmg_no_kill + kill_conversion — plan §7 M3/§8, the
--- 2026-11-17 count re-pin) and the Option A count addendum (22 rows:
+-- 2026-11-17 count re-pin), the Option A count addendum (22 rows:
 -- 16 match raw-count rows + 6 profile rows — owner Option A
--- extension, 2026-11-17), each with the interpretation recorded
--- in its doc. The eighth match-scope dogfooding row (kda, w13d's
+-- extension, 2026-11-17) and the subject-axis addendum (4 rows —
+-- plan §8 (M8/M4 rows), 2026-11-17: lost_equip + win_pct restate the
+-- Economy/profile cards' Formula titles, the two team rows are the
+-- per-team halves of the same Economy cards; each with the
+-- interpretation recorded in its doc). The eighth match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of this INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
 -- name), so its position changes nothing but the numbering.
@@ -1313,6 +1323,45 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))',
  'match', 'float2',
  'Formula: sum(player_stats.kills + player_stats.assists) / max(sum(player_stats.deaths), 1) — kills plus assists per death, addressed per player — a deathless subject divides by 1, like the scoreboard.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- Subject-axis addendum (metrics expansion §8 M8/M4 rows,
+-- 2026-11-17): FOUR builtins whose addressing is WRITTEN explicitly —
+-- the INSERT above predates the subject column's writers and keeps the
+-- player default for its rows, so the non-player rows ride this second
+-- statement (same INSERT OR IGNORE add-on path, keyed on the UNIQUE
+-- name). Equivalence with the characterization-pinned cards:
+-- lost_equip / team_force_win_rate / team_lost_equip restate the
+-- Economy view's lost-equip total, per-team force rate and per-team
+-- lost-equip halves (Formula titles in lib/strings/economy.js; the
+-- card numbers are pinned by the economy tables DOM tests) — the seed
+-- reads round_economy.equip_value, which extract.agg writes from the
+-- SAME freezeEnd capture as rounds.equip_ct/equip_t the cards render
+-- (internal/extract/agg.go freezeEnd); win_pct restates the profile
+-- Win% card (100 * Wins / Matches over the stored won stamp —
+-- profileservice.go, pinned by TestWinPctCharacterization). Every doc
+-- is Formula-first and states subject + partition (AGENTS tier-2 doc
+-- rule; no doc hard-codes a count).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('lost_equip', 'Lost equipment', '',
+ 'from round_economy, rounds: sum(where winner != '''' and side != winner and team != '''', equip_value)',
+ 'match', 'match', '', 'currency',
+ 'Formula: sum(round_economy.equip_value) of the losing side over decided, team-known rounds — freeze-end money lost, addressed per match (no partition), over the joined sources — a total; N = rounds.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('team_force_win_rate', 'Force win %', '',
+ 'from round_side_classes, rounds: ratio(count(where class = ''force'' and winner = side), count(where class = ''force''))',
+ 'match', 'team', '', 'percent',
+ 'Formula: force-buy rounds won ÷ that team''s own force-buy rounds — per-team force win rate, addressed per team (no partition), over the joined sources — a percent; N is the team''s classified rounds.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('team_lost_equip', 'Team lost equipment', '',
+ 'from round_economy, rounds: sum(where winner != '''' and side != winner and team != '''', equip_value)',
+ 'match', 'team', '', 'currency',
+ 'Formula: sum(round_economy.equip_value) of that team''s losing rounds — freeze-end money the team lost, addressed per team (no partition), over the joined sources — a total; N counts its lost rounds.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('win_pct', 'Win %', '',
+ 'from player_stats: ratio(sum(won), count())',
+ 'profile', 'player', '', 'percent',
+ 'Formula: sum(player_stats.won) / count() — match wins ÷ matches played over a career, addressed per player (no partition) — a percent; ties count as no wins; N = matches played.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

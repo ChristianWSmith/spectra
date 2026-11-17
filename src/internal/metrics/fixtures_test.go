@@ -35,18 +35,23 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the EIGHTY-THREE schema-seeded builtins (schema.sql —
-// name/expr/scope/format/short_name/denominator are LOCKED to the
-// baseline seed by this table) onto their hand-computed seed
+// builtinSeed maps the EIGHTY-SEVEN schema-seeded builtins (schema.sql —
+// name/expr/scope/subject/format/short_name/denominator are LOCKED to
+// the baseline seed by this table) onto their hand-computed seed
 // expectations. (2026-11-17 re-pin of the FIFTY-NINE count: plan §7 M3
 // / §8 adds the dmg_no_kill + kill_conversion match rows; the same
 // day's owner Option A extension adds the 22-row count addendum —
 // EIGHTY-THREE / 64 match + 19 profile — an owner amendment the
-// plan's §8 does not list.) interpretation records how the seeded expression states
+// plan's §8 does not list; the subject-axis addendum (plan §8 (M8/M4
+// rows), 2026-11-17) then adds 4 rows with an explicit subject —
+// EIGHTY-SEVEN / 67 match + 20 profile — pistol_hold and
+// avg_equip_gap among the plan's six rows reported NOT expressible in
+// the grammar.) interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
-// live in the row's doc). There is no groupBy input: since W2 every
-// statement is subject-grouped by the engine, which is exactly the
-// per-player shape this test proves.
+// live in the row's doc). Since the subject axis, every statement is
+// grouped by the DECLARED subject's key — the player shape for the
+// player rows (the groupBy parameter retired with W2), the match/team
+// key for the addendum rows.
 //
 // The expectations are hand-computed over the committed corpus
 // (testdata/seed.sql — 3 identical matches × 8 players × 24 rounds;
@@ -64,6 +69,7 @@ var builtinSeed = []struct {
 	name           string
 	expr           string
 	scope          string
+	subject        string // "" = player (the DDL default the player rows rely on)
 	format         string
 	shortName      string
 	denominator    string
@@ -714,6 +720,55 @@ var builtinSeed = []struct {
 		interpretation: "matches the player appears in (corpus: 3)",
 		rows:           8, wantAll: 3, wantN: 3, wantLabels: eightLabels,
 	},
+	// ---- subject-axis addendum (plan §8 (M8/M4 rows), 2026-11-17):
+	// the first non-player rows — subject WRITTEN, values hand-computed
+	// over the corpus team stamps (sides never switch, so team = side).
+	{
+		// The Economy card's lost-equip total (its Formula title) over
+		// the joined sources: every corpus round is decided (winner
+		// alternates by parity), loser side equip 2000 after a CT win
+		// (odd rounds ×12) and 2500 after a T win (even ×12):
+		// 12×2000 + 12×2500 = 54000 per match; N is the GROUP's rows —
+		// every economy row of the match (24 rounds × 2 sides = 48) —
+		// the filter shapes the value, never N (one spelling).
+		name:  "lost_equip",
+		expr:  "from round_economy, rounds: sum(where winner != '' and side != winner and team != '', equip_value)",
+		scope: "match", subject: "match", format: "currency", shortName: "", denominator: "",
+		interpretation: "freeze-end money lost by the losing side over decided, team-known rounds — the card total, addressed per match (over the joined sources)",
+		rows:           3, wantAll: 54000, wantN: 48, wantLabels: "1,2,3",
+	},
+	{
+		// The Economy card's per-team force half: team ct wins only
+		// round 3 of its three force rounds (1/3), team t wins rounds 2
+		// and 4 (2/3); match 1 carries no class rows (join_test's
+		// classification rig owns that match's analysis tables) — two
+		// matches × two teams, N = the team's classified rounds.
+		name:  "team_force_win_rate",
+		expr:  "from round_side_classes, rounds: ratio(count(where class = 'force' and winner = side), count(where class = 'force'))",
+		scope: "match", subject: "team", format: "percent", shortName: "", denominator: "",
+		interpretation: "force-buy rounds won ÷ that team's own force rounds — the card's per-team force rate (over the joined sources)",
+		rows:           4, wantValues: []float64{1.0 / 3, 2.0 / 3, 1.0 / 3, 2.0 / 3}, wantN: 3, wantLabels: "ct,t,ct,t",
+	},
+	{
+		// The Economy card's per-team lost-equip split: the loser row's
+		// team takes the money — ct loses the 12 even rounds at 2500
+		// (30000), t the 12 odd rounds at 2000 (24000), per match; N is
+		// the group's rows — every economy row of that team (24 rounds).
+		name:  "team_lost_equip",
+		expr:  "from round_economy, rounds: sum(where winner != '' and side != winner and team != '', equip_value)",
+		scope: "match", subject: "team", format: "currency", shortName: "", denominator: "",
+		interpretation: "the losing side's freeze-end money credited to its team — the card's per-team split (over the joined sources)",
+		rows:           6, wantValues: []float64{30000, 24000, 30000, 24000, 30000, 24000}, wantN: 24, wantLabels: "ct,t,ct,t,ct,t",
+	},
+	{
+		// The profile Win% card's ratio over the won stamp: the corpus
+		// matches are all 12-12 ties (won = 0 — a tie is not a win,
+		// models.WinFor), so every career row is 0/3.
+		name: "win_pct", expr: "from player_stats: ratio(sum(won), count())",
+		scope: "profile", format: "percent", shortName: "", denominator: "",
+		interpretation: "career wins ÷ matches played — the profile Win% card's stored twin (ties are no wins → 0 over the tied corpus)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
 }
 
 // eightLabels is the corpus roster in subject (steam_id) ASC order —
@@ -740,18 +795,18 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 	// of exactly the multi-source exprs (the criterion that partitions
 	// the two phrasings).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, scope, subject, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
 	)
 	if err != nil {
 		t.Fatalf("read builtins: %v", err)
 	}
-	type seedRow struct{ expr, scope, denom, doc, format, shortName string }
+	type seedRow struct{ expr, scope, subject, denom, doc, format, shortName string }
 	got := map[string]seedRow{}
 	for _, r := range res.Rows {
 		got[r[0].(string)] = seedRow{
-			expr: r[1].(string), scope: r[2].(string), denom: r[3].(string),
-			doc: r[4].(string), format: r[5].(string), shortName: r[6].(string),
+			expr: r[1].(string), scope: r[2].(string), subject: r[3].(string), denom: r[4].(string),
+			doc: r[5].(string), format: r[6].(string), shortName: r[7].(string),
 		}
 	}
 	if len(got) != len(builtinSeed) {
@@ -763,9 +818,13 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 			t.Errorf("builtin %q missing from the schema seed", f.name)
 			continue
 		}
-		if row.expr != f.expr || row.scope != f.scope || row.denom != f.denominator {
-			t.Errorf("builtin %q seeded row = expr %q scope %q denom %q, want expr %q scope %q denom %q",
-				f.name, row.expr, row.scope, row.denom, f.expr, f.scope, f.denominator)
+		wantSubject := f.subject
+		if wantSubject == "" {
+			wantSubject = "player" // the DDL default every player row relies on
+		}
+		if row.expr != f.expr || row.scope != f.scope || row.subject != wantSubject || row.denom != f.denominator {
+			t.Errorf("builtin %q seeded row = expr %q scope %q subject %q denom %q, want expr %q scope %q subject %q denom %q",
+				f.name, row.expr, row.scope, row.subject, row.denom, f.expr, f.scope, wantSubject, f.denominator)
 		}
 		if row.format != f.format {
 			t.Errorf("builtin %q format = %q, want %q", f.name, row.format, f.format)
@@ -779,8 +838,8 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 		if strings.Contains(row.doc, "grouped by player") {
 			t.Errorf("builtin %q doc still carries the retired groupBy phrasing: %s", f.name, row.doc)
 		}
-		if !strings.Contains(row.doc, "addressed per player") {
-			t.Errorf("builtin %q doc missing the subject-addressed phrasing: %s", f.name, row.doc)
+		if want := "addressed per " + wantSubject; !strings.Contains(row.doc, want) {
+			t.Errorf("builtin %q doc missing %q (the subject-addressed phrasing): %s", f.name, want, row.doc)
 		}
 		// The join wording is required of exactly the MULTI-SOURCE
 		// exprs — the source clause (up to the ":") carries the comma,
@@ -797,10 +856,18 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 	// (b)+(c)+(d) compile → run → assert values, sample sizes, labels.
 	for _, f := range builtinSeed {
 		t.Run(f.name, func(t *testing.T) {
-			if perr := Validate(f.expr); perr != nil {
-				t.Fatalf("Validate: %v", perr)
+			wantSubject := f.subject
+			if wantSubject == "" {
+				wantSubject = "player"
 			}
-			pv, perr, err := RunPreview(st, Def{Expr: f.expr, Denominator: f.denominator}, "", 500)
+			addr := Address{Subject: wantSubject, Profile: f.scope == "profile"}
+			if _, perr := Compile(f.expr, "", "", addr); perr != nil {
+				t.Fatalf("Compile: %v", perr)
+			}
+			pv, perr, err := RunPreview(st, Def{
+				Expr: f.expr, Denominator: f.denominator,
+				Subject: wantSubject, Profile: f.scope == "profile",
+			}, "", 500)
 			if perr != nil {
 				t.Fatalf("parse: %v", perr)
 			}
@@ -845,6 +912,9 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 		"events": 1944, "player_round_stats": 576, "round_economy": 144,
 		"engagements": 216, "utility_events": 216,
 		"chat": 12,
+		// Subject-axis seed inputs: force class rows for matches 2-3
+		// only (match 1 belongs to join_test's classification rig).
+		"round_side_classes": 12,
 		// Join fixtures: 3 matches × 7 rows (opps = 10i for i ≤ 6,
 		// Grace stored-zero; Heidi absent — seed.sql header).
 		"match_trade_opps": 21,

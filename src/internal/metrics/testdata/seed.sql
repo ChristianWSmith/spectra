@@ -3279,3 +3279,29 @@ INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '7656
 INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000005', 50, 5);
 INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000006', 60, 6);
 INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000007', 0, 0);
+-- Subject-axis seed inputs (metrics expansion §8 M8/M4 rows,
+-- 2026-11-17): the corpus matches have NO side switches
+-- (side_switches = 0), so each side row's team IS its side — the §5
+-- teamKeyAt value — and one UPDATE stamps every economy row with it.
+-- Force class rows for MATCHES 2-3 only (rounds 2-4, both sides;
+-- winners alternate ct/t by round parity): team ct wins only round 3
+-- of them (1/3), team t wins rounds 2 and 4 (2/3). Match 1 is left
+-- EMPTY on purpose — join_test's classification rig owns that match's
+-- analysis tables and inserts its own rows there. Deliberate fixture
+-- extension: no pre-existing seed reads round_economy.team or
+-- round_side_classes (the side_class_* seeds lead with
+-- round_player_sides, which the corpus still does not carry — those
+-- stay no-row), so no pinned expectation moves.
+UPDATE round_economy SET team = side;
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 2, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 2, 't', 'force', 'seed fixture', 't');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 3, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 3, 't', 'force', 'seed fixture', 't');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 4, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (2, 4, 't', 'force', 'seed fixture', 't');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 2, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 2, 't', 'force', 'seed fixture', 't');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 3, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 3, 't', 'force', 'seed fixture', 't');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 4, 'ct', 'force', 'seed fixture', 'ct');
+INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 4, 't', 'force', 'seed fixture', 't');
