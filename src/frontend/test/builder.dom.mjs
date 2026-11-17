@@ -320,12 +320,12 @@ bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
       // sorts before "41.2%" lexicographically — a text sort cannot
       // pass these checks. Ns descend 13 → 7 → 3 in arrival order.
       rows.push(
-        { metricId: id, steamId: '76561198000000001', value: 0.412, n: 13 },
-        { metricId: id, steamId: '76561198000000002', value: 0.9, n: 7 },
-        { metricId: id, steamId: '76561198000000003', value: 0.05, n: 3 },
+        { metricId: id, subjectKey: '76561198000000001', value: 0.412, n: 13 },
+        { metricId: id, subjectKey: '76561198000000002', value: 0.9, n: 7 },
+        { metricId: id, subjectKey: '76561198000000003', value: 0.05, n: 3 },
       );
     } else {
-      rows.push({ metricId: id, steamId: '76561198000000001', value: 6, n: 13 });
+      rows.push({ metricId: id, subjectKey: '76561198000000001', value: 6, n: 13 });
     }
   }
   return rows;

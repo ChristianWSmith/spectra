@@ -17,8 +17,8 @@ import (
 // all of it — the read-only console session never reaches these methods.
 
 // metricColumns is the full metrics column list in scan order: the DDL's
-// 13 columns in schema order, pinned by metricColumnsContract.
-const metricColumns = `id, name, title, short_name, expr, scope, format, doc, origin,
+// 15 columns in schema order, pinned by metricColumnsContract.
+const metricColumns = `id, name, title, short_name, expr, scope, subject, partition, format, doc, origin,
 	plugin_id, denominator, version, created_at`
 
 // scanMetric reads one metrics row (created_at is nullable → zero time on
@@ -29,8 +29,8 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		createdAt sql.NullTime
 	)
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.Scope, &m.Format, &m.Doc,
-		&m.Origin, &m.PluginID, &m.Denominator, &m.Version, &createdAt,
+		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.Scope, &m.Subject, &m.Partition,
+		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &m.Denominator, &m.Version, &createdAt,
 	)
 	if err != nil {
 		return models.MetricRow{}, err

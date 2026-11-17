@@ -169,14 +169,14 @@
 //
 //	INNER JOIN metric_values md0 ON md0.metric_id = ?
 //	  AND md0.match_id = <0 | the row's match>
-//	  AND md0.steam_id = <the statement's subject>
+//	  AND md0.subject_key = <the statement's subject>
 //	  AND md0.metric_version = ? AND md0.rule_version = ?
 //
 // The row key is the dependent's subject address — which is why a ref
 // resolves iff the dependent's row key CONTAINS every key column of the
-// dependency's grain (cross-scope rule): match key (match_id, steam_id)
-// and profile key (steam_id). Same-scope refs and a PROFILE dependency
-// inside a match metric are fine (the row's player key carries the
+// dependency's grain (cross-scope rule): match key (match_id, subject_key)
+// and profile key (subject_key). Same-scope refs and a PROFILE dependency
+// inside a match metric are fine (the row's subject key carries the
 // career scalar); a MATCH dependency inside a profile metric is a save
 // error — *"metric 'x' is match-scoped and cannot be used inside a
 // profile-scoped metric (a career value cannot read a per-match value)"*.

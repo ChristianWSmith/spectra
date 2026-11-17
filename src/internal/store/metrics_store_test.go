@@ -22,7 +22,7 @@ import (
 // CONTRACT VIOLATION and must fail this test; computed values keep only
 // their current generation (metric_values), never definitions.
 var metricColumnsContract = []string{
-	"id", "name", "title", "short_name", "expr", "scope", "format", "doc", "origin",
+	"id", "name", "title", "short_name", "expr", "scope", "subject", "partition", "format", "doc", "origin",
 	"plugin_id", "denominator", "version", "created_at",
 }
 

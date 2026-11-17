@@ -556,7 +556,7 @@ func seedStoredValue(t *testing.T, dbPath string, metricID, matchID int64, steam
 	}
 	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(
-		`INSERT INTO metric_values (metric_id, match_id, steam_id, value, n, metric_version, rule_version)
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, value, n, metric_version, rule_version)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		metricID, matchID, steamID, value, n, metricVersion, ruleVersion,
 	); err != nil {

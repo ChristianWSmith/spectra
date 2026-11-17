@@ -28,7 +28,7 @@ func TestTier1IndexesPresent(t *testing.T) {
 		"idx_jobs_match",
 		"idx_match_trade_opps_steam",
 		"idx_metric_values_match",
-		"idx_metric_values_steam",
+		"idx_metric_values_subject",
 		"idx_metric_deps_dep",
 	}
 	for _, name := range want {

@@ -384,7 +384,7 @@ func TestReportMetricReadBack(t *testing.T) {
 	insert := func(d models.MetricRow, version int, steamID string, v float64) {
 		t.Helper()
 		if err := st.InsertMetricValues(d.ID, version, cfg.RuleVersion, []store.MetricValueRow{
-			{MatchID: id, SteamID: steamID, Value: v, N: 5},
+			{MatchID: id, SubjectKey: steamID, Value: v, N: 5},
 		}); err != nil {
 			t.Fatalf("InsertMetricValues(%s): %v", d.Name, err)
 		}
@@ -489,7 +489,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	insert := func(d models.MetricRow, version int, steamID string, v float64) {
 		t.Helper()
 		if err := st.InsertMetricValues(d.ID, version, cfg.RuleVersion, []store.MetricValueRow{
-			{MatchID: id, SteamID: steamID, Value: v, N: 5},
+			{MatchID: id, SubjectKey: steamID, Value: v, N: 5},
 		}); err != nil {
 			t.Fatalf("InsertMetricValues(%s): %v", d.Name, err)
 		}

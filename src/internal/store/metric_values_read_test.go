@@ -19,13 +19,13 @@ import (
 //     GetMetricValuesForMatch, career rows at match_id = 0 via
 //     GetMetricValuesForPlayer — the two never cross);
 //  3. canonical metric order (metricOrder: builtin → user → plugin,
-//     name ASC) then steam_id, so a view zips rows against ListMetrics
+//     name ASC) then subject_key, so a view zips rows against ListMetrics
 //     without a second sort;
 //  4. absent-row honesty — a player the statement produced no row for
 //     has NO row here (never a fabricated 0; the view renders the
 //     state).
 //
-// The DTO shape itself (exactly {metricId, steamId, value, n}) is
+// The DTO shape itself (exactly {metricId, subjectKey, value, n}) is
 // pinned by models.TestMetricValueJSONContract.
 
 // seedOrderMetric inserts a definition with an explicit origin (the
@@ -43,7 +43,7 @@ func seedOrderMetric(t *testing.T, s *Store, name, origin string) models.MetricR
 }
 
 // TestGetMetricValuesForMatchFreshOrderedAndHonest pins the match-grain
-// read: fresh-only serving, canonical metric order then steam_id, the
+// read: fresh-only serving, canonical metric order then subject_key, the
 // grain guard (match id required), the metric filter and absent-row
 // honesty.
 func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
@@ -65,16 +65,16 @@ func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
 	builtin := seedOrderMetric(t, s, "m_builtin", "builtin")
 
 	// Fresh rows for match A: two players on the builtin metric, one on
-	// the others (steam_id ties break the order inside a metric).
+	// the others (subject_key ties break the order inside a metric).
 	if err := s.InsertMetricValues(builtin.ID, builtin.Version, live, []MetricValueRow{
-		{MatchID: matchA, SteamID: "76561198000000002", Value: 2, N: 5},
-		{MatchID: matchA, SteamID: "76561198000000001", Value: 1, N: 4},
+		{MatchID: matchA, SubjectKey: "76561198000000002", Value: 2, N: 5},
+		{MatchID: matchA, SubjectKey: "76561198000000001", Value: 1, N: 4},
 	}); err != nil {
 		t.Fatalf("insert builtin: %v", err)
 	}
 	for _, m := range []models.MetricRow{user, plugin} {
 		if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-			{MatchID: matchA, SteamID: "76561198000000001", Value: 9, N: 9},
+			{MatchID: matchA, SubjectKey: "76561198000000001", Value: 9, N: 9},
 		}); err != nil {
 			t.Fatalf("insert %s: %v", m.Name, err)
 		}
@@ -82,7 +82,7 @@ func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
 	// An OUTDATED row for the same match (metric_version 0 = never
 	// stamped = behind): physically present, never served.
 	if err := s.InsertMetricValues(user.ID, 0, live, []MetricValueRow{
-		{MatchID: matchA, SteamID: "76561198000000003", Value: 77, N: 77},
+		{MatchID: matchA, SubjectKey: "76561198000000003", Value: 77, N: 77},
 	}); err != nil {
 		t.Fatalf("insert stale: %v", err)
 	}
@@ -106,14 +106,14 @@ func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
 		{plugin.ID, "76561198000000001"},
 	}
 	for i, w := range wantOrder {
-		if rows[i].MetricID != w.metric || rows[i].SteamID != w.steam {
+		if rows[i].MetricID != w.metric || rows[i].SubjectKey != w.steam {
 			t.Errorf("row[%d] = {metric %d, %s}, want {metric %d, %s}",
-				i, rows[i].MetricID, rows[i].SteamID, w.metric, w.steam)
+				i, rows[i].MetricID, rows[i].SubjectKey, w.metric, w.steam)
 		}
 	}
 	// Absent-row honesty: …0003 has no fresh row → NO row (never a 0).
 	for _, r := range rows {
-		if r.SteamID == "76561198000000003" {
+		if r.SubjectKey == "76561198000000003" {
 			t.Errorf("outdated row served: %+v (fresh-only contract broken)", r)
 		}
 	}
@@ -170,20 +170,20 @@ func TestGetMetricValuesForPlayerGrain(t *testing.T) {
 	// Career rows (match 0) for two players + a MATCH row for the same
 	// metric — the grain split must keep them apart.
 	if err := s.InsertMetricValues(other.ID, other.Version, live, []MetricValueRow{
-		{MatchID: 0, SteamID: bob, Value: 20, N: 8},
-		{MatchID: 0, SteamID: amy, Value: 10, N: 4},
-		{MatchID: matchID, SteamID: amy, Value: 99, N: 1},
+		{MatchID: 0, SubjectKey: bob, Value: 20, N: 8},
+		{MatchID: 0, SubjectKey: amy, Value: 10, N: 4},
+		{MatchID: matchID, SubjectKey: amy, Value: 99, N: 1},
 	}); err != nil {
 		t.Fatalf("insert career: %v", err)
 	}
 	if err := s.InsertMetricValues(second.ID, second.Version, live, []MetricValueRow{
-		{MatchID: 0, SteamID: amy, Value: 3, N: 2},
+		{MatchID: 0, SubjectKey: amy, Value: 3, N: 2},
 	}); err != nil {
 		t.Fatalf("insert second: %v", err)
 	}
 
 	// The whole bucket: career rows only, canonical metric order then
-	// steam_id — no match row, ever.
+	// subject_key — no match row, ever.
 	bucket, err := s.GetMetricValuesForPlayer("", nil)
 	if err != nil {
 		t.Fatalf("bucket read: %v", err)
@@ -192,12 +192,12 @@ func TestGetMetricValuesForPlayerGrain(t *testing.T) {
 		t.Fatalf("bucket rows = %d, want 3 (career grain only): %+v", len(bucket), bucket)
 	}
 	for _, r := range bucket {
-		if r.MetricID == other.ID && r.SteamID == amy && r.Value == 99 {
+		if r.MetricID == other.ID && r.SubjectKey == amy && r.Value == 99 {
 			t.Errorf("match-grain row leaked into the career read: %+v", r)
 		}
 	}
-	if bucket[0].MetricID != other.ID || bucket[0].SteamID != amy ||
-		bucket[1].MetricID != other.ID || bucket[1].SteamID != bob ||
+	if bucket[0].MetricID != other.ID || bucket[0].SubjectKey != amy ||
+		bucket[1].MetricID != other.ID || bucket[1].SubjectKey != bob ||
 		bucket[2].MetricID != second.ID {
 		t.Errorf("bucket order = %+v, want [other/amy, other/bob, second/amy]", bucket)
 	}
@@ -211,7 +211,7 @@ func TestGetMetricValuesForPlayerGrain(t *testing.T) {
 		t.Fatalf("player rows = %d, want 2: %+v", len(one), one)
 	}
 	for _, r := range one {
-		if r.SteamID != amy {
+		if r.SubjectKey != amy {
 			t.Errorf("player read returned another subject: %+v", r)
 		}
 	}
@@ -250,12 +250,12 @@ func TestGetMetricValuesReadsCarryNoStampKeys(t *testing.T) {
 	matchID := seedReadyMatch(t, s, "read-dto")
 	m := seedValueMetric(t, s, "dto_metric", "match")
 	if err := s.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, []MetricValueRow{
-		{MatchID: matchID, SteamID: "76561198000000001", Value: 1, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 1},
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, []MetricValueRow{
-		{MatchID: 0, SteamID: "76561198000000001", Value: 2, N: 2},
+		{MatchID: 0, SubjectKey: "76561198000000001", Value: 2, N: 2},
 	}); err != nil {
 		t.Fatalf("insert career: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestGetMetricValuesReadsCarryNoStampKeys(t *testing.T) {
 				t.Errorf("%s read JSON carries the internal-only %q: %s", name, forbidden, s)
 			}
 		}
-		if !strings.Contains(s, `"metricId"`) || !strings.Contains(s, `"steamId"`) ||
+		if !strings.Contains(s, `"metricId"`) || !strings.Contains(s, `"subjectKey"`) ||
 			!strings.Contains(s, `"value"`) || !strings.Contains(s, `"n"`) {
 			t.Errorf("%s read JSON missing a DTO key: %s", name, s)
 		}

@@ -171,7 +171,7 @@ func TestMetricRefsExtraction(t *testing.T) {
 // two live stamps, the forced column qualification, one join per DISTINCT
 // name, and the binds' textual order.
 func TestRefJoinShape(t *testing.T) {
-	const upstream = "INNER JOIN metric_values md0 ON md0.metric_id = ? AND md0.match_id = %s AND md0.steam_id = events.attacker AND md0.metric_version = ? AND md0.rule_version = ?"
+	const upstream = "INNER JOIN metric_values md0 ON md0.metric_id = ? AND md0.match_id = %s AND md0.subject_key = events.attacker AND md0.metric_version = ? AND md0.rule_version = ?"
 	cases := []struct {
 		name, expr, scope, wantMatch string
 		wantArgs                     []any
@@ -203,8 +203,9 @@ func TestRefJoinShape(t *testing.T) {
 				t.Errorf("args = %v, want %v (id, stamps, then the scope id)", plan.Args, c.wantArgs)
 			}
 			// A ref-bearing statement must qualify every primary column:
-			// metric_values shares match_id/steam_id with the source, so
-			// an unqualified reference would be ambiguous.
+			// metric_values shares match_id with the source (and its
+			// subject_key mirrors the source's subject column), so an
+			// unqualified reference would be ambiguous.
 			if !strings.Contains(plan.SQL, "events.attacker <> ''") {
 				t.Errorf("subject addressing not qualified:\n%s", plan.SQL)
 			}

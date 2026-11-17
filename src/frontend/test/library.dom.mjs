@@ -174,7 +174,7 @@ bindings.MetricsService.ListMetrics = () =>
     },
   ]);
 bindings.MetricsService.GetMetricValuesForPlayer = () =>
-  Promise.resolve([{ metricId: 71, steamId: '76561198000000002', value: 61.5, n: 1 }]);
+  Promise.resolve([{ metricId: 71, subjectKey: '76561198000000002', value: 61.5, n: 1 }]);
 
 // pageOf mimics the store's keyset window over a scripted row array:
 // start AFTER the cursor row (afterID), take one window, report whether

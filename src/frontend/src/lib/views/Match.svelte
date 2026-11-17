@@ -627,11 +627,11 @@
 
   function columnOf(def, rows, st) {
     // rows: the canonical read's stored values for THIS match (fresh
-    // only), keyed by steam id; st: the metric's compute-state entry.
+    // only), keyed by subject key; st: the metric's compute-state entry.
     return {
       def,
       rows,
-      map: new Map(rows.map((r) => [r.steamId, r])),
+      map: new Map(rows.map((r) => [r.subjectKey, r])),
       // The unit's sibling coverage: at least one fresh row for this
       // metric in THIS match — what separates no-data ('—') from the
       // behind chip (design §5 states 4/5).

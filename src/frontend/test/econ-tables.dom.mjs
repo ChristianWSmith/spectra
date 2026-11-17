@@ -1196,8 +1196,8 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
     // N previewMetric calls → one stored read) beside the state read;
     // fresh + rows → the cells render the numbers.
     getMetricValuesForMatch: [
-      { metricId: 7, steamId: 'A', value: 12.5, n: 13 },
-      { metricId: 7, steamId: 'B', value: 9.2, n: 13 },
+      { metricId: 7, subjectKey: 'A', value: 12.5, n: 13 },
+      { metricId: 7, subjectKey: 'B', value: 9.2, n: 13 },
     ],
     getMetricComputeState: [{ metricId: 7, state: 'fresh' }],
   };
@@ -1278,7 +1278,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
         doc: 'Grenade damage dealt per round',
       },
     ],
-    getMetricValuesForMatch: [{ metricId: 8, steamId: 'A', value: 12.5, n: 13 }],
+    getMetricValuesForMatch: [{ metricId: 8, subjectKey: 'A', value: 12.5, n: 13 }],
     getMetricComputeState: [{ metricId: 8, state: 'fresh' }],
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
@@ -1324,7 +1324,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
     ],
     // Only metric 94 has a stored row — and only for alice (bob has
     // none while the unit IS covered → the no-data dash).
-    getMetricValuesForMatch: [{ metricId: 94, steamId: 'A', value: 8, n: 5 }],
+    getMetricValuesForMatch: [{ metricId: 94, subjectKey: 'A', value: 8, n: 5 }],
     getMetricComputeState: [
       { metricId: 91, state: 'processing' },
       { metricId: 92, state: 'failed', error: 'upstream vanished' },
@@ -1495,20 +1495,20 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
     // Fresh rows for alice only — bob's metric cells render the honest
     // dash (the unit IS covered, he just has no row).
     getMetricValuesForMatch: [
-      { metricId: 1, steamId: 'A', value: 4, n: 13 },
-      { metricId: 2, steamId: 'A', value: 90, n: 13 },
-      { metricId: 3, steamId: 'A', value: 0.71, n: 13 },
-      { metricId: 4, steamId: 'A', value: 0.5, n: 13 },
-      { metricId: 5, steamId: 'A', value: 1.67, n: 13 },
-      { metricId: 6, steamId: 'A', value: 2.33, n: 13 },
-      { metricId: 7, steamId: 'A', value: 3, n: 13 },
-      { metricId: 8, steamId: 'A', value: 1, n: 13 },
-      { metricId: 9, steamId: 'A', value: 0, n: 13 },
-      { metricId: 10, steamId: 'A', value: 0, n: 13 },
-      { metricId: 11, steamId: 'A', value: 12, n: 13 },
-      { metricId: 12, steamId: 'A', value: 9, n: 13 },
-      { metricId: 13, steamId: 'A', value: 5, n: 13 },
-      { metricId: 14, steamId: 'A', value: 7, n: 13 },
+      { metricId: 1, subjectKey: 'A', value: 4, n: 13 },
+      { metricId: 2, subjectKey: 'A', value: 90, n: 13 },
+      { metricId: 3, subjectKey: 'A', value: 0.71, n: 13 },
+      { metricId: 4, subjectKey: 'A', value: 0.5, n: 13 },
+      { metricId: 5, subjectKey: 'A', value: 1.67, n: 13 },
+      { metricId: 6, subjectKey: 'A', value: 2.33, n: 13 },
+      { metricId: 7, subjectKey: 'A', value: 3, n: 13 },
+      { metricId: 8, subjectKey: 'A', value: 1, n: 13 },
+      { metricId: 9, subjectKey: 'A', value: 0, n: 13 },
+      { metricId: 10, subjectKey: 'A', value: 0, n: 13 },
+      { metricId: 11, subjectKey: 'A', value: 12, n: 13 },
+      { metricId: 12, subjectKey: 'A', value: 9, n: 13 },
+      { metricId: 13, subjectKey: 'A', value: 5, n: 13 },
+      { metricId: 14, subjectKey: 'A', value: 7, n: 13 },
     ],
     getMetricComputeState: Array.from({ length: 14 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
@@ -2019,7 +2019,7 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
     getScoreboard: sb3,
     listMetrics: [mk(91, 'm_one', 'One'), mk(92, 'm_two', 'Two')],
     // Fresh row for alice only; metric 92 has NO rows and a behind state.
-    getMetricValuesForMatch: [{ metricId: 91, steamId: '76561198000000001', value: 7, n: 13 }],
+    getMetricValuesForMatch: [{ metricId: 91, subjectKey: '76561198000000001', value: 7, n: 13 }],
     getMetricComputeState: [
       { metricId: 91, state: 'fresh' },
       { metricId: 92, state: 'behind' },
@@ -2225,7 +2225,7 @@ console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-
     // since the denominator wave — the Go-side value pin is
     // internal/metrics TestExtractShapedScoreboardEquivalence); this
     // pins the two DISPLAY paths over it.
-    getMetricValuesForMatch: [{ metricId: 77, steamId: 'A', value: 42.56, n: 13 }],
+    getMetricValuesForMatch: [{ metricId: 77, subjectKey: 'A', value: 42.56, n: 13 }],
     getMetricComputeState: [{ metricId: 77, state: 'fresh' }],
   };
   localStorage.setItem('spectra:pinned-metrics', '["adr"]');

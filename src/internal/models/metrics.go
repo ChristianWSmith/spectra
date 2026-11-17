@@ -23,7 +23,9 @@ type MetricRow struct {
 	ShortName   string    `json:"shortName"` // optional; read only at width-constrained metric column headers
 	Expr        string    `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
 	Scope       string    `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
-	Format      string    `json:"format"`    // ""|int|float1|float2|percent|currency
+	Subject     string    `json:"subject"`   // player|match|team — who its values are keyed by (DDL CHECK)
+	Partition   string    `json:"partition"` // ''|side|map|weapon — how match/team rows split (DDL CHECK)
+	Format      string    `json:"format"`    // ""|int|float1|float2|percent|currency|identity
 	Doc         string    `json:"doc"`
 	Origin      string    `json:"origin"` // builtin|user|plugin
 	PluginID    string    `json:"pluginId"`
@@ -35,14 +37,16 @@ type MetricRow struct {
 // MetricValue is ONE stored metric value the canonical read serves
 // (stored-metrics design §5) — the frontend contract for a value slot,
 // at either grain (match rows at match_id > 0, career rows at 0):
-// exactly {metricId, steamId, value, n}. Deliberately carries NO stamp:
-// metric_version / rule_version / computed_at are INTERNAL-ONLY and
-// never leave the store, so no view, tooltip or export can render one.
+// exactly {metricId, subjectKey, value, n}. subjectKey is the row's
+// subject: a player's SteamID64, a team key, or ” (match subject /
+// career bucket). Deliberately carries NO stamp: metric_version /
+// rule_version / computed_at are INTERNAL-ONLY and never leave the
+// store, so no view, tooltip or export can render one.
 type MetricValue struct {
-	MetricID int64   `json:"metricId"`
-	SteamID  string  `json:"steamId"` // the subject player (SteamID64, humans only)
-	Value    float64 `json:"value"`
-	N        int     `json:"n"` // sample size behind the value
+	MetricID   int64   `json:"metricId"`
+	SubjectKey string  `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
+	Value      float64 `json:"value"`
+	N          int     `json:"n"` // sample size behind the value
 }
 
 // MetricSeriesPoint is ONE fresh stored match-grain value carrying the

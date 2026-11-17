@@ -220,12 +220,12 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 		if !ok {
 			continue
 		}
-		c, ok := cells[v.SteamID]
+		c, ok := cells[v.SubjectKey]
 		if !ok {
 			c = dashCells()
 		}
 		w.fill(&c, reportCell(v.Value, w.format, w.scale))
-		cells[v.SteamID] = c
+		cells[v.SubjectKey] = c
 	}
 	return cells, nil
 }

@@ -250,7 +250,7 @@
               const unit = byMetric.get(def.id) || [];
               return {
                 def,
-                row: unit.find((v) => v.steamId === sid) || null,
+                row: unit.find((v) => v.subjectKey === sid) || null,
                 unitHasRows: unit.length > 0,
                 error: (stateById.get(def.id) && stateById.get(def.id).error) || '',
               };

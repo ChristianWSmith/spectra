@@ -419,27 +419,41 @@ CREATE TABLE IF NOT EXISTS match_trade_opps (
 
 -- Stored metric VALUES (owner rulings 2026-11-13): every saved metric is
 -- stored and never calculated for a saved read; a metric is always ONE
--- number addressed to a player —
---   match scope   → one value for this player in this match   (match_id > 0)
---   profile scope → one value for this player's career        (match_id = 0)
+-- number addressed to a subject —
+--   match scope   → one value for this subject in this match (match_id > 0)
+--   profile scope → one value for this subject's career      (match_id = 0)
+-- subject_key carries the subject: a player's SteamID64 (humans only — the
+-- statement already applied store.HumanOnly), a team key ('ct'/'t' — the
+-- sideparity teamKeyAt vocabulary), or '' for a match subject (and for the
+-- career bucket, which is always player-subject). APP-LEVEL INVARIANT (no
+-- schema CHECK — pre-release no-ALTER policy): a match- or team-subject
+-- metric's rows always carry match_id > 0 — match_id = 0 is the career
+-- bucket alone, pinned by store.InsertMetricValues' guard. dim is the
+-- partition key ('' = unpartitioned; side/map/weapon arrive with the
+-- partition phases) and value_key the identity slot (the identity
+-- metric's value — the winner's key — '': every number-valued row). Both
+-- default '' today: no writer partitions or addresses an identity yet.
 -- NO HISTORY: rows exist only for the CURRENT generation; outdated rows
 -- (either stamp behind) are DELETED by the compute pass, never retained.
 -- Stamps are INTERNAL-ONLY: the canonical read serves only rows where both
 -- stamps are live; no app surface renders a stamp. value 0 always beside n;
--- a group the statement did not produce has NO row. steam_id has no FK — a
--- career key does not FK to the per-match roster (player_career precedent,
--- schema.sql:566-584). Reaching this table's shape on an existing DB is
--- the wipe's job (pre-release: wipe + re-import, never ALTER).
+-- a group the statement did not produce has NO row. subject_key has no FK —
+-- a career key does not FK to the per-match roster (player_career
+-- precedent, schema.sql:566-584). Reaching this table's shape on an
+-- existing DB is the wipe's job (pre-release: wipe + re-import, never
+-- ALTER).
 CREATE TABLE IF NOT EXISTS metric_values (
 	metric_id       INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
 	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
-	steam_id        TEXT    NOT NULL,             -- the subject player (SteamID64, humans only)
+	subject_key     TEXT    NOT NULL DEFAULT '',  -- player SteamID64 | team key ('ct'/'t') | '' (match subject)
+	dim             TEXT    NOT NULL DEFAULT '',  -- partition key ('' = unpartitioned)
 	value           REAL    NOT NULL DEFAULT 0,
+	value_key       TEXT    NOT NULL DEFAULT '',  -- identity value (identity metrics only; '' otherwise)
 	n               INTEGER NOT NULL DEFAULT 0,   -- sample size behind the value
 	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
 	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
 	computed_at     DATETIME,
-	PRIMARY KEY (metric_id, match_id, steam_id),
+	PRIMARY KEY (metric_id, match_id, subject_key, dim),
 	CHECK (match_id >= 0)
 );
 
@@ -502,13 +516,18 @@ CREATE INDEX IF NOT EXISTS idx_events_kind_match ON events(kind, match_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_path ON jobs(path);
 CREATE INDEX IF NOT EXISTS idx_jobs_match ON jobs(match_id);
 -- Stored metric values: match-leading serves the scoreboard/appendix read
--- AND the childTables per-match clear; the steam_id-leading member is the
--- career read (library-wide steam_id convention, like player_career's
--- consumers); dep_name-leading serves the delete-block/dependents lookup.
--- The PK's metric_id prefix already serves per-metric invalidation deletes
--- and the sweep's per-metric outdated-row removal.
-CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, metric_id);
-CREATE INDEX IF NOT EXISTS idx_metric_values_steam ON metric_values(steam_id, metric_id);
+-- AND the childTables per-match clear; the subject-leading member serves
+-- the career read (subject_key equality at match_id = 0) and the series
+-- read (subject_key equality with match_id > 0) — the same
+-- subject_key-leading convention as player_career's consumers, now keyed
+-- by the generalized subject (a team key is not a steamid); both members
+-- carry the new key columns (subject_key/dim — the metric_values PK) so a
+-- key-shaped probe stays an index seek as subjects and partitions land.
+-- dep_name-leading serves the delete-block/dependents lookup. The PK's
+-- metric_id prefix already serves per-metric invalidation deletes and the
+-- sweep's per-metric outdated-row removal.
+CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, metric_id, subject_key, dim);
+CREATE INDEX IF NOT EXISTS idx_metric_values_subject ON metric_values(subject_key, match_id, metric_id, dim);
 CREATE INDEX IF NOT EXISTS idx_metric_deps_dep ON metric_deps(dep_name);
 CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
 
@@ -680,6 +699,14 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- compiles and returns the hand-computed seed values under the join
 -- grammar (internal/metrics/doc.go).
 
+-- subject/partition (metrics expansion §4, 2026-11-17): the metric's
+-- addressing — WHICH subject its values are keyed by (player | match |
+-- team; the seed's player default means no seed row changes) and how a
+-- match/team subject's rows split ('' | side | map | weapon — the
+-- partition phases write their own values; '' today). format carries no
+-- SQL CHECK: its vocabulary is the app-level contract
+-- (metricservice.metricFormats — which gains 'identity', the key-valued
+-- format, beside this readiness change).
 CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT UNIQUE NOT NULL,
@@ -687,6 +714,8 @@ CREATE TABLE IF NOT EXISTS metrics (
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
 	scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
+	subject TEXT NOT NULL DEFAULT 'player' CHECK (subject IN ('player', 'match', 'team')),
+	partition TEXT NOT NULL DEFAULT '' CHECK (partition IN ('', 'side', 'map', 'weapon')),
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',

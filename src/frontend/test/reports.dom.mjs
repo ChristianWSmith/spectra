@@ -337,7 +337,7 @@ bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
   const out = [];
   for (const id of metricIDs || []) {
     if (id === 1) {
-      out.push({ metricId: 1, steamId: '76561198000000001', value: 4.25, n: 7 });
+      out.push({ metricId: 1, subjectKey: '76561198000000001', value: 4.25, n: 7 });
     }
     // id 3 (behind) deliberately has NO stored row.
   }
@@ -794,7 +794,7 @@ console.log('H. the player picker triple composes per half — raw K/D + the ass
   let assistsRow = { value: 7, n: 24 };
   bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) =>
     assistsRow && (metricIDs || []).includes(4)
-      ? [{ metricId: 4, steamId: '76561198000000001', value: assistsRow.value, n: assistsRow.n }]
+      ? [{ metricId: 4, subjectKey: '76561198000000001', value: assistsRow.value, n: assistsRow.n }]
       : [];
   // The read-through cache holds the previous handlers' answers — flush
   // it so this section's re-scripted reads are the ones the view gets.

@@ -58,7 +58,7 @@ func insertSeedMetricValue(t *testing.T, s *Store, name, steamID string, matchID
 		version = 0
 	}
 	if err := s.InsertMetricValues(def.ID, version, cfg.RuleVersion, []MetricValueRow{
-		{MatchID: matchID, SteamID: steamID, Value: value, N: 1},
+		{MatchID: matchID, SubjectKey: steamID, Value: value, N: 1},
 	}); err != nil {
 		t.Fatalf("InsertMetricValues(%s): %v", name, err)
 	}

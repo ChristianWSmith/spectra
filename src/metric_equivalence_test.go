@@ -132,7 +132,7 @@ func readyMatchIDs(t *testing.T, st *store.Store) []int64 {
 func storedOracle(t *testing.T, st *store.Store, metricID int64) map[eqKey]eqVal {
 	t.Helper()
 	res, err := st.QueryWrite(t.Context(),
-		`SELECT match_id, steam_id, value, n FROM metric_values WHERE metric_id = ? ORDER BY match_id, steam_id`,
+		`SELECT match_id, subject_key, value, n FROM metric_values WHERE metric_id = ? ORDER BY match_id, subject_key`,
 		[]any{metricID}, 1000000)
 	if err != nil {
 		t.Fatalf("stored read: %v", err)

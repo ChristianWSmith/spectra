@@ -1021,13 +1021,13 @@
   }
 
   // toPreviewRows shapes stored rows exactly like a preview's (group =
-  // the subject SteamID, label = the player's name) so the SAME table
+  // the subject key, label = the player's name) so the SAME table
   // renders both — names come from the library-wide player list (one
   // cached read, shared with the palette/profile finder).
   function toPreviewRows(values, names) {
     return (values || []).map((v) => ({
-      group: v.steamId,
-      label: names.get(v.steamId) || v.steamId,
+      group: v.subjectKey,
+      label: names.get(v.subjectKey) || v.subjectKey,
       value: v.value,
       n: v.n,
     }));

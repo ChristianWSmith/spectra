@@ -37,13 +37,13 @@ func TestMetricRowJSONContract(t *testing.T) {
 }
 
 // TestMetricValueJSONContract pins the canonical-read DTO (stored
-// metrics W5/§5): exactly {metricId, steamId, value, n} — the four
+// metrics W5/§5): exactly {metricId, subjectKey, value, n} — the four
 // fields a value slot renders, and NOTHING else. No stamp key of any
 // kind (metricVersion / ruleVersion / computedAt are internal-only and
 // must not even be expressible here), so no view, tooltip or export can
 // render a version number by construction (design §5's no-version pin).
 func TestMetricValueJSONContract(t *testing.T) {
-	b, err := json.Marshal(MetricValue{MetricID: 7, SteamID: "76561198000000001", Value: 1.5, N: 3})
+	b, err := json.Marshal(MetricValue{MetricID: 7, SubjectKey: "76561198000000001", Value: 1.5, N: 3})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestMetricValueJSONContract(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	want := []string{"metricId", "steamId", "value", "n"}
+	want := []string{"metricId", "subjectKey", "value", "n"}
 	if len(got) != len(want) {
 		t.Errorf("MetricValue JSON keys = %d, want exactly %d: %s", len(got), len(want), b)
 	}

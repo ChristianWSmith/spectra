@@ -40,7 +40,7 @@ var tableNotes = map[string]string{
 
 	// M5 (this milestone).
 	"metrics":          "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",
-	"metric_values":    "stored metric VALUES: one number per saved metric per player — match grain (match_id > 0) or career grain (match_id = 0); value 0 always beside n (sample size), a group the statement did not produce has no row",
+	"metric_values":    "stored metric VALUES: one number per saved metric per SUBJECT — keyed by subject_key (a player's SteamID64, a team key, or '' for a match subject), match grain (match_id > 0) or career grain (match_id = 0, player subject only); value 0 always beside n (sample size), a group the statement did not produce has no row",
 	"metric_deps":      "metric→metric dependency edges (which metrics each metric's expression references by name)",
 	"saved_queries":    "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
 	"query_history":    "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
@@ -100,7 +100,15 @@ var columnNotes = map[string]map[string]string{
 		"short_name":  "optional user-entered short label — read ONLY at width-constrained metric column headers (short_name || title || name; title || name everywhere else)",
 		"expr":        "metric grammar: from <table>[, <secondary>...]: <aggregations> (extra sources join engine-side)",
 		"scope":       "'match'|'profile' — where the metric is addressed: this player in one match, or this player's career",
+		"subject":     "'player'|'match'|'team' — who the metric's values are keyed by (subject_key in metric_values)",
+		"partition":   "''|side|map|weapon — how a match/team subject's values split",
 		"denominator": "scalar subquery source: ''|rounds|matches",
+	},
+	"metric_values": {
+		"subject_key": "the row's subject: a player's SteamID64, a team key ('ct'/'t' — the side the team finished on), or '' (match subject / career bucket)",
+		"dim":         "partition key ('' = unpartitioned)",
+		"value_key":   "identity value for an identity metric (the winner's key); '' for every number-valued row",
+		"match_id":    "0 = the career (profile) grain; a match or team subject always carries a real match id",
 	},
 }
 

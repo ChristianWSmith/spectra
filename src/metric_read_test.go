@@ -28,7 +28,7 @@ func viewMatchRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVal
 			t.Fatalf("GetMetricValuesForMatch(%d): %v", mid, err)
 		}
 		for _, r := range rows {
-			key := eqKey{matchID: mid, steam: r.SteamID}
+			key := eqKey{matchID: mid, steam: r.SubjectKey}
 			if _, dup := out[key]; dup {
 				t.Errorf("duplicate view row for %+v", key)
 			}
@@ -49,7 +49,7 @@ func viewCareerRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVa
 	}
 	out := map[eqKey]eqVal{}
 	for _, r := range rows {
-		key := eqKey{matchID: 0, steam: r.SteamID}
+		key := eqKey{matchID: 0, steam: r.SubjectKey}
 		if _, dup := out[key]; dup {
 			t.Errorf("duplicate view row for %+v", key)
 		}

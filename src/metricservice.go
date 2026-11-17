@@ -126,10 +126,14 @@ func exprErrorErr(perr *metrics.ParseError) error {
 // metricFormats are the accepted Format values (contract). float2 keeps
 // a two-decimal tail unconditionally (Q6 — the K/D seeds render2.00,
 // never the auto-format's "2"); it is a display tag only, no DDL and no
-// grammar change. The store's format filter keeps the SAME vocabulary
-// in canonical enum order (store.metricFormatTokens) — one list, two
-// layers, never a token this map lacks.
-var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true}
+// grammar change. identity (the key-valued format — metrics expansion
+// §4 readiness, 2026-11-17) marks a metric whose value is a KEY in
+// metric_values.value_key rather than a number; no seed carries it and
+// the editor select / store format filter (store.metricFormatTokens —
+// this vocabulary minus identity, plus its filter-only `auto` alias for
+// ”) do not offer it until an identity metric's surface first ships.
+// The filter never lists a token this map lacks.
+var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true, "identity": true}
 
 // ListMetrics returns all definitions (builtin first).
 func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
@@ -234,10 +238,10 @@ func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope string, k
 		// Cross-scope rule (design §2): a PROFILE metric may read a
 		// profile ref (and a match metric either grain — the row's player
 		// key carries the career scalar), but a career value cannot read
-		// a per-match value: the profile row key (steam_id) contains no
-		// match_id to correlate on. Applied to EVERY resolved ref,
-		// `known` entries included — the rename splice re-validation runs
-		// through here with the same rule.
+		// a per-match value: the profile row key (subject_key at
+		// match_id = 0) contains no match_id to correlate on. Applied to
+		// EVERY resolved ref, `known` entries included — the rename
+		// splice re-validation runs through here with the same rule.
 		if dependentScope == "profile" && t.Scope == "match" {
 			return nil, nil, fmt.Errorf(
 				"metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
@@ -332,7 +336,7 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	}
 	m.Format = strings.TrimSpace(m.Format)
 	if !metricFormats[m.Format] {
-		return models.MetricRow{}, fmt.Errorf("unknown format %q (valid: int, float1, float2, percent, currency)", m.Format)
+		return models.MetricRow{}, fmt.Errorf("unknown format %q (valid: int, float1, float2, percent, currency, identity)", m.Format)
 	}
 	// Scope is a REAL field since W2: the DDL CHECK admits exactly these
 	// two values, so anything else (including an omitted "") is rejected
@@ -594,14 +598,14 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 //
 // ONE read per value surface, straight through to the store's canonical
 // read: fresh rows only, canonical metric order, DTO exactly
-// {metricId, steamId, value, n} (no stamps — internal-only by
+// {metricId, subjectKey, value, n} (no stamps — internal-only by
 // construction). These are what every view reads for a SAVED metric;
 // PreviewMetric stays the on-demand calculator for unsaved/dirty
 // drafts, which have no stored rows to read.
 
 // GetMetricValuesForMatch returns the requested metrics' fresh stored
 // rows for ONE match (matchID > 0), canonical metric order then
-// steam_id; metricIDs empty = every metric.
+// subject_key; metricIDs empty = every metric.
 func (s *MetricsService) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]models.MetricValue, error) {
 	return s.st.GetMetricValuesForMatch(matchID, metricIDs)
 }

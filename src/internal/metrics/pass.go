@@ -503,10 +503,10 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 				mid = int64(f)
 			}
 			out = append(out, store.MetricValueRow{
-				MatchID: mid,
-				SteamID: toKey(r[valueIdx-1]),
-				Value:   toFloat(r[valueIdx]),
-				N:       toN(r[len(r)-1]),
+				MatchID:    mid,
+				SubjectKey: toKey(r[valueIdx-1]),
+				Value:      toFloat(r[valueIdx]),
+				N:          toN(r[len(r)-1]),
 			})
 		}
 		return out, nil
@@ -566,10 +566,10 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 				}
 			}
 			out = append(out, store.MetricValueRow{
-				MatchID: key.mid,
-				SteamID: key.subject,
-				Value:   v,
-				N:       len(p.vals),
+				MatchID:    key.mid,
+				SubjectKey: key.subject,
+				Value:      v,
+				N:          len(p.vals),
 			})
 		}
 		return out, nil

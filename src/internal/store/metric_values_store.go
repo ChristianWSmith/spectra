@@ -116,14 +116,15 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 }
 
 // MetricValueRow is ONE fresh stored value the compute pass inserts
-// (phase 2). MatchID 0 is the profile (career) grain; SteamID is the
-// subject player (humans only — the statement already applied
-// store.HumanOnly + subject <> ”, so the pass never filters here).
+// (phase 2). MatchID 0 is the profile (career) grain; SubjectKey is the
+// row's subject — a player's SteamID64 (humans only — the statement
+// already applied store.HumanOnly + subject <> ”, so the pass never
+// filters here), a team key, or ” for a match subject.
 type MetricValueRow struct {
-	MatchID int64
-	SteamID string
-	Value   float64
-	N       int
+	MatchID    int64
+	SubjectKey string
+	Value      float64
+	N          int
 }
 
 // ClearMetricValues is the compute pass's PHASE 1 (design §4): it
@@ -132,7 +133,7 @@ type MetricValueRow struct {
 // the predicate): the table is derived data, phase 2 recomputes the
 // metric's whole set in one batched statement, and keeping live rows
 // would collide with the fresh insert on the primary key
-// (metric_id, match_id, steam_id). Only behind metrics reach this call
+// (metric_id, match_id, subject_key, dim). Only behind metrics reach this call
 // (the sweep's work list), so "all of this metric's rows" and "the rows
 // failing the predicate" are the same set in practice — and for a
 // closure-added metric whose rows still looked live, removing them is
@@ -157,9 +158,28 @@ func (s *Store) ClearMetricValues(metricID int64) error {
 // a failure mid-insert rolls the transaction back (no half-written
 // metric; absent → behind → the next sweep re-runs it), so the table is
 // strictly fresh-or-nothing at rest.
+//
+// APP-LEVEL INVARIANT (schema.sql metric_values): match_id = 0 is the
+// career bucket alone — a match- or team-subject metric always stores
+// per-match rows (match_id > 0). The store is the ONE write chokepoint
+// (both phase writers land here), so the subject check is enforced HERE
+// instead of as a schema CHECK — the pre-release baseline takes no CHECK
+// churn for an invariant the writer can hold itself. Player-subject rows
+// are unconstrained: match grain at match_id > 0, career at 0.
 func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion int, rows []MetricValueRow) error {
 	if len(rows) == 0 {
 		return nil // nothing to commit — the metric simply has no rows (absent → behind)
+	}
+	var subject string
+	if err := s.db.QueryRow(`SELECT subject FROM metrics WHERE id = ?`, metricID).Scan(&subject); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	if subject == "match" || subject == "team" {
+		for _, r := range rows {
+			if r.MatchID <= 0 {
+				return fmt.Errorf("a %s subject's value must belong to a match", subject)
+			}
+		}
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -167,7 +187,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(
-		`INSERT INTO metric_values (metric_id, match_id, steam_id, value, n, metric_version, rule_version, computed_at)
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, value, n, metric_version, rule_version, computed_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -176,7 +196,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	defer stmt.Close()
 	now := time.Now()
 	for _, r := range rows {
-		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SteamID), r.Value, r.N, metricVersion, ruleVersion, now); err != nil {
+		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SubjectKey), r.Value, r.N, metricVersion, ruleVersion, now); err != nil {
 			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
 	}
@@ -197,18 +217,18 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
 // caller can ever render a stale value. The DTO is exactly
-// {metricId, steamId, value, n}: no stamps, no computed_at (they are
+// {metricId, subjectKey, value, n}: no stamps, no computed_at (they are
 // INTERNAL-ONLY — models.MetricValue carries no such field, so a stamp
 // cannot reach a view, tooltip or export by construction). Rows come
 // back in the canonical metric order (metricOrder — builtin → user →
-// plugin, name ASC) then steam_id, so a caller zips them against
+// plugin, name ASC) then subject_key, so a caller zips them against
 // ListMetrics without a second sort.
 
 // metricValueFreshSQL is the read's row clause: a row is fresh iff it
 // was computed under the metric's CURRENT version and the CURRENT
 // analysis rule version — metricValueFreshCond, prefixed with the join
 // it needs (m.version).
-const metricValueFreshSQL = `SELECT v.metric_id, v.steam_id, v.value, v.n
+const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.value, v.n
 	FROM metric_values v
 	JOIN metrics m ON m.id = v.metric_id
 	WHERE ` + metricValueFreshCond
@@ -234,7 +254,7 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 	var out []models.MetricValue
 	for rows.Next() {
 		var v models.MetricValue
-		if err := rows.Scan(&v.MetricID, &v.SteamID, &v.Value, &v.N); err != nil {
+		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Value, &v.N); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -248,7 +268,7 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 // GetMetricValuesForMatch is THE match-grain value read (design §5):
 // every FRESH stored row of the requested metrics for ONE match
 // (match_id = matchID; matchID must be > 0 — the career grain is
-// GetMetricValuesForPlayer), in canonical metric order then steam_id.
+// GetMetricValuesForPlayer), in canonical metric order then subject_key.
 // metricIDs narrows the read (empty = every metric). Absent rows are
 // ABSENT: the read never fabricates a 0 for a player the statement did
 // not produce — the view renders the state instead.
@@ -262,7 +282,7 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
 	q := metricValueFreshSQL + ` AND v.match_id = ?` + idCond + `
-		ORDER BY ` + metricOrder + `, v.steam_id`
+		ORDER BY ` + metricOrder + `, v.subject_key`
 	args := append([]any{cfg.RuleVersion, matchID}, idArgs...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -278,10 +298,10 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 
 // GetMetricValuesForPlayer is THE career-grain value read (design §5):
 // FRESH stored rows at match_id = 0 (the profile grain), in canonical
-// metric order then steam_id. steamID "" reads the WHOLE career bucket
+// metric order then subject_key. steamID "" reads the WHOLE career bucket
 // (every player — the coverage a value slot needs to tell "no data for
 // this player" from "behind", and Builder's all-players profile
-// preview); a non-empty steamID narrows to that one player.
+// preview); a non-empty steamID narrows to that one player's subject_key.
 // metricIDs narrows the read (empty = every metric). Same honesty rule
 // as the match read: a player with no stored row has NO row.
 func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]models.MetricValue, error) {
@@ -293,11 +313,11 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 	steamCond := ""
 	var args []any
 	if steamID != "" {
-		steamCond = " AND v.steam_id = ?"
+		steamCond = " AND v.subject_key = ?"
 		args = append(args, steamID)
 	}
 	q := metricValueFreshSQL + ` AND v.match_id = 0` + steamCond + idCond + `
-		ORDER BY ` + metricOrder + `, v.steam_id`
+		ORDER BY ` + metricOrder + `, v.subject_key`
 	args = append(append([]any{cfg.RuleVersion}, args...), idArgs...)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -391,8 +411,8 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 		JOIN metrics m ON m.id = v.metric_id
 		JOIN matches mt ON mt.id = v.match_id
 		WHERE ` + metricValueFreshCond + `
-		  AND v.steam_id = ? AND v.match_id > 0 AND mt.extracted_at IS NOT NULL
-		  AND ` + HumanOnlyBySteamID("v.steam_id", "v.match_id") + idCond + `
+		  AND v.subject_key = ? AND v.match_id > 0 AND mt.extracted_at IS NOT NULL
+		  AND ` + HumanOnlyBySteamID("v.subject_key", "v.match_id") + idCond + `
 		ORDER BY (mt.patch_version = 0) ASC, mt.patch_version ASC,
 		         mt.extracted_at ASC, mt.id ASC, v.metric_id ASC`
 	args := append([]any{cfg.RuleVersion, scrub(steamID)}, idArgs...)

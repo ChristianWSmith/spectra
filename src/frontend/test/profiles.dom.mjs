@@ -701,8 +701,8 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
     ]);
   bindings.MetricsService.GetMetricValuesForPlayer = () =>
     Promise.resolve([
-      { metricId: 51, steamId: '76561198000000001', value: 1.5, n: 40 },
-      { metricId: 51, steamId: '76561198000000002', value: 2.5, n: 99 },
+      { metricId: 51, subjectKey: '76561198000000001', value: 1.5, n: 40 },
+      { metricId: 51, subjectKey: '76561198000000002', value: 2.5, n: 99 },
     ]);
   bindings.MetricsService.GetMetricComputeState = () =>
     Promise.resolve([
@@ -860,19 +860,19 @@ console.log(
   // and zoe's `career_adr` for the Profiles list column — dan gets NO
   // row, which is the honest gap that must render '—'.
   const ROWS = [
-    { metricId: 61, steamId: '76561198000000001', value: 63.5, n: 42 },
-    { metricId: 61, steamId: '76561198000000002', value: 55, n: 7 },
-    { metricId: 61, steamId: '76561198000000003', value: 40, n: 9 },
-    { metricId: 62, steamId: '76561198000000001', value: 12.5, n: 42 },
-    { metricId: 63, steamId: '76561198000000001', value: 1.42, n: 42 },
-    { metricId: 64, steamId: '76561198000000001', value: 0.41, n: 42 },
-    { metricId: 65, steamId: '76561198000000001', value: 0.7, n: 42 },
-    { metricId: 66, steamId: '76561198000000001', value: 0.666, n: 42 },
-    { metricId: 71, steamId: '76561198000000001', value: 0.5, n: 42 },
-    { metricId: 67, steamId: '76561198000000001', value: 0.5, n: 42 },
-    { metricId: 70, steamId: '76561198000000001', value: 1, n: 42 },
-    { metricId: 68, steamId: '76561198000000001', value: 3.2, n: 42 },
-    { metricId: 69, steamId: '76561198000000001', value: 88.9, n: 42 },
+    { metricId: 61, subjectKey: '76561198000000001', value: 63.5, n: 42 },
+    { metricId: 61, subjectKey: '76561198000000002', value: 55, n: 7 },
+    { metricId: 61, subjectKey: '76561198000000003', value: 40, n: 9 },
+    { metricId: 62, subjectKey: '76561198000000001', value: 12.5, n: 42 },
+    { metricId: 63, subjectKey: '76561198000000001', value: 1.42, n: 42 },
+    { metricId: 64, subjectKey: '76561198000000001', value: 0.41, n: 42 },
+    { metricId: 65, subjectKey: '76561198000000001', value: 0.7, n: 42 },
+    { metricId: 66, subjectKey: '76561198000000001', value: 0.666, n: 42 },
+    { metricId: 71, subjectKey: '76561198000000001', value: 0.5, n: 42 },
+    { metricId: 67, subjectKey: '76561198000000001', value: 0.5, n: 42 },
+    { metricId: 70, subjectKey: '76561198000000001', value: 1, n: 42 },
+    { metricId: 68, subjectKey: '76561198000000001', value: 3.2, n: 42 },
+    { metricId: 69, subjectKey: '76561198000000001', value: 88.9, n: 42 },
   ];
   bindings.MetricsService.ListMetrics = () => Promise.resolve(CATALOG);
   // Deliberately WIDER than asked: the real read narrows server-side,

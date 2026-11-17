@@ -78,16 +78,17 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 //
 //	INNER JOIN metric_values md0 ON md0.metric_id = ?
 //	  AND md0.match_id = <0 | primary.match_id>
-//	  AND md0.steam_id = <primary's subject>
+//	  AND md0.subject_key = <primary's subject>
 //	  AND md0.metric_version = ? AND md0.rule_version = ?
 //
 // INNER is the designed semantics: a missing or outdated upstream DROPS
 // the dependent's row — absent = unknown, never 0 (sources keep their
 // Value-0-beside-N honesty row; a MISSING DEPENDENCY is not a zero).
-// The join forces column qualification (metric_values shares match_id /
-// steam_id with every source, so an unqualified reference would be
-// ambiguous), which is why a single-source ref-bearing statement emits
-// qualified columns while the ref-free base form stays byte-stable.
+// The join forces column qualification (metric_values shares match_id
+// with every source, and its subject_key mirrors each source's subject
+// column, so an unqualified reference would be ambiguous), which is why
+// a single-source ref-bearing statement emits qualified columns while
+// the ref-free base form stays byte-stable.
 //
 // metric_values is written by the W3 compute pass (metrics.Sweep); a
 // ref-bearing preview over a not-yet-computed upstream honestly returns
@@ -227,8 +228,8 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 	refAliases := map[string]string{}
 	var refArgs []any
 	if refsFound := MetricRefs(spec); len(refsFound) > 0 {
-		// Force qualification: metric_values carries match_id/steam_id,
-		// so every primary column reference must name its table.
+		// Force qualification: metric_values carries match_id and the
+		// subject key, so every primary column reference must name its table.
 		res.joined = true
 		for _, name := range DistinctNames(refsFound) {
 			t := refs[name]
@@ -236,7 +237,7 @@ func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, bat
 			refAliases[name] = alias
 			from += " INNER JOIN metric_values " + alias + " ON " +
 				alias + ".metric_id = ? AND " + alias + ".match_id = " + refMatchExpr(t, primary) +
-				" AND " + alias + ".steam_id = " + primary + "." + subject +
+				" AND " + alias + ".subject_key = " + primary + "." + subject +
 				" AND " + alias + ".metric_version = ? AND " + alias + ".rule_version = ?"
 			// Bind order follows the join's textual order: id, then the
 			// two stamps (the match key is a constant/column, never a

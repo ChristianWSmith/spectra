@@ -260,7 +260,7 @@
         const a = new Map();
         if (assistsDef) {
           for (const v of values || []) {
-            if (v.metricId === assistsDef.id) a.set(v.steamId, { value: v.value, format: assistsDef.format });
+            if (v.metricId === assistsDef.id) a.set(v.subjectKey, { value: v.value, format: assistsDef.format });
           }
         }
         assistsBySteam = a;
@@ -387,8 +387,8 @@
         const next = {};
         for (const id of sel) {
           const valRows = (byMetric.get(id) || []).map((v) => ({
-            id: v.steamId,
-            label: bySteam.get(v.steamId) || v.steamId,
+            id: v.subjectKey,
+            label: bySteam.get(v.subjectKey) || v.subjectKey,
             value: v.value,
             n: v.n,
           }));

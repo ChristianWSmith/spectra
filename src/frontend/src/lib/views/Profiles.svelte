@@ -120,12 +120,12 @@
       })
       .then((res) => {
         if (!live || !res) return;
-        // Key by steam id but keep only THIS metric's rows: the read is
+        // Key by subject key but keep only THIS metric's rows: the read is
         // already narrowed server-side, and filtering here keeps the
         // map honest if a read ever returns a wider set.
         const bySteam = new Map();
         for (const v of res.values || []) {
-          if (v.metricId === res.def.id) bySteam.set(v.steamId, v);
+          if (v.metricId === res.def.id) bySteam.set(v.subjectKey, v);
         }
         adrMetric = res.def;
         adrRows = bySteam;
