@@ -139,7 +139,9 @@ func TestNetKeyFromInfoFile(t *testing.T) {
 }
 
 // voiceParse feeds the wired VoiceSink a small deterministic stream and
-// returns the same minimal ExtractedMatch as fakeParse.
+// returns the same minimal VALID ExtractedMatch as fakeParse (one player
+// + one round — the content guard in Importer.process rejects an empty
+// extraction).
 func voiceParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
 	if _, err := io.ReadAll(r); err != nil {
 		return nil, err
@@ -155,7 +157,11 @@ func voiceParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*m
 			}
 		}
 	}
-	return &models.ExtractedMatch{Match: models.Match{Map: "de_test", TickRate: 64}}, nil
+	return &models.ExtractedMatch{
+		Match:   models.Match{Map: "de_test", TickRate: 64},
+		Players: []models.Player{{SteamID: "100", Name: "tester", Side: "ct"}},
+		Rounds:  []models.Round{{Number: 1, StartTick: 1, EndTick: 64}},
+	}, nil
 }
 
 // TestImportWritesVoice proves the M4 import wiring end to end with a fake
