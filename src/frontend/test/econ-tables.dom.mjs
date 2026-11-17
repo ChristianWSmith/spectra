@@ -734,6 +734,36 @@ check(
   navDrill || 'no navigation',
 );
 
+// ME0 (metrics-expansion Phase 0, M8 pre-image): the four summary
+// cards' COMPUTED VALUES on this fixture — pistol held/won, force-win
+// %, avg equip gap (rounded), lost-equip total + per-team split, and
+// each card's drill round — pinned as the display strings the view
+// renders today (above, only the drill BEHAVIOR was pinned).
+{
+  const sumCards = [...root.querySelectorAll('.econ-summary .stat-cell')];
+  const val = (i) => sumCards[i]?.querySelector('.stat-value')?.textContent ?? '';
+  const sub = (i) => sumCards[i]?.querySelector('.stat-sub')?.textContent ?? '';
+  const ttl = (i) => sumCards[i]?.getAttribute('title') ?? '';
+  for (const [i, c] of sumCards.entries()) {
+    console.log(`    M8 card${i}: value=${JSON.stringify(val(i))} sub=${JSON.stringify(sub(i))} title=${JSON.stringify(ttl(i))}`);
+  }
+  check('M8: four summary cards', sumCards.length === 4, String(sumCards.length));
+  check('M8: pistol held/won = 1/2 (rounds 1+13 won, only round 1 held)', val(0) === '1/2', val(0));
+  check('M8: force-win = 0% (6 T-side force rounds, none won)', val(1) === '0%', val(1));
+  check('M8: force sub = per-team won/total (rounds 1–12 t-side forces attribute to Alpha)', sub(1) === 'Alpha 0/6 · Beta 0/0', sub(1));
+  check('M8: avg equip gap = $67 (round(800/12) over 12 decided rounds)', val(2) === '$67', val(2));
+  check('M8: lost-equip total = $53,800 (sum of loser freeze-end equip)', val(3) === '$53,800', val(3));
+  check('M8: lost sub = per-team split (Alpha = era-0 loser-T 30200; Beta = era-0 loser-CT 18600 + r13 loser-T 5000)', sub(3) === 'Alpha $30,200 · Beta $23,600', sub(3));
+  check(
+    'M8: Formula titles carry the drill rounds (pistol 1, force 2, gap 1, lost 11)',
+    ttl(0).includes('Formula:') && ttl(0).includes('watch round 1 ') &&
+      ttl(1).includes('Formula:') && ttl(1).includes('watch round 2 ') &&
+      ttl(2).includes('Formula:') && ttl(2).includes('round 1 (largest gap)') &&
+      ttl(3).includes('Formula:') && ttl(3).includes('watch round 11 '),
+    [ttl(0), ttl(1), ttl(2), ttl(3)].join(' || '),
+  );
+}
+
 console.log('E. Economy tab: an open econ-why-row stays above the split-before line');
 const whyBtn = rowsOf(table)[11].querySelector('.econ-cls');
 check('round 12 has a class chip button', !!whyBtn);
@@ -2118,6 +2148,121 @@ console.log('N. the scoreboard-opens-transposed pref (w25): the shape a match op
     !isTransposed() && pressed() === 'false',
     `transposed=${isTransposed()} pressed=${pressed()}`,
   );
+}
+
+console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, empty set)');
+{
+  const labelOf = (c) => c.querySelector('.field-label')?.textContent || '';
+  const topCards = (r) =>
+    [...r.querySelectorAll('.stat-cell')].filter((c) =>
+      ['Top fragger', 'Best ADR', 'Most util', 'Entry opens', 'Most MVPs'].some((l) => labelOf(c).includes(l)),
+    );
+  const card = (r, label) => topCards(r).find((c) => labelOf(c).includes(label));
+  const val = (c) => c?.querySelector('.stat-value')?.textContent ?? '';
+  const who = (c) => c?.querySelector('.stat-sub')?.textContent ?? '';
+
+  // (1) Selection over a kills-DESC seed with TIES (kills 10/10, util
+  // 50/50) and an ALL-ZERO metric set (entry opens, MVPs all 0): maxBy
+  // uses strict `>`, so the FIRST row in viewRows order wins every tie
+  // and every all-zero metric — bob wins Best ADR outright (90 > 80).
+  const tied = {
+    ...dataFor(13),
+    getScoreboard: [
+      { steamId: 'A', name: 'alice', side: 'ct', kills: 10, deaths: 2, assists: 3, adr: 80, mvps: 0, utilityDamage: 50, entryKills: 0 },
+      { steamId: 'B', name: 'bob', side: 't', kills: 10, deaths: 4, assists: 1, adr: 90, mvps: 0, utilityDamage: 50, entryKills: 0 },
+      { steamId: 'C', name: 'carol', side: 'ct', kills: 5, deaths: 9, assists: 2, adr: 40, mvps: 0, utilityDamage: 10, entryKills: 0 },
+    ],
+  };
+  root = await showMatch(tied, { routeTab: '' });
+  await sleep();
+  check('M1: five top cards render on Overview', topCards(root).length === 5, String(topCards(root).length));
+  check(
+    'M1: Top fragger tie (10/10) → FIRST row (alice), K/D/A value composed',
+    val(card(root, 'Top fragger')) === '10/2/3' && who(card(root, 'Top fragger')).includes('alice'),
+    `${val(card(root, 'Top fragger'))} / ${who(card(root, 'Top fragger'))}`,
+  );
+  check(
+    'M1: Best ADR → the outright max (bob 90), fmt1 display',
+    val(card(root, 'Best ADR')) === '90.0' && who(card(root, 'Best ADR')).includes('bob'),
+    `${val(card(root, 'Best ADR'))} / ${who(card(root, 'Best ADR'))}`,
+  );
+  check(
+    'M1: Most util tie (50/50) → FIRST row (alice)',
+    val(card(root, 'Most util')) === '50' && who(card(root, 'Most util')).includes('alice'),
+    `${val(card(root, 'Most util'))} / ${who(card(root, 'Most util'))}`,
+  );
+  check(
+    'M1: all-zero Entry opens / Most MVPs → FIRST row (alice), value 0',
+    val(card(root, 'Entry opens')) === '0' && who(card(root, 'Entry opens')).includes('alice') &&
+      val(card(root, 'Most MVPs')) === '0' && who(card(root, 'Most MVPs')).includes('alice'),
+    `${val(card(root, 'Entry opens'))}/${val(card(root, 'Most MVPs'))} — ${who(card(root, 'Entry opens'))}/${who(card(root, 'Most MVPs'))}`,
+  );
+
+  // (2) EMPTY set: no roster rows → topStats returns [] (the
+  // !viewRows.length guard — the empty reduce would otherwise throw).
+  root = await showMatch({ ...dataFor(13), getScoreboard: [] }, { routeTab: '' });
+  await sleep();
+  check(
+    'M1: empty roster → NO top cards (the empty-set guard)',
+    topCards(root).length === 0,
+    String(topCards(root).length),
+  );
+}
+
+console.log('P. ME0/M9: roster ADR chip (raw ps.adr) vs the adr metric — byte-identical display for equal values');
+{
+  const mk = (id, name) => ({ id, name, title: name, doc: `Formula: ${name}`, format: 'float1' });
+  const d = {
+    ...dataFor(13),
+    getScoreboard: [
+      { steamId: 'A', name: 'alice', side: 'ct', kills: 10, deaths: 2, assists: 3, adr: 42.56, mvps: 1, utilityDamage: 50, entryKills: 1 },
+      { steamId: 'B', name: 'bob', side: 't', kills: 8, deaths: 5, assists: 2, adr: 80, mvps: 0, utilityDamage: 20, entryKills: 0 },
+    ],
+    listMetrics: [mk(77, 'adr')],
+    // M9's agreement fixture: the raw column and the stored metric row
+    // carry the SAME value (both are damage ÷ the match's counted rounds
+    // since the denominator wave — the Go-side value pin is
+    // internal/metrics TestExtractShapedScoreboardEquivalence); this
+    // pins the two DISPLAY paths over it.
+    getMetricValuesForMatch: [{ metricId: 77, steamId: 'A', value: 42.56, n: 13 }],
+    getMetricComputeState: [{ metricId: 77, state: 'fresh' }],
+  };
+  localStorage.setItem('spectra:pinned-metrics', '["adr"]');
+
+  // Raw side: the Overview roster chip (fmt1(p.adr) over the column).
+  root = await showMatch(d, { routeTab: '' });
+  await sleep();
+  const chipRow = [...root.querySelectorAll('tbody tr')].find(
+    (r) => (r.textContent || '').includes('alice') && r.querySelector('.chip.adr'),
+  );
+  const chipText = chipRow?.querySelector('.chip.adr')?.textContent ?? '';
+  check(
+    'M9: roster ADR chip renders the raw column through fmt1 (42.56 → 42.6)',
+    chipText === '42.6',
+    chipText || 'no chip',
+  );
+
+  // Metric side: the scoreboard's pinned adr column
+  // (fmtMetric(value, "float1") → the SAME fmt1 function).
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
+  const adrIdx = ths.findIndex((t) => (t.querySelector('.th-sort')?.textContent || '').includes('adr'));
+  const aliceRow = [...root.querySelectorAll('.data-table.scoreboard tbody tr')].find((r) =>
+    (r.querySelector('.name-cell')?.textContent || '').includes('alice'),
+  );
+  const metricText = adrIdx >= 0 && aliceRow ? aliceRow.children[adrIdx].textContent : '';
+  check(
+    'M9: pinned adr metric cell renders the stored value (float1)',
+    metricText === '42.6',
+    metricText || `no cell (th idx ${adrIdx})`,
+  );
+  check(
+    'M9: chip and metric AGREE byte-for-byte (both display paths)',
+    chipText !== '' && metricText === chipText,
+    `${chipText} vs ${metricText}`,
+  );
+  localStorage.removeItem('spectra:pinned-metrics');
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
