@@ -305,6 +305,18 @@ check(
     /Ctrl\/Cmd\+Enter/.test(runBtn.getAttribute('title') || ''),
   rightCluster ? [...rightCluster.children].map((c) => c.className).join(' | ') : 'no cluster',
 );
+// W17 (owner, 2026-11-16): the run codicon LEADS the label (the play
+// glyph was retired with the move — "run codicon left of the text").
+// The busy branch keeps its plain "Running…" (the busy-button
+// exemption) — no icon either side of that word.
+check(
+  'Run leads with the run codicon before its label (icon-left); Running… stays plain text',
+  !!runBtn &&
+    runBtn.firstElementChild?.classList.contains('codicon-run') &&
+    runBtn.textContent.trim() === 'Run' &&
+    !runBtn.querySelector('.codicon-play'),
+  runBtn ? `${runBtn.firstElementChild?.className} :: ${JSON.stringify(runBtn.textContent)}` : 'no Run button',
+);
 check(
   'the Export trigger is the canonical popover host (aria trio, disabled until a result exists)',
   !!exportBtn &&

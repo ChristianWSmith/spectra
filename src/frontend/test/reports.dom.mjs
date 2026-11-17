@@ -7,6 +7,9 @@
 //      flat match-scope METRIC definitions — the groupBy grouping died
 //      with the W2 grammar wave (no "by …" group headers, no
 //      profile-scope rows: those surface on PlayerProfile);
+//   A2. W17 (owner, 2026-11-16): the save button sits at the RIGHT end
+//      of the stats-inputs line (the ONE .row-between around the token
+//      field) and leads with the SAVE codicon — never play;
 //   B. picking a stat (through the field's suggestion) reads the
 //      STORED rows through the canonical read (one call carrying the
 //      whole picked set + the roster label read) — PreviewMetric is
@@ -383,6 +386,41 @@ console.log('A. the item universe behind the field is the raw recorded values pl
     !r.querySelector('.rep-mgroup') && !r.querySelector('.rep-sub') &&
       !/by ungrouped/.test(r.textContent),
     r.textContent.replace(/\s+/g, ' ').slice(0, 300),
+  );
+}
+
+// W17 (owner, 2026-11-16): the save button left the panel header and
+// parks at the RIGHT end of the stats-inputs line — the field whose
+// picks it exports and the button that writes the document share ONE
+// .row-between. The play glyph died with the move: the save codicon
+// LEADS the label now (the busy shape itself is progress-presentation's
+// pin). This fixture scripts a template, so the whole appendix block
+// ({#if tpl}) — button included — renders.
+console.log('A2. W17: the save button sits on the stats-inputs line, save icon leading');
+{
+  const statsField = r.querySelector('#rep-stats');
+  // The input sits INSIDE TokenSelect's .tk root — the line is its
+  // nearest .row-between ancestor (the wrapper this wave added).
+  const saveRow = statsField?.closest('.row-between');
+  const save = saveBtn(r);
+  check(
+    'the stats field and the save button share ONE .row-between line, button at its right end',
+    !!statsField &&
+      !!save &&
+      saveRow?.classList.contains('row-between') &&
+      saveRow.lastElementChild === save &&
+      r.querySelectorAll('.row-between').length === 1,
+    saveRow
+      ? `${saveRow.className} / rows=${r.querySelectorAll('.row-between').length}`
+      : 'no #rep-stats',
+  );
+  check(
+    'the button leads with the SAVE codicon (never play) and keeps its label',
+    !!save &&
+      save.firstElementChild?.classList.contains('codicon-save') &&
+      !save.querySelector('.codicon-play') &&
+      save.textContent.includes('Save report'),
+    save ? save.innerHTML.slice(0, 160) : 'no save button',
   );
 }
 

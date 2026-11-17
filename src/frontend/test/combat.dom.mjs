@@ -8,8 +8,9 @@
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
 // its long-event replay loop (H: solo's kill span at the loop length,
 // padded-span fallback, unstatable → no ?loop=), the bare round numbers
-// under the RD heading (J) and the Engagements ROUND scope — one
-// selector, 'all' by default, Engagements only (N).
+// under the RD heading (J) and the Engagements ROUND scope — the
+// TokenSelect MULTI-select (picked rounds as chips, empty set = all
+// rounds, Engagements only; N).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -149,6 +150,25 @@ for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink', 'StatusChip'
     join(dir, 'components', `${name}.js`),
   );
 }
+
+// TokenSelect (W17: the Engagements round MULTI-select) — its Popover
+// leaf compiles beside it, and the strings catalog rebases like every
+// other component this driver mounts.
+svelteCompile(
+  readFileSync('src/lib/components/Popover.svelte', 'utf8'),
+  'Popover.svelte',
+  join(dir, 'components', 'Popover.js'),
+);
+svelteCompile(
+  readFileSync('src/lib/components/TokenSelect.svelte', 'utf8')
+    .replace("from './Popover.svelte'", "from './Popover.js'")
+    .replace(
+      "from '../strings/index.js'",
+      `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+    ),
+  'TokenSelect.svelte',
+  join(dir, 'components', 'TokenSelect.js'),
+);
 
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
@@ -835,12 +855,13 @@ check(
   roundNs.join(','),
 );
 // W3a (owner answer Q2): the KAST grid/dialog gets NO round filter — its
-// cells are a read-out, and the view's ONE round selector is the
-// Engagements card's (section N drives it).
+// cells are a read-out; W17 (owner, 2026-11-16): the view's ONE round
+// control is the Engagements card's TokenSelect MULTI-select, so the
+// view carries no <select> at all any more (section N drives it).
 check(
-  'the KAST dialog carries no round filter (the grid has no select; the view’s only selector is the Engagements one)',
+  'the KAST dialog carries no round filter (the view has no <select>; the Engagements card owns the round token field)',
   !rootJ.querySelector('.comb-kast-grid select') &&
-    rootJ.querySelectorAll('select').length === 1 &&
+    rootJ.querySelectorAll('select').length === 0 &&
     !!rootJ.querySelector('#comb-round-filter'),
   `selects=${rootJ.querySelectorAll('select').length}`,
 );
@@ -1058,12 +1079,16 @@ console.log('M. Entry% / Trade% / Untraded deaths / Missed trades / KAST% are me
 }
 
 // ---------------------------------------------------------------------------
-// Section N: the Engagements ROUND scope (owner answer Q2, W3a): ONE
-// <select> on the Engagements card only — 'all' by default (no filter,
-// the kind toggles' all-off rule), a round number narrows the same list;
-// the Clutches card and the KAST grid/dialog carry none. Labels read the
-// canonical `RD<n> | <ct>-<t>` (roundScoreLabel, lib/rounds.js).
-console.log('N. engagements round scope: one selector, all-by-default, Engagements only');
+// Section N: the Engagements ROUND scope (owner answer Q2, W3a; W17
+// multi-select, owner 2026-11-16): the sanctioned TokenSelect on the
+// Engagements card only — picked rounds land as CHIPS in the field,
+// the empty set is the all-rounds default (no filter, the kind toggles'
+// all-off rule), a picked set ORs those rounds together; the Clutches
+// card and the KAST grid/dialog carry none. Labels read the canonical
+// `RD<n> | <ct>-<t>` (roundScoreLabel, lib/rounds.js); the visible
+// "Round" word rides the control's aria-label (W7), with no empty
+// label element left behind.
+console.log('N. engagements round scope: TokenSelect multi-select, empty set = all, Engagements only');
 {
   const rootN = await render({
     ...base,
@@ -1076,46 +1101,85 @@ console.log('N. engagements round scope: one selector, all-by-default, Engagemen
   const engN = sections(rootN, 'Engagements')[0];
   const tableN = engN?.querySelector('table');
   const selN = engN?.querySelector('#comb-round-filter');
+  const chipsN = () => [...(engN?.querySelectorAll('.tk-tok') || [])];
+  // TokenSelect's panel opens on focus (its onfocus → open), so the
+  // options are readable once the paint settles — the reports driver's
+  // openBox pattern over the round field.
+  const openRoundBox = async () => {
+    selN?.dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
+    await sleep(60);
+    return [...(engN?.querySelectorAll('.tk-opt') || [])];
+  };
+  const pickN = async (label) => {
+    const opt = (await openRoundBox()).find((o) => o.textContent.trim() === label);
+    if (opt) click(opt);
+    await sleep();
+    return !!opt;
+  };
+  const removeChipN = async (label) => {
+    const chip = chipsN().find((c) => c.textContent.trim() === label);
+    const x = chip?.querySelector('.tk-x');
+    if (x) click(x);
+    await sleep();
+    return !!x;
+  };
   check(
-    'the engagement filter row carries the round selector',
-    !!selN,
-    engN ? 'no #comb-round-filter' : 'no Engagements section',
-  );
-  check(
-    'its options are "All rounds" + one canonical RD | score label per round with a kill',
+    'the engagement filter row carries the round token field (aria-label "Round", no visible label left behind)',
     !!selN &&
-      [...selN.options].map((o) => o.textContent.trim()).join(',') ===
-        'All rounds,RD6 | 0-0,RD7 | 0-0',
-    selN ? [...selN.options].map((o) => o.textContent.trim()).join(',') : 'missing',
+      selN.getAttribute('aria-label') === 'Round' &&
+      !!engN?.querySelector('.comb-round-filter .tk') &&
+      !engN.querySelector('.comb-round-filter .field-label') &&
+      !engN.querySelector('.comb-round-filter label'),
+    engN
+      ? selN
+        ? `aria=${selN.getAttribute('aria-label')}`
+        : 'no #comb-round-filter'
+      : 'no Engagements section',
+  );
+  const optsN = await openRoundBox();
+  check(
+    'its suggestions are one canonical RD | score label per round with a kill — no "All rounds" row (the empty set IS all rounds)',
+    JSON.stringify(optsN.map((o) => o.textContent.trim())) ===
+      JSON.stringify(['RD6 | 0-0', 'RD7 | 0-0']),
+    optsN.map((o) => o.textContent.trim()).join(','),
   );
   check(
-    'the default is "All rounds" — no filter, every row shows (the kind toggles’ all-off rule)',
-    selN?.value === 'all' && rows(tableN).length === 3,
-    `${selN?.value} / ${rows(tableN).length} rows`,
+    'the default is an empty set — no chips, every row shows (the kind toggles’ all-off rule)',
+    chipsN().length === 0 && rows(tableN).length === 3,
+    `${chipsN().length} chips / ${rows(tableN).length} rows`,
   );
-  selN.value = '6';
-  selN.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  await sleep();
   check(
-    'round 6 selected → only round 6’s kill shows, the control reads the choice back',
-    rows(tableN).length === 1 &&
+    'round 6 picked → only round 6’s kill shows, the pick reads back as a chip',
+    (await pickN('RD6 | 0-0')) &&
+      rows(tableN).length === 1 &&
       rows(tableN)[0]?.textContent.includes('bob') &&
-      selN.value === '6',
-    `${rows(tableN).length} rows / value=${selN.value}`,
+      chipsN().some((c) => c.textContent.trim() === 'RD6 | 0-0'),
+    `${rows(tableN).length} rows / chips=${chipsN().map((c) => c.textContent.trim()).join('|')}`,
   );
-  selN.value = 'all';
-  selN.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  await sleep();
   check(
-    'back to "All rounds" → every row returns',
-    rows(tableN).length === 3 && selN.value === 'all',
-    `${rows(tableN).length} rows / value=${selN.value}`,
+    'adding round 7 → the picked set ORs both rounds (every row returns, two chips)',
+    (await pickN('RD7 | 0-0')) &&
+      rows(tableN).length === 3 &&
+      chipsN().length === 2,
+    `${rows(tableN).length} rows / chips=${chipsN().length}`,
+  );
+  check(
+    'removing both chips → the empty set shows every row again',
+    (await removeChipN('RD6 | 0-0')) &&
+      (await removeChipN('RD7 | 0-0')) &&
+      chipsN().length === 0 &&
+      rows(tableN).length === 3,
+    `${rows(tableN).length} rows / chips=${chipsN().length}`,
   );
   const clutchN = sections(rootN, 'Clutches')[0];
   check(
-    'the Clutches card carries NO round selector (owner answer Q2)',
-    !!clutchN && !clutchN.querySelector('select'),
-    clutchN ? `selects=${clutchN.querySelectorAll('select').length}` : 'no Clutches section',
+    'the Clutches card carries NO round control (owner answer Q2)',
+    !!clutchN &&
+      !clutchN.querySelector('#comb-round-filter') &&
+      !clutchN.querySelector('.tk'),
+    clutchN
+      ? `token fields=${clutchN.querySelectorAll('.tk').length}`
+      : 'no Clutches section',
   );
 }
 

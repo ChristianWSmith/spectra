@@ -146,8 +146,11 @@ label.filt-lab {
 }
 
 /* The Engagements round scope (owner answer Q2): the ONE round
-   <select> sitting in the kind-toggle row — label and control on the
-   same line, never a second filter row. The Clutches card's
+   MULTI-select (W17: the sanctioned TokenSelect — chips in the field)
+   sitting in the kind-toggle row, never a second filter row. The
+   visible "Round" label rides the control's aria-label (W7), so this
+   wrapper carries no label element — it only keeps the field a
+   shrink-to-fit flex item beside the toggles. The Clutches card's
    .comb-kinds row deliberately has none. NOT `.comb-round`: that class
    is the KAST grid's per-round cell (below) and must stay untouched. */
 .comb-round-filter {

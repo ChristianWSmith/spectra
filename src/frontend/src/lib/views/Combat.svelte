@@ -61,6 +61,7 @@
   import EventPlay from '../components/EventPlay.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import TokenSelect from '../components/TokenSelect.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -179,15 +180,18 @@
     // scalar `engKind` entry fails sameKind's array check and is
     // whitelisted away — no migration.
     engKinds: [],
-    // The engagements ROUND scope (owner answer Q2, 2026-11-16): ONE
-    // round <select> on the Engagements card ONLY — the Clutches card
-    // and the KAST grid/dialog get none (the criterion is that the
-    // round picker scopes the kill-by-kill list it sits on). The value
-    // is the option's own string: 'all' (the default = no filter — the
-    // kind toggles' all-off rule applies here too: a fresh card shows
-    // every row) or a round number. Unlike the throw log's preselect
-    // (Q1), nothing narrows by default.
-    engRound: 'all',
+    // The engagements ROUND scope (owner answer Q2, 2026-11-16; W17
+    // multi-select, owner 2026-11-16): an ARRAY of picked rounds on the
+    // Engagements card ONLY — the Clutches card and the KAST
+    // grid/dialog get none (the criterion is that the round picker
+    // scopes the kill-by-kill list it sits on). [] (the default) is the
+    // no-filter value — the kind toggles' all-off rule applies here
+    // too: a fresh card shows every row — and a picked set ORs those
+    // rounds together. Unlike the throw log's preselect (Q1), nothing
+    // narrows by default. The old scalar `engRound` ('all'/round-as-
+    // text) fails sameKind's array check and never surfaces — no
+    // migration.
+    engRounds: [],
     clutchWon: true,
     clutchLost: false,
     // The default ordering follows the KAST slot — now a METRIC column
@@ -203,9 +207,10 @@
   const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
   const combSeed = combInit();
   let engKinds = $state(combSeed.engKinds);
-  // The Engagements round scope: 'all' (no filter — the default) or a
-  // round's option value (a round number as text); see combDefaults.
-  let engRound = $state(combSeed.engRound);
+  // The Engagements round scope: [] (no filter — the default) or the
+  // picked round numbers (the sanctioned TokenSelect multi-select's
+  // set semantics); see combDefaults.
+  let engRounds = $state(combSeed.engRounds);
   // Clutches card outcome toggle — LOCAL state only: never stamped into
   // the URL (the route-query retention ruling resolved to the
   // process-scoped registry below): won ON and lost OFF by default, i.e.
@@ -228,13 +233,13 @@
       combLastKey = k;
       const s = seed(k, combDefaults());
       engKinds = s.engKinds;
-      engRound = s.engRound;
+      engRounds = s.engRounds;
       clutchWon = s.clutchWon;
       clutchLost = s.clutchLost;
       statSort = s.statSort;
       return;
     }
-    remember(k, { engKinds, engRound, clutchWon, clutchLost, statSort });
+    remember(k, { engKinds, engRounds, clutchWon, clutchLost, statSort });
   });
 
   // KAST drill-down modal (per-round K/A/T/S grid).
@@ -438,25 +443,38 @@
   // matches when it CONTAINS ANY selected kind — a trade+untraded kill
   // shows under either toggle and once (not twice) under both. With
   // every toggle off (the default) there is no kind filter at all. The
-  // round scope (owner answer Q2) narrows the SAME list to one round —
-  // 'all' (the default) is no round filter either. Both predicates
-  // compose over the fetch order of engagementRows, which is preserved.
+  // round scope (owner answer Q2; W17 multi-select, owner 2026-11-16)
+  // narrows the SAME list to the picked SET — an empty set (the
+  // default) is no round filter either, and a picked set ORs those
+  // rounds together (RD7 selected alone shows round 7; adding RD6
+  // unions it in). Both predicates compose over the fetch order of
+  // engagementRows, which is preserved.
   const engRoundOptions = $derived(
     [...new Set(engagementRows.map((g) => g.round))].sort((a, b) => a - b),
+  );
+  // The TokenSelect universe: one {id, label} per round with a kill —
+  // labels the canonical `RD<n> | <ct>-<t>` (roundScoreLabel), so the
+  // type-to-search box searches the same words it shows.
+  const engRoundItems = $derived(
+    engRoundOptions.map((n) => ({ id: n, label: roundScoreLabel(rounds, n) })),
   );
   const visibleEngagements = $derived(
     engagementRows.filter(
       (g) =>
         (engKinds.length === 0 || g.kinds.some((k) => engKinds.includes(k))) &&
-        (engRound === 'all' || String(g.round) === engRound),
+        (engRounds.length === 0 || engRounds.includes(g.round)),
     ),
   );
 
   // Each click adds its kind to the selection or removes it (the
   // Clutches card's independent-toggle shape): deselecting everything
-  // lands back on the all-off default = no filter.
+  // lands back on the all-off default = no filter. The round scope
+  // toggles the same way through TokenSelect's pick/remove pair.
   function toggleEngKind(k) {
     engKinds = engKinds.includes(k) ? engKinds.filter((x) => x !== k) : [...engKinds, k];
+  }
+  function toggleEngRound(n) {
+    engRounds = engRounds.includes(n) ? engRounds.filter((x) => x !== n) : [...engRounds, n];
   }
 
   const sortedStats = $derived.by(() => {
@@ -748,24 +766,26 @@
           >{k}</button>
         {/each}
         <!-- The ONE round scope (owner answer Q2): Engagements only —
-             the Clutches card and the KAST grid/dialog carry none. The
-             default is 'all' (no filter — the kind toggles' all-off
-             rule); option labels read the canonical `RD<n> | <ct>-<t>`
-             (roundScoreLabel). -->
-        <label class="comb-round-filter" for="comb-round-filter">
-          <span class="field-label">{S.combat.roundFilterLabel}</span>
-          <select
-            class="input"
+             the Clutches card and the KAST grid/dialog carry none. W17
+             (owner, 2026-11-16): the single <select> became the
+             sanctioned TokenSelect MULTI-select — picked rounds land as
+             chips in the field (type to search the canonical
+             `RD<n> | <ct>-<t>` labels), an empty set = ALL rounds (the
+             kind toggles' all-off rule), a picked set ORs those rounds
+             together. The visible "Round" label moved onto the control
+             as its aria-label (W7) — no empty label element left
+             behind. -->
+        <div class="comb-round-filter">
+          <TokenSelect
             id="comb-round-filter"
-            value={engRound}
-            onchange={(e) => (engRound = e.currentTarget.value)}
-          >
-            <option value="all">{S.combat.allRounds}</option>
-            {#each engRoundOptions as n (n)}
-              <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
-            {/each}
-          </select>
-        </label>
+            items={engRoundItems}
+            text={(it) => it.label}
+            tokens={engRounds.map((n) => ({ id: n, label: roundScoreLabel(rounds, n) }))}
+            ariaLabel={S.combat.roundFilterLabel}
+            onselect={(it) => toggleEngRound(it.id)}
+            onremove={(n) => toggleEngRound(n)}
+          />
+        </div>
       </div>
       <div class="table-scroll">
         <table class="data-table">

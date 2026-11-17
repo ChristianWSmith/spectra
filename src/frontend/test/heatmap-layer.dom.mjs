@@ -962,11 +962,12 @@ check(
 // select; the heatmap CONTENT AND the filter controls (toolbar + progress
 // row) now share the single card (V8b reversed C18 — section N's
 // toolbar/progress pins above stay green); the empty-state hint line is
-// gone (V8c); the floating Save parks bottom-right of that card (V8e);
-// and the view's rows center on one axis with a height cap on the radar
-// block — CSS text, the econ-tables/replay ruleBody precedent, since no
-// driver asserts rendered CSS.
-console.log('P. Heatmaps view: floor <select>, controls+content card, Save, centered rows, height cap');
+// gone (V8c); the floating bottom-right cluster carries Generate + Save
+// image (V8e, extended by W17 — the toolbar lost its Generate button to
+// the cluster); and the view's rows center on one axis with a height cap
+// on the radar block — CSS text, the econ-tables/replay ruleBody
+// precedent, since no driver asserts rendered CSS.
+console.log('P. Heatmaps view: floor <select>, controls+content card, floating Generate+Save, centered rows, height cap');
 
 {
   const floorAt = heatSrc.indexOf('id="heat-floor"');
@@ -1078,12 +1079,13 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, Save, cent
     '',
   );
 
-  // --- V8e: the floating Save -------------------------------------------
-  // It renders only once a heatmap exists (`grid`), hands HeatmapLayer's
-  // PRIVATE composite canvas to the canonical downloadCanvasPNG through
-  // the explicit onCanvas bridge, and parks bottom-right of the card —
-  // which needs .panel to become a positioning context (scoped to
-  // .heat-view so no other panel gains one).
+  // --- V8e/W17: the floating bottom-right cluster ---------------------------
+  // Save renders only once a heatmap exists (`grid && heatCanvas`), hands
+  // HeatmapLayer's PRIVATE composite canvas to the canonical
+  // downloadCanvasPNG through the explicit onCanvas bridge; W17 (owner,
+  // 2026-11-16) moved Generate OUT of the toolbar into the SAME floating
+  // cluster (Save to its LEFT), which needs .panel to become a positioning
+  // context (scoped to .heat-view so no other panel gains one).
   const layerSrc = readFileSync('src/lib/components/HeatmapLayer.svelte', 'utf8');
   const saveAt = heatSrc.indexOf('class="btn heat-save"');
   const saveGateAt = heatSrc.indexOf('{#if grid && heatCanvas}');
@@ -1091,6 +1093,21 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, Save, cent
     'Save button markup lives in the view, gated on the generated raster (grid && heatCanvas)',
     saveAt > panelAt && saveAt < panelEnd && saveGateAt > panelAt && saveGateAt < saveAt,
     `${panelAt} ${saveGateAt} ${saveAt} ${panelEnd}`,
+  );
+  // W17: the cluster itself — Generate rides it ALWAYS (out of the
+  // toolbar, the card's primary action before any grid exists), the
+  // gated Save sits to its LEFT, both inside the card.
+  const floatAt = heatSrc.indexOf('<div class="heat-float">');
+  const genAt = heatSrc.indexOf('class="btn primary heat-generate"');
+  check(
+    'the floating cluster: Generate always renders (out of the toolbar) with the gated Save to its LEFT',
+    floatAt > panelAt &&
+      floatAt < panelEnd &&
+      saveGateAt > floatAt &&
+      saveAt > saveGateAt &&
+      genAt > saveAt &&
+      genAt < panelEnd,
+    `${panelAt} ${floatAt} ${saveGateAt} ${saveAt} ${genAt} ${panelEnd}`,
   );
   check(
     'Save path: downloadCanvasPNG (THE canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
@@ -1108,9 +1125,11 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, Save, cent
   );
   const m3aNorm = m3a.replace(/\s+/g, ' ');
   check(
-    'Save positioning: .heat-view .panel is the positioning context and .heat-save parks bottom-right of it',
+    'Save positioning: .heat-view .panel is the positioning context and the .heat-float cluster parks bottom-right (Save left of Generate)',
     /\.heat-view \.panel \{ position: relative; \}/.test(m3aNorm) &&
-      /\.heat-save \{ position: absolute; right: 12px; bottom: 10px;/.test(m3aNorm),
+      /\.heat-float \{ position: absolute; right: 12px; bottom: 10px;/.test(m3aNorm) &&
+      /\.heat-save \{ background: var\(--panel\);/.test(m3aNorm) &&
+      !/\.heat-save \{[^}]*position: absolute/.test(m3aNorm),
     '',
   );
 

@@ -10,7 +10,10 @@ export const reports = {
   subtitle: 'Templated match / player / round reports.',
   retry: 'Retry',
   templateAndTarget: 'Template & target',
-  generateReport: 'Save report ',
+  // The trailing space died with the trailing play glyph (W17, owner
+  // 2026-11-16): the save codicon now LEADS this label, and the space
+  // between them lives in the markup at the call site.
+  generateReport: 'Save report',
   originTitle: 'Origin',
   noTemplates: 'No report templates available.',
   noMatches: 'No matches in the library yet.',
