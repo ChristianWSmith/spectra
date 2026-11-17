@@ -53,13 +53,13 @@
 //      (cancel removes nothing; confirm calls RemovePlugin with the id
 //      and the row leaves).
 //   J. The plugin source row: the READ-ONLY path display (no free
-//      typing — the placeholder input is gone) and BOTH native pickers
-//      (the addendum: no dialog on our platforms mixes files and
-//      folders) — Browse… with its search glyph for the bundle
-//      directory and the icon-only manifest-file button (codicon-file,
-//      aria-label + title) filling the SAME display (one display, one
-//      picked path) — with Install handing the shown path to
-//      InstallPlugin in each round.
+//      typing — the placeholder input is gone) and the ONE native file
+//      picker (w27 file-only: install takes a single
+//      spectra-plugin.json) — Browse… with its search glyph and the
+//      manifest-file tooltip filling the display, with Install handing
+//      the shown path to InstallPlugin in each round and the button
+//      leaving "Installing…" once the call resolves (the stall
+//      regression: it must never stick).
 //   K. Build plugin… (w23): the card-header trigger (codicon-export +
 //      label riding the .row-between beside the Plugins heading), the
 //      dialog's anatomy (the name field with its hint, the 1.0.0
@@ -185,12 +185,9 @@ bindings.PlatformService.RemovePlugin = (id) => {
   pluginList = []; // the real Remove deletes the bundle → the next list is empty
   return Promise.resolve();
 };
-// The plugin-source picker + install (w20): the browse click hands back
-// a picked path, Install echoes it back as a validated install state.
-bindings.PlatformService.ChoosePluginSource = () => {
-  bindings.calls.push({ method: 'ChoosePluginSource', args: [] });
-  return Promise.resolve('/srv/plug');
-};
+// The plugin-source picker + install (w20, collapsed to ONE picker by
+// w27): the browse click hands back a picked manifest-file path, Install
+// echoes it back as a validated install state.
 bindings.PlatformService.InstallPlugin = (p) => {
   bindings.calls.push({ method: 'InstallPlugin', args: [p] });
   return Promise.resolve({
@@ -200,8 +197,9 @@ bindings.PlatformService.InstallPlugin = (p) => {
     error: '',
   });
 };
-// The manifest-file picker (w20 addendum): the icon-only twin of the
-// directory picker, filling the SAME read-only display.
+// THE plugin-source picker (w27 file-only): the manifest file fills the
+// read-only display; there is deliberately NO folder-picker stub — a
+// stray call would throw.
 bindings.PlatformService.ChoosePluginFile = () => {
   bindings.calls.push({ method: 'ChoosePluginFile', args: [] });
   return Promise.resolve('/srv/spectra-plugin.json');
@@ -830,7 +828,7 @@ console.log('I. plugin rows (the fixture renders them — structure, the text to
   );
 }
 
-console.log('J. the plugin source row: the read-only display, BOTH pickers and the install flow');
+console.log('J. the plugin source row: the read-only display, the ONE file picker and the install flow');
 {
   const input = $('.sett-plugin-path')[0];
   check(
@@ -840,25 +838,24 @@ console.log('J. the plugin source row: the read-only display, BOTH pickers and t
   );
   const browse = $('button').find((b) => b.textContent.includes('Browse…'));
   check(
-    'Browse… carries its label and the codicon-search glyph',
+    'Browse… is THE picker: label + codicon-search glyph + the manifest-file tooltip',
     !!browse &&
       !browse.disabled &&
       !!browse.querySelector('.codicon.codicon-search[aria-hidden="true"]') &&
-      browse.textContent.includes('Browse…'),
+      browse.textContent.includes('Browse…') &&
+      browse.title === 'Choose the spectra-plugin.json file to install',
     browse ? browse.outerHTML.slice(0, 260) : 'missing',
   );
-  // The manifest-file picker (w20 addendum): the icon-only twin of
-  // Browse… — no native dialog on our platforms mixes files and folders,
-  // so each source kind gets its own affordance.
-  const fileBtn = $('button').find((b) => b.getAttribute('aria-label') === 'Choose manifest file');
+  // w27 file-only: ONE affordance — the folder picker (browsePlugin) and
+  // the icon-only file twin are both gone, so the source row holds
+  // exactly Browse… + Install.
+  const rowBtns = input ? [...input.closest('.row-between').querySelectorAll('button')] : [];
   check(
-    'the manifest-file button is icon-only: codicon-file, no text, aria-label + title carrying the word',
-    !!fileBtn &&
-      !fileBtn.disabled &&
-      !fileBtn.textContent.trim() &&
-      !!fileBtn.querySelector('.codicon.codicon-file[aria-hidden="true"]') &&
-      fileBtn.title === 'Choose a single manifest file instead of a bundle folder',
-    fileBtn ? fileBtn.outerHTML.slice(0, 320) : 'missing',
+    'the source row is Browse… + Install only (the folder picker and the icon-only file button are gone)',
+    rowBtns.length === 2 &&
+      rowBtns[0].textContent.includes('Browse…') &&
+      rowBtns[1].textContent.includes('Install from path'),
+    `buttons=${rowBtns.length} labels=${rowBtns.map((b) => b.textContent.trim()).join('|')}`,
   );
   const install = $('button').find((b) => b.textContent.includes('Install from path'));
   check(
@@ -867,33 +864,20 @@ console.log('J. the plugin source row: the read-only display, BOTH pickers and t
     install ? `disabled=${install.disabled}` : 'missing',
   );
 
-  // Round 1: the directory pick, then the file pick REPLACING it in the
-  // same display (one display, one picked path — the two pickers never
-  // both run), then the install of whichever path is showing.
+  // One round: the file pick lands in the read-only display, then the
+  // install of the path showing.
   click(browse);
   await sleep(20);
   check(
-    'the bundle-directory pick lands in the read-only display and arms Install',
-    !!input && input.value === '/srv/plug' && !!install && !install.disabled,
+    'the manifest-file pick lands in the read-only display and arms Install',
+    !!input && input.value === '/srv/spectra-plugin.json' && !!install && !install.disabled,
     `value=${input && input.value} disabled=${install && install.disabled}`,
-  );
-  click(fileBtn);
-  await sleep(20);
-  check(
-    'the file pick REPLACES it in the same display (one display, one picked path) and arms Install',
-    !!input &&
-      input.value === '/srv/spectra-plugin.json' &&
-      !!install &&
-      !install.disabled &&
-      callCount('ChoosePluginSource') === 1 &&
-      callCount('ChoosePluginFile') === 1,
-    `value=${input && input.value} dir=${callCount('ChoosePluginSource')} file=${callCount('ChoosePluginFile')}`,
   );
   click(install);
   await sleep(50);
   let installs = bindings.calls.filter((c) => c.method === 'InstallPlugin');
   check(
-    'Install hands the manifest-file path to InstallPlugin',
+    'Install hands the picked manifest-file path to InstallPlugin',
     installs.length === 1 && installs[0].args[0] === '/srv/spectra-plugin.json',
     JSON.stringify(installs.map((c) => c.args)),
   );
@@ -902,22 +886,32 @@ console.log('J. the plugin source row: the read-only display, BOTH pickers and t
     !!input && input.value === '' && body().includes('Installed demo.'),
     `value=${input && input.value}`,
   );
+  // The stall regression (w27): "Installing…" is the in-flight word of
+  // this button — once InstallPlugin resolves it must read Install from
+  // path again (disabled only because the cleared display has no path),
+  // never stick on Installing….
+  check(
+    'the button leaves Installing… once the call resolves (the reported stall must not recur)',
+    !!install &&
+      install.textContent.includes('Install from path') &&
+      !body().includes('Installing…'),
+    install ? `text=${install.textContent.trim()} disabled=${install.disabled}` : 'missing',
+  );
 
-  // Round 2: the directory picker still drives the same row after a
-  // file pick, and its path reaches InstallPlugin too.
+  // A second round: the row re-arms from a fresh pick and installs again.
   click(browse);
   await sleep(20);
   check(
-    'a second bundle-directory pick lands in the same display and re-arms Install',
-    !!input && input.value === '/srv/plug' && !!install && !install.disabled,
+    'a second file pick re-arms the same display',
+    !!input && input.value === '/srv/spectra-plugin.json' && !!install && !install.disabled,
     `value=${input && input.value}`,
   );
   click(install);
   await sleep(50);
   installs = bindings.calls.filter((c) => c.method === 'InstallPlugin');
   check(
-    'the second install hands the bundle path to InstallPlugin',
-    installs.length === 2 && installs[1].args[0] === '/srv/plug',
+    'the second install hands the manifest-file path to InstallPlugin again',
+    installs.length === 2 && installs[1].args[0] === '/srv/spectra-plugin.json',
     JSON.stringify(installs.map((c) => c.args)),
   );
 }

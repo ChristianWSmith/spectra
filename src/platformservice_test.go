@@ -316,32 +316,12 @@ func TestPluginLifecycleViaService(t *testing.T) {
 	}
 }
 
-// TestChoosePluginSource pins the bundle-directory picker's contract
-// through the promptPluginPick seam: a choice passes through verbatim,
-// while a cancel ("" + nil) and a dialog failure both read as "" — the
-// same contract as ChooseDemoDir/ChooseCS2Dir, and no real dialog ever
-// opens in a test.
-func TestChoosePluginSource(t *testing.T) {
-	svc := &PlatformService{
-		promptPluginPick: func() (string, error) { return "/srv/plug", nil },
-	}
-	if got := svc.ChoosePluginSource(); got != "/srv/plug" {
-		t.Errorf("choice: got %q, want /srv/plug", got)
-	}
-	svc.promptPluginPick = func() (string, error) { return "", nil }
-	if got := svc.ChoosePluginSource(); got != "" {
-		t.Errorf("cancel: got %q, want \"\"", got)
-	}
-	svc.promptPluginPick = func() (string, error) { return "", errors.New("dialog broke") }
-	if got := svc.ChoosePluginSource(); got != "" {
-		t.Errorf("dialog failure: got %q, want \"\"", got)
-	}
-}
-
-// TestChoosePluginFile is the manifest-file twin: the same three-case
-// contract on the SECOND affordance (w20 addendum — no native dialog on
-// Linux/Windows mixes files and folders, so the two source kinds get a
-// picker each).
+// TestChoosePluginFile pins THE plugin-source picker's contract through
+// the promptPluginPick seam: a choice passes through verbatim, while a
+// cancel ("" + nil) and a dialog failure both read as "" — the same
+// contract as ChooseDemoDir/ChooseCS2Dir, and no real dialog ever opens
+// in a test. (The folder-picker twin died with w27's file-only ruling —
+// install takes a manifest file, never a folder.)
 func TestChoosePluginFile(t *testing.T) {
 	svc := &PlatformService{
 		promptPluginPick: func() (string, error) { return "/srv/spectra-plugin.json", nil },

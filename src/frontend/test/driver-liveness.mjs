@@ -861,6 +861,14 @@ const EXPECTED = {
   // save receiving spectra-plugin.json with the composed text landing
   // (plus the status line), the silent cancel, the server-failure error
   // line (no save dialog), and the head ✕ closing the dialog.
+  // settings 111 → 111 (2026-11-17, w27 file-only plugin install): §J
+  // re-pinned in place with the SAME check count — ONE picker now (the
+  // folder picker and the icon-only file button are both gone: the
+  // source row is exactly Browse… + Install, Browse… carries the
+  // manifest-file tooltip), one file-pick round instead of the
+  // dir-pick-then-file-replace pair, and the new stall regression (the
+  // button must leave "Installing…" once InstallPlugin resolves). The
+  // retired folder-picker pins died with the control; §K untouched.
   'settings.dom.mjs': 111,
   // sqlconsole (2026-11-15, help-buttons): NEW at 5 — the SQL console
   // is the one view header with no driver of its own (its loading lines

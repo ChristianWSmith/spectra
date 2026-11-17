@@ -82,14 +82,13 @@ export const settings = {
   fontSizeAria: 'Font size',
 
   // Plugins panel
-  pluginsNoteLead: 'Declarative bundles: a directory with',
+  pluginsNoteLead: 'Declarative bundles: a single',
   pluginManifestName: 'spectra-plugin.json',
   pluginsNoteTail:
-    '(plus optional metric /\n      report-template definitions) or a single manifest JSON. Enabled plugins\n      contribute metrics and report templates on the next list — no restart.',
+    'with your metrics and report\n      templates inlined. Enabled plugins contribute metrics and report\n      templates on the next list — no restart.',
   pluginPathAria: 'Plugin source path',
   browsePlugin: 'Browse…',
-  choosePluginFileLabel: 'Choose manifest file',
-  choosePluginFileTitle: 'Choose a single manifest file instead of a bundle folder',
+  choosePluginFileTitle: 'Choose the spectra-plugin.json file to install',
   installing: 'Installing…',
   installFromPath: 'Install from path',
   noPluginsYet: 'No plugins installed yet.',

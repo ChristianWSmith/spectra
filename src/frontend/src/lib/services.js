@@ -978,13 +978,10 @@ export function clearQueryHistory() { return QueryService.ClearHistory(); }
 export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
 export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
 export function listPlugins() { return PlatformService.ListPlugins(); }
-// choosePluginSource opens the native plugin-source picker (a bundle
-// directory or a single spectra-plugin.json — both InstallPlugin source
-// kinds); resolves to "" on cancel (the chooseDemoDir pattern).
-export function choosePluginSource() { return PlatformService.ChoosePluginSource(); }
-// choosePluginFile is the manifest-file twin of choosePluginSource — no
-// native dialog on Linux/Windows offers files AND folders at once, so
-// the two source kinds get a picker each. Same ""-on-cancel contract.
+// choosePluginFile opens the native manifest-file picker — THE plugin
+// source picker (install takes a single spectra-plugin.json, w27 — no
+// native dialog on Linux/Windows mixes files and folders anyway).
+// Resolves to "" on cancel (the chooseDemoDir pattern).
 export function choosePluginFile() { return PlatformService.ChoosePluginFile(); }
 // installPlugin/setPluginEnabled/removePlugin are mutating wrappers like
 // saveMetric/deleteMetric: no event fires when the op itself resolves,
