@@ -662,8 +662,12 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- the three opening-duel rows) — plus the M3 combat-damage addendum
 -- (dmg_no_kill + kill_conversion, plan §7 M3; 2026-11-17 re-pin of the
 -- FIFTY-NINE count and the scope split it sanctions: the plan's §8
--- seed list names both rows as numeric match seeds). Scope split: 48
--- match / 13 profile (2026-11-17, same plan row: +2 match).
+-- seed list names both rows as numeric match seeds) — plus the Option
+-- A count addendum (22 rows: 16 match raw player_stats count rows + 6
+-- profile rows — owner Option A extension, 2026-11-17, an owner
+-- amendment the plan's §8 does not list). Scope split: 64 match / 19
+-- profile (2026-11-17: +2 match M3, then +16 match +6 profile Option
+-- A).
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -745,12 +749,14 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly sixty-one — trade_rate
+-- THE builtins, seeded (see header): exactly eighty-three — trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
--- rows: 38 match / 4 profile) and the M3 combat-damage addendum (2
+-- rows: 38 match / 4 profile), the M3 combat-damage addendum (2
 -- match rows, dmg_no_kill + kill_conversion — plan §7 M3/§8, the
--- 2026-11-17 count re-pin), each with the interpretation recorded
+-- 2026-11-17 count re-pin) and the Option A count addendum (22 rows:
+-- 16 match raw-count rows + 6 profile rows — owner Option A
+-- extension, 2026-11-17), each with the interpretation recorded
 -- in its doc. The eighth match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of this INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1112,6 +1118,131 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'from events: ratio(sum(where kind = ''damage'' and exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg), sum(where kind = ''damage'', dmg))',
  'match', 'percent',
  'Formula: sum(events.dmg with a same-tick, same-actor kill) / sum(events.dmg over damage events) — the share of this player''s damage that converts into kills, addressed per player — a percent.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- addendum: the Option A count addendum (22 rows — owner Option
+-- A extension, 2026-11-17: the metrics system IS the gameplay-
+-- statistics layer, so every raw gameplay-stat column that is sum-
+-- expressible converts to a count seed; exclusions are the stated
+-- (a)–(e) kinds — identity columns, JSON blobs, existing canonical
+-- seeds, plan-owned wins, derived formulas). 16 match rows over the
+-- raw player_stats columns (the scoreboard's K/D/MVPs/DMG/Util
+-- columns among them) + 6 profile rows: the career twins of the
+-- scoreboard five and the career match count. score stays UNSEEDED
+-- (game-internal composite — its sum has no honest reading);
+-- opening_kills/opening_deaths stay UNSEEDED because they are the
+-- SAME first-blood attribution stored twice as entry_kills/
+-- entry_deaths (extract/agg.go increments both in one branch) — the
+-- entry seeds are canonical. All int, no denominator: the rounds
+-- denominator machinery owns ADR/Entry%, never a raw count.
+('kills', 'Kills', 'K',
+ 'from player_stats: sum(kills)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.kills) — kills this player earned, addressed per player — the scoreboard''s K column.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('deaths', 'Deaths', 'D',
+ 'from player_stats: sum(deaths)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.deaths) — deaths this player suffered, addressed per player — the scoreboard''s D column.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('mvps', 'MVPs', 'MVPs',
+ 'from player_stats: sum(mvps)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.mvps) — rounds this player was awarded MVP, addressed per player — the scoreboard''s MVPs column.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('total_damage', 'Damage', 'DMG',
+ 'from player_stats: sum(total_damage)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.total_damage) — damage this player dealt, addressed per player — the scoreboard''s DMG column (ADR divides the same total by rounds).',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('utility_damage', 'Utility damage', 'Util',
+ 'from player_stats: sum(utility_damage)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.utility_damage) — the scoreboard''s raw Util total, addressed per player — all utility damage this player dealt (Util damage (paired) counts only in-window grenade hits).',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('headshots', 'Headshots', '',
+ 'from player_stats: sum(headshots)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.headshots) — kills that landed as headshots, addressed per player — the raw count behind HS%.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('teamkills', 'Team kills', '',
+ 'from player_stats: sum(teamkills)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.teamkills) — teammates this player killed, addressed per player — the raw team-kill count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('suicides', 'Suicides', '',
+ 'from player_stats: sum(suicides)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.suicides) — deaths to their own hand, addressed per player — the raw suicide count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('damage_taken', 'Damage taken', '',
+ 'from player_stats: sum(damage_taken)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.damage_taken) — damage this player absorbed, addressed per player — the taken-damage total.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('shots', 'Shots', '',
+ 'from player_stats: sum(shots)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.shots) — shots this player fired, addressed per player — the raw shot count (accuracy is a derived ratio, not this row).',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('hits', 'Hits', '',
+ 'from player_stats: sum(hits)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.hits) — shots that connected, addressed per player — the raw hit count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('rounds_played', 'Rounds played', '',
+ 'from player_stats: sum(rounds_played)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.rounds_played) — rounds this player appeared in, addressed per player — their own rounds, never the match''s (ADR divides by the match''s).',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('flashed_times', 'Times flashed', '',
+ 'from player_stats: sum(flashed_times)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.flashed_times) — times this player was blinded, addressed per player — the raw blind count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('bomb_plants', 'Bomb plants', '',
+ 'from player_stats: sum(bomb_plants)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.bomb_plants) — bombs this player planted, addressed per player — the raw plant count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('bomb_defuses', 'Bomb defuses', '',
+ 'from player_stats: sum(bomb_defuses)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.bomb_defuses) — bombs this player defused, addressed per player — the raw defuse count.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('money_spent_total', 'Money spent', '',
+ 'from player_stats: sum(money_spent_total)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.money_spent_total) — money this player spent, addressed per player — whole dollars over the match.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_kills', 'Kills', '',
+ 'from player_stats: sum(kills)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.kills) over the library — kills across the player''s career, addressed per player — the history row''s K column summed.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_deaths', 'Deaths', '',
+ 'from player_stats: sum(deaths)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.deaths) over the library — deaths across the player''s career, addressed per player — the history row''s D column summed.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_assists', 'Assists', '',
+ 'from player_stats: sum(assists)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.assists) over the library — cross-team assists across the player''s career, addressed per player — the history row''s A column summed.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_mvps', 'MVPs', '',
+ 'from player_stats: sum(mvps)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.mvps) over the library — MVP awards across the player''s career, addressed per player — the scoreboard MVPs column summed.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_total_damage', 'Damage', '',
+ 'from player_stats: sum(total_damage)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.total_damage) over the library — damage dealt across the player''s career, addressed per player — the DMG column summed (career ADR divides it).',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_matches', 'Matches played', '',
+ 'from player_stats: count()',
+ 'profile', 'int',
+ 'Formula: count(player_stats) over the library — matches this player appears in, addressed per player — the profile''s Matches card as a pinnable metric.',
  'builtin', '', CURRENT_TIMESTAMP),
 -- ---- addendum: the KDA conversion (w13d, 1 row, match scope) — the
 -- scoreboard's KDA column left the Go calculation for the metric

@@ -42,9 +42,10 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestBuiltinMetricsPreview: the sixty-one schema-seeded builtins
+// TestBuiltinMetricsPreview: the eighty-three schema-seeded builtins
 // (trade_rate + the dogfooding set + the inferred set + the plan §7 M3
-// combat-damage addendum) each compile and run on a fresh library — the
+// combat-damage addendum + the owner Option A count addendum —
+// 2026-11-17 re-pin) each compile and run on a fresh library — the
 // DoD "demonstrably expressible" loop end to end.
 func TestBuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
@@ -59,8 +60,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 61 {
-		t.Fatalf("builtins = %d, want 61 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair — the 2026-11-17 re-pin)", len(res.Rows))
+	if len(res.Rows) != 83 {
+		t.Fatalf("builtins = %d, want 83 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum — the 2026-11-17 re-pin)", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -102,12 +103,13 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 48 match / 13
+	// The scope split is part of the seed contract: 64 match / 19
 	// profile (the profile rows land inert — their surface converts in
-	// W3; w13d's kda row and the plan §7 M3 combat pair are match
-	// scope — the 2026-11-17 re-pin).
-	if scopes["match"] != 48 || scopes["profile"] != 13 {
-		t.Errorf("scope split = %d match / %d profile, want 48 / 13", scopes["match"], scopes["profile"])
+	// W3; w13d's kda row, the plan §7 M3 combat pair and the Option A
+	// count addendum's 16 raw-count rows are match scope — the
+	// 2026-11-17 owner Option A extension re-pin).
+	if scopes["match"] != 64 || scopes["profile"] != 19 {
+		t.Errorf("scope split = %d match / %d profile, want 64 / 19", scopes["match"], scopes["profile"])
 	}
 }
 
