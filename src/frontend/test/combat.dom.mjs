@@ -8,9 +8,13 @@
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
 // its long-event replay loop (H: solo's kill span at the loop length,
 // padded-span fallback, unstatable → no ?loop=), the bare round numbers
-// under the RD heading (J) and the Engagements ROUND scope — the
+// under the RD heading (A/B/D) and the Engagements ROUND scope — the
 // TokenSelect MULTI-select (picked rounds as chips, empty set = all
-// rounds, Engagements only; N).
+// rounds, Engagements only; N). The retired Combat stats panel and its
+// KAST drill-down dialog are GONE (J — no section heading and no KAST
+// trigger anywhere), the cold-start gate and the failed-load alert hold
+// over the two surviving panels (K, L), and the view never calls the
+// retired combat-stats / metric-slot reads (M).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -92,7 +96,7 @@ const svelteCompile = (src, filename, out) => {
 // sideparity) — the same copy the landmark-row / stat-card drivers do.
 // viewstate.svelte.js is Combat's view-state registry (match-scoped
 // seed/remember — see its header; plain JS, copied raw).
-for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js', 'metricstate.js']) {
+for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -115,21 +119,26 @@ const wait = (v) =>
     : globalThis.__combatDelay
       ? new Promise((res) => setTimeout(() => res(v), globalThis.__combatDelay))
       : Promise.resolve(v);
-export const getCombatStats = () => wait(d().stats || []);
+// The RETIRED reads (the Combat stats panel, its metric slots and the
+// KAST drill-down are gone): still exported so a re-import would link,
+// but section M arms __combatCalls and pins every one of these at ZERO
+// calls. Unarmed (null) the counter stays quiet everywhere else.
+const hit = (name) => {
+  const c = globalThis.__combatCalls;
+  if (c) c[name] += 1;
+};
+export const getCombatStats = () => { hit('getCombatStats'); return wait(d().stats || []); };
 export const getClutches = () => wait(d().clutches || []);
 export const getEngagements = () => wait(d().engagements || []);
-export const getPlayerRounds = () => wait(d().playerRounds || []);
+export const getPlayerRounds = () => { hit('getPlayerRounds'); return wait(d().playerRounds || []); };
 export const getRounds = () => wait(d().rounds || []);
 export const getScoreboard = () => wait(d().scoreboard || []);
 export const getMatch = () => wait(d().match || null);
-// The five converted stat slots read the canonical stored path (W2/W2b):
-// defs → one values read → the compute-state read. The live progress
-// feeds are subscriptions, not reads — they stay plain no-ops here.
-export const listMetrics = () => wait(d().listMetrics || []);
-export const getMetricValuesForMatch = () => wait(d().metricValues || []);
-export const getMetricComputeState = () => wait(d().metricStates || []);
-export const subscribeMetricProgress = () => () => {};
-export const onMetricDone = () => () => {};
+export const listMetrics = () => { hit('listMetrics'); return wait(d().listMetrics || []); };
+export const getMetricValuesForMatch = () => { hit('getMetricValuesForMatch'); return wait(d().metricValues || []); };
+export const getMetricComputeState = () => { hit('getMetricComputeState'); return wait(d().metricStates || []); };
+export const subscribeMetricProgress = () => { hit('subscribeMetricProgress'); return () => {}; };
+export const onMetricDone = () => { hit('onMetricDone'); return () => {}; };
 // The one pref read at mount (the loop length) — unset, so the view
 // seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
 export const getPref = () => Promise.resolve(undefined);
@@ -138,10 +147,11 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink', 'StatusChip']) {
+for (const name of ['EventPlay', 'ProfileLink', 'StatusChip']) {
   svelteCompile(
-    // plumbing (Strings Stage 3): SortTh imports the strings catalog —
-    // resolve it from the real tree (no-op for the import-less leaves).
+    // plumbing (Strings Stage 3): these components import the strings
+    // catalog — resolve it from the real tree (no-op for the import-less
+    // leaves).
     readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
       "from '../strings/index.js'",
       `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
@@ -244,36 +254,6 @@ const base = {
   scoreboard: [
     { steamId: 'A', name: 'alice', side: 'ct' },
     { steamId: 'B', name: 'bob', side: 't' },
-  ],
-  stats: [],
-  // The five converted stat slots' canonical read (W2/W2b): the seeded
-  // catalog, fresh stored rows and fresh compute states, so every
-  // section renders metric-backed cells; sections M/N script variants.
-  listMetrics: [
-    { id: 11, name: 'entry_rate', title: 'Entry%', shortName: 'Entry%', scope: 'match', format: 'percent', doc: 'Formula: entry_rate' },
-    { id: 12, name: 'trade_rate_deaths', title: 'Trade%', shortName: 'Trade%', scope: 'match', format: 'percent', doc: 'Formula: trade_rate_deaths' },
-    { id: 13, name: 'kast', title: 'KAST%', shortName: 'KAST%', scope: 'match', format: 'percent', doc: 'Formula: kast' },
-    { id: 14, name: 'untraded_deaths', title: 'Untraded deaths', shortName: '', scope: 'match', format: 'int', doc: 'Formula: untraded_deaths' },
-    { id: 15, name: 'missed_trades', title: 'Missed trades', shortName: '', scope: 'match', format: 'int', doc: 'Formula: missed_trades' },
-  ],
-  metricValues: [
-    { metricId: 11, steamId: 'A', value: 0.5, n: 24 },
-    { metricId: 11, steamId: 'B', value: 0.25, n: 24 },
-    { metricId: 12, steamId: 'A', value: 1.5, n: 12 },
-    { metricId: 12, steamId: 'B', value: 0, n: 12 },
-    { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
-    { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
-    { metricId: 14, steamId: 'A', value: 1, n: 6 },
-    { metricId: 14, steamId: 'B', value: 0, n: 6 },
-    { metricId: 15, steamId: 'A', value: 2, n: 6 },
-    { metricId: 15, steamId: 'B', value: 0, n: 6 },
-  ],
-  metricStates: [
-    { metricId: 11, state: 'fresh' },
-    { metricId: 12, state: 'fresh' },
-    { metricId: 13, state: 'fresh' },
-    { metricId: 14, state: 'fresh' },
-    { metricId: 15, state: 'fresh' },
   ],
   engagements: [
     { tick: 10640, round: 7, kind: 'opening', aSteam: 'A', aName: 'alice', bSteam: 'B', bName: 'bob', distance: 19.4, wonBy: 'ct' },
@@ -820,77 +800,34 @@ check(
   tableI.textContent.slice(-90),
 );
 
-console.log('J. RD{n} everywhere in Combat — the KAST drill-down round label too');
+console.log('J. the retired Combat stats panel and its KAST drill-down are gone');
 document.body.removeChild(rootI);
-const rootJ = await render({
-  ...base,
-  // The KAST cell is metric-value-backed now (W2): the row carries only
-  // the Go residual columns (W2b dropped untradedDeaths/tradeOppMissed —
-  // both are metric slots), and the 50% comes from the kast seed's
-  // stored row (base.metricValues — alice 0.5 ×100).
-  stats: [
-    {
-      steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0,
-    },
-  ],
-  playerRounds: [
-    { round: 6, kills: 0, assists: 1, deaths: 0, traded: false, survived: true, kast: true },
-    { round: 7, kills: 2, assists: 0, deaths: 1, traded: true, survived: false, kast: true },
-  ],
-});
-const statsRow = rows(sections(rootJ, 'Combat stats')[0]?.querySelector('table') || document.createElement('table'))[0];
-const kastBtn = statsRow?.querySelector('.comb-kast-btn');
-check('KAST drill-down button present', !!kastBtn, statsRow?.textContent);
+const rootJ = await render(base);
+// The panel's only consumer was the Combat stats section; with the panel
+// gone the KAST drill-down (its cell button) has no trigger left, so the
+// whole surface must be ABSENT — not merely unopened.
 check(
-  'the KAST cell renders the METRIC value (50% from the stored kast row)',
-  (kastBtn?.textContent || '').trim() === '50%',
-  kastBtn?.textContent,
-);
-click(kastBtn);
-await sleep();
-const roundNs = [...rootJ.querySelectorAll('.comb-round-n')].map((s) => s.textContent.trim());
-check(
-  'KAST per-round grid labels read RD{n}',
-  roundNs.length === 2 && roundNs.every((t) => /^RD\d+$/.test(t)) && roundNs.join(',') === 'RD6,RD7',
-  roundNs.join(','),
-);
-// W3a (owner answer Q2): the KAST grid/dialog gets NO round filter — its
-// cells are a read-out; W17 (owner, 2026-11-16): the view's ONE round
-// control is the Engagements card's TokenSelect MULTI-select, so the
-// view carries no <select> at all any more (section N drives it).
-check(
-  'the KAST dialog carries no round filter (the view has no <select>; the Engagements card owns the round token field)',
-  !rootJ.querySelector('.comb-kast-grid select') &&
-    rootJ.querySelectorAll('select').length === 0 &&
-    !!rootJ.querySelector('#comb-round-filter'),
-  `selects=${rootJ.querySelectorAll('select').length}`,
-);
-// The dialog header reads the SAME metric cell presentation — and the
-// client-side fallback % (audit N18) is dead: both scripted rounds are
-// KAST, so a fallback would compute 100%; the header must show the
-// stored metric's 50% instead.
-check(
-  'the dialog header reads the metric cell (50%), never the client-side fallback (100%)',
-  /50% KAST over 2 rounds/.test(
-    [...rootJ.querySelectorAll('.view p.muted')]
-      .map((p) => p.textContent.replace(/\s+/g, ' '))
-      .join(' | '),
-  ),
-  [...rootJ.querySelectorAll('.view p.muted')].map((p) => p.textContent.replace(/\s+/g, ' ')).join(' | ').slice(0, 200),
+  'no Combat stats section renders and no KAST trigger exists anywhere',
+  sections(rootJ, 'Combat stats').length === 0 &&
+    rootJ.querySelectorAll('section.panel').length === 2 &&
+    !rootJ.querySelector('.comb-kast-btn') &&
+    !rootJ.querySelector('.comb-kast-grid') &&
+    !rootJ.textContent.includes('Combat stats'),
+  `panels=${rootJ.querySelectorAll('section.panel').length} kastBtn=${!!rootJ.querySelector('.comb-kast-btn')}`,
 );
 
 // ---------------------------------------------------------------------------
 // Section K: the cold-start loading gate (loading ladder rung 3). Until the
 // one Promise.all settles, the view shows the plain loading line — it never
 // renders its panels as empty tables (a false "no data" state).
-console.log('K. cold start: the panels never claim "No combat stats." mid-load');
+console.log('K. cold start: the two panels never render mid-load (the loading line only)');
 {
   globalThis.__combatDelay = 250;
   const rootK = await render(base);
   check(
-    'mid-load: loading line up, no empty-state text, no panel',
+    'mid-load: loading line up, no panel heading, no panel',
     rootK.textContent.includes('Loading combat data…') &&
-      !rootK.textContent.includes('No combat stats.') &&
+      !rootK.textContent.includes('Combat stats') &&
       rootK.querySelectorAll('section.panel').length === 0,
     rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
@@ -906,9 +843,9 @@ console.log('K. cold start: the panels never claim "No combat stats." mid-load')
   );
   await sleep(400); // past the 250 ms delay
   check(
-    'after the fetch lands: gate gone, all three panels render',
+    'after the fetch lands: gate gone, both panels render',
     !rootK.textContent.includes('Loading combat data…') &&
-      sections(rootK, 'Combat stats').length === 1 &&
+      sections(rootK, 'Combat stats').length === 0 &&
       sections(rootK, 'Engagements').length === 1 &&
       sections(rootK, 'Clutches').length === 1,
     rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
@@ -918,10 +855,10 @@ console.log('K. cold start: the panels never claim "No combat stats." mid-load')
 
 // ---------------------------------------------------------------------------
 // Section L: the load failure is dismissible IN PLACE (PRODUCT.md "Every
-// error indication is dismissible") and is never paired with a false
-// "No combat stats." claim — the ✕ lives inside p.error[role="alert"] and
-// clears `error`, leaving the view (and its three panels) mounted.
-console.log('L. failed load: the error is dismissible in place, no false empty claim beside it');
+// error indication is dismissible") and is never paired with a rendered
+// Combat stats section — the ✕ lives inside p.error[role="alert"] and
+// clears `error`, leaving the view (and its two panels) mounted.
+console.log('L. failed load: the error is dismissible in place, the retired section never renders beside it');
 {
   globalThis.__combatError = 'combat backend down';
   const rootL = await render(base);
@@ -936,36 +873,29 @@ console.log('L. failed load: the error is dismissible in place, no false empty c
     !!errP?.querySelector('button.btn.small .codicon-close'),
     errP ? errP.innerHTML.slice(0, 160) : '',
   );
+  // The retired section's honesty gate inverted in place: there is no
+  // empty-state claim to gate any more — the section itself never
+  // renders, error beside it or not.
   check(
-    'no false "No combat stats." claim beside the error (honesty gate)',
-    !rootL.textContent.includes('No combat stats.'),
+    'the retired Combat stats section never renders beside the error',
+    sections(rootL, 'Combat stats').length === 0 &&
+      !rootL.textContent.includes('Combat stats'),
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 160),
   );
   const panelsBefore = rootL.querySelectorAll('section.panel').length;
-  check('the three panels render around the failure', panelsBefore === 3, String(panelsBefore));
-  // A dead backend fails BOTH reads — the main load and the metric-slot
-  // read — so two alerts surface, each dismissible in place (behind the
-  // metric alert the five fixed slots keep the honest dash).
+  check('the two panels render around the failure', panelsBefore === 2, String(panelsBefore));
+  // A dead backend fails the ONE load read (the metric-slot read left
+  // with the panel), so a single alert surfaces, dismissible in place.
   const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
-    'both failures surface: the load alert and the metric-slot alert',
-    alerts.length === 2 && alerts.every((p) => p.textContent.includes('combat backend down')),
+    'the single failure surfaces as one dismissible alert',
+    alerts.length === 1 && alerts[0].textContent.includes('combat backend down'),
     alerts.map((p) => p.textContent.trim().slice(0, 60)).join(' | '),
   );
   click(errP.querySelector('button.btn.small'));
   await sleep();
-  const afterMain = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
-    '✕ clears the load error in place (metric alert remains, panels mounted, nothing navigated)',
-    afterMain.length === 1 &&
-      afterMain[0] !== errP &&
-      rootL.querySelectorAll('section.panel').length === panelsBefore,
-    rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
-  );
-  click(afterMain[0].querySelector('button.btn.small'));
-  await sleep();
-  check(
-    'the metric-slot alert dismisses too — no alert left, view still mounted',
+    '✕ clears the alert in place — no alert left, panels still mounted, nothing navigated',
     rootL.querySelectorAll('p.error[role="alert"]').length === 0 &&
       rootL.querySelectorAll('section.panel').length === panelsBefore,
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
@@ -974,108 +904,31 @@ console.log('L. failed load: the error is dismissible in place, no false empty c
 }
 
 // ---------------------------------------------------------------------------
-// Section M: the five converted stat slots are metric-value-backed
-// (W2/W2b): same positions, the canonical stored read, the five-state
-// presentation — including the two W2b slots (Untraded deaths,
-// Missed trades) that left GetCombatStats for their builtin rows.
-console.log('M. Entry% / Trade% / Untraded deaths / Missed trades / KAST% are metric columns — value, dash, chip, default order');
+// Section M: the retired data paths stay UNREAD — the Combat stats panel,
+// its metric slots and the KAST drill-down are gone (W24), so a fresh
+// mount must never call the combat-stats fetch, the metric-slot reads or
+// the per-round KAST fetch. The stub counts every call while this
+// section's window is armed (the counter stays quiet everywhere else).
+console.log('M. the view never reads the retired combat-stats / metric-slot data paths');
 {
-  const rootM = await render({
-    ...base,
-    // The Go residual columns only: untradedDeaths/tradeOppMissed are
-    // metric slots now, so the stub rows never carry them.
-    stats: [
-      { steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0 },
-      { steamId: 'B', name: 'bob', dmgNoKill: 40, dmgConvPct: 25, ffDamage: 5 },
-    ],
-    metricValues: [
-      { metricId: 11, steamId: 'A', value: 0.5, n: 24 }, // alice Entry% = 50%
-      // bob has NO entry_rate row → the honest dash (the unit IS covered)
-      { metricId: 12, steamId: 'B', value: 2.5, n: 12 }, // bob Trade% = 250%
-      { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
-      { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
-      // The W2b slots carry the numbers the Go columns showed: alice 1
-      // untraded / 2 missed, bob 0 missed; bob has NO untraded_deaths
-      // row → the honest dash (the unit IS covered).
-      { metricId: 14, steamId: 'A', value: 1, n: 6 },
-      { metricId: 15, steamId: 'A', value: 2, n: 6 },
-      { metricId: 15, steamId: 'B', value: 0, n: 6 },
-    ],
-    metricStates: [
-      { metricId: 11, state: 'fresh' },
-      { metricId: 12, state: 'fresh' },
-      { metricId: 13, state: 'fresh' },
-      { metricId: 14, state: 'fresh' },
-      { metricId: 15, state: 'fresh' },
-    ],
-  });
-  const tableM = sections(rootM, 'Combat stats')[0]?.querySelector('table');
-  check('stats table rendered', !!tableM);
+  globalThis.__combatCalls = {
+    getCombatStats: 0,
+    getPlayerRounds: 0,
+    listMetrics: 0,
+    getMetricValuesForMatch: 0,
+    getMetricComputeState: 0,
+    subscribeMetricProgress: 0,
+    onMetricDone: 0,
+  };
+  const rootM = await render(base);
+  const calls = globalThis.__combatCalls;
   check(
-    'the five converted headers keep their EXACT positions',
-    JSON.stringify(headerTexts(tableM)) ===
-      JSON.stringify(['Player', 'Damage (no kill)', 'Kill conversion %', 'FF', 'Entry%', 'Trade%', 'Untraded deaths', 'Missed trades inferred', 'KAST%']),
-    JSON.stringify(headerTexts(tableM)),
+    'every retired read stays at zero calls and no Combat stats section renders',
+    Object.values(calls).every((n) => n === 0) &&
+      sections(rootM, 'Combat stats').length === 0,
+    JSON.stringify(calls),
   );
-  const mRows = rows(tableM);
-  check(
-    'the default statSort follows the KAST metric (desc: bob 0.75 leads alice 0.5)',
-    mRows.length === 2 && mRows[0].textContent.includes('bob') && mRows[1].textContent.includes('alice'),
-    mRows.map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 30)).join(' || '),
-  );
-  const cellsOf = (tr) => [...tr.children].map((c) => c.textContent.trim());
-  const aliceCells = cellsOf(mRows.find((r) => r.textContent.includes('alice')));
-  const bobCells = cellsOf(mRows.find((r) => r.textContent.includes('bob')));
-  check(
-    'Entry% renders the metric value / the honest dash where the player has no row',
-    aliceCells[4] === '50%' && bobCells[4] === '—',
-    `alice=${aliceCells[4]} bob=${bobCells[4]}`,
-  );
-  check('Trade% renders the metric value (250% — a ratio over deaths)', bobCells[5] === '250%', bobCells[5]);
-  check(
-    'KAST% renders the metric values (50% / 75%)',
-    aliceCells[8] === '50%' && bobCells[8] === '75%',
-    `${aliceCells[8]} / ${bobCells[8]}`,
-  );
-  // The two W2b slots: the stored counts as metric values (1 / 2), a
-  // stored 0 rendering as 0 (never a fabricated dash), and bob's missing
-  // untraded_deaths row as the honest dash.
-  check(
-    'Untraded deaths / Missed trades render their metric values (value, stored 0, dash where no row)',
-    aliceCells[6] === '1' && bobCells[6] === '—' &&
-      aliceCells[7] === '2' && bobCells[7] === '0',
-    `alice=${aliceCells[6]}/${aliceCells[7]} bob=${bobCells[6]}/${bobCells[7]}`,
-  );
-
-  // The behind state renders the CHIP, never a number (five-state).
-  const rootM2 = await render({
-    ...base,
-    stats: [
-      { steamId: 'A', name: 'alice', dmgNoKill: 1, dmgConvPct: 0, ffDamage: 0 },
-    ],
-    metricValues: [],
-    metricStates: [
-      { metricId: 11, state: 'behind' },
-      { metricId: 12, state: 'behind' },
-      { metricId: 13, state: 'behind' },
-      { metricId: 14, state: 'behind' },
-      { metricId: 15, state: 'behind' },
-    ],
-  });
-  const m2Row = rows(sections(rootM2, 'Combat stats')[0]?.querySelector('table')).find((r) =>
-    r.textContent.includes('alice'),
-  );
-  const behindCells = cellsOf(m2Row);
-  check(
-    'behind renders the idle chip with the design copy in all five slots, never a number',
-    behindCells[4].includes('behind') &&
-      !/\d/.test(behindCells[4]) &&
-      behindCells[5].includes('behind') &&
-      behindCells[6].includes('behind') &&
-      behindCells[7].includes('behind') &&
-      behindCells[8].includes('behind'),
-    JSON.stringify([behindCells[4], behindCells[5], behindCells[6], behindCells[7], behindCells[8]]),
-  );
+  globalThis.__combatCalls = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1084,7 +937,7 @@ console.log('M. Entry% / Trade% / Untraded deaths / Missed trades / KAST% are me
 // Engagements card only — picked rounds land as CHIPS in the field,
 // the empty set is the all-rounds default (no filter, the kind toggles'
 // all-off rule), a picked set ORs those rounds together; the Clutches
-// card and the KAST grid/dialog carry none. Labels read the canonical
+// card carries none. Labels read the canonical
 // `RD<n> | <ct>-<t>` (roundScoreLabel, lib/rounds.js); the visible
 // "Round" word rides the control's aria-label (W7), with no empty
 // label element left behind.

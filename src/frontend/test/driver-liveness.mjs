@@ -292,7 +292,26 @@ const EXPECTED = {
   // control (no .tk). Section J re-pinned IN PLACE, same count: the
   // view now carries NO <select> at all (0, was 1 — the round control
   // left the select vocabulary) while #comb-round-filter stays.
-  'combat.dom.mjs': 96,
+  // combat 96 → 84 (2026-11-16, W24 — the Combat stats panel and its
+  // KAST drill-down dialog are gone): −12. Section M's eight metric-
+  // column checks died with the panel and are replaced by +1 the
+  // retired-read counter pin (a fresh mount calls NONE of getCombatStats
+  // / getPlayerRounds / listMetrics / getMetricValuesForMatch /
+  // getMetricComputeState / subscribeMetricProgress / onMetricDone, and
+  // no Combat stats section renders — the stub counts while the window
+  // is armed). Section J's five KAST-dialog legs became +1 absence pin
+  // (no Combat stats section, exactly two panels, no .comb-kast-btn
+  // trigger and no .comb-kast-grid anywhere). Section L 7 → 6: the
+  // metric-slot dismiss check died with the second alert (one alert now
+  // surfaces and dismisses), "panels around the failure" re-pinned 3 →
+  // 2, and the "no false empty claim" check inverted IN PLACE to "the
+  // retired section never renders beside the error". Section K kept its
+  // 3 checks, re-pinned in place (both panels after the fetch; the
+  // mid-load leg reads "no panel heading" instead of the retired
+  // empty-state copy). Sections A–I and N untouched; the base fixtures
+  // stats/listMetrics/metricValues/metricStates and the Dialog/SortTh
+  // component compiles were dropped as dead.
+  'combat.dom.mjs': 84,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the

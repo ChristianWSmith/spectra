@@ -257,7 +257,6 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 # Combat
 
-- **Combat stats** — damage dealt without a kill, kill conversion %, friendly-fire damage, Entry%, Trade%, untraded deaths, missed trades, and KAST% (click KAST% for that player's per-round K/A/T/S grid).
 - **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** field beside them — a type-to-search multi-select whose picked rounds land as chips and combine as OR too, while an empty field (the default) shows every round, with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
 - **Clutches** — the detected 1vN situations (found by counting who is still alive when a side drops to one player), with size, player, outcome, bomb state and HP left; **won** / **lost** toggles filter the list, and ▶ follows the lone player.
 
