@@ -637,15 +637,22 @@ function splitFields(tuple) {
 }
 function seedDocs() {
   const sql = readFileSync(path.join(SRC, 'internal/store/schema.sql'), 'utf8');
-  const m = sql.match(/INSERT OR IGNORE INTO metrics \(([^)]*)\) VALUES([\s\S]*?);\n/);
-  if (!m) return { rows: 0, docs: [] };
-  const cols = m[1].split(',').map((s) => s.trim());
-  const docIdx = cols.indexOf('doc');
-  if (docIdx < 0) return { rows: 0, docs: [] };
-  const docs = splitTuples(m[2]).map((tuple) => {
-    const f = splitFields(tuple);
-    return { name: unquote(f[0] ?? ''), doc: unquote(f[docIdx] ?? '') };
-  });
+  // EVERY metrics INSERT (the seed grew beyond the first statement —
+  // the subject-axis and identity addenda ship their addressing/format
+  // in later INSERTs, and their docs are tier/denylist-checked here
+  // too; per-statement column lists, since the later statements add
+  // subject/partition columns).
+  const docs = [];
+  for (const m of sql.matchAll(/INSERT OR IGNORE INTO metrics \(([^)]*)\) VALUES([\s\S]*?);\n/g)) {
+    const cols = m[1].split(',').map((s) => s.trim());
+    const docIdx = cols.indexOf('doc');
+    if (docIdx < 0) continue;
+    for (const tuple of splitTuples(m[2])) {
+      const f = splitFields(tuple);
+      docs.push({ name: unquote(f[0] ?? ''), doc: unquote(f[docIdx] ?? '') });
+    }
+  }
+  if (docs.length === 0) return { rows: 0, docs: [] };
   return { rows: docs.length, docs };
 }
 

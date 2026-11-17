@@ -42,10 +42,11 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestBuiltinMetricsPreview: the eighty-seven schema-seeded builtins
+// TestBuiltinMetricsPreview: the ninety-two schema-seeded builtins
 // (trade_rate + the dogfooding set + the inferred set + the plan §7 M3
 // combat-damage addendum + the owner Option A count addendum + the
-// subject-axis addendum — plan §8 (M8/M4 rows), 2026-11-17 re-pin) each
+// subject-axis addendum — plan §8 (M8/M4 rows), 2026-11-17 re-pin + the
+// identity addendum — plan §8 (M1 identity row), 2026-11-17 re-pin) each
 // compile and run on a fresh library — the
 // DoD "demonstrably expressible" loop end to end.
 func TestBuiltinMetricsPreview(t *testing.T) {
@@ -61,8 +62,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 87 {
-		t.Fatalf("builtins = %d, want 87 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum — the 2026-11-17 re-pin, plan §8 (M8/M4 rows))", len(res.Rows))
+	if len(res.Rows) != 92 {
+		t.Fatalf("builtins = %d, want 92 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum — the 2026-11-17 re-pins, plan §8 (M8/M4 rows) and §8 (M1 identity row))", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -109,14 +110,15 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 67 match / 20
+	// The scope split is part of the seed contract: 72 match / 20
 	// profile (the profile rows land inert — their surface converts in
 	// W3; w13d's kda row, the plan §7 M3 combat pair, the Option A
-	// count addendum's 16 raw-count rows and the subject-axis
-	// addendum's 3 economy rows are match scope — the 2026-11-17
-	// subject-axis re-pin, plan §8 (M8/M4 rows)).
-	if scopes["match"] != 67 || scopes["profile"] != 20 {
-		t.Errorf("scope split = %d match / %d profile, want 67 / 20", scopes["match"], scopes["profile"])
+	// count addendum's 16 raw-count rows, the subject-axis
+	// addendum's 3 economy rows and the identity addendum's 5 M1 rows
+	// are match scope — the 2026-11-17 subject-axis and identity
+	// re-pins, plan §8 (M8/M4 rows) and §8 (M1 identity row)).
+	if scopes["match"] != 72 || scopes["profile"] != 20 {
+		t.Errorf("scope split = %d match / %d profile, want 72 / 20", scopes["match"], scopes["profile"])
 	}
 }
 

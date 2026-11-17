@@ -720,9 +720,13 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- (M8/M4 rows), 2026-11-17 — the M8/M4 rows the grammar expresses;
 -- pistol_hold and avg_equip_gap are NOT expressible in the current
 -- grammar (no next-round window, no per-row subtraction) and are
--- reported rather than approximated). Scope split: 67 match / 20
--- profile (2026-11-17: +2 match M3, then +16 match +6 profile Option
--- A, then +3 match +1 profile subject-axis).
+-- reported rather than approximated) — plus the identity addendum (5
+-- match rows with an explicit subject AND the identity format: the M1
+-- top-card seeds top_fragger/best_adr/most_util/entry_opens/most_mvps
+-- over argmax — plan §8 (M1 identity row), 2026-11-17). Scope split:
+-- 72 match / 20 profile (2026-11-17: +2 match M3, then +16 match +6
+-- profile Option A, then +3 match +1 profile subject-axis, then +5
+-- match identity).
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -814,7 +818,7 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly eighty-seven — trade_rate
+-- THE builtins, seeded (see header): exactly ninety-two — trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
 -- rows: 38 match / 4 profile), the M3 combat-damage addendum (2
@@ -825,8 +829,11 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- plan §8 (M8/M4 rows), 2026-11-17: lost_equip + win_pct restate the
 -- Economy/profile cards' Formula titles, the two team rows are the
 -- per-team halves of the same Economy cards; each with the
--- interpretation recorded in its doc). The eighth match-scope dogfooding row (kda, w13d's
--- scoreboard KDA conversion) sits at the END of this INSERT — row
+-- interpretation recorded in its doc). The identity addendum (5
+-- match rows in their own INSERT below — plan §8 (M1 identity row),
+-- 2026-11-17) carries format=identity, the first seeded rows whose
+-- value is a KEY. The eighth match-scope dogfooding row (kda, w13d's
+-- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
 -- name), so its position changes nothing but the numbering.
 -- INSERT OR IGNORE keyed on the UNIQUE name: re-applying the baseline
@@ -1363,6 +1370,45 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from player_stats: ratio(sum(won), count())',
  'profile', 'player', '', 'percent',
  'Formula: sum(player_stats.won) / count() — match wins ÷ matches played over a career, addressed per player (no partition) — a percent; ties count as no wins; N = matches played.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- Identity addendum (metrics expansion §6.4/§8 M1 identity row,
+-- 2026-11-17): FIVE match-subject builtins whose value is a KEY — the
+-- M1 Overview top-cards' stored twins (top_fragger / best_adr /
+-- most_util / entry_opens / most_mvps), each argmax over the M1 stat
+-- on the player_stats lead (§7 M1's expression list). Same INSERT OR
+-- IGNORE add-on path as the subject-axis block above (keyed on the
+-- UNIQUE name), addressing written explicitly: subject=match,
+-- format=identity, no partition, no denominator (an identity's N is
+-- the pool it chose from — §3.3, stated in every doc below). Every
+-- doc is Formula-first, states subject + partition + the N semantics
+-- and stays inside the tier-2 doc limit (AGENTS doc rule; no doc
+-- hard-codes a count).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('top_fragger', 'Top fragger', '',
+ 'from player_stats: argmax(kills)',
+ 'match', 'match', '', 'identity',
+ 'Formula: argmax(player_stats.kills) — the player with the most kills in the match, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('best_adr', 'Best ADR', '',
+ 'from player_stats: argmax(adr)',
+ 'match', 'match', '', 'identity',
+ 'Formula: argmax(player_stats.adr) — the match''s highest-ADR player, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('most_util', 'Most util', '',
+ 'from player_stats: argmax(utility_damage)',
+ 'match', 'match', '', 'identity',
+ 'Formula: argmax(player_stats.utility_damage) — the match''s leading utility-damage player, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('entry_opens', 'Entry opens', '',
+ 'from player_stats: argmax(entry_kills)',
+ 'match', 'match', '', 'identity',
+ 'Formula: argmax(player_stats.entry_kills) — the player with the most round-opening first bloods, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('most_mvps', 'Most MVPs', '',
+ 'from player_stats: argmax(mvps)',
+ 'match', 'match', '', 'identity',
+ 'Formula: argmax(player_stats.mvps) — the match''s MVP-award leader, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

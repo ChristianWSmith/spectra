@@ -305,7 +305,7 @@ func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
 	live := cfg.RuleVersion
 
 	match := seedReadyMatch(t, s, "identity-read")
-	ident := seedOrderMetric(t, s, "top_fragger", "user")
+	ident := seedOrderMetric(t, s, "ident_leader", "user")
 	numeric := seedOrderMetric(t, s, "plain_count", "user")
 
 	if err := s.InsertMetricValues(ident.ID, ident.Version, live, []MetricValueRow{
