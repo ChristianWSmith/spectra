@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -324,14 +325,16 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 		})
 	}
 	for _, r := range m.ReportTpls {
-		out.ReportTpls = append(out.ReportTpls, reportTplFromPlugin(m.ID, r))
+		out.ReportTpls = append(out.ReportTpls, reportTplFromPlugin(r))
 	}
 	return out
 }
 
 // reportTplFromPlugin converts one plugin template to the service type.
-func reportTplFromPlugin(pluginID string, r plugin.ReportTemplate) ReportTemplate {
-	_ = pluginID // plugin attribution rides the template ID prefix in the UI
+// Attribution rides Origin ("plugin") — the ONE field every template
+// list and chip reads (platformservice.go ListReportTemplates), never a
+// prefix on the id: ids are plain slugs the manifest owns.
+func reportTplFromPlugin(r plugin.ReportTemplate) ReportTemplate {
 	return ReportTemplate{
 		ID: r.ID, Title: r.Title, Scope: r.Scope, Format: r.Format,
 		Origin: "plugin", Body: r.Body,
@@ -340,7 +343,12 @@ func reportTplFromPlugin(pluginID string, r plugin.ReportTemplate) ReportTemplat
 
 // --- Reports -----------------------------------------------------------------
 
-// ListReportTemplates returns builtin + enabled-plugin templates.
+// ListReportTemplates returns builtin + stored user + enabled-plugin
+// templates, in the store's canonical origin rank (builtin → user →
+// plugin — store.metricOrder's order, so every origin-partitioned list in
+// the app reads the same way). Attribution rides each row's Origin field;
+// ids are plain slugs the manifest (builtins, plugins) or the mint
+// (user rows) owns.
 func (s *PlatformService) ListReportTemplates() ([]ReportTemplate, error) {
 	out := []ReportTemplate{}
 	for _, t := range report.Builtins() {
@@ -348,6 +356,13 @@ func (s *PlatformService) ListReportTemplates() ([]ReportTemplate, error) {
 			ID: t.ID, Title: t.Title, Scope: t.Scope, Format: t.Format,
 			Origin: t.Origin, Body: t.Body,
 		})
+	}
+	rows, err := s.st.ListReportTemplates()
+	if err != nil {
+		return out, fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	for _, r := range rows {
+		out = append(out, reportTemplateFromRow(r))
 	}
 	states, err := s.pluginManager().List()
 	if err != nil {
@@ -358,10 +373,19 @@ func (s *PlatformService) ListReportTemplates() ([]ReportTemplate, error) {
 			continue
 		}
 		for _, r := range st.Manifest.ReportTpls {
-			out = append(out, reportTplFromPlugin(st.Manifest.ID, r))
+			out = append(out, reportTplFromPlugin(r))
 		}
 	}
 	return out, nil
+}
+
+// reportTemplateFromRow maps a stored row to the service DTO (the
+// frontend contract — the store row itself never leaves this layer).
+func reportTemplateFromRow(r store.ReportTemplateRow) ReportTemplate {
+	return ReportTemplate{
+		ID: r.ID, Title: r.Title, Scope: r.Scope, Format: r.Format,
+		Origin: r.Origin, Body: r.Body,
+	}
 }
 
 // RenderReport renders templateID for a target (matchID/steamID/round as
@@ -371,16 +395,260 @@ func (s *PlatformService) RenderReport(templateID string, matchID int64, steamID
 	return out, err
 }
 
-// renderReportDoc resolves templateID against builtins + enabled plugin
-// templates, validates the scope against the target, builds the data map
-// and renders. Shared by PlatformService.RenderReport and the
+// RenderReportDraft renders a DRAFT template body — the Reports Builder's
+// Preview of unsaved edits — against a target. It runs the SAME render
+// path a stored template takes (renderTemplateDoc below), so a preview
+// can never disagree with what Save + RenderReport would produce. scope
+// is validated here exactly like SaveReportTemplate (the frontend never
+// decides what the renderer accepts) and NOTHING is stored: the body
+// reaches the template engine and nowhere else.
+func (s *PlatformService) RenderReportDraft(scope, body string, matchID int64, steamID string, round int) (string, error) {
+	scope = strings.TrimSpace(scope)
+	if err := validateReportScope(scope); err != nil {
+		return "", err
+	}
+	if err := validateReportBody(body); err != nil {
+		return "", err
+	}
+	return renderTemplateDoc(s.st, report.Template{ID: "draft", Title: "draft", Scope: scope, Body: body}, matchID, steamID, round)
+}
+
+// validateReportScope / validateReportFormat / validateReportBody are the
+// closed vocabularies a report template is stored and rendered under —
+// the SAME three the plugin manifest validates its reportTpls against
+// (internal/plugin/manifest.go), so a stored row can never hold a value
+// the renderer's switch or a later bundle would reject. SaveReportTemplate
+// runs all three, RenderReportDraft the scope and body it actually reads.
+// Errors are plain user copy: they reach errText verbatim (no package
+// prefix, no implementation nouns).
+func validateReportScope(scope string) error {
+	switch scope {
+	case "match", "player", "round":
+		return nil
+	}
+	return fmt.Errorf("a report template's scope must be match, player or round")
+}
+
+func validateReportFormat(format string) error {
+	switch format {
+	case "md", "html":
+		return nil
+	}
+	return fmt.Errorf("a report template's format must be md or html")
+}
+
+func validateReportBody(body string) error {
+	if strings.TrimSpace(body) == "" {
+		return fmt.Errorf("a report template needs a body")
+	}
+	return nil
+}
+
+// SaveReportTemplate persists ONE user template: an empty id CREATES a
+// new row (minting the id from the title — see mintReportTemplateID), a
+// non-empty id REPLACES the stored row carrying it. Built-in and plugin
+// templates are read-only, so the frontend never addresses them here: a
+// save aimed at one of theirs sends the FORK shape (an empty id) the
+// metric editor uses for the same rule (Builder.svelte's `id: 0` payload
+// — saving a read-only source stores a copy as your own).
+//
+// The row's origin is always "user" regardless of what the caller sent —
+// the stored table holds one origin and the read path above composes
+// attribution from the column, never from the request.
+func (s *PlatformService) SaveReportTemplate(t ReportTemplate) (ReportTemplate, error) {
+	scope := strings.TrimSpace(t.Scope)
+	format := strings.TrimSpace(t.Format)
+	title := strings.TrimSpace(t.Title)
+	if title == "" {
+		return ReportTemplate{}, fmt.Errorf("a report template needs a title")
+	}
+	if err := validateReportScope(scope); err != nil {
+		return ReportTemplate{}, err
+	}
+	if err := validateReportFormat(format); err != nil {
+		return ReportTemplate{}, err
+	}
+	if err := validateReportBody(t.Body); err != nil {
+		return ReportTemplate{}, err
+	}
+	body := t.Body
+	id := strings.TrimSpace(t.ID)
+	if id == "" {
+		taken, err := s.reportTemplateIDsInUse()
+		if err != nil {
+			return ReportTemplate{}, err
+		}
+		row, err := s.st.CreateReportTemplate(store.ReportTemplateRow{
+			ID: mintReportTemplateID(title, taken), Title: title,
+			Scope: scope, Format: format, Body: body, Origin: "user",
+		})
+		if err != nil {
+			return ReportTemplate{}, err
+		}
+		return reportTemplateFromRow(row), nil
+	}
+	// Replace path. The id must be slug-shaped (the same contract
+	// plugin.ValidSlug applies to manifest ids, so a stored id stays
+	// bundle-able) and must name a stored row: every other id either
+	// fails the shape (a builtin's dotted id) or matches nothing (a
+	// plugin's id has no row here), so a read-only source can never be
+	// written through this path.
+	if !plugin.ValidSlug(id) {
+		return ReportTemplate{}, fmt.Errorf("a report template's id must be 2-40 characters of lowercase letters, digits and hyphens")
+	}
+	row, err := s.st.UpdateReportTemplate(store.ReportTemplateRow{
+		ID: id, Title: title, Scope: scope, Format: format, Body: body, Origin: "user",
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ReportTemplate{}, fmt.Errorf("no report template with that id")
+		}
+		return ReportTemplate{}, err
+	}
+	return reportTemplateFromRow(row), nil
+}
+
+// DeleteReportTemplate removes ONE stored user template. Only user rows
+// exist in report_templates, so there is no builtin/plugin guard to
+// mirror from DeleteMetric: an id that names no stored row (a builtin's,
+// a plugin's, a typo) yields "no report template with that id" and
+// touches nothing.
+func (s *PlatformService) DeleteReportTemplate(id string) error {
+	if err := s.st.DeleteReportTemplate(strings.TrimSpace(id)); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no report template with that id")
+		}
+		return err
+	}
+	return nil
+}
+
+// reportTemplateIDsInUse is every template id already spoken for — the
+// builtins, the enabled plugins' templates and the stored user rows — so
+// a minted id can never shadow one of them (report.Find resolves the
+// FIRST match in the builtin → user → plugin order, so a collision would
+// silently hide a template from rendering). The map is built once per
+// save; the mint only ever reads it.
+func (s *PlatformService) reportTemplateIDsInUse() (func(string) bool, error) {
+	taken := map[string]bool{}
+	for _, t := range report.Builtins() {
+		taken[t.ID] = true
+	}
+	rows, err := s.st.ListReportTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	for _, r := range rows {
+		taken[r.ID] = true
+	}
+	states, err := s.pluginManager().List()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	for _, st := range states {
+		if !st.Enabled || st.Error != "" {
+			continue
+		}
+		for _, r := range st.Manifest.ReportTpls {
+			taken[r.ID] = true
+		}
+	}
+	return func(id string) bool { return taken[id] }, nil
+}
+
+// reportTemplateSlugMax is the plugin manifest's slug ceiling (slugRe's
+// {2,40}) spelled here because the mint has to ENFORCE it rather than
+// merely check it.
+const reportTemplateSlugMax = 40
+
+// mintReportTemplateID turns a title into the id a new user template is
+// stored under: lowercased, everything outside [a-z0-9] folded to single
+// hyphens, trimmed and clamped to the slug ceiling — the plugin manifest's
+// `^[a-z0-9-]{2,40}$` contract (plugin.ValidSlug), so a saved template is
+// bundle-able later without re-shaping its id. `taken` reports the ids
+// already in use; the first free one wins, suffixing -2, -3, … (the base
+// is truncated to keep the suffixed id inside the ceiling). A title that
+// folds to nothing ("!!!") falls back to a fixed base, which the same
+// de-dupe then numbers. The loop terminates: the taken set is finite and
+// every iteration mints a distinct id.
+func mintReportTemplateID(title string, taken func(string) bool) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(title) {
+		alnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if alnum {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		// Fold every separator (space, punctuation, any non-ASCII rune)
+		// to ONE hyphen, and never lead with one.
+		if b.Len() > 0 && !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	base := strings.Trim(b.String(), "-")
+	if base == "" {
+		base = "report"
+	}
+	if len(base) > reportTemplateSlugMax {
+		base = strings.TrimRight(base[:reportTemplateSlugMax], "-")
+	}
+	id := base
+	for n := 2; taken(id); n++ {
+		suffix := "-" + strconv.Itoa(n)
+		head := base
+		if cut := reportTemplateSlugMax - len(suffix); len(head) > cut {
+			head = strings.TrimRight(head[:cut], "-")
+		}
+		id = head + suffix
+	}
+	return id
+}
+
+// renderReportDoc resolves templateID against builtins, stored user
+// templates and enabled plugin templates, then renders it for the
+// target. Shared by PlatformService.RenderReport and the
 // /api/export/<id>/report HTTP route. Returns (text, format, error).
 func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID string, round int) (string, string, error) {
+	tpls, err := reportTemplatesFor(st)
+	if err != nil {
+		return "", "", err
+	}
+	tpl, err := report.Find(tpls, templateID)
+	if err != nil {
+		return "", "", err
+	}
+	out, err := renderTemplateDoc(st, tpl, matchID, steamID, round)
+	if err != nil {
+		return "", "", err
+	}
+	return out, tpl.Format, nil
+}
+
+// reportTemplatesFor is THE resolution list every template read shares:
+// builtins, then the stored user templates, then the enabled plugins'
+// (the builtin → user → plugin origin rank). ListReportTemplates maps the
+// same three sources into the service DTO, and renderReportDoc and
+// RenderReportDraft resolve through it, so what the list shows and what
+// a render finds can never diverge.
+func reportTemplatesFor(st *store.Store) ([]report.Template, error) {
 	tpls := report.Builtins()
+	rows, err := st.ListReportTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	for _, r := range rows {
+		tpls = append(tpls, report.Template{
+			ID: r.ID, Title: r.Title, Scope: r.Scope, Format: r.Format,
+			Origin: r.Origin, Body: r.Body,
+		})
+	}
 	mgr := plugin.NewManager(st, plugin.DefaultDir())
 	states, err := mgr.List()
 	if err != nil {
-		return "", "", fmt.Errorf("couldn't load the report templates: %w", err)
+		return nil, fmt.Errorf("couldn't load the report templates: %w", err)
 	}
 	for _, ps := range states {
 		if !ps.Enabled || ps.Error != "" {
@@ -393,33 +661,35 @@ func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID 
 			})
 		}
 	}
-	tpl, err := report.Find(tpls, templateID)
-	if err != nil {
-		return "", "", err
-	}
+	return tpls, nil
+}
+
+// renderTemplateDoc validates tpl's scope against the target, builds that
+// scope's data map and renders tpl's body — THE render path: the
+// id-addressed render (renderReportDoc) and the Builder's draft preview
+// (RenderReportDraft) both land here, so a preview and a stored render
+// can never disagree about how a scope resolves.
+func renderTemplateDoc(st *store.Store, tpl report.Template, matchID int64, steamID string, round int) (string, error) {
 	switch tpl.Scope {
 	case "match":
 		data, err := report.BuildMatchData(st, matchID)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		out, err := report.Render(tpl.ID, tpl.Body, data)
-		return out, tpl.Format, err
+		return report.Render(tpl.ID, tpl.Body, data)
 	case "player":
 		data, err := report.BuildPlayerData(st, matchID, steamID)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		out, err := report.Render(tpl.ID, tpl.Body, data)
-		return out, tpl.Format, err
+		return report.Render(tpl.ID, tpl.Body, data)
 	case "round":
 		data, err := report.BuildRoundData(st, matchID, round)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
-		out, err := report.Render(tpl.ID, tpl.Body, data)
-		return out, tpl.Format, err
+		return report.Render(tpl.ID, tpl.Body, data)
 	default:
-		return "", "", fmt.Errorf("template %q has an unknown scope %q", tpl.ID, tpl.Scope)
+		return "", fmt.Errorf("template %q has an unknown scope %q", tpl.ID, tpl.Scope)
 	}
 }

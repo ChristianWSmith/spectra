@@ -166,6 +166,24 @@ test('#/reports/:id carries an optional match context id', () => {
   assert.equal('id' in parseHash('#/reports'), false);
 });
 
+// The Reports builder is a SIBLING top-level view, never a /reports
+// sub-path: `path.startsWith('/reports')` would swallow a /reports-
+// prefixed name, so the route lives on its own prefix — pinned here so a
+// future rename cannot quietly hand it to the Reports view.
+test('#/reportbuilder is its own prefix route (never swallowed by /reports)', () => {
+  assert.deepEqual(parseHash('#/reportbuilder'), { name: 'reportbuilder' });
+  assert.deepEqual(parseHash('#/reportbuilder/anything'), { name: 'reportbuilder' });
+  assert.equal('id' in parseHash('#/reportbuilder'), false);
+  // no query key on the plain hash; a query still rides along
+  assert.equal('query' in parseHash('#/reportbuilder'), false);
+  assert.deepEqual(parseHash('#/reportbuilder?title=abc'), {
+    name: 'reportbuilder',
+    query: { title: 'abc' },
+  });
+  // …and the Reports view keeps its own route untouched.
+  assert.deepEqual(parseHash('#/reports'), { name: 'reports' });
+});
+
 test('#/profiles is a prefix route (the player directory)', () => {
   assert.deepEqual(parseHash('#/profiles'), { name: 'profiles' });
   assert.deepEqual(parseHash('#/profiles/foo'), { name: 'profiles' });

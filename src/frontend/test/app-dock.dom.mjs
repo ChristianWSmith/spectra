@@ -165,7 +165,7 @@ const writeStub = (rel, src) => {
 };
 for (const name of [
   'Library', 'Match', 'RoundDetail', 'Settings', 'Builder', 'SqlConsole', 'Explorer',
-  'Reports', 'Profiles', 'PlayerProfile', 'CompareRounds',
+  'Reports', 'ReportsBuilder', 'Profiles', 'PlayerProfile', 'CompareRounds',
 ]) {
   // Per-view MOUNT counter (section F): the displaced-view overlay's
   // THE pin is that an expand → minimize round trip does NOT remount

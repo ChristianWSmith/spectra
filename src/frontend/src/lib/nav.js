@@ -506,6 +506,17 @@ export const NAV_ACTIONS = [
     active: (r) => PROFILE_FAMILY.has(r.name),
   },
   { label: 'Builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
+  // The Reports builder authors report templates (its own top-level
+  // route — see router.js: NOT a /reports sub-path). Single-route action,
+  // so — like Builder and the SQL console — it carries NO `memory`
+  // field: nothing to remember, always enabled, the click targets its
+  // own hash (lib/nav.js resolveNavTarget/isNavEnabled).
+  {
+    label: 'Reports builder',
+    icon: 'codicon-file-code',
+    hash: '/reportbuilder',
+    active: (r) => r.name === 'reportbuilder',
+  },
   { label: 'SQL console', icon: 'codicon-terminal', hash: '/sql', active: (r) => r.name === 'sql' },
   {
     label: 'Settings',

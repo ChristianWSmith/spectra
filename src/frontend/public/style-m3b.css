@@ -1051,3 +1051,209 @@ label.filt-lab {
 [data-theme="light"] .replay-stage {
   background: #dfe4ec; /* canvas renderer still paints its own dark clear */
 }
+
+/* --- Reports builder (rb-) -------------------------------------------------
+   The template-authoring view (views/ReportsBuilder.svelte): the metric
+   Builder's two-panel grid shape in its own prefix — `rb-` belongs to
+   this view alone (prefix policy above), and none of the bld- rules are
+   shared or duplicated here. */
+
+.rb-head-note {
+  font-size: 0.86em;
+  max-width: 70ch;
+}
+
+.rb-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 330px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.rb-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.rb-list {
+  gap: 8px;
+}
+
+/* The origin filter row: the shared filter label (.filt-lab) and
+   checkbox row (.filt-check) the Builder's filter panel and Settings
+   already spell — never an rb- synonym for either. */
+.rb-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.rb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rb-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.rb-row:hover {
+  background: var(--list-hover);
+}
+
+.rb-row.active {
+  border-color: var(--accent-45);
+  background: var(--accent-06);
+}
+
+.rb-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+}
+
+.rb-row-title {
+  font-size: 0.92em;
+  font-weight: 600;
+}
+
+.rb-row-sub {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.76em;
+}
+
+.rb-row-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  opacity: 0.3;
+  transition: opacity 0.12s;
+}
+
+.rb-row:hover .rb-row-acts,
+.rb-row:focus-within .rb-row-acts {
+  opacity: 1;
+}
+
+/* The editor's field grid: Title leads at double width, Scope and
+   Format sit beside it, the Template body spans the full row
+   (minmax(0, …) keeps the shrink honest at the 900px minimum width). */
+.rb-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.rb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rb-field.wide {
+  grid-column: 1 / -1;
+}
+
+.rb-body {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.rb-readonly {
+  color: var(--accent);
+  border-color: var(--accent-50);
+}
+
+/* The preview target block: separated from the template fields (it is
+   what the draft renders against, not part of the document), with the
+   pickers allowed to size themselves from their own triggers. */
+.rb-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.rb-target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.rb-target-row .rb-field {
+  flex: 0 1 300px;
+  min-width: 220px;
+}
+
+.rb-hint {
+  font-size: 0.76em;
+}
+
+/* ONE actions line: the destructive control left, Preview + Save right. */
+.rb-actions {
+  margin-top: 4px;
+}
+
+.rb-destructive {
+  display: inline-flex;
+  align-items: center;
+}
+
+.rb-note {
+  font-size: 0.82em;
+}
+
+.rb-preview {
+  gap: 8px;
+}
+
+/* The composed draft: the document source exactly as it renders (md or
+   html), scrollable on its own so the editor above keeps its height. */
+.rb-doc {
+  margin: 0;
+  padding: 10px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 1000px) {
+  .rb-grid,
+  .rb-fields {
+    grid-template-columns: 1fr;
+  }
+}

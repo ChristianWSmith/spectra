@@ -871,6 +871,73 @@ console.log('I. the header `?` opens the guide at the reports section (standalon
   );
 }
 
+// W21 (reports-builder, 2026-11-16): the template CARDS' origin
+// surfacing — the Reports builder added user templates to the catalog
+// this view consumes, so every origin must show on its card, a card must
+// be selectable by click (the save below then renders THAT id), and a
+// stored selection naming a template that no longer exists must heal to
+// a live one instead of leaving no template at all.
+console.log('J. origin surfacing: builtin + user + plugin cards render, select, and a stale tplId heals');
+{
+  bindings.handlers.ListReportTemplates = () => [
+    { id: 'j-builtin', title: 'J builtin', scope: 'match', format: 'md', origin: 'builtin', body: 'builtin body' },
+    { id: 'j-user', title: 'J user', scope: 'player', format: 'html', origin: 'user', body: 'user body' },
+    { id: 'j-plugin', title: 'J plugin', scope: 'round', format: 'md', origin: 'plugin', body: 'plugin body' },
+  ];
+  viewstate.resetViewState();
+  const jj = await mountReports();
+  const cards = [...jj.querySelectorAll('.rep-tpl')];
+  check(
+    'one card per origin renders (builtin + user + plugin)',
+    cards.length === 3,
+    `${cards.length} cards: ${cards.map((c) => c.querySelector('.rep-tpl-title')?.textContent.trim()).join(', ')}`,
+  );
+  const origins = cards.map((c) => c.querySelector('.chip.flag')?.textContent.trim());
+  check(
+    'every card carries its origin chip — builtin / user / plugin',
+    JSON.stringify(origins) === JSON.stringify(['builtin', 'user', 'plugin']),
+    JSON.stringify(origins),
+  );
+  check(
+    'every card also states its scope and its format beside the origin',
+    cards.every((c) => c.querySelectorAll('.rep-tpl-meta .chip').length === 3),
+    cards.map((c) => [...c.querySelectorAll('.rep-tpl-meta .chip')].map((x) => x.textContent.trim()).join('/')).join(' | '),
+  );
+  const pluginCard = cards.find(
+    (c) => c.querySelector('.chip.flag')?.textContent.trim() === 'plugin',
+  );
+  click(pluginCard);
+  await sleep(60);
+  check(
+    'clicking the plugin card selects it',
+    pluginCard.getAttribute('aria-pressed') === 'true' && pluginCard.classList.contains('active'),
+    `pressed=${pluginCard.getAttribute('aria-pressed')} active=${pluginCard.classList.contains('active')}`,
+  );
+  const beforeRenders = bindings.calls.filter((c) => c.method === 'RenderReport').length;
+  const dl = await saveReport(jj);
+  const renders = bindings.calls.filter((c) => c.method === 'RenderReport');
+  check(
+    'Save renders THAT selected id (the plugin template) and lands the document',
+    renders.length === beforeRenders + 1 && renders.at(-1).args[0] === 'j-plugin' && !!dl,
+    JSON.stringify(renders.slice(beforeRenders).map((c) => c.args[0])),
+  );
+
+  // A stored selection naming a template that no longer exists (a
+  // deleted row, an uninstalled plugin) self-heals to a live one —
+  // Reports.svelte's loadTemplates guard, pinned here with the
+  // three-origin catalog.
+  viewstate.resetViewState();
+  viewstate.remember('reports', { tplId: 'vanished-template' });
+  const j2 = await mountReports();
+  const active2 = [...j2.querySelectorAll('.rep-tpl')].find((c) => c.classList.contains('active'));
+  check(
+    'a stale stored tplId naming a vanished template self-heals to a live one',
+    !!active2 && active2.querySelector('.chip.flag')?.textContent.trim() === 'builtin' &&
+      !j2.textContent.includes('vanished-template'),
+    active2 ? active2.querySelector('.rep-tpl-title')?.textContent.trim() : 'no active card',
+  );
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) await unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

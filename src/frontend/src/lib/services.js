@@ -986,6 +986,24 @@ export function renderReport(templateId, matchId, steamId, round) {
   return PlatformService.RenderReport(templateId, matchId || 0, steamId || '', round || 0);
 }
 
+// --- Report template mutators (the Reports builder) --------------------------
+// saveReportTemplate writes ONE user template: an empty id CREATES (the
+// Go side mints the slug from the title and de-dupes it), a non-empty id
+// replaces that stored row — so a fork of a built-in/plugin source sends
+// an empty id, exactly like the metric editor's `id: 0` payload.
+// deleteReportTemplate removes a stored row (user templates only — a
+// built-in or plugin id has no row and reports the service's error).
+// Both are plain calls: listReportTemplates above is NOT read-cached, so
+// there is nothing to invalidate here.
+export function saveReportTemplate(t) { return PlatformService.SaveReportTemplate(t); }
+export function deleteReportTemplate(id) { return PlatformService.DeleteReportTemplate(id); }
+// renderReportDraft renders a DRAFT body (unsaved edits) through the
+// SAME Go render path renderReport takes — the builder's Preview. It
+// stores nothing; scope/body are re-validated server-side.
+export function renderReportDraft(scope, body, matchId, steamId, round) {
+  return PlatformService.RenderReportDraft(scope, body || '', matchId || 0, steamId || '', round || 0);
+}
+
 // --- MapPackService -----------------------------------------------------------
 // Radar extraction from the user's local CS2 install (Valve IP stays
 // local — see internal/mappack). Packs load through loadMapPack().

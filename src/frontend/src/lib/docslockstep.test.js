@@ -78,6 +78,7 @@ const NAV_SECTIONS = {
   Match: 'understanding-a-match', // the match view's own section (L4: Match became its own sidebar tab)
   Profiles: 'profiles',
   Builder: 'metric-builder',
+  'Reports builder': 'reports-builder',
   'SQL console': 'sql-console',
   Settings: 'settings',
 };
@@ -112,6 +113,7 @@ const VIEW_SECTIONS = {
   'Profiles.svelte': 'profiles',
   'Replay.svelte': 'replay',
   'Reports.svelte': 'reports',
+  'ReportsBuilder.svelte': 'reports-builder',
   'RoundDetail.svelte': 'understanding-a-match',
   'Settings.svelte': 'settings',
   'SqlConsole.svelte': 'sql-console',

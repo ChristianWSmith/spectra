@@ -31,6 +31,13 @@ const ManifestName = "spectra-plugin.json"
 // letters/digits/hyphen).
 var slugRe = regexp.MustCompile(`^[a-z0-9-]{2,40}$`)
 
+// ValidSlug reports whether s satisfies the plugin-id / report-template-id
+// slug contract (slugRe). It is THE shared shape check for any id that
+// must stay bundle-able as a plugin manifest entry: manifests validate
+// with it, and platformservice.go mints user report-template ids against
+// it so a saved template never needs re-shaping to be bundled later.
+func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+
 // metricNameRe is looser than slugRe: metric names are column keys, so
 // snake_case (and a 64-char ceiling) is allowed.
 var metricNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
@@ -104,7 +111,7 @@ func ValidateManifest(data []byte) (Manifest, error) {
 		}
 		for k := range caps {
 			if !allowedCapabilities[k] {
-				return Manifest{}, fmt.Errorf("unknown capability %q (only metrics and report_templates are supported)", k)
+				return Manifest{}, fmt.Errorf("unknown capability %q (only metrics and report templates are supported)", k)
 			}
 		}
 	}

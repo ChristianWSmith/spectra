@@ -9,7 +9,7 @@
 // target (App's openDocs('metric-language') — untouched).
 //
 // TIERS (N3, 2026-11-14): the contents list is exactly two levels —
-// MAJORS are the twelve guide sections plus `metric-language`, MINORS
+// MAJORS are the thirteen guide sections plus `metric-language`, MINORS
 // are the metric chapter's other sections, each carrying
 // `parent: 'metric-language'` in metric-language.js. The field is
 // TOC-only: every section still renders its own <section><h2> below.

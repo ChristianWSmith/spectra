@@ -475,6 +475,32 @@ hands the whole document to the save dialog; the filename ends in .md or .html t
 template's format.`,
   },
   {
+    id: 'reports-builder',
+    title: 'The Reports builder',
+    blocks: `**Reports builder** (sidebar) is where report templates are written. The templates a report
+is built from — the match, player and round documents, plus any a plugin contributes — are picked
+in **Reports**; this view authors them.
+
+The **left panel** lists every template: its title, then a **scope** chip (match, player or round),
+a **format** chip (md or html) and an **origin** chip naming where it came from — a built-in, one of
+yours, or a plugin. **New** starts a fresh template, the search box narrows the list by title, and
+the **Origin** checkboxes show or hide each group. Click a row to load it into the editor; for a
+template you created, the row carries a trash button that deletes it.
+
+The **editor** has **Title**, **Scope**, **Format** and the **Template body** — the document
+itself, written with \`{{ … }}\` placeholders that fill in from the match, player or round the
+report points at, so a body can be read off a built-in and edited into your own. **Save** stores it
+as yours. **Preview target** chooses what the draft renders against — a match for every scope, plus
+a player or a round where the scope needs one — and **Preview** renders the body you are editing,
+unsaved, showing the document exactly as it would be written out. Nothing is chosen for you: the
+preview stays off until you pick a target.
+
+**Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
+templates can't be edited*), but you can still read and preview them. Plugin templates carry a
+*read-only source* chip; saving one stores a copy as your own. Only your own templates can be
+deleted.`,
+  },
+  {
     id: 'sql-console',
     title: 'SQL console',
     blocks: `**SQL console** (sidebar) is a read-only query window over your whole library — for when you want

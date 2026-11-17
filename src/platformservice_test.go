@@ -13,6 +13,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/plugin"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -398,4 +399,146 @@ func TestHandleExportRoutes(t *testing.T) {
 		t.Fatal("library.db body empty")
 	}
 	_ = id
+}
+
+// TestReportTemplateLifecycleViaService pins the Reports Builder's
+// storage contract at the SERVICE layer: the server-side shape gates (the
+// frontend never decides what is stored), the slug mint (the plugin
+// manifest's id contract, de-duped), the three-origin list composition,
+// one render path shared by a stored template and a draft preview, and
+// the read-only rule for built-in/plugin sources (fork on save — the
+// metric editor's rule, Builder.svelte's `id: 0` payload).
+func TestReportTemplateLifecycleViaService(t *testing.T) {
+	useTempXDG(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	matchID := seedPlatformMatch(t, st)
+	svc := &PlatformService{st: st}
+
+	// Server-side validation: scope, format, title and body are all
+	// required, and the vocabularies are the manifest's own.
+	for _, bad := range []ReportTemplate{
+		{Title: "T", Scope: "career", Format: "md", Body: "x"},
+		{Title: "T", Scope: "match", Format: "pdf", Body: "x"},
+		{Title: "", Scope: "match", Format: "md", Body: "x"},
+		{Title: "T", Scope: "match", Format: "md", Body: "   "},
+	} {
+		if _, err := svc.SaveReportTemplate(bad); err == nil {
+			t.Errorf("SaveReportTemplate(%+v) succeeded, want a validation error", bad)
+		}
+	}
+
+	// Create: the id is minted from the title, in the manifest's slug
+	// shape, with origin "user" whatever the caller claimed.
+	created, err := svc.SaveReportTemplate(ReportTemplate{
+		Title: "Match Summary!", Scope: "match", Format: "md", Body: "map={{.Match.Map}}",
+		Origin: "builtin", // ignored — the stored row is always the user's
+	})
+	if err != nil {
+		t.Fatalf("SaveReportTemplate(create): %v", err)
+	}
+	if created.ID != "match-summary" {
+		t.Fatalf("minted id = %q, want match-summary", created.ID)
+	}
+	if !plugin.ValidSlug(created.ID) {
+		t.Fatalf("minted id %q is not a plugin-manifest slug", created.ID)
+	}
+	if created.Origin != "user" {
+		t.Fatalf("created origin = %q, want user", created.Origin)
+	}
+
+	// De-dupe: the same title mints a distinct id instead of colliding.
+	two, err := svc.SaveReportTemplate(ReportTemplate{
+		Title: "Match Summary!", Scope: "match", Format: "md", Body: "second",
+	})
+	if err != nil {
+		t.Fatalf("SaveReportTemplate(dup): %v", err)
+	}
+	if two.ID != "match-summary-2" || !plugin.ValidSlug(two.ID) {
+		t.Fatalf("de-duped id = %q, want match-summary-2", two.ID)
+	}
+
+	// The list composes all three origins (builtin → user → plugin) and
+	// both stored rows ride with their origin attribute.
+	list, err := svc.ListReportTemplates()
+	if err != nil {
+		t.Fatalf("ListReportTemplates: %v", err)
+	}
+	seen := map[string]string{}
+	for _, tp := range list {
+		seen[tp.ID] = tp.Origin
+	}
+	if o := seen["match.md"]; o != "builtin" {
+		t.Fatalf("builtin origin = %q, want builtin", o)
+	}
+	if o := seen["match-summary"]; o != "user" {
+		t.Fatalf("user origin = %q, want user", o)
+	}
+	if o := seen["match-summary-2"]; o != "user" {
+		t.Fatalf("second user origin = %q, want user", o)
+	}
+
+	// A stored user template renders through the SAME path as a builtin.
+	out, err := svc.RenderReport("match-summary", matchID, "", 0)
+	if err != nil {
+		t.Fatalf("RenderReport(user): %v", err)
+	}
+	if out != "map=De_Inferno" {
+		t.Fatalf("user render = %q, want map=De_Inferno", out)
+	}
+
+	// Read-only sources never write through: a builtin's dotted id fails
+	// the slug shape, an unknown slug names no stored row — and the
+	// builtin itself still renders afterwards.
+	if _, err := svc.SaveReportTemplate(ReportTemplate{
+		ID: "match.md", Title: "x", Scope: "match", Format: "md", Body: "x",
+	}); err == nil {
+		t.Fatal("saving against a builtin id succeeded")
+	}
+	if _, err := svc.SaveReportTemplate(ReportTemplate{
+		ID: "no-such-template", Title: "x", Scope: "match", Format: "md", Body: "x",
+	}); err == nil {
+		t.Fatal("saving against an unknown id succeeded")
+	}
+	if _, err := svc.RenderReport("match.md", matchID, "", 0); err != nil {
+		t.Fatalf("builtin render after rejected saves: %v", err)
+	}
+
+	// Delete: a user row goes, a builtin id touches nothing.
+	if err := svc.DeleteReportTemplate("match-summary"); err != nil {
+		t.Fatalf("DeleteReportTemplate: %v", err)
+	}
+	if err := svc.DeleteReportTemplate("match.md"); err == nil {
+		t.Fatal("deleting a builtin id succeeded")
+	}
+	if _, err := svc.RenderReport("match-summary", matchID, "", 0); err == nil {
+		t.Fatal("deleted template still renders")
+	}
+	rows, err := st.ListReportTemplates()
+	if err != nil || len(rows) != 1 || rows[0].ID != "match-summary-2" {
+		t.Fatalf("stored rows after delete = %+v, %v, want only match-summary-2", rows, err)
+	}
+
+	// The draft preview runs the SAME render path against a target and
+	// stores NOTHING (its scope is validated like a stored row's).
+	draft, err := svc.RenderReportDraft("match", "draft map={{.Match.Map}}", matchID, "", 0)
+	if err != nil {
+		t.Fatalf("RenderReportDraft: %v", err)
+	}
+	if draft != "draft map=De_Inferno" {
+		t.Fatalf("draft render = %q, want draft map=De_Inferno", draft)
+	}
+	if _, err := svc.RenderReportDraft("career", "x", matchID, "", 0); err == nil {
+		t.Fatal("draft with an unknown scope succeeded")
+	}
+	if _, err := svc.RenderReportDraft("match", "   ", matchID, "", 0); err == nil {
+		t.Fatal("draft with an empty body succeeded")
+	}
+	rows, err = st.ListReportTemplates()
+	if err != nil || len(rows) != 1 || rows[0].ID != "match-summary-2" {
+		t.Fatalf("stored rows after a draft = %+v, %v, want exactly one", rows, err)
+	}
 }
