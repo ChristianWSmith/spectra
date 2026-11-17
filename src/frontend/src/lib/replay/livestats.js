@@ -12,7 +12,8 @@
 //
 // The fold mirrors the canonical Go rules in
 // internal/analytics/rounds.go PlayerRounds (the same rows that back
-// PlayerRound DMG/K/A/D):
+// PlayerRound DMG/K/A/D) — PlayerRounds is THE canonical fold; every
+// gate below is its rule restated, never a second interpretation:
 //   - counted rounds ONLY (lib/rounds.js isCounted on the event's round
 //     row; a round the lookup does not know is NOT counted — Go only
 //     folds rounds CountedRounds returned). Every stored round is
@@ -22,6 +23,17 @@
 //     TICK by the injected sideAt callback; an unknown side never matches
 //     (Go's sameSide: a != "" && a == b), so an unknown side is
 //     PERMISSIVE and the kill counts,
+//   - no self-kill kill credit: attacker ≠ victim is UNCONDITIONAL
+//     (PlayerRounds' kill-credit line, ruling 2026-11-17 — the side gate
+//     alone would credit a victim their own kill in a round whose sides
+//     are unknown),
+//   - a disconnect-time World self-kill (killer == victim, weapon World,
+//     a player_disconnect for that identity on the SAME tick — the
+//     (player, tick) disconnect SET PlayerRounds builds) earns NO stat:
+//     no kill, no assist, no death. The row stays in the feed as a
+//     record of what happened; only this stat fold skips it. A genuine
+//     world-hazard self-kill (no same-tick disconnect) still counts as a
+//     death,
 //   - assists: assister set, ≠ victim, cross-team, !assistedFlash,
 //   - deaths: every death of the player (no side gate),
 //   - damage: ALL damage attributed to the player — the canonical fold
@@ -49,6 +61,34 @@ function sameSide(a, b) {
   return a !== '' && a === b;
 }
 
+// WORLD_WEAPON — the JS twin of internal/analytics/analytics.go
+// WorldWeapon: the stored weapon name of a world kill. One spelling
+// shared with the canonical fold; do not vary the string.
+const WORLD_WEAPON = 'World';
+
+// disconnectSet — the (player, tick) disconnect SET, the JS twin of the
+// map PlayerRounds builds (internal/analytics/rounds.go): every row with
+// kind player_disconnect stamps its identity (EventRow.attacker carries
+// the leaver's steam id — lib/replay/playercard.js indexConnections
+// reads the same field) and its tick. A SET, not a last-tick map: a
+// player may disconnect several times and each disconnect tick must
+// match on its own. Built from ALL rows regardless of playhead/round —
+// Go builds it from the whole event list too, and a same-tick match
+// makes a future disconnect unreachable by an already-folded kill anyway.
+function disconnectSet(events) {
+  const out = new Map();
+  for (const e of events || []) {
+    if (!e || e.kind !== 'player_disconnect') continue;
+    const id = String(e.attacker || '');
+    const t = Number(e.tick);
+    if (!id || !Number.isFinite(t)) continue;
+    let set = out.get(id);
+    if (!set) out.set(id, (set = new Set()));
+    set.add(t);
+  }
+  return out;
+}
+
 // foldEvent — THE per-row fold rule, the ONE spelling of the kill /
 // assist / death / damage accounting both entry points run (the playhead
 // gate lives in the callers — it decides WHICH rows reach here; this
@@ -57,7 +97,8 @@ function sameSide(a, b) {
 //   et       the row's tick, already validated finite and ≤ playhead
 //   byNumber round number → round row (counted-round gate, module header)
 //   sideAt   injected side lookup (see liveStats)
-function foldEvent(e, et, byNumber, sideAt, acc) {
+//   disc     the (player, tick) disconnect set (disconnectSet)
+function foldEvent(e, et, byNumber, sideAt, disc, acc) {
   // Counted rounds only — see the module header.
   if (!isCounted(byNumber.get(Number(e.round)))) return;
   const { kills, deaths, assists, dmg } = acc;
@@ -65,8 +106,23 @@ function foldEvent(e, et, byNumber, sideAt, acc) {
     const atk = String(e.attacker || '');
     const vic = String(e.victim || '');
     const asr = String(e.assister || '');
+    // Disconnect-time World self-kill: not a death, not a kill, not an
+    // assist — no stat at all (PlayerRounds' continue, the canonical
+    // rule; module header). The row itself stays in the feed: a record
+    // of what happened, only the stats stay honest.
+    if (
+      vic &&
+      atk === vic &&
+      String(e.weapon || '') === WORLD_WEAPON &&
+      disc.get(vic)?.has(et)
+    ) {
+      return;
+    }
     const vt = vic ? side(vic, et, sideAt) : '';
-    if (atk && !sameSide(side(atk, et, sideAt), vt)) bump(kills, atk);
+    // attacker ≠ victim is UNCONDITIONAL (PlayerRounds' kill-credit
+    // line): without it a self-kill in a round whose sides are unknown
+    // credits the victim's own kill.
+    if (atk && atk !== vic && !sameSide(side(atk, et, sideAt), vt)) bump(kills, atk);
     if (asr && asr !== vic && !sameSide(vt, side(asr, et, sideAt)) && !e.assistedFlash) {
       bump(assists, asr);
     }
@@ -181,6 +237,7 @@ export function liveStats(events, opts = {}) {
   const steamIds = Array.isArray(opts.steamIds) ? opts.steamIds : [];
 
   const { byNumber, started } = scanRounds(rounds, playhead);
+  const disc = disconnectSet(events);
   const acc = newAcc();
 
   for (const e of events || []) {
@@ -189,7 +246,7 @@ export function liveStats(events, opts = {}) {
     // A row without a usable tick cannot be placed at the playhead —
     // dropped, never guessed into the fold.
     if (!Number.isFinite(et) || et > playhead) continue;
-    foldEvent(e, et, byNumber, sideAt, acc);
+    foldEvent(e, et, byNumber, sideAt, disc, acc);
   }
 
   return emit(acc, started, steamIds);
@@ -238,6 +295,7 @@ export function createLiveStatsCursor() {
     next: 0, // index of the first row NOT yet folded
     tick: Number.NEGATIVE_INFINITY, // the playhead the counters reflect
     byNumber: new Map(),
+    disc: new Map(), // the (player, tick) disconnect set (see disconnectSet)
     started: 0, // counted rounds started at/before `tick`
     acc: newAcc(), // kills / deaths / assists / dmg counters
   };
@@ -269,6 +327,10 @@ function resetCursor(c, events, rounds, sideAt) {
   c.usable = tickSorted(events);
   c.acc = newAcc();
   c.byNumber = byNumberOf(rounds);
+  // The disconnect set is a pure function of the ROWS (rows identity is
+  // part of the reset key), rebuilt here exactly like byNumber — a
+  // refetch that changes the rows re-derives it too.
+  c.disc = disconnectSet(events);
   c.started = 0;
   c.next = 0;
   c.tick = Number.NEGATIVE_INFINITY;
@@ -291,7 +353,7 @@ function advanceCursor(c, playhead) {
         // every later row sits at or after it (the non-finite rows that
         // follow can never fold anyway).
         if (et > playhead) break;
-        foldEvent(e, et, c.byNumber, c.sideAt, c.acc);
+        foldEvent(e, et, c.byNumber, c.sideAt, c.disc, c.acc);
       }
     }
     i++;

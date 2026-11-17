@@ -1,11 +1,13 @@
 // Node tests for lib/replay/livestats.js — the live K/D/A + ADR fold
 // behind the player card's stats row. The rules mirror the canonical Go
 // fold (internal/analytics/rounds.go PlayerRounds): counted rounds only,
-// enemy-only kills (unknown side permissive), cross-team non-flash
-// assists, every death, ALL damage (friendly fire included), ADR over the
-// counted rounds STARTED at/before the playhead — for BOTH entry points:
-// the pure liveStats and the incremental cursor the view drives per tick
-// (the cursor is pinned to the pure fold's output, row order included).
+// enemy-only kills (unknown side permissive), NO self-kill kill credit,
+// disconnect-time World self-kills excluded from every stat, cross-team
+// non-flash assists, every death, ALL damage (friendly fire included),
+// ADR over the counted rounds STARTED at/before the playhead — for BOTH
+// entry points: the pure liveStats and the incremental cursor the view
+// drives per tick (the cursor is pinned to the pure fold's output, row
+// order included).
 // Run: node --test src/lib/livestats.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -74,6 +76,57 @@ test('assists: assister set, ≠ victim, cross-team, !assistedFlash', () => {
   assert.equal(out.get('B').a, 1, 'cross-team assister counts');
   assert.equal(out.get('X').a, 0, 'a victim cannot assist themselves');
   assert.equal(out.get('A').a, 0);
+});
+
+// --- Disconnect-artifact parity (canonical: analytics.PlayerRounds) ----------
+//
+// w38 made the STORED per-round stats honest about disconnect artifacts;
+// this fold mirrors both rules so the replay's live card never ticks up
+// on a fake row the stored stats exclude (the FEED keeps the fake rows —
+// records of what happened — only the stat fold changes).
+
+const disconnect = (over = {}) => ({ kind: 'player_disconnect', tick: 200, round: 1, ...over });
+
+test('a disconnect-time World self-kill earns NO stat — no K, no D, no A', () => {
+  const out = fold([
+    disconnect({ attacker: 'X', tick: 200 }),
+    kill({ attacker: 'X', victim: 'X', weapon: 'World', tick: 200, assister: 'C' }),
+  ]);
+  assert.equal(out.get('X').d, 0, 'the fake death must not tick the live card');
+  assert.equal(out.get('X').k, 0, 'a self-kill is never kill credit anyway');
+  assert.equal(out.get('C').a, 0, 'no assister credit on an excluded row (PlayerRounds continue)');
+});
+
+test('a genuine world-hazard self-kill (no same-tick disconnect) still counts as a death', () => {
+  // Same shape, but the disconnect is at ANOTHER tick — the criterion is
+  // the (player, tick) SET, not "this player ever disconnected".
+  const out = fold([
+    disconnect({ attacker: 'X', tick: 150 }),
+    kill({ attacker: 'X', victim: 'X', weapon: 'World', tick: 200 }),
+  ]);
+  assert.equal(out.get('X').d, 1, 'a real world death is still a death');
+  assert.equal(out.get('X').k, 0, 'never kill credit');
+  // …and a World self-kill with NO disconnect row at all counts too.
+  const lone = fold([kill({ attacker: 'X', victim: 'X', weapon: 'World', tick: 300 })]);
+  assert.equal(lone.get('X').d, 1);
+  // The disconnect must be for the SAME identity: another player's
+  // disconnect on the same tick excludes nothing.
+  const other = fold([
+    disconnect({ attacker: 'Y', tick: 200 }),
+    kill({ attacker: 'X', victim: 'X', weapon: 'World', tick: 200 }),
+  ]);
+  assert.equal(other.get('X').d, 1, "a different player's disconnect never excludes this death");
+});
+
+test('attacker === victim never earns kill credit (unknown sides included)', () => {
+  // The side gate alone is not enough: an unknown side is permissive, so
+  // a self-kill in a round with no side info would credit the victim's
+  // own kill without the UNCONDITIONAL attacker ≠ victim half.
+  const out = fold([kill({ attacker: 'X', victim: 'X', weapon: 'World', tick: 200 })], {
+    sideAt: () => '',
+  });
+  assert.equal(out.get('X').k, 0, 'a self-kill is never a kill, known or unknown sides');
+  assert.equal(out.get('X').d, 1, 'with no disconnect row it is still a death');
 });
 
 test('damage folds ALL attributed damage — friendly fire included', () => {
@@ -199,6 +252,14 @@ const SWEEP_EVENTS = [
   { kind: 'damage', tick: 1500, round: 2, attacker: 'X', victim: 'A', dmg: 12 },
   { kind: 'kill', tick: 2100, round: 3, attacker: 'B', victim: 'Y' },
   { kind: 'damage', tick: 2500, round: 3, attacker: 'Z', victim: 'Y', dmg: 66 },
+  // Disconnect-artifact rows at the tail (still tick-sorted): a fake
+  // disconnect-time World self-kill (must earn NO stat through BOTH
+  // entry points — the cursor builds its disconnect set in resetCursor)
+  // beside a genuine world-hazard self-kill (no same-tick disconnect →
+  // still a death for Z).
+  { kind: 'player_disconnect', tick: 2600, round: 3, attacker: 'Y' },
+  { kind: 'kill', tick: 2600, round: 3, attacker: 'Y', victim: 'Y', weapon: 'World', assister: 'C' },
+  { kind: 'kill', tick: 2600, round: 3, attacker: 'Z', victim: 'Z', weapon: 'World' },
 ];
 
 const sweepOpts = (tick, over = {}) => ({
