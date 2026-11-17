@@ -471,10 +471,10 @@ document to disk.
 lands as a highlighted chip in the field, and each picked stat earns a line under the field
 carrying its expression and its row count — while it has no computed number for this match, that
 line shows its state chip instead. The field also offers the match's **recorded values** — the
-scoreboard numbers themselves (kills, deaths, damage, utility damage, MVPs, score) — which
-are not metrics: a recorded pick carries a *Recorded value* chip instead of an expression or a
-state, and its exported section says so plainly, with each player's stored round count beside the
-value. Remove a chip with its ✕, or with Backspace while the field is
+scoreboard's stored numbers themselves (kills, deaths, damage, utility damage, MVPs, score),
+offered as recorded rather than computed: a recorded pick carries a *Recorded value* chip instead
+of an expression or a state, and its exported section says so plainly, with each player's stored
+round count beside the value. Remove a chip with its ✕, or with Backspace while the field is
 empty; with no chips the saved document carries no appendix. Picked stats and their sections
 follow the same order as everywhere else.
 
