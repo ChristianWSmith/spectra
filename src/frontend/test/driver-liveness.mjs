@@ -249,7 +249,17 @@ const EXPECTED = {
   // builder 157 → 158 (2026-11-16, w22 name-keyed pins): +1 section J —
   // the delete-scrub: deleting a PINNED user metric scrubs its NAME
   // from BOTH pin keys (the write is names-only, never an id).
-  'builder.dom.mjs': 158,
+  // builder 158 → 163 (2026-11-16, w25 shape pref — the NEW section K;
+  // delta rebased by the lead at merge: w25 branched before w19/w22):
+  // +5 — the "Scoreboard starts transposed" checkbox's placement in the
+  // match section AFTER its list (and absent from the profile section),
+  // its unchecked absent-pref default with the catalog label over a
+  // bare-key GetPref read, the click writing ONLY
+  // scoreboard_starts_transposed through SetPref, the close+reopen
+  // read-back of the written value through a stateful store, and Reset
+  // order leaving the shape key untouched (the checkbox stays checked).
+  // Sections A–J untouched by w25.
+  'builder.dom.mjs': 163,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -467,7 +477,16 @@ const EXPECTED = {
   // pinned-metric row list dropped the two retired keys, and the
   // sb3/sbMixed fixtures dropped their dead `kda` fields. Sections
   // A–J untouched (J's static 'K' header is still there).
-  'econ-tables.dom.mjs': 150,
+  // econ-tables 150 → 153 (2026-11-16, w25 shape pref — the NEW section
+  // N): +3 — pref ON + fresh registry opens the scoreboard TRANSPOSED
+  // with no click (aria-pressed "true", the bare-key pref read counted),
+  // a session RECORD wins over the pref (flipped to player rows, remount
+  // with the pref still ON stays player rows — with a second pref read
+  // proving the seed path ran), and pref absent + fresh registry stays
+  // player rows (the default is off). Section N resetViewState()s FIRST
+  // (this driver's registry was never reset and section M left the shape
+  // ON); sections A–M untouched.
+  'econ-tables.dom.mjs': 153,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the

@@ -444,7 +444,9 @@ hides it from its view without taking it off this list (the scoreboard's **Name*
 one that cannot be hidden), and a pinned metric's pin button unpins it: the row leaves this list
 at once and the metric stops showing on its surface, while its slot in the order is kept, so
 pinning it again restores its place. Each row's buttons sit together at the row's right edge, and
-**Reset order** restores every default, hidden ones included.
+**Reset order** restores every default, hidden ones included. Under the scoreboard list, the
+**Scoreboard starts transposed** checkbox sets the shape a match opens in; a match you flip during
+this session keeps the shape you left it in until you restart Spectra.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,

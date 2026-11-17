@@ -86,6 +86,14 @@
 //      name-keyed delete-scrub (deleting a pinned metric drops its
 //      NAME from both pin keys — names only, never an id), and the
 //      header ✕ closing it.
+//   K. the Scoreboard section's SHAPE pref (w25): the "Scoreboard
+//      starts transposed" checkbox sits in the MATCH section AFTER its
+//      list and never in the profile section, opens unchecked with the
+//      absent-pref default and its catalog label (the dialog reads the
+//      bare kvstore key), the click writes ONLY
+//      scoreboard_starts_transposed through SetPref, a close+reopen
+//      with a stateful store reads the written value back as checked,
+//      and Reset order leaves the shape key untouched.
 //
 // Section A opens with the N1 list-scroll pins and section F carries
 // the N6 one-line actions-row anatomy pins (the delete that now leads
@@ -2414,6 +2422,111 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     await sleep(60);
     check('the header ✕ dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
   }
+}
+
+console.log(
+  "K. the Scoreboard section's shape checkbox (w25): placement after its list, default off, the one key it writes, read-back on reopen, Reset leaves it alone",
+);
+{
+  // w25 — the ordering dialog's THIRD pref (metricorder.js
+  // STARTS_TRANSPOSED_KEY): "Scoreboard starts transposed" is the shape
+  // a match OPENS in (the Match view reads it once per mount). Section J
+  // left the dialog closed; open it fresh with NO GetPref handler, so
+  // the read below is the honest absent-pref default (off).
+  delete bindings.handlers.GetPref;
+  delete bindings.handlers.SetPref;
+  bindings.resetCalls();
+  const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) =>
+    b.textContent.includes('Order'),
+  );
+  if (orderBtn) click(orderBtn);
+  await sleep(150);
+  const dlgK = document.querySelector('.dlg-panel.mo-prompt');
+  const matchSec = dlgK?.querySelector('.mo-sec[data-mo-scope="match"]');
+  const profSec = dlgK?.querySelector('.mo-sec[data-mo-scope="profile"]');
+  const box = matchSec?.querySelector('#mo-starts-transposed');
+  const listEl = matchSec?.querySelector('.mo-list');
+  const followsList = !!box && !!listEl &&
+    (listEl.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  check(
+    'the shape checkbox sits in the Scoreboard section AFTER its list, and never in the profile section',
+    followsList && !profSec?.querySelector('#mo-starts-transposed'),
+    box ? `afterList=${followsList}` : 'no #mo-starts-transposed in the match section',
+  );
+  check(
+    'it opens UNCHECKED by default (no GetPref handler — absent ⇒ off) with the catalog label, over a bare-key read',
+    !!box &&
+      box.checked === false &&
+      (box.closest('label')?.textContent || '').trim() === 'Scoreboard starts transposed' &&
+      bindings.calls.some(
+        (c) => c.method === 'GetPref' && c.args[0] === 'scoreboard_starts_transposed',
+      ),
+    box
+      ? `checked=${box.checked} label="${(box.closest('label')?.textContent || '').trim()}"`
+      : 'no box',
+  );
+
+  // The ONE writer: a stateful kvstore store goes in FIRST, so the click
+  // below lands in it and the reopen reads that very value back.
+  const store = {};
+  bindings.handlers.GetPref = (k) => store[k];
+  bindings.handlers.SetPref = (k, v) => {
+    store[k] = v;
+  };
+  bindings.resetCalls();
+  box?.click();
+  await sleep(80);
+  const sets = bindings.calls.filter((c) => c.method === 'SetPref');
+  check(
+    'the click writes SetPref("scoreboard_starts_transposed", true) — and ONLY that key',
+    !!box &&
+      box.checked === true &&
+      sets.length === 1 &&
+      sets[0].args[0] === 'scoreboard_starts_transposed' &&
+      sets[0].args[1] === true &&
+      store.scoreboard_starts_transposed === true,
+    `checked=${box?.checked} sets=${JSON.stringify(sets.map((c) => c.args))}`,
+  );
+
+  // Close + reopen: the dialog re-reads on open, so the written value
+  // comes back from the store — a fresh read, not the in-memory state.
+  bindings.resetCalls();
+  const closeBtn = dlgK?.querySelector('button[aria-label="Close"]');
+  if (closeBtn) click(closeBtn);
+  await sleep(60);
+  const orderBtn2 = [...r.querySelectorAll('.bld-list button')].find((b) =>
+    b.textContent.includes('Order'),
+  );
+  if (orderBtn2) click(orderBtn2);
+  await sleep(150);
+  const dlgK2 = document.querySelector('.dlg-panel.mo-prompt');
+  const box2 = dlgK2?.querySelector('#mo-starts-transposed');
+  const reads = bindings.calls.filter(
+    (c) => c.method === 'GetPref' && c.args[0] === 'scoreboard_starts_transposed',
+  );
+  check(
+    'close + reopen re-reads the bare key through the store and comes back CHECKED',
+    !!box2 && box2.checked === true && reads.length >= 1 && store.scoreboard_starts_transposed === true,
+    box2 ? `checked=${box2.checked} reads=${reads.length}` : 'no reopened dialog',
+  );
+
+  // Reset order (lead ruling): it restores ORDER + VISIBILITY only — the
+  // shape is neither, so no SetPref/Delete may ever target its key here.
+  bindings.resetCalls();
+  const resetBtn = [...(dlgK2?.querySelectorAll('button') || [])].find((b) =>
+    b.textContent.includes('Reset order'),
+  );
+  if (resetBtn) click(resetBtn);
+  await sleep(80);
+  const shapeCalls = bindings.calls.filter((c) => c.args[0] === 'scoreboard_starts_transposed');
+  check(
+    'Reset order writes/deletes NOTHING for the shape key (the checkbox stays as it was)',
+    shapeCalls.length === 0 && !!box2 && box2.checked === true,
+    JSON.stringify(bindings.calls.map((c) => [c.method, c.args[0]])),
+  );
+
+  delete bindings.handlers.GetPref;
+  delete bindings.handlers.SetPref;
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

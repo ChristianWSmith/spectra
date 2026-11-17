@@ -172,6 +172,11 @@ export const common = {
   metricOrderHintKeys: ' move · Esc close',
   metricOrderNote:
     'Fixed stats and your pinned metrics are listed in the order they appear — reorder with the arrows, hide a fixed stat with the eye, and unpin a metric here with the pin on its row.',
+  // w25 — the Scoreboard section's shape checkbox (after its list):
+  // the label stays tier 1; the behavior sentence rides its title= hint.
+  metricOrderStartsTransposed: 'Scoreboard starts transposed', // the checkbox label
+  metricOrderStartsTransposedHint:
+    'The checkbox sets the shape a match opens in; a match you flip during this session keeps the shape you left it in until you restart Spectra.', // title= tooltip on the checkbox row
 
   // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
   payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)

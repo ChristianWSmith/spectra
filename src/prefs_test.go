@@ -95,6 +95,13 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsMetricHiddenProfileKey != "metric_hidden_profile" {
 		t.Errorf("metric hidden (profile) key = %q, want %q", prefsMetricHiddenProfileKey, "metric_hidden_profile")
 	}
+	// The dialog's THIRD pref (metricorder.js STARTS_TRANSPOSED_KEY): the
+	// scoreboard's opening SHAPE, a boolean read by the Match view. Same
+	// frontend-written / Go-never-consumes contract — one rename silently
+	// reverts every stored choice to the default (player rows).
+	if prefsScoreboardStartsTransposedKey != "scoreboard_starts_transposed" {
+		t.Errorf("scoreboard starts-transposed key = %q, want %q", prefsScoreboardStartsTransposedKey, "scoreboard_starts_transposed")
+	}
 	// The replay loop-length pref (Settings' Replay panel writes it, the
 	// replay transport and every event-level replay link read it; Go never
 	// consumes it). One key rename silently reverts every stored choice

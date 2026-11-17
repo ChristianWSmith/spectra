@@ -50,6 +50,8 @@
     readHidden,
     writeHidden,
     resetHidden,
+    readStartsTransposed,
+    writeStartsTransposed,
     hideable,
   } from '../metricorder.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
@@ -68,11 +70,15 @@
   let defs = $state([]); // the full catalog (listMetrics) — both sections scope-filter it
   let orders = $state({ match: null, profile: null }); // saved pref per scope (null = absent)
   let hidden = $state({ match: [], profile: [] }); // hidden fixed-entry keys per scope (absent ⇒ [])
+  // w25 — the dialog's THIRD pref (metricorder.js STARTS_TRANSPOSED_KEY):
+  // the scoreboard's opening shape, read with the rest on open (absent ⇒
+  // off) and written through setStartsTransposed below.
+  let startsTransposed = $state(false);
   let error = $state('');
 
-  // One listMetrics() + both order reads + both visibility reads on open
-  // (design §2.4: no async inside a move — everything below is
-  // synchronous over this snapshot; listMetrics is the shared
+  // One listMetrics() + both order reads + both visibility reads + the
+  // shape pref on open (design §2.4: no async inside a move — everything
+  // below is synchronous over this snapshot; listMetrics is the shared
   // library-wide cached read).
   $effect(() => {
     if (!open) return;
@@ -83,12 +89,14 @@
       readOrder('profile'),
       readHidden('match'),
       readHidden('profile'),
+      readStartsTransposed(),
     ])
-      .then(([rows, m, p, hm, hp]) => {
+      .then(([rows, m, p, hm, hp, st]) => {
         if (!open) return; // closed mid-flight
         defs = rows || [];
         orders = { match: m, profile: p };
         hidden = { match: hm, profile: hp };
+        startsTransposed = st;
       })
       .catch((e) => {
         error = errText(e);
@@ -165,6 +173,22 @@
     }
   }
 
+  // setStartsTransposed — the SHAPE pref write (w25): write-through with
+  // the same snap-back contract as toggleHidden above — a write that did
+  // not save is never shown as saved. This checkbox is the ONLY writer of
+  // the key (toggling a match's scoreboard never writes it), and it is
+  // not part of the order sequence: Reset order below never touches it.
+  async function setStartsTransposed(on) {
+    const prev = startsTransposed;
+    startsTransposed = on;
+    try {
+      await writeStartsTransposed(on);
+    } catch (e) {
+      startsTransposed = prev;
+      error = errText(e);
+    }
+  }
+
   // unpin (M6) — the dialog's pin toggle on a METRIC row. The write
   // stays with Builder: onTogglePin → togglePin writes BOTH pin keys
   // and never metric_order_* (the sequence keeps the slot, so
@@ -212,7 +236,10 @@
   // Reset order: delete BOTH pref PAIRS (order + hidden, both scopes)
   // ⇒ each section snaps back to its default sequence with every fixed
   // stat showing again (the lead's ruling: Reset restores the defaults,
-  // visibility included).
+  // visibility included). It deliberately does NOT touch the SHAPE pref
+  // (STARTS_TRANSPOSED_KEY, the checkbox below the scoreboard list) —
+  // that is the shape a match opens in, neither order nor visibility
+  // (w25; no delete of it exists anywhere in this dialog).
   async function resetAll() {
     const prevOrders = orders;
     const prevHidden = hidden;
@@ -349,6 +376,28 @@
         </div>
       {/each}
     </div>
+    {#if scope === 'match'}
+      <!-- w25 — the Scoreboard section's SHAPE preference, after its
+           list: "Scoreboard starts transposed" (default off) is the
+           shape a match OPENS in — the Match view reads it once per
+           mount as the seed default, while a session record for that
+           match still wins. .filt-check is THE shared checkbox row
+           (public/style-m3b.css — Builder's filter boxes and Settings'
+           copy-on-import row), so this adds no dialog-scoped style. -->
+      <label
+        class="filt-check"
+        for="mo-starts-transposed"
+        title={S.common.metricOrderStartsTransposedHint}
+      >
+        <input
+          id="mo-starts-transposed"
+          type="checkbox"
+          checked={startsTransposed}
+          onchange={(e) => setStartsTransposed(e.currentTarget.checked)}
+        />
+        <span>{S.common.metricOrderStartsTransposed}</span>
+      </label>
+    {/if}
   </section>
 {/snippet}
 

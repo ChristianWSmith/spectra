@@ -10,7 +10,10 @@
 // route query (not a link), NOT the registry (not view state).
 // Visibility rides its own twin key pair (metric_hidden_match /
 // metric_hidden_profile) under the same rules — the same writers, the
-// same kvstore, absent ⇒ nothing hidden.
+// same kvstore, absent ⇒ nothing hidden. A THIRD dialog pref (w25) sits
+// beside them without joining either table: STARTS_TRANSPOSED_KEY, the
+// scoreboard's opening shape (boolean, absent ⇒ off) — see its const
+// below for the placement ruling.
 //
 // Composition (W6, 2026-11-16):  composedSequence = resolveOrder over
 // the FIXED stats AND the metrics, one merged entry list.
@@ -63,6 +66,21 @@ export const HIDDEN_KEYS = Object.freeze({
   match: 'metric_hidden_match',
   profile: 'metric_hidden_profile',
 });
+
+// The dialog's THIRD pref (w25, 2026-11-16) — the scoreboard's opening
+// SHAPE: "Scoreboard starts transposed" under the dialog's Scoreboard
+// section, boolean, ABSENT = off (player rows). NOT part of the order
+// sequence and not visibility: a separate boolean the Match view reads
+// once per mount as the shape a match OPENS in (a session record for
+// that match still wins), written only by that checkbox — Reset order
+// never touches it.
+// Placement ruling (AGENTS "State placement — the forward test"): it
+// survives a restart and is not a link ⇒ the kvstore (prefs.go's
+// prefsScoreboardStartsTransposedKey; frontend-written, Go never
+// consumes it) — NOT the route query, NOT localStorage
+// (webstorage.test.js bans new references), NOT the view-state registry
+// (that holds only the per-session shape a match was left in).
+export const STARTS_TRANSPOSED_KEY = 'scoreboard_starts_transposed';
 
 // DEFAULT_RANKS — the default METRIC sequence per scope (design §1.6),
 // name-keyed. A rank places the metric at that position among the
@@ -588,6 +606,22 @@ export function parseStoredPins(raw) {
   } catch {
     return null;
   }
+}
+
+// readStartsTransposed() — the SHAPE pref (STARTS_TRANSPOSED_KEY), with
+// the absent⇒default idiom of resolvePins below over a boolean:
+// ABSENT or corrupt ⇒ false (the default, player rows). Only the literal
+// `true` reads as on, so a broken pref can never open a match transposed.
+export function readStartsTransposed() {
+  return Promise.resolve(getPref(STARTS_TRANSPOSED_KEY)).then((v) => v === true);
+}
+
+// writeStartsTransposed(on) — persist the shape pref as a strict boolean
+// (kvstore AutoSave — durable immediately). The order dialog's
+// "Scoreboard starts transposed" checkbox is the ONLY writer: toggling a
+// match's scoreboard never writes it, and no reset path deletes it.
+export function writeStartsTransposed(on) {
+  return Promise.resolve(setPref(STARTS_TRANSPOSED_KEY, on === true));
 }
 
 // resolvePins(scope, stored, catalog) — THE absent-vs-present pins

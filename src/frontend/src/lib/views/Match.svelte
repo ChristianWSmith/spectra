@@ -59,7 +59,7 @@
   import WinnerCell from '../components/WinnerCell.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
-  import { readOrder, readHidden, resolvePins, parseStoredPins, composedSequence } from '../metricorder.js';
+  import { readOrder, readHidden, readStartsTransposed, resolvePins, parseStoredPins, composedSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
@@ -165,13 +165,29 @@
   // (no remount), so ONE combined effect both RE-SEEDS on a key change
   // and writes through otherwise — self-ordering: the write branch runs
   // only while the key is unchanged, so the old match's values can never
-  // land under the new key. The TAB stays URL-owned (routeTab effect
+  // land under the new key. The seed is GATED on the shape pref below:
+  // nothing is recorded for a key until the pref-loaded seed has run for
+  // it (the ungated effect used to record the mount default before the
+  // async pref read could land). The TAB stays URL-owned (routeTab effect
   // below) and is never registered; busy/error/warnings stay transient.
-  const selDefaults = () => ({ compareSel: [], transposed: false });
+  // The record's defaults: the compare picks always start empty; the
+  // transposed shape starts at the SHAPE PREF's value (metricorder.js
+  // STARTS_TRANSPOSED_KEY — the ordering dialog's "Scoreboard starts
+  // transposed" checkbox: the shape a match OPENS in), which the
+  // pref-loaded seed below supplies. A registry record wins over these
+  // (seed() merges the record OVER the defaults), and toggling the
+  // scoreboard never writes the pref — only the dialog does.
+  const selDefaults = (transposedDefault = false) => ({
+    compareSel: [],
+    transposed: transposedDefault,
+  });
   const selKey = $derived(matchKey('selection', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
   // (Svelte's documented state_referenced_locally fix); the snapshot carries
   // the key so lastKey matches without a second top-level derived read.
+  // It seeds with the PLAIN defaults — the shape pref has not landed yet
+  // — so it is the pre-paint value only; the pref-gated effect below
+  // applies the real seed (an existing record wins either way).
   // The combined reseed/write-through $effect below owns every later key
   // change — URL stays the sole durable record; registry semantics unchanged.
   const selInit = () => ({ ...seed(selKey, selDefaults()), key: selKey });
@@ -199,24 +215,57 @@
   // match-scoped like compareSel (the expanded/compareSel precedent):
   // a process-local view shape, never a link, so it is NOT URL state and
   // never survives as a shareable address; each match restores the shape
-  // it was left in.
+  // it was left in. What it OPENS at is the shape pref below, applied
+  // only by the pref-gated seed — a session record for this match still
+  // wins over it (it is never re-applied on a later toggle).
   let transposed = $state(selSeed.transposed);
   let selLastKey = selSeed.key;
+  // w25 — the SHAPE PREF (metricorder.js STARTS_TRANSPOSED_KEY): read
+  // ONCE per mount (the loop_secs pattern in Combat.svelte), fail-soft —
+  // absent/corrupt/failed read ⇒ off, the default. It is a kvstore
+  // preference (survives a restart), NOT view state: it is never stored
+  // in the registry itself and never written from here — only the
+  // ordering dialog's checkbox writes it.
+  let startsTransposed = $state(false);
+  let prefLoaded = $state(false);
+  readStartsTransposed()
+    .then((on) => {
+      startsTransposed = on;
+    })
+    .catch(() => {
+      // a failed read is the default: the shape off
+    })
+    .finally(() => {
+      prefLoaded = true;
+    });
+  // SEED AFTER THE PREF LANDS (w25): the first run once prefLoaded
+  // applies the seed — a registry record wins, the pref value otherwise —
+  // and only from then does the write-through run. INVARIANT: nothing is
+  // recorded for a key until the pref-loaded seed has run for it. The
+  // record fields are READ above the branch in BOTH cases: the seed run
+  // must subscribe to them too, or a later toggle could never re-run this
+  // effect to write the record through. selSeeded is effect-internal
+  // bookkeeping like selLastKey (plain — it changes only inside here).
+  let selSeeded = false;
   $effect(() => {
+    if (!prefLoaded) return; // the gate — no record before the pref-landed seed
     const k = selKey;
-    if (k !== selLastKey) {
-      // Another match without a remount: apply its record (defaults
-      // when it has none) and do not write — the entry keeps exactly
-      // what was applied, so the old match's picks can never land under
-      // the new key (the write-through re-arms on the next selection
-      // change, which reads the re-seeded values).
+    const cur = { compareSel, transposed };
+    if (k !== selLastKey || !selSeeded) {
+      // SEED — the first run after the pref lands, or another match
+      // without a remount: apply this key's record (the pref-carrying
+      // defaults when it has none) and do not write — the entry keeps
+      // exactly what was applied, so the old match's values can never
+      // land under the new key (the write-through re-arms on the next
+      // selection change, which reads the re-seeded values).
       selLastKey = k;
-      const s = seed(k, selDefaults());
+      selSeeded = true;
+      const s = seed(k, selDefaults(startsTransposed));
       compareSel = s.compareSel;
       transposed = s.transposed;
       return;
     }
-    remember(k, { compareSel, transposed });
+    remember(k, cur);
   });
 
   // Side-switch boundary per row (index-aligned with rounds): the
