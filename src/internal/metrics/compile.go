@@ -468,29 +468,50 @@ func (r *colResolution) qualify(col string) string {
 // validateAggIdents walks one aggregation's condition/column identifiers —
 // every identifier must resolve against the expression's source set
 // (parser output carries identifier nodes; this is where they are
-// checked and where the value-column rule fires).
+// checked and where the value-column rule fires). Inside an exists()
+// the resolution splits: bare columns name the INNER scan (the
+// PRIMARY's whitelist only — a secondary's column would silently bind
+// the outer row inside the subquery) and outer.<column> resolves
+// through the expression's source set like any condition column.
 func validateAggIdents(a *Agg, res *colResolution) *ParseError {
-	var checkCond func(c *condNode) *ParseError
-	checkCond = func(c *condNode) *ParseError {
+	var checkCond func(c *condNode, inExists bool) *ParseError
+	checkCond = func(c *condNode, inExists bool) *ParseError {
 		if c == nil {
 			return nil
 		}
+		if c.kind == cExists {
+			inExists = true // its subtree is the inner scan
+		}
 		for _, o := range []*operand{c.x, c.y} {
-			if o != nil && o.kind == opColumn {
+			if o == nil {
+				continue
+			}
+			switch o.kind {
+			case opColumn:
+				if inExists {
+					if !sourceColumns[res.primary][o.col] {
+						return errf(o.pos, "unknown column %q for source %s", o.col, res.primary)
+					}
+					continue
+				}
+				if perr := res.resolveCond(o.col, o.pos); perr != nil {
+					return perr
+				}
+			case opOuter:
 				if perr := res.resolveCond(o.col, o.pos); perr != nil {
 					return perr
 				}
 			}
 		}
-		if p := checkCond(c.l); p != nil {
+		if p := checkCond(c.l, inExists); p != nil {
 			return p
 		}
-		return checkCond(c.r)
+		return checkCond(c.r, inExists)
 	}
-	if p := checkCond(a.Where); p != nil {
+	if p := checkCond(a.Where, false); p != nil {
 		return p
 	}
-	if p := checkCond(a.Count); p != nil {
+	if p := checkCond(a.Count, false); p != nil {
 		return p
 	}
 	if a.Col != "" || a.Terms != nil {
@@ -565,6 +586,11 @@ type emitter struct {
 	// denominator correlates on the ROW's match instead of binding one
 	// scope id. false = the preview shapes (byte-stable emission).
 	batched bool
+	// inExists > 0 while emitting inside an exists() subquery: bare
+	// columns name the INNER scan (x0-qualified — unqualified would be
+	// ambiguous the moment the outer query also owns the name, and the
+	// provenance view should show which row each column reads).
+	inExists int
 }
 
 func (e *emitter) bind(v any) string {
@@ -901,13 +927,47 @@ func (e *emitter) emitCond(c *condNode) {
 		e.sb.WriteString("(NOT ")
 		e.emitCond(c.l)
 		e.sb.WriteString(")")
+	case cExists:
+		// The correlated-existence subquery (plan §6.2): the inner
+		// scan is the PRIMARY's table — aliased x0 so an outer
+		// reference can never resolve to it (emitDenom's rule for a
+		// subquery over the same table the outer query reads) —
+		// engine-correlated on the row's match with NO user text (the
+		// join-ON discipline: a match-scoped predicate can never bleed
+		// across matches), and the inner condition reads bare columns
+		// as x0.<col> while outer.<column> resolves through the outer
+		// row's owners. The current row is a candidate like any other
+		// (SQL EXISTS semantics); N2's kind predicate distinguishes it.
+		e.sb.WriteString("EXISTS (SELECT 1 FROM ")
+		e.sb.WriteString(tableFor(e.res.primary))
+		e.sb.WriteString(" AS x0 WHERE x0.match_id = ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".match_id AND ")
+		e.inExists++
+		e.emitCond(c.l)
+		e.inExists--
+		e.sb.WriteString(")")
 	}
 }
 
 // emitOperand writes a whitelisted column verbatim (side-qualified when
-// the statement joins) or binds a literal.
+// the statement joins) or binds a literal. Inside an exists() subquery
+// the two operand kinds take the qualified paths: outer.<column> is
+// ALWAYS owner-qualified (unqualified would resolve to the inner scan),
+// bare columns are x0-qualified (the inner scan).
 func (e *emitter) emitOperand(o *operand) {
+	if o.kind == opOuter {
+		e.sb.WriteString(e.res.owners[o.col])
+		e.sb.WriteString(".")
+		e.sb.WriteString(o.col)
+		return
+	}
 	if o.kind == opColumn {
+		if e.inExists > 0 {
+			e.sb.WriteString("x0.")
+			e.sb.WriteString(o.col)
+			return
+		}
 		e.sb.WriteString(e.res.qualify(o.col))
 		return
 	}

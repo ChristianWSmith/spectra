@@ -51,11 +51,21 @@ var ratioNestedOps = map[string]bool{
 
 // exprKeywords are case-insensitive contextual keywords (they only carry
 // meaning in their positions; as column names they would be rejected — no
-// whitelisted column is named any of these).
+// whitelisted column is named any of these). `exists` and `outer` belong
+// to the exists() construct (parseExists / parseOperand): as a source or
+// column name outside it they are refused as the keywords they are.
 var exprKeywords = map[string]bool{
 	"from": true, "as": true, "where": true, "and": true, "or": true,
 	"not": true, "true": true, "false": true,
+	"exists": true, "outer": true,
 }
+
+// existsValueMsg is the ONE refusal for exists() in a value position —
+// top-level aggregation, ratio operand, column argument, additive chain
+// term and scalar min/max term (parseAgg, parseColArg, parseScalarTerm
+// all quote it verbatim): the construct is a condition, and a condition
+// never becomes a value.
+const existsValueMsg = "exists() is a condition, not a value — it can only appear where a condition is accepted (count()'s argument or a where filter)"
 
 // cmpOps are the comparison operators (two-char forms must be adjacent:
 // `a < = b` is a syntax error, not `<=`).
@@ -134,6 +144,10 @@ type scalarTerm struct {
 const (
 	opColumn = 'i'
 	opLit    = 'l'
+	// opOuter: `outer.<column>` — the row being tested, referenced from
+	// inside an exists() subquery (the construct's ONE qualifier; only
+	// parseOperand builds one, only while p.inExists > 0).
+	opOuter = 'o'
 )
 
 type operand struct {
@@ -154,6 +168,10 @@ const (
 	cAnd   = 'a'
 	cOr    = 'o'
 	cNot   = 'n'
+	// cExists: exists(<cond>) — the correlated-existence construct
+	// (plan §6.2): l is the inner condition over ANOTHER row of the
+	// expression's primary source; pos is the `exists` token.
+	cExists = 'e'
 )
 
 type condNode struct {
@@ -306,6 +324,15 @@ type parser struct {
 	i     int
 	depth int
 	end   int // byte length of the source (EOF error positions)
+	// primary is the expression's PRIMARY source name (set by parseSpec
+	// before any aggregation parses) — exists() uses it to recognize a
+	// self-referential qualifier (the subquery already scans that
+	// source, so naming it as a qualifier is refused by name).
+	primary string
+	// inExists counts exists() frames currently being parsed: > 0 makes
+	// `outer.<column>` legal (and only `outer.` legal) in parseOperand,
+	// and refuses a nested exists().
+	inExists int
 }
 
 func (p *parser) peek() (exprTok, bool) {
@@ -393,6 +420,10 @@ func (p *parser) parseSpec() (Spec, *ParseError) {
 		return Spec{}, perr
 	}
 	spec := Spec{Source: srcs[0].Name, SourcePos: srcs[0].Pos, Sources: srcs}
+	// The primary's name — exists() uses it to recognize a self-
+	// referential qualifier inside its condition (the subquery scans
+	// THIS source, so naming it as a qualifier is refused by name).
+	p.primary = srcs[0].Name
 	last := srcs[len(srcs)-1]
 	for {
 		if p.atEnd() {
@@ -423,6 +454,12 @@ func (p *parser) parseAgg(top bool) (Agg, *ParseError) {
 	t, ok := p.next()
 	if !ok || t.kind != tIdent {
 		return Agg{}, p.errHere("expected aggregation name")
+	}
+	// exists() is a condition, never a value (existsValueMsg): this
+	// fires for a top-level aggregation AND for ratio()'s operands —
+	// parseAgg parses both.
+	if strings.EqualFold(t.text, "exists") {
+		return Agg{}, errf(t.pos, existsValueMsg)
 	}
 	if exprKeywords[t.text] {
 		return Agg{}, errf(t.pos, "expected aggregation name, got keyword %q", t.text)
@@ -628,6 +665,9 @@ func (p *parser) parseScalarTerm(op string) (scalarTerm, *ParseError) {
 	if t.kind == tIdent && strings.EqualFold(t.text, "metric") {
 		return scalarTerm{}, errf(t.pos, "metric() is a value reference — it cannot appear inside %s()", op)
 	}
+	if t.kind == tIdent && strings.EqualFold(t.text, "exists") {
+		return scalarTerm{}, errf(t.pos, existsValueMsg)
+	}
 	if t.kind == tIdent {
 		if !aggOps[strings.ToLower(t.text)] {
 			// A bare column or keyword: only whole aggregations carry
@@ -710,9 +750,14 @@ func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 	// Denied position (design §2): a ref is a computed value, not a row
 	// transform — aggregating a broadcast scalar double-aggregates it.
 	// `metric` is not a whitelisted column of ANY source, so this ident
-	// can only be the ref keyword.
+	// can only be the ref keyword. exists() is refused here with its
+	// own message for the same reason it is refused at every other
+	// value position: it is a condition.
 	if strings.EqualFold(t.text, "metric") {
 		return Agg{}, errf(t.pos, "metric() is a value reference — it cannot appear inside %s()", op)
+	}
+	if strings.EqualFold(t.text, "exists") {
+		return Agg{}, errf(t.pos, existsValueMsg)
 	}
 	if exprKeywords[t.text] {
 		return Agg{}, errf(t.pos, "expected a column name, got keyword %q", t.text)
@@ -750,6 +795,9 @@ func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 			}
 			if strings.EqualFold(c.text, "metric") {
 				return Agg{}, errf(c.pos, "metric() is a value reference — it cannot appear inside %s()", op)
+			}
+			if strings.EqualFold(c.text, "exists") {
+				return Agg{}, errf(c.pos, existsValueMsg)
 			}
 			if exprKeywords[c.text] {
 				return Agg{}, errf(c.pos, "expected a column name, got keyword %q", c.text)
@@ -832,6 +880,14 @@ func (p *parser) parsePrimaryCond() (*condNode, *ParseError) {
 		p.depth--
 		return inner, nil
 	}
+	// exists() is a condition PRIMARY (plan §6.2): in this position an
+	// ident spelled `exists` can only be the construct — no whitelisted
+	// column is named `exists` — so it commits here and parseExists
+	// owns its shape and refusals (missing "(", arity, nesting).
+	if t, ok := p.peek(); ok && t.kind == tIdent && strings.EqualFold(t.text, "exists") {
+		p.i++ // consume `exists`
+		return p.parseExists(t)
+	}
 	x, perr := p.parseOperand()
 	if perr != nil {
 		return nil, perr
@@ -845,6 +901,53 @@ func (p *parser) parsePrimaryCond() (*condNode, *ParseError) {
 		return &condNode{kind: cCmp, op: t.text, x: x, y: y, pos: t.pos}, nil
 	}
 	return &condNode{kind: cTruth, x: x, pos: x.pos}, nil
+}
+
+// parseExists reads the exists() construct (plan §6.2 / D7): a condition-
+// position correlated subquery over the expression's OWN primary source
+// — `exists(<cond>)` holds for the row being tested when ANOTHER row of
+// the lead's table matches <cond> (N2: damage rows whose kill is on the
+// same tick/attacker/victim). The inner condition reads bare columns of
+// that table (validated against the PRIMARY's whitelist only — a name
+// absent there would silently bind the OUTER row inside the subquery)
+// and `outer.<column>` for the row being tested; the engine correlates
+// the two rows on match_id (emitCond), so a match-scoped predicate can
+// never bleed across matches. One level only: a nested exists() is
+// refused. `t` is the already-consumed `exists` token (its position
+// anchors the shape errors).
+func (p *parser) parseExists(t exprTok) (*condNode, *ParseError) {
+	if p.inExists > 0 {
+		return nil, errf(t.pos, "exists() cannot be nested inside exists()")
+	}
+	if !p.atPunct("(") {
+		return nil, p.errHere("expected %q after %q", "(", "exists")
+	}
+	p.i++ // consume '('
+	p.depth++
+	if p.depth > maxCondDepth {
+		return nil, p.errHere("condition nesting too deep (max %d)", maxCondDepth)
+	}
+	// Optional `where` prefix — count()'s filter form, mirrored.
+	if tk, ok := p.peek(); ok && tk.is("where") {
+		p.i++
+	}
+	if p.atPunct(")") {
+		return nil, errf(p.toks[p.i].pos, "exists() takes a condition")
+	}
+	p.inExists++
+	inner, perr := p.parseCond()
+	p.inExists--
+	if perr != nil {
+		return nil, perr
+	}
+	if p.atPunct(",") {
+		return nil, errf(p.toks[p.i].pos, "exists() takes exactly one condition")
+	}
+	if perr := p.expectPunct(")"); perr != nil {
+		return nil, perr
+	}
+	p.depth--
+	return &condNode{kind: cExists, l: inner, pos: t.pos}, nil
 }
 
 func (p *parser) parseOperand() (*operand, *ParseError) {
@@ -866,6 +969,40 @@ func (p *parser) parseOperand() (*operand, *ParseError) {
 		}
 		if strings.EqualFold(t.text, "false") {
 			return &operand{kind: opLit, isBool: true, bval: false, pos: t.pos}, nil
+		}
+		// exists() constructs: `outer.<column>` names the row being
+		// tested — the construct's ONE qualifier (inside exists() only;
+		// outside, `outer` is a keyword like any other). It needs a
+		// column after the dot.
+		if p.inExists > 0 && strings.EqualFold(t.text, "outer") {
+			if !p.atPunct(".") {
+				return nil, p.errHere("expected a column after %q", "outer.")
+			}
+			p.i++ // consume '.'
+			c, ok := p.next()
+			if !ok || c.kind != tIdent {
+				return nil, p.errHere("expected a column after %q", "outer.")
+			}
+			if exprKeywords[c.text] {
+				return nil, errf(c.pos, "expected a column name, got keyword %q", c.text)
+			}
+			return &operand{kind: opOuter, col: c.text, pos: c.pos}, nil
+		}
+		// Inside exists(), a dot after any other identifier is a
+		// qualifier attempt: the grammar has no qualified-identifier
+		// syntax, and naming the expression's OWN source would be a
+		// self-reference — the subquery already scans it, so the name
+		// cannot pick a row. `outer.<column>` is the one spelling for
+		// the row being tested.
+		if p.inExists > 0 && !exprKeywords[t.text] {
+			if nx, ok := p.peek(); ok && nx.kind == tPunct && nx.text == "." {
+				if strings.EqualFold(t.text, p.primary) {
+					return nil, errf(t.pos,
+						"cannot reference %q inside exists() — the subquery scans this source; the row being tested is written outer.<column>", t.text)
+				}
+				return nil, errf(t.pos,
+					"unknown qualifier %q inside exists() — only outer.<column> qualifies a column here", t.text)
+			}
 		}
 		if exprKeywords[t.text] {
 			return nil, errf(t.pos, "expected a column name, got keyword %q", t.text)
