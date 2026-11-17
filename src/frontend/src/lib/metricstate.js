@@ -43,7 +43,11 @@ const STATE_TITLES = {
 
 // metricPresentation maps (state, the player's row, the unit's sibling
 // coverage) onto what the slot renders:
-//   {kind: 'value', value, n}   the stored number
+//   {kind: 'value', value, n[, valueKey]}  the stored number; an
+//                                        IDENTITY row also carries its
+//                                        value_key (the winner's key —
+//                                        §3.3, so the surface can
+//                                        resolve it to a name)
 //   {kind: 'nodata'}            the '—' (no fabricated 0)
 //   {kind: 'chip', state}       processing | failed | behind
 // An unknown/absent state (read not landed yet) renders the neutral
@@ -51,7 +55,11 @@ const STATE_TITLES = {
 export function metricPresentation(state, row, unitHasRows) {
   if (state === 'processing') return { kind: 'chip', state: 'processing' };
   if (state === 'failed') return { kind: 'chip', state: 'failed' };
-  if (row) return { kind: 'value', value: row.value, n: row.n };
+  if (row) {
+    const out = { kind: 'value', value: row.value, n: row.n };
+    if (row.valueKey) out.valueKey = row.valueKey;
+    return out;
+  }
   if (state === 'no-data' || unitHasRows) return { kind: 'nodata' };
   if (state === 'behind') return { kind: 'chip', state: 'behind' };
   return { kind: 'nodata' };

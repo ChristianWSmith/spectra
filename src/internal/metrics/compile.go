@@ -106,6 +106,13 @@ type Plan struct {
 	// preview shapes: a scoped run binds one match id, scope "" groups
 	// by subject alone (profile/career values store at match_id = 0).
 	MatchAddress bool
+	// Identity marks the argmax row shape (metrics expansion §6.4/§3.3):
+	// the statement's value columns are the winner's KEY (the lead's
+	// player column, `idkey`) beside the companion value — valuesFromPlan
+	// maps idkey into MetricValueRow.ValueKey and Preview into
+	// PreviewRow.ValueKey. Numeric plans never set it; an identity plan
+	// is always subject=match, sole aggregation (compile enforces both).
+	Identity bool
 }
 
 // Compile parses + validates (grammar, sources, the subject anchor per
@@ -117,6 +124,22 @@ type Plan struct {
 // partition dim when the address declares one). Any validation failure
 // is a *ParseError carrying Message/Pos (the ExprError contract).
 //
+// argmaxOf returns the expression's argmax aggregation (nil when there
+// is none). argmax is a WHOLE-expression operator (§6.4): the parser
+// admits it like any column op, and compileRefs enforces the rest of
+// its contract (profile scope, subject 'match', player-anchored lead,
+// no denominator, sole aggregation — each refusal its own message,
+// plan §6) from this one handle, so the checks can never disagree
+// about which token they position on.
+func argmaxOf(spec Spec) *Agg {
+	for i := range spec.Aggs {
+		if spec.Aggs[i].Op == "argmax" {
+			return &spec.Aggs[i]
+		}
+	}
+	return nil
+}
+
 // Compile is the REF-FREE entry point: an expression holding a
 // metric() reference must compile through CompileRefs with the
 // resolution the service looked up (a nil map reports the ref as
@@ -202,6 +225,17 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 	if perr != nil {
 		return Plan{}, perr
 	}
+	// argmax (metrics expansion §6.4 / D2) is detected once here and
+	// refused at every illegal shape with ITS OWN written message —
+	// plan §6's per-capability rule. The profile refusal fires FIRST,
+	// before Address.normalize can rephrase it through the subject ×
+	// scope matrix: a profile-scope argmax over a career is the §6.4 v1
+	// refusal, whatever the declared subject says.
+	ax := argmaxOf(spec)
+	if ax != nil && addr.Profile {
+		return Plan{}, errf(ax.Pos,
+			"argmax() picks each match's leading player — profile scope computes over a career, which has no match pool to choose from (metrics expansion §6.4)")
+	}
 	// Declared addressing first (§6.3): subject/partition vocabulary,
 	// then the subject × scope legality rule — a profile statement with
 	// a match/team subject is refused HERE, before any source check, so
@@ -245,23 +279,46 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 	// subject (§3.4) — while the GROUP key comes from the declared
 	// subject (emitter.subjectKeyExpr).
 	subject := sourceSubject[primary]
-	switch addr.Subject {
-	case "player":
+	if ax != nil {
+		// argmax's shape rules (§6.4 v1): subject 'match' only — it
+		// picks each match's leading player, so a player- or team-
+		// subject statement has no place to put the identity — and the
+		// lead must be PLAYER-anchored: the pool is that source's
+		// players (the declared subject stays match, so the group key
+		// is the row's match while the idkey is the winner's player
+		// key). Each refusal is positioned on the argmax token.
+		if addr.Subject != "match" {
+			return Plan{}, errf(ax.Pos,
+				"argmax() needs subject \"match\": it picks each match's leading player (declared subject %q)", addr.Subject)
+		}
 		if subject == "" {
-			return Plan{}, errf(spec.SourcePos,
-				"expression is not player-anchored: primary source %q has no player subject — a metric's value must be per player (player sources: %s; round-grain sources can only join a player-anchored expression)",
+			return Plan{}, errf(ax.Pos,
+				"argmax() needs a player-anchored lead: primary source %q has no player subject — the pool is that source's players (player sources: %s)",
 				primary, playerSources)
 		}
-	case "match":
-		if !sourceColumns[primary]["match_id"] {
-			return Plan{}, errf(spec.SourcePos,
-				"expression is not match-anchored: primary source %q carries no match_id column (every match-grain source does)", primary)
+		if len(spec.Aggs) != 1 {
+			return Plan{}, errf(ax.Pos,
+				"argmax() is the whole expression — it cannot be combined with other aggregations")
 		}
-	case "team":
-		if !sourceColumns[primary]["team"] {
-			return Plan{}, errf(spec.SourcePos,
-				"expression is not team-anchored: primary source %q has no team column (team sources: %s)",
-				primary, teamSourcesMsg())
+	} else {
+		switch addr.Subject {
+		case "player":
+			if subject == "" {
+				return Plan{}, errf(spec.SourcePos,
+					"expression is not player-anchored: primary source %q has no player subject — a metric's value must be per player (player sources: %s; round-grain sources can only join a player-anchored expression)",
+					primary, playerSources)
+			}
+		case "match":
+			if !sourceColumns[primary]["match_id"] {
+				return Plan{}, errf(spec.SourcePos,
+					"expression is not match-anchored: primary source %q carries no match_id column (every match-grain source does)", primary)
+			}
+		case "team":
+			if !sourceColumns[primary]["team"] {
+				return Plan{}, errf(spec.SourcePos,
+					"expression is not team-anchored: primary source %q has no team column (team sources: %s)",
+					primary, teamSourcesMsg())
+			}
 		}
 	}
 
@@ -328,6 +385,13 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 			return Plan{}, errf(0, "unknown denominator %q (valid: rounds, matches)", denominator)
 		}
 		denomTable = t
+	}
+	// argmax's denominator refusal (§6.4): an identity's sample size is
+	// THE POOL it chose from (§3.3's N semantics), so a rounds/matches
+	// divisor would misreport it — refused with the operator's own copy.
+	if ax != nil && denomTable != "" {
+		return Plan{}, errf(ax.Pos,
+			"argmax() takes no denominator — its N is the pool of players the winner was chosen from")
 	}
 	for i := range spec.Aggs {
 		if perr := validateAggIdents(&spec.Aggs[i], res); perr != nil {
@@ -427,6 +491,7 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 		Subject:      addr.Subject,
 		Partition:    addr.Partition,
 		MatchAddress: batched || addr.Subject == "team",
+		Identity:     ax != nil,
 	}
 	newEmitter := func() *emitter {
 		return &emitter{
@@ -452,7 +517,13 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 
 	plan.Mode = ModeGrouped
 	agg := newEmitter()
-	agg.phase1(sqlAggs, denomTable != "")
+	if plan.Identity {
+		// Sole aggregation (enforced above), so sqlAggs[0] IS the argmax:
+		// the identity row shape instead of the numeric phase1.
+		agg.phaseIdentity(sqlAggs[0])
+	} else {
+		agg.phase1(sqlAggs, denomTable != "")
+	}
 	plan.SQL, plan.Args = agg.sb.String(), agg.args
 	if hasPctl {
 		var pctl *Agg
@@ -963,6 +1034,111 @@ func (e *emitter) groupCols() []string {
 		cols = append(cols, "dim")
 	}
 	return cols
+}
+
+// groupExprs is groupCols' RAW-expression twin: the same row-shape
+// key as the underlying column expressions (the inner select of a
+// windowed statement cannot reference the outer aliases), with the
+// match subject's mid/grp duplicate collapsed (both are the row's
+// match id). phaseIdentity's PARTITION BY reads this.
+func (e *emitter) groupExprs() []string {
+	var exprs []string
+	if e.emitMid() {
+		exprs = append(exprs, e.matchIDExpr())
+	}
+	if g := e.subjectKeyExpr(); len(exprs) == 0 || exprs[0] != g {
+		exprs = append(exprs, g)
+	}
+	if e.addr.Partition != "" {
+		exprs = append(exprs, e.partitionKeyExpr())
+	}
+	return exprs
+}
+
+// phaseIdentity emits the argmax row shape (metrics expansion §6.4 /
+// §3.3): an INNER statement that ranks the pool's rows with a window
+// function, and an OUTER that keeps each group's winner —
+//
+//	SELECT <groupCols>, idkey, v, n FROM (
+//	  SELECT <shape>, <player col> AS idkey, <col> AS v,
+//	         ROW_NUMBER() OVER (PARTITION BY <groupExprs>
+//	                           ORDER BY <col> DESC, <player col> ASC) AS rn,
+//	         COUNT(*) OVER (PARTITION BY <groupExprs>) AS n
+//	  FROM … <scope/subject/where>) WHERE rn = 1 ORDER BY <groupCols>
+//
+// so one row per subject group carries the identity (idkey — the
+// winner's player key, mapped into value_key by valuesFromPlan) beside
+// the companion value, and n is COUNT(*) over the SAME partition —
+// §3.3's N = the pool the argmax chose from (the humans-only + scope +
+// per-agg filter rows). Ties break on the player key ASC, so the same
+// input always names the same winner. An EMPTY pool emits no row at
+// all — the dash is "no rows", never a fabricated identity (§3.3).
+// There is no denominator branch: compile refused one above.
+func (e *emitter) phaseIdentity(a *Agg) {
+	e.sb.WriteString("SELECT ")
+	e.sb.WriteString(strings.Join(e.groupCols(), ", "))
+	e.sb.WriteString(", idkey, v, n FROM (SELECT ")
+	if e.emitMid() {
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" AS mid, ")
+	}
+	e.sb.WriteString(e.subjectKeyExpr())
+	e.sb.WriteString(" AS grp, ")
+	if e.addr.Partition != "" {
+		e.sb.WriteString(e.partitionKeyExpr())
+		e.sb.WriteString(" AS dim, ")
+	}
+	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(" AS idkey, ")
+	e.sb.WriteString(e.res.qualify(a.Col))
+	e.sb.WriteString(" AS v, ROW_NUMBER() OVER (PARTITION BY ")
+	e.sb.WriteString(strings.Join(e.groupExprs(), ", "))
+	e.sb.WriteString(" ORDER BY ")
+	e.sb.WriteString(e.res.qualify(a.Col))
+	e.sb.WriteString(" DESC, ")
+	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(" ASC) AS rn, COUNT(*) OVER (PARTITION BY ")
+	e.sb.WriteString(strings.Join(e.groupExprs(), ", "))
+	e.sb.WriteString(") AS n FROM ")
+	e.writeFrom()
+	wroteWhere := false
+	if e.matchID > 0 {
+		e.sb.WriteString(" WHERE ")
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" = ")
+		e.sb.WriteString(e.bind(e.matchID))
+		wroteWhere = true
+	}
+	wroteWhere = e.writeSubject(wroteWhere) // the same addressing conditions phase1 spells
+	// No empty identity key (the player subject's no-actor rule applied
+	// to the idkey): a row whose player key is ” can never become an
+	// identity — phase1 keeps its byte-stable match-subject shape, so
+	// this guard lives here with the operator.
+	if e.subjectExpr() != "" {
+		if wroteWhere {
+			e.sb.WriteString(" AND ")
+		} else {
+			e.sb.WriteString(" WHERE ")
+		}
+		e.sb.WriteString(e.subjectExpr())
+		e.sb.WriteString(" <> ''")
+		wroteWhere = true
+	}
+	if a.Where != nil {
+		// The per-agg filter shapes the POOL (rows outside it are never
+		// candidates), so it lands in the inner WHERE — never folded
+		// into the value like phase1's CASE form.
+		if wroteWhere {
+			e.sb.WriteString(" AND ")
+		} else {
+			e.sb.WriteString(" WHERE ")
+		}
+		e.sb.WriteString("(")
+		e.emitCond(a.Where)
+		e.sb.WriteString(")")
+	}
+	e.sb.WriteString(") WHERE rn = 1 ORDER BY ")
+	e.sb.WriteString(strings.Join(e.groupCols(), ", "))
 }
 
 // phase2 emits the raw-value statement for a percentile value: the

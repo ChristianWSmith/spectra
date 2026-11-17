@@ -107,6 +107,21 @@
 //	metric('<name>')               another SAVED metric's value — see
 //	                               "Metric references" below (exactly two
 //	                               legal positions, never elsewhere)
+//	argmax(<col>)                  the IDENTITY operator (metrics
+//	                               expansion §6.4/§3.3) — see "Identity
+//	                               values (argmax)" below: the whole
+//	                               pool's winner, emitted as the
+//	                               player key beside the winning value.
+//	                               Legal exactly as a SOLE top-level
+//	                               aggregation with subject='match' on
+//	                               a player-anchored lead; every other
+//	                               shape refuses with its own message
+//	                               (profile scope, subject, lead,
+//	                               denominator, combination — plan §6's
+//	                               per-capability rule; nesting it in
+//	                               ratio()/scalar min/max rides the
+//	                               shared "%s() cannot be nested inside
+//	                               %s()" copy).
 //
 // Conditions (the <cond> grammar): operands are whitelisted columns,
 // numbers, 'strings', true/false; operators are = != > >= < <=, AND, OR,
@@ -395,6 +410,35 @@
 // constraint and every "match scalar without a player" surface (no
 // match-level stat strip, no player-less pinning).
 //
+// # Identity values (argmax) — metrics expansion §6.4 / §3.3
+//
+// argmax(<col>) makes a metric whose value is a WHO, not a number: the
+// pool is the lead's rows for one subject group (subject='match' in v1
+// — one pool per match), the winner is the row with the highest <col>,
+// ties break on the player key ASC (deterministic), and the emitted
+// row carries the winner's player KEY (idkey) beside the companion
+// value — the compute pass stores idkey in metric_values.value_key and
+// the companion in value (store.MetricValueRow / models.MetricValue),
+// and the preview surfaces it as PreviewRow.ValueKey. Contract:
+//
+//   - subject='match' only: an identity is each match's leading
+//     player; a player/team subject has no place for it and profile
+//     scope (a career) has no match pool — each refusal its own
+//     written message (compileRefs, plan §6).
+//   - the lead must be PLAYER-anchored (the pool is that source's
+//     players) and argmax the SOLE aggregation; no denominator (its
+//     sample size is the pool, below).
+//   - N = THE POOL the argmax chose from (§3.3): COUNT(*) over the
+//     same partition — the humans-only + scope + per-agg-filter rows
+//     that were candidates. "0 beside N" is NUMERIC-ONLY: an identity
+//     never renders a zero-beside-N row.
+//   - DASH = EMPTY POOL: a pool with no rows emits no row at all —
+//     never a fabricated identity. The five-state vocabulary is
+//     unchanged (fresh = the identity row is present).
+//   - the stored value_key is a KEY, never display text: fmt renders
+//     it through the value_key → name lookup and an unresolved key is
+//     the dash, never the raw SteamID64 (user-domain text rule).
+//
 // # Denominator
 //
 // models.MetricRow.Denominator (optional) — allowed values: rounds,
@@ -420,8 +464,9 @@
 //     correlated on the subject: rounds →
 //     `COUNT(*) FROM player_round_stats WHERE steam_id = <subject>`
 //     (one row per player-round — and player_round_stats is the
-//     ROSTER × every counted round: analytics.PlayerRounds emits a row
-//     for each player in each counted round whether or not they were
+//     HUMAN ROSTER × every counted round (bots carry no per-round
+//     rows — 2026-11-17): analytics.PlayerRounds emits a row
+//     for each human in each counted round whether or not they were
 //     present for it, so a career `rounds` denominator reads as the
 //     rounds of the matches the subject played, never the rounds they
 //     personally took part in), matches →

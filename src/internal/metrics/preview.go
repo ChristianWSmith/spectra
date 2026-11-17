@@ -44,14 +44,19 @@ type Def struct {
 // ADDRESS — the subject key of the statement (a SteamID64 for every
 // player-addressed row, the match id for a match subject, a team key
 // for a team subject), and Dim the partition value (” = unpartitioned)
-// — the stored row's shape, ready for its surface (§6.7).
+// — the stored row's shape, ready for its surface (§6.7). ValueKey is
+// the identity WINNER's key (identity/argmax rows only — §3.3; ” on
+// every numeric row): Label resolves it to the winner's name, and an
+// unresolved key labels the dash, never the raw key (user-domain text
+// rule).
 type PreviewRow struct {
-	MatchID int64
-	Group   string
-	Dim     string
-	Label   string
-	Value   float64
-	N       int
+	MatchID  int64
+	Group    string
+	Dim      string
+	Label    string
+	Value    float64
+	ValueKey string
+	N        int
 }
 
 // Preview is a compiled-and-run metric preview.
@@ -109,14 +114,25 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 		if plan.Partition != "" {
 			valIdx++
 		}
+		// Identity rows carry ONE extra column: [mid] grp [dim] idkey v n
+		// (§3.3 — the winner's key beside the companion value).
+		need := valIdx + 2
+		if plan.Identity {
+			need = valIdx + 3
+		}
 		for _, r := range res.Rows {
-			if len(r) < valIdx+2 {
+			if len(r) < need {
 				continue
 			}
 			row := PreviewRow{
 				Group: toKey(r[grpIdx]),
-				Value: toFloat(r[valIdx]),
 				N:     toN(r[len(r)-1]),
+			}
+			if plan.Identity {
+				row.ValueKey = toKey(r[valIdx])
+				row.Value = toFloat(r[valIdx+1])
+			} else {
+				row.Value = toFloat(r[valIdx])
 			}
 			if plan.Partition != "" {
 				row.Dim = toKey(r[grpIdx+1])
@@ -238,18 +254,26 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 // resolveLabels fills Row.Label: SteamID64-shaped groups resolve to the
 // players-table name (scoped match → store.GetPlayerRefs, the roster read
 // model; library-wide → one batched IN-list lookup, latest match wins),
-// everything else falls back to its raw key. Best effort — a label lookup
-// failure never fails the preview (it gives up quietly, labels stay "").
+// everything else falls back to its raw key. IDENTITY rows resolve their
+// WINNER key (ValueKey) the same way instead: the label is the winner's
+// name, and an unresolved winner labels the em dash — never the raw
+// SteamID64 (the §9 user-domain text rule: an unresolved identity key
+// renders as a dash). Best effort — a label lookup failure never fails
+// the preview (it gives up quietly, labels stay "").
 func resolveLabels(st *store.Store, rows []PreviewRow, matchID int64) {
 	names := map[string]string{}
 	var ids []string
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if r.Group == "" || !isSteamID(r.Group) || seen[r.Group] {
+		key := r.ValueKey // identity rows address their winner; numeric rows their group
+		if key == "" {
+			key = r.Group
+		}
+		if key == "" || !isSteamID(key) || seen[key] {
 			continue
 		}
-		seen[r.Group] = true
-		ids = append(ids, r.Group)
+		seen[key] = true
+		ids = append(ids, key)
 	}
 	if len(ids) > 0 {
 		if matchID > 0 {
@@ -298,6 +322,16 @@ func resolveLabels(st *store.Store, rows []PreviewRow, matchID int64) {
 		}
 	}
 	for i := range rows {
+		if rows[i].ValueKey != "" {
+			// Identity row: the label is the WINNER's name — an
+			// unresolved key is the dash, never the raw SteamID64.
+			if name, ok := names[rows[i].ValueKey]; ok && name != "" {
+				rows[i].Label = name
+			} else {
+				rows[i].Label = "—"
+			}
+			continue
+		}
 		g := rows[i].Group
 		if g == "" {
 			rows[i].Label = ""

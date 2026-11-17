@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the EIGHTY-SEVEN schema-seeded builtins (schema.sql —
+// builtinSeed maps the NINETY-TWO schema-seeded builtins (schema.sql —
 // name/expr/scope/subject/format/short_name/denominator are LOCKED to
 // the baseline seed by this table) onto their hand-computed seed
 // expectations. (2026-11-17 re-pin of the FIFTY-NINE count: plan §7 M3
@@ -46,7 +46,9 @@ func seededStore(t *testing.T) *store.Store {
 // rows), 2026-11-17) then adds 4 rows with an explicit subject —
 // EIGHTY-SEVEN / 67 match + 20 profile — pistol_hold and
 // avg_equip_gap among the plan's six rows reported NOT expressible in
-// the grammar.) interpretation records how the seeded expression states
+// the grammar; the identity addendum (plan §8 (M1 identity row),
+// 2026-11-17) finally adds the five M1 top-card seeds — NINETY-TWO /
+// 72 match + 20 profile — subject=match, format=identity.) interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
 // grouped by the DECLARED subject's key — the player shape for the
@@ -768,6 +770,47 @@ var builtinSeed = []struct {
 		scope: "profile", format: "percent", shortName: "", denominator: "",
 		interpretation: "career wins ÷ matches played — the profile Win% card's stored twin (ties are no wins → 0 over the tied corpus)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	// ---- identity addendum (plan §8 (M1 identity row), 2026-11-17):
+	// the five M1 top-card seeds — subject=match, format=identity, rows
+	// = 3 (one identity per match), N = 8 (the pool the argmax chose
+	// from — every player_stats row of the match), labels = the
+	// WINNER's name per match. Corpus math (seed.sql): kills = 2i and
+	// adr = 50+5i rise with i, so Heidi (i=8) leads both outright
+	// (16 kills / 90 ADR); utility_damage and entry_kills are absent
+	// (= 0) and mvps is 1 for every player, so those three TIE across
+	// all eight and the deterministic tie-break (player key ASC) names
+	// Alice (…001). The engine-side pins (emission, refusal set,
+	// filtered pool, empty pool) live in argmax_test.go.
+	{
+		name: "top_fragger", expr: "from player_stats: argmax(kills)",
+		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
+		interpretation: "the match's leading fragger by stored kills (corpus: Heidi, 16 kills, over the 8-player pool)",
+		rows:           3, wantValues: []float64{16, 16, 16}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
+	},
+	{
+		name: "best_adr", expr: "from player_stats: argmax(adr)",
+		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
+		interpretation: "the match's highest stored ADR (corpus: Heidi, 90, over the 8-player pool)",
+		rows:           3, wantValues: []float64{90, 90, 90}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
+	},
+	{
+		name: "most_util", expr: "from player_stats: argmax(utility_damage)",
+		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
+		interpretation: "the match's leading utility-damage player (corpus: column absent → 0 for everyone → tie → Alice by key ASC)",
+		rows:           3, wantValues: []float64{0, 0, 0}, wantN: 8, wantLabels: "Alice,Alice,Alice",
+	},
+	{
+		name: "entry_opens", expr: "from player_stats: argmax(entry_kills)",
+		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
+		interpretation: "the match's round-opening first-blood leader (corpus: column absent → 0 for everyone → tie → Alice by key ASC)",
+		rows:           3, wantValues: []float64{0, 0, 0}, wantN: 8, wantLabels: "Alice,Alice,Alice",
+	},
+	{
+		name: "most_mvps", expr: "from player_stats: argmax(mvps)",
+		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
+		interpretation: "the match's MVP-award leader (corpus: 1 per player → tie → Alice by key ASC)",
+		rows:           3, wantValues: []float64{1, 1, 1}, wantN: 8, wantLabels: "Alice,Alice,Alice",
 	},
 }
 

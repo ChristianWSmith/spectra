@@ -25,8 +25,8 @@ import (
 //     has NO row here (never a fabricated 0; the view renders the
 //     state).
 //
-// The DTO shape itself (exactly {metricId, subjectKey, value, n}) is
-// pinned by models.TestMetricValueJSONContract.
+// The DTO shape itself (exactly {metricId, subjectKey, value,
+// valueKey, n}) is pinned by models.TestMetricValueJSONContract.
 
 // seedOrderMetric inserts a definition with an explicit origin (the
 // canonical order test needs all three origin ranks).
@@ -285,5 +285,70 @@ func TestGetMetricValuesReadsCarryNoStampKeys(t *testing.T) {
 			!strings.Contains(s, `"value"`) || !strings.Contains(s, `"n"`) {
 			t.Errorf("%s read JSON missing a DTO key: %s", name, s)
 		}
+	}
+}
+
+// TestMetricValueIdentityKeyRoundTrip pins the identity slot through
+// THE canonical read (metrics expansion §3.3): an argmax row's
+// value_key rides the phase-2 write (InsertMetricValues) into
+// GetMetricValuesForMatch's DTO beside the companion value, with N as
+// the pool it was chosen from — while a numeric row carries "" in the
+// slot. Freshness is unchanged: an outdated identity row stays
+// present-but-unserved like any other stale row.
+func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
+	s, _ := openFileStore(t)
+	t.Cleanup(func() { _ = s.CloseRO() })
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	live := cfg.RuleVersion
+
+	match := seedReadyMatch(t, s, "identity-read")
+	ident := seedOrderMetric(t, s, "ident_leader", "user")
+	numeric := seedOrderMetric(t, s, "plain_count", "user")
+
+	if err := s.InsertMetricValues(ident.ID, ident.Version, live, []MetricValueRow{
+		{MatchID: match, SubjectKey: "", ValueKey: "76561198000000008", Value: 16, N: 8},
+	}); err != nil {
+		t.Fatalf("insert identity: %v", err)
+	}
+	if err := s.InsertMetricValues(numeric.ID, numeric.Version, live, []MetricValueRow{
+		{MatchID: match, SubjectKey: "76561198000000001", Value: 3, N: 8},
+	}); err != nil {
+		t.Fatalf("insert numeric: %v", err)
+	}
+
+	rows, err := s.GetMetricValuesForMatch(match, []int64{ident.ID, numeric.ID})
+	if err != nil {
+		t.Fatalf("GetMetricValuesForMatch: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (%+v)", len(rows), rows)
+	}
+	for _, r := range rows {
+		if r.MetricID == ident.ID {
+			if r.ValueKey != "76561198000000008" || r.Value != 16 || r.N != 8 || r.SubjectKey != "" {
+				t.Errorf("identity row = %+v, want ValueKey …008 / Value 16 / N 8 (the pool) / subject \"\"", r)
+			}
+		} else if r.ValueKey != "" {
+			t.Errorf("numeric row = %+v, want ValueKey \"\"", r)
+		}
+	}
+
+	// An outdated identity row is present but never served (the ONE
+	// freshness spelling — an identity rides it unchanged).
+	staleMatch := seedReadyMatch(t, s, "identity-read-stale")
+	if err := s.InsertMetricValues(ident.ID, 0, live, []MetricValueRow{
+		{MatchID: staleMatch, SubjectKey: "", ValueKey: "76561198000000001", Value: 99, N: 8},
+	}); err != nil {
+		t.Fatalf("insert stale identity: %v", err)
+	}
+	fresh, err := s.GetMetricValuesForMatch(staleMatch, []int64{ident.ID})
+	if err != nil {
+		t.Fatalf("fresh read: %v", err)
+	}
+	if len(fresh) != 0 {
+		t.Errorf("stale identity rows served = %+v, want none (present but invisible)", fresh)
 	}
 }

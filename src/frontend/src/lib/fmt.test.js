@@ -239,6 +239,30 @@ test('fmtMetric drives every format tag, currency through fmtMoney', () => {
   assert.equal(fmtMetric(NaN, 'currency'), '—');
 });
 
+// identity (metrics expansion §3.3/§9): fmtMetric renders the KEY via
+// the caller's name lookup — an unresolved key is the dash, and a raw
+// SteamID64 can NEVER reach a render (even a resolver that falls back
+// to the key itself). The companion numeric value is not this
+// function's business: the identity IS what it renders.
+test('fmtMetric identity: value_key resolves to a name, unresolved renders the dash', () => {
+  const key = '76561198000000008';
+  const names = { [key]: 'Heidi' };
+  const resolve = (k) => names[k];
+  assert.equal(fmtMetric(16, 'identity', key, resolve), 'Heidi', 'the winner name, never the companion number');
+  assert.equal(fmtMetric(16, 'identity', '76561198000000099', resolve), '—', 'an unknown key is the dash');
+  assert.equal(fmtMetric(0, 'identity', key, () => ''), '—', 'an empty name is the dash');
+  assert.equal(fmtMetric(16, 'identity', key, undefined), '—', 'no resolver → dash, never the raw key');
+  assert.equal(fmtMetric(16, 'identity', '', resolve), '—', 'no key (the empty pool) → dash');
+  // The mechanical never-a-steamid pin: a resolver that falls back to
+  // the key itself still renders the dash, never the key.
+  assert.equal(fmtMetric(16, 'identity', key, (k) => k), '—');
+  // Identity runs before the numeric NaN guard: the companion value
+  // (whatever it is) never gates the name.
+  assert.equal(fmtMetric(NaN, 'identity', key, resolve), 'Heidi');
+  // Every numeric tag ignores the two extra parameters.
+  assert.equal(fmtMetric(16, 'int', key, resolve), fmtInt(16));
+});
+
 test('fmtPercent renders an already-0..100 value (the read-DTO percent scale)', () => {
   // The contract every *Pct/*Rate read field follows (KASTPct,
   // DMGConvPct, profile WinPct/…): the

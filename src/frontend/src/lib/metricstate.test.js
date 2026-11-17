@@ -101,7 +101,13 @@ test('every presentation carries EXACTLY its documented keys (no stamp field)', 
   for (const pres of shapes) {
     const keys = Object.keys(pres).sort();
     const allowed =
-      pres.kind === 'value' ? ['kind', 'n', 'value'] : pres.kind === 'chip' ? ['kind', 'state'] : ['kind'];
+      pres.kind === 'value'
+        ? pres.valueKey
+          ? ['kind', 'n', 'value', 'valueKey']
+          : ['kind', 'n', 'value']
+        : pres.kind === 'chip'
+          ? ['kind', 'state']
+          : ['kind'];
     assert.deepEqual(keys, allowed, `unexpected keys on ${JSON.stringify(pres)}`);
     for (const k of keys) {
       assert.ok(
@@ -110,6 +116,29 @@ test('every presentation carries EXACTLY its documented keys (no stamp field)', 
       );
     }
   }
+});
+
+// --- Identity rows (metrics expansion §3.3) --------------------------------
+
+test('fresh renders an IDENTITY row with its value_key — fresh = identity present', () => {
+  const ident = { valueKey: '76561198000000008', value: 16, n: 8 };
+  assert.deepEqual(metricPresentation('fresh', ident, true), {
+    kind: 'value',
+    value: 16,
+    n: 8,
+    valueKey: '76561198000000008',
+  });
+  // A numeric row never grows the key slot (the shape pin above stays
+  // exact for it).
+  assert.deepEqual(Object.keys(metricPresentation('fresh', ROW, true)).sort(), ['kind', 'n', 'value']);
+});
+
+test('the EMPTY POOL is the dash — fresh with no identity row → nodata, never a fabricated winner', () => {
+  // An argmax pool with no rows stores no row (the engine's side is
+  // pinned in internal/metrics' empty-pool test); the slot's side of
+  // the contract is this: fresh + no row renders the dash.
+  assert.deepEqual(metricPresentation('fresh', null, false), { kind: 'nodata' });
+  assert.deepEqual(metricPresentation('fresh', null, true), { kind: 'nodata' });
 });
 
 test('state titles never carry a digit — no version number is expressible', () => {

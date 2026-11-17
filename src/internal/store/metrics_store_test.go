@@ -34,7 +34,9 @@ var metricColumnsContract = []string{
 // (+16 match +6 profile raw count seeds, 2026-11-17) and the
 // subject-axis addendum (+3 match +1 profile — plan §8 (M8/M4 rows),
 // 2026-11-17: the first non-player subjects, pinned by
-// nonPlayerSubjects below); short_name is
+// nonPlayerSubjects below) and the identity addendum (+5 match,
+// format=identity — plan §8 (M1 identity row), 2026-11-17: 92
+// builtins / 72 match + 20 profile); short_name is
 // written only where a
 // header is width-constrained, so trade_rate and most inferred rows
 // ship ”). The
@@ -154,26 +156,42 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"team_force_win_rate": {"match", "percent", ""},
 	"team_lost_equip":     {"match", "currency", ""},
 	"win_pct":             {"profile", "percent", ""},
+	// addendum — the M1 identity rows (5, match, format=identity) —
+	// plan §8 (M1 identity row), 2026-11-17 (92 builtins / 72 match +
+	// 20 profile): argmax over the M1 stat, subject pinned by
+	// nonPlayerSubjects below.
+	"top_fragger": {"match", "identity", ""},
+	"best_adr":    {"match", "identity", ""},
+	"most_util":   {"match", "identity", ""},
+	"entry_opens": {"match", "identity", ""},
+	"most_mvps":   {"match", "identity", ""},
 }
 
 // nonPlayerSubjects is the subject-axis pin beside the shape map: the
 // seed's DECLARED subject per builtin — every row not named here is a
 // player-subject row (the DDL default), asserted for ALL builtins in
-// TestMetricsSchemaFreshOpen. plan §8 (M8/M4 rows), 2026-11-17.
+// TestMetricsSchemaFreshOpen. plan §8 (M8/M4 rows), 2026-11-17; the
+// five identity rows (plan §8 M1, same day) are match-subject too.
 var nonPlayerSubjects = map[string]string{
 	"lost_equip":          "match",
 	"team_force_win_rate": "team",
 	"team_lost_equip":     "team",
+	"top_fragger":         "match",
+	"best_adr":            "match",
+	"most_util":           "match",
+	"entry_opens":         "match",
+	"most_mvps":           "match",
 }
 
 // TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
-// seeds the eighty-seven builtin metrics (the Option A extension and
-// the subject-axis addendum on top of the sixty-one re-pin — plan §8
-// (M8/M4 rows), 2026-11-17); a second Open re-applies the
+// seeds the ninety-two builtin metrics (the Option A extension, the
+// subject-axis addendum and the identity addendum on top of the
+// sixty-one re-pin — plan §8, 2026-11-17); a second Open re-applies the
 // baseline as a no-op — the seed INSERT is idempotent, so no builtin
-// rows are duplicated (and the 65 rows added after the original seed —
-// the 42-row inferred set, w13d's kda and the owner Option A count
-// addendum's 22, 2026-11-17 — are exactly the ones an
+// rows are duplicated (and the 76 rows added after the original seed —
+// the 42-row inferred set, w13d's kda, the M3 combat-damage pair, the
+// owner Option A count addendum's 22, the subject-axis addendum's 4
+// and the identity addendum's 5, 2026-11-17 — are exactly the ones an
 // older seed reaches through the same OR IGNORE) —
 // and the metrics column contract plus the
 // builtin set still hold.
@@ -231,13 +249,13 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		}
 	}
 
-	// The eighty-seven builtins, name + doc present — still exactly
-	// eighty-seven AFTER the reopen, so the baseline's seed did not
+	// The ninety-two builtins, name + doc present — still exactly
+	// ninety-two AFTER the reopen, so the baseline's seed did not
 	// duplicate rows (values validated by internal/metrics fixture
 	// tests). Scope split
-	// (67 match / 20 profile after the 2026-11-17 subject-axis addendum
-	// re-pin — plan §8 (M8/M4 rows); the owner Option A extension had
-	// re-pinned 64 / 19, M3 48 / 13)
+	// (72 match / 20 profile after the 2026-11-17 identity addendum
+	// re-pin — plan §8 (M1 identity row); the subject-axis addendum
+	// had re-pinned 67 / 20, Option A 64 / 19, M3 48 / 13)
 	// and short_name/format are PER-SEED asserts
 	// (the old blanket "all match / all short_name empty" held only when
 	// there was one row — design §3.4's pin table).
@@ -273,7 +291,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 				m.Name, m.ShortName, seeded.shortName)
 		}
 		if m.Scope != seeded.scope {
-			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 67 match / 20 profile)",
+			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 72 match / 20 profile)",
 				m.Name, m.Scope, seeded.scope)
 		}
 		wantSubject := "player"
@@ -330,14 +348,14 @@ func TestMetricCRUD(t *testing.T) {
 		t.Errorf("duplicate-name err = %v, want friendly uniqueness error", err)
 	}
 
-	// List: builtins first (all eighty-seven schema-seeded rows), then
+	// List: builtins first (all ninety-two schema-seeded rows), then
 	// user rows.
 	all, err := s.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(all) != len(schemaSeededBuiltins)+1 {
-		t.Fatalf("list len = %d, want %d (87 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
+		t.Fatalf("list len = %d, want %d (92 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
 	}
 	for i, m := range all[:len(schemaSeededBuiltins)] {
 		if m.Origin != "builtin" {
@@ -522,10 +540,10 @@ func filterMetricRef(rows []models.MetricRow, query string) []models.MetricRow {
 	return out
 }
 
-// TestListMetricsPageWindowsTileListOrder: 320 definitions (87
-// schema-seeded builtins + 230 user + 3 plugin — the 87 is the
-// 2026-11-17 subject-axis addendum re-pin, plan §8 (M8/M4 rows)) must
-// tile into 100/100/100/20 windows that concatenate to ListMetrics' exact order, every
+// TestListMetricsPageWindowsTileListOrder: 325 definitions (92
+// schema-seeded builtins + 230 user + 3 plugin — the 92 is the
+// 2026-11-17 identity addendum re-pin, plan §8 (M1 identity row)) must
+// tile into 100/100/100/25 windows that concatenate to ListMetrics' exact order, every
 // id exactly once, with each origin group CONTIGUOUS across window
 // boundaries — the Builder renders its Builtins/Yours/Plugins headers
 // from those runs, so a boundary splitting a group must not reorder rows.
@@ -543,12 +561,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 320 {
-		t.Fatalf("reference list = %d rows, want 320 (87 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 325 {
+		t.Fatalf("reference list = %d rows, want 325 (92 builtins + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
-	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 20 {
-		t.Errorf("window sizes = %v, want [100 100 100 20]", sizes)
+	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 25 {
+		t.Errorf("window sizes = %v, want [100 100 100 25]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -576,13 +594,13 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 }
 
 // TestListMetricsPageWindowBoundaries pins the exact boundary: 100 rows
-// (87 builtins + 13 users — 100 − seeds, the 2026-11-17 subject-axis
-// addendum re-pin, plan §8 (M8/M4 rows)) is ONE window with HasNext false (the limit+1
+// (92 builtins + 8 users — 100 − seeds, the 2026-11-17 identity
+// addendum re-pin, plan §8 (M1 identity row)) is ONE window with HasNext false (the limit+1
 // probe found no row), 101 rows splits 100/1 with HasNext flipping
 // correctly, and limit 0 selects the default window size.
 func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	s := openMem(t)
-	for i := range 13 {
+	for i := range 8 {
 		seedUserMetric(t, s, fmt.Sprintf("b%03d", i), "")
 	}
 
@@ -632,19 +650,19 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	for i := range 250 {
 		seedUserMetric(t, s, fmt.Sprintf("c%03d", i), "")
 	}
-	ref := metricIDs(metricRowsRef(t, s)) // 87 builtins + 250 users
+	ref := metricIDs(metricRowsRef(t, s)) // 92 builtins + 250 users
 
-	// Cursor at the 100th row in order → the remaining 237 (the window
-	// limit must clear the remainder: 337 > 87 builtins + 250 users − 100).
+	// Cursor at the 100th row in order → the remaining 242 (the window
+	// limit must clear the remainder: 342 > 92 builtins + 250 users − 100).
 	page, err := s.ListMetricsPage("", "", "", "", "", ref[99], 300)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 237 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 237, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 242 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 242, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
-		t.Errorf("mid cursor rows = %v…, want the 237 ids after the cursor", metricIDs(page.Rows)[:3])
+		t.Errorf("mid cursor rows = %v…, want the 242 ids after the cursor", metricIDs(page.Rows)[:3])
 	}
 
 	// Cursor at the last row → an empty window, no successor.
@@ -684,17 +702,18 @@ func TestListMetricsPageSearch(t *testing.T) {
 	ref := metricRowsRef(t, s)
 
 	// Name substring, ASCII case-insensitive: "adr" and "ADR" hit the
-	// SAME four rows — the three builtins whose name/title carries the
-	// substring (adr, career_adr, career_adr_sigma — the dogfooding set
-	// landed with W2) plus the user's adr_per_round — in the canonical
+	// SAME five rows — the four builtins whose name/title carries the
+	// substring (adr, best_adr — the M1 identity seed — career_adr,
+	// career_adr_sigma — the dogfooding set landed with W2) plus the
+	// user's adr_per_round — in the canonical
 	// group order (builtins name-ASC, then user).
 	for _, q := range []string{"adr", "ADR"} {
 		page, err := s.ListMetricsPage(q, "", "", "", "", 0, 100)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(%q): %v", q, err)
 		}
-		if len(page.Rows) != 4 || page.HasNext {
-			t.Errorf("query %q → %d rows (HasNext=%v), want 4 (3 builtins + adr_per_round)",
+		if len(page.Rows) != 5 || page.HasNext {
+			t.Errorf("query %q → %d rows (HasNext=%v), want 5 (4 builtins + adr_per_round)",
 				q, len(page.Rows), page.HasNext)
 			continue
 		}
@@ -802,9 +821,9 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
-	ref := metricRowsRef(t, s) // 87 builtins + 5 user + 2 plugin
-	if len(ref) != 94 {
-		t.Fatalf("reference = %d rows, want 94 (87 builtins + 5 user + 2 plugin)", len(ref))
+	ref := metricRowsRef(t, s) // 92 builtins + 5 user + 2 plugin
+	if len(ref) != 99 {
+		t.Fatalf("reference = %d rows, want 99 (92 builtins + 5 user + 2 plugin)", len(ref))
 	}
 
 	// Every filter value in ONE window: exactly its partition, in the
@@ -860,7 +879,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	s := openMem(t)
 	seedUserMetric(t, s, "my_trade_rate", "My trade rate")
 	seedUserMetric(t, s, "adr_per_round", "ADR per round")
-	ref := metricRowsRef(t, s) // 87 builtins (incl. trade_rate + career_trade_rate) + 2 users
+	ref := metricRowsRef(t, s) // 92 builtins (incl. trade_rate + career_trade_rate) + 2 users
 
 	// "trade rate" matches TWO builtin titles (trade_rate — the original
 	// seed — and career_trade_rate — the profile twin the dogfooding set
@@ -1437,8 +1456,11 @@ func formatFilterMetricRef(rows []models.MetricRow, filter string) []models.Metr
 // canonical vocabulary and subset order are the store's (an unknown
 // token, an empty segment, a duplicate or a reordered word is rejected
 // before any SQL), "auto" is the ” bucket (never a literal 'auto'
-// string), all-on and the full six-token subset are the SAME window,
-// and "none" (every box off) is a legal empty read with a non-nil
+// string), all-on and the full six-token subset cover the SAME offered
+// rows (the identity seeds carry a format the Type group does not
+// offer yet — plan §8 (M1 identity row), 2026-11-17; the Builder's
+// identity token lands with its surface), and "none" (every box off) is
+// a legal empty read with a non-nil
 // window — the origin/scope shape, not the denominator rule's.
 func TestListMetricsPageFormatFilter(t *testing.T) {
 	s := openMem(t)
@@ -1487,9 +1509,14 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		}
 	}
 
-	// ALL-ON == ALL SIX CHECKED: no predicate and every-predicate
-	// select the identical window (the popover's all-checked word is "",
-	// so this is what makes the default first render unfiltered).
+	// ALL-ON == THE SIX OFFERED TOKENS: no predicate and the full
+	// six-token subset select the same window OVER THE OFFERED FORMAT
+	// VOCABULARY (the popover's all-checked word is "", so this is what
+	// makes the default first render unfiltered). The identity seeds
+	// (plan §8 M1, 2026-11-17) carry format=identity, a token the Type
+	// group does not offer yet (the Builder's identity control lands
+	// with its surface, plan §9) — the unfiltered all-on window
+	// additionally carries those rows, never fewer than the subset.
 	allOn, err := s.ListMetricsPage("", "", "", "", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=): %v", err)
@@ -1498,8 +1525,27 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=all six): %v", err)
 	}
-	if !sameIDs(metricIDs(allSix.Rows), metricIDs(allOn.Rows)) {
-		t.Errorf("all-six window = %v, want the all-on window %v", metricIDs(allSix.Rows), metricIDs(allOn.Rows))
+	// The offered vocabulary (the six tokens + their auto alias): every
+	// row outside it (the identity seeds) is absent from allSix.
+	offered := func(m models.MetricRow) bool {
+		tok := m.Format
+		if tok == "" {
+			tok = "auto"
+		}
+		return slices.Contains(metricFormatTokens, tok)
+	}
+	offeredRows := make([]models.MetricRow, 0, len(allSix.Rows))
+	for _, m := range allOn.Rows {
+		if offered(m) {
+			offeredRows = append(offeredRows, m)
+		}
+	}
+	if !sameIDs(metricIDs(allSix.Rows), metricIDs(offeredRows)) {
+		t.Errorf("all-six window = %v, want the offered-format ids %v", metricIDs(allSix.Rows), metricIDs(offeredRows))
+	}
+	if len(allOn.Rows) <= len(allSix.Rows) {
+		t.Errorf("all-on window = %d rows, all-six = %d — the identity seeds must widen the unfiltered window",
+			len(allOn.Rows), len(allSix.Rows))
 	}
 	if !sameIDs(metricIDs(allOn.Rows), metricIDs(ref)) {
 		t.Errorf("all-on window = %v…, want the whole reference order", metricIDs(allOn.Rows)[:min(3, len(allOn.Rows))])
@@ -1531,8 +1577,10 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	}
 
 	// SUBSET MATH: the six single-token windows are DISJOINT and
-	// together cover every row exactly once (each row carries exactly
-	// one format), so the subset filter is a partition of the catalog.
+	// together cover every row carrying an OFFERED format exactly once
+	// (each row carries exactly one format, and the identity seeds'/
+	// format sits outside the vocabulary the Type group offers), so the
+	// subset filter is a partition of the offered catalog.
 	var tiled []int64
 	seen := map[int64]int{}
 	for _, tok := range metricFormatTokens {
@@ -1550,11 +1598,11 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 			t.Errorf("id %d appeared in %d single-token windows, want exactly 1", id, n)
 		}
 	}
-	wantIDs := metricIDs(ref)
+	wantIDs := metricIDs(offeredRows)
 	slices.Sort(tiled)
 	slices.Sort(wantIDs)
 	if !slices.Equal(tiled, wantIDs) {
-		t.Errorf("single-token windows cover %d ids, want the whole reference (%d)", len(tiled), len(wantIDs))
+		t.Errorf("single-token windows cover %d ids, want the offered reference (%d)", len(tiled), len(wantIDs))
 	}
 
 	// The partition holds ACROSS keyset windows: "percent" in windows of

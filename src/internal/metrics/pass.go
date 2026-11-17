@@ -479,7 +479,10 @@ func containsID(ids []int64, id int64) bool {
 //	                player's SteamID64, a team key, or '' for a match
 //	                subject (its address IS the row's match — mapped
 //	                from the match id the shape carries); dim is the
-//	                partition value ('' = unpartitioned — §6.5).
+//	                partition value ('' = unpartitioned — §6.5). An
+//	                IDENTITY (argmax) plan swaps the value columns for
+//	                idkey + the companion value: idkey lands in
+//	                ValueKey, the companion in Value (§3.3).
 //	ModePercentile   raw rows partitioned by the row's address —
 //	                (match_id, subject_key, dim) when the shape
 //	                carries the match (batched pass, team subject),
@@ -491,11 +494,11 @@ func containsID(ids []int64, id int64) bool {
 //	                RunPreview's percentile branch exactly — preview
 //	                and stored agree by construction.
 //
-// value_key is written ” here: identity metrics (the argmax value
-// slot) land with the Phase 5 writer — MetricValueRow carries the slot
-// so the shape reaches the insert once that writer exists.
-// A row too short to carry its shape is skipped (defensive — the
-// emitter always emits the full shape).
+// value_key IS written for identity rows: an argmax plan's row shape
+// ([mid] grp [dim] idkey v n) maps idkey into MetricValueRow.ValueKey
+// beside the companion value (§3.3 — the Phase 5 writer); every numeric
+// row writes ”. A row too short to carry its shape is skipped
+// (defensive — the emitter always emits the full shape).
 func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 	out := make([]store.MetricValueRow, 0, len(rows))
 	// The row-shape offsets from the plan's declared addressing (the
@@ -508,10 +511,16 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 	if plan.Partition != "" {
 		valueIdx++
 	}
+	// Identity rows carry one extra value column: idkey sits at
+	// valueIdx, the companion value right after it (§3.3).
+	need := valueIdx + 2
+	if plan.Identity {
+		need = valueIdx + 3
+	}
 	switch plan.Mode {
 	case ModeGrouped:
 		for _, r := range rows {
-			if len(r) < valueIdx+2 { // [mid] subject, [dim], value, n — never shorter
+			if len(r) < need { // [mid] subject, [dim], idkey?, value, n — never shorter
 				continue
 			}
 			var mid int64
@@ -540,13 +549,19 @@ func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
 			if plan.Partition != "" {
 				dim = toKey(r[grpIdx+1])
 			}
-			out = append(out, store.MetricValueRow{
+			row := store.MetricValueRow{
 				MatchID:    mid,
 				SubjectKey: subjectKey,
 				Dim:        dim,
-				Value:      toFloat(r[valueIdx]),
 				N:          toN(r[len(r)-1]),
-			})
+			}
+			if plan.Identity {
+				row.ValueKey = toKey(r[valueIdx])
+				row.Value = toFloat(r[valueIdx+1])
+			} else {
+				row.Value = toFloat(r[valueIdx])
+			}
+			out = append(out, row)
 		}
 		return out, nil
 	case ModePercentile:

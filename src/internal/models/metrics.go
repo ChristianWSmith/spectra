@@ -37,16 +37,20 @@ type MetricRow struct {
 // MetricValue is ONE stored metric value the canonical read serves
 // (stored-metrics design §5) — the frontend contract for a value slot,
 // at either grain (match rows at match_id > 0, career rows at 0):
-// exactly {metricId, subjectKey, value, n}. subjectKey is the row's
-// subject: a player's SteamID64, a team key, or ” (match subject /
-// career bucket). Deliberately carries NO stamp: metric_version /
+// exactly {metricId, subjectKey, value, valueKey, n}. subjectKey is
+// the row's subject: a player's SteamID64, a team key, or ” (match
+// subject / career bucket). valueKey is the IDENTITY slot (§3.3): the
+// argmax winner's player key on an identity row, ” on every numeric
+// row — the surface renders it as a name (unresolved ⇒ dash, never the
+// raw key). Deliberately carries NO stamp: metric_version /
 // rule_version / computed_at are INTERNAL-ONLY and never leave the
 // store, so no view, tooltip or export can render one.
 type MetricValue struct {
 	MetricID   int64   `json:"metricId"`
 	SubjectKey string  `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
 	Value      float64 `json:"value"`
-	N          int     `json:"n"` // sample size behind the value
+	ValueKey   string  `json:"valueKey"` // identity winner's key (identity rows only; '' otherwise)
+	N          int     `json:"n"`        // sample size behind the value (for an identity, the pool)
 }
 
 // MetricSeriesPoint is ONE fresh stored match-grain value carrying the
