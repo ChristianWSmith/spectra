@@ -1510,6 +1510,26 @@ func (a *agg) weaponPickedUp(tick int, key uint64, name, weapon, cat string, px,
 // ---- people, chat, meta ----
 
 func (a *agg) connect(tick int, key uint64, name string, bot bool) {
+	// Roster membership from the connect row itself. The other ensure
+	// paths can all miss an identity: a substitute bot that is kicked
+	// before the next freeze-end sample, whose kick-time World self-kill
+	// is excluded from stats (kill's disconnect criterion), and whose
+	// controller entity is gone before the end-of-demo snapshot leaves NO
+	// players/player_stats row at all — the replay meta then hands the
+	// frontend a BLANK roster entry (no name/side/is_bot) and the card's
+	// presence rule can never resolve it (owner report 2026-11-17: the
+	// card/marker/trail/camera invariant). ensure derives isBot from the
+	// synthetic key shape; side is left to the observation paths
+	// (freeze-end / stat-bearing kills / the final snapshot) — when none
+	// fires, the renderer resolves it from the position stream's per-
+	// frame flags (presentAt's injected sideAt). Gated with the row: a
+	// discarded period (knife/warmup) ingests nothing, and so does the
+	// pre-first-round prefix: its connect rows are wiped by dropPrefix
+	// when the opening round turns out discarded, so the roster entry
+	// must not outlive them (the entry exists iff the row does).
+	if key != 0 && !a.discarding && a.currentRound > 0 {
+		a.ensure(key, name)
+	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventConnect,

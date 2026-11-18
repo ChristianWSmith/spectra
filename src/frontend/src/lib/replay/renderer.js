@@ -2329,7 +2329,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   function drawTrails(frame) {
     const from = Math.max(0, frame - TRAIL_FRAMES);
     const s = cam.fit * cam.zoom;
+    const tick = engine.state.tick;
     for (let slot = 0; slot < store.slots.length; slot++) {
+      // Marker presence (W40's ONE gate): a slot outside its window
+      // draws NOTHING of itself — the dot/label are already gated in
+      // drawPlayers, and a trail with no dot at its head is the
+      // "spontaneously appearing bot" leak (owner report 2026-11-17).
+      if (slotPresence && !slotPresence(slot, tick)) continue;
       const p = store.slots[slot].pos;
       const color = teamColor(sideAtFrame(slot, frame));
       // Previous point as SCALARS (the old prev = [x, y] allocated one
@@ -3256,6 +3262,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (p == null) continue; // not shot yet / travel over — the cheap gate
       const slot = b.slot;
       if (!Number.isInteger(slot) || slot < 0 || slot >= store.slots.length) continue;
+      // Marker presence at the SHOT tick: the dash reads as emerging
+      // from under the shooter's dot — a hidden slot has no dot, so it
+      // gets no tracer either (W40's ONE gate; owner report 2026-11-17).
+      if (slotPresence && !slotPresence(slot, b.tick)) continue;
       const f = b.frame;
       if (!Number.isInteger(f) || f < 0 || f >= store.frames) continue;
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
@@ -3307,6 +3317,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (p == null) continue; // not hit yet / dash arrived and gone
       const slot = slotOfSteam.get(String(h.attacker));
       if (slot == null || slot >= store.slots.length) continue;
+      // Marker presence at the HIT tick — same rule as the bullet
+      // tracers (a hidden shooter's line has no dot to emerge from).
+      if (slotPresence && !slotPresence(slot, h.tick)) continue;
       const f = engine.frameForTick(Math.max(engine.firstTick, h.tick));
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
       const ppos = store.slots[slot].pos;

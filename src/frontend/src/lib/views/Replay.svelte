@@ -1216,17 +1216,68 @@
     return '';
   }
 
+  // sideAtCoverage(slot, tick) — the coverage-time side resolver
+  // presentAt asks for (playercard.js presentAt's sideAt): the canonical
+  // per-frame side rule (renderer sideFromFlags, bits only — presentAt
+  // owns the roster-side fallback) read at the LAST position frame AT OR
+  // BEFORE `tick` THAT CARRIES THIS SLOT'S PAYLOAD. Two differences from
+  // the sideAtTick above (W43's event-tick resolver for the live-stats
+  // fold — different question, different need):
+  //   - the payload walk-back: a coverage ANCHOR commonly lands AFTER
+  //     the human's own samples ended (he disconnected the tick before
+  //     the bot joined — 91080 vs 91081 in the repro), and a frame the
+  //     slot was not sampled in carries flags 0 ("no evidence"), not a
+  //     licence to give up: the walk finds his last real sample;
+  //   - bounded history matters here: sideAtLastPayload scans from the
+  //     END of the stream (a playhead question), while coverage is
+  //     judged at an ANCHOR in the past — a halftime flip must not
+  //     retroactively change which team the pair was on when the
+  //     pairing formed (owner report 2026-11-17: bvcket finished ct, his
+  //     round-12 substitute finished t, and no covering bot's card ever
+  //     showed). Out of range / no payload frame → '' (presentAt falls
+  //     back to the roster side).
+  function sideAtCoverage(slot, tick) {
+    const d = data;
+    if (!d || !d.slots || !d.ticks || !d.masks) return '';
+    if (!Number.isInteger(slot) || slot < 0 || slot >= d.slots.length) return '';
+    const sd = d.slots[slot];
+    const t = Number(tick);
+    if (!sd || !sd.flags || !Number.isFinite(t)) return '';
+    // Last frame at or before t (ticks ascend — binary search).
+    let lo = 0;
+    let hi = d.ticks.length - 1;
+    let hit = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (d.ticks[mid] <= t) {
+        hit = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    // Walk back to the last frame that carries THIS slot's payload — an
+    // absent mask bit is "no evidence", not a licence to read a frame
+    // the slot wasn't sampled in (the sideAtLastPayload rule, bounded).
+    for (let f = hit; f >= 0; f--) {
+      if (d.masks[f] & (1 << slot)) return sideFromFlags(sd.flags[f]);
+    }
+    return '';
+  }
+
   // playerConnected(slot, tick) — the ONE card-presence question: is
   // this roster slot's player IN the match at `tick`? Delegated entirely
   // to playercard.js presentAt — humans run connectedAt's rule, a BOT
   // slot runs the replay exception (a bot is listed only while it covers
   // a disconnected same-side human, so a missing/empty read hides it —
-  // bots fail toward NOT listed, humans never do). A human slot with no
+  // bots fail toward NOT listed, humans never do), with sides judged at
+  // the coverage anchor through sideAtCoverage. A human slot with no
   // steam id, no roster row or no rows stays visible. Reads uiTick
   // through the caller, so scrubbing back before a disconnect re-shows
-  // the card and scrubbing forward hides it again.
+  // the card and scrubbing forward hides it again. Sides are judged at
+  // the coverage anchor through sideAtCoverage.
   function playerConnected(slot, tick) {
-    return presentAt(connIndex, players, slot, tick);
+    return presentAt(connIndex, players, slot, tick, sideAtCoverage);
   }
 
   const cardGroups = $derived.by(() => {
