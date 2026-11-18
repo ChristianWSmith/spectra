@@ -1726,3 +1726,49 @@ at the end of the section.
   and MurkyYT/cs2-map-icons (map icons scraped straight from the game
   depot, `vsvg-converter.js` included,
   https://github.com/MurkyYT/cs2-map-icons) (both retrieved 2026-11-16).
+
+- **Per-round money props (`m_iStartAccount` / `m_unRoundStartEquipmentValue`
+  / `m_iCashSpentThisRound`)** — where per-player per-round money comes
+  from without a price table: all three values are the GAME's own
+  networked props, so no buy-event reconstruction or item-price lookup is
+  needed. (1) **money_start** = controller prop
+  `m_pInGameMoneyServices.m_iStartAccount` ("Money the player held at the
+  start of the current round") — a snapshot taken at round start BEFORE
+  any buys, and it absorbs the game's own money resets (golden: $800 on
+  counted rounds 1 and 13, the second pistol). At freeze time end the
+  identity `startAccount − m_iCashSpentThisRound == m_iAccount` holds
+  exactly (no income can land during freeze), and the value is stable
+  freeze end → round end (zero drift over all 230 golden player-rounds).
+  demoinfocs v6 exposes NO accessor for it — read the raw property
+  (`Entity.PropertyValue("m_pInGameMoneyServices.m_iStartAccount")`,
+  spectra `extract.roundStartMoney`). (2) **equip** = pawn prop
+  `m_unRoundStartEquipmentValue` (demoinfocs
+  `Player.EquipmentValueRoundStart()` — "before the player has bought any
+  new items in the freeze time"): the inventory value carried INTO the
+  round, free spawn pistol included ($200 on a bare pistol round —
+  golden rounds 1 and 13 read 200 for every player), updated every round
+  (carried rifles show as thousands) and stable within the round.
+  (3) **spent** = controller prop `m_pInGameMoneyServices.m_iCashSpentThisRound`
+  (demoinfocs `Player.MoneySpentThisRound()` — "Money spent so far in the
+  current round"): the game's own per-round buy counter, zeroed at
+  RoundStart. **Sample point = RoundEnd**: buys continue after freezetime
+  while `mp_buytime` is open (CS2OpenDev convars: default 90 s from round
+  start; golden measured 15 player-rounds whose counter grew between
+  freeze end and round end — a freeze-end sample would undercount them),
+  while no spend lands between RoundEnd and the next RoundStart (golden
+  gap-buy check on the cumulative `m_iTotalCashSpent` = 0), so the
+  RoundEnd read is the round's final, complete spend. All three props
+  survive to RoundEnd for dead players (pawns are not destroyed until the
+  next round start; golden: 0 of 230 pawns gone). A player not connected
+  at RoundEnd has no sample — consumers keep an absence-as-zero default.
+  Characterized end-to-end by `extract.TestDiagRoundMoneyProps`
+  (SPECTRA_DIAG=1) on golden/de_cache.dem.zst.
+  **Source** — CS2OpenDev schema
+  `CCSPlayerController_InGameMoneyServices`
+  (m_iStartAccount / m_iCashSpentThisRound field docs,
+  https://cs2opendev.github.io/CS2OpenDev-Docs/schemas/server/CCSPlayerController_InGameMoneyServices/);
+  CS2OpenDev convars (`mp_buytime` default 90,
+  https://cs2opendev.github.io/CS2OpenDev-Docs/convars/);
+  demoinfocs-golang v6.0.0-rc.2 `pkg/demoinfocs/common/player.go`
+  (`EquipmentValueRoundStart` / `MoneySpentThisRound` doc comments);
+  local characterization on golden/de_cache.dem.zst (2026-11-18).

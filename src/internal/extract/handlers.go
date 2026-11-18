@@ -114,13 +114,34 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			p.TickRate(),
 		)
 		// MVP attribution via scoreboard-counter diffs (the round_mvp
-		// announcement is absent in many demos, golden included).
-		for _, pl := range gs.Participants().Playing() {
+		// announcement is absent in many demos, golden included) plus the
+		// round-end money sample behind player_round_stats' money columns.
+		// The money props are read HERE, at RoundEnd, because that is the
+		// first instant the round's spend is complete: m_iCashSpentThisRound
+		// keeps accruing while mp_buytime stays open past freezetime
+		// (characterized on golden by TestDiagRoundMoneyProps: 15
+		// player-rounds bought after freeze end), while m_iStartAccount and
+		// m_unRoundStartEquipmentValue are round-stable (zero drift freeze
+		// end → round end) and no spend lands between RoundEnd and the next
+		// RoundStart (gap-buy check = 0). A participant without the
+		// start-account prop contributes no sample (see roundStartMoney).
+		playing := gs.Participants().Playing()
+		samples := make([]moneyEndSample, 0, len(playing))
+		for _, pl := range playing {
 			if pl == nil {
 				continue
 			}
 			a.mvpScan(playerKey(pl), pl.Name, pl.MVPs())
+			if start, ok := roundStartMoney(pl); ok {
+				samples = append(samples, moneyEndSample{
+					key:          playerKey(pl),
+					startAccount: start,
+					equipStart:   pl.EquipmentValueRoundStart(),
+					spent:        pl.MoneySpentThisRound(),
+				})
+			}
 		}
+		a.moneyEnd(samples)
 	})
 
 	p.RegisterEventHandler(func(e events.RoundMVPAnnouncement) {

@@ -177,7 +177,7 @@ func TestPlayerRoundsKASTTruthTable(t *testing.T) {
 		ev(3, 250, 1, models.EventDamage, "C", "B", withDmg(40)),
 		ev(4, 260, 1, models.EventDamage, "A", "X", withDmg(30), withWeapon("HE Grenade")),
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players), nil)
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r
@@ -221,7 +221,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 		ev(0, 100, 1, models.EventKill, "X", "A"),
 		ev(1, 100+window, 1, models.EventKill, "B", "X"), // exactly at the window edge
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players), nil)
 	for _, r := range got {
 		if r.SteamID == "A" && !r.Traded {
 			t.Errorf("A traded = false at exact window edge (%d ticks), want true", window)
@@ -229,7 +229,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 	}
 
 	events[1].Tick = 100 + window + 1
-	got = PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
+	got = PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players), nil)
 	for _, r := range got {
 		if r.SteamID == "A" && r.Traded {
 			t.Errorf("A traded = true beyond window, want false")

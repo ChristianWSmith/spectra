@@ -21,7 +21,7 @@ func TestSelfKillWithUnknownSidesEarnsNoKillCredit(t *testing.T) {
 	events := []models.Event{
 		ev(0, 100, 1, models.EventKill, "1", "1", withWeapon("AK-47")),
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, nil)
+	got := PlayerRounds(events, rounds, players, testCfg, nil, nil)
 	if len(got) != 1 {
 		t.Fatalf("rows = %d, want 1", len(got))
 	}
@@ -57,7 +57,7 @@ func TestPostMatchDisconnectDeathsAgreeWithExtractor(t *testing.T) {
 		// world-hazard death and stays counted.
 		ev(3, 960, 1, models.EventKill, "2", "2", withWeapon(WorldWeapon)),
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, nil)
+	got := PlayerRounds(events, rounds, players, testCfg, nil, nil)
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r
@@ -84,7 +84,7 @@ func TestBotsCarryNoPlayerRoundRows(t *testing.T) {
 		{SteamID: "18374686479671623694", Name: "Rebel", IsBot: true},
 	}
 	rounds := []RoundInfo{{Number: 1, Winner: "ct"}}
-	got := PlayerRounds(nil, rounds, players, testCfg, nil)
+	got := PlayerRounds(nil, rounds, players, testCfg, nil, nil)
 	// (d) ruling 2026-11-17: the roster×rounds matrix is a HUMAN stats
 	// surface — a bot's row claimed survived/kast for rounds it never
 	// existed (the repro: 22 rows × 3 bots), and every consumer of

@@ -113,9 +113,13 @@ type RoundSideClass struct {
 }
 
 // PlayerRoundStat is one player_round_stats row: per-player-per-round combat
-// facts including the KAST decomposition. MoneyStart/Equip/
-// Spent are 0 in v1 — per-player purchase payloads are not extractable
-// (item_equip carries no price; see store analytics notes).
+// facts including the KAST decomposition. MoneyStart/Equip/Spent are the
+// extractor's round-end money samples (round_player_money): the account
+// at round start before buys (m_iStartAccount), the equipment carried in
+// before freeze-time buys (m_unRoundStartEquipmentValue) and the round's
+// spend once the buy period closed (m_iCashSpentThisRound); a
+// player-round without a sample reads 0 (absence-as-zero, owner ruling
+// 2026-11-18).
 type PlayerRoundStat struct {
 	MatchID     int64  `json:"matchId"`
 	Round       int    `json:"round"`

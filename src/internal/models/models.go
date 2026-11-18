@@ -545,21 +545,43 @@ type RoundPlayerSide struct {
 	Side    string `json:"side"` // "ct" | "t"
 }
 
+// RoundPlayerMoney is one player's round-end economy sample: the money
+// they held when the round started (m_iStartAccount — before any buys),
+// the equipment value they carried into it (m_unRoundStartEquipmentValue,
+// before freeze-time buys) and what they spent during the round
+// (m_iCashSpentThisRound — the game's own per-round counter, read at
+// RoundEnd so buys made after freeze time are included). Sampled only
+// for players connected at RoundEnd; a player-round without a sample
+// keeps player_round_stats' money columns at the table's absence-as-zero
+// default (same convention as kills/dmg for rounds not played).
+type RoundPlayerMoney struct {
+	MatchID    int64  `json:"matchId"`
+	Round      int    `json:"round"`
+	SteamID    string `json:"steamId"`
+	MoneyStart int    `json:"moneyStart"`
+	Equip      int    `json:"equip"`
+	Spent      int    `json:"spent"`
+}
+
 // ExtractedMatch is the complete extract output for one demo — the single
 // value internal/extract produces and internal/store persists in one
 // transaction. Match fields filled here: everything except ID/Status/Error
 // (the store joins it onto the existing lifecycle row).
 type ExtractedMatch struct {
-	Match         Match             `json:"match"`
-	Teams         []Team            `json:"teams"`
-	Players       []Player          `json:"players"`
-	PlayerStats   []PlayerStats     `json:"playerStats"`
-	Rounds        []Round           `json:"rounds"`
-	RoundEconomy  []RoundEconomy    `json:"roundEconomy"`
-	RoundSides    []RoundPlayerSide `json:"roundSides"`
-	Events        []Event           `json:"events"`
-	GenericEvents []GenericEvent    `json:"genericEvents"`
-	Chat          []Chat            `json:"chat"`
+	Match        Match             `json:"match"`
+	Teams        []Team            `json:"teams"`
+	Players      []Player          `json:"players"`
+	PlayerStats  []PlayerStats     `json:"playerStats"`
+	Rounds       []Round           `json:"rounds"`
+	RoundEconomy []RoundEconomy    `json:"roundEconomy"`
+	RoundSides   []RoundPlayerSide `json:"roundSides"`
+	// RoundMoney are the round-end per-player economy samples
+	// (RoundPlayerMoney — start account, carried equipment value, the
+	// round's spend) that fill player_round_stats' money columns.
+	RoundMoney    []RoundPlayerMoney `json:"roundMoney"`
+	Events        []Event            `json:"events"`
+	GenericEvents []GenericEvent     `json:"genericEvents"`
+	Chat          []Chat             `json:"chat"`
 	// SoundEvents are the player sounds (footsteps/lands/jumps/fall
 	// damage) read from CMsgSosStartSoundEvent — persisted to the
 	// sound_events table by SaveExtracted like every other child.

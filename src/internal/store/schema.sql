@@ -203,6 +203,26 @@ CREATE TABLE IF NOT EXISTS round_player_sides (
 	PRIMARY KEY (match_id, round, steam_id)
 );
 
+-- Round-end per-player economy samples (ingest-owned, SaveExtracted's
+-- only writer — same family as round_player_sides): the money behind
+-- player_round_stats' money columns. money_start = m_iStartAccount (the
+-- game's own snapshot of the account at round start, before buys — it
+-- absorbs the pistol/OT money resets); equip = m_unRoundStartEquipmentValue
+-- (carried gear before freeze-time buys, free spawn pistol included);
+-- spent = m_iCashSpentThisRound (the game's per-round spend counter read
+-- at RoundEnd, after mp_buytime has closed). Sampled only for players
+-- connected at RoundEnd; a player-round without a row keeps
+-- player_round_stats' absence-as-zero default.
+CREATE TABLE IF NOT EXISTS round_player_money (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	steam_id TEXT NOT NULL,
+	money_start INTEGER NOT NULL DEFAULT 0,
+	equip INTEGER NOT NULL DEFAULT 0,
+	spent INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (match_id, round, steam_id)
+);
+
 CREATE TABLE IF NOT EXISTS round_economy (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,

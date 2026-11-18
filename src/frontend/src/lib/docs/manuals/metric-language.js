@@ -135,11 +135,11 @@ The classic scoreboard line, one row per player per match: kills, deaths, assist
 
 # player_round_stats
 
-One row per player per round: kills, assists, deaths, whether the death was traded, whether they survived, the KAST flag for that round, damage and utility damage, and the money and equipment they started the round with.
+One row per player per round: kills, assists, deaths, whether the death was traded, whether they survived, the KAST flag for that round, damage and utility damage, the money they started the round with (before any buys), the equipment value they carried into it, and what they spent during it.
 
 **Columns:** \`match_id\`, \`round\`, \`steam_id\`, \`name\`, \`kills\`, \`assists\`, \`deaths\`, \`traded\`, \`survived\`, \`kast\`, \`dmg\`, \`util_dmg\`, \`money_start\`, \`equip\`, \`spent\`, \`rule_version\`, \`side\`, \`won\`
 
-\`side\` is the per-round side sample (the side-partition carrier) and \`won\` the per-round win flag the side win-rate sums.
+\`side\` is the per-round side sample (the side-partition carrier) and \`won\` the per-round win flag the side win-rate sums. The money columns are the game's own round-end readings: \`money_start\` the account at round start before buys, \`equip\` the equipment carried in before freeze-time buys, \`spent\` the round's total spend once the buy period closed. A round with no sample (the player was not connected at round end) reads 0.
 
 # round_economy
 
