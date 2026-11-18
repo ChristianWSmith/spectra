@@ -22,9 +22,9 @@
 // others by name (the folds' consolidation landed 2026-11-18) — the
 // stored Go fold (internal/analytics/rounds.go PlayerRounds — no stat
 // for the pair), the playhead stats fold (replay/livestats.js
-// foldEvent — imports THIS predicate, it no longer carries its own
-// copy) and this module (the render surfaces: feed list, kill ticker,
-// death marker).
+// foldEvent — imports THIS predicate AND this module's disconnectSet,
+// it no longer carries its own copy of either) and this module (the
+// render surfaces: feed list, kill ticker, death marker).
 
 // disconnectSet — the (player, tick) disconnect SET built from a match's
 // player_disconnect rows (EventRow.attacker carries the leaver's

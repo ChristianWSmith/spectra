@@ -91,6 +91,14 @@ const PROBE_POOL = 4;
 // renders the nine DEFAULT pins in DEFAULT order over a reversed
 // catalog, and the Profiles ADR column is metric-backed: stored value,
 // honest gap, behind chip, metric-value sort with gaps last).
+// Floor re-pin (2026-11-18, the Phase-8 sweep): every floor re-measured
+// against the checks its driver actually executes today — five floors
+// had drifted below their drivers (builder 165 → 169, econ-tables
+// 175 → 189, library 200 → 209, profiles 83 → 103, reports 50 → 60);
+// the other twenty-three already matched and are untouched. The
+// measurement ran each driver through this guard's own probe and read
+// the executed-check count off the shortfall message, so the numbers
+// are observations, not estimates.
 const EXPECTED = {
   // app-dock 59 → 66 (2026-11-16, R2 L4 — the Match sidebar tab): +7 —
   // the boot pair right after the mount (the Match tab DISABLED with its
@@ -276,7 +284,10 @@ const EXPECTED = {
   // box and its middle box relabelled Custom): +2 section B — the
   // "builtin,plugin" and "user" checked-set windows pin the third box's
   // subset words beside the existing "plugin"/"none" states.
-  'builder.dom.mjs': 165,
+  // builder 165 → 169 (2026-11-18, floor re-pin): measured by a full
+  // probe run — the floor had lagged the sections the drivers gained
+  // since the last re-pin.
+  'builder.dom.mjs': 169,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -510,7 +521,10 @@ const EXPECTED = {
   // while the capped fetch is in flight (the floor had also lagged the
   // driver's real count — 170 executed at base — so the pin is now the
   // true count). Lead reconciles if a parallel wave re-pins this line.
-  'econ-tables.dom.mjs': 175,
+  // econ-tables 175 → 189 (2026-11-18, floor re-pin): measured by a full
+  // probe run — the floor had lagged the sections the drivers gained
+  // since the last re-pin.
+  'econ-tables.dom.mjs': 189,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the
@@ -647,7 +661,10 @@ const EXPECTED = {
   // problem re-shows it, and the baseline restore). Sections A–E, G–R
   // untouched; the F fixture gained a job-less file so the dir table
   // still has a listable row.
-  'library.dom.mjs': 200,
+  // library 200 → 209 (2026-11-18, floor re-pin): measured by a full
+  // probe run — the floor had lagged the sections the drivers gained
+  // since the last re-pin.
+  'library.dom.mjs': 209,
   // map-pack-prompt 48 → 43 (2026-11-17, w29 — close-on-extract): −5.
   // The accept legs went 24 → 19: the popup's progress-display pins
   // (StatusChip block shown, the per-step details text, the family
@@ -702,7 +719,10 @@ const EXPECTED = {
   // the DROP-NEVER-MIGRATE pins over an OLD id-array under the profile
   // key: the grid renders the fixed pair alone (no metric selected) and
   // the stored bytes survive the read untouched.
-  'profiles.dom.mjs': 83,
+  // profiles 83 → 103 (2026-11-18, floor re-pin): measured by a full
+  // probe run — the floor had lagged the sections the drivers gained
+  // since the last re-pin.
+  'profiles.dom.mjs': 103,
   // progress-presentation 19 → 19 (2026-11-17, w29 — close-on-extract):
   // the count is UNCHANGED; the byte-identity pin (Settings mpDetail vs
   // MapPackPrompt stepDetail) flipped IN PLACE to the absence form —
@@ -836,7 +856,10 @@ const EXPECTED = {
   // scope + format, a plugin card selecting on click with Save then
   // calling RenderReport with THAT id, and a stale stored tplId naming a
   // vanished template self-healing to a live one (loadTemplates' guard).
-  'reports.dom.mjs': 50,
+  // reports 50 → 60 (2026-11-18, floor re-pin): measured by a full
+  // probe run — the floor had lagged the sections the drivers gained
+  // since the last re-pin.
+  'reports.dom.mjs': 60,
   // round-detail 64 → 76 (2026-11-15, round-view C5): header = title only
   // (meta line + buy-class chip moved out — +2 the Round info card pins:
   // renamed card, meta line landed, First kill absence), +2 ribbon pins
