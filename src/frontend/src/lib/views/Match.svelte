@@ -59,7 +59,16 @@
   import WinnerCell from '../components/WinnerCell.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
-  import { readOrder, readHidden, readStartsTransposed, resolvePins, parseStoredPins, composedSequence } from '../metricorder.js';
+  import {
+    readOrder,
+    readHidden,
+    readStartsTransposed,
+    resolvePins,
+    parseStoredPins,
+    composedSequence,
+    pinnedInSequence,
+    readOverviewPins,
+  } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
@@ -90,8 +99,9 @@
   const helpSection = $derived(MATCH_TAB_SECTIONS[tab] || 'understanding-a-match');
 
   // The scoreboard's FIXED block (metricorder.js FIXED_BLOCK's `short`
-  // mirrors this list): the Go-rendered stats' compact headers in their
-  // store order. Combined
+  // mirrors this list): the no-twin stats' compact headers in their
+  // store order — descriptors (Name/Team) plus Score, which keeps its
+  // raw read by owner ruling (no seed). Combined
   // columns sort by their primary key. N4: these are SEQUENCE entries
   // now (the '@'-namespaced fixed keys in metricorder.js), so the
   // RENDERED column order comes from the composed sequence (sbCols) —
@@ -102,10 +112,18 @@
   // inferred-conversion swap (W2a); KDA and Opening K/D left with w13d
   // (owner, 2026-11-16 — KDA became the seeded `kda` metric and the
   // Opening K/D compound split into the entry_kills / entry_deaths
-  // metric columns): all fourteen render as PINNED METRIC columns
+  // metric columns), and the fourteen left as PINNED METRIC columns
   // (composed into sbCols below — sourced from the stored metric rows
   // through the five-state machine), in today's relative order once the
   // default pins/sequence land (metricorder.js).
+  // UNIFICATION (owner, 2026-11-18 — "fully dogfooded"): the five
+  // count columns — K, D, DMG, Util, MVPs — left too. Their seeds
+  // (kills / deaths / total_damage / utility_damage / mvps) are the
+  // entities now, so all five render as pinned metric columns through
+  // the same five-state machine: the headers stay byte-identical (the
+  // seeds' short names ARE K / D / DMG / Util / MVPs) and every header
+  // GAINS the Formula ⓘ the fixed header never carried. Score has no
+  // seed (owner ruling) and stays here raw.
   // Every key here sorts CLIENT-side over the displayed sequence (the
   // fold below): the fetch is id-keyed (one GetScoreboard call per
   // match, kills DESC) and no sort ever re-requests a row order from the
@@ -117,59 +135,44 @@
     // "Team" column: the key stays `side` but the cell shows the TEAM's
     // display name — see the body branch below.
     { key: 'side', label: 'Team' },
-    { key: 'kills', label: 'K' },
-    { key: 'deaths', label: 'D' },
-    { key: 'total_damage', label: 'DMG' },
-    { key: 'utility_damage', label: 'Util' },
-    { key: 'mvps', label: 'MVPs' },
     { key: 'score', label: 'Score' },
   ];
 
-  // The SCORE_COLS cells whose VALUE now comes from a seeded metric row
-  // (owner ruling, 2026-11-17 — the metrics system IS the gameplay-
-  // statistics layer, so every consumer of a seeded stat reads the
-  // seed): the five count seeds' names are byte-identical to these
-  // keys, so the cell resolves its slot in `fixedCols` by the key
-  // itself (FIXED_SLOTS below unions their ids into the ONE stored
-  // read). `score` has no seed (game-internal composite — its sum has
-  // no honest reading) and keeps its raw field read; Name/Team are
-  // descriptors, not values. A key here never falls back to the raw
-  // field: no slot (read in flight / name absent from the catalog) is
-  // the honest dash, a non-fresh state its chip (invariant 9 — the
-  // state machine of lib/metricstate.js, exactly like the pinned
-  // metric columns).
-  const SEEDED_FIXED = new Set([
-    'kills',
-    'deaths',
-    'total_damage',
-    'utility_damage',
-    'mvps',
-  ]);
-
   // The Overview top cards' IDENTITY seeds (metrics expansion M1,
-  // migrated 2026-11-18 — Phase 7's surfaces hand-off): the five
-  // argmax built-ins are THE selection for the top-card who (the
-  // ad-hoc maxBy over viewRows died with this migration — stored
-  // values are offered, never recomputed). They ride the SAME catalog
-  // read and the SAME ONE stored read as the fixed slots below
-  // (unioned into `fixed` by name — a name the catalog lacks keeps the
-  // honest no-card, never a guessed winner). The DISPLAY composition
-  // stays the roster line (canonical raw columns — K/D/A, ADR, util,
-  // entry, MVPs are data, not metrics): the seed picks WHO, the
-  // winner's own scoreboard line renders the number. Tie-break: the
-  // seed's ratified rule (player-key ASC — doc.go "Identity values")
-  // wins over the retired first-row rule wherever they disagree.
-  const TOP_CARD_SLOTS = ['top_fragger', 'best_adr', 'most_util', 'entry_opens', 'most_mvps'];
+  // migrated 2026-11-18 — Phase 7's surfaces hand-off; numbers
+  // metric-sourced 2026-11-18 — owner item 4; WHICH cards render and in
+  // what order is the ordering dialog's Match-overview table — owner
+  // item 5, metricorder.js 'overview' scope): the argmax built-ins are
+  // THE selection for the top-card who (the ad-hoc maxBy over viewRows
+  // died with this migration — stored values are offered, never
+  // recomputed). The pinned identity defs (overviewSeq, the ONE
+  // sequence over metricorder.overviewDefs — match-scope metrics that
+  // RECORDED a leader) ride the SAME catalog read and the SAME ONE
+  // stored read as the fixed slots below (unioned into `fixed` by
+  // name — a name the catalog lacks keeps the honest no-card, never a
+  // guessed winner). WHO = the identity row's stored valueKey (roster
+  // row by that key — the display line only NAMES it). NUMBER = the
+  // winner's stored metric row through the W36 named-slot path
+  // (overviewNumber below — pins-independent, one unioned read, never
+  // per-card fetches): the raw roster fields behind the DTO are never
+  // read for a card number. Tie-break: the seed's ratified rule
+  // (player-key ASC — doc.go "Identity values") wins over the retired
+  // first-row rule wherever they disagree.
 
-  // The cards' spec: seed name → label + the roster-line display
-  // composition (byte-identical strings to the pre-migration cards).
-  const TOP_CARDS = [
-    { name: 'top_fragger', label: 'Top fragger', compose: (p) => `${p.kills}/${p.deaths}/${p.assists}` },
-    { name: 'best_adr', label: 'Best ADR', compose: (p) => fmt1(p.adr) },
-    { name: 'most_util', label: 'Most util', compose: (p) => `${p.utilityDamage}` },
-    { name: 'entry_opens', label: 'Entry opens', compose: (p) => `${p.entryKills}` },
-    { name: 'most_mvps', label: 'Most MVPs', compose: (p) => `${p.mvps}` },
-  ];
+  // The card NUMBER composers (owner item 4): the five builtin cards
+  // and the metric rows that supply their numbers (byte-identical
+  // strings to the raw-composed cards for fresh equal values — the pin
+  // is the SOURCE: seed row, never the roster field). The K/D/A card
+  // composes all three halves exactly like the roster line; any OTHER
+  // identity metric falls back to its own stored identity value in
+  // overviewNumber.
+  const OVERVIEW_COMPOSERS = Object.freeze({
+    top_fragger: (p) => rosterKda(p).text,
+    best_adr: (p) => seededText('adr', p),
+    most_util: (p) => seededText('utility_damage', p),
+    entry_opens: (p) => seededText('entry_kills', p),
+    most_mvps: (p) => seededText('mvps', p),
+  });
 
   // The fixed block's `short` → its SCORE_COLS entry (the composed
   // sequence's fixed entries speak metricorder's `short` headers —
@@ -196,9 +199,12 @@
   // all-tied key moves nothing at all. sortKey/desc stay DERIVED from
   // the newest entry, so the SortTh markers keep their single-mark shape.
   // Re-seeded with the id-keyed fetch (kills DESC — the store's default).
-  // N4 (lead ruling): hiding K leaves this seed alone — the fold still
-  // orders the rows by kills, it just shows no K column marking it (no
-  // re-seed machinery for a hidden default key).
+  // Since the unification of 2026-11-18 the seed's 'kills' key re-spells
+  // to the `kills` metric column's m: key once the catalog lands (the
+  // pins effect below) — the mark sits on the K column and the fold reads
+  // the STORED rows; if that column is unpinned the fold moves nothing
+  // and the fetch's kills DESC stands. N4 (lead ruling): hiding a default
+  // key leaves the seed alone (no re-seed machinery for a hidden key).
   let sortStack = $state([{ key: 'kills', desc: true }]);
   const sortKey = $derived(sortStack[sortStack.length - 1]?.key ?? '');
   const desc = $derived(sortStack[sortStack.length - 1]?.desc ?? false);
@@ -346,14 +352,27 @@
   // seed WITHOUT being a pinned column read their metric BY NAME —
   // pins-independent, unioned into the ONE stored read below (an
   // unpinned metric still fills its cell — the kast precedent). Today:
-  // `assists` (the roster K/D/A triples), the five SEEDED_FIXED counts
-  // (the scoreboard K/D/DMG/Util/MVPs cells — owner ruling 2026-11-17)
-  // and `adr` (the roster ADR chips — the M9 item: the chip reads the
-  // seed row, never `ps.adr`). The entry_kills / entry_deaths slots
-  // left with w13d (owner, 2026-11-16): the Opening K/D compound cell
-  // they fed is gone and both halves render as their own pinned metric
-  // columns.
-  const FIXED_SLOTS = ['assists', 'kills', 'deaths', 'total_damage', 'utility_damage', 'mvps', 'adr'];
+  // `assists`, `kills`, `deaths` (the roster K/D/A triples), `adr`
+  // (the roster ADR chips — the M9 item: the chip reads the seed row,
+  // never `ps.adr`) and `utility_damage`, `entry_kills`, `mvps` (the
+  // Overview top cards' NUMBERS — owner item 4 of 2026-11-18: every
+  // card number reads its stat's stored row through this same path,
+  // never the raw roster field). The five scoreboard count cells LEFT
+  // their slot with the unification of 2026-11-18 (owner, "fully
+  // dogfooded"): as pinned metric columns they read through
+  // `metricCols` like every other column (the roster triple and the
+  // cards keep THEIR names — those displays are not scoreboard
+  // columns). The entry_deaths slot had already left with w13d (owner,
+  // 2026-11-16): the Opening K/D compound cell is gone.
+  const FIXED_SLOTS = [
+    'assists',
+    'kills',
+    'deaths',
+    'adr',
+    'utility_damage',
+    'entry_kills',
+    'mvps',
+  ];
   // name → columnOf() data for each fixed slot the catalog carried
   // (empty until the read lands; a name the catalog lacks stays absent
   // → the honest dash, never a guessed number).
@@ -598,11 +617,16 @@
       // nothing (what the pre-C14 "return scoreboard" did, per step).
       return col ? metricSortVal(col, p) : null;
     }
-    // Every fixed key sorts on its raw field value: cellText returns
-    // the row's field verbatim for all of them (kda was the only
-    // formatter — it printed through fmt2, so it needed this raw
-    // branch; the column left SCORE_COLS for the metric `m:` path in
-    // w13d).
+    // The RAW arm is EXACTLY the fixed keys that still render raw:
+    // the name/side descriptors and Score (no seed — owner ruling).
+    // Every count column is a metric column now (the m: path above —
+    // unification, owner 2026-11-18: display seed, sort seed, one
+    // entity). A legacy raw key no column lands (the kills fetch seed
+    // before the catalog re-spells it below, or a stale stored key)
+    // resolves null → the fold moves NOTHING: the fetch already
+    // returned kills DESC, so the row order stays honest and no raw
+    // field is ever read for a seeded stat.
+    if (key !== 'name' && key !== 'side' && key !== 'score') return null;
     return cellText({ key }, p);
   }
 
@@ -640,6 +664,14 @@
   // the stored value read, so an empty or failed metric read still
   // renders the fixed half — never a blank scoreboard.
   let sbSeq = $state([]);
+
+  // overviewSeq — the Match-overview card list (owner item 5): the
+  // identity metrics the dialog's overview table pins, in sequence
+  // order (pinnedInSequence over the 'overview' scope — metricorder's
+  // overviewDefs universe). Lands with the catalog read below; the top
+  // cards render from it, each card's identity row coming from the same
+  // ONE stored read (unioned into `fixed` by name).
+  let overviewSeq = $state([]);
 
   // sbCols — the sequence joined with what has landed: fixed entries
   // are complete immediately, metric entries appear when their stored
@@ -703,6 +735,7 @@
     fixedCols = new Map();
     metricError = '';
     sbSeq = [];
+    overviewSeq = [];
     // The catalog read ALWAYS runs (never gated on the pins): the fixed
     // named slots above need it even when a stored selection says "pin
     // nothing" — the selection governs the COLUMNS, not these cells.
@@ -712,8 +745,14 @@
       // The visibility read is presentation-only: a failed pref read
       // falls back to "nothing hidden" instead of failing the columns.
       readHidden('match').catch(() => []),
+      // The Match-overview table's pair (owner item 5): same
+      // presentation-only fallbacks — an unreadable pref falls back to
+      // the defaults (default order / default card set), never a blank
+      // Overview.
+      readOrder('overview'),
+      readOverviewPins().catch(() => null),
     ])
-      .then(([defs, order, hiddenKeys]) => {
+      .then(([defs, order, hiddenKeys, overviewOrder, storedOverviewPins]) => {
         if (!live) return;
         const rows = defs || [];
         // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
@@ -743,12 +782,44 @@
         }
         sbSeq = seq;
         // THE one stored read: the pinned column ids UNIONED with the
-        // fixed named slots' ids (design §6.1). An empty id list would
-        // mean "every metric" on the wire — never send one; with
-        // nothing to read both outputs stay empty (columns and fixed
-        // cells render their honest gaps).
+        // fixed named slots' ids AND the pinned overview identities'
+        // ids (design §6.1 + owner items 4/5): one GetMetricValues call
+        // covers roster/chip/card slots and every card's identity row.
+        // An empty id list would mean "every metric" on the wire —
+        // never send one; with nothing to read both outputs stay empty
+        // (columns and fixed cells render their honest gaps).
+        // The OVERVIEW card list lands first (it feeds the union):
+        // absent pins ⇒ DEFAULT_PINS.overview resolved by name (the
+        // shipped card set), present ⇒ verbatim; pinnedInSequence
+        // intersects with the identity universe, so a stale stored name
+        // drops here and never reaches the read.
+        overviewSeq = pinnedInSequence(
+          'overview',
+          overviewOrder,
+          rows,
+          resolvePins('overview', storedOverviewPins, rows),
+        );
         const byName = new Map(rows.map((d) => [d.name, d]));
-        const fixed = [...FIXED_SLOTS, ...TOP_CARD_SLOTS].map((n) => byName.get(n)).filter(Boolean);
+        // The C14 sort seed re-spells to the metric column (the
+        // unification of 2026-11-18: the seed's 'kills' key WAS the
+        // scoreboard's K column — that column is the `kills` METRIC
+        // column now, so the active mark and the fold move to the m:
+        // path — stored rows, never the raw field; the direction and
+        // the store's kills-DESC fetch seed are unchanged). Only the
+        // literal seed re-spells: a user's own choice (name / side /
+        // score, or any m: key) is never rewritten, and a later
+        // refetch finds the key already re-spelled and leaves it.
+        const seed = sortStack[sortStack.length - 1];
+        const killsDef = byName.get('kills');
+        if (seed && seed.key === 'kills' && killsDef) {
+          sortStack = [
+            ...sortStack.slice(0, -1),
+            { key: metricSortKey(killsDef.id), desc: seed.desc },
+          ];
+        }
+        const fixed = [...FIXED_SLOTS, ...overviewSeq.map((d) => d.name)]
+          .map((n) => byName.get(n))
+          .filter(Boolean);
         const ids = [...new Set([...picked.map((d) => d.id), ...fixed.map((d) => d.id)])];
         if (ids.length === 0) return;
         // ONE stored read for every pin and every fixed slot (design §5:
@@ -820,6 +891,20 @@
     if (!mc) return metricPresentation('', null, false);
     const st = liveMetricState(metricProgress, metricStates, mc.def.id);
     return metricPresentation(st, mc.map.get(p.steamId) || null, mc.unitHasRows);
+  }
+
+  // seededText — one named slot's stored value as an OVERVIEW CARD's
+  // number (owner item 4, 2026-11-18): the W36 pattern over fixedPres —
+  // fresh → the stored row through the twin metric's own format tag;
+  // anything else (read in flight / no slot / no row / non-fresh state)
+  // → the honest dash. A card number is NEVER the raw roster field
+  // behind it: the metric row is THE value, and where a not-yet-swept
+  // metric disagrees with the raw column, the metric wins (no raw
+  // fallback — the same ruling that moved the cells off cellText).
+  function seededText(name, p) {
+    const pres = fixedPres(name, p);
+    if (pres.kind !== 'value') return '—';
+    return fmtMetric(pres.value, fixedCols.get(name)?.def.format || '');
   }
 
   // fixedTitle — one fixed slot's tooltip (the Combat slot pattern):
@@ -1057,11 +1142,14 @@
   }
 
   // The Overview top cards — SELECTION from the identity seeds
-  // (TOP_CARD_SLOTS above, metrics M1 migration 2026-11-18):
-  //   fresh identity row → the card: the winner's roster line picks
-  //     the display (name, team color, K/D/A composition) and the
-  //     stored valueKey picks WHO — an unresolved key renders NO card
-  //     (§3.3: never a fabricated name);
+  // (the overviewSeq list above: metricorder 'overview' scope — owner
+  // item 5, the dialog's Match-overview table decides which cards and
+  // their order; owner item 4 supplies the numbers):
+  //   fresh identity row → the card: the stored valueKey picks WHO (the
+  //     roster line NAMES it — name, team color, profile link), the
+  //     winner's stored metric row supplies the NUMBER (overviewNumber —
+  //     never the raw roster field), and an unresolved key renders NO
+  //     card (§3.3: never a fabricated name);
   //   no stored row → NO card (the empty-pool rule — an empty roster
   //     lands here too, so the empty-set guard is the seed's own);
   //   a state (processing / failed / behind) → the card with the
@@ -1069,24 +1157,39 @@
   //     a guessed name).
   const topStats = $derived.by(() => {
     const out = [];
-    for (const c of TOP_CARDS) {
-      const mc = fixedCols.get(c.name);
+    // overviewSeq holds the DEFS themselves (pinnedInSequence's shape).
+    for (const def of overviewSeq) {
+      const mc = fixedCols.get(def.name);
       if (!mc) continue; // catalog lacked the seed → no card
       const row = mc.rows.length ? mc.rows[0] : null; // identity rows: one per match (subjectKey '')
       const st = liveMetricState(metricProgress, metricStates, mc.def.id);
       const pres = metricPresentation(st, row, mc.unitHasRows);
       if (pres.kind === 'nodata') continue; // empty pool → no card, never a fabricated name
+      const label = def.title || def.name;
       if (pres.kind === 'value') {
         const key = pres.valueKey || '';
         const p = viewRows.find((r) => r.steamId === key);
         if (!p) continue; // the key resolves to no roster name → no card (never a raw id)
-        out.push({ label: c.label, p, value: c.compose(p), pres: null, mc });
+        out.push({ key: def.name, label, p, value: overviewNumber(def, p, pres), pres: null, mc });
       } else {
-        out.push({ label: c.label, p: null, value: '', pres, mc });
+        out.push({ key: def.name, label, p: null, value: '', pres, mc });
       }
     }
     return out;
   });
+
+  // overviewNumber — ONE overview card's number (owner item 4): the
+  // five builtins' named-slot composers read their twins' stored rows;
+  // any OTHER identity metric (a user's argmax) renders its OWN stored
+  // identity value — the argmax'd stat the pass recorded beside
+  // value_key — through fmtMetric's numeric default arm (its format tag
+  // IS 'identity', the key-valued tag that renders the NAME, so the
+  // number never routes through it). Never a raw roster field.
+  function overviewNumber(def, p, pres) {
+    const compose = OVERVIEW_COMPOSERS[def.name];
+    if (compose) return compose(p);
+    return fmtMetric(pres.value, '');
+  }
 </script>
 
 <div class="view">
@@ -1197,7 +1300,7 @@
 
     {#if tab === 'Overview'}
       <div class="stat-grid">
-        {#each topStats as s (s.label)}
+        {#each topStats as s (s.key)}
           {#if s.pres}
             <!-- The identity seed's five-state card (M1 migration,
                  2026-11-18): a state in lieu of the value — the chip
@@ -1406,37 +1509,18 @@
         </button>
       {/snippet}
       <!-- One fixed stat cell, shared by BOTH shapes: the normal body's
-           else-branch and every transposed stat row. A SEEDED_FIXED key
-           (owner ruling 2026-11-17) renders through the five-state
-           machine from its STORED seed row — value / honest dash / state
-           chip, the Formula tooltip from the seed's `doc` — and never
-           the raw field (no raw fallback: an absent slot is the dash);
-           every other fixed key keeps the plain cellText render (score
-           has no seed; the Opening K/D compound cell this snippet used
-           to branch on left with w13d, owner 2026-11-16 — its halves
-           are metric columns now). -->
+           else-branch and every transposed stat row. Every fixed cell is
+           a RAW recorded value now: the five seeded count keys (and the
+           SEEDED_FIXED branch that served them, owner ruling 2026-11-17)
+           left with the unification of 2026-11-18 — K/D/DMG/Util/MVPs
+           render as metric columns through the m: path's five-state
+           machine (stored rows, Formula tooltip, honest chips). What
+           remains here is Score (no seed by owner ruling — the last
+           recorded-value column) plus the descriptor cells the body
+           branches handle above — cellText verbatim, never a computed
+           value. -->
       {#snippet fixedCell(col, p)}
-        {#if SEEDED_FIXED.has(col.key)}
-          {@const pres = fixedPres(col.key, p)}
-          <td class="num" title={fixedTitle(col.key, pres)}>
-            {#if pres.kind === 'value'}
-              {fmtMetric(pres.value, (fixedCols.get(col.key)?.def.format) || '')}
-            {:else if pres.kind === 'nodata'}
-              —
-            {:else}
-              <!-- State chip in lieu of a number (design §5):
-                   processing / failed / behind. -->
-              <StatusChip
-                status={pres.state}
-                title={fixedTitle(col.key, pres)}
-                progress={metricProgressFrac(metricProgress, fixedCols.get(col.key)?.def.id)}
-                stage={metricProgressStage(metricProgress, fixedCols.get(col.key)?.def.id)}
-              />
-            {/if}
-          </td>
-        {:else}
-          <td class="num">{cellText(col, p)}</td>
-        {/if}
+        <td class="num">{cellText(col, p)}</td>
       {/snippet}
       <!-- One pinned metric cell, shared by BOTH shapes (design §5's
            state machine: value / honest dash / chip, never a number in

@@ -85,6 +85,16 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsMetricOrderProfileKey != "metric_order_profile" {
 		t.Errorf("metric order (profile) key = %q, want %q", prefsMetricOrderProfileKey, "metric_order_profile")
 	}
+	// The overview table's pair (metricorder.js 'overview' scope — the
+	// match-overview cards' order + selection, owner item 5 2026-11-18).
+	// Same contract: one rename silently detaches a stored arrangement
+	// (or selection) back to the defaults.
+	if prefsMetricOrderOverviewKey != "metric_order_overview" {
+		t.Errorf("metric order (overview) key = %q, want %q", prefsMetricOrderOverviewKey, "metric_order_overview")
+	}
+	if prefsMetricPinsOverviewKey != "metric_pins_overview" {
+		t.Errorf("metric pins (overview) key = %q, want %q", prefsMetricPinsOverviewKey, "metric_pins_overview")
+	}
 	// The metric VISIBILITY twin (metricorder.js HIDDEN_KEYS): which
 	// fixed stats are hidden per surface. Same contract as the order
 	// pair — one rename silently reverts every stored choice to

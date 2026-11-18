@@ -355,29 +355,33 @@ const scoreboard = [
 ];
 const summary = { id: 3, ctName: 'Alpha', tName: 'Beta' };
 
-// The five SEEDED fixed cells' catalog (owner ruling 2026-11-17 — the
-// metrics system IS the gameplay-statistics layer): the scoreboard
-// K/D/DMG/Util/MVPs cells read their seed rows, so the default fixture
-// carries the definitions those fixed slots resolve BY NAME. None of
-// these names is a default pin (DEFAULT_PINS.match carries assists,
-// adr, …), so the rendered column set stays exactly the fixed block —
-// the seeds fill cells, they never add columns. Ids are the 100-series
-// so a section's local catalog (1–14, 77, 91–95) never collides.
+// The SEEDED fixed cells'/cards' named-slot catalog (owner rulings
+// 2026-11-17 and 2026-11-18): the scoreboard K/D/DMG/Util/MVPs cells,
+// the roster K/D/A triple + ADR chip and the Overview top cards' NUMBERS
+// all read their seed rows, so the default fixture carries the
+// definitions those named slots resolve BY NAME. Ids are explicit: the
+// 101–105 block predates the card slots, and 106–116 belong to the
+// Economy seeds (106/107/113–116) and the identity cards (108–112), so
+// the three card slots take 117–119. shortName/format mirror the schema
+// seeds (the metric column headers read shortName).
 const SEED_FIELDS = Object.freeze({
-  kills: 'kills',
-  deaths: 'deaths',
-  total_damage: 'totalDamage',
-  utility_damage: 'utilityDamage',
-  mvps: 'mvps',
+  kills: ['kills', 101, 'K', 'int'],
+  deaths: ['deaths', 102, 'D', 'int'],
+  total_damage: ['totalDamage', 103, 'DMG', 'int'],
+  utility_damage: ['utilityDamage', 104, 'Util', 'int'],
+  mvps: ['mvps', 105, 'MVPs', 'int'],
+  assists: ['assists', 117, 'A', 'int'],
+  adr: ['adr', 118, 'ADR', 'float1'],
+  entry_kills: ['entryKills', 119, 'Open K', 'int'],
 });
-const SEED_DEFS = Object.entries(SEED_FIELDS).map(([name, field], i) => ({
-  id: 101 + i,
+const SEED_DEFS = Object.entries(SEED_FIELDS).map(([name, [, id, short, format]]) => ({
+  id,
   name,
   title: name,
-  shortName: name,
+  shortName: short,
   scope: 'match',
-  format: 'int',
-  doc: `Formula: sum(player_stats.${field}) — the ${name} cell's seed`,
+  format,
+  doc: `Formula: sum(player_stats.${name}) — the ${name} slot's seed`,
 }));
 // The canonical read over the CURRENT scoreboard fixture: one row per
 // requested seed id × player whose raw field the seed sums (equal by
@@ -392,7 +396,7 @@ const seedValues = (matchID, ids) => {
   const out = [];
   for (const id of ids || []) {
     const name = nameById.get(id);
-    const field = name ? SEED_FIELDS[name] : '';
+    const field = name ? SEED_FIELDS[name]?.[0] : '';
     if (!field) continue;
     for (const p of sb) {
       const v = p[field];
@@ -498,10 +502,10 @@ const econSeedValues = (ids, countedN, switches) => {
   return out;
 };
 
-// The five M1 IDENTITY card seeds (plan §8 identity rows): the Overview
-// top cards read these stored rows since their Phase-7 migration
-// (2026-11-18) — the seed picks WHO (valueKey), the roster line only
-// renders the name/number. Ids continue the 100-series.
+// The five M1 IDENTITY card seeds' FIELD map (plan §8 identity rows):
+// each name → the raw column its argmax records over (the ORACLE below
+// re-derives the winner from the fixture's scoreboard; the engine reads
+// the same column).
 const IDENTITY_FIELDS = Object.freeze({
   top_fragger: 'kills',
   best_adr: 'adr',
@@ -509,11 +513,25 @@ const IDENTITY_FIELDS = Object.freeze({
   entry_opens: 'entryKills',
   most_mvps: 'mvps',
 });
+// The five M1 IDENTITY card seeds (plan §8 identity rows): the Overview
+// top cards read these stored rows since their Phase-7 migration
+// (2026-11-18) — the seed picks WHO (valueKey). Since owner item 5 the
+// card LABEL comes from the def too (the dialog's overview table lists
+// `title`), so the fixture's titles mirror the schema seeds byte for
+// byte ('Top fragger' … — never `title: name`). Ids continue the
+// 100-series.
+const IDENTITY_TITLES = Object.freeze({
+  top_fragger: 'Top fragger',
+  best_adr: 'Best ADR',
+  most_util: 'Most util',
+  entry_opens: 'Entry opens',
+  most_mvps: 'Most MVPs',
+});
 const IDENTITY_SEED_DEFS = Object.freeze(
   Object.entries(IDENTITY_FIELDS).map(([name, field], i) => ({
     id: 108 + i,
     name,
-    title: name,
+    title: IDENTITY_TITLES[name],
     shortName: '',
     scope: 'match',
     subject: 'match',
@@ -580,6 +598,13 @@ const dataFor = (countedN, switches = 1) => ({
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
+  // The kvstore getter: ABSENT keys answer undefined. (The servicesStub
+  // defaults an unscripted service to [] — a present-EMPTY pref — which
+  // resolvePins would read verbatim as "pin nothing" and blank the
+  // overview card set; order/hidden read the same either way: [] and
+  // null both resolve their defaults.) Sections that script prefs (N4's
+  // hidden set, w25's shape) override this through their spread.
+  getPref: () => undefined,
 });
 
 // --- Queries ---------------------------------------------------------------
@@ -1435,7 +1460,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   const metricTh = ths.find(
     (t) => (t.querySelector('.th-sort')?.textContent || '').includes('Utility damage per round'),
   );
-  const staticTh = ths.find((t) => (t.querySelector('.th-sort')?.textContent || '').trim() === 'K');
+  const staticTh = ths.find((t) => (t.querySelector('.th-sort')?.textContent || '').trim() === 'Score');
   check(
     'metric header wears m5-mth (the cap scope); static SCORE_COLS never do',
     !!metricTh &&
@@ -1443,7 +1468,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
       !!staticTh &&
       !staticTh.classList.contains('m5-mth'),
     metricTh
-      ? `metric=${metricTh.className} static=${staticTh ? staticTh.className : 'no K header'}`
+      ? `metric=${metricTh.className} static=${staticTh ? staticTh.className : 'no Score header'}`
       : 'no metric header rendered',
   );
   const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib');
@@ -1674,25 +1699,27 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 
 console.log('K. Scoreboard order: the fixed block first, then the fourteen converted metric columns (W2a + w13d)');
 {
-  // The fourteen converted columns (design §4.2/§4.3 + w13d, owner
-  // 2026-11-16): they left SCORE_COLS and arrive as PINNED METRIC
-  // columns at the tail, in today's relative order. Pins are set
-  // EXPLICITLY here (a present key renders the stored selection
-  // verbatim — the absent→DEFAULT_PINS rule resolves a fresh install to
-  // these same fourteen names in this same order, pinned in
-  // metricorder.test.js; w22: pins are name-keyed, so the fixture pins
-  // BY NAME); under the ABSENT order pref the fixed block
-  // leads exactly as the old code prefix did (its negative ranks —
-  // metricorder.FIXED_RANKS), and the pins never reorder it. w13d
-  // removed KDA and Opening K/D from the fixed block: KDA is a metric
-  // column now and the compound cell's halves are the Open K / Open D
-  // columns. The catalog also carries the fixed named slot the roster
-  // triples read PINS-INDEPENDENT (design §6.1) — assists, which this
-  // fixture pins too (a slot may be a column as well); entry_deaths
-  // lost that slot with the compound cell.
+  // K. Scoreboard order (unification, 2026-11-18): the fixed block is
+  // exactly Name/Team/Score, the five unified count columns arrive as
+  // PINNED METRIC columns in their FORMER fixed slots (their shorts ARE
+  // the old headers — the rendered header order is byte-identical),
+  // then the fourteen converted columns in today's relative order.
+  // Pins are set EXPLICITLY here (a present key renders the stored
+  // selection verbatim — the absent→DEFAULT_PINS rule resolves a fresh
+  // install to these same names, pinned in metricorder.test.js; w22:
+  // pins are name-keyed, so the fixture pins BY NAME); under the
+  // ABSENT order pref the fixed block leads exactly as the old code
+  // prefix did (its negative ranks — metricorder.FIXED_RANKS and the
+  // unified metrics' DEFAULT_RANKS slots), and the pins never reorder
+  // it. w13d removed KDA and Opening K/D from the fixed block: KDA is a
+  // metric column now and the compound cell's halves are the Open K /
+  // Open D columns. The catalog also carries the fixed named slot the
+  // roster triples read PINS-INDEPENDENT (design §6.1) — assists — and
+  // the cards' slots; every slot may be a column as well.
   localStorage.setItem(
     'spectra:pinned-metrics',
     JSON.stringify([
+      'kills', 'deaths', 'total_damage', 'utility_damage', 'mvps',
       'assists', 'adr', 'kast', 'hs_pct', 'kd', 'kda', 'two_k',
       'three_k', 'four_k', 'five_k', 'entry_kills', 'entry_deaths',
       'trade_kills', 'best_streak',
@@ -1719,16 +1746,22 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
       mk(12, 'entry_deaths', 'Open D', 'int'),
       mk(13, 'trade_kills', 'Trade', 'int'),
       mk(14, 'best_streak', 'Streak', 'int'),
-      // The roster triple's K and D halves are SEEDED cells now (owner
-      // ruling 2026-11-17) — the fixed slots resolve them by name from
-      // this catalog, pins-independent, exactly like the A half.
-      mk(15, 'kills', 'Kills', 'int'),
-      mk(16, 'deaths', 'Deaths', 'int'),
+      // The five unified count columns (unification 2026-11-18): they
+      // are METRIC columns now — shorts K/D/DMG/Util/MVPs mirror the
+      // old fixed headers byte-identically — and the same rows feed the
+      // roster triple's K/D halves (pins-independent slots).
+      mk(15, 'kills', 'K', 'int'),
+      mk(16, 'deaths', 'D', 'int'),
+      mk(17, 'total_damage', 'DMG', 'int'),
+      mk(18, 'utility_damage', 'Util', 'int'),
+      mk(19, 'mvps', 'MVPs', 'int'),
     ],
-    // Fresh rows for alice only — bob's metric cells render the honest
-    // dash (the unit IS covered, he just has no row) — plus the roster
-    // triple's K/D seed rows for BOTH players (the halves render their
-    // stored values; bob's missing assists row keeps dashing his A).
+    // Fresh rows for alice only — bob's converted metric cells render
+    // the honest dash (the unit IS covered, he just has no row) — plus
+    // the roster triple's K/D seed rows for BOTH players (the halves
+    // render their stored values; bob's missing assists row keeps
+    // dashing his A) and both players' count rows for the unified
+    // columns (alice's render, mirroring the raw fixture).
     getMetricValuesForMatch: [
       { metricId: 1, subjectKey: 'A', value: 4, n: 13 },
       { metricId: 2, subjectKey: 'A', value: 90, n: 13 },
@@ -1748,8 +1781,14 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
       { metricId: 16, subjectKey: 'A', value: 12, n: 13 },
       { metricId: 15, subjectKey: 'B', value: 18, n: 13 },
       { metricId: 16, subjectKey: 'B', value: 13, n: 13 },
+      { metricId: 17, subjectKey: 'A', value: 2450, n: 13 },
+      { metricId: 18, subjectKey: 'A', value: 150, n: 13 },
+      { metricId: 19, subjectKey: 'A', value: 3, n: 13 },
+      { metricId: 17, subjectKey: 'B', value: 1980, n: 13 },
+      { metricId: 18, subjectKey: 'B', value: 120, n: 13 },
+      { metricId: 19, subjectKey: 'B', value: 2, n: 13 },
     ],
-    getMetricComputeState: Array.from({ length: 14 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
+    getMetricComputeState: Array.from({ length: 19 }, (_, i) => ({ metricId: i + 1, state: 'fresh' })),
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
@@ -1759,7 +1798,7 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
   const fixed = ['Name', 'Team', 'K', 'D', 'DMG', 'Util', 'MVPs', 'Score'];
   const converted = ['A', 'ADR', 'KAST%', 'HS%', 'K/D', 'KDA', '2K', '3K', '4K', '5K', 'Open K', 'Open D', 'Trade', 'Streak'];
   check(
-    'the fixed block leads in store order (no converted column inside it)',
+    'the scoreboard leads with Name/Team/Score and the unified count columns in their FORMER slots (byte-identical header order)',
     JSON.stringify(labels.slice(0, fixed.length)) === JSON.stringify(fixed),
     JSON.stringify(labels),
   );
@@ -1769,10 +1808,13 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
     JSON.stringify(labels.slice(fixed.length)),
   );
   check(
-    'exactly those fourteen headers wear m5-mth (fixed ones never do)',
-    ths.filter((t) => t.classList.contains('m5-mth')).length === 14 &&
-      ths.slice(0, fixed.length).every((t) => !t.classList.contains('m5-mth')),
-    String(ths.filter((t) => t.classList.contains('m5-mth')).length),
+    'the unified count headers wear m5-mth like every metric (positions 2–6), the true statics (Name/Team/Score) never do — nineteen metric headers total (5 unified + 14)',
+    ths.filter((t) => t.classList.contains('m5-mth')).length === 19 &&
+      !ths[0].classList.contains('m5-mth') &&
+      !ths[1].classList.contains('m5-mth') &&
+      !ths[7].classList.contains('m5-mth') &&
+      ths.slice(2, 7).every((t) => t.classList.contains('m5-mth')),
+    `m5=${ths.filter((t) => t.classList.contains('m5-mth')).length} first8=${ths.slice(0, 8).map((t) => `${labelOf(t)}:${t.classList.contains('m5-mth') ? 'y' : 'n'}`).join(',')}`,
   );
   const rowsOfSb = [...root.querySelectorAll('.data-table.scoreboard tbody tr')];
   const alice = rowsOfSb.find((r) => (r.querySelector('.name-cell')?.textContent || '').includes('alice'));
@@ -1857,26 +1899,28 @@ console.log('K. Scoreboard order: the fixed block first, then the fourteen conve
     bobKda ? `${bobKda.textContent.trim()} title=${bobKda.getAttribute('title')}` : 'no cell',
   );
 
-  // N4 wire-through: the VISIBILITY pref removes a fixed column from
-  // THIS view — the ordering dialog's `metric_hidden_match` written
-  // through the same kvstore read (readHidden) — while every other
-  // column keeps its position. The default (absent key) is the
-  // fixed-leads composition the pins above assert.
+  // N4 wire-through (unification shape, 2026-11-18): the VISIBILITY pref
+  // removes a live fixed column from THIS view — the ordering dialog's
+  // `metric_hidden_match` written through the same kvstore read
+  // (readHidden) — while every other column keeps its position. The
+  // fixture also carries the STALE '@K' key (retired with the
+  // unification): it must mark NOTHING — K is a metric column now, so
+  // it stays exactly where it was (the by-construction drop). Team (the
+  // live key) drops. The default (absent key) is the fixed-leads
+  // composition the pins above assert.
   root = await showMatch(
-    { ...d, getPref: (key) => (key === 'metric_hidden_match' ? ['@K'] : undefined) },
+    { ...d, getPref: (key) => (key === 'metric_hidden_match' ? ['@K', '@Team'] : undefined) },
     { routeTab: 'Scoreboard' },
   );
   await sleep();
   {
     const hiddenLabels = [...root.querySelectorAll('.data-table.scoreboard thead th')].map(labelOf);
     check(
-      'N4: hiding K drops exactly the K column — the other fixed stats and every metric keep their place',
-      !hiddenLabels.includes('K') &&
-        JSON.stringify(hiddenLabels.slice(0, 7)) ===
-          JSON.stringify([
-            'Name', 'Team', 'D', 'DMG', 'Util', 'MVPs', 'Score',
-          ]) &&
-        JSON.stringify(hiddenLabels.slice(7)) === JSON.stringify(converted),
+      'N4: hiding Team drops exactly the Team column; the stale @K key marks nothing (K keeps its slot) — every metric keeps its place',
+      !hiddenLabels.includes('Team') &&
+        hiddenLabels.includes('K') &&
+        JSON.stringify(hiddenLabels.filter((l) => l !== 'Team')) ===
+          JSON.stringify(['Name', 'K', 'D', 'DMG', 'Util', 'MVPs', 'Score', ...converted]),
       JSON.stringify(hiddenLabels),
     );
   }
@@ -2089,9 +2133,9 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
     );
   }
   check(
-    'one row per stat, in the COLUMN order (fixed block minus Name/Team — w13d dropped KDA and Opening K/D)',
+    'one row per stat, in the COLUMN order (the unified counts in their former slots + the default-pinned slot metrics; Name/Team excluded)',
     JSON.stringify(statLabels()) ===
-      JSON.stringify(['K', 'D', 'DMG', 'Util', 'MVPs', 'Score']),
+      JSON.stringify(['K', 'D', 'DMG', 'Util', 'MVPs', 'Score', 'A', 'ADR', 'Open K']),
     JSON.stringify(statLabels()),
   );
   check(
@@ -2100,7 +2144,7 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
       (tr) => tr.querySelector('th[scope="row"]') && tr.children[0].tagName === 'TH',
     ) &&
       table().querySelectorAll('tbody .th-sort').length === 0 &&
-      table().querySelectorAll('tbody tr').length === 6,
+      table().querySelectorAll('tbody tr').length === 9,
     `rows=${table().querySelectorAll('tbody tr').length} sortbtns=${table().querySelectorAll('tbody .th-sort').length}`,
   );
   check(
@@ -2272,9 +2316,8 @@ console.log('M. Scoreboard sort chain + transpose (owner C14)');
   clickEl(transposeBtn());
   await sleep();
   check(
-    'the pinned metrics follow the fixed block as stat rows, in the metricorder sequence',
-    JSON.stringify(statLabels()) ===
-      JSON.stringify(['K', 'D', 'DMG', 'Util', 'MVPs', 'Score', 'One', 'Two']),
+    'the pinned metrics follow the remaining fixed stat row (Score — this fixture\'s catalog carries no count metric) in the metricorder sequence',
+    JSON.stringify(statLabels()) === JSON.stringify(['Score', 'One', 'Two']),
     JSON.stringify(statLabels()),
   );
   check(
@@ -2408,11 +2451,31 @@ console.log('O. ME0/M1: Overview top-card SELECTION (identity seeds: tie-break, 
   // 50/50) and an ALL-ZERO metric set (entry opens, MVPs all 0).
   // MIGRATED 2026-11-18 (metrics Phase 7): the cards read the five
   // identity seeds' stored rows — the retired maxBy/first-row rule is
-  // gone. Here the two rules AGREE (alice's key 'A' < bob's 'B', and
-  // alice is also the first view row), so every value below is the
-  // pre-migration string re-sourced from the seed; scenario (1b)
-  // separates the rules. bob wins Best ADR outright (90 > 80) either
-  // way.
+  // gone. Here the two WHO rules AGREE (alice's key 'A' < bob's 'B', and
+  // alice is also the first view row); scenario (1b) separates them.
+  // bob wins Best ADR outright (90 > 80) either way.
+  //
+  // NUMBER source pin (owner item 4, 2026-11-18): cardSeededRead
+  // patches the twins' stored rows so they DELIBERATELY disagree with
+  // the raw roster fields behind them (the identity rows still argmax
+  // over the raw fixture — WHO is unchanged): a card printing the raw
+  // column (10/2/3 · 90.0 · 50 · 0 · 0) fails; the stored metric row
+  // (11/3/4 · 91.5 · 55 · 3 · 7) shows. The numbers below ARE that pin.
+  const CARD_SEED_PATCH = Object.freeze({
+    kills: { A: 11 },
+    deaths: { A: 3 },
+    assists: { A: 4 },
+    adr: { B: 91.5 },
+    utility_damage: { A: 55 },
+    entry_kills: { A: 3 },
+    mvps: { A: 7 },
+  });
+  const seedNameById = new Map(SEED_DEFS.map((d) => [d.id, d.name]));
+  const cardSeededRead = (matchID, ids) =>
+    dataFor(13).getMetricValuesForMatch(matchID, ids).map((r) => {
+      const v = CARD_SEED_PATCH[seedNameById.get(r.metricId) || '']?.[r.subjectKey];
+      return v === undefined ? r : { ...r, value: v };
+    });
   const tied = {
     ...dataFor(13),
     getScoreboard: [
@@ -2420,29 +2483,30 @@ console.log('O. ME0/M1: Overview top-card SELECTION (identity seeds: tie-break, 
       { steamId: 'B', name: 'bob', side: 't', kills: 10, deaths: 4, assists: 1, adr: 90, mvps: 0, utilityDamage: 50, entryKills: 0 },
       { steamId: 'C', name: 'carol', side: 'ct', kills: 5, deaths: 9, assists: 2, adr: 40, mvps: 0, utilityDamage: 10, entryKills: 0 },
     ],
+    getMetricValuesForMatch: cardSeededRead,
   };
   root = await showMatch(tied, { routeTab: '' });
   await sleep();
   check('M1: five top cards render on Overview', topCards(root).length === 5, String(topCards(root).length));
   check(
-    'M1: Top fragger tie (10/10) → the identity seed picks alice (key ASC: A < B), K/D/A composed from her line',
-    val(card(root, 'Top fragger')) === '10/2/3' && who(card(root, 'Top fragger')).includes('alice'),
+    'M1: Top fragger tie (10/10) → the identity seed picks alice (key ASC: A < B), K/D/A from her STORED rows (11/3/4 — the raw line 10/2/3 never prints)',
+    val(card(root, 'Top fragger')) === '11/3/4' && who(card(root, 'Top fragger')).includes('alice'),
     `${val(card(root, 'Top fragger'))} / ${who(card(root, 'Top fragger'))}`,
   );
   check(
-    'M1: Best ADR → the outright max (bob 90), fmt1 display',
-    val(card(root, 'Best ADR')) === '90.0' && who(card(root, 'Best ADR')).includes('bob'),
+    'M1: Best ADR → the outright max (bob), number from the STORED adr row (91.5 — raw 90.0 never prints)',
+    val(card(root, 'Best ADR')) === '91.5' && who(card(root, 'Best ADR')).includes('bob'),
     `${val(card(root, 'Best ADR'))} / ${who(card(root, 'Best ADR'))}`,
   );
   check(
-    'M1: Most util tie (50/50) → the identity seed picks alice (key ASC)',
-    val(card(root, 'Most util')) === '50' && who(card(root, 'Most util')).includes('alice'),
+    'M1: Most util tie (50/50) → the identity seed picks alice (key ASC); the number is her STORED row (55 — raw 50 never prints)',
+    val(card(root, 'Most util')) === '55' && who(card(root, 'Most util')).includes('alice'),
     `${val(card(root, 'Most util'))} / ${who(card(root, 'Most util'))}`,
   );
   check(
-    'M1: all-zero Entry opens / Most MVPs → the identity seed picks alice (key ASC), value 0',
-    val(card(root, 'Entry opens')) === '0' && who(card(root, 'Entry opens')).includes('alice') &&
-      val(card(root, 'Most MVPs')) === '0' && who(card(root, 'Most MVPs')).includes('alice'),
+    'M1: all-zero Entry opens / Most MVPs → the identity seed picks alice (key ASC); STORED rows 3 / 7 print (the raw all-zeros never do)',
+    val(card(root, 'Entry opens')) === '3' && who(card(root, 'Entry opens')).includes('alice') &&
+      val(card(root, 'Most MVPs')) === '7' && who(card(root, 'Most MVPs')).includes('alice'),
     `${val(card(root, 'Entry opens'))}/${val(card(root, 'Most MVPs'))} — ${who(card(root, 'Entry opens'))}/${who(card(root, 'Most MVPs'))}`,
   );
 
@@ -2452,7 +2516,8 @@ console.log('O. ME0/M1: Overview top-card SELECTION (identity seeds: tie-break, 
   // tie; the seed's ratified rule is player-key ASC and keys are
   // alice 'A' < bob 'B', so alice wins each tie and each all-zero
   // metric here — the moved expectation IS the pin. Best ADR still
-  // goes to the outright max (bob, 90 > 80).
+  // goes to the outright max (bob). The stored-row patches ride along:
+  // the numbers stay the SEED values (11/3/4 · 91.5 · 55 · 3 · 7).
   const reversed = {
     ...dataFor(13),
     getScoreboard: [
@@ -2460,20 +2525,21 @@ console.log('O. ME0/M1: Overview top-card SELECTION (identity seeds: tie-break, 
       { steamId: 'A', name: 'alice', side: 'ct', kills: 10, deaths: 2, assists: 3, adr: 80, mvps: 0, utilityDamage: 50, entryKills: 0 },
       { steamId: 'C', name: 'carol', side: 'ct', kills: 5, deaths: 9, assists: 2, adr: 40, mvps: 0, utilityDamage: 10, entryKills: 0 },
     ],
+    getMetricValuesForMatch: cardSeededRead,
   };
   root = await showMatch(reversed, { routeTab: '' });
   await sleep();
   check(
-    'M1: reversed order — Top fragger tie (10/10, bob listed first) → the SEED wins with alice (key A < B), never the first row',
-    val(card(root, 'Top fragger')) === '10/2/3' && who(card(root, 'Top fragger')).includes('alice'),
+    'M1: reversed order — Top fragger tie (10/10, bob listed first) → the SEED wins with alice (key A < B), never the first row; her STORED K/D/A prints (11/3/4)',
+    val(card(root, 'Top fragger')) === '11/3/4' && who(card(root, 'Top fragger')).includes('alice'),
     `${val(card(root, 'Top fragger'))} / ${who(card(root, 'Top fragger'))}`,
   );
   check(
-    'M1: reversed order — Most util / all-zero Entry opens / Most MVPs also pick alice by key, Best ADR stays bob (90)',
-    val(card(root, 'Most util')) === '50' && who(card(root, 'Most util')).includes('alice') &&
-      val(card(root, 'Entry opens')) === '0' && who(card(root, 'Entry opens')).includes('alice') &&
-      val(card(root, 'Most MVPs')) === '0' && who(card(root, 'Most MVPs')).includes('alice') &&
-      val(card(root, 'Best ADR')) === '90.0' && who(card(root, 'Best ADR')).includes('bob'),
+    'M1: reversed order — Most util / all-zero Entry opens / Most MVPs also pick alice by key, Best ADR stays bob (stored 91.5)',
+    val(card(root, 'Most util')) === '55' && who(card(root, 'Most util')).includes('alice') &&
+      val(card(root, 'Entry opens')) === '3' && who(card(root, 'Entry opens')).includes('alice') &&
+      val(card(root, 'Most MVPs')) === '7' && who(card(root, 'Most MVPs')).includes('alice') &&
+      val(card(root, 'Best ADR')) === '91.5' && who(card(root, 'Best ADR')).includes('bob'),
     ['Most util', 'Entry opens', 'Most MVPs', 'Best ADR']
       .map((l) => `${l}=${val(card(root, l))}/${who(card(root, l))}`)
       .join(' · '),
@@ -2737,11 +2803,17 @@ console.log('R. seeded fixed cells: seed value + Formula title, the five states,
 
   {
     const cell = cellAt('K', 'bob');
+    const kTh = ths[idxOf('K')];
     check(
-      'the seeded K cell renders the stored seed value (18) with the Formula tooltip from the seed doc',
+      'the unified K column renders the stored seed value (18); the cell wears the metric n= title and the seed Formula rides the header ⓘ (unification — K is a metric column now)',
       !!cell && cell.textContent.trim() === '18' &&
-        (cell.getAttribute('title') || '').startsWith('Formula: sum(player_stats.kills)'),
-      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+        cell.getAttribute('title') === 'K — sample size n=13' &&
+        (kTh?.querySelector('.m5-ib')?.getAttribute('title') || '').startsWith(
+          'Formula: sum(player_stats.kills)',
+        ),
+      cell
+        ? `${cell.textContent.trim()} title=${cell.getAttribute('title')} ib=${kTh?.querySelector('.m5-ib')?.getAttribute('title')}`
+        : 'no cell',
     );
   }
   {

@@ -301,6 +301,12 @@
   // fixed-label table, ids namespaced 'raw:<field>'). Recorded values
   // are not metrics: they carry no definition, no formula and no
   // compute state, which is what makes them addable here at all.
+  // Since the unification of 2026-11-18 the list is EXACTLY Score —
+  // every other recorded-value stat whose seed exists offers through
+  // the metric catalog instead (one entity per stat: a `raw:kills` id
+  // beside the `kills` metric was the duplicate the owner retired; a
+  // stale raw pick in a saved selection drops by construction, as
+  // `raw:kda` did).
   const rawOffer = rawItems('match');
 
   // appendixItems — THE ordered item universe: the composed sequence's

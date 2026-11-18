@@ -142,6 +142,14 @@ var matchListSort = map[string]string{
 // alias and the computed ratio died with it. There is no `kd` key
 // either: the K/D column left the scoreboard with the report
 // read-back (dogfooding W4).
+//
+// `kills` is EXEMPT from the "no raw reads of seeded stats" rule
+// (unification ruling, 2026-11-18 — R3): this is the fetch's ROW
+// ORDER for the id-keyed GetScoreboard call (Match.svelte's kills-DESC
+// seed), not a displayed statistic — the K cell and the K column's own
+// sort both read the `kills` metric rows on the frontend. A row order
+// the store must express in SQL has no metric equivalent to lean on,
+// so ps.kills stays here and nowhere else.
 var scoreboardSort = map[string]string{
 	"kills": "ps.kills",
 }

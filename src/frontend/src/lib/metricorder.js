@@ -13,20 +13,35 @@
 // same kvstore, absent ⇒ nothing hidden. A THIRD dialog pref (w25) sits
 // beside them without joining either table: STARTS_TRANSPOSED_KEY, the
 // scoreboard's opening shape (boolean, absent ⇒ off) — see its const
-// below for the placement ruling.
+// below for the placement ruling. And a THIRD TABLE (owner item 5,
+// 2026-11-18): the Match-overview card list carries its own pair —
+// ORDER_KEYS.overview + OVERVIEW_PINS_KEY (kvstore; the selection lives
+// HERE rather than in Builder's localStorage pins because this dialog
+// owns that table — its pin toggles write it directly, exactly like
+// writeHidden writes visibility).
 //
-// Composition (W6, 2026-11-16):  composedSequence = resolveOrder over
-// the FIXED stats AND the metrics, one merged entry list.
-//   - The fixed stats are first-class SEQUENCE entries under a
-//     namespace key ('@Name', '@K', '@Matches', '@Win%'): identity is
-//     the metric NAME and users may name a metric 'K', so the fixed
-//     side needs a namespace no metric name can hold (metric names are
-//     validated identifiers — the '@' prefix is theirs alone). They
-//     carry NEGATIVE default ranks, so an absent pref leads with the
-//     fixed block exactly as before and an EXISTING metric-name array
-//     re-inserts them ahead of every metric (today's rendering).
+// Composition (W6, 2026-11-16; unified 2026-11-18 — owner "fully
+// dogfooded" ruling):  composedSequence = resolveOrder over the FIXED
+// stats AND the metrics, one merged entry list.
+//   - The fixed stats that have NO metric twin are first-class
+//     SEQUENCE entries under a namespace key ('@Name', '@Team',
+//     '@Score'): identity is the metric NAME and users may name a
+//     metric anything, so the fixed side needs a namespace no metric
+//     name can hold (metric names are validated identifiers — the '@'
+//     prefix is theirs alone). Every count stat whose seed landed in
+//     the 2026-11-17 addendum (kills / deaths / total_damage /
+//     utility_damage / mvps, and the profile's career_matches /
+//     win_pct) LEFT this block for its metric entity — there is now
+//     exactly ONE "Kills" row in this sequence (the `kills` metric),
+//     never an '@K' twin beside it. They carry NEGATIVE default ranks
+//     (DEFAULT_RANKS), so an absent pref leads with the fixed block
+//     exactly as before and an EXISTING metric-name array re-inserts
+//     them ahead of every metric (today's rendering).
 //     No migration, no version marker: the first user move persists
-//     the full merged sequence (pre-release no-versioning policy).
+//     the full merged sequence (pre-release no-versioning policy);
+//     a stale '@K'-style key in a stored pref simply drops out of the
+//     universe on read (same by-construction drop as the retired
+//     `raw:kda` below).
 //   - A fixed stat's VISIBILITY is separate from its position: hidden
 //     entries stay in the sequence (and stay listed in the ordering
 //     dialog — the toggle never removes a row), they just do not
@@ -56,11 +71,27 @@ import { getPref, setPref, deletePref } from './services.js';
 export const ORDER_KEYS = Object.freeze({
   match: 'metric_order_match',
   profile: 'metric_order_profile',
+  overview: 'metric_order_overview',
 });
+
+// OVERVIEW_PINS_KEY — the Match-overview table's PIN SET (owner item 5,
+// 2026-11-18). The third table orders AND selects: a metric's card
+// shows on the match overview exactly when its name is in this set, and
+// the sequence above decides where. Placement ruling (AGENTS "State
+// placement"): survives a restart, not a link ⇒ kvstore (prefs.go
+// prefsMetricPinsOverviewKey), frontend-written through this module,
+// Go never consumes it — the same home as the order/hidden twins and
+// deliberately NOT Builder's localStorage pins: those are the
+// scoreboard/profile selections (Builder's rows pin there), while this
+// is the ordering dialog's own selection for its own table, written
+// beside its order key. ABSENT ⇒ DEFAULT_PINS.overview resolved by name
+// (a fresh install shows the default card set); PRESENT (even '[]') ⇒
+// the stored selection verbatim — the resolvePins rule unchanged.
+export const OVERVIEW_PINS_KEY = 'metric_pins_overview';
 
 // The VISIBILITY twin: which FIXED stats are hidden from their view.
 // Same routing, same storage rules, absent ⇒ nothing hidden. Namespaced
-// keys ('@K' …) — a metric can never be hidden here (metric visibility
+// keys ('@Team' …) — a metric can never be hidden here (metric visibility
 // stays pin-driven); these hold fixed-entry keys only.
 export const HIDDEN_KEYS = Object.freeze({
   match: 'metric_hidden_match',
@@ -87,6 +118,14 @@ export const STARTS_TRANSPOSED_KEY = 'scoreboard_starts_transposed';
 // converted columns; anything unranked (user/plugin metrics, not-yet
 // seeded names) has rank ∞ and enters in catalog order.
 //
+// UNIFICATION (owner, 2026-11-18): a metric rank may be NEGATIVE —
+// the seven count metrics that left the fixed block (the five scoreboard
+// counts here, career_matches / win_pct in the profile scope) keep the
+// exact negative ranks their '@' entries held, so an absent pref
+// resolves to the byte-identical pre-unification column/card order (the
+// fixed block led by negative ranks; these names now occupy those
+// slots). This is the ONE ranks table — no second "leading" table.
+//
 // Match: the fourteen scoreboard columns that render as metrics keep
 // their exact relative order — the original 23-column scoreboard's
 // positions: A #5 < ADR #6 < KAST% #7 < HS% #8 < K/D #9 < 2K #13 <
@@ -101,6 +140,14 @@ export const STARTS_TRANSPOSED_KEY = 'scoreboard_starts_transposed';
 // (rank ∞).
 export const DEFAULT_RANKS = Object.freeze({
   match: Object.freeze({
+    // The former '@'-entries' slots (byte-identical relative order:
+    // K -8 < D -7 < DMG -5 < Util -3 < MVPs -2, between Team -9 and
+    // Score -1): these metrics now LEAD the positive block below.
+    kills: -8,
+    deaths: -7,
+    total_damage: -5,
+    utility_damage: -3,
+    mvps: -2,
     assists: 1,
     adr: 2,
     kast: 3,
@@ -116,14 +163,17 @@ export const DEFAULT_RANKS = Object.freeze({
     trade_kills: 13,
     best_streak: 14,
   }),
-  // Profile: today's StatCards grid order (PlayerProfile.svelte) minus
-  // the cards that stay Go — Matches and Win% are fixed-block entries
-  // with their own negative ranks below. The σ half of "ADR ± σ"
-  // follows its mean; the Opening-duels rate takes the Opening duels
+  // Profile: today's StatCards grid order (PlayerProfile.svelte) —
+  // Matches and Win% are metric entries now (career_matches / win_pct,
+  // unification 2026-11-18) keeping their former fixed-block head
+  // slots as negative ranks. The σ half of "ADR ± σ" follows its
+  // mean; the Opening-duels rate takes the Opening duels
   // card's position and the Clutches card splits into its count then
   // its win-% sub (inferred-conversion W3a, Addendum A/I9 — both cards
   // left the grid for these rows).
   profile: Object.freeze({
+    career_matches: -2,
+    win_pct: -1,
     career_adr: 1,
     career_adr_sigma: 2,
     career_kd: 3,
@@ -135,6 +185,18 @@ export const DEFAULT_RANKS = Object.freeze({
     career_clutch_win_rate: 9,
     career_avg_enemies_flashed: 10,
     career_avg_util_damage: 11,
+  }),
+  // Overview (owner item 5, 2026-11-18): the card table's default order
+  // is exactly the shipped card row — Top fragger, Best ADR, Most util,
+  // Entry opens, Most MVPs. This scope has NO fixed entries (the
+  // universe is the identity metrics — overviewDefs below), so rank ∞
+  // (an unlisted identity metric) appends in catalog order.
+  overview: Object.freeze({
+    top_fragger: 1,
+    best_adr: 2,
+    most_util: 3,
+    entry_opens: 4,
+    most_mvps: 5,
   }),
 });
 
@@ -150,20 +212,31 @@ export const DEFAULT_RANKS = Object.freeze({
 // on plugin replace, names don't): the fixed stats are sequence
 // entries, never a selection.
 //
-// match = the fourteen always-on scoreboard columns: the four that
-// converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
+// match = the fourteen always-on scoreboard columns PLUS the five
+// count metrics that left the fixed block (unification, owner
+// 2026-11-18: kills/deaths/total_damage/utility_damage/mvps were
+// always-on columns as '@' entries — as metrics they render only when
+// pinned, so the absent-key default pins them). The fourteen: the four
+// that converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
 // moved (NOT trade_rate — today it is not a scoreboard column), plus
 // w13d's two (owner, 2026-11-16): kda — the scoreboard's KDA column
 // as a metric — and entry_deaths, which the comment this replaces kept
 // unpinned ONLY because it rendered inside the Opening K/D pair cell
 // (that cell is gone: both halves stand as their own columns now).
-// Instances that already saved a pins pref will NOT pick these two up:
-// a present key is the stored selection verbatim — pre-release, no
+// Instances that already saved a pins pref will NOT pick these five
+// up: a present key is the stored selection verbatim — pre-release, no
 // migration (re-pin by hand or clear the pref). profile = the eleven
-// rank-1..11 names above (the always-on card set: the nine dogfood
-// cards plus W3a's Opening-duels rate and Clutches count).
+// rank-1..11 names below (the always-on card set: the nine dogfood
+// cards plus W3a's Opening-duels rate and Clutches count) PLUS
+// career_matches / win_pct — the two cards that lived as the fixed
+// pair, same present-key caveat as the match five.
 export const DEFAULT_PINS = Object.freeze({
   match: Object.freeze([
+    'kills',
+    'deaths',
+    'total_damage',
+    'utility_damage',
+    'mvps',
     'assists',
     'adr',
     'kast',
@@ -180,6 +253,8 @@ export const DEFAULT_PINS = Object.freeze({
     'best_streak',
   ]),
   profile: Object.freeze([
+    'career_matches',
+    'win_pct',
     'career_adr',
     'career_adr_sigma',
     'career_kd',
@@ -192,59 +267,63 @@ export const DEFAULT_PINS = Object.freeze({
     'career_avg_enemies_flashed',
     'career_avg_util_damage',
   ]),
+  // Overview (owner item 5, 2026-11-18): the shipped card set — the five
+  // M1 identity builtins, same absent-vs-present rule as the other
+  // scopes (a present key is the stored selection verbatim — an
+  // instance that saved one before this table existed re-pins its cards
+  // once; pre-release no migration).
+  overview: Object.freeze([
+    'top_fragger',
+    'best_adr',
+    'most_util',
+    'entry_opens',
+    'most_mvps',
+  ]),
 });
 
-// FIXED_BLOCK — the Go-rendered stats' {key, name, short, field}
-// entries in their canonical order, MINUS the entries that convert
-// (design §1.5). This is THE label table (W13b): ONE entry carries
-// both label shapes — `name` is the FULL name the ordering dialog
-// title, the aria labels and the Reports appendix/export read, `short`
-// is the compact header Match's SCORE_COLS mirrors (pinned in
-// econ-tables.dom.mjs) and the ordering dialog's mono slot shows beside
-// the full name when the two differ. `key` is the '@'-namespaced
-// sequence identity and `field` the PlayerStatsRow JSON field a raw
-// report item reads (null = no raw counterpart) — RAW_FIELDS derives
-// from it below, never a second list. `key` and `short` are byte-
-// identical to the pre-W13b flat label, so every stored pref, every
-// FIXED_RANKS key, every data-mo-name and colByLabel key keeps working
-// with zero migration — identity never churns (pre-release no-versioning
-// policy).
+// FIXED_BLOCK — the stats that stay FIXED sequence entries because
+// they have NO metric twin: the descriptor columns (Name/Team —
+// identity, not statistics) and Score. This is THE label table (W13b):
+// ONE entry carries both label shapes — `name` is the FULL name the
+// ordering dialog title, the aria labels and the Reports
+// appendix/export read, `short` is the compact header Match's SCORE_COLS
+// mirrors (pinned in econ-tables.dom.mjs) and the ordering dialog's
+// mono slot shows beside the full name when the two differ. `key` is
+// the '@'-namespaced sequence identity and `field` the PlayerStatsRow
+// JSON field a raw report item reads (null = no raw counterpart) —
+// RAW_FIELDS derives from it below, never a second list. `key` and
+// `short` are byte-identical to the pre-W13b flat label, so every
+// stored pref, every FIXED_RANKS key, every data-mo-name and colByLabel
+// key keeps working with zero migration — identity never churns
+// (pre-release no-versioning policy).
 //
-// match: SCORE_COLS (Match.svelte) minus every entry that renders as
-// a metric — adr/kast/hs_pct/kd (dogfood W2), A, 2K–5K, Open K,
-// Trade, Streak (the W2a swap) and, per the owner ruling of 2026-11-16
-// (w13d), KDA (now the seeded `kda` metric) and Opening K/D (its
-// entry_kills / entry_deaths halves stand as their own metric columns
-// now) — leaving the eight entries whose `short`s are Name, Team, K,
-// D, DMG, Util, MVPs, Score (their `name`s read Kills / Deaths /
-// Damage / Utility damage where the two differ). (The Rnds row left
-// with the owner's C14 scoreboard change — the column is gone from
-// SCORE_COLS too, so this list stays its mirror; rounds played itself
-// remains a store column (still legal inside an expression, but no
-// seeded metric reads it: ADR and Entry% divide by the match's rounds
-// since w16).)
-// profile: the StatCards grid (PlayerProfile.svelte) minus every card
-// that renders as a metric — ADR ± σ, K/D, HS%, KAST%, Trade rate, the
-// Clutches win-% sub, Avg enemies flashed and Avg util damage (the
-// dogfood swap) plus, in the inferred-conversion W3a swap, the
-// Opening-duels card and the Clutches COUNT (both became Career
-// metrics rows: career_opening_rate / career_clutches) — leaving
-// Matches and Win% (raw / N2).
+// UNIFICATION (owner, 2026-11-18 — "fully dogfooded": kills in metric
+// ordering comes from the kills metric, kills on the scoreboard comes
+// from the kills metric — ONE entity): the count entries that had
+// metric twins LEFT the block — @K/@D/@DMG/@Util/@MVPs (seeds kills /
+// deaths / total_damage / utility_damage / mvps, count addendum
+// 2026-11-17) and the profile pair @Matches/@Win% (career_matches /
+// win_pct). Their scoreboard values had read the seeds since W36
+// (SEEDED_FIXED); now the ENTITIES unify too: one "Kills" row in the
+// ordering dialog, one Kills column on the scoreboard, one Kills offer
+// in Reports — never an '@' twin beside the metric. A stale '@K'-style
+// key in a stored order/hidden pref drops out of the universe on read
+// (by construction, exactly as `raw:kda` did); the raw `field` mapping
+// survives ONLY for Score — the last recorded-value column (no seed:
+// owner ruling, a game-internal composite whose sum has no honest
+// reading; R3 of the unification wave). (The Rnds row left earlier with
+// the owner's C14 scoreboard change — the column is gone from SCORE_COLS
+// too, so this list stays its mirror.)
+// profile: EMPTY — Matches and Win% are the career_matches / win_pct
+// metric entries now (their cards read the stored seed rows since the
+// owner ruling of 2026-11-17; the entities followed on 2026-11-18).
 export const FIXED_BLOCK = Object.freeze({
   match: Object.freeze([
     Object.freeze({ key: '@Name', name: 'Name', short: 'Name', field: null }),
     Object.freeze({ key: '@Team', name: 'Team', short: 'Team', field: null }),
-    Object.freeze({ key: '@K', name: 'Kills', short: 'K', field: 'kills' }),
-    Object.freeze({ key: '@D', name: 'Deaths', short: 'D', field: 'deaths' }),
-    Object.freeze({ key: '@DMG', name: 'Damage', short: 'DMG', field: 'totalDamage' }),
-    Object.freeze({ key: '@Util', name: 'Utility damage', short: 'Util', field: 'utilityDamage' }),
-    Object.freeze({ key: '@MVPs', name: 'MVPs', short: 'MVPs', field: 'mvps' }),
     Object.freeze({ key: '@Score', name: 'Score', short: 'Score', field: 'score' }),
   ]),
-  profile: Object.freeze([
-    Object.freeze({ key: '@Matches', name: 'Matches', short: 'Matches', field: null }),
-    Object.freeze({ key: '@Win%', name: 'Win%', short: 'Win%', field: null }),
-  ]),
+  profile: Object.freeze([]),
 });
 
 // The key → entry index (keys are unique across scopes — the '@'
@@ -273,26 +352,25 @@ export function fixedKeys(scope) {
 }
 
 // FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
-// scope, in canonical order (−10 … −1 across the scoreboard's eight
-// surviving columns — w13d, owner 2026-11-16, removed @KDA and
-// @Opening K/D and left every remaining key's value untouched, since
-// only the sign and the relative order ever matter; −2/−1 for the
-// profile pair). Negative so the fixed block leads the default
-// sequence exactly as today's code prefix did, and so a stored
-// metric-name-only array re-inserts every fixed entry ahead of every
-// metric (composition note above). Metric ranks stay positive.
+// FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
+// scope, in canonical order (@Name -10 … @Score -1 — the descriptors
+// and Score now, after the unification of 2026-11-18 moved the five
+// count entries to DEFAULT_RANKS as metrics holding those same slots;
+// w13d, owner 2026-11-16, earlier removed @KDA and @Opening K/D and
+// left every remaining key's value untouched, since only the sign and
+// the relative order ever matter). Negative so the fixed block leads
+// the default sequence exactly as today's code prefix did, and so a
+// stored metric-name-only array re-inserts every fixed entry ahead of
+// every metric (composition note above). The metrics that took the
+// vacated slots carry their negative ranks in DEFAULT_RANKS — ONE
+// ranking spine across both tables, never a second table.
 export const FIXED_RANKS = Object.freeze({
   match: Object.freeze({
     '@Name': -10,
     '@Team': -9,
-    '@K': -8,
-    '@D': -7,
-    '@DMG': -5,
-    '@Util': -3,
-    '@MVPs': -2,
     '@Score': -1,
   }),
-  profile: Object.freeze({ '@Matches': -2, '@Win%': -1 }),
+  profile: Object.freeze({}),
 });
 
 // RAW_FIELDS — the fixed stats that ALSO have a raw scoreboard field,
@@ -305,14 +383,16 @@ export const FIXED_RANKS = Object.freeze({
 // the fixed block minus this table is exactly the entries with no raw
 // counterpart or no numeric cell:
 //   Name / Team       — descriptors, not values
-//   Matches / Win%    — profile-scope descriptors (no scoreboard row)
-// w13d (owner, 2026-11-16): @KDA and @Opening K/D left the fixed block
-// (KDA is the seeded `kda` metric now; Opening K/D's halves are the
-// entry_kills / entry_deaths columns), so `raw:kda` left this table
-// with them. A stale pick of it in a saved selection drops SILENTLY BY
-// CONSTRUCTION: a selection never resolves items — `picked` filters the
+// UNIFICATION (owner, 2026-11-18): the count stats left the fixed
+// block for their metrics, so this table is now EXACTLY {Score}. A
+// stale `raw:kills` / `raw:deaths` / `raw:totalDamage` /
+// `raw:utilityDamage` / `raw:mvps` pick in a saved report selection
+// drops SILENTLY BY CONSTRUCTION (the precedent w13d set for
+// `raw:kda`): a selection never resolves items — `picked` filters the
 // ITEM UNIVERSE (appendixItems) by the selection, so an id no universe
 // carries simply never matches, no writer and no migration needed.
+// Those five stats offer through the metric catalog instead — one
+// entity per stat, never a raw twin beside it.
 export const RAW_FIELDS = Object.freeze(
   Object.fromEntries(
     Object.values(FIXED_BLOCK)
@@ -326,9 +406,13 @@ export const RAW_FIELDS = Object.freeze(
 // {id: 'raw:<field>', label, kind: 'raw', field}. The id is a STRING
 // (namespaced) so a raw pick can never collide with a metric id in the
 // selection set; `label` is the entry's FULL name from the ONE label
-// table (W13b — the appendix chips and the exported headings read
-// "Kills", never the bare short). Only a scope with raw counterparts
+// table (W13b — the appendix chips and the exported headings read the
+// full name, never the bare short). Only a scope with raw counterparts
 // (match — the Reports appendix is a per-match document) yields any.
+// Post-unification (owner, 2026-11-18) match yields EXACTLY one item —
+// `raw:score`: every other recorded-value stat whose seed exists is a
+// metric offer (the count addendum's seeds), and Score stays raw by
+// owner ruling (no seed).
 export function rawItems(scope) {
   const out = [];
   for (const e of FIXED_BLOCK[scope] || []) {
@@ -344,12 +428,26 @@ export function isRawId(id) {
   return typeof id === 'string' && id.startsWith('raw:');
 }
 
+// overviewDefs(defs) — THE Match-overview universe (owner item 5,
+// 2026-11-18): match-scope metrics that RECORDED a leader — the
+// identity format (`format: 'identity'`, the engine's argmax rows,
+// doc.go "Identity values"). The criterion: a card can name the
+// metric's leading player + that player's stored value only when the
+// metric carries a value_key — a numeric metric records no winner, so
+// offering it here could only fabricate one. Every reader of the
+// 'overview' scope filters through THIS function — never a second
+// universe rule.
+export function overviewDefs(defs) {
+  return (defs || []).filter((d) => d && d.scope === 'match' && d.format === 'identity');
+}
+
 // HIDE_EXEMPT — THE visibility exemption (owner ruling, W6): the
 // scoreboard's Name column is structural (the row identity every other
 // cell hangs off), so it is the ONE fixed stat a user may not hide;
-// the profile scope has no Name and both of its fixed stats are
-// hideable. A stored hidden key outside this predicate never hides
-// anything — the exemption wins on read, no writer filter needed.
+// the profile scope has no fixed stats at all since the 2026-11-18
+// unification (its two cards are metric entries — visibility is
+// pin-driven there). A stored hidden key outside this predicate never
+// hides anything — the exemption wins on read, no writer filter needed.
 const HIDE_EXEMPT = Object.freeze({
   match: Object.freeze([FIXED_PREFIX + 'Name']),
   profile: Object.freeze([]),
@@ -461,8 +559,13 @@ export function resolveOrder(saved, catalog, scope = 'match') {
 // views' historical filters). Metric-only by contract — the Reports
 // appendix and the trend picker are metric-only surfaces; a surface
 // that renders fixed stats too composes through composedSequence.
+// scope 'overview' filters through overviewDefs (the identity
+// universe — the ONE rule, no fixed entries to strip).
 export function inSequence(scope, saved, defs) {
-  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+  const scoped =
+    scope === 'overview'
+      ? overviewDefs(defs)
+      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const fixed = new Set(fixedKeys(scope));
   return resolveOrder(saved, scoped.map((d) => d.name), scope)
@@ -503,7 +606,10 @@ export function pinnedInSequence(scope, saved, defs, pinNames) {
 export function composedSequence(scope, saved, defs, hiddenKeys = []) {
   const fixed = new Set(fixedKeys(scope));
   const hidden = new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
-  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+  const scoped =
+    scope === 'overview'
+      ? overviewDefs(defs)
+      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const out = [];
   for (const n of resolveOrder(saved, scoped.map((d) => d.name), scope)) {
@@ -575,6 +681,29 @@ export function writeHidden(scope, keys) {
 // resetHidden(scope) — delete the key ⇒ nothing hidden again.
 export function resetHidden(scope) {
   return Promise.resolve(deletePref(HIDDEN_KEYS[scope]));
+}
+
+// readOverviewPins() — the overview table's PIN SET (OVERVIEW_PINS_KEY):
+// null when the key is ABSENT (the reader's null marks "apply the
+// default card set" — resolvePins below owns absent-vs-present; every
+// caller passes the result straight through it).
+export function readOverviewPins() {
+  return Promise.resolve(getPref(OVERVIEW_PINS_KEY)).then((v) =>
+    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
+  );
+}
+
+// writeOverviewPins(names) — persist the selection verbatim (kvstore
+// AutoSave — durable immediately). The ordering dialog's overview
+// section pin toggles are the ONLY writers.
+export function writeOverviewPins(names) {
+  return Promise.resolve(setPref(OVERVIEW_PINS_KEY, [...names]));
+}
+
+// resetOverviewPins() — delete the key ⇒ the default card set again
+// (paired with resetOrder('overview') in the dialog's Reset).
+export function resetOverviewPins() {
+  return Promise.resolve(deletePref(OVERVIEW_PINS_KEY));
 }
 
 // parseStoredPins(raw) — THE pins READ: the localStorage getItem string
