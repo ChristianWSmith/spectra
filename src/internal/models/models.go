@@ -165,6 +165,18 @@ const (
 	EventRoundEnd   = "round_end"
 	EventConnect    = "player_connect"
 	EventDisconnect = "player_disconnect"
+	// EventBotTakeover — a control re-assumption: a connected human's
+	// controller takes a bot's pawn over (the per-frame
+	// demoinfocsControls edge in extract.handlers — the same read the
+	// position sink routes through, so the row's tick IS the frame of
+	// the identity handoff). Written for the replay's coverage predicate
+	// (playercard.js presentAt: coverage spans the human's disconnect →
+	// re-assumption — owner report 2026-11-18). Records stay records:
+	// a plain typed event beside connect/disconnect. Deliberately NOT
+	// sourced from the events.BotTakenOver game event: it never fires
+	// for reconnect-recovery (ground truth on the owner's demo
+	// 2026-11-18 — zero BotTakenOver events across the whole parse).
+	EventBotTakeover = "bot_takeover"
 )
 
 // Sound-event kinds (sound_events.kind) — the classification of one player

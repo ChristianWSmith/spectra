@@ -34,6 +34,49 @@ func demoinfocsControls(c *common.Player) *common.Player {
 	return c.ControlledBot()
 }
 
+// ctlEdge is one human's observed control state at a FrameDone: the bot
+// key their controller currently holds (0 = not controlling) plus the
+// names the bot_takeover record carries.
+type ctlEdge struct {
+	bot     uint64
+	key     uint64
+	taker   string
+	botName string
+}
+
+// controlEdges — THE control re-assumption detector (owner report
+// 2026-11-18: coverage spans a human's disconnect → RE-ASSESSEMENT, and
+// the game-event events.BotTakenOver never fires for reconnect-recovery,
+// so the per-frame demoinfocsControls state IS the signal). Pure: given
+// the previous and current per-taker maps (taker key → bot key, 0 = not
+// controlling), it returns every CURRENTLY-controlling taker whose bot
+// key differs from the last observed state:
+//   - 0/new-key → edge (first re-assumption — also a late joiner who
+//     was never in `prev` and controls on first sight after seeding);
+//   - botA → botB → edge (control moved to another body);
+//   - bot → 0 or unchanged → NO edge (losing control or continuing is
+//     not a re-assumption).
+//
+// The caller seeds `prev` on the first frame without calling this — a
+// controller already controlling when observation starts is a state, not
+// a transition — and replaces `prev` with `cur` after every comparison,
+// so a taker absent from `cur` (a disconnect) drops out entirely: a
+// later re-sighting while controlling edges again (`!ok`), never
+// compares equal across an absence.
+func controlEdges(prev, cur map[uint64]ctlEdge) []ctlEdge {
+	var out []ctlEdge
+	for k, e := range cur {
+		if e.bot == 0 {
+			continue
+		}
+		if p, ok := prev[k]; !ok || p.bot != e.bot {
+			e.key = k
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // pairIdentity is THE takeover pairing rule — the pure core
 // activeIdentity delegates to, with the control read injected so plain
 // fake players can pin it (demoinfocs' entity-backed reads are nil-safe

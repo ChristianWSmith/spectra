@@ -51,7 +51,7 @@ var tableNotes = map[string]string{
 // columnNotes maps table → column → note.
 var columnNotes = map[string]map[string]string{
 	"events": {
-		"kind":           "taxonomy: kill|damage|blind|bomb_*|weapon_drop|weapon_pickup|grenade_*|round_*|player_connect|player_disconnect",
+		"kind":           "taxonomy: kill|damage|blind|bomb_*|weapon_drop|weapon_pickup|grenade_*|round_*|player_connect|player_disconnect|bot_takeover",
 		"attacker":       "SteamID64 of the actor ('' = world/no actor)",
 		"victim":         "SteamID64 of the affected player",
 		"assisted_flash": "kill was flash-assisted (victim blinded by the assister's flash)",

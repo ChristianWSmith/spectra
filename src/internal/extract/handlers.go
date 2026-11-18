@@ -382,6 +382,18 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// other per-round resets). targetBuf is reused across frames (the
 	// parse is sequential — MsgQueueBufferSize(0)).
 	targetBuf := make([]identityTarget, 0, 10)
+	// Control re-assumption edge (agg.botTakeover → models.EventBotTakeover
+	// rows — the replay's coverage-END signal; owner report 2026-11-18):
+	// every frame the control state of every participant is compared to
+	// the previous one through controlEdges (takeover.go — THE pure
+	// detector, pinned there). demoinfocsControls is the SAME read the
+	// position/state sinks route through, so the row's tick IS the
+	// identity handoff frame the position stream shows (91972 on the
+	// owner's demo — Rebel's last walking frame 91971, bvcket's first
+	// 91972). prevCtl persists across frames; the first FrameDone seeds
+	// it silently (state, not a transition).
+	prevCtl := map[uint64]ctlEdge{}
+	seedsCtl := false
 	p.RegisterEventHandler(func(events.FrameDone) {
 		// Same takeover routing as the position/state sinks: the held
 		// util of a life controlled through a bot is read from the
@@ -397,6 +409,35 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 				a.noteHeldUtil(playerKey(t.identity), wepName(w))
 			}
 		}
+		// The control edge: one pass over EVERY participant (All, not
+		// only Playing — the gate is demoinfocsControls' own IsConnected,
+		// the read the sinks use, so the row's tick and the position
+		// handoff can never disagree).
+		gs := p.GameState()
+		cur := map[uint64]ctlEdge{}
+		for _, c := range gs.Participants().All() {
+			if c == nil || c.IsBot {
+				continue // a bot never re-assumes control — the taker is human
+			}
+			e := ctlEdge{bot: 0, key: playerKey(c), taker: c.Name}
+			if bot := demoinfocsControls(c); bot != nil && bot != c {
+				e.bot = playerKey(bot)
+				e.botName = bot.Name
+			}
+			cur[e.key] = e
+		}
+		if seedsCtl {
+			for _, e := range controlEdges(prevCtl, cur) {
+				a.botTakeover(gs.IngameTick(), e.key, e.taker, e.bot, e.botName)
+			}
+		} else {
+			seedsCtl = true // first frame: state, not a transition
+		}
+		// prev = this frame's full state: a taker absent from `cur` (a
+		// disconnect) drops out, so a reconnect-while-controlling can
+		// never compare equal across the absence (controlEdges' !ok
+		// edges again on re-sighting).
+		prevCtl = cur
 	})
 
 	// item_pickup fires for EVERY acquisition — ground pickups AND buys
@@ -454,25 +495,17 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		a.disconnect(p.GameState().IngameTick(), playerKey(e.Player), e.Player.Name)
 	})
 
-	// bot_takeover: the reconnecting human takes the substitute bot's
-	// pawn over. Tick-accurate transition bookkeeping only (owner's
-	// 2026-11-17 takeover ruling — no user-visible output yet): the
-	// remap itself is resolved live from the controller props by
-	// activeIdentity/pairIdentity on every read, this log pins WHEN
-	// control changed hands (demoinfocs asserts the taker is a
-	// non-bot with IsControllingBot + ControlledBot at dispatch).
-	p.RegisterEventHandler(func(e events.BotTakenOver) {
-		if e.Taker == nil {
-			return
-		}
-		gs := p.GameState()
-		botKey, botName := uint64(0), ""
-		if bot := e.Taker.ControlledBot(); bot != nil {
-			botKey = playerKey(bot)
-			botName = bot.Name
-		}
-		a.botTakeover(gs.IngameTick(), playerKey(e.Taker), e.Taker.Name, botKey, botName)
-	})
+	// bot_takeover → control re-assumption (models.EventBotTakeover).
+	// The events.BotTakenOver GAME EVENT was retired as a source here
+	// (owner's 2026-11-18 report wave): it never fires for reconnect-
+	// recovery — ground truth on the owner's demo, zero BotTakenOver
+	// events across a whole parse — so it cannot end the replay's
+	// coverage window when the owner can see control change hands. THE
+	// signal is the per-frame demoinfocsControls edge in the FrameDone
+	// handler below: the exact read the position/state sinks route
+	// through, so the recorded tick IS the frame the identity handoff
+	// lands on (91972 on the owner's demo — Rebel's last walking frame
+	// 91971, bvcket's first 91972).
 
 	// Player chat is read from SayText2, NOT from events.ChatMessage:
 	// SayText2 carries MsgName — the ONLY channel signal (all vs team) —

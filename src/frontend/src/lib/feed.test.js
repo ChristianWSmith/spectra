@@ -54,6 +54,7 @@ const {
   runFeedJob,
   mergeSourceRows,
   composeFeedRows,
+  feedDisplayRows,
   entrySelection,
   landmarkExportRows,
 } = await import('./replay/feed.js');
@@ -499,6 +500,55 @@ test('landmarkExportRows flattens the feed into canonical columns', () => {
     landmarkExportRows([srow])[1],
     [640, 2, 'sound', 'footsteps', 'step', '', 'step · concrete', '', ''],
   );
+});
+
+// --- Disconnect-self-kill suppression (owner ruling 2026-11-18) --------------
+// The narrow dated exception to "event surfaces record what happened": a
+// kill row that IS a disconnect's World self-kill is a disconnect side
+// effect, not a death that happened — the LIST shows no such row (the
+// disconnect line beside it renders), for humans and bots alike, while
+// the composed rows and the export keep the record untouched
+// (selfkill.js — THE criterion).
+
+test('feedDisplayRows: the disconnect-self-kill artifact renders no row; the disconnect line stays', () => {
+  const kill = (id, tick, attacker, victim) =>
+    normalizeEvent(
+      { id, seq: id, tick, round: 1, kind: 'kill', attacker, attackerName: attacker, victim, victimName: victim, weapon: 'World' },
+      {},
+    );
+  const disc = (id, tick, who) =>
+    normalizeEvent({ id, seq: id, tick, round: 1, kind: 'player_disconnect', attacker: who, attackerName: who }, {});
+  const composed = [
+    kill(1, 50, '1', '1'), // the artifact — a human's disconnect self-kill
+    disc(2, 50, '1'),
+    kill(3, 55, '9', '9'), // the artifact — a BOT's disconnect self-kill
+    disc(4, 55, '9'),
+    kill(5, 60, '2', '2'), // genuine world-hazard self-kill, NO disconnect
+    kill(6, 70, '3', '4'), // an ordinary kill
+  ];
+  const connRows = [
+    { kind: 'player_disconnect', tick: 50, attacker: '1' },
+    { kind: 'player_disconnect', tick: 55, attacker: '9' },
+  ];
+  const shown = feedDisplayRows(composed, connRows);
+  assert.deepEqual(
+    shown.map((r) => `${r.kind}@${r.tick}`),
+    ['player_disconnect@50', 'player_disconnect@55', 'kill@60', 'kill@70'],
+    'both artifact kills drop (human AND bot — per-player), the disconnect lines and every real death stay',
+  );
+  // Records stay records: the composed rows are not mutated and the CSV
+  // export still carries the raw artifact row.
+  assert.equal(composed.length, 6, 'feedDisplayRows never mutates the composed feed');
+  const exported = landmarkExportRows(composed);
+  assert.ok(
+    exported.some((r) => r[4] === 'kill' && r[0] === 50),
+    'the export keeps the raw disconnect-self-kill row',
+  );
+  // No disconnect evidence → nothing may be dropped (fail toward
+  // SHOWING, never toward hiding a real death): a filter whose
+  // connRows read failed lands here.
+  assert.equal(feedDisplayRows(composed, []).length, 6, 'an absent set suppresses nothing');
+  assert.equal(feedDisplayRows(undefined, connRows).length, 0, 'an absent feed never throws');
 });
 
 // --- The composer invariant (fs-scan) ---------------------------------------

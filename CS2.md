@@ -284,7 +284,15 @@ at the end of the section.
   objects stay connected (human controller gets `m_bControllingBot`;
   `m_hOriginalControllerOfCurrentPawn` → the bot's controller; the bot is
   kicked later, sometimes only at the next round boundary — not always
-  same-tick as the reconnect). Game events split identity across
+  same-tick as the reconnect). **The `bot_takeover` GAME EVENT does NOT
+  fire for this** (ground truth 2026-11-18: a full demoinfocs parse of a
+  demo with disconnect → bot cover → reconnect → re-takeover dispatched
+  ZERO `events.BotTakenOver` while the controller-props read
+  (`IsControllingBot` + connected) flipped exactly at the observed
+  position-handoff tick) — control re-assumption must be read from the
+  CONTROLLER PROPS per frame (spectra `extract.controlEdges` → the
+  `bot_takeover` event row it writes), never waited on from the game
+  event. Game events split identity across
   resolution domains: **userid-keyed** events (`player_death`,
   `player_hurt`) name the reconnecting human; **pawn-keyed** events
   (`bomb_pickup` carries only `userid_pawn`) name the BOT; and the human
@@ -302,6 +310,7 @@ at the end of the section.
   `bombPickup`), `datatables.go` (`getOrCreatePlayerFromControllerEntity`,
   `applyControllerConnectionState`), `common/player.go`
   (`ControlledBot`, `PlayerPawnEntity`) read 2026-11-17;
+  spectra repro-demo full parse — zero BotTakenOver dispatch (2026-11-18);
   https://cs2.poggu.me/dumped-data/game-events/ (`bot_takeover`,
   `bomb_pickup.userid_pawn`; 2026-11-09). *Game-side m_hPlayerPawn
   behavior (the stale-corpse read path) and whose account (human

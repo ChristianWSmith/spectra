@@ -57,6 +57,7 @@
     feedJobs,
     runFeedJob,
     composeFeedRows,
+    feedDisplayRows,
     entrySelection,
     fetchEntryRow,
     landmarkExportRows,
@@ -457,12 +458,14 @@
   // match has any (presence-zero matches keep this [] and their footsteps
   // stay silent), and pushed to the sfx engine beside rounds/landmarks.
   let soundRows = [];
-  // Connection rows (player_connect / player_disconnect), fetched once
+  // Connection rows (player_connect / player_disconnect / bot_takeover —
+  // presence AND control re-assumption), fetched once
   // per match beside the world dataset: the roster keeps a slot for a player who
   // disconnects mid-demo AND for a bot that joins late, so without them
   // the columns grow a phantom card (the nuke demo's sixth CT) — and for
   // a BOT these rows are the only evidence that it is covering a
-  // disconnected human (playercard.js presentAt). Fail-soft like
+  // disconnected human (playercard.js presentAt; the coverage window's
+  // end is the bot_takeover row, owner report 2026-11-18). Fail-soft like
   // the world load: any failure lands [] and every HUMAN card stays visible;
   // a bot card then stays hidden, because the replay exception needs
   // positive evidence (bots fail toward NOT listed).
@@ -604,10 +607,19 @@
     }),
   );
 
+  // The LIST's rendered rows: composed rows minus the disconnect-self-kill
+  // artifact (feed.js feedDisplayRows — THE rule, owner ruling 2026-11-18:
+  // a disconnect shows JUST its disconnect line, human or bot). The list
+  // renders listRows; the composed feedRows stay raw underneath for the
+  // CSV/JSON exports and the ?sel= deep link (records stay records).
+  const listRows = $derived(feedDisplayRows(feedRows, connRows));
+
   // The feed count as the rail toggle prints it ("185", "185+" while a
   // page is still loading) — the ONE spelling: the expanded header's
   // number and the collapsed handle's title/aria-label both use it.
-  const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
+  // Counts what the LIST shows (listRows), so the printed number never
+  // includes a row the list suppresses.
+  const feedCountLabel = $derived(String(listRows.length) + (hasMore ? '+' : ''));
 
   // WORLD dataset rows — world.rows alias (world.js owns the fetch AND
   // the normalization: normalizeWorld takes no filter, applies no claim
@@ -4243,7 +4255,7 @@
 
       {#if !selected}
       <ul class="landmark-list" aria-label={S.replay.eventsListAria}>
-        {#each feedRows as row (row.key)}
+        {#each listRows as row (row.key)}
           <LandmarkRow
             {row}
             {nav}
