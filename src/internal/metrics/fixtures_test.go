@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the ONE HUNDRED AND TWO schema-seeded builtins
+// builtinSeed maps the ONE HUNDRED AND FOUR schema-seeded builtins
 // (schema.sql —
 // name/expr/scope/subject/partition/format/short_name/denominator are
 // LOCKED to the baseline seed by this table) onto their hand-computed
@@ -52,7 +52,10 @@ func seededStore(t *testing.T) *store.Store {
 // 72 match + 20 profile — subject=match, format=identity; the
 // partition addendum (plan §8 (M5/M6 rows), 2026-11-17) then adds the
 // five side- and five map-partitioned profile seeds — ONE HUNDRED AND
-// TWO / 72 match + 30 profile — partition written explicitly.)
+// TWO / 72 match + 30 profile — partition written explicitly; the
+// weapon addendum (plan §8 (M7 row) behind the M7 gate, 2026-11-17)
+// finally adds the two EXACT weapon columns — ONE HUNDRED AND FOUR /
+// 72 match + 32 profile — the damage column escalated with the gate.)
 // interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
@@ -923,6 +926,31 @@ var builtinSeed = []struct {
 		scope: "profile", partition: "map", format: "float2", shortName: "", denominator: "",
 		interpretation: "kills per death on the map (2i/i = 2)",
 		rows:           24, wantAll: 2, wantN: 1, wantDims: threeMapDims,
+	},
+	// ---- weapon addendum (plan §8 (M7 row) behind the M7 gate,
+	// 2026-11-17): the two columns the golden gate proved EXACTLY equal
+	// to the fold. Corpus structure: every player fires one kill weapon
+	// per round-half mirrored across teams (alice/eve ak47+usp,
+	// bob/frank awp, carol/grace m4a1, dave/heidi deagle — 12 kills per
+	// match per group × 3), every player ALSO carries a flashbang group
+	// (blind/damage events only → 0 kills beside N — the group is real,
+	// the filter counted nothing), and the headshot flag lands on the
+	// ak47/usp/m4a1 kills only (awp/deagle none). N varies per group
+	// (that group's event rows — 216/180/36/18 here), so these entries
+	// pin values + dims + labels and leave N to the group structure.
+	{
+		name: "weapon_kills", expr: "from events: count(where kind = 'kill' and attacker != victim)",
+		scope: "profile", partition: "weapon", format: "int", shortName: "", denominator: "",
+		interpretation: "enemy kills per weapon (12 per match per kill group × 3; flashbang groups carry 0 kills)",
+		rows:           24, wantValues: []float64{36.0, 0.0, 36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 36.0, 0.0, 36.0, 0.0, 36.0, 0.0, 36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 36.0, 0.0, 36.0, 0.0}, wantLabels: "Alice,Alice,Alice,Bob,Bob,Bob,Carol,Carol,Carol,Dave,Dave,Dave,Eve,Eve,Eve,Frank,Frank,Frank,Grace,Grace,Grace,Heidi,Heidi,Heidi",
+		wantDims: []string{"ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang", "ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang"},
+	},
+	{
+		name: "weapon_headshots", expr: "from events: count(where kind = 'kill' and headshot = 1 and attacker != victim)",
+		scope: "profile", partition: "weapon", format: "int", shortName: "", denominator: "",
+		interpretation: "enemy headshot kills per weapon (ak47/usp/m4a1 headshot, awp/deagle none in the corpus)",
+		rows:           24, wantValues: []float64{36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0, 36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0}, wantLabels: "Alice,Alice,Alice,Bob,Bob,Bob,Carol,Carol,Carol,Dave,Dave,Dave,Eve,Eve,Eve,Frank,Frank,Frank,Grace,Grace,Grace,Heidi,Heidi,Heidi",
+		wantDims: []string{"ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang", "ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang"},
 	},
 }
 

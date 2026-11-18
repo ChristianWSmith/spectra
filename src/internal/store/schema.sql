@@ -831,7 +831,7 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly one hundred and two —
+-- THE builtins, seeded (see header): exactly one hundred and four —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
@@ -846,10 +846,14 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- interpretation recorded in its doc). The identity addendum (5
 -- match rows in their own INSERT below — plan §8 (M1 identity row),
 -- 2026-11-17) carries format=identity, the first seeded rows whose
--- value is a KEY, and the partition addendum (10 rows in their own
+-- value is a KEY, the partition addendum (10 rows in their own
 -- INSERT below — plan §8 (M5/M6 rows), 2026-11-17: the Sides and
--- Maps tables' stored twins, every row partition='side' or
--- 'map' — 72 match + 30 profile across the whole set). The eighth
+-- Maps tables' stored twins, every row partition='side' or 'map') and
+-- the weapon addendum (2 rows — plan §8 (M7 row) behind the M7 gate,
+-- 2026-11-17: kills/headshots matched the fold EXACTLY over the golden
+-- demo while the damage column's structural gap escalated, so the
+-- weapon set ships the two exact columns — 72 match + 32 profile
+-- across the whole set). The eighth
 -- match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1496,6 +1500,27 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from player_stats: ratio(sum(kills), sum(deaths))',
  'profile', 'player', 'map', 'float2',
  'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death on that map, addressed per player, partitioned by map — no deaths → 0 beside N; N = matches on the map.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- Weapon addendum (metrics expansion §8 M7 row, 2026-11-17): TWO
+-- profile-scope weapon-partitioned builtins — the M7 gate
+-- (internal/integration/profile_weapons_gate_test.go) proved these two
+-- columns EXACTLY equal to the retired JSON fold over the golden demo
+-- (every human × weapon), so they migrate; the damage column's fold
+-- diverges by the HP-cap replay + team/post-match gates (escalated —
+-- no seed, the weapons table keeps its fold until that resolves).
+-- Same INSERT OR IGNORE add-on path; Formula-first docs, subject +
+-- partition stated, tier-2 length (AGENTS doc rule).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('weapon_kills', 'Weapon kills', '',
+ 'from events: count(where kind = ''kill'' and attacker != victim)',
+ 'profile', 'player', 'weapon', 'int',
+ 'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('weapon_headshots', 'Weapon headshots', '',
+ 'from events: count(where kind = ''kill'' and headshot = 1 and attacker != victim)',
+ 'profile', 'player', 'weapon', 'int',
+ 'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One
