@@ -273,9 +273,10 @@ check(
   q(root, '.pc-stats')?.textContent,
 );
 check(
-  'stats row title documents the exact formula',
+  'stats row title documents the exact formula (enemy damage only — owner ruling 2026-11-17)',
   /counted rounds started/.test(q(root, '.pc-stats')?.getAttribute('title') || '') &&
-    /friendly fire/.test(q(root, '.pc-stats')?.getAttribute('title') || ''),
+    /enemy damage only/.test(q(root, '.pc-stats')?.getAttribute('title') || '') &&
+    !/includes friendly fire/.test(q(root, '.pc-stats')?.getAttribute('title') || ''),
   q(root, '.pc-stats')?.getAttribute('title'),
 );
 check('no C4 cell when the inventory carries no bomb', !q(root, '.pc-c4'));

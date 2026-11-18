@@ -36,11 +36,25 @@
 //     death,
 //   - assists: assister set, ≠ victim, cross-team, !assistedFlash,
 //   - deaths: every death of the player (no side gate),
-//   - damage: ALL damage attributed to the player — the canonical fold
-//     `dmg[e.Attacker] += e.Dmg` has NO side gate, so friendly fire
-//     counts (do NOT "fix" it),
-//   - ADR = Σdamage ÷ number of counted rounds STARTED at/before the
-//     playhead; 0 rounds → adr is null (rendered "—", never 0).
+//   - damage: enemy damage ONLY — same-side damage (friendly fire) is
+//     skipped, gated with the same parity rule as the backend stamp
+//     (extract's sameSide / the events.same_side column): both sides
+//     known AND equal → skip; an unknown side on either end never
+//     matches, so it counts as ENEMY (owner ruling 2026-11-17: damage
+//     stats differentiate enemy damage; FF stays an accounting quantity
+//     inside expressions/filters, never a surfaced stat),
+//   - ADR = Σenemy damage ÷ number of counted rounds STARTED at/before
+//     the playhead; 0 rounds → adr is null (rendered "—", never 0).
+//
+// TRANSIENT DRIFT (owner sequencing, until the queued analytics wave):
+// the Sides card's stored PlayerRound DMG still folds ALL attributed
+// damage — internal/analytics/rounds.go's damage line gains the same
+// side gate in that wave, at which point both folds state the identical
+// enemy-only rule. Until then the two disagree in the OPPOSITE
+// direction from before this ruling: they used to agree on
+// FF-inclusive while the stored ADR seeds were already enemy-only;
+// now this playhead fold agrees with the stored ADR and the rounds.go
+// fold is the FF-inclusive one.
 //
 // Pure (no DOM, no services, no globals): node-tested by
 // src/lib/livestats.test.js. sideAt is injected so the module stays a
@@ -129,7 +143,19 @@ function foldEvent(e, et, byNumber, sideAt, disc, acc) {
     if (vic) bump(deaths, vic);
   } else if (e.kind === 'damage') {
     const atk = String(e.attacker || '');
-    if (atk) addDmg(dmg, atk, Number(e.dmg) || 0);
+    if (!atk) return;
+    const vic = String(e.victim || '');
+    // Same-side gate — owner ruling 2026-11-17: damage stats
+    // differentiate enemy damage, friendly fire is not damage dealt on
+    // any scoreboard. Parity with the backend stamp (events.same_side,
+    // extract.agg.hurt): skip only when BOTH sides are known and equal;
+    // an unknown side on either end never matches (JS sameSide mirrors
+    // Go's a != "" && a == b) and therefore counts as ENEMY — a strict
+    // known-and-different gate would zero a side-less corpus and
+    // desynchronize from total_damage. Victimless rows have no side to
+    // compare and keep counting (backend: victim side unknown → 0).
+    if (vic && sameSide(side(atk, et, sideAt), side(vic, et, sideAt))) return;
+    addDmg(dmg, atk, Number(e.dmg) || 0);
   }
 }
 
@@ -204,9 +230,10 @@ function emit(acc, started, steamIds) {
   for (const [id, n] of acc.kills) out.get(id).k = n;
   for (const [id, n] of acc.deaths) out.get(id).d = n;
   for (const [id, n] of acc.assists) out.get(id).a = n;
-  // ADR per player: their damage (friendly fire included) over the
-  // counted rounds started so far. With 0 started rounds every adr stays
-  // null — the card renders "—", never a fake 0.
+  // ADR per player: their ENEMY damage (same-side hits excluded by the
+  // damage gate above — owner ruling 2026-11-17) over the counted rounds
+  // started so far. With 0 started rounds every adr stays null — the
+  // card renders "—", never a fake 0.
   if (started > 0) {
     for (const id of out.keys()) out.get(id).adr = (acc.dmg.get(id) || 0) / started;
   }

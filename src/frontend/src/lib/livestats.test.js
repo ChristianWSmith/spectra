@@ -3,8 +3,9 @@
 // fold (internal/analytics/rounds.go PlayerRounds): counted rounds only,
 // enemy-only kills (unknown side permissive), NO self-kill kill credit,
 // disconnect-time World self-kills excluded from every stat, cross-team
-// non-flash assists, every death, ALL damage (friendly fire included),
-// ADR over the counted rounds STARTED at/before the playhead — for BOTH
+// non-flash assists, every death, ENEMY-ONLY damage (same-side friendly
+// fire excluded — owner ruling 2026-11-17), ADR over the counted rounds
+// STARTED at/before the playhead — for BOTH
 // entry points: the pure liveStats and the incremental cursor the view
 // drives per tick (the cursor is pinned to the pure fold's output, row
 // order included).
@@ -129,18 +130,37 @@ test('attacker === victim never earns kill credit (unknown sides included)', () 
   assert.equal(out.get('X').d, 1, 'with no disconnect row it is still a death');
 });
 
-test('damage folds ALL attributed damage — friendly fire included', () => {
+test('damage folds ENEMY damage only — same-side (friendly fire) excluded', () => {
+  // INVERTED (owner ruling 2026-11-17): friendly fire in damage stats "is
+  // a problem" — the playhead fold now excludes same-side damage with the
+  // backend's parity rule (events.same_side / extract.agg.hurt): skip only
+  // when BOTH sides are known and equal; an unknown side counts as ENEMY.
   const out = fold([
-    dmg({ attacker: 'A', victim: 'X', dmg: 30 }),
-    dmg({ attacker: 'A', victim: 'B', dmg: 12 }), // friendly fire — canonical fold has NO side gate
-    dmg({ attacker: 'C', victim: 'X', dmg: 8 }),
+    dmg({ attacker: 'A', victim: 'X', dmg: 30 }), // enemy (ct → t) — counted
+    dmg({ attacker: 'A', victim: 'B', dmg: 12 }), // friendly fire (ct → ct) — EXCLUDED
+    dmg({ attacker: 'C', victim: 'X', dmg: 8 }), // enemy — counted
   ]);
-  // ADR = damage ÷ counted rounds started (rounds 1 and 2 started by
-  // tick 1500 → 2), so 42/2 and 8/2.
-  assert.equal(out.get('A').adr, 42 / 2);
+  // ADR = enemy damage ÷ counted rounds started (rounds 1 and 2 started by
+  // tick 1500 → 2), so 30/2 and 8/2 — the FF row adds nothing.
+  assert.equal(out.get('A').adr, 30 / 2, 'friendly fire must not reach ADR');
   assert.equal(out.get('C').adr, 8 / 2);
   assert.equal(out.get('X').adr, 0, 'no damage dealt is a real 0, not unknown');
   assert.equal(out.get('A').k, 0, 'damage never fabricates a kill');
+
+  // Parity half: an UNKNOWN side on either end never matches sameSide, so
+  // the damage still counts as enemy (a strict known-and-different gate
+  // would zero a side-less corpus).
+  const unknown = fold([dmg({ attacker: 'A', victim: '?', dmg: 20 })], {
+    sideAt: () => '',
+  });
+  assert.equal(unknown.get('A').adr, 20 / 2, 'unknown sides count as enemy');
+  const half = fold([dmg({ attacker: 'A', victim: '?', dmg: 20 })], {
+    sideAt: (id) => (id === 'A' ? 'ct' : ''),
+  });
+  assert.equal(half.get('A').adr, 20 / 2, 'one unknown side is enough — still enemy');
+  // …and a victimless attributed row has no side to compare: it counts.
+  const noVictim = fold([dmg({ attacker: 'A', dmg: 4 })], { sideAt: () => 'ct' });
+  assert.equal(noVictim.get('A').adr, 4 / 2, 'no victim side → not same-side → counted');
 });
 
 test('counted rounds only: knife/warmup/unknown-round rows are dropped', () => {
@@ -218,7 +238,8 @@ test('defensive inputs never throw', () => {
 // through), same ADR float. The fixtures below deliberately include the
 // awkward rows (warmup/knife/unknown rounds, a bad tick, an assister
 // flash, friendly fire) so the equivalence is pinned on the rules, not
-// just on the happy path.
+// just on the happy path. (The FF row is now EXCLUDED by the damage gate
+// — both entry points run the same fold, so the equivalence still holds.)
 
 const SWEEP_ROUNDS = [
   { number: -2, startTick: -5000 }, // legacy knife row
