@@ -821,6 +821,26 @@ user decision, not a normalization.
 
 ## 9. What PLAN.md must carry from this step
 
+> **OWNER RULINGS (2026-11-18) — override anything below they conflict with:**
+>
+> 1. **Formula display = SINGLE FIELD** (the two-field recommendation in
+>    decisions 3 and 9 is REJECTED): the stored formula **is** the expanded
+>    SQL; the Formula tooltip and the editor show the stored formula; there is
+>    no `expr`-vs-`canonical_sql` split. Wave-B consequences: sugar input still
+>    expands at save; seed expressions in `schema.sql` normalize to their
+>    expansion at Open so every stored row carries one spelling (dedupe
+>    holds); §2.2's backfill becomes that normalization. The authored sugar in
+>    `schema.sql` remains the authoring source of record in git.
+> 2. **Freshness precision = FULL NOW** (the conservative fallback in the
+>    deferral table below is REJECTED): the blanket `rule_version` axis lift
+>    for fact-only metrics ships in the same wave as rule 5; the pin updates
+>    ride that wave. **Owner note: analysis rules will get converted to the
+>    metrics system, so the axis question is moot as architecture** — treat
+>    `rule_version` freshness as transitional: it shrinks to unconverted
+>    Go-side-rule-stored outputs and eventually dies; freshness converges on
+>    the touched-table-set model. The deferral table's rule_version row and
+>    §6.3 are read with this note.
+
 ### Decisions made here (carry as settled, with their pins-to-write)
 
 1. **Rule-3 derivation ladder + declared-pool fallback** (§1.0): fetch → Go
