@@ -13,7 +13,7 @@
   import { fmtMoney, fmtMetric } from '../fmt.js';
   import { replayHash, entryLoopSpan } from '../nav.js';
   import { buildHash } from '../router.js';
-  import { teamKeyAt, winnerTeamKey } from '../sideparity.js';
+  import { winnerTeamKey } from '../sideparity.js';
   import { roundStartTick, roundEndTick, separatorFlags } from '../rounds.js';
   import { lossPips } from '../econ.js';
   import { listedPlayers } from '../players.js';
@@ -75,13 +75,16 @@
   const lossInferredCT = $derived(rows.some((r) => r.inferredCT));
   const lossInferredT = $derived(rows.some((r) => r.inferredT));
 
-  // The pistol and winner-gap CARDS read their stored metric rows (the
-  // builtins pistol_hold / avg_equip_gap — plan §8 M8 rows, seeded over
-  // the next() round window and the diff() row difference): name →
-  // {value, format} or null when the catalog lacks the seed / the row
-  // is not fresh / the read fails — the honest dash, never a locally
-  // recomputed number (the value computation retired with this
-  // migration; its oracle lives in internal/metrics'
+  // The four summary CARDS read their stored metric rows: pistol/gap
+  // (the builtins pistol_hold / avg_equip_gap — plan §8 M8 rows,
+  // seeded over the next() round window and the diff() row
+  // difference) and force/lost (team_force_wins / team_force_rounds /
+  // lost_equip / team_lost_equip — the view-aggregate relocation, ME8
+  // exception audit: the last view-computed card numbers). name →
+  // {format, rows} or absent when the catalog lacks the seed / no row
+  // is fresh / the read fails — the honest dash, never a locally
+  // recomputed number (the value computations retired with these
+  // migrations; their oracles live in internal/metrics'
   // econ_equivalence_test). THE canonical read pair: listMetrics to
   // resolve the seed names, then the ONE getMetricValuesForMatch call —
   // same pattern as the scoreboard and Reports.
@@ -91,7 +94,14 @@
     listMetrics()
       .then((defs) => {
         const byName = new Map((defs || []).map((d) => [d && d.name, d]));
-        const wanted = ['pistol_hold', 'avg_equip_gap']
+        const wanted = [
+          'pistol_hold',
+          'avg_equip_gap',
+          'team_force_wins',
+          'team_force_rounds',
+          'lost_equip',
+          'team_lost_equip',
+        ]
           .map((n) => byName.get(n))
           .filter((d) => d);
         if (!wanted.length) return undefined;
@@ -99,24 +109,54 @@
           if (!live) return;
           const out = {};
           for (const d of wanted) {
-            const row = (values || []).find((v) => v.metricId === d.id);
-            out[d.name] = row ? { value: row.value, format: d.format } : null;
+            out[d.name] = {
+              format: d.format,
+              rows: (values || []).filter((v) => v.metricId === d.id),
+            };
           }
           cardMetrics = out;
         });
       })
       .catch(() => {
-        // A failed read leaves the slots at null → the dash (never a
+        // A failed read leaves the slots absent → the dash (never a
         // fabricated value); the main load's error banner still owns
         // the view-level failure indication.
       });
     return () => (live = false);
   });
 
-  // Sides swap at halftime, so a side never names a team: every per-team
-  // rollup below resolves each round's side through the canonical
-  // side-parity helper (teamKeyAt), keyed by the team's final side —
-  // the same key the display names and identity colors use.
+  // One metric's MATCH-subject stored row (subjectKey '') or null — the
+  // dash gate every match-subject card value uses.
+  function matchRow(name) {
+    const m = cardMetrics[name];
+    if (!m) return null;
+    const row = m.rows.find((v) => v.subjectKey === '');
+    return row ? { value: row.value, format: m.format } : null;
+  }
+
+  // One metric's TEAM-subject stored values keyed by team key
+  // ('ct'/'t'); null unless BOTH teams' rows are present — a
+  // half-present pair is unknown, never half-rendered (absent =
+  // unknown, never 0).
+  function teamValues(name) {
+    const m = cardMetrics[name];
+    if (!m) return null;
+    const out = {};
+    for (const row of m.rows) out[row.subjectKey] = row.value;
+    return 'ct' in out && 't' in out ? out : null;
+  }
+
+  // fmtStored renders one stored row through its format tag — the
+  // honest dash when the row is absent.
+  const fmtStored = (row) => (row ? fmtMetric(row.value, row.format) : '—');
+
+  // Sides swap at halftime, so a side never names a team: the cards'
+  // per-team values read stored rows keyed by the canonical
+  // side-parity teamKeyAt stamp (SaveExtracted/Compute write it — the
+  // same key the display names and identity colors use; the retired
+  // rollups' oracle recomputes it in internal/metrics'
+  // econ_equivalence_test). This switch still feeds the curve's era
+  // splits and the round winner names below.
   const sideSwitches = $derived(match?.sideSwitches || 0);
 
   // Side-switch boundary per row (index-aligned with `rows`): the
@@ -152,20 +192,15 @@
     return ct === t ? '' : ct > t ? 'ct' : 't';
   });
 
-  // Summary math (all deterministic sums/ratios over the stored rows —
-  // badges per PRD §6.1; formulas live in each card's title). The
-  // PISTOL and GAP card VALUES no longer live here: they read their
-  // stored metric rows (cardMetrics above — plan §8 M8 seeds), and the
-  // retired view computation survives only as the oracle in
-  // internal/metrics' econ_equivalence_test.go. What remains are the
-  // DRILL anchors (which round each button opens — navigation state,
-  // not a rendered number: the first decided pistol round, the round
-  // holding the largest winner gap) and the force/lost cards' own
-  // aggregates.
+  // Summary math: ONLY the DRILL anchors live here (which round each
+  // button opens — navigation state, not a rendered number: the first
+  // decided pistol round, the first force-buy round, the round holding
+  // the largest winner gap, the round holding the largest loser equip).
+  // Every card VALUE reads its stored metric rows (cardMetrics above —
+  // plan §8 M8 seeds for pistol/gap, the view-aggregate relocation for
+  // force/lost): the retired view computations survive only as the
+  // oracles in internal/metrics' econ_equivalence_test.
   const summary = $derived.by(() => {
-    const counted = rows.length;
-    const sw = sideSwitches;
-
     let firstPistol = 0;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -176,37 +211,16 @@
       break; // drill anchor: the FIRST decided pistol round, nothing more
     }
 
-    // Force buys, per TEAM: a side's force-buy round is a force-buy round
-    // of whichever team played that side in that round (a round both
-    // teams force-bought counts for each of them).
-    const force = { ct: { won: 0, total: 0 }, t: { won: 0, total: 0 } };
     let firstForce = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const forceSides = [];
-      if (r.classCT === 'force') forceSides.push('ct');
-      if (r.classT === 'force') forceSides.push('t');
-      for (const side of forceSides) {
-        const key = teamKeyAt(side, i, counted, sw);
-        if (!key) continue; // unknown side → no guessed team
-        force[key].total++;
-        if (side === 'ct' ? r.wonCT : r.wonT) force[key].won++;
-        if (!firstForce) firstForce = r.round;
-      }
-    }
-
-    // Gap drill anchor + lost equipment: the gap card's button opens the
-    // round holding the LARGEST winner gap (the title says so) — a
-    // per-row argmax over decided rounds, never a rendered value (the
-    // average reads the stored metric row). Lost equipment credits the
-    // TEAM that lost it.
     let gapRound = 0;
     let gapBest = -Infinity;
-    const lost = { ct: 0, t: 0 };
     let lostRound = 0;
     let lostBest = -Infinity;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      if (!firstForce && (r.classCT === 'force' || r.classT === 'force')) {
+        firstForce = r.round; // drill anchor: the FIRST force-buy round
+      }
       let win;
       let lose;
       let loserSide;
@@ -227,24 +241,51 @@
         gapRound = r.round;
       }
       const loserEquip = loserSide === 'ct' ? r.equipCT || 0 : r.equipT || 0;
-      const loserKey = teamKeyAt(loserSide, i, counted, sw);
-      if (loserKey) lost[loserKey] += loserEquip;
       if (loserEquip > lostBest) {
         lostBest = loserEquip;
         lostRound = r.round;
       }
     }
 
+    return { firstPistol, firstForce, gapRound, lostRound };
+  });
+
+  // The FORCE card's value/sub compose from the stored per-team COUNT
+  // rows (team_force_wins / team_force_rounds — every raw number is a
+  // stored row): the headline percent pools both teams' pairs, the
+  // sub-line shows each team's own. Composition rationale (the
+  // view-aggregate rule): the pooled ratio is pure presentation
+  // arithmetic over already-fetched stored rows and its formula rides
+  // the card title; a pooled RATIO seed deliberately does not exist
+  // because it cannot carry this card's dash — a zero denominator
+  // stores 0 beside N, indistinguishable from a real 0%. No rows
+  // (unanalyzed / not yet computed) → the honest dash for BOTH slots,
+  // never a fabricated 0/0; rows present with zero forces → the dash +
+  // "no force buys".
+  const forceCard = $derived.by(() => {
+    const won = teamValues('team_force_wins');
+    const rounds = teamValues('team_force_rounds');
+    if (!won || !rounds) return { value: '—', sub: '—' };
+    const ct = { won: won.ct, total: rounds.ct };
+    const t = { won: won.t, total: rounds.t };
+    const total = ct.total + t.total;
+    if (!total) return { value: '—', sub: S.economy.noForceBuys };
     return {
-      firstPistol,
-      force,
-      forceTotal: force.ct.total + force.t.total,
-      forceWon: force.ct.won + force.t.won,
-      firstForce,
-      gapRound,
-      lost,
-      lostTotal: lost.ct + lost.t,
-      lostRound,
+      value: Math.round((100 * (ct.won + t.won)) / total) + '%',
+      sub: `${names.ct} ${ct.won}/${ct.total} · ${names.t} ${t.won}/${t.total}`,
+    };
+  });
+
+  // The LOST card reads its stored twins (lost_equip headline total +
+  // team_lost_equip per-team halves) — fmtMoney over the stored
+  // values, the same rendering the retired sums produced.
+  const lostCard = $derived.by(() => {
+    const total = matchRow('lost_equip');
+    const teams = teamValues('team_lost_equip');
+    if (!total || !teams) return { value: '—', sub: '—' };
+    return {
+      value: fmtStored(total),
+      sub: `${names.ct} ${fmtMoney(teams.ct)} · ${names.t} ${fmtMoney(teams.t)}`,
     };
   });
 
@@ -339,7 +380,7 @@
     <div class="econ-summary stat-grid">
       <StatCard
         label={S.economy.pistolLabel}
-        value={cardMetrics.pistol_hold ? fmtMetric(cardMetrics.pistol_hold.value, cardMetrics.pistol_hold.format) : '—'}
+        value={fmtStored(matchRow('pistol_hold'))}
         sub={S.economy.pistolSub}
         cls={!summary.firstPistol ? 'no-drill' : ''}
         title={S.fill(S.economy.pistolTitle, { round: summary.firstPistol || '—' })}
@@ -350,12 +391,8 @@
 
       <StatCard
         label={S.economy.forceLabel}
-        value={summary.forceTotal
-          ? Math.round((100 * summary.forceWon) / summary.forceTotal) + '%'
-          : '—'}
-        sub={summary.forceTotal
-          ? `${names.ct} ${summary.force.ct.won}/${summary.force.ct.total} · ${names.t} ${summary.force.t.won}/${summary.force.t.total}`
-          : S.economy.noForceBuys}
+        value={forceCard.value}
+        sub={forceCard.sub}
         cls={!summary.firstForce ? 'no-drill' : ''}
         title={S.fill(S.economy.forceTitle, { round: summary.firstForce || '—' })}
         onclick={() => drill(summary.firstForce)}
@@ -365,7 +402,7 @@
 
       <StatCard
         label={S.economy.gapLabel}
-        value={cardMetrics.avg_equip_gap ? fmtMetric(cardMetrics.avg_equip_gap.value, cardMetrics.avg_equip_gap.format) : '—'}
+        value={fmtStored(matchRow('avg_equip_gap'))}
         sub={S.economy.gapSub}
         cls={!summary.gapRound ? 'no-drill' : ''}
         title={S.fill(S.economy.gapTitle, { round: summary.gapRound || '—' })}
@@ -376,8 +413,8 @@
 
       <StatCard
         label={S.economy.lostLabel}
-        value={fmtMoney(summary.lostTotal)}
-        sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
+        value={lostCard.value}
+        sub={lostCard.sub}
         cls={!summary.lostRound ? 'no-drill' : ''}
         title={S.fill(S.economy.lostTitle, { round: summary.lostRound || '—' })}
         onclick={() => drill(summary.lostRound)}
