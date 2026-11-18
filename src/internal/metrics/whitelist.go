@@ -33,7 +33,15 @@ var sourceColumns = map[string]map[string]bool{
 	"events": colSet(
 		"match_id", "seq", "tick", "round", "kind", "attacker", "victim",
 		"assister", "weapon", "headshot", "wallbang", "noscope",
-		"through_smoke", "attacker_blind", "assisted_flash", "distance",
+		"through_smoke", "attacker_blind",
+		// attacker_inair (added 2026-11-18, the Phase-8 audit): the
+		// payload-only midair kill flag sat in the DDL and the event DTO
+		// since 2026-11-08 but never reached this list — no dated
+		// decision excluded it (the sibling kill flags all whitelisted),
+		// so the omission was an oversight, not a rule. The guide's
+		// events column list grows with it (the list IS this whitelist).
+		"attacker_inair",
+		"assisted_flash", "distance",
 		"hitgroup", "dmg", "site", "pos_x", "pos_y", "pos_z",
 		// same_side (owner ruling 2026-11-17): the ingest-owned enemy-
 		// damage stamp the dmg_no_kill / kill_conversion seeds filter on.
