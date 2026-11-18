@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the ONE HUNDRED AND SIX schema-seeded builtins
+// builtinSeed maps the ONE HUNDRED AND SEVEN schema-seeded builtins
 // (schema.sql —
 // name/expr/scope/subject/partition/format/short_name/denominator are
 // LOCKED to the baseline seed by this table) onto their hand-computed
@@ -53,13 +53,16 @@ func seededStore(t *testing.T) *store.Store {
 // partition addendum (plan §8 (M5/M6 rows), 2026-11-17) then adds the
 // five side- and five map-partitioned profile seeds — ONE HUNDRED AND
 // TWO / 72 match + 30 profile — partition written explicitly; the
-// weapon addendum (plan §8 (M7 row) behind the M7 gate, 2026-11-17)
-// finally adds the two EXACT weapon columns — ONE HUNDRED AND FOUR /
-// 72 match + 32 profile — the damage column escalated with the gate;
-// the grammar addendum (plan §8 (M8 rows), 2026-11-17) finally lands
-// those two deferred M8 rows — ONE HUNDRED AND SIX / 74 match +
-// 32 profile — pistol_hold over the next() round window, avg_equip_gap
-// over the diff() row difference.)
+// weapon addendum (plan §8 (M7 row), 2026-11-17) finally adds the two
+// EXACT weapon columns — ONE HUNDRED AND FOUR / 72 match + 32 profile
+// — the damage column escalated with the gate; the grammar addendum
+// (plan §8 (M8 rows), 2026-11-17) then lands those two deferred M8
+// rows — ONE HUNDRED AND SIX / 74 match + 32 profile — pistol_hold
+// over the next() round window, avg_equip_gap over the diff() row
+// difference; the M7 weapon-damage flip (plan §8 (M7 row), 2026-11-18)
+// finally lands the third weapon column — ONE HUNDRED AND SEVEN /
+// 74 match + 33 profile — the capped_dmg ingest stamp closed the gate
+// and the damage column migrated.)
 // interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
@@ -958,6 +961,23 @@ var builtinSeed = []struct {
 		scope: "profile", partition: "weapon", format: "int", shortName: "", denominator: "",
 		interpretation: "enemy headshot kills per weapon (ak47/usp/m4a1 headshot, awp/deagle none in the corpus)",
 		rows:           24, wantValues: []float64{36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0, 36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0}, wantLabels: "Alice,Alice,Alice,Bob,Bob,Bob,Carol,Carol,Carol,Dave,Dave,Dave,Eve,Eve,Eve,Frank,Frank,Frank,Grace,Grace,Grace,Heidi,Heidi,Heidi",
+		wantDims: []string{"ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang", "ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang"},
+	},
+	// ---- M7 weapon-damage flip (plan §8 (M7 row), 2026-11-18): the
+	// third weapon column, exact after the capped_dmg ingest stamp
+	// closed the gate (Δ4509 = HP-cap 4330 + known-side team 164 +
+	// post-match 15). Corpus math (testdata/seed.sql — every damage
+	// row now stamps capped_dmg): the cap replay per round (victim HP
+	// starts 100, credit = min(dmg, HP), HP -= dmg) turns Σ raw 79200
+	// into Σ credit 56160; the pattern is symmetric across the roster,
+	// so every player's career ak47 credit is 3 × 2340 = 7020 and the
+	// non-ak47 dims (kill/blind weapons, no damage rows) carry 0 beside
+	// N. Same group structure as weapon_kills — identical dims/labels.
+	{
+		name: "weapon_damage", expr: "from events: sum(where kind = 'damage' and attacker != victim and same_side = 0, capped_dmg)",
+		scope: "profile", partition: "weapon", format: "int", shortName: "", denominator: "",
+		interpretation: "enemy HP-capped damage per weapon (ak47 7020 per player career — 3 matches × 2340; raw Σ 79200 caps to 56160)",
+		rows:           24, wantValues: []float64{7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0, 7020.0, 0.0, 0.0}, wantLabels: "Alice,Alice,Alice,Bob,Bob,Bob,Carol,Carol,Carol,Dave,Dave,Dave,Eve,Eve,Eve,Frank,Frank,Frank,Grace,Grace,Grace,Heidi,Heidi,Heidi",
 		wantDims: []string{"ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang", "ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang"},
 	},
 	// ---- grammar addendum (plan §8 (M8 rows), 2026-11-17): the two

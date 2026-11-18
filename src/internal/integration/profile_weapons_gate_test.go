@@ -1,19 +1,33 @@
 package integration_test
 
 // M7 gate — the Weapons table's migration to partition='weapon' metric
-// seeds (plan §7 M7), run BEFORE any weapon seed ships: the JSON-fold
-// numbers (player_stats.kills_by_weapon / damage_by_weapon summed per
-// weapon, headshots rebuilt from kill events — store.GetPlayerWeaponJSONs
-// + profileservice.mergeWeapons) must equal candidate events-partitioned
-// metric values EXACTLY (owner ruling 2026-11-17: "if the numbers
-// diverge, fix the metric until they match — we don't do exceptions").
+// seeds (plan §7 M7), run through the gate BEFORE the third column
+// shipped: the JSON-fold numbers (player_stats.kills_by_weapon /
+// damage_by_weapon summed per weapon, headshots rebuilt from kill
+// events — store.GetPlayerWeaponJSONs + profileservice.mergeWeapons)
+// must equal the SHIPPED seed expressions' partitioned metric values
+// EXACTLY (owner ruling 2026-11-17: "if the numbers diverge, fix the
+// metric until they match — we don't do exceptions").
+//
+// History: ME6 ran this gate 2026-11-17 with kills/headshots EXACT and
+// damage DIVERGED (candidate 21626 vs fold 17117, Δ4509 = HP-cap
+// residual 4330 + known-side team damage 164 + post-match damage 15),
+// escalated with example rows, and the test pinned that divergence with
+// the documented note that equality would FLIP it into the migrate
+// signal. The flip landed 2026-11-18: the capped_dmg ingest stamp
+// (extract.agg.hurt — the capDamage replay + post-match real gate,
+// row-local where §6.5 forbids the rounds join) plus the same_side
+// enemy gate closed all three causes, this test pinned equality over
+// the golden demo, and the weapon_damage seed shipped (107th builtin).
+// All three candidates are strict now; the census survives as failure
+// diagnostics (every delta still gets a named root cause).
 //
 // The test computes both sides over the golden demo and classifies every
 // delta by its root cause, so the verdict rides on numbers:
 //
 //	fold side   the retired fold's per-weapon {kills, damage, headshots}
-//	candidate   draft seed expressions compiled through the real engine
-//	            (Address{Partition: "weapon", Profile: true})
+//	candidate   the SHIPPED seed row's expression compiled through the
+//	            real engine (Address{Partition: "weapon", Profile: true})
 //
 // Skipped under -short and when the demo is absent or an LFS pointer,
 // like every other golden-demo test here.
@@ -68,30 +82,48 @@ func weaponFold(t *testing.T, st *store.Store, steamID string) map[string]weapon
 	return out
 }
 
-// weaponCandidates are the draft seed expressions under test — the
-// exact shapes a weapon partition would ship (no seed row exists yet;
-// this gate decides whether one may).
+// weaponCandidates are the three shipped weapon seeds (name → the fold
+// field their values must equal exactly). The gate reads each expr from
+// its SEEDED row — the migration contract pins the shipped expression,
+// not a draft copy — and compiles it through the real engine. strict is
+// always true since the 2026-11-18 flip: every candidate must match the
+// fold EXACTLY over every human × weapon (the divergence pin ME6
+// documented resolved into this equality pin — the migrate signal).
 var weaponCandidates = []struct {
 	name string
-	expr string
 	pick func(weaponFoldRow) int
-	// strict pins EXACT equality (kills, headshots — green means
-	// migrate); the damage candidate carries the documented structural
-	// gap below, so it pins only that the gap is still open (delta > 0
-	// with the census decomposition logged — equality would FLIP this
-	// test and is the migrate signal for the damage column).
-	strict bool
 }{
-	{"weapon_kills", "from events: count(where kind = 'kill' and attacker != victim)", func(r weaponFoldRow) int { return r.kills }, true},
-	{"weapon_damage", "from events: sum(where kind = 'damage' and attacker != victim, dmg)", func(r weaponFoldRow) int { return r.damage }, false},
-	{"weapon_headshots", "from events: count(where kind = 'kill' and headshot = 1 and attacker != victim)", func(r weaponFoldRow) int { return r.headshots }, true},
+	{"weapon_kills", func(r weaponFoldRow) int { return r.kills }},
+	{"weapon_damage", func(r weaponFoldRow) int { return r.damage }},
+	{"weapon_headshots", func(r weaponFoldRow) int { return r.headshots }},
+}
+
+// seededWeaponExpr loads a weapon seed's shipped expression + addressing
+// from the baseline seed (schema.sql's weapon addendum). A missing row
+// fails the gate: the table migration reads these rows, so an unshipped
+// seed is itself a gate failure.
+func seededWeaponExpr(t *testing.T, st *store.Store, name string) metrics.Def {
+	t.Helper()
+	res, err := st.RunReadOnly(
+		`SELECT expr, subject, partition, scope FROM metrics WHERE name = ? AND origin = 'builtin'`,
+		[]any{name}, 10, 5000)
+	if err != nil || len(res.Rows) != 1 {
+		t.Fatalf("seeded row %s: err=%v rows=%d", name, err, len(res.Rows))
+	}
+	row := res.Rows[0]
+	return metrics.Def{
+		Expr:      row[0].(string),
+		Subject:   row[1].(string),
+		Partition: row[2].(string),
+		Profile:   row[3].(string) == "profile",
+	}
 }
 
 // TestGoldenProfileWeaponsGate runs the M7 gate and reports the full
-// comparison. It FAILS while any candidate diverges from the fold: a
-// green run is the migrate signal (owner ruling — the gate's pass
-// condition is exact equality, and a red run carries the numbers the
-// escalation report needs).
+// comparison. It PINS exact equality for all three shipped weapon seeds
+// (the 2026-11-18 flip of ME6's divergence pin — a green run is the
+// migrated state; a red run fails with the census's named root cause and
+// example rows for the escalation).
 func TestGoldenProfileWeaponsGate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping golden-demo parse in -short mode")
@@ -133,13 +165,13 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 
 	for _, cand := range weaponCandidates {
 		t.Run(cand.name, func(t *testing.T) {
-			// The candidate's stored-shape values: the sweep's career
-			// statement (profile scope, weapon partition).
-			pv, perr, err := metrics.RunPreview(st, metrics.Def{
-				Expr: cand.expr, Subject: "player", Partition: "weapon", Profile: true,
-			}, "", 2000)
+			// The shipped seed row's stored-shape values: the sweep's
+			// career statement (profile scope, weapon partition), expr
+			// loaded from the seeded row itself.
+			def := seededWeaponExpr(t, st, cand.name)
+			pv, perr, err := metrics.RunPreview(st, def, "", 2000)
 			if perr != nil {
-				t.Fatalf("parse: %v", perr)
+				t.Fatalf("parse: %v (%s)", perr, def.Expr)
 			}
 			if err != nil {
 				t.Fatalf("run: %v (sql %s)", err, pv.SQL)
@@ -179,23 +211,16 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 					foldTotal += want
 					if have != want {
 						diverged++
-						if cand.strict {
-							t.Errorf("%s/%s: candidate = %v, fold = %v (delta %s)",
-								ref.Name, w, have, want, census.explain(w, cand.name))
-						}
+						t.Errorf("%s/%s: seed = %v, fold = %v (delta %s)",
+							ref.Name, w, have, want, census.explain(w, cand.name))
 					}
 				}
 			}
-			if cand.strict && diverged == 0 {
-				t.Logf("%s: EXACT match over every human × weapon", cand.name)
-			}
-			if !cand.strict {
-				delta := candTotal - foldTotal
-				t.Logf("damage gap: candidate total = %.0f, fold total = %.0f, delta = %.0f dmg — census: %s",
-					candTotal, foldTotal, delta, census)
-				if delta <= 0 {
-					t.Errorf("damage candidate now equals the fold (%.0f) — the gap closed: MIGRATE the damage column (drop this branch, add the seed)", candTotal)
-				}
+			if diverged == 0 {
+				t.Logf("%s: EXACT match over every human × weapon (fold total %.0f)", cand.name, foldTotal)
+			} else {
+				t.Logf("%s: totals: seed = %.0f, fold = %.0f — census: %s",
+					cand.name, candTotal, foldTotal, census)
 			}
 		})
 	}
