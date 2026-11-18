@@ -187,14 +187,17 @@
   // state machine: fresh → the value, no-data → '—', anything else → the
   // state chip — never a fabricated 0, never a version number.
   const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
-  // The fixed cards' SEED slots (owner ruling, 2026-11-17): a fixed
-  // entry whose stat W35 seeded reads its `career_*` row PINS-
-  // INDEPENDENTLY — the slot id is unioned into the ONE career read
-  // below, exactly like Match's FIXED_SLOTS. Today: @Matches →
-  // career_matches (whose seed doc names this very card). The Win% card
-  // has no seed (wins are not sum-expressible) and keeps its raw
-  // profile fields — see the template branch.
-  const CAREER_SLOTS = ['career_matches'];
+  // The fixed cards' SEED slots (owner ruling, 2026-11-17 — CAREER_SLOTS
+  // and its careerSlot/careerSlotPres readers) are RETIRED with the
+  // unification of 2026-11-18 (owner, "fully dogfooded"): the Matches
+  // and Win% cards are ordinary pinned metric tiles now (career_matches
+  // / win_pct — their VALUES read the seed rows exactly as before), so
+  // their rows ride the same ONE career read as every other pin. A card
+  // the user unpins renders nowhere (hiding a stat IS unpinning it), so
+  // no pins-independent slot remains on this surface. The stale "Win%
+  // has no seed" note this replaces was overtaken the NEXT day by the
+  // count addendum's `win_pct` seed (schema.sql — ratio(sum(won),
+  // count()), the profile Win% card restated as a metric).
   let careerPins = $state([]);
   let careerCols = $state([]);
   let careerError = $state('');
@@ -227,9 +230,9 @@
     careerCols = [];
     careerError = '';
     if (!sid) return;
-    // No early return on a present-empty selection: the fixed cards'
-    // SEED slots (CAREER_SLOTS) still need their read — only an empty
-    // id list (no pins AND no resolvable slot) skips it below.
+    // An empty pin selection skips the read below: every card on this
+    // surface is a pinned metric tile since the unification of
+    // 2026-11-18 (no pins-independent seed slot remains).
     Promise.all([listMetrics(), readOrder('profile')])
       .then(([defs, order]) => {
         if (!live) return;
@@ -242,18 +245,11 @@
         // profile sequence filtered to the pinned set — the pins array
         // orders nothing.
         const picked = pinnedInSequence('profile', order, rows, pinNames);
-        const byName = new Map(rows.map((d) => [d.name, d]));
-        const slots = CAREER_SLOTS.map((n) => byName.get(n)).filter(Boolean);
-        const wanted = [...picked];
-        for (const s of slots) {
-          if (!wanted.some((d) => d.id === s.id)) wanted.push(s);
-        }
-        const ids = wanted.map((d) => d.id);
+        const ids = picked.map((d) => d.id);
         if (ids.length === 0) return;
-        // ONE stored read for every profile pin AND every fixed-card
-        // slot (the whole career bucket — rows for other players are
-        // this unit's coverage, never displayed here) beside the one
-        // compute-state read.
+        // ONE stored read for every profile pin (the whole career bucket —
+        // rows for other players are this unit's coverage, never displayed
+        // here) beside the one compute-state read.
         return Promise.all([getMetricValuesForPlayer('', ids), getMetricComputeState()]).then(
           ([values, states]) => {
             const byMetric = new Map();
@@ -263,7 +259,7 @@
             }
             const stateById = new Map((states || []).map((s) => [s.metricId, s]));
             if (live) metricStates = stateById;
-            return wanted.map((def) => {
+            return picked.map((def) => {
               const unit = byMetric.get(def.id) || [];
               return {
                 def,
@@ -420,25 +416,22 @@
     return () => (live = false);
   });
 
-  // careerCards — THE one composed card list (N4): the fixed pair and
-  // the pinned metric tiles as entries of the ONE sequence
-  // (metricorder.composedSequence), in order, with a hidden fixed entry
-  // dropped (it stays listed in the ordering dialog — visibility is
-  // view-display only). An unpinned metric never enters; a pinned one
-  // enters only once its stored read landed (the honest gap: the tile
-  // appears with its value read, never with a guessed one).
+  // careerCards — THE one composed card list (N4, unification
+  // 2026-11-18): the pinned metric tiles as entries of the ONE sequence
+  // (metricorder.composedSequence), in order. The fixed pair (@Matches /
+  // @Win%) left for their career_matches / win_pct metric entries, so
+  // every card is a tile now: an unpinned metric never enters (hiding a
+  // stat IS unpinning it — lead ruling R1), and a pinned one enters only
+  // once its stored read landed (the honest gap: the tile appears with
+  // its value read, never with a guessed one).
   const careerCards = $derived.by(() => {
     const byName = new Map(careerCols.map((c) => [c.def.name, c]));
     const pinned = new Set(careerPins);
     const out = [];
     for (const e of composedSequence('profile', profOrder, trendDefs, profHidden)) {
-      if (e.hidden) continue;
-      if (e.kind === 'fixed') {
-        out.push({ key: e.key, fixed: e.key, label: e.label, col: null });
-      } else if (pinned.has(e.def.name)) {
-        const col = byName.get(e.name);
-        if (col) out.push({ key: `m:${e.def.id}`, fixed: '', label: e.label, col });
-      }
+      if (e.kind !== 'metric' || !pinned.has(e.def.name)) continue;
+      const col = byName.get(e.name);
+      if (col) out.push({ key: `m:${e.def.id}`, label: e.label, col });
     }
     return out;
   });
@@ -453,23 +446,6 @@
     if (pres.kind === 'value') return `${col.def.title || col.def.name} — sample size n=${pres.n}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, col.error);
-  }
-
-  // The fixed cards' seed slot (CAREER_SLOTS above): the col the ONE
-  // career read produced for that name, or null while the read is in
-  // flight / the catalog lacks the name — the card then renders the
-  // honest dash (never the raw profile field behind it, owner ruling
-  // 2026-11-17: no raw fallback).
-  function careerSlot(name) {
-    return careerCols.find((c) => c.def.name === name) || null;
-  }
-
-  // THE state machine for one fixed-card slot (lib/metricstate.js) —
-  // the career tile twin over a slot col.
-  function careerSlotPres(col) {
-    if (!col) return metricPresentation('', null, false);
-    const st = liveMetricState(metricProgress, metricStates, col.def.id);
-    return metricPresentation(st, col.row, col.unitHasRows);
   }
 
   function pick(steam) {
@@ -742,19 +718,19 @@
 
   {#if profile}
     <!-- The profile's headline surface (dogfooding design §1.5 + the
-         career-metrics consolidation, N4): ONE panel-less block over
-         THE composed sequence — the fixed cards (Matches, Win%) and the
-         pinned profile-scope metrics as StatCard tiles in metricorder
-         order (lib/metricorder.js composedSequence is the ONE ordering
-         mechanism). The REAL empty-state invariant: the block renders
-         whenever at least ONE entry is visible — a hidden fixed pair
-         with nothing pinned renders NO grid (never a broken empty one),
-         and a hidden entry simply leaves while the rest keep their
-         order. The career half is the same stored-read state machine as
-         before (fresh → the value, no-data → '—', anything else → the
-         state chip — never a fabricated 0, never a version number); a
-         failed career read shows its alert ABOVE the block (the
-         profileError pattern). -->
+         career-metrics consolidation, N4 + the unification of
+         2026-11-18): ONE panel-less block over THE composed sequence —
+         the pinned profile-scope metrics as StatCard tiles in
+         metricorder order (lib/metricorder.js composedSequence is the
+         ONE ordering mechanism; since the unification every card is a
+         tile, Matches and Win% included — career_matches / win_pct).
+         The REAL empty-state invariant: the block renders whenever at
+         least ONE tile is visible — nothing pinned renders NO grid
+         (never a broken empty one). The career half is the same
+         stored-read state machine as before (fresh → the value, no-data
+         → '—', anything else → the state chip — never a fabricated 0,
+         never a version number); a failed career read shows its alert
+         ABOVE the block (the profileError pattern). -->
     {#if careerError}
       <p class="error" role="alert">
         {S.profiles.careerErrorLead}{careerError}
@@ -772,9 +748,16 @@
                  doc), children[1] the value slot running the state machine —
                  the cell's own `title` carries n=/state — never a fabricated
                  0 and never a version number. -->
+            <!-- R4 (unification wave ruling): the Matches tile's sub
+                 line stays a RAW RECORD READ — `wins` has no seed (only
+                 the win_pct ratio does) and no seed lands in this wave;
+                 it is a recorded count, not a computed metric, and it is
+                 listed as a residual for the docs sync. Every other tile
+                 carries no sub. -->
             <StatCard
               label={col.def.title || col.def.name}
               labelTitle={col.def.doc || col.def.name}
+              sub={col.def.name === 'career_matches' ? `${profile.wins} wins` : undefined}
               title={careerTitle(col, pres)}
             >
               {#snippet valueSlot()}
@@ -792,42 +775,6 @@
                 {/if}
               {/snippet}
             </StatCard>
-          {:else if card.fixed === '@Matches'}
-            <!-- W13b: the fixed card's title comes from the ONE label
-                 table through composedSequence (card.label = the entry's
-                 full name), never a second strings copy of it. The VALUE
-                 reads the `career_matches` SEED row through the same
-                 state machine as the metric tiles (owner ruling
-                 2026-11-17): fresh → the stored count, otherwise the
-                 honest dash/state chip — never profile.matches behind
-                 it (no raw fallback); the label keeps the seed's doc as
-                 its tooltip, the cell its n=/state title. The sub line
-                 stays the raw wins count (wins have no seed). -->
-            {@const mcol = careerSlot('career_matches')}
-            {@const mpres = careerSlotPres(mcol)}
-            <StatCard
-              label={card.label}
-              labelTitle={mcol ? mcol.def.doc || mcol.def.name : undefined}
-              sub={`${profile.wins} wins`}
-              title={mcol ? careerTitle(mcol, mpres) : S.profiles.statMatchesTitle}
-            >
-              {#snippet valueSlot()}
-                {#if mpres.kind === 'value'}
-                  {fmtMetric(mpres.value, mcol.def.format)}
-                {:else if mpres.kind === 'nodata'}
-                  —
-                {:else}
-                  <StatusChip
-                    status={mpres.state}
-                    title={careerTitle(mcol, mpres)}
-                    progress={metricProgressFrac(metricProgress, mcol.def.id)}
-                    stage={metricProgressStage(metricProgress, mcol.def.id)}
-                  />
-                {/if}
-              {/snippet}
-            </StatCard>
-          {:else}
-            <StatCard label={card.label} value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title={S.profiles.statWinPctTitle} />
           {/if}
         {/each}
       </div>

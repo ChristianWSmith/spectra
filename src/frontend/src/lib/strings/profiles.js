@@ -21,14 +21,14 @@ export const profiles = {
   thAdr: 'ADR',
   thLastImport: 'Last import',
 
-  // PlayerProfile — the profile surface (fixed cards, career metrics,
-  // trend, splits and match history). The fixed cards' LABELS are not
-  // chrome copy: they are metricorder data (FIXED_BLOCK's full names,
-  // read through composedSequence) — W13b retired statMatchesLabel /
-  // statWinPctLabel as their second home; only the tooltips stay here.
+  // PlayerProfile — the profile surface (career metrics, trend, splits
+  // and match history). The fixed cards' LABELS are not chrome copy:
+  // they are metricorder data (metric titles, read through
+  // composedSequence) — W13b retired statMatchesLabel / statWinPctLabel
+  // as their second home, and the unification of 2026-11-18 retired the
+  // two statTitle tooltips with their raw-card branches (every card is a
+  // metric tile now: its `labelTitle` carries the seed's own doc).
   h1Player: 'Player',
-  statMatchesTitle: 'Matches in the library for this player',
-  statWinPctTitle: 'Share of matches won',
   careerErrorLead: 'Profile metrics unavailable: ',
   trendHeading: 'Trend',
   // The trend card's metric picker (the shared SuggestInput): the one

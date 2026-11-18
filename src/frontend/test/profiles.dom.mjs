@@ -427,6 +427,15 @@ bindings.MetricsService.ListMetrics = () =>
       doc: 'Formula: sum(player_stats.deaths)', origin: 'builtin' },
     { id: 7, name: 'assists', title: 'Assists', scope: 'match', format: 'int',
       doc: 'Formula: sum(player_stats.assists)', origin: 'builtin' },
+    // The profile-scope DEFAULT pins' head (unification, 2026-11-18):
+    // Matches and Win% are metric entries now (career_matches /
+    // win_pct), so a default (absent-key) pins read resolves them
+    // through the catalog exactly like every other card — G1/G2's
+    // "profile content still renders" checks ride on this.
+    { id: 82, name: 'career_matches', title: 'Matches played', scope: 'profile', format: 'int',
+      doc: 'Formula: count(player_stats) over the library', origin: 'builtin' },
+    { id: 83, name: 'win_pct', title: 'Win %', scope: 'profile', format: 'percent',
+      doc: 'Formula: sum(player_stats.won) / count()', origin: 'builtin' },
   ]);
 bindings.MetricsService.GetMetricSeries = () =>
   Promise.resolve([
@@ -700,11 +709,13 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   await sleep(120);
   const w22Grid = w22Target.querySelector('.stat-grid.prof-stats');
   const w22Cells = w22Grid ? [...w22Grid.querySelectorAll('.stat-cell')] : [];
-  // …the block still renders with the FIXED pair only (a live mount,
-  // never a guessed tile) …
+  // …the block renders NO cards at all (the unification of 2026-11-18
+  // took the fixed pair away: every card is a pinned metric tile, an
+  // empty selection is an empty surface — never a guessed tile, never
+  // a raw pair standing in) …
   check(
-    'w22: an old id-array under the profile pins key selects NOTHING — the grid renders the fixed pair alone',
-    w22Cells.length === 2,
+    'w22: an old id-array under the profile pins key selects NOTHING — no cards render (no fixed pair stands in)',
+    !w22Grid && w22Cells.length === 0,
     `cells=${JSON.stringify(w22Cells.map((c) => c.textContent.trim()))}`,
   );
   // …and the stored bytes are left byte-for-byte untouched: no format
@@ -756,15 +767,16 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   await sleep(120);
 
   // The Career-metrics PANEL dissolved into the headline block (P1,
-  // 2026-11-16): ONE `.stat-grid.prof-stats` container holds the two
-  // fixed cards first and the pinned metric TILES after them (rendered
-  // through the canonical StatCard — children[0] the label with its own
-  // doc tooltip, children[1] the value slot running the state machine,
-  // the cell's own `title` carrying n=/state). The pins are therefore
-  // the .stat-cell tiles AFTER the fixed pair.
+  // 2026-11-16): ONE `.stat-grid.prof-stats` container holds every card
+  // as a pinned metric TILE (rendered through the canonical StatCard —
+  // children[0] the label with its own doc tooltip, children[1] the
+  // value slot running the state machine, the cell's own `title`
+  // carrying n=/state). Since the unification of 2026-11-18 there is no
+  // fixed pair ahead of them — Matches and Win% are tiles too — so the
+  // pins ARE the cells.
   const grid = iTarget.querySelector('.stat-grid.prof-stats');
   check('the merged headline block renders the profile pins', !!grid, 'no .stat-grid.prof-stats');
-  const rows = grid ? [...grid.querySelectorAll('.stat-cell')].slice(2) : [];
+  const rows = grid ? [...grid.querySelectorAll('.stat-cell')] : [];
   check(
     'exactly the two profile-scope pins list (a match-scope metric never surfaces here)',
     rows.length === 2 &&
@@ -832,6 +844,18 @@ console.log(
   // ABSENT pins key — never from the catalog order, never from an id
   // list. Titles/short_name/format mirror the real builtin seeds.
   const CATALOG = [
+    // The unified head pair (unification, 2026-11-18): the former
+    // fixed cards as their metric entries — titles mirror the schema
+    // seeds ('Matches played' / 'Win %'), and their negative DEFAULT
+    // ranks lead the sequence exactly where the fixed pair led it.
+    {
+      id: 57, name: 'career_matches', title: 'Matches played', scope: 'profile',
+      format: 'int', doc: 'Formula: count(player_stats) over the library', origin: 'builtin',
+    },
+    {
+      id: 58, name: 'win_pct', title: 'Win %', scope: 'profile',
+      format: 'percent', doc: 'Formula: sum(player_stats.won) / count()', origin: 'builtin',
+    },
     {
       id: 69, name: 'career_avg_util_damage', title: 'Avg util damage', scope: 'profile',
       format: 'float1', doc: 'Formula: avg(player_stats.utility_damage)', origin: 'builtin',
@@ -892,10 +916,15 @@ console.log(
     },
   ];
   const ELEVEN = [69, 68, 67, 70, 66, 71, 65, 64, 63, 62, 61]; // CATALOG order
+  const HEAD = [57, 58]; // the unified head pair (career_matches / win_pct)
   // amy's career rows for all eleven (the profile under test), plus bob's
   // and zoe's `career_adr` for the Profiles list column — dan gets NO
-  // row, which is the honest gap that must render '—'.
+  // row, which is the honest gap that must render '—'. The head pair's
+  // rows are deliberately NOT the raw profile fields behind the DTO
+  // (matches 2 / winPct 80): the seed row is THE source.
   const ROWS = [
+    { metricId: 57, subjectKey: '76561198000000001', value: 7, n: 42 },
+    { metricId: 58, subjectKey: '76561198000000001', value: 0.6, n: 42 },
     { metricId: 61, subjectKey: '76561198000000001', value: 63.5, n: 42 },
     { metricId: 61, subjectKey: '76561198000000002', value: 55, n: 7 },
     { metricId: 61, subjectKey: '76561198000000003', value: 40, n: 9 },
@@ -917,7 +946,7 @@ console.log(
   // metric before rendering.
   bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(ROWS);
   bindings.MetricsService.GetMetricComputeState = () =>
-    Promise.resolve(ELEVEN.map((id) => ({ metricId: id, state: 'fresh' })));
+    Promise.resolve([...HEAD, ...ELEVEN].map((id) => ({ metricId: id, state: 'fresh' })));
 
   // --- J1: the profile surface = 2 fixed cards + 11 default-pinned tiles
   invalidate(); // flush section I's stubs (same read-cache keys)
@@ -929,33 +958,47 @@ console.log(
   });
   await sleep(140); // mount + getProfile + listMetrics + the career read
 
-  // P1 (2026-11-16), N4 (2026-11-16): the fixed pair and the pinned
-  // metric tiles live in ONE `.stat-grid.prof-stats` block over THE
-  // composed sequence (metricorder.composedSequence) — under the
-  // DEFAULT prefs the fixed pair LEADS (its negative ranks), then the
+  // P1 (2026-11-16), N4 (2026-11-16), unification (2026-11-18): every
+  // card is a pinned metric tile in ONE `.stat-grid.prof-stats` block
+  // over THE composed sequence (metricorder.composedSequence) — under
+  // the DEFAULT prefs the two unified head cards LEAD (their negative
+  // ranks held the fixed pair's slots), then the eleven
   // metricorder-composed tiles.
   const grid = j1.querySelector('.stat-grid.prof-stats');
   const cardLabels = grid
     ? [...grid.querySelectorAll('.stat-cell .field-label')].map((e) => e.textContent.trim())
     : [];
-  const fixedLabels = cardLabels.slice(0, 2);
+  const headLabels = cardLabels.slice(0, 2);
   check(
-    'the composed sequence leads with the fixed pair (Matches, Win% first — the pinned metric tiles follow it)',
-    JSON.stringify(fixedLabels) === JSON.stringify(['Matches', 'Win%']) &&
+    'the composed sequence leads with the unified head pair (Matches played, Win % first — the pinned metric tiles follow it)',
+    JSON.stringify(headLabels) === JSON.stringify(['Matches played', 'Win %']) &&
       cardLabels.length === 2 + 11,
     JSON.stringify(cardLabels),
   );
   {
+    // The head pair reads its SEED rows, never the raw profile fields
+    // behind the DTO (matches 2 / winPct 80): a tile printing 7 or 60%
+    // is proof the seed row is the source (unification, 2026-11-18).
+    const headCells = grid
+      ? [...grid.querySelectorAll('.stat-cell')].slice(0, 2).map((c) => c.children[1]?.textContent.trim())
+      : [];
+    check(
+      'the unified head pair renders the STORED seed values (7 / 60%), never the raw profile fields',
+      headCells[0] === '7' && headCells[1] === '60%',
+      JSON.stringify(headCells),
+    );
+  }
+  {
     // W3a's swap: the Opening duels and Clutches cards left the FIXED
     // block — their numbers live as metric tiles (checked below), so no
-    // stat may render twice (fixed card AND metric tile).
+    // stat may render twice (head card AND metric tile).
     for (const gone of [
       'ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage',
       'Opening duels', 'Clutches',
     ]) {
       check(
-        `the converted card "${gone}" never renders twice (fixed card AND metric tile)`,
-        !fixedLabels.includes(gone) && cardLabels.filter((l) => l === gone).length <= 1,
+        `the converted card "${gone}" never renders twice (head card AND metric tile)`,
+        !headLabels.includes(gone) && cardLabels.filter((l) => l === gone).length <= 1,
         JSON.stringify(cardLabels),
       );
     }
@@ -1089,12 +1132,14 @@ console.log(
   // composition is the only thing these mounts change.
   bindings.MetricsService.GetMetricValuesForPlayer = () => Promise.resolve(ROWS);
   bindings.MetricsService.GetMetricComputeState = () =>
-    Promise.resolve(ELEVEN.map((id) => ({ metricId: id, state: 'fresh' })));
+    Promise.resolve([...HEAD, ...ELEVEN].map((id) => ({ metricId: id, state: 'fresh' })));
   // A WHOLE stored sequence (the writer persists every entry on the
   // first move — a partial pref would re-insert the missing entries at
-  // their default ranks).
+  // their default ranks). Post-unification shape: the unified head pair
+  // as metric names (win_pct deliberately BEFORE career_matches — the
+  // stored position wins over the default ranks), the eleven after it.
   const FULL_PROFILE_ORDER = [
-    '@Win%', '@Matches', 'career_trade_rate', 'career_adr', 'career_adr_sigma',
+    'win_pct', 'career_matches', 'career_trade_rate', 'career_adr', 'career_adr_sigma',
     'career_kd', 'career_hs_pct', 'career_kast', 'career_opening_rate',
     'career_clutches', 'career_clutch_win_rate', 'career_avg_enemies_flashed',
     'career_avg_util_damage',
@@ -1119,22 +1164,26 @@ console.log(
   invalidate();
   const j4 = await mountProfile();
   check(
-    'N4: a stored order pref reorders the FIXED cards too — Win% leads, Matches second (the sequence owns both)',
-    j4.labels[0] === 'Win%' && j4.labels[1] === 'Matches' && j4.labels.length === 13,
+    'N4: a stored order pref reorders the unified head pair too — Win % leads, Matches played second (the sequence owns both)',
+    j4.labels[0] === 'Win %' && j4.labels[1] === 'Matches played' && j4.labels.length === 13,
     JSON.stringify(j4.labels),
   );
   document.body.removeChild(j4.el);
 
+  // Since the unification the profile scope has NO fixed entries, so a
+  // stale stored hidden key marks nothing (its rows are pin-driven now)
+  // — the same by-construction drop stale '@K'-style keys get on the
+  // match scope. All thirteen cards render.
   bindings.handlers.GetPref = (key) =>
     key === 'metric_hidden_profile' ? ['@Matches'] : undefined;
   invalidate();
   const j5 = await mountProfile();
   check(
-    'N4: a hidden fixed card leaves the VIEW — Matches gone, Win% still leads, every metric tile keeps its place',
-    !j5.labels.includes('Matches') &&
-      j5.labels[0] === 'Win%' &&
-      j5.labels.length === 12 &&
-      JSON.stringify(j5.labels.slice(1, 4)) === JSON.stringify(['ADR', 'ADR σ', 'K/D']),
+    'N4: a stale profile hidden key marks nothing — every card is pin-driven now (13 tiles, head pair intact)',
+    !j5.labels.includes('undefined') &&
+      j5.labels[0] === 'Matches played' &&
+      j5.labels.length === 13 &&
+      JSON.stringify(j5.labels.slice(2, 5)) === JSON.stringify(['ADR', 'ADR σ', 'K/D']),
     JSON.stringify(j5.labels),
   );
   document.body.removeChild(j5.el);
@@ -1232,15 +1281,24 @@ console.log('K. PlayerProfile trend: the picker offers ANY match-scope metric an
 }
 
 // ---------------------------------------------------------------------------
-// Section L: the fixed Matches card's VALUE is the `career_matches`
-// seed row (owner ruling, 2026-11-17 — the count seeds' profile twin):
-// fresh → the stored count with the seed's Formula/n tooltip, no row →
-// the honest state — NEVER profile.matches behind it (the fixture's
-// profile carries matches: 2, so a raw fallback prints 2 where the seed
-// says 7). The card's sub line keeps the raw wins count (wins have no
-// seed), and the Win% card stays raw (no winPct seed — inventory note).
+// Section L: the Matches card's VALUE is the `career_matches`
+// seed row (owner ruling, 2026-11-17 — the count seeds' profile twin;
+// the card itself became a metric tile in the unification of
+// 2026-11-18): fresh → the stored count with the seed's Formula/n
+// tooltip, no row → the honest state — NEVER profile.matches behind it
+// (the fixture's profile carries matches: 2, so a raw fallback prints 2
+// where the seed says 7). The card's sub line keeps the raw wins count
+// (R4 of the unification wave: wins has no seed — a residual for the
+// docs sync), and the Win% card is the `win_pct` SEED tile now (the
+// old "no winPct seed" note here was overtaken by the count addendum).
 console.log('L. the Matches card reads the career_matches seed row (never profile.matches)');
 {
+  // The card is a pinned metric tile now (unification 2026-11-18): the
+  // absent pins key resolves DEFAULT_PINS through THIS catalog, which
+  // carries career_matches (and no win_pct — the resolved selection
+  // drops the unresolvable name, the design §1.6 rule). The stale
+  // "Win% has no seed" note this section used to carry is gone: the
+  // count addendum seeded win_pct the NEXT day (schema.sql).
   localStorage.removeItem('spectra:pinned-profile-metrics');
   bindings.MetricsService.ListMetrics = () =>
     Promise.resolve([
@@ -1266,7 +1324,11 @@ console.log('L. the Matches card reads the career_matches seed row (never profil
   };
   const cardOf = (target) =>
     [...target.querySelectorAll('.stat-grid.prof-stats .stat-cell')].find(
-      (c) => c.querySelector('.field-label')?.textContent.trim() === 'Matches',
+      (c) =>
+        // Since the unification the card IS the metric tile: its label
+        // is the seed's own title ('Matches played', schema — the
+        // former FIXED_BLOCK label 'Matches' retired with the entry).
+        c.querySelector('.field-label')?.textContent.trim() === 'Matches played',
     );
 
   const fresh = await mountProfile();

@@ -261,12 +261,12 @@
   }
 </script>
 
-{#snippet section(scope, title)}
+{#snippet section(scope, title, caption)}
   {@const shown = seqOf(scope)}
   <section class="mo-sec" data-mo-scope={scope}>
     <h3 class="mo-sec-title" id="mo-sec-title-{scope}">{title}</h3>
     <p class="mo-fixed-cap muted" id="mo-fixed-cap-{scope}">
-      {S.common.metricOrderFixedCaption}
+      {caption}
     </p>
     <!-- ONE listbox per section (W6): the fixed stats and the pinned
          metrics share it, in sequence order. option is the ARIA
@@ -419,8 +419,8 @@
     {#if error}
       <p class="error" role="alert">{error}</p>
     {/if}
-    {@render section('match', S.common.metricOrderScoreboardSection)}
-    {@render section('profile', S.common.metricOrderProfileSection)}
+    {@render section('match', S.common.metricOrderScoreboardSection, S.common.metricOrderFixedCaption)}
+    {@render section('profile', S.common.metricOrderProfileSection, S.common.metricOrderProfileCaption)}
     <div class="toolbar mo-foot">
       <span class="muted mo-hint"
         ><span class="codicon codicon-arrow-up"></span><span
