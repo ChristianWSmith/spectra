@@ -75,10 +75,16 @@ var weaponCandidates = []struct {
 	name string
 	expr string
 	pick func(weaponFoldRow) int
+	// strict pins EXACT equality (kills, headshots — green means
+	// migrate); the damage candidate carries the documented structural
+	// gap below, so it pins only that the gap is still open (delta > 0
+	// with the census decomposition logged — equality would FLIP this
+	// test and is the migrate signal for the damage column).
+	strict bool
 }{
-	{"weapon_kills", "from events: count(where kind = 'kill' and attacker != victim)", func(r weaponFoldRow) int { return r.kills }},
-	{"weapon_damage", "from events: sum(where kind = 'damage' and attacker != victim, dmg)", func(r weaponFoldRow) int { return r.damage }},
-	{"weapon_headshots", "from events: count(where kind = 'kill' and headshot = 1 and attacker != victim)", func(r weaponFoldRow) int { return r.headshots }},
+	{"weapon_kills", "from events: count(where kind = 'kill' and attacker != victim)", func(r weaponFoldRow) int { return r.kills }, true},
+	{"weapon_damage", "from events: sum(where kind = 'damage' and attacker != victim, dmg)", func(r weaponFoldRow) int { return r.damage }, false},
+	{"weapon_headshots", "from events: count(where kind = 'kill' and headshot = 1 and attacker != victim)", func(r weaponFoldRow) int { return r.headshots }, true},
 }
 
 // TestGoldenProfileWeaponsGate runs the M7 gate and reports the full
@@ -147,6 +153,7 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 			}
 
 			diverged := 0
+			var candTotal, foldTotal float64
 			for _, ref := range refs {
 				if ref.IsBot {
 					continue // the fold may list bots; the metric is humans-only (§3.4)
@@ -168,15 +175,27 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 				for _, w := range names {
 					want := float64(cand.pick(fold[w]))
 					have := got[w]
+					candTotal += have
+					foldTotal += want
 					if have != want {
 						diverged++
-						t.Errorf("%s/%s: candidate = %v, fold = %v (delta %s)",
-							ref.Name, w, have, want, census.explain(w, cand.name))
+						if cand.strict {
+							t.Errorf("%s/%s: candidate = %v, fold = %v (delta %s)",
+								ref.Name, w, have, want, census.explain(w, cand.name))
+						}
 					}
 				}
 			}
-			if diverged == 0 {
+			if cand.strict && diverged == 0 {
 				t.Logf("%s: EXACT match over every human × weapon", cand.name)
+			}
+			if !cand.strict {
+				delta := candTotal - foldTotal
+				t.Logf("damage gap: candidate total = %.0f, fold total = %.0f, delta = %.0f dmg — census: %s",
+					candTotal, foldTotal, delta, census)
+				if delta <= 0 {
+					t.Errorf("damage candidate now equals the fold (%.0f) — the gap closed: MIGRATE the damage column (drop this branch, add the seed)", candTotal)
+				}
 			}
 		})
 	}
@@ -196,10 +215,11 @@ type weaponCensus struct {
 	// the raw hit, so the candidate's SUM(dmg) can diverge even with
 	// every gate matched — these sums quantify the row classes and the
 	// residual against the fold total is the cap itself.
-	teamDamageDmg  int // known-side team damage
-	postMatchDmg   int // post-match damage
-	discardedDmg   int // damage in uncounted rounds
-	enemyRawDamage int // Σ raw events.dmg over attacker-eligible damage rows (counted rounds)
+	teamDamageDmg  int      // known-side team damage
+	postMatchDmg   int      // post-match damage
+	discardedDmg   int      // damage in uncounted rounds
+	enemyRawDamage int      // Σ raw events.dmg over attacker-eligible damage rows (counted rounds)
+	overkill       []string // (round, victim) pairs whose raw damage exceeds the 100 HP pool
 	examples       []string
 }
 
@@ -207,7 +227,7 @@ func (c weaponCensus) String() string {
 	return fmt.Sprintf("discarded-round kills=%d (neg %d), teamkills=%d, post-match kills=%d | damage: known-team=%d dmg, post-match=%d dmg, discarded=%d dmg, attacker-eligible raw total=%d dmg; examples: %s",
 		c.discardedRounds, c.negativeRound, c.teamkills, c.postMatch,
 		c.teamDamageDmg, c.postMatchDmg, c.discardedDmg, c.enemyRawDamage,
-		strings.Join(c.examples, " | "))
+		"overkill: "+strings.Join(c.overkill, " | ")+"; kill examples: "+strings.Join(c.examples, " | "))
 }
 
 func (c weaponCensus) explain(weapon, cand string) string {
@@ -312,6 +332,24 @@ func runWeaponCensus(t *testing.T, st *store.Store, matchID int64) weaponCensus 
 		t.Fatalf("census post-match: %v", err)
 	}
 	c.postMatch = int(res.Rows[0][0].(int64))
+
+	// HP-cap example for the escalation report: one (round, victim)
+	// whose raw damage events exceed the 100 HP pool — the fold credits
+	// min(Σraw, 100) through capDamage's per-hit replay, the candidate's
+	// SUM(dmg) credits the raw total (order-dependent per-weapon
+	// attribution: truncation lands on whichever hit crossed the line).
+	res, err = st.RunReadOnly(`
+		SELECT e.round, e.victim, SUM(e.dmg) AS raw
+		FROM events e
+		WHERE e.kind = 'damage' AND e.attacker != '' AND e.attacker != e.victim
+		GROUP BY e.round, e.victim HAVING raw > 100
+		ORDER BY raw DESC LIMIT 3`, nil, 3, 5000)
+	if err != nil {
+		t.Fatalf("census overkill: %v", err)
+	}
+	for _, row := range res.Rows {
+		c.overkill = append(c.overkill, fmt.Sprintf("round=%v victim=%v raw=%v dmg (fold credits ≤100)", row[0], row[1], row[2]))
+	}
 
 	// Example rows for the report: five excluded kill rows with their
 	// reason's raw fields.
