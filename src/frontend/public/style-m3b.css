@@ -148,10 +148,11 @@ label.filt-lab {
 /* The Engagements round scope (owner, 2026-11-18): the ONE round
    <select> mirroring the Utility tab's round dropdown (visible "Round"
    field label, "All rounds" + canonical RD | score options, default
-   round 1) sitting in the kind-toggle row, never a second filter row.
+   round 1) sitting in the kind-filter row, never a second filter row.
    The wrapper keeps the field a shrink-to-fit flex item beside the
-   toggles; .comb-field stacks label over control (the util-field
-   shape). The Clutches card's .comb-kinds row deliberately has none. */
+   kind dropdown; .comb-field stacks label over control (the util-field
+   shape, shared by both fields). The Clutches card's .comb-kinds row
+   deliberately has neither. */
 .comb-round-filter {
   display: inline-flex;
   align-items: center;
@@ -160,6 +161,37 @@ label.filt-lab {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* The Engagements KIND multi-select (owner, 2026-11-18): the toggle
+   buttons became ONE dropdown — the host is the canonical Popover's
+   anchor (position: relative so the panel attaches — the
+   .bld-filter-host / .rp-pop-host spelling) and the panel is the
+   checkbox stack (.bld-filter-pop's chrome; option rows render through
+   the SHARED .filt-check — never a comb- synonym for either). The
+   closed state's wording is the view's (kindSummary), not a style
+   concern; the panel sits below the trigger (top) at the field's left
+   edge, like Builder's. */
+.comb-kind-host {
+  position: relative;
+  display: inline-flex;
+}
+.comb-kind-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  padding: 6px 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 0.85em;
+  white-space: nowrap;
 }
 
 .comb-kind.active {

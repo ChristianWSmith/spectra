@@ -17,6 +17,8 @@ export const combat = {
   noteLead: 'Dotted headers and ',
   engagementsHeading: 'Engagements',
   filterEngagementsLabel: 'Filter engagements by kind or round',
+  kindFilterLabel: 'Kind',
+  allKinds: 'All kinds',
   roundFilterLabel: 'Round',
   allRounds: 'All rounds',
   thReplay: 'Replay',

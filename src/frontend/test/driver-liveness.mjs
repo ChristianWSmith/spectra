@@ -356,7 +356,19 @@ const EXPECTED = {
   // row, All rounds / round 6 / round 1 round-trip, Clutches none); B
   // and G each re-pinned 1 → 1 for the clutches title chip's removal
   // (absence pins). TokenSelect/Popover compiles dropped as dead.
-  'combat.dom.mjs': 84,
+  // combat 84 → 88 (2026-11-18, the Combat kind filter became a
+  // multi-select dropdown): +3 section A (the dropdown's chrome — a
+  // "Kind" field label over a trigger with NO toggle buttons left, the
+  // closed state reading "All kinds" at the none-checked default with
+  // the panel shut, the panel offering one UNchecked box per kind, and
+  // Escape closing it with focus back on the trigger), +1 section D
+  // (all four boxes checked = the same every-row filter as none
+  // checked, closed state still "All kinds"). Sections D/E/I re-pinned
+  // IN PLACE for the checkbox selection (OR union over checked boxes,
+  // uncheck-all → every row + "All kinds", opening-only empties, the
+  // traded box offered, untraded ADDED keeps the traded row) — same
+  // counts there. Popover compiles again (the dropdown's anchor).
+  'combat.dom.mjs': 88,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
   // docs (documentation popup, 2026-11-14): NEW at 41 — section A (the

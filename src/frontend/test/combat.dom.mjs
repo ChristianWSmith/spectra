@@ -2,9 +2,11 @@
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
 // traded/untraded facts share one row with its chips — section D — plus
-// the opening+untraded pair, the OR-toggle filter behaviour with the
-// no-"all"-button and all-off = no-filter default pins, and the
-// grouping-key precision in E/F), the `traded` kind chip + toggle (I),
+// the opening+untraded pair, the OR multi-select filter behaviour with
+// the KIND DROPDOWN chrome (a "Kind" field over a trigger, one checkbox
+// per kind in the anchored panel, closed state stating the effective
+// filter) and the none-checked = no-filter default pins, and the
+// grouping-key precision in E/F), the `traded` kind chip + checkbox (I),
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
 // its long-event replay loop (H: solo's kill span at the loop length,
 // padded-span fallback, unstatable → no ?loop=), the bare round numbers
@@ -149,7 +151,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['EventPlay', 'ProfileLink', 'StatusChip']) {
+for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
   svelteCompile(
     // plumbing (Strings Stage 3): these components import the strings
     // catalog — resolve it from the real tree (no-op for the import-less
@@ -163,9 +165,11 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip']) {
   );
 }
 
-// TokenSelect/Popover are no longer mounted here: the Engagements round
-// scope became a plain <select> (section N), so nothing in this driver
-// compiles the chip input anymore.
+// TokenSelect is no longer mounted here (the Engagements round scope is
+// a plain <select> — section N, so nothing compiles the chip input
+// anymore); Popover IS — the kind filter's multi-select dropdown anchors
+// on it (section A), so this driver compiles it beside the view's other
+// component imports.
 
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
@@ -229,6 +233,24 @@ const sections = (root, heading) =>
   );
 const headerTexts = (table) => [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
 const rows = (table) => [...table.querySelectorAll('tbody tr')];
+
+// The Engagements kind filter's DROPDOWN (one per mounted section): the
+// trigger button under its "Kind" field label, and the panel only while
+// open — openKinds() clicks the trigger and hands back the panel (null
+// when the control is not the dropdown yet), kindCheck() the box for one
+// kind inside it.
+const kindTriggerOf = (sec) => sec?.querySelector('.comb-kind-host button');
+const openKinds = async (sec) => {
+  const t = kindTriggerOf(sec);
+  if (t) click(t);
+  await sleep();
+  return sec?.querySelector('#comb-kind-pop') || null;
+};
+const kindCheck = (sec, label) =>
+  [...(sec?.querySelectorAll('#comb-kind-pop .filt-check') || [])]
+    .find((l) => l.textContent.trim() === label)
+    ?.querySelector('input');
+const ALL_KINDS = ['opening', 'trade', 'traded', 'untraded'];
 
 // Round 7 starts at tick 10000 at 64 tick — the engagement at 10640 is
 // 640/64 = 10 s INTO that round ("0:10"), never the match clock.
@@ -296,31 +318,63 @@ check('victim column holds the victim', first[6]?.textContent.includes('bob'), f
 check('distance rounded in metres', first[7]?.textContent.trim() === '19', first[7]?.textContent);
 const second = engRows[1]?.querySelectorAll('td') || [];
 check('missing distance renders an em dash', second[7]?.textContent.trim() === '—', second[7]?.textContent);
-// The exclusive "all" button is gone: the four kind TOGGLES are the
-// kind half of the filter row (labels exactly opening/trade/traded/
-// untraded) — the round selector beside them is section N's pin.
+// The kind filter is ONE multi-select DROPDOWN (owner, 2026-11-18): the
+// four toggle buttons are gone — a visible "Kind" field label over a
+// trigger whose CLOSED state states the effective filter ("All kinds" at
+// the none-checked default = the old all-off no-filter), and an anchored
+// panel of one checkbox per kind (the victim-side `traded` included —
+// there is still no exclusive "all" option). The round selector beside
+// it is section N's pin.
+const kindHostA = eng.querySelector('.comb-kind-host');
+const kindTrigA = kindTriggerOf(eng);
 check(
-  'kind toggles offered, no "all" button (the victim-side traded included)',
-  [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(',') ===
-    'opening,trade,traded,untraded',
-  [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
+  'kind filter is a dropdown: "Kind" field label over a trigger, no toggle buttons left',
+  !!kindHostA &&
+    kindHostA.querySelector('.field-label')?.textContent.trim() === 'Kind' &&
+    !!kindTrigA &&
+    eng.querySelectorAll('.comb-kind').length === 0,
+  kindHostA
+    ? `toggles=${eng.querySelectorAll('.comb-kind').length} trigger=${kindTrigA?.textContent.trim()}`
+    : 'no .comb-kind-host',
 );
-// The all-off verdict made mechanical: a FRESH mount starts with every
-// toggle off (aria-pressed="false", no .active) and NO filter applied —
-// every engagement row renders (all-off = all rows, never an empty
-// default card).
 check(
-  'fresh mount: all four toggles off (aria-pressed=false, no .active) and every row shown',
-  [...eng.querySelectorAll('.comb-kind')].every(
-    (b) => b.getAttribute('aria-pressed') === 'false' && !b.classList.contains('active'),
-  ) && rows(engTable).length === 2,
-  JSON.stringify(
-    [...eng.querySelectorAll('.comb-kind')].map((b) => [
-      b.textContent.trim(),
-      b.getAttribute('aria-pressed'),
-      b.classList.contains('active'),
-    ]),
-  ),
+  'closed state at the default reads "All kinds" and the panel is shut',
+  /All kinds/.test(kindTrigA?.textContent || '') && !eng.querySelector('#comb-kind-pop'),
+  kindTrigA?.textContent.trim() || 'no trigger',
+);
+const kindPopA = await openKinds(eng);
+check(
+  'opening offers one checkbox per kind, ALL unchecked (the all-off default)',
+  !!kindPopA &&
+    [...kindPopA.querySelectorAll('.filt-check')].map((l) => l.textContent.trim()).join(',') ===
+      'opening,trade,traded,untraded' &&
+    [...kindPopA.querySelectorAll('input')].every((i) => !i.checked),
+  kindPopA
+    ? JSON.stringify(
+        [...kindPopA.querySelectorAll('.filt-check')].map((l) => [
+          l.textContent.trim(),
+          l.querySelector('input')?.checked,
+        ]),
+      )
+    : 'no #comb-kind-pop',
+);
+// The all-off verdict made mechanical: a FRESH mount applies NO kind
+// filter — every engagement row renders (none-checked = all rows, never
+// an empty default card).
+check(
+  'fresh mount: none checked → NO filter — every engagement row shows',
+  rows(engTable).length === 2,
+  String(rows(engTable).length),
+);
+// Escape is the canonical Popover dismissal (the component's contract):
+// the panel goes and focus returns to the trigger (the consumer's
+// onClose half — outside pointerdown closes without stealing focus).
+document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+await sleep();
+check(
+  'Escape closes the panel and returns focus to the trigger',
+  !eng.querySelector('#comb-kind-pop') && document.activeElement === kindTrigA,
+  `pop=${!!eng.querySelector('#comb-kind-pop')} focus=${document.activeElement?.tagName}`,
 );
 
 // (B) the engagement ▶ keeps its seek tick, stamps the loop-length entry
@@ -421,10 +475,10 @@ check(
   clutchSec2?.textContent.slice(0, 120),
 );
 
-// The kind-filter buttons of a given Engagements section (each scenario
-// mounts its own root, so the helper is scoped per section).
-const kindBtn = (sec, label) =>
-  [...sec.querySelectorAll('.comb-kind')].find((b) => b.textContent.trim() === label);
+// The kind filter's checkboxes live in the Engagements section's
+// dropdown panel (each scenario mounts its own root, so the helper is
+// scoped per section); openKinds() above opens the panel first — a
+// scenario keeps it open while it works the boxes.
 
 console.log('D. one kill, one row: the same-tick trade+untraded pair merges (the reported bug)');
 document.body.removeChild(root2);
@@ -496,41 +550,55 @@ check(
   dCells[1]?.textContent,
 );
 
-// The kind TOGGLES filter merged rows by CONTAINED kind, OR'd: the row
-// shows under trade AND under untraded (both on → once, not twice),
-// deselecting every toggle removes the filter (all rows — the all-off
-// default), and selecting only a kind the pair does not carry empties
-// the table.
+// The kind CHECKBOXES filter merged rows by CONTAINED kind, OR'd: the
+// row shows under trade AND under untraded (both checked → once, not
+// twice), unchecking every box removes the filter (all rows — the
+// none-checked default), checking every box is the SAME every-row
+// filter (closed state reads "All kinds" either way), and checking only
+// a kind the pair does not carry empties the table.
 const dMatched = () => !tableD.textContent.includes('No engagements match this filter.');
-click(kindBtn(engD, 'trade'));
+const popD = await openKinds(engD);
+click(kindCheck(engD, 'trade'));
 await sleep();
 check(
-  'toggle trade on → the merged row shows, its aria-pressed flips',
+  'checking trade → the merged row shows, its box is checked (opening stays clear)',
   rows(tableD).length === 1 && dMatched() &&
-    kindBtn(engD, 'trade')?.getAttribute('aria-pressed') === 'true' &&
-    kindBtn(engD, 'opening')?.getAttribute('aria-pressed') === 'false',
+    kindCheck(engD, 'trade')?.checked === true &&
+    kindCheck(engD, 'opening')?.checked === false,
   String(rows(tableD).length),
 );
-click(kindBtn(engD, 'untraded'));
+click(kindCheck(engD, 'untraded'));
 await sleep();
 check(
-  'OR union: trade+untraded both on → the SAME row shows once (both chips still on it)',
+  'OR union: trade+untraded both checked → the SAME row shows once (both chips still on it)',
   rows(tableD).length === 1 && dMatched() &&
-    [...tableD.querySelectorAll('.comb-kind-chip')].length === 2,
+    [...tableD.querySelectorAll('.comb-kind-chip')].length === 2 &&
+    kindCheck(engD, 'trade')?.checked === true &&
+    kindCheck(engD, 'untraded')?.checked === true,
   String(rows(tableD).length),
 );
-click(kindBtn(engD, 'trade'));
-click(kindBtn(engD, 'untraded'));
+click(kindCheck(engD, 'trade'));
+click(kindCheck(engD, 'untraded'));
 await sleep();
 check(
-  'deselect-all → no filter → every row shows (all-off default, never an empty card)',
+  'uncheck-all → no filter → every row shows (none-checked default, never an empty card) and the closed state reads "All kinds"',
   rows(tableD).length === 1 && dMatched() &&
-    [...tableD.querySelectorAll('.comb-kind')].every(
-      (b) => b.getAttribute('aria-pressed') === 'false' && !b.classList.contains('active'),
-    ),
+    [...popD.querySelectorAll('input')].every((i) => !i.checked) &&
+    /All kinds/.test(kindTriggerOf(engD)?.textContent || ''),
   String(rows(tableD).length),
 );
-click(kindBtn(engD, 'opening'));
+for (const k of ALL_KINDS) click(kindCheck(engD, k));
+await sleep();
+check(
+  'ALL FOUR checked → the same every-row filter as none checked, closed state still "All kinds"',
+  rows(tableD).length === 1 && dMatched() &&
+    [...popD.querySelectorAll('input')].every((i) => i.checked) &&
+    /All kinds/.test(kindTriggerOf(engD)?.textContent || ''),
+  String(rows(tableD).length),
+);
+for (const k of ALL_KINDS) click(kindCheck(engD, k));
+await sleep();
+click(kindCheck(engD, 'opening'));
 await sleep();
 check(
   'opening alone → no match (the pair carries no opening fact)',
@@ -567,24 +635,25 @@ check(
   JSON.stringify(eChips.map((c) => c.textContent.trim())) === '["opening","untraded"]',
   JSON.stringify(eChips.map((c) => c.textContent.trim())),
 );
-// Explicit OR pin: the opening+untraded pair shows under EITHER toggle
-// alone and — both selected — exactly once (union, never a duplicate).
-click(kindBtn(engE, 'opening'));
+// Explicit OR pin: the opening+untraded pair shows under EITHER checked
+// box alone and — both checked — exactly once (union, never a duplicate).
+await openKinds(engE);
+click(kindCheck(engE, 'opening'));
 await sleep();
 check(
-  'toggle opening on → the merged row shows',
+  'checking opening → the merged row shows',
   rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
   String(rows(tableE).length),
 );
-click(kindBtn(engE, 'untraded'));
+click(kindCheck(engE, 'untraded'));
 await sleep();
 check(
-  'OR union: opening+untraded both on → the SAME row shows once, both toggles pressed',
+  'OR union: opening+untraded both checked → the SAME row shows once, both boxes checked',
   rows(tableE).length === 1 &&
     !tableE.textContent.includes('No engagements match this filter.') &&
     [...tableE.querySelectorAll('.comb-kind-chip')].length === 2 &&
-    kindBtn(engE, 'opening')?.getAttribute('aria-pressed') === 'true' &&
-    kindBtn(engE, 'untraded')?.getAttribute('aria-pressed') === 'true',
+    kindCheck(engE, 'opening')?.checked === true &&
+    kindCheck(engE, 'untraded')?.checked === true,
   JSON.stringify([
     rows(tableE).length,
     [...tableE.querySelectorAll('.comb-kind-chip')].length,
@@ -763,21 +832,23 @@ check(
   ),
   iChips.find((c) => c.textContent.trim() === 'traded')?.getAttribute('title'),
 );
+const popI = await openKinds(engI);
 check(
-  'filter chip list offers traded',
-  [...engI.querySelectorAll('.comb-kind')].some((b) => b.textContent.trim() === 'traded'),
-  [...engI.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
+  'the dropdown offers the traded checkbox (the victim-side kind)',
+  !!popI &&
+    [...popI.querySelectorAll('.filt-check')].some((l) => l.textContent.trim() === 'traded'),
+  [...(popI?.querySelectorAll('.filt-check') || [])].map((l) => l.textContent.trim()).join(','),
 );
-click(kindBtn(engI, 'traded'));
+click(kindCheck(engI, 'traded'));
 await sleep();
 check(
-  'toggle traded → the merged row CONTAINS-matches and shows',
+  'checking traded → the merged row CONTAINS-matches and shows',
   rows(tableI).length === 1 && !tableI.textContent.includes('No engagements match this filter.'),
   String(rows(tableI).length),
 );
-click(kindBtn(engI, 'untraded'));
+click(kindCheck(engI, 'untraded'));
 await sleep();
-// Inverted by the OR toggles: untraded is ADDED, not swapped in — the
+// Inverted by the OR selection: untraded is ADDED, not swapped in — the
 // row still carries traded, so it keeps showing (the exclusive
 // selection used to empty the table here).
 check(

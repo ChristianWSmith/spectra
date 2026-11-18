@@ -4,8 +4,11 @@
   // (round → time-into-round → killer vs victim → distance in metres —
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
   // traded — share the one row, both chips in its Kind cell; the kind
-  // TOGGLES are independent/OR'd and ALL OFF by default = no filter,
-  // every row; the round <select> narrows the same list — round 1 by
+  // filter is a MULTI-SELECT DROPDOWN (a "Kind" field over a trigger
+  // whose closed state states the effective filter, one checkbox per
+  // kind in the canonical Popover's panel) whose selections are
+  // independent/OR'd and NONE CHECKED by default = no filter, every
+  // row; the round <select> narrows the same list — round 1 by
   // default, "All rounds" on offer — and rides the Engagements card
   // only) and the clutches
   // (won/lost toggle — won ON, lost OFF by default).
@@ -38,6 +41,7 @@
   } from '../definitions.js';
   import EventPlay from '../components/EventPlay.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import Popover from '../components/Popover.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
@@ -47,8 +51,8 @@
   // models.go). "traded" is the victim-side ANSWERED fact — the natural
   // pair of untraded — so every kill yields ≥ 1 row: exactly one
   // victim-side row (traded OR untraded) plus the killer-side facts.
-  // No '' / "all" entry: the toggles below are independent selections
-  // and every toggle OFF is the no-filter default.
+  // No '' / "all" entry: the checkboxes below are independent
+  // selections and NONE CHECKED is the no-filter default.
   const ENG_KINDS = ['opening', 'trade', 'traded', 'untraded'];
 
   let clutches = $state([]);
@@ -94,7 +98,7 @@
     return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
-  // View-local filter state (kind chips, the round scope, clutch
+  // View-local filter state (the kind selection, the round scope, clutch
   // won/lost) restores per match through the process-scoped
   // registry (viewstate.svelte.js): the key carries the match id
   // (matchKey), so match A's filters never seed into match B. App's {#if}
@@ -104,7 +108,7 @@
   // the key is unchanged, so the old match's values can never land under
   // the new key. busy/error stay transient.
   const combDefaults = () => ({
-    // Engagements: an ARRAY of active kind toggles — [] (all off) is
+    // Engagements: an ARRAY of checked kinds — [] (none checked) is
     // the no-filter default (every row), not an empty card. A stale
     // scalar `engKind` entry fails sameKind's array check and is
     // whitelisted away — no migration.
@@ -131,6 +135,15 @@
   const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
   const combSeed = combInit();
   let engKinds = $state(combSeed.engKinds);
+  // The kind dropdown's OPEN state — transient like every popover: never
+  // seeded, never in the URL (it never restores). The anchor is the
+  // field wrapper (Popover's contract: it contains trigger AND panel, so
+  // an outside pointerdown closes), and the trigger takes focus back on
+  // Escape — the Builder filter-dropdown shape, over the canonical
+  // Popover.
+  let kindOpen = $state(false);
+  let kindAnchor = $state(null);
+  let kindTrigger = $state(null);
   // The Engagements round scope: '1' (the default — round 1, see
   // combDefaults), 'all' (every round) or a round number as text;
   // see combDefaults.
@@ -245,13 +258,13 @@
     return [...groups.values()];
   });
 
-  // The kind TOGGLES filter the merged rows as an OR UNION: a row
+  // The checked KINDS filter the merged rows as an OR UNION: a row
   // matches when it CONTAINS ANY selected kind — a trade+untraded kill
-  // shows under either toggle and once (not twice) under both. With
-  // every toggle off (the default) there is no kind filter at all. The
+  // shows under either check and once (not twice) under both. With
+  // nothing checked (the default) there is no kind filter at all. The
   // round scope narrows the SAME list to ONE selected round ('all' =
-  // every row — the kind toggles' all-off rule keeps that reachable),
-  // and both predicates compose over the fetch order of
+  // every row — the kind selection's none-checked rule keeps that
+  // reachable), and both predicates compose over the fetch order of
   // engagementRows, which is preserved.
   const engRoundOptions = $derived(
     [...new Set(engagementRows.map((g) => g.round))].sort((a, b) => a - b),
@@ -281,14 +294,36 @@
     ),
   );
 
-  // Each click adds its kind to the selection or removes it (the
-  // Clutches card's independent-toggle shape): deselecting everything
-  // lands back on the all-off default = no filter. The round scope is
-  // a <select>: one pick replaces the selection ('all' or a round
+  // Each check adds its kind to the selection or removes it (the
+  // Clutches card's independent-toggle shape): unchecking everything
+  // lands back on the none-checked default = no filter. The round scope
+  // is a <select>: one pick replaces the selection ('all' or a round
   // number as text — the Utility dropdown's onchange shape).
   function toggleEngKind(k) {
     engKinds = engKinds.includes(k) ? engKinds.filter((x) => x !== k) : [...engKinds, k];
   }
+
+  // The kind dropdown's dismissal — the canonical Popover's two halves:
+  // Escape closes AND returns focus to the trigger, an outside
+  // pointerdown closes without stealing it (Popover.svelte's contract).
+  function closeKinds() {
+    kindOpen = false;
+    kindTrigger?.focus();
+  }
+  function closeKindsOutside() {
+    kindOpen = false;
+  }
+
+  // The closed state's wording — ONE spelling deciding the render: the
+  // EFFECTIVE filter. No checked kind (the default) and all four checked
+  // are the same every-duel filter (every merged row carries a kind), so
+  // both read "All kinds" — the round dropdown's "All rounds"
+  // vocabulary; a partial selection lists its kinds in kind order.
+  const kindSummary = $derived(
+    engKinds.length === 0 || engKinds.length === ENG_KINDS.length
+      ? S.combat.allKinds
+      : ENG_KINDS.filter((k) => engKinds.includes(k)).join(', '),
+  );
 
   // Deep link into the replay at a tick, with an optional entry-only
   // ?loop= range stamped beside it (undefined = none): the loop length
@@ -398,14 +433,58 @@
     <section class="panel comb-sec">
       <h2>{S.combat.engagementsHeading}</h2>
       <div class="comb-kinds" role="group" aria-label={S.combat.filterEngagementsLabel}>
-        {#each ENG_KINDS as k (k)}
-          <button
-            class="btn small comb-kind"
-            class:active={engKinds.includes(k)}
-            aria-pressed={engKinds.includes(k)}
-            onclick={() => toggleEngKind(k)}
-          >{k}</button>
-        {/each}
+        <!-- The kind filter (owner, 2026-11-18): the four toggle buttons
+             became ONE multi-select dropdown — a visible "Kind" field
+             label over a trigger whose closed state states the effective
+             filter ("All kinds" at the none-checked default), and a
+             panel of one checkbox per kind through the shared
+             .filt-check row. The canonical Popover anchors on the field
+             wrapper (it contains trigger AND panel): Escape/outside
+             pointerdown close, focus returns to the trigger on Escape —
+             Builder's filter-dropdown shape. Selection state does NOT
+             move: engKinds stays viewstate-registered (combDefaults). -->
+        <span class="comb-kind-host" bind:this={kindAnchor}>
+          <span class="comb-field">
+            <span class="field-label">{S.combat.kindFilterLabel}</span>
+            <button
+              type="button"
+              class="btn small"
+              class:primary={kindOpen}
+              bind:this={kindTrigger}
+              aria-haspopup="true"
+              aria-expanded={kindOpen}
+              aria-controls={kindOpen ? 'comb-kind-pop' : null}
+              onclick={() => (kindOpen = !kindOpen)}
+            >
+              {kindSummary}
+              <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+            </button>
+          </span>
+          <Popover
+            open={kindOpen}
+            anchor={kindAnchor}
+            onClose={closeKinds}
+            onOutside={closeKindsOutside}
+          >
+            <div
+              class="comb-kind-pop"
+              id="comb-kind-pop"
+              role="group"
+              aria-label={S.combat.kindFilterLabel}
+            >
+              {#each ENG_KINDS as k (k)}
+                <label class="filt-check">
+                  <input
+                    type="checkbox"
+                    checked={engKinds.includes(k)}
+                    onchange={() => toggleEngKind(k)}
+                  />
+                  {k}
+                </label>
+              {/each}
+            </div>
+          </Popover>
+        </span>
         <!-- The ONE round scope (owner, 2026-11-18): the chip input
              became a dropdown mirroring the Utility tab's round
              selector — a visible "Round" field label, options "All
@@ -514,13 +593,14 @@
 
     <section class="panel comb-sec">
       <h2>{S.combat.clutchesHeading}</h2>
-      <!-- Outcome TOGGLES — the same independent-toggle shape as the
-           Engagements card's kind chips (each flips its own boolean):
+      <!-- Outcome TOGGLES — the same independent-selection shape as the
+           Engagements card's kind dropdown (each flips its own boolean):
            won+lost = all rows, won-only = the default/historical list,
            lost-only = the lost rows, neither = the empty state below.
-           The one divergence: the Engagements toggles treat ALL OFF as
-           NO FILTER (every row), never an empty card. Local $state only
-           — never route-query state (retention ruling pending). -->
+           The one divergence: the Engagements kind selection treats NONE
+           CHECKED as NO FILTER (every row), never an empty card. Local
+           $state only — never route-query state (retention ruling
+           pending). -->
       <div class="comb-kinds" role="group" aria-label={S.combat.filterClutchesLabel}>
         <button
           class="btn small comb-kind"
