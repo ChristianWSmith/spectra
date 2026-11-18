@@ -829,16 +829,20 @@ export function deleteMetric(id) {
   });
 }
 // previewMetric runs a compiled expression: id rides an empty expr (the
-// SAVED definition — denominator included), a non-empty expr is ad-hoc.
-// scope: "" = whole library, "match:<id>" = one match. There is no
-// groupBy argument (retired with the W2 grammar wave) — the engine
-// addresses every preview row by its subject.
+// SAVED definition — denominator included, addressing read off its row),
+// a non-empty expr is ad-hoc. subject/partition/scope are the DRAFT's own
+// addressing (2026-11-18 — the same triple validateExpr threads): the
+// server compiles the draft under them, so a match/team-subject draft
+// previews as its subject instead of false-refusing at the player
+// default. The run itself is library-wide (no groupBy argument — retired
+// with the W2 grammar wave) — the engine addresses every preview row by
+// its subject.
 // DESIGN §5 PREVIEW CRITERION: this is the ON-DEMAND CALCULATOR for
 // unsaved/dirty drafts (authoring state has no stored rows). A saved +
 // unmodified definition must instead read its stored rows through
 // getMetricValuesForMatch/getMetricValuesForPlayer below — never this.
-export function previewMetric(id, expr, scope, limit) {
-  return MetricsService.PreviewMetric(id, expr || '', scope || '', limit || 200);
+export function previewMetric(id, expr, subject, partition, scope, limit) {
+  return MetricsService.PreviewMetric(id, expr || '', subject || '', partition || '', scope || '', limit || 200);
 }
 // validateExpr is the Builder's live check; subject/partition/scope are
 // the DRAFT's own addressing (2026-11-18) — the server compiles the

@@ -1017,8 +1017,10 @@
   // plain state indicator — no `ms`, because it timed nothing. A dirty
   // or unsaved draft is authoring state with NO rows: it stays an
   // on-demand calculation through PreviewMetric (timing included — it
-  // genuinely computed), enforcing player-relativity like any invalid
-  // expression.
+  // genuinely computed) under the draft's OWN addressing (subject,
+  // partition, scope — the same triple the live check validates it
+  // with), so a match-subject draft previews as its subject instead of
+  // refusing at the player default.
   async function runPreview(target) {
     previewError = '';
     const id = target ? target.id : form.id;
@@ -1034,6 +1036,10 @@
       id,
       expr: adhoc ? expr : '',
       adhoc,
+      // The draft's own addressing rides the ad-hoc leg only — the
+      // stored leg reads addressing off the saved row instead.
+      subject: adhoc ? form.subject : '',
+      partition: adhoc ? form.partition : '',
       scope: target ? target.scope || 'match' : form.scope,
       format: target ? target.format || '' : form.format,
     });
@@ -1046,7 +1052,14 @@
     previewAdhoc = spec.adhoc;
     try {
       if (spec.adhoc) {
-        const pv = await previewMetric(spec.id, spec.expr, '', PREVIEW_LIMIT);
+        const pv = await previewMetric(
+          spec.id,
+          spec.expr,
+          spec.subject || '',
+          spec.partition || '',
+          spec.scope || '',
+          PREVIEW_LIMIT,
+        );
         preview = {
           rows: (pv && pv.rows) || [],
           format: spec.format,

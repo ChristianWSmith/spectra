@@ -316,8 +316,8 @@ bindings.handlers.ListMetricsPage = (
 // PreviewMetric — the SAVED leg must NOT (design §5: a saved +
 // unmodified definition reads its stored rows).
 const previewCalls = [];
-bindings.handlers.PreviewMetric = (id, expr, scope, limit) => {
-  previewCalls.push([id, expr, scope, limit]);
+bindings.handlers.PreviewMetric = (id, expr, subject, partition, scope, limit) => {
+  previewCalls.push([id, expr, subject, partition, scope, limit]);
   const m = METRICS.find((r) => r.id === id) || {};
   return {
     metric: m,

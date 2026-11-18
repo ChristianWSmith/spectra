@@ -75,7 +75,7 @@ func TestSaveMetricScope(t *testing.T) {
 
 	// PreviewMetric: the W2 arity (id, expr, scope, limit) — an empty
 	// expr runs the saved definition, and the preview is subject-grouped.
-	pv, err := svc.PreviewMetric(saved.ID, "", "", 10)
+	pv, err := svc.PreviewMetric(saved.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("PreviewMetric: %v", err)
 	}
@@ -620,7 +620,7 @@ func TestPreviewMetricSubjectShapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveMetric: %v", err)
 	}
-	pv, err := svc.PreviewMetric(matchSubj.ID, "", "", 10)
+	pv, err := svc.PreviewMetric(matchSubj.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("PreviewMetric(match subject): %v", err)
 	}
@@ -635,7 +635,7 @@ func TestPreviewMetricSubjectShapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveMetric: %v", err)
 	}
-	pv, err = svc.PreviewMetric(teamSubj.ID, "", "", 10)
+	pv, err = svc.PreviewMetric(teamSubj.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("PreviewMetric(team subject): %v", err)
 	}
@@ -697,5 +697,63 @@ func TestValidateExprCarriesDraftAddressing(t *testing.T) {
 		t.Errorf("ValidateExpr(match subject, profile scope) = (%v, %+v, %v), want the matrix refusal", ok, ee, err)
 	} else if !strings.Contains(ee.Message, "can't be profile-scoped") && !strings.Contains(ee.Message, "profile") {
 		t.Errorf("profile refusal message = %q, want it to name the profile scope", ee.Message)
+	}
+}
+
+// TestPreviewMetricCarriesDraftAddressing pins the address-aware ad-hoc
+// preview (2026-11-18 — the deferral PreviewMetric's draft leg carried
+// is fulfilled): a draft previews under ITS OWN subject/partition/scope
+// — the same draftAddress the live check and the save use — instead of
+// the zero-value address, which normalized to subject "player". Before
+// it, a match-subject argmax draft false-refused at Preview with
+// `invalid metric expression: argmax() needs subject "match": it picks
+// each match's leading player (declared subject "player")` although the
+// same expression validates and saves clean.
+func TestPreviewMetricCarriesDraftAddressing(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "preview-address.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	// (a) A subject=match draft whose lead is legal ONLY for its own
+	// subject previews successfully under the draft's addressing (the
+	// base false-refusal above).
+	const argmax = "from player_stats: argmax(kills)"
+	pv, err := svc.PreviewMetric(0, argmax, "match", "", "match", 10)
+	if err != nil {
+		t.Fatalf("PreviewMetric(match-subject argmax draft): %v", err)
+	}
+	if pv.SQL == "" {
+		t.Error("match-subject argmax draft previewed without provenance SQL")
+	}
+
+	// (b) The same expression on a PLAYER subject still refuses — the
+	// compile's argmax contract stays load-bearing at preview exactly as
+	// the live check pins it.
+	if _, err := svc.PreviewMetric(0, argmax, "player", "", "match", 10); err == nil ||
+		!strings.Contains(err.Error(), `argmax() needs subject "match"`) {
+		t.Errorf("PreviewMetric(argmax, subject=player) err = %v, want the argmax subject refusal", err)
+	}
+
+	// (c) Default addressing is byte-unchanged: an omitted subject
+	// previews statement-for-statement like an explicit player one
+	// (draftAddress's "" → player), and the statement is the one the
+	// player-default leg produced before the threading landed.
+	def, err := svc.PreviewMetric(0, "from events: count()", "", "", "", 10)
+	if err != nil {
+		t.Fatalf("PreviewMetric(default addressing): %v", err)
+	}
+	const baseSQL = `SELECT attacker AS grp, COUNT(*), COUNT(*) AS n FROM events WHERE attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY grp ORDER BY grp`
+	if def.SQL != baseSQL {
+		t.Errorf("default-addressing draft SQL changed (byte-unchanged expected):\ngot:  %s\nwant: %s", def.SQL, baseSQL)
+	}
+	pl, err := svc.PreviewMetric(0, "from events: count()", "player", "", "match", 10)
+	if err != nil {
+		t.Fatalf("PreviewMetric(explicit player): %v", err)
+	}
+	if def.SQL != pl.SQL {
+		t.Errorf("default-addressing SQL != explicit player SQL\ndefault: %s\nplayer:  %s", def.SQL, pl.SQL)
 	}
 }

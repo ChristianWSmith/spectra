@@ -584,7 +584,7 @@ func TestRenameSpliceEvaluatesIdentically(t *testing.T) {
 	// upstream's own version and the live rule version.
 	seedStoredValue(t, f.path, up.ID, matchID, depSteamID, 2, 1, up.Version, cfg.RuleVersion)
 
-	before, err := f.svc.PreviewMetric(dep.ID, "", "", 10)
+	before, err := f.svc.PreviewMetric(dep.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("preview before rename: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestRenameSpliceEvaluatesIdentically(t *testing.T) {
 		t.Fatalf("rename: %v", err)
 	}
 
-	after, err := f.svc.PreviewMetric(dep.ID, "", "", 10)
+	after, err := f.svc.PreviewMetric(dep.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("preview after rename: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestDraftRefsResolveAgainstSavedMetrics(t *testing.T) {
 	}
 
 	// An ad-hoc preview runs the draft against the saved metric.
-	pv, err := f.svc.PreviewMetric(0, "from events: metric('draft_up')", "", 10)
+	pv, err := f.svc.PreviewMetric(0, "from events: metric('draft_up')", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("ad-hoc preview: %v", err)
 	}
@@ -642,7 +642,7 @@ func TestDraftRefsResolveAgainstSavedMetrics(t *testing.T) {
 
 	// A saved ref-bearing metric previews through the same resolution.
 	f.save(t, models.MetricRow{Name: "draft_dep", Expr: "from events: metric('draft_up')"})
-	if _, err := f.svc.PreviewMetric(mustID(t, f.st, "draft_dep"), "", "", 10); err != nil {
+	if _, err := f.svc.PreviewMetric(mustID(t, f.st, "draft_dep"), "", "", "", "", 10); err != nil {
 		t.Fatalf("saved ref-bearing preview: %v", err)
 	}
 
