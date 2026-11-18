@@ -272,7 +272,11 @@ const EXPECTED = {
   // read-back of the written value through a stateful store, and Reset
   // order leaving the shape key untouched (the checkbox stays checked).
   // Sections A–J untouched by w25.
-  'builder.dom.mjs': 163,
+  // builder 163 → 165 (2026-11-17, the Origin group gained the Plugin
+  // box and its middle box relabelled Custom): +2 section B — the
+  // "builtin,plugin" and "user" checked-set windows pin the third box's
+  // subset words beside the existing "plugin"/"none" states.
+  'builder.dom.mjs': 165,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

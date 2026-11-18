@@ -148,8 +148,10 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // ListMetricsPage returns ONE keyset window of the same list ListMetrics
 // returns (the Builder's "Load more" pagination): the rows after afterID
 // (0 = the first window) for the same server-side search query AND the
-// same server-side filters — origin ("" = all, "builtin", "mine" = user +
-// plugin, "none" = both toggles off), scope ("match", "profile", "none"),
+// same server-side filters — origin (the Builder Origin group's checked
+// set: "" = every box, "none" = no box, or the canonical comma-subset
+// of the three origin tokens builtin/user/plugin — the Custom box is
+// "user", the Plugin box "plugin"), scope ("match", "profile", "none"),
 // denominator (the Denominator group's checked set as a canonical
 // comma-subset of the three bucket tokens rounds/matches/none where
 // "none" names the denominator-less rows: "" = every box, "empty" = no

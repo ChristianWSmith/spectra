@@ -316,8 +316,8 @@ console.log('C. the origin group and the title search narrow the list (client-si
     $('.rb-row').length === 2 &&
       !r.textContent.includes('Match report'),
     `${$('.rb-row').length} rows`);
-  await setCheck(boxes[1], false); // Yours off
-  check('Yours off too → only the plugin row',
+  await setCheck(boxes[1], false); // Custom off
+  check('Custom off too → only the plugin row',
     $('.rb-row').length === 1 &&
       $('.rb-row')[0].querySelector('.rb-row-title').textContent.trim() === 'Plugin report',
     `${$('.rb-row').length} rows`);

@@ -90,6 +90,47 @@ const (
 	ListMetricsPageMaxRows = 500
 )
 
+// metricOriginTokens is the CANONICAL metric-origin vocabulary in
+// origin-rank order (the three values metricOriginRank sorts by) — the
+// tokens ListMetricsPage's origin filter accepts: the Builder Origin
+// group's three boxes (Built-in / Custom / Plugin — "builtin",
+// "user" the user-authored origin behind the Custom box, "plugin" the
+// installed-plugin origin). Like metricFormatTokens it is what makes a
+// subset word canonical instead of merely valid; the empty checked set
+// is the caller's separate "none" word (see the ORIGIN FILTER note
+// below).
+var metricOriginTokens = []string{"builtin", "user", "plugin"}
+
+// originFilterPredicate renders ListMetricsPage's origin-subset
+// predicate for a word that is neither "" (all-on) nor "none" (all-off,
+// the caller's switch): one `origin IN (?, …)` — the canonical
+// comma-subset, every token a literal column value (the format and
+// denominator vocabularies each bind their ” value as its own
+// equality; origin has no such bucket). Every token must be known,
+// DISTINCT and in metricOriginTokens order (a known-but-reordered word
+// is a non-canonical word, and an empty segment is an unknown token),
+// so anything else is the pre-SQL rejection `unknown origin filter %q`
+// (the scope/denominator/format copy) and NO SQL ever runs.
+func originFilterPredicate(word string) (string, []any, error) {
+	var (
+		literals []string
+		lastRank = -1
+	)
+	for _, tok := range strings.Split(word, ",") {
+		rank := slices.Index(metricOriginTokens, tok)
+		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
+			return "", nil, fmt.Errorf("couldn't load the metrics: unknown origin filter %q", word)
+		}
+		lastRank = rank
+		literals = append(literals, tok)
+	}
+	args := make([]any, 0, len(literals))
+	for _, lit := range literals {
+		args = append(args, lit)
+	}
+	return `origin IN (` + strings.TrimSuffix(strings.Repeat("?,", len(literals)), ",") + `)`, args, nil
+}
+
 // metricFormatTokens is the CANONICAL metric-format vocabulary in enum
 // order — the tokens ListMetricsPage's format filter accepts, with
 // "auto" naming the format column's ” value (the form's own Auto /
@@ -204,17 +245,20 @@ func denomFilterPredicate(word string) (string, []any, error) {
 // default). It rides the SAME WHERE as the cursor predicate, so a
 // filtered walk tiles the filtered list exactly.
 //
-// ORIGIN FILTER: originFilter narrows the window SERVER-side to one side
-// of the built-in partition — "builtin" (origin = 'builtin'), "mine"
-// (every OTHER origin: user + plugin — spelled as the complement
-// `origin <> 'builtin'`, so the two Builder toggles can never disagree
-// with the store about what "mine" means, and a future origin value
-// lands on the mine side by default), "none" (both toggles off — the
-// empty set, still one read path), "" (no predicate — the whole
-// catalog). It rides the SAME WHERE as the search and the cursor, so the
-// composed walk tiles the composed list exactly; a client-side filter
-// over a page window would drop rows at the window edges. An unknown
-// value is rejected before any SQL.
+// ORIGIN FILTER: originFilter narrows the window SERVER-side to a
+// SUBSET of the origin column — the Builder Origin group's three
+// checkboxes (Built-in / Custom / Plugin). It is the same canonical
+// comma-subset shape as DENOMINATOR and FORMAT below, over
+// metricOriginTokens (builtin, user, plugin — metricOriginRank's three
+// values): "" = every box checked (no predicate — the whole catalog),
+// "none" = no box checked (the empty set, the same spelling scope
+// uses), and any other word is a CANONICAL COMMA-SUBSET
+// ("builtin,plugin"): every token known, distinct and in
+// metricOriginTokens order. An unknown token, an empty element, a
+// duplicate or a reorder is rejected before any SQL. It rides the SAME
+// WHERE as the search and the cursor, so the composed walk tiles the
+// composed list exactly; a client-side filter over a page window would
+// drop rows at the window edges.
 //
 // SCOPE FILTER: scopeFilter is the SAME shape over the scope column —
 // "match", "profile", "none" (both toggles off — every row carries one
@@ -258,7 +302,7 @@ func denomFilterPredicate(word string) (string, []any, error) {
 // in-store resolution ListMatchesPage does (one driver path, and a
 // cursor row that vanished between two windows is ErrNotFound instead of
 // a silently mis-placed page). The cursor row may sit OUTSIDE a
-// filtered set (a builtin cursor on a "mine" walk): it still
+// filtered set (a builtin cursor on a "user,plugin" walk): it still
 // resolves, because the predicate is the row's stored key, not membership.
 //
 // KEYSET PREDICATE: `(rank, name) > (?, ?)` — SQLite's row-value
@@ -293,20 +337,22 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 		where.WriteString(pred)
 		args = append(args, a...)
 	}
-	// The origin partition goes first (the coarsest narrowing). "none"
-	// is a constant-false predicate rather than a view-side short-circuit
-	// so both-off keeps the ONE read path (same cache key shape, same
-	// cursor semantics as every other window).
+	// The origin subset goes first (the coarsest narrowing). "none" is
+	// a constant-false predicate rather than a view-side short-circuit
+	// so all-off keeps the ONE read path (same cache key shape, same
+	// cursor semantics as every other window); every other word is the
+	// canonical comma-subset originFilterPredicate renders — its
+	// rejection happens there, before any SQL.
 	switch originFilter {
 	case "": // no predicate — the whole catalog
-	case "builtin":
-		addWhere(`origin = 'builtin'`)
-	case "mine":
-		addWhere(`origin <> 'builtin'`)
 	case "none":
 		addWhere(`0 = 1`)
 	default:
-		return nil, fmt.Errorf("couldn't load the metrics: unknown origin filter %q", originFilter)
+		pred, a, err := originFilterPredicate(originFilter)
+		if err != nil {
+			return nil, err
+		}
+		addWhere(pred, a...)
 	}
 	// The scope partition: both values are DDL-checked, so both-off is
 	// the empty set exactly like origin's "none".

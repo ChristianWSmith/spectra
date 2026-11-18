@@ -400,7 +400,7 @@
             type="checkbox"
             checked={showYours}
             onchange={(e) => (showYours = e.currentTarget.checked)}
-          /> {S.reportbuilder.filterYours}</label
+          /> {S.reportbuilder.filterCustom}</label
         >
         <label class="filt-check"
           ><input

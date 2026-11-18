@@ -386,12 +386,12 @@ func TestListMetricsPageArity(t *testing.T) {
 		}
 	}
 
-	// The four filters in one call: origin 'mine' + scope 'match' +
+	// The four filters in one call: origin 'user,plugin' + scope 'match' +
 	// denominator 'rounds' + format 'float1' selects exactly the one
 	// seeded user row (the plugin's/other users' rows differ on a
 	// predicate, the builtins are excluded by origin) — so every filter
 	// word landed where it belongs.
-	page, err = svc.ListMetricsPage("", "mine", "match", "rounds", "float1", 0, 0)
+	page, err = svc.ListMetricsPage("", "user,plugin", "match", "rounds", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, match, rounds, float1): %v", err)
 	}
@@ -424,14 +424,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	if mineFloat1 == 0 {
 		t.Fatalf("fixture has no float1 mine row — the format narrowing check would be vacuous")
 	}
-	f1, err := svc.ListMetricsPage("", "mine", "", "", "float1", 0, 0)
+	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=float1): %v", err)
 	}
 	if len(f1.Rows) != mineFloat1 {
 		t.Errorf("mine+float1 = %d rows, want every float1 mine row (%d)", len(f1.Rows), mineFloat1)
 	}
-	pc, err := svc.ListMetricsPage("", "mine", "", "", "percent", 0, 0)
+	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "percent", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=percent): %v", err)
 	}
