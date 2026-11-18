@@ -42,6 +42,10 @@ const { compile } = await import('svelte/compiler');
 const { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } = await import('node:fs');
 const { dirname, join, normalize, relative } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
+// The stored-row oracle below resolves per-team keys with the REAL
+// side-parity module (the same teamKeyAt the retired view computation
+// called and the stored team stamps are written through).
+const { teamKeyAt } = await import('../src/lib/sideparity.js');
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   pretendToBeVisual: true,
@@ -398,16 +402,21 @@ const seedValues = (matchID, ids) => {
   return out;
 };
 
-// The two ECONOMY card seeds' rows (plan §8 M8 rows): the card values
-// are stored metric rows since their migration — pistol_hold
-// (percent — the held ÷ won RATE the card used to render as "1/2") and
-// avg_equip_gap (currency — the mean decided-round winner gap). The
-// driver computes each value with the SAME view aggregate the card
-// used before the migration (an independent in-driver port over
-// economyRows below) and serves it as the STORED row; exact equivalence
+// The four ECONOMY card seed families' rows (plan §8 M8 rows + the
+// view-aggregate relocation, ME8 audit): the card values are stored
+// metric rows since their migrations — pistol_hold (percent — the held
+// ÷ won RATE the card used to render as "1/2"), avg_equip_gap
+// (currency — the mean decided-round winner gap), the force card's
+// team_force_wins / team_force_rounds count pairs (its headline
+// percent pools them) and the lost card's lost_equip total +
+// team_lost_equip halves. The driver computes each value with the SAME
+// view aggregate the cards used before the migration (an independent
+// in-driver port over economyRows below — the real teamKeyAt for the
+// per-team keys) and serves it as the STORED row; exact equivalence
 // of the SEEDED expressions to this oracle is pinned in Go
 // (internal/metrics econ_equivalence_test.go), the rendered strings in
-// section M8. Match-subject rows carry subjectKey ''.
+// section M8. Match-subject rows carry subjectKey ''; team rows the
+// team key.
 const ECON_SEED_DEFS = Object.freeze([
   {
     id: 106, name: 'pistol_hold', title: 'pistol_hold', shortName: '',
@@ -419,10 +428,37 @@ const ECON_SEED_DEFS = Object.freeze([
     scope: 'match', subject: 'match', format: 'currency',
     doc: 'Formula: mean winner − loser freeze-end equip — addressed per match',
   },
+  {
+    id: 113, name: 'team_force_wins', title: 'team_force_wins', shortName: '',
+    scope: 'match', subject: 'team', format: 'int',
+    doc: 'Formula: count of that team’s force rounds won — addressed per team',
+  },
+  {
+    id: 114, name: 'team_force_rounds', title: 'team_force_rounds', shortName: '',
+    scope: 'match', subject: 'team', format: 'int',
+    doc: 'Formula: count of that team’s own force rounds — addressed per team',
+  },
+  {
+    id: 115, name: 'lost_equip', title: 'lost_equip', shortName: '',
+    scope: 'match', subject: 'match', format: 'currency',
+    doc: 'Formula: total freeze-end equip lost across decided rounds — addressed per match',
+  },
+  {
+    id: 116, name: 'team_lost_equip', title: 'team_lost_equip', shortName: '',
+    scope: 'match', subject: 'team', format: 'currency',
+    doc: 'Formula: freeze-end equip that team lost — addressed per team',
+  },
 ]);
-const econSeedValues = (ids, countedN) => {
+const econSeedValues = (ids, countedN, switches) => {
   const rows = economyRows(countedN);
   let held = 0, won = 0, sum = 0, n = 0;
+  // The retired force/lost view computation, in-driver: per-team force
+  // counts (teamKeyAt per row — a round both teams force-bought counts
+  // for each) and the lost-equip halves (the loser's freeze-end equip
+  // credits the team behind the loser side).
+  const force = { ct: { won: 0, total: 0 }, t: { won: 0, total: 0 } };
+  const lost = { ct: 0, t: 0 };
+  let lostTotal = 0;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (r.pistolRound) {
@@ -439,11 +475,25 @@ const econSeedValues = (ids, countedN) => {
     else continue;
     sum += (win || 0) - (lose || 0);
     n++;
+    for (const side of [r.classCT === 'force' ? 'ct' : '', r.classT === 'force' ? 't' : ''].filter(Boolean)) {
+      const key = teamKeyAt(side, i, rows.length, switches);
+      if (!key) continue;
+      force[key].total++;
+      if (side === 'ct' ? r.wonCT : r.wonT) force[key].won++;
+    }
+    const loserSide = r.winner === 'ct' ? 't' : 'ct';
+    const loserEquip = loserSide === 'ct' ? r.equipCT || 0 : r.equipT || 0;
+    const loserKey = teamKeyAt(loserSide, i, rows.length, switches);
+    if (loserKey) { lost[loserKey] += loserEquip; lostTotal += loserEquip; }
   }
   const out = [];
   for (const id of ids || []) {
     if (id === 106) out.push({ metricId: 106, subjectKey: '', value: won ? held / won : 0, n: rows.length });
     if (id === 107) out.push({ metricId: 107, subjectKey: '', value: n ? sum / n : 0, n: rows.length });
+    if (id === 113) for (const k of ['ct', 't']) out.push({ metricId: 113, subjectKey: k, value: force[k].won, n: rows.length });
+    if (id === 114) for (const k of ['ct', 't']) out.push({ metricId: 114, subjectKey: k, value: force[k].total, n: rows.length });
+    if (id === 115) out.push({ metricId: 115, subjectKey: '', value: lostTotal, n: rows.length * 2 });
+    if (id === 116) for (const k of ['ct', 't']) out.push({ metricId: 116, subjectKey: k, value: lost[k], n: rows.length });
   }
   return out;
 };
@@ -504,8 +554,8 @@ const identitySeedValues = (ids) => {
   return out;
 };
 
-const dataFor = (countedN) => ({
-  getMatch: match,
+const dataFor = (countedN, switches = 1) => ({
+  getMatch: { ...match, sideSwitches: switches },
   getMatchSummary: summary,
   getRounds: [...preMatch, ...counted(countedN)],
   getScoreboard: scoreboard,
@@ -524,7 +574,7 @@ const dataFor = (countedN) => ({
   listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS, ...IDENTITY_SEED_DEFS],
   getMetricValuesForMatch: (matchID, ids) => [
     ...seedValues(matchID, ids),
-    ...econSeedValues(ids, countedN),
+    ...econSeedValues(ids, countedN, switches),
     ...identitySeedValues(ids),
   ],
   getMetricComputeState: [],
@@ -896,10 +946,14 @@ check(
 );
 
 // ME0 (metrics-expansion Phase 0, M8 pre-image): the four summary
-// cards' COMPUTED VALUES on this fixture — pistol held/won, force-win
-// %, avg equip gap (rounded), lost-equip total + per-team split, and
+// cards' VALUES on this fixture — pistol held/won, force-win %,
+// avg equip gap (rounded), lost-equip total + per-team split, and
 // each card's drill round — pinned as the display strings the view
-// renders today (above, only the drill BEHAVIOR was pinned).
+// renders today (above, only the drill BEHAVIOR was pinned). All four
+// values read STORED metric rows since their migrations (pistol/gap —
+// plan §8 M8; force/lost — the view-aggregate relocation, ME8 audit);
+// the rows are the in-driver ports above, so these strings rest on
+// the same aggregate the retired view computation produced.
 {
   const sumCards = [...root.querySelectorAll('.econ-summary .stat-cell')];
   const val = (i) => sumCards[i]?.querySelector('.stat-value')?.textContent ?? '';
@@ -919,9 +973,14 @@ check(
   // number as the fraction notation "1/2"; a stored metric value is a
   // single number, so the card's format tag decides the notation.
   check('M8: pistol held rate = 50% (1/2 — rounds 1+13 won, only round 1 held)', val(0) === '50%', val(0));
+  // The force card's pair composes from its stored count rows
+  // (team_force_wins / team_force_rounds — the view-aggregate
+  // relocation, ME8 audit): six era-0 T-side force rounds attribute to
+  // Alpha (final CT), none won; Beta never force-bought.
   check('M8: force-win = 0% (6 T-side force rounds, none won)', val(1) === '0%', val(1));
   check('M8: force sub = per-team won/total (rounds 1–12 t-side forces attribute to Alpha)', sub(1) === 'Alpha 0/6 · Beta 0/0', sub(1));
   check('M8: avg equip gap = $67 (round(800/12) over 12 decided rounds)', val(2) === '$67', val(2));
+  // The lost card reads lost_equip (total) + team_lost_equip (halves).
   check('M8: lost-equip total = $53,800 (sum of loser freeze-end equip)', val(3) === '$53,800', val(3));
   check('M8: lost sub = per-team split (Alpha = era-0 loser-T 30200; Beta = era-0 loser-CT 18600 + r13 loser-T 5000)', sub(3) === 'Alpha $30,200 · Beta $23,600', sub(3));
   check(
@@ -1062,7 +1121,7 @@ console.log('F2. EconCurve n=28 (golden nuke shape, sideSwitches=2): resets-only
 // [12, 24, 27] — a strict superset — so the row structure is
 // 1-12 | 13-24 | 25-27 | 28: the round-25 gap carries NO side switch
 // (same class both sides), the round-28 gap does.
-root = await showMatch({ ...dataFor(28), getMatch: { ...match, sideSwitches: 2 } }, { routeTab: 'Economy' });
+root = await showMatch(dataFor(28, 2), { routeTab: 'Economy' });
 const paths28 = [...root.querySelectorAll('.econ-line')];
 check('28 rows × 4 money resets → 2 teams × 4 eras = 8 paths', paths28.length === 8, String(paths28.length));
 const cls28 = (p) => (p.classList.contains('side-ct') ? 'ct' : p.classList.contains('side-t') ? 't' : '?');

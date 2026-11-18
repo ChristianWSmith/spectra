@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the ONE HUNDRED AND SEVEN schema-seeded builtins
+// builtinSeed maps the ONE HUNDRED AND NINE schema-seeded builtins
 // (schema.sql —
 // name/expr/scope/subject/partition/format/short_name/denominator are
 // LOCKED to the baseline seed by this table) onto their hand-computed
@@ -62,7 +62,10 @@ func seededStore(t *testing.T) *store.Store {
 // difference; the M7 weapon-damage flip (plan §8 (M7 row), 2026-11-18)
 // finally lands the third weapon column — ONE HUNDRED AND SEVEN /
 // 74 match + 33 profile — the capped_dmg ingest stamp closed the gate
-// and the damage column migrated.)
+// and the damage column migrated; the view-aggregate relocation
+// addendum (ME8 exception audit, 2026-11-18) then lands the force
+// card's two team count rows — ONE HUNDRED AND NINE / 76 match +
+// 33 profile — cited to the view-aggregate rule, not a plan row.)
 // interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
@@ -1008,6 +1011,30 @@ var builtinSeed = []struct {
 		scope: "match", subject: "match", format: "currency", shortName: "", denominator: "",
 		interpretation: "mean winner-minus-loser freeze-end equip over decided rounds (alternating ±500 → 0; N = the match's rounds)",
 		rows:           3, wantAll: 0, wantN: 24, wantLabels: "1,2,3",
+	},
+	// ---- view-aggregate relocation addendum (ME8 exception audit,
+	// 2026-11-18): the force card's per-team count pairs — the last
+	// view-computed card numbers, relocated onto seeds under the
+	// view-aggregate rule's third clause (the discriminating shapes —
+	// a side switch, both teams force-buying, an analyzed zero-force
+	// match, the unanalyzed absence — live in econ_equivalence_test.go).
+	// Corpus math (testdata/seed.sql): force class rows on matches 2-3
+	// only (rounds 2-4 both sides; match 1 carries NONE, so it produces
+	// no group and no row — the honest empty, never a fabricated 0);
+	// ct wins only round 3 of its three force rounds (1), t wins rounds
+	// 2 and 4 (2); N is the team's class rows behind the value (3),
+	// never the filtered force rows.
+	{
+		name: "team_force_wins", expr: "from round_side_classes, rounds: count(where class = 'force' and winner = side)",
+		scope: "match", subject: "team", format: "int", shortName: "", denominator: "",
+		interpretation: "force rounds that team won (corpus matches 2-3: ct 1, t 2; match 1 unanalyzed → no row)",
+		rows:           4, wantValues: []float64{1, 2, 1, 2}, wantN: 3, wantLabels: "ct,t,ct,t",
+	},
+	{
+		name: "team_force_rounds", expr: "from round_side_classes: count(where class = 'force')",
+		scope: "match", subject: "team", format: "int", shortName: "", denominator: "",
+		interpretation: "that team's own force-buy rounds (corpus matches 2-3: 3 each — every class row there is force)",
+		rows:           4, wantValues: []float64{3, 3, 3, 3}, wantN: 3, wantLabels: "ct,t,ct,t",
 	},
 }
 
