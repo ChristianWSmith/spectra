@@ -1470,7 +1470,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('side_kd', 'K/D', '',
  'from player_round_stats: ratio(sum(kills), max(sum(deaths), 1))',
  'profile', 'player', 'side', 'float2',
- 'Formula: sum(player_round_stats.kills) / max(sum(player_round_stats.deaths), 1) — kills per death by side, addressed per player, partitioned by side — a deathless side divides by 1; N = rounds on the side.',
+ 'Formula: sum(player_round_stats.kills) / max(sum(player_round_stats.deaths), 1) — kills per death, addressed per player, partitioned by side — a deathless side divides by 1; N = rounds on the side.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('map_matches', 'Matches', '',
  'from player_stats: count()',
