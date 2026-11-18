@@ -3305,3 +3305,48 @@ INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES 
 INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 3, 't', 'force', 'seed fixture', 't');
 INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 4, 'ct', 'force', 'seed fixture', 'ct');
 INSERT INTO round_side_classes (match_id, round, side, class, why, team) VALUES (3, 4, 't', 'force', 'seed fixture', 't');
+
+-- Partition stamp fills (metrics expansion §8 M5/M6 rows, 2026-11-17):
+-- deliberate fixture extension in the round_side_classes block's style.
+-- The corpus's INSERTs predate the stamps, so the three fills below
+-- give the side/map partitions real inputs without touching a single
+-- existing INSERT line:
+--
+--   1. player_stats.map  — copied from the match row (the §5 stamp's
+--      production rule: player_stats.map IS the match's map), so the
+--      map partition has one dim per match (de_mirage / de_dust2 /
+--      de_inferno — the corpus's three maps).
+--   2. player_stats.won  — models.WinFor over the stored score: every
+--      corpus match is a 12-12 tie, so won = 0 everywhere (a tie is
+--      not a win), which is what the win_pct fixture already pins.
+--   3. round_player_sides — the freeze-end side samples the side-split
+--      oracle (store.GetPlayerSideSplits) joins: the corpus carries no
+--      per-round side switch (side_switches = 0), so a player's sample
+--      in EVERY round equals their final side (players 1-4 ct, 5-8 t).
+--      team stays '' (the corpus never stamps the sideparity team key
+--      on this table — team-subject seeds keep dropping these rows).
+--      ALL THREE matches are filled: join_test's match-1 rig re-seeds
+--      the same values after a DELETE, so its inserts never collide.
+--   4. player_round_stats.side/won — stamped FROM those samples and
+--      the round winners, exactly as analytics.PlayerRounds derives
+--      them in production (side '' would only appear for a round with
+--      no sample; the corpus has none), so the side-partitioned seeds'
+--      inputs and the oracle's join read the same truth.
+UPDATE player_stats SET map = (SELECT m.map FROM matches m WHERE m.id = player_stats.match_id);
+UPDATE player_stats SET won = CASE
+	WHEN player_stats.side = 'ct' AND (SELECT m.score_ct FROM matches m WHERE m.id = player_stats.match_id) > (SELECT m.score_t FROM matches m WHERE m.id = player_stats.match_id) THEN 1
+	WHEN player_stats.side = 't' AND (SELECT m.score_t FROM matches m WHERE m.id = player_stats.match_id) > (SELECT m.score_ct FROM matches m WHERE m.id = player_stats.match_id) THEN 1
+	ELSE 0 END;
+INSERT INTO round_player_sides (match_id, round, steam_id, side, team)
+	SELECT prs.match_id, prs.round, prs.steam_id, ps.side, ''
+	FROM player_round_stats prs
+	JOIN player_stats ps ON ps.match_id = prs.match_id AND ps.steam_id = prs.steam_id;
+UPDATE player_round_stats SET side = COALESCE((
+	SELECT rps.side FROM round_player_sides rps
+	WHERE rps.match_id = player_round_stats.match_id
+	  AND rps.round = player_round_stats.round
+	  AND rps.steam_id = player_round_stats.steam_id), '');
+UPDATE player_round_stats SET won = CASE
+	WHEN side <> '' AND side = (SELECT r.winner FROM rounds r
+		WHERE r.match_id = player_round_stats.match_id AND r.number = player_round_stats.round)
+	THEN 1 ELSE 0 END;

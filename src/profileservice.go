@@ -35,30 +35,6 @@ type ProfileSummary struct {
 	LastSeen string `json:"lastSeen"` // date of most recent match ("" if unknown)
 }
 
-// ProfileSide is the player's per-ROUND split by side (players switch
-// sides at halftime, so this is rounds played on CT vs T — never a
-// per-match side; see store.GetPlayerSideSplits).
-type ProfileSide struct {
-	Side        string  `json:"side"` // ct|t
-	Rounds      int     `json:"rounds"`
-	RoundWinPct float64 `json:"roundWinPct"` // rounds won on this side, 0..100
-	ADR         float64 `json:"adr"`
-	KASTPct     float64 `json:"kastPct"`
-	KD          float64 `json:"kd"`
-}
-
-// ProfileMap is the per-map split. ADR is the pooled per-map micro-average
-// (store.GetPlayerMapADR: Σ damage over the map's matches ÷ their counted
-// rounds — owner rule 2026-11-16, never the unweighted mean of the
-// per-match ADR values) — nil when the map's matches carry no stored
-// rounds (the profile renders "—"), never a fabricated 0.
-type ProfileMap struct {
-	Map     string   `json:"map"`
-	Matches int      `json:"matches"`
-	Wins    int      `json:"wins"`
-	ADR     *float64 `json:"adr"`
-}
-
 // ProfileWeapon is weapon proficiency.
 type ProfileWeapon struct {
 	Weapon    string `json:"weapon"`
@@ -83,11 +59,16 @@ type Profile struct {
 	Matches int                        `json:"matches"`
 	Wins    int                        `json:"wins"`
 	WinPct  float64                    `json:"winPct"`
-	Sides   []ProfileSide              `json:"sides"`
-	Maps    []ProfileMap               `json:"maps"`
 	Weapons []ProfileWeapon            `json:"weapons"` // top by kills
 	History []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
+
+// The Sides and Maps tables no longer ride this DTO: they read their
+// partitioned builtin rows (side_*/map_* seeds) through the canonical
+// stored-value read in PlayerProfile.svelte — the Go folds that used to
+// fill them (store.GetPlayerSideSplits, the history fold +
+// store.GetPlayerMapADR) survive ONLY as the equivalence tests'
+// oracles (internal/metrics/profile_splits_equivalence_test.go).
 
 // weaponTopLimit caps the profile's weapon proficiency list.
 const weaponTopLimit = 10
@@ -102,8 +83,9 @@ type ProfileService struct {
 // career row yields an empty profile (SteamID filled) rather than an error
 // — the frontend shows an empty state. Per-weapon headshots come from the
 // stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
-// mergeWeapons alongside kills and damage; the per-ROUND side splits come
-// from store.GetPlayerSideSplits. The stats that converted to metrics
+// mergeWeapons alongside kills and damage (the M7 gate's verdict —
+// plan §7 M7 — keeps this fold until the weapon seeds' damage column
+// resolves). The stats that converted to metrics
 // (dogfooding design §3.5's nine — ADR ± σ, K/D, HS%, KAST%, Trade
 // rate, clutch win share, avg enemies flashed, avg util damage — plus
 // W3a's Clutches count and Opening-duels rate) are computed NOWHERE in
@@ -132,73 +114,6 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		return Profile{}, err
 	}
 	p.History = history
-
-	// Per-ROUND side splits: players switch sides at halftime, so the
-	// Sides card compares rounds played on CT vs T (never one row per
-	// match side — that mixed both halves into a single label).
-	splits, err := s.st.GetPlayerSideSplits(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	for _, sp := range splits {
-		winPct := 0.0
-		if sp.Rounds > 0 {
-			winPct = 100 * float64(sp.Wins) / float64(sp.Rounds)
-		}
-		p.Sides = append(p.Sides, ProfileSide{
-			Side:        sp.Side,
-			Rounds:      sp.Rounds,
-			RoundWinPct: winPct,
-			ADR:         sp.ADR,
-			KASTPct:     sp.KASTPct,
-			// KD floors the denominator (kills / max(deaths, 1)) over
-			// these rounds — a zero-death side counts every kill (same
-			// floor, no NaN).
-			KD: float64(sp.Kills) / float64(max(sp.Deaths, 1)),
-		})
-	}
-
-	// Per-map fold over the history. The ADR cell is the POOLED per-map
-	// micro-average from store.GetPlayerMapADR — Σ(their damage on the
-	// map's matches) ÷ Σ(those matches' counted rounds), owner rule
-	// 2026-11-16 — never the unweighted mean of the history rows'
-	// per-match ADR values. It reads the SAME match set as the Matches
-	// cell (playerHistoryFrom), so the two always describe the same
-	// matches; a map whose matches carry no rounds keeps ADR nil → "—",
-	// never a fabricated 0.
-	type mapAggT struct {
-		ProfileMap
-	}
-	mapAgg := map[string]*mapAggT{}
-	for _, h := range history {
-		m := mapAgg[h.Map]
-		if m == nil {
-			m = &mapAggT{ProfileMap: ProfileMap{Map: h.Map}}
-			mapAgg[h.Map] = m
-		}
-		m.Matches++
-		if h.Win {
-			m.Wins++
-		}
-	}
-	mapADR, err := s.st.GetPlayerMapADR(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	for _, row := range mapADR {
-		if m := mapAgg[row.Map]; m != nil {
-			m.ADR = row.ADR
-		}
-	}
-	for _, m := range mapAgg {
-		p.Maps = append(p.Maps, m.ProfileMap)
-	}
-	sort.Slice(p.Maps, func(i, j int) bool {
-		if p.Maps[i].Matches != p.Maps[j].Matches {
-			return p.Maps[i].Matches > p.Maps[j].Matches
-		}
-		return p.Maps[i].Map < p.Maps[j].Map
-	})
 
 	weapons, err := s.st.GetPlayerWeaponJSONs(steamID)
 	if err != nil {

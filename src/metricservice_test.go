@@ -368,10 +368,12 @@ func TestListMetricsPageArity(t *testing.T) {
 		t.Fatalf("catalog = %d rows, want the seeded builtins + 2 users", len(all))
 	}
 
-	// Every filter empty + limit 0 (store default) = the whole canonical
-	// list — the five filter slots really are the filters (a stray value
-	// would narrow this).
-	page, err := svc.ListMetricsPage("", "", "", "", "", 0, 0)
+	// Every filter empty = the whole canonical list — the five filter
+	// slots really are the filters (a stray value would narrow this).
+	// The limit is explicit: the seed count now exceeds the store's
+	// default window (plan §8 (M5/M6 rows) re-pin — 104 rows > 100), so
+	// limit 0's default window could no longer hold the whole list.
+	page, err := svc.ListMetricsPage("", "", "", "", "", 0, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all empty): %v", err)
 	}
@@ -438,8 +440,9 @@ func TestListMetricsPageArity(t *testing.T) {
 	}
 
 	// The cursor (arg 6): the first row as afterID drops it and keeps
-	// the rest, in order — with the store's default limit still in play.
-	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, 0)
+	// the rest, in order — the explicit limit again (the list outgrew
+	// the store's default window with the partition addendum).
+	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(cursor): %v", err)
 	}

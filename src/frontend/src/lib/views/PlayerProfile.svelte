@@ -540,8 +540,86 @@
     };
   });
 
-  const sides = $derived(profile?.sides || []);
-  const maps = $derived(profile?.maps || []);
+  // --- The Sides / Maps tables (M5/M6 partitioned seeds) ---------------
+  // Both tables read their partitioned builtin rows through the canonical
+  // stored-value read — getMetricValuesForPlayer carries each row's dim —
+  // refetched with the career read on spectra:metric-done. The retired
+  // Go folds (profileservice's side splits and per-map fold) survive
+  // only as the equivalence tests' oracles: NO raw fallback — a seed the
+  // catalog does not carry, or a dim without a fresh row, renders the
+  // honest dash (metricPresentation's precedence, never a Go number).
+  const SIDE_SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
+  const MAP_SEEDS = ['map_matches', 'map_wins', 'map_adr'];
+  let splitDefs = $state(new Map()); // seed name → definition (Formula titles)
+  let splitValues = $state(new Map()); // seed name → Map(dim → display value)
+
+  $effect(() => {
+    careerReload; // spectra:metric-done → refetch (the cache flushed)
+    const sid = steamId;
+    let live = true;
+    splitDefs = new Map();
+    splitValues = new Map();
+    if (!sid) return;
+    const wanted = [...SIDE_SEEDS, ...MAP_SEEDS];
+    listMetrics()
+      .then((defs) => {
+        const byName = new Map((defs || []).map((d) => [d.name, d]));
+        const found = wanted.map((n) => byName.get(n)).filter(Boolean);
+        if (!live) return null;
+        splitDefs = new Map(found.map((d) => [d.name, d]));
+        if (!found.length) return null;
+        return getMetricValuesForPlayer(sid, found.map((d) => d.id));
+      })
+      .then((values) => {
+        if (!live || !values) return;
+        const byId = new Map([...splitDefs].map(([n, d]) => [d.id, { name: n, def: d }]));
+        const out = new Map(); // seed name → Map(dim → value)
+        for (const v of values) {
+          const hit = byId.get(v.metricId);
+          if (!hit || !v.dim) continue; // '' = the unpartitioned bucket, never a table row
+          // Percent seeds store the 0..1 fraction; these tables have
+          // always rendered 0..100 (the retired folds' scale) — the
+          // MetricDisplayScale rule every percent surface applies.
+          const scaled = hit.def.format === 'percent' ? v.value * 100 : v.value;
+          if (!out.has(hit.name)) out.set(hit.name, new Map());
+          out.get(hit.name).set(v.dim, scaled);
+        }
+        splitValues = out;
+      })
+      .catch(() => {}); // a failed read shows the honest empty state, never a Go number
+    return () => (live = false);
+  });
+
+  const sides = $derived.by(() => {
+    const out = [];
+    for (const dim of ['ct', 't']) {
+      const vals = SIDE_SEEDS.map((n) => splitValues.get(n)?.get(dim));
+      if (vals.every((v) => v === undefined)) continue;
+      out.push({
+        side: dim,
+        rounds: vals[0] ?? null,
+        roundWinPct: vals[1] ?? null,
+        adr: vals[2] ?? null,
+        kastPct: vals[3] ?? null,
+        kd: vals[4] ?? null,
+      });
+    }
+    return out;
+  });
+
+  const maps = $derived.by(() => {
+    const dims = new Set();
+    for (const n of MAP_SEEDS) for (const d of splitValues.get(n)?.keys() ?? []) dims.add(d);
+    const out = [...dims].map((dim) => {
+      const at = (n) => splitValues.get(n)?.get(dim) ?? null;
+      return { map: dim, matches: at('map_matches'), wins: at('map_wins'), adr: at('map_adr') };
+    });
+    out.sort(
+      (a, b) =>
+        (b.matches ?? -1) - (a.matches ?? -1) || (a.map < b.map ? -1 : a.map > b.map ? 1 : 0),
+    );
+    return out;
+  });
   const weapons = $derived((profile?.weapons || []).slice(0, 8));
   const history = $derived(profile?.history || []);
 
@@ -749,22 +827,22 @@
           <thead>
             <tr>
               <th scope="col">{S.profiles.thSide}</th>
-              <th scope="col" class="num">{S.profiles.thRounds}</th>
-              <th scope="col" class="num">{S.profiles.thWinPct}</th>
-              <th scope="col" class="num">{S.profiles.thAdr}</th>
-              <th scope="col" class="num">{S.profiles.thKast}</th>
-              <th scope="col" class="num">K/D</th>
+              <th scope="col" class="num" title={splitDefs.get('side_rounds')?.doc}>{S.profiles.thRounds}</th>
+              <th scope="col" class="num" title={splitDefs.get('side_win_pct')?.doc}>{S.profiles.thWinPct}</th>
+              <th scope="col" class="num" title={splitDefs.get('side_adr')?.doc}>{S.profiles.thAdr}</th>
+              <th scope="col" class="num" title={splitDefs.get('side_kast')?.doc}>{S.profiles.thKast}</th>
+              <th scope="col" class="num" title={splitDefs.get('side_kd')?.doc}>K/D</th>
             </tr>
           </thead>
           <tbody>
             {#each sides as s (s.side)}
               <tr>
                 <td><span class="chip side {s.side}">{(s.side || '—').toUpperCase()}</span></td>
-                <td class="num">{s.rounds}</td>
-                <td class="num">{fmtPercent(s.roundWinPct)}</td>
-                <td class="num">{fmt1(s.adr)}</td>
-                <td class="num">{fmtPercent(s.kastPct)}</td>
-                <td class="num">{fmt2(s.kd)}</td>
+                <td class="num">{s.rounds ?? '—'}</td>
+                <td class="num">{s.roundWinPct != null ? fmtPercent(s.roundWinPct) : '—'}</td>
+                <td class="num">{s.adr != null ? fmt1(s.adr) : '—'}</td>
+                <td class="num">{s.kastPct != null ? fmtPercent(s.kastPct) : '—'}</td>
+                <td class="num">{s.kd != null ? fmt2(s.kd) : '—'}</td>
               </tr>
             {:else}
               <tr><td colspan="6" class="muted">{S.profiles.noSides}</td></tr>
@@ -779,9 +857,9 @@
           <thead>
             <tr>
               <th scope="col">{S.profiles.thMap}</th>
-              <th scope="col" class="num">{S.profiles.thMatches}</th>
-              <th scope="col" class="num">{S.profiles.thWins}</th>
-              <th scope="col" class="num">{S.profiles.thAdr}</th>
+              <th scope="col" class="num" title={splitDefs.get('map_matches')?.doc}>{S.profiles.thMatches}</th>
+              <th scope="col" class="num" title={splitDefs.get('map_wins')?.doc}>{S.profiles.thWins}</th>
+              <th scope="col" class="num" title={splitDefs.get('map_adr')?.doc}>{S.profiles.thAdr}</th>
             </tr>
           </thead>
           <tbody>
@@ -796,9 +874,9 @@
                   (e.preventDefault(), openMapInLibrary(m.map))}
               >
                 <td>{m.map || '—'}</td>
-                <td class="num">{m.matches}</td>
-                <td class="num">{m.wins}</td>
-                <td class="num">{fmt1(m.adr)}</td>
+                <td class="num">{m.matches ?? '—'}</td>
+                <td class="num">{m.wins ?? '—'}</td>
+                <td class="num">{m.adr != null ? fmt1(m.adr) : '—'}</td>
               </tr>
             {:else}
               <tr><td colspan="4" class="muted">{S.profiles.noMaps}</td></tr>

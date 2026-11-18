@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -133,50 +132,6 @@ func newProfileFixture(t *testing.T) *ProfileService {
 	return &ProfileService{st: st}
 }
 
-// TestGetProfileSidesKD: the Sides table is a PER-ROUND split (players
-// switch sides at halftime, so one row per match side would mix both
-// halves): alice plays counted round 1 on ct in match 1 (won, 5k/2d)
-// and on t in match 2 (lost, 4k/0d) — one round per side. K/D comes from
-// the same player_round_stats rows as Rounds/ADR/KAST with the floored
-// denominator (kills / max(deaths, 1)), never a
-// division-by-zero/empty-side 0.
-func TestGetProfileSidesKD(t *testing.T) {
-	svc := newProfileFixture(t)
-	p, err := svc.GetProfile("100")
-	if err != nil {
-		t.Fatalf("GetProfile: %v", err)
-	}
-	if len(p.Sides) != 2 {
-		t.Fatalf("sides = %+v, want ct and t rows", p.Sides)
-	}
-	bySide := map[string]ProfileSide{}
-	for _, s := range p.Sides {
-		bySide[s.Side] = s
-	}
-	ct, tside := bySide["ct"], bySide["t"]
-	if ct.Rounds != 1 || tside.Rounds != 1 {
-		t.Errorf("rounds = %d/%d, want 1/1 (one counted round per side)", ct.Rounds, tside.Rounds)
-	}
-	// Round wins: round 1's winner is "ct", so the CT row won its round
-	// and the T row did not — per-round, not per match.
-	if ct.RoundWinPct < 99.9 || ct.RoundWinPct > 100.1 || tside.RoundWinPct != 0 {
-		t.Errorf("roundWinPct ct/t = %v/%v, want 100/0", ct.RoundWinPct, tside.RoundWinPct)
-	}
-	if kd := ct.KD; kd < 2.49 || kd > 2.51 {
-		t.Errorf("ct KD = %v, want 2.5 (5 kills / 2 deaths)", kd)
-	}
-	// Zero-death side: the denominator floors at 1 (the floored shape).
-	if kd := tside.KD; kd < 3.99 || kd > 4.01 {
-		t.Errorf("t KD = %v, want 4.0 (4 kills / max(0 deaths, 1))", kd)
-	}
-	if ct.ADR < 599.9 || ct.ADR > 600.1 || tside.ADR < 299.9 || tside.ADR > 300.1 {
-		t.Errorf("ADR ct/t = %v/%v, want 600/300 (player_round_stats.dmg ÷ rounds)", ct.ADR, tside.ADR)
-	}
-	if ct.KASTPct < 99.9 || ct.KASTPct > 100.1 || tside.KASTPct != 0 {
-		t.Errorf("kastPct ct/t = %v/%v, want 100/0 (kast 0/1 → ×100)", ct.KASTPct, tside.KASTPct)
-	}
-}
-
 // TestGetProfileDesignedHybrid pins the DTO contract dogfooding design
 // §3.5 leaves behind — the audit's §5.2.5 prediction made literal: the
 // raw/inferred and non-expressible stats (N2–N6) STAY on the Go DTO and
@@ -200,8 +155,11 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("unmarshal profile: %v", err)
 	}
+	// sides/maps left with the M5/M6 read migration (2026-11-17): the
+	// partitioned seeds serve those tables through the frontend's
+	// stored-value read, never this DTO.
 	staying := []string{
-		"steamId", "name", "matches", "wins", "winPct", "sides", "maps",
+		"steamId", "name", "matches", "wins", "winPct",
 		"weapons", "history",
 	}
 	converted := []string{
@@ -366,104 +324,5 @@ func TestListPlayersCarriesNoADR(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("alice missing from %s", raw)
-	}
-}
-
-// TestGetProfileMapADRPooled pins the Maps card's ADR cell (owner rule
-// 2026-11-16): the POOLED micro-average over the map's matches —
-// Σ(their damage) ÷ Σ(those matches' counted rounds) — never the
-// unweighted mean of the per-match ADR values (which would read 200
-// for de_dust2 below, where the pooled answer is 250), and never a
-// fabricated 0 when the map's matches carry no stored rounds (the
-// honest "—").
-func TestGetProfileMapADRPooled(t *testing.T) {
-	st, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	save := func(n int, mapName string, rounds, damage int) {
-		t.Helper()
-		path := fmt.Sprintf("/d/map%d.dem", n)
-		sha := fmt.Sprintf("sha-map%d", n)
-		id, err := st.CreateMatchRow(path, sha, 42)
-		if err != nil {
-			t.Fatalf("CreateMatchRow: %v", err)
-		}
-		roundRows := make([]models.Round, 0, rounds)
-		for r := 1; r <= rounds; r++ {
-			roundRows = append(roundRows, models.Round{Number: r})
-		}
-		em := &models.ExtractedMatch{
-			Match: models.Match{
-				Path: path, SHA256: sha, Size: 42,
-				Map: mapName, TickRate: 64, ScoreCT: 13, ScoreT: 10,
-				ExtractedAt: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC).Add(time.Duration(n) * time.Hour),
-			},
-			Players: []models.Player{{SteamID: "100", Name: "alice", Side: "ct"}},
-			PlayerStats: []models.PlayerStats{
-				{SteamID: "100", Side: "ct", Name: "alice", TotalDamage: damage, RoundsPlayed: rounds},
-			},
-			Rounds: roundRows,
-		}
-		if err := st.SaveExtracted(id, em); err != nil {
-			t.Fatalf("SaveExtracted: %v", err)
-		}
-	}
-	// de_dust2: 900 damage over 3 rounds + 100 over 1 round → pooled
-	// 1000/4 = 250; the unweighted mean of the per-match ADRs would be
-	// (300 + 100)/2 = 200 — the two spellings differ exactly here.
-	save(1, "de_dust2", 3, 900)
-	save(2, "de_dust2", 1, 100)
-	// de_inferno: one match, 500 over 2 rounds → 250 (per-map grouping).
-	save(3, "de_inferno", 2, 500)
-	// de_nuke: a match with NO stored rounds → nil ("—"), never 0.
-	save(4, "de_nuke", 0, 100)
-	if err := st.RebuildCareer(); err != nil {
-		t.Fatalf("RebuildCareer: %v", err)
-	}
-
-	svc := &ProfileService{st: st}
-	p, err := svc.GetProfile("100")
-	if err != nil {
-		t.Fatalf("GetProfile: %v", err)
-	}
-	byMap := map[string]ProfileMap{}
-	for _, m := range p.Maps {
-		byMap[m.Map] = m
-	}
-	if len(p.Maps) != 3 {
-		t.Errorf("maps = %+v, want 3 rows (one per map)", p.Maps)
-	}
-
-	dust2, ok := byMap["de_dust2"]
-	if !ok {
-		t.Fatalf("maps = %+v, want a de_dust2 row", p.Maps)
-	}
-	if dust2.Matches != 2 || dust2.Wins != 2 {
-		t.Errorf("de_dust2 matches/wins = %d/%d, want 2/2 (both 13-10 ct wins)", dust2.Matches, dust2.Wins)
-	}
-	if dust2.ADR == nil {
-		t.Fatal("de_dust2 ADR = nil, want the pooled 250")
-	}
-	if *dust2.ADR != 250 {
-		t.Errorf("de_dust2 ADR = %v, want 250 (1000 damage ÷ 4 counted rounds — pooled, never the mean-of-per-match 200)", *dust2.ADR)
-	}
-
-	inferno, ok := byMap["de_inferno"]
-	if !ok {
-		t.Fatalf("maps = %+v, want a de_inferno row", p.Maps)
-	}
-	if inferno.ADR == nil || *inferno.ADR != 250 {
-		t.Errorf("de_inferno ADR = %v, want 250 (500 ÷ 2)", inferno.ADR)
-	}
-
-	nuke, ok := byMap["de_nuke"]
-	if !ok {
-		t.Fatalf("maps = %+v, want a de_nuke row", p.Maps)
-	}
-	if nuke.ADR != nil {
-		t.Errorf("de_nuke ADR = %v, want nil (no stored rounds → the card's honest —)", *nuke.ADR)
 	}
 }

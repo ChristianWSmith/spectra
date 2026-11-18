@@ -48,7 +48,7 @@ const (
 	roundSideClassCols = `round, side, class, why, team`
 
 	playerRoundCols = `round, steam_id, name, kills, assists, deaths, traded, survived,
-		kast, dmg, util_dmg, money_start, equip, spent, rule_version`
+		kast, dmg, util_dmg, money_start, equip, spent, rule_version, side, won`
 
 	clutchCols = `round, size, steam_id, name, start_tick, end_tick, bomb_state, hp_left,
 		equip, won, kill_ticks, replay_anchor`
@@ -177,7 +177,7 @@ func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat
 			if _, err := stmt.Exec(
 				matchID, r.Round, scrub(r.SteamID), scrub(r.Name), r.Kills, r.Assists, r.Deaths,
 				b2i(r.Traded), b2i(r.Survived), b2i(r.KAST), r.DMG, r.UtilDmg,
-				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion,
+				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion, scrub(r.Side), r.Won,
 			); err != nil {
 				return fmt.Errorf("%s: %w", op, err)
 			}
@@ -396,7 +396,7 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 		if err := rows.Scan(
 			&r.Round, &r.SteamID, &r.Name, &r.Kills, &r.Assists, &r.Deaths,
 			&r.Traded, &r.Survived, &r.KAST, &r.DMG, &r.UtilDmg,
-			&r.MoneyStart, &r.Equip, &r.Spent, &r.RuleVersion,
+			&r.MoneyStart, &r.Equip, &r.Spent, &r.RuleVersion, &r.Side, &r.Won,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
 		}

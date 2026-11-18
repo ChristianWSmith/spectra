@@ -36,7 +36,11 @@ var metricColumnsContract = []string{
 // 2026-11-17: the first non-player subjects, pinned by
 // nonPlayerSubjects below) and the identity addendum (+5 match,
 // format=identity — plan §8 (M1 identity row), 2026-11-17: 92
-// builtins / 72 match + 20 profile); short_name is
+// builtins / 72 match + 20 profile) and the partition addendum
+// (+5 side +5 map profile rows — plan §8 (M5/M6 rows), 2026-11-17: 102
+// builtins / 72 match + 30 profile) and the weapon addendum (+2
+// profile, partition='weapon' — plan §8 (M7 row) behind the M7 gate,
+// 2026-11-17: 104 builtins / 72 match + 32 profile); short_name is
 // written only where a
 // header is width-constrained, so trade_rate and most inferred rows
 // ship ”). The
@@ -116,7 +120,8 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"career_opener_wins":  {"profile", "int", ""},
 	// addendum — the M3 combat-damage conversions (2, match): plan
 	// §7 M3/§8's 2026-11-17 re-pin (61 builtins / 48 match + 13
-	// profile). Friendly fire has no seed — see the schema.sql block.
+	// profile). Friendly fire never became a seed — its tombstone is
+	// combat_equivalence_test.go's header.
 	"dmg_no_kill":     {"match", "int", ""},
 	"kill_conversion": {"match", "percent", ""},
 	// addendum — the Option A count addendum (22: 16 match raw-count
@@ -165,6 +170,27 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"most_util":   {"match", "identity", ""},
 	"entry_opens": {"match", "identity", ""},
 	"most_mvps":   {"match", "identity", ""},
+	// addendum — the partition rows (10 + 2, profile, partition written
+	// explicitly) — plan §8 (M5/M6 rows) and §8 (M7 row) behind the M7
+	// gate, 2026-11-17 (104 builtins / 72 match + 32 profile): the
+	// Sides, Maps and (kills/headshots) Weapons tables' stored twins,
+	// every one player-subject with a side/map/weapon partition.
+	"side_rounds":  {"profile", "int", ""},
+	"side_win_pct": {"profile", "percent", ""},
+	"side_adr":     {"profile", "float1", ""},
+	"side_kast":    {"profile", "percent", ""},
+	"side_kd":      {"profile", "float2", ""},
+	"map_matches":  {"profile", "int", ""},
+	"map_wins":     {"profile", "int", ""},
+	"map_win_pct":  {"profile", "percent", ""},
+	"map_adr":      {"profile", "float1", ""},
+	"map_kd":       {"profile", "float2", ""},
+	// addendum — the M7 weapon rows (2, profile, partition='weapon') —
+	// plan §8 (M7 row) behind the M7 gate, 2026-11-17: the two columns
+	// the golden gate proved exactly equal to the fold; damage
+	// escalated, no seed.
+	"weapon_kills":     {"profile", "int", ""},
+	"weapon_headshots": {"profile", "int", ""},
 }
 
 // nonPlayerSubjects is the subject-axis pin beside the shape map: the
@@ -249,13 +275,15 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		}
 	}
 
-	// The ninety-two builtins, name + doc present — still exactly
-	// ninety-two AFTER the reopen, so the baseline's seed did not
+	// The one-hundred-four builtins, name + doc present — still exactly
+	// one hundred four AFTER the reopen, so the baseline's seed did not
 	// duplicate rows (values validated by internal/metrics fixture
 	// tests). Scope split
-	// (72 match / 20 profile after the 2026-11-17 identity addendum
-	// re-pin — plan §8 (M1 identity row); the subject-axis addendum
-	// had re-pinned 67 / 20, Option A 64 / 19, M3 48 / 13)
+	// (72 match / 32 profile after the 2026-11-17 weapon addendum
+	// re-pin — plan §8 (M7 row); the partition addendum had re-pinned
+	// 72 / 30, the identity addendum
+	// re-pinned 72 / 20, the subject-axis 67 / 20, Option A 64 / 19,
+	// M3 48 / 13)
 	// and short_name/format are PER-SEED asserts
 	// (the old blanket "all match / all short_name empty" held only when
 	// there was one row — design §3.4's pin table).
@@ -291,7 +319,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 				m.Name, m.ShortName, seeded.shortName)
 		}
 		if m.Scope != seeded.scope {
-			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 72 match / 20 profile)",
+			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 72 match / 32 profile)",
 				m.Name, m.Scope, seeded.scope)
 		}
 		wantSubject := "player"
@@ -348,14 +376,14 @@ func TestMetricCRUD(t *testing.T) {
 		t.Errorf("duplicate-name err = %v, want friendly uniqueness error", err)
 	}
 
-	// List: builtins first (all ninety-two schema-seeded rows), then
+	// List: builtins first (all one-hundred-four schema-seeded rows), then
 	// user rows.
 	all, err := s.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(all) != len(schemaSeededBuiltins)+1 {
-		t.Fatalf("list len = %d, want %d (92 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
+		t.Fatalf("list len = %d, want %d (104 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
 	}
 	for i, m := range all[:len(schemaSeededBuiltins)] {
 		if m.Origin != "builtin" {
@@ -540,10 +568,10 @@ func filterMetricRef(rows []models.MetricRow, query string) []models.MetricRow {
 	return out
 }
 
-// TestListMetricsPageWindowsTileListOrder: 325 definitions (92
-// schema-seeded builtins + 230 user + 3 plugin — the 92 is the
-// 2026-11-17 identity addendum re-pin, plan §8 (M1 identity row)) must
-// tile into 100/100/100/25 windows that concatenate to ListMetrics' exact order, every
+// TestListMetricsPageWindowsTileListOrder: 337 definitions (104
+// schema-seeded builtins + 230 user + 3 plugin — the 104 is the
+// 2026-11-17 weapon addendum re-pin, plan §8 (M7 row)) must
+// tile into 100/100/100/37 windows that concatenate to ListMetrics' exact order, every
 // id exactly once, with each origin group CONTIGUOUS across window
 // boundaries — the Builder renders its Builtins/Yours/Plugins headers
 // from those runs, so a boundary splitting a group must not reorder rows.
@@ -561,12 +589,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 325 {
-		t.Fatalf("reference list = %d rows, want 325 (92 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 337 {
+		t.Fatalf("reference list = %d rows, want 337 (104 builtins + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
-	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 25 {
-		t.Errorf("window sizes = %v, want [100 100 100 25]", sizes)
+	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 37 {
+		t.Errorf("window sizes = %v, want [100 100 100 37]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -593,51 +621,64 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 }
 
-// TestListMetricsPageWindowBoundaries pins the exact boundary: 100 rows
-// (92 builtins + 8 users — 100 − seeds, the 2026-11-17 identity
-// addendum re-pin, plan §8 (M1 identity row)) is ONE window with HasNext false (the limit+1
-// probe found no row), 101 rows splits 100/1 with HasNext flipping
-// correctly, and limit 0 selects the default window size.
+// TestListMetricsPageWindowBoundaries pins the exact boundary: with the
+// partition addendum the builtin group ALONE exceeds one window (plan
+// §8 (M5/M6 rows), 2026-11-17 re-pin — 102 seeds), so "exactly fills a
+// window" now comes from the MINE partition (100 user rows) with HasNext
+// false (the limit+1 probe found no row), 101 rows splits 100/1 with
+// HasNext flipping correctly, and limit 0 selects the default window
+// size even when the unfiltered list holds more.
 func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	s := openMem(t)
-	for i := range 8 {
+	for i := range 100 {
 		seedUserMetric(t, s, fmt.Sprintf("b%03d", i), "")
 	}
 
+	// limit 0 → the default window size (100 rows), never "all rows":
+	// 102 builtins + 100 users exist, the window still stops at 100.
 	page, err := s.ListMetricsPage("", "", "", "", "", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage: %v", err)
 	}
-	if len(page.Rows) != 100 || page.HasNext {
-		t.Errorf("100 rows → %d rows, HasNext=%v; want 100, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 100 || !page.HasNext {
+		t.Errorf("limit 0 over 202 rows → %d rows, HasNext=%v; want 100, true", len(page.Rows), page.HasNext)
 	}
 
-	// The 101st row: the first window now reports a successor.
-	seedUserMetric(t, s, "b041", "")
-	ref := metricIDs(metricRowsRef(t, s))
-	if len(ref) != 101 {
-		t.Fatalf("reference = %d rows, want 101", len(ref))
+	// Exactly one window: the mine partition totals 100 rows.
+	page, err = s.ListMetricsPage("", "mine", "", "", "", 0, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine): %v", err)
 	}
-	first, err := s.ListMetricsPage("", "", "", "", "", 0, ListMetricsPageSize)
+	if len(page.Rows) != 100 || page.HasNext {
+		t.Errorf("100 mine rows → %d rows, HasNext=%v; want 100, false", len(page.Rows), page.HasNext)
+	}
+
+	// The 101st mine row: the first window now reports a successor.
+	seedUserMetric(t, s, "b100", "")
+	ref := metricIDs(originFilterMetricRef(metricRowsRef(t, s), "mine"))
+	if len(ref) != 101 {
+		t.Fatalf("mine reference = %d rows, want 101", len(ref))
+	}
+	first, err := s.ListMetricsPage("", "mine", "", "", "", 0, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(first): %v", err)
 	}
 	if len(first.Rows) != 100 || !first.HasNext {
-		t.Fatalf("101 rows → first window %d rows, HasNext=%v; want 100, true", len(first.Rows), first.HasNext)
+		t.Fatalf("101 mine rows → first window %d rows, HasNext=%v; want 100, true", len(first.Rows), first.HasNext)
 	}
 	if !sameIDs(metricIDs(first.Rows), ref[:100]) {
-		t.Errorf("first window = %v…, want the first 100 reference ids", metricIDs(first.Rows)[:3])
+		t.Errorf("first window = %v…, want the first 100 mine ids", metricIDs(first.Rows)[:3])
 	}
 	cursor := first.Rows[len(first.Rows)-1].ID
-	second, err := s.ListMetricsPage("", "", "", "", "", cursor, ListMetricsPageSize)
+	second, err := s.ListMetricsPage("", "mine", "", "", "", cursor, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(second): %v", err)
 	}
 	if len(second.Rows) != 1 || second.HasNext {
-		t.Errorf("101 rows → second window %d rows, HasNext=%v; want 1, false", len(second.Rows), second.HasNext)
+		t.Errorf("101 mine rows → second window %d rows, HasNext=%v; want 1, false", len(second.Rows), second.HasNext)
 	}
 	if !sameIDs(metricIDs(second.Rows), ref[100:]) {
-		t.Errorf("second window = %v, want the final reference id %v", metricIDs(second.Rows), ref[100:])
+		t.Errorf("second window = %v, want the final mine id %v", metricIDs(second.Rows), ref[100:])
 	}
 }
 
@@ -650,19 +691,19 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	for i := range 250 {
 		seedUserMetric(t, s, fmt.Sprintf("c%03d", i), "")
 	}
-	ref := metricIDs(metricRowsRef(t, s)) // 92 builtins + 250 users
+	ref := metricIDs(metricRowsRef(t, s)) // 104 builtins + 250 users
 
-	// Cursor at the 100th row in order → the remaining 242 (the window
-	// limit must clear the remainder: 342 > 92 builtins + 250 users − 100).
+	// Cursor at the 100th row in order → the remaining 254 (the window
+	// limit must clear the remainder: 354 > 104 builtins + 250 users − 100).
 	page, err := s.ListMetricsPage("", "", "", "", "", ref[99], 300)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 242 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 242, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 254 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 254, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
-		t.Errorf("mid cursor rows = %v…, want the 242 ids after the cursor", metricIDs(page.Rows)[:3])
+		t.Errorf("mid cursor rows = %v…, want the 254 ids after the cursor", metricIDs(page.Rows)[:3])
 	}
 
 	// Cursor at the last row → an empty window, no successor.
@@ -702,9 +743,10 @@ func TestListMetricsPageSearch(t *testing.T) {
 	ref := metricRowsRef(t, s)
 
 	// Name substring, ASCII case-insensitive: "adr" and "ADR" hit the
-	// SAME five rows — the four builtins whose name/title carries the
+	// SAME seven rows — the six builtins whose name/title carries the
 	// substring (adr, best_adr — the M1 identity seed — career_adr,
-	// career_adr_sigma — the dogfooding set landed with W2) plus the
+	// career_adr_sigma — the dogfooding set landed with W2 — and the
+	// side_adr/map_adr partition twins — plan §8 (M5/M6 rows)) plus the
 	// user's adr_per_round — in the canonical
 	// group order (builtins name-ASC, then user).
 	for _, q := range []string{"adr", "ADR"} {
@@ -712,8 +754,8 @@ func TestListMetricsPageSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListMetricsPage(%q): %v", q, err)
 		}
-		if len(page.Rows) != 5 || page.HasNext {
-			t.Errorf("query %q → %d rows (HasNext=%v), want 5 (4 builtins + adr_per_round)",
+		if len(page.Rows) != 7 || page.HasNext {
+			t.Errorf("query %q → %d rows (HasNext=%v), want 7 (6 builtins + adr_per_round)",
 				q, len(page.Rows), page.HasNext)
 			continue
 		}
@@ -725,16 +767,16 @@ func TestListMetricsPageSearch(t *testing.T) {
 		}
 	}
 
-	// Title-only substring: "K/D" appears in no name, but in four
-	// titles — the two K/D builtins (career_kd, kd — name-ASC), the
-	// user's "K/D ratio" then the plugin's "Plugin K/D" (the canonical
-	// group order still holds).
+	// Title-only substring: "K/D" appears in no name, but in six
+	// titles — the four K/D builtins (career_kd, kd, side_kd, map_kd —
+	// name-ASC), the user's "K/D ratio" then the plugin's "Plugin K/D"
+	// (the canonical group order still holds).
 	page, err := s.ListMetricsPage("K/D", "", "", "", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(K/D): %v", err)
 	}
-	if got := metricIDs(page.Rows); len(got) != 4 || page.HasNext {
-		t.Fatalf("title query → %d rows (HasNext=%v), want 4", len(got), page.HasNext)
+	if got := metricIDs(page.Rows); len(got) != 6 || page.HasNext {
+		t.Fatalf("title query → %d rows (HasNext=%v), want 6", len(got), page.HasNext)
 	} else if want := metricIDs(filterMetricRef(ref, "K/D")); !sameIDs(got, want) {
 		t.Errorf("title query ids = %v, want %v", got, want)
 	}
@@ -821,16 +863,16 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
-	ref := metricRowsRef(t, s) // 92 builtins + 5 user + 2 plugin
-	if len(ref) != 99 {
-		t.Fatalf("reference = %d rows, want 99 (92 builtins + 5 user + 2 plugin)", len(ref))
+	ref := metricRowsRef(t, s) // 104 builtins + 5 user + 2 plugin
+	if len(ref) != 111 {
+		t.Fatalf("reference = %d rows, want 111 (104 builtins + 5 user + 2 plugin)", len(ref))
 	}
 
 	// Every filter value in ONE window: exactly its partition, in the
 	// canonical order, with no successor beyond it.
 	for _, filter := range []string{"", "builtin", "mine", "none"} {
 		want := originFilterMetricRef(ref, filter)
-		page, err := s.ListMetricsPage("", filter, "", "", "", 0, 100)
+		page, err := s.ListMetricsPage("", filter, "", "", "", 0, 200)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(origin=%q): %v", filter, err)
 		}
@@ -879,7 +921,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	s := openMem(t)
 	seedUserMetric(t, s, "my_trade_rate", "My trade rate")
 	seedUserMetric(t, s, "adr_per_round", "ADR per round")
-	ref := metricRowsRef(t, s) // 92 builtins (incl. trade_rate + career_trade_rate) + 2 users
+	ref := metricRowsRef(t, s) // 104 builtins (incl. trade_rate + career_trade_rate) + 2 users
 
 	// "trade rate" matches TWO builtin titles (trade_rate — the original
 	// seed — and career_trade_rate — the profile twin the dogfooding set
@@ -1201,15 +1243,16 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	}
 	// The rounds-only window, pinned by NAME: w16's three `rounds`
 	// seeds (adr, entry_rate, career_adr — CS2 per-round statistics
-	// divide by the match's rounds) beside the fixture's own per_round
-	// user row. A seed that gains or loses a denominator moves this
-	// list; a denominator-less row appearing here is the overturn
-	// breaking.
+	// divide by the match's rounds) beside the M6 map_adr seed (plan §8
+	// (M5/M6 rows) — the map's counted rounds, dim-scoped by emitDenom)
+	// and the fixture's own per_round user row. A seed that gains or
+	// loses a denominator moves this list; a denominator-less row
+	// appearing here is the overturn breaking.
 	roundsNames := make([]string, 0, len(roundsOnly.Rows))
 	for _, m := range roundsOnly.Rows {
 		roundsNames = append(roundsNames, m.Name)
 	}
-	if got, want := strings.Join(roundsNames, ","), "adr,career_adr,entry_rate,per_round"; got != want {
+	if got, want := strings.Join(roundsNames, ","), "adr,career_adr,entry_rate,map_adr,per_round"; got != want {
 		t.Errorf("rounds-only window = [%s], want [%s] (exactly the denominated rows)", got, want)
 	}
 	noneOnly, err := s.ListMetricsPage("", "", "", "none", "", 0, 500)

@@ -48,6 +48,7 @@ type MetricRow struct {
 type MetricValue struct {
 	MetricID   int64   `json:"metricId"`
 	SubjectKey string  `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
+	Dim        string  `json:"dim"`        // partition value ('' = unpartitioned — §6.5)
 	Value      float64 `json:"value"`
 	ValueKey   string  `json:"valueKey"` // identity winner's key (identity rows only; '' otherwise)
 	N          int     `json:"n"`        // sample size behind the value (for an identity, the pool)

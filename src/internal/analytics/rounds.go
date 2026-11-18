@@ -157,6 +157,15 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			a := assists[p.SteamID] > 0
 			s := deaths[p.SteamID] == 0
 			t := traded[p.SteamID]
+			// The row's side stamp: the SAME freeze-end sample the side
+			// splits join on (resolveRoundSides — exact, never a final-
+			// side guess); won is the round winner beside it (the
+			// per-round twin of player_stats.won — schema.sql).
+			side := teamR[p.SteamID]
+			won := 0
+			if side != "" && r.Winner != "" && r.Winner == side {
+				won = 1
+			}
 			out = append(out, PlayerRound{
 				Round:       r.Number,
 				SteamID:     p.SteamID,
@@ -173,6 +182,8 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 				Equip:       0,
 				Spent:       0,
 				RuleVersion: cfg.RuleVersion,
+				Side:        side,
+				Won:         won,
 			})
 		}
 	}
