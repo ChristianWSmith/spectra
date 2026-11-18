@@ -253,16 +253,20 @@ const openBox = async (root) => {
   return [...root.querySelectorAll('.tk-opt')];
 };
 const optLabels = (opts) => opts.map((o) => o.textContent.trim());
-// The six raw recorded-value items in their fixed-block order (N5) —
+// The raw recorded-value items in their fixed-block order (N5) —
 // they LEAD the universe (metricorder.composedSequence's fixed
 // positions), so every option-list pin below composes with them.
 // W13b (2026-11-16): the raw items carry the label table's FULL names
-// (the appendix chips and the exported headings read "Kills"), never
-// the bare scoreboard shorts.
+// (the appendix chips and the exported headings read the full name),
+// never the bare scoreboard shorts.
 // w13d (2026-11-16): KDA left with @KDA — the scoreboard's KDA column
 // is the seeded `kda` metric now, so it offers through the metric
 // catalog instead (this fixture scripts no `kda` metric).
-const RAW_LABELS = ['Kills', 'Deaths', 'Damage', 'Utility damage', 'MVPs', 'Score'];
+// UNIFICATION (owner, 2026-11-18): the five count stats left with their
+// seed metrics — Kills/Deaths/Damage/Utility damage/MVPs offer through
+// the metric catalog beside their (now merged) entity, so the raw offer
+// is EXACTLY Score (the one seedless recorded column).
+const RAW_LABELS = ['Score'];
 
 // --- The save ----------------------------------------------------------------
 // The Generate/Save button (its busy shape — {#if rendering}Generating…
@@ -367,18 +371,16 @@ console.log('A. the item universe behind the field is the raw recorded values pl
 {
   const opts = await openBox(r);
   const labels = optLabels(opts);
-  // N5: the six raw recorded values lead (the fixed block's
-  // positions), then the match-scope metric definitions — a
-  // profile-scope metric never enters a per-match appendix. W13b: the
-  // raw labels are the table's FULL names. w13d: KDA left with @KDA
-  // (it offers as a metric now, and this fixture scripts none).
+  // N5: the raw recorded values lead (the fixed block's positions —
+  // EXACTLY Score since the unification of 2026-11-18: the count stats
+  // offer through their metric entities), then the match-scope metric
+  // definitions — a profile-scope metric never enters a per-match
+  // appendix. W13b: the raw labels are the table's FULL names. w13d:
+  // KDA left with @KDA (it offers as a metric now, and this fixture
+  // scripts none).
   check(
     'the raw recorded values AND the match-scope metrics offer themselves (a profile-scope metric never does)',
-    JSON.stringify(labels) ===
-      JSON.stringify([
-        'Kills', 'Deaths', 'Damage', 'Utility damage', 'MVPs', 'Score',
-        'Match stat', 'Behind stat',
-      ]) &&
+    JSON.stringify(labels) === JSON.stringify(['Score', 'Match stat', 'Behind stat']) &&
       !r.textContent.includes('Career stat'),
     JSON.stringify(labels),
   );
@@ -699,7 +701,7 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
       JSON.stringify([...RAW_LABELS, 'Match stat', 'Behind stat']),
     JSON.stringify(optLabels(opts)),
   );
-  click(opts.find((o) => o.textContent.trim() === 'Kills'));
+  click(opts.find((o) => o.textContent.trim() === 'Score'));
   await sleep(150);
   check(
     'picking a raw value reads the SCOREBOARD for this match (the recorded read)',
@@ -713,10 +715,10 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
   );
   check(
     'the raw pick lands as its own chip (its namespaced id, the full-name label)',
-    JSON.stringify(tokenNames(rRaw)) === JSON.stringify(['Kills']),
+    JSON.stringify(tokenNames(rRaw)) === JSON.stringify(['Score']),
     JSON.stringify(tokenNames(rRaw)),
   );
-  const rawLine = readout(rRaw, 'Kills');
+  const rawLine = readout(rRaw, 'Score');
   const rawChips = rawLine ? [...rawLine.querySelectorAll('.chip')] : [];
   check(
     'its readout carries ONE static provenance chip — no state chip, no expression text, no Formula:',
@@ -732,9 +734,9 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
   const rawText = savedText(rawDl);
   check(
     'the saved document carries the recorded-value heading, the honest meta line and the table — never "value not computed"',
-    rawText.includes('### Kills') &&
+    rawText.includes('### Score') &&
       rawText.includes('recorded value · per player · 1 players') &&
-      rawText.includes('| 76561198000000001 | amy | 20 | 24 |') &&
+      rawText.includes('| 76561198000000001 | amy | 48 | 24 |') &&
       !rawText.includes('value not computed'),
     rawText.replace(/\s+/g, ' ').slice(0, 600),
   );
