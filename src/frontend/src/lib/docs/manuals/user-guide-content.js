@@ -394,7 +394,7 @@ a player ("this player's trade rate"), a match or a team — and every metric ca
 formula and sample-size honesty (a value is never invented; missing data shows as a dash or an
 honest zero beside its \`N\`).
 
-The **left column** lists every metric, grouped **Builtins / Yours / Plugins**, with a search box
+The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
 and one **Filters** panel (origin, scope, denominator, format and pinning — the last narrows the list
 to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview

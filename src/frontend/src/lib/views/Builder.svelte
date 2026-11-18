@@ -447,7 +447,16 @@
   // never repeats a header — the final look matches the unpaginated
   // grouped list. Runs derive from the PIN-FILTERED rows (visibleMetrics
   // below), so a group can vanish entirely under the Pinning filter.
-  const GROUP_LABEL = { builtin: 'Builtins', user: 'Yours', plugin: 'Plugins' };
+  // The list's origin run headers (2026-11-18, metrics Phase 7): the
+  // strings catalog is THE home for the labels (one spelling per
+  // concept) — the user group's header reads "Custom", the same word
+  // the Origin filter's box uses for exactly those rows (W45's ruling;
+  // it replaced the inline "Yours").
+  const GROUP_LABEL = {
+    builtin: S.builder.groupBuiltins,
+    user: S.builder.groupCustom,
+    plugin: S.builder.groupPlugins,
+  };
 
   const dirty = $derived(snapshot(form) !== baseline);
   // The editor's pin button keys off the SAVED name — the identity the

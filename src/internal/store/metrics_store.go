@@ -317,7 +317,7 @@ func denomFilterPredicate(word string) (string, []any, error) {
 // composite key is unique (metrics.name is UNIQUE across origins), so
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
-// view renders its Builtins/Yours/Plugins headers from those runs.
+// view renders its Builtins/Custom/Plugins headers from those runs.
 func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize

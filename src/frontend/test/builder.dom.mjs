@@ -703,9 +703,12 @@ check(
   `panel=${!!panelOf(r)} expanded=${trig?.getAttribute('aria-expanded')}`,
 );
 check(
-  'the default view is the user,plugin partition (Yours + Plugins headers, no builtin row)',
+  // Re-pinned 2026-11-18 (metrics Phase 7, W45 catalog gap): the user
+  // group's header reads "Custom" — the same word the Origin box uses
+  // for exactly those rows — from the strings catalog.
+  'the default view is the user,plugin partition (Custom + Plugins headers, no builtin row)',
   JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Yours', 'Plugins']),
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Custom', 'Plugins']),
   JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
 );
 check(
@@ -764,7 +767,7 @@ check(
   'Built-in checked → (query "", origin "", scope "", denominator "", format "", cursor 0, 100) — all four rows with the Builtins header',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Yours', 'Plugins']),
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Custom', 'Plugins']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
@@ -772,7 +775,7 @@ pageCalls.length = 0;
 await setBox(r, 'Custom', false);
 await sleep(DEBOUNCE);
 check(
-  'Custom unchecked → origin "builtin,plugin": the built-in and plugin rows render, no Yours header',
+  'Custom unchecked → origin "builtin,plugin": the built-in and plugin rows render, no Custom header',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin,plugin', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Plugins']),
@@ -815,10 +818,10 @@ pageCalls.length = 0;
 await setBox(r, 'Custom', true);
 await sleep(DEBOUNCE);
 check(
-  'Custom checked → origin "user": the user rows render under the Yours header',
+  'Custom checked → origin "user": the user rows render under the Custom header',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Yours']),
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Custom']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();

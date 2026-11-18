@@ -74,6 +74,16 @@ export const builder = {
   // option, declared on the definition (its `format` column), never in
   // the expression text.
   filterIdentity: 'Identity',
+  // The list's ORIGIN group headers (the run labels over the rows).
+  // The user-authored group's header reads "Custom" — it lists exactly
+  // the rows the Origin group's Custom box selects (origin 'user'), so
+  // the two media say one word for one set (W45's Custom filter
+  // ruling); it replaced the inline "Yours" spelling with the catalog
+  // home (one spelling per concept). "Builtins" is the header's plural
+  // noun — the box's label stays the singular "Built-in".
+  groupBuiltins: 'Builtins',
+  groupCustom: 'Custom',
+  groupPlugins: 'Plugins',
   // The Pinning group (the list's fifth filter — client-side: pins live
   // in localStorage, so the backend cannot narrow on them).
   pinningLabel: 'Pinning',
