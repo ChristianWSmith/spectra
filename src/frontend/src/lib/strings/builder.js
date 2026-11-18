@@ -23,6 +23,11 @@ export const builder = {
   pinToProfile: 'Pin to player profile',
   unpinFromScoreboard: 'Unpin from scoreboard',
   unpinFromProfile: 'Unpin from player profile',
+  // The Match-overview table's two-way pin (the dialog's third section,
+  // owner item 5 2026-11-18 — that table is the overview's only picker,
+  // so its rows carry BOTH states; Builder's rows never pin here).
+  pinToOverview: 'Pin as overview card',
+  unpinFromOverview: 'Unpin from overview',
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
   // Both delete sites compose these (w19 item 23): the list row's

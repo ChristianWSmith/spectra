@@ -502,10 +502,10 @@ const econSeedValues = (ids, countedN, switches) => {
   return out;
 };
 
-// The five M1 IDENTITY card seeds (plan §8 identity rows): the Overview
-// top cards read these stored rows since their Phase-7 migration
-// (2026-11-18) — the seed picks WHO (valueKey), the roster line only
-// renders the name/number. Ids continue the 100-series.
+// The five M1 IDENTITY card seeds' FIELD map (plan §8 identity rows):
+// each name → the raw column its argmax records over (the ORACLE below
+// re-derives the winner from the fixture's scoreboard; the engine reads
+// the same column).
 const IDENTITY_FIELDS = Object.freeze({
   top_fragger: 'kills',
   best_adr: 'adr',
@@ -513,11 +513,25 @@ const IDENTITY_FIELDS = Object.freeze({
   entry_opens: 'entryKills',
   most_mvps: 'mvps',
 });
+// The five M1 IDENTITY card seeds (plan §8 identity rows): the Overview
+// top cards read these stored rows since their Phase-7 migration
+// (2026-11-18) — the seed picks WHO (valueKey). Since owner item 5 the
+// card LABEL comes from the def too (the dialog's overview table lists
+// `title`), so the fixture's titles mirror the schema seeds byte for
+// byte ('Top fragger' … — never `title: name`). Ids continue the
+// 100-series.
+const IDENTITY_TITLES = Object.freeze({
+  top_fragger: 'Top fragger',
+  best_adr: 'Best ADR',
+  most_util: 'Most util',
+  entry_opens: 'Entry opens',
+  most_mvps: 'Most MVPs',
+});
 const IDENTITY_SEED_DEFS = Object.freeze(
   Object.entries(IDENTITY_FIELDS).map(([name, field], i) => ({
     id: 108 + i,
     name,
-    title: name,
+    title: IDENTITY_TITLES[name],
     shortName: '',
     scope: 'match',
     subject: 'match',
@@ -584,6 +598,13 @@ const dataFor = (countedN, switches = 1) => ({
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
+  // The kvstore getter: ABSENT keys answer undefined. (The servicesStub
+  // defaults an unscripted service to [] — a present-EMPTY pref — which
+  // resolvePins would read verbatim as "pin nothing" and blank the
+  // overview card set; order/hidden read the same either way: [] and
+  // null both resolve their defaults.) Sections that script prefs (N4's
+  // hidden set, w25's shape) override this through their spread.
+  getPref: () => undefined,
 });
 
 // --- Queries ---------------------------------------------------------------

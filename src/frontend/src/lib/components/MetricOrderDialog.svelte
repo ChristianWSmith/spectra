@@ -1,7 +1,8 @@
 <script>
   // The metric ORDER preference UI (dogfooding design §2): ONE dialog,
-  // TWO stacked sections — Scoreboard (match metrics) then Player
-  // profile (profile metrics) — not tabs: both lists are short, and
+  // THREE stacked sections — Scoreboard (match metrics), Player
+  // profile (profile metrics) and Match overview (the top-card set,
+  // owner item 5 of 2026-11-18) — not tabs: the lists are short, and
   // the whole point is showing "your fixed stats, then your pinned
   // metrics" for each surface at a glance.
   //
@@ -17,7 +18,12 @@
   // both pin keys and is handed in as `onTogglePin` (the single pins
   // writer), so this dialog still cannot fork the pins contract, and
   // the unpin leaves metric_order_* untouched — the sequence keeps the
-  // slot for re-pinning. The eye keeps its Show/Hide name and never
+  // slot for re-pinning. The EXCEPTION is the Match-overview table
+  // (owner item 5): its pin set is THIS dialog's own kvstore selection
+  // (metric_pins_overview, written beside its order key exactly like
+  // writeHidden writes visibility), because the dialog is the
+  // overview's only picker — its rows therefore toggle BOTH ways. The
+  // eye keeps its Show/Hide name and never
   // says "pin"; the pin toggle's label comes from the same catalog
   // keys Builder's pin button composes (strings/builder.js).
   //
@@ -27,9 +33,11 @@
   // no dirty/cancel gate). Gestures index the LIST the user sees, but
   // the persisted value is always the WHOLE sequence — entries that are
   // not listed (unpinned metrics) keep their relative slots (see move).
-  // Reset deletes BOTH pref pairs per scope (order + hidden) — the
+  // Reset deletes BOTH pref pairs per scope (order + hidden) plus the
+  // overview's order + pins — the
   // lead's ruling: Reset order restores the defaults INCLUDING showing
-  // every fixed stat again. Close is the header's ✕ (dialog open state
+  // every fixed stat again and the default card set on the overview.
+  // Close is the header's ✕ (dialog open state
   // is transient — never seeded, never remembered, never in the URL).
   //
   // Reordering is BUTTON + KEYBOARD ONLY (owner, 2026-11-15: retire the
@@ -53,6 +61,10 @@
     readStartsTransposed,
     writeStartsTransposed,
     hideable,
+    resolvePins,
+    readOverviewPins,
+    writeOverviewPins,
+    resetOverviewPins,
   } from '../metricorder.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
@@ -68,8 +80,15 @@
 
   let bodyEl = $state(null);
   let defs = $state([]); // the full catalog (listMetrics) — both sections scope-filter it
-  let orders = $state({ match: null, profile: null }); // saved pref per scope (null = absent)
+  let orders = $state({ match: null, profile: null, overview: null }); // saved pref per scope (null = absent)
   let hidden = $state({ match: [], profile: [] }); // hidden fixed-entry keys per scope (absent ⇒ [])
+  // The THIRD table (owner item 5, 2026-11-18): the Match-overview card
+  // set, RESOLVED on load (absent ⇒ DEFAULT_PINS.overview by name, the
+  // shipped card set; present ⇒ verbatim) — every row's pin state reads
+  // this, and the first toggle materializes the resolved set into the
+  // kvstore (the write-through idiom the order/hidden twins use; the
+  // pref is absent until then).
+  let overviewPins = $state([]);
   // w25 — the dialog's THIRD pref (metricorder.js STARTS_TRANSPOSED_KEY):
   // the scoreboard's opening shape, read with the rest on open (absent ⇒
   // off) and written through setStartsTransposed below.
@@ -77,9 +96,9 @@
   let error = $state('');
 
   // One listMetrics() + both order reads + both visibility reads + the
-  // shape pref on open (design §2.4: no async inside a move — everything
-  // below is synchronous over this snapshot; listMetrics is the shared
-  // library-wide cached read).
+  // shape pref + the overview table's pair on open (design §2.4: no
+  // async inside a move — everything below is synchronous over this
+  // snapshot; listMetrics is the shared library-wide cached read).
   $effect(() => {
     if (!open) return;
     error = '';
@@ -90,13 +109,18 @@
       readHidden('match'),
       readHidden('profile'),
       readStartsTransposed(),
+      readOrder('overview'),
+      readOverviewPins(),
     ])
-      .then(([rows, m, p, hm, hp, st]) => {
+      .then(([rows, m, p, hm, hp, st, ov, ovp]) => {
         if (!open) return; // closed mid-flight
         defs = rows || [];
-        orders = { match: m, profile: p };
+        orders = { match: m, profile: p, overview: ov };
         hidden = { match: hm, profile: hp };
         startsTransposed = st;
+        // The resolved card set (absent ⇒ the default five by name —
+        // a default name the catalog lacks drops, §1.6).
+        overviewPins = resolvePins('overview', ovp, defs);
       })
       .catch((e) => {
         error = errText(e);
@@ -117,7 +141,12 @@
   // the fixed stats (ALL of them, hidden ones included — they stay
   // listed) plus the pinned metrics. Every gesture index — keyboard and
   // the ↑/↓ buttons — is an index into THIS list, not into the catalog.
+  // EXCEPTION — the OVERVIEW table (owner item 5): it lists its WHOLE
+  // universe (the identity metrics), pinned or not, because its pin
+  // toggle ADDS rows (this table is the overview's only picker); the
+  // match/profile tables keep the fixed+pinned shape (unpin only, M6).
   function seqOf(scope) {
+    if (scope === 'overview') return composedSequence(scope, orders[scope], defs, []);
     const pins = new Set(pinnedNames(scope));
     return composedSequence(scope, orders[scope], defs, hidden[scope]).filter(
       (e) => e.kind === 'fixed' || pins.has(e.def.name),
@@ -169,6 +198,30 @@
       await writeHidden(scope, next);
     } catch (e) {
       hidden = { ...hidden, [scope]: prev };
+      error = errText(e);
+    }
+  }
+
+  // toggleOverviewPin — the overview table's TWO-WAY pin (owner item 5,
+  // 2026-11-18). Unlike the match/profile tables (unpin-only — their
+  // picker is Builder's metric rows, M6), this table IS the overview's
+  // only picker: a card can be pinned nowhere else, so its row carries
+  // the pin in both states. The write goes straight to OVERVIEW_PINS_KEY
+  // (this dialog's own kvstore selection — the writeHidden idiom;
+  // Builder's pins contract is untouched). Write-through
+  // with the same snap-back as every other toggle here: a write that
+  // did not save is never shown as saved. Unpinning keeps the name in
+  // the order sequence, so re-pinning restores the card's place.
+  async function toggleOverviewPin(entry) {
+    const prev = overviewPins;
+    const next = prev.includes(entry.name)
+      ? prev.filter((n) => n !== entry.name)
+      : [...prev, entry.name];
+    overviewPins = next;
+    try {
+      await writeOverviewPins(next);
+    } catch (e) {
+      overviewPins = prev;
       error = errText(e);
     }
   }
@@ -234,17 +287,22 @@
   }
 
   // Reset order: delete BOTH pref PAIRS (order + hidden, both scopes)
-  // ⇒ each section snaps back to its default sequence with every fixed
-  // stat showing again (the lead's ruling: Reset restores the defaults,
-  // visibility included). It deliberately does NOT touch the SHAPE pref
+  // plus the OVERVIEW pair (order + pins) ⇒ each section snaps back to
+  // its default sequence with every fixed stat showing again and the
+  // default card set back on the overview (the lead's ruling: Reset
+  // restores the defaults, visibility included — owner item 5 joins the
+  // rule: the overview's order and selection reset together). It
+  // deliberately does NOT touch the SHAPE pref
   // (STARTS_TRANSPOSED_KEY, the checkbox below the scoreboard list) —
   // that is the shape a match opens in, neither order nor visibility
   // (w25; no delete of it exists anywhere in this dialog).
   async function resetAll() {
     const prevOrders = orders;
     const prevHidden = hidden;
-    orders = { match: null, profile: null };
+    const prevOverviewPins = overviewPins;
+    orders = { match: null, profile: null, overview: null };
     hidden = { match: [], profile: [] };
+    overviewPins = resolvePins('overview', null, defs);
     error = '';
     try {
       await Promise.all([
@@ -252,10 +310,13 @@
         resetOrder('profile'),
         resetHidden('match'),
         resetHidden('profile'),
+        resetOrder('overview'),
+        resetOverviewPins(),
       ]);
     } catch (e) {
       orders = prevOrders;
       hidden = prevHidden;
+      overviewPins = prevOverviewPins;
       error = errText(e);
     }
   }
@@ -339,7 +400,27 @@
                 ><span class="codicon {e.hidden ? 'codicon-eye-closed' : 'codicon-eye'}"></span
               ></button>
             {/if}
-            {#if e.kind === 'metric'}
+            {#if e.kind === 'metric' && scope === 'overview'}
+              <!-- The overview table's TWO-WAY pin (owner item 5): this
+                   table IS the overview's only picker, so the row pins
+                   AND unpins — pinned state tints the button (the same
+                   accent tint as the M6 pinned state). The write is the
+                   dialog's own kvstore selection (toggleOverviewPin →
+                   OVERVIEW_PINS_KEY), never Builder's pin store
+                   (the scoreboard/profile selection); an unpin keeps the sequence slot, so re-pinning
+                   restores the card's place. -->
+              <button
+                class="btn small ghost"
+                class:mo-pin-on={overviewPins.includes(e.name)}
+                title={overviewPins.includes(e.name)
+                  ? S.builder.unpinFromOverview
+                  : S.builder.pinToOverview}
+                aria-label={S.fill(S.builder.togglePinAria, { name: e.name })}
+                aria-pressed={overviewPins.includes(e.name)}
+                onclick={() => toggleOverviewPin(e)}
+                ><span class="codicon codicon-pin"></span
+              ></button>
+            {:else if e.kind === 'metric'}
               <!-- M6: unpin only — every listed metric IS pinned (the
                    list is fixed stats + pinned metrics), so the toggle
                    always shows the pinned state and the row leaves the
@@ -421,6 +502,7 @@
     {/if}
     {@render section('match', S.common.metricOrderScoreboardSection, S.common.metricOrderFixedCaption)}
     {@render section('profile', S.common.metricOrderProfileSection, S.common.metricOrderProfileCaption)}
+    {@render section('overview', S.common.metricOrderOverviewSection, S.common.metricOrderOverviewCaption)}
     <div class="toolbar mo-foot">
       <span class="muted mo-hint"
         ><span class="codicon codicon-arrow-up"></span><span

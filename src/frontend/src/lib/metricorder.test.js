@@ -38,6 +38,7 @@ const {
   ORDER_KEYS,
   HIDDEN_KEYS,
   STARTS_TRANSPOSED_KEY,
+  OVERVIEW_PINS_KEY,
   DEFAULT_RANKS,
   DEFAULT_PINS,
   FIXED_BLOCK,
@@ -46,6 +47,7 @@ const {
   fixedKeys,
   hideable,
   defaultRanker,
+  overviewDefs,
   resolveOrder,
   inSequence,
   pinnedInSequence,
@@ -60,6 +62,9 @@ const {
   readHidden,
   writeHidden,
   resetHidden,
+  readOverviewPins,
+  writeOverviewPins,
+  resetOverviewPins,
   readStartsTransposed,
   writeStartsTransposed,
 } = mo;
@@ -74,8 +79,12 @@ const metricsOnly = (saved, catalog, scope = 'match') =>
 
 // --- The tables ship exactly as design §1.6 ---------------------------------
 
-test('ORDER_KEYS are the two bare kvstore keys (no version marker)', () => {
-  assert.deepEqual(ORDER_KEYS, { match: 'metric_order_match', profile: 'metric_order_profile' });
+test('ORDER_KEYS are the three bare kvstore keys (no version marker)', () => {
+  assert.deepEqual(ORDER_KEYS, {
+    match: 'metric_order_match',
+    profile: 'metric_order_profile',
+    overview: 'metric_order_overview',
+  });
   // Pre-release no-versioning policy (§3.7.2): no v1/ladder anywhere.
   assert.ok(!Object.values(ORDER_KEYS).some((k) => /\bv\d\b|version|_v/.test(k)));
 });
@@ -899,4 +908,106 @@ test('defaultRanker: unranked/user names are ∞, unknown scopes rank everything
   assert.equal(defaultRanker('profile')('career_kd'), 3);
   assert.equal(defaultRanker('nope')('adr'), Infinity, 'a bogus scope never ranks anything');
   assert.equal(defaultRanker('nope')('@K'), Infinity, 'a bogus scope never ranks a fixed key');
+});
+
+// --- The overview table (owner item 5, 2026-11-18) ------------------------
+
+test('overviewDefs: THE overview universe — match-scope metrics that recorded a leader (identity format)', () => {
+  const defs = [
+    { id: 1, name: 'top_fragger', scope: 'match', format: 'identity' },
+    { id: 2, name: 'kills', scope: 'match', format: 'int' },
+    { id: 3, name: 'career_kd', scope: 'profile', format: 'identity' },
+    { id: 4, name: 'my_argmax', scope: 'match', format: 'identity' },
+    null,
+  ];
+  assert.deepEqual(
+    overviewDefs(defs).map((d) => d.name),
+    ['top_fragger', 'my_argmax'],
+    'the criterion: match scope AND the identity format (a card names a leader only when the metric recorded one)',
+  );
+  assert.deepEqual(overviewDefs(null), [], 'a null catalog reads as an empty universe');
+});
+
+test('overview ranks/pins: the shipped card set leads in its own table (absent pref ⇒ default card row)', () => {
+  assert.deepEqual(DEFAULT_RANKS.overview, {
+    top_fragger: 1,
+    best_adr: 2,
+    most_util: 3,
+    entry_opens: 4,
+    most_mvps: 5,
+  });
+  assert.deepEqual(DEFAULT_PINS.overview, [
+    'top_fragger',
+    'best_adr',
+    'most_util',
+    'entry_opens',
+    'most_mvps',
+  ]);
+  // The universe carries NO fixed entries: resolveOrder sequences the
+  // identity metrics alone — ranked defaults first, rank-∞ (user)
+  // entries after in catalog order.
+  assert.deepEqual(resolveOrder(null, ['my_argmax', 'best_adr', 'top_fragger'], 'overview'), [
+    'top_fragger',
+    'best_adr',
+    'my_argmax',
+  ]);
+  const defs = [
+    { id: 1, name: 'top_fragger', scope: 'match', format: 'identity' },
+    { id: 2, name: 'best_adr', scope: 'match', format: 'identity' },
+    { id: 3, name: 'kills', scope: 'match', format: 'int' },
+  ];
+  assert.deepEqual(
+    composedSequence('overview', null, defs).map((e) => e.key),
+    ['top_fragger', 'best_adr'],
+    'a non-identity match metric never enters the overview table (the scope filter IS overviewDefs)',
+  );
+  assert.deepEqual(
+    composedSequence('overview', ['best_adr', 'top_fragger'], defs).map((e) => e.key),
+    ['best_adr', 'top_fragger'],
+    'a stored order wins for the identity metrics',
+  );
+  assert.deepEqual(
+    inSequence('overview', null, defs).map((d) => d.name),
+    ['top_fragger', 'best_adr'],
+  );
+});
+
+test('overview pins: resolvePins absent⇒default names / present⇒verbatim; pinnedInSequence intersects with the identity universe', () => {
+  const defs = [
+    { id: 1, name: 'top_fragger', scope: 'match', format: 'identity' },
+    { id: 2, name: 'best_adr', scope: 'match', format: 'identity' },
+    { id: 3, name: 'kills', scope: 'match', format: 'int' },
+  ];
+  assert.deepEqual(
+    resolvePins('overview', null, defs),
+    ['top_fragger', 'best_adr'],
+    'absent ⇒ the default names this catalog carries (the rest drop, §1.6)',
+  );
+  assert.deepEqual(resolvePins('overview', [], defs), [], "present '[]' is verbatim — pin nothing");
+  assert.deepEqual(
+    pinnedInSequence('overview', null, defs, ['best_adr', 'kills', 'ghost']).map((d) => d.name),
+    ['best_adr'],
+    'pins SELECT the universe — a stale or non-identity name drops at the intersection, never reaches the read',
+  );
+});
+
+test('the overview pins key round-trips through its own kvstore key (absent ⇒ null ⇒ defaults)', async () => {
+  bindings.resetCalls();
+  assert.equal(await readOverviewPins(), null, 'absent reads as null (the resolvePins default rule)');
+  bindings.resetCalls();
+  await writeOverviewPins(['best_adr', 'top_fragger']);
+  assert.equal(OVERVIEW_PINS_KEY, 'metric_pins_overview');
+  assert.deepEqual(bindings.calls, [
+    { method: 'SetPref', args: ['metric_pins_overview', ['best_adr', 'top_fragger']] },
+  ]);
+  bindings.handlers.GetPref = (key) =>
+    key === 'metric_pins_overview' ? ['x', 5, 'top_fragger'] : undefined;
+  assert.deepEqual(await readOverviewPins(), ['x', 'top_fragger'], 'non-string entries filter out');
+  delete bindings.handlers.GetPref;
+  bindings.resetCalls();
+  await resetOverviewPins();
+  assert.deepEqual(bindings.calls[bindings.calls.length - 1], {
+    method: 'Delete',
+    args: ['metric_pins_overview'],
+  });
 });

@@ -46,6 +46,20 @@ const (
 	prefsMetricOrderMatchKey   = "metric_order_match"
 	prefsMetricOrderProfileKey = "metric_order_profile"
 
+	// prefsMetricOrderOverviewKey / prefsMetricPinsOverviewKey are the
+	// ordering dialog's THIRD table (metricorder.js 'overview' scope —
+	// owner item 5 of 2026-11-18): the ORDER of the match overview's
+	// card metrics and the PIN SET selecting which cards render (absent
+	// = the default card set — metricorder.js DEFAULT_PINS.overview).
+	// Values: JSON arrays of metric NAMES (the same stable identity the
+	// other order pair uses; ids churn on plugin replace). Same
+	// frontend-written / Go-never-consumes contract as the order pair
+	// (font_size precedent); the selection lives in the kvstore rather
+	// than the localStorage pins because the dialog owns this table's
+	// picker (Builder's rows never pin here).
+	prefsMetricOrderOverviewKey = "metric_order_overview"
+	prefsMetricPinsOverviewKey  = "metric_pins_overview"
+
 	// prefsMetricHiddenMatchKey / prefsMetricHiddenProfileKey hold which
 	// FIXED stats are hidden from their view (metricorder.js HIDDEN_KEYS:
 	// '@'-prefixed entry names). Absent = nothing hidden; metric

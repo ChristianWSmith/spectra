@@ -1962,9 +1962,9 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
   const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
 
   check(
-    'one dialog, two stacked sections (scoreboard then profile — no tabs)',
+    'one dialog, three stacked sections (scoreboard, profile, overview — no tabs)',
     [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | ') ===
-      'Scoreboard (match metrics) | Player profile (profile metrics)' &&
+      'Scoreboard (match metrics) | Player profile (profile metrics) | Match overview (top cards)' &&
       !dlg?.querySelector('[role="tab"]'),
     [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
   );
@@ -2055,14 +2055,15 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
   // The help line (reworded for N4: fixed stats are listed now, and
   // they can be hidden — the pins-only copy was wrong once they
   // folded into the list; M6: it names the unpin HERE instead of
-  // pointing back at the metric list). Still the owner's domain, no
-  // dev shorthand.
+  // pointing back at the metric list; owner item 5: it names the third
+  // table). Still the owner's domain, no dev shorthand.
   const note = (dlg?.querySelector('.mo-note')?.textContent || '').replace(/\s+/g, ' ').trim();
   check(
-    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, unpin here in the dialog; no dev-process phrase',
-    /Fixed stats and your pinned metrics are listed/.test(note) &&
+    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, unpin here in the dialog, the overview table picks the top cards; no dev-process phrase',
+    /Fixed stats and pinned metrics are listed in order/.test(note) &&
       /hide a fixed stat with the eye/.test(note) &&
       /unpin a metric here/.test(note) &&
+      /overview table picks the match top cards/.test(note) &&
       !/Go stats/i.test(dlg?.textContent || ''),
     note,
   );
@@ -2102,6 +2103,28 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     click(rowNamed(r, name)?.querySelector(`[aria-label="Toggle pin for ${name}"]`));
     await sleep(40);
   }
+
+  // The overview universe for the dialog (owner item 5): the ONE cached
+  // listMetrics() gains the identity metrics — top_fragger (a DEFAULT
+  // overview pin ⇒ its row opens pinned) and a user argmax (unpinned).
+  // The Builder LIST behind the dialog is untouched: it pages through
+  // ListMetricsPage, a separate stub over METRICS.
+  const baseListMetrics = bindings.MetricsService.ListMetrics;
+  bindings.MetricsService.ListMetrics = () =>
+    Promise.resolve([
+      ...METRICS,
+      {
+        id: 91, name: 'top_fragger', title: 'Top fragger', shortName: '',
+        expr: 'from player_stats: argmax(kills)', scope: 'match', format: 'identity',
+        doc: 'Formula: argmax(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '',
+      },
+      {
+        id: 92, name: 'my_argmax', title: 'My leader', shortName: '',
+        expr: 'from player_stats: argmax(kast)', scope: 'match', format: 'identity',
+        doc: 'Formula: argmax(player_stats.kast)', origin: 'user', pluginId: '', denominator: '',
+      },
+    ]);
+  services.invalidate(); // flush the cached catalog read so the open sees it
 
   bindings.resetCalls();
   click(orderBtn);
@@ -2268,6 +2291,10 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
           JSON.stringify([
             '@Name', '@Team', '@Score',
             'trade_rate', 'my_kd', 'adr_avg', 'plug_stat',
+            // The identity metrics are match-catalog members too: they
+            // sequence at rank ∞ behind the shown entries (owner item 5
+            // — the fixture's dialog catalog carries them).
+            'top_fragger', 'my_argmax',
           ]),
       set ? JSON.stringify(set.args) : 'no SetPref call',
     );
@@ -2356,6 +2383,64 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     );
   }
   {
+    // Owner item 5 — the Match-overview table: its WHOLE identity
+    // universe is listed (pin toggles ADD here — this table is the
+    // overview's only picker, unlike the match/profile unpin-only
+    // rows), the shipped default card opens pinned, and each write
+    // lands on the table's own kvstore key.
+    const ovRows = dRows('overview');
+    check(
+      'the overview table lists its identity universe in sequence order (the default-pinned card first, the unpinned user metric after)',
+      JSON.stringify(ovRows.map((x) => x.dataset.moName)) ===
+        JSON.stringify(['top_fragger', 'my_argmax']),
+      JSON.stringify(ovRows.map((x) => x.dataset.moName)),
+    );
+    const ovTitle = (row) =>
+      row?.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('title') ?? '-';
+    check(
+      'the default card opens pinned (its row carries the unpin state); the unpinned metric offers the pin',
+      ovRows[0]?.querySelector('[title="Unpin from overview"]') !== null &&
+        ovRows[0]?.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('aria-pressed') === 'true' &&
+        ovRows[1]?.querySelector('[title="Pin as overview card"]') !== null,
+      ovRows.map((x) => `${x.dataset.moName}:${ovTitle(x)}`).join(', '),
+    );
+    check(
+      'overview rows are metric rows with ↑↓ and no eye (the eye stays a fixed-stat control)',
+      ovRows.length > 0 &&
+        ovRows.every(
+          (x) => x.dataset.moKind === 'metric' && x.querySelector('.mo-moves') &&
+            !x.querySelector('button[aria-label^="Hide "]'),
+        ),
+      ovRows.map((x) => `${x.dataset.moName}:${x.dataset.moKind}`).join(', '),
+    );
+    // Pin the user metric: the selection lands on ITS kvstore key —
+    // never Builder's localStorage pins, and the order key is untouched.
+    const ovOrderWrites = () =>
+      bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_overview')
+        .length;
+    const orderWritesBefore = ovOrderWrites();
+    click(ovRows[1].querySelector('[aria-label^="Toggle pin"]'));
+    await sleep(80);
+    const pinsSet = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_pins_overview').pop();
+    check(
+      'pinning an overview card writes ONLY the overview pin key, carrying the whole set (default + the new one)',
+      !!pinsSet &&
+        JSON.stringify(pinsSet.args[1]) === JSON.stringify(['top_fragger', 'my_argmax']) &&
+        ovOrderWrites() === orderWritesBefore,
+      pinsSet ? JSON.stringify(pinsSet.args) : 'no SetPref',
+    );
+    // Reorder through the same write-through move() as every other
+    // table — the moved sequence lands on the overview ORDER key.
+    click(dRows('overview')[1]?.querySelector('[aria-label="Move My leader up"]'));
+    await sleep(80);
+    const orderSet = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_overview').pop();
+    check(
+      'reordering the overview table writes its own order key with the moved sequence',
+      !!orderSet && JSON.stringify(orderSet.args[1]) === JSON.stringify(['my_argmax', 'top_fragger']),
+      orderSet ? JSON.stringify(orderSet.args) : 'no SetPref',
+    );
+  }
+  {
     const resetBtn = [...dlg.querySelectorAll('button')].find((b) =>
       b.textContent.includes('Reset order'),
     );
@@ -2363,13 +2448,15 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     await sleep(80);
     const dels = bindings.calls.filter((c) => c.method === 'Delete');
     check(
-      'Reset order deletes BOTH pref PAIRS — the order keys and the hidden keys (the lead: visibility resets too)',
+      'Reset order deletes BOTH pref PAIRS plus the overview pair — order, visibility and the card selection (the lead: every default restores)',
       JSON.stringify(dels.map((c) => c.args[0]).sort()) ===
         JSON.stringify([
           'metric_hidden_match',
           'metric_hidden_profile',
           'metric_order_match',
+          'metric_order_overview',
           'metric_order_profile',
+          'metric_pins_overview',
         ]),
       JSON.stringify(dels.map((c) => c.args)),
     );
@@ -2384,6 +2471,15 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
       'Reset also SHOWS the hidden Team again (its row carries Hide, no hidden mark)',
       !!teamBack && !teamBack.classList.contains('mo-hidden') && !!teamBack.querySelector('button[aria-label="Hide Team"]'),
       teamBack ? `class=${teamBack.className}` : 'row gone',
+    );
+    const ovBack = dRows('overview');
+    check(
+      'Reset restores the overview table too — default order and the default card set (my_argmax unpinned again)',
+      JSON.stringify(ovBack.map((x) => x.dataset.moName)) ===
+        JSON.stringify(['top_fragger', 'my_argmax']) &&
+        ovBack[0]?.querySelector('[title="Unpin from overview"]') !== null &&
+        ovBack[1]?.querySelector('[title="Pin as overview card"]') !== null,
+      ovBack.map((x) => `${x.dataset.moName}:${x.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('title') ?? '-'}`).join(', '),
     );
   }
   {
@@ -2474,6 +2570,11 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
     await sleep(60);
     check('the header ✕ dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
   }
+  // Restore the shared catalog stub (the identity fixture was this
+  // dialog section's only consumer) and flush the cached read so later
+  // mounts resolve through the original METRICS.
+  bindings.MetricsService.ListMetrics = baseListMetrics;
+  services.invalidate();
 }
 
 console.log(

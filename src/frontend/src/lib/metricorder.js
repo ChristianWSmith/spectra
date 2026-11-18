@@ -13,7 +13,12 @@
 // same kvstore, absent ⇒ nothing hidden. A THIRD dialog pref (w25) sits
 // beside them without joining either table: STARTS_TRANSPOSED_KEY, the
 // scoreboard's opening shape (boolean, absent ⇒ off) — see its const
-// below for the placement ruling.
+// below for the placement ruling. And a THIRD TABLE (owner item 5,
+// 2026-11-18): the Match-overview card list carries its own pair —
+// ORDER_KEYS.overview + OVERVIEW_PINS_KEY (kvstore; the selection lives
+// HERE rather than in Builder's localStorage pins because this dialog
+// owns that table — its pin toggles write it directly, exactly like
+// writeHidden writes visibility).
 //
 // Composition (W6, 2026-11-16; unified 2026-11-18 — owner "fully
 // dogfooded" ruling):  composedSequence = resolveOrder over the FIXED
@@ -66,7 +71,23 @@ import { getPref, setPref, deletePref } from './services.js';
 export const ORDER_KEYS = Object.freeze({
   match: 'metric_order_match',
   profile: 'metric_order_profile',
+  overview: 'metric_order_overview',
 });
+
+// OVERVIEW_PINS_KEY — the Match-overview table's PIN SET (owner item 5,
+// 2026-11-18). The third table orders AND selects: a metric's card
+// shows on the match overview exactly when its name is in this set, and
+// the sequence above decides where. Placement ruling (AGENTS "State
+// placement"): survives a restart, not a link ⇒ kvstore (prefs.go
+// prefsMetricPinsOverviewKey), frontend-written through this module,
+// Go never consumes it — the same home as the order/hidden twins and
+// deliberately NOT Builder's localStorage pins: those are the
+// scoreboard/profile selections (Builder's rows pin there), while this
+// is the ordering dialog's own selection for its own table, written
+// beside its order key. ABSENT ⇒ DEFAULT_PINS.overview resolved by name
+// (a fresh install shows the default card set); PRESENT (even '[]') ⇒
+// the stored selection verbatim — the resolvePins rule unchanged.
+export const OVERVIEW_PINS_KEY = 'metric_pins_overview';
 
 // The VISIBILITY twin: which FIXED stats are hidden from their view.
 // Same routing, same storage rules, absent ⇒ nothing hidden. Namespaced
@@ -165,6 +186,18 @@ export const DEFAULT_RANKS = Object.freeze({
     career_avg_enemies_flashed: 10,
     career_avg_util_damage: 11,
   }),
+  // Overview (owner item 5, 2026-11-18): the card table's default order
+  // is exactly the shipped card row — Top fragger, Best ADR, Most util,
+  // Entry opens, Most MVPs. This scope has NO fixed entries (the
+  // universe is the identity metrics — overviewDefs below), so rank ∞
+  // (an unlisted identity metric) appends in catalog order.
+  overview: Object.freeze({
+    top_fragger: 1,
+    best_adr: 2,
+    most_util: 3,
+    entry_opens: 4,
+    most_mvps: 5,
+  }),
 });
 
 // DEFAULT_PINS — the absent-key default SELECTION (design §1.6), the
@@ -233,6 +266,18 @@ export const DEFAULT_PINS = Object.freeze({
     'career_clutch_win_rate',
     'career_avg_enemies_flashed',
     'career_avg_util_damage',
+  ]),
+  // Overview (owner item 5, 2026-11-18): the shipped card set — the five
+  // M1 identity builtins, same absent-vs-present rule as the other
+  // scopes (a present key is the stored selection verbatim — an
+  // instance that saved one before this table existed re-pins its cards
+  // once; pre-release no migration).
+  overview: Object.freeze([
+    'top_fragger',
+    'best_adr',
+    'most_util',
+    'entry_opens',
+    'most_mvps',
   ]),
 });
 
@@ -383,6 +428,19 @@ export function isRawId(id) {
   return typeof id === 'string' && id.startsWith('raw:');
 }
 
+// overviewDefs(defs) — THE Match-overview universe (owner item 5,
+// 2026-11-18): match-scope metrics that RECORDED a leader — the
+// identity format (`format: 'identity'`, the engine's argmax rows,
+// doc.go "Identity values"). The criterion: a card can name the
+// metric's leading player + that player's stored value only when the
+// metric carries a value_key — a numeric metric records no winner, so
+// offering it here could only fabricate one. Every reader of the
+// 'overview' scope filters through THIS function — never a second
+// universe rule.
+export function overviewDefs(defs) {
+  return (defs || []).filter((d) => d && d.scope === 'match' && d.format === 'identity');
+}
+
 // HIDE_EXEMPT — THE visibility exemption (owner ruling, W6): the
 // scoreboard's Name column is structural (the row identity every other
 // cell hangs off), so it is the ONE fixed stat a user may not hide;
@@ -501,8 +559,13 @@ export function resolveOrder(saved, catalog, scope = 'match') {
 // views' historical filters). Metric-only by contract — the Reports
 // appendix and the trend picker are metric-only surfaces; a surface
 // that renders fixed stats too composes through composedSequence.
+// scope 'overview' filters through overviewDefs (the identity
+// universe — the ONE rule, no fixed entries to strip).
 export function inSequence(scope, saved, defs) {
-  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+  const scoped =
+    scope === 'overview'
+      ? overviewDefs(defs)
+      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const fixed = new Set(fixedKeys(scope));
   return resolveOrder(saved, scoped.map((d) => d.name), scope)
@@ -543,7 +606,10 @@ export function pinnedInSequence(scope, saved, defs, pinNames) {
 export function composedSequence(scope, saved, defs, hiddenKeys = []) {
   const fixed = new Set(fixedKeys(scope));
   const hidden = new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
-  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+  const scoped =
+    scope === 'overview'
+      ? overviewDefs(defs)
+      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const out = [];
   for (const n of resolveOrder(saved, scoped.map((d) => d.name), scope)) {
@@ -615,6 +681,29 @@ export function writeHidden(scope, keys) {
 // resetHidden(scope) — delete the key ⇒ nothing hidden again.
 export function resetHidden(scope) {
   return Promise.resolve(deletePref(HIDDEN_KEYS[scope]));
+}
+
+// readOverviewPins() — the overview table's PIN SET (OVERVIEW_PINS_KEY):
+// null when the key is ABSENT (the reader's null marks "apply the
+// default card set" — resolvePins below owns absent-vs-present; every
+// caller passes the result straight through it).
+export function readOverviewPins() {
+  return Promise.resolve(getPref(OVERVIEW_PINS_KEY)).then((v) =>
+    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
+  );
+}
+
+// writeOverviewPins(names) — persist the selection verbatim (kvstore
+// AutoSave — durable immediately). The ordering dialog's overview
+// section pin toggles are the ONLY writers.
+export function writeOverviewPins(names) {
+  return Promise.resolve(setPref(OVERVIEW_PINS_KEY, [...names]));
+}
+
+// resetOverviewPins() — delete the key ⇒ the default card set again
+// (paired with resetOrder('overview') in the dialog's Reset).
+export function resetOverviewPins() {
+  return Promise.resolve(deletePref(OVERVIEW_PINS_KEY));
 }
 
 // parseStoredPins(raw) — THE pins READ: the localStorage getItem string
