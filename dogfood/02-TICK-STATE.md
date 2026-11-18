@@ -594,7 +594,11 @@ where present.
    holds for `attacker_inair` (clean) and `same_side` (needs E2+E3); **fails
    for `capped_dmg`** (order-dependent, row-local — `schema.sql:284-296` says
    so). **Owner ruling 2026-11-18: APPROVED — drop 2, keep `capped_dmg`** (the
-   stamp keeps an honest DDL comment; revisit post-SQL).
+   stamp keeps an honest DDL comment; revisit post-SQL). **Criterion (owner,
+   same day):** capped damage is *engine emulation*, not invention — same class
+   as assist assignment. Standing test for future stamp-drop candidates: value
+   observable in per-tick state ⇒ join and drop; requires emulating an
+   engine-internal rule ⇒ stays a derived-at-ingest stamp.
 5. **Row-by-row single-tx writes scale to tick volume** — falsified by
    measurement: 14–21.6 s/tx violates `busy_timeout=5000`; chunked is mandatory
    and costs nothing (measured parity).
