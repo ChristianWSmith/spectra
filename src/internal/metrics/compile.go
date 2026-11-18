@@ -744,6 +744,30 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 				if perr := res.resolveCond(o.col, o.pos); perr != nil {
 					return perr
 				}
+			case opWindow:
+				// The next-round window (parseWindow) — compile owns
+				// the whitelist side: the source must be ROUND-GRAIN
+				// (one row per round per match, or "the next round"
+				// would be ambiguous across the source's rows) and the
+				// column must be the PRIMARY's (the window scans the
+				// primary's own table — a secondary's column has no
+				// round sequence of its own here).
+				if inExists {
+					return errf(o.pos, "next() cannot appear inside exists()")
+				}
+				if !roundGrain(res.primary) {
+					return errf(o.pos,
+						"next() needs a round-grain source — primary source %q is not one row per round (round-grain sources: %s)",
+						res.primary, roundGrainSourcesMsg())
+				}
+				if !sourceColumns[res.primary][o.col] {
+					if _, other := res.owners[o.col]; other && res.joined {
+						return errf(o.colPos,
+							"next() reads a column of the primary source %q — %q belongs to another source in the join",
+							res.primary, o.col)
+					}
+					return errf(o.colPos, "unknown column %q for source %s", o.col, res.primary)
+				}
 			}
 		}
 		if p := checkCond(c.l, inExists); p != nil {
@@ -1538,6 +1562,36 @@ func (e *emitter) emitCond(c *condNode) {
 // ALWAYS owner-qualified (unqualified would resolve to the inner scan),
 // bare columns are x0-qualified (the inner scan).
 func (e *emitter) emitOperand(o *operand) {
+	if o.kind == opWindow {
+		// The next-round window: a CORRELATED SCALAR SUBQUERY over the
+		// primary's own table, not a SQL window function — LEAD/LAG
+		// would see the per-agg filters and the scope WHERE first (the
+		// "next round" would silently become the next SURVIVING row),
+		// while this always reads the source's full round sequence for
+		// the row's match. Round order is the round-number column; no
+		// next round ⇒ NULL (a condition over it is unknown, never
+		// true). Alias nx0 is engine-chosen like exists()'s x0 (each
+		// subquery scopes its own alias), correlation columns are
+		// primary-qualified — validation guarantees a round-grain
+		// primary, so sourceDims carries the round column.
+		roundCol := sourceDims[e.res.primary]["round"]
+		e.sb.WriteString("(SELECT nx0.")
+		e.sb.WriteString(o.col)
+		e.sb.WriteString(" FROM ")
+		e.sb.WriteString(tableFor(e.res.primary))
+		e.sb.WriteString(" AS nx0 WHERE nx0.match_id = ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".match_id AND nx0.")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" > ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" ORDER BY nx0.")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" LIMIT 1)")
+		return
+	}
 	if o.kind == opOuter {
 		e.sb.WriteString(e.res.owners[o.col])
 		e.sb.WriteString(".")

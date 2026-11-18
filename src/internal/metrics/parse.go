@@ -54,10 +54,13 @@ var ratioNestedOps = map[string]bool{
 // whitelisted column is named any of these). `exists` and `outer` belong
 // to the exists() construct (parseExists / parseOperand): as a source or
 // column name outside it they are refused as the keywords they are.
+// `next` belongs to the next() round-window construct (parseWindow): a
+// bare `next` is refused as the keyword it is, `next(` commits to the
+// window wherever the position accepts it.
 var exprKeywords = map[string]bool{
 	"from": true, "as": true, "where": true, "and": true, "or": true,
 	"not": true, "true": true, "false": true,
-	"exists": true, "outer": true,
+	"exists": true, "outer": true, "next": true,
 }
 
 // existsValueMsg is the ONE refusal for exists() in a value position —
@@ -66,6 +69,14 @@ var exprKeywords = map[string]bool{
 // all quote it verbatim): the construct is a condition, and a condition
 // never becomes a value.
 const existsValueMsg = "exists() is a condition, not a value — it can only appear where a condition is accepted (count()'s argument or a where filter)"
+
+// nextValueMsg is the ONE refusal for next() in a value position —
+// top-level aggregation, ratio operand, column argument, additive chain
+// term and scalar min/max term (parseAgg, parseColArg, parseScalarTerm
+// all quote it verbatim): the construct is a ROW WINDOW reading another
+// round's row, legal exactly where a condition is (parseWindow). A row
+// window never becomes this row's value.
+const nextValueMsg = "next() is a round window — it can only appear where a condition is accepted (count()'s argument or a where filter); it reads another round's row, never this row's value"
 
 // cmpOps are the comparison operators (two-char forms must be adjacent:
 // `a < = b` is a syntax error, not `<=`).
@@ -148,6 +159,12 @@ const (
 	// inside an exists() subquery (the construct's ONE qualifier; only
 	// parseOperand builds one, only while p.inExists > 0).
 	opOuter = 'o'
+	// opWindow: `next(<column>)` — the next-round window operand
+	// (parseWindow): the column's value on the NEXT round's row of the
+	// expression's primary source. pos is the `next` token (shape and
+	// round-grain refusals anchor there), colPos the column token (its
+	// whitelist refusal anchors there).
+	opWindow = 'w'
 )
 
 type operand struct {
@@ -159,6 +176,7 @@ type operand struct {
 	isBool bool
 	bval   bool
 	pos    int
+	colPos int // opWindow: the column token's position
 }
 
 // condition node kinds.
@@ -461,6 +479,11 @@ func (p *parser) parseAgg(top bool) (Agg, *ParseError) {
 	if strings.EqualFold(t.text, "exists") {
 		return Agg{}, errf(t.pos, existsValueMsg)
 	}
+	// next() is a round window, never a value (nextValueMsg): same
+	// positions, same refusal path as exists().
+	if strings.EqualFold(t.text, "next") {
+		return Agg{}, errf(t.pos, nextValueMsg)
+	}
 	if exprKeywords[t.text] {
 		return Agg{}, errf(t.pos, "expected aggregation name, got keyword %q", t.text)
 	}
@@ -676,6 +699,9 @@ func (p *parser) parseScalarTerm(op string) (scalarTerm, *ParseError) {
 	if t.kind == tIdent && strings.EqualFold(t.text, "exists") {
 		return scalarTerm{}, errf(t.pos, existsValueMsg)
 	}
+	if t.kind == tIdent && strings.EqualFold(t.text, "next") {
+		return scalarTerm{}, errf(t.pos, nextValueMsg)
+	}
 	if t.kind == tIdent {
 		if !aggOps[strings.ToLower(t.text)] {
 			// A bare column or keyword: only whole aggregations carry
@@ -767,6 +793,9 @@ func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 	if strings.EqualFold(t.text, "exists") {
 		return Agg{}, errf(t.pos, existsValueMsg)
 	}
+	if strings.EqualFold(t.text, "next") {
+		return Agg{}, errf(t.pos, nextValueMsg)
+	}
 	if exprKeywords[t.text] {
 		return Agg{}, errf(t.pos, "expected a column name, got keyword %q", t.text)
 	}
@@ -806,6 +835,9 @@ func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 			}
 			if strings.EqualFold(c.text, "exists") {
 				return Agg{}, errf(c.pos, existsValueMsg)
+			}
+			if strings.EqualFold(c.text, "next") {
+				return Agg{}, errf(c.pos, nextValueMsg)
 			}
 			if exprKeywords[c.text] {
 				return Agg{}, errf(c.pos, "expected a column name, got keyword %q", c.text)
@@ -958,6 +990,45 @@ func (p *parser) parseExists(t exprTok) (*condNode, *ParseError) {
 	return &condNode{kind: cExists, l: inner, pos: t.pos}, nil
 }
 
+// parseWindow reads the next-round window operand `next(<column>)` — the
+// condition-position construct over a round-addressable source (package
+// doc): ONE column, no nesting, no qualifier (the window's correlation is
+// engine-side, like exists()'s). `t` is the already-consumed `next` token
+// (its position anchors the shape errors); legality per position is the
+// caller's (parseOperand allows it only outside exists()).
+func (p *parser) parseWindow(t exprTok) (*operand, *ParseError) {
+	p.i++ // consume '('
+	if p.atPunct(")") {
+		return nil, errf(p.toks[p.i].pos, "next() takes a column name (next(<column>))")
+	}
+	c, ok := p.next()
+	if !ok || c.kind != tIdent {
+		return nil, p.errHere("expected a column name in next()")
+	}
+	if strings.EqualFold(c.text, "next") {
+		return nil, errf(c.pos, "next() cannot be nested inside next()")
+	}
+	// Same operand denials the column argument carries: a ref is a
+	// computed value (and a condition may hold no ref at all), a
+	// construct is not a column, a keyword is not a name.
+	if strings.EqualFold(c.text, "metric") {
+		return nil, errf(c.pos, "metric() is a value reference — it cannot appear inside next()")
+	}
+	if strings.EqualFold(c.text, "exists") {
+		return nil, errf(c.pos, existsValueMsg)
+	}
+	if exprKeywords[c.text] {
+		return nil, errf(c.pos, "expected a column name, got keyword %q", c.text)
+	}
+	if p.atPunct(",") {
+		return nil, errf(p.toks[p.i].pos, "next() takes exactly one column")
+	}
+	if perr := p.expectPunct(")"); perr != nil {
+		return nil, perr
+	}
+	return &operand{kind: opWindow, col: c.text, pos: t.pos, colPos: c.pos}, nil
+}
+
 func (p *parser) parseOperand() (*operand, *ParseError) {
 	t, ok := p.next()
 	if !ok {
@@ -971,6 +1042,17 @@ func (p *parser) parseOperand() (*operand, *ParseError) {
 		// can only be the ref keyword.
 		if strings.EqualFold(t.text, "metric") {
 			return nil, errf(t.pos, "metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)")
+		}
+		// next(<column>) — the round-window operand: legal in any
+		// condition (count()'s argument, a where filter, diff()'s
+		// orientation — a row predicate over source rows), NEVER inside
+		// exists() (the subquery's row is another scan; the window
+		// always correlates to the row being tested).
+		if strings.EqualFold(t.text, "next") && p.atPunct("(") {
+			if p.inExists > 0 {
+				return nil, errf(t.pos, "next() cannot appear inside exists()")
+			}
+			return p.parseWindow(t)
 		}
 		if strings.EqualFold(t.text, "true") {
 			return &operand{kind: opLit, isBool: true, bval: true, pos: t.pos}, nil
