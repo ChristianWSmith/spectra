@@ -369,32 +369,40 @@ type RoundEconomy struct {
 // position at the source event (kill events — the "where the killer was"
 // half of the kills heatmap; nil when the source lacks it).
 type Event struct {
-	Seq           int      `json:"seq"`
-	Tick          int      `json:"tick"`
-	Round         int      `json:"round"`
-	Kind          string   `json:"kind"`
-	Attacker      string   `json:"attacker"`
-	Victim        string   `json:"victim"`
-	Assister      string   `json:"assister"`
-	Weapon        string   `json:"weapon"`
-	Headshot      bool     `json:"headshot"`
-	Wallbang      bool     `json:"wallbang"`
-	Noscope       bool     `json:"noscope"`
-	ThroughSmoke  bool     `json:"throughSmoke"`
-	AttackerBlind bool     `json:"attackerBlind"`
-	AssistedFlash bool     `json:"assistedFlash"`
-	Distance      float64  `json:"distance"`
-	Hitgroup      string   `json:"hitgroup"`
-	Dmg           int      `json:"dmg"`
-	Site          string   `json:"site"`
-	DetailJSON    string   `json:"detailJson"`
-	RawJSON       string   `json:"rawJson"`
-	PosX          *float64 `json:"posX,omitempty"`
-	PosY          *float64 `json:"posY,omitempty"`
-	PosZ          *float64 `json:"posZ,omitempty"`
-	AttackerPosX  *float64 `json:"attackerPosX,omitempty"`
-	AttackerPosY  *float64 `json:"attackerPosY,omitempty"`
-	AttackerPosZ  *float64 `json:"attackerPosZ,omitempty"`
+	Seq           int     `json:"seq"`
+	Tick          int     `json:"tick"`
+	Round         int     `json:"round"`
+	Kind          string  `json:"kind"`
+	Attacker      string  `json:"attacker"`
+	Victim        string  `json:"victim"`
+	Assister      string  `json:"assister"`
+	Weapon        string  `json:"weapon"`
+	Headshot      bool    `json:"headshot"`
+	Wallbang      bool    `json:"wallbang"`
+	Noscope       bool    `json:"noscope"`
+	ThroughSmoke  bool    `json:"throughSmoke"`
+	AttackerBlind bool    `json:"attackerBlind"`
+	AssistedFlash bool    `json:"assistedFlash"`
+	Distance      float64 `json:"distance"`
+	Hitgroup      string  `json:"hitgroup"`
+	Dmg           int     `json:"dmg"`
+	// SameSide is the damage row's side stamp (owner ruling 2026-11-17):
+	// true iff attacker and victim sides were BOTH known and EQUAL at the
+	// event — the exact predicate extract's enemy-damage gate applies
+	// (agg.go "count ENEMY damage only"), so false covers enemy AND
+	// unknown (the permissive rule: an unknown side counts as enemy).
+	// Stamped at ingest (extract.agg.hurt); non-damage rows keep the
+	// zero value.
+	SameSide     bool     `json:"sameSide"`
+	Site         string   `json:"site"`
+	DetailJSON   string   `json:"detailJson"`
+	RawJSON      string   `json:"rawJson"`
+	PosX         *float64 `json:"posX,omitempty"`
+	PosY         *float64 `json:"posY,omitempty"`
+	PosZ         *float64 `json:"posZ,omitempty"`
+	AttackerPosX *float64 `json:"attackerPosX,omitempty"`
+	AttackerPosY *float64 `json:"attackerPosY,omitempty"`
+	AttackerPosZ *float64 `json:"attackerPosZ,omitempty"`
 	// AttackerInAir is the player_death payload's `attackerinair` (the
 	// attacker was midair). demoinfocs' events.Kill has NO MidAir field
 	// and dispatches BEFORE the raw GenericGameEvent, so the extractor

@@ -317,6 +317,43 @@ func TestTwoKColumn(t *testing.T) {
 	}
 }
 
+// TestSaveExtractedWritesSameSide pins the write half of the ingest-owned
+// `same_side` stamp (owner ruling 2026-11-17): SaveExtracted persists the
+// model field into the events column (the read path deliberately does NOT
+// carry it — eventRowCols stays un-widened; the playhead resolves sides
+// itself). eventCols + the placeholder count + the Exec args are pinned to
+// the DDL by TestColumnListConstsMatchSchema; this pins the VALUE.
+func TestSaveExtractedWritesSameSide(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/d/side.dem", "sha-side-stamp", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	em := &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 30, SameSide: true},
+		{Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // default 0
+	}}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.db.Query(`SELECT seq, same_side FROM events WHERE match_id = ? ORDER BY seq`, id)
+	if err != nil {
+		t.Fatalf("query same_side: %v", err)
+	}
+	defer rows.Close()
+	got := map[int]int{}
+	for rows.Next() {
+		var seq, same int
+		if err := rows.Scan(&seq, &same); err != nil {
+			t.Fatalf("scan same_side: %v", err)
+		}
+		got[seq] = same
+	}
+	if got[0] != 1 || got[1] != 0 {
+		t.Errorf("same_side = %v, want {0:1, 1:0} (stamp written, zero value = enemy/unknown)", got)
+	}
+}
+
 func TestSaveExtractedRoundtrip(t *testing.T) {
 	s := openMem(t)
 	const sha = "sha-roundtrip"

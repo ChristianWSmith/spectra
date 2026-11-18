@@ -232,6 +232,17 @@ CREATE TABLE IF NOT EXISTS events (
 	distance REAL NOT NULL DEFAULT 0,
 	hitgroup TEXT NOT NULL DEFAULT '',
 	dmg INTEGER NOT NULL DEFAULT 0,
+	-- same_side (owner ruling 2026-11-17 — damage stats differentiate
+	-- enemy damage; friendly fire stays an accounting quantity inside
+	-- expressions/filters, never a surfaced stat): 1 iff attacker and
+	-- victim sides were BOTH known and EQUAL at the event — the exact
+	-- predicate extract's "count ENEMY damage only" gate uses
+	-- (internal/extract/agg.go hurt), stamped at ingest by
+	-- store.SaveExtracted. 0 otherwise, so an unknown side reads as
+	-- ENEMY (the same permissive rule `if enemy` applies). No
+	-- migration: the baseline only CREATEs — a stale dev DB lacks the
+	-- column and must be re-imported (wipe + re-import).
+	same_side INTEGER NOT NULL DEFAULT 0,
 	site TEXT NOT NULL DEFAULT '',
 	detail_json TEXT NOT NULL DEFAULT '',
 	raw_json TEXT NOT NULL DEFAULT '',

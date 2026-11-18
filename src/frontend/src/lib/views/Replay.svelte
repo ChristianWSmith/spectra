@@ -1279,8 +1279,9 @@
   // already-fetched drawable events (drawNorm: kill + damage rows) at
   // uiTick through replay/livestats.js — the rules live there, mirroring
   // internal/analytics/rounds.go's fold (counted rounds only, enemy-only
-  // kills, cross-team non-flash assists, every death, ALL damage incl.
-  // friendly fire) — and hands each card its row.
+  // kills, cross-team non-flash assists, every death, ENEMY-ONLY damage —
+  // friendly fire excluded by the same-side gate, owner ruling
+  // 2026-11-17) — and hands each card its row.
   // sideAtTick resolves a side from the position store's per-frame flags
   // AT THE EVENT'S TICK (renderer sideFromFlags — the frame's bits only,
   // never the final side: that is post-halftime and would misfile an

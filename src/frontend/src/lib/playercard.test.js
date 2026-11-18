@@ -191,8 +191,12 @@ test('statsText renders the live row and never fakes an unknown ADR', () => {
 
 test('STATS_TITLE documents the exact formula the row shows', () => {
   assert.match(STATS_TITLE, /counted rounds started/);
-  assert.match(STATS_TITLE, /friendly fire/);
-  assert.match(STATS_TITLE, /ADR = Σdamage/);
+  // Owner ruling 2026-11-17: the fold excludes friendly fire, so the
+  // disclosure must say enemy damage only — the old "damage includes
+  // friendly fire" claim would now be false.
+  assert.match(STATS_TITLE, /enemy damage only/);
+  assert.doesNotMatch(STATS_TITLE, /includes friendly fire/);
+  assert.match(STATS_TITLE, /ADR = Σenemy damage/);
 });
 
 // --- Connection (card presence) --------------------------------------------

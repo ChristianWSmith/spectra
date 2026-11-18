@@ -362,8 +362,8 @@ export function reloadProgress(series, frame) {
 // scoreboard: internal/analytics/rounds.go's rules, replay/livestats.js
 // the fold).
 export const STATS_TITLE =
-  'at the playhead: counted rounds started so far; damage includes friendly fire ' +
-  '(ADR = Σdamage ÷ counted rounds started)';
+  'at the playhead: counted rounds started so far; enemy damage only ' +
+  '(ADR = Σenemy damage ÷ counted rounds started)';
 
 // statsText renders the compact live stats row: "K/D/A 12/5/3 · ADR 87.4".
 // A missing row (no fold yet) renders honest placeholders, and an ADR

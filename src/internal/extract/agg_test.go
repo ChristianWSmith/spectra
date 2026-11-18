@@ -484,6 +484,68 @@ func TestProgressCallback(t *testing.T) {
 	}
 }
 
+// TestDamageSameSideStamp pins the ingest-owned `same_side` event stamp
+// (owner ruling 2026-11-17: damage stats differentiate enemy damage —
+// friendly fire stays an accounting quantity inside expressions/filters,
+// never a surfaced stat). The stamp is EXACTLY agg.hurt's enemy-gate
+// predicate (extract.sameSide: both sides known AND equal), so:
+//   - enemy damage (different known sides) → SameSide false, credited,
+//   - friendly fire (equal known sides)     → SameSide true, NOT credited,
+//   - unknown side on either end           → SameSide false (permissive
+//     parity: an unknown side reads as enemy — a strict known-and-
+//     different gate would zero the side-less corpus and desynchronize
+//     the stamp from total_damage).
+func TestDamageSameSideStamp(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+
+	hurt := func(tick int, attacker, victim uint64, atkSide, vicSide string) {
+		a.hurt(hurtInfo{
+			tick: tick, real: true,
+			attackerKey: attacker, attackerName: "atk", attackerSide: atkSide,
+			victimKey: victim, victimName: "vic", victimSide: vicSide,
+			weapon: "AK-47", healthDamage: 25, healthDamageTaken: 25, health: 75, hitgroup: "Chest",
+		})
+	}
+	// Same tick is fine — the stamp reads the sides, not the clock.
+	hurt(10, 1, 2, "ct", "t")  // enemy
+	hurt(11, 1, 3, "ct", "ct") // friendly fire
+	hurt(12, 4, 5, "", "")     // both sides unknown
+	hurt(13, 6, 7, "ct", "")   // victim side unknown
+
+	damageRows := func() []models.Event {
+		var out []models.Event
+		for _, e := range a.events {
+			if e.Kind == models.EventDamage {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	rows := damageRows()
+	if len(rows) != 4 {
+		t.Fatalf("damage rows = %d, want 4", len(rows))
+	}
+	wantStamp := []bool{false, true, false, false}
+	for i, w := range wantStamp {
+		if rows[i].SameSide != w {
+			t.Errorf("damage row %d SameSide = %v, want %v (sides as fed)", i, rows[i].SameSide, w)
+		}
+	}
+	// Parity with the stat gate: only the enemy hit credited the attacker
+	// (the same `same` computation — a divergence here means the stamp
+	// and total_damage disagree).
+	if p := a.players[1]; p == nil || p.totalDamage != 25 {
+		t.Errorf("enemy damage credited = %+v, want totalDamage 25", p)
+	}
+	if p := a.players[4]; p == nil || p.totalDamage != 25 {
+		t.Errorf("unknown-side damage credited (permissive) = %+v, want totalDamage 25", p)
+	}
+	if p := a.players[6]; p == nil || p.totalDamage != 25 {
+		t.Errorf("half-unknown-side damage credited (permissive) = %+v, want totalDamage 25", p)
+	}
+}
+
 func TestWeaponMapJSONShape(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, false, 115, "BOMB TARGET")
