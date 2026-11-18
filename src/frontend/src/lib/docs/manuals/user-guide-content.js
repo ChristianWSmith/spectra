@@ -454,8 +454,9 @@ one that cannot be hidden), and a pinned metric's pin button unpins it: the row 
 at once and the metric stops showing on its surface, while its slot in the order is kept, so
 pinning it again restores its place. (On the profile list there are no fixed rows — its rows are
 all pinned metrics, so each row's pin unpins it.) Every scoreboard-list metric row also carries
-an **Economy** toggle: on, the metric's stat shows on the match's **Economy** tab instead of its
-match-overview card; off, it returns. The toggle moves placement only — the metric stays pinned
+an **Economy** toggle: on, the metric's stat shows on the match's **Economy** tab — an identity
+metric's card leaves the match overview while toggled; off, it returns. The toggle moves placement
+only — the metric stays pinned
 and its row stays in this list — and **Reset order** restores the shipped Economy set. The
 **Match overview** list picks the cards on
 top of a match: its pin adds or removes a card (only metrics that name a leading player are
@@ -489,10 +490,12 @@ document to disk.
 lands as a highlighted chip in the field, and each picked stat earns a line under the field
 carrying its expression and its row count — while it has no computed number for this match, that
 line shows its state chip instead. The field also offers the match's **recorded values** — the
-scoreboard's stored numbers themselves (kills, deaths, damage, utility damage, MVPs, score),
+scoreboard's stored numbers with no formula behind them (today that is the match's **Score**),
 offered as recorded rather than computed: a recorded pick carries a *Recorded value* chip instead
 of an expression or a state, and its exported section says so plainly, with each player's stored
-round count beside the value. Remove a chip with its ✕, or with Backspace while the field is
+round count beside the value. Every other scoreboard number offers through the metric list —
+one entity per stat, never a recorded twin beside it. Remove a chip with its ✕, or with Backspace
+while the field is
 empty; with no chips the saved document carries no appendix. Picked stats and their sections
 follow the same order as everywhere else.
 
