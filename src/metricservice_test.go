@@ -85,11 +85,11 @@ func TestSaveMetricScope(t *testing.T) {
 
 	// ValidateExpr: the W2 arity (expr only) — the anchor reports on the
 	// live check too, identically to a save.
-	ok, ee, err := svc.ValidateExpr("from events: count()")
+	ok, ee, err := svc.ValidateExpr("from events: count()", "player", "", "match")
 	if err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr = (%v, %+v, %v), want ok", ok, ee, err)
 	}
-	ok, ee, _ = svc.ValidateExpr("from rounds: count()")
+	ok, ee, _ = svc.ValidateExpr("from rounds: count()", "player", "", "match")
 	if ok || !strings.Contains(ee.Message, "not player-anchored") {
 		t.Errorf("ValidateExpr(round-grain) = (%v, %+v), want the anchor rejection", ok, ee)
 	}
@@ -331,9 +331,9 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	}
 }
 
-// TestListMetricsPageArity pins the service passthrough: all SEVEN
-// arguments reach the store in their positions — the four filter words
-// (origin, scope, denominator, format) included — since a dropped,
+// TestListMetricsPageArity pins the service passthrough: all EIGHT
+// arguments reach the store in their positions — the five filter words
+// (origin, scope, subject, denominator, format) included — since a dropped,
 // defaulted or reordered arg would select a different window than the
 // one asserted here. The filter vocabulary is the store's: each unknown
 // word comes back as the store's own pre-SQL rejection (which is only
@@ -368,13 +368,13 @@ func TestListMetricsPageArity(t *testing.T) {
 		t.Fatalf("catalog = %d rows, want the seeded builtins + 2 users", len(all))
 	}
 
-	// Every filter empty = the whole canonical list — the five filter
+	// Every filter empty = the whole canonical list — the six filter
 	// slots really are the filters (a stray value would narrow this).
 	// The limit is explicit: the seed count now exceeds the store's
 	// default window (the 2026-11-18 view-aggregate relocation re-pin,
 	// ME8 audit — 109 rows > 100), so
 	// limit 0's default window could no longer hold the whole list.
-	page, err := svc.ListMetricsPage("", "", "", "", "", 0, len(all))
+	page, err := svc.ListMetricsPage("", "", "", "", "", "", 0, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all empty): %v", err)
 	}
@@ -387,12 +387,12 @@ func TestListMetricsPageArity(t *testing.T) {
 		}
 	}
 
-	// The four filters in one call: origin 'user,plugin' + scope 'match' +
-	// denominator 'rounds' + format 'float1' selects exactly the one
+	// The five filters in one call: origin 'user,plugin' + scope 'match' +
+	// subject 'player' + denominator 'rounds' + format 'float1' selects exactly the one
 	// seeded user row (the plugin's/other users' rows differ on a
 	// predicate, the builtins are excluded by origin) — so every filter
 	// word landed where it belongs.
-	page, err = svc.ListMetricsPage("", "user,plugin", "match", "rounds", "float1", 0, 0)
+	page, err = svc.ListMetricsPage("", "user,plugin", "match", "player", "rounds", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, match, rounds, float1): %v", err)
 	}
@@ -425,14 +425,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	if mineFloat1 == 0 {
 		t.Fatalf("fixture has no float1 mine row — the format narrowing check would be vacuous")
 	}
-	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "float1", 0, 0)
+	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=float1): %v", err)
 	}
 	if len(f1.Rows) != mineFloat1 {
 		t.Errorf("mine+float1 = %d rows, want every float1 mine row (%d)", len(f1.Rows), mineFloat1)
 	}
-	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "percent", 0, 0)
+	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "", "percent", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=percent): %v", err)
 	}
@@ -443,7 +443,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// The cursor (arg 6): the first row as afterID drops it and keeps
 	// the rest, in order — the explicit limit again (the list outgrew
 	// the store's default window with the partition addendum).
-	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, len(all))
+	cursored, err := svc.ListMetricsPage("", "", "", "", "", "", all[0].ID, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(cursor): %v", err)
 	}
@@ -452,8 +452,8 @@ func TestListMetricsPageArity(t *testing.T) {
 			len(cursored.Rows), cursored.Rows[0].ID, len(all)-1, all[0].ID)
 	}
 
-	// The limit (arg 7): 1 row + the has-next probe.
-	limited, err := svc.ListMetricsPage("", "", "", "", "", 0, 1)
+	// The limit (arg 8): 1 row + the has-next probe.
+	limited, err := svc.ListMetricsPage("", "", "", "", "", "", 0, 1)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(limit 1): %v", err)
 	}
@@ -471,6 +471,8 @@ func TestListMetricsPageArity(t *testing.T) {
 	for _, tc := range []struct{ slot, word, want string }{
 		{"origin", "everything", `unknown origin filter "everything"`},
 		{"scope", "career", `unknown scope filter "career"`},
+		{"subject", "map", `unknown subject filter "map"`},
+		{"subject", "player,team,match", `unknown subject filter "player,team,match"`},
 		{"denominator", "games", `unknown denominator filter "games"`},
 		{"denominator", "rounds,games", `unknown denominator filter "rounds,games"`},
 		{"denominator", "rounds,", `unknown denominator filter "rounds,"`},
@@ -479,13 +481,15 @@ func TestListMetricsPageArity(t *testing.T) {
 		var err error
 		switch tc.slot {
 		case "origin":
-			_, err = svc.ListMetricsPage("", tc.word, "", "", "", 0, 100)
+			_, err = svc.ListMetricsPage("", tc.word, "", "", "", "", 0, 100)
 		case "scope":
-			_, err = svc.ListMetricsPage("", "", tc.word, "", "", 0, 100)
+			_, err = svc.ListMetricsPage("", "", tc.word, "", "", "", 0, 100)
+		case "subject":
+			_, err = svc.ListMetricsPage("", "", "", tc.word, "", "", 0, 100)
 		case "denominator":
-			_, err = svc.ListMetricsPage("", "", "", tc.word, "", 0, 100)
+			_, err = svc.ListMetricsPage("", "", "", "", tc.word, "", 0, 100)
 		case "format":
-			_, err = svc.ListMetricsPage("", "", "", "", tc.word, 0, 100)
+			_, err = svc.ListMetricsPage("", "", "", "", "", tc.word, 0, 100)
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s filter %q: err = %v, want the store's %s", tc.slot, tc.word, err, tc.want)
@@ -637,5 +641,61 @@ func TestPreviewMetricSubjectShapes(t *testing.T) {
 	}
 	if !strings.Contains(pv.SQL, "match_id AS mid, team AS grp") {
 		t.Errorf("team-subject preview row shape lacks the match address + team key:\n%s", pv.SQL)
+	}
+}
+
+// TestValidateExprCarriesDraftAddressing pins the address-aware live
+// check (2026-11-18): the Builder's debounced validation compiles a
+// draft under ITS OWN subject/partition/scope instead of the zero-value
+// address (which normalized to subject "player"). Before it, opening an
+// identity built-in reported a FALSE refusal — `argmax() needs subject
+// "match" … (declared subject "player")` at the argmax's byte position —
+// and no argmax metric could ever be authored, because the same
+// player-only address gated Save.
+func TestValidateExprCarriesDraftAddressing(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "live-check.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	// (a) The FIVE identity built-ins validate CLEAN under their STORED
+	// addresses — the fail-before-fix case (base: top_fragger refused
+	// with `argmax() needs subject "match"`).
+	for _, name := range []string{"top_fragger", "best_adr", "most_util", "entry_opens", "most_mvps"} {
+		m, err := st.GetMetricByName(name)
+		if err != nil {
+			t.Fatalf("GetMetricByName(%s): %v", name, err)
+		}
+		ok, ee, err := svc.ValidateExpr(m.Expr, m.Subject, m.Partition, m.Scope)
+		if err != nil || !ok || ee.Message != "" {
+			t.Errorf("ValidateExpr(%s) = (%v, %+v, %v), want clean under its stored address", name, ok, ee, err)
+		}
+	}
+
+	// (b) A subject=match DRAFT validates correctly (the authoring path
+	// the player-only address used to gate), while the same expression
+	// on a PLAYER subject still refuses — compile.go's argmax contract
+	// stays load-bearing.
+	const argmax = "from player_stats: argmax(kills)"
+	if ok, ee, err := svc.ValidateExpr(argmax, "match", "", "match"); err != nil || !ok || ee.Message != "" {
+		t.Errorf("ValidateExpr(argmax, subject=match) = (%v, %+v, %v), want clean", ok, ee, err)
+	}
+	ok, ee, err := svc.ValidateExpr(argmax, "player", "", "match")
+	if err != nil {
+		t.Fatalf("ValidateExpr(argmax, subject=player): %v", err)
+	}
+	if ok || !strings.Contains(ee.Message, `argmax() needs subject "match"`) {
+		t.Errorf("ValidateExpr(argmax, subject=player) = (%v, %+v), want the argmax subject refusal", ok, ee)
+	}
+
+	// The subject × scope half of the matrix reaches the live check too:
+	// a match-subject draft on PROFILE scope refuses exactly as the save
+	// would (a match has no career), while the player default stays clean.
+	if ok, ee, err := svc.ValidateExpr("from player_stats: avg(adr)", "match", "", "profile"); err != nil || ok {
+		t.Errorf("ValidateExpr(match subject, profile scope) = (%v, %+v, %v), want the matrix refusal", ok, ee, err)
+	} else if !strings.Contains(ee.Message, "can't be profile-scoped") && !strings.Contains(ee.Message, "profile") {
+		t.Errorf("profile refusal message = %q, want it to name the profile scope", ee.Message)
 	}
 }
