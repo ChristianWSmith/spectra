@@ -381,12 +381,14 @@ type SavedFilterRow struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
-// ProfileWeaponJSONs is one match's weapon breakdown JSON triplet (merge
+// ProfileWeaponJSONs is one match's weapon breakdown JSON pair (merge
 // in the caller — see ProfileService.GetProfile). HeadshotsByWeapon is
 // derived from the stored kill events (not an extract column), with the
 // same eligibility as kills_by_weapon — see store.GetPlayerWeaponJSONs.
+// The damage half retired with player_stats.damage_by_weapon
+// (2026-11-18 owner ruling): the weapon_damage seed is THE damage
+// implementation.
 type ProfileWeaponJSONs struct {
 	KillsByWeapon     string `json:"killsByWeapon"`
-	DamageByWeapon    string `json:"damageByWeapon"`
 	HeadshotsByWeapon string `json:"headshotsByWeapon"`
 }

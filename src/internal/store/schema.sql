@@ -107,8 +107,13 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	rounds_played INTEGER NOT NULL DEFAULT 0,
 	entry_kills INTEGER NOT NULL DEFAULT 0,
 	entry_deaths INTEGER NOT NULL DEFAULT 0,
-	opening_kills INTEGER NOT NULL DEFAULT 0,
-	opening_deaths INTEGER NOT NULL DEFAULT 0,
+	-- opening_kills/opening_deaths were RETIRED 2026-11-18: extract
+	-- incremented them in the same first-blood branch as entry_kills/
+	-- entry_deaths (identical stored columns — pinned equal on the
+	-- golden demo), so entry_* is the single attribution and the twins
+	-- had zero readers. Baseline-only schema: this drop rides the
+	-- owner's owed wipe + re-import (make deep-clean CONFIRM=1) —
+	-- there is no migration path by design (AGENTS.md no-versioning).
 	trade_kills INTEGER NOT NULL DEFAULT 0,
 	best_streak INTEGER NOT NULL DEFAULT 0,
 	three_k INTEGER NOT NULL DEFAULT 0,
@@ -120,20 +125,20 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	bomb_plants INTEGER NOT NULL DEFAULT 0,
 	bomb_defuses INTEGER NOT NULL DEFAULT 0,
 	money_spent_total INTEGER NOT NULL DEFAULT 0,
-	-- kills_by_weapon / damage_by_weapon: the retired profile Weapons
-	-- table's JSON fold — extract still WRITES both, and the match
-	-- scoreboard row still carries kills_by_weapon (FilterBar unions its
-	-- keys into the match's weapon filter — a live reader, 2026-11-18);
-	-- damage_by_weapon has NO consumer since the profile Weapons table
-	-- migrated to the weapon_* seeds (2026-11-18, M7 gate flip), its
-	-- only readers now the oracle tests (internal/integration/
-	-- profile_weapons_gate_test.go, store's headshots derivation test).
-	-- Both stay OUT of the metrics expression whitelist (JSON blobs,
-	-- internal/metrics/whitelist.go) and stay in the schema — dropping
-	-- damage_by_weapon is a separate owner decision (ME8 audit note,
-	-- 2026-11-18).
+	-- kills_by_weapon: the retired profile Weapons table's JSON fold —
+	-- extract still WRITES it, and the match scoreboard row still
+	-- carries it (FilterBar unions its keys into the match's weapon
+	-- filter — a live reader, 2026-11-18). It stays OUT of the metrics
+	-- expression whitelist (JSON blob, internal/metrics/whitelist.go).
+	-- Its twin damage_by_weapon was DROPPED 2026-11-18 by owner ruling:
+	-- zero readers outside the oracle tests since the profile Weapons
+	-- table migrated to the weapon_* seeds (2026-11-18, M7 gate flip —
+	-- the fold-vs-seed equality proven at migration, flip commit
+	-- 86300be), and the seed is now THE damage implementation. Like
+	-- the opening_* twins earlier the same day, the drop rides the
+	-- owner's owed wipe + re-import (baseline-only schema, no
+	-- migration path — AGENTS.md no-versioning).
 	kills_by_weapon TEXT NOT NULL DEFAULT '',
-	damage_by_weapon TEXT NOT NULL DEFAULT '',
 	-- flash_assists splits AssistedFlash assists out of the assist column
 	-- (external scoreboards exclude them; the game's own m_iAssists
 	-- includes them).
@@ -1239,19 +1244,19 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
 -- additive sum(a + b) chain is what the duel total needs.
 ('career_opening_rate', 'Opening duels', '',
- 'from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))',
+ 'from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))',
  'profile', 'percent',
- 'Formula: sum(player_stats.opening_kills) / sum(player_stats.opening_kills + player_stats.opening_deaths) — career opening duels won, shown as a percent, addressed per player (the Opening duels card).',
+ 'Formula: sum(player_stats.entry_kills) / sum(player_stats.entry_kills + player_stats.entry_deaths) — career opening duels won, shown as a percent, addressed per player (the Opening duels card).',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_openings', 'Openings', '',
- 'from player_stats: sum(opening_kills + opening_deaths)',
+ 'from player_stats: sum(entry_kills + entry_deaths)',
  'profile', 'int',
- 'Formula: sum(player_stats.opening_kills + player_stats.opening_deaths) — the player''s career opening duels: the opening kill plus the first-blood deaths it produced, addressed per player.',
+ 'Formula: sum(player_stats.entry_kills + player_stats.entry_deaths) — the player''s career opening duels: the opening kill plus the first-blood deaths it produced, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_opener_wins', 'Opener wins', '',
- 'from player_stats: sum(opening_kills)',
+ 'from player_stats: sum(entry_kills)',
  'profile', 'int',
- 'Formula: sum(player_stats.opening_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
+ 'Formula: sum(player_stats.entry_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
  'builtin', '', CURRENT_TIMESTAMP),
 -- ---- addendum: the M3 combat-damage conversions (2 rows, match
 -- scope, 2026-11-17 — plan §7 M3 / §8): Damage-no-kill and Kill
@@ -1286,11 +1291,11 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- raw player_stats columns (the scoreboard's K/D/MVPs/DMG/Util
 -- columns among them) + 6 profile rows: the career twins of the
 -- scoreboard five and the career match count. score stays UNSEEDED
--- (game-internal composite — its sum has no honest reading);
--- opening_kills/opening_deaths stay UNSEEDED because they are the
--- SAME first-blood attribution stored twice as entry_kills/
--- entry_deaths (extract/agg.go increments both in one branch) — the
--- entry seeds are canonical. All int, no denominator: the rounds
+-- (game-internal composite — its sum has no honest reading); the
+-- opening_kills/opening_deaths twins were retired WITH their columns
+-- (2026-11-18) — extract incremented them in the same first-blood
+-- branch as entry_kills/entry_deaths, so the entry seeds are
+-- canonical. All int, no denominator: the rounds
 -- denominator machinery owns ADR/Entry%, never a raw count.
 ('kills', 'Kills', 'K',
  'from player_stats: sum(kills)',

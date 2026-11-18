@@ -35,6 +35,13 @@
 // `built-in-metrics` re-listed against the seed block (still
 // count-free). Every quoted message was re-executed against the engine
 // in this pass.
+//
+// COLUMN SWEEP 2026-11-18 (opening-column retirement): the
+// player_stats column list drops opening_kills/opening_deaths and the
+// sum-chain/where examples re-point to entry_kills/entry_deaths — the
+// twins were identical first-blood attribution (golden-demo-proven)
+// and their columns were retired with them, so entry_* is the one
+// spelling the engine accepts from player_stats.
 export const metricLanguageSections = [
   {
     id: 'metric-language',
@@ -120,9 +127,9 @@ One row per round: who won it and why, how long it lasted, the MVP, each side's 
 
 # player_stats
 
-The classic scoreboard line, one row per player per match: kills, deaths, assists, headshots, damage dealt and taken, ADR, rounds played, entry and opening kills/deaths, trade kills, best streak, multi-kill tiers (2K–5K), utility damage, enemies flashed, times flashed, bomb plants and defuses, and money spent.
+The classic scoreboard line, one row per player per match: kills, deaths, assists, headshots, damage dealt and taken, ADR, rounds played, entry kills/deaths, trade kills, best streak, multi-kill tiers (2K–5K), utility damage, enemies flashed, times flashed, bomb plants and defuses, and money spent.
 
-**Columns:** \`match_id\`, \`steam_id\`, \`side\`, \`name\`, \`kills\`, \`deaths\`, \`assists\`, \`flash_assists\`, \`headshots\`, \`teamkills\`, \`suicides\`, \`mvps\`, \`score\`, \`total_damage\`, \`damage_taken\`, \`shots\`, \`hits\`, \`adr\`, \`hs_pct\`, \`rounds_played\`, \`entry_kills\`, \`entry_deaths\`, \`opening_kills\`, \`opening_deaths\`, \`trade_kills\`, \`best_streak\`, \`two_k\`, \`three_k\`, \`four_k\`, \`five_k\`, \`utility_damage\`, \`enemies_flashed\`, \`flashed_times\`, \`bomb_plants\`, \`bomb_defuses\`, \`money_spent_total\`, \`team\`, \`won\`, \`map\`
+**Columns:** \`match_id\`, \`steam_id\`, \`side\`, \`name\`, \`kills\`, \`deaths\`, \`assists\`, \`flash_assists\`, \`headshots\`, \`teamkills\`, \`suicides\`, \`mvps\`, \`score\`, \`total_damage\`, \`damage_taken\`, \`shots\`, \`hits\`, \`adr\`, \`hs_pct\`, \`rounds_played\`, \`entry_kills\`, \`entry_deaths\`, \`trade_kills\`, \`best_streak\`, \`two_k\`, \`three_k\`, \`four_k\`, \`five_k\`, \`utility_damage\`, \`enemies_flashed\`, \`flashed_times\`, \`bomb_plants\`, \`bomb_defuses\`, \`money_spent_total\`, \`team\`, \`won\`, \`map\`
 
 \`team\` is the stamped team each player finished on (the team-subject anchor/filter), \`won\` the 0/1 match result the win seeds sum, and \`map\` the map-partition column.
 
@@ -290,7 +297,7 @@ Which form you get is decided by what follows the bracket: \`where\` or a plain 
 \`sum\` is the only operator that accepts added columns:
 
 \`\`\`
-from player_stats: sum(opening_kills + opening_deaths)
+from player_stats: sum(entry_kills + entry_deaths)
 from player_stats: ratio(sum(kills + assists), sum(deaths))
 \`\`\`
 
@@ -609,9 +616,9 @@ from events: count(where dmg >= 50 and (kind = 'kill' or not headshot))
 **The additive chain**
 
 \`\`\`
-from player_stats: sum(opening_kills + opening_deaths)         -- openings total
+from player_stats: sum(entry_kills + entry_deaths)         -- openings total
 from player_stats: ratio(sum(kills + assists), sum(deaths))    -- KDA
-from player_stats: sum(where side = 'ct', opening_kills + opening_deaths)
+from player_stats: sum(where side = 'ct', entry_kills + entry_deaths)
 \`\`\`
 
 **Spread and position**

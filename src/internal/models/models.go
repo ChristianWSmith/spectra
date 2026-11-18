@@ -306,8 +306,6 @@ type PlayerStats struct {
 	RoundsPlayed    int     `json:"roundsPlayed"`
 	EntryKills      int     `json:"entryKills"`
 	EntryDeaths     int     `json:"entryDeaths"`
-	OpeningKills    int     `json:"openingKills"`
-	OpeningDeaths   int     `json:"openingDeaths"`
 	TradeKills      int     `json:"tradeKills"`
 	BestStreak      int     `json:"bestStreak"`
 	TwoK            int     `json:"twoK"`
@@ -320,8 +318,7 @@ type PlayerStats struct {
 	BombPlants      int     `json:"bombPlants"`
 	BombDefuses     int     `json:"bombDefuses"`
 	MoneySpentTotal int     `json:"moneySpentTotal"`
-	KillsByWeapon   string  `json:"killsByWeapon"`  // JSON object weapon→count
-	DamageByWeapon  string  `json:"damageByWeapon"` // JSON object weapon→damage
+	KillsByWeapon   string  `json:"killsByWeapon"` // JSON object weapon→count
 }
 
 // Round is one round's summary (rounds table). Number is the extractor's

@@ -91,7 +91,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{SteamID: "100", Side: side, Name: "alice",
 					Kills: kills, Deaths: deaths, Headshots: creditedHS,
 					ADR: 80, HSPct: 60, RoundsPlayed: 24,
-					KillsByWeapon: byWeapon, DamageByWeapon: `{"ak47":900}`},
+					KillsByWeapon: byWeapon},
 			},
 			Rounds: []models.Round{
 				{Number: 1, Winner: "ct", StartTick: 100, EndTick: 5000},

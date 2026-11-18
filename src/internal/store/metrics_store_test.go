@@ -135,9 +135,10 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"kill_conversion": {"match", "percent", ""},
 	// addendum — the Option A count addendum (22: 16 match raw-count
 	// rows + 6 profile) — owner Option A extension, 2026-11-17 (at that
-	// re-pin: 83 builtins / 64 match + 19 profile). opening_kills/opening_deaths
-	// stay unseeded: they duplicate entry_kills/entry_deaths (one
-	// first-blood branch in extract); wins stays plan-owned (Phase 3's
+	// re-pin: 83 builtins / 64 match + 19 profile). The
+	// opening_kills/opening_deaths twins were retired with their
+	// columns on 2026-11-18 (they duplicated entry_kills/entry_deaths —
+	// one first-blood branch in extract); wins stays plan-owned (Phase 3's
 	// `won` stamp); score stays unseeded (game-internal composite).
 	"kills":               {"match", "int", "K"},
 	"deaths":              {"match", "int", "D"},

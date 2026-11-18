@@ -48,8 +48,8 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 			SteamID: string(rune('A'+i)) + "00", Side: side, Name: "player" + string(rune('0'+i)),
 			Kills: 10 - i, Deaths: i, Assists: 1, Headshots: 2, MVPs: 1, Score: 20,
 			TotalDamage: 1000, DamageTaken: 800, ADR: 50, HSPct: 20,
-			RoundsPlayed: 5, OpeningKills: 1, TradeKills: 2, UtilityDamage: 30,
-			MoneySpentTotal: 12000, KillsByWeapon: `{"ak47":3}`, DamageByWeapon: `{"ak47":400}`,
+			RoundsPlayed: 5, TradeKills: 2, UtilityDamage: 30,
+			MoneySpentTotal: 12000, KillsByWeapon: `{"ak47":3}`,
 		})
 	}
 	for r := 1; r <= 5; r++ {

@@ -38,11 +38,12 @@ type ProfileSummary struct {
 // ProfileWeapon is one per-weapon row of the retired JSON fold —
 // mergeWeapons' output type, ORACLE-ONLY since the profile Weapons table
 // migrated to the weapon_* seeds (M7, 2026-11-18): no service returns it
-// any more, only the equivalence tests construct it.
+// any more, only the equivalence tests construct it. The damage half is
+// gone with player_stats.damage_by_weapon (2026-11-18 owner ruling — the
+// weapon_damage seed is THE damage implementation).
 type ProfileWeapon struct {
 	Weapon    string `json:"weapon"`
 	Kills     int    `json:"kills"`
-	Damage    int    `json:"damage"`
 	Headshots int    `json:"headshots"`
 }
 
@@ -122,15 +123,18 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	return p, nil
 }
 
-// mergeWeapons folds the per-match kills_by_weapon/damage_by_weapon and
+// mergeWeapons folds the per-match kills_by_weapon and
 // headshots_by_weapon JSON objects into one top-N list sorted by kills
 // descending (ties: name). ORACLE-ONLY since the M7 migration
 // (2026-11-18): the production Weapons table reads the weapon_* seeds;
 // this fold survives for the equivalence tests' pre-image
 // (profileservice_weapons_characterization_test.go) and the M7 gate's
-// fold side (internal/integration/profile_weapons_gate_test.go).
+// fold side (internal/integration/profile_weapons_gate_test.go). Its
+// damage leg retired with player_stats.damage_by_weapon (2026-11-18
+// owner ruling) — the weapon_damage seed is THE damage implementation,
+// and the sort's former damage-desc tie-break fell away with it.
 func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
-	type aggT struct{ kills, dmg, hs int }
+	type aggT struct{ kills, hs int }
 	agg := map[string]*aggT{}
 	merge := func(raw string, pick func(a *aggT) *int) {
 		if raw == "" {
@@ -151,19 +155,15 @@ func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
 	}
 	for _, r := range rows {
 		merge(r.KillsByWeapon, func(a *aggT) *int { return &a.kills })
-		merge(r.DamageByWeapon, func(a *aggT) *int { return &a.dmg })
 		merge(r.HeadshotsByWeapon, func(a *aggT) *int { return &a.hs })
 	}
 	out := make([]ProfileWeapon, 0, len(agg))
 	for weapon, a := range agg {
-		out = append(out, ProfileWeapon{Weapon: weapon, Kills: a.kills, Damage: a.dmg, Headshots: a.hs})
+		out = append(out, ProfileWeapon{Weapon: weapon, Kills: a.kills, Headshots: a.hs})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kills != out[j].Kills {
 			return out[i].Kills > out[j].Kills
-		}
-		if out[i].Damage != out[j].Damage {
-			return out[i].Damage > out[j].Damage
 		}
 		return out[i].Weapon < out[j].Weapon
 	})

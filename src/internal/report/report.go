@@ -103,9 +103,11 @@ type MetricCells struct {
 	// deathless subject divides by 1 on both sides).
 	KDA string
 	// The W3b converting cells (design §3.1/§6.1). EntryKills/
-	// EntryDeaths fill BOTH of player.md's pairs — opening_kills and
-	// entry_kills (likewise the deaths halves) are the identical stored
-	// columns, so identical columns compose identical cells.
+	// EntryDeaths fill BOTH of player.md's pairs — the opening_kills/
+	// opening_deaths twins were retired with their columns on
+	// 2026-11-18 (identical stored columns: extract incremented both in
+	// one first-blood branch, golden-proven), so entry_* is the single
+	// attribution behind both pairs.
 	Assists        string
 	EntryKills     string
 	EntryDeaths    string
@@ -149,7 +151,8 @@ var reportMetricSeeds = []struct {
 	// halves — the scoreboard A / Openings / Trades, the player report's
 	// K/D/A A-half, both opening pairs, Trades, Best streak, Enemies
 	// flashed. entry_kills fills EVERY opening/entry K half (the
-	// columns are identical), entry_deaths every D half.
+	// opening_* twin columns retired with them, 2026-11-18),
+	// entry_deaths every D half.
 	{seed: "assists", fill: func(c *MetricCells, s string) { c.Assists = s }},
 	{seed: "entry_kills", fill: func(c *MetricCells, s string) { c.EntryKills = s }},
 	{seed: "entry_deaths", fill: func(c *MetricCells, s string) { c.EntryDeaths = s }},

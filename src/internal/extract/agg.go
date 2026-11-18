@@ -138,8 +138,6 @@ type playerAgg struct {
 	moneySpentTotal int
 	entryKills      int
 	entryDeaths     int
-	openingKills    int
-	openingDeaths   int
 	tradeKills      int
 	killStreak      int
 	bestStreak      int
@@ -153,7 +151,6 @@ type playerAgg struct {
 	bombPlants      int
 	bombDefuses     int
 	weaponKills     map[string]int
-	weaponDmg       map[string]int
 }
 
 func newPlayerAgg(name string, bot bool) *playerAgg {
@@ -161,7 +158,6 @@ func newPlayerAgg(name string, bot bool) *playerAgg {
 		name:        name,
 		isBot:       bot,
 		weaponKills: make(map[string]int),
-		weaponDmg:   make(map[string]int),
 	}
 }
 
@@ -919,14 +915,15 @@ func (a *agg) kill(k killInfo) {
 		}
 	}
 
-	// First blood of the round: entry + opening attribution.
+	// First blood of the round: entry attribution. (The opening_kills
+	// twin was incremented in this same branch until it was retired
+	// with its column on 2026-11-18 — identical stored columns.)
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if r.firstKillSteam == "" {
 			r.firstKillSteam = keyStr(k.killerKey)
 			r.firstDeathSteam = keyStr(k.victimKey)
 			kp.entryKills++
-			kp.openingKills++
 		}
 	}
 
@@ -949,7 +946,9 @@ func (a *agg) kill(k killInfo) {
 		a.tradeWindow[k.victimKey] = tradeRec{tick: k.tick, killerKey: k.killerKey, victimSide: k.victimSide}
 	}
 
-	// Entry/opening death: the first-blood victim.
+	// Entry death: the first-blood victim. (The opening_deaths twin
+	// was incremented in this same branch until it was retired with
+	// its column on 2026-11-18 — identical stored columns.)
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if r.firstDeathSteam != "" && r.firstDeathSteam == keyStr(k.victimKey) {
@@ -958,7 +957,6 @@ func (a *agg) kill(k killInfo) {
 				vp = a.ensure(k.victimKey, k.victimName)
 			}
 			vp.entryDeaths++
-			vp.openingDeaths++
 		}
 	}
 
@@ -1098,7 +1096,6 @@ func (a *agg) hurt(h hurtInfo) {
 		ap := a.ensure(h.attackerKey, h.attackerName)
 		ap.totalDamage += dealt
 		ap.hits++
-		ap.weaponDmg[h.weapon] += dealt
 		if h.isUtility {
 			ap.utilityDamage += dealt
 		}

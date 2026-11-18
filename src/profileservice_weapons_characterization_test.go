@@ -9,19 +9,22 @@ import (
 // TestMergeWeaponsCharacterization pins the RETIRED profile Weapons
 // JSON fold (mergeWeapons) as M7's equivalence pre-image — ORACLE-ONLY
 // since the table migrated to the weapon_* seeds (2026-11-18): the fold
-// is PURE INTEGER SUMS per weapon — kills/damage/headshots pooled across
-// matches, sorted kills desc → damage desc → name asc, capped at
+// is PURE INTEGER SUMS per weapon — kills/headshots pooled across
+// matches, sorted kills desc → name asc, capped at
 // weaponTopLimit — so any weapon-partitioned ratio metric must be
 // compared against the ROW-RATIO over these pooled counts (Σhs ÷ Σk),
 // never the mean-of-per-match-ratios. For ak47 below the two spellings
 // diverge measurably: pooled 4/14 ≈ 0.2857 where the unweighted mean
-// of the per-match HS shares is (3/10 + 1/4)/2 = 0.325.
+// of the per-match HS shares is (3/10 + 1/4)/2 = 0.325. (The fold's
+// damage half and its desc tie-break retired with
+// player_stats.damage_by_weapon, 2026-11-18 owner ruling — the
+// weapon_damage seed is THE damage implementation.)
 func TestMergeWeaponsCharacterization(t *testing.T) {
 	// Pooling across matches + malformed/empty JSON rows skipped.
 	rows := []models.ProfileWeaponJSONs{
-		{KillsByWeapon: `{"ak47":10,"awp":2}`, DamageByWeapon: `{"ak47":900,"awp":300}`, HeadshotsByWeapon: `{"ak47":3}`},
-		{KillsByWeapon: `{"ak47":4,"awp":1}`, DamageByWeapon: `{"ak47":900,"awp":150}`, HeadshotsByWeapon: `{"ak47":1}`},
-		{KillsByWeapon: "", DamageByWeapon: `not json`, HeadshotsByWeapon: `{}`},
+		{KillsByWeapon: `{"ak47":10,"awp":2}`, HeadshotsByWeapon: `{"ak47":3}`},
+		{KillsByWeapon: `{"ak47":4,"awp":1}`, HeadshotsByWeapon: `{"ak47":1}`},
+		{KillsByWeapon: "", HeadshotsByWeapon: `{}`},
 	}
 	got := mergeWeapons(rows)
 	if len(got) != 2 {
@@ -32,28 +35,31 @@ func TestMergeWeaponsCharacterization(t *testing.T) {
 		t.Errorf("order = %s,%s, want ak47,awp (kills desc)", got[0].Weapon, got[1].Weapon)
 	}
 	// Exact pooled sums — the row-ratio inputs M7 compares against.
-	if ak := got[0]; ak.Kills != 14 || ak.Damage != 1800 || ak.Headshots != 4 {
-		t.Errorf("ak47 = %+v, want kills 14 (10+4), damage 1800 (900+900), headshots 4 (3+1) — pooled sums, not per-match means", ak)
+	if ak := got[0]; ak.Kills != 14 || ak.Headshots != 4 {
+		t.Errorf("ak47 = %+v, want kills 14 (10+4), headshots 4 (3+1) — pooled sums, not per-match means", ak)
 	}
-	if awp := got[1]; awp.Kills != 3 || awp.Damage != 450 || awp.Headshots != 0 {
-		t.Errorf("awp = %+v, want kills 3 (2+1), damage 450 (300+150), headshots 0 (absent → 0)", awp)
+	if awp := got[1]; awp.Kills != 3 || awp.Headshots != 0 {
+		t.Errorf("awp = %+v, want kills 3 (2+1), headshots 0 (absent → 0)", awp)
 	}
 
-	// Tie-breaks: equal kills → damage desc; equal kills+damage → name asc.
+	// Tie-breaks: equal kills → name asc (the damage-desc leg left with
+	// the dropped damage JSON, 2026-11-18: the old chain put alpha
+	// first on its 200 damage, then name — pure name order now leads
+	// with aaa).
 	tied := mergeWeapons([]models.ProfileWeaponJSONs{
-		{KillsByWeapon: `{"zeta":5,"alpha":5,"bbb":5,"aaa":5}`, DamageByWeapon: `{"zeta":100,"alpha":200,"bbb":100,"aaa":100}`},
+		{KillsByWeapon: `{"zeta":5,"alpha":5,"bbb":5,"aaa":5}`},
 	})
 	var order []string
 	for _, w := range tied {
 		order = append(order, w.Weapon)
 	}
-	wantOrder := []string{"alpha", "aaa", "bbb", "zeta"}
+	wantOrder := []string{"aaa", "alpha", "bbb", "zeta"}
 	if len(order) != len(wantOrder) {
 		t.Fatalf("tied order = %v, want %v", order, wantOrder)
 	}
 	for i := range wantOrder {
 		if order[i] != wantOrder[i] {
-			t.Errorf("tied order = %v, want %v (kills desc → damage desc → name asc)", order, wantOrder)
+			t.Errorf("tied order = %v, want %v (kills desc → name asc — the damage leg left with the column)", order, wantOrder)
 		}
 	}
 

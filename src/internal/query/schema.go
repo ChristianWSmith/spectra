@@ -90,7 +90,6 @@ var columnNotes = map[string]map[string]string{
 	},
 	"player_stats": {
 		"trade_kills":     "kills answering a teammate death inside the trade window",
-		"opening_kills":   "first-kill attributions (extractor rule)",
 		"assists":         "cross-team assists, AssistedFlash excluded (external-scoreboard convention)",
 		"flash_assists":   "AssistedFlash assists, split out of assists (the game's m_iAssists includes them)",
 		"kills_by_weapon": "JSON object (excluded from the metrics expression whitelist)",
