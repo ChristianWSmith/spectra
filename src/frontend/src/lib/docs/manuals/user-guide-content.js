@@ -389,12 +389,12 @@ id, and a player search box to jump to someone else. Then:
   {
     id: 'metric-builder',
     title: 'The metric Builder',
-    blocks: `**Builder** (sidebar) is where numbers are defined. A **metric** is one number for one player —
-"this player's trade rate", "this player's KAST%" — and every metric carries its own written
+    blocks: `**Builder** (sidebar) is where numbers are defined. A **metric** is one number for one subject —
+a player ("this player's trade rate"), a match or a team — and every metric carries its own written
 formula and sample-size honesty (a value is never invented; missing data shows as a dash or an
 honest zero beside its \`N\`).
 
-The **left column** lists every metric, grouped **Builtins / Yours / Plugins**, with a search box
+The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
 and one **Filters** panel (origin, scope, denominator, format and pinning — the last narrows the list
 to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
@@ -424,8 +424,9 @@ metrics show none (neither here nor on their list row).
 metrics can't be edited*), but you can still preview, reference and pin them. Plugin metrics
 carry a *read-only source* chip; saving one stores a copy as your own metric.
 
-**Preview** runs the expression read-only against your library: one row per player with the value
-and its **N**. A saved, unmodified metric previews the values already stored (the panel names
+**Preview** runs the expression read-only against your library: one row per subject with the value
+and its **N** (per player for a player metric; per match or per team for a match- or team-subject
+one). A saved, unmodified metric previews the values already stored (the panel names
 which unit they came from); an unsaved or edited expression is calculated on the spot — which is
 why an ad-hoc preview notes that the denominator applies after save. State chips appear in place
 of numbers while a value is recomputing or has failed. Click a column header to sort the rows:

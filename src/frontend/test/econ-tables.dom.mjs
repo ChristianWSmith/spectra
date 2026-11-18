@@ -448,6 +448,62 @@ const econSeedValues = (ids, countedN) => {
   return out;
 };
 
+// The five M1 IDENTITY card seeds (plan §8 identity rows): the Overview
+// top cards read these stored rows since their Phase-7 migration
+// (2026-11-18) — the seed picks WHO (valueKey), the roster line only
+// renders the name/number. Ids continue the 100-series.
+const IDENTITY_FIELDS = Object.freeze({
+  top_fragger: 'kills',
+  best_adr: 'adr',
+  most_util: 'utilityDamage',
+  entry_opens: 'entryKills',
+  most_mvps: 'mvps',
+});
+const IDENTITY_SEED_DEFS = Object.freeze(
+  Object.entries(IDENTITY_FIELDS).map(([name, field], i) => ({
+    id: 108 + i,
+    name,
+    title: name,
+    shortName: '',
+    scope: 'match',
+    subject: 'match',
+    format: 'identity',
+    doc: `Formula: argmax(player_stats.${field}) — the card's selection; N = the pool`,
+  })),
+);
+// The argmax ORACLE over the CURRENT scoreboard fixture — the engine's
+// ratified rule restated in-driver (doc.go "Identity values"): the
+// highest value wins and TIES break on the player key ASCENDING. The
+// retired card code took the FIRST view row instead (strict `>`), so
+// where the two disagree the SEED wins — that is what the migration
+// pins. A row whose field is not a finite number sits outside the pool
+// (the store always writes the column; a sparse fixture row is not a
+// candidate), and an empty pool emits NO row (the empty-set rule —
+// never a fabricated winner).
+const argmaxIdentity = (sb, field) => {
+  const pool = sb.filter((p) => Number.isFinite(p[field]));
+  let best = null;
+  for (const p of pool) {
+    const v = p[field];
+    if (!best || v > best.v || (v === best.v && String(p.steamId) < String(best.steam))) {
+      best = { steam: p.steamId, v };
+    }
+  }
+  return best ? { ...best, pool: pool.length } : null;
+};
+const identitySeedValues = (ids) => {
+  const sb = (globalThis.__svc && globalThis.__svc.getScoreboard) || [];
+  const nameById = new Map(IDENTITY_SEED_DEFS.map((d) => [d.id, d.name]));
+  const out = [];
+  for (const id of ids || []) {
+    const field = IDENTITY_FIELDS[nameById.get(id) || ''];
+    if (!field) continue;
+    const win = argmaxIdentity(sb, field);
+    if (win) out.push({ metricId: id, subjectKey: '', valueKey: win.steam, value: win.v, n: win.pool });
+  }
+  return out;
+};
+
 const dataFor = (countedN) => ({
   getMatch: match,
   getMatchSummary: summary,
@@ -465,10 +521,11 @@ const dataFor = (countedN) => ({
   // whatever the state map says); an unscripted name resolves [] through
   // the stub, and a section that scripts its own catalog/read replaces
   // both wholesale (the sections below).
-  listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS],
+  listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS, ...IDENTITY_SEED_DEFS],
   getMetricValuesForMatch: (matchID, ids) => [
     ...seedValues(matchID, ids),
     ...econSeedValues(ids, countedN),
+    ...identitySeedValues(ids),
   ],
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
@@ -2277,7 +2334,7 @@ console.log('N. the scoreboard-opens-transposed pref (w25): the shape a match op
   );
 }
 
-console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, empty set)');
+console.log('O. ME0/M1: Overview top-card SELECTION (identity seeds: tie-break, reversed order, all-zero set, empty set, behind)');
 {
   const labelOf = (c) => c.querySelector('.field-label')?.textContent || '';
   const topCards = (r) =>
@@ -2289,9 +2346,14 @@ console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, em
   const who = (c) => c?.querySelector('.stat-sub')?.textContent ?? '';
 
   // (1) Selection over a kills-DESC seed with TIES (kills 10/10, util
-  // 50/50) and an ALL-ZERO metric set (entry opens, MVPs all 0): maxBy
-  // uses strict `>`, so the FIRST row in viewRows order wins every tie
-  // and every all-zero metric — bob wins Best ADR outright (90 > 80).
+  // 50/50) and an ALL-ZERO metric set (entry opens, MVPs all 0).
+  // MIGRATED 2026-11-18 (metrics Phase 7): the cards read the five
+  // identity seeds' stored rows — the retired maxBy/first-row rule is
+  // gone. Here the two rules AGREE (alice's key 'A' < bob's 'B', and
+  // alice is also the first view row), so every value below is the
+  // pre-migration string re-sourced from the seed; scenario (1b)
+  // separates the rules. bob wins Best ADR outright (90 > 80) either
+  // way.
   const tied = {
     ...dataFor(13),
     getScoreboard: [
@@ -2304,7 +2366,7 @@ console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, em
   await sleep();
   check('M1: five top cards render on Overview', topCards(root).length === 5, String(topCards(root).length));
   check(
-    'M1: Top fragger tie (10/10) → FIRST row (alice), K/D/A value composed',
+    'M1: Top fragger tie (10/10) → the identity seed picks alice (key ASC: A < B), K/D/A composed from her line',
     val(card(root, 'Top fragger')) === '10/2/3' && who(card(root, 'Top fragger')).includes('alice'),
     `${val(card(root, 'Top fragger'))} / ${who(card(root, 'Top fragger'))}`,
   );
@@ -2314,25 +2376,91 @@ console.log('O. ME0/M1: Overview top-card SELECTION (tie-break, all-zero set, em
     `${val(card(root, 'Best ADR'))} / ${who(card(root, 'Best ADR'))}`,
   );
   check(
-    'M1: Most util tie (50/50) → FIRST row (alice)',
+    'M1: Most util tie (50/50) → the identity seed picks alice (key ASC)',
     val(card(root, 'Most util')) === '50' && who(card(root, 'Most util')).includes('alice'),
     `${val(card(root, 'Most util'))} / ${who(card(root, 'Most util'))}`,
   );
   check(
-    'M1: all-zero Entry opens / Most MVPs → FIRST row (alice), value 0',
+    'M1: all-zero Entry opens / Most MVPs → the identity seed picks alice (key ASC), value 0',
     val(card(root, 'Entry opens')) === '0' && who(card(root, 'Entry opens')).includes('alice') &&
       val(card(root, 'Most MVPs')) === '0' && who(card(root, 'Most MVPs')).includes('alice'),
     `${val(card(root, 'Entry opens'))}/${val(card(root, 'Most MVPs'))} — ${who(card(root, 'Entry opens'))}/${who(card(root, 'Most MVPs'))}`,
   );
 
-  // (2) EMPTY set: no roster rows → topStats returns [] (the
-  // !viewRows.length guard — the empty reduce would otherwise throw).
+  // (1b) REVERSED VIEW ORDER — the tie-break re-pin (2026-11-18): the
+  // same numbers with BOB leading the viewRows order (equal kills, bob
+  // listed first). The retired first-row rule would name bob in every
+  // tie; the seed's ratified rule is player-key ASC and keys are
+  // alice 'A' < bob 'B', so alice wins each tie and each all-zero
+  // metric here — the moved expectation IS the pin. Best ADR still
+  // goes to the outright max (bob, 90 > 80).
+  const reversed = {
+    ...dataFor(13),
+    getScoreboard: [
+      { steamId: 'B', name: 'bob', side: 't', kills: 10, deaths: 4, assists: 1, adr: 90, mvps: 0, utilityDamage: 50, entryKills: 0 },
+      { steamId: 'A', name: 'alice', side: 'ct', kills: 10, deaths: 2, assists: 3, adr: 80, mvps: 0, utilityDamage: 50, entryKills: 0 },
+      { steamId: 'C', name: 'carol', side: 'ct', kills: 5, deaths: 9, assists: 2, adr: 40, mvps: 0, utilityDamage: 10, entryKills: 0 },
+    ],
+  };
+  root = await showMatch(reversed, { routeTab: '' });
+  await sleep();
+  check(
+    'M1: reversed order — Top fragger tie (10/10, bob listed first) → the SEED wins with alice (key A < B), never the first row',
+    val(card(root, 'Top fragger')) === '10/2/3' && who(card(root, 'Top fragger')).includes('alice'),
+    `${val(card(root, 'Top fragger'))} / ${who(card(root, 'Top fragger'))}`,
+  );
+  check(
+    'M1: reversed order — Most util / all-zero Entry opens / Most MVPs also pick alice by key, Best ADR stays bob (90)',
+    val(card(root, 'Most util')) === '50' && who(card(root, 'Most util')).includes('alice') &&
+      val(card(root, 'Entry opens')) === '0' && who(card(root, 'Entry opens')).includes('alice') &&
+      val(card(root, 'Most MVPs')) === '0' && who(card(root, 'Most MVPs')).includes('alice') &&
+      val(card(root, 'Best ADR')) === '90.0' && who(card(root, 'Best ADR')).includes('bob'),
+    ['Most util', 'Entry opens', 'Most MVPs', 'Best ADR']
+      .map((l) => `${l}=${val(card(root, l))}/${who(card(root, l))}`)
+      .join(' · '),
+  );
+
+  // (2) EMPTY set: no roster rows → the identity pools are empty →
+  // the seeds emit NO row → every card is absent (the §3.3 empty-pool
+  // rule; the retired `!viewRows.length` guard is gone with the
+  // migration).
   root = await showMatch({ ...dataFor(13), getScoreboard: [] }, { routeTab: '' });
   await sleep();
   check(
-    'M1: empty roster → NO top cards (the empty-set guard)',
+    'M1: empty roster → NO top cards (the identity pools are empty — never a fabricated name)',
     topCards(root).length === 0,
     String(topCards(root).length),
+  );
+
+  // (3) BEHIND: the seeds exist in the catalog but no stored row has
+  // landed — each card wears the established five-state chip in its
+  // value slot (identity rows get the same states §9 requires), with
+  // NO name beside it (a state names no player).
+  const behind = {
+    ...dataFor(13),
+    getMetricValuesForMatch: (matchID, ids) => [
+      ...seedValues(matchID, ids),
+      ...econSeedValues(ids, 13),
+      // identity rows deliberately dropped
+    ],
+    getMetricComputeState: IDENTITY_SEED_DEFS.map((d) => ({ metricId: d.id, state: 'behind' })),
+  };
+  root = await showMatch(behind, { routeTab: '' });
+  await sleep();
+  const behindCards = topCards(root);
+  check(
+    'M1: seeds behind → five state cards, each carrying the behind chip and no name',
+    behindCards.length === 5 &&
+      behindCards.every(
+        (c) =>
+          !!c.querySelector('.chip.status') &&
+          (c.querySelector('.chip.status')?.getAttribute('title') || '').includes('value not available yet') &&
+          who(c) === '',
+      ),
+    `${behindCards.length} cards: ` +
+      behindCards
+        .map((c) => `${labelOf(c)}=${c.querySelector('.chip.status') ? 'chip' : 'value'}/${JSON.stringify(who(c))}`)
+        .join(' · '),
   );
 }
 

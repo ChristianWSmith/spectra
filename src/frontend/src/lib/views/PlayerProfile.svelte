@@ -585,7 +585,7 @@
           // MetricDisplayScale rule every percent surface applies.
           const scaled = hit.def.format === 'percent' ? v.value * 100 : v.value;
           if (!out.has(hit.name)) out.set(hit.name, new Map());
-          out.get(hit.name).set(v.dim, scaled);
+          out.get(hit.name).set(v.dim, { value: scaled, n: v.n });
         }
         splitValues = out;
       })
@@ -596,15 +596,15 @@
   const sides = $derived.by(() => {
     const out = [];
     for (const dim of ['ct', 't']) {
-      const vals = SIDE_SEEDS.map((n) => splitValues.get(n)?.get(dim));
-      if (vals.every((v) => v === undefined)) continue;
+      const rows = SIDE_SEEDS.map((n) => splitValues.get(n)?.get(dim));
+      if (rows.every((v) => v === undefined)) continue;
       out.push({
         side: dim,
-        rounds: vals[0] ?? null,
-        roundWinPct: vals[1] ?? null,
-        adr: vals[2] ?? null,
-        kastPct: vals[3] ?? null,
-        kd: vals[4] ?? null,
+        rounds: rows[0]?.value ?? null,
+        roundWinPct: rows[1]?.value ?? null,
+        adr: rows[2]?.value ?? null,
+        kastPct: rows[3]?.value ?? null,
+        kd: rows[4]?.value ?? null,
       });
     }
     return out;
@@ -614,8 +614,13 @@
     const dims = new Set();
     for (const n of MAP_SEEDS) for (const d of splitValues.get(n)?.keys() ?? []) dims.add(d);
     const out = [...dims].map((dim) => {
-      const at = (n) => splitValues.get(n)?.get(dim) ?? null;
-      return { map: dim, matches: at('map_matches'), wins: at('map_wins'), adr: at('map_adr') };
+      const at = (n) => splitValues.get(n)?.get(dim);
+      return {
+        map: dim,
+        matches: at('map_matches')?.value ?? null,
+        wins: at('map_wins')?.value ?? null,
+        adr: at('map_adr')?.value ?? null,
+      };
     });
     out.sort(
       (a, b) =>
@@ -632,8 +637,13 @@
     const dims = new Set();
     for (const n of WEAPON_SEEDS) for (const d of splitValues.get(n)?.keys() ?? []) dims.add(d);
     const out = [...dims].map((dim) => {
-      const at = (n) => splitValues.get(n)?.get(dim) ?? null;
-      return { weapon: dim, kills: at('weapon_kills'), damage: at('weapon_damage'), headshots: at('weapon_headshots') };
+      const at = (n) => splitValues.get(n)?.get(dim);
+      return {
+        weapon: dim,
+        kills: at('weapon_kills')?.value ?? null,
+        damage: at('weapon_damage')?.value ?? null,
+        headshots: at('weapon_headshots')?.value ?? null,
+      };
     });
     out.sort(
       (a, b) =>
@@ -643,6 +653,51 @@
     );
     return out.slice(0, 8);
   });
+
+  // --- The five-state wiring for the three split tables (ME6 deviation
+  // 6, closed 2026-11-18): every split CELL renders through THE state
+  // machine exactly like every other metric surface — fresh keeps the
+  // cell's number, a missing row is the honest dash, and a live
+  // non-fresh state is the chip (never a plain dash or text pretending
+  // to be no-data). A table's EMPTY branch consults the same states:
+  // with nothing stored anywhere, a live state (processing / failed /
+  // behind) earns its chip instead of the plain empty-state text; only
+  // the up-to-date nothing-to-show case keeps the text.
+  function splitPres(name, dim) {
+    const def = splitDefs.get(name);
+    if (!def) return metricPresentation('', null, false); // catalog lacks it → neutral dash
+    const rows = splitValues.get(name);
+    const st = liveMetricState(metricProgress, metricStates, def.id);
+    return metricPresentation(st, rows ? rows.get(dim) || null : null, !!(rows && rows.size));
+  }
+
+  function splitTitle(name, pres) {
+    const def = splitDefs.get(name);
+    const label = def ? def.title || def.name : name;
+    if (pres.kind === 'value') return `${label} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, (def && metricStates.get(def.id)?.error) || '');
+  }
+
+  // The winning chip state over a whole empty table: processing beats
+  // failed beats behind (the design's precedence), scanned over the
+  // table's own seeds in order — null keeps the plain empty text.
+  function splitEmptyState(seedNames) {
+    for (const state of ['processing', 'failed', 'behind']) {
+      for (const n of seedNames) {
+        const def = splitDefs.get(n);
+        if (!def) continue;
+        if (liveMetricState(metricProgress, metricStates, def.id) === state) return { state, def };
+      }
+    }
+    return null;
+  }
+
+  // The empty branch's chip title — failed carries the engine error
+  // text through the state entry, exactly like every other state slot.
+  function splitEmptyTitle(hit) {
+    return metricStateTitle(hit.state, metricStates.get(hit.def.id)?.error || '');
+  }
   const history = $derived(profile?.history || []);
 
   // Return trip: where the button points, and how to name it (the default
@@ -843,6 +898,41 @@
     </section>
 
     <div class="prof-splits">
+      <!-- One cell renderer + one empty-branch renderer for the three
+           split tables (five-state wiring, 2026-11-18): title and
+           value/dash/chip come from THE state machine, the column's
+           formatter is passed in so every number string stays
+           byte-identical to the pre-wiring tables. -->
+      {#snippet splitCell(name, dim, fmt)}
+        {@const pres = splitPres(name, dim)}
+        <td class="num" title={splitTitle(name, pres)}>
+          {#if pres.kind === 'value'}
+            {fmt(pres.value)}
+          {:else if pres.kind === 'nodata'}
+            —
+          {:else}
+            <StatusChip
+              status={pres.state}
+              title={splitTitle(name, pres)}
+              progress={metricProgressFrac(metricProgress, splitDefs.get(name)?.id)}
+              stage={metricProgressStage(metricProgress, splitDefs.get(name)?.id)}
+            />
+          {/if}
+        </td>
+      {/snippet}
+      {#snippet splitEmpty(seedNames, fallback)}
+        {@const hit = splitEmptyState(seedNames)}
+        {#if hit}
+          <StatusChip
+            status={hit.state}
+            title={splitEmptyTitle(hit)}
+            progress={metricProgressFrac(metricProgress, hit.def.id)}
+            stage={metricProgressStage(metricProgress, hit.def.id)}
+          />
+        {:else}
+          {fallback}
+        {/if}
+      {/snippet}
       <section class="panel prof-sides">
         <h2>{S.profiles.sidesHeading}</h2>
         <table class="data-table">
@@ -860,14 +950,14 @@
             {#each sides as s (s.side)}
               <tr>
                 <td><span class="chip side {s.side}">{(s.side || '—').toUpperCase()}</span></td>
-                <td class="num">{s.rounds ?? '—'}</td>
-                <td class="num">{s.roundWinPct != null ? fmtPercent(s.roundWinPct) : '—'}</td>
-                <td class="num">{s.adr != null ? fmt1(s.adr) : '—'}</td>
-                <td class="num">{s.kastPct != null ? fmtPercent(s.kastPct) : '—'}</td>
-                <td class="num">{s.kd != null ? fmt2(s.kd) : '—'}</td>
+                {@render splitCell('side_rounds', s.side, (v) => v)}
+                {@render splitCell('side_win_pct', s.side, fmtPercent)}
+                {@render splitCell('side_adr', s.side, fmt1)}
+                {@render splitCell('side_kast', s.side, fmtPercent)}
+                {@render splitCell('side_kd', s.side, fmt2)}
               </tr>
             {:else}
-              <tr><td colspan="6" class="muted">{S.profiles.noSides}</td></tr>
+              <tr><td colspan="6" class="muted">{@render splitEmpty(SIDE_SEEDS, S.profiles.noSides)}</td></tr>
             {/each}
           </tbody>
         </table>
@@ -896,12 +986,12 @@
                   (e.preventDefault(), openMapInLibrary(m.map))}
               >
                 <td>{m.map || '—'}</td>
-                <td class="num">{m.matches ?? '—'}</td>
-                <td class="num">{m.wins ?? '—'}</td>
-                <td class="num">{m.adr != null ? fmt1(m.adr) : '—'}</td>
+                {@render splitCell('map_matches', m.map, (v) => v)}
+                {@render splitCell('map_wins', m.map, (v) => v)}
+                {@render splitCell('map_adr', m.map, fmt1)}
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">{S.profiles.noMaps}</td></tr>
+              <tr><td colspan="4" class="muted">{@render splitEmpty(MAP_SEEDS, S.profiles.noMaps)}</td></tr>
             {/each}
           </tbody>
         </table>
@@ -922,12 +1012,12 @@
             {#each weapons as w (w.weapon)}
               <tr>
                 <td class="mono">{w.weapon}</td>
-                <td class="num">{w.kills != null ? fmtInt(w.kills) : '—'}</td>
-                <td class="num">{w.damage != null ? fmtInt(w.damage) : '—'}</td>
-                <td class="num">{w.headshots != null ? fmtInt(w.headshots) : '—'}</td>
+                {@render splitCell('weapon_kills', w.weapon, fmtInt)}
+                {@render splitCell('weapon_damage', w.weapon, fmtInt)}
+                {@render splitCell('weapon_headshots', w.weapon, fmtInt)}
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">{S.profiles.noWeapons}</td></tr>
+              <tr><td colspan="4" class="muted">{@render splitEmpty(WEAPON_SEEDS, S.profiles.noWeapons)}</td></tr>
             {/each}
           </tbody>
         </table>

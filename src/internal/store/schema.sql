@@ -1570,12 +1570,18 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 -- `attacker != victim` the actor gate, `same_side = 0` the permissive
 -- side gate; the value is the stamped capped_dmg, never raw events.dmg.
 -- Same INSERT OR IGNORE add-on path; Formula-first docs, subject +
--- partition stated, tier-2 length (AGENTS doc rule).
+-- partition stated, tier-2 length (AGENTS doc rule). N-claim fix
+-- (2026-11-18, Phase 7 doc sweep): the two COUNT seeds' docs used to
+-- say "N = the kill events counted", but N is the GROUP row count —
+-- that weapon's ALL-kind event rows (doc.go "N is the sample size
+-- behind the value (group row count)"), so both docs now say the event
+-- rows recorded for the weapon. Doc strings only — no expr, no value,
+-- seed count unchanged.
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
 ('weapon_kills', 'Weapon kills', '',
  'from events: count(where kind = ''kill'' and attacker != victim)',
  'profile', 'player', 'weapon', 'int',
- 'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
+ 'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon — N = the event rows recorded for that weapon.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('weapon_damage', 'Weapon damage', '',
  'from events: sum(where kind = ''damage'' and attacker != victim and same_side = 0, capped_dmg)',
@@ -1585,7 +1591,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('weapon_headshots', 'Weapon headshots', '',
  'from events: count(where kind = ''kill'' and headshot = 1 and attacker != victim)',
  'profile', 'player', 'weapon', 'int',
- 'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
+ 'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon — N = the event rows recorded for that weapon.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Grammar addendum (metrics expansion §8 M8 rows, 2026-11-17): TWO

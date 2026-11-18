@@ -202,14 +202,19 @@
     denomMatches: true,
     denomNone: true,
     // Type group: the owner's ruling ("all six checked — auto + int +
-    // float1 + float2 + percent + currency") — only Built-in starts off,
-    // so the first render is unfiltered on every group but Origin.
+    // float1 + float2 + percent + currency") extended by the seventh
+    // Identity box (metrics Phase 7, 2026-11-18 — the key-valued
+    // metrics' filter treatment; seed() merges over defaults, so a
+    // registry record written before it still starts checked) — only
+    // Built-in starts off, so the first render is unfiltered on every
+    // group but Origin.
     formatAuto: true,
     formatInt: true,
     formatFloat1: true,
     formatFloat2: true,
     formatPercent: true,
     formatCurrency: true,
+    formatIdentity: true,
     // Pinning group (the fifth, client-side — see pinFilter below): the
     // owner's default both ON, so the first render is unfiltered here
     // too.
@@ -233,6 +238,7 @@
   let formatFloat2 = $state(bldSeed.formatFloat2);
   let formatPercent = $state(bldSeed.formatPercent);
   let formatCurrency = $state(bldSeed.formatCurrency);
+  let formatIdentity = $state(bldSeed.formatIdentity);
   let showPinned = $state(bldSeed.showPinned);
   let showUnpinned = $state(bldSeed.showUnpinned);
   $effect(() =>
@@ -254,6 +260,7 @@
       formatFloat2,
       formatPercent,
       formatCurrency,
+      formatIdentity,
       showPinned,
       showUnpinned,
     }),
@@ -440,7 +447,16 @@
   // never repeats a header — the final look matches the unpaginated
   // grouped list. Runs derive from the PIN-FILTERED rows (visibleMetrics
   // below), so a group can vanish entirely under the Pinning filter.
-  const GROUP_LABEL = { builtin: 'Builtins', user: 'Yours', plugin: 'Plugins' };
+  // The list's origin run headers (2026-11-18, metrics Phase 7): the
+  // strings catalog is THE home for the labels (one spelling per
+  // concept) — the user group's header reads "Custom", the same word
+  // the Origin filter's box uses for exactly those rows (W45's ruling;
+  // it replaced the inline "Yours").
+  const GROUP_LABEL = {
+    builtin: S.builder.groupBuiltins,
+    user: S.builder.groupCustom,
+    plugin: S.builder.groupPlugins,
+  };
 
   const dirty = $derived(snapshot(form) !== baseline);
   // The editor's pin button keys off the SAVED name — the identity the
@@ -556,12 +572,13 @@
   });
 
   // formatFilter — the fourth group's (Type) checked-set → server word:
-  // unlike the pair-shaped groups (Origin / Scope / Pinning) it is six
-  // checkboxes (the Denominator group's three are the checked-set shape
-  // too — denomFilterWord above), so the derivation is the canonical one
-  // in lib/metricformats.js (all six = '' no
+  // unlike the pair-shaped groups (Origin / Scope / Pinning) it is
+  // seven checkboxes (the Denominator group's three are the checked-set
+  // shape too — denomFilterWord above), so the derivation is the canonical one
+  // in lib/metricformats.js (all seven = '' no
   // predicate, none = 'none', otherwise the canonical comma-subset —
-  // "auto" being the format select's Auto, the '' format). Same
+  // "auto" being the format select's Auto, the '' format, "identity"
+  // the key-valued metrics). Same
   // plumbing as the others: it rides the list read's args (refreshList
   // below restarts the window on any flip) and joins
   // listMetricsPage's cache key for free (services.js).
@@ -573,8 +590,16 @@
       float2: formatFloat2,
       percent: formatPercent,
       currency: formatCurrency,
+      identity: formatIdentity,
     }),
   );
+
+  // The editor Format select's options: the SELECTABLE members of THE
+  // canonical list, plus a filter-only token the loaded definition
+  // already carries (identity on the M1 built-ins) so a read-only row
+  // shows its own format instead of a mismatched one — a filter-only
+  // format is never offered as a fresh choice (metricformats.js).
+  const editorFormats = $derived(METRIC_FORMATS.filter((f) => !f.filterOnly || f.value === form.format));
 
   // The search text AND the four filters the current window sequence
   // serves: refreshList writes them, loadMore reads them (the cursor's
@@ -1327,10 +1352,11 @@
                     onchange={(e) => (denomNone = e.currentTarget.checked)}
                   /> {S.builder.filterNone}</label>
               </div>
-              <!-- Type = the metric's format (the editor's Format
-                   select vocabulary, lib/metricformats.js): every
-                   option its own checkbox, ALL six checked by default
-                   (the owner's ruling) — only Built-in starts off — so
+              <!-- Type = the metric's format (the canonical format
+                   vocabulary, lib/metricformats.js): every
+                   option its own checkbox, ALL seven checked by default
+                   (the owner's six-box ruling extended by Identity,
+                   metrics Phase 7 2026-11-18) — only Built-in starts off — so
                    the first render carries format '' (no predicate). -->
               <div class="bld-filter-group" role="group" aria-label={S.builder.typeLabel}>
                 <span class="filt-lab">{S.builder.typeLabel}</span>
@@ -1375,6 +1401,12 @@
                     checked={formatCurrency}
                     onchange={(e) => (formatCurrency = e.currentTarget.checked)}
                   /> {S.builder.filterCurrency}</label>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatIdentity}
+                    onchange={(e) => (formatIdentity = e.currentTarget.checked)}
+                  /> {S.builder.filterIdentity}</label>
               </div>
               <!-- Pinning = the fifth group, RENDER-TIME (the one
                    sanctioned exception — see visibleMetrics): pins live
@@ -1555,9 +1587,12 @@
             <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
-                 Type filter's options; auto's value is the '' format). -->
+                 Type filter's options; auto's value is the '' format)
+                 minus its FILTER-ONLY members — except one the loaded
+                 definition already carries, which renders so a read-only
+                 identity built-in shows its own format (editorFormats). -->
             <select id="bld-format" class="input" bind:value={form.format} disabled={builtinLoaded}>
-              {#each METRIC_FORMATS as f (f.token)}
+              {#each editorFormats as f (f.token)}
                 <option value={f.value}>{f.token}</option>
               {/each}
             </select>

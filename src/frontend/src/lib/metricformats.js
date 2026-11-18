@@ -1,19 +1,30 @@
 // metricformats.js — THE metric format vocabulary (the format column's
-// six values in their canonical enum order) and THE checked-set →
+// seven values in their canonical enum order) and THE checked-set →
 // format-filter word mapping behind the Builder Filters popover's Type
 // group.
 //
 // METRIC_FORMATS is the single frontend spelling of the vocabulary: the
-// editor's Format select renders from it, and formatFilterWord composes
-// filter words from the SAME order — one list, both consumers, never a
-// re-spelled token. It is the frontend twin of the Go contracts:
-// metricservice.go's metricFormats (accepted Format values — the Go map
-// also accepts 'identity', the key-valued format no editor or filter
-// offers yet) and store.metricFormatTokens (the filter word's canonical
-// order), which is what makes a subset word canonical instead of merely
-// valid. "auto" is the form's own Auto: its stored value is the format
-// column's '' — the store binds that token as `format = ?` with the
-// empty string (store.ListMetricsPage's FORMAT FILTER).
+// editor's Format select renders its SELECTABLE members, and
+// formatFilterWord composes filter words from the SAME order — one
+// list, both consumers, never a re-spelled token. It is the frontend
+// twin of the Go contracts: metricservice.go's metricFormats (accepted
+// Format values) and store.metricFormatTokens (the filter word's
+// canonical order), which is what makes a subset word canonical instead
+// of merely valid. "auto" is the form's own Auto: its stored value is
+// the format column's '' — the store binds that token as `format = ?`
+// with the empty string (store.ListMetricsPage's FORMAT FILTER).
+//
+// `identity` is FILTER-ONLY (metrics expansion Phase 7, 2026-11-18):
+// the Type group offers it so the key-valued identity metrics are
+// selectable in the list, but the editor's Format select never OFFERS
+// it as a fresh choice — identity belongs to a definition whose
+// expression leads with argmax under subject=match, a combination the
+// editor cannot gate yet (no subject control), so offering it there
+// would invite a value-less metric. `filterOnly` marks that split;
+// entries WITHOUT it are the selectable set (the editor renders
+// METRIC_FORMATS.filter(f => !f.filterOnly), and a loaded definition
+// already carrying the filter-only token still shows it — see
+// Builder's editorFormats).
 export const METRIC_FORMATS = [
   { token: 'auto', value: '' },
   { token: 'int', value: 'int' },
@@ -21,6 +32,7 @@ export const METRIC_FORMATS = [
   { token: 'float2', value: 'float2' },
   { token: 'percent', value: 'percent' },
   { token: 'currency', value: 'currency' },
+  { token: 'identity', value: 'identity', filterOnly: true },
 ];
 
 // formatFilterWord(checked) — the ONE checked-set → server-word

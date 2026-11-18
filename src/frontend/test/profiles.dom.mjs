@@ -1519,5 +1519,139 @@ console.log('M. the Profiles Matches column and the history K/D halves read thei
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
+// ---------------------------------------------------------------------------
+// Section N: the split tables' FIVE-STATE cells (ME6 deviation 6, closed
+// 2026-11-18) — the Sides/Maps/Weapons tables were the last metric
+// surface rendering plain dashes/empty text where the design demands
+// state chips. The fixture stages the WHOLE vocabulary across the
+// tables: fresh rows with byte-identical numbers beside behind /
+// processing cells in the SAME row, and fully-empty tables whose empty
+// branch carries the live state instead of the plain text (failed beats
+// behind in the Weapons branch, and its title keeps the engine error).
+console.log('N. the split tables render the five-state cells — fresh numbers beside behind/processing chips, state in the empty branches');
+{
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+  const def = (id, name, format) => ({
+    id, name, title: name, scope: 'profile', format,
+    doc: `Formula: ${name} seed`, origin: 'builtin',
+  });
+  const CATALOG = [
+    def(201, 'side_rounds', 'int'),
+    def(202, 'side_win_pct', 'percent'),
+    def(203, 'side_adr', 'float1'),
+    def(204, 'side_kast', 'percent'),
+    def(205, 'side_kd', 'float2'),
+    def(206, 'map_matches', 'int'),
+    def(207, 'map_wins', 'int'),
+    def(208, 'map_adr', 'float1'),
+    def(209, 'weapon_kills', 'int'),
+    def(210, 'weapon_damage', 'int'),
+    def(211, 'weapon_headshots', 'int'),
+    // CAREER_SLOTS' one fixed seed — its resolution is what makes the
+    // career effect issue the compute-state read the split cells share
+    // (an empty id list returns before it).
+    def(81, 'career_matches', 'int'),
+  ];
+  bindings.MetricsService.ListMetrics = () => Promise.resolve(CATALOG);
+  bindings.MetricsService.GetMetricValuesForPlayer = () =>
+    Promise.resolve([
+      { metricId: 81, subjectKey: '76561198000000001', value: 7, n: 7 },
+      { metricId: 201, subjectKey: '76561198000000001', dim: 'ct', value: 65, n: 13 },
+      { metricId: 201, subjectKey: '76561198000000001', dim: 't', value: 61, n: 12 },
+      { metricId: 203, subjectKey: '76561198000000001', dim: 'ct', value: 42.56, n: 13 },
+      { metricId: 203, subjectKey: '76561198000000001', dim: 't', value: 38.2, n: 12 },
+    ]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([
+      { metricId: 81, state: 'fresh' },
+      { metricId: 201, state: 'fresh' },
+      { metricId: 203, state: 'fresh' },
+      { metricId: 202, state: 'behind' },
+      { metricId: 204, state: 'behind' },
+      { metricId: 205, state: 'processing' },
+      { metricId: 206, state: 'behind' },
+      { metricId: 207, state: 'behind' },
+      { metricId: 208, state: 'behind' },
+      { metricId: 209, state: 'behind' },
+      { metricId: 210, state: 'behind' },
+      { metricId: 211, state: 'failed', error: 'engine exploded' },
+    ]);
+  invalidate();
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  mount(profileMod.default, { target, props: { steamId: '76561198000000001', nav: () => {} } });
+  await sleep(140);
+
+  const tableOf = (needle) =>
+    [...target.querySelectorAll('.prof-splits section')].find((s) =>
+      (s.querySelector('h2')?.textContent || '').includes(needle),
+    )?.querySelector('table');
+  const rowWith = (table, text) =>
+    [...(table?.querySelectorAll('tbody tr') || [])].find((tr) => tr.textContent.includes(text));
+
+  const sides = tableOf('Sides');
+  const sideRow = (code) =>
+    [...(sides?.querySelectorAll('tbody tr') || [])].find(
+      (tr) => tr.querySelector('.chip.side')?.textContent.trim() === code,
+    );
+  const ctRow = sideRow('CT');
+  const tRow = sideRow('T');
+  check(
+    'sides: fresh rows still render (ct + t) with byte-identical numbers — rounds 65 raw, ADR 42.6 through fmt1',
+    sides?.querySelectorAll('tbody tr').length === 2 &&
+      ctRow?.children[1]?.textContent.trim() === '65' &&
+      ctRow?.children[3]?.textContent.trim() === '42.6' &&
+      tRow?.children[1]?.textContent.trim() === '61',
+    `rows=${sides?.querySelectorAll('tbody tr').length} ct=[${[...(ctRow?.children || [])]
+      .map((c) => c.textContent.trim())
+      .join(',')}]`,
+  );
+  const behindCell = ctRow?.children[2]?.querySelector('.chip.status');
+  check(
+    'sides: a BEHIND seed in a fresh row wears the behind chip (idle, design copy) — never a plain dash',
+    !!behindCell &&
+      behindCell.classList.contains('idle') &&
+      (behindCell.getAttribute('title') || '') === 'value not available yet — recompute pending',
+    behindCell ? `class=${behindCell.className} title=${behindCell.getAttribute('title')}` : 'no chip in the Win% cell',
+  );
+  const busyCell = ctRow?.children[5]?.querySelector('.chip.status');
+  check(
+    'sides: a PROCESSING seed wears the busy chip in the K/D cell (its number is withheld, never stale)',
+    !!busyCell && busyCell.classList.contains('busy'),
+    busyCell ? `class=${busyCell.className}` : 'no chip in the K/D cell',
+  );
+  const kastChip = ctRow?.children[4]?.querySelector('.chip.status');
+  check(
+    'sides: every state cell carries the state title (Win% and KAST behind — both chips, no bare dashes)',
+    !!kastChip && kastChip.classList.contains('idle'),
+    kastChip ? `class=${kastChip.className}` : 'no chip in the KAST cell',
+  );
+
+  const maps = tableOf('Maps');
+  const mapsCell = maps?.querySelector('tbody tr td');
+  check(
+    'maps: with nothing stored anywhere the empty branch carries the BEHIND chip — the plain empty text stays for the up-to-date case only',
+    maps?.querySelectorAll('tbody tr').length === 1 &&
+      !!mapsCell?.querySelector('.chip.status') &&
+      mapsCell.querySelector('.chip.status').classList.contains('idle'),
+    `rows=${maps?.querySelectorAll('tbody tr').length} cell=${mapsCell?.textContent.trim()}`,
+  );
+
+  const weapons = tableOf('Weapons');
+  const weaponsCell = weapons?.querySelector('tbody tr td');
+  check(
+    'weapons: the empty branch shows FAILED (bad chip) over behind by precedence, and its title keeps the engine error',
+    !!weaponsCell?.querySelector('.chip.status') &&
+      weaponsCell.querySelector('.chip.status').classList.contains('bad') &&
+      (weaponsCell.querySelector('.chip.status').getAttribute('title') || '') === 'engine exploded',
+    weaponsCell ? `cell=${weaponsCell.textContent.trim()} title=${weaponsCell.querySelector('.chip.status')?.getAttribute('title')}` : 'no weapons cell',
+  );
+
+  document.body.removeChild(target);
+  // Leave the shared stubs for any later section (this is the last):
+  bindings.MetricsService.GetMetricComputeState = () => Promise.resolve([]);
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

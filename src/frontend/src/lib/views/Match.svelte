@@ -146,6 +146,31 @@
     'mvps',
   ]);
 
+  // The Overview top cards' IDENTITY seeds (metrics expansion M1,
+  // migrated 2026-11-18 — Phase 7's surfaces hand-off): the five
+  // argmax built-ins are THE selection for the top-card who (the
+  // ad-hoc maxBy over viewRows died with this migration — stored
+  // values are offered, never recomputed). They ride the SAME catalog
+  // read and the SAME ONE stored read as the fixed slots below
+  // (unioned into `fixed` by name — a name the catalog lacks keeps the
+  // honest no-card, never a guessed winner). The DISPLAY composition
+  // stays the roster line (canonical raw columns — K/D/A, ADR, util,
+  // entry, MVPs are data, not metrics): the seed picks WHO, the
+  // winner's own scoreboard line renders the number. Tie-break: the
+  // seed's ratified rule (player-key ASC — doc.go "Identity values")
+  // wins over the retired first-row rule wherever they disagree.
+  const TOP_CARD_SLOTS = ['top_fragger', 'best_adr', 'most_util', 'entry_opens', 'most_mvps'];
+
+  // The cards' spec: seed name → label + the roster-line display
+  // composition (byte-identical strings to the pre-migration cards).
+  const TOP_CARDS = [
+    { name: 'top_fragger', label: 'Top fragger', compose: (p) => `${p.kills}/${p.deaths}/${p.assists}` },
+    { name: 'best_adr', label: 'Best ADR', compose: (p) => fmt1(p.adr) },
+    { name: 'most_util', label: 'Most util', compose: (p) => `${p.utilityDamage}` },
+    { name: 'entry_opens', label: 'Entry opens', compose: (p) => `${p.entryKills}` },
+    { name: 'most_mvps', label: 'Most MVPs', compose: (p) => `${p.mvps}` },
+  ];
+
   // The fixed block's `short` → its SCORE_COLS entry (the composed
   // sequence's fixed entries speak metricorder's `short` headers —
   // their `label` is the full name the dialog/Reports read; this map is
@@ -723,7 +748,7 @@
         // nothing to read both outputs stay empty (columns and fixed
         // cells render their honest gaps).
         const byName = new Map(rows.map((d) => [d.name, d]));
-        const fixed = FIXED_SLOTS.map((n) => byName.get(n)).filter(Boolean);
+        const fixed = [...FIXED_SLOTS, ...TOP_CARD_SLOTS].map((n) => byName.get(n)).filter(Boolean);
         const ids = [...new Set([...picked.map((d) => d.id), ...fixed.map((d) => d.id)])];
         if (ids.length === 0) return;
         // ONE stored read for every pin and every fixed slot (design §5:
@@ -1031,21 +1056,36 @@
     );
   }
 
+  // The Overview top cards — SELECTION from the identity seeds
+  // (TOP_CARD_SLOTS above, metrics M1 migration 2026-11-18):
+  //   fresh identity row → the card: the winner's roster line picks
+  //     the display (name, team color, K/D/A composition) and the
+  //     stored valueKey picks WHO — an unresolved key renders NO card
+  //     (§3.3: never a fabricated name);
+  //   no stored row → NO card (the empty-pool rule — an empty roster
+  //     lands here too, so the empty-set guard is the seed's own);
+  //   a state (processing / failed / behind) → the card with the
+  //     five-state chip in the value slot (never a stale number, never
+  //     a guessed name).
   const topStats = $derived.by(() => {
-    if (!viewRows.length) return [];
-    const maxBy = (fn) => viewRows.reduce((a, b) => (fn(b) > fn(a) ? b : a));
-    const frag = maxBy((p) => p.kills);
-    const util = maxBy((p) => p.utilityDamage);
-    const adr = maxBy((p) => p.adr);
-    const entry = maxBy((p) => p.entryKills);
-    const mvp = maxBy((p) => p.mvps);
-    return [
-      { label: 'Top fragger', p: frag, value: `${frag.kills}/${frag.deaths}/${frag.assists}` },
-      { label: 'Best ADR', p: adr, value: fmt1(adr.adr) },
-      { label: 'Most util', p: util, value: `${util.utilityDamage}` },
-      { label: 'Entry opens', p: entry, value: `${entry.entryKills}` },
-      { label: 'Most MVPs', p: mvp, value: `${mvp.mvps}` },
-    ];
+    const out = [];
+    for (const c of TOP_CARDS) {
+      const mc = fixedCols.get(c.name);
+      if (!mc) continue; // catalog lacked the seed → no card
+      const row = mc.rows.length ? mc.rows[0] : null; // identity rows: one per match (subjectKey '')
+      const st = liveMetricState(metricProgress, metricStates, mc.def.id);
+      const pres = metricPresentation(st, row, mc.unitHasRows);
+      if (pres.kind === 'nodata') continue; // empty pool → no card, never a fabricated name
+      if (pres.kind === 'value') {
+        const key = pres.valueKey || '';
+        const p = viewRows.find((r) => r.steamId === key);
+        if (!p) continue; // the key resolves to no roster name → no card (never a raw id)
+        out.push({ label: c.label, p, value: c.compose(p), pres: null, mc });
+      } else {
+        out.push({ label: c.label, p: null, value: '', pres, mc });
+      }
+    }
+    return out;
   });
 </script>
 
@@ -1158,28 +1198,53 @@
     {#if tab === 'Overview'}
       <div class="stat-grid">
         {#each topStats as s (s.label)}
-          <StatCard
-            label={s.label}
-            value={s.value}
-            sub={s.p.name}
-            subCls={teamCls(s.p.side)}
-            title={S.fill(S.match.followReplayTitle, { name: s.p.name })}
-            onclick={() => openPlayerEvents(s.p.steamId, { follow: true })}
-          >
-            <!-- Aggregate (per-match) surface: the name keeps the TEAM
-                 identity color, but the text itself is the profile link —
-                 the card's own click opens Replay with the camera on that
-                 player (same as the roster/scoreboard rows). -->
-            {#snippet subSlot()}
-              <ProfileLink
-                steam={s.p.steamId}
-                name={s.p.name}
-                {nav}
-                cls={teamCls(s.p.side)}
-                title={S.fill(S.match.openProfile, { name: s.p.name })}
-              />
-            {/snippet}
-          </StatCard>
+          {#if s.pres}
+            <!-- The identity seed's five-state card (M1 migration,
+                 2026-11-18): a state in lieu of the value — the chip
+                 rides the value slot, the label carries the seed's own
+                 Formula doc, and there is NO name and no drill (a state
+                 names no player — never a fabricated identity). -->
+            <StatCard
+              label={s.label}
+              value=""
+              title={metricStateTitle(s.pres.state, s.mc.error || '')}
+              labelTitle={s.mc.def.doc || undefined}
+            >
+              {#snippet valueSlot()}
+                <StatusChip
+                  status={s.pres.state}
+                  title={metricStateTitle(s.pres.state, s.mc.error || '')}
+                  progress={metricProgressFrac(metricProgress, s.mc.def.id)}
+                  stage={metricProgressStage(metricProgress, s.mc.def.id)}
+                />
+              {/snippet}
+            </StatCard>
+          {:else}
+            <StatCard
+              label={s.label}
+              value={s.value}
+              sub={s.p.name}
+              subCls={teamCls(s.p.side)}
+              title={S.fill(S.match.followReplayTitle, { name: s.p.name })}
+              onclick={() => openPlayerEvents(s.p.steamId, { follow: true })}
+            >
+              <!-- Aggregate (per-match) surface: the name keeps the TEAM
+                   identity color, but the text itself is the profile link —
+                   the card's own click opens Replay with the camera on that
+                   player (same as the roster/scoreboard rows). WHO the card
+                   names is the identity seed's stored valueKey; the roster
+                   line only renders it. -->
+              {#snippet subSlot()}
+                <ProfileLink
+                  steam={s.p.steamId}
+                  name={s.p.name}
+                  {nav}
+                  cls={teamCls(s.p.side)}
+                  title={S.fill(S.match.openProfile, { name: s.p.name })}
+                />
+              {/snippet}
+            </StatCard>
+          {/if}
         {/each}
       </div>
 
