@@ -133,10 +133,13 @@ func exprErrorErr(perr *metrics.ParseError) error {
 // §4/§9) marks a metric whose value is a KEY in metric_values.value_key
 // rather than a number — the M1 identity seeds carry it (plan §8), and
 // fmtMetric renders it through the value_key → name lookup (unresolved
-// ⇒ dash, never a raw key). The editor select / store format filter
-// (store.metricFormatTokens — this vocabulary minus identity, plus its
-// filter-only `auto` alias for ”) do not offer the token until the
-// identity surface ships (plan §9 gates the Builder control). The
+// ⇒ dash, never a raw key). The store format filter
+// (store.metricFormatTokens — this vocabulary plus its filter-only
+// `auto` alias for ”) offers every token including identity since
+// metrics expansion Phase 7 (2026-11-18: the Builder Type group's
+// Identity box); the editor's Format select deliberately does NOT
+// offer identity as a fresh choice (lib/metricformats.js filterOnly —
+// no subject control to gate argmax on yet). The
 // filter never lists a token this map lacks.
 var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true, "identity": true}
 

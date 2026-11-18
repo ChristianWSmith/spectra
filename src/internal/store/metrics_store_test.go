@@ -1515,17 +1515,18 @@ func formatFilterMetricRef(rows []models.MetricRow, filter string) []models.Metr
 }
 
 // TestListMetricsPageFormatFilter pins the Type group's format subset —
-// the server-side predicate behind the Builder's six format checkboxes:
+// the server-side predicate behind the Builder's seven format checkboxes:
 // each word selects exactly its subset of the format column (a
 // client-side filter over a page window would drop rows at the window
 // edges, so the subset is asserted over KEYSET WINDOWS too), the
 // canonical vocabulary and subset order are the store's (an unknown
 // token, an empty segment, a duplicate or a reordered word is rejected
 // before any SQL), "auto" is the ” bucket (never a literal 'auto'
-// string), all-on and the full six-token subset cover the SAME offered
-// rows (the identity seeds carry a format the Type group does not
-// offer yet — plan §8 (M1 identity row), 2026-11-17; the Builder's
-// identity token lands with its surface), and "none" (every box off) is
+// string), all-on and the full seven-token subset cover the SAME
+// offered rows (identity joined the vocabulary — metrics Phase 7,
+// 2026-11-18: the Builder Type group's Identity box; the seeds'
+// format=identity rows are filterable like every other), and "none"
+// (every box off) is
 // a legal empty read with a non-nil
 // window — the origin/scope shape, not the denominator rule's.
 func TestListMetricsPageFormatFilter(t *testing.T) {
@@ -1534,14 +1535,14 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	// (percent/float1/float2) — reachability is derived from the
 	// reference below, never pinned to a count (W1's reseeds grow the
 	// catalog without touching this test).
-	for _, tok := range []string{"auto", "int", "float1", "float2", "percent", "currency"} {
+	for _, tok := range []string{"auto", "int", "float1", "float2", "percent", "currency", "identity"} {
 		seedTypedMetric(t, s, "fmt_"+tok, tok, "match", "")
 	}
 	ref := metricRowsRef(t, s)
 
 	// The vocabulary itself: THE canonical enum order every accepted
 	// subset word is composed in (the rejections below depend on it).
-	if got, want := strings.Join(metricFormatTokens, ","), "auto,int,float1,float2,percent,currency"; got != want {
+	if got, want := strings.Join(metricFormatTokens, ","), "auto,int,float1,float2,percent,currency,identity"; got != want {
 		t.Fatalf("metricFormatTokens = %q, want %q", got, want)
 	}
 	// Every token has at least one row, so no word below is vacuous.
@@ -1575,24 +1576,49 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		}
 	}
 
-	// ALL-ON == THE SIX OFFERED TOKENS: no predicate and the full
-	// six-token subset select the same window OVER THE OFFERED FORMAT
-	// VOCABULARY (the popover's all-checked word is "", so this is what
-	// makes the default first render unfiltered). The identity seeds
-	// (plan §8 M1, 2026-11-17) carry format=identity, a token the Type
-	// group does not offer yet (the Builder's identity control lands
-	// with its surface, plan §9) — the unfiltered all-on window
-	// additionally carries those rows, never fewer than the subset.
+	// ALL-ON == THE SEVEN OFFERED TOKENS (identity joined the Type
+	// group — metrics Phase 7, 2026-11-18): no predicate and the full
+	// seven-token subset select the same window — the whole reference
+	// (the popover's all-checked word is "", so this is what makes the
+	// default first render unfiltered).
 	allOn, err := s.ListMetricsPage("", "", "", "", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=): %v", err)
 	}
-	allSix, err := s.ListMetricsPage("", "", "", "", "auto,int,float1,float2,percent,currency", 0, 500)
+	allSeven, err := s.ListMetricsPage("", "", "", "", "auto,int,float1,float2,percent,currency,identity", 0, 500)
 	if err != nil {
-		t.Fatalf("ListMetricsPage(format=all six): %v", err)
+		t.Fatalf("ListMetricsPage(format=all seven): %v", err)
 	}
-	// The offered vocabulary (the six tokens + their auto alias): every
-	// row outside it (the identity seeds) is absent from allSix.
+	if !sameIDs(metricIDs(allOn.Rows), metricIDs(allSeven.Rows)) {
+		t.Errorf("all-on window = %v, want the full seven-token subset %v", metricIDs(allOn.Rows), metricIDs(allSeven.Rows))
+	}
+	if !sameIDs(metricIDs(allOn.Rows), metricIDs(ref)) {
+		t.Errorf("all-on window = %v…, want the whole reference order", metricIDs(allOn.Rows)[:min(3, len(allOn.Rows))])
+	}
+	// ONE BOX OFF (Identity): the six-token word drops exactly the
+	// identity rows — before Phase 7 these rows were unreachable by
+	// any accepted word at all.
+	sixOff, err := s.ListMetricsPage("", "", "", "", "auto,int,float1,float2,percent,currency", 0, 500)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(format six): %v", err)
+	}
+	wantSix := make([]models.MetricRow, 0, len(allOn.Rows))
+	identityRows := 0
+	for _, m := range allOn.Rows {
+		if m.Format == "identity" {
+			identityRows++
+			continue
+		}
+		wantSix = append(wantSix, m)
+	}
+	if identityRows == 0 {
+		t.Fatal("the fixture carries no identity-format row (the M1 seeds or fmt_identity)")
+	}
+	if !sameIDs(metricIDs(sixOff.Rows), metricIDs(wantSix)) {
+		t.Errorf("six-token window = %v, want the non-identity ids %v", metricIDs(sixOff.Rows), metricIDs(wantSix))
+	}
+	// The OFFERED vocabulary (every accepted token): every row sits in
+	// it since identity landed — the filter covers the whole catalog.
 	offered := func(m models.MetricRow) bool {
 		tok := m.Format
 		if tok == "" {
@@ -1600,21 +1626,14 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		}
 		return slices.Contains(metricFormatTokens, tok)
 	}
-	offeredRows := make([]models.MetricRow, 0, len(allSix.Rows))
+	offeredRows := make([]models.MetricRow, 0, len(allOn.Rows))
 	for _, m := range allOn.Rows {
 		if offered(m) {
 			offeredRows = append(offeredRows, m)
 		}
 	}
-	if !sameIDs(metricIDs(allSix.Rows), metricIDs(offeredRows)) {
-		t.Errorf("all-six window = %v, want the offered-format ids %v", metricIDs(allSix.Rows), metricIDs(offeredRows))
-	}
-	if len(allOn.Rows) <= len(allSix.Rows) {
-		t.Errorf("all-on window = %d rows, all-six = %d — the identity seeds must widen the unfiltered window",
-			len(allOn.Rows), len(allSix.Rows))
-	}
-	if !sameIDs(metricIDs(allOn.Rows), metricIDs(ref)) {
-		t.Errorf("all-on window = %v…, want the whole reference order", metricIDs(allOn.Rows)[:min(3, len(allOn.Rows))])
+	if !sameIDs(metricIDs(offeredRows), metricIDs(allOn.Rows)) {
+		t.Errorf("offered-format rows = %v…, want every all-on row (identity is offered now)", metricIDs(offeredRows)[:min(3, len(offeredRows))])
 	}
 
 	// THE AUTO BUCKET: the "auto" word selects exactly the '' rows (the
@@ -1642,11 +1661,10 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		}
 	}
 
-	// SUBSET MATH: the six single-token windows are DISJOINT and
-	// together cover every row carrying an OFFERED format exactly once
-	// (each row carries exactly one format, and the identity seeds'/
-	// format sits outside the vocabulary the Type group offers), so the
-	// subset filter is a partition of the offered catalog.
+	// SUBSET MATH: the seven single-token windows are DISJOINT and
+	// together cover every row (each row carries exactly one format,
+	// identity included since metrics Phase 7), so the
+	// subset filter is a partition of the whole catalog.
 	var tiled []int64
 	seen := map[int64]int{}
 	for _, tok := range metricFormatTokens {

@@ -69,6 +69,11 @@ export const builder = {
   filterFloat2: 'Float2',
   filterPercent: 'Percent',
   filterCurrency: 'Currency',
+  // The Type group's seventh box (metrics Phase 7, 2026-11-18): the
+  // key-valued identity metrics' filter treatment — like every format
+  // option, declared on the definition (its `format` column), never in
+  // the expression text.
+  filterIdentity: 'Identity',
   // The Pinning group (the list's fifth filter — client-side: pins live
   // in localStorage, so the backend cannot narrow on them).
   pinningLabel: 'Pinning',

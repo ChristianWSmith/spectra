@@ -135,11 +135,16 @@ func originFilterPredicate(word string) (string, []any, error) {
 // order — the tokens ListMetricsPage's format filter accepts, with
 // "auto" naming the format column's ” value (the form's own Auto /
 // Int / Float1 / Float2 / Percent / Currency — the editor's format
-// select). It is the store-side twin of the service's metricFormats
+// select — plus "identity", the key-valued format (metrics expansion
+// D2 — the M1 identity seeds), which the Builder's Type filter offers
+// but the editor's Format select never does (the filter-only split
+// lives in the frontend twin, lib/metricformats.js — metrics expansion
+// Phase 7, 2026-11-18). It is the store-side twin of the service's
+// metricFormats
 // contract (metricservice.go — same vocabulary, one order): the filter
 // word is a comma-subset of THESE tokens in THIS order, which is what
 // makes the subset word canonical instead of merely valid.
-var metricFormatTokens = []string{"auto", "int", "float1", "float2", "percent", "currency"}
+var metricFormatTokens = []string{"auto", "int", "float1", "float2", "percent", "currency", "identity"}
 
 // formatFilterPredicate renders ListMetricsPage's format-subset
 // predicate for a word that is neither "" (all-on) nor "none" (all-off,
@@ -285,7 +290,7 @@ func denomFilterPredicate(word string) (string, []any, error) {
 //
 // FORMAT FILTER: formatFilter narrows the window to a SUBSET of the
 // format column — the Builder Filters popover's fourth group (Type).
-// Unlike the three pairs it is not a pair but a six-way checkbox set,
+// Unlike the three pairs it is not a pair but a seven-way checkbox set,
 // so the word is the CHECKED SET in metricFormatTokens' canonical order:
 // "" = every box checked (no predicate — the other groups' all-on),
 // "none" = no box checked (the empty set, the same spelling origin

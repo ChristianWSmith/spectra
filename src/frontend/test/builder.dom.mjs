@@ -61,7 +61,7 @@
 //   G. the search composes with the filters (all four server-side
 //      groups, incl. a Denominator subset word) in ONE server call;
 //   H. the filter checks are view-local registry state
-//      (viewstate.svelte.js): all sixteen restore across unmount →
+//      (viewstate.svelte.js): all seventeen restore across unmount →
 //      remount, and resetViewState() returns the next mount to the
 //      defaults;
 //   I. the compute-state surface (design §4/§5): every list item and
@@ -518,7 +518,7 @@ const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubb
 // through the same DOM path (the panel stays open — it is a
 // multi-select), and originOf/scopeOf/denomOf/typeOf/pinningOf read
 // each group's boxes in panel order (null when a box is missing, which
-// fails every expectation below); sixteenOf is
+// fails every expectation below); allBoxesOf is
 // the whole panel.
 const filterTrigger = (r) => r.querySelector('.bld-filter-host > button');
 const panelOf = (r) => r.querySelector('.bld-filter-pop');
@@ -551,14 +551,14 @@ const scopeOf = (r) => ['Match', 'Profile'].map((l) => boxNamed(r, l)?.checked ?
 const denomOf = (r) => ['Rounds', 'Matches', 'None'].map((l) => boxNamed(r, l)?.checked ?? null);
 const PIN_LABELS = ['Pinned', 'Unpinned'];
 const pinningOf = (r) => PIN_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
-// The Type group's six format boxes in panel order — the canonical
+// The Type group's seven format boxes in panel order — the canonical
 // enum order the subset word composes in (lib/metricformats.js).
-const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency'];
+const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency', 'Identity'];
 const typeOf = (r) => FMT_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 // The whole panel in DOM order: the Origin three, the Scope pair, the
-// Denominator three, the Type six and the Pinning pair — sixteen boxes
-// in five groups.
-const sixteenOf = (r) => [...originOf(r), ...scopeOf(r), ...denomOf(r), ...typeOf(r), ...pinningOf(r)];
+// Denominator three, the Type seven and the Pinning pair — seventeen
+// boxes in five groups.
+const allBoxesOf = (r) => [...originOf(r), ...scopeOf(r), ...denomOf(r), ...typeOf(r), ...pinningOf(r)];
 // The panel's group names in DOM order (the panel itself first, then
 // its five labelled groups).
 const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator', 'Type', 'Pinning'];
@@ -581,7 +581,7 @@ const formChip = (r) => r.querySelector('.bld-readonly');
 
 viewstate.resetViewState();
 
-console.log('A. ONE multi-select for the four groups — defaults Built-in OFF / Custom + Plugin ON, every other option ON (Type: all six checked); the trigger opens and closes the panel');
+console.log('A. ONE multi-select for the four groups — defaults Built-in OFF / Custom + Plugin ON, every other option ON (Type: all seven checked); the trigger opens and closes the panel');
 let r = await mountBuilder();
 // N1 — the list BODY is the view's one scroll region: one .bld-rows
 // scroller holds the rows + the Load-more footer, while the panel
@@ -650,8 +650,10 @@ check(
 await openFilters(r);
 const panel = panelOf(r);
 check(
-  'the trigger opens the checkbox panel (aria-expanded + sixteen options)',
-  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 16,
+  // 16 → 17 boxes (2026-11-18, metrics Phase 7): the Type group
+  // gained its Identity box.
+  'the trigger opens the checkbox panel (aria-expanded + seventeen options)',
+  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 17,
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
@@ -667,8 +669,12 @@ check(
   JSON.stringify(denomOf(r)) + ' / ' + JSON.stringify(pinningOf(r)),
 );
 check(
-  'the Type group defaults to ALL SIX format boxes checked (owner: "all six checked except Built-in")',
-  JSON.stringify(typeOf(r)) === JSON.stringify([true, true, true, true, true, true]),
+  // 6 → 7 boxes (2026-11-18, metrics Phase 7): Identity joins the
+  // owner's "all checked" ruling, so the first render stays
+  // unfiltered (format '' — the identity seeds are visible by
+  // default like every other row).
+  'the Type group defaults to ALL SEVEN format boxes checked (owner: "all six checked" + the Phase-7 Identity box)',
+  JSON.stringify(typeOf(r)) === JSON.stringify([true, true, true, true, true, true, true]),
   JSON.stringify(typeOf(r)),
 );
 {
@@ -1010,23 +1016,24 @@ check(
 }
 // The Type group narrows the SAME call (origin is the whole catalog
 // here): the word is the CHECKED set in canonical enum order, "auto"
-// being the '' rows — unchecking Auto hands the five literal tokens to
-// the store and the auto-format row drops out.
+// being the '' rows — unchecking Auto hands the six literal tokens to
+// the store (Identity stays checked — the Phase-7 box) and the
+// auto-format row drops out.
 services.invalidate();
 pageCalls.length = 0;
 await setBox(r, 'Auto', false); // every format but the '' rows
 await sleep(DEBOUNCE);
 check(
-  'Auto unchecked → format "int,float1,float2,percent,currency" — the canonical subset, the auto-format row gone',
+  'Auto unchecked → format "int,float1,float2,percent,currency,identity" — the canonical subset, the auto-format row gone',
   JSON.stringify(pageCalls[0]) ===
-    JSON.stringify(['', '', '', '', 'int,float1,float2,percent,currency', 0, 100]) &&
+    JSON.stringify(['', '', '', '', 'int,float1,float2,percent,currency,identity', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
 await setBox(r, 'Auto', true);
-for (const l of ['Int', 'Float1', 'Float2', 'Currency']) await setBox(r, l, false);
+for (const l of ['Int', 'Float1', 'Float2', 'Currency', 'Identity']) await setBox(r, l, false);
 await sleep(DEBOUNCE);
 check(
   'Auto + Percent only → format "auto,percent" — the auto bucket and the percent rows in one window',
@@ -1051,7 +1058,7 @@ pageCalls.length = 0;
 for (const l of FMT_LABELS) await setBox(r, l, true);
 await sleep(DEBOUNCE);
 check(
-  'all six Type boxes back on → format "" — the whole catalog window again',
+  'all seven Type boxes back on → format "" — the whole catalog window again',
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
@@ -1612,11 +1619,12 @@ console.log('G. the search composes with the filters in ONE server call');
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   // The Type group composes in the SAME call: formats narrowed to Auto
-  // alone (the other five off), then the search on top — one window,
+  // alone (the other six off — Identity included, the Phase-7 box),
+  // then the search on top — one window,
   // three narrowings, the format word riding the same args as the rest.
   services.invalidate();
   pageCalls.length = 0;
-  for (const l of ['Int', 'Float1', 'Float2', 'Percent', 'Currency']) await setBox(r, l, false);
+  for (const l of ['Int', 'Float1', 'Float2', 'Percent', 'Currency', 'Identity']) await setBox(r, l, false);
   await sleep(DEBOUNCE);
   check(
     'formats narrowed to Auto alone → format "auto" — only the auto-format row survives in the user,plugin partition',
@@ -1683,12 +1691,12 @@ console.log('G. the search composes with the filters in ONE server call');
   );
 }
 
-console.log('H. the filter checks are view-local registry state (restore all sixteen, then reset to defaults)');
+console.log('H. the filter checks are view-local registry state (restore all seventeen, then reset to defaults)');
 {
   // Leave a DISTINCT state behind — one option off in EACH of the
   // Origin, Denominator and Type groups (the Pinning pair and the
   // Denominator NONE box stay on), so the restore proves every one of
-  // the sixteen keys round-trip.
+  // the seventeen keys round-trip.
   services.invalidate();
   pageCalls.length = 0;
   await setBox(r, 'Built-in', false);
@@ -1702,24 +1710,24 @@ console.log('H. the filter checks are view-local registry state (restore all six
   await setBox(r, 'Currency', false); // no currency row in the fixture — the rows below stand
   await sleep(DEBOUNCE);
   check(
-    // Reading B re-pin (2026-11-16): Matches off with Rounds AND None
-    // on sends the subset word "rounds,none" (the old "rounds" rows).
+    // Identity stays checked (the Phase-7 box), so the format word
+    // carries it: 2026-11-18 re-pin.
     'the parting state is user,plugin + Rounds/None minus Currency (Built-in, Matches and Currency off)',
     JSON.stringify(pageCalls[pageCalls.length - 1]) ===
-      JSON.stringify(['', 'user,plugin', '', 'rounds,none', 'auto,int,float1,float2,percent', 0, 100]) &&
+      JSON.stringify(['', 'user,plugin', '', 'rounds,none', 'auto,int,float1,float2,percent,identity', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
   await openFilters(r);
   check(
-    'unmount → remount restores ALL sixteen checks (only Built-in, Matches and Currency off)',
-    JSON.stringify(sixteenOf(r)) ===
+    'unmount → remount restores ALL seventeen checks (only Built-in, Matches and Currency off)',
+    JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
         false, true, true, true, true, true, false, true, true, true, true, true, true, false,
-        true, true,
+        true, true, true,
       ]),
-    JSON.stringify(sixteenOf(r)),
+    JSON.stringify(allBoxesOf(r)),
   );
   check(
     '…and the restored view shows the restored rows',
@@ -1730,13 +1738,13 @@ console.log('H. the filter checks are view-local registry state (restore all six
   r = await mountBuilder();
   await openFilters(r);
   check(
-    'resetViewState() → the next mount is back to the defaults (Built-in OFF / Custom + Plugin ON, every other option ON — Denominator all three, Type all six, Pinning both)',
-    JSON.stringify(sixteenOf(r)) ===
+    'resetViewState() → the next mount is back to the defaults (Built-in OFF / Custom + Plugin ON, every other option ON — Denominator all three, Type all seven, Pinning both)',
+    JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
         false, true, true, true, true, true, true, true, true, true, true, true, true, true,
-        true, true,
+        true, true, true,
       ]),
-    JSON.stringify(sixteenOf(r)),
+    JSON.stringify(allBoxesOf(r)),
   );
   check(
     '…and the default view is the user,plugin partition again',
@@ -2570,6 +2578,75 @@ console.log(
 
   delete bindings.handlers.GetPref;
   delete bindings.handlers.SetPref;
+}
+
+// ---------------------------------------------------------------------------
+// Section K: the Type group's Identity box (metrics expansion Phase 7,
+// 2026-11-18) — the key-valued identity metrics gain their filter
+// treatment, flowing exactly like every other format option: declared
+// on the definition's `format` column, never text in the expression.
+// The identity fixture is pushed ONLY for this section and popped in
+// its finally, so the earlier sections' pinned four-row windows keep
+// their shapes.
+console.log('K. the Type group offers Identity: an identity metric is selectable, chips identity, loads read-only, and wears its five-state row chip');
+{
+  viewstate.resetViewState();
+  const IDENTITY = {
+    id: 5, name: 'top_fragger', title: 'Top fragger', shortName: '',
+    expr: 'from player_stats: argmax(kills)', scope: 'match', subject: 'match',
+    format: 'identity', doc: 'Formula: argmax(player_stats.kills) — N = the pool',
+    origin: 'builtin', pluginId: '', denominator: '',
+  };
+  METRICS.push(IDENTITY);
+  computeStates = [...computeStates, { metricId: 5, state: 'behind' }];
+  services.invalidate();
+  try {
+    r = await mountBuilder();
+    await openFilters(r);
+    await setBox(r, 'Built-in', true); // the seeds are built-ins
+    await sleep(DEBOUNCE);
+    for (const l of FMT_LABELS.filter((x) => x !== 'Identity')) await setBox(r, l, false);
+    await sleep(DEBOUNCE);
+    check(
+      'Identity checked alone → format word "identity" in the ONE server call, and the identity metric is the window',
+      JSON.stringify(pageCalls[pageCalls.length - 1]) ===
+        JSON.stringify(['', '', '', '', 'identity', 0, 100]) &&
+        JSON.stringify(namesOf(r)) === JSON.stringify(['top_fragger']) &&
+        JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins']),
+      JSON.stringify(pageCalls[pageCalls.length - 1]) +
+        ' rows=' +
+        JSON.stringify(namesOf(r)) +
+        ' headers=' +
+        JSON.stringify(headersOf(r)),
+    );
+    check(
+      'the identity row wears the identity format chip beside its scope and none-denominator chips',
+      JSON.stringify(chipsOf(r, 'top_fragger')) === JSON.stringify(['match', 'none', 'identity']),
+      JSON.stringify(chipsOf(r, 'top_fragger')),
+    );
+    const idChip = rowNamed(r, 'top_fragger')?.querySelector('.bld-row-sub .chip.status');
+    check(
+      'the identity row renders the established five-state chip (behind — the computed state, never a fabricated value)',
+      !!idChip && (idChip.getAttribute('title') || '').includes('value not available yet'),
+      idChip ? `class=${idChip.className} title=${idChip.getAttribute('title')}` : 'no status chip',
+    );
+    click(rowNamed(r, 'top_fragger')?.querySelector('button.bld-row-main'));
+    await sleep(60);
+    const fmtSel = r.querySelector('#bld-format');
+    check(
+      'the identity metric loads read-only and its Format select shows identity (the filter-only token renders for a loaded definition, never as a fresh choice)',
+      heading(r) === 'Edit metric' &&
+        fmtSel?.value === 'identity' &&
+        fmtSel?.disabled === true &&
+        ![...fmtSel.options].some((o) => o.value === 'identity' && !o.selected),
+      `heading=${heading(r)} value=${fmtSel?.value} disabled=${fmtSel?.disabled} options=${fmtSel ? [...fmtSel.options].map((o) => o.value).join(',') : 'none'}`,
+    );
+  } finally {
+    computeStates = computeStates.filter((s) => s.metricId !== 5);
+    const i = METRICS.indexOf(IDENTITY);
+    if (i >= 0) METRICS.splice(i, 1);
+    services.invalidate();
+  }
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
