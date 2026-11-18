@@ -1297,11 +1297,12 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       .map((id) => `${id}:disabled=${r.querySelector('#' + id)?.disabled}`)
       .join(' '),
   );
-  // The form's FIXED ROWS (owner ruling, origin-independent — it pins
+  // The form's FIXED ROWS (owner rulings, origin-independent — it pins
   // .bld-fields markup, not the built-in state): row 1 Name / Title /
-  // Short name, row 2 Subject / Scope / Denominator (Subject sits
-  // immediately LEFT of Scope — the owner's placement), row 3 Format,
-  // then the full-width Doc and Expression rows underneath. ALL nine
+  // Short name, row 2 Subject / Scope alone (Subject sits immediately
+  // LEFT of Scope — the owner's placement), row 3 Denominator / Format
+  // below it (the owner's row split, 2026-11-18), then the full-width
+  // Doc and Expression rows underneath. ALL nine
   // fields in DOM order, deep-equalled: a reorder, a dropped field or a
   // new one spliced in anywhere fails loudly. The wide pair is included
   // on purpose — "Doc/Expression last and full-width" is part of the
@@ -1310,7 +1311,7 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     (f) => f.querySelector('[id]')?.id ?? '',
   );
   check(
-    'the form fields sit in the fixed rows (Name/Title/Short · Subject/Scope/Denominator · Format, then Doc/Expression)',
+    'the form fields sit in the fixed rows (Name/Title/Short · Subject/Scope · Denominator/Format, then Doc/Expression)',
     JSON.stringify(fieldIds) ===
       JSON.stringify([
         'bld-name',

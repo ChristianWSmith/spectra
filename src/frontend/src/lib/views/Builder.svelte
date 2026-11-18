@@ -1654,12 +1654,14 @@
             />
           </div>
           <!-- Subject sits immediately LEFT of Scope (the owner's
-               placement): the metrics subject axis — what the number is
+               placement), the two alone on their row with Denominator
+               / Format on the row below (owner, 2026-11-18): the
+               metrics subject axis — what the number is
                about — beside where it is addressed. The server's
                subject × scope matrix guards the pair (an illegal
                combination surfaces the save's own refusal), so every
                option stays enabled here. -->
-          <div class="bld-field">
+          <div class="bld-field half">
             <label class="field-label" for="bld-subject">{S.builder.fieldSubject}</label>
             <select id="bld-subject" class="input" bind:value={form.subject} disabled={builtinLoaded}>
               <option value="player">{S.builder.subjectPlayerOption}</option>
@@ -1667,14 +1669,14 @@
               <option value="team">{S.builder.subjectTeamOption}</option>
             </select>
           </div>
-          <div class="bld-field">
+          <div class="bld-field half">
             <label class="field-label" for="bld-scope">{S.builder.scopeLabel}</label>
             <select id="bld-scope" class="input" bind:value={form.scope} disabled={builtinLoaded}>
               <option value="match">{S.builder.scopeMatchOption}</option>
               <option value="profile">{S.builder.scopeProfileOption}</option>
             </select>
           </div>
-          <div class="bld-field">
+          <div class="bld-field half">
             <label class="field-label" for="bld-denom">{S.builder.denominatorLabel}</label>
             <select id="bld-denom" class="input" bind:value={form.denominator} disabled={builtinLoaded}>
               <option value="">{S.builder.denomNone}</option>
@@ -1682,7 +1684,7 @@
               <option value="matches">{S.builder.denomMatches}</option>
             </select>
           </div>
-          <div class="bld-field">
+          <div class="bld-field half">
             <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
