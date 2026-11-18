@@ -547,7 +547,7 @@ Notes on how they behave:
     blocks: `You can run any expression before saving it:
 
 - As you type, the expression is checked continuously and reported as **valid** or as an error at a byte position in your text.
-- **Preview** runs it read-only against your library and lists one row per player with their value and N. It is capped at 200 rows by default and 10 seconds; a percentile-first formula reads up to 500,000 raw values before it stops.
+- **Preview** runs it read-only against your library and lists one row per subject with the value and N (per player for a player metric; per match or per team for a match- or team-subject one). It is capped at 200 rows by default and 10 seconds; a percentile-first formula reads up to 500,000 raw values before it stops.
 - **The first aggregation is the value shown.** If you list several, the others are carried along but only the first is surfaced as the value.
 - A **saved, unmodified** metric shows its stored value; an **unsaved or edited** expression is calculated on the spot for the preview. Editing a saved metric's formula therefore previews your draft version until you save it.
 - A preview of a metric with a denominator in an unsaved form notes that the denominator applies after save.`,
