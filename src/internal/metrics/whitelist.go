@@ -38,6 +38,11 @@ var sourceColumns = map[string]map[string]bool{
 		// same_side (owner ruling 2026-11-17): the ingest-owned enemy-
 		// damage stamp the dmg_no_kill / kill_conversion seeds filter on.
 		"same_side",
+		// capped_dmg (owner ruling 2026-11-17; M7 weapon-damage gate
+		// escalation, 2026-11-18): the ingest-owned HP-capped damage
+		// credit (extract.agg.capDamage order-dependent replay,
+		// post-match hits 0) the weapon_damage seed sums.
+		"capped_dmg",
 	),
 	"engagements": colSet(
 		"match_id", "seq", "tick", "round", "kind", "a_steam", "a_name",

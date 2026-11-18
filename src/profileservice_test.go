@@ -157,10 +157,12 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 	}
 	// sides/maps left with the M5/M6 read migration (2026-11-17): the
 	// partitioned seeds serve those tables through the frontend's
-	// stored-value read, never this DTO.
+	// stored-value read, never this DTO. weapons left the same way with
+	// the M7 weapon migration (2026-11-18): the Weapons table reads the
+	// weapon_* seed rows.
 	staying := []string{
 		"steamId", "name", "matches", "wins", "winPct",
-		"weapons", "history",
+		"history",
 	}
 	converted := []string{
 		"adrAvg", "adrStd", "kd", "hsPct", "kastPct", "tradeRate",
@@ -171,6 +173,9 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 		// career_opening_rate metric rows, so their JSON keys die here
 		// exactly like the eleven above.
 		"clutches", "openingRate",
+		// M7 (2026-11-18): the per-weapon triple became the weapon_*
+		// partitioned seed rows, so the JSON fold's key dies here too.
+		"weapons",
 	}
 	for _, k := range staying {
 		if _, ok := got[k]; !ok {
@@ -255,37 +260,29 @@ func TestGetProfileHistoryStartingSide(t *testing.T) {
 	}
 }
 
-// TestGetProfileWeapons: the Weapons table folds per-weapon headshots
-// from the stored kill events alongside kills/damage. (The career K/D +
-// HS% StatCards this test used to check left with those fields — the
-// profile reads them as metric rows now; the rollup itself is pinned by
-// the store's TestCareerRebuildMath.)
-func TestGetProfileWeapons(t *testing.T) {
+// TestGetProfileCarriesNoWeaponFold pins the M7 migration on the DTO
+// (2026-11-18): the profile's Weapons table reads the weapon_* stored
+// rows in PlayerProfile.svelte, so the Go JSON fold (mergeWeapons over
+// GetPlayerWeaponJSONs) must not survive here "not even as a field
+// name" (the TestListPlayersCarriesNoADR pattern). The fold's math
+// survives only as the equivalence oracles: the characterization test
+// (mergeWeapons pre-image) and the M7 gate (fold vs seeds over the
+// golden demo).
+func TestGetProfileCarriesNoWeaponFold(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
 	}
-	if len(p.Weapons) == 0 {
-		t.Fatal("no weapon rows")
+	if p.Name == "" || p.Matches == 0 {
+		t.Fatalf("fixture profile empty: %+v (the fold-free DTO still carries the career)", p)
 	}
-	var ak *ProfileWeapon
-	for i := range p.Weapons {
-		if p.Weapons[i].Weapon == "ak47" {
-			ak = &p.Weapons[i]
-		}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
-	if ak == nil {
-		t.Fatalf("no ak47 row in %+v", p.Weapons)
-	}
-	if ak.Kills != 14 {
-		t.Errorf("ak47 kills = %d, want 14 (10 + 4 across the two matches)", ak.Kills)
-	}
-	if ak.Headshots != 4 {
-		t.Errorf("ak47 headshots = %d, want 4 (3 + 1 credited enemy headshots; teamkill/round-less excluded)", ak.Headshots)
-	}
-	if ak.Headshots > ak.Kills {
-		t.Errorf("ak47 headshots %d > kills %d", ak.Headshots, ak.Kills)
+	if strings.Contains(string(raw), "weapons") {
+		t.Errorf("profile DTO still carries a weapons field (second presentation path): %s", raw)
 	}
 }
 

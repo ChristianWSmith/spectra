@@ -87,9 +87,11 @@ from player_stats: ratio(sum(kills), sum(deaths))
 
 Every recorded event of a match: kills, damage, blinding, grenade and bomb actions, round start/end. Rows with no acting player (an event nobody caused) are never counted.
 
-**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`attacker\`, \`victim\`, \`assister\`, \`weapon\`, \`headshot\`, \`wallbang\`, \`noscope\`, \`through_smoke\`, \`attacker_blind\`, \`assisted_flash\`, \`distance\`, \`hitgroup\`, \`dmg\`, \`site\`, \`pos_x\`, \`pos_y\`, \`pos_z\`, \`same_side\`
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`attacker\`, \`victim\`, \`assister\`, \`weapon\`, \`headshot\`, \`wallbang\`, \`noscope\`, \`through_smoke\`, \`attacker_blind\`, \`assisted_flash\`, \`distance\`, \`hitgroup\`, \`dmg\`, \`site\`, \`pos_x\`, \`pos_y\`, \`pos_z\`, \`same_side\`, \`capped_dmg\`
 
 \`same_side\` marks damage that stayed on one team (both sides known and equal — friendly fire); it is 0 for enemy damage and for rows whose sides are unknown, so \`where … and same_side = 0\` counts enemy damage only.
+
+\`capped_dmg\` is that hit's damage credit: the raw \`dmg\` clamped to the victim's remaining health in the order the hits landed (a 115-damage hit on a 10-HP player credited 10), and 0 for play after the match ends. Sum it instead of \`dmg\` whenever the total should match the boards' HP-capped damage.
 
 # engagements
 

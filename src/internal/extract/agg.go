@@ -1047,18 +1047,36 @@ func (a *agg) hurt(h hurtInfo) {
 	// reads the identical predicate — a strict known-and-different rule
 	// would desynchronize the stamp from total_damage.
 	same := sameSide(h.attackerSide, h.victimSide)
+	// capped is the row's HP-capped credit stamp (owner ruling 2026-11-17
+	// "fix the metric until they match"; M7 weapon-damage gate
+	// escalation, 2026-11-18): the exact value the per-weapon damage
+	// fold credits for THIS hit, stamped where the cap replay already
+	// runs with full event order (capDamage below). Every stats-eligible
+	// hit runs the replay — team/world hits drain HP too — but only
+	// `real` play credits: a post-match hit stamps 0 and never touches
+	// the HP replay (the fold's `real` gate; §6.5 blocks joining rounds
+	// into a weapon partition, so the fact must be row-local). The enemy
+	// gate is deliberately NOT stamped here: SameSide + the actor
+	// columns carry it, exactly where every other damage seed reads it.
+	capped := 0
+	if h.real {
+		// Health bookkeeping for EVERY real hit (team/world damage drains HP
+		// too) — the returned credit is capped at the victim's remaining HP.
+		capped = a.capDamage(h.victimKey, h.healthDamage, h.health)
+	}
 	a.addEvent(models.Event{
-		Tick:     h.tick,
-		Kind:     models.EventDamage,
-		Attacker: keyStr(h.attackerKey),
-		Victim:   keyStr(h.victimKey),
-		Weapon:   h.weapon,
-		Dmg:      h.healthDamage,
-		SameSide: same,
-		Hitgroup: h.hitgroup,
-		PosX:     h.posX,
-		PosY:     h.posY,
-		PosZ:     h.posZ,
+		Tick:      h.tick,
+		Kind:      models.EventDamage,
+		Attacker:  keyStr(h.attackerKey),
+		Victim:    keyStr(h.victimKey),
+		Weapon:    h.weapon,
+		Dmg:       h.healthDamage,
+		SameSide:  same,
+		CappedDmg: capped,
+		Hitgroup:  h.hitgroup,
+		PosX:      h.posX,
+		PosY:      h.posY,
+		PosZ:      h.posZ,
 		DetailJSON: detailJSON(map[string]any{
 			"attacker":    h.attackerName,
 			"victim":      h.victimName,
@@ -1070,9 +1088,7 @@ func (a *agg) hurt(h hurtInfo) {
 	if !h.real {
 		return
 	}
-	// Health bookkeeping for EVERY real hit (team/world damage drains HP
-	// too) — the returned credit is capped at the victim's remaining HP.
-	dealt := a.capDamage(h.victimKey, h.healthDamage, h.health)
+	dealt := capped
 	// Attacker stats count ENEMY damage only — friendly fire and self
 	// damage are not "damage dealt" on any scoreboard (awpy/HLTV/ProSettings).
 	// `same` (computed above for the event stamp) IS this gate's side

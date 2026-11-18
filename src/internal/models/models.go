@@ -405,7 +405,19 @@ type Event struct {
 	// unknown (the permissive rule: an unknown side counts as enemy).
 	// Stamped at ingest (extract.agg.hurt); non-damage rows keep the
 	// zero value.
-	SameSide     bool     `json:"sameSide"`
+	SameSide bool `json:"sameSide"`
+	// CappedDmg is the damage row's HP-capped credit stamp (owner ruling
+	// 2026-11-17 "fix the metric until they match"; M7 weapon-damage gate
+	// escalation, 2026-11-18): the value extract.agg.capDamage credits
+	// this hit — raw dmg clamped to the victim's remaining HP in event
+	// order — and 0 for a hit that is NOT stats-eligible (post-match
+	// play, agg.hurt's `real` gate). The query-time fold cannot replay
+	// that order (§6.5 forbids joining rounds into a weapon partition),
+	// so the fact is row-local at ingest. The enemy gate is NOT baked
+	// in: it stays on the SameSide stamp + the actor columns, exactly
+	// where every other damage seed reads it. Stamped at ingest
+	// (extract.agg.hurt); non-damage rows keep the zero value.
+	CappedDmg    int      `json:"cappedDmg"`
 	Site         string   `json:"site"`
 	DetailJSON   string   `json:"detailJson"`
 	RawJSON      string   `json:"rawJson"`

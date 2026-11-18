@@ -120,6 +120,18 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	bomb_plants INTEGER NOT NULL DEFAULT 0,
 	bomb_defuses INTEGER NOT NULL DEFAULT 0,
 	money_spent_total INTEGER NOT NULL DEFAULT 0,
+	-- kills_by_weapon / damage_by_weapon: the retired profile Weapons
+	-- table's JSON fold — extract still WRITES both, and the match
+	-- scoreboard row still carries kills_by_weapon (FilterBar unions its
+	-- keys into the match's weapon filter — a live reader, 2026-11-18);
+	-- damage_by_weapon has NO consumer since the profile Weapons table
+	-- migrated to the weapon_* seeds (2026-11-18, M7 gate flip), its
+	-- only readers now the oracle tests (internal/integration/
+	-- profile_weapons_gate_test.go, store's headshots derivation test).
+	-- Both stay OUT of the metrics expression whitelist (JSON blobs,
+	-- internal/metrics/whitelist.go) and stay in the schema — dropping
+	-- damage_by_weapon is a separate owner decision (ME8 audit note,
+	-- 2026-11-18).
 	kills_by_weapon TEXT NOT NULL DEFAULT '',
 	damage_by_weapon TEXT NOT NULL DEFAULT '',
 	-- flash_assists splits AssistedFlash assists out of the assist column
@@ -244,6 +256,19 @@ CREATE TABLE IF NOT EXISTS events (
 	-- migration: the baseline only CREATEs — a stale dev DB lacks the
 	-- column and must be re-imported (wipe + re-import).
 	same_side INTEGER NOT NULL DEFAULT 0,
+	-- capped_dmg (owner ruling 2026-11-17 "fix the metric until they
+	-- match"; M7 weapon-damage gate escalation, 2026-11-18): the
+	-- HP-capped damage credit of THIS hit — the value extract.agg.hurt
+	-- feeds player_stats.weaponDmg — with post-match (non-real) hits
+	-- stamped 0. The cap replays per victim in event order
+	-- (extract.agg.capDamage), so a query-time SUM(events.dmg) can
+	-- never reproduce it (round 5 of the golden demo: 206 raw dmg on
+	-- one victim, fold credits <=100); the fact is row-local at ingest.
+	-- The enemy gate stays OFF this column: same_side + the actor
+	-- columns carry it (the weapon_damage seed spells all three).
+	-- No migration: the baseline only CREATEs — a stale dev DB lacks
+	-- the column and must be re-imported (wipe + re-import).
+	capped_dmg INTEGER NOT NULL DEFAULT 0,
 	site TEXT NOT NULL DEFAULT '',
 	detail_json TEXT NOT NULL DEFAULT '',
 	raw_json TEXT NOT NULL DEFAULT '',
@@ -852,7 +877,7 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly one hundred and six —
+-- THE builtins, seeded (see header): exactly one hundred and seven —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
@@ -870,15 +895,17 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- value is a KEY, the partition addendum (10 rows in their own
 -- INSERT below — plan §8 (M5/M6 rows), 2026-11-17: the Sides and
 -- Maps tables' stored twins, every row partition='side' or 'map') and
--- the weapon addendum (2 rows — plan §8 (M7 row) behind the M7 gate,
--- 2026-11-17: kills/headshots matched the fold EXACTLY over the golden
--- demo while the damage column's structural gap escalated, so the
--- weapon set ships the two exact columns — 72 match + 32 profile
--- across the whole set) and the grammar addendum (2 rows in their own
+-- the weapon addendum (3 rows — plan §8 (M7 row), 2026-11-17:
+-- kills/headshots matched the fold EXACTLY over the golden demo and
+-- shipped; the damage column's structural gap escalated, then FLIPPED
+-- 2026-11-18 — the capped_dmg ingest stamp closed Δ4509 (HP-cap 4330 +
+-- known-side team 164 + post-match 15), the M7 gate pinned equality and
+-- the column migrated — 72 match + 33 profile across the whole set) and
+-- the grammar addendum (2 rows in their own
 -- INSERT below — plan §8 (M8 rows), 2026-11-17: pistol_hold +
 -- avg_equip_gap, the two M8 rows the Phase 4 grammar finding deferred
 -- as inexpressible, over the next() round window and the diff() row
--- difference — 74 match + 32 profile across the whole set). The eighth
+-- difference — 74 match + 33 profile across the whole set). The eighth
 -- match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1528,13 +1555,20 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death on that map, addressed per player, partitioned by map — no deaths → 0 beside N; N = matches on the map.',
  'builtin', '', CURRENT_TIMESTAMP);
 
--- Weapon addendum (metrics expansion §8 M7 row, 2026-11-17): TWO
--- profile-scope weapon-partitioned builtins — the M7 gate
--- (internal/integration/profile_weapons_gate_test.go) proved these two
--- columns EXACTLY equal to the retired JSON fold over the golden demo
--- (every human × weapon), so they migrate; the damage column's fold
--- diverges by the HP-cap replay + team/post-match gates (escalated —
--- no seed, the weapons table keeps its fold until that resolves).
+-- Weapon addendum (metrics expansion §8 M7 row, 2026-11-17; damage
+-- column flipped in 2026-11-18): THREE profile-scope weapon-partitioned
+-- builtins — the M7 gate (internal/integration/profile_weapons_gate_test.go)
+-- proved kills/headshots EXACTLY equal to the retired JSON fold over the
+-- golden demo (every human × weapon) and shipped them then; the damage
+-- column diverged (candidate 21626 vs fold 17117, Δ4509 = HP-cap 4330 +
+-- known-side team 164 + post-match 15 — owner ruling 2026-11-17 "fix the
+-- metric until they match") until the capped_dmg ingest stamp closed all
+-- three gates (2026-11-18: the cap replay + post-match real gate stamped
+-- row-local at ingest, the enemy gate on same_side), the gate flipped to
+-- pinned equality and the column migrated with it. The expr spells the
+-- fold's enemy predicate: subject addressing carries attacker <> '',
+-- `attacker != victim` the actor gate, `same_side = 0` the permissive
+-- side gate; the value is the stamped capped_dmg, never raw events.dmg.
 -- Same INSERT OR IGNORE add-on path; Formula-first docs, subject +
 -- partition stated, tier-2 length (AGENTS doc rule).
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
@@ -1542,6 +1576,11 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from events: count(where kind = ''kill'' and attacker != victim)',
  'profile', 'player', 'weapon', 'int',
  'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('weapon_damage', 'Weapon damage', '',
+ 'from events: sum(where kind = ''damage'' and attacker != victim and same_side = 0, capped_dmg)',
+ 'profile', 'player', 'weapon', 'int',
+ 'Formula: sum(events.capped_dmg over enemy damage events with that weapon) — HP-capped damage dealt across the career, addressed per player, partitioned by weapon — N = the event rows for that weapon.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('weapon_headshots', 'Weapon headshots', '',
  'from events: count(where kind = ''kill'' and headshot = 1 and attacker != victim)',

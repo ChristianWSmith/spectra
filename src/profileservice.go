@@ -35,7 +35,10 @@ type ProfileSummary struct {
 	LastSeen string `json:"lastSeen"` // date of most recent match ("" if unknown)
 }
 
-// ProfileWeapon is weapon proficiency.
+// ProfileWeapon is one per-weapon row of the retired JSON fold —
+// mergeWeapons' output type, ORACLE-ONLY since the profile Weapons table
+// migrated to the weapon_* seeds (M7, 2026-11-18): no service returns it
+// any more, only the equivalence tests construct it.
 type ProfileWeapon struct {
 	Weapon    string `json:"weapon"`
 	Kills     int    `json:"kills"`
@@ -59,16 +62,18 @@ type Profile struct {
 	Matches int                        `json:"matches"`
 	Wins    int                        `json:"wins"`
 	WinPct  float64                    `json:"winPct"`
-	Weapons []ProfileWeapon            `json:"weapons"` // top by kills
 	History []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
-// The Sides and Maps tables no longer ride this DTO: they read their
-// partitioned builtin rows (side_*/map_* seeds) through the canonical
-// stored-value read in PlayerProfile.svelte — the Go folds that used to
-// fill them (store.GetPlayerSideSplits, the history fold +
-// store.GetPlayerMapADR) survive ONLY as the equivalence tests'
-// oracles (internal/metrics/profile_splits_equivalence_test.go).
+// The Sides, Maps and Weapons tables no longer ride this DTO: they read
+// their partitioned builtin rows (side_*/map_*/weapon_* seeds) through
+// the canonical stored-value read in PlayerProfile.svelte — the Go folds
+// that used to fill them (store.GetPlayerSideSplits, the history fold +
+// store.GetPlayerMapADR, and the mergeWeapons JSON fold over
+// store.GetPlayerWeaponJSONs) survive ONLY as the equivalence tests'
+// oracles (internal/metrics/profile_splits_equivalence_test.go,
+// profileservice_weapons_characterization_test.go and the M7 gate in
+// internal/integration/profile_weapons_gate_test.go).
 
 // weaponTopLimit caps the profile's weapon proficiency list.
 const weaponTopLimit = 10
@@ -81,11 +86,11 @@ type ProfileService struct {
 
 // GetProfile builds the full profile for one SteamID64. A player with no
 // career row yields an empty profile (SteamID filled) rather than an error
-// — the frontend shows an empty state. Per-weapon headshots come from the
-// stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
-// mergeWeapons alongside kills and damage (the M7 gate's verdict —
-// plan §7 M7 — keeps this fold until the weapon seeds' damage column
-// resolves). The stats that converted to metrics
+// — the frontend shows an empty state. The Weapons table's numbers left
+// with the M7 migration (2026-11-18): the profile reads the weapon_*
+// stored rows through the canonical stored-value read in
+// PlayerProfile.svelte, like the Sides/Maps tables before it. The stats
+// that converted to metrics
 // (dogfooding design §3.5's nine — ADR ± σ, K/D, HS%, KAST%, Trade
 // rate, clutch win share, avg enemies flashed, avg util damage — plus
 // W3a's Clutches count and Opening-duels rate) are computed NOWHERE in
@@ -114,18 +119,16 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		return Profile{}, err
 	}
 	p.History = history
-
-	weapons, err := s.st.GetPlayerWeaponJSONs(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	p.Weapons = mergeWeapons(weapons)
 	return p, nil
 }
 
 // mergeWeapons folds the per-match kills_by_weapon/damage_by_weapon and
 // headshots_by_weapon JSON objects into one top-N list sorted by kills
-// descending (ties: name).
+// descending (ties: name). ORACLE-ONLY since the M7 migration
+// (2026-11-18): the production Weapons table reads the weapon_* seeds;
+// this fold survives for the equivalence tests' pre-image
+// (profileservice_weapons_characterization_test.go) and the M7 gate's
+// fold side (internal/integration/profile_weapons_gate_test.go).
 func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
 	type aggT struct{ kills, dmg, hs int }
 	agg := map[string]*aggT{}
