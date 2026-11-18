@@ -118,7 +118,8 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"career_opener_wins":  {"profile", "int", ""},
 	// addendum — the M3 combat-damage conversions (2, match): plan
 	// §7 M3/§8's 2026-11-17 re-pin (61 builtins / 48 match + 13
-	// profile). Friendly fire has no seed — see the schema.sql block.
+	// profile). Friendly fire never became a seed — its tombstone is
+	// combat_equivalence_test.go's header.
 	"dmg_no_kill":     {"match", "int", ""},
 	"kill_conversion": {"match", "percent", ""},
 	// addendum — the Option A count addendum (22: 16 match raw-count
