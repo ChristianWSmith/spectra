@@ -19,6 +19,7 @@
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import { EQUIP_DEF } from '../definitions.js';
+  import { readEconomyPins, resolvePins } from '../metricorder.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
@@ -75,36 +76,40 @@
   const lossInferredCT = $derived(rows.some((r) => r.inferredCT));
   const lossInferredT = $derived(rows.some((r) => r.inferredT));
 
-  // The four summary CARDS read their stored metric rows: pistol/gap
-  // (the builtins pistol_hold / avg_equip_gap — plan §8 M8 rows,
-  // seeded over the next() round window and the diff() row
-  // difference) and force/lost (team_force_wins / team_force_rounds /
-  // lost_equip / team_lost_equip — the view-aggregate relocation, ME8
-  // exception audit: the last view-computed card numbers). name →
-  // {format, rows} or absent when the catalog lacks the seed / no row
-  // is fresh / the read fails — the honest dash, never a locally
-  // recomputed number (the value computations retired with these
-  // migrations; their oracles live in internal/metrics'
-  // econ_equivalence_test). THE canonical read pair: listMetrics to
-  // resolve the seed names, then the ONE getMetricValuesForMatch call —
-  // same pattern as the scoreboard and Reports.
+  // The summary CARDS read their stored metric rows through the ONE
+  // economy card set (owner, 2026-11-18): which stats the tab shows
+  // comes from metricorder's economy placement pref (metric_economy —
+  // absent ⇒ DEFAULT_ECONOMY, the shipped set; present ⇒ verbatim),
+  // resolved over the catalog and sequenced by the match order. Each
+  // card renders ITS metric's stored row (matchRow/teamValues below) —
+  // the composed pooled-force % and lost sub retired with this
+  // migration; their inputs' equivalence lives in internal/metrics'
+  // econ_equivalence_test (the oracles for every default-set stat).
+  // name → {format, rows} or absent when the catalog lacks the seed /
+  // no row is fresh / the read fails — the honest dash, never a locally
+  // recomputed number. The canonical read pair: listMetrics to resolve
+  // the set, then the ONE getMetricValuesForMatch call — same pattern
+  // as the scoreboard and Reports.
   let cardMetrics = $state({});
+  let econDefs = $state([]); // the resolved card set, in match-sequence order
   $effect(() => {
     let live = true;
-    listMetrics()
-      .then((defs) => {
-        const byName = new Map((defs || []).map((d) => [d && d.name, d]));
-        const wanted = [
-          'pistol_hold',
-          'avg_equip_gap',
-          'team_force_wins',
-          'team_force_rounds',
-          'lost_equip',
-          'team_lost_equip',
-        ]
-          .map((n) => byName.get(n))
+    Promise.all([listMetrics(), readEconomyPins()])
+      .then(([defs, stored]) => {
+        const rows = defs || [];
+        // Absent ⇒ DEFAULT_ECONOMY by name; present ⇒ verbatim (the
+        // resolvePins rule — the ONE absent-vs-present reader). Card
+        // order follows THAT array (the shipped set's order), not the
+        // scoreboard sequence: placement is the pref's, not the
+        // sequence's.
+        const wanted = resolvePins('economy', stored, rows)
+          .map((n) => rows.find((d) => d && d.name === n))
           .filter((d) => d);
-        if (!wanted.length) return undefined;
+        econDefs = wanted;
+        if (!wanted.length) {
+          cardMetrics = {};
+          return undefined;
+        }
         return getMetricValuesForMatch(id, wanted.map((d) => d.id)).then((values) => {
           if (!live) return;
           const out = {};
@@ -250,44 +255,54 @@
     return { firstPistol, firstForce, gapRound, lostRound };
   });
 
-  // The FORCE card's value/sub compose from the stored per-team COUNT
-  // rows (team_force_wins / team_force_rounds — every raw number is a
-  // stored row): the headline percent pools both teams' pairs, the
-  // sub-line shows each team's own. Composition rationale (the
-  // view-aggregate rule): the pooled ratio is pure presentation
-  // arithmetic over already-fetched stored rows and its formula rides
-  // the card title; a pooled RATIO seed deliberately does not exist
-  // because it cannot carry this card's dash — a zero denominator
-  // stores 0 beside N, indistinguishable from a real 0%. No rows
-  // (unanalyzed / not yet computed) → the honest dash for BOTH slots,
-  // never a fabricated 0/0; rows present with zero forces → the dash +
-  // "no force buys".
-  const forceCard = $derived.by(() => {
-    const won = teamValues('team_force_wins');
-    const rounds = teamValues('team_force_rounds');
-    if (!won || !rounds) return { value: '—', sub: '—' };
-    const ct = { won: won.ct, total: rounds.ct };
-    const t = { won: won.t, total: rounds.t };
-    const total = ct.total + t.total;
-    if (!total) return { value: '—', sub: S.economy.noForceBuys };
-    return {
-      value: Math.round((100 * (ct.won + t.won)) / total) + '%',
-      sub: `${names.ct} ${ct.won}/${ct.total} · ${names.t} ${t.won}/${t.total}`,
-    };
+  // Per-card composition over the economy set: the DRILL anchor (a
+  // navigation fact, view-local by precedent — which round each shipped
+  // stat opens), the static sub hint two shipped stats carry, and the
+  // inferred badge (loss-bonus-derived stats). Everything else comes
+  // from the metric: its title is the label, its doc the tooltip, its
+  // stored row the value — a user-toggled metric needs no entry here.
+  const CARD_DRILL = Object.freeze({
+    pistol_hold: 'firstPistol',
+    team_force_wins: 'firstForce',
+    team_force_rounds: 'firstForce',
+    avg_equip_gap: 'gapRound',
+    lost_equip: 'lostRound',
+    team_lost_equip: 'lostRound',
   });
+  const CARD_SUB = Object.freeze({
+    pistol_hold: S.economy.pistolSub,
+    avg_equip_gap: S.economy.gapSub,
+  });
+  const CARD_INFERRED = new Set(['lost_equip', 'team_lost_equip']);
 
-  // The LOST card reads its stored twins (lost_equip headline total +
-  // team_lost_equip per-team halves) — fmtMoney over the stored
-  // values, the same rendering the retired sums produced.
-  const lostCard = $derived.by(() => {
-    const total = matchRow('lost_equip');
-    const teams = teamValues('team_lost_equip');
-    if (!total || !teams) return { value: '—', sub: '—' };
-    return {
-      value: fmtStored(total),
-      sub: `${names.ct} ${fmtMoney(teams.ct)} · ${names.t} ${fmtMoney(teams.t)}`,
-    };
-  });
+  // One TEAM-subject metric's stored pair as the card's value line —
+  // both teams or the honest dash (teamValues' half-present rule);
+  // rendered through the metric's own format tag.
+  function teamLine(name) {
+    const t = teamValues(name);
+    if (!t) return '—';
+    const m = cardMetrics[name];
+    const f = (v) => fmtMetric(v, m ? m.format : '');
+    return `${names.ct} ${f(t.ct)} · ${names.t} ${f(t.t)}`;
+  }
+
+  // econCards — THE card list: the economy set in match-sequence
+  // order, each card's value from ITS metric's stored row (the
+  // matchRow/teamValues/fmtStored pattern; the one unioned read above).
+  const econCards = $derived.by(() =>
+    econDefs.map((d) => {
+      const anchor = CARD_DRILL[d.name] ? summary[CARD_DRILL[d.name]] : 0;
+      return {
+        key: d.name,
+        label: d.title || d.name,
+        value: d.subject === 'team' ? teamLine(d.name) : fmtStored(matchRow(d.name)),
+        sub: CARD_SUB[d.name] || '',
+        title: d.doc || '',
+        inferred: CARD_INFERRED.has(d.name),
+        drill: anchor || 0,
+      };
+    }),
+  );
 
   // Stat-card drill → WATCH the round: ROUND-LEVEL loop (the round IS
   // the sequence — the owner's watch rule: a round-level button loops the
@@ -378,49 +393,18 @@
     <EconCurve {rows} {id} {nav} {sideSwitches} matchWinner={matchWinner} {names} />
 
     <div class="econ-summary stat-grid">
-      <StatCard
-        label={S.economy.pistolLabel}
-        value={fmtStored(matchRow('pistol_hold'))}
-        sub={S.economy.pistolSub}
-        cls={!summary.firstPistol ? 'no-drill' : ''}
-        title={S.fill(S.economy.pistolTitle, { round: summary.firstPistol || '—' })}
-        onclick={() => drill(summary.firstPistol)}
-      >
-        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
-      </StatCard>
-
-      <StatCard
-        label={S.economy.forceLabel}
-        value={forceCard.value}
-        sub={forceCard.sub}
-        cls={!summary.firstForce ? 'no-drill' : ''}
-        title={S.fill(S.economy.forceTitle, { round: summary.firstForce || '—' })}
-        onclick={() => drill(summary.firstForce)}
-      >
-        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
-      </StatCard>
-
-      <StatCard
-        label={S.economy.gapLabel}
-        value={fmtStored(matchRow('avg_equip_gap'))}
-        sub={S.economy.gapSub}
-        cls={!summary.gapRound ? 'no-drill' : ''}
-        title={S.fill(S.economy.gapTitle, { round: summary.gapRound || '—' })}
-        onclick={() => drill(summary.gapRound)}
-      >
-        {#snippet badge()}<span class="chip badge-computed">{S.economy.badgeComputed}</span>{/snippet}
-      </StatCard>
-
-      <StatCard
-        label={S.economy.lostLabel}
-        value={lostCard.value}
-        sub={lostCard.sub}
-        cls={!summary.lostRound ? 'no-drill' : ''}
-        title={S.fill(S.economy.lostTitle, { round: summary.lostRound || '—' })}
-        onclick={() => drill(summary.lostRound)}
-      >
-        {#snippet badge()}<span class="chip badge-inferred">{S.economy.badgeInferred}</span>{/snippet}
-      </StatCard>
+      {#each econCards as c (c.key)}
+        <StatCard
+          label={c.label}
+          value={c.value}
+          sub={c.sub}
+          cls={c.drill ? '' : 'no-drill'}
+          title={c.title}
+          onclick={c.drill ? () => drill(c.drill) : null}
+        >
+          {#snippet badge()}<span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">{c.inferred ? S.economy.badgeInferred : S.economy.badgeComputed}</span>{/snippet}
+        </StatCard>
+      {/each}
     </div>
 
     <section class="panel">

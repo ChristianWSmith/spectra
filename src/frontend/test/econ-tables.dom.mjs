@@ -423,32 +423,32 @@ const seedValues = (matchID, ids) => {
 // team key.
 const ECON_SEED_DEFS = Object.freeze([
   {
-    id: 106, name: 'pistol_hold', title: 'pistol_hold', shortName: '',
+    id: 106, name: 'pistol_hold', title: 'Pistol \u2192 next round', shortName: '',
     scope: 'match', subject: 'match', format: 'percent',
     doc: 'Formula: pistol rounds held ÷ pistol rounds won — addressed per match',
   },
   {
-    id: 107, name: 'avg_equip_gap', title: 'avg_equip_gap', shortName: '',
+    id: 107, name: 'avg_equip_gap', title: 'Winner equipment value advantage', shortName: '',
     scope: 'match', subject: 'match', format: 'currency',
     doc: 'Formula: mean winner − loser freeze-end equip — addressed per match',
   },
   {
-    id: 113, name: 'team_force_wins', title: 'team_force_wins', shortName: '',
+    id: 113, name: 'team_force_wins', title: 'Force rounds won', shortName: '',
     scope: 'match', subject: 'team', format: 'int',
     doc: 'Formula: count of that team’s force rounds won — addressed per team',
   },
   {
-    id: 114, name: 'team_force_rounds', title: 'team_force_rounds', shortName: '',
+    id: 114, name: 'team_force_rounds', title: 'Force rounds', shortName: '',
     scope: 'match', subject: 'team', format: 'int',
     doc: 'Formula: count of that team’s own force rounds — addressed per team',
   },
   {
-    id: 115, name: 'lost_equip', title: 'lost_equip', shortName: '',
+    id: 115, name: 'lost_equip', title: 'Lost equipment', shortName: '',
     scope: 'match', subject: 'match', format: 'currency',
     doc: 'Formula: total freeze-end equip lost across decided rounds — addressed per match',
   },
   {
-    id: 116, name: 'team_lost_equip', title: 'team_lost_equip', shortName: '',
+    id: 116, name: 'team_lost_equip', title: 'Team lost equipment', shortName: '',
     scope: 'match', subject: 'team', format: 'currency',
     doc: 'Formula: freeze-end equip that team lost — addressed per team',
   },
@@ -936,7 +936,7 @@ console.log("D2. Economy stat-card drill → ROUND-LEVEL loop (the round's own s
 // (counted(13) above).
 globalThis.__nav = [];
 const econCards = [...root.querySelectorAll('.econ-summary .stat-cell')];
-check('four drillable stat cards render', econCards.length === 4, String(econCards.length));
+check('six economy stat cards render (the default set)', econCards.length === 6, String(econCards.length));
 check(
   'first card is the pistol drill',
   /Pistol/.test(econCards[0]?.textContent || ''),
@@ -987,7 +987,19 @@ check(
   for (const [i, c] of sumCards.entries()) {
     console.log(`    M8 card${i}: value=${JSON.stringify(val(i))} sub=${JSON.stringify(sub(i))} title=${JSON.stringify(ttl(i))}`);
   }
-  check('M8: four summary cards', sumCards.length === 4, String(sumCards.length));
+  // The ECONOMY card set migration (owner, 2026-11-18): the card SET
+  // is metricorder's economy placement pref (absent ⇒ DEFAULT_ECONOMY
+  // — the shipped six, in that array's order), one card per metric,
+  // every value ITS metric's stored row — the composed pooled-force %
+  // and lost sub retired with the migration (their inputs' equivalence
+  // stays pinned in Go, internal/metrics econ_equivalence_test).
+  check('M8: the default economy set renders six cards (pistol, force pair, gap, lost pair)',
+    sumCards.length === 6, String(sumCards.length));
+  check('M8: labels come from the metric titles',
+    ['Pistol \u2192 next round', 'Force rounds won', 'Force rounds',
+     'Winner equipment value advantage', 'Lost equipment', 'Team lost equipment']
+      .every((t, i) => (sumCards[i]?.querySelector('.field-label')?.textContent || '').includes(t)),
+    sumCards.map((c) => c.querySelector('.field-label')?.textContent).join(' | '));
   // M8 re-pin with the card migration (2026-11-17): the pistol card
   // reads its STORED pistol_hold row (plan §8 M8 — the seed over the
   // next() round window) — the SAME held/won number (rounds 1+13 won,
@@ -998,23 +1010,30 @@ check(
   // number as the fraction notation "1/2"; a stored metric value is a
   // single number, so the card's format tag decides the notation.
   check('M8: pistol held rate = 50% (1/2 — rounds 1+13 won, only round 1 held)', val(0) === '50%', val(0));
-  // The force card's pair composes from its stored count rows
-  // (team_force_wins / team_force_rounds — the view-aggregate
-  // relocation, ME8 audit): six era-0 T-side force rounds attribute to
-  // Alpha (final CT), none won; Beta never force-bought.
-  check('M8: force-win = 0% (6 T-side force rounds, none won)', val(1) === '0%', val(1));
-  check('M8: force sub = per-team won/total (rounds 1–12 t-side forces attribute to Alpha)', sub(1) === 'Alpha 0/6 · Beta 0/0', sub(1));
-  check('M8: avg equip gap = $67 (round(800/12) over 12 decided rounds)', val(2) === '$67', val(2));
-  // The lost card reads lost_equip (total) + team_lost_equip (halves).
-  check('M8: lost-equip total = $53,800 (sum of loser freeze-end equip)', val(3) === '$53,800', val(3));
-  check('M8: lost sub = per-team split (Alpha = era-0 loser-T 30200; Beta = era-0 loser-CT 18600 + r13 loser-T 5000)', sub(3) === 'Alpha $30,200 · Beta $23,600', sub(3));
+  // The force pair reads its stored count rows (team_force_wins /
+  // team_force_rounds — the view-aggregate relocation, ME8 audit): six
+  // era-0 T-side force rounds attribute to Alpha (final CT), none won;
+  // Beta never force-bought. The pooled rate the old card composed
+  // from these two rows retires here — the counts are the stats.
+  check('M8: force wins = per-team stored counts (Alpha 0, Beta 0)', val(1) === 'Alpha 0 · Beta 0', val(1));
+  check('M8: force rounds = per-team stored counts (Alpha 6, Beta 0)', val(2) === 'Alpha 6 · Beta 0', val(2));
+  check('M8: avg equip gap = $67 (round(800/12) over 12 decided rounds)', val(3) === '$67', val(3));
+  // The lost pair reads lost_equip (total) + team_lost_equip (halves),
+  // each as its own card's stored row.
+  check('M8: lost-equip total = $53,800 (sum of loser freeze-end equip)', val(4) === '$53,800', val(4));
+  check('M8: team lost = per-team split (Alpha = era-0 loser-T 30200; Beta = era-0 loser-CT 18600 + r13 loser-T 5000)', val(5) === 'Alpha $30,200 · Beta $23,600', val(5));
+  check('M8: the shipped stats keep their static subs (pistol, gap)',
+    sub(0) === 'pistol wins held next round' && sub(3) === 'avg winner \u2212 loser equip per round',
+    [sub(0), sub(3)].join(' | '));
   check(
-    'M8: Formula titles carry the drill rounds (pistol 1, force 2, gap 1, lost 11)',
-    ttl(0).includes('Formula:') && ttl(0).includes('watch round 1 ') &&
-      ttl(1).includes('Formula:') && ttl(1).includes('watch round 2 ') &&
-      ttl(2).includes('Formula:') && ttl(2).includes('round 1 (largest gap)') &&
-      ttl(3).includes('Formula:') && ttl(3).includes('watch round 11 '),
-    [ttl(0), ttl(1), ttl(2), ttl(3)].join(' || '),
+    'M8: every card title carries its Formula doc',
+    sumCards.every((c) => (c.getAttribute('title') || '').includes('Formula:')),
+    sumCards.map((c) => c.getAttribute('title')).join(' || '),
+  );
+  check(
+    'M8: the inferred badge marks the loss-derived cards only (lost pair)',
+    sumCards.map((c) => !!c.querySelector('.badge-inferred')).join(',') === 'false,false,false,false,true,true',
+    sumCards.map((c) => !!c.querySelector('.badge-inferred')).join(','),
   );
 }
 
@@ -2921,6 +2940,23 @@ console.log('R. seeded fixed cells: seed value + Formula title, the five states,
     );
   }
   localStorage.removeItem('spectra:pinned-metrics');
+}
+
+console.log('N. the user-toggled economy set replaces the shipped cards (metric_economy present)');
+{
+  root = await showMatch(
+    { ...dataFor(13), getPref: (key) => (key === 'metric_economy' ? ['pistol_hold', 'kills'] : undefined) },
+    { routeTab: 'Economy' },
+  );
+  await sleep();
+  const toggled = [...root.querySelectorAll('.econ-summary .stat-cell')];
+  check(
+    'a present metric_economy pref replaces the shipped cards (team pair dropped, the added seed shows its dash)',
+    toggled.length === 2 &&
+      /Pistol/.test(toggled[0]?.textContent || '') &&
+      (toggled[1]?.querySelector('.stat-value')?.textContent || '') === '\u2014',
+    toggled.map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

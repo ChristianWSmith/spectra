@@ -28,6 +28,13 @@ export const builder = {
   // so its rows carry BOTH states; Builder's rows never pin here).
   pinToOverview: 'Pin as overview card',
   unpinFromOverview: 'Unpin from overview',
+  // The match row's ECONOMY placement toggle (the dialog's scoreboard
+  // section, owner 2026-11-18): state-based titles beside the pin
+  // pair — the toggle moves the metric's stat to the Economy tab (an
+  // identity metric's card leaves the match overview while toggled).
+  economyToggleAria: 'Toggle Economy tab for {name}',
+  economyShow: 'Show on the Economy tab',
+  economyHide: 'Remove from the Economy tab',
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
   // Both delete sites compose these (w19 item 23): the list row's

@@ -249,7 +249,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 # Economy
 
 - **The curve** — *Equip value per round* or *Team net worth per round*, one line per team, with a legend and a round strip under it. Hover for values; click a column to open that round.
-- **Four summary cards** — *Pistol → next round* (pistol wins held the next round), *Force-buy win rate*, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* (marked **inferred**). Each card's tooltip states the exact formula, and clicking it watches the relevant round in the replay.
+- **Summary cards** — one card per stat the tab shows. The shipped set covers *Pistol → next round* (pistol wins held the next round), force rounds won and force rounds played per team, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* with its per-team split (marked **inferred**). Which stats appear is reconfigurable from the metric order dialog's Economy toggles (below); each card's tooltip states the exact formula, and a card whose stat names a round watches that round in the replay.
 - **Buy types** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The footnote names what the columns mean: equipment value is the gear a side *holds* at freeze time end — never that round's spend — and the loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
 
 # Utility
@@ -453,9 +453,14 @@ hides it from its view without taking it off this list (the scoreboard's **Name*
 one that cannot be hidden), and a pinned metric's pin button unpins it: the row leaves this list
 at once and the metric stops showing on its surface, while its slot in the order is kept, so
 pinning it again restores its place. (On the profile list there are no fixed rows — its rows are
-all pinned metrics, so each row's pin unpins it.) The **Match overview** list picks the cards on
+all pinned metrics, so each row's pin unpins it.) Every scoreboard-list metric row also carries
+an **Economy** toggle: on, the metric's stat shows on the match's **Economy** tab instead of its
+match-overview card; off, it returns. The toggle moves placement only — the metric stays pinned
+and its row stays in this list — and **Reset order** restores the shipped Economy set. The
+**Match overview** list picks the cards on
 top of a match: its pin adds or removes a card (only metrics that name a leading player are
-offered — a card always shows the leader beside that player's stored value) and the arrows set
+offered, and never one toggled to the Economy tab — a card always shows the leader beside that
+player's stored value) and the arrows set
 the cards' order. Each row's buttons sit together at the row's
 right edge, and
 **Reset order** restores every default, hidden ones included. Under the scoreboard list, the

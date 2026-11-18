@@ -60,6 +60,16 @@ const (
 	prefsMetricOrderOverviewKey = "metric_order_overview"
 	prefsMetricPinsOverviewKey  = "metric_pins_overview"
 
+	// prefsMetricEconomyKey is the Economy tab's CARD SET placement
+	// toggle (metricorder.js ECONOMY_KEY — owner, 2026-11-18): a JSON
+	// array of match-scope metric NAMES whose stats the Economy tab
+	// shows (an identity metric's card moves off the match overview
+	// while toggled — overviewDefs' economy carve-out). Absent = the
+	// shipped card set (metricorder.js DEFAULT_ECONOMY); present =
+	// verbatim. Same frontend-written / Go-never-consumes contract as
+	// the overview pair (font_size precedent).
+	prefsMetricEconomyKey = "metric_economy"
+
 	// prefsMetricHiddenMatchKey / prefsMetricHiddenProfileKey hold which
 	// FIXED stats are hidden from their view (metricorder.js HIDDEN_KEYS:
 	// '@'-prefixed entry names). Absent = nothing hidden; metric

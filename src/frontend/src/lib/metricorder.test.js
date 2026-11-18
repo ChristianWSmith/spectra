@@ -39,6 +39,8 @@ const {
   HIDDEN_KEYS,
   STARTS_TRANSPOSED_KEY,
   OVERVIEW_PINS_KEY,
+  ECONOMY_KEY,
+  DEFAULT_ECONOMY,
   DEFAULT_RANKS,
   DEFAULT_PINS,
   FIXED_BLOCK,
@@ -63,6 +65,9 @@ const {
   writeHidden,
   resetHidden,
   readOverviewPins,
+  readEconomyPins,
+  writeEconomyPins,
+  resetEconomyPins,
   writeOverviewPins,
   resetOverviewPins,
   readStartsTransposed,
@@ -1010,4 +1015,74 @@ test('the overview pins key round-trips through its own kvstore key (absent ⇒ 
     method: 'Delete',
     args: ['metric_pins_overview'],
   });
+});
+
+// --- The Economy placement set (owner, 2026-11-18) ---------------------------
+
+test('DEFAULT_ECONOMY is exactly the metrics behind the Economy view\u2019s shipped cards', () => {
+  assert.equal(ECONOMY_KEY, 'metric_economy');
+  assert.deepEqual(DEFAULT_ECONOMY, [
+    'pistol_hold',
+    'team_force_wins',
+    'team_force_rounds',
+    'avg_equip_gap',
+    'lost_equip',
+    'team_lost_equip',
+  ]);
+  // The same absent-vs-present rule as every other family: the set
+  // rides resolvePins under its own scope.
+  const defs = DEFAULT_ECONOMY.map((name, i) => ({ id: 100 + i, name, scope: 'match' }));
+  assert.deepEqual(resolvePins('economy', null, defs), [...DEFAULT_ECONOMY], 'absent \u21d2 the shipped set by name');
+  assert.deepEqual(resolvePins('economy', [], defs), [], "present '[]' is verbatim \u2014 pin nothing");
+  assert.deepEqual(resolvePins('economy', ['avg_equip_gap'], defs), ['avg_equip_gap'], 'present \u21d2 verbatim');
+  assert.deepEqual(resolvePins('economy', null, []), [], 'a catalog lacking every name resolves to nothing');
+});
+
+test('the economy key round-trips through its own kvstore key (absent \u21d2 null \u21d2 defaults)', async () => {
+  bindings.resetCalls();
+  assert.equal(await readEconomyPins(), null, 'absent reads as null (the resolvePins default rule)');
+  bindings.resetCalls();
+  await writeEconomyPins(['pistol_hold', 'kills']);
+  assert.deepEqual(bindings.calls, [
+    { method: 'SetPref', args: ['metric_economy', ['pistol_hold', 'kills']] },
+  ]);
+  bindings.handlers.GetPref = (key) => (key === 'metric_economy' ? ['x', 5, 'pistol_hold'] : undefined);
+  assert.deepEqual(await readEconomyPins(), ['x', 'pistol_hold'], 'non-string entries filter out');
+  delete bindings.handlers.GetPref;
+  bindings.resetCalls();
+  await resetEconomyPins();
+  assert.deepEqual(bindings.calls[bindings.calls.length - 1], { method: 'Delete', args: ['metric_economy'] });
+});
+
+test('the overview universe excludes economy-toggled metrics \u2014 ONE rule threaded through every overview reader', () => {
+  const defs = [
+    { id: 1, name: 'top_fragger', scope: 'match', format: 'identity' },
+    { id: 2, name: 'best_adr', scope: 'match', format: 'identity' },
+    { id: 3, name: 'adr', scope: 'match', format: '' },
+  ];
+  // The exclusion changes ONLY the overview scope; match/profile reads
+  // ignore it (placement never touches the scoreboard).
+  assert.deepEqual(overviewDefs(defs).map((d) => d.name), ['top_fragger', 'best_adr'], 'no exclude \u21d2 unchanged');
+  assert.deepEqual(overviewDefs(defs, ['top_fragger']).map((d) => d.name), ['best_adr']);
+  assert.deepEqual(overviewDefs(defs, []).map((d) => d.name), ['top_fragger', 'best_adr'], 'an empty exclude changes nothing');
+  assert.deepEqual(
+    inSequence('overview', null, defs, ['best_adr']).map((d) => d.name),
+    ['top_fragger'],
+    'inSequence threads the exclude',
+  );
+  assert.deepEqual(
+    composedSequence('overview', null, defs, [], ['top_fragger']).map((e) => e.key),
+    ['best_adr'],
+    'composedSequence threads the exclude (the dialog\u2019s overview table)',
+  );
+  assert.deepEqual(
+    pinnedInSequence('overview', null, defs, ['top_fragger', 'best_adr'], ['top_fragger']).map((d) => d.name),
+    ['best_adr'],
+    'pinnedInSequence threads the exclude (the Match view\u2019s cards)',
+  );
+  assert.deepEqual(
+    inSequence('match', null, defs, ['adr']).map((d) => d.name),
+    ['adr', 'top_fragger', 'best_adr'],
+    'the match scope never excludes (adr keeps its default rank slot)',
+  );
 });
