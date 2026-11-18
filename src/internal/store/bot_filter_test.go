@@ -23,7 +23,7 @@ func withBot(em *models.ExtractedMatch) *models.ExtractedMatch {
 	em.PlayerStats = append(em.PlayerStats, models.PlayerStats{
 		SteamID: botSteamID, Side: "ct", Name: "Crew", Kills: 3, Deaths: 1,
 		Assists: 0, ADR: 40, HSPct: 33, RoundsPlayed: 2,
-		KillsByWeapon: `{"ak47":3}`, DamageByWeapon: `{"ak47":300}`,
+		KillsByWeapon: `{"ak47":3}`,
 	})
 	return em
 }

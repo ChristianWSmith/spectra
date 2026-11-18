@@ -151,7 +151,6 @@ type playerAgg struct {
 	bombPlants      int
 	bombDefuses     int
 	weaponKills     map[string]int
-	weaponDmg       map[string]int
 }
 
 func newPlayerAgg(name string, bot bool) *playerAgg {
@@ -159,7 +158,6 @@ func newPlayerAgg(name string, bot bool) *playerAgg {
 		name:        name,
 		isBot:       bot,
 		weaponKills: make(map[string]int),
-		weaponDmg:   make(map[string]int),
 	}
 }
 
@@ -1098,7 +1096,6 @@ func (a *agg) hurt(h hurtInfo) {
 		ap := a.ensure(h.attackerKey, h.attackerName)
 		ap.totalDamage += dealt
 		ap.hits++
-		ap.weaponDmg[h.weapon] += dealt
 		if h.isUtility {
 			ap.utilityDamage += dealt
 		}

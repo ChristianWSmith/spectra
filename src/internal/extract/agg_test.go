@@ -670,13 +670,6 @@ func TestWeaponMapJSONShape(t *testing.T) {
 		t.Errorf("KillsByWeapon = %v, want AK-47:2 AWP:1", kb)
 	}
 
-	var db map[string]int
-	if err := json.Unmarshal([]byte(st.DamageByWeapon), &db); err != nil {
-		t.Fatalf("DamageByWeapon is not a JSON object: %q (%v)", st.DamageByWeapon, err)
-	}
-	if db["AK-47"] != 34 {
-		t.Errorf("DamageByWeapon = %v, want AK-47:34", db)
-	}
 	if st.TotalDamage != 34 || st.Hits != 1 || st.Kills != 3 || st.Headshots != 1 {
 		t.Errorf("damage/hit/kill stats wrong: %+v", st)
 	}
@@ -685,8 +678,8 @@ func TestWeaponMapJSONShape(t *testing.T) {
 	}
 
 	// A player with no weapon rows still gets an empty object, never "null".
-	if victim.KillsByWeapon != "{}" || victim.DamageByWeapon != "{}" {
-		t.Errorf("victim weapon maps = %q/%q, want {}", victim.KillsByWeapon, victim.DamageByWeapon)
+	if victim.KillsByWeapon != "{}" {
+		t.Errorf("victim weapon map = %q, want {}", victim.KillsByWeapon)
 	}
 	if victim.DamageTaken != 30 {
 		t.Errorf("victim damageTaken = %d, want 30", victim.DamageTaken)

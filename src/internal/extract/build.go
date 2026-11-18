@@ -108,10 +108,6 @@ func (a *agg) build() *models.ExtractedMatch {
 		if err != nil {
 			killsByWeapon = []byte("{}")
 		}
-		damageByWeapon, err := json.Marshal(p.weaponDmg)
-		if err != nil {
-			damageByWeapon = []byte("{}")
-		}
 		roundsPlayed := 0
 		if rs := a.participation[key]; rs != nil {
 			roundsPlayed = len(rs)
@@ -166,7 +162,6 @@ func (a *agg) build() *models.ExtractedMatch {
 			BombDefuses:     p.bombDefuses,
 			MoneySpentTotal: p.moneySpentTotal,
 			KillsByWeapon:   string(killsByWeapon),
-			DamageByWeapon:  string(damageByWeapon),
 		})
 	}
 

@@ -860,7 +860,7 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 		{SteamID: "300", Name: "carl", Side: "ct"},
 	}
 	em.PlayerStats = []models.PlayerStats{
-		{SteamID: "100", Side: "ct", Name: "alice", KillsByWeapon: `{"ak47":10}`, DamageByWeapon: `{"ak47":900}`},
+		{SteamID: "100", Side: "ct", Name: "alice", KillsByWeapon: `{"ak47":10}`},
 	}
 	em.RoundSides = []models.RoundPlayerSide{
 		{Round: 1, SteamID: "100", Side: "ct"},
@@ -896,9 +896,8 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}
-	if rows[0].KillsByWeapon != `{"ak47":10}` || rows[0].DamageByWeapon != `{"ak47":900}` {
-		t.Errorf("kills/damage JSON = %q/%q, want the stored player_stats pair",
-			rows[0].KillsByWeapon, rows[0].DamageByWeapon)
+	if rows[0].KillsByWeapon != `{"ak47":10}` {
+		t.Errorf("kills JSON = %q, want the stored player_stats column", rows[0].KillsByWeapon)
 	}
 	if rows[0].HeadshotsByWeapon != `{"ak47":1}` {
 		t.Errorf("headshots JSON = %q, want {\"ak47\":1} (only the credited enemy headshot)", rows[0].HeadshotsByWeapon)

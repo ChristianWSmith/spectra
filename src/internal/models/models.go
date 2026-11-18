@@ -318,8 +318,7 @@ type PlayerStats struct {
 	BombPlants      int     `json:"bombPlants"`
 	BombDefuses     int     `json:"bombDefuses"`
 	MoneySpentTotal int     `json:"moneySpentTotal"`
-	KillsByWeapon   string  `json:"killsByWeapon"`  // JSON object weapon→count
-	DamageByWeapon  string  `json:"damageByWeapon"` // JSON object weapon→damage
+	KillsByWeapon   string  `json:"killsByWeapon"` // JSON object weapon→count
 }
 
 // Round is one round's summary (rounds table). Number is the extractor's

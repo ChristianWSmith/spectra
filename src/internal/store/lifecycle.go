@@ -265,7 +265,7 @@ const (
 		teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
 		rounds_played, entry_kills, entry_deaths, trade_kills,
 		best_streak, two_k, three_k, four_k, five_k, utility_damage, enemies_flashed, flashed_times,
-		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon,
+		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon,
 		team, won, map`
 
 	roundCols = `number, winner, reason, duration_s, start_tick, end_tick,
@@ -381,7 +381,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	statsStmt, err := tx.Prepare(
 		`INSERT INTO player_stats (match_id, ` + playerStatsCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -394,7 +394,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			ps.DamageTaken, ps.Shots, ps.Hits, ps.ADR, ps.HSPct, ps.RoundsPlayed, ps.EntryKills,
 			ps.EntryDeaths, ps.TradeKills, ps.BestStreak, ps.TwoK,
 			ps.ThreeK, ps.FourK, ps.FiveK, ps.UtilityDamage, ps.EnemiesFlashed, ps.FlashedTimes, ps.BombPlants,
-			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
+			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon),
 			teamOfPlayer(ps.Side), b2i(models.WinFor(ps.Side, em.Match.ScoreCT, em.Match.ScoreT)),
 			scrub(em.Match.Map),
 		); err != nil {

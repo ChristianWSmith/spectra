@@ -1311,7 +1311,7 @@ func (s *Store) GetPlayerMapADR(steamID string) ([]models.ProfileMapADR, error) 
 // headshots to player_stats.headshots for every player.
 func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSONs, error) {
 	rows, err := s.db.Query(
-		`SELECT ps.kills_by_weapon, ps.damage_by_weapon,
+		`SELECT ps.kills_by_weapon,
 			COALESCE((SELECT json_group_object(w.weapon, w.n) FROM (
 				SELECT e.weapon, COUNT(*) AS n
 				FROM events e
@@ -1335,7 +1335,7 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 	var out []models.ProfileWeaponJSONs
 	for rows.Next() {
 		var r models.ProfileWeaponJSONs
-		if err := rows.Scan(&r.KillsByWeapon, &r.DamageByWeapon, &r.HeadshotsByWeapon); err != nil {
+		if err := rows.Scan(&r.KillsByWeapon, &r.HeadshotsByWeapon); err != nil {
 			return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 		}
 		out = append(out, r)

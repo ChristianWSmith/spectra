@@ -2,12 +2,12 @@ package integration_test
 
 // M7 gate — the Weapons table's migration to partition='weapon' metric
 // seeds (plan §7 M7), run through the gate BEFORE the third column
-// shipped: the JSON-fold numbers (player_stats.kills_by_weapon /
-// damage_by_weapon summed per weapon, headshots rebuilt from kill
-// events — store.GetPlayerWeaponJSONs + profileservice.mergeWeapons)
-// must equal the SHIPPED seed expressions' partitioned metric values
-// EXACTLY (owner ruling 2026-11-17: "if the numbers diverge, fix the
-// metric until they match — we don't do exceptions").
+// shipped: the JSON-fold numbers (player_stats.kills_by_weapon summed
+// per weapon, headshots rebuilt from kill events —
+// store.GetPlayerWeaponJSONs + profileservice.mergeWeapons) must equal
+// the SHIPPED seed expressions' partitioned metric values EXACTLY
+// (owner ruling 2026-11-17: "if the numbers diverge, fix the metric
+// until they match — we don't do exceptions").
 //
 // History: ME6 ran this gate 2026-11-17 with kills/headshots EXACT and
 // damage DIVERGED (candidate 21626 vs fold 17117, Δ4509 = HP-cap
@@ -19,13 +19,23 @@ package integration_test
 // row-local where §6.5 forbids the rounds join) plus the same_side
 // enemy gate closed all three causes, this test pinned equality over
 // the golden demo, and the weapon_damage seed shipped (107th builtin).
-// All three candidates are strict now; the census survives as failure
-// diagnostics (every delta still gets a named root cause).
+// The census survives as failure diagnostics (every delta still gets a
+// named root cause).
+//
+// DAMAGE LEG RETIRED 2026-11-18 (owner ruling): the fold's damage side
+// lived in player_stats.damage_by_weapon, whose only remaining readers
+// were these oracle tests — the column is dropped, so the weapon_damage
+// candidate has no fold side to compare any more. Equality was proven
+// at the flip above (commit 86300be: seed == fold over every human ×
+// weapon of the golden demo), the seed is now THE damage
+// implementation, and its values read the capped_dmg ingest stamp, not
+// the dropped column — its numbers do not move here. The kills and
+// headshots legs stand EXACTLY as they were (their columns live).
 //
 // The test computes both sides over the golden demo and classifies every
 // delta by its root cause, so the verdict rides on numbers:
 //
-//	fold side   the retired fold's per-weapon {kills, damage, headshots}
+//	fold side   the retired fold's per-weapon {kills, headshots}
 //	candidate   the SHIPPED seed row's expression compiled through the
 //	            real engine (Address{Partition: "weapon", Profile: true})
 //
@@ -47,12 +57,14 @@ import (
 )
 
 // weaponFoldRow is one player's fold-side totals for one weapon.
-type weaponFoldRow struct{ kills, damage, headshots int }
+type weaponFoldRow struct{ kills, headshots int }
 
 // weaponFold runs the RETIRED fold's math verbatim (the reference
-// oracle): sum the per-match JSON triplets, weapon by weapon — the
+// oracle): sum the per-match JSON pairs, weapon by weapon — the
 // mergeWeapons arithmetic without its top-N truncation (the gate
-// compares the WHOLE distribution).
+// compares the WHOLE distribution). No damage side: the fold's damage
+// reference died with player_stats.damage_by_weapon (2026-11-18 owner
+// ruling — see the header's damage-leg note).
 func weaponFold(t *testing.T, st *store.Store, steamID string) map[string]weaponFoldRow {
 	t.Helper()
 	rows, err := st.GetPlayerWeaponJSONs(steamID)
@@ -76,25 +88,27 @@ func weaponFold(t *testing.T, st *store.Store, steamID string) map[string]weapon
 	}
 	for _, r := range rows {
 		add(r.KillsByWeapon, func(a *weaponFoldRow) *int { return &a.kills })
-		add(r.DamageByWeapon, func(a *weaponFoldRow) *int { return &a.damage })
 		add(r.HeadshotsByWeapon, func(a *weaponFoldRow) *int { return &a.headshots })
 	}
 	return out
 }
 
-// weaponCandidates are the three shipped weapon seeds (name → the fold
-// field their values must equal exactly). The gate reads each expr from
-// its SEEDED row — the migration contract pins the shipped expression,
-// not a draft copy — and compiles it through the real engine. strict is
-// always true since the 2026-11-18 flip: every candidate must match the
-// fold EXACTLY over every human × weapon (the divergence pin ME6
-// documented resolved into this equality pin — the migrate signal).
+// weaponCandidates are the shipped weapon seeds the fold can still
+// reference (name → the fold field their values must equal exactly).
+// The third shipped seed, weapon_damage, retired its fold side with
+// player_stats.damage_by_weapon (2026-11-18 — its equality was proven
+// at the flip, commit 86300be; the seed is THE implementation). The
+// gate reads each remaining expr from its SEEDED row — the migration
+// contract pins the shipped expression, not a draft copy — and compiles
+// it through the real engine. strict is always true since the
+// 2026-11-18 flip: every candidate must match the fold EXACTLY over
+// every human × weapon (the divergence pin ME6 documented resolved into
+// this equality pin — the migrate signal).
 var weaponCandidates = []struct {
 	name string
 	pick func(weaponFoldRow) int
 }{
 	{"weapon_kills", func(r weaponFoldRow) int { return r.kills }},
-	{"weapon_damage", func(r weaponFoldRow) int { return r.damage }},
 	{"weapon_headshots", func(r weaponFoldRow) int { return r.headshots }},
 }
 
@@ -120,8 +134,10 @@ func seededWeaponExpr(t *testing.T, st *store.Store, name string) metrics.Def {
 }
 
 // TestGoldenProfileWeaponsGate runs the M7 gate and reports the full
-// comparison. It PINS exact equality for all three shipped weapon seeds
-// (the 2026-11-18 flip of ME6's divergence pin — a green run is the
+// comparison. It PINS exact equality for both fold-referenced shipped
+// weapon seeds — kills and headshots (weapon_damage's leg retired with
+// its column, 2026-11-18; see the header) — the 2026-11-18 flip of
+// ME6's divergence pin: a green run is the
 // migrated state; a red run fails with the census's named root cause and
 // example rows for the escalation).
 func TestGoldenProfileWeaponsGate(t *testing.T) {

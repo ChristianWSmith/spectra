@@ -373,10 +373,6 @@ func TestParseGolden(t *testing.T) {
 		if err := json.Unmarshal([]byte(s.KillsByWeapon), &kb); err != nil {
 			t.Errorf("%s KillsByWeapon invalid JSON %q: %v", s.SteamID, s.KillsByWeapon, err)
 		}
-		var db map[string]int
-		if err := json.Unmarshal([]byte(s.DamageByWeapon), &db); err != nil {
-			t.Errorf("%s DamageByWeapon invalid JSON %q: %v", s.SteamID, s.DamageByWeapon, err)
-		}
 	}
 
 	// Enemies-flashed credits must all trace back to player_blind events,

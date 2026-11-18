@@ -70,11 +70,11 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 				Hits: 20, ADR: 60, HSPct: 40, RoundsPlayed: 2, EntryKills: 1,
 				TradeKills: 2, BestStreak: 5, TwoK: 3, ThreeK: 1, UtilityDamage: 50, EnemiesFlashed: 3,
 				BombPlants: 1, MoneySpentTotal: 7500,
-				KillsByWeapon: `{"ak47":10}`, DamageByWeapon: `{"ak47":1200}`},
+				KillsByWeapon: `{"ak47":10}`},
 			{SteamID: "200", Side: "t", Name: "bob", Kills: 5, Deaths: 2, Assists: 1,
 				Headshots: 1, Score: 11, TotalDamage: 600, DamageTaken: 1100, ADR: 30,
 				HSPct: 20, RoundsPlayed: 2, EntryDeaths: 1,
-				KillsByWeapon: `{"awp":5}`, DamageByWeapon: `{"awp":600}`},
+				KillsByWeapon: `{"awp":5}`},
 		},
 		Rounds: []models.Round{
 			{Number: 1, Winner: "ct", Reason: "CTWin", DurationS: 117.5, StartTick: 100,
@@ -495,17 +495,15 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	// columns directly instead.
 	var flashAssists, moneySpent, twoK, threeK int
 	var hsPct float64
-	var damageByWeapon string
 	if err := s.db.QueryRow(
-		`SELECT flash_assists, hs_pct, money_spent_total, two_k, three_k, damage_by_weapon
+		`SELECT flash_assists, hs_pct, money_spent_total, two_k, three_k
 		   FROM player_stats WHERE match_id = ? AND steam_id = '100'`, id,
-	).Scan(&flashAssists, &hsPct, &moneySpent, &twoK, &threeK, &damageByWeapon); err != nil {
+	).Scan(&flashAssists, &hsPct, &moneySpent, &twoK, &threeK); err != nil {
 		t.Fatalf("read alice's stored stats: %v", err)
 	}
-	if flashAssists != 1 || hsPct != 40 || moneySpent != 7500 || twoK != 3 || threeK != 1 ||
-		damageByWeapon != `{"ak47":1200}` {
-		t.Errorf("alice stored stats mismatch: flash_assists=%d hs_pct=%v money_spent=%d two_k=%d three_k=%d damage_by_weapon=%q",
-			flashAssists, hsPct, moneySpent, twoK, threeK, damageByWeapon)
+	if flashAssists != 1 || hsPct != 40 || moneySpent != 7500 || twoK != 3 || threeK != 1 {
+		t.Errorf("alice stored stats mismatch: flash_assists=%d hs_pct=%v money_spent=%d two_k=%d three_k=%d",
+			flashAssists, hsPct, moneySpent, twoK, threeK)
 	}
 	if bob.SteamID != "200" || bob.Name != "bob" || bob.Side != "t" {
 		t.Errorf("bob row mismatch: %+v", bob)

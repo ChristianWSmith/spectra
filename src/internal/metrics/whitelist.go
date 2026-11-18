@@ -26,9 +26,9 @@ var sources = []string{
 // sourceColumns is the per-source column whitelist. JSON/blob payload
 // columns are deliberately excluded (events.detail_json, events.raw_json,
 // utility_events.affected, utility_events.trajectory_ref,
-// clutches.kill_ticks, player_stats.kills_by_weapon,
-// player_stats.damage_by_weapon); chat.text stays in for exact-match
-// filters.
+// clutches.kill_ticks, player_stats.kills_by_weapon — its
+// damage_by_weapon twin was dropped 2026-11-18); chat.text stays in for
+// exact-match filters.
 var sourceColumns = map[string]map[string]bool{
 	"events": colSet(
 		"match_id", "seq", "tick", "round", "kind", "attacker", "victim",
