@@ -426,7 +426,17 @@ export const getEvents = (filter) => {
   // fetchTyped derives from the enabled categories (only fetchTyped
   // passes one — the load-time draw/blind/conn reads never do).
   globalThis.__eventFilters = (globalThis.__eventFilters || []).concat([filter]);
-  return Promise.resolve(matched(filter));
+  const rows = matched(filter);
+  // Section T's delayed-feed fixture: with globalThis.__feedDelayMs set,
+  // the LIST read (limit = PAGE+1) resolves late while the draw read
+  // (limit 0 — the one load()'s chain waits on) stays immediate, so the
+  // feed settles AFTER startEngine has applied the mount seed — the
+  // post-engine timing the ?sel= guard exists for (the fast-stub default
+  // resolves immediately, as every earlier section expects).
+  const delay = globalThis.__feedDelayMs && filter.limit > 0 ? globalThis.__feedDelayMs : 0;
+  return delay
+    ? new Promise((resolve) => setTimeout(() => resolve(rows), delay))
+    : Promise.resolve(rows);
 };
 // getEventKeys — the SCRUBBER-MARKER answer: the SAME rows the list read
 // returns for this filter (the shared predicate above), keys-only. Every
@@ -488,8 +498,13 @@ export const getScoreboard = () => Promise.resolve([]);
 // Voice: the fixture has NO voice (presence null → the whole voice index
 // read below is gated off), but the view links getVoiceIndex like the
 // other reads — the stub resolves null, which the view treats as the
-// fail-soft "no players / no lanes / no window map" result.
-export const getVoicePresence = () => Promise.resolve(null);
+// fail-soft "no players / no lanes / no window map" result. The ONE
+// exception is the ?sel= / detail-pane button section (T) at the tail:
+// it sets globalThis.__voicePresence = { hasVoice: true } around its
+// mounts so the detail head renders "Hear around the event", and deletes
+// it again — every earlier section (and the volume-row "disabled without
+// voice" pins) sees the null default.
+export const getVoicePresence = () => Promise.resolve(globalThis.__voicePresence ?? null);
 export const getVoicePlayers = () => Promise.resolve([]);
 export const getVoiceLanes = () => Promise.resolve(null);
 export const getVoiceIndex = () => Promise.resolve(null);
@@ -851,12 +866,15 @@ export const snapshot = (canvas, matchId, tick, onResult) => {
 // cancel ("") → a silent null settle.
 writeFileSync(join(dir, 'replay', 'input-real.js'), readFileSync('src/lib/replay/input.js', 'utf8'));
 
-// The voice engine stays INERT (this harness never constructs it — the
-// stubbed getVoicePresence resolves null), but replay/sfx.js imports the
+// The voice engine stays INERT (the default fixture never constructs it —
+// the stubbed getVoicePresence resolves null), but replay/sfx.js imports the
 // SHARED GST_AUDIO_HINT string from audio.js: re-export it from a
 // verbatim copy of the real module (one spelling of the message; the
 // copy's own imports resolve against this cache's stubs) while the
-// engine itself stays stubbed.
+// engine itself stays stubbed. Section T's voice fixture (so the detail
+// pane's "Hear around the event" renders) DOES construct it, so the stub
+// is a no-op FAKE with the engine's full surface: setEnabled resolves so
+// Replay's .catch() chains hold, and no side effect can escape it.
 writeFileSync(
   join(dir, 'replay', 'audio-real.js'),
   readFileSync('src/lib/replay/audio.js', 'utf8'),
@@ -864,7 +882,15 @@ writeFileSync(
 writeFileSync(
   join(dir, 'replay', 'audio.js'),
   `export { GST_AUDIO_HINT } from './audio-real.js';
-export const createVoiceEngine = () => null;
+export const createVoiceEngine = () => ({
+  setPlayers() {},
+  setWindows() {},
+  setMasterVolume() {},
+  setMuted() {},
+  setMutedMany() {},
+  setEnabled() { return Promise.resolve(false); },
+  destroy() {},
+});
 export const fetchVoicePCM = async () => new Float32Array(0);
 `,
 );
@@ -4082,14 +4108,16 @@ check(
   `pressed=${loopBtn4?.getAttribute('aria-pressed')} seeks=+${seeksDelta()}`,
 );
 // The full promise (Combat's ▶ shape: ?tick= + ?loop=): BOTH apply —
-// seek first, then arm, so the arm lands behind the seek's
+// seek first (to the LOOP'S START, the owner's loop-start landing rule:
+// a seed carrying both promises lands at loop.from, never at the event
+// tick), then arm, so the arm lands behind the seek's
 // cancelLoopIfOutside instead of being cancelled by it.
 globalThis.__setQuery({ tick: '384', loop: '320,576' });
 await sleep();
 check(
-  'a fresh tick+loop link applies BOTH (seek → 384, range armed)',
-  seeksDelta() === 5 && seeksNow().at(-1) === 384 &&
-    loopBtn4.getAttribute('aria-pressed') === 'true' && readout4().endsWith('tick 384'),
+  'a fresh tick+loop link applies BOTH (seek → the loop start 320, range armed)',
+  seeksDelta() === 5 && seeksNow().at(-1) === 320 &&
+    loopBtn4.getAttribute('aria-pressed') === 'true' && readout4().endsWith('tick 320'),
   `seeks=${JSON.stringify(seeksNow().slice(seeksBase.length))} pressed=${loopBtn4?.getAttribute('aria-pressed')} | ${readout4()}`,
 );
 check(
@@ -4334,17 +4362,22 @@ check(
   JSON.stringify(lastFilter6() || {}),
 );
 
-// --- (C19 superseded): the feed row's ▶ SEEKS, PLAYS AND ARMS THE LOOP ------
+// --- (C19 superseded): the feed row's ▶ SEEKS TO THE LOOP START, PLAYS AND ARMS ------
 // The owner ruling supersedes C19's pause for these buttons: once the loop
-// is armed, PLAY (Replay's armLoopAroundSeek = seek → play → arm), the same
-// arrival every external watch link has (startEngine autoplays with its loop
-// armed). The order mirrors the entry ?loop= apply (seek → bounds → arm):
-// engine seekTick's loop-exit guard (cancelLoopIfOutside) cancels an armed
-// range the seek lands OUTSIDE of, so arming after the seek is the side
-// that can never be undone by the seek it follows — and NOTE this end-state
-// pin cannot tell the two orders apart (the window is CENTERED on the event
-// tick, so the landing frame always falls inside it): the order is the
-// code's stated contract, not something this fixture can detect.
+// is armed, PLAY (Replay's armLoopAroundSeek = seek to the loop's start →
+// play → arm), the same arrival every external watch link has (startEngine
+// autoplays with its loop armed). The landing is the START of the
+// loop-length window around the event (owner ruling 2026-11-18: a button
+// that establishes a loop starts at the loop's start, never at the event
+// itself), derived from the ONE loopAroundTicks helper armLoopAroundTick
+// bounds from too. The order mirrors the entry ?loop= apply (seek →
+// bounds → arm): engine seekTick's loop-exit guard (cancelLoopIfOutside)
+// cancels an armed range the seek lands OUTSIDE of, so arming after the
+// seek is the side that can never be undone by the seek it follows — and
+// NOTE this end-state pin cannot tell the two orders apart (the landing
+// sits ON the window's start BOUNDARY — inclusive, engine.test.js keeps
+// an armed range whose bound it is on): the order is the code's stated
+// contract, not something this fixture can detect.
 // engine.seekTick itself stays position-only
 // (section K's "seek never touches play/pause" pins own that), and no
 // wasPlaying write either: the keep-alive re-records it from the engine at
@@ -4354,7 +4387,7 @@ check(
 // ON PURPOSE first — through the transport's own toggle, which the stub
 // never counts — so the PLAY leg is a real transition instead of a no-op
 // against an already-running stub.
-console.log('N2. event-card play — the row ▶ seeks to the event, STARTS playback, and arms the loop length around it');
+console.log('N2. event-card play — the row ▶ seeks to the LOOP START, STARTS playback, and arms the loop length around the event');
 const transportN2 = target6.querySelector('.replay-transport');
 const glyphN2 = () =>
   transportN2?.querySelector('button[aria-label="Play"]') ? 'play'
@@ -4385,9 +4418,9 @@ check(
 click(target6.querySelector('.lm-row .lm-play') || document.createElement('button'));
 await sleep();
 check(
-  'the row ▶ seeks to the event tick (seek +1 → 128, the stub logs every seekTick)',
+  'the row ▶ seeks to the LOOP START (seek +1 → 0: event 128 ∓ 5 s at 64 tps floors at 0)',
   (globalThis.__seeks || []).length === seeksN2.length + 1 &&
-    (globalThis.__seeks || []).at(-1) === 128,
+    (globalThis.__seeks || []).at(-1) === 0,
   JSON.stringify((globalThis.__seeks || []).slice(seeksN2.length)),
 );
 check(
@@ -4935,6 +4968,120 @@ check(
 );
 click(targetR.querySelector('.replay-stage .rp-theater-exit'));
 await sleep();
+
+// ============================================================================
+// APPENDED SECTION (the entry ?sel= seek vs the tick/loop promise) ===========
+// Characterization-first pins for the owner's ruling (2026-11-18): a link
+// that establishes a loop starts playback at the LOOP's start, not at the
+// event itself. The entry ?sel= effect used to seek the landmark tick with
+// no guard — invisible while tick == sel tick, but after the appliers land
+// a tick+loop URL at loop.from it would silently re-seek PAST the loop
+// start (in-range, so it would not even cancel the loop). Two directions:
+//   - sel + tick(+loop): the tick/loop promise OWNS the position — the
+//     landing is the loop's start and the effect never re-seeks;
+//   - a pure ?sel= deep link (no ?tick= promise): still seeks its
+//     landmark exactly as before (the guard is narrow).
+// The same instance pins the in-session detail-pane buttons (the ONE
+// armLoopAroundSeek path: "Watch this event" and "Hear around the event"
+// land at the loop start too — hearTick is that same path with voice on).
+// ============================================================================
+console.log('T. entry ?sel= yields to the tick+loop promise (landing = the loop start); a pure ?sel= still seeks its landmark');
+globalThis.__voicePresence = { hasVoice: true }; // voice fixture: the detail pane's Hear button (getVoicePresence stub above)
+// Delay the LIST read so the feed settles AFTER startEngine applied the
+// mount seed — the post-engine timing where an unguarded ?sel= seek would
+// re-seek PAST the loop start (in-range, so it would not even cancel the
+// loop). The fast-stub default is what every earlier section sees.
+globalThis.__feedDelayMs = 500;
+const seeksT0 = [...(globalThis.__seeks || [])];
+const seeksT = () => (globalThis.__seeks || []).slice(seeksT0.length);
+const targetT = document.createElement('div');
+document.body.appendChild(targetT);
+const harnessTSrc = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({ sel: 'e:90', tick: '128', loop: '64,448', cat: 'kills' });
+</script>
+<Replay id={1} {query} nav={(h) => (globalThis.__navT = (globalThis.__navT || []).concat(h))} />`;
+const harnessTOut = join(dir, 'harnessT.js');
+svelteCompile(harnessTSrc, 'harnessT.svelte', harnessTOut);
+const modT = await import(pathToFileURL(harnessTOut).href);
+resetReplayPreload();
+mount(modT.default, { target: targetT });
+await sleep(700); // load → startEngine (seed applies), then the delayed feed settles + the ?sel= effect runs
+const loopBtnT = () =>
+  targetT.querySelector('.replay-transport button[aria-label="Loop range"]');
+check(
+  'T: sel+tick+loop lands at the LOOP START (the ?sel= effect never outranks the tick/loop promise)',
+  seeksT().length >= 1 && seeksT().at(-1) === 64 && !seeksT().includes(128),
+  JSON.stringify(seeksT()),
+);
+check(
+  'T: the loop promise is armed after the entry (landing on its start bound is inclusive)',
+  loopBtnT()?.getAttribute('aria-pressed') === 'true',
+  loopBtnT()?.getAttribute('aria-pressed'),
+);
+check(
+  'T: the ?sel= selection itself still applied (the detail pane shows the landmark)',
+  !!targetT.querySelector('.lm-detail'),
+  String(!!targetT.querySelector('.lm-detail')),
+);
+// In-session, via the ONE armLoopAroundSeek path: the detail pane's
+// "Watch this event" lands at the loop start (event 128 ∓ 5 s at 64 tps
+// → from 0), then plays, then arms.
+const watchT = targetT.querySelector('.lm-detail-actions .btn.primary');
+check('T: the detail pane offers "Watch this event"', !!watchT, String(!!watchT));
+const seeksT1 = seeksT().length;
+click(watchT || document.createElement('button'));
+await sleep();
+check(
+  'T: the detail "Watch this event" seeks to the loop START (the in-session from, never the event tick)',
+  seeksT().length === seeksT1 + 1 && seeksT().at(-1) === 0,
+  JSON.stringify(seeksT()),
+);
+// "Hear around the event" — hearTick is the same path with voice on: the
+// window stays centred on the event, playback starts at the loop start.
+const hearT = [...targetT.querySelectorAll('.lm-detail-head button')].find((b) =>
+  (b.getAttribute('title') || '').startsWith('Open playback at this event'),
+);
+check('T: the voice fixture offers "Hear around the event" in the detail head', !!hearT, String(!!hearT));
+const seeksT2 = seeksT().length;
+click(hearT || document.createElement('button'));
+await sleep();
+check(
+  'T: "Hear around the event" starts at the loop START too (same path, voice leg)',
+  seeksT().length === seeksT2 + 1 && seeksT().at(-1) === 0,
+  JSON.stringify(seeksT()),
+);
+
+// The OTHER direction: a pure ?sel= deep link carries no ?tick= promise,
+// so the guard must not touch it — it seeks its landmark as before.
+delete globalThis.__feedDelayMs; // back to the fast-stub default
+const seeksU0 = [...(globalThis.__seeks || [])];
+const seeksU = () => (globalThis.__seeks || []).slice(seeksU0.length);
+const targetU = document.createElement('div');
+document.body.appendChild(targetU);
+const harnessUSrc = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({ sel: 'e:90', cat: 'kills' });
+</script>
+<Replay id={1} {query} nav={(h) => (globalThis.__navU = (globalThis.__navU || []).concat(h))} />`;
+const harnessUOut = join(dir, 'harnessU.js');
+svelteCompile(harnessUSrc, 'harnessU.svelte', harnessUOut);
+const modU = await import(pathToFileURL(harnessUOut).href);
+resetReplayPreload();
+mount(modU.default, { target: targetU });
+await sleep();
+await sleep();
+check(
+  'T: a pure ?sel= deep link (no ?tick=) still seeks its landmark — exactly one seek, to 128',
+  seeksU().length === 1 && seeksU().at(-1) === 128,
+  JSON.stringify(seeksU()),
+);
+check(
+  'T: the pure ?sel= selection applied too (detail pane open)',
+  !!targetU.querySelector('.lm-detail'),
+  String(!!targetU.querySelector('.lm-detail')),
+);
+delete globalThis.__voicePresence; // restore the no-voice fixture default
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

@@ -725,7 +725,7 @@
   let payloadRaw = $state(false);
   let payloadQuery = $state('');
   let copied = $state(false);
-  let entrySel = ''; // ?sel= from the entry URL (applied once)
+  let entrySel = $state(''); // ?sel= from the entry URL (applied once)
   let entrySelTick = 0; // its tick when it resolves before the engine is up
   // The DEFAULT entry tick when the URL makes no time promise (no valid
   // ?tick= — the round scope is filter state and never a promise):
@@ -734,7 +734,13 @@
   // purpose: it decides where a replay LAUNCHES, not where an in-session
   // filter change lands (those never re-run startEngine).
   let entryDefaultTick = 0;
-  let selApplied = false;
+  // $state: the ?sel= effect below reads these in its guard, and load()
+  // (onMount) assigns entrySel AFTER that effect's first run — as plain
+  // lets the assignment was invisible to Svelte and the effect ran its
+  // one dependency-free pass with entrySel '' (the deep link never
+  // selected). Reactive, the assignment wakes the effect exactly once
+  // and selApplied's write settles it.
+  let selApplied = $state(false);
   // The LAST-APPLIED entry seed — the ONE record both seed-application
   // paths write: startEngine's fresh-mount block (seeds it with the mount
   // resolution) and the keep-alive's seed watcher below (records every
@@ -780,10 +786,12 @@
   }
 
   // Entry selection: a deep link's ?sel= opens the landmark (typed
-  // events resolve by id even beyond the loaded pages) and seeks the
-  // replay to its tick — "open the intended position AND selection".
-  // Selection during the session never seeks (the user's playback
-  // context is preserved); ▶ is the explicit seek action. The RESOLUTION
+  // events resolve by id even beyond the loaded pages) and — only when
+  // the URL makes NO ?tick= promise (seekEntry's guard: the tick/loop
+  // seed owns the position, landing at the LOOP's start when ?loop=
+  // accompanies the tick) — seeks the replay to its tick. Selection
+  // during the session never seeks (the user's playback context is
+  // preserved); ▶ is the explicit seek action. The RESOLUTION
   // is feed-shape (feed.entrySelection: the row already in the list, or
   // the event id to fetch — feed.fetchEntryRow); this effect is the
   // CHROME half that applies it (selection state + the seek).
@@ -818,7 +826,17 @@
   // the position data loads, and an unguarded `engine?.seekTick` would
   // silently no-op there — leaving the replay on the first frame instead
   // of the linked landmark.
+  // THE GUARD (owner ruling 2026-11-18): when the URL carries a ?tick=
+  // promise, the tick/loop seed OWNS the position — startEngine (or the
+  // keep-alive's seed watcher) has already landed it (at the LOOP's
+  // start when ?loop= accompanies the tick), and a ?sel= re-seek to the
+  // landmark would jump PAST that landing — in-range of the armed loop,
+  // so it would not even cancel it, silently violating the loop-start
+  // rule. A pure ?sel= deep link (no ?tick=) keeps seeking its landmark
+  // exactly as before: the guard reads entrySeed — THE same resolution
+  // source both appliers use — never a second interpretation.
   function seekEntry(tick) {
+    if (entrySeed(query, rounds).seek != null) return;
     if (engine) engine.seekTick(tick);
     else entrySelTick = tick;
   }
@@ -1051,26 +1069,34 @@
 
   // armLoopAroundSeek — THE one path behind every event-card play button:
   // the feed row's ▶, the detail pane's "Watch this event" and "Hear around
-  // the event". Seek to the event, START PLAYBACK (owner ruling: once the
-  // loop is armed, PLAY — the old C19 "seek then pause" no longer holds
-  // for these buttons, and it now agrees with every external watch link:
-  // startEngine autoplays a fresh entry with its loop armed), then arm
-  // the loop-length window around it (armLoopAroundTick below).
+  // the event". Seek to the START of the loop-length window around the
+  // event (owner ruling 2026-11-18: a button that establishes a loop starts
+  // at the loop's start, not at the event itself — the window still wraps
+  // the event), START PLAYBACK (owner ruling: once the loop is armed, PLAY
+  // — the old C19 "seek then pause" no longer holds for these buttons, and
+  // it now agrees with every external watch link: startEngine autoplays a
+  // fresh entry with its loop armed), then arm the loop-length window
+  // around it (armLoopAroundTick below). The landing tick comes from
+  // loopAroundTicks — the ONE derivation armLoopAroundTick uses too, never
+  // a second rule.
   //
   // The ORDER: seek first, then arm — the same order startEngine's entry
   // ?loop= apply uses (seek → bounds → arm). engine.seekTick's loop-exit
   // guard (cancelLoopIfOutside) cancels an armed range the seek lands
   // OUTSIDE of, so arming after the seek is the side that can never be
-  // undone by the very seek it follows.
+  // undone by the very seek it follows. Landing on the fresh range's own
+  // start bound would be inclusive anyway (engine.test.js), but the order
+  // makes that moot on the first arm.
   //
   // This is view glue only — engine.seekTick itself stays position-only
   // (section K's "seek never touches play/pause" pins own that), and no
   // wasPlaying write either: the keep-alive re-records it from the engine
   // at leave. The optional voice leg is the M4 comms-around button: the
   // same path with the voice engine re-armed first, so the audio engine
-  // starts from the event (in-panel) and its "around" claim is loop-true.
+  // starts from the loop's start (in-panel) and its "around" claim is
+  // loop-true.
   function armLoopAroundSeek(tick, { voice = false } = {}) {
-    engine?.seekTick(tick);
+    engine?.seekTick(loopAroundTicks(tick).from);
     if (voice && voiceEngine) voiceEngine.setEnabled(true).catch(() => {});
     engine?.play();
     armLoopAroundTick(tick);
@@ -1901,7 +1927,10 @@
   //     startEngine's entry order (seek first — engine.seekTick is a
   //     POSITION change only, it never touches play/pause, so a seed over
   //     the collapsed dock cannot resume a user's pause — then loop bounds
-  //     + arm, behind the seek's cancelLoopIfOutside);
+  //     + arm, behind the seek's cancelLoopIfOutside), the seek TARGET
+  //     being seed.loop.from when the seed carries a loop (the same
+  //     loop-start landing rule startEngine applies — the two appliers
+  //     must agree);
   //   - a null component is "no promise": never seek, never arm, never
   //     disarm (absence clears nothing — the toggle, the range-edit rule
   //     and cancelLoopIfOutside own every removal);
@@ -1915,7 +1944,11 @@
     const seed = entrySeed(query, rounds);
     if (!engine) return; // load still in flight: startEngine applies + records the mount seed
     const plan = untrack(() => entrySeedPlan(appliedSeed, seed));
-    if (plan.applySeek) engine.seekTick(seed.seek);
+    // The same loop-start landing rule as startEngine (the two appliers
+    // must agree): a seed carrying both promises seeks to the LOOP's
+    // start; a tick-only seed seeks itself; a loop-only seed (applySeek
+    // false) seeks nothing at all.
+    if (plan.applySeek) engine.seekTick(seed.loop != null ? seed.loop.from : seed.seek);
     if (plan.applyLoop) {
       engine.setLoop(engine.frameForTick(seed.loop.from), engine.frameForTick(seed.loop.to));
       engine.setLoopEnabled(true);
@@ -2599,19 +2632,33 @@
     });
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeed is the ONE resolution (nav.entrySeed → entrySeekTick):
-    // ?tick= is the ONLY position source — the round scope
+    // ?tick= is the only position SOURCE — the round scope
     // (?roundFrom=/?roundTo=) is feed-filter state and NEVER seeks, so
     // a scope-only URL resolves null here; null means the URL made NO
     // time promise, and then the load-time default (entryDefaultTick:
     // the first counted round's start) applies; a ?sel= landmark
-    // that resolved before the engine was up applies in between).
+    // that resolved before the engine was up applies in between —
+    // never when a ?tick= promise exists (seekEntry's guard: the
+    // tick/loop seed owns the position). The LANDING rule is applied
+    // below: both promises → the loop's start (owner ruling
+    // 2026-11-18).
     // Applied once HERE per fresh load — the keep-alive's seed watcher
     // ("Keep-alive entry seed" above) owns every DISTINCT resolution
     // after it: entry-once PER DISTINCT SEED, not per load. Identical-
     // value churn (filter edits keeping ?tick=, expandReplayHash round
     // trips, ?back= rewrites) resolves the same seed and applies nothing.
     const seed0 = entrySeed(query, rounds);
-    if (seed0.seek != null) engine.seekTick(seed0.seek);
+    // The LOOP-START landing (owner ruling 2026-11-18): a seed that
+    // carries BOTH promises (?tick= + ?loop= — every event link that
+    // establishes a loop) lands at the LOOP's start, never at the event
+    // tick; a tick-only seed seeks itself, and a loop-only seed seeks
+    // nothing (falls through to the sel/default legs exactly as before).
+    // Landing on loop.from is inclusive — engine.seekTick keeps an armed
+    // range whose bound it sits on (engine.test.js) — and the order stays
+    // seek → bounds → arm, so the arm can never be cancelled by the seek
+    // it follows.
+    if (seed0.seek != null && seed0.loop != null) engine.seekTick(seed0.loop.from);
+    else if (seed0.seek != null) engine.seekTick(seed0.seek);
     else if (entrySelTick) engine.seekTick(entrySelTick);
     else if (entryDefaultTick) engine.seekTick(entryDefaultTick);
     // Entry loop — the URL's SECOND entry promise (nav.entryLoopRange;
@@ -2770,28 +2817,40 @@
     engine?.toggleLoop();
   }
 
-  // armLoopAroundTick — the ONE in-view loop armer: the loop-length window
-  // (uiLoopSecs — the `loop_secs` pref read at load, NEVER a literal second
-  // count) AROUND a tick, at the match tick rate. The window CLAMPS at the
-  // stream edges — frameForTick floors at 0 and the `to` side clamps to the
-  // last frame — so it SHRINKS near an edge, never wraps. This is the
-  // in-session twin of nav.entryLoopAround (THE ?loop= stamper for the
-  // singular-event category — same ±half arithmetic, same loop_secs width,
-  // cross-referenced here rather than re-derived from a second rule): it
-  // states the range as ENGINE bounds instead of a URL string, because
-  // stamping the URL from inside Replay would re-mint it and drop the
-  // filter / `sel` state. Unlike a bound EDIT (loopBoundEdited — whose job
-  // is to disable) this never disarms first: bounds, then arm, exactly the
-  // entry ?loop='s order (startEngine's apply above), and the URL's
-  // promise is dropped on the way (an edit owns the URL: a refresh must
-  // not resurrect the pre-click range) — but only when there was one, so
-  // a session without ?loop= keeps its hash byte-identical.
-  function armLoopAroundTick(tick) {
-    if (!engine || !data) return;
+  // loopAroundTicks — THE one in-session derivation of the loop-length
+  // window AROUND a tick, in TICKS: ± uiLoopSecs (the `loop_secs` pref
+  // read at load, NEVER a literal second count) at the match tick rate,
+  // the `from` side floored at 0 (a negative bound is never legal — the
+  // same clamp as nav.entryLoopAround). Both armLoopAroundTick (bounds →
+  // arm) and armLoopAroundSeek (the landing = this window's START) read
+  // it — the frame clamping stays in armLoopAroundTick, where it belongs.
+  function loopAroundTicks(tick) {
     const tr = normTickRate(meta?.tickRate);
     const half = uiLoopSecs * tr;
-    const f0 = engine.frameForTick(tick - half); // clamps to 0
-    const f1 = Math.min(data.frames - 1, engine.frameForTick(tick + half));
+    return { from: Math.max(0, tick - half), to: tick + half };
+  }
+
+  // armLoopAroundTick — the ONE in-view loop armer: the loop-length window
+  // AROUND a tick (loopAroundTicks above), stated as ENGINE bounds. The
+  // window CLAMPS at the stream edges — frameForTick floors at 0 and the
+  // `to` side clamps to the last frame — so it SHRINKS near an edge,
+  // never wraps. This is the in-session twin of nav.entryLoopAround (THE
+  // ?loop= stamper for the singular-event category — same ±half
+  // arithmetic, same loop_secs width, cross-referenced here rather than
+  // re-derived from a second rule): it states the range as ENGINE bounds
+  // instead of a URL string, because stamping the URL from inside Replay
+  // would re-mint it and drop the filter / `sel` state. Unlike a bound
+  // EDIT (loopBoundEdited — whose job is to disable) this never disarms
+  // first: bounds, then arm, exactly the entry ?loop='s order (startEngine's
+  // apply above), and the URL's promise is dropped on the way (an edit
+  // owns the URL: a refresh must not resurrect the pre-click range) — but
+  // only when there was one, so a session without ?loop= keeps its hash
+  // byte-identical.
+  function armLoopAroundTick(tick) {
+    if (!engine || !data) return;
+    const { from, to } = loopAroundTicks(tick);
+    const f0 = engine.frameForTick(from); // clamps to 0
+    const f1 = Math.min(data.frames - 1, engine.frameForTick(to));
     engine.setLoop(f0, f1); // never enables by itself
     if (query.loop) navigateFilter(filter, { keepLoop: false });
     engine.setLoopEnabled(true); // arm, like the entry ?loop= apply
