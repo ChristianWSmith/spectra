@@ -318,26 +318,38 @@ func TestStateStreamExplicit(t *testing.T) {
 	}
 }
 
-// TestStateStreamSkipsUnknownSlot: a state sample for a SteamID the
-// position stream never locked must be skipped with a log line, never a
-// parse failure (mirrors AddFrame's latecomer policy).
+// TestStateStreamSkipsUnknownSlot: a state sample for a key the position
+// stream never handed a slot to must be skipped with a log line, never a
+// parse failure — the state stream reads the positions writer's table and
+// never grows it (slot growth belongs to AddFrame alone; owner report
+// 2026-11-17 re-pinned the old "first-frame table" phrasing away: a key
+// WITH a position sample now gets a slot whenever it first appears).
 func TestStateStreamSkipsUnknownSlot(t *testing.T) {
 	dir := t.TempDir()
 	fw := newFrameWriter(t, dir)
-	latecomer := uint64(76561198000000099)
-	fw.step(t, true, aliveSample(stateA, 100))
-	fw.step(t, false, aliveSample(stateA, 80), aliveSample(latecomer, 100))
+	ghost := uint64(76561198000000099) // never appears in any position frame
+	// Frame 0: A's position + state, plus a state sample for a key with
+	// no position of its own — nowhere to land.
+	if err := fw.w.AddFrame(0, []extract.PositionPlayer{{SteamID: stateA, X: 1}}); err != nil {
+		t.Fatalf("AddFrame: %v", err)
+	}
+	if err := fw.w.AddState(true, []extract.StatePlayer{aliveSample(stateA, 100), aliveSample(ghost, 100)}); err != nil {
+		t.Fatalf("AddState: %v", err)
+	}
+	fw.frame++
+	// Frame 1: A's hp change only — the ghost still has no slot.
+	fw.step(t, false, aliveSample(stateA, 80))
 	if _, err := fw.w.Close(64); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	recs, _ := decodeState(t, dir)
-	// f0 seed (slot A) + f1's hp change; the latecomer never lands.
+	// f0 seed (slot A) + f1's hp change; the ghost never lands.
 	if len(recs) != 2 {
-		t.Fatalf("records = %d, want 2 (latecomer skipped): %+v", len(recs), recs)
+		t.Fatalf("records = %d, want 2 (slotless key skipped): %+v", len(recs), recs)
 	}
 	for i, r := range recs {
 		if r.Slot != 0 {
-			t.Errorf("rec %d slot = %d, want 0 (latecomer must not get a slot)", i, r.Slot)
+			t.Errorf("rec %d slot = %d, want 0 (the slotless key must not get a slot)", i, r.Slot)
 		}
 	}
 	if recs[0].HP != 100 || recs[1].HP != 80 {

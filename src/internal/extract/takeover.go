@@ -154,8 +154,10 @@ var pawnAlive = (*common.Player).IsAlive
 // position / yaw / air / duck read through the PAWN (during a takeover
 // the human's own pawn is the stale pre-disconnect corpse — reading it
 // produced the repro's 1840/1840-frame blackout), the key and side from
-// the IDENTITY (the human's SteamID64; a lone bot keeps 0 and stays a
-// non-slot-table player, exactly as before). false = no row this frame
+// the IDENTITY (extract.playerKey — the controlling human's SteamID64
+// post-takeover; a lone/covering bot's synthetic 0xFF key before it, so
+// the bot's marker tracks it from ITS connect instead of popping in at
+// the takeover — owner report 2026-11-17). false = no row this frame
 // (dead — the position stream only carries alive players).
 func positionRow(t identityTarget) (PositionPlayer, bool) {
 	if !pawnAlive(t.pawn) {
@@ -170,7 +172,7 @@ func positionRow(t identityTarget) (PositionPlayer, bool) {
 		yaw -= 360
 	}
 	return PositionPlayer{
-		SteamID: t.identity.SteamID64,
+		SteamID: playerKey(t.identity),
 		X:       float32(pos.X),
 		Y:       float32(pos.Y),
 		Z:       float32(pos.Z),

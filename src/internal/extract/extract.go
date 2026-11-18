@@ -35,8 +35,11 @@ const progressEvery = 1000
 // the unit the sidecar writer (internal/sidecar) encodes. Coordinates are
 // world units; Yaw is ViewDirectionX (yaw) in degrees, normalized to
 // -180..180 before the sink; Air/Duck map to the q16 flags bits and Side
-// ("ct"/"t"/"") to the side bits. SteamID is the raw SteamID64 (0 for bots,
-// which have no SteamID64).
+// ("ct"/"t"/"") to the side bits. SteamID is the ACCUMULATOR KEY
+// (extract.playerKey): the SteamID64 for humans, the synthetic
+// 0xFF-prefixed bot key for bots — the same key space as players.steam_id
+// and the sidecar slot table, so a bot's samples join the roster like any
+// other player's (they used to carry 0 and were dropped at the writer).
 type PositionPlayer struct {
 	SteamID uint64
 	X, Y, Z float32
@@ -76,7 +79,9 @@ type PositionSink interface {
 // cash lands while the player is still dead, which is exactly when a card
 // needs it) and Helmet is the pawn's item-service flag read through the
 // same entity path Armor uses (same lifetime, same sample-as-read rule).
-// SteamID is the raw SteamID64 (0 for bots).
+// SteamID is the accumulator key (extract.playerKey — SteamID64 for
+// humans, the synthetic 0xFF bot key for bots; same key space as
+// PositionPlayer).
 //
 // Reloading is the exception that joins the WEAPON group, not the as-read
 // group: it is only read while alive (a dead pawn reloads nothing) and is
@@ -103,7 +108,7 @@ type StatePlayer struct {
 
 // RosterSink is an OPTIONAL capability of a PositionSink: after the parse
 // ends, Parse delivers the end-of-demo roster's teammate colors through a
-// Positions sink that implements it — map[SteamID64]raw
+// Positions sink that implements it — map[extract.playerKey]raw
 // m_iCompTeammateColor (CS2.md "Player scoreboard/radar colors": 0 blue,
 // 1 green, 2 yellow, 3 orange, 4 purple, -1 none/GOTV).
 //
@@ -340,10 +345,13 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			// Takeover routing (takeover.go appendTargets): during a
 			// reconnect takeover the human's own pawn is the stale
 			// pre-disconnect corpse — reading it blacked out the whole
-			// window (owner's repro: 1840/1840 frames with no sample)
-			// while the live bot's steamId-0 key could not be stored —
+			// window (owner's repro: 1840/1840 frames with no sample) —
 			// so the sample runs through the controlled pawn and is
-			// keyed with the controlling human's SteamID64.
+			// keyed with the identity's accumulator key (the controlling
+			// human's SteamID64 post-takeover; the covering bot's
+			// synthetic key before it — the marker tracks the bot from
+			// ITS connect, not from the takeover, owner report
+			// 2026-11-17).
 			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
 			frameBuf = frameBuf[:0]
 			for _, t := range targetBuf {
@@ -432,12 +440,13 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	gs := p.GameState()
 	playing := finalRoster(gs.Participants().All())
 	finals := make([]finalPlayer, 0, len(playing))
-	// Teammate colors for the RosterSink capability: keyed by SteamID64,
-	// the same key the position sink's slot table is built from (bots
-	// share SteamID 0 and are never slot-table players).
+	// Teammate colors for the RosterSink capability: keyed by
+	// extract.playerKey — the same key the position sink's slot table is
+	// built from (a bot's synthetic key colors its own slot; SteamID64
+	// keying collapsed every bot onto 0).
 	rosterColors := make(map[uint64]int, len(playing))
 	for _, pl := range playing {
-		rosterColors[pl.SteamID64] = teammateColor(pl)
+		rosterColors[playerKey(pl)] = teammateColor(pl)
 		finals = append(finals, finalPlayer{
 			key:             playerKey(pl),
 			name:            pl.Name,
@@ -557,9 +566,10 @@ func (rs *roundSeeds) take(round int) bool {
 
 // sampleStatePlayer reads one participant's authoritative per-frame state
 // (cheap prop reads, once per frame per player — see StatePlayer),
-// split across the takeover pair: the row is KEYED with the identity (the
-// controlling human's SteamID64 — the sidecar slot table only stores
-// human keys, so keying the bot's steamId-0 would drop the whole window),
+// split across the takeover pair: the row is KEYED with the identity's
+// accumulator key (extract.playerKey — the controlling human's SteamID64
+// on a takeover; a lone bot's synthetic 0xFF key, so its window is
+// stored instead of dropped at the sidecar slot table),
 // while every pawn-carried read (alive/HP/armor/weapons/reload/buttons)
 // runs through the pawn — the controlled bot's during a takeover, the
 // participant's own otherwise (identical reads when identity == pawn).
@@ -588,7 +598,7 @@ func sampleStatePlayer(identity, pawn *common.Player) StatePlayer {
 		}
 		reloading = pawn.IsReloading
 	}
-	return buildStateSample(identity.SteamID64, alive, pawn.Health(), pawn.Armor(), identity.Money(), pawn.HasHelmet(),
+	return buildStateSample(playerKey(identity), alive, pawn.Health(), pawn.Armor(), identity.Money(), pawn.HasHelmet(),
 		weapon, inventory, mag, reserve, mainMag, mainReserve, pawn.IsPressingButton(common.ButtonAttack), reloading)
 }
 

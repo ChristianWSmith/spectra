@@ -7895,3 +7895,78 @@ test('free camera (control): a size change never moves the radar pass mid-draw',
   assert.deepEqual(radar1, radar2, 'free mode: a second draw repaints the radar at the same camera (the reorder changes nothing here)');
   r.destroy();
 });
+
+// --- marker presence gate (card/marker agreement) ----------------------------
+//
+// The covering bot's dot must live in EXACTLY its card's window: Replay
+// pushes THE card predicate (playerConnected → playercard.js presentAt)
+// through setSlotPresence, and drawPlayers drops every slot outside it
+// (owner ruling 2026-11-17 — the bot used to "pop into existence" at the
+// takeover because its pre-takeover samples never reached the screen).
+test('slot presence gates the marker: hidden slot draws no dot or label, visible slot does', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const players = [
+    { steamId: '1', name: 'alice', side: 'ct' },
+    { steamId: '2', name: 'bob', side: 't' },
+  ];
+  const paint = (r, canvas) => {
+    r.resize();
+    engine.seekTick(10);
+    const mark = canvas.log.length;
+    r.draw();
+    const seq = canvas.log.slice(mark);
+    return {
+      names: seq
+        .filter((e) => e.op === 'fillText' && (e.args[0] === 'alice' || e.args[0] === 'bob'))
+        .map((e) => e.args[0])
+        .sort(),
+      dots: seq.filter(
+        (e, i) => e.op === 'arc' && e.args[2] === 9 && seq[i + 1] && seq[i + 1].op === 'fill',
+      ).length,
+    };
+  };
+
+  // No gate pushed (the default every host without the push gets):
+  // both markers draw.
+  let canvas = recordingCanvas();
+  let r = createRenderer(canvas, { engine, data, players });
+  let got = paint(r, canvas);
+  assert.deepEqual(got.names, ['alice', 'bob'], 'no gate → both name labels');
+  assert.equal(got.dots, 2, 'no gate → both dots');
+  r.destroy();
+
+  // The pushed gate hides slot 1 (outside its presentAt window): its dot
+  // AND its label vanish; slot 0 is untouched.
+  canvas = recordingCanvas();
+  r = createRenderer(canvas, { engine, data, players });
+  r.setSlotPresence((slot) => slot === 0);
+  got = paint(r, canvas);
+  assert.deepEqual(got.names, ['alice'], 'hidden slot draws no name label');
+  assert.equal(got.dots, 1, 'hidden slot draws no dot');
+  r.destroy();
+
+  // The window opens (presentAt flips true — the covering human
+  // disconnects and the bot's card appears): the marker appears WITH it,
+  // on the same draw, nothing sticky from the hidden state.
+  canvas = recordingCanvas();
+  r = createRenderer(canvas, { engine, data, players });
+  let slot1Visible = false;
+  r.setSlotPresence((slot) => slot === 0 || slot1Visible);
+  got = paint(r, canvas);
+  assert.equal(got.dots, 1, 'still hidden before the window opens');
+  slot1Visible = true;
+  const mark = canvas.log.length;
+  r.draw();
+  const seq = canvas.log.slice(mark);
+  const dots = seq.filter(
+    (e, i) => e.op === 'arc' && e.args[2] === 9 && seq[i + 1] && seq[i + 1].op === 'fill',
+  );
+  assert.equal(dots.length, 2, 'the marker appears the moment its window opens');
+  assert.ok(
+    seq.some((e) => e.op === 'fillText' && e.args[0] === 'bob'),
+    '…with its label',
+  );
+  r.destroy();
+});

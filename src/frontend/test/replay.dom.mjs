@@ -780,6 +780,13 @@ writeFileSync(
     },
     setIcons() {},
     setVoices() {},
+    setSlotPresence(v) {
+      // Recorded so the driver can pin the marker-presence wiring:
+      // startEngine pushes THE card predicate (playerConnected →
+      // playercard.js presentAt) — owner ruling 2026-11-17: the
+      // covering bot's dot lives in exactly its card's window.
+      globalThis.__slotPresence = v || null;
+    },
     setStateIndex() {},
     resize() {
       // Recorded so section J3 can pin the keep-alive activation

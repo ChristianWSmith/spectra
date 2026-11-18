@@ -32,15 +32,19 @@ type Writer struct {
 	offset     int64 // bytes written to positions.bin so far
 	idx        []idxEntry
 
-	slots       []uint64
-	slotOf      map[uint64]int
-	slotsLocked bool // slot table assigned by the first non-empty frame
-	skipped     map[uint64]bool
+	slots  []uint64
+	slotOf map[uint64]int
+	// slots grow ON DEMAND in first-seen key order: the initial roster
+	// claims slots at the first non-empty frame, a key seen later (a bot
+	// covering a disconnected human joins mid-match — owner report
+	// 2026-11-17) appends its own, and a handed-out slot number is never
+	// renumbered (index stability for readers). Capped at maxSlots.
+	skipped map[uint64]bool
 
 	// colors is the end-of-demo roster's raw m_iCompTeammateColor per
-	// SteamID (extract.RosterSink — set once at the end of the parse,
-	// well after the slot table locked), resolved onto slot order at
-	// Close.
+	// accumulator key (extract.RosterSink — set once at the end of the
+	// parse, after the slot table has grown through the stream),
+	// resolved onto slot order at Close.
 	colors map[uint64]int
 
 	// st is the sparse player-state stream (state.go); its files are
@@ -102,39 +106,36 @@ func NewWriter(dir string, tickRate float64) (*Writer, error) {
 	}, nil
 }
 
-// AddFrame encodes one frame (extract.PositionSink). The slot table is
-// assigned at the first frame that carries players, in first-seen SteamID
-// order; SteamIDs that appear later are skipped with a log line instead of
-// failing the parse (a slot is never retroactively renumbered — the index
-// must stay stable for readers). Flushes a zstd block every BlockFrames
-// frames. players must not be retained by the caller side — it is only
-// read here.
+// AddFrame encodes one frame (extract.PositionSink). The slot table grows
+// on demand in first-seen key order — the initial roster claims its
+// slots at the first non-empty frame, a key seen later APPENDS a slot
+// (a covering bot joins mid-match; its samples must reach the screen),
+// and a handed-out slot number is never renumbered — the index must stay
+// stable for readers. Keys arriving when the table is full (maxSlots)
+// are skipped with a log line instead of failing the parse. Flushes a
+// zstd block every BlockFrames frames. players must not be retained by
+// the caller side — it is only read here.
 func (w *Writer) AddFrame(tick int32, players []extract.PositionPlayer) error {
 	if w.closed {
 		return errors.New("cannot add a frame after the writer is closed")
-	}
-	if !w.slotsLocked && len(players) > 0 {
-		for _, p := range players {
-			if len(w.slots) >= maxSlots {
-				w.logSkip(p.SteamID, "slot table full")
-				continue
-			}
-			w.slotOf[p.SteamID] = len(w.slots)
-			w.slots = append(w.slots, p.SteamID)
-		}
-		w.slotsLocked = true
 	}
 	var mask uint16
 	var bySlot [maxSlots]extract.PositionPlayer
 	for _, p := range players {
 		slot, ok := w.slotOf[p.SteamID]
 		if !ok {
-			w.logSkip(p.SteamID, "not in first-frame slot table")
-			continue
+			if len(w.slots) >= maxSlots {
+				w.logSkip(p.SteamID, "slot table full")
+				continue
+			}
+			slot = len(w.slots)
+			w.slotOf[p.SteamID] = slot
+			w.slots = append(w.slots, p.SteamID)
 		}
 		if mask&(1<<uint(slot)) != 0 {
-			// Duplicate SteamID in one frame (bots share SteamID 0):
-			// the first sighting wins the slot.
+			// Duplicate key in one frame: the first sighting wins the
+			// slot (kept as the invariant from the SteamID-0 era, when
+			// every bot collided on one key — bot keys are distinct now).
 			continue
 		}
 		mask |= 1 << uint(slot)
