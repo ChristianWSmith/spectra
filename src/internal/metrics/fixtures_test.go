@@ -35,10 +35,11 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the NINETY-TWO schema-seeded builtins (schema.sql —
-// name/expr/scope/subject/format/short_name/denominator are LOCKED to
-// the baseline seed by this table) onto their hand-computed seed
-// expectations. (2026-11-17 re-pin of the FIFTY-NINE count: plan §7 M3
+// builtinSeed maps the ONE HUNDRED AND TWO schema-seeded builtins
+// (schema.sql —
+// name/expr/scope/subject/partition/format/short_name/denominator are
+// LOCKED to the baseline seed by this table) onto their hand-computed
+// seed expectations. (2026-11-17 re-pin of the FIFTY-NINE count: plan §7 M3
 // / §8 adds the dmg_no_kill + kill_conversion match rows; the same
 // day's owner Option A extension adds the 22-row count addendum —
 // EIGHTY-THREE / 64 match + 19 profile — an owner amendment the
@@ -48,12 +49,18 @@ func seededStore(t *testing.T) *store.Store {
 // avg_equip_gap among the plan's six rows reported NOT expressible in
 // the grammar; the identity addendum (plan §8 (M1 identity row),
 // 2026-11-17) finally adds the five M1 top-card seeds — NINETY-TWO /
-// 72 match + 20 profile — subject=match, format=identity.) interpretation records how the seeded expression states
+// 72 match + 20 profile — subject=match, format=identity; the
+// partition addendum (plan §8 (M5/M6 rows), 2026-11-17) then adds the
+// five side- and five map-partitioned profile seeds — ONE HUNDRED AND
+// TWO / 72 match + 30 profile — partition written explicitly.)
+// interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
 // grouped by the DECLARED subject's key — the player shape for the
 // player rows (the groupBy parameter retired with W2), the match/team
-// key for the addendum rows.
+// key for the addendum rows — and a partitioned row additionally
+// splits by dim (wantDims pins which dim each row lands on; the
+// partition column itself is locked alongside the expr above).
 //
 // The expectations are hand-computed over the committed corpus
 // (testdata/seed.sql — 3 identical matches × 8 players × 24 rounds;
@@ -61,17 +68,23 @@ func seededStore(t *testing.T) *store.Store {
 // headshots = i, total_damage = 100i, adr = 50+5i (the hand-written
 // gradient only career_adr_sigma still reads — every ADR seed now
 // recomputes from total_damage with the `rounds` denominator, owner
-// rule 2026-11-16), rounds_played = 24 (no seed reads it any more),
-// trade_kills = i per match for player i (1..8), entry_kills /
+// rule 2026-11-16), rounds_played = 24 (map_adr's per-match divisor
+// matches it — the corpus has no absent-round player), trade_kills = i
+// per match for player i (1..8), entry_kills /
 // utility_damage / enemies_flashed are absent → 0, and every player has
-// 72 player_round_stats rows with a 0.5 KAST mean (36 of 72). The
-// corpus has NO clutches and no player_round_stats surprises, which is
-// what makes the N values (COUNT(*) behind each aggregate) exact.
+// 72 player_round_stats rows with a 0.5 KAST mean (36 of 72), a 60.0
+// side ADR (4320 damage / 72 rounds), 72 kills / 18 deaths (K/D 4)
+// and a 36/72 round-win rate (the winners alternate ct/t by round
+// parity, each player sits on ONE side all career — side_switches 0 —
+// so each player has exactly ONE side dim row). The corpus has NO
+// clutches and no player_round_stats surprises, which is what makes
+// the N values (COUNT(*) behind each aggregate) exact.
 var builtinSeed = []struct {
 	name           string
 	expr           string
 	scope          string
 	subject        string // "" = player (the DDL default the player rows rely on)
+	partition      string // "" = unpartitioned (the DDL default)
 	format         string
 	shortName      string
 	denominator    string
@@ -79,8 +92,9 @@ var builtinSeed = []struct {
 	rows           int
 	wantValues     []float64 // per subject, ORDER BY grp ASC (nil → wantAll)
 	wantAll        float64
-	wantN          int    // expected N per row (0 = don't assert)
-	wantLabels     string // expected labels joined ("" = don't assert)
+	wantN          int      // expected N per row (0 = don't assert)
+	wantLabels     string   // expected labels joined ("" = don't assert)
+	wantDims       []string // per row, ORDER BY grp, dim (nil = don't assert)
 }{
 	{
 		name:        "trade_rate",
@@ -437,12 +451,15 @@ var builtinSeed = []struct {
 		interpretation: "death-drop count (corpus: none recorded)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
 	},
-	// ---- inferred set, T2 (10): the corpus writes NEITHER analysis
-	// table (round_classifications / round_player_sides are empty), so
-	// every label/class count is 0 over a LEFT JOIN that keeps all 72
-	// player-rounds (N), while the empty round_player_sides primary
-	// produces no groups at all — the value-acceptance rig with INSERTed
-	// rows lives in join_test.go TestJoinedClassificationValues.
+	// ---- inferred set, T2 (10): the corpus writes NEITHER LABEL nor
+	// CLASS table (round_classifications / round_side_classes are
+	// empty), so every label/class count is 0 over a LEFT JOIN that
+	// keeps all 72 player-rounds (N). round_player_sides now ships
+	// FILLED for every match (testdata/seed.sql — the side-split
+	// oracle needs it), so the side_class_* primaries produce their
+	// 8 groups per library-scope preview instead of no rows at all —
+	// the value-acceptance rig with INSERTed class rows lives in
+	// join_test.go TestJoinedClassificationValues.
 	{
 		name: "round_label_eco", expr: "from player_round_stats, round_classifications: count(where label = 'eco')",
 		scope: "match", format: "int", shortName: "", denominator: "",
@@ -474,34 +491,39 @@ var builtinSeed = []struct {
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
 	},
 	{
+		// The corpus's class rows live in matches 2-3 only (rounds 2-4,
+		// both sides, class 'force' — the seed.sql extension comment):
+		// match 1 contributes 0 force rounds, matches 2-3 contribute 3
+		// each → 6 per player over the library-scope preview, N = the
+		// 72 side-sample rows behind them.
 		name: "side_class_eco", expr: "from round_player_sides, round_side_classes: count(where class = 'eco')",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "rounds played on an eco-classified side (empty primary → no rows)",
-		rows:           0,
+		interpretation: "rounds played on an eco-classified side (class rows are force-only → 0 beside N)",
+		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
 		name: "side_class_force", expr: "from round_player_sides, round_side_classes: count(where class = 'force')",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "rounds played on a force-classified side (empty primary → no rows)",
-		rows:           0,
+		interpretation: "rounds played on a force-classified side (0 + 3 + 3 across the three matches)",
+		rows:           8, wantAll: 6, wantN: 72,
 	},
 	{
 		name: "side_class_full", expr: "from round_player_sides, round_side_classes: count(where class = 'full')",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "rounds played on a full-buy side (empty primary → no rows)",
-		rows:           0,
+		interpretation: "rounds played on a full-buy side (force-only class rows → 0 beside N)",
+		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
 		name: "side_class_save", expr: "from round_player_sides, round_side_classes: count(where class = 'save')",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "rounds played on a save side (empty primary → no rows)",
-		rows:           0,
+		interpretation: "rounds played on a save side (force-only class rows → 0 beside N)",
+		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
 		name: "side_class_pistol", expr: "from round_player_sides, round_side_classes: count(where class = 'pistol')",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "rounds played on a pistol-classified side (empty primary → no rows)",
-		rows:           0,
+		interpretation: "rounds played on a pistol-classified side (force-only class rows → 0 beside N)",
+		rows:           8, wantAll: 0, wantN: 72,
 	},
 	// ---- inferred set, profile scope (1).
 	{
@@ -812,11 +834,129 @@ var builtinSeed = []struct {
 		interpretation: "the match's MVP-award leader (corpus: 1 per player → tie → Alice by key ASC)",
 		rows:           3, wantValues: []float64{1, 1, 1}, wantN: 8, wantLabels: "Alice,Alice,Alice",
 	},
+	// ---- partition addendum (plan §8 (M5/M6 rows), 2026-11-17): the
+	// five side- and five map-partitioned profile seeds. The corpus
+	// fills every stamp (testdata/seed.sql extension): each player sits
+	// on ONE side all career (side_switches 0 — players 1-4 ct, 5-8 t),
+	// so each side seed yields ONE dim row per player (N = their 72
+	// rounds), while every player meets all THREE maps (one match each
+	// — de_dust2 < de_inferno < de_mirage by dim ASC), so each map
+	// seed yields three rows per player (N = 1 match). The corpus
+	// matches are 12-12 ties, so every win cell is 0 (models.WinFor).
+	{
+		name: "side_rounds", expr: "from player_round_stats: count()",
+		scope: "profile", partition: "side", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on the player's side (all 72 career rounds sit on one side)",
+		rows:           8, wantAll: 72, wantN: 72, wantLabels: eightLabels,
+		wantDims: []string{"ct", "ct", "ct", "ct", "t", "t", "t", "t"},
+	},
+	{
+		// 36 of the player's 72 rounds were won by their side (winners
+		// alternate by round parity) → 0.5.
+		name: "side_win_pct", expr: "from player_round_stats: ratio(sum(won), count())",
+		scope: "profile", partition: "side", format: "percent", shortName: "", denominator: "",
+		interpretation: "rounds won on the side ÷ rounds played on it (36/72)",
+		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
+		wantDims: []string{"ct", "ct", "ct", "ct", "t", "t", "t", "t"},
+	},
+	{
+		// 4320 damage over 72 rounds = 60.0 — the pooled side ADR the
+		// Sides card's ADR cell showed (SUM(dmg)/COUNT(*), never a mean
+		// of per-match values).
+		name: "side_adr", expr: "from player_round_stats: ratio(sum(dmg), count())",
+		scope: "profile", partition: "side", format: "float1", shortName: "", denominator: "",
+		interpretation: "damage dealt on the side ÷ rounds played on it (4320/72)",
+		rows:           8, wantAll: 60, wantN: 72, wantLabels: eightLabels,
+		wantDims: []string{"ct", "ct", "ct", "ct", "t", "t", "t", "t"},
+	},
+	{
+		// 36 KAST rounds of 72 → 0.5 (the percent fraction the display
+		// scales ×100 — the seed.sql header's 0.5 KAST mean).
+		name: "side_kast", expr: "from player_round_stats: avg(kast)",
+		scope: "profile", partition: "side", format: "percent", shortName: "", denominator: "",
+		interpretation: "share of the side's rounds with a K, A, T or S (36/72)",
+		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
+		wantDims: []string{"ct", "ct", "ct", "ct", "t", "t", "t", "t"},
+	},
+	{
+		// 72 kills / 18 deaths — the floored denominator the Sides
+		// card used (kills / max(deaths, 1)); the corpus's 18 deaths
+		// never hit the floor, the seed's max() pins the spelling.
+		name: "side_kd", expr: "from player_round_stats: ratio(sum(kills), max(sum(deaths), 1))",
+		scope: "profile", partition: "side", format: "float2", shortName: "", denominator: "",
+		interpretation: "kills per death on the side (72/18, floored at 1)",
+		rows:           8, wantAll: 4, wantN: 72, wantLabels: eightLabels,
+		wantDims: []string{"ct", "ct", "ct", "ct", "t", "t", "t", "t"},
+	},
+	{
+		name: "map_matches", expr: "from player_stats: count()",
+		scope: "profile", partition: "map", format: "int", shortName: "", denominator: "",
+		interpretation: "matches played on the map (one match per map in the corpus)",
+		rows:           24, wantAll: 1, wantN: 1, wantDims: threeMapDims,
+	},
+	{
+		// The corpus matches are all 12-12 ties → won = 0 everywhere.
+		name: "map_wins", expr: "from player_stats: sum(won)",
+		scope: "profile", partition: "map", format: "int", shortName: "", denominator: "",
+		interpretation: "matches won on the map (tied corpus → 0)",
+		rows:           24, wantAll: 0, wantN: 1, wantDims: threeMapDims,
+	},
+	{
+		name: "map_win_pct", expr: "from player_stats: ratio(sum(won), count())",
+		scope: "profile", partition: "map", format: "percent", shortName: "", denominator: "",
+		interpretation: "matches won ÷ played on the map (tied corpus → 0/1)",
+		rows:           24, wantAll: 0, wantN: 1, wantDims: threeMapDims,
+	},
+	{
+		// The Maps card's pooled micro-average: Σ damage over the map's
+		// matches ÷ their counted rounds — 100i damage / 24 rounds per
+		// player (the `rounds` denominator, dim-scoped by emitDenom to
+		// the map's matches — never a mean of per-match ADRs).
+		name: "map_adr", expr: "from player_stats: sum(total_damage)",
+		scope: "profile", partition: "map", format: "float1", shortName: "", denominator: "rounds",
+		interpretation: "pooled damage per round over the map's matches (100i/24)",
+		rows:           24, wantValues: mapADRValues, wantN: 1, wantDims: threeMapDims,
+	},
+	{
+		// kills = 2i, deaths = i per match → 2i/i = 2 on every map.
+		name: "map_kd", expr: "from player_stats: ratio(sum(kills), sum(deaths))",
+		scope: "profile", partition: "map", format: "float2", shortName: "", denominator: "",
+		interpretation: "kills per death on the map (2i/i = 2)",
+		rows:           24, wantAll: 2, wantN: 1, wantDims: threeMapDims,
+	},
 }
 
 // eightLabels is the corpus roster in subject (steam_id) ASC order —
 // every grouped preview's label expectation.
 const eightLabels = "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi"
+
+// threeMapDims is the map partition's row order for EIGHT players (dim
+// ASC per subject: de_dust2, de_inferno, de_mirage — the corpus plays
+// each map once), the wantDims expectation of every map seed row.
+var threeMapDims = []string{
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+	"de_dust2", "de_inferno", "de_mirage",
+}
+
+// mapADRValues is the map_adr fixture: player i's pooled per-map ADR —
+// 100i damage ÷ 24 counted rounds, once per map (players 1..8, three
+// dims each).
+var mapADRValues = []float64{
+	100.0 / 24, 100.0 / 24, 100.0 / 24,
+	200.0 / 24, 200.0 / 24, 200.0 / 24,
+	300.0 / 24, 300.0 / 24, 300.0 / 24,
+	400.0 / 24, 400.0 / 24, 400.0 / 24,
+	500.0 / 24, 500.0 / 24, 500.0 / 24,
+	600.0 / 24, 600.0 / 24, 600.0 / 24,
+	700.0 / 24, 700.0 / 24, 700.0 / 24,
+	800.0 / 24, 800.0 / 24, 800.0 / 24,
+}
 
 // TestBuiltinSeedMetrics is the acceptance test: the schema-seeded
 // builtins must (a) exist with seeded expr + subject-addressed doc
@@ -838,18 +978,18 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 	// of exactly the multi-source exprs (the criterion that partitions
 	// the two phrasings).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, subject, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
-		nil, 100, 5000,
+		`SELECT name, expr, scope, subject, partition, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		nil, 200, 5000,
 	)
 	if err != nil {
 		t.Fatalf("read builtins: %v", err)
 	}
-	type seedRow struct{ expr, scope, subject, denom, doc, format, shortName string }
+	type seedRow struct{ expr, scope, subject, partition, denom, doc, format, shortName string }
 	got := map[string]seedRow{}
 	for _, r := range res.Rows {
 		got[r[0].(string)] = seedRow{
-			expr: r[1].(string), scope: r[2].(string), subject: r[3].(string), denom: r[4].(string),
-			doc: r[5].(string), format: r[6].(string), shortName: r[7].(string),
+			expr: r[1].(string), scope: r[2].(string), subject: r[3].(string), partition: r[4].(string),
+			denom: r[5].(string), doc: r[6].(string), format: r[7].(string), shortName: r[8].(string),
 		}
 	}
 	if len(got) != len(builtinSeed) {
@@ -865,9 +1005,10 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 		if wantSubject == "" {
 			wantSubject = "player" // the DDL default every player row relies on
 		}
-		if row.expr != f.expr || row.scope != f.scope || row.subject != wantSubject || row.denom != f.denominator {
-			t.Errorf("builtin %q seeded row = expr %q scope %q subject %q denom %q, want expr %q scope %q subject %q denom %q",
-				f.name, row.expr, row.scope, row.subject, row.denom, f.expr, f.scope, wantSubject, f.denominator)
+		if row.expr != f.expr || row.scope != f.scope || row.subject != wantSubject ||
+			row.partition != f.partition || row.denom != f.denominator {
+			t.Errorf("builtin %q seeded row = expr %q scope %q subject %q partition %q denom %q, want expr %q scope %q subject %q partition %q denom %q",
+				f.name, row.expr, row.scope, row.subject, row.partition, row.denom, f.expr, f.scope, wantSubject, f.partition, f.denominator)
 		}
 		if row.format != f.format {
 			t.Errorf("builtin %q format = %q, want %q", f.name, row.format, f.format)
@@ -903,13 +1044,13 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 			if wantSubject == "" {
 				wantSubject = "player"
 			}
-			addr := Address{Subject: wantSubject, Profile: f.scope == "profile"}
+			addr := Address{Subject: wantSubject, Partition: f.partition, Profile: f.scope == "profile"}
 			if _, perr := Compile(f.expr, "", "", addr); perr != nil {
 				t.Fatalf("Compile: %v", perr)
 			}
 			pv, perr, err := RunPreview(st, Def{
 				Expr: f.expr, Denominator: f.denominator,
-				Subject: wantSubject, Profile: f.scope == "profile",
+				Subject: wantSubject, Partition: f.partition, Profile: f.scope == "profile",
 			}, "", 500)
 			if perr != nil {
 				t.Fatalf("parse: %v", perr)
@@ -930,6 +1071,9 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 				}
 				if f.wantN != 0 && r.N != f.wantN {
 					t.Errorf("row %d N = %d, want %d", i, r.N, f.wantN)
+				}
+				if f.wantDims != nil && r.Dim != f.wantDims[i] {
+					t.Errorf("row %d dim = %q, want %q", i, r.Dim, f.wantDims[i])
 				}
 			}
 			if f.wantLabels != "" {

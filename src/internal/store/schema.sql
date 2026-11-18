@@ -831,7 +831,8 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly ninety-two — trade_rate
+-- THE builtins, seeded (see header): exactly one hundred and two —
+-- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
 -- rows: 38 match / 4 profile), the M3 combat-damage addendum (2
@@ -845,7 +846,11 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- interpretation recorded in its doc). The identity addendum (5
 -- match rows in their own INSERT below — plan §8 (M1 identity row),
 -- 2026-11-17) carries format=identity, the first seeded rows whose
--- value is a KEY. The eighth match-scope dogfooding row (kda, w13d's
+-- value is a KEY, and the partition addendum (10 rows in their own
+-- INSERT below — plan §8 (M5/M6 rows), 2026-11-17: the Sides and
+-- Maps tables' stored twins, every row partition='side' or
+-- 'map' — 72 match + 30 profile across the whole set). The eighth
+-- match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
 -- name), so its position changes nothing but the numbering.
@@ -1422,6 +1427,75 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from player_stats: argmax(mvps)',
  'match', 'match', '', 'identity',
  'Formula: argmax(player_stats.mvps) — the match''s MVP-award leader, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- Partition addendum (metrics expansion §8 M5/M6 rows, 2026-11-17):
+-- TEN profile-scope builtins whose addressing is WRITTEN explicitly —
+-- five side-partitioned (the Sides table's stored twins) and five
+-- map-partitioned (the Maps table's stored twins) — same INSERT OR
+-- IGNORE add-on path as the subject-axis and identity blocks above
+-- (keyed on the UNIQUE name). Equivalence with the retired reads
+-- (oracle-only now, internal/metrics side/map equivalence tests):
+-- side_* restate store.GetPlayerSideSplits' per-side rounds, round
+-- win rate, pooled side ADR, KAST% and floored K/D over the same
+-- player_round_stats rows; map_* restate the Maps card's fold
+-- (matches/wins over the won stamp) and store.GetPlayerMapADR's
+-- pooled micro-average (Σ damage ÷ the map's counted rounds — the
+-- `rounds` denominator, dim-scoped by emitDenom). The fifth map row
+-- (map_kd) and map_win_pct complete the ratio twins of the table's
+-- own columns; every doc is Formula-first, states subject + partition
+-- and stays inside the tier-2 doc limit (AGENTS doc rule; no doc
+-- hard-codes a count).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('side_rounds', 'Rounds', '',
+ 'from player_round_stats: count()',
+ 'profile', 'player', 'side', 'int',
+ 'Formula: count(player_round_stats) — rounds played on that side across the career, addressed per player, partitioned by side — N = the rounds counted.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_win_pct', 'Round win %', '',
+ 'from player_round_stats: ratio(sum(won), count())',
+ 'profile', 'player', 'side', 'percent',
+ 'Formula: sum(player_round_stats.won) / count() — rounds won on that side ÷ rounds played on it, addressed per player, partitioned by side — a percent; N = rounds on the side.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_adr', 'ADR', '',
+ 'from player_round_stats: ratio(sum(dmg), count())',
+ 'profile', 'player', 'side', 'float1',
+ 'Formula: sum(player_round_stats.dmg) / count() — damage dealt on that side ÷ rounds played on it, addressed per player, partitioned by side — damage per round; N = rounds on the side.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_kast', 'KAST%', '',
+ 'from player_round_stats: avg(kast)',
+ 'profile', 'player', 'side', 'percent',
+ 'Formula: avg(player_round_stats.kast) — share of that side''s rounds with a K, A, T or S, addressed per player, partitioned by side — a percent; N = rounds on the side.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_kd', 'K/D', '',
+ 'from player_round_stats: ratio(sum(kills), max(sum(deaths), 1))',
+ 'profile', 'player', 'side', 'float2',
+ 'Formula: sum(player_round_stats.kills) / max(sum(player_round_stats.deaths), 1) — kills per death on that side, addressed per player, partitioned by side — a deathless side divides by 1; N = rounds on the side.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('map_matches', 'Matches', '',
+ 'from player_stats: count()',
+ 'profile', 'player', 'map', 'int',
+ 'Formula: count(player_stats) — matches played on that map across the career, addressed per player, partitioned by map — N = the matches counted.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('map_wins', 'Wins', '',
+ 'from player_stats: sum(won)',
+ 'profile', 'player', 'map', 'int',
+ 'Formula: sum(player_stats.won) — matches won on that map, addressed per player, partitioned by map — ties count as no wins; N = matches on the map.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('map_win_pct', 'Win %', '',
+ 'from player_stats: ratio(sum(won), count())',
+ 'profile', 'player', 'map', 'percent',
+ 'Formula: sum(player_stats.won) / count() — matches won ÷ played on that map, addressed per player, partitioned by map — a percent; ties count as no wins; N = matches on the map.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('map_adr', 'ADR', '',
+ 'from player_stats: sum(total_damage)',
+ 'profile', 'player', 'map', 'float1',
+ 'Formula: sum(player_stats.total_damage) / the map''s counted rounds (denominator: rounds) — pooled damage per round over that map''s matches, addressed per player, partitioned by map — never a mean of per-match ADRs.',
+ 'builtin', 'rounds', CURRENT_TIMESTAMP),
+('map_kd', 'K/D', '',
+ 'from player_stats: ratio(sum(kills), sum(deaths))',
+ 'profile', 'player', 'map', 'float2',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death on that map, addressed per player, partitioned by map — no deaths → 0 beside N; N = matches on the map.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

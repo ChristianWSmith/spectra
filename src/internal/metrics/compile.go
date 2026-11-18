@@ -393,6 +393,27 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 		return Plan{}, errf(ax.Pos,
 			"argmax() takes no denominator — its N is the pool of players the winner was chosen from")
 	}
+	// Partition × denominator (§3.2/§6.6, 2026-11-17): a divisor is
+	// defined for the dim's OWN units where the partition column lives
+	// on the divisor's table (side/map — emitDenom spells those), but
+	// the weapon partition has no round or match unit at all (a weapon
+	// is not a thing rounds or matches divide into), and a non-player
+	// subject's divisor counts the whole match's units for that
+	// subject — neither can be scoped to a dim, so the combination is
+	// refused here rather than silently reporting a whole-match
+	// divisor against a dim-scoped numerator (the honesty rule: never
+	// a number whose divisor does not match its rows).
+	if denomTable != "" && addr.Partition != "" {
+		if addr.Partition == "weapon" {
+			return Plan{}, errf(0,
+				"the weapon partition cannot combine with a denominator — a weapon has no rounds or matches to divide by (pick an in-expression divisor such as ratio())")
+		}
+		if addr.Subject != "player" {
+			return Plan{}, errf(0,
+				"the %s subject cannot combine a partition with a denominator — its divisor counts the whole match's units and cannot be scoped to a %q dim (pick an in-expression divisor such as ratio())",
+				addr.Subject, addr.Partition)
+		}
+	}
 	for i := range spec.Aggs {
 		if perr := validateAggIdents(&spec.Aggs[i], res); perr != nil {
 			return Plan{}, perr
@@ -905,6 +926,15 @@ func (e *emitter) partitionKeyExpr() string {
 	return col
 }
 
+// dimQual renders the partition column for a denominator subquery's
+// dim correlation: ALWAYS primary-qualified (unlike partitionKeyExpr's
+// byte-stable single-source spelling) — inside the subquery an
+// unqualified dim would resolve to the subquery's own alias and make
+// the correlation tautological.
+func (e *emitter) dimQual() string {
+	return e.res.primary + "." + partitionColumns[e.addr.Partition]
+}
+
 // subjectConds is THE source-row addressing condition set (one spelling,
 // phase1 and phase2 share it). The humans-only rule is about SOURCE
 // ROWS — every subject alike (§3.4: a team/match value still counts
@@ -1222,6 +1252,18 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 //     team ” and drop out rather than guess); the `matches`
 //     denominator counts the row's own match — a team value spans
 //     exactly one match. Always correlated (both teams share a match).
+//
+//   - a PARTITIONED player value (§3.2/§6.6, 2026-01-17): the divisor
+//     is the dim's OWN units — side rows divide by the rows of that
+//     side (player_round_stats.side / player_stats.side beside the
+//     row's dim), a map's career value divides by that map's matches'
+//     counted rounds (player_round_stats joined to the subject's
+//     player_stats rows for the map stamp — the same roster×rounds
+//     rows the unpartitioned career rule counts, restricted to the
+//     dim), so a dim-scoped numerator never meets a whole-career
+//     divisor. weapon + denominator is refused at compile time (a
+//     weapon has no round/match unit); non-player subjects likewise
+//     (the match-scoped branch above cannot be dim-scoped).
 func (e *emitter) emitDenom() {
 	matchRide := e.res.primary + ".match_id"
 	switch e.addr.Subject {
@@ -1248,6 +1290,7 @@ func (e *emitter) emitDenom() {
 		}
 		// bound match scope: the same scalar as the player rule below
 	}
+	part := e.addr.Partition
 	e.sb.WriteString("(SELECT COUNT(*) FROM ")
 	switch {
 	case e.batched:
@@ -1255,20 +1298,76 @@ func (e *emitter) emitDenom() {
 		// reference is ALWAYS primary-qualified (an unqualified match_id
 		// inside the subquery would resolve to the inner table's column
 		// — `match_id = match_id` — and count the whole table).
+		if part == "side" {
+			// Side-scoped divisor: the units OF THAT SIDE in the row's
+			// match (the rounds/matches tables carry no side column).
+			tbl := "player_round_stats"
+			if e.denom == "matches" {
+				tbl = "player_stats"
+			}
+			e.sb.WriteString(tbl)
+			e.sb.WriteString(" AS d WHERE d.match_id = ")
+			e.sb.WriteString(matchRide)
+			e.sb.WriteString(" AND d.side = ")
+			e.sb.WriteString(e.dimQual())
+			break
+		}
 		e.sb.WriteString(e.denom)
 		e.sb.WriteString(" WHERE match_id = ")
 		e.sb.WriteString(e.res.primary)
 		e.sb.WriteString(".match_id")
 	case e.matchID > 0:
+		if part == "side" {
+			tbl := "player_round_stats"
+			if e.denom == "matches" {
+				tbl = "player_stats"
+			}
+			e.sb.WriteString(tbl)
+			e.sb.WriteString(" AS d WHERE d.match_id = ")
+			e.sb.WriteString(e.bind(e.matchID))
+			e.sb.WriteString(" AND d.side = ")
+			e.sb.WriteString(e.dimQual())
+			break
+		}
 		e.sb.WriteString(e.denom)
 		e.sb.WriteString(" WHERE match_id = ")
 		e.sb.WriteString(e.bind(e.matchID))
 	default:
-		e.sb.WriteString(denominatorCareerTables[e.denom])
-		e.sb.WriteString(" AS d WHERE d.steam_id = ")
-		e.sb.WriteString(e.res.primary)
-		e.sb.WriteString(".")
-		e.sb.WriteString(e.subject)
+		// Career/profile divisor (or a library-scope preview of a
+		// match-scope metric): the subject's own units, dim-scoped when
+		// the address declares a partition.
+		qual := e.res.primary + "." + e.subject
+		switch part {
+		case "side":
+			e.sb.WriteString(denominatorCareerTables[e.denom])
+			e.sb.WriteString(" AS d WHERE d.steam_id = ")
+			e.sb.WriteString(qual)
+			e.sb.WriteString(" AND d.side = ")
+			e.sb.WriteString(e.dimQual())
+		case "map":
+			if e.denom == "rounds" {
+				// player_round_stats carries no map column: join the
+				// subject's player_stats rows for the §5 map stamp —
+				// still the subject's OWN roster×round rows (one per
+				// counted round of their matches), now only the map's.
+				e.sb.WriteString("player_round_stats AS d JOIN player_stats AS dm" +
+					" ON dm.match_id = d.match_id AND dm.steam_id = d.steam_id" +
+					" WHERE d.steam_id = ")
+				e.sb.WriteString(qual)
+				e.sb.WriteString(" AND dm.map = ")
+				e.sb.WriteString(e.dimQual())
+				break
+			}
+			e.sb.WriteString(denominatorCareerTables[e.denom])
+			e.sb.WriteString(" AS d WHERE d.steam_id = ")
+			e.sb.WriteString(qual)
+			e.sb.WriteString(" AND d.map = ")
+			e.sb.WriteString(e.dimQual())
+		default:
+			e.sb.WriteString(denominatorCareerTables[e.denom])
+			e.sb.WriteString(" AS d WHERE d.steam_id = ")
+			e.sb.WriteString(qual)
+		}
 	}
 	e.sb.WriteString(")")
 }

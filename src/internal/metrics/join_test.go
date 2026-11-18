@@ -387,9 +387,12 @@ func TestAliasSourceEmission(t *testing.T) {
 // fresh import carries (AGENTS "Analysis-rule derived values"): round
 // labels (8 force + 16 eco over match 1's 24 rounds), per-side buy
 // classes (6 full + 18 eco per side) and the freeze-end sides for every
-// player-round. The corpus ships both tables EMPTY (testdata/seed.sql),
-// which is what the fixture seeds' honest 0/empty expectations rest on —
-// this rig is what proves the restatements COUNT what they claim.
+// player-round. The corpus ships the LABEL and CLASS tables EMPTY
+// (testdata/seed.sql) — which is what the fixture seeds' honest 0/empty
+// expectations rest on — while its round_player_sides samples now ship
+// filled for every match (the side-split oracle needs them; the rig
+// re-seeds match 1's rows over the corpus ones below, same values),
+// which is what proves the restatements COUNT what they claim.
 func classificationStore(t *testing.T) *store.Store {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "t2.db")
@@ -408,6 +411,12 @@ func classificationStore(t *testing.T) *store.Store {
 	defer func() { _ = db.Close() }()
 	if err := LoadSeed(db); err != nil {
 		t.Fatalf("LoadSeed: %v", err)
+	}
+	// The corpus fills round_player_sides for every match; the rig
+	// re-seeds match 1's samples itself (delete-then-insert, the same
+	// values the corpus row would carry).
+	if _, err := db.Exec(`DELETE FROM round_player_sides WHERE match_id = 1`); err != nil {
+		t.Fatalf("clear corpus round_player_sides: %v", err)
 	}
 	for r := 1; r <= 24; r++ {
 		label := "eco"

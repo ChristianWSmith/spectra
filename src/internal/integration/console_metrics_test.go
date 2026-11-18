@@ -42,11 +42,12 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestBuiltinMetricsPreview: the ninety-two schema-seeded builtins
+// TestBuiltinMetricsPreview: the one-hundred-two schema-seeded builtins
 // (trade_rate + the dogfooding set + the inferred set + the plan §7 M3
 // combat-damage addendum + the owner Option A count addendum + the
 // subject-axis addendum — plan §8 (M8/M4 rows), 2026-11-17 re-pin + the
-// identity addendum — plan §8 (M1 identity row), 2026-11-17 re-pin) each
+// identity addendum — plan §8 (M1 identity row), 2026-11-17 re-pin + the
+// partition addendum — plan §8 (M5/M6 rows), 2026-11-17 re-pin) each
 // compile and run on a fresh library — the
 // DoD "demonstrably expressible" loop end to end.
 func TestBuiltinMetricsPreview(t *testing.T) {
@@ -56,14 +57,14 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// every preview is subject-addressed by the engine (one row per
 	// player the statement produced).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, denominator, subject FROM metrics WHERE origin = 'builtin' ORDER BY name`,
-		nil, 100, 5000,
+		`SELECT name, expr, scope, partition, denominator, subject FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		nil, 200, 5000,
 	)
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 92 {
-		t.Fatalf("builtins = %d, want 92 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum — the 2026-11-17 re-pins, plan §8 (M8/M4 rows) and §8 (M1 identity row))", len(res.Rows))
+	if len(res.Rows) != 102 {
+		t.Fatalf("builtins = %d, want 102 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum — the 2026-11-17 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row) and §8 (M5/M6 rows))", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -76,11 +77,9 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 		"clutches": true, "clutch_win_rate": true, "clutch_avg_size": true,
 		"clutch_avg_hp": true, "clutch_avg_equip": true,
 		"career_clutches": true, "career_clutch_win_rate": true,
-		"side_class_eco": true, "side_class_force": true, "side_class_full": true,
-		"side_class_save": true, "side_class_pistol": true,
 	}
 	for _, r := range res.Rows {
-		name, expr, scope, denom, subject := r[0].(string), r[1].(string), r[2].(string), r[3].(string), r[4].(string)
+		name, expr, scope, partition, denom, subject := r[0].(string), r[1].(string), r[2].(string), r[3].(string), r[4].(string), r[5].(string)
 		scopes[scope]++
 		t.Run(name, func(t *testing.T) {
 			if scope != "match" && scope != "profile" {
@@ -89,13 +88,13 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			if subject != "player" && subject != "match" && subject != "team" {
 				t.Fatalf("builtin subject = %q, want player|match|team", subject)
 			}
-			addr := metrics.Address{Subject: subject, Profile: scope == "profile"}
+			addr := metrics.Address{Subject: subject, Partition: partition, Profile: scope == "profile"}
 			if _, perr := metrics.Compile(expr, "", "", addr); perr != nil {
 				t.Fatalf("Compile(%q, subject %q): %v", expr, subject, perr)
 			}
 			pv, perr, err := metrics.RunPreview(st, metrics.Def{
 				Expr: expr, Denominator: denom,
-				Subject: subject, Profile: scope == "profile",
+				Subject: subject, Partition: partition, Profile: scope == "profile",
 			}, "", 500)
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql %s)", perr, err, pv.SQL)
@@ -110,15 +109,15 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 72 match / 20
-	// profile (the profile rows land inert — their surface converts in
-	// W3; w13d's kda row, the plan §7 M3 combat pair, the Option A
+	// The scope split is part of the seed contract: 72 match / 30
+	// profile (w13d's kda row, the plan §7 M3 combat pair, the Option A
 	// count addendum's 16 raw-count rows, the subject-axis
 	// addendum's 3 economy rows and the identity addendum's 5 M1 rows
-	// are match scope — the 2026-11-17 subject-axis and identity
-	// re-pins, plan §8 (M8/M4 rows) and §8 (M1 identity row)).
-	if scopes["match"] != 72 || scopes["profile"] != 20 {
-		t.Errorf("scope split = %d match / %d profile, want 72 / 20", scopes["match"], scopes["profile"])
+	// are match scope; the partition addendum's 10 side/map rows are
+	// profile — the 2026-11-17 re-pins, plan §8 (M8/M4 rows), §8 (M1
+	// identity row) and §8 (M5/M6 rows)).
+	if scopes["match"] != 72 || scopes["profile"] != 30 {
+		t.Errorf("scope split = %d match / %d profile, want 72 / 30", scopes["match"], scopes["profile"])
 	}
 }
 
