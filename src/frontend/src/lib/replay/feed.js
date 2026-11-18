@@ -58,6 +58,7 @@ import {
   normalizeEvent,
   normalizeGeneric,
 } from './landmarks.js';
+import { disconnectSet, isDisconnectSelfKill } from './selfkill.js';
 
 // The feed's page size: a page read requests size+1 (the probe row that
 // says "there is more" without truncating silently) and keeps size.
@@ -374,6 +375,27 @@ export function composeFeedRows(pages, ctx) {
     }
   }
   return mergeSourceRows(rows);
+}
+
+// feedDisplayRows — the FEED LIST's rendering gate: the composed rows
+// minus the disconnect-self-kill artifact (selfkill.js — THE criterion;
+// owner ruling 2026-11-18: at a disconnect the game fires a World
+// self-kill on that player's tick, and the feed must show JUST the
+// disconnect line — "he gets a self-kill death feed line and then a
+// disconnect line — should be just disconnect. Happens for the bot too").
+// This is the narrow dated exception to "event surfaces record what
+// happened": this artifact is not a death that happened. The COMPOSED
+// rows stay untouched underneath — the CSV/JSON exports and the ?sel=
+// deep link still see the raw row (records stay records); only the list
+// renders through this. `connRows` is the view's ALWAYS-fetched control
+// rows: the disconnect set must be complete no matter which categories
+// the filter enabled (a filter without the Joins & leaves category never
+// fetches disconnect rows itself).
+export function feedDisplayRows(rows, connRows) {
+  const src = rows || [];
+  const disc = disconnectSet(connRows);
+  if (disc.size === 0) return src;
+  return src.filter((r) => !isDisconnectSelfKill(r, disc));
 }
 
 // --- The ?sel= deep-link resolution ---------------------------------------

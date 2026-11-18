@@ -196,6 +196,10 @@ for (const rel of [
   // shaping) — Replay imports it beside landmarks.js; copy it or the
   // feed graph fails to link above.
   'feed.js',
+  // selfkill.js is THE disconnect-self-kill criterion (the feed list's
+  // rendering gate through feedDisplayRows, and renderer.js's kill/
+  // death-marker gate) — copy it or both graphs fail to link above.
+  'selfkill.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,

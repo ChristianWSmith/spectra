@@ -46,6 +46,7 @@ import { makeTransform } from '../components/mapxform.js';
 // (bucketing/classification lives in ./landmarks.js — rows arrive
 // pre-bucketed from normalizeEvent; see setLandmarks.)
 import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
+import { disconnectSet, isDisconnectSelfKill } from './selfkill.js';
 // Layer assignment + the T/⊥ elevation rules (pure — node-tested in
 // src/lib/layers.test.js).
 import { elevationFor, layerIndexForZ } from './layers.js';
@@ -1457,12 +1458,27 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // collected here and joined AFTER the throw→det pairing pool is
     // complete (joinBounceVerts).
     const bounces = [];
+    // Disconnect self-kill artifact suppression (selfkill.js — THE
+    // criterion; owner ruling 2026-11-18, the narrow dated exception to
+    // "event surfaces record what happened": a kill row that IS a
+    // disconnect's World self-kill is not a death that happened — it
+    // never renders, while the disconnect line does; "happens for the
+    // bot too", so the set is per-player for whoever's disconnect it
+    // is). Built from THIS landmark list first, so the gate below sees
+    // every disconnect row the world dataset carries. One gate over
+    // kills[] covers BOTH kill renders — the kill ticker
+    // (killFeedLayout) and the death-X marker (drawDeaths) — that
+    // array's only consumers.
+    const discKill = disconnectSet(landmarks);
     for (const l of landmarks) {
       switch (l.bucket) {
         case 'throw':
           throws.push(l);
           break;
         case 'kill':
+          // The artifact row renders NOTHING (no ticker line, no death
+          // X): the record stays in events and in the exports untouched.
+          if (isDisconnectSelfKill(l, discKill)) break;
           // Death markers (spec 28): the victim's steamId resolves to the
           // slot whose dot the X replaces; x/y are the kill row's stored
           // VICTIM position (normalizeEvent aliases posX/posY).

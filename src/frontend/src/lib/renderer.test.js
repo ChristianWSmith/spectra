@@ -4039,6 +4039,80 @@ test('kill feed: suicide rows — self-kill and empty attacker drop the killer f
   r.destroy();
 });
 
+// Disconnect-self-kill artifact suppression (selfkill.js — THE criterion;
+// owner ruling 2026-11-18, the narrow dated exception to "event surfaces
+// record what happened"): at a disconnect the game fires a World
+// self-kill on that player's exact tick. The kill ticker and the death-X
+// marker must show JUST the disconnect line — while a genuine same-tick
+// World self-kill with NO disconnect (a real world-hazard death — the
+// stats fold's negative case) still renders, and a BOT's disconnect
+// behaves identically (the criterion is per-player: whoever's
+// disconnect it is).
+test('kill feed: a disconnect self-kill renders no death line; the disconnect line and a genuine self-kill stay', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // the artifact — a human's disconnect self-kill
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '1', victimName: 'alice', weapon: 'World', posX: 40, posY: 40 }),
+    mk({ id: 2, seq: 2, tick: 50, round: 1, kind: 'player_disconnect', attacker: '1', attackerName: 'alice' }),
+    // the artifact — a BOT's disconnect self-kill (same criterion)
+    mk({ id: 3, seq: 3, tick: 55, round: 1, kind: 'kill', attacker: '9', attackerName: 'robo', victim: '9', victimName: 'robo', weapon: 'World', posX: 60, posY: 60 }),
+    mk({ id: 4, seq: 4, tick: 55, round: 1, kind: 'player_disconnect', attacker: '9', attackerName: 'robo' }),
+    // genuine world-hazard self-kill, NO disconnect row — still a death
+    mk({ id: 5, seq: 5, tick: 60, round: 1, kind: 'kill', attacker: '2', attackerName: 'bob', victim: '2', victimName: 'bob', weapon: 'World', posX: 50, posY: 50 }),
+  ]);
+  r.setIcons({
+    World: { width: 32, height: 32, src: 'world.svg' },
+    suicide: { width: 32, height: 32, src: 'suicide.svg' },
+    disconnect: { width: 32, height: 32, src: 'disconnect.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // THREE ticker rows — both disconnect lines + the genuine self-kill.
+  // Without the suppression the two artifact kills would stack five.
+  const boxes = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.equal(boxes.length, 3, 'two disconnect lines + the genuine self-kill, no artifact rows');
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.equal(srcs.filter((s) => s === 'disconnect.svg').length, 2, 'both disconnect lines render (human + bot)');
+  assert.equal(srcs.filter((s) => s === 'suicide.svg').length, 1, 'only the genuine self-kill keeps its glyph');
+  // alice appears on the ticker exactly once — at line 1's text y (the
+  // world layers print player names too, so scope to the cell): the
+  // disconnect line's leaver cell, never an artifact suicide victim cell.
+  const aliceRuns = opsSince(canvas.log, 'fillText', mark).filter((e) => e.args[0] === 'alice' && e.args[2] === 12);
+  assert.equal(aliceRuns.length, 1, "alice's only ticker line is the disconnect row");
+  // Death-X marker: the artifact victim's X is gone (kills[] never saw
+  // the row — the ONE push gate covers ticker AND death marker); bob's
+  // genuine death still marks (the X is the only round-lineCap stroke).
+  // Death-X marker: the artifact victim's X is gone (kills[] never saw
+  // the row — the ONE push gate covers ticker AND death marker); bob's
+  // genuine death still marks. The X strokes a dark round-cap underlay
+  // PLUS its side-colored line — count the COLORED round-cap strokes
+  // (both side colors, never the dark underlay) = one X each.
+  const roundCap = canvas.log
+    .slice(mark)
+    .filter((e) => e.op === 'stroke' && e.lineCap === 'round' && String(e.strokeStyle).startsWith('#'));
+  assert.equal(roundCap.length, 1, "only bob's genuine death X draws (the artifact victim's X is suppressed)");
+  r.destroy();
+});
+
 test('kill feed: missing round-4 indicator images reserve NO cell (no gap either)', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
