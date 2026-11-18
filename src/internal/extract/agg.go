@@ -1037,6 +1037,16 @@ func (a *agg) hurt(h hurtInfo) {
 	}
 	// Every PlayerHurt of a counted round becomes an event; stat
 	// accumulation below is additionally gated on real (post-match).
+	//
+	// same is the ONE side computation of this row: it stamps the event
+	// (SameSide) AND gates the attacker's stat below — true iff both
+	// sides were known and equal at the event (extract.sameSide), so
+	// false covers enemy AND unknown (owner ruling 2026-11-17: damage
+	// stats differentiate enemy damage; FF stays an accounting quantity
+	// inside expressions/filters). The "count ENEMY damage only" gate
+	// reads the identical predicate — a strict known-and-different rule
+	// would desynchronize the stamp from total_damage.
+	same := sameSide(h.attackerSide, h.victimSide)
 	a.addEvent(models.Event{
 		Tick:     h.tick,
 		Kind:     models.EventDamage,
@@ -1044,6 +1054,7 @@ func (a *agg) hurt(h hurtInfo) {
 		Victim:   keyStr(h.victimKey),
 		Weapon:   h.weapon,
 		Dmg:      h.healthDamage,
+		SameSide: same,
 		Hitgroup: h.hitgroup,
 		PosX:     h.posX,
 		PosY:     h.posY,
@@ -1064,8 +1075,9 @@ func (a *agg) hurt(h hurtInfo) {
 	dealt := a.capDamage(h.victimKey, h.healthDamage, h.health)
 	// Attacker stats count ENEMY damage only — friendly fire and self
 	// damage are not "damage dealt" on any scoreboard (awpy/HLTV/ProSettings).
-	enemy := h.attackerKey != 0 && h.attackerKey != h.victimKey &&
-		!sameSide(h.attackerSide, h.victimSide)
+	// `same` (computed above for the event stamp) IS this gate's side
+	// predicate: unknown side ⇒ not same ⇒ enemy (permissive parity).
+	enemy := h.attackerKey != 0 && h.attackerKey != h.victimKey && !same
 	if enemy {
 		ap := a.ensure(h.attackerKey, h.attackerName)
 		ap.totalDamage += dealt
