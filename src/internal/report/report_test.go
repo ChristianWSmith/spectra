@@ -636,14 +636,14 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	if !strings.Contains(out, pairBehind) {
 		t.Errorf("match.md behind entry_deaths did not dash ONLY its half:\n%s", out)
 	}
-	if strings.Contains(out, "888") {
+	if strings.Contains(bodyOf(out), "888") {
 		t.Errorf("match.md leaked the behind entry_deaths value:\n%s", out)
 	}
 	pout = playerDoc(t)
 	if !strings.Contains(pout, "Openings 3/— · Open K/D 3/— · Trades 9 · Best streak 6") {
 		t.Errorf("player.md pairs not composed per half:\n%s", pout)
 	}
-	if strings.Contains(pout, "888") {
+	if strings.Contains(bodyOf(pout), "888") {
 		t.Errorf("player.md leaked the behind entry_deaths value:\n%s", pout)
 	}
 
@@ -658,15 +658,55 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	if !strings.Contains(out, "| player0 | ct | 10 | 0 | — | 42.5 | 20 | 2.50 | 5 | 3/— | 9 | 1 |") {
 		t.Errorf("match.md behind assists did not dash ONLY the A half:\n%s", out)
 	}
-	if strings.Contains(out, "999") {
+	if strings.Contains(bodyOf(out), "999") {
 		t.Errorf("match.md leaked the behind assists value:\n%s", out)
 	}
 	pout = playerDoc(t)
 	if !strings.Contains(pout, "K/D/A: **10/0/—**") {
 		t.Errorf("player.md behind assists did not dash the A half:\n%s", pout)
 	}
-	if strings.Contains(pout, "**10/0/999**") {
+	if strings.Contains(bodyOf(pout), "**10/0/999**") {
 		t.Errorf("player.md leaked the behind assists value:\n%s", pout)
+	}
+}
+
+// bodyOf drops the Generated footer from a rendered document before a
+// leak scan: the footer's nanosecond timestamp (text/template prints
+// time.Time with Go's full layout, fraction digits included) is the
+// only volatile text in a rendered doc, so a leak substring like "888"
+// must never false-positive against the clock (observed 2026-11-17:
+// intermittent full-suite failures whose fraction happened to contain
+// the leak digits, e.g. "...37.017846888 +0000 UTC" — the behind state
+// itself rendered correctly). Covers both footer markers: the markdown
+// templates' "Generated …" line and the HTML template's meta paragraph.
+func bodyOf(doc string) string {
+	if i := strings.Index(doc, "\nGenerated "); i >= 0 {
+		return doc[:i]
+	}
+	if i := strings.Index(doc, `<p class="meta">Generated `); i >= 0 {
+		return doc[:i]
+	}
+	return doc
+}
+
+// TestReportLeakCheckIgnoresGeneratedFooter pins the footer strip: a
+// clock whose fraction contains the leak digits must not trip the scan,
+// while a REAL body leak must still trip it (both directions,
+// constructed — no clock, deterministic).
+func TestReportLeakCheckIgnoresGeneratedFooter(t *testing.T) {
+	const footer = "\n\nGenerated 2026-11-18 03:36:34.367193888 +0000 UTC by Spectra\n"
+	if strings.Contains(bodyOf("| player0 | ct |"+footer), "888") {
+		t.Errorf("bodyOf kept the footer clock digits:\n%q", bodyOf("| player0 | ct |"+footer))
+	}
+	if !strings.Contains(bodyOf("| player0 | 888 |"+footer), "888") {
+		t.Errorf("bodyOf dropped a REAL body leak:\n%q", bodyOf("| player0 | 888 |"+footer))
+	}
+	const htmlFooter = `<p class="meta">Generated 2026-11-18 03:36:34.367193888 +0000 UTC</p>`
+	if strings.Contains(bodyOf("<td>42</td>"+htmlFooter), "888") {
+		t.Errorf("bodyOf kept the html footer clock digits")
+	}
+	if !strings.Contains(bodyOf("<td>888</td>"+htmlFooter), "888") {
+		t.Errorf("bodyOf dropped a REAL html body leak")
 	}
 }
 
