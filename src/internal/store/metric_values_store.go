@@ -298,7 +298,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 // analysis rule version — metricValueFreshCond, prefixed with the join
 // it needs (m.version). value_key rides every row (the identity slot —
 // §3.3 — ” on numeric rows).
-const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.value, v.value_key, v.n
+const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.dim, v.value, v.value_key, v.n
 	FROM metric_values v
 	JOIN metrics m ON m.id = v.metric_id
 	WHERE ` + metricValueFreshCond
@@ -324,7 +324,7 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 	var out []models.MetricValue
 	for rows.Next() {
 		var v models.MetricValue
-		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Value, &v.ValueKey, &v.N); err != nil {
+		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Dim, &v.Value, &v.ValueKey, &v.N); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

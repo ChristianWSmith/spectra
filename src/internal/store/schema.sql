@@ -403,6 +403,19 @@ CREATE TABLE IF NOT EXISTS player_round_stats (
 	equip INTEGER NOT NULL DEFAULT 0,
 	spent INTEGER NOT NULL DEFAULT 0,
 	rule_version INTEGER NOT NULL DEFAULT 0,
+	-- `side` (metrics expansion §3.2, 2026-11-17): the player's freeze-
+	-- end side sample for THIS round (round_player_sides' exact value,
+	-- stamped with the row by analytics.PlayerRounds — '' when the round
+	-- has no sample). This is the side carrier the plan's side partition
+	-- assumes for player_round_stats; without it no per-round stat (KAST,
+	-- damage, kills) could be partitioned by side (§6.5).
+	side TEXT NOT NULL DEFAULT '',
+	-- `won` (metrics expansion §8 M5 row, 2026-11-17): 1 when the round's
+	-- winner (rounds.winner) is this row's side — the per-round twin of
+	-- player_stats.won, stamped with the row at analyze time so the
+	-- side-partitioned win rate reads stored inputs (never a read-time
+	-- join to rounds). Unknown side or undecided round ⇒ 0.
+	won INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (match_id, round, steam_id)
 );
 CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(match_id, steam_id);

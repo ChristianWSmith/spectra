@@ -133,6 +133,12 @@ type PlayerRoundStat struct {
 	Equip       int    `json:"equip"`
 	Spent       int    `json:"spent"`
 	RuleVersion int    `json:"ruleVersion"`
+	// Side is the player's freeze-end side sample for this round
+	// (round_player_sides' exact value; "" = no sample — never guessed).
+	Side string `json:"side"`
+	// Won is 1 when rounds.winner equals Side (the per-round twin of
+	// player_stats.won; 0 for an unknown side or undecided round).
+	Won int `json:"won"`
 }
 
 // Clutch is one clutches row: a 1vN detected by alive-count analysis

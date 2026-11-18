@@ -63,6 +63,10 @@ var sourceColumns = map[string]map[string]bool{
 		"match_id", "round", "steam_id", "name", "kills", "assists", "deaths",
 		"traded", "survived", "kast", "dmg", "util_dmg", "money_start",
 		"equip", "spent", "rule_version",
+		// §5-style stamps (2026-11-17): the per-round side sample and the
+		// per-round win — the side carrier §3.2 assumes for this source
+		// (side partition) and the won twin the side win-rate sums.
+		"side", "won",
 	),
 	"round_economy": colSet(
 		"match_id", "round", "side", "equip_value", "money_sampled_sum",
@@ -224,7 +228,7 @@ var sourceDims = map[string]map[string]string{
 	"engagements":           {"round": "round"},
 	"rounds":                {"round": "number"},
 	"player_stats":          {"side": "side"},
-	"player_round_stats":    {"round": "round"},
+	"player_round_stats":    {"round": "round", "side": "side"},
 	"round_economy":         {"round": "round", "side": "side"},
 	"clutches":              {"round": "round"},
 	"utility_events":        {"round": "round"},

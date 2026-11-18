@@ -311,6 +311,16 @@ func TestJoinedClassificationPairs(t *testing.T) {
 				"AND round_player_sides.round = round_side_classes.round " +
 				"AND round_player_sides.side = round_side_classes.side",
 		},
+		{
+			// player_round_stats gained the §3.2 side stamp (2026-11-17),
+			// so its side is now a shared join dimension — the pair the
+			// case below used to reject on THIS primary.
+			"per-round stats carry the side dim",
+			"from player_round_stats, round_side_classes: count(where class = 'eco')",
+			"LEFT JOIN round_side_classes ON player_round_stats.match_id = round_side_classes.match_id " +
+				"AND player_round_stats.round = round_side_classes.round " +
+				"AND player_round_stats.side = round_side_classes.side",
+		},
 	}
 	for _, c := range accepted {
 		t.Run(c.name, func(t *testing.T) {
@@ -325,7 +335,7 @@ func TestJoinedClassificationPairs(t *testing.T) {
 	}
 
 	rejected := []struct{ name, expr, wantMsg string }{
-		{"no side dim on the primary", "from player_round_stats, round_side_classes: count()", "not unique on the shared dimensions"},
+		{"no side dim on the primary", "from events, round_side_classes: count()", "not unique on the shared dimensions"},
 		{"alias is primary-only", "from player_stats, engagements_victim: count()", "not unique on the shared dimensions"},
 	}
 	for _, c := range rejected {

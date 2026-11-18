@@ -37,10 +37,12 @@ func TestMetricRowJSONContract(t *testing.T) {
 }
 
 // TestMetricValueJSONContract pins the canonical-read DTO (stored
-// metrics W5/§5, identity slot §3.3): exactly {metricId, subjectKey,
-// value, valueKey, n} — the five fields a value slot renders, and
-// NOTHING else. valueKey is the identity winner's key (identity rows;
-// the empty string on every numeric row). No stamp key of any
+// metrics W5/§5, identity slot §3.3, partition dim §6.5): exactly
+// {metricId, subjectKey, dim, value, valueKey, n} — the fields a value
+// slot renders, and NOTHING else. dim is the partition value (empty on
+// every unpartitioned row) so a partitioned read can tell its rows
+// apart; valueKey is the identity winner's key (identity rows; the
+// empty string on every numeric row). No stamp key of any
 // kind (metricVersion / ruleVersion / computedAt are internal-only and
 // must not even be expressible here), so no view, tooltip or export can
 // render a version number by construction (design §5's no-version pin).
@@ -53,7 +55,7 @@ func TestMetricValueJSONContract(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	want := []string{"metricId", "subjectKey", "value", "valueKey", "n"}
+	want := []string{"metricId", "subjectKey", "dim", "value", "valueKey", "n"}
 	if len(got) != len(want) {
 		t.Errorf("MetricValue JSON keys = %d, want exactly %d: %s", len(got), len(want), b)
 	}
