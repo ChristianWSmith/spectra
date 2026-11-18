@@ -60,6 +60,16 @@ type MatchListPage struct {
 // K/D, w13d for KDA — reports read them back, the scoreboard columns
 // are metric-backed), so a Go-computed copy would be a second
 // presentation of the same number.
+//
+// Slimmed 2026-11-18: every seed-backed stat cell (HS%, damage taken,
+// flash assists, headshots, entry/opening deaths, trades, best streak,
+// 2K–5K, enemies flashed, plants/defuses, teamkills, suicides, money
+// spent, per-weapon damage) renders from its stored metric row on every
+// surface, so the raw passthrough columns had ZERO readers left — the
+// rows carry only identity, the fixed raw cells (K/D/A, damage,
+// utility, MVPs, score, rounds) and the entry-opens card's input. The
+// underlying player_stats columns are untouched; they back the seeds
+// and the SQL console.
 type PlayerStatsRow struct {
 	SteamID           string  `json:"steamId"`
 	Name              string  `json:"name"`
@@ -70,33 +80,13 @@ type PlayerStatsRow struct {
 	Kills             int     `json:"kills"`
 	Deaths            int     `json:"deaths"`
 	Assists           int     `json:"assists"`
-	FlashAssists      int     `json:"flashAssists"`
-	Headshots         int     `json:"headshots"`
-	HSPct             float64 `json:"hsPct"`
 	ADR               float64 `json:"adr"`
 	TotalDamage       int     `json:"totalDamage"`
-	DamageTaken       int     `json:"damageTaken"`
 	EntryKills        int     `json:"entryKills"`
-	EntryDeaths       int     `json:"entryDeaths"`
-	OpeningKills      int     `json:"openingKills"`
-	OpeningDeaths     int     `json:"openingDeaths"`
-	TradeKills        int     `json:"tradeKills"`
-	BestStreak        int     `json:"bestStreak"`
-	TwoK              int     `json:"twoK"`
-	ThreeK            int     `json:"threeK"`
-	FourK             int     `json:"fourK"`
-	FiveK             int     `json:"fiveK"`
 	UtilityDamage     int     `json:"utilityDamage"`
-	EnemiesFlashed    int     `json:"enemiesFlashed"`
-	BombPlants        int     `json:"bombPlants"`
-	BombDefuses       int     `json:"bombDefuses"`
 	MVPs              int     `json:"mvps"`
 	Score             int     `json:"score"`
-	Teamkills         int     `json:"teamkills"`
-	Suicides          int     `json:"suicides"`
-	MoneySpent        int     `json:"moneySpent"`
 	KillsByWeapon     string  `json:"killsByWeapon"`
-	DamageByWeapon    string  `json:"damageByWeapon"`
 }
 
 // RoundRow is the round-browser row (round joined with display names).

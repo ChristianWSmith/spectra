@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -81,9 +82,12 @@ func TestPlayerRoundsTeamkillDeathNotTraded(t *testing.T) {
 // DEFAULT window (5 s) must leave player_stats.trade_kills equal to the
 // extractor's stored output (the import-time 5 s rule), while a narrower
 // TradeWindowS must change the recomputed value — configurability
-// proven through Compute → store → scoreboard.
+// proven through Compute → store → the stored column (read directly:
+// the scoreboard DTO dropped its zero-reader passthroughs, 2026-11-18).
 func TestComputeTradeKillsDefaultAndConfigurable(t *testing.T) {
-	st, err := store.Open(":memory:")
+	// File-backed (not :memory:) so the assertions can read the stored
+	// column through the store's read-only session.
+	st, err := store.Open(filepath.Join(t.TempDir(), "trade.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
@@ -125,16 +129,28 @@ func TestComputeTradeKillsDefaultAndConfigurable(t *testing.T) {
 	}
 }
 
-// boardTrade projects the scoreboard's trade_kills column per player.
+// boardTrade projects the stored trade_kills column per player — the
+// scoreboard DTO no longer carries the seed-backed passthroughs
+// (2026-11-18), so the raw column is read directly.
 func boardTrade(t *testing.T, st *store.Store, id int64) map[string]int {
 	t.Helper()
-	rows, err := st.GetScoreboard(id, "", false)
+	res, err := st.RunReadOnly(
+		`SELECT steam_id, trade_kills FROM player_stats WHERE match_id = ?`,
+		[]any{id}, 500, 5000)
 	if err != nil {
-		t.Fatalf("GetScoreboard: %v", err)
+		t.Fatalf("read player_stats.trade_kills: %v", err)
 	}
 	out := map[string]int{}
-	for _, r := range rows {
-		out[r.SteamID] = r.TradeKills
+	for _, row := range res.Rows {
+		sid, ok := row[0].(string)
+		if !ok {
+			t.Fatalf("trade_kills row = %#v, want (steam_id, count)", row)
+		}
+		n, ok := row[1].(int64)
+		if !ok {
+			t.Fatalf("trade_kills value = %T (%v), want an integer", row[1], row[1])
+		}
+		out[sid] = int(n)
 	}
 	return out
 }

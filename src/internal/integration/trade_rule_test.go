@@ -122,16 +122,28 @@ func TestTradeKillsMatchExtractorAtDefault(t *testing.T) {
 	t.Logf("trade_kills: extractor@5s total=%d, recomputed@1s total=%d", wantTotal, narrowTotal)
 }
 
-// tradeKillsByPlayer reads the scoreboard's Trade column per SteamID.
+// tradeKillsByPlayer reads the stored trade_kills column per SteamID —
+// the scoreboard DTO no longer carries the seed-backed passthroughs
+// (2026-11-18), so the raw column is read directly.
 func tradeKillsByPlayer(t *testing.T, st *store.Store, id int64) map[string]int {
 	t.Helper()
-	rows, err := st.GetScoreboard(id, "", false)
+	res, err := st.RunReadOnly(
+		`SELECT steam_id, trade_kills FROM player_stats WHERE match_id = ?`,
+		[]any{id}, 500, 5000)
 	if err != nil {
-		t.Fatalf("GetScoreboard: %v", err)
+		t.Fatalf("read player_stats.trade_kills: %v", err)
 	}
 	out := map[string]int{}
-	for _, r := range rows {
-		out[r.SteamID] = r.TradeKills
+	for _, row := range res.Rows {
+		sid, ok := row[0].(string)
+		if !ok {
+			t.Fatalf("trade_kills row = %#v, want (steam_id, count)", row)
+		}
+		n, ok := row[1].(int64)
+		if !ok {
+			t.Fatalf("trade_kills value = %T (%v), want an integer", row[1], row[1])
+		}
+		out[sid] = int(n)
 	}
 	return out
 }

@@ -299,20 +299,33 @@ func TestTwoKColumn(t *testing.T) {
 		t.Fatalf("player_stats.two_k column match count = %d (err %v), want INTEGER NOT NULL DEFAULT 0", n, err)
 	}
 	id := saveTestMatch(t, s, "/d/twok.dem", "sha-twok", time.Now())
-	board, err := s.GetScoreboard(id, "", false)
+	// Read back through a direct column read: the scoreboard DTO
+	// dropped its zero-reader passthrough fields (2026-11-18); the
+	// column itself is what this test pins.
+	rows, err := s.db.Query(
+		`SELECT steam_id, two_k FROM player_stats WHERE match_id = ? ORDER BY steam_id`, id)
 	if err != nil {
-		t.Fatalf("GetScoreboard: %v", err)
+		t.Fatalf("read player_stats.two_k: %v", err)
 	}
-	if len(board) != 2 {
-		t.Fatalf("GetScoreboard len = %d, want 2", len(board))
-	}
-	for _, r := range board {
-		want := 0
-		if r.SteamID == "100" {
-			want = 3
+	defer rows.Close()
+	seen := map[string]int{}
+	for rows.Next() {
+		var sid string
+		var n int
+		if err := rows.Scan(&sid, &n); err != nil {
+			t.Fatalf("scan two_k: %v", err)
 		}
-		if r.TwoK != want {
-			t.Errorf("player %s two_k = %d, want %d", r.SteamID, r.TwoK, want)
+		seen[sid] = n
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate two_k: %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("two_k rows = %d, want 2", len(seen))
+	}
+	for sid, want := range map[string]int{"100": 3, "200": 0} {
+		if seen[sid] != want {
+			t.Errorf("player %s two_k = %d, want %d", sid, seen[sid], want)
 		}
 	}
 }
@@ -473,13 +486,26 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	// KDA is gone from the row (w13d): the stored `kda` metric is THE
 	// KDA value — a Go-computed copy would be a second presentation of
 	// the same number (models.PlayerStatsRow's doc comment).
-	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 || alice.FlashAssists != 1 {
+	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 ||
+		alice.ADR != 60 || alice.KillsByWeapon != `{"ak47":10}` {
 		t.Errorf("alice stats mismatch: %+v", alice)
 	}
-	if alice.HSPct != 40 || alice.ADR != 60 || alice.MoneySpent != 7500 ||
-		alice.TwoK != 3 || alice.ThreeK != 1 ||
-		alice.KillsByWeapon != `{"ak47":10}` || alice.DamageByWeapon != `{"ak47":1200}` {
-		t.Errorf("alice detail mismatch: %+v", alice)
+	// The seed-backed passthroughs left the scoreboard DTO (2026-11-18,
+	// zero readers): their write path is pinned by reading the stored
+	// columns directly instead.
+	var flashAssists, moneySpent, twoK, threeK int
+	var hsPct float64
+	var damageByWeapon string
+	if err := s.db.QueryRow(
+		`SELECT flash_assists, hs_pct, money_spent_total, two_k, three_k, damage_by_weapon
+		   FROM player_stats WHERE match_id = ? AND steam_id = '100'`, id,
+	).Scan(&flashAssists, &hsPct, &moneySpent, &twoK, &threeK, &damageByWeapon); err != nil {
+		t.Fatalf("read alice's stored stats: %v", err)
+	}
+	if flashAssists != 1 || hsPct != 40 || moneySpent != 7500 || twoK != 3 || threeK != 1 ||
+		damageByWeapon != `{"ak47":1200}` {
+		t.Errorf("alice stored stats mismatch: flash_assists=%d hs_pct=%v money_spent=%d two_k=%d three_k=%d damage_by_weapon=%q",
+			flashAssists, hsPct, moneySpent, twoK, threeK, damageByWeapon)
 	}
 	if bob.SteamID != "200" || bob.Name != "bob" || bob.Side != "t" {
 		t.Errorf("bob row mismatch: %+v", bob)
