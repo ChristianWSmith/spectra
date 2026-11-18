@@ -6,8 +6,7 @@
 // Compute is the store orchestration (read → derive → replace → career
 // rebuild). The combat damage conversions are NOT derived here: they
 // are metric seeds — dmg_no_kill / kill_conversion over the EXISTS
-// construct (plan §7 M3, 2026-11-17; friendly fire stays only as the
-// reference oracle in internal/metrics/combat_equivalence_test.go) —
+// construct (plan §7 M3, 2026-11-17) —
 // with ONE stored exception: the
 // trade-opportunity counts (tradeopps.go) are derived here at analyze
 // time, stored in match_trade_opps, and read back only as metric rows
@@ -47,7 +46,6 @@
 //     arithmetic for rows without that detail, with a dead solo reading
 //     0 — a reconstruction rather than an HP sample at the resolve
 //     event (no such event exists).
-//   - Friendly fire uses each player's FINAL side (events carry no team).
 //
 // Round eligibility: CountedRounds is the canonical filter and today an
 // identity — the extractor discards knife/warmup rounds at ingest, so

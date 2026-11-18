@@ -1176,13 +1176,8 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- scope, 2026-11-17 — plan §7 M3 / §8): Damage-no-kill and Kill
 -- conversion % left the retired store.GetCombatStats SQL for the
 -- EXISTS construct (plan §6.2/D7 — same-tick, same-attacker, same-
--- victim kill detection spelled in the expression). Friendly fire has
--- NO seed: the grammar has no source carrying the VICTIM's side (events
--- has no side column; the side-carrying sources join only on the row's
--- own subject; exists()'s inner scan is the primary alone), so the
--- final-side equality stays Go-side in the equivalence oracle —
--- internal/metrics/combat_equivalence_test.go (plan §7 M3's "else
--- stays, noted"). Scale: kill_conversion is a percent in the engine's
+-- victim kill detection spelled in the expression). Scale:
+-- kill_conversion is a percent in the engine's
 -- 0..1 convention (the retired read-DTO carried 0..100); the
 -- equivalence test pins value × 100 == the retired number.
 ('dmg_no_kill', 'Damage no kill', '',

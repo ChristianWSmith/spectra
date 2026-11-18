@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -27,7 +28,6 @@ import (
 //	DMGNoKill 50 (alice)        → dmg_no_kill 50
 //	DMGConvPct ≈54.55 (0..100)  → kill_conversion × 100 ≈ 54.55
 //	DMGNoKill 50/10 (zoe/dave)  → dmg_no_kill 50/10 (actor-pair rule)
-//	FF 10 (alice, dave)         → NO SEED: see the FF note below
 //	humans-only base rows       → no metric row for the bot (engine side)
 //
 // Scale note: the retired read-DTO carried DMGConvPct on a 0..100
@@ -36,34 +36,36 @@ import (
 // (hs_pct, kast), so equivalence is asserted as value × 100 — the same
 // ×100 bridge TestFixtureCorpusScoreboardEquivalence uses for kast.
 //
-// FF note (plan §7 M3 "FF damage too if expressible; else stays,
-// noted"): friendly fire needs the VICTIM's stored side beside the
-// attacker's, and no grammar source carries it — `events` has no side
-// column, the side-carrying sources (player_stats, round_player_sides)
-// join only on the row's own subject (the attacker), and exists()'s
-// inner scan is the primary events table alone (whitelist.go). So FF
-// stays Go-side: the retired SQL survives HERE as the reference oracle
-// (the M2 precedent — kdPerMatchSQL survives only as the oracle in
-// metric_series_read_test.go), and this file holds the only remaining
-// copy of its decisions.
+// Friendly fire is DELETED — owner ruling 2026-11-17 (the dead-stat
+// sweep): it was this oracle's third column, computed Go-side because
+// no grammar source carries the VICTIM's stored side beside the
+// attacker's (`events` has no side column; the side-carrying sources
+// (player_stats, round_player_sides) join only on the row's own
+// subject; exists()'s inner scan is the primary events table alone —
+// whitelist.go), so it was never seedable and never had a surface.
+// Nothing of it survives here — not the column, its SQL, or its
+// assertions. The fixture's same-side damage ROWS stay: the seeds
+// carry no side gate, so that damage is part of the characterized
+// dmg_no_kill values below (alice's 110 total; dave's only row).
 //
 // The name-ORDER decision (old decision 3) retired with the roster
 // read it served: nothing orders these numbers by name any more. The
 // oracle keeps its ORDER BY as a faithful copy but does not pin it.
 
 // combatOracleRow is the retired GetCombatStats read shape per human
-// attacker: unconverted damage, conversion percent on the retired
-// 0..100 scale, and friendly fire (the no-seed column).
+// attacker: unconverted damage and conversion percent on the retired
+// 0..100 scale (friendly fire's column left with the owner's
+// 2026-11-17 dead-stat ruling — see the note in the file header).
 type combatOracleRow struct {
 	NoKill  int
 	ConvPct float64
-	FF      int
 }
 
 // combatStatsOracle runs the RETIRED store.GetCombatStats SQL verbatim
-// (the reference oracle — see the FF note above): the damage aggregate
-// with its same-tick EXISTS split and final-side friendly fire, over
-// the humans-only, name-ordered base rows the roster read used.
+// (the reference oracle — friendly fire's column deleted per the owner
+// ruling of 2026-11-17, see the file header): the damage aggregate
+// with its same-tick EXISTS split, over the humans-only, name-ordered
+// base rows the roster read used.
 func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]combatOracleRow {
 	t.Helper()
 	dmgRes, err := st.RunReadOnly(
@@ -73,21 +75,18 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 				SELECT 1 FROM events k
 				WHERE k.match_id = e.match_id AND k.kind = 'kill' AND k.tick = e.tick
 					AND k.attacker = e.attacker AND k.victim = e.victim
-			) THEN e.dmg ELSE 0 END),
-			SUM(CASE WHEN vp.steam_id IS NOT NULL AND ap.side = vp.side THEN e.dmg ELSE 0 END)
+			) THEN e.dmg ELSE 0 END)
 		 FROM events e
-		 LEFT JOIN players ap ON ap.match_id = e.match_id AND e.attacker <> '' AND ap.steam_id = e.attacker
-		 LEFT JOIN players vp ON vp.match_id = e.match_id AND e.victim <> '' AND vp.steam_id = e.victim
 		 WHERE e.match_id = ? AND e.kind = 'damage' AND e.attacker <> ''
 		 GROUP BY e.attacker`,
 		[]any{matchID}, 500, 5000)
 	if err != nil {
 		t.Fatalf("oracle damage aggregate: %v", err)
 	}
-	type agg struct{ total, onKill, ff float64 }
+	type agg struct{ total, onKill float64 }
 	byAttacker := map[string]agg{}
 	for _, r := range dmgRes.Rows {
-		byAttacker[r[0].(string)] = agg{toFloat(r[1]), toFloat(r[2]), toFloat(r[3])}
+		byAttacker[r[0].(string)] = agg{toFloat(r[1]), toFloat(r[2])}
 	}
 	// The old base rows: every HUMAN with stats for the match, by name.
 	baseRes, err := st.RunReadOnly(
@@ -103,7 +102,7 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 	for _, r := range baseRes.Rows {
 		sid := r[0].(string)
 		a := byAttacker[sid]
-		row := combatOracleRow{NoKill: int(a.total - a.onKill), FF: int(a.ff)}
+		row := combatOracleRow{NoKill: int(a.total - a.onKill)}
 		if a.total > 0 {
 			row.ConvPct = 100 * a.onKill / a.total
 		}
@@ -163,9 +162,9 @@ func combatStore(t *testing.T) *store.Store {
 
 // characterizationFixture is the ME0 characterized corpus
 // (TestGetCombatStatsFromStoredRows verbatim): alice deals 110 damage
-// to bob — 60 on the kill's tick, 40 on a later tick — plus 10 friendly
-// fire on carl (both ct). Expected: DMGNoKill 50, DMGConvPct ≈54.55,
-// FF 10.
+// to bob — 60 on the kill's tick, 40 on a later tick — plus 10
+// same-side damage on carl (counted: the seeds carry no side gate).
+// Expected: DMGNoKill 50, DMGConvPct ≈54.55.
 func characterizationFixture(t *testing.T) (*store.Store, int64) {
 	t.Helper()
 	st := combatStore(t)
@@ -184,7 +183,7 @@ func characterizationFixture(t *testing.T) (*store.Store, int64) {
 			{Seq: 0, Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
 			{Seq: 1, Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 60},
 			{Seq: 2, Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 40},
-			{Seq: 3, Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // FF (both ct)
+			{Seq: 3, Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // same-side damage — counted (no side gate)
 		},
 	}
 	return st, saveCombatMatch(t, st, "combat-equiv-a", em)
@@ -209,9 +208,6 @@ func TestCombatDamageSeedEquivalence(t *testing.T) {
 	}
 	if want := 100 * 60.0 / 110.0; math.Abs(alice.ConvPct-want) > 1e-9 {
 		t.Errorf("oracle DMGConvPct = %v, want %v (≈54.55, the 0..100 scale)", alice.ConvPct, want)
-	}
-	if alice.FF != 10 {
-		t.Errorf("oracle FF = %d, want 10 (alice and carl both ct)", alice.FF)
 	}
 
 	noKill := combatPreview(t, st, seedDef(t, st, "dmg_no_kill"), "match:"+itoa(id))
@@ -254,9 +250,8 @@ func TestCombatDamageSeedEquivalence(t *testing.T) {
 
 // decisionFixture is the ME0 decision corpus
 // (TestGetCombatStatsSQLDecisions verbatim, plus a bot's damage): the
-// same-tick kill by a DIFFERENT attacker must not convert, both-unknown
-// sides count as friendly fire, and the bot's damage never reaches a
-// value.
+// same-tick kill by a DIFFERENT attacker must not convert, and the
+// bot's damage never reaches a value.
 func decisionFixture(t *testing.T) (*store.Store, int64) {
 	t.Helper()
 	st := combatStore(t)
@@ -279,7 +274,8 @@ func decisionFixture(t *testing.T) (*store.Store, int64) {
 			{SteamID: botSteamID, Name: "bot", Side: "ct", RoundsPlayed: 2},
 		},
 		Events: []models.Event{
-			// (1) Friendly fire with BOTH sides unknown: '' == '' counts.
+			// (1) dave's damage with both sides unknown — the seeds
+			// carry no side gate, so it counts (NoKill 10).
 			{Seq: 0, Tick: 100, Round: 1, Kind: models.EventDamage, Attacker: "400", Victim: "500", Dmg: 10},
 			// (2) Damage whose victim dies the same tick from a
 			// DIFFERENT attacker: the kill must match attacker+victim+
@@ -299,15 +295,16 @@ func decisionFixture(t *testing.T) (*store.Store, int64) {
 }
 
 // TestCombatSeedActorPairAndRosterEquivalence pins the retired SQL's
-// read decisions through the seeds where they migrated and through the
-// oracle where they did not:
+// read decisions through the seeds:
 //
 //   - actor-pair/tick conversion (old decision 2): zoe's 90 damage
 //     converts only the same-attacker same-tick 40 → NoKill 50 both
 //     sides; the different-attacker kill on the same tick does not
 //     convert (the exists_test correlation pin's sibling at seed level);
-//   - both-unknown-sides friendly fire (old decision 1): dave FF 10 —
-//     oracle-only, no seed (see the FF note);
+//   - unknown-side damage counts — the seeds carry no side gate:
+//     dave's only row is NoKill 10 through both the oracle and the
+//     seed (the friendly-fire decision that used to live here died
+//     with the owner's 2026-11-17 dead-stat ruling);
 //   - humans-only (old decision 5): the bot's damage reaches neither
 //     the oracle's base rows nor any metric row;
 //   - name ordering (old decision 3): retired with the roster read —
@@ -327,8 +324,8 @@ func TestCombatSeedActorPairAndRosterEquivalence(t *testing.T) {
 	if !ok {
 		t.Fatalf("oracle has no dave row: %+v", oracle)
 	}
-	if dave.NoKill != 10 || dave.FF != 10 {
-		t.Errorf("oracle dave noKill/ff = %d/%d, want 10/10 ('' == '' counts as FF)", dave.NoKill, dave.FF)
+	if dave.NoKill != 10 {
+		t.Errorf("oracle dave DMGNoKill = %d, want 10 (no side gate on the seeds)", dave.NoKill)
 	}
 	if _, ok := oracle[botSteamID]; ok {
 		t.Errorf("oracle lists the bot: %+v (base rows are humans only)", oracle[botSteamID])
@@ -400,5 +397,23 @@ func TestCombatSeedsSweepFresh(t *testing.T) {
 		if c.Behind || c.FreshRows == 0 {
 			t.Errorf("%s coverage = %+v, want fresh rows after one Sweep", name, c)
 		}
+	}
+}
+
+// TestCombatOracleCarriesOnlyTheSeededColumns pins the dead-stat
+// deletion (owner ruling, 2026-11-17): friendly fire's column left the
+// retired-GetCombatStats oracle entirely — the oracle row is exactly
+// the two read shapes that migrated to seeds (dmg_no_kill,
+// kill_conversion). A third field means a no-seed column came back:
+// stop and check the ruling before re-adding it.
+func TestCombatOracleCarriesOnlyTheSeededColumns(t *testing.T) {
+	typ := reflect.TypeOf(combatOracleRow{})
+	got := make([]string, typ.NumField())
+	for i := range got {
+		got[i] = typ.Field(i).Name
+	}
+	want := []string{"NoKill", "ConvPct"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("combatOracleRow fields = %v, want %v (owner ruling, 2026-11-17: friendly fire deleted)", got, want)
 	}
 }
