@@ -783,9 +783,11 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- the two M8 rows Phase 4 deferred as inexpressible, now over the
 -- next() round window and the diff() row difference — internal/metrics
 -- doc.go). Scope split:
--- 72 match / 20 profile (2026-11-17: +2 match M3, then +16 match +6
+-- 76 match / 33 profile (2026-11-17: +2 match M3, then +16 match +6
 -- profile Option A, then +3 match +1 profile subject-axis, then +5
--- match identity).
+-- match identity, then +10 profile partition, then +3 profile weapon;
+-- 2026-11-18: +1 profile weapon-damage flip, then +2 match
+-- view-aggregate relocation rows — the ME8 audit's force-card counts).
 -- The profile rows land here with the match rows: one owner for one
 -- statement, zero visible effect (nothing reads them until their
 -- surface converts). These rows are how the set reaches a database
@@ -877,7 +879,7 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly one hundred and seven —
+-- THE builtins, seeded (see header): exactly one hundred and nine —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
@@ -905,7 +907,12 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- INSERT below — plan §8 (M8 rows), 2026-11-17: pistol_hold +
 -- avg_equip_gap, the two M8 rows the Phase 4 grammar finding deferred
 -- as inexpressible, over the next() round window and the diff() row
--- difference — 74 match + 33 profile across the whole set). The eighth
+-- difference) and the view-aggregate relocation addendum (2 rows in
+-- their own INSERT below — ME8 exception audit, 2026-11-18:
+-- team_force_wins + team_force_rounds, the force card's per-team count
+-- pairs the view still computed — the view-aggregate rule's third
+-- clause, cited in that block) — 76 match + 33 profile across the
+-- whole set). The eighth
 -- match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1621,6 +1628,33 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from rounds: avg(where winner != '''', diff(equip_ct, equip_t, winner = ''ct''))',
  'match', 'match', '', 'currency',
  'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time — addressed per match (no partition); N = rounds.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- View-aggregate relocation addendum (ME8 exception audit, 2026-11-18):
+-- TWO team-subject count builtins — the force card's per-team won /
+-- total pairs, the last piece of that card's numbers still computed in
+-- the view (the view-aggregate rule's third clause: a value derivable
+-- from a stored metric relocates; a pooled ratio seed deliberately does
+-- NOT exist here — a zero denominator stores 0 beside N, which cannot
+-- carry the card's "no force buys" dash, so the honest stored form of
+-- the card is its counts). Same INSERT OR IGNORE add-on path (keyed on
+-- the UNIQUE name), addressing written explicitly: subject=team,
+-- scope=match, no partition, no denominator (a count IS the value).
+-- Equivalence with the characterization-pinned Economy card: the
+-- sub-line's won/rounds pairs — exact equality to the retired view
+-- computation pinned in internal/metrics' econ equivalence test. Every
+-- doc is Formula-first, states subject + partition and stays inside the
+-- tier-2 doc limit (AGENTS doc rule; no doc hard-codes a count).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('team_force_wins', 'Force rounds won', '',
+ 'from round_side_classes, rounds: count(where class = ''force'' and winner = side)',
+ 'match', 'team', '', 'int',
+ 'Formula: count(round_side_classes rows joined to rounds WHERE class = force AND winner = side) — force rounds that team won, addressed per team (no partition), over the joined sources.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('team_force_rounds', 'Force rounds', '',
+ 'from round_side_classes: count(where class = ''force'')',
+ 'match', 'team', '', 'int',
+ 'Formula: count(round_side_classes rows WHERE class = force) — that team''s own force-buy rounds, addressed per team (no partition).',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One
