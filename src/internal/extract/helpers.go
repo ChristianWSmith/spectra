@@ -95,6 +95,30 @@ func teammateColor(pl *common.Player) int {
 	}
 }
 
+// roundStartMoney reads one participant's round-start account — the
+// player controller property m_pInGameMoneyServices.m_iStartAccount
+// (CS2OpenDev schema: "Money the player held at the start of the
+// current round"). It is the money_start source for player_round_stats:
+// the game snapshots it at round start, BEFORE any freeze-time buys, and
+// it absorbs the game's own money resets (pistol rounds and OT halves)
+// — characterized on the golden demo by TestDiagRoundMoneyProps (identity
+// startAccount − cashSpentThisRound == account at freeze end; $800 on
+// rounds 1 and 13; zero drift freeze end → round end).
+//
+// ok=false (missing entity or property — a controller the demo never
+// transmitted) makes the caller skip the whole money sample rather than
+// record a zero that would be indistinguishable from a real $0 start.
+func roundStartMoney(pl *common.Player) (int, bool) {
+	if pl == nil || pl.Entity == nil {
+		return 0, false
+	}
+	v, ok := pl.Entity.PropertyValue("m_pInGameMoneyServices.m_iStartAccount")
+	if !ok || v.Any == nil {
+		return 0, false
+	}
+	return v.Int(), true
+}
+
 // realPeriod reports whether stats-eligible (real) play is underway: the
 // match has started, warmup is over, and the game phase has advanced past
 // Pregame. IsWarmupPeriod() alone misses two polluters observed in real

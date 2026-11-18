@@ -194,6 +194,7 @@ func (a *agg) build() *models.ExtractedMatch {
 
 	out.RoundEconomy = a.economy
 	out.RoundSides = a.roundSides
+	out.RoundMoney = a.roundMoney
 	out.Events = a.events
 	out.GenericEvents = a.generic
 	out.Chat = a.chatRows
@@ -247,6 +248,9 @@ func (a *agg) renumber() {
 	}
 	for i := range a.roundSides {
 		a.roundSides[i].Round = remap(a.roundSides[i].Round)
+	}
+	for i := range a.roundMoney {
+		a.roundMoney[i].Round = remap(a.roundMoney[i].Round)
 	}
 }
 

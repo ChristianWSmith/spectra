@@ -24,9 +24,13 @@
 //     eco_equivalence_test.go).
 //   - OT pistol rounds are not special-cased (none in the golden demo):
 //     pistol = counted sequence index % 12 == 0 (MR12 half starts).
-//   - Per-player money_start/equip/spent stay 0: the item_equip payload
-//     carries no price/cost, so per-player per-round spend is not
-//     extractable (team-level equip/money live in the economy view).
+//   - Per-player money_start/equip/spent come from the extractor's
+//     round-end prop samples (m_iStartAccount / m_unRoundStartEquipmentValue
+//     / m_iCashSpentThisRound — round_player_money; owner ruling
+//     2026-11-18 "implement the per-round money data", replacing the
+//     v1 always-0 placeholder). A player-round without a sample keeps
+//     the columns' absence-as-zero default (disconnected before round
+//     end, or the demo carried no start-account prop).
 //   - Engagement kinds are opening|trade|traded|untraded; the entry kind
 //     is deferred (player_stats.entry_kills from the extractor already
 //     covers per-player entry attribution).

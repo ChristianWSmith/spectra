@@ -816,6 +816,45 @@ func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, e
 	return out, nil
 }
 
+// GetRoundPlayerMoney returns the extractor's round-end per-player
+// economy samples as round → steamID → row (round ASC). Empty map when
+// the match has no stored samples — callers treat a missing sample as
+// absence (player_round_stats' money columns keep their zero default,
+// the same absence-as-zero convention as kills for rounds not played).
+func (s *Store) GetRoundPlayerMoney(matchID int64) (map[int]map[string]models.RoundPlayerMoney, error) {
+	rows, err := s.db.Query(
+		`SELECT round, steam_id, money_start, equip, spent FROM round_player_money
+		 WHERE match_id = ? ORDER BY round ASC, steam_id ASC`, matchID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the round money: %w", err)
+	}
+	defer rows.Close()
+	out := map[int]map[string]models.RoundPlayerMoney{}
+	for rows.Next() {
+		var (
+			round int
+			sid   string
+			rm    models.RoundPlayerMoney
+		)
+		if err := rows.Scan(&round, &sid, &rm.MoneyStart, &rm.Equip, &rm.Spent); err != nil {
+			return nil, fmt.Errorf("couldn't load the round money: %w", err)
+		}
+		m := out[round]
+		if m == nil {
+			m = map[string]models.RoundPlayerMoney{}
+			out[round] = m
+		}
+		rm.Round = round
+		rm.SteamID = sid
+		m[sid] = rm
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the round money: %w", err)
+	}
+	return out, nil
+}
+
 // ---- saved filters ----
 
 // ListSavedFilters returns all saved filter presets, newest first.

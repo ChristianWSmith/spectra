@@ -78,6 +78,22 @@ type moneySample struct {
 	freePistol int
 }
 
+// moneyEndSample is one participant's round-END economy reading — the
+// source of player_round_stats' money columns. startAccount is
+// m_iStartAccount (money held at round start, before buys); equipStart
+// is m_unRoundStartEquipmentValue (carried gear before freeze-time
+// buys, free spawn pistol included); spent is m_iCashSpentThisRound (the
+// game's own per-round spend counter, complete only once mp_buytime has
+// closed — hence RoundEnd rather than freeze end; see the RoundEnd
+// handler). All three round-stable or round-final as characterized by
+// TestDiagRoundMoneyProps.
+type moneyEndSample struct {
+	key          uint64
+	startAccount int
+	equipStart   int
+	spent        int
+}
+
 // roundInfo is one round's running state (models.Round at build time).
 // Only COUNTED rounds are ever accumulated here: knife/warmup/post-match
 // rounds are discarded at ingest (see agg.roundStart), so the stored set
@@ -279,6 +295,11 @@ type agg struct {
 
 	roundSides []models.RoundPlayerSide
 
+	// roundMoney holds the round-end per-player economy samples
+	// (moneyEndSample → models.RoundPlayerMoney) behind player_round_stats'
+	// money columns — one row per connected participant per counted round.
+	roundMoney []models.RoundPlayerMoney
+
 	economy  []models.RoundEconomy
 	events   []models.Event
 	generic  []models.GenericEvent
@@ -339,6 +360,7 @@ func newAgg() *agg {
 		disconnectTick: make(map[uint64]int),
 		economy:        make([]models.RoundEconomy, 0, 64),
 		roundSides:     make([]models.RoundPlayerSide, 0, 256),
+		roundMoney:     make([]models.RoundPlayerMoney, 0, 256),
 		events:         make([]models.Event, 0, 512),
 		generic:        make([]models.GenericEvent, 0, 21000),
 		chatRows:       make([]models.Chat, 0, 64),
@@ -523,6 +545,35 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 		Kind:       models.EventRoundEnd,
 		DetailJSON: detailJSON(map[string]any{"winner": winner, "reason": reason, "message": message}),
 	}, "round_end")
+}
+
+// moneyEnd records the round-end money samples (player_round_stats'
+// money_start/equip/spent): one models.RoundPlayerMoney row per sampled
+// participant of the CURRENT counted round. Discarded rounds (knife/
+// warmup/post-match) hang no rows — a.rounds' last entry would be the
+// PREVIOUS counted round, the same guard roundEnd/mvpScan use. Samples
+// arrive only for participants whose start-account prop the demo carried
+// (handlers.go roundStartMoney), so a missing prop yields no row rather
+// than a zeroed one; player_round_stats keeps its absence-as-zero
+// default for player-rounds without a sample (players disconnected
+// before round end, or not yet connected).
+func (a *agg) moneyEnd(samples []moneyEndSample) {
+	if a.discarding || len(a.rounds) == 0 {
+		return
+	}
+	r := &a.rounds[len(a.rounds)-1]
+	for _, s := range samples {
+		if s.key == 0 {
+			continue
+		}
+		a.roundMoney = append(a.roundMoney, models.RoundPlayerMoney{
+			Round:      r.number,
+			SteamID:    keyStr(s.key),
+			MoneyStart: s.startAccount,
+			Equip:      s.equipStart,
+			Spent:      s.spent,
+		})
+	}
 }
 
 // freezeEnd records freeze-time-end ticks/equip values on the current round

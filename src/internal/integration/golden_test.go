@@ -537,6 +537,47 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 		kastPctAvg = 100 * float64(kastTrue) / float64(len(prs))
 	}
 
+	// Money-column hard safety nets (owner ruling 2026-11-18): the
+	// round-end prop samples must reach player_round_stats as REAL
+	// values on the golden demo. Round 1 and round 13 are the two pistol
+	// rounds — the game resets every player's account to $800 there
+	// (m_iStartAccount carries the reset) and nobody has carried gear
+	// beyond the free spawn pistol ($200 equipment value), both verified
+	// by extract.TestDiagRoundMoneyProps on this demo. At least one
+	// player must have spent money in round 1 (pistol buys). Runs even
+	// with -update.
+	pistolMoney := map[int]int{} // round → distinct money_start values
+	pistolEquip := map[int]int{} // round → distinct equip values
+	round1Spent := 0
+	for _, r := range prs {
+		if r.Round == 1 || r.Round == 13 {
+			pistolMoney[r.Round*100000+r.MoneyStart] = 1
+			pistolEquip[r.Round*100000+r.Equip] = 1
+			if r.Round == 1 {
+				round1Spent += r.Spent
+			}
+		}
+	}
+	if len(pistolMoney) != 2 {
+		t.Errorf("pistol-round money_start values = %v, want exactly {1: 800, 13: 800} (the game's $800 reset)", pistolMoney)
+	}
+	for k := range pistolMoney {
+		if k%100000 != 800 {
+			t.Errorf("pistol-round money_start = %d, want 800", k%100000)
+		}
+	}
+	if len(pistolEquip) != 2 {
+		t.Errorf("pistol-round equip values = %v, want exactly {1: 200, 13: 200} (free spawn pistol only)", pistolEquip)
+	}
+	for k := range pistolEquip {
+		if k%100000 != 200 {
+			t.Errorf("pistol-round equip = %d, want 200 (the free spawn pistol's equipment value)", k%100000)
+		}
+	}
+	if round1Spent <= 0 {
+		t.Errorf("round 1 total spent = %d, want > 0 (pistol buys are recorded)", round1Spent)
+	}
+
 	classes, err := st.GetRoundClasses(id)
 	if err != nil {
 		t.Fatalf("GetRoundClasses: %v", err)

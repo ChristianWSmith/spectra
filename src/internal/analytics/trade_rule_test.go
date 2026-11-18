@@ -63,7 +63,7 @@ func TestEngagementsTeamkillsNeverTrade(t *testing.T) {
 // player_stats.trade_kills; the enemy control death still trades.
 func TestPlayerRoundsTeamkillDeathNotTraded(t *testing.T) {
 	events, rounds, players := tradeScenario()
-	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players), nil)
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r

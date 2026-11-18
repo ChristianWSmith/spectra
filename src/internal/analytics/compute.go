@@ -120,6 +120,13 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	if err != nil {
 		return fmt.Errorf("couldn't load the round sides: %w", err)
 	}
+	// Round-end per-player money samples (player_round_stats' money
+	// columns) — ingest-owned rows, same absence-as-zero convention as
+	// the sides above when a player-round has no sample.
+	money, err := st.GetRoundPlayerMoney(matchID)
+	if err != nil {
+		return fmt.Errorf("couldn't load the round money: %w", err)
+	}
 
 	classes, sideClasses := Classify(eco, rounds, cfg)
 	// Team stamp (metrics expansion §5): round_side_classes is a
@@ -148,7 +155,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		}
 		sideClasses[i].Team = rules.TeamKeyAt(sideClasses[i].Side, idx, len(rounds), m.SideSwitches)
 	}
-	prs := PlayerRounds(evs, rounds, players, cfg, sides)
+	prs := PlayerRounds(evs, rounds, players, cfg, sides, money)
 	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg, sides, blindDetails)

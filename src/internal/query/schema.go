@@ -15,6 +15,7 @@ var tableNotes = map[string]string{
 	"player_stats":       "per-match scoreboard rollup per player (K/D/A, ADR, openings, trades, weapon JSON)",
 	"rounds":             "per-round outcome + timing (winner, reason, ticks, first kill, MVP) — one row per COUNTED round (knife/warmup rounds are discarded at ingest)",
 	"round_player_sides": "per-round player sides from freeze-end samples (exact side per round — halftime switches)",
+	"round_player_money": "per-round player money from round-end samples (start account, carried equipment, round spend)",
 	"round_economy":      "per-round per-side equipment value + money samples + spend (spent = Σ over the side's players of the freeze-time-end delta in the cumulative cash-spent counter; buy classification input) + free spawn-issued default-pistol value held at freeze end (free_pistol_value — granted pistols count inside equipment value, so net worth includes them)",
 	"events":             "normalized game events (kill/damage/blind/bomb/…) with tick, actors, weapon flags, positions",
 	"generic_events":     "raw parser events not in the normalized taxonomy (name/tick/payload JSON)",

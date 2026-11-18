@@ -433,6 +433,19 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		}
 	}
 
+	moneyStmt, err := tx.Prepare(
+		`INSERT INTO round_player_money (match_id, round, steam_id, money_start, equip, spent) VALUES (?, ?, ?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return fmt.Errorf("saving the match data: %w", err)
+	}
+	defer moneyStmt.Close()
+	for _, rm := range em.RoundMoney {
+		if _, err := moneyStmt.Exec(matchID, rm.Round, scrub(rm.SteamID), rm.MoneyStart, rm.Equip, rm.Spent); err != nil {
+			return fmt.Errorf("saving the match data: %w", err)
+		}
+	}
+
 	econStmt, err := tx.Prepare(
 		`INSERT INTO round_economy (match_id, ` + roundEconomyCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

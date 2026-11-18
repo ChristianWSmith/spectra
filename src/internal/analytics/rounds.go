@@ -32,8 +32,22 @@ import (
 // of the replay playhead's fold, the same permissive predicate as
 // player_stats.total_damage and the events.same_side stamp (both sides
 // known AND equal → same-side → skip; an unknown side counts).
-// MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
-// no price — see package doc). Rows are emitted for EVERY HUMAN player ×
+//
+// MoneyStart/Equip/Spent come from the extractor's round-end money
+// samples (money — round → steamID → row, store.GetRoundPlayerMoney):
+// MoneyStart is m_iStartAccount, the game's own snapshot of the account
+// at round start before any buys (it carries the pistol/OT money
+// resets); Equip is m_unRoundStartEquipmentValue, the equipment value
+// carried into the round before freeze-time buys (free spawn pistol
+// included); Spent is m_iCashSpentThisRound, the game's per-round spend
+// counter read at RoundEnd once mp_buytime has closed. A player-round
+// without a sample (player disconnected before round end, or the demo
+// carried no start-account prop) keeps the table's absence-as-zero
+// default — the same convention as kills/dmg for rounds not played,
+// never a derived guess. The three props and the RoundEnd sample point
+// are characterized by extract.TestDiagRoundMoneyProps; sources in
+// CS2.md "Per-round money props".
+// Rows are emitted for EVERY HUMAN player ×
 // every counted round (round ASC, players sorted by SteamID for stable
 // output) — bots are dropped entirely (ruling 2026-11-17: a bot's
 // roster×round row existed in rounds it never played; every consumer of
@@ -43,7 +57,7 @@ import (
 // freeze-end side samples; a round without them leaves every side unknown —
 // kills/assists stay permissive (an unknown side never matches) and no
 // trade is claimed.
-func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string) []PlayerRound {
+func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string, money map[int]map[string]models.RoundPlayerMoney) []PlayerRound {
 	real := CountedRounds(rounds)
 	if len(real) == 0 {
 		return nil
@@ -171,6 +185,10 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			a := assists[p.SteamID] > 0
 			s := deaths[p.SteamID] == 0
 			t := traded[p.SteamID]
+			// The round-end money sample for this player-round (absent
+			// → the zero value, i.e. the columns' absence-as-zero
+			// default — see the function doc).
+			rm := money[r.Number][p.SteamID]
 			// The row's side stamp: the SAME freeze-end sample the side
 			// splits join on (resolveRoundSides — exact, never a final-
 			// side guess); won is the round winner beside it (the
@@ -192,9 +210,9 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 				KAST:        k || a || t || s,
 				DMG:         dmg[p.SteamID],
 				UtilDmg:     utilDmg[p.SteamID],
-				MoneyStart:  0, // v1 limitation: no per-player price data
-				Equip:       0,
-				Spent:       0,
+				MoneyStart:  rm.MoneyStart,
+				Equip:       rm.Equip,
+				Spent:       rm.Spent,
 				RuleVersion: cfg.RuleVersion,
 				Side:        side,
 				Won:         won,
