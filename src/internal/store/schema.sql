@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS matches (
 	-- engagements / utility_events + player_stats.trade_kills) were last
 	-- computed under. Written ONLY at the end of a successful
 	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
-	-- 0 = never analyzed / unknown (rule_version starts at 1, so 0 is
+	-- 0 = never analyzed / unknown (rule_version starts at 1 — 2 since
+	-- the 2026-11-18 enemy-damage bump of store.DefaultConfig — so 0 is
 	-- never a real version). The behind read (store.MatchListFilter.Behind)
 	-- compares it against the live rule version. SaveExtracted never
 	-- touches it (matchOwnedElsewhere): a reprocess keeps its old stamp
@@ -672,7 +673,10 @@ CREATE TABLE IF NOT EXISTS saved_filters (
 
 -- Single-row rules config (plan M3 §3): id is pinned to 1 by CHECK; the
 -- Go GetConfig seeds DefaultConfig on first use (trade 5s / full 20000 /
--- force 10000 / trade-opp 1000u / rule v1).
+-- force 10000 / trade-opp 1000u / rule v2 — the 2026-11-18 bump of
+-- store.DefaultConfig.RuleVersion 1 → 2: the enemy-damage folds in
+-- analytics.rounds.go / analytics.utility.go (owner ruling
+-- 2026-11-17) changed stored analysis outputs).
 -- The DEFAULTs MIRROR store.DefaultConfig — the Go seed is the ONE
 -- canonical source (GetConfig's explicit INSERT writes every column, so
 -- these are never read in practice; the eco pair used to disagree here
@@ -685,7 +689,7 @@ CREATE TABLE IF NOT EXISTS analysis_config (
 	eco_full_buy INTEGER NOT NULL DEFAULT 20000,
 	eco_force INTEGER NOT NULL DEFAULT 10000,
 	trade_opp_distance INTEGER NOT NULL DEFAULT 1000,
-	rule_version INTEGER NOT NULL DEFAULT 1
+	rule_version INTEGER NOT NULL DEFAULT 2
 );
 
 -- Communications: the voice presence header + encrypted-chat provenance.

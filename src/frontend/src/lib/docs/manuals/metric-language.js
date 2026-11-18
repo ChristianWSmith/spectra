@@ -87,7 +87,9 @@ from player_stats: ratio(sum(kills), sum(deaths))
 
 Every recorded event of a match: kills, damage, blinding, grenade and bomb actions, round start/end. Rows with no acting player (an event nobody caused) are never counted.
 
-**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`attacker\`, \`victim\`, \`assister\`, \`weapon\`, \`headshot\`, \`wallbang\`, \`noscope\`, \`through_smoke\`, \`attacker_blind\`, \`assisted_flash\`, \`distance\`, \`hitgroup\`, \`dmg\`, \`site\`, \`pos_x\`, \`pos_y\`, \`pos_z\`
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`attacker\`, \`victim\`, \`assister\`, \`weapon\`, \`headshot\`, \`wallbang\`, \`noscope\`, \`through_smoke\`, \`attacker_blind\`, \`assisted_flash\`, \`distance\`, \`hitgroup\`, \`dmg\`, \`site\`, \`pos_x\`, \`pos_y\`, \`pos_z\`, \`same_side\`
+
+\`same_side\` marks damage that stayed on one team (both sides known and equal — friendly fire); it is 0 for enemy damage and for rows whose sides are unknown, so \`where … and same_side = 0\` counts enemy damage only.
 
 # engagements
 

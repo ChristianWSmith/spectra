@@ -568,7 +568,10 @@ func TestUtilityPairingAndFlash(t *testing.T) {
 		ev(10, 300, 1, models.EventGrenadeThrow, "A", "", withWeapon("Smoke Grenade")),
 		// throw with no detonation → no row
 	}
-	got := Utility(events, players, testCfg, blindDetails)
+	// Round-1 freeze-end samples (the damage sum's enemy gate); the
+	// two blind rows are unaffected (the flash branch carries no gate).
+	sides := map[int]map[string]string{1: {"A": "ct", "X": "t", "Y": "t"}}
+	got := Utility(events, players, testCfg, sides, blindDetails)
 	if len(got) != 2 {
 		t.Fatalf("utility rows = %d (%+v), want 2 (HE + flash; un-detonated smoke skipped)", len(got), got)
 	}
@@ -627,7 +630,7 @@ func TestUtilityDetWithoutThrow(t *testing.T) {
 			e.PosX, e.PosY = pf(10), pf(-20)
 		}),
 	}
-	got := Utility(events, players, testCfg, nil)
+	got := Utility(events, players, testCfg, nil, nil)
 	if len(got) != 1 || got[0].Kind != "smoke" || got[0].Thrower != "A" {
 		t.Errorf("rows = %+v, want one smoke row keyed on the detonation", got)
 	}
@@ -667,7 +670,7 @@ func TestUtilitySortEffectiveThrowTick(t *testing.T) {
 		ev(5, 750, 1, models.EventGrenade, "A", "", withWeapon("Smoke Grenade")),
 		ev(6, 800, 1, models.EventGrenade, "A", "", withWeapon("Smoke Grenade")),
 	}
-	got := Utility(events, players, testCfg, nil)
+	got := Utility(events, players, testCfg, nil, nil)
 	want := []struct {
 		tick      int // detonation tick
 		throwTick int

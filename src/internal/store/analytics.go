@@ -27,12 +27,25 @@ import (
 // CS2 run speeds (215 u/s with a rifle, 250 u/s knife), and a radius
 // inside the melee zone (5 m ≈ 200 u) would only ever select deaths that
 // get traded anyway — leaving the gated count at ~0 on real demos.
+//
+// RuleVersion is bumped only when an analysis RULE's output changes
+// (a threshold save bumps it too, through SetConfig): 1 → 2 on
+// 2026-11-18 for the owner's 2026-11-17 enemy-damage ruling —
+// player_round_stats.dmg/util_dmg (analytics.rounds.go) and the
+// utility burn-window sum (analytics.utility.go) now fold same-side
+// damage out, so stored rows computed under v1 are behind → the
+// behind facet lists them → RecomputeAll rewrites them. Existing
+// databases: GetConfig's seed is insert-on-miss, so a pre-existing
+// analysis_config row keeps its stored version — the owner's pending
+// wipe + re-import covers those libraries (a fresh database seeds
+// v2 at first GetConfig); no ensure/ALTER path exists (AGENTS
+// "Version nothing until the first release").
 var DefaultConfig = models.AnalysisConfig{
 	TradeWindowS:     5.0,
 	EcoFullBuy:       20000,
 	EcoForce:         10000,
 	TradeOppDistance: 1000,
-	RuleVersion:      1,
+	RuleVersion:      2,
 }
 
 // Per-table column lists (G1): each const is the row WITHOUT the

@@ -26,8 +26,13 @@ import (
 // agrees with player_stats (ruling, lead 2026-11-17, owner's
 // reconnect-takeover report).
 //
-// DMG/UtilDmg aggregate damage events (attacker side; util = the utility
-// set in models.IsUtilityWeapon). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
+// DMG/UtilDmg aggregate ENEMY damage events (attacker side; util = the
+// utility set in models.IsUtilityWeapon). Same-side damage leaves both
+// accumulators — owner ruling 2026-11-17: the fold is the stored twin
+// of the replay playhead's fold, the same permissive predicate as
+// player_stats.total_damage and the events.same_side stamp (both sides
+// known AND equal → same-side → skip; an unknown side counts).
+// MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
 // no price — see package doc). Rows are emitted for EVERY HUMAN player ×
 // every counted round (round ASC, players sorted by SteamID for stable
 // output) — bots are dropped entirely (ruling 2026-11-17: a bot's
@@ -102,7 +107,16 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 					killerOf[e.Victim] = e.Attacker
 				}
 			case models.EventDamage:
-				if e.Attacker != "" {
+				// Enemy damage only (owner ruling 2026-11-17): both
+				// sides known AND equal → same-side → skip; an
+				// unknown side counts (the permissive rule — the
+				// same predicate as the events.same_side stamp,
+				// player_stats.total_damage and the replay
+				// playhead's fold in lib/replay/livestats.js).
+				// Gating the case body keeps dmg and util_dmg on the
+				// same rule (util_dmg then agrees with extract's
+				// enemy-gated player_stats.utility_damage).
+				if e.Attacker != "" && !sameSide(teamR[e.Attacker], teamR[e.Victim]) {
 					dmg[e.Attacker] += e.Dmg
 					if models.IsUtilityWeapon(e.Weapon) {
 						utilDmg[e.Attacker] += e.Dmg

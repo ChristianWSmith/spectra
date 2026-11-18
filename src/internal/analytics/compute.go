@@ -151,7 +151,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	prs := PlayerRounds(evs, rounds, players, cfg, sides)
 	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
-	utils := Utility(evs, players, cfg, blindDetails)
+	utils := Utility(evs, players, cfg, sides, blindDetails)
 
 	// Replace* take matchID as their own argument (rows stay unstamped —
 	// the MatchID column is written from the parameter). The round-level

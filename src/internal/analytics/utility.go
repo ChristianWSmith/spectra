@@ -43,11 +43,18 @@ func utilKind(weapon string) string {
 //	ThrowTick     the paired throw's own tick — 0 when no throw paired
 //	              (never an interpolated throw time)
 //	ThrowX/ThrowY the paired throw's origin, nil when unknown/unpaired
-//	Damage        Σ damage events of the matching weapon kind within the
-//	              burn window after the detonation (HE 4 s — measured
-//	              golden-demo spread; molotov/incendiary 7 s; smoke/flash/
-//	              decoy none) — detonation-derived by nature: the damage
-//	              lands in the POST-blast window
+//	Damage        Σ ENEMY damage events of the matching weapon kind
+//	              within the burn window after the detonation (HE 4 s —
+//	              measured golden-demo spread; molotov/incendiary 7 s;
+//	              smoke/flash/decoy none) — detonation-derived by nature:
+//	              the damage lands in the POST-blast window. Same-side
+//	              damage leaves the sum (owner ruling 2026-11-17 — the
+//	              same permissive predicate as the events.same_side
+//	              stamp, player_stats.total_damage and the replay
+//	              playhead's fold); an unknown side counts. Affected
+//	              still lists every victim hit (it records who was hit,
+//	              like the ungated flash branch), only the damage STAT
+//	              is gated.
 //	FlashMs       Σ flash durations (blind events by this thrower within 5 s
 //	              of a flash detonation; duration from the extractor's
 //	              flashDurationMs detail field) — likewise post-blast
@@ -76,7 +83,12 @@ func utilKind(weapon string) string {
 // store.GetBlindFlashDetails). The typed-column read (models.EventFromRow)
 // never populates ev.DetailJSON, so the durations must arrive through this
 // side channel; they are parsed ONCE here, not per attribution-loop hit.
-func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetails map[int]string) []UtilityEvent {
+//
+// sides is the extractor's exact per-round freeze-end side samples (the
+// same map PlayerRounds/Engagements/Clutches take — resolveRoundSides
+// per round): the damage sum's enemy gate reads it. A round without a
+// stored sample leaves every side unknown → the permissive rule counts.
+func Utility(events []models.Event, players []PlayerRef, cfg Config, sides map[int]map[string]string, blindDetails map[int]string) []UtilityEvent {
 	names := nameOf(players)
 	sorted := sortedEvents(events)
 
@@ -110,7 +122,8 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 	flashWindow := cfg.ticks(utilFlashWindowS)
 
 	var out []UtilityEvent
-	for _, roundEvents := range byRound {
+	for round, roundEvents := range byRound {
+		teamR := resolveRoundSides(sides, round)
 		var dets []models.Event
 		var throws []models.Event
 		for _, e := range roundEvents {
@@ -176,7 +189,19 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetail
 				switch ev.Kind {
 				case models.EventDamage:
 					if burn > 0 && utilKind(ev.Weapon) == kind && ev.Victim != "" {
-						damage += ev.Dmg
+						// Enemy damage only (owner ruling
+						// 2026-11-17): both sides known AND
+						// equal → same-side → skip the STAT;
+						// an unknown side counts (the
+						// permissive rule — the same
+						// predicate as the events.same_side
+						// stamp and the rounds.go fold
+						// above). The victim still lands in
+						// affected — that list records who
+						// was hit, like the flash branch.
+						if !sameSide(teamR[ev.Attacker], teamR[ev.Victim]) {
+							damage += ev.Dmg
+						}
 						affectedSet[ev.Victim] = true
 					}
 				case models.EventBlind:
