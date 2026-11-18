@@ -1407,6 +1407,160 @@ await sleep(350); // past the 250 ms debounce
 }
 
 {
+  // The copy→parse boundary (owner, 2026-11-17): the card's claim keys
+  // on the import job's NON-TERMINAL STATUS — never on `matchId`. At
+  // the boundary Go creates the match row and stamps the job
+  // (CreateMatchRow + SetJobMatch, then spectra:library-changed), so
+  // the synthetic row above correctly disappears — but the file must
+  // NOT flash back into the import-dir card for the rescan's trailing
+  // debounce window (SCAN_DEBOUNCE_MS), because the click-time scan
+  // still lists the pending file (the backend lists it and only flags
+  // it). Characterization: keyed on `!matchId` (the synthetic row's
+  // condition) the row re-appeared for the whole debounce window.
+  const rowFor = (name) => dirRows().find((tr) => tr.textContent.includes(name));
+  const scanCalls = () => bindings.calls.filter((c) => c.method === 'ListDemoFiles').length;
+  const pendingRows = () =>
+    matchRows().filter((tr) => tr.hasAttribute('data-pending-import'));
+  const matchListRows = () =>
+    matchRows().filter((tr) => !tr.hasAttribute('data-pending-import'));
+  const prevJobsB = bindings.LibraryService.ListJobs;
+  const prevDemoB = bindings.LibraryService.ListDemoFiles;
+  const prevRowsForFacetB = rowsForFacet;
+  // The boundary job: same id/path through both snapshots, only the
+  // boundary fields differ (matchId lands, the job keeps RUNNING).
+  const boundaryJob = (over) => ({
+    id: 19,
+    kind: 'import',
+    path: '/imports/ready.dem',
+    progress: 0.7,
+    stage: 'parsing',
+    error: '',
+    createdAt: '2026-01-05T00:00:07Z',
+    startedAt: '2026-01-05T00:00:07Z',
+    finishedAt: null,
+    ...over,
+  });
+  // The match row the boundary's CreateMatchRow produced (id 42).
+  const boundaryMatch = {
+    id: 42,
+    path: '/imports/ready.dem',
+    map: 'de_overpass',
+    size: 4321,
+    scoreCT: 0,
+    scoreT: 0,
+    ctName: '',
+    tName: '',
+    realRounds: 0,
+    durationS: 0,
+    extractedAt: '0001-01-01T00:00:00Z',
+    status: 'parsing',
+    error: '',
+  };
+  const jobsWith = (job) => () =>
+    Promise.resolve([
+      pendingImportJob,
+      queuedReprocessJob,
+      runningImportJob,
+      dequeuedJob,
+      reprocessRunningJob,
+      job,
+    ]);
+  const dirDump = () =>
+    JSON.stringify(dirRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40)));
+
+  // (a) The queued state — the exact click-time snapshot: the job owns
+  // the path with matchId 0, and the scan STILL lists the file.
+  const scans0 = scanCalls();
+  bindings.LibraryService.ListJobs = jobsWith(
+    boundaryJob({ status: 'queued', progress: 0, stage: 'queued', matchId: 0, startedAt: null }),
+  );
+  fire('spectra:library-changed');
+  await sleep(80); // jobs + list land; the trailing rescan has NOT fired
+  check(
+    'boundary setup: the queued claim holds (file off the card, synthetic row above)',
+    !rowFor('ready.dem') &&
+      pendingRows().some((tr) => tr.textContent.includes('ready.dem')),
+    dirDump(),
+  );
+  check(
+    'boundary setup: no rescan has run yet (nothing below can be masked)',
+    scanCalls() === scans0,
+    String(scanCalls() - scans0),
+  );
+
+  // (b) THE boundary: the same job now carries matchId 42 while still
+  // running — the fresh jobs snapshot lands via library-changed, still
+  // inside the 300 ms scan debounce.
+  bindings.LibraryService.ListJobs = jobsWith(
+    boundaryJob({ status: 'running', stage: 'parsing', progress: 0.7, matchId: 42 }),
+  );
+  rowsForFacet = (f) =>
+    f && f.map === 'queued' ? [queuedMatch, boundaryMatch] : prevRowsForFacetB(f);
+  const scansAtBoundary = scanCalls();
+  fire('spectra:library-changed');
+  await sleep(80); // < SCAN_DEBOUNCE_MS (300) — provably pre-rescan
+  check(
+    'the rescan provably has not run at the boundary',
+    scanCalls() === scansAtBoundary,
+    String(scanCalls() - scansAtBoundary),
+  );
+  check(
+    'copy→parse boundary: the claimed row does NOT flash back into the card',
+    !rowFor('ready.dem'),
+    dirDump(),
+  );
+  check(
+    'the synthetic row is gone (matchId landed — no twin in the table above)',
+    !pendingRows().some((tr) => tr.textContent.includes('ready.dem')),
+    JSON.stringify(pendingRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
+  );
+  check(
+    'the boundary match row is present above (CreateMatchRow reached the list)',
+    matchListRows().some((tr) => tr.textContent.includes('ready.dem')),
+    JSON.stringify(matchListRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
+  );
+
+  // (c) Settle: the trailing rescan lands and recognizes the file (the
+  // scan now omits it) → still hidden; job-done cannot bring it back.
+  bindings.LibraryService.ListDemoFiles = () =>
+    Promise.resolve([
+      {
+        path: '/imports/new.dem',
+        root: '/imports',
+        size: 1234,
+        modTime: '2026-01-01T00:00:00Z',
+        hashed: false,
+      },
+    ]);
+  await sleep(400); // past SCAN_DEBOUNCE_MS — the rescan has landed
+  check(
+    'once the rescan recognizes the file it stays off the card',
+    !rowFor('ready.dem'),
+    dirDump(),
+  );
+  fire('spectra:job-done', { jobId: 19, matchId: 42, status: 'done', error: '' });
+  await sleep(80);
+  check(
+    'job-done cannot bring the row back (the file is recognized, claim or not)',
+    !rowFor('ready.dem'),
+    dirDump(),
+  );
+
+  // (d) Restore the baseline for the sections below: jobs, the scan
+  // stub and the queued facet fixture.
+  bindings.LibraryService.ListJobs = prevJobsB;
+  bindings.LibraryService.ListDemoFiles = prevDemoB;
+  rowsForFacet = prevRowsForFacetB;
+  fire('spectra:library-changed');
+  await sleep(400); // jobs restore + the debounced rescan settle
+  check(
+    'baseline restored: the file is listable again for the sections below',
+    !!rowFor('ready.dem'),
+    dirDump(),
+  );
+}
+
+{
   // Multi-file import: the dialog may return N paths and the view must
   // hand them to ONE ImportPaths call (one job per path, Go side).
   bindings.handlers.ImportDialog = () => ['/imports/one.dem', '/imports/two.dem'];
