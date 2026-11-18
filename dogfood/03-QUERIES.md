@@ -834,12 +834,17 @@ user decision, not a normalization.
 > 2. **Freshness precision = FULL NOW** (the conservative fallback in the
 >    deferral table below is REJECTED): the blanket `rule_version` axis lift
 >    for fact-only metrics ships in the same wave as rule 5; the pin updates
->    ride that wave. **Owner note: analysis rules will get converted to the
->    metrics system, so the axis question is moot as architecture** — treat
->    `rule_version` freshness as transitional: it shrinks to unconverted
->    Go-side-rule-stored outputs and eventually dies; freshness converges on
->    the touched-table-set model. The deferral table's rule_version row and
->    §6.3 are read with this note.
+>    ride that wave. **Owner note, refined 2026-11-18 (supersedes an earlier
+>    "convert to ordinary metrics" paraphrase):** analysis rules get
+>    **built-in metric stubs** that feed propagation of dependent metrics;
+>    **analysis-rule values remain user-editable**, and updating them is **the
+>    one thing that pushes a change to the corresponding stubs**, which
+>    triggers recalculation of dependents as needed via the existing
+>    dependency-cascade machinery. The blanket `rule_version` axis is thereby
+>    replaced by **stub-mediated propagation** — precision = the cascade
+>    reaches exactly the dependents — while rule 5's touched-table set still
+>    governs fact freshness. Read the deferral table's rule_version row and
+>    §6.3 with this note.
 
 ### Decisions made here (carry as settled, with their pins-to-write)
 
