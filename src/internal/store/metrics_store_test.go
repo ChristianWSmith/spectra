@@ -552,11 +552,11 @@ func metricIDs(rows []models.MetricRow) []int64 {
 // origin/scope/denominator/format filters, returning each window's row
 // count and the concatenated rows in order. Fails on a runaway loop (a
 // cursor that never advances would spin).
-func walkMetricPage(t *testing.T, s *Store, query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (sizes []int, rows []models.MetricRow) {
+func walkMetricPage(t *testing.T, s *Store, query string, originFilter string, scopeFilter string, subjectFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (sizes []int, rows []models.MetricRow) {
 	t.Helper()
 	seen := 0
 	for {
-		page, err := s.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit)
+		page, err := s.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(query=%q, origin=%q, scope=%q, denom=%q, format=%q, after=%d): %v", query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, err)
 		}
@@ -626,7 +626,7 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	if len(ref) != 342 {
 		t.Fatalf("reference list = %d rows, want 342 (109 builtins + 230 user + 3 plugin)", len(ref))
 	}
-	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
+	sizes, got := walkMetricPage(t, s, "", "", "", "", "", "", 0, ListMetricsPageSize)
 	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 42 {
 		t.Errorf("window sizes = %v, want [100 100 100 42]", sizes)
 	}
@@ -670,7 +670,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 
 	// limit 0 → the default window size (100 rows), never "all rows":
 	// 109 builtins + 100 users exist, the window still stops at 100.
-	page, err := s.ListMetricsPage("", "", "", "", "", 0, 0)
+	page, err := s.ListMetricsPage("", "", "", "", "", "", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage: %v", err)
 	}
@@ -679,7 +679,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	}
 
 	// Exactly one window: the mine partition totals 100 rows.
-	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", 0, 0)
+	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", "", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine): %v", err)
 	}
@@ -693,7 +693,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	if len(ref) != 101 {
 		t.Fatalf("mine reference = %d rows, want 101", len(ref))
 	}
-	first, err := s.ListMetricsPage("", "user,plugin", "", "", "", 0, ListMetricsPageSize)
+	first, err := s.ListMetricsPage("", "user,plugin", "", "", "", "", 0, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(first): %v", err)
 	}
@@ -704,7 +704,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 		t.Errorf("first window = %v…, want the first 100 mine ids", metricIDs(first.Rows)[:3])
 	}
 	cursor := first.Rows[len(first.Rows)-1].ID
-	second, err := s.ListMetricsPage("", "user,plugin", "", "", "", cursor, ListMetricsPageSize)
+	second, err := s.ListMetricsPage("", "user,plugin", "", "", "", "", cursor, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(second): %v", err)
 	}
@@ -729,7 +729,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 
 	// Cursor at the 100th row in order → the remaining 259 (the window
 	// limit must clear the remainder: 359 > 109 builtins + 250 users − 100).
-	page, err := s.ListMetricsPage("", "", "", "", "", ref[99], 300)
+	page, err := s.ListMetricsPage("", "", "", "", "", "", ref[99], 300)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
@@ -742,7 +742,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 
 	// Cursor at the last row → an empty window, no successor.
 	last := ref[len(ref)-1]
-	page, err = s.ListMetricsPage("", "", "", "", "", last, 200)
+	page, err = s.ListMetricsPage("", "", "", "", "", "", last, 200)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(end): %v", err)
 	}
@@ -754,7 +754,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	}
 
 	// A cursor row that was deleted → ErrNotFound.
-	if _, err := s.ListMetricsPage("", "", "", "", "", 999999, 200); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ListMetricsPage("", "", "", "", "", "", 999999, 200); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing cursor err = %v, want store.ErrNotFound", err)
 	}
 }
@@ -784,7 +784,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	// user's adr_per_round — in the canonical
 	// group order (builtins name-ASC, then user).
 	for _, q := range []string{"adr", "ADR"} {
-		page, err := s.ListMetricsPage(q, "", "", "", "", 0, 100)
+		page, err := s.ListMetricsPage(q, "", "", "", "", "", 0, 100)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(%q): %v", q, err)
 		}
@@ -805,7 +805,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	// titles — the four K/D builtins (career_kd, kd, side_kd, map_kd —
 	// name-ASC), the user's "K/D ratio" then the plugin's "Plugin K/D"
 	// (the canonical group order still holds).
-	page, err := s.ListMetricsPage("K/D", "", "", "", "", 0, 100)
+	page, err := s.ListMetricsPage("K/D", "", "", "", "", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(K/D): %v", err)
 	}
@@ -817,7 +817,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 
 	// The filtered walk (windows of 1) tiles the filtered reference
 	// exactly — the cursor resolves inside the filtered set too.
-	sizes, walked := walkMetricPage(t, s, "k/d", "", "", "", "", 0, 1)
+	sizes, walked := walkMetricPage(t, s, "k/d", "", "", "", "", "", 0, 1)
 	want := filterMetricRef(ref, "k/d")
 	if len(sizes) != len(want) {
 		t.Errorf("filtered walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
@@ -827,7 +827,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	}
 
 	// No match: an empty (non-nil) window, no successor.
-	page, err = s.ListMetricsPage("zz_no_such_metric", "", "", "", "", 0, 100)
+	page, err = s.ListMetricsPage("zz_no_such_metric", "", "", "", "", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(no match): %v", err)
 	}
@@ -839,7 +839,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	}
 
 	// Empty query = the whole unfiltered list.
-	page, err = s.ListMetricsPage("", "", "", "", "", 0, 1000)
+	page, err = s.ListMetricsPage("", "", "", "", "", "", 0, 1000)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(empty): %v", err)
 	}
@@ -903,7 +903,7 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	// three boxes' eight states.
 	for _, filter := range []string{"", "builtin", "user", "plugin", "builtin,user", "builtin,plugin", "user,plugin", "none"} {
 		want := originFilterMetricRef(ref, filter)
-		page, err := s.ListMetricsPage("", filter, "", "", "", 0, 200)
+		page, err := s.ListMetricsPage("", filter, "", "", "", "", 0, 200)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(origin=%q): %v", filter, err)
 		}
@@ -921,7 +921,7 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	// The subset holds ACROSS keyset windows: "user,plugin" in windows
 	// of 2 tiles the non-builtin reference exactly — sizes, order, no
 	// duplicates — and no builtin row ever leaks into the window.
-	sizes, got := walkMetricPage(t, s, "", "user,plugin", "", "", "", 0, 2)
+	sizes, got := walkMetricPage(t, s, "", "user,plugin", "", "", "", "", 0, 2)
 	wantMine := originFilterMetricRef(ref, "user,plugin") // 7 rows → [2 2 2 1]
 	if len(sizes) != 4 || sizes[0] != 2 || sizes[1] != 2 || sizes[2] != 2 || sizes[3] != 1 {
 		t.Errorf("user,plugin window sizes = %v, want [2 2 2 1]", sizes)
@@ -940,7 +940,7 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	// vocabulary is exactly the three origins' subsets), and a
 	// known-but-reordered subset is non-canonical, like format's.
 	for _, word := range []string{"everything", "mine", "plugin,user"} {
-		if _, err := s.ListMetricsPage("", word, "", "", "", 0, 100); err == nil ||
+		if _, err := s.ListMetricsPage("", word, "", "", "", "", 0, 100); err == nil ||
 			!strings.Contains(err.Error(), fmt.Sprintf(`unknown origin filter %q`, word)) {
 			t.Errorf("origin=%q err = %v, want the friendly pre-SQL rejection", word, err)
 		}
@@ -973,7 +973,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	}{
 		{"", 3}, {"builtin", 2}, {"user,plugin", 1}, {"user", 1}, {"plugin", 0}, {"none", 0},
 	} {
-		page, err := s.ListMetricsPage("trade rate", tc.filter, "", "", "", 0, 100)
+		page, err := s.ListMetricsPage("trade rate", tc.filter, "", "", "", "", 0, 100)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(q, origin=%q): %v", tc.filter, err)
 		}
@@ -985,7 +985,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	}
 	// Case-insensitive on BOTH sides: an upper-case term partitions the
 	// same way (SQLite LIKE's ASCII folding).
-	page, err := s.ListMetricsPage("TRADE RATE", "user,plugin", "", "", "", 0, 100)
+	page, err := s.ListMetricsPage("TRADE RATE", "user,plugin", "", "", "", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(upper, mine): %v", err)
 	}
@@ -995,7 +995,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 
 	// The composed filtered walk (windows of 1) tiles the composed
 	// reference exactly — filter AND search inside one WHERE.
-	sizes, walked := walkMetricPage(t, s, "trade rate", "user,plugin", "", "", "", 0, 1)
+	sizes, walked := walkMetricPage(t, s, "trade rate", "user,plugin", "", "", "", "", 0, 1)
 	want := originFilterMetricRef(hit, "user,plugin")
 	if len(sizes) != len(want) {
 		t.Errorf("composed walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
@@ -1014,7 +1014,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 			builtinID = m.ID
 		}
 	}
-	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", builtinID, 100)
+	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", "", builtinID, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, builtin cursor): %v", err)
 	}
@@ -1025,7 +1025,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	// A cursor on the FIRST mine row continues after it (the mid-list
 	// cursor, mine side): only the row that follows survives.
 	mine := originFilterMetricRef(ref, "user,plugin")
-	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", mine[0].ID, 100)
+	page, err = s.ListMetricsPage("", "user,plugin", "", "", "", "", mine[0].ID, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, mid cursor): %v", err)
 	}
@@ -1130,7 +1130,7 @@ func TestListMetricsPageScopeFilter(t *testing.T) {
 	// canonical order, with no successor beyond it.
 	for _, filter := range []string{"", "match", "profile", "none"} {
 		want := scopeFilterMetricRef(ref, filter)
-		page, err := s.ListMetricsPage("", "", filter, "", "", 0, 500)
+		page, err := s.ListMetricsPage("", "", filter, "", "", "", 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(scope=%q): %v", filter, err)
 		}
@@ -1149,7 +1149,7 @@ func TestListMetricsPageScopeFilter(t *testing.T) {
 	// 3 tiles the profile reference exactly — sizes, order, no
 	// duplicates, and no match-scoped row ever leaks in.
 	wantProfile := scopeFilterMetricRef(ref, "profile")
-	sizes, got := walkMetricPage(t, s, "", "", "profile", "", "", 0, 3)
+	sizes, got := walkMetricPage(t, s, "", "", "profile", "", "", "", 0, 3)
 	if len(sizes) != (len(wantProfile)+2)/3 {
 		t.Errorf("profile window sizes = %v (%d windows), want %d windows of 3 over %d rows",
 			sizes, len(sizes), (len(wantProfile)+2)/3, len(wantProfile))
@@ -1164,7 +1164,7 @@ func TestListMetricsPageScopeFilter(t *testing.T) {
 	}
 
 	// Unknown filter value: rejected before any SQL (no window).
-	if _, err := s.ListMetricsPage("", "", "career", "", "", 0, 100); err == nil ||
+	if _, err := s.ListMetricsPage("", "", "career", "", "", "", 0, 100); err == nil ||
 		!strings.Contains(err.Error(), `unknown scope filter "career"`) {
 		t.Errorf("unknown scope filter err = %v, want the friendly pre-SQL rejection", err)
 	}
@@ -1215,7 +1215,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 		"rounds,matches,none",
 	} {
 		want := denomFilterMetricRef(ref, filter)
-		page, err := s.ListMetricsPage("", "", "", filter, "", 0, 500)
+		page, err := s.ListMetricsPage("", "", "", "", filter, "", 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(denom=%q): %v", filter, err)
 		}
@@ -1248,11 +1248,11 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	// ALL-ON == ALL THREE CHECKED: no predicate and the full subset
 	// select the identical window (the popover's all-checked word is "",
 	// so this is what makes the default first render unfiltered).
-	allOn, err := s.ListMetricsPage("", "", "", "", "", 0, 500)
+	allOn, err := s.ListMetricsPage("", "", "", "", "", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=): %v", err)
 	}
-	allThree, err := s.ListMetricsPage("", "", "", "rounds,matches,none", "", 0, 500)
+	allThree, err := s.ListMetricsPage("", "", "", "", "rounds,matches,none", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=rounds,matches,none): %v", err)
 	}
@@ -1273,7 +1273,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 		t.Fatalf("rounds,none reference = %d rows, want %d (everything except the %d matches-denominated row(s))",
 			len(roundsNone), len(ref)-nMatches, nMatches)
 	}
-	roundsOnly, err := s.ListMetricsPage("", "", "", "rounds", "", 0, 500)
+	roundsOnly, err := s.ListMetricsPage("", "", "", "", "rounds", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=rounds): %v", err)
 	}
@@ -1291,7 +1291,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	if got, want := strings.Join(roundsNames, ","), "adr,career_adr,entry_rate,map_adr,per_round"; got != want {
 		t.Errorf("rounds-only window = [%s], want [%s] (exactly the denominated rows)", got, want)
 	}
-	noneOnly, err := s.ListMetricsPage("", "", "", "none", "", 0, 500)
+	noneOnly, err := s.ListMetricsPage("", "", "", "", "none", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=none): %v", err)
 	}
@@ -1310,7 +1310,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	// ALL BOXES OFF ("empty"): the EMPTY set, the origin/scope shape —
 	// non-nil, no successor, and the denominator-less rows do NOT
 	// smuggle themselves in (the 2026-11-14 rule this overturns).
-	bothOff, err := s.ListMetricsPage("", "", "", "empty", "", 0, 500)
+	bothOff, err := s.ListMetricsPage("", "", "", "", "empty", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(denom=empty): %v", err)
 	}
@@ -1325,7 +1325,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 	// windows of 2 tiles its checked set exactly, and no rounds-
 	// denominated row ever leaks in.
 	wantMatchesNone := denomFilterMetricRef(ref, "matches,none")
-	sizes, got := walkMetricPage(t, s, "", "", "", "matches,none", "", 0, 2)
+	sizes, got := walkMetricPage(t, s, "", "", "", "", "matches,none", "", 0, 2)
 	if len(sizes) != (len(wantMatchesNone)+1)/2 {
 		t.Errorf("matches,none window sizes = %v (%d windows), want %d windows of 2 over %d rows",
 			sizes, len(sizes), (len(wantMatchesNone)+1)/2, len(wantMatchesNone))
@@ -1350,7 +1350,7 @@ func TestListMetricsPageDenominatorFilter(t *testing.T) {
 		"rounds,", ",none", "rounds,,none", "rounds,matches,",
 		"rounds,rounds", "none,rounds",
 	} {
-		if _, err := s.ListMetricsPage("", "", "", w, "", 0, 100); err == nil ||
+		if _, err := s.ListMetricsPage("", "", "", "", w, "", 0, 100); err == nil ||
 			!strings.Contains(err.Error(), fmt.Sprintf("unknown denominator filter %q", w)) {
 			t.Errorf("denominator filter %q: err = %v, want the friendly pre-SQL rejection", w, err)
 		}
@@ -1404,7 +1404,7 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 			scopeFilterMetricRef(originFilterMetricRef(ref, tc.origin), tc.scope),
 			tc.denom,
 		)
-		page, err := s.ListMetricsPage("", tc.origin, tc.scope, tc.denom, "", 0, 500)
+		page, err := s.ListMetricsPage("", tc.origin, tc.scope, "", tc.denom, "", 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(origin=%q, scope=%q, denom=%q): %v", tc.origin, tc.scope, tc.denom, err)
 		}
@@ -1423,7 +1423,7 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 		t.Fatalf(`query fixture: "trade" matched %d rows, want at least 3`, len(hit))
 	}
 	want := denomFilterMetricRef(scopeFilterMetricRef(originFilterMetricRef(hit, "user,plugin"), "profile"), "rounds")
-	page, err := s.ListMetricsPage("TRADE", "user,plugin", "profile", "rounds", "", 0, 500)
+	page, err := s.ListMetricsPage("TRADE", "user,plugin", "profile", "", "rounds", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(TRADE, mine, profile, rounds): %v", err)
 	}
@@ -1436,7 +1436,7 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 
 	// The composed walk (windows of 1) tiles the composed reference
 	// exactly — four narrowings inside one WHERE, cursor included.
-	sizes, walked := walkMetricPage(t, s, "trade", "user,plugin", "profile", "rounds", "", 0, 1)
+	sizes, walked := walkMetricPage(t, s, "trade", "user,plugin", "profile", "", "rounds", "", 0, 1)
 	if len(sizes) != len(want) {
 		t.Errorf("composed walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
 	}
@@ -1453,7 +1453,7 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 			break
 		}
 	}
-	page, err = s.ListMetricsPage("", "user,plugin", "match", "rounds", "", builtinID, 500)
+	page, err = s.ListMetricsPage("", "user,plugin", "match", "", "rounds", "", builtinID, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, match, rounds, builtin cursor): %v", err)
 	}
@@ -1464,7 +1464,7 @@ func TestListMetricsPageAllFiltersCompose(t *testing.T) {
 
 	// Both source toggles off AND both scopes off: an empty, non-nil
 	// window — the one read where the empty set is the right answer.
-	page, err = s.ListMetricsPage("", "none", "none", "rounds", "", 0, 100)
+	page, err = s.ListMetricsPage("", "none", "none", "", "rounds", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(origin=none, scope=none): %v", err)
 	}
@@ -1574,7 +1574,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		"auto,int,float1,float2,percent,currency",
 	} {
 		want := formatFilterMetricRef(ref, w)
-		page, err := s.ListMetricsPage("", "", "", "", w, 0, 500)
+		page, err := s.ListMetricsPage("", "", "", "", "", w, 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(format=%q): %v", w, err)
 		}
@@ -1594,11 +1594,11 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	// seven-token subset select the same window — the whole reference
 	// (the popover's all-checked word is "", so this is what makes the
 	// default first render unfiltered).
-	allOn, err := s.ListMetricsPage("", "", "", "", "", 0, 500)
+	allOn, err := s.ListMetricsPage("", "", "", "", "", "", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=): %v", err)
 	}
-	allSeven, err := s.ListMetricsPage("", "", "", "", "auto,int,float1,float2,percent,currency,identity", 0, 500)
+	allSeven, err := s.ListMetricsPage("", "", "", "", "", "auto,int,float1,float2,percent,currency,identity", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=all seven): %v", err)
 	}
@@ -1611,7 +1611,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	// ONE BOX OFF (Identity): the six-token word drops exactly the
 	// identity rows — before Phase 7 these rows were unreachable by
 	// any accepted word at all.
-	sixOff, err := s.ListMetricsPage("", "", "", "", "auto,int,float1,float2,percent,currency", 0, 500)
+	sixOff, err := s.ListMetricsPage("", "", "", "", "", "auto,int,float1,float2,percent,currency", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format six): %v", err)
 	}
@@ -1652,7 +1652,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	// THE AUTO BUCKET: the "auto" word selects exactly the '' rows (the
 	// format column's empty value), and a word WITHOUT "auto" drops
 	// every one of them.
-	auto, err := s.ListMetricsPage("", "", "", "", "auto", 0, 500)
+	auto, err := s.ListMetricsPage("", "", "", "", "", "auto", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format=auto): %v", err)
 	}
@@ -1664,7 +1664,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 			t.Errorf("auto bucket kept %s (format %q) — it must be the '' rows", m.Name, m.Format)
 		}
 	}
-	withoutAuto, err := s.ListMetricsPage("", "", "", "", "int,float1,float2,percent,currency", 0, 500)
+	withoutAuto, err := s.ListMetricsPage("", "", "", "", "", "int,float1,float2,percent,currency", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(format without auto): %v", err)
 	}
@@ -1681,7 +1681,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	var tiled []int64
 	seen := map[int64]int{}
 	for _, tok := range metricFormatTokens {
-		page, err := s.ListMetricsPage("", "", "", "", tok, 0, 500)
+		page, err := s.ListMetricsPage("", "", "", "", "", tok, 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(format=%q): %v", tok, err)
 		}
@@ -1706,7 +1706,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 	// 3 tiles the percent reference exactly — sizes, order, no
 	// duplicates, and no other-format row ever leaks in.
 	wantPercent := formatFilterMetricRef(ref, "percent")
-	sizes, got := walkMetricPage(t, s, "", "", "", "", "percent", 0, 3)
+	sizes, got := walkMetricPage(t, s, "", "", "", "", "", "percent", 0, 3)
 	if len(sizes) != (len(wantPercent)+2)/3 {
 		t.Errorf("percent window sizes = %v (%d windows), want %d windows of 3 over %d rows",
 			sizes, len(sizes), (len(wantPercent)+2)/3, len(wantPercent))
@@ -1735,7 +1735,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		t.Fatal("fixture carries no float1 row for the outside-cursor case")
 	}
 	idx := slices.IndexFunc(ref, func(m models.MetricRow) bool { return m.ID == float1ID })
-	page, err := s.ListMetricsPage("", "", "", "", "percent", float1ID, 500)
+	page, err := s.ListMetricsPage("", "", "", "", "", "percent", float1ID, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(percent, float1 cursor): %v", err)
 	}
@@ -1754,7 +1754,7 @@ func TestListMetricsPageFormatFilter(t *testing.T) {
 		"auto,auto", "int,auto", "percent,int", "auto,int,",
 		"none,auto",
 	} {
-		if _, err := s.ListMetricsPage("", "", "", "", w, 0, 100); err == nil ||
+		if _, err := s.ListMetricsPage("", "", "", "", "", w, 0, 100); err == nil ||
 			!strings.Contains(err.Error(), fmt.Sprintf("unknown format filter %q", w)) {
 			t.Errorf("format filter %q: err = %v, want the friendly pre-SQL rejection", w, err)
 		}
@@ -1801,7 +1801,7 @@ func TestListMetricsPageFormatFilterComposes(t *testing.T) {
 			denomFilterMetricRef(scopeFilterMetricRef(originFilterMetricRef(ref, tc.origin), tc.scope), tc.denom),
 			tc.format,
 		)
-		page, err := s.ListMetricsPage("", tc.origin, tc.scope, tc.denom, tc.format, 0, 500)
+		page, err := s.ListMetricsPage("", tc.origin, tc.scope, "", tc.denom, tc.format, 0, 500)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(origin=%q, scope=%q, denom=%q, format=%q): %v", tc.origin, tc.scope, tc.denom, tc.format, err)
 		}
@@ -1824,7 +1824,7 @@ func TestListMetricsPageFormatFilterComposes(t *testing.T) {
 	if len(want) == 0 {
 		t.Fatal("composed fixture matched nothing — the composition assertion would be vacuous")
 	}
-	page, err := s.ListMetricsPage("TRADE", "user,plugin", "", "", "auto,percent", 0, 500)
+	page, err := s.ListMetricsPage("TRADE", "user,plugin", "", "", "", "auto,percent", 0, 500)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(TRADE, mine, format=auto,percent): %v", err)
 	}
@@ -1834,7 +1834,7 @@ func TestListMetricsPageFormatFilterComposes(t *testing.T) {
 
 	// The composed walk (windows of 1) tiles the composed reference
 	// exactly — four narrowings inside one WHERE, cursor included.
-	sizes, walked := walkMetricPage(t, s, "trade", "user,plugin", "", "", "auto,percent", 0, 1)
+	sizes, walked := walkMetricPage(t, s, "trade", "user,plugin", "", "", "", "auto,percent", 0, 1)
 	if len(sizes) != len(want) {
 		t.Errorf("composed walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
 	}
@@ -1844,7 +1844,7 @@ func TestListMetricsPageFormatFilterComposes(t *testing.T) {
 
 	// Every pair off AND every format box off: an empty, non-nil window
 	// — the empty set spelled by both shapes at once.
-	page, err = s.ListMetricsPage("", "none", "none", "none", "none", 0, 100)
+	page, err = s.ListMetricsPage("", "none", "none", "", "none", "none", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all filters none): %v", err)
 	}

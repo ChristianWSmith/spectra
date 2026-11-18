@@ -236,6 +236,47 @@ func denomFilterPredicate(word string) (string, []any, error) {
 	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
 }
 
+// metricSubjectTokens is the CANONICAL metric-subject vocabulary in
+// axis order — the tokens ListMetricsPage's subject filter accepts
+// (store-side twin of the Builder Subject group's three boxes: Player /
+// Match / Team — the metrics subject axis, models.MetricRow.Subject).
+// The subject column is DDL-checked to exactly these three values, so
+// every token is a literal column value (no ” bucket, unlike format
+// and denominator); like metricOriginTokens it is what makes a subset
+// word canonical instead of merely valid, and the empty checked set is
+// the caller's separate "none" word (see the SUBJECT FILTER note
+// below).
+var metricSubjectTokens = []string{"player", "match", "team"}
+
+// subjectFilterPredicate renders ListMetricsPage's subject-subset
+// predicate for a word that is neither "" (all-on) nor "none" (all-off,
+// the caller's switch): one `subject IN (?, …)` — the canonical
+// comma-subset, every token a literal column value, exactly
+// originFilterPredicate's shape. Every token must be known, DISTINCT
+// and in metricSubjectTokens order (a known-but-reordered word is a
+// non-canonical word, and an empty segment is an unknown token), so
+// anything else is the pre-SQL rejection `unknown subject filter %q`
+// (the origin/scope/denominator/format copy) and NO SQL ever runs.
+func subjectFilterPredicate(word string) (string, []any, error) {
+	var (
+		literals []string
+		lastRank = -1
+	)
+	for _, tok := range strings.Split(word, ",") {
+		rank := slices.Index(metricSubjectTokens, tok)
+		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
+			return "", nil, fmt.Errorf("couldn't load the metrics: unknown subject filter %q", word)
+		}
+		lastRank = rank
+		literals = append(literals, tok)
+	}
+	args := make([]any, 0, len(literals))
+	for _, lit := range literals {
+		args = append(args, lit)
+	}
+	return `subject IN (` + strings.TrimSuffix(strings.Repeat("?,", len(literals)), ",") + `)`, args, nil
+}
+
 // ListMetricsPage returns ONE keyset window of the metric-definition
 // list ListMetrics returns: the rows strictly after the cursor row
 // (afterID — 0 starts the first window) in ListMetrics' exact order,
@@ -269,6 +310,19 @@ func denomFilterPredicate(word string) (string, []any, error) {
 // "match", "profile", "none" (both toggles off — every row carries one
 // of the two values, so the empty set, same spelling as origin's),
 // "" (no predicate). An unknown value is rejected before any SQL.
+//
+// SUBJECT FILTER: subjectFilter narrows the window to a SUBSET of the
+// subject column — the Builder Filters popover's Subject group (Player
+// / Match / Team), the metrics subject axis. It is the same canonical
+// comma-subset shape as ORIGIN over metricSubjectTokens (player, match,
+// team — the DDL CHECK's three values): "" = every box checked (no
+// predicate), "none" = no box checked (the empty set, the same
+// spelling origin and scope use), and any other word is a CANONICAL
+// COMMA-SUBSET ("player,team"): every token known, distinct and in
+// metricSubjectTokens order. An unknown token, an empty element, a
+// duplicate or a reorder is rejected before any SQL. Query-layer only —
+// no schema change: the column still holds exactly 'player', 'match',
+// 'team'.
 //
 // DENOMINATOR FILTER (Reading B — the owner-accepted OVERTURN of the
 // 2026-11-14 "denominator-less rows pass in EVERY state" ruling,
@@ -318,7 +372,7 @@ func denomFilterPredicate(word string) (string, []any, error) {
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
 // view renders its Builtins/Custom/Plugins headers from those runs.
-func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize
 	}
@@ -330,9 +384,10 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 		args  []any
 	)
 	// addWhere appends ONE ANDed predicate to the shared WHERE — every
-	// narrowing (origin filter, scope filter, denominator filter,
-	// format filter, search, cursor) rides the same clause, so they
-	// compose in any order and none can silently bypass another.
+	// narrowing (origin filter, scope filter, subject filter,
+	// denominator filter, format filter, search, cursor) rides the same
+	// clause, so they compose in any order and none can silently bypass
+	// another.
 	addWhere := func(pred string, a ...any) {
 		if where.Len() == 0 {
 			where.WriteString(" WHERE ")
@@ -371,6 +426,21 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 		addWhere(`0 = 1`)
 	default:
 		return nil, fmt.Errorf("couldn't load the metrics: unknown scope filter %q", scopeFilter)
+	}
+	// The subject subset (see the SUBJECT FILTER note above): "none" is
+	// the empty set like origin's and scope's, and every other non-empty
+	// word is the canonical comma-subset subjectFilterPredicate renders —
+	// its rejection happens there, before any SQL.
+	switch subjectFilter {
+	case "": // no predicate — every subject
+	case "none":
+		addWhere(`0 = 1`)
+	default:
+		pred, a, err := subjectFilterPredicate(subjectFilter)
+		if err != nil {
+			return nil, err
+		}
+		addWhere(pred, a...)
 	}
 	// The denominator subset (see the DENOMINATOR FILTER note above):
 	// "" is the all-on default, "empty" is the empty set like the

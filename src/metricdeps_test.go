@@ -294,7 +294,7 @@ func TestCrossScopeReferenceMatrix(t *testing.T) {
 	// The rule is a DEFINITION rule: ValidateExpr carries no scope (a
 	// draft is authoring state), so the same draft resolves fine — the
 	// save above is what rejects it.
-	ok, ee, err := f.svc.ValidateExpr("from events: metric('x_match')")
+	ok, ee, err := f.svc.ValidateExpr("from events: metric('x_match')", "player", "", "match")
 	if err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr = (%v, %+v, %v), want ok (drafts resolve existence only)", ok, ee, err)
 	}
@@ -623,7 +623,7 @@ func TestDraftRefsResolveAgainstSavedMetrics(t *testing.T) {
 	f := newDepsFixture(t)
 	f.save(t, models.MetricRow{Name: "draft_up", Expr: "from events: count()"})
 
-	ok, ee, err := f.svc.ValidateExpr("from events: metric('draft_up')")
+	ok, ee, err := f.svc.ValidateExpr("from events: metric('draft_up')", "player", "", "match")
 	if err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr(draft with ref) = (%v, %+v, %v), want ok", ok, ee, err)
 	}
@@ -647,7 +647,7 @@ func TestDraftRefsResolveAgainstSavedMetrics(t *testing.T) {
 	}
 
 	// An unsaved name is the positioned error on BOTH paths (one copy).
-	ok, ee, err = f.svc.ValidateExpr("from events: metric('never_saved')")
+	ok, ee, err = f.svc.ValidateExpr("from events: metric('never_saved')", "player", "", "match")
 	if err != nil || ok {
 		t.Fatalf("ValidateExpr(unknown ref) = (%v, %+v, %v), want rejection", ok, ee, err)
 	}
@@ -710,7 +710,7 @@ func TestPluginPathsBypassTheDeleteBlock(t *testing.T) {
 	} else if perr.Message != `unknown metric reference "plug_up"` {
 		t.Errorf("Validate error = %q, want the unknown-reference copy", perr.Message)
 	}
-	if ok, ee, err := f.svc.ValidateExpr(dep.Expr); err != nil || !ok || ee.Message != "" {
+	if ok, ee, err := f.svc.ValidateExpr(dep.Expr, "player", "", "match"); err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr after replace = (%v, %+v, %v), want ok", ok, ee, err)
 	}
 

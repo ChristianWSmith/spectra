@@ -768,12 +768,15 @@ export function listMetrics() {
 // listMetricsPage is the Builder list's keyset window ("Load more"): the
 // same canonical order as listMetrics, ONE window of `limit` rows
 // strictly after `afterID` (0 = the first window), narrowed SERVER-side
-// by `query` (case-insensitive LIKE over name/title) AND by the four
+// by `query` (case-insensitive LIKE over name/title) AND by the five
 // SERVER-side filter groups — `originFilter` (the Origin group's checked
 // set: '' = every box, 'none' = no box, or the canonical comma-subset of
 // builtin/user/plugin where 'user' is the Custom box and 'plugin' the
 // Plugin box — store.ListMetricsPage's vocabulary),
 // `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none'),
+// `subjectFilter` (Subject: '' = every box, 'none' = no box, or the
+// canonical comma-subset of the three subject tokens player/match/team
+// — store.ListMetricsPage's SUBJECT FILTER vocabulary),
 // `denomFilter` (Denominator: '' = every box, 'empty' = no box, or the
 // canonical comma-subset of the three bucket tokens rounds/matches/none
 // where 'none' names the denominator-less rows — Reading B 2026-11-16,
@@ -781,21 +784,30 @@ export function listMetrics() {
 // (Type: '' = every format, 'none' = none, or the canonical comma-subset
 // of format tokens where 'auto' names the '' format — the store's
 // vocabulary, store.ListMetricsPage), returned as {rows, hasNext}. The
-// fifth group (Pinning) is render-time in the view — pins live in
+// sixth group (Pinning) is render-time in the view — pins live in
 // localStorage and never reach this call.
-// Read-cached keyed (query, originFilter, scopeFilter, denomFilter,
-// formatFilter, afterID, limit) — every filter rides the args, so they
+// Read-cached keyed (query, originFilter, scopeFilter, subjectFilter,
+// denomFilter, formatFilter, afterID, limit) — every filter rides the args, so they
 // join the ONE existing cache key and need no second cache — like
 // listMatchesPage, and the WHOLE cache (this entry included) flushes on
 // every spectra:* event and inside the mutating wrappers below:
 // invalidate() is readCache.clear(), so one save/delete refetches both
 // the paged window and listMetrics.
-export function listMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit) {
+export function listMetricsPage(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit) {
   return cachedRead(
     'ListMetricsPage',
-    [query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit],
+    [query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit],
     () =>
-      MetricsService.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit),
+      MetricsService.ListMetricsPage(
+        query,
+        originFilter,
+        scopeFilter,
+        subjectFilter,
+        denomFilter,
+        formatFilter,
+        afterID,
+        limit,
+      ),
   );
 }
 export function getMetric(id) { return MetricsService.GetMetric(id); }
@@ -828,7 +840,14 @@ export function deleteMetric(id) {
 export function previewMetric(id, expr, scope, limit) {
   return MetricsService.PreviewMetric(id, expr || '', scope || '', limit || 200);
 }
-export function validateExpr(expr) { return MetricsService.ValidateExpr(expr); }
+// validateExpr is the Builder's live check; subject/partition/scope are
+// the DRAFT's own addressing (2026-11-18) — the server compiles the
+// expression under them, so a non-player draft is judged as its subject
+// (the identity built-ins' argmax reads clean) instead of being refused
+// as a player formula.
+export function validateExpr(expr, subject, partition, scope) {
+  return MetricsService.ValidateExpr(expr, subject || '', partition || '', scope || '');
+}
 
 // --- Stored metric values + compute state (design §5) ----------------------
 // THE canonical reads: fresh stored rows only (the store applies the

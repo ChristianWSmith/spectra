@@ -395,8 +395,8 @@ formula and sample-size honesty (a value is never invented; missing data shows a
 honest zero beside its \`N\`).
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
-and one **Filters** panel (origin, scope, denominator, format and pinning — the last narrows the list
-to pinned or to unpinned metrics). The list scrolls when it grows
+and one **Filters** panel (origin, scope, subject, denominator, format and pinning — the last narrows
+the list to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
 it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
 **Order…** opens the ordering dialog.
@@ -404,7 +404,10 @@ it, a pin to place it, and — for metrics you created — a delete. **New** sta
 The **editor** on the right has:
 
 - **Name** (the identifier other formulas reference), **Title** (display label) and an optional **Short name** for narrow columns.
-- **Scope** — *match* (this player in this match) or *profile* (this player's career).
+- **Subject** — what the number is *about*: *player* (one player's own number), *match* (the match
+itself) or *team* (one side's number). A new metric starts as *player*; which subjects may combine
+with which scope is decided when you save (a match or team has no career, so those refuse *profile*).
+- **Scope** — *match* (this subject in this match) or *profile* (this player's career).
 - **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
 - **Denominator** — none, \`rounds\` or \`matches\` (what a total is divided by to become a rate).
 - **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.

@@ -155,14 +155,18 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // set: "" = every box, "none" = no box, or the canonical comma-subset
 // of the three origin tokens builtin/user/plugin — the Custom box is
 // "user", the Plugin box "plugin"), scope ("match", "profile", "none"),
-// denominator (the Denominator group's checked set as a canonical
-// comma-subset of the three bucket tokens rounds/matches/none where
-// "none" names the denominator-less rows: "" = every box, "empty" = no
-// box — Reading B, 2026-11-16; see store.ListMetricsPage's DENOMINATOR
-// FILTER note) and format (the Builder's Type group: "" = every format,
+// subject (the Builder Subject group's checked set — the metrics
+// subject axis: "" = every box, "none" = no box, or the canonical
+// comma-subset of the three subject tokens player/match/team — see
+// store.ListMetricsPage's SUBJECT FILTER note), denominator (the
+// Denominator group's checked set as a canonical comma-subset of the
+// three bucket tokens rounds/matches/none where "none" names the
+// denominator-less rows: "" = every box, "empty" = no box — Reading B,
+// 2026-11-16; see store.ListMetricsPage's DENOMINATOR FILTER note) and
+// format (the Builder's Type group: "" = every format,
 // "none" = none, or the canonical comma-subset of format tokens where
-// "auto" names the ” format) — which are the Builder's four SERVER-side
-// filter groups (the fifth, Pinning, is a render-time filter over
+// "auto" names the ” format) — which are the Builder's five SERVER-side
+// filter groups (the sixth, Pinning, is a render-time filter over
 // localStorage the backend cannot see — see Builder.svelte); see
 // store.ListMetricsPage — at most limit rows (0 = the store's default
 // window), plus HasNext (another window follows) — see
@@ -170,8 +174,8 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit)
 }
 
 // GetMetric returns one by id (or name).
@@ -754,10 +758,25 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 // W2b: a draft carrying metric() references is resolved against the
 // SAVED catalog first (drafts are calculated; a ref to an unsaved name
 // reports the positioned unknown-reference error a save would report).
-// The cross-scope rule is deliberately NOT enforced here: ValidateExpr
-// carries no scope argument (a draft's scope is authoring state), so
-// that definition-level rule stays with the save.
-func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
+//
+// Addressing (2026-11-18 — the subject axis reached the editor): the
+// check compiles the draft under ITS OWN addressing — subject,
+// partition and the profile half of scope (the loaded row's values, or
+// a new draft's authoring defaults) instead of the zero-value address,
+// which normalized to subject "player" and made every non-player draft
+// report a false refusal (the identity built-ins — top_fragger and its
+// four siblings — refused to open with `argmax() needs subject "match"`
+// although their stored rows compile fine). Subject/partition ARE
+// authoring state, exactly like the scope that stays out below, so they
+// belong on the live check; the address feeds CompileRefs' subject ×
+// scope matrix (profile is still player-only — a match-subject draft
+// on profile scope refuses here, as it would at save).
+//
+// The cross-scope RULE between references is still deliberately NOT
+// enforced here: ValidateExpr resolves refs against the saved catalog
+// as existence only (a draft's own grain is authoring state), so that
+// definition-level rule stays with the save.
+func (s *MetricsService) ValidateExpr(expr string, subject string, partition string, scope string) (bool, ExprError, error) {
 	refs, perr, err := s.resolveRefsExpr(expr, "", "")
 	if err != nil {
 		return false, ExprError{}, err
@@ -765,7 +784,11 @@ func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
 	if perr != nil {
 		return false, exprError(perr), nil
 	}
-	if _, perr := metrics.CompileRefs(expr, "", "", metrics.Address{}, refs); perr != nil {
+	if subject = strings.TrimSpace(subject); subject == "" {
+		subject = "player" // the DDL default — an omitted subject reads as player, like SaveMetric
+	}
+	addr := metrics.Address{Subject: subject, Partition: partition, Profile: scope == "profile"}
+	if _, perr := metrics.CompileRefs(expr, "", "", addr, refs); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil

@@ -8,8 +8,9 @@
 // set's canonical comma-subset ("user,plugin" — the old "mine").
 // Section labels below match the run's console.log letters:
 //   A. the ONE filter multi-select (a Filters trigger opens the
-//      canonical Popover's checkbox panel with five labelled groups —
+//      canonical Popover's checkbox panel with six labelled groups —
 //      Origin (Built-in|Custom|Plugin), Scope (Match|Profile),
+//      Subject (Player|Match|Team — the metrics subject axis),
 //      Denominator (Rounds|Matches|None), Type (Auto|Int|Float1|Float2|
 //      Percent|Currency), Pinning (Pinned|Unpinned); defaults: Built-in
 //      OFF / Custom + Plugin ON (the owner's standing ruling — every
@@ -61,7 +62,7 @@
 //   G. the search composes with the filters (all four server-side
 //      groups, incl. a Denominator subset word) in ONE server call;
 //   H. the filter checks are view-local registry state
-//      (viewstate.svelte.js): all seventeen restore across unmount →
+//      (viewstate.svelte.js): all twenty restore across unmount →
 //      remount, and resetViewState() returns the next mount to the
 //      defaults;
 //   I. the compute-state surface (design §4/§5): every list item and
@@ -215,23 +216,24 @@ const METRICS = [
   {
     id: 1, name: 'trade_rate', title: 'Trade rate', shortName: '',
     expr: 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
-    scope: 'match', format: 'percent', doc: 'Formula: trade successes / opportunities',
+    scope: 'match', subject: 'player', format: 'percent',
+    doc: 'Formula: trade successes / opportunities',
     origin: 'builtin', pluginId: '', denominator: 'rounds',
   },
   {
     id: 2, name: 'adr_avg', title: 'ADR average', shortName: 'ADR',
-    expr: 'from player_stats: avg(adr)', scope: 'match', format: '',
+    expr: 'from player_stats: avg(adr)', scope: 'match', subject: 'player', format: '',
     doc: 'Formula: average ADR', origin: 'user', pluginId: '', denominator: '',
   },
   {
     id: 3, name: 'my_kd', title: 'My K/D', shortName: '',
     expr: 'from events: ratio(count(victim), count(attacker))', scope: 'match',
-    format: 'float1', doc: 'Formula: kills / deaths', origin: 'user', pluginId: '',
-    denominator: 'matches',
+    subject: 'match', format: 'float1', doc: 'Formula: kills / deaths', origin: 'user',
+    pluginId: '', denominator: 'matches',
   },
   {
     id: 4, name: 'plug_stat', title: 'Plugin stat', shortName: '',
-    expr: 'from events: count()', scope: 'match', format: 'int',
+    expr: 'from events: count()', scope: 'match', subject: 'team', format: 'int',
     doc: 'Formula: count()', origin: 'plugin', pluginId: 'p1', denominator: '',
   },
 ];
@@ -240,18 +242,19 @@ const METRICS = [
 // (store.ListMetricsPage — including Reading B's denominator bucket
 // subset and the format subset), recorded so the checks can assert the
 // exact args the view sent — (query, originFilter, scopeFilter,
-// denomFilter, formatFilter, afterID, limit).
+// subjectFilter, denomFilter, formatFilter, afterID, limit).
 const pageCalls = [];
 bindings.handlers.ListMetricsPage = (
   q,
   originFilter,
   scopeFilter,
+  subjectFilter,
   denomFilter,
   formatFilter,
   afterID,
   limit,
 ) => {
-  pageCalls.push([q, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit]);
+  pageCalls.push([q, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit]);
   let rows = METRICS.slice();
   // The origin WORD SUBSET (2026-11-17 — the Origin group's three
   // boxes): "" = all, "none" = the empty set, otherwise the canonical
@@ -267,7 +270,17 @@ bindings.handlers.ListMetricsPage = (
   if (scopeFilter === 'match') rows = rows.filter((m) => (m.scope || 'match') === 'match');
   else if (scopeFilter === 'profile') rows = rows.filter((m) => m.scope === 'profile');
   else if (scopeFilter === 'none') rows = [];
-  // The denominator BUCKET SUBSET (Reading B — the 2026-11-16 overturn
+  // The subject SUBSET (the Subject group's word — the metrics subject
+  // axis): "none" is the empty set like origin's; any other word is the
+  // checked tokens, a row passing iff its subject is one of them (a
+  // fixture row without the field reads the DDL default "player").
+  // store.ListMetricsPage mirrors this exactly (its SUBJECT FILTER
+  // note), and the view composes the words from the checked set.
+  if (subjectFilter === 'none') rows = [];
+  else if (subjectFilter) {
+    const subs = new Set(subjectFilter.split(','));
+    rows = rows.filter((m) => subs.has(m.subject || 'player'));
+  }  // The denominator BUCKET SUBSET (Reading B — the 2026-11-16 overturn
   // of the 2026-11-14 "denominator-less rows pass in every state"
   // ruling): the word is the checked set of buckets ("" = all three,
   // "empty" = the empty set, otherwise the canonical comma-subset) and
@@ -546,6 +559,28 @@ const setBox = async (r, label, on) => {
 const ORIGIN_LABELS = ['Built-in', 'Custom', 'Plugin'];
 const originOf = (r) => ORIGIN_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 const scopeOf = (r) => ['Match', 'Profile'].map((l) => boxNamed(r, l)?.checked ?? null);
+// The Subject group's three boxes in panel order — scoped by the group's
+// aria-label, because its middle box shares the Scope group's "Match"
+// word (one spelling per concept) and boxNamed takes the FIRST match.
+const SUBJ_LABELS = ['Player', 'Match', 'Team'];
+const subjGroup = (r) =>
+  [...(panelOf(r)?.querySelectorAll('.bld-filter-group') || [])].find(
+    (g) => g.getAttribute('aria-label') === 'Subject',
+  );
+const subjectOf = (r) =>
+  SUBJ_LABELS.map(
+    (l) =>
+      [...(subjGroup(r)?.querySelectorAll('input[type="checkbox"]') || [])].find(
+        (cb) => (cb.closest('label')?.textContent || '').trim() === l,
+      )?.checked ?? null,
+  );
+const setSubjBox = async (r, label, on) => {
+  await openFilters(r);
+  const cb = [...(subjGroup(r)?.querySelectorAll('input[type="checkbox"]') || [])].find(
+    (x) => (x.closest('label')?.textContent || '').trim() === label,
+  );
+  if (cb && cb.checked !== on) cb.click();
+};
 // The Denominator group's three boxes in panel order (Reading B) and
 // the Pinning group's pair — read beside originOf/typeOf below.
 const denomOf = (r) => ['Rounds', 'Matches', 'None'].map((l) => boxNamed(r, l)?.checked ?? null);
@@ -556,12 +591,19 @@ const pinningOf = (r) => PIN_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency', 'Identity'];
 const typeOf = (r) => FMT_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 // The whole panel in DOM order: the Origin three, the Scope pair, the
-// Denominator three, the Type seven and the Pinning pair — seventeen
-// boxes in five groups.
-const allBoxesOf = (r) => [...originOf(r), ...scopeOf(r), ...denomOf(r), ...typeOf(r), ...pinningOf(r)];
+// Subject three, the Denominator three, the Type seven and the Pinning
+// pair — twenty boxes in six groups.
+const allBoxesOf = (r) => [
+  ...originOf(r),
+  ...scopeOf(r),
+  ...subjectOf(r),
+  ...denomOf(r),
+  ...typeOf(r),
+  ...pinningOf(r),
+];
 // The panel's group names in DOM order (the panel itself first, then
-// its five labelled groups).
-const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Denominator', 'Type', 'Pinning'];
+// its six labelled groups).
+const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Subject', 'Denominator', 'Type', 'Pinning'];
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -634,7 +676,7 @@ let r = await mountBuilder();
 }
 check(
   'first list call = (query "", origin "user,plugin", scope "", denominator "", format "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 const trig = filterTrigger(r);
@@ -650,10 +692,10 @@ check(
 await openFilters(r);
 const panel = panelOf(r);
 check(
-  // 16 → 17 boxes (2026-11-18, metrics Phase 7): the Type group
-  // gained its Identity box.
-  'the trigger opens the checkbox panel (aria-expanded + seventeen options)',
-  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 17,
+  // 17 → 20 boxes (2026-11-18): the Subject group's three boxes join
+  // the metrics subject axis (after the Phase-7 Identity box).
+  'the trigger opens the checkbox panel (aria-expanded + twenty options)',
+  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 20,
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
@@ -682,7 +724,7 @@ check(
     ? [...panel.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))
     : [];
   check(
-    'the panel is ONE named group holding five labelled groups (Origin, Scope, Denominator, Type, Pinning)',
+    'the panel is ONE named group holding six labelled groups (Origin, Scope, Subject, Denominator, Type, Pinning)',
     panel?.getAttribute('aria-label') === 'Metric filters' &&
       JSON.stringify(names) === JSON.stringify(GROUP_LABELS.slice(1)),
     JSON.stringify([panel?.getAttribute('aria-label'), ...names]),
@@ -765,7 +807,7 @@ await setBox(r, 'Built-in', true); // from the default: the user,plugin partitio
 await sleep(DEBOUNCE);
 check(
   'Built-in checked → (query "", origin "", scope "", denominator "", format "", cursor 0, 100) — all four rows with the Builtins header',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Custom', 'Plugins']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
@@ -776,7 +818,7 @@ await setBox(r, 'Custom', false);
 await sleep(DEBOUNCE);
 check(
   'Custom unchecked → origin "builtin,plugin": the built-in and plugin rows render, no Custom header',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin,plugin', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin,plugin', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Plugins']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
@@ -787,7 +829,7 @@ await setBox(r, 'Built-in', false);
 await sleep(DEBOUNCE);
 check(
   'Built-in unchecked → origin "plugin": only the plugin row renders, and its plugin chip rides beside its scope chip',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'plugin', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'plugin', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Plugins']) &&
     JSON.stringify(chipsOf(r, 'plug_stat')) === JSON.stringify(['match', 'none', 'int', 'plugin']),
@@ -803,7 +845,7 @@ await setBox(r, 'Plugin', false);
 await sleep(DEBOUNCE);
 check(
   'all three Origin options off → origin "none" — a legal empty read',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', '', '', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', '', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -819,7 +861,7 @@ await setBox(r, 'Custom', true);
 await sleep(DEBOUNCE);
 check(
   'Custom checked → origin "user": the user rows render under the Custom header',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Custom']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
@@ -830,7 +872,7 @@ await setBox(r, 'Plugin', true);
 await sleep(DEBOUNCE);
 check(
   'Custom and Plugin back checked → origin "user,plugin" — cursor reset again, the non-builtin rows render',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -840,7 +882,7 @@ await setBox(r, 'Built-in', true);
 await sleep(DEBOUNCE);
 check(
   'all three Origin options back on → the whole catalog window again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) &&
     rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
@@ -852,7 +894,7 @@ await setBox(r, 'Match', false); // Profile only
 await sleep(DEBOUNCE);
 check(
   'Match unchecked → (query "", origin "", scope "profile", denominator "", format "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'profile', '', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'profile', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -866,7 +908,7 @@ await setBox(r, 'Profile', false); // both Scope options off
 await sleep(DEBOUNCE);
 check(
   'both Scope options off → scope "none" — the same legal empty read as origin',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'none', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'none', '', '', '', 0, 100]) &&
     rowsOf(r).length === 0 &&
     r.textContent.includes('No metrics to show.'),
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
@@ -877,7 +919,7 @@ await setBox(r, 'Match', true); // Match only
 await sleep(DEBOUNCE);
 check(
   'Match back checked (Profile still off) → scope "match" — cursor reset again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'match', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'match', '', '', '', 0, 100]) &&
     rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
@@ -887,7 +929,7 @@ await setBox(r, 'Profile', true);
 await sleep(DEBOUNCE);
 check(
   'both Scope options on → scope "" — no narrowing',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 services.invalidate();
@@ -896,7 +938,7 @@ await setBox(r, 'Rounds', false); // Matches + None (the default third box)
 await sleep(DEBOUNCE);
 check(
   'Rounds unchecked → (…, denominator "matches,none", cursor 0, 100) — the canonical subset word',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches,none', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'matches,none', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -910,7 +952,7 @@ await setBox(r, 'Matches', false); // only None left
 await sleep(DEBOUNCE);
 check(
   'Matches unchecked → denominator "none" (the {None} subset)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'none', '', 0, 100]),
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'none', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -927,7 +969,7 @@ await setBox(r, 'None', false); // no Denominator box left
 await sleep(DEBOUNCE);
 check(
   'every Denominator box off → denominator "empty" — the empty set, a legal empty read',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'empty', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'empty', '', 0, 100]) &&
     rowsOf(r).length === 0 &&
     r.textContent.includes('No metrics to show.'),
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
@@ -941,7 +983,7 @@ await setBox(r, 'Rounds', true); // {Rounds} only
 await sleep(DEBOUNCE);
 check(
   '{Rounds} alone → denominator "rounds" — the NEW rounds-only subset, one store-side row (the denominator-less rows are gone)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'rounds', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -951,7 +993,7 @@ await setBox(r, 'Matches', true); // {Rounds, Matches}
 await sleep(DEBOUNCE);
 check(
   '{Rounds, Matches} → denominator "rounds,matches" — both denominated metrics, still no denominator-less row',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds,matches', '', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'rounds,matches', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -961,7 +1003,7 @@ await setBox(r, 'None', true); // all three back on
 await sleep(DEBOUNCE);
 check(
   'all three Denominator boxes on → denominator "" — all four rows again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 
@@ -1029,7 +1071,7 @@ await sleep(DEBOUNCE);
 check(
   'Auto unchecked → format "int,float1,float2,percent,currency,identity" — the canonical subset, the auto-format row gone',
   JSON.stringify(pageCalls[0]) ===
-    JSON.stringify(['', '', '', '', 'int,float1,float2,percent,currency,identity', 0, 100]) &&
+    JSON.stringify(['', '', '', '', '', 'int,float1,float2,percent,currency,identity', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd', 'plug_stat']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -1040,7 +1082,7 @@ for (const l of ['Int', 'Float1', 'Float2', 'Currency', 'Identity']) await setBo
 await sleep(DEBOUNCE);
 check(
   'Auto + Percent only → format "auto,percent" — the auto bucket and the percent rows in one window',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'auto,percent', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 'auto,percent', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
   JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
@@ -1051,7 +1093,7 @@ await setBox(r, 'Percent', false);
 await sleep(DEBOUNCE);
 check(
   'every Type box off → format "none" — the same legal empty read as the pair groups',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'none', 0, 100]) &&
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 'none', 0, 100]) &&
     rowsOf(r).length === 0 &&
     r.textContent.includes('No metrics to show.'),
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
@@ -1062,12 +1104,86 @@ for (const l of FMT_LABELS) await setBox(r, l, true);
 await sleep(DEBOUNCE);
 check(
   'all seven Type boxes back on → format "" — the whole catalog window again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 // Hand a CLOSED panel to the untouched sections below (D/E/F open
 // nothing; G reopens it).
 await closeFilters(r);
+
+console.log('C2. the Subject group narrows the same server call (the metrics subject axis)');
+{
+  // The block runs on whatever filter state section C left (like every
+  // section before it) and pins the SUBJECT token's position (arg 4),
+  // each subject ALONE, a combination, the empty set and the all-on
+  // default — the baseline rows are captured with the subject group
+  // all-on, which is what the default view is.
+  await openFilters(r);
+  await setSubjBox(r, 'Player', true);
+  await setSubjBox(r, 'Match', true);
+  await setSubjBox(r, 'Team', true);
+  await sleep(DEBOUNCE);
+  const baselineRows = namesOf(r);
+  const subjArg = () => pageCalls[pageCalls.length - 1]?.[3];
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Player', false);
+  await sleep(DEBOUNCE);
+  check(
+    'Player off → subject token "match,team" (arg 4): the match- and team-subject rows survive',
+    subjArg() === 'match,team' &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd', 'plug_stat']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Match', false);
+  await sleep(DEBOUNCE);
+  check(
+    'Team alone → subject token "team"',
+    subjArg() === 'team' && JSON.stringify(namesOf(r)) === JSON.stringify(['plug_stat']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Player', true);
+  await setSubjBox(r, 'Team', false);
+  await sleep(DEBOUNCE);
+  check(
+    'Player alone → subject token "player"',
+    subjArg() === 'player' &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Player', false);
+  await setSubjBox(r, 'Match', true);
+  await sleep(DEBOUNCE);
+  check(
+    'Match alone → subject token "match"',
+    subjArg() === 'match' && JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Match', false);
+  await sleep(DEBOUNCE);
+  check(
+    'all three Subject boxes off → subject "none" (the legal empty read)',
+    subjArg() === 'none' && rowsOf(r).length === 0,
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + rowsOf(r).length,
+  );
+  // The restored all-on word is the DEFAULT state's own args (section A
+  // already read them once), so it would hit the read cache and issue no
+  // backend call at all — flush first, then prove the flip re-reads.
+  services.invalidate();
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Player', true);
+  await setSubjBox(r, 'Match', true);
+  await setSubjBox(r, 'Team', true);
+  await sleep(DEBOUNCE);
+  check(
+    'all three back on → subject "" (no predicate): the default view is unchanged',
+    subjArg() === '' && JSON.stringify(namesOf(r)) === JSON.stringify(baselineRows),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+}
 
 console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip present, no delete');
 {
@@ -1172,33 +1288,35 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       .join(' '),
   );
   check(
-    'the three selects (Scope, Denominator, Format) are disabled for a built-in',
-    ['bld-scope', 'bld-denom', 'bld-format'].every((id) => {
+    'the four selects (Subject, Scope, Denominator, Format) are disabled for a built-in',
+    ['bld-subject', 'bld-scope', 'bld-denom', 'bld-format'].every((id) => {
       const el = r.querySelector('#' + id);
       return el && el.disabled === true;
     }),
-    ['bld-scope', 'bld-denom', 'bld-format']
+    ['bld-subject', 'bld-scope', 'bld-denom', 'bld-format']
       .map((id) => `${id}:disabled=${r.querySelector('#' + id)?.disabled}`)
       .join(' '),
   );
-  // The form's TWO FIXED ROWS (owner ruling, origin-independent — it
-  // pins .bld-fields markup, not the built-in state): row 1 Name /
-  // Title / Short name, row 2 Scope / Denominator / Format, then the
-  // full-width Doc and Expression rows underneath. ALL eight fields in
-  // DOM order, deep-equalled: a reorder, a dropped field or a new one
-  // spliced in anywhere fails loudly. The wide pair is included on
-  // purpose — "Doc/Expression last and full-width" is part of the same
-  // ruling, so their position is worth the same pin.
+  // The form's FIXED ROWS (owner ruling, origin-independent — it pins
+  // .bld-fields markup, not the built-in state): row 1 Name / Title /
+  // Short name, row 2 Subject / Scope / Denominator (Subject sits
+  // immediately LEFT of Scope — the owner's placement), row 3 Format,
+  // then the full-width Doc and Expression rows underneath. ALL nine
+  // fields in DOM order, deep-equalled: a reorder, a dropped field or a
+  // new one spliced in anywhere fails loudly. The wide pair is included
+  // on purpose — "Doc/Expression last and full-width" is part of the
+  // same ruling, so their position is worth the same pin.
   const fieldIds = [...r.querySelectorAll('.bld-fields .bld-field')].map(
     (f) => f.querySelector('[id]')?.id ?? '',
   );
   check(
-    'the form fields sit in the two fixed rows (Name/Title/Short · Scope/Denominator/Format, then Doc/Expression)',
+    'the form fields sit in the fixed rows (Name/Title/Short · Subject/Scope/Denominator · Format, then Doc/Expression)',
     JSON.stringify(fieldIds) ===
       JSON.stringify([
         'bld-name',
         'bld-title',
         'bld-short',
+        'bld-subject',
         'bld-scope',
         'bld-denom',
         'bld-format',
@@ -1207,6 +1325,23 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       ]),
     JSON.stringify(fieldIds),
   );
+  // The SUBJECT select renders immediately LEFT of Scope in edit mode
+  // (the owner's placement, verbatim): DOM order is the visual order in
+  // this grid, so previousElementSibling pins the position itself.
+  {
+    // The FIELD (not the select) is the grid cell, so the position pins
+    // on the two .bld-field siblings: Subject's cell is the one directly
+    // before Scope's cell.
+    const subjField = r.querySelector('#bld-subject')?.closest('.bld-field');
+    const scopeField = r.querySelector('#bld-scope')?.closest('.bld-field');
+    check(
+      'the Subject select sits immediately left of the Scope select (edit mode)',
+      !!subjField && !!scopeField && scopeField.previousElementSibling === subjField,
+      subjField && scopeField
+        ? `prevCell=${scopeField.previousElementSibling?.querySelector('[id]')?.id}`
+        : 'missing field',
+    );
+  }
   check(
     'the read-only chip is present, worded for the user',
     !!chip() && chip().textContent.trim() === 'built-in' && chip().getAttribute('title') === REASON,
@@ -1290,7 +1425,9 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     ['bld-name', 'bld-title', 'bld-short', 'bld-doc', 'bld-expr'].every(
       (id) => r.querySelector('#' + id)?.readOnly === false,
     ) &&
-      ['bld-scope', 'bld-denom', 'bld-format'].every((id) => r.querySelector('#' + id)?.disabled === false),
+      ['bld-subject', 'bld-scope', 'bld-denom', 'bld-format'].every(
+        (id) => r.querySelector('#' + id)?.disabled === false,
+      ),
     ['bld-name', 'bld-doc', 'bld-scope', 'bld-format']
       .map((id) => {
         const el = r.querySelector('#' + id);
@@ -1368,6 +1505,114 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       !chip(),
     `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value} disabled=${saveBtn().disabled} chip=${!!chip()}`,
   );
+}
+
+console.log('D2. the Subject select persists through save (round trip) and an illegal pair surfaces the server refusal');
+{
+  // The scripted backend PERSISTS what it is handed, so the reload
+  // below is a real round trip through the view's own save/load path —
+  // not just a payload assertion.
+  const payloads = [];
+  bindings.handlers.SaveMetric = (m) => {
+    payloads.push(m);
+    const row = METRICS.find((x) => x.id === m.id);
+    if (row) Object.assign(row, m);
+    return { ...m };
+  };
+  const saveBtnOf = () =>
+    [...r.querySelectorAll('.bld-actions button')].find((b) => b.textContent.includes('Save metric'));
+  try {
+    click(rowNamed(r, 'adr_avg').querySelector('button.bld-row-main'));
+    await sleep(60);
+    check(
+      'a user row loads its stored subject into the select (player — the authoring default)',
+      r.querySelector('#bld-subject')?.value === 'player' &&
+        r.querySelector('#bld-scope')?.value === 'match',
+      `subject=${r.querySelector('#bld-subject')?.value} scope=${r.querySelector('#bld-scope')?.value}`,
+    );
+    const sel = r.querySelector('#bld-subject');
+    sel.value = 'team';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await sleep(20);
+    check(
+      'the select binds the form: Subject now reads team',
+      r.querySelector('#bld-subject')?.value === 'team',
+      `subject=${r.querySelector('#bld-subject')?.value}`,
+    );
+    click(saveBtnOf());
+    await sleep(80);
+    check(
+      'Save carries subject (and the preserved partition) in the payload',
+      payloads.length === 1 &&
+        payloads[0].subject === 'team' &&
+        payloads[0].partition === '' &&
+        payloads[0].scope === 'match',
+      JSON.stringify(
+        payloads[0] && {
+          subject: payloads[0].subject,
+          partition: payloads[0].partition,
+          scope: payloads[0].scope,
+        },
+      ),
+    );
+    click(rowNamed(r, 'adr_avg').querySelector('button.bld-row-main'));
+    await sleep(60);
+    check(
+      'reloading the definition restores the saved subject (round trip)',
+      r.querySelector('#bld-subject')?.value === 'team',
+      `subject=${r.querySelector('#bld-subject')?.value}`,
+    );
+    // New → the authoring default, not the last edit's value.
+    const newBtn = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('New'));
+    click(newBtn);
+    await sleep(60);
+    check(
+      'New starts on the authoring default subject (player)',
+      r.querySelector('#bld-subject')?.value === 'player',
+      `subject=${r.querySelector('#bld-subject')?.value}`,
+    );
+  } finally {
+    delete bindings.handlers.SaveMetric;
+  }
+  // An ILLEGAL subject × scope pair surfaces the SERVER's own refusal —
+  // the editor builds no client-side validity matrix (every option stays
+  // enabled; the guard lives in SaveMetric).
+  bindings.handlers.SaveMetric = () =>
+    Promise.reject(
+      new Error("a match-subject metric can't be profile-scoped (a match or team has no career — pick match scope)"),
+    );
+  try {
+    // A fresh draft, filled past the front-door guards, so the report
+    // below is the SERVER's matrix refusal and nothing else.
+    type(r.querySelector('#bld-name'), 'side_split');
+    type(r.querySelector('#bld-doc'), 'Formula: side split');
+    type(r.querySelector('#bld-expr'), 'from player_stats: count()');
+    await sleep(500); // the debounced live check settles on "valid"
+    const sel = r.querySelector('#bld-subject');
+    sel.value = 'match';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    const scopeSel = r.querySelector('#bld-scope');
+    scopeSel.value = 'profile';
+    scopeSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await sleep(20);
+    const enabled = [...r.querySelectorAll('.bld-fields select')].every((x) => x.disabled === false);
+    click(saveBtnOf());
+    await sleep(80);
+    check(
+      'the illegal pair (match subject + profile scope) surfaces the save refusal, with no option disabled',
+      enabled &&
+        (r.querySelector('p.error')?.textContent || '').includes("can't be profile-scoped"),
+      `enabled=${enabled} err="${r.querySelector('p.error')?.textContent}"`,
+    );
+  } finally {
+    delete bindings.handlers.SaveMetric;
+  }
+  // Block B leaves a FILLED draft behind; section E pins the pristine
+  // New form ("previewing a builtin does NOT load the form"), so reset
+  // it exactly the way section D's own reset does.
+  const newBtn2 = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('New'));
+  click(newBtn2);
+  await sleep(60);
 }
 
 console.log('E. the builtin PREVIEWS from its STORED rows — a saved read never calculates');
@@ -1603,7 +1848,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'typing restarts the window with BOTH narrowings: (query "adr", origin "user,plugin", scope "", denominator "", format "", cursor 0, 100)',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'user,plugin', '', '', '', 0, 100]),
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'user,plugin', '', '', '', '', 0, 100]),
     JSON.stringify(pageCalls[0]),
   );
   check(
@@ -1617,7 +1862,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'clearing the query restores the user,plugin partition window',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', '', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -1631,7 +1876,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'formats narrowed to Auto alone → format "auto" — only the auto-format row survives in the user,plugin partition',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', 'auto', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', 'auto', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -1641,7 +1886,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'the search composes with origin AND format in ONE call: (query "adr", origin "user,plugin", format "auto", …)',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'user,plugin', '', '', 'auto', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'user,plugin', '', '', '', 'auto', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -1652,7 +1897,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'clearing the query AND re-checking every Type box → the user,plugin partition window again (format word back to "")',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', '', '', '', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -1662,7 +1907,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'Built-in back checked → the whole catalog window again',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
     JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
   );
   // A Denominator SUBSET word composes with the search in the same ONE
@@ -1678,7 +1923,7 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'the Denominator subset composes with the search in ONE call: (query "trade", denominator "rounds,none", origin "", …)',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['trade', '', '', 'rounds,none', '', 0, 100]) &&
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['trade', '', '', '', 'rounds,none', '', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
     JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
@@ -1689,17 +1934,17 @@ console.log('G. the search composes with the filters in ONE server call');
   await sleep(DEBOUNCE);
   check(
     'clearing the query and restoring the Denominator boxes → the whole catalog window again',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
     JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
   );
 }
 
-console.log('H. the filter checks are view-local registry state (restore all seventeen, then reset to defaults)');
+console.log('H. the filter checks are view-local registry state (restore all twenty, then reset to defaults)');
 {
   // Leave a DISTINCT state behind — one option off in EACH of the
   // Origin, Denominator and Type groups (the Pinning pair and the
   // Denominator NONE box stay on), so the restore proves every one of
-  // the seventeen keys round-trip.
+  // the twenty keys round-trip.
   services.invalidate();
   pageCalls.length = 0;
   await setBox(r, 'Built-in', false);
@@ -1717,18 +1962,18 @@ console.log('H. the filter checks are view-local registry state (restore all sev
     // carries it: 2026-11-18 re-pin.
     'the parting state is user,plugin + Rounds/None minus Currency (Built-in, Matches and Currency off)',
     JSON.stringify(pageCalls[pageCalls.length - 1]) ===
-      JSON.stringify(['', 'user,plugin', '', 'rounds,none', 'auto,int,float1,float2,percent,identity', 0, 100]) &&
+      JSON.stringify(['', 'user,plugin', '', '', 'rounds,none', 'auto,int,float1,float2,percent,identity', 0, 100]) &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
   await openFilters(r);
   check(
-    'unmount → remount restores ALL seventeen checks (only Built-in, Matches and Currency off)',
+    'unmount → remount restores ALL twenty checks (only Built-in, Matches and Currency off)',
     JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
-        false, true, true, true, true, true, false, true, true, true, true, true, true, false,
-        true, true, true,
+        false, true, true, true, true, true, true, true, true, false, true, true, true, true,
+        true, true, false, true, true, true,
       ]),
     JSON.stringify(allBoxesOf(r)),
   );
@@ -1745,7 +1990,7 @@ console.log('H. the filter checks are view-local registry state (restore all sev
     JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
         false, true, true, true, true, true, true, true, true, true, true, true, true, true,
-        true, true, true,
+        true, true, true, true, true, true,
       ]),
     JSON.stringify(allBoxesOf(r)),
   );
@@ -2613,7 +2858,7 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     check(
       'Identity checked alone → format word "identity" in the ONE server call, and the identity metric is the window',
       JSON.stringify(pageCalls[pageCalls.length - 1]) ===
-        JSON.stringify(['', '', '', '', 'identity', 0, 100]) &&
+        JSON.stringify(['', '', '', '', '', 'identity', 0, 100]) &&
         JSON.stringify(namesOf(r)) === JSON.stringify(['top_fragger']) &&
         JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins']),
       JSON.stringify(pageCalls[pageCalls.length - 1]) +
