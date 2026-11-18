@@ -4,8 +4,9 @@
 // Section labels below match the run's console.log letters:
 //   A. the sidebar Help icon — nav-chrome chrome between the spacer and
 //      Settings, never active/aria-current across routes, the popup
-//      opens at the guide top with the full TOC (27 sections since the
-//      2026-11-14 content onboarding — Introduction leads) and no manual
+//      opens at the guide top with the full TOC (every registered
+//      section since the 2026-11-14 content onboarding — Introduction
+//      leads) and no manual
 //      switcher (only one manual ships), the near-fullscreen geometry
 //      (centred backdrop with its uniform margin, panel = viewport −
 //      2×16px, max-height none — pinned as computed styles from the
@@ -487,8 +488,10 @@ check(
   // entries; the researched draft's Introduction now leads the guide.
   // 26 → 27 (w21, reports-builder): the Reports builder gained its own
   // section beside `reports`.
-  'the full TOC renders (27 section entries, the guide opens at its first section)',
-  tocItems().length === 27 && tocCurrent()?.textContent.trim() === 'Introduction',
+  // 27 → 28 (2026-11-18, metrics Phase 7): the metric-language chapter
+  // gained its `partitions` section.
+  'the full TOC renders (28 section entries, the guide opens at its first section)',
+  tocItems().length === 28 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -747,8 +750,11 @@ check(
 );
 const introSec = sectionOf('metric-language');
 check(
+  // Re-pinned 2026-11-18 (metrics Phase 7): "one number for one
+  // player" was the pre-subject claim — the intro now opens on the
+  // subject model (player / match / team).
   'the metric-language intro (the Builder ? target) renders real prose and no note',
-  normalized(introSec).includes('A metric is one number for one player') &&
+  normalized(introSec).includes('A metric is one number for one subject') &&
     !normalized(introSec).includes('Coming soon'),
   normalized(introSec).slice(0, 80),
 );
@@ -820,8 +826,9 @@ check(
   tocItems().map((b) => b.textContent.trim()).join(', '),
 );
 check(
+  // 27 → 28 body sections (2026-11-18, metrics Phase 7 `partitions`).
   'the filter is TOC-only: the body still renders every section while it is active',
-  docBody().querySelectorAll('.doc-section').length === 27,
+  docBody().querySelectorAll('.doc-section').length === 28,
   docBody().querySelectorAll('.doc-section').length + ' body sections',
 );
 check(
@@ -891,8 +898,9 @@ check(
 );
 await typeQuery('');
 check(
-  'clearing the input restores the full TOC (27 entries, no empty-state line)',
-  tocItems().length === 27 && !emptyTocLine(),
+  // 27 → 28 entries (2026-11-18, metrics Phase 7 `partitions`).
+  'clearing the input restores the full TOC (28 entries, no empty-state line)',
+  tocItems().length === 28 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
 
@@ -1002,9 +1010,10 @@ const rowOf = (majorText) =>
 const toggleOf = (majorText) => rowOf(majorText)?.querySelector('.doc-toc-toggle') ?? null;
 const minorEntries = () => [...document.querySelectorAll('.doc-toc-children .doc-toc-item')];
 check(
+  // 13 → 14 minors (2026-11-18, metrics Phase 7 `partitions`).
   'the ONE subsection toggle sits on the metric-language row (expanded by default, catalog label) — no toggle on a childless major',
   document.querySelectorAll('.doc-toc-toggle').length === 1 &&
-    minorEntries().length === 13 &&
+    minorEntries().length === 14 &&
     toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true' &&
     toggleOf('Metric language')?.getAttribute('aria-label') === stringsCommon.collapseSubsections &&
     toggleOf('Introduction') === null,
@@ -1022,8 +1031,9 @@ check(
 click(toggleOf('Metric language'));
 await sleep();
 check(
-  'unfolding restores every entry (27) and aria-expanded back to true',
-  tocItems().length === 27 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  // 27 → 28 entries (2026-11-18, metrics Phase 7 `partitions`).
+  'unfolding restores every entry (28) and aria-expanded back to true',
+  tocItems().length === 28 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
   `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
 );
 click(tocItems().find((b) => b.textContent.trim() === 'Denominators'));
