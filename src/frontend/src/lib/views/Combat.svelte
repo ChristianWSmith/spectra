@@ -449,8 +449,8 @@
                       ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
                       : S.combat.watchEngagement}
                     label={g.aSteam
-                      ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
-                      : `Watch tick ${g.tick} in the replay`}
+                      ? `Watch this engagement — follow ${g.aName || g.aSteam}`
+                      : S.combat.watchEngagement}
                     onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
                   />
                 </td>

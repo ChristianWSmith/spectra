@@ -440,8 +440,8 @@
                         ? `Watch this throw — follow ${r.throwerName || r.thrower}`
                         : S.utility.watchThrowFallback}
                       label={r.thrower
-                        ? `Watch this throw at tick ${effTick(r)} — follow ${r.throwerName || r.thrower}`
-                        : `Watch this throw at tick ${effTick(r)}`}
+                        ? `Watch this throw — follow ${r.throwerName || r.thrower}`
+                        : S.utility.watchThrowFallback}
                       onclick={() => openReplay(r)}
                     />
                   </span>

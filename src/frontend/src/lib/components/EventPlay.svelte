@@ -7,8 +7,12 @@
   // row's main button — see LandmarkRow.svelte.
   let {
     tick = 0,
-    title = `Watch at tick ${tick} in replay`,
-    label = `Watch tick ${tick} in replay`,
+    // Defaults identify the EVENT, never a landing position or a tick
+    // number (owner ruling 2026-11-18): every current call site passes
+    // its own title/label, these are the fallback copy only. `tick` stays
+    // a prop for the callers that pass it.
+    title = `Watch this event in replay`,
+    label = `Watch this event in replay`,
     cls = '',
     onclick = () => {},
   } = $props();

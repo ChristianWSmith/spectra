@@ -190,11 +190,12 @@
 
   // The row ▶'s own tooltip (passed to LandmarkRow): names the follow so
   // the icon-only button says what it does; actor-less rows keep the
-  // component's default watch copy.
+  // component's default watch copy. Labels identify the EVENT (owner
+  // ruling 2026-11-18): no tick numbers, no landing claims.
   function seekCopy(row) {
     const who = row.attackerName || row.attacker;
     return row.attacker
-      ? { title: `Watch this event — follow ${who}`, label: `Watch at tick ${row.tick} — follow ${who}` }
+      ? { title: `Watch this event — follow ${who}`, label: `Watch this event — follow ${who}` }
       : { title: '', label: '' };
   }
 

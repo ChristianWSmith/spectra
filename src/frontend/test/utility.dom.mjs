@@ -480,8 +480,8 @@ check(
   throwBtn?.getAttribute('title'),
 );
 check(
-  'throw ▶ carries an aria-label with the tick + follow',
-  throwBtn?.getAttribute('aria-label') === 'Watch this throw at tick 1500 — follow alice',
+  'throw ▶ carries an aria-label naming the event + follow (no tick — labels identify the event)',
+  throwBtn?.getAttribute('aria-label') === 'Watch this throw — follow alice',
   throwBtn?.getAttribute('aria-label'),
 );
 throwBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -511,9 +511,9 @@ check(
 );
 const pairedBtn = cellRow(1)?.querySelector('.util-actions button');
 check(
-  'paired row: the ▶ title + aria-label keep the shipped wording with the throw tick inside',
+  'paired row: the ▶ title + aria-label keep the shipped event-identifying wording (no tick)',
   pairedBtn?.getAttribute('title') === 'Watch this throw — follow alice' &&
-    pairedBtn?.getAttribute('aria-label') === 'Watch this throw at tick 1650 — follow alice',
+    pairedBtn?.getAttribute('aria-label') === 'Watch this throw — follow alice',
   `${pairedBtn?.getAttribute('title')} / ${pairedBtn?.getAttribute('aria-label')}`,
 );
 pairedBtn?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));

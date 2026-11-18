@@ -25,17 +25,23 @@ export function openProfile(nav, steam) {
 // the replay (nav.entrySeekTick reads ?tick= alone); a link that means
 // to JUMP stamps `tick` BESIDE the scope (roundStartTick at the
 // watch/drill call sites):
-//   tick   — initial replay position: the ONLY "where to jump"
-//            instruction (winner-take-all, applied on entry and
-//            re-applied only for a distinct value while the keep-alive
-//            instance lives)
+//   tick   — initial replay position: the where-to-jump instruction —
+//            UNLESS a `loop` accompanies it: a seed carrying BOTH lands
+//            at the LOOP'S start (owner ruling 2026-11-18 — Replay's
+//            two appliers, startEngine and the keep-alive seed watcher,
+//            seek seed.loop.from whenever the seed carries a loop, and
+//            seed.seek only when it does not; a loop-only seed seeks
+//            nothing). Winner-take-all among position sources,
+//            applied on entry and re-applied only for a distinct value
+//            while the keep-alive instance lives.
 //   loop   — initial loop range "<fromTick>,<toTick>" (ticks; the comma
 //            stays raw in buildHash). ENTRY-ONLY: Replay applies it on
 //            entry (nav.entryLoopRange → engine bounds + arm), re-arms
 //            only a DISTINCT range while the keep-alive instance lives
 //            (nav.entrySeedPlan), and drops it from the URL as soon as
 //            the user edits a bound, so the URL keeps mirroring the
-//            engine's loop state.
+//            engine's loop state. When it accompanies `tick`, its
+//            START is where playback lands (see `tick` above).
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash
@@ -199,16 +205,25 @@ export function entryLoopSpanAround(firstTick, lastTick, tickRate, seconds = LOO
 // instance lives — entry-once PER DISTINCT SEED: identical-value
 // in-session churn keeps the playback position, a no-promise rewrite
 // never seeks). PARAMETER SEPARATION is the contract: ?tick= is the
-// ONLY "where to jump" instruction — ?roundFrom=/?roundTo= are FEED
+// where-to-jump instruction — ?roundFrom=?roundTo= are FEED
 // FILTER state ("what to show") and never a position, at mount or
-// mid-session:
+// mid-session — with ONE joint landing rule recorded here (owner
+// ruling 2026-11-18): when ?loop= ACCOMPANIES ?tick=, the appliers in
+// Replay (startEngine + the keep-alive seed watcher) seek the LOOP'S
+// START instead — this resolver still resolves the tick itself, and
+// the resolvers below stay mutually independent; only the APPLY step
+// reads the pair:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
 //               wins as-is when it names a real non-negative tick —
 //               0 included (an explicit first-frame target must not be
 //               reinterpreted as "no promise"; a round-1 start link
 //               stamps that round's startTick, not 0 — since the
 //               pre-pistol sanitization gate the stream starts at round
-//               1, and an out-of-range ?tick= simply clamps);
+//               1, and an out-of-range ?tick= simply clamps) — unless
+//               a loop accompanies it, in which case the landing is the
+//               loop's start (a round-level loop starts at the round's
+//               own startTick, so those links land exactly where they
+//               always did);
 //   2. else null — the URL makes NO time promise, so there is nothing
 //               to resolve here: Replay applies the user's DEFAULT
 //               start position (the first counted round's start — the
@@ -259,9 +274,12 @@ export function entrySeekTick(query) {
 //     round and is not a promise (roundSpan returns null when there is
 //     no span to check against — then the explicit finite bounds stand
 //     on their own).
-// Independent of entrySeekTick: ?tick= decides WHERE the replay starts
-// (the round scope is feed-filter state and never a position), never
-// what it loops over.
+// Independent of entrySeekTick: ?tick= never reads ?loop= to decide
+// WHAT it loops over (the round scope is feed-filter state and never a
+// position) — the resolvers stay mutually independent; what they do
+// TOGETHER is the appliers' rule in Replay: with both promises present,
+// the loop's START is the landing (nav.replayHash's `tick`/`loop`
+// contract above states it for link authors).
 // Replay applies the resolved range in startEngine (bounds, then arm)
 // and the keep-alive's seed watcher re-arms only a DISTINCT range
 // (entrySeedPlan below) — identical-value in-session query churn can
@@ -307,7 +325,11 @@ function roundSpan(rounds) {
 // own resolver's contract: seek is null when the URL carries no valid
 // ?tick= (the round scope never seeks — a scope-only URL resolves null
 // and lands at the pref-aware default, filter intact), loop null when
-// it states no usable range.
+// it states no usable range. APPLY-time joint rule (owner ruling
+// 2026-11-18): when BOTH halves resolve, the landing is loop.from —
+// the loop's start — never the seek tick (a copied URL's `tick` then
+// names the event, not the landing; ?tick= is the consumed entry
+// promise and this pair of resolvers is the documented contract).
 export function entrySeed(query, rounds) {
   return { seek: entrySeekTick(query), loop: entryLoopRange(query, rounds) };
 }
@@ -330,9 +352,11 @@ export function entrySeed(query, rounds) {
 // flags then mirror the non-null halves of `next`, in startEngine's
 // entry order (seek first — a seek landing outside an armed range
 // cancels it, engine.js cancelLoopIfOutside — then loop bounds + arm),
-// so a link's full promise lands even when only one half changed and
-// the arm re-asserts a range the seek just cancelled. The CALLER owns
-// the bookkeeping: it records `next` as the last-applied seed on EVERY
+// the seek TARGET being loop.from when the seed carries a loop (the
+// loop-start landing rule, nav.entrySeed above) so a link's full
+// promise lands even when only one half changed and the arm re-asserts
+// a range the seek just cancelled. The CALLER owns the
+// bookkeeping: it records `next` as the last-applied seed on EVERY
 // resolution (nulls included — a no-promise rewrite becomes the new
 // baseline), so a repeat of the last value resolves equal and applies
 // nothing.
