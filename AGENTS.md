@@ -359,9 +359,8 @@ Canonical homes (extend these, don't fork them):
   the combat damage conversions live as the `dmg_no_kill` /
   `kill_conversion` builtin seeds over the EXISTS construct (owner,
   2026-11-17); the retired `store.GetCombatStats` SQL survives only as
-  the reference oracle in `internal/metrics/combat_equivalence_test.go`
-  — friendly fire, which the grammar cannot express (no source carries
-  the victim's side), is pinned there and has no seed; counted
+  the reference oracle in `internal/metrics/combat_equivalence_test.go`;
+  counted
   rounds — the ONLY rounds: the extractor discards knife/warmup/
   post-match rounds at ingest (`extract.agg.roundStart`), so every stored
   round is counted and `analytics.CountedRounds` is a documented identity
