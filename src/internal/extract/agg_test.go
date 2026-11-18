@@ -546,6 +546,85 @@ func TestDamageSameSideStamp(t *testing.T) {
 	}
 }
 
+// TestDamageCappedDmgStamp pins the ingest-owned `capped_dmg` event
+// stamp (owner ruling 2026-11-17 "fix the metric until they match"; M7
+// weapon-damage gate escalation 2026-11-18 — candidate SUM(dmg) read
+// 21626 against the fold's 17117 because a query-time aggregate cannot
+// replay the HP cap). The stamp is EXACTLY what the per-weapon damage
+// fold credits for the hit:
+//   - the capDamage replay runs for every stats-eligible hit in event
+//     order, clamping each hit to the victim's remaining HP (60/40/0
+//     below — raw dmg 60/80/50), so the stamp can never equal a blind
+//     SUM(events.dmg);
+//   - a post-match (!real) hit stamps 0 AND leaves the HP replay
+//     untouched — the fold's `real` gate, row-local (§6.5 forbids
+//     joining rounds into a weapon partition);
+//   - the enemy gate is NOT stamped: SameSide + the actor columns
+//     carry it (the weapon_damage seed spells the predicate).
+func TestDamageCappedDmgStamp(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+
+	a.hurt(hurtInfo{ // 60 raw on a full-HP victim → 60 credited
+		tick: 10, real: true,
+		attackerKey: 1, attackerName: "atk", attackerSide: "ct",
+		victimKey: 2, victimName: "vic", victimSide: "t",
+		weapon: "AK-47", healthDamage: 60, healthDamageTaken: 60, health: 40, hitgroup: "Chest",
+	})
+	a.hurt(hurtInfo{ // 80 raw into 40 HP left → 40 credited
+		tick: 11, real: true,
+		attackerKey: 3, attackerName: "atk2", attackerSide: "ct",
+		victimKey: 2, victimName: "vic", victimSide: "t",
+		weapon: "AWP", healthDamage: 80, healthDamageTaken: 80, health: 0, hitgroup: "Chest",
+	})
+	a.hurt(hurtInfo{ // victim already down → 0 credited
+		tick: 12, real: true,
+		attackerKey: 1, attackerName: "atk", attackerSide: "ct",
+		victimKey: 2, victimName: "vic", victimSide: "t",
+		weapon: "AK-47", healthDamage: 50, healthDamageTaken: 50, health: 0, hitgroup: "Chest",
+	})
+	a.hurt(hurtInfo{ // post-match: row stored with raw dmg, stamp 0, HP untouched
+		tick: 13, real: false,
+		attackerKey: 5, attackerName: "post", attackerSide: "ct",
+		victimKey: 4, victimName: "fresh", victimSide: "t",
+		weapon: "AK-47", healthDamage: 70, healthDamageTaken: 70, health: 30, hitgroup: "Chest",
+	})
+	a.hurt(hurtInfo{ // the first REAL hit on that victim still sees 100 HP → 50 credited
+		tick: 14, real: true,
+		attackerKey: 6, attackerName: "later", attackerSide: "t",
+		victimKey: 4, victimName: "fresh", victimSide: "ct",
+		weapon: "AK-47", healthDamage: 50, healthDamageTaken: 50, health: 50, hitgroup: "Chest",
+	})
+
+	var rows []models.Event
+	for _, e := range a.events {
+		if e.Kind == models.EventDamage {
+			rows = append(rows, e)
+		}
+	}
+	if len(rows) != 5 {
+		t.Fatalf("damage rows = %d, want 5", len(rows))
+	}
+	wantStamp := []int{60, 40, 0, 0, 50}
+	wantRaw := []int{60, 80, 50, 70, 50}
+	for i, w := range wantStamp {
+		if rows[i].CappedDmg != w {
+			t.Errorf("damage row %d CappedDmg = %d, want %d (raw dmg %d)",
+				i, rows[i].CappedDmg, w, rows[i].Dmg)
+		}
+		if rows[i].Dmg != wantRaw[i] {
+			t.Errorf("damage row %d Dmg = %d, want %d (the raw hit never changes)",
+				i, rows[i].Dmg, wantRaw[i])
+		}
+	}
+	// The non-real hit must NOT have drained the replay: row 5 credited
+	// the full 50 against a fresh 100-HP pool (a leaked replay would
+	// have left 30 and credited 30).
+	if p := a.players[6]; p == nil || p.totalDamage != 50 {
+		t.Errorf("later real damage credited = %+v, want totalDamage 50", p)
+	}
+}
+
 func TestWeaponMapJSONShape(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, false, 115, "BOMB TARGET")

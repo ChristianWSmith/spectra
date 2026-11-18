@@ -244,6 +244,19 @@ CREATE TABLE IF NOT EXISTS events (
 	-- migration: the baseline only CREATEs — a stale dev DB lacks the
 	-- column and must be re-imported (wipe + re-import).
 	same_side INTEGER NOT NULL DEFAULT 0,
+	-- capped_dmg (owner ruling 2026-11-17 "fix the metric until they
+	-- match"; M7 weapon-damage gate escalation, 2026-11-18): the
+	-- HP-capped damage credit of THIS hit — the value extract.agg.hurt
+	-- feeds player_stats.weaponDmg — with post-match (non-real) hits
+	-- stamped 0. The cap replays per victim in event order
+	-- (extract.agg.capDamage), so a query-time SUM(events.dmg) can
+	-- never reproduce it (round 5 of the golden demo: 206 raw dmg on
+	-- one victim, fold credits <=100); the fact is row-local at ingest.
+	-- The enemy gate stays OFF this column: same_side + the actor
+	-- columns carry it (the weapon_damage seed spells all three).
+	-- No migration: the baseline only CREATEs — a stale dev DB lacks
+	-- the column and must be re-imported (wipe + re-import).
+	capped_dmg INTEGER NOT NULL DEFAULT 0,
 	site TEXT NOT NULL DEFAULT '',
 	detail_json TEXT NOT NULL DEFAULT '',
 	raw_json TEXT NOT NULL DEFAULT '',

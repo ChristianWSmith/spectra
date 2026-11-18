@@ -354,6 +354,45 @@ func TestSaveExtractedWritesSameSide(t *testing.T) {
 	}
 }
 
+// TestSaveExtractedWritesCappedDmg pins the write half of the ingest-owned
+// `capped_dmg` stamp (owner ruling 2026-11-17 "fix the metric until they
+// match"; M7 weapon-damage gate escalation 2026-11-18): SaveExtracted
+// persists the model field into the events column in eventCols order
+// (hitgroup, dmg, same_side, capped_dmg — an arg swap would silently
+// corrupt every damage row). The read path deliberately does NOT carry it
+// (eventRowCols stays un-widened; only the metric expressions read it).
+func TestSaveExtractedWritesCappedDmg(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/d/cap.dem", "sha-capped-stamp", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	em := &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 80, CappedDmg: 40},
+		{Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // default 0
+	}}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.db.Query(`SELECT seq, dmg, same_side, capped_dmg FROM events WHERE match_id = ? ORDER BY seq`, id)
+	if err != nil {
+		t.Fatalf("query capped_dmg: %v", err)
+	}
+	defer rows.Close()
+	got := map[int][3]int{}
+	for rows.Next() {
+		var seq, dmg, same, cap int
+		if err := rows.Scan(&seq, &dmg, &same, &cap); err != nil {
+			t.Fatalf("scan capped_dmg: %v", err)
+		}
+		got[seq] = [3]int{dmg, same, cap}
+	}
+	if got[0] != [3]int{80, 0, 40} || got[1] != [3]int{10, 0, 0} {
+		t.Errorf("(dmg, same_side, capped_dmg) = %v, want {0:{80 0 40} 1:{10 0 0}} (stamp written in eventCols order, zero value default)",
+			got)
+	}
+}
+
 func TestSaveExtractedRoundtrip(t *testing.T) {
 	s := openMem(t)
 	const sha = "sha-roundtrip"
