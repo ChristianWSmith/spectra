@@ -580,7 +580,7 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 // TestCareerOpeningEquivalence is the opening-duel trio's acceptance
 // oracle (design addendum I9): the three profile seeds equal the raw
 // per-player sums over player_stats — openings =
-// Σ(opening_kills + opening_deaths), opener_wins = Σ(opening_kills),
+// Σ(entry_kills + entry_deaths), opener_wins = Σ(entry_kills),
 // each with the seed's own subject addressing (a non-empty `steam_id`
 // beside the humans-only NOT EXISTS over players, computed here as an
 // independent plain-SQL oracle instead of the career rollup whose
@@ -601,20 +601,20 @@ func TestCareerOpeningEquivalence(t *testing.T) {
 		AND NOT EXISTS (SELECT 1 FROM players p
 			WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)`
 	wantOpen := oracle(t, st,
-		`SELECT steam_id, SUM(opening_kills + opening_deaths) FROM player_stats`+humansOnly+
+		`SELECT steam_id, SUM(entry_kills + entry_deaths) FROM player_stats`+humansOnly+
 			` GROUP BY steam_id`)
 	wantWins := oracle(t, st,
-		`SELECT steam_id, SUM(opening_kills) FROM player_stats`+humansOnly+
+		`SELECT steam_id, SUM(entry_kills) FROM player_stats`+humansOnly+
 			` GROUP BY steam_id`)
 
 	for i := 1; i <= 8; i++ {
 		sid := fmt.Sprintf("7656119800000000%d", i)
 		if openings[sid] != wantOpen[sid] {
-			t.Errorf("career_openings[%s] = %v, want SUM(opening_kills + opening_deaths) = %v",
+			t.Errorf("career_openings[%s] = %v, want SUM(entry_kills + entry_deaths) = %v",
 				sid, openings[sid], wantOpen[sid])
 		}
 		if wins[sid] != wantWins[sid] {
-			t.Errorf("career_opener_wins[%s] = %v, want SUM(opening_kills) = %v",
+			t.Errorf("career_opener_wins[%s] = %v, want SUM(entry_kills) = %v",
 				sid, wins[sid], wantWins[sid])
 		}
 		// The card's own formula over the re-based numbers: its guard

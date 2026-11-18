@@ -138,8 +138,6 @@ type playerAgg struct {
 	moneySpentTotal int
 	entryKills      int
 	entryDeaths     int
-	openingKills    int
-	openingDeaths   int
 	tradeKills      int
 	killStreak      int
 	bestStreak      int
@@ -919,14 +917,15 @@ func (a *agg) kill(k killInfo) {
 		}
 	}
 
-	// First blood of the round: entry + opening attribution.
+	// First blood of the round: entry attribution. (The opening_kills
+	// twin was incremented in this same branch until it was retired
+	// with its column on 2026-11-18 — identical stored columns.)
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if r.firstKillSteam == "" {
 			r.firstKillSteam = keyStr(k.killerKey)
 			r.firstDeathSteam = keyStr(k.victimKey)
 			kp.entryKills++
-			kp.openingKills++
 		}
 	}
 
@@ -949,7 +948,9 @@ func (a *agg) kill(k killInfo) {
 		a.tradeWindow[k.victimKey] = tradeRec{tick: k.tick, killerKey: k.killerKey, victimSide: k.victimSide}
 	}
 
-	// Entry/opening death: the first-blood victim.
+	// Entry death: the first-blood victim. (The opening_deaths twin
+	// was incremented in this same branch until it was retired with
+	// its column on 2026-11-18 — identical stored columns.)
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if r.firstDeathSteam != "" && r.firstDeathSteam == keyStr(k.victimKey) {
@@ -958,7 +959,6 @@ func (a *agg) kill(k killInfo) {
 				vp = a.ensure(k.victimKey, k.victimName)
 			}
 			vp.entryDeaths++
-			vp.openingDeaths++
 		}
 	}
 

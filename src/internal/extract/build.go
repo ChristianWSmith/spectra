@@ -153,8 +153,6 @@ func (a *agg) build() *models.ExtractedMatch {
 			RoundsPlayed:    roundsPlayed,
 			EntryKills:      p.entryKills,
 			EntryDeaths:     p.entryDeaths,
-			OpeningKills:    p.openingKills,
-			OpeningDeaths:   p.openingDeaths,
 			TradeKills:      p.tradeKills,
 			BestStreak:      p.bestStreak,
 			TwoK:            p.twoK,

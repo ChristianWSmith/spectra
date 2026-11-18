@@ -503,11 +503,11 @@ func TestSumChainCompileShapes(t *testing.T) {
 		name, expr string
 		wantSQL    string // "" = no SQL assertion
 	}{
-		{"career_openings", "from player_stats: sum(opening_kills + opening_deaths)",
-			"SUM(opening_kills + opening_deaths)"},
-		{"career_opener_wins", "from player_stats: sum(opening_kills)", ""},
-		{"career_opening_rate", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
-			"1.0*(SUM(opening_kills)) / NULLIF((SUM(opening_kills + opening_deaths)), 0)"},
+		{"career_openings", "from player_stats: sum(entry_kills + entry_deaths)",
+			"SUM(entry_kills + entry_deaths)"},
+		{"career_opener_wins", "from player_stats: sum(entry_kills)", ""},
+		{"career_opening_rate", "from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))",
+			"1.0*(SUM(entry_kills)) / NULLIF((SUM(entry_kills + entry_deaths)), 0)"},
 		// Capability proofs for the shared two-column wall (audit N1/N3
 		// shapes). N1 is the FLOORED spelling (w13e): the scalar max()
 		// floors the denominator, so a zero-death subject can never
@@ -516,7 +516,7 @@ func TestSumChainCompileShapes(t *testing.T) {
 		// pin stays the compile surface that seed needs, at both scopes.
 		{"n1_kda_shape", "from player_stats: ratio(sum(kills + assists), max(sum(deaths), 1))",
 			"1.0*(SUM(kills + assists)) / NULLIF((MAX(SUM(deaths), ?)), 0)"},
-		{"n3_rate_shape", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))", ""},
+		{"n3_rate_shape", "from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -545,12 +545,12 @@ func TestSumChainCompileShapes(t *testing.T) {
 // here.
 func TestSumChainGrammarMatrix(t *testing.T) {
 	accept := []struct{ name, expr string }{
-		{"sum chain", "from player_stats: sum(opening_kills + opening_deaths)"},
-		{"sum chain with filter", "from player_stats: sum(where side='ct', opening_kills + opening_deaths)"},
-		{"n-ary chain", "from player_stats: sum(kills + assists + opening_kills)"},
+		{"sum chain", "from player_stats: sum(entry_kills + entry_deaths)"},
+		{"sum chain with filter", "from player_stats: sum(where side='ct', entry_kills + entry_deaths)"},
+		{"n-ary chain", "from player_stats: sum(kills + assists + entry_kills)"},
 		{"chain inside ratio numerator", "from player_stats: ratio(sum(kills + assists), sum(deaths))"},
-		{"chain inside ratio denominator", "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))"},
-		{"chain over a join (qualified)", "from player_stats, match_trade_opps: sum(opening_kills + opening_deaths)"},
+		{"chain inside ratio denominator", "from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))"},
+		{"chain over a join (qualified)", "from player_stats, match_trade_opps: sum(entry_kills + entry_deaths)"},
 	}
 	for _, c := range accept {
 		t.Run("accept "+c.name, func(t *testing.T) {
@@ -563,14 +563,14 @@ func TestSumChainGrammarMatrix(t *testing.T) {
 		})
 	}
 	reject := []struct{ name, expr, want string }{
-		{"avg chain", "from player_stats: avg(opening_kills + opening_deaths)", "single column"},
+		{"avg chain", "from player_stats: avg(entry_kills + entry_deaths)", "single column"},
 		{"stddev chain", "from player_stats: stddev(kills + assists)", "single column"},
 		{"min chain", "from player_stats: min(kills + assists)", "single column"},
 		{"ref inside chain", "from player_stats: sum(kills + metric('x'))", "value reference"},
 		{"keyword inside chain", "from player_stats: sum(kills + and)", "keyword"},
 		{"literal in chain", "from player_stats: sum(kills + 1)", "column name"},
 		{"unknown column in chain", "from player_stats: sum(kills + nope)", "unknown column"},
-		{"condition arithmetic still banned", "from player_stats: count(where opening_kills + opening_deaths > 0)", ""},
+		{"condition arithmetic still banned", "from player_stats: count(where entry_kills + entry_deaths > 0)", ""},
 		{"multiplication not part of the node", "from player_stats: sum(kills * assists)", ""},
 	}
 	for _, c := range reject {

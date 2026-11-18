@@ -107,8 +107,13 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	rounds_played INTEGER NOT NULL DEFAULT 0,
 	entry_kills INTEGER NOT NULL DEFAULT 0,
 	entry_deaths INTEGER NOT NULL DEFAULT 0,
-	opening_kills INTEGER NOT NULL DEFAULT 0,
-	opening_deaths INTEGER NOT NULL DEFAULT 0,
+	-- opening_kills/opening_deaths were RETIRED 2026-11-18: extract
+	-- incremented them in the same first-blood branch as entry_kills/
+	-- entry_deaths (identical stored columns — pinned equal on the
+	-- golden demo), so entry_* is the single attribution and the twins
+	-- had zero readers. Baseline-only schema: this drop rides the
+	-- owner's owed wipe + re-import (make deep-clean CONFIRM=1) —
+	-- there is no migration path by design (AGENTS.md no-versioning).
 	trade_kills INTEGER NOT NULL DEFAULT 0,
 	best_streak INTEGER NOT NULL DEFAULT 0,
 	three_k INTEGER NOT NULL DEFAULT 0,
@@ -1232,19 +1237,19 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
 -- additive sum(a + b) chain is what the duel total needs.
 ('career_opening_rate', 'Opening duels', '',
- 'from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))',
+ 'from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))',
  'profile', 'percent',
- 'Formula: sum(player_stats.opening_kills) / sum(player_stats.opening_kills + player_stats.opening_deaths) — career opening duels won, shown as a percent, addressed per player (the Opening duels card).',
+ 'Formula: sum(player_stats.entry_kills) / sum(player_stats.entry_kills + player_stats.entry_deaths) — career opening duels won, shown as a percent, addressed per player (the Opening duels card).',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_openings', 'Openings', '',
- 'from player_stats: sum(opening_kills + opening_deaths)',
+ 'from player_stats: sum(entry_kills + entry_deaths)',
  'profile', 'int',
- 'Formula: sum(player_stats.opening_kills + player_stats.opening_deaths) — the player''s career opening duels: the opening kill plus the first-blood deaths it produced, addressed per player.',
+ 'Formula: sum(player_stats.entry_kills + player_stats.entry_deaths) — the player''s career opening duels: the opening kill plus the first-blood deaths it produced, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('career_opener_wins', 'Opener wins', '',
- 'from player_stats: sum(opening_kills)',
+ 'from player_stats: sum(entry_kills)',
  'profile', 'int',
- 'Formula: sum(player_stats.opening_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
+ 'Formula: sum(player_stats.entry_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening duels percentage.',
  'builtin', '', CURRENT_TIMESTAMP),
 -- ---- addendum: the M3 combat-damage conversions (2 rows, match
 -- scope, 2026-11-17 — plan §7 M3 / §8): Damage-no-kill and Kill
@@ -1279,11 +1284,11 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- raw player_stats columns (the scoreboard's K/D/MVPs/DMG/Util
 -- columns among them) + 6 profile rows: the career twins of the
 -- scoreboard five and the career match count. score stays UNSEEDED
--- (game-internal composite — its sum has no honest reading);
--- opening_kills/opening_deaths stay UNSEEDED because they are the
--- SAME first-blood attribution stored twice as entry_kills/
--- entry_deaths (extract/agg.go increments both in one branch) — the
--- entry seeds are canonical. All int, no denominator: the rounds
+-- (game-internal composite — its sum has no honest reading); the
+-- opening_kills/opening_deaths twins were retired WITH their columns
+-- (2026-11-18) — extract incremented them in the same first-blood
+-- branch as entry_kills/entry_deaths, so the entry seeds are
+-- canonical. All int, no denominator: the rounds
 -- denominator machinery owns ADR/Entry%, never a raw count.
 ('kills', 'Kills', 'K',
  'from player_stats: sum(kills)',

@@ -80,7 +80,9 @@ func seededStore(t *testing.T) *store.Store {
 // recomputes from total_damage with the `rounds` denominator, owner
 // rule 2026-11-16), rounds_played = 24 (map_adr's per-match divisor
 // matches it — the corpus has no absent-round player), trade_kills = i
-// per match for player i (1..8), entry_kills /
+// per match for player i (1..8), entry_kills = i per match (the
+// 2026-11-18 swap that retired the identical opening_kills column —
+// same values, so every opening-duel expectation kept its number),
 // utility_damage / enemies_flashed are absent → 0, and every player has
 // 72 player_round_stats rows with a 0.5 KAST mean (36 of 72), a 60.0
 // side ADR (4320 damage / 72 rounds), 72 kills / 18 deaths (K/D 4)
@@ -139,14 +141,16 @@ var builtinSeed = []struct {
 		wantN:          3, wantLabels: eightLabels,
 	},
 	{
-		// D7: entry_kills is absent from the corpus's INSERTs → 0 for
-		// everyone; the `rounds` denominator (the subject's 72 career
-		// rounds) is non-NULL, so the value is a plain 0, not
-		// NULL-beside-N.
+		// D7: entry_kills = i per match (the 2026-11-18 swap of the
+		// retired opening_kills column); the preview runs at library
+		// scope, so the value is the career 3i over the seed's `rounds`
+		// denominator (72 career rounds) = i/24 per player.
 		name: "entry_rate", expr: "from player_stats: sum(entry_kills)",
 		scope: "match", format: "percent", shortName: "Entry%", denominator: "rounds",
-		interpretation: "entry (first-blood) kills per round of the match (0 — the corpus records no entry kills)",
-		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+		interpretation: "entry (first-blood) kills per round (corpus: career 3i / 72 rounds)",
+		rows:           8,
+		wantValues:     []float64{3.0 / 72, 6.0 / 72, 9.0 / 72, 12.0 / 72, 15.0 / 72, 18.0 / 72, 21.0 / 72, 24.0 / 72},
+		wantN:          3, wantLabels: eightLabels,
 	},
 	{
 		// D4: sum(headshots)/sum(kills) = 3i/6i = 0.5 for every player.
@@ -298,8 +302,8 @@ var builtinSeed = []struct {
 	{
 		name: "entry_kills", expr: "from player_stats: sum(entry_kills)",
 		scope: "match", format: "int", shortName: "Open K", denominator: "",
-		interpretation: "first bloods (column absent → 0; the corpus writes opening_kills instead, which is why the I4 direct form diverges here)",
-		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+		interpretation: "first bloods (corpus: entry_kills = i per match × 3 matches = 3i — the 2026-11-18 swap of the retired opening_kills column)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
 		name: "entry_deaths", expr: "from player_stats: sum(entry_deaths)",
@@ -545,22 +549,25 @@ var builtinSeed = []struct {
 	// ---- addendum: the opening-duel trio (profile) + the victim-side
 	// duel count (match).
 	{
-		// opening_kills = i per match, opening_deaths absent → the
+		// entry_kills = i per match (the 2026-11-18 swap of the
+		// retired opening_kills column), entry_deaths absent → the
 		// denominator equals the numerator, so the rate is exactly 1.
-		name: "career_opening_rate", expr: "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
+		// The exprs re-pointed opening_* → entry_* with these same
+		// values — zero number movement.
+		name: "career_opening_rate", expr: "from player_stats: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))",
 		scope: "profile", format: "percent", shortName: "", denominator: "",
-		interpretation: "career first-blood duel win share (corpus records no opening deaths → 1.0)",
+		interpretation: "career first-blood duel win share (corpus records no entry deaths → 1.0)",
 		rows:           8, wantAll: 1, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "career_openings", expr: "from player_stats: sum(opening_kills + opening_deaths)",
+		name: "career_openings", expr: "from player_stats: sum(entry_kills + entry_deaths)",
 		scope: "profile", format: "int", shortName: "", denominator: "",
 		interpretation: "career opening duels (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
 		wantLabels: eightLabels,
 	},
 	{
-		name: "career_opener_wins", expr: "from player_stats: sum(opening_kills)",
+		name: "career_opener_wins", expr: "from player_stats: sum(entry_kills)",
 		scope: "profile", format: "int", shortName: "", denominator: "",
 		interpretation: "career opening kills (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
@@ -813,10 +820,12 @@ var builtinSeed = []struct {
 	// from — every player_stats row of the match), labels = the
 	// WINNER's name per match. Corpus math (seed.sql): kills = 2i and
 	// adr = 50+5i rise with i, so Heidi (i=8) leads both outright
-	// (16 kills / 90 ADR); utility_damage and entry_kills are absent
-	// (= 0) and mvps is 1 for every player, so those three TIE across
+	// (16 kills / 90 ADR); utility_damage is absent (= 0) and mvps is
+	// 1 for every player, so those two TIE across
 	// all eight and the deterministic tie-break (player key ASC) names
-	// Alice (…001). The engine-side pins (emission, refusal set,
+	// Alice (…001), while entry_kills = i (the 2026-11-18 swap of the
+	// retired opening_kills column) has Heidi leading at 8. The
+	// engine-side pins (emission, refusal set,
 	// filtered pool, empty pool) live in argmax_test.go.
 	{
 		name: "top_fragger", expr: "from player_stats: argmax(kills)",
@@ -839,8 +848,8 @@ var builtinSeed = []struct {
 	{
 		name: "entry_opens", expr: "from player_stats: argmax(entry_kills)",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
-		interpretation: "the match's round-opening first-blood leader (corpus: column absent → 0 for everyone → tie → Alice by key ASC)",
-		rows:           3, wantValues: []float64{0, 0, 0}, wantN: 8, wantLabels: "Alice,Alice,Alice",
+		interpretation: "the match's round-opening first-blood leader (corpus: entry_kills = i since the 2026-11-18 swap → Heidi, 8)",
+		rows:           3, wantValues: []float64{8, 8, 8}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
 	},
 	{
 		name: "most_mvps", expr: "from player_stats: argmax(mvps)",

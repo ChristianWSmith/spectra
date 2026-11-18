@@ -66,8 +66,8 @@ var sourceColumns = map[string]map[string]bool{
 		"match_id", "steam_id", "side", "name", "kills", "deaths", "assists",
 		"flash_assists", "headshots", "teamkills", "suicides", "mvps", "score",
 		"total_damage", "damage_taken", "shots", "hits", "adr", "hs_pct",
-		"rounds_played", "entry_kills", "entry_deaths", "opening_kills",
-		"opening_deaths", "trade_kills", "best_streak", "two_k", "three_k",
+		"rounds_played", "entry_kills", "entry_deaths",
+		"trade_kills", "best_streak", "two_k", "three_k",
 		"four_k", "five_k", "utility_damage", "enemies_flashed", "flashed_times",
 		"bomb_plants", "bomb_defuses", "money_spent_total",
 		// Row stamps (§5, 2026-11-17): team (the team-subject anchor /

@@ -306,8 +306,6 @@ type PlayerStats struct {
 	RoundsPlayed    int     `json:"roundsPlayed"`
 	EntryKills      int     `json:"entryKills"`
 	EntryDeaths     int     `json:"entryDeaths"`
-	OpeningKills    int     `json:"openingKills"`
-	OpeningDeaths   int     `json:"openingDeaths"`
 	TradeKills      int     `json:"tradeKills"`
 	BestStreak      int     `json:"bestStreak"`
 	TwoK            int     `json:"twoK"`

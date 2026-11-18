@@ -131,9 +131,11 @@ func TestArgmaxEmissionShape(t *testing.T) {
 // M1 stat per match, the companion value, and N = the pool (8 players —
 // every player_stats row of the match passes humans-only). Corpus
 // math: kills = 2i and adr = 50+5i rise with i, so Heidi (i=8) leads
-// both outright; utility_damage / entry_kills are absent (= 0) and
-// mvps is 1 for everyone, so those three TIE and the deterministic
-// tie-break (player key ASC) names Alice (…001).
+// both outright; utility_damage is absent (= 0) and mvps is 1 for
+// everyone, so those two TIE and the deterministic
+// tie-break (player key ASC) names Alice (…001); entry_kills = i (the
+// 2026-11-18 swap of the retired opening_kills column) has Heidi
+// leading at 8.
 func TestArgmaxCorpusIdentities(t *testing.T) {
 	st := seededStore(t)
 	const heidi = "76561198000000008"
@@ -147,7 +149,7 @@ func TestArgmaxCorpusIdentities(t *testing.T) {
 		{"from player_stats: argmax(kills)", heidi, "Heidi", 16},
 		{"from player_stats: argmax(adr)", heidi, "Heidi", 90},
 		{"from player_stats: argmax(utility_damage)", alice, "Alice", 0},
-		{"from player_stats: argmax(entry_kills)", alice, "Alice", 0},
+		{"from player_stats: argmax(entry_kills)", heidi, "Heidi", 8},
 		{"from player_stats: argmax(mvps)", alice, "Alice", 1},
 	}
 	for _, c := range cases {

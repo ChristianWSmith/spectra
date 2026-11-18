@@ -858,7 +858,7 @@ console.log(
     },
     {
       id: 71, name: 'career_opening_rate', title: 'Opening duels', scope: 'profile',
-      format: 'percent', doc: 'Formula: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))', origin: 'builtin',
+      format: 'percent', doc: 'Formula: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))', origin: 'builtin',
     },
     {
       id: 65, name: 'career_kast', title: 'KAST%', scope: 'profile',

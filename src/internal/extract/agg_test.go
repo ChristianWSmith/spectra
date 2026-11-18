@@ -177,11 +177,11 @@ func TestEntryOpeningAttribution(t *testing.T) {
 	})
 
 	kp, vp := a.players[10], a.players[20]
-	if kp == nil || kp.entryKills != 1 || kp.openingKills != 1 {
-		t.Fatalf("first-blood killer entry/opening = %+v, want 1/1", kp)
+	if kp == nil || kp.entryKills != 1 {
+		t.Fatalf("first-blood killer entry kills = %+v, want 1", kp)
 	}
-	if vp == nil || vp.entryDeaths != 1 || vp.openingDeaths != 1 {
-		t.Fatalf("first-blood victim entry/opening deaths = %+v, want 1/1", vp)
+	if vp == nil || vp.entryDeaths != 1 {
+		t.Fatalf("first-blood victim entry deaths = %+v, want 1", vp)
 	}
 	r := a.rounds[0]
 	if r.firstKillSteam != "10" || r.firstDeathSteam != "20" {
@@ -195,10 +195,10 @@ func TestEntryOpeningAttribution(t *testing.T) {
 		victimKey: 21, victimName: "seconddead", victimSide: "t",
 		weapon: "AK-47",
 	})
-	if p := a.players[11]; p == nil || p.entryKills != 0 || p.openingKills != 0 {
+	if p := a.players[11]; p == nil || p.entryKills != 0 {
 		t.Fatalf("second kill must not count as entry: %+v", p)
 	}
-	if p := a.players[21]; p == nil || p.entryDeaths != 0 || p.openingDeaths != 0 {
+	if p := a.players[21]; p == nil || p.entryDeaths != 0 {
 		t.Fatalf("second death must not count as entry death: %+v", p)
 	}
 }

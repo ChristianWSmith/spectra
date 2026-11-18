@@ -156,7 +156,7 @@ func generateCorpus(n int) string {
 	emit("matches", "path,sha256,size,map,tick_rate,duration_ticks,playback_time_s,frames,server_name,client_name,game_dir,net_proto,real_rounds,score_ct,score_t,half_ct,half_t,side_switches,parser_version,extracted_at,parse_ms,warnings_count,status", matches)
 	emit("teams", "match_id,side,name,flag,score", teams)
 	emit("players", "match_id,steam_id,name,is_bot,side", players)
-	emit("player_stats", "match_id,steam_id,side,name,kills,deaths,assists,headshots,mvps,score,total_damage,damage_taken,adr,hs_pct,rounds_played,opening_kills,trade_kills,money_spent_total", pstats)
+	emit("player_stats", "match_id,steam_id,side,name,kills,deaths,assists,headshots,mvps,score,total_damage,damage_taken,adr,hs_pct,rounds_played,entry_kills,trade_kills,money_spent_total", pstats)
 	emit("rounds", "match_id,number,winner,reason,duration_s,start_tick,end_tick,mvp,equip_ct,equip_t,freeze_end_tick,first_kill_steam,first_death_steam", rounds)
 	emit("round_economy", "match_id,round,side,equip_value,money_sampled_sum,money_samples", econ)
 	emit("events", "match_id,seq,tick,round,kind,attacker,victim,weapon,headshot,wallbang,through_smoke,attacker_blind,assisted_flash,distance,hitgroup,dmg", events)
