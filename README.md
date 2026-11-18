@@ -8,9 +8,9 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 
 - Fully offline: demos and their data stay on your machine — no account, no
   sign-in, no upload, no subscription
-- Import `.dem` / `.dem.zst` demos (picker or drag-and-drop) with background
-  parsing, progress, and SHA-256 duplicate detection — originals are never
-  modified
+- Import `.dem` / `.dem.zst` demos (picker, drag-and-drop, or watched
+  folders you nominate) with background parsing, progress, and SHA-256
+  duplicate detection — originals are never modified
 - Match library with map and player filters: re-run imports, delete a
   match’s data (optionally the file too), per-match parser version and
   import warnings

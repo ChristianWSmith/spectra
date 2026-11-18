@@ -567,7 +567,7 @@ Notes on how they behave:
 
 - **The scoreboard's own numbers**, match-scoped (\`kills\`, \`deaths\`, \`mvps\`, \`total_damage\`, \`utility_damage\`, \`kda\`, \`adr\`, \`trade_rate\`, \`kast\`, \`kd\`, \`dmg_no_kill\`, \`kill_conversion\`) with career twins (\`career_kills\`, \`career_kd\`, \`career_kast\`, \`win_pct\`, …).
 - **Rounds, openings and clutches** (\`eng_opening\`, \`eng_trade\`, \`clutches\`, \`clutch_win_rate\`, \`pistol_rounds\`, \`round_label_eco\`, …).
-- **Match-level and team-level answers** — addressed to the match itself (\`lost_equip\`, \`avg_equip_gap\`, \`pistol_hold\`) or to each team (\`team_force_win_rate\`, \`team_lost_equip\`).
+- **Match-level and team-level answers** — addressed to the match itself (\`lost_equip\`, \`avg_equip_gap\`, \`pistol_hold\`) or to each team (\`team_force_win_rate\`, \`team_force_wins\`, \`team_force_rounds\`, \`team_lost_equip\`).
 - **Who led — identity metrics whose value is a player**: \`top_fragger\`, \`best_adr\`, \`most_util\`, \`entry_opens\`, \`most_mvps\`.
 - **Per-side, per-map and per-weapon career tables** — partitioned metrics (\`side_win_pct\`, \`side_adr\`, \`map_win_pct\`, \`map_kd\`, \`weapon_kills\`, \`weapon_damage\`, …).
 
