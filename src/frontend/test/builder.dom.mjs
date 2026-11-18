@@ -1114,39 +1114,60 @@ await closeFilters(r);
 console.log('C2. the Subject group narrows the same server call (the metrics subject axis)');
 {
   // The block runs on whatever filter state section C left (like every
-  // section before it) and pins the SUBJECT token's position (arg 4) plus
-  // the rows it lets through — the baseline rows are captured with the
-  // subject group all-on, which is what the default view is.
+  // section before it) and pins the SUBJECT token's position (arg 4),
+  // each subject ALONE, a combination, the empty set and the all-on
+  // default — the baseline rows are captured with the subject group
+  // all-on, which is what the default view is.
   await openFilters(r);
   await setSubjBox(r, 'Player', true);
   await setSubjBox(r, 'Match', true);
   await setSubjBox(r, 'Team', true);
   await sleep(DEBOUNCE);
   const baselineRows = namesOf(r);
+  const subjArg = () => pageCalls[pageCalls.length - 1]?.[3];
   pageCalls.length = 0;
   await setSubjBox(r, 'Player', false);
   await sleep(DEBOUNCE);
   check(
-    'Player off → subject token "match,team" (arg 4) — the match- and team-subject rows survive',
-    pageCalls[0]?.[3] === 'match,team' &&
+    'Player off → subject token "match,team" (arg 4): the match- and team-subject rows survive',
+    subjArg() === 'match,team' &&
       JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd', 'plug_stat']),
-    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   pageCalls.length = 0;
   await setSubjBox(r, 'Match', false);
   await sleep(DEBOUNCE);
   check(
-    'Match off too → subject token "team"',
-    pageCalls[0]?.[3] === 'team' && JSON.stringify(namesOf(r)) === JSON.stringify(['plug_stat']),
-    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+    'Team alone → subject token "team"',
+    subjArg() === 'team' && JSON.stringify(namesOf(r)) === JSON.stringify(['plug_stat']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   pageCalls.length = 0;
+  await setSubjBox(r, 'Player', true);
   await setSubjBox(r, 'Team', false);
   await sleep(DEBOUNCE);
   check(
+    'Player alone → subject token "player"',
+    subjArg() === 'player' &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Player', false);
+  await setSubjBox(r, 'Match', true);
+  await sleep(DEBOUNCE);
+  check(
+    'Match alone → subject token "match"',
+    subjArg() === 'match' && JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd']),
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  pageCalls.length = 0;
+  await setSubjBox(r, 'Match', false);
+  await sleep(DEBOUNCE);
+  check(
     'all three Subject boxes off → subject "none" (the legal empty read)',
-    pageCalls[0]?.[3] === 'none' && rowsOf(r).length === 0,
-    JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+    subjArg() === 'none' && rowsOf(r).length === 0,
+    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + rowsOf(r).length,
   );
   // The restored all-on word is the DEFAULT state's own args (section A
   // already read them once), so it would hit the read cache and issue no
@@ -1159,8 +1180,7 @@ console.log('C2. the Subject group narrows the same server call (the metrics sub
   await sleep(DEBOUNCE);
   check(
     'all three back on → subject "" (no predicate): the default view is unchanged',
-    pageCalls[pageCalls.length - 1]?.[3] === '' &&
-      JSON.stringify(namesOf(r)) === JSON.stringify(baselineRows),
+    subjArg() === '' && JSON.stringify(namesOf(r)) === JSON.stringify(baselineRows),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
 }
