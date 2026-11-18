@@ -198,8 +198,8 @@
 //     row's value.
 //
 // Worked: from rounds, round_classifications: ratio(count(where label =
-// 'pistol' and winner != '' and next(winner) = winner), count(where
-// label = 'pistol' and winner != '')) — pistol rounds won whose winner
+// 'pistol' and winner != ” and next(winner) = winner), count(where
+// label = 'pistol' and winner != ”)) — pistol rounds won whose winner
 // also won the immediately following round (the Economy card's
 // held ÷ won), each count a condition over the joined sources.
 //
@@ -237,7 +237,7 @@
 //     column-name productions (pinned in metrics_test.go and
 //     rowdifference_test.go).
 //
-// Worked: from rounds: avg(where winner != '', diff(equip_ct, equip_t,
+// Worked: from rounds: avg(where winner != ”, diff(equip_ct, equip_t,
 // winner = 'ct')) — mean over decided rounds of (winner equip − loser
 // equip), the Economy card's average equipment gap.
 //

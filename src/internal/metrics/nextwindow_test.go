@@ -51,11 +51,11 @@ func TestNextWindowRefusals(t *testing.T) {
 	// is a condition, never this row's value.
 	const valueMsg = "next() is a round window — it can only appear where a condition is accepted"
 	for _, expr := range []string{
-		"from rounds: next(winner)",                     // top-level aggregation
-		"from rounds: ratio(next(winner), count())",     // ratio() operand
-		"from rounds: avg(next(winner))",                // column argument
-		"from rounds: sum(number + next(winner))",       // additive chain term
-		"from rounds: max(sum(number), next(winner))",   // scalar min/max term
+		"from rounds: next(winner)",                   // top-level aggregation
+		"from rounds: ratio(next(winner), count())",   // ratio() operand
+		"from rounds: avg(next(winner))",              // column argument
+		"from rounds: sum(number + next(winner))",     // additive chain term
+		"from rounds: max(sum(number), next(winner))", // scalar min/max term
 	} {
 		_, perr := Compile(expr, "", "", Address{Subject: "match"})
 		if perr == nil {

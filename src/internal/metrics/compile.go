@@ -781,6 +781,31 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 	if p := checkCond(a.Count, false); p != nil {
 		return p
 	}
+	// The row difference's operands (doc.go "Row difference"): BOTH are
+	// columns of the SAME row of the PRIMARY source — a cross-source
+	// subtraction is not a row difference (its own message; the
+	// "incompatible subjects" refusal), unknown columns keep the
+	// unknown-column copy. The orientation condition walks like any
+	// condition column.
+	if a.DiffCond != nil {
+		for _, d := range []struct {
+			col string
+			pos int
+		}{{a.DiffA, a.DiffAPos}, {a.DiffB, a.DiffBPos}} {
+			if sourceColumns[res.primary][d.col] {
+				continue
+			}
+			if owner, other := res.owners[d.col]; other {
+				return errf(d.pos,
+					"diff() subtracts two values of the same row of the primary source %q — %q belongs to %q (a row difference is not a cross-source operation)",
+					res.primary, d.col, owner)
+			}
+			return res.unresolved(d.col, d.pos)
+		}
+		if p := checkCond(a.DiffCond, false); p != nil {
+			return p
+		}
+	}
 	if a.Col != "" || a.Terms != nil {
 		if a.Terms != nil {
 			for i, tm := range a.Terms {
@@ -1474,10 +1499,26 @@ func (e *emitter) emitValue(a *Agg) {
 	}
 }
 
-// emitTerms writes the value term(s): the single qualified column (the
-// byte-stable form — Terms == nil, which every pre-chain expression
-// parses with) or sum()'s additive column chain `q1 + q2 + …`.
+// emitTerms writes the value term(s): the row-difference transform when
+// present (the oriented CASE — doc.go "Row difference"), otherwise the
+// single qualified column (the byte-stable form — Terms == nil, which
+// every pre-diff expression parses with) or sum()'s additive column
+// chain `q1 + q2 + …`.
 func (e *emitter) emitTerms(a *Agg) {
+	if a.DiffCond != nil {
+		e.sb.WriteString("(CASE WHEN ")
+		e.emitCond(a.DiffCond)
+		e.sb.WriteString(" THEN (")
+		e.emitDiffCol(a.DiffA)
+		e.sb.WriteString(" - ")
+		e.emitDiffCol(a.DiffB)
+		e.sb.WriteString(") ELSE (")
+		e.emitDiffCol(a.DiffB)
+		e.sb.WriteString(" - ")
+		e.emitDiffCol(a.DiffA)
+		e.sb.WriteString(") END)")
+		return
+	}
 	if a.Terms == nil {
 		e.sb.WriteString(e.res.qualify(a.Col))
 		return
@@ -1488,6 +1529,20 @@ func (e *emitter) emitTerms(a *Agg) {
 		}
 		e.sb.WriteString(e.res.qualify(tm))
 	}
+}
+
+// emitDiffCol writes one diff() operand: ALWAYS the primary's own
+// column (validation accepted only primary columns, and it qualifies
+// them directly — like the subject keys — so a column the owners map
+// sees as multi-owned can never be emitted ambiguously).
+func (e *emitter) emitDiffCol(col string) {
+	if e.res.joined {
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".")
+		e.sb.WriteString(col)
+		return
+	}
+	e.sb.WriteString(col)
 }
 
 // emitStddevX writes the stddev operand (repeated per textual position —
