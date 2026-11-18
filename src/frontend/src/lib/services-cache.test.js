@@ -646,14 +646,14 @@ test('listMetricsPage is read-cached (all four filters in the key) and flushes w
   await p1;
   assert.equal(bindings.callCount('ListMetricsPage'), 1, 'backend called once');
 
-  const mine = services.listMetricsPage('', 'mine', '', '', '', 0, 100);
+  const nonBuiltin = services.listMetricsPage('', 'user,plugin', '', '', '', 0, 100);
   const profile = services.listMetricsPage('', '', 'profile', '', '', 0, 100);
   const rounds = services.listMetricsPage('', '', '', 'rounds', '', 0, 100);
   const none = services.listMetricsPage('', '', '', '', 'none', 0, 100);
   const fmt = services.listMetricsPage('', '', '', '', 'auto,int', 0, 100);
   const next = services.listMetricsPage('', '', '', '', '', 42, 100);
   const q = services.listMetricsPage('adr', '', '', '', '', 0, 100);
-  assert.notEqual(mine, p1, 'originFilter is part of the key');
+  assert.notEqual(nonBuiltin, p1, 'originFilter is part of the key');
   assert.notEqual(profile, p1, 'scopeFilter is part of the key');
   assert.notEqual(rounds, p1, 'denomFilter is part of the key');
   assert.notEqual(none, rounds, 'every denom word is its own key entry');
@@ -661,7 +661,7 @@ test('listMetricsPage is read-cached (all four filters in the key) and flushes w
   assert.notEqual(fmt, none, 'every format word is its own key entry');
   assert.notEqual(next, p1, 'afterID is part of the key');
   assert.notEqual(q, p1, 'query is part of the key');
-  await Promise.all([mine, profile, rounds, none, fmt, next, q]);
+  await Promise.all([nonBuiltin, profile, rounds, none, fmt, next, q]);
   assert.equal(bindings.callCount('ListMetricsPage'), 8);
 
   // A spectra:* data event flushes it like every other cached read.

@@ -29,6 +29,7 @@
   import { fmtInt, fmtMetric } from '../fmt.js';
   import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
   import { denomFilterWord } from '../metricdenoms.js';
+  import { originFilterWord } from '../metricorigins.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
@@ -181,9 +182,11 @@
     form: newForm(),
     baseline: '',
     query: '',
-    // Origin group: the owner's STANDING default — Built-in OFF, My
-    // metrics ON — so the initial view lists the user's own metrics
-    // (user + plugin). The Scope and Denominator groups start ALL their
+    // Origin group: the owner's STANDING default — Built-in OFF, the
+    // two other origins ON — so the initial view lists every
+    // non-builtin metric (user + plugin), the same rows the group
+    // showed before it gained its third box. The Scope and Denominator
+    // groups start ALL their
     // options ON (the owner's addendum: "both scopes and both
     // denominators toggled on"; the Denominator group gained its third
     // None box with Reading B, 2026-11-16, also ON), so neither narrows
@@ -191,7 +194,8 @@
     // option goes off (originFilter / scopeFilter / denomFilter below),
     // and all-off is legal in every group.
     builtin: false,
-    mine: true,
+    custom: true,
+    plugin: true,
     scopeMatch: true,
     scopeProfile: true,
     denomRounds: true,
@@ -216,7 +220,8 @@
   let baseline = $state(bldSeed.baseline);
   let query = $state(bldSeed.query);
   let builtin = $state(bldSeed.builtin);
-  let mine = $state(bldSeed.mine);
+  let custom = $state(bldSeed.custom);
+  let plugin = $state(bldSeed.plugin);
   let scopeMatch = $state(bldSeed.scopeMatch);
   let scopeProfile = $state(bldSeed.scopeProfile);
   let denomRounds = $state(bldSeed.denomRounds);
@@ -236,7 +241,8 @@
       baseline,
       query,
       builtin,
-      mine,
+      custom,
+      plugin,
       scopeMatch,
       scopeProfile,
       denomRounds,
@@ -463,21 +469,19 @@
   const saveDisabled = $derived(saving || builtinLoaded);
 
   // originFilter — THE one checked-set → server-word derivation (the
-  // multi-select's Origin group): both checked = the whole catalog
-  // (''), Built-in only / My metrics only = the store's partition words,
-  // neither checked = 'none' (an empty list — legal, it falls out of the
-  // same read path). "mine" is the store's complement (origin <>
-  // 'builtin': user + plugin), so the options can never disagree with
-  // the store about what "mine" means. It rides the list read's args —
-  // see refreshList — so it restarts the window exactly like a search
-  // change does (the effect below reads it) and joins listMetricsPage's
-  // cache key for free (services.js).
-  const originFilter = $derived.by(() => {
-    if (builtin && mine) return '';
-    if (builtin) return 'builtin';
-    if (mine) return 'mine';
-    return 'none';
-  });
+  // multi-select's Origin group): the group's boxes are exactly the
+  // origin column's three values (Built-in / Custom / Plugin), so the
+  // word is originFilterWord's canonical comma-subset of the checked
+  // set — all three = '' (no predicate), none = 'none', otherwise the
+  // subset ("builtin,plugin") — the ONE composer in lib/metricorigins.js
+  // mirroring the store's metricOriginTokens, so the options can never
+  // disagree with the store about what an origin means. It rides the
+  // list read's args — see refreshList — so it restarts the window
+  // exactly like a search change does (the effect below reads it) and
+  // joins listMetricsPage's cache key for free (services.js).
+  const originFilter = $derived(
+    originFilterWord({ builtin, user: custom, plugin }),
+  );
 
   // scopeFilter / denomFilter — the SAME derivation over the other two
   // SERVER-side groups (Match / Profile, Rounds / Matches / None). The
@@ -1265,9 +1269,16 @@
                 <label class="filt-check"
                   ><input
                     type="checkbox"
-                    checked={mine}
-                    onchange={(e) => (mine = e.currentTarget.checked)}
-                  /> {S.builder.filterMyMetrics}</label
+                    checked={custom}
+                    onchange={(e) => (custom = e.currentTarget.checked)}
+                  /> {S.builder.filterCustom}</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={plugin}
+                    onchange={(e) => (plugin = e.currentTarget.checked)}
+                  /> {S.builder.filterPlugin}</label
                 >
               </div>
               <div class="bld-filter-group" role="group" aria-label={S.builder.scopeLabel}>

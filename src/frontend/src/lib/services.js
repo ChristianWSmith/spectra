@@ -769,8 +769,10 @@ export function listMetrics() {
 // same canonical order as listMetrics, ONE window of `limit` rows
 // strictly after `afterID` (0 = the first window), narrowed SERVER-side
 // by `query` (case-insensitive LIKE over name/title) AND by the four
-// SERVER-side filter groups — `originFilter` (Built-in / My metrics: '' = both,
-// 'builtin', 'mine' = user + plugin, 'none' = both off),
+// SERVER-side filter groups — `originFilter` (the Origin group's checked
+// set: '' = every box, 'none' = no box, or the canonical comma-subset of
+// builtin/user/plugin where 'user' is the Custom box and 'plugin' the
+// Plugin box — store.ListMetricsPage's vocabulary),
 // `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none'),
 // `denomFilter` (Denominator: '' = every box, 'empty' = no box, or the
 // canonical comma-subset of the three bucket tokens rounds/matches/none

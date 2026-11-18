@@ -20,7 +20,7 @@ export const reportbuilder = {
   searchPlaceholder: 'Search templates…',
   originLabel: 'Origin',
   filterBuiltIn: 'Built-in',
-  filterYours: 'Yours',
+  filterCustom: 'Custom',
   filterPlugin: 'Plugin',
 
   // empty states
