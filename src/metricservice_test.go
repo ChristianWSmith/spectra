@@ -371,7 +371,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// Every filter empty = the whole canonical list — the five filter
 	// slots really are the filters (a stray value would narrow this).
 	// The limit is explicit: the seed count now exceeds the store's
-	// default window (plan §8 (M5/M6 rows) re-pin — 104 rows > 100), so
+	// default window (plan §8 (M8 rows) re-pin — 106 rows > 100), so
 	// limit 0's default window could no longer hold the whole list.
 	page, err := svc.ListMetricsPage("", "", "", "", "", 0, len(all))
 	if err != nil {
