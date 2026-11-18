@@ -198,8 +198,8 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	// 2026-11-17 (106 builtins / 74 match + 32 profile): the two M8
 	// rows Phase 4 deferred as inexpressible, over the next() round
 	// window and the diff() row difference.
-	"pistol_hold":    {"match", "percent", ""},
-	"avg_equip_gap":  {"match", "currency", ""},
+	"pistol_hold":   {"match", "percent", ""},
+	"avg_equip_gap": {"match", "currency", ""},
 }
 
 // nonPlayerSubjects is the subject-axis pin beside the shape map: the
