@@ -130,28 +130,37 @@
   ];
 
   // The Overview top cards' IDENTITY seeds (metrics expansion M1,
-  // migrated 2026-11-18 — Phase 7's surfaces hand-off): the five
-  // argmax built-ins are THE selection for the top-card who (the
-  // ad-hoc maxBy over viewRows died with this migration — stored
-  // values are offered, never recomputed). They ride the SAME catalog
-  // read and the SAME ONE stored read as the fixed slots below
-  // (unioned into `fixed` by name — a name the catalog lacks keeps the
-  // honest no-card, never a guessed winner). The DISPLAY composition
-  // stays the roster line (canonical raw columns — K/D/A, ADR, util,
-  // entry, MVPs are data, not metrics): the seed picks WHO, the
-  // winner's own scoreboard line renders the number. Tie-break: the
-  // seed's ratified rule (player-key ASC — doc.go "Identity values")
-  // wins over the retired first-row rule wherever they disagree.
+  // migrated 2026-11-18 — Phase 7's surfaces hand-off; numbers
+  // metric-sourced 2026-11-18 — owner item 4, "leverage the metric
+  // rather than querying directly"): the five argmax built-ins are THE
+  // selection for the top-card who (the ad-hoc maxBy over viewRows died
+  // with this migration — stored values are offered, never recomputed).
+  // They ride the SAME catalog read and the SAME ONE stored read as the
+  // fixed slots below (unioned into `fixed` by name — a name the
+  // catalog lacks keeps the honest no-card, never a guessed winner).
+  // WHO = the identity row's stored valueKey (roster row by that key —
+  // the display line only NAMES it). NUMBER = the winner's stored
+  // metric row through the W36 named-slot path (seededText /
+  // rosterKda over `fixedCols` — pins-independent, one unioned read,
+  // never per-card fetches): the raw roster fields behind the DTO are
+  // never read for a card number (a not-yet-swept metric shows the
+  // honest dash, never the raw field — never a raw number, per the
+  // skip rule). Tie-break: the seed's ratified rule (player-key ASC —
+  // doc.go "Identity values") wins over the retired first-row rule
+  // wherever they disagree.
   const TOP_CARD_SLOTS = ['top_fragger', 'best_adr', 'most_util', 'entry_opens', 'most_mvps'];
 
-  // The cards' spec: seed name → label + the roster-line display
-  // composition (byte-identical strings to the pre-migration cards).
+  // The cards' spec: seed name → label + the metric-sourced display
+  // composition (byte-identical strings to the raw-composed cards for
+  // fresh equal values — the pin is the SOURCE: seed row, never the
+  // roster field). Each card reads its stat's named slot below; the
+  // K/D/A card composes all three halves exactly like the roster line.
   const TOP_CARDS = [
-    { name: 'top_fragger', label: 'Top fragger', compose: (p) => `${p.kills}/${p.deaths}/${p.assists}` },
-    { name: 'best_adr', label: 'Best ADR', compose: (p) => fmt1(p.adr) },
-    { name: 'most_util', label: 'Most util', compose: (p) => `${p.utilityDamage}` },
-    { name: 'entry_opens', label: 'Entry opens', compose: (p) => `${p.entryKills}` },
-    { name: 'most_mvps', label: 'Most MVPs', compose: (p) => `${p.mvps}` },
+    { name: 'top_fragger', label: 'Top fragger', compose: (p) => rosterKda(p).text },
+    { name: 'best_adr', label: 'Best ADR', compose: (p) => seededText('adr', p) },
+    { name: 'most_util', label: 'Most util', compose: (p) => seededText('utility_damage', p) },
+    { name: 'entry_opens', label: 'Entry opens', compose: (p) => seededText('entry_kills', p) },
+    { name: 'most_mvps', label: 'Most MVPs', compose: (p) => seededText('mvps', p) },
   ];
 
   // The fixed block's `short` → its SCORE_COLS entry (the composed
@@ -332,17 +341,27 @@
   // seed WITHOUT being a pinned column read their metric BY NAME —
   // pins-independent, unioned into the ONE stored read below (an
   // unpinned metric still fills its cell — the kast precedent). Today:
-  // `assists`, `kills`, `deaths` (the roster K/D/A triples) and `adr`
+  // `assists`, `kills`, `deaths` (the roster K/D/A triples), `adr`
   // (the roster ADR chips — the M9 item: the chip reads the seed row,
-  // never `ps.adr`). The five scoreboard count cells LEFT with the
-  // unification of 2026-11-18 (owner, "fully dogfooded"): as pinned
-  // metric columns they read through `metricCols` like every other
-  // column, so they are no longer named slots here (the roster triple
-  // keeps ITS three names — that display is not a scoreboard column).
-  // The entry_kills / entry_deaths slots had already left with w13d
-  // (owner, 2026-11-16): the Opening K/D compound cell they fed is
-  // gone and both halves render as their own pinned metric columns.
-  const FIXED_SLOTS = ['assists', 'kills', 'deaths', 'adr'];
+  // never `ps.adr`) and `utility_damage`, `entry_kills`, `mvps` (the
+  // Overview top cards' NUMBERS — owner item 4 of 2026-11-18: every
+  // card number reads its stat's stored row through this same path,
+  // never the raw roster field). The five scoreboard count cells LEFT
+  // their slot with the unification of 2026-11-18 (owner, "fully
+  // dogfooded"): as pinned metric columns they read through
+  // `metricCols` like every other column (the roster triple and the
+  // cards keep THEIR names — those displays are not scoreboard
+  // columns). The entry_deaths slot had already left with w13d (owner,
+  // 2026-11-16): the Opening K/D compound cell is gone.
+  const FIXED_SLOTS = [
+    'assists',
+    'kills',
+    'deaths',
+    'adr',
+    'utility_damage',
+    'entry_kills',
+    'mvps',
+  ];
   // name → columnOf() data for each fixed slot the catalog carried
   // (empty until the read lands; a name the catalog lacks stays absent
   // → the honest dash, never a guessed number).
@@ -833,6 +852,20 @@
     return metricPresentation(st, mc.map.get(p.steamId) || null, mc.unitHasRows);
   }
 
+  // seededText — one named slot's stored value as an OVERVIEW CARD's
+  // number (owner item 4, 2026-11-18): the W36 pattern over fixedPres —
+  // fresh → the stored row through the twin metric's own format tag;
+  // anything else (read in flight / no slot / no row / non-fresh state)
+  // → the honest dash. A card number is NEVER the raw roster field
+  // behind it: the metric row is THE value, and where a not-yet-swept
+  // metric disagrees with the raw column, the metric wins (no raw
+  // fallback — the same ruling that moved the cells off cellText).
+  function seededText(name, p) {
+    const pres = fixedPres(name, p);
+    if (pres.kind !== 'value') return '—';
+    return fmtMetric(pres.value, fixedCols.get(name)?.def.format || '');
+  }
+
   // fixedTitle — one fixed slot's tooltip (the Combat slot pattern):
   // fresh → the seed's OWN `doc` (the Formula — the tooltip medium the
   // tiering rule measures wholesale; owner ruling 2026-11-17: a seeded
@@ -1068,11 +1101,13 @@
   }
 
   // The Overview top cards — SELECTION from the identity seeds
-  // (TOP_CARD_SLOTS above, metrics M1 migration 2026-11-18):
-  //   fresh identity row → the card: the winner's roster line picks
-  //     the display (name, team color, K/D/A composition) and the
-  //     stored valueKey picks WHO — an unresolved key renders NO card
-  //     (§3.3: never a fabricated name);
+  // (TOP_CARD_SLOTS above, metrics M1 migration 2026-11-18; numbers
+  // from stored metric rows since owner item 4, 2026-11-18):
+  //   fresh identity row → the card: the stored valueKey picks WHO (the
+  //     roster line NAMES it — name, team color, profile link), the
+  //     winner's stored metric row supplies the NUMBER (compose over
+  //     seededText / rosterKda — never the raw roster field), and an
+  //     unresolved key renders NO card (§3.3: never a fabricated name);
   //   no stored row → NO card (the empty-pool rule — an empty roster
   //     lands here too, so the empty-set guard is the seed's own);
   //   a state (processing / failed / behind) → the card with the
