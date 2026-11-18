@@ -33,6 +33,12 @@ root docs stay untracked; these do not).
    against a scratch/in-memory database or existing dev DB, never schema
    changes, never app code. The real prototype rides PLAN.md.
 
+## Owner rulings (live)
+
+- **2026-11-18 — pre-release breakage is free:** we are pre-release; schema and seed changes break whatever they need to, no compatibility paths, no ensure-column anything. Where verification is a concern, **cut a pre-migration database snapshot before the wipe** and diff metric values+N match-by-match after re-import — the sanctioned comparison instrument for the whole program. Applies directly to Step 2's stamp-drop decision (`events.same_side`/`capped_dmg`/`attacker_inair` drops are ON the table, coordinated with rewrites of the three seeds that reference them).
+
+---
+
 ## The acceptance bar (carried into every step)
 
 **Component parity:** everything currently shown in the match and profile views
