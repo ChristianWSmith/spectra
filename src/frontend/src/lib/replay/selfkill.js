@@ -18,11 +18,13 @@
 // the death marker. Raw event reads, the events table and CSV/JSON
 // exports keep the record untouched.
 //
-// Twins: the Go rule (internal/analytics/rounds.go PlayerRounds — no stat
-// for the pair) and the playhead stats fold (replay/livestats.js
-// foldEvent, same criterion inline). livestats.js is fenced to another
-// wave in flight right now — consolidating its inline copy onto this
-// module is the queued follow-up (cross-ref noted, not edited).
+// Twins: one criterion, three named homes, each cross-referencing the
+// others by name (the folds' consolidation landed 2026-11-18) — the
+// stored Go fold (internal/analytics/rounds.go PlayerRounds — no stat
+// for the pair), the playhead stats fold (replay/livestats.js
+// foldEvent — imports THIS predicate, it no longer carries its own
+// copy) and this module (the render surfaces: feed list, kill ticker,
+// death marker).
 
 // disconnectSet — the (player, tick) disconnect SET built from a match's
 // player_disconnect rows (EventRow.attacker carries the leaver's
@@ -46,7 +48,8 @@ export function disconnectSet(rows) {
 
 // isDisconnectSelfKill — THE predicate: is this row a kill that is the
 // disconnect side effect for its own victim? All four must hold:
-// a kill row, attacker === victim (a self-kill), weapon 'World', and a
+// a kill row, attacker === victim (a self-kill), weapon 'World' (the
+// spelling of Go's analytics.go WorldWeapon — never vary it), and a
 // player_disconnect for that victim on that exact tick in `set`.
 // Anything else (a genuine world-hazard self-kill with no same-tick
 // disconnect, an attacker≠victim kill, a missing set) is NOT the
