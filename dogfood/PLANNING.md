@@ -61,11 +61,14 @@ empty pool, five metric states, no fabricated zeros).
 - [ ] **Step 2 — tick-state design** → `dogfood/02-TICK-STATE.md`
       (depends: 1). Density/derived-feature policy, schema shape, ingest path,
       sidecar relationship, what rides the owner's wipe.
-- [ ] **Step 3 — query language + five rules, rule-3 prototype** →
+- [x] **Step 3 — query language + five rules, rule-3 prototype** →
       `dogfood/03-QUERIES.md` (depends: 1). **The crux:** worked examples
       proving N derivation/declaration for ratios, rates, per-round aggregates,
       identities, percentiles. Sugar→SQL IR shape, output-shape validation,
-      freshness-by-table-set.
+      freshness-by-table-set. **DONE 2026-11-18 — crux PASSED for all five
+      shapes** (executed against scratch DB); derivation ladder + `n_pool`
+      declaration + `src_*` view rule settled; two owner rulings pending
+      (formula display two-field vs one, rule_version axis lift).
 - [ ] **Step 4 — components + parity inventory** → `dogfood/04-COMPONENTS.md`
       (depends: 1; shape vocabulary from the manifesto, cross-checked against
       3 when it lands). Component grammar, input contracts, controls→parameters,
