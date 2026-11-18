@@ -137,10 +137,11 @@
   // Demos sitting in the configured import dirs (Settings → "Import
   // dirs") that are not in the library yet — each with a one-click
   // Import that runs through the same pipeline as drag-and-drop, plus a
-  // confirmed delete-from-disk for the file itself. A file the queue
-  // owns (pendingDemoPaths) is NOT listed here at all: it appears only
-  // as the synthetic job row in the table above (demoRows below) —
-  // never on both tables (owner, 2026-11-17).
+  // confirmed delete-from-disk for the file itself. A file a live import
+  // job claims (claimedImportPaths) is NOT listed here at all: it shows
+  // only as its job in the table above — the synthetic row while it has
+  // no match row, its match row after (demoRows below) — never on both
+  // tables (owner, 2026-11-17).
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // The scan's progress point (spectra:scan-progress → StatusChip): 0 while
@@ -263,13 +264,25 @@
     }
   }
 
+  // jobsGen distinguishes the current jobs snapshot from stale replies
+  // (the refreshList/loadMore listGen pattern): two refreshes in flight
+  // must never let the OLDER reply overwrite the newer snapshot — for
+  // the import-dir claim (claimedImportPaths) a stale jobs reply would
+  // hold or release claims off a superseded job row. Non-reactive on
+  // purpose — it is not state.
+  let jobsGen = 0;
+
   async function refreshJobs() {
+    const gen = ++jobsGen;
     try {
-      jobs = await listJobs();
+      const next = await listJobs();
+      if (gen === jobsGen) jobs = next;
     } catch (e) {
-      error = errText(e);
+      if (gen === jobsGen) error = errText(e);
     } finally {
-      jobsLoading = false;
+      // Only the CURRENT reply ends the wait (a stale one landing later
+      // must not drop the loading display out from under the live read).
+      if (gen === jobsGen) jobsLoading = false;
     }
   }
 
@@ -420,19 +433,34 @@
       .map(jobView),
   );
 
-  // The pending import for an import-dir path — a path with an entry
-  // here is owned by the table ABOVE (its synthetic row), never by the
-  // scan table: demoRows filters on it, so the two tables can never
-  // show the file at once (owner, 2026-11-17). Keyed by the exact path
+  // The import-dir card's CLAIM (owner, 2026-11-17): a scanned path is
+  // held off this card while an import job over it is NON-TERMINAL
+  // (queued/running) — claimed at enqueue, released only when the job
+  // reaches a terminal status or a rescan confirms the file is gone.
+  // Keyed on the job's STATUS, never on matchId: at the copy→parse
+  // boundary the job gains its match row (CreateMatchRow + SetJobMatch)
+  // and its synthetic row above correctly disappears, but the claim must
+  // hold for the whole job — the click-time scan still lists the pending
+  // file (the backend lists it and only flags it), so a `!matchId`
+  // claim lets the row flash back for SCAN_DEBOUNCE_MS until the trailing
+  // rescan recognized the file as imported. Keyed by the exact path
   // string the pipeline stores: the dir row's Import hands the same
-  // string to importPaths, and Enqueue dedupes on it.
-  const pendingDemoPaths = $derived(new Map(pendingImports.map((j) => [j.path, j])));
+  // string to importPaths, and Enqueue dedupes on it. A failure/cancel
+  // before a match row exists turns the job terminal → the row
+  // legitimately returns with the problem banner.
+  const claimedImportPaths = $derived(
+    new Set(
+      jobs
+        .filter((j) => j.kind === 'import' && (j.status === 'queued' || j.status === 'running'))
+        .map((j) => j.path),
+    ),
+  );
 
   // The rows the import-dir table renders: every scanned file EXCEPT
-  // the ones a queued/running import owns (pendingDemoPaths — the same
-  // source the synthetic rows above render from, so the pairing is
-  // exact: excluded here ⇔ listed there).
-  const demoRows = $derived(demoFiles.filter((f) => !pendingDemoPaths.has(f.path)));
+  // the claimed ones — a claimed file shows only as its job in the
+  // table above (the synthetic row while it has no match row, its match
+  // row once that lands), never on both tables at once.
+  const demoRows = $derived(demoFiles.filter((f) => !claimedImportPaths.has(f.path)));
 
   // Cancel vs Remove: one backend call (cancelJob), two labels — a
   // queued job is waiting in line (Remove takes it out), a running one
@@ -1185,10 +1213,10 @@
        Settings → "Import dirs" that are not in the library yet — the
        backend omits recognised imports and zero-byte files, so deleting
        a match brings its demo back here. One Import button per row runs
-       the ordinary pipeline (hash dedupe, row status chip); a file with
-       a queued/running job is NOT listed here — it lives only as the
-       synthetic job row in the table above (demoRows, pendingDemoPaths),
-       and clicking Import takes the row out at once (doImportFile).
+       the ordinary pipeline (hash dedupe, row status chip); a file a
+       live import job claims is NOT listed here — it lives only as its
+       job row in the table above (demoRows, claimedImportPaths), and
+       clicking Import takes the row out at once (doImportFile).
        Delete from disk removes the file itself, behind a confirmation. -->
   <section class="panel" aria-label={S.library.demosLabel}>
     <div class="row-between">
@@ -1244,11 +1272,12 @@
         </thead>
         <tbody>
           {#each demoRows as f (f.path)}
-            <!-- A queued/running import for this path never renders here
-                 (demoRows filters pendingDemoPaths) — the file shows only
-                 as the synthetic row above, so it is never on both
-                 tables (owner, 2026-11-17; was: an in-place flip to the
-                 job chip). -->
+            <!-- A live import job for this path never renders here
+                 (demoRows filters claimedImportPaths) — the file shows
+                 only as its job above (the synthetic row until its match
+                 row lands), so it is never on both tables
+                 (owner, 2026-11-17; was: an in-place flip to the job
+                 chip). -->
             <tr>
               <td>
                 <span class="mono lib-demo-name" title={f.path}>{basename(f.path)}</span>
