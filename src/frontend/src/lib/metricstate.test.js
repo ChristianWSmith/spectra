@@ -162,6 +162,16 @@ test('state titles never carry a digit — no version number is expressible', ()
   assert.equal(metricStateTitle('', ''), '');
 });
 
+test('the no-data title is subject-neutral — it renders in match and team cells too', () => {
+  // Lead ruling 2026-11-18: the no-data copy is not player-specific.
+  // The Reports appendix and the Builder render this title for
+  // match-subject and team-subject metrics as well, so the wording
+  // names no player (and stays tier-1 common-location copy).
+  const title = metricStateTitle('no-data', '');
+  assert.equal(title, 'no data for this subject');
+  assert.ok(!/player/i.test(title), `subject-specific wording: ${JSON.stringify(title)}`);
+});
+
 // --- The two state sources (live feed vs refetched word) --------------------
 
 test('liveMetricState: the progress feed wins over the refetched word', () => {

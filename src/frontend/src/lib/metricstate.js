@@ -17,7 +17,7 @@
 //   fresh       a fresh row came back from the canonical read → the
 //               value (title = formula + n)
 //   no-data     the metric is fresh for this unit but has no row for
-//               this player — or nothing at all to compute over → '—'
+//               this subject — or nothing at all to compute over → '—'
 //   behind      no fresh rows for the unit and no failure recorded →
 //               the chip (never computed, outdated-and-deleted and
 //               rules-behind are deliberately indistinguishable)
@@ -34,10 +34,12 @@ export const METRIC_STATES = ['processing', 'failed', 'fresh', 'no-data', 'behin
 // Titles for the states whose copy the design fixes. 'failed' takes the
 // engine's error text instead (metricStateTitle), 'fresh' takes the
 // caller's formula + n. None of them ever carries a version number or
-// a timestamp.
+// a timestamp. Subject-neutral wording (lead ruling 2026-11-18): the
+// no-data title renders in match- and team-subject cells too (the
+// Reports appendix), so it names the metric's subject, never a player.
 const STATE_TITLES = {
   processing: 'recomputing — this value is not final yet',
-  'no-data': 'no data for this player',
+  'no-data': 'no data for this subject',
   behind: 'value not available yet — recompute pending',
 };
 
