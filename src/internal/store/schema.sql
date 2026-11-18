@@ -742,12 +742,18 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- match-scope — lost_equip (match subject) + team_force_win_rate and
 -- team_lost_equip (team subjects) — and 1 profile win_pct; plan §8
 -- (M8/M4 rows), 2026-11-17 — the M8/M4 rows the grammar expresses;
--- pistol_hold and avg_equip_gap are NOT expressible in the current
--- grammar (no next-round window, no per-row subtraction) and are
--- reported rather than approximated) — plus the identity addendum (5
+-- pistol_hold and avg_equip_gap were reported NOT expressible in the
+-- grammar at that point (no next-round window, no per-row subtraction)
+-- and are no longer reported — they land in the grammar addendum
+-- below) — plus the identity addendum (5
 -- match rows with an explicit subject AND the identity format: the M1
 -- top-card seeds top_fragger/best_adr/most_util/entry_opens/most_mvps
--- over argmax — plan §8 (M1 identity row), 2026-11-17). Scope split:
+-- over argmax — plan §8 (M1 identity row), 2026-11-17) — plus the
+-- grammar addendum (2 rows with an explicit subject in their own
+-- INSERT: pistol_hold + avg_equip_gap, plan §8 (M8 rows), 2026-11-17 —
+-- the two M8 rows Phase 4 deferred as inexpressible, now over the
+-- next() round window and the diff() row difference — internal/metrics
+-- doc.go). Scope split:
 -- 72 match / 20 profile (2026-11-17: +2 match M3, then +16 match +6
 -- profile Option A, then +3 match +1 profile subject-axis, then +5
 -- match identity).
@@ -842,7 +848,7 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly one hundred and four —
+-- THE builtins, seeded (see header): exactly one hundred and six —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
 -- scope rows and nine profile-scope rows), the inferred set (42
@@ -864,7 +870,11 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- 2026-11-17: kills/headshots matched the fold EXACTLY over the golden
 -- demo while the damage column's structural gap escalated, so the
 -- weapon set ships the two exact columns — 72 match + 32 profile
--- across the whole set). The eighth
+-- across the whole set) and the grammar addendum (2 rows in their own
+-- INSERT below — plan §8 (M8 rows), 2026-11-17: pistol_hold +
+-- avg_equip_gap, the two M8 rows the Phase 4 grammar finding deferred
+-- as inexpressible, over the next() round window and the diff() row
+-- difference — 74 match + 32 profile across the whole set). The eighth
 -- match-scope dogfooding row (kda, w13d's
 -- scoreboard KDA conversion) sits at the END of the first INSERT — row
 -- order here is presentation only (ListMetrics orders builtins by
@@ -1527,6 +1537,35 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'from events: count(where kind = ''kill'' and headshot = 1 and attacker != victim)',
  'profile', 'player', 'weapon', 'int',
  'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon — N = the kill events counted.',
+ 'builtin', '', CURRENT_TIMESTAMP);
+
+-- Grammar addendum (metrics expansion §8 M8 rows, 2026-11-17): TWO
+-- match-subject builtins — the two M8 rows the Phase 4 grammar finding
+-- reported NOT expressible (pistol_hold needed a next-round window,
+-- avg_equip_gap a per-row winner-minus-loser subtraction), now seeded
+-- over the grammar constructs that landed for them (internal/metrics
+-- doc.go "Round window (next())" and "Row difference (diff())").
+-- Same INSERT OR IGNORE add-on path (keyed on the UNIQUE name),
+-- addressing written explicitly: subject=match, no partition, no
+-- denominator (the value IS the per-match aggregate). Equivalence with
+-- the characterization-pinned Economy cards: pistol_hold restates the
+-- card's held ÷ won (Formula title in lib/strings/economy.js; the card
+-- numbers are pinned by the economy tables DOM tests) and
+-- avg_equip_gap the card's average winner-minus-loser freeze-end gap —
+-- exact equivalence pinned in internal/metrics' econ equivalence test
+-- against the view computation's retired oracle. Every doc is
+-- Formula-first, states subject + partition and stays inside the
+-- tier-2 doc limit (AGENTS doc rule; no doc hard-codes a count).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, denominator, created_at) VALUES
+('pistol_hold', 'Pistol → next round', '',
+ 'from rounds, round_classifications: ratio(count(where label = ''pistol'' and winner != '''' and next(winner) = winner), count(where label = ''pistol'' and winner != ''''))',
+ 'match', 'match', '', 'percent',
+ 'Formula: pistol rounds won where that side also won the following round ÷ pistol rounds won — the held-pistol rate, addressed per match (no partition), over the joined sources; N = rounds.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('avg_equip_gap', 'Winner equipment value advantage', '',
+ 'from rounds: avg(where winner != '''', diff(equip_ct, equip_t, winner = ''ct''))',
+ 'match', 'match', '', 'currency',
+ 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time — addressed per match (no partition); N = rounds.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

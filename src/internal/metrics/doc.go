@@ -122,6 +122,17 @@
 //	                               ratio()/scalar min/max rides the
 //	                               shared "%s() cannot be nested inside
 //	                               %s()" copy).
+//	next(<col>)                    the NEXT-ROUND window operand — see
+//	                               "Round window (next())" below: a
+//	                               condition-position construct (legal
+//	                               exactly where a condition is; every
+//	                               value position refuses it with
+//	                               nextValueMsg).
+//	diff(<col>, <col>, <cond>)     the per-row ORIENTED difference — see
+//	                               "Row difference (diff())" below: a
+//	                               row transform reduced ONLY by
+//	                               sum()/avg(), never an aggregation
+//	                               itself.
 //
 // Conditions (the <cond> grammar): operands are whitelisted columns,
 // numbers, 'strings', true/false; operators are = != > >= < <=, AND, OR,
@@ -151,6 +162,84 @@
 // the condition itself distinguishes it (N2's kind predicate). Depth
 // counts toward maxCondDepth; the statement runs on the same
 // read-only session under the same row cap as any other.
+//
+// # Round window (next())
+//
+// next(<col>) is the row-window operand (plan §8's next-round
+// construct): inside a condition or filter it reads <col> from the
+// NEXT round's row of the expression's PRIMARY source — the row of the
+// same match with the smallest round number strictly greater than the
+// current row's; the match's last round has no next round, so next()
+// there is NULL and a comparison over it is unknown (the row never
+// counts as held). Semantics, pinned by TestNextWindowRefusals /
+// TestNextWindowCorpus:
+//
+//   - ROUND-GRAIN ONLY (whitelist.go roundGrain — the source's
+//     uniqueness key IS (match_id, round column)): rounds and
+//     round_classifications. A side-grained or event-grained primary
+//     would have several candidate rows for "the next round" — every
+//     such source refuses with its own positioned message.
+//   - the column is the PRIMARY's (the window scans the primary's own
+//     table; a secondary's column refuses with its own message in a
+//     join), validated against the whitelist like any condition column.
+//   - the ORDER is the round number within the row's match — NOT the
+//     next row surviving the expression's filters: emission is a
+//     correlated scalar subquery over the source's full table, so a
+//     per-agg where filter or the scope WHERE can never narrow the
+//     window (a SQL LEAD/LAG would — that is why the subquery exists).
+//   - one level only: next(next(<col>)) refuses, and next() inside
+//     exists() refuses (exists() already scans other rows of the
+//     source; the window always correlates to the row being tested).
+//     next() inside diff()'s orientation condition is legal — it is
+//     the same row's condition position.
+//   - every value position refuses with nextValueMsg (top-level
+//     aggregation, ratio() operand, column argument, additive chain
+//     term, scalar min/max term) — a window is a condition, never this
+//     row's value.
+//
+// Worked: from rounds, round_classifications: ratio(count(where label =
+// 'pistol' and winner != ” and next(winner) = winner), count(where
+// label = 'pistol' and winner != ”)) — pistol rounds won whose winner
+// also won the immediately following round (the Economy card's
+// held ÷ won), each count a condition over the joined sources.
+//
+// # Row difference (diff())
+//
+// diff(<a>, <b>, <cond>) is the per-row ORIENTED subtraction (plan
+// §8's winner-minus-loser construct) — a ROW TRANSFORM, not an
+// aggregation: it may appear exactly as sum()'s or avg()'s column
+// argument (sum(diff(…)) / avg(diff(…)), with the usual optional
+// where filter around it) and nowhere else. Per row it evaluates
+// <a> − <b> when <cond> holds for that row, <b> − <a> otherwise —
+// <cond> ORIENTS the subtraction (which side is the subtrahend), which
+// is what makes "winner buy − loser buy" a single row's value over
+// rows whose winner flips. Contract:
+//
+//   - exactly three arguments — two whitelisted columns of the
+//     PRIMARY source (both operands the same row of one source: a
+//     secondary's column refuses with its own message — a row
+//     difference is not a cross-source operation) and one condition;
+//     every arity/shape miss has its own message.
+//   - reduced ONLY by sum()/avg(): min/max/stddev/percentile/median/
+//     argmax, a top-level position, ratio()'s operands and scalar
+//     min/max terms refuse with their own messages (parseColArg,
+//     parseAgg, parseScalarTerm).
+//   - exists() inside diff()'s condition refuses (its subquery alias
+//     and inner-scan rules belong to the aggregation's own where/count
+//     position) — put the existence filter there.
+//   - THE DENIAL THAT STAYS LOAD-BEARING: aggregate arithmetic is not
+//     grammar. diff() subtracts two values OF THE SAME ROW before the
+//     reduction; `sum(a) - sum(b)` (and any agg-level `+`/`-`) still
+//     refuses at the aggregation boundary exactly as before — a
+//     reduction never becomes an operand of another computation.
+//     Nesting a whole aggregation where a column belongs
+//     (avg(sum(a)), diff(sum(a), sum(b), …)) refuses through the
+//     column-name productions (pinned in metrics_test.go and
+//     rowdifference_test.go).
+//
+// Worked: from rounds: avg(where winner != ”, diff(equip_ct, equip_t,
+// winner = 'ct')) — mean over decided rounds of (winner equip − loser
+// equip), the Economy card's average equipment gap.
 //
 // # Metric references (metric('name'))
 //

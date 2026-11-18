@@ -143,6 +143,33 @@ func tableFor(src string) string {
 	return src
 }
 
+// roundGrain reports whether a source is ROUND-GRAIN: exactly one row
+// per round per match — its declared uniqueness key IS (match_id,
+// round column). That is the mechanical criterion behind the next()
+// window's legality (doc.go): only then does "the next round" name one
+// unambiguous row of the source. The worked set is rounds and
+// round_classifications; side-grained sources (round_economy,
+// round_side_classes, round_player_sides — the side is part of the
+// key), event-grained sources (the key carries seq) and player-grained
+// sources all fail the key shape. Pinned by TestNextWindowRefusals.
+func roundGrain(src string) bool {
+	key := sourceUniqueKeys[src]
+	round := sourceDims[src]["round"]
+	return round != "" && len(key) == 2 && key[0] == "match_id" && key[1] == round
+}
+
+// roundGrainSourcesMsg renders the round-grain list for the refusal
+// message (computed from the declarations, so the copy cannot drift).
+func roundGrainSourcesMsg() string {
+	var names []string
+	for _, s := range sources {
+		if roundGrain(s) {
+			names = append(names, s)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
 func colSet(cols ...string) map[string]bool {
 	m := make(map[string]bool, len(cols))
 	for _, c := range cols {

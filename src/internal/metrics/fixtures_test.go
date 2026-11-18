@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the ONE HUNDRED AND FOUR schema-seeded builtins
+// builtinSeed maps the ONE HUNDRED AND SIX schema-seeded builtins
 // (schema.sql —
 // name/expr/scope/subject/partition/format/short_name/denominator are
 // LOCKED to the baseline seed by this table) onto their hand-computed
@@ -45,9 +45,9 @@ func seededStore(t *testing.T) *store.Store {
 // EIGHTY-THREE / 64 match + 19 profile — an owner amendment the
 // plan's §8 does not list; the subject-axis addendum (plan §8 (M8/M4
 // rows), 2026-11-17) then adds 4 rows with an explicit subject —
-// EIGHTY-SEVEN / 67 match + 20 profile — pistol_hold and
-// avg_equip_gap among the plan's six rows reported NOT expressible in
-// the grammar; the identity addendum (plan §8 (M1 identity row),
+// EIGHTY-SEVEN / 67 match + 20 profile — reporting pistol_hold and
+// avg_equip_gap among the plan's six rows NOT expressible in the
+// grammar at that point; the identity addendum (plan §8 (M1 identity row),
 // 2026-11-17) finally adds the five M1 top-card seeds — NINETY-TWO /
 // 72 match + 20 profile — subject=match, format=identity; the
 // partition addendum (plan §8 (M5/M6 rows), 2026-11-17) then adds the
@@ -55,7 +55,11 @@ func seededStore(t *testing.T) *store.Store {
 // TWO / 72 match + 30 profile — partition written explicitly; the
 // weapon addendum (plan §8 (M7 row) behind the M7 gate, 2026-11-17)
 // finally adds the two EXACT weapon columns — ONE HUNDRED AND FOUR /
-// 72 match + 32 profile — the damage column escalated with the gate.)
+// 72 match + 32 profile — the damage column escalated with the gate;
+// the grammar addendum (plan §8 (M8 rows), 2026-11-17) finally lands
+// those two deferred M8 rows — ONE HUNDRED AND SIX / 74 match +
+// 32 profile — pistol_hold over the next() round window, avg_equip_gap
+// over the diff() row difference.)
 // interpretation records how the seeded expression states
 // the metric (never silently — the formula and any proxy/deviation
 // live in the row's doc). Since the subject axis, every statement is
@@ -951,6 +955,35 @@ var builtinSeed = []struct {
 		interpretation: "enemy headshot kills per weapon (ak47/usp/m4a1 headshot, awp/deagle none in the corpus)",
 		rows:           24, wantValues: []float64{36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0, 36.0, 0.0, 36.0, 0.0, 0.0, 0.0, 0.0, 0.0, 36.0, 0.0, 0.0, 0.0}, wantLabels: "Alice,Alice,Alice,Bob,Bob,Bob,Carol,Carol,Carol,Dave,Dave,Dave,Eve,Eve,Eve,Frank,Frank,Frank,Grace,Grace,Grace,Heidi,Heidi,Heidi",
 		wantDims: []string{"ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang", "ak47", "flashbang", "usp", "ak47", "awp", "flashbang", "ak47", "flashbang", "m4a1", "ak47", "deagle", "flashbang"},
+	},
+	// ---- grammar addendum (plan §8 (M8 rows), 2026-11-17): the two
+	// M8 rows Phase 4 reported NOT expressible, now over the next()
+	// round window and the diff() row difference. Corpus math
+	// (testdata/seed.sql): the shared corpus writes NEITHER
+	// classification rows (see the T2 note above — join_test's rig owns
+	// match 1's labels) NOR consecutive same-side wins (winners
+	// alternate by parity), so pistol_hold's two counts are 0/0 → the
+	// honest empty-set 0 beside N (24 rounds of the group), and
+	// avg_equip_gap is (12 × +500) + (12 × −500) over the 24 decided
+	// rounds → exactly 0 (equip 2500 ct / 2000 t every round: +500 on
+	// each odd CT win, −500 on each even T win — a non-directional
+	// subtraction would read +500 here, so the orientation is pinned).
+	// The DISCRIMINATING hand-computed cases (a HELD pistol round, an
+	// upset round the loser's fatter buy loses, an undecided round the
+	// card skips) live in econ_equivalence_test.go's dedicated fixture
+	// — the alternation and the empty label table make them
+	// structurally unreachable on the shared corpus.
+	{
+		name: "pistol_hold", expr: "from rounds, round_classifications: ratio(count(where label = 'pistol' and winner != '' and next(winner) = winner), count(where label = 'pistol' and winner != ''))",
+		scope: "match", subject: "match", format: "percent", shortName: "", denominator: "",
+		interpretation: "pistol rounds won where that side also won the following round ÷ pistol rounds won (no label rows in the shared corpus → 0 beside N)",
+		rows:           3, wantAll: 0, wantN: 24, wantLabels: "1,2,3",
+	},
+	{
+		name: "avg_equip_gap", expr: "from rounds: avg(where winner != '', diff(equip_ct, equip_t, winner = 'ct'))",
+		scope: "match", subject: "match", format: "currency", shortName: "", denominator: "",
+		interpretation: "mean winner-minus-loser freeze-end equip over decided rounds (alternating ±500 → 0; N = the match's rounds)",
+		rows:           3, wantAll: 0, wantN: 24, wantLabels: "1,2,3",
 	},
 }
 

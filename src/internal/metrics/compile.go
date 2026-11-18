@@ -744,6 +744,30 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 				if perr := res.resolveCond(o.col, o.pos); perr != nil {
 					return perr
 				}
+			case opWindow:
+				// The next-round window (parseWindow) — compile owns
+				// the whitelist side: the source must be ROUND-GRAIN
+				// (one row per round per match, or "the next round"
+				// would be ambiguous across the source's rows) and the
+				// column must be the PRIMARY's (the window scans the
+				// primary's own table — a secondary's column has no
+				// round sequence of its own here).
+				if inExists {
+					return errf(o.pos, "next() cannot appear inside exists()")
+				}
+				if !roundGrain(res.primary) {
+					return errf(o.pos,
+						"next() needs a round-grain source — primary source %q is not one row per round (round-grain sources: %s)",
+						res.primary, roundGrainSourcesMsg())
+				}
+				if !sourceColumns[res.primary][o.col] {
+					if _, other := res.owners[o.col]; other && res.joined {
+						return errf(o.colPos,
+							"next() reads a column of the primary source %q — %q belongs to another source in the join",
+							res.primary, o.col)
+					}
+					return errf(o.colPos, "unknown column %q for source %s", o.col, res.primary)
+				}
 			}
 		}
 		if p := checkCond(c.l, inExists); p != nil {
@@ -756,6 +780,31 @@ func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 	}
 	if p := checkCond(a.Count, false); p != nil {
 		return p
+	}
+	// The row difference's operands (doc.go "Row difference"): BOTH are
+	// columns of the SAME row of the PRIMARY source — a cross-source
+	// subtraction is not a row difference (its own message; the
+	// "incompatible subjects" refusal), unknown columns keep the
+	// unknown-column copy. The orientation condition walks like any
+	// condition column.
+	if a.DiffCond != nil {
+		for _, d := range []struct {
+			col string
+			pos int
+		}{{a.DiffA, a.DiffAPos}, {a.DiffB, a.DiffBPos}} {
+			if sourceColumns[res.primary][d.col] {
+				continue
+			}
+			if owner, other := res.owners[d.col]; other {
+				return errf(d.pos,
+					"diff() subtracts two values of the same row of the primary source %q — %q belongs to %q (a row difference is not a cross-source operation)",
+					res.primary, d.col, owner)
+			}
+			return res.unresolved(d.col, d.pos)
+		}
+		if p := checkCond(a.DiffCond, false); p != nil {
+			return p
+		}
 	}
 	if a.Col != "" || a.Terms != nil {
 		if a.Terms != nil {
@@ -1450,10 +1499,26 @@ func (e *emitter) emitValue(a *Agg) {
 	}
 }
 
-// emitTerms writes the value term(s): the single qualified column (the
-// byte-stable form — Terms == nil, which every pre-chain expression
-// parses with) or sum()'s additive column chain `q1 + q2 + …`.
+// emitTerms writes the value term(s): the row-difference transform when
+// present (the oriented CASE — doc.go "Row difference"), otherwise the
+// single qualified column (the byte-stable form — Terms == nil, which
+// every pre-diff expression parses with) or sum()'s additive column
+// chain `q1 + q2 + …`.
 func (e *emitter) emitTerms(a *Agg) {
+	if a.DiffCond != nil {
+		e.sb.WriteString("(CASE WHEN ")
+		e.emitCond(a.DiffCond)
+		e.sb.WriteString(" THEN (")
+		e.emitDiffCol(a.DiffA)
+		e.sb.WriteString(" - ")
+		e.emitDiffCol(a.DiffB)
+		e.sb.WriteString(") ELSE (")
+		e.emitDiffCol(a.DiffB)
+		e.sb.WriteString(" - ")
+		e.emitDiffCol(a.DiffA)
+		e.sb.WriteString(") END)")
+		return
+	}
 	if a.Terms == nil {
 		e.sb.WriteString(e.res.qualify(a.Col))
 		return
@@ -1464,6 +1529,20 @@ func (e *emitter) emitTerms(a *Agg) {
 		}
 		e.sb.WriteString(e.res.qualify(tm))
 	}
+}
+
+// emitDiffCol writes one diff() operand: ALWAYS the primary's own
+// column (validation accepted only primary columns, and it qualifies
+// them directly — like the subject keys — so a column the owners map
+// sees as multi-owned can never be emitted ambiguously).
+func (e *emitter) emitDiffCol(col string) {
+	if e.res.joined {
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".")
+		e.sb.WriteString(col)
+		return
+	}
+	e.sb.WriteString(col)
 }
 
 // emitStddevX writes the stddev operand (repeated per textual position —
@@ -1538,6 +1617,36 @@ func (e *emitter) emitCond(c *condNode) {
 // ALWAYS owner-qualified (unqualified would resolve to the inner scan),
 // bare columns are x0-qualified (the inner scan).
 func (e *emitter) emitOperand(o *operand) {
+	if o.kind == opWindow {
+		// The next-round window: a CORRELATED SCALAR SUBQUERY over the
+		// primary's own table, not a SQL window function — LEAD/LAG
+		// would see the per-agg filters and the scope WHERE first (the
+		// "next round" would silently become the next SURVIVING row),
+		// while this always reads the source's full round sequence for
+		// the row's match. Round order is the round-number column; no
+		// next round ⇒ NULL (a condition over it is unknown, never
+		// true). Alias nx0 is engine-chosen like exists()'s x0 (each
+		// subquery scopes its own alias), correlation columns are
+		// primary-qualified — validation guarantees a round-grain
+		// primary, so sourceDims carries the round column.
+		roundCol := sourceDims[e.res.primary]["round"]
+		e.sb.WriteString("(SELECT nx0.")
+		e.sb.WriteString(o.col)
+		e.sb.WriteString(" FROM ")
+		e.sb.WriteString(tableFor(e.res.primary))
+		e.sb.WriteString(" AS nx0 WHERE nx0.match_id = ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".match_id AND nx0.")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" > ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" ORDER BY nx0.")
+		e.sb.WriteString(roundCol)
+		e.sb.WriteString(" LIMIT 1)")
+		return
+	}
 	if o.kind == opOuter {
 		e.sb.WriteString(e.res.owners[o.col])
 		e.sb.WriteString(".")
