@@ -1213,15 +1213,21 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 -- kill_conversion is a percent in the engine's
 -- 0..1 convention (the retired read-DTO carried 0..100); the
 -- equivalence test pins value × 100 == the retired number.
+-- Enemy gate (owner ruling 2026-11-17): both rows filter
+-- same_side = 0, the ingest stamp's permissive enemy rule (both
+-- sides known and equal → same-side, else enemy) — the same
+-- predicate as player_stats.total_damage. Same-side damage leaves
+-- BOTH halves of kill_conversion (numerator and denominator); an
+-- unknown side stamps 0 and still counts, in parity.
 ('dmg_no_kill', 'Damage no kill', '',
- 'from events: sum(where kind = ''damage'' and not exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg)',
+ 'from events: sum(where kind = ''damage'' and not exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim) and same_side = 0, dmg)',
  'match', 'int',
- 'Formula: sum(events.dmg over damage events WHERE no same-tick, same-actor kill exists) — damage that did not convert into a kill, addressed per player.',
+ 'Formula: sum(events.dmg over enemy damage events WHERE no same-tick, same-actor kill exists) — damage that did not convert into a kill, addressed per player.',
  'builtin', '', CURRENT_TIMESTAMP),
 ('kill_conversion', 'Kill conversion %', '',
- 'from events: ratio(sum(where kind = ''damage'' and exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg), sum(where kind = ''damage'', dmg))',
+ 'from events: ratio(sum(where kind = ''damage'' and exists(kind = ''kill'' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim) and same_side = 0, dmg), sum(where kind = ''damage'' and same_side = 0, dmg))',
  'match', 'percent',
- 'Formula: sum(events.dmg with a same-tick, same-actor kill) / sum(events.dmg over damage events) — the share of this player''s damage that converts into kills, addressed per player — a percent.',
+ 'Formula: sum(events.dmg with a same-tick, same-actor kill) / sum(events.dmg), both over enemy damage — the share of this player''s damage that converts into kills, addressed per player — a percent.',
  'builtin', '', CURRENT_TIMESTAMP),
 -- ---- addendum: the Option A count addendum (22 rows — owner Option
 -- A extension, 2026-11-17: the metrics system IS the gameplay-

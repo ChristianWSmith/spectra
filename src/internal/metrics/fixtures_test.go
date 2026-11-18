@@ -582,28 +582,32 @@ var builtinSeed = []struct {
 		// converts: every damage point is unconverted damage. Per
 		// subject the corpus deals 9900 damage over the three
 		// identical matches (3 × 3300: each player holds each damage
-		// position three times). N (the subject's own event rows —
-		// the kill/blind distribution is not uniform across subjects)
-		// is deliberately not asserted (wantN 0), like
-		// untraded_deaths above; the ME0 value semantics pin in
-		// combat_equivalence_test.go.
+		// position three times). The corpus's events carry no
+		// same_side stamp (DEFAULT 0 = enemy/unknown), so the wave-B
+		// enemy gate changes nothing here — 9900 stands. N (the
+		// subject's own event rows — the kill/blind distribution is
+		// not uniform across subjects) is deliberately not asserted
+		// (wantN 0), like untraded_deaths above; the ME0 value
+		// semantics pin in combat_equivalence_test.go.
 		name:  "dmg_no_kill",
-		expr:  "from events: sum(where kind = 'damage' and not exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg)",
+		expr:  "from events: sum(where kind = 'damage' and not exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim) and same_side = 0, dmg)",
 		scope: "match", format: "int", shortName: "", denominator: "",
-		interpretation: "damage that never converted into a kill (corpus: no shared tick → all damage, 9900)",
+		interpretation: "enemy damage that never converted into a kill (corpus: no shared tick → all damage, 9900)",
 		rows:           8, wantAll: 9900, wantLabels: eightLabels,
 	},
 	{
 		// Same corpus truth from the other side: the converted half
 		// sums to 0 for everyone, so the ratio is exactly 0 (a real
-		// 0 beside N — the denominator never vanishes). The
-		// interesting conversion semantics (same-tick actor pair)
+		// 0 beside N — the denominator never vanishes). The wave-B
+		// enemy gate sits in BOTH halves of the ratio and is a no-op
+		// on this side-less corpus (every row stamps DEFAULT 0).
+		// The interesting conversion semantics (same-tick actor pair)
 		// are pinned in combat_equivalence_test.go against the
-		// retired SQL's characterized values.
+		// retired SQL's gated values.
 		name:  "kill_conversion",
-		expr:  "from events: ratio(sum(where kind = 'damage' and exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim), dmg), sum(where kind = 'damage', dmg))",
+		expr:  "from events: ratio(sum(where kind = 'damage' and exists(kind = 'kill' and tick = outer.tick and attacker = outer.attacker and victim = outer.victim) and same_side = 0, dmg), sum(where kind = 'damage' and same_side = 0, dmg))",
 		scope: "match", format: "percent", shortName: "", denominator: "",
-		interpretation: "share of this player's damage that converts into kills (corpus: 0 — no shared tick)",
+		interpretation: "share of this player's enemy damage that converts into kills (corpus: 0 — no shared tick)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
 	},
 	// ---- addendum: the Option A count addendum (16 match + 6 profile
