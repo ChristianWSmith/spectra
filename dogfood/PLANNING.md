@@ -78,7 +78,7 @@ empty pool, five metric states, no fabricated zeros).
 ## Step details (briefs get built from these)
 
 **Step 1 — baseline inventory (parallel, read-only researchers).**
-Three briefs over one fixed baseline (`fcdf01e`):
+Three briefs over one fixed baseline (`24de283`):
 - *R1 metrics engine:* grammar constructs + refusal matrix, compiler/IR, seed
   catalog, `metric_values` materialization, freshness/behind states, N as
   manufactured today, subject/scope/partition/denominator/format furniture,
