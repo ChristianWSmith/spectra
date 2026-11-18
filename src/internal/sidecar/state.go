@@ -411,10 +411,11 @@ func (st *stateStream) ensureOpen(dir string) error {
 
 // AddState appends one frame's state samples as sparse change records
 // (extract.StateSink). The slot table is the positions writer's — samples
-// for SteamIDs it never locked are skipped with a log line instead of
-// failing the parse. Duplicates inside one frame (bots share SteamID 0)
-// keep the first sighting, mirroring AddFrame. seed forces full records.
-// players must not be retained by the caller side — only read here.
+// for a key it never handed a slot to (the table is full) are skipped
+// with a log line instead of failing the parse. Duplicates inside one
+// frame keep the first sighting, mirroring AddFrame. seed forces full
+// records. players must not be retained by the caller side — only read
+// here.
 func (w *Writer) AddState(seed bool, players []extract.StatePlayer) error {
 	if w.closed {
 		return errors.New("cannot add state after the writer is closed")
@@ -435,7 +436,10 @@ func (w *Writer) AddState(seed bool, players []extract.StatePlayer) error {
 	for _, p := range players {
 		slot, ok := w.slotOf[p.SteamID]
 		if !ok {
-			w.logStateSkip(p.SteamID, "not in first-frame slot table")
+			// No position sample ever handed this key a slot (the table
+			// is full, or the key never appeared in a frame) — the state
+			// stream reads the positions table and never grows it.
+			w.logStateSkip(p.SteamID, "no position slot")
 			continue
 		}
 		if seen&(1<<uint(slot)) != 0 {

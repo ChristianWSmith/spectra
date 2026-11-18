@@ -353,3 +353,118 @@ func TestBotTakenOverBookkeeping(t *testing.T) {
 		t.Errorf("bookkeeping leaked %d event rows, want none", len(a.events))
 	}
 }
+
+// TestBotSamplesCarrySyntheticKey: a lone bot's sink rows must carry ITS
+// accumulator key, not steamId 0 — the sidecar slot table joins on this
+// key, and 0 was dropped at the writer, which is exactly why the owner's
+// covering bot "popped into existence at takeover": every pre-takeover
+// sample died at the slot table (owner report 2026-11-17). Humans keep
+// their SteamID64 byte-for-byte (playerKey is the identity for them).
+func TestBotSamplesCarrySyntheticKey(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	other := &common.Player{Name: "Ricksaw", EntityID: 13, IsBot: true, Team: common.TeamCounterTerrorists}
+	// Pre-takeover: the covering human is disconnected, so the control
+	// read yields nothing (demoinfocsControls' IsConnected gate) — both
+	// bots are their own identities.
+	all := []*common.Player{human, bot, other}
+	controls := fakeControls()
+
+	was := pawnAlive
+	pawnAlive = func(p *common.Player) bool { return true } // every pawn alive this frame
+	t.Cleanup(func() { pawnAlive = was })
+
+	targets := appendTargets(nil, all, controls)
+	if len(targets) != 3 {
+		t.Fatalf("targets = %d, want 3 (nobody is covered pre-takeover)", len(targets))
+	}
+	seen := map[uint64]bool{}
+	for _, tg := range targets {
+		row, ok := positionRow(tg)
+		if !ok {
+			t.Fatalf("no position row for %q", tg.identity.Name)
+		}
+		want := playerKey(tg.identity)
+		if row.SteamID != want {
+			t.Errorf("%q position key = %d, want playerKey %d", tg.identity.Name, row.SteamID, want)
+		}
+		if row.SteamID == 0 {
+			t.Errorf("%q position key = 0 — the sidecar drops steamId-0 at the slot table", tg.identity.Name)
+		}
+		if seen[row.SteamID] {
+			t.Errorf("duplicate position key %d — bot keys must be distinct", row.SteamID)
+		}
+		seen[row.SteamID] = true
+		st := sampleStatePlayer(tg.identity, tg.pawn)
+		if st.SteamID != want || st.SteamID == 0 {
+			t.Errorf("%q state key = %d, want playerKey %d", tg.identity.Name, st.SteamID, want)
+		}
+	}
+	// The human's key is byte-identical to before this rule (SteamID64).
+	if id := playerKey(human); id != human.SteamID64 {
+		t.Fatalf("human key = %d, want the raw SteamID64 %d", id, human.SteamID64)
+	}
+}
+
+// TestTakeoverHandoffPositionsContinuous: at the handoff the identity
+// swaps (covering bot's synthetic key → controlling human's SteamID64)
+// while the PAWN — the source of every coordinate — stays the same bot
+// object on both sides of the swap, so the marker moves by exactly zero
+// units: no jump, no gap (owner ruling, 2026-11-17). The pre-takeover
+// side runs with an empty control read (the covering human is
+// disconnected — the IsConnected gate), the post side with the takeover
+// pair.
+func TestTakeoverHandoffPositionsContinuous(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	all := []*common.Player{human, bot}
+
+	was := pawnAlive
+	pawnAlive = func(p *common.Player) bool { return p == bot } // the controlled pawn is the live one
+	t.Cleanup(func() { pawnAlive = was })
+
+	// Pre-takeover: nobody controls — the bot emits as its own identity.
+	var preBot *identityTarget
+	for _, tg := range appendTargets(nil, all, fakeControls()) {
+		if tg.identity == bot {
+			preBot = &tg
+		}
+	}
+	if preBot == nil {
+		t.Fatal("pre-takeover: no target for the lone covering bot")
+	}
+	// Post-takeover: the human controls — his target reads the bot's pawn.
+	var postHuman *identityTarget
+	for _, tg := range appendTargets(nil, all, fakeControls([2]*common.Player{human, bot})) {
+		if tg.identity == human {
+			postHuman = &tg
+		}
+	}
+	if postHuman == nil {
+		t.Fatal("post-takeover: no target for the controlling human")
+	}
+
+	// Same pawn on both sides — every coordinate is read from one source.
+	if preBot.pawn != postHuman.pawn || preBot.pawn != bot {
+		t.Fatalf("handoff pawn = pre %v / post %v, want the same bot object", preBot.pawn, postHuman.pawn)
+	}
+	preRow, ok := positionRow(*preBot)
+	if !ok {
+		t.Fatal("pre-takeover bot row missing")
+	}
+	postRow, ok := positionRow(*postHuman)
+	if !ok {
+		t.Fatal("post-takeover human row missing")
+	}
+	// The ONLY thing that changes at the handoff is the key.
+	if preRow.SteamID == postRow.SteamID {
+		t.Errorf("handoff key stayed %d — identity must hand off to the human", preRow.SteamID)
+	}
+	if preRow.SteamID != playerKey(bot) || postRow.SteamID != human.SteamID64 {
+		t.Errorf("handoff keys = bot %d → human %d, want %d → %d",
+			preRow.SteamID, postRow.SteamID, playerKey(bot), human.SteamID64)
+	}
+	if preRow.X != postRow.X || preRow.Y != postRow.Y || preRow.Z != postRow.Z ||
+		preRow.Yaw != postRow.Yaw || preRow.Air != postRow.Air || preRow.Duck != postRow.Duck ||
+		preRow.Side != postRow.Side {
+		t.Errorf("handoff teleported: pre %+v vs post %+v", preRow, postRow)
+	}
+}

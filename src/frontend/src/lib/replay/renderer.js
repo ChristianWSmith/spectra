@@ -1080,6 +1080,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // setVoices; both are read as pure functions of tick (seek-safe).
   let voiceColors = [];
   let voiceSpeaking = null;
+  // slotPresence: (slot, tick) => boolean — THE marker-presence gate,
+  // pushed by the view as the SAME predicate the player cards render
+  // with (Replay's playerConnected → playercard.js presentAt — owner
+  // ruling 2026-11-17: the covering bot's dot appears and disappears in
+  // exactly its card's window, and at takeover the identity hands off to
+  // the controlling human with continuous positions). null = no gate
+  // pushed (every slot visible — the default for hosts/tests that predate
+  // the push; Replay always pushes).
+  let slotPresence = null;
   // stateIndex: lib/replay/state.js buildStateIndex output (or null — an
   // older import with no state stream: the carried-C4 badge degrades to
   // nothing). Consumed through slotStateAt in drawPlayers (the badge);
@@ -1748,6 +1757,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     draw();
   }
 
+  // setSlotPresence(fn): the marker-presence gate (see the slotPresence
+  // declaration) — fn is (slot, tick) => boolean. The view pushes THE
+  // same predicate its cards render through (playerConnected →
+  // playercard.js presentAt), so a dot can never be visible while its
+  // card is hidden or vice versa. null/absent clears the gate (every
+  // slot visible).
+  function setSlotPresence(fn) {
+    slotPresence = typeof fn === 'function' ? fn : null;
+    draw();
+  }
+
   // setBlinds(rows): the flash-white overlay input — [{slot, tick, ms}]
   // rows (the view joined the blind events with the narrow flash-duration
   // read by seq and resolved each victim to its slot). Bucketed per slot
@@ -1940,12 +1960,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (img.y < minY) minY = img.y;
       if (img.y > maxY) maxY = img.y;
     };
+    const tick = engine.state.tick;
     for (let slot = 0; slot < store.slots.length; slot++) {
+      // A slot outside its presence window is not on screen — it must
+      // not pull the camera either (same gate as drawPlayers).
+      if (slotPresence && !slotPresence(slot, tick)) continue;
       engine.lerpAt(slot, tmp);
       if (tmp.alive && Number.isFinite(tmp.x)) add(tmp.x, tmp.y, tmp.z);
     }
     const tr = engine.tickRate;
-    const tick = engine.state.tick;
     for (const l of plants) {
       if (!hasPos(l)) continue;
       // INCLUSIVE of the cutoff tick, deliberately: at the cutoff (the
@@ -3309,6 +3332,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // badge records its own x/y copy.
     const badges = [];
     for (let slot = 0; slot < store.slots.length; slot++) {
+      // Marker presence — THE gate the cards render through (view push:
+      // playerConnected → playercard.js presentAt): a slot outside its
+      // window draws nothing here (the covering bot's dot appears with
+      // its card, hands off to the controlling human at the takeover —
+      // owner ruling 2026-11-17).
+      if (slotPresence && !slotPresence(slot, tick)) continue;
       engine.lerpAt(slot, tmp);
       if (!tmp.alive) continue;
       const c = worldToScreen(tmp.x, tmp.y, tmp.z, scr1);
@@ -4587,6 +4616,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setOverlayLayers,
     setIcons,
     setVoices,
+    setSlotPresence,
     setBlinds,
     setChat,
     setBullets,

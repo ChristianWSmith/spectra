@@ -107,6 +107,33 @@ test('the world pushes are wired ONCE each in Replay.svelte', () => {
   }
 });
 
+test('marker presence IS the card predicate (setSlotPresence(playerConnected))', () => {
+  // Owner ruling 2026-11-17: the covering bot's dot appears and
+  // disappears in exactly its card's window, and at takeover the
+  // identity hands off with continuous positions. The tie is structural:
+  // Replay pushes THE SAME playerConnected call the cards render
+  // through (which is presentAt underneath) into the renderer's one
+  // presence gate — both draw paths (drawPlayers + the smart camera's
+  // framing) consume it, and nothing else may compose a second window.
+  const view = readFileSync(
+    fileURLToPath(new URL('./views/Replay.svelte', import.meta.url)),
+    'utf8',
+  );
+  const pushes = view.match(/setSlotPresence\([^)]*\)/g) || [];
+  assert.equal(pushes.length, 1, `setSlotPresence must be wired from exactly one site (${pushes.length})`);
+  assert.ok(
+    /setSlotPresence\(playerConnected\)/.test(view),
+    `the push must be THE card predicate itself, got: ${pushes[0] || 'nothing'}`,
+  );
+  assert.ok(
+    /return presentAt\(connIndex, players, slot, tick\)/.test(view),
+    'playerConnected must delegate to playercard.js presentAt (the ONE card rule)',
+  );
+  const rsrc = read('renderer.js');
+  const gates = rsrc.match(/slotPresence && !slotPresence\(slot, tick\)/g) || [];
+  assert.equal(gates.length, 2, `both draw paths must gate on slotPresence (${gates.length})`);
+});
+
 test('SFX_CUE_KINDS ⊆ DRAW_KINDS (the audio half of the draw set)', () => {
   const draw = new Set(DRAW_KINDS);
   assert.ok(SFX_CUE_KINDS.length > 0, 'the cue-kind registry must not be empty');

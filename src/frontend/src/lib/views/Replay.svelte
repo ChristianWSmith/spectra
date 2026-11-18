@@ -2342,6 +2342,12 @@
     // tolerates a repeat call.
     renderer.setIcons(iconObj);
     renderer.setVoices({ colors: playerColorSlots, speaking: speakIdx ? speakingFor : null });
+    // Marker presence = THE card predicate: the renderer's dots render
+    // through the SAME playerConnected → presentAt call the cards do, so
+    // a covering bot's marker lives in exactly its card's window and
+    // hands off to the controlling human at the takeover (owner ruling
+    // 2026-11-17 — card and marker can never disagree).
+    renderer.setSlotPresence(playerConnected);
     renderer.setStateIndex(stateIndex);
     // Tracer rows: the ONE bullet derivation (lib/replay/bullets.js —
     // gun-only, freeze-filtered, `draw` picks the lines) over the

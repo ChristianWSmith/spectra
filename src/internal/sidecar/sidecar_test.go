@@ -380,7 +380,13 @@ func TestOpenMissingSidecar(t *testing.T) {
 	})
 }
 
-func TestUnknownSteamIDSkippedNotFatal(t *testing.T) {
+// TestLateKeyExtendsFrameMask: a key first seen on a later frame claims
+// an APPENDED slot and the frame masks grow with it — the append must
+// never fail the parse (owner report 2026-11-17 replaced the old
+// "frozen at first frame" contract this test used to pin: a covering
+// bot's samples were dropped there, which is why its marker popped in
+// at the takeover).
+func TestLateKeyExtendsFrameMask(t *testing.T) {
 	dir := t.TempDir()
 	w, err := NewWriter(dir, 0)
 	if err != nil {
@@ -395,16 +401,16 @@ func TestUnknownSteamIDSkippedNotFatal(t *testing.T) {
 	}
 	if err := w.AddFrame(102, []extract.PositionPlayer{
 		{SteamID: slotA, X: 7, Y: 8, Z: 9},
-		{SteamID: latecomer, X: 10, Y: 11, Z: 12}, // never got a slot
+		{SteamID: latecomer, X: 10, Y: 11, Z: 12}, // appends its own slot
 	}); err != nil {
-		t.Fatalf("AddFrame #2 (unknown id must not fail): %v", err)
+		t.Fatalf("AddFrame #2 (late key must not fail): %v", err)
 	}
 	meta, err := w.Close(64)
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if len(meta.Players) != 2 || meta.Players[0] != slotA || meta.Players[1] != slotB {
-		t.Fatalf("slot table = %v, want [A B] frozen at first frame", meta.Players)
+	if len(meta.Players) != 3 || meta.Players[0] != slotA || meta.Players[1] != slotB || meta.Players[2] != latecomer {
+		t.Fatalf("slot table = %v, want [A B latecomer] (append-only, no renumbering)", meta.Players)
 	}
 
 	r, err := Open(dir)
@@ -422,12 +428,15 @@ func TestUnknownSteamIDSkippedNotFatal(t *testing.T) {
 	if frames[0].mask != 0b11 {
 		t.Errorf("frame 0 mask = %#b, want 0b11", frames[0].mask)
 	}
-	// The latecomer was dropped: only slot A survives.
-	if frames[1].mask != 0b01 {
-		t.Errorf("frame 1 mask = %#b, want 0b01", frames[1].mask)
+	// Frame 1 carries A plus the appended slot 2 (B sits this frame out).
+	if frames[1].mask != 0b101 {
+		t.Errorf("frame 1 mask = %#b, want 0b101", frames[1].mask)
 	}
 	if frames[1].bySlot[0].x != 7 {
 		t.Errorf("frame 1 slot 0 x = %v, want 7", frames[1].bySlot[0].x)
+	}
+	if frames[1].bySlot[2].x != 10 {
+		t.Errorf("frame 1 late slot x = %v, want 10", frames[1].bySlot[2].x)
 	}
 }
 
