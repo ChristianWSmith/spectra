@@ -142,6 +142,15 @@
   // only as its job in the table above — the synthetic row while it has
   // no match row, its match row after (demoRows below) — never on both
   // tables (owner, 2026-11-17).
+  //
+  // The table refreshes MANUALLY (owner ruling 2026-11-18): the scan
+  // runs on exactly three triggers — mount, the Refresh button and match
+  // deletion (onDelete) — never on job/parse transitions. A rescan
+  // mid-parse only flashes the panel (the Scanning spinner swap and the
+  // imported row returning for the trailing-debounce window once the
+  // claim releases), and a manual refresh would not pick up a mid-parse
+  // demo anyway. Job outcomes settle the rows LOCALLY instead — see
+  // settleImportDirRow and doImportFile's splice.
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // The scan's progress point (spectra:scan-progress → StatusChip): 0 while
@@ -156,6 +165,13 @@
   // event lands mid-scan.
   let demoScanInFlight = false;
   let demoScanAgain = false;
+  // Rows an Import click spliced OUT of the table (doImportFile), kept
+  // so a job-done FAILURE can put the row back without a rescan — keyed
+  // by the exact path the job carries, consumed (removed) by that job's
+  // terminal event: success drops the entry (the file is imported),
+  // failure/cancel re-inserts the row at its old index. Plain working
+  // state like the in-flight guard above — never render state.
+  const splicedImportRows = new Map(); // path -> { file, at }
   let demoError = $state('');
   let notice = $state('');
   // The one confirmation modal (ConfirmDialog.svelte) — see onDelete /
@@ -319,7 +335,21 @@
         scanProgress = p && typeof p.progress === 'number' ? p.progress : 0;
       }),
       onJobDone((d) => {
-        refreshJobs();
+        // The import-dir table settles LOCALLY on a terminal job — NO
+        // rescan (owner ruling 2026-11-18: scans are mount/Refresh/
+        // delete only). Success splices the path out of demoFiles (the
+        // file is imported now — the claim releases at this terminal
+        // status, so without the splice the click-time snapshot would
+        // flash the row back); failure/cancel re-inserts the row the
+        // Import click spliced out — it returns beside the problem
+        // banner, scan-free. Settled once synchronously (before the
+        // jobs read below can release the claim) and once after it
+        // lands (backstop: a job-done that beats the post-enqueue jobs
+        // read — settleImportDirRow is idempotent).
+        if (d) settleImportDirRow(d);
+        refreshJobs().then(() => {
+          if (d) settleImportDirRow(d);
+        });
         refreshList();
         // Freshly imported match → warm ITS header: the user's probable
         // next click (rung 1). Ordering is safe BY CONSTRUCTION: the
@@ -329,14 +359,15 @@
         // fresh — never re-caching pre-flush data. `force` skips the
         // hover's per-row throttle for the same reason.
         if (d && d.matchId) warmMatchHeader(d.matchId, true);
-        scheduleDemoScan();
       }),
       onLibraryChanged(() => {
         refreshJobs();
         refreshList();
-        // Coalesced: an import burst lands ONE rescan after it settles,
-        // never one per event (scheduleDemoScan).
-        scheduleDemoScan();
+        // No demo-dir rescan here (owner ruling 2026-11-18): unrelated
+        // library-changed events (a parse boundary, a status transition,
+        // any other view's write) must never flash the import-dirs
+        // table — it refreshes on mount, the Refresh button and match
+        // deletion only.
       }),
       // Drop only reaches JS when the pointer is over an element with
       // data-file-drop-target (the drop zone below).
@@ -484,7 +515,9 @@
       await cancelJob(id);
       await refreshJobs();
       await refreshList();
-      await refreshDemoFiles();
+      // No demo-dir rescan (owner ruling 2026-11-18): a cancelled
+      // import's row returns through settleImportDirRow (job-done),
+      // never through a scan.
     } catch (e) {
       error = errText(e);
     }
@@ -513,10 +546,12 @@
     }
     // Each refresh catches internally (error/demoError slots), so only
     // importPaths can fail the call — same behavior as the old single
-    // try, with the outcome now reported to the caller.
+    // try, with the outcome now reported to the caller. No demo-dir
+    // rescan here (owner ruling 2026-11-18): the row left the table at
+    // click time (doImportFile) and the claim keeps it out while the
+    // job runs; job-done settles it locally.
     await refreshJobs();
     await refreshList();
-    await refreshDemoFiles();
     return true;
   }
 
@@ -529,15 +564,19 @@
   // through sha256 inside the binding), so callers schedule it — see
   // scheduleDemoScan below — instead of running it inline.
   //
-  // Scan scheduling: event-driven rescans go through scheduleDemoScan, a
-  // TRAILING debounce — every request pushes the single pending scan out
-  // SCAN_DEBOUNCE_MS, so an import burst (job-done / library-changed per
-  // job) settles into ONE rescan instead of one per event, and the scan
-  // never runs inline in a handler. The mount scan is scheduled at delay 0
-  // (requestIdleCallback where available) so first paint and the cheaper
-  // mount reads above it never wait behind a folder walk. Explicit user
-  // actions (import / cancel / delete, the Refresh button) still call
-  // refreshDemoFiles directly: their outcome is what the user awaits.
+  // Scan scheduling (owner ruling 2026-11-18: manual-only): the import
+  // dirs are rescanned on exactly THREE triggers — the mount scan, the
+  // Refresh button and match deletion (onDelete) — and NEVER on
+  // job/parse transitions: spectra:job-done and spectra:library-changed
+  // refetch jobs + list only (the table settles locally through
+  // settleImportDirRow / doImportFile's splice), because a mid-parse
+  // rescan only flashes the panel and a scan cannot see a mid-parse
+  // demo anyway. scheduleDemoScan stays the mount scan's scheduler (a
+  // TRAILING debounce, delay 0 via requestIdleCallback where available,
+  // so first paint never waits behind a folder walk) and coalesces any
+  // overlapping request; explicit user actions (Refresh, match delete)
+  // call refreshDemoFiles directly — their outcome is what the user
+  // awaits.
   const SCAN_DEBOUNCE_MS = 300;
   let demoScanCancel = null; // cancels the ONE pending scheduled scan
 
@@ -569,7 +608,7 @@
       // A scan is already running: don't pile up (the walk + stats are
       // cheap, but a rescan mid-scan would only return the same rows) —
       // remember the request and run it once the current scan lands, so
-      // a library event that arrived mid-scan is never lost.
+      // a scan request that arrived mid-scan is never lost.
       demoScanAgain = true;
       return;
     }
@@ -601,13 +640,58 @@
   // (demoRows keeps it out once the jobs snapshot knows the path). If
   // the enqueue fails, the row is put back at its old index — a failed
   // import never silently swallows the row (the error banner says why).
+  // The spliced row is also remembered (splicedImportRows) so a job that
+  // fails LATER puts it back without a rescan (settleImportDirRow) —
+  // owner ruling 2026-11-18: no scan fires on job transitions.
   async function doImportFile(f, ev) {
     ev.stopPropagation();
     const at = demoFiles.findIndex((x) => x.path === f.path);
-    if (at >= 0) demoFiles.splice(at, 1);
+    if (at >= 0) {
+      demoFiles.splice(at, 1);
+      splicedImportRows.set(f.path, { file: f, at });
+    }
     const ok = await doImportPaths([f.path]);
     if (!ok && at >= 0 && !demoFiles.some((x) => x.path === f.path)) {
       demoFiles.splice(Math.min(at, demoFiles.length), 0, f);
+      splicedImportRows.delete(f.path); // the enqueue failed: no job will ever settle this entry
+    }
+  }
+
+  // settleImportDirRow — the import-dirs table's job-done settlement
+  // (owner ruling 2026-11-18: NO rescan on job/parse transitions; the
+  // scan triggers are mount / the Refresh button / match deletion). The
+  // path comes from the jobs snapshot the row was claimed from (the job
+  // was NON-TERMINAL there — that claim is what held the row off the
+  // card):
+  //   done        → splice the path OUT of demoFiles: the file is
+  //                 imported now (the scan would omit it anyway), so the
+  //                 row must not flash back when the claim releases at
+  //                 this terminal status;
+  //   failed/cancelled → re-insert the row the Import click spliced out
+  //                 (splicedImportRows) at its old index — the row
+  //                 returns beside the problem banner, scan-free. A row
+  //                 never spliced (Import… / drag-drop import) is still
+  //                 in demoFiles and returns on its own when the claim
+  //                 releases; a job not in the snapshot is not ours to
+  //                 settle (the next scan settles it).
+  // Idempotent: the job-done handler calls it once synchronously (before
+  // the jobs read can release the claim — no flash frame) and once after
+  // that read lands (the backstop for a job-done that beat the
+  // post-enqueue jobs read).
+  function settleImportDirRow(d) {
+    const j = jobs.find((x) => x.id === d.jobId && x.kind === 'import');
+    if (!j || !j.path) return;
+    if (d.status === 'done') {
+      splicedImportRows.delete(j.path);
+      const at = demoFiles.findIndex((x) => x.path === j.path);
+      if (at >= 0) demoFiles.splice(at, 1);
+      return;
+    }
+    const stashed = splicedImportRows.get(j.path);
+    if (!stashed) return;
+    splicedImportRows.delete(j.path);
+    if (!demoFiles.some((x) => x.path === j.path)) {
+      demoFiles.splice(Math.min(stashed.at, demoFiles.length), 0, stashed.file);
     }
   }
 
@@ -626,7 +710,12 @@
     if (!ok) return;
     try {
       await deleteDemoFile(f.path);
-      await refreshDemoFiles();
+      // The row leaves WITH the file — a local splice of exactly this
+      // row, not a rescan (owner ruling 2026-11-18: the table refreshes
+      // manually only; this delete changed one row and the frontend
+      // knows which).
+      const at = demoFiles.findIndex((x) => x.path === f.path);
+      if (at >= 0) demoFiles.splice(at, 1);
       notice = `Deleted ${basename(f.path)} from disk.`;
     } catch (e) {
       demoError = errText(e);
@@ -709,6 +798,9 @@
       }
       await refreshJobs();
       await refreshList();
+      // Scan trigger (c) — match deletion (owner ruling 2026-11-18):
+      // deleting a match brings its demo back here, and DeleteMatch
+      // emits no event at all, so this path scans directly.
       await refreshDemoFiles();
     } catch (e) {
       error = errText(e);
