@@ -343,9 +343,9 @@ distance range, headshot and a **Position** row where the world-space bounds are
 directly (minimum and maximum on each axis) or cleared, plus **saved filter presets** (save, apply,
 delete, reset). The loaded feed exports as **CSV or JSON**. Selecting an event opens its detail
 pane with the participants, a filter over its payload keys and a raw-JSON toggle. The row's play
-button — and **Watch this event** in that pane — jump the replay to the event, start playing and
-loop it for the length set in **Settings → Replay**; **Hear around the event** does the same with
-voice on.
+button — and **Watch this event** in that pane — open a loop of the length set in **Settings →
+Replay** around the event and start playing from the beginning of that loop; **Hear around the
+event** does the same with voice on.
 
 # Keyboard shortcuts
 

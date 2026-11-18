@@ -289,14 +289,17 @@
   function bombWatch(e) {
     const who = e.attackerName || e.attacker;
     const role = e.kind === 'bomb_plant' ? 'planter' : e.kind === 'bomb_defuse' ? 'defuser' : null;
+    // Labels identify the EVENT (owner ruling 2026-11-18): no tick
+    // numbers, no landing claims — the loop opens around the event and
+    // playback starts at the loop's start.
     return e.attacker && role
       ? {
           title: `Watch this bomb event — follow ${who} (${role})`,
-          label: `Watch from tick ${e.tick} — follow ${who}`,
+          label: `Watch this bomb event — follow ${who} (${role})`,
         }
       : {
           title: 'Watch this bomb event in the replay',
-          label: `Watch from tick ${e.tick} in the replay`,
+          label: 'Watch this bomb event in the replay',
         };
   }
 </script>
@@ -498,8 +501,8 @@
                             ? `Watch from this kill — follow ${k.attackerName || k.attacker} (killer)`
                             : S.match.watchKillIdle}
                           aria-label={k.attacker
-                            ? `Watch from tick ${k.tick} — follow ${k.attackerName || k.attacker}`
-                            : `Watch from tick ${k.tick} in the replay`}
+                            ? `Watch this kill — follow ${k.attackerName || k.attacker} (killer)`
+                            : 'Watch this kill in the replay'}
                           onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate, loopSecs), k.attacker)}
                           ><span class="codicon codicon-play" aria-hidden="true"></span></button
                         >

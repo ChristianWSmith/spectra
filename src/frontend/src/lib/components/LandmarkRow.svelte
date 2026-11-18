@@ -157,16 +157,20 @@
 {/snippet}
 
 <!-- The default ▶ copy (caller-supplied seekTitle/seekLabel win): the row
-     action is WATCH — seek to the event, play and loop the user's loop
-     length around it — true in BOTH consumers (Replay's feed arms the
-     loop in place; CompareRounds' actor-less rows stamp the same anchor
-     as their entry ?loop=), so it may name neither a bare seek (the old
-     wording) nor a second count (the length is the `loop_secs` pref). -->
+     action is WATCH — a loop of the user's loop length opens around the
+     event and playback starts at the LOOP'S START (owner ruling
+     2026-11-18) — true in BOTH consumers (Replay's feed arms the loop in
+     place; CompareRounds' actor-less rows stamp the same anchor as their
+     entry ?loop=), so it may name neither a landing position (no "jump
+     to it", no tick — the labels identify the EVENT, per the same
+     ruling) nor a second count (the length is the `loop_secs` pref). The
+     aria-label reuses the catalog's one spelling of the watch action
+     (strings/replay.js seekToEvent). -->
 <li class="lm-row" class:lm-compact={compact} class:active={selected}>
   <button
     class="btn small ghost lm-play"
-    title={seekTitle || `Watch this event — jump to it, play, and loop around it for your loop length (Settings → Replay)`}
-    aria-label={seekLabel || `Watch at tick ${row.tick}`}
+    title={seekTitle || `Watch this event — plays from the start of a loop around it (Settings → Replay)`}
+    aria-label={seekLabel || S.replay.seekToEvent}
     onclick={seek}
   ><span class="codicon codicon-play" aria-hidden="true"></span></button
   >
