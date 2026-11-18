@@ -7970,3 +7970,100 @@ test('slot presence gates the marker: hidden slot draws no dot or label, visible
   );
   r.destroy();
 });
+
+// --- the movement trail obeys the ONE marker-presence gate ------------------
+//
+// Owner report 2026-11-17: "I can see the trail it leaves behind when it
+// walks, but its player card is missing and its dot isn't drawn" — the
+// trail was the one position surface W40's gate did not cover. The pin
+// below ties ALL THREE canvas surfaces (dot + label + trail) to the ONE
+// predicate the cards render through, across a hidden→visible transition:
+// a hidden slot draws NOTHING of itself, and the moment its window opens
+// everything appears on the same draw.
+test('the movement trail and dot obey the same presence gate across the window transition', () => {
+  headlessGlobals();
+
+  // A moving slot 0 (16 u/frame = 1024 u/s — well over TRAIL_MIN_SPEED)
+  // and a static slot 1 (never trails, so any trail stroke is slot 0's).
+  const frames = 500;
+  const data = {
+    frames,
+    ticks: new Int32Array(frames).map((_, i) => i),
+    masks: new Uint16Array(frames).fill(0b11),
+    slots: [0, 1].map((s) => ({
+      pos: new Float32Array(frames * 4),
+      flags: new Uint8Array(frames),
+    })),
+    bounds: { minX: 0, maxX: 5000, minY: 0, maxY: 5000 },
+  };
+  for (let f = 0; f < frames; f++) {
+    data.slots[0].pos[f * 4] = 10 + f * 16; // x marches east
+    data.slots[0].pos[f * 4 + 1] = 10;
+    data.slots[1].pos[f * 4] = 400;
+    data.slots[1].pos[f * 4 + 1] = 400;
+    data.slots[0].flags[f] = 8; // ct
+    data.slots[1].flags[f] = 4; // t
+  }
+  const players = [
+    { steamId: '1', name: 'alice', side: 'ct' },
+    { steamId: '2', name: 'bob', side: 't' },
+  ];
+  // The trail strokes: lineWidth 2 in slot 0's team color, a stroke
+  // whose path was built from lineTrails' moveTo/lineTo walk (the
+  // recording canvas snapshots styles but not globalAlpha — the path
+  // shape is what isolates a trail stroke from a rim's arc stroke in
+  // this minimal scene; the bands' sub-0.5 alpha is asserted by the
+  // trailBandAlpha head tests above).
+  const trailStrokes = (log) =>
+    log.filter(
+      (e, i) =>
+        e.op === 'stroke' &&
+        e.lineWidth === 2 &&
+        e.strokeStyle === '#5aa9e6' &&
+        log[i - 1] &&
+        log[i - 1].op === 'lineTo',
+    );
+  const names = (log) =>
+    log.filter((e) => e.op === 'fillText' && (e.args[0] === 'alice' || e.args[0] === 'bob')).map((e) => e.args[0]);
+  const engine = createEngine(data, 64);
+  const paint = (r, canvas) => {
+    r.resize();
+    engine.seekTick(400); // inside the 192-frame trail window
+    const mark = canvas.log.length;
+    r.draw();
+    return canvas.log.slice(mark);
+  };
+
+  // No gate pushed → the trail draws (the W40 default every other host
+  // gets).
+  let canvas = recordingCanvas();
+  let r = createRenderer(canvas, { engine, data, players });
+  let seq = paint(r, canvas);
+  assert.ok(trailStrokes(seq).length > 0, 'ungated: the moving slot trails');
+  r.destroy();
+
+  // The gate hides slot 0 → no dot, no label, NO TRAIL (the leak).
+  canvas = recordingCanvas();
+  r = createRenderer(canvas, { engine, data, players });
+  r.setSlotPresence((slot) => slot === 1);
+  seq = paint(r, canvas);
+  assert.deepEqual(names(seq), ['bob'], 'hidden slot draws no label');
+  assert.equal(trailStrokes(seq).length, 0, 'hidden slot leaves NO trail');
+  r.destroy();
+
+  // The window opens → dot, label and trail all appear on the SAME draw
+  // (one predicate, every surface — nothing sticky, nothing delayed).
+  canvas = recordingCanvas();
+  r = createRenderer(canvas, { engine, data, players });
+  let slot0Visible = false;
+  r.setSlotPresence((slot) => slot !== 0 || slot0Visible);
+  seq = paint(r, canvas);
+  assert.equal(trailStrokes(seq).length, 0, 'still hidden before the window opens');
+  slot0Visible = true;
+  const mark = canvas.log.length;
+  r.draw();
+  seq = canvas.log.slice(mark);
+  assert.ok(trailStrokes(seq).length > 0, 'the trail appears when the window opens');
+  assert.ok(names(seq).includes('alice'), 'the dot/label appear with it');
+  r.destroy();
+});

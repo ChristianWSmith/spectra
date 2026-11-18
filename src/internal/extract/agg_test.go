@@ -1225,3 +1225,49 @@ func TestEnemiesFlashed(t *testing.T) {
 		t.Fatalf("unknown-side blind = %+v, want enemiesFlashed 1 (permissive attribution)", p)
 	}
 }
+
+// TestConnectEstablishesRosterRow: a stored connect row makes the
+// identity KNOWN — the other ensure paths can all miss a substitute bot
+// (kicked before the next freeze-end sample, kick-time World self-kill
+// excluded from stats, controller entity gone before the end-of-demo
+// snapshot), and without a players row the replay meta hands the frontend
+// a BLANK roster entry the card's presence rule can never resolve
+// (owner report 2026-11-17 — the card/marker/trail/camera invariant).
+func TestConnectEstablishesRosterRow(t *testing.T) {
+	const botKey = uint64(0xFF00000000000000 | 0x0B07)
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET") // counted round
+	a.connect(81344, botKey, "Ricksaw", true)
+	p := a.players[botKey]
+	if p == nil {
+		t.Fatal("connect did not establish the roster row — the replay meta would join a blank entry")
+	}
+	if p.name != "Ricksaw" || !p.isBot {
+		t.Errorf("row = name %q isBot %v, want Ricksaw/true", p.name, p.isBot)
+	}
+
+	// The entry exists iff its row does: a discarded period (knife/
+	// warmup) stores no connect row and must establish no roster entry.
+	b := newAgg()
+	b.roundStart(0, true, false, 115, "") // warmup → discarding
+	b.connect(100, 76561198000000001, "knifeOnly", false)
+	if b.players[76561198000000001] != nil {
+		t.Error("discarded-period connect established a row — knife/warmup ingests nothing")
+	}
+	if len(b.events) != 0 {
+		t.Errorf("discarded-period connect stored %d event rows, want 0", len(b.events))
+	}
+
+	// The pre-first-round prefix: its rows are wiped by dropPrefix when
+	// the opening round is discarded, so no roster entry may outlive
+	// them either.
+	c := newAgg()
+	c.connect(10, 76561198000000002, "prefix", false)
+	c.roundStart(0, true, false, 115, "") // first round discarded → dropPrefix
+	if c.players[76561198000000002] != nil {
+		t.Error("prefix connect's roster row outlived dropPrefix — the entry exists iff the row does")
+	}
+	if len(c.events) != 0 {
+		t.Errorf("prefix connect rows after dropPrefix = %d, want 0", len(c.events))
+	}
+}

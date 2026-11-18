@@ -126,12 +126,20 @@ test('marker presence IS the card predicate (setSlotPresence(playerConnected))',
     `the push must be THE card predicate itself, got: ${pushes[0] || 'nothing'}`,
   );
   assert.ok(
-    /return presentAt\(connIndex, players, slot, tick\)/.test(view),
-    'playerConnected must delegate to playercard.js presentAt (the ONE card rule)',
+    /return presentAt\(connIndex, players, slot, tick, sideAtCoverage\)/.test(view),
+    'playerConnected must delegate to playercard.js presentAt with the coverage-time side resolver (the ONE card rule)',
   );
   const rsrc = read('renderer.js');
-  const gates = rsrc.match(/slotPresence && !slotPresence\(slot, tick\)/g) || [];
-  assert.equal(gates.length, 2, `both draw paths must gate on slotPresence (${gates.length})`);
+  // FIVE draw paths consume the ONE gate — a hidden slot must draw
+  // NOTHING of itself (owner report 2026-11-17: the trail leaked past
+  // the dot/card/camera): the dots/labels (drawPlayers), the smart
+  // camera's framing (smartTarget), the movement trails (drawTrails)
+  // and both tracer origins at their row's tick (drawBulletTracers,
+  // drawHitTracers). Event-derived markers (death X, kill feed, chat,
+  // grenades/drops/bomb) are the RECORD of what happened and stay
+  // ungated by stance — see the audit in the w44 wave report.
+  const gates = rsrc.match(/slotPresence && !slotPresence\(slot, [^)]+\)/g) || [];
+  assert.equal(gates.length, 5, `all five position surfaces must gate on slotPresence (${gates.length})`);
 });
 
 test('SFX_CUE_KINDS ⊆ DRAW_KINDS (the audio half of the draw set)', () => {

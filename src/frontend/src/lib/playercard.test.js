@@ -471,3 +471,75 @@ test('reloadProgress: the stream ending mid-reload clamps to 0 (duration unknown
   assert.equal(reloadProgress(odd, 1), 1 / 3);
   assert.equal(reloadProgress(odd, 2), 2 / 3);
 });
+
+// --- Coverage-time sides (the repro's halftime flip) ------------------------
+// Owner report 2026-11-17: NO covering bot's card ever showed. The
+// roster's FINAL sides disagree for the coverage pair — the human
+// finished ct while his round-12 substitute finished t — so the
+// final-side comparison could never match, even though both were on the
+// SAME team (t) when the pairing formed. presentAt therefore judges the
+// side AT THE ANCHOR (the bot's join tick) through the injected sideAt
+// resolver; the roster side stays the resolver's fallback.
+const LEAVER = '76561198000000011';
+const SUBBOT = '18374686479671623694';
+const flipRoster = [
+  { steamId: LEAVER, name: 'flipper', side: 'ct' }, // finished ct…
+  { steamId: SUBBOT, name: 'sub', side: 't', isBot: true }, // …coverage was on t
+];
+const flipConn = () =>
+  indexConnections([
+    conn('player_disconnect', 1000, LEAVER),
+    conn('player_connect', 1001, SUBBOT),
+    conn('player_connect', 5000, LEAVER),
+  ]);
+
+test('presentAt: sides are judged at the coverage anchor, not from final sides', () => {
+  const idx = flipConn();
+  // Legacy (no resolver): the final sides disagree → never listed —
+  // the exact hole the owner hit.
+  assert.equal(presentAt(idx, flipRoster, 1, 1001), false, 'final sides alone cannot pair');
+  // With a resolver: both parties were t AT THE ANCHOR → listed.
+  const anchorSides = [];
+  const sideAt = (slot, tick) => {
+    anchorSides.push([slot, tick]);
+    return slot === 0 || slot === 1 ? 't' : '';
+  };
+  assert.equal(presentAt(idx, flipRoster, 1, 1001, sideAt), true, 'coverage-time sides pair');
+  // The resolver is asked AT THE ANCHOR (the bot's join), never at the
+  // playhead — a halftime flip after the anchor must not retroactively
+  // change the pairing.
+  assert.ok(anchorSides.length > 0, 'the resolver was consulted');
+  assert.ok(
+    anchorSides.every(([, tick]) => tick === 1001),
+    `asked at the anchor only, got ${JSON.stringify(anchorSides)}`,
+  );
+  // Coverage-time sides that DISAGREE still fail — the resolver never
+  // forces a pairing.
+  assert.equal(
+    presentAt(idx, flipRoster, 1, 1001, (slot) => (slot === 0 ? 'ct' : 't')),
+    false,
+    'anchor sides disagree → not covering',
+  );
+  // The human reconnects → out of coverage regardless of sides.
+  assert.equal(presentAt(idx, flipRoster, 1, 5000, sideAt), false, 'the leaver is back');
+});
+
+test('presentAt: a blank roster row resolves through the anchor sides', () => {
+  // The repro's Steel/Ricksaw shape: the bot left before the demo's end,
+  // so no players row exists and the meta joins a BLANK entry (no side,
+  // no name, not even the bot flag — only the 0xFF id shape says bot).
+  const blank = [
+    { steamId: LEAVER, name: 'leaver', side: 'ct' },
+    { steamId: SUBBOT, name: '', side: '', isBot: false },
+  ];
+  const idx = flipConn();
+  // No resolver → no side evidence → fails toward NOT listed (never
+  // guessed), exactly as before.
+  assert.equal(presentAt(idx, blank, 1, 1001), false, 'blank side never guesses');
+  // The resolver supplies both anchor sides from the position stream.
+  assert.equal(
+    presentAt(idx, blank, 1, 1001, () => 't'),
+    true,
+    'anchor sides resolve the blank row',
+  );
+});

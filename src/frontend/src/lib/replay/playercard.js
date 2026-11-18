@@ -248,9 +248,17 @@ export function connectedAt(events, tick) {
 //          23467 → Crew connects 25155 → both end at 28801).
 //     A bot that never disconnects (a DemoRecorder/GOTV-style occupant)
 //     connects before any human has left, so condition 2 can never hold
-//     for it → never listed. Sides come from the roster's FINAL side
-//     (players.side, the same table the column grouping uses) and both
-//     must be known and equal — an unknown side fails the pairing rather
+//     for it → never listed. Sides are judged AT THE COVERAGE ANCHOR —
+//     the tick the bot joined, the moment the pairing forms — through
+//     the optional `sideAt` resolver `(slot, tick) => side` the view
+//     injects: the canonical per-frame side rule over the position
+//     stream, with the roster's FINAL side as its fallback. Roster
+//     sides alone are FINAL sides, and a halftime flip makes a coverage
+//     pair disagree on them (the repro: bvcket finished ct while Rebel,
+//     his round-12 substitute, finished t — so the card never showed
+//     ANY covering bot; owner report 2026-11-17, the card/marker/trail/
+//     camera invariant). Without a resolver the roster side is used as
+//     before. An unknown side on EITHER party fails the pairing rather
 //     than guessing one (fail toward NOT listing the bot).
 //
 // NO recorded event at/before `tick` (the roster-derived initial state):
@@ -265,7 +273,7 @@ export function connectedAt(events, tick) {
 //
 // Bot-ness is lib/players.js isBot (the players.is_bot flag the replay
 // meta now carries, with the synthetic 0xFF id shape as its backstop).
-export function presentAt(index, roster, slot, tick) {
+export function presentAt(index, roster, slot, tick, sideAt) {
   const p = Array.isArray(roster) ? roster[slot] : null;
   const sid = p && p.steamId != null ? String(p.steamId) : '';
   const events = index && sid ? index.get(sid) : undefined;
@@ -278,13 +286,25 @@ export function presentAt(index, roster, slot, tick) {
   const joined = stateAt(events, t);
   if (!joined) return false; // no recorded join evidence at this playhead
   if (!joined.connected) return false; // recorded disconnect → out of the match
+  // Coverage-time sides (header): the resolver reads each party's side
+  // AT THE ANCHOR (the bot's join — where the pairing forms); the
+  // roster's final side is its fallback. No resolver → roster sides
+  // exactly as before.
+  const sideOf = (i, row) => {
+    const resolved = typeof sideAt === 'function' ? sideAt(i, joined.tick) : '';
+    return resolved || row.side || '';
+  };
+  const pSide = sideOf(slot, p);
+  if (!pSide) return false; // no side evidence for the bot → pairing cannot pass (never guessed)
   const rostered = Array.isArray(roster) ? roster : [];
-  for (const q of rostered) {
+  for (let qi = 0; qi < rostered.length; qi++) {
+    const q = rostered[qi];
     if (!q) continue;
     const qid = q.steamId != null ? String(q.steamId) : '';
     if (qid === sid) continue;
     if (isBot(q)) continue; // a bot never justifies another bot
-    if (!q.side || !p.side || q.side !== p.side) continue; // same side, known
+    const qSide = sideOf(qi, q);
+    if (!qSide || qSide !== pSide) continue; // same side at the anchor, known
     const out = stateAt(index && qid ? index.get(qid) : undefined, t);
     if (!out || out.connected) continue; // still in (or no evidence)
     if (out.tick <= joined.tick) return true; // left before the bot joined
