@@ -120,16 +120,18 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	bomb_plants INTEGER NOT NULL DEFAULT 0,
 	bomb_defuses INTEGER NOT NULL DEFAULT 0,
 	money_spent_total INTEGER NOT NULL DEFAULT 0,
-	-- kills_by_weapon / damage_by_weapon: the retired Weapons table's
-	-- JSON fold — extract still WRITES them and the match scoreboard's
-	-- row DTO still carries them (nothing consumes the pair: the
-	-- profile Weapons table migrated to the weapon_* seeds, 2026-11-18,
-	-- M7 gate flip), and the only value readers left are the oracle
-	-- tests (internal/integration/profile_weapons_gate_test.go, store's
-	-- headshots derivation test).
+	-- kills_by_weapon / damage_by_weapon: the retired profile Weapons
+	-- table's JSON fold — extract still WRITES both, and the match
+	-- scoreboard row still carries kills_by_weapon (FilterBar unions its
+	-- keys into the match's weapon filter — a live reader, 2026-11-18);
+	-- damage_by_weapon has NO consumer since the profile Weapons table
+	-- migrated to the weapon_* seeds (2026-11-18, M7 gate flip), its
+	-- only readers now the oracle tests (internal/integration/
+	-- profile_weapons_gate_test.go, store's headshots derivation test).
 	-- Both stay OUT of the metrics expression whitelist (JSON blobs,
 	-- internal/metrics/whitelist.go) and stay in the schema — dropping
-	-- them is a separate owner decision (ME8 audit note, 2026-11-18).
+	-- damage_by_weapon is a separate owner decision (ME8 audit note,
+	-- 2026-11-18).
 	kills_by_weapon TEXT NOT NULL DEFAULT '',
 	damage_by_weapon TEXT NOT NULL DEFAULT '',
 	-- flash_assists splits AssistedFlash assists out of the assist column

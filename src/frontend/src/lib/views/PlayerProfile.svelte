@@ -540,16 +540,19 @@
     };
   });
 
-  // --- The Sides / Maps tables (M5/M6 partitioned seeds) ---------------
-  // Both tables read their partitioned builtin rows through the canonical
+  // --- The Sides / Maps / Weapons tables (M5/M6/M7 partitioned seeds)
+  // All three tables read their partitioned builtin rows through the
+  // canonical
   // stored-value read — getMetricValuesForPlayer carries each row's dim —
   // refetched with the career read on spectra:metric-done. The retired
-  // Go folds (profileservice's side splits and per-map fold) survive
+  // Go folds (profileservice's side splits, per-map fold and the
+  // mergeWeapons JSON fold) survive
   // only as the equivalence tests' oracles: NO raw fallback — a seed the
   // catalog does not carry, or a dim without a fresh row, renders the
   // honest dash (metricPresentation's precedence, never a Go number).
   const SIDE_SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
   const MAP_SEEDS = ['map_matches', 'map_wins', 'map_adr'];
+  const WEAPON_SEEDS = ['weapon_kills', 'weapon_damage', 'weapon_headshots'];
   let splitDefs = $state(new Map()); // seed name → definition (Formula titles)
   let splitValues = $state(new Map()); // seed name → Map(dim → display value)
 
@@ -560,7 +563,7 @@
     splitDefs = new Map();
     splitValues = new Map();
     if (!sid) return;
-    const wanted = [...SIDE_SEEDS, ...MAP_SEEDS];
+    const wanted = [...SIDE_SEEDS, ...MAP_SEEDS, ...WEAPON_SEEDS];
     listMetrics()
       .then((defs) => {
         const byName = new Map((defs || []).map((d) => [d.name, d]));
@@ -620,7 +623,26 @@
     );
     return out;
   });
-  const weapons = $derived((profile?.weapons || []).slice(0, 8));
+  const weapons = $derived.by(() => {
+    // Same shape as the Maps table: the union of the three seeds' dims,
+    // sorted the way the retired mergeWeapons fold sorted (kills desc →
+    // damage desc → weapon name asc), capped at the view's top rows —
+    // a dim missing a seed row renders the honest dash per cell, never
+    // a Go number.
+    const dims = new Set();
+    for (const n of WEAPON_SEEDS) for (const d of splitValues.get(n)?.keys() ?? []) dims.add(d);
+    const out = [...dims].map((dim) => {
+      const at = (n) => splitValues.get(n)?.get(dim) ?? null;
+      return { weapon: dim, kills: at('weapon_kills'), damage: at('weapon_damage'), headshots: at('weapon_headshots') };
+    });
+    out.sort(
+      (a, b) =>
+        (b.kills ?? -1) - (a.kills ?? -1) ||
+        (b.damage ?? -1) - (a.damage ?? -1) ||
+        (a.weapon < b.weapon ? -1 : a.weapon > b.weapon ? 1 : 0),
+    );
+    return out.slice(0, 8);
+  });
   const history = $derived(profile?.history || []);
 
   // Return trip: where the button points, and how to name it (the default
@@ -891,18 +913,18 @@
           <thead>
             <tr>
               <th scope="col">{S.profiles.thWeapon}</th>
-              <th scope="col" class="num">{S.profiles.thKills}</th>
-              <th scope="col" class="num">{S.profiles.thDamage}</th>
-              <th scope="col" class="num">HS</th>
+              <th scope="col" class="num" title={splitDefs.get('weapon_kills')?.doc}>{S.profiles.thKills}</th>
+              <th scope="col" class="num" title={splitDefs.get('weapon_damage')?.doc}>{S.profiles.thDamage}</th>
+              <th scope="col" class="num" title={splitDefs.get('weapon_headshots')?.doc}>HS</th>
             </tr>
           </thead>
           <tbody>
             {#each weapons as w (w.weapon)}
               <tr>
                 <td class="mono">{w.weapon}</td>
-                <td class="num">{fmtInt(w.kills)}</td>
-                <td class="num">{fmtInt(w.damage)}</td>
-                <td class="num">{fmtInt(w.headshots)}</td>
+                <td class="num">{w.kills != null ? fmtInt(w.kills) : '—'}</td>
+                <td class="num">{w.damage != null ? fmtInt(w.damage) : '—'}</td>
+                <td class="num">{w.headshots != null ? fmtInt(w.headshots) : '—'}</td>
               </tr>
             {:else}
               <tr><td colspan="4" class="muted">{S.profiles.noWeapons}</td></tr>

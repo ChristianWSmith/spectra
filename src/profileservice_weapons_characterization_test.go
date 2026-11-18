@@ -6,9 +6,10 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestMergeWeaponsCharacterization pins the profile Weapons table's
-// JSON fold (mergeWeapons) as M7's equivalence pre-image: the table is
-// PURE INTEGER SUMS per weapon — kills/damage/headshots pooled across
+// TestMergeWeaponsCharacterization pins the RETIRED profile Weapons
+// JSON fold (mergeWeapons) as M7's equivalence pre-image — ORACLE-ONLY
+// since the table migrated to the weapon_* seeds (2026-11-18): the fold
+// is PURE INTEGER SUMS per weapon — kills/damage/headshots pooled across
 // matches, sorted kills desc → damage desc → name asc, capped at
 // weaponTopLimit — so any weapon-partitioned ratio metric must be
 // compared against the ROW-RATIO over these pooled counts (Σhs ÷ Σk),
