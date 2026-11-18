@@ -41,7 +41,8 @@ type ProvenancePanel struct {
 	// — the rule_version its derived rows were last computed under), NOT
 	// the live config's version: reporting the live one claimed rows were
 	// current when they might not be. 0 = never analyzed / unknown —
-	// never a real version (analysis_config starts at 1) — and the same
+	// never a real version (analysis_config starts at 1 — 2 since the
+	// 2026-11-18 enemy-damage bump) — and the same
 	// missing-data convention as VoiceChunks above (0, no fabricated
 	// number).
 	RuleVersion int `json:"ruleVersion"`

@@ -68,8 +68,10 @@ func TestConfigSeedAndSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConfig: %v", err)
 	}
-	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 20000 || c.EcoForce != 10000 || c.RuleVersion != 1 {
-		t.Errorf("seeded config = %+v, want defaults 5/20000/10000/v1", c)
+	// 2026-11-18: the seed version moved 1 → 2 with the enemy-damage
+	// folds (store.DefaultConfig.RuleVersion — owner ruling 2026-11-17).
+	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 20000 || c.EcoForce != 10000 || c.RuleVersion != 2 {
+		t.Errorf("seeded config = %+v, want defaults 5/20000/10000/v2", c)
 	}
 	if c.TradeOppDistance != 1000 {
 		t.Errorf("seeded tradeOppDistance = %d, want the 1000u default", c.TradeOppDistance)

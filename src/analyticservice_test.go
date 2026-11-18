@@ -315,12 +315,14 @@ func TestSetConfigBumpsOnlyOnChange(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	as := &AnalyticsService{st: st}
 
-	cur, err := as.GetConfig() // seeds the defaults (rule v1)
+	// 2026-11-18: seeded rule version moved 1 → 2 (the enemy-damage
+	// folds — store.DefaultConfig.RuleVersion, owner ruling 2026-11-17).
+	cur, err := as.GetConfig() // seeds the defaults (rule v2)
 	if err != nil {
 		t.Fatalf("GetConfig: %v", err)
 	}
-	if cur.RuleVersion != 1 {
-		t.Fatalf("seeded rule version = %d, want 1", cur.RuleVersion)
+	if cur.RuleVersion != 2 {
+		t.Fatalf("seeded rule version = %d, want 2", cur.RuleVersion)
 	}
 
 	// Identical values → the stored row back, version untouched, even
@@ -514,11 +516,11 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 	if n := opps(t, "100"); n != 2 {
 		t.Fatalf("alice opps @1000 = %d, want 2 (both teammate deaths)", n)
 	}
-	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
-		t.Fatalf("stamp after first run = %d, %v, want 1 (seeded default rules)", v, err)
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
+		t.Fatalf("stamp after first run = %d, %v, want 2 (seeded default rules — v2 since the 2026-11-18 enemy-damage bump)", v, err)
 	}
 
-	// Save a narrower radius: bump v1 → v2 and the match goes behind.
+	// Save a narrower radius: bump v2 → v3 and the match goes behind.
 	saved, err := as.SetConfig(models.AnalysisConfig{
 		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000,
 		TradeOppDistance: 200, RuleVersion: 1,
@@ -526,8 +528,8 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetConfig(200): %v", err)
 	}
-	if saved.RuleVersion != 2 {
-		t.Fatalf("rule_version after distance change = %d, want 2 (exactly one bump)", saved.RuleVersion)
+	if saved.RuleVersion != 3 {
+		t.Fatalf("rule_version after distance change = %d, want 3 (exactly one bump)", saved.RuleVersion)
 	}
 	behind, err := st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
 	if err != nil {
@@ -554,8 +556,8 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 	if n := opps(t, "100"); n != 1 {
 		t.Errorf("alice opps @200 = %d, want 1 (only the 150u death)", n)
 	}
-	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
-		t.Errorf("stamp after re-run = %d, %v, want 2 (current rules)", v, err)
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 3 {
+		t.Errorf("stamp after re-run = %d, %v, want 3 (current rules)", v, err)
 	}
 	behind, err = st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
 	if err != nil {
@@ -653,14 +655,14 @@ func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
 	if ct, tc, _, _ := round2(t); ct != "force" || tc != "eco" {
 		t.Fatalf("round 2 @20000/10000 = %q/%q, want force/eco", ct, tc)
 	}
-	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
-		t.Fatalf("stamp after first run = %d, %v, want 1 (seeded default rules)", v, err)
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
+		t.Fatalf("stamp after first run = %d, %v, want 2 (seeded default rules — v2 since the 2026-11-18 enemy-damage bump)", v, err)
 	}
 	if rows, err := st.GetRoundClasses(id); err != nil || len(rows) != 2 {
 		t.Fatalf("round classes = %d, %v, want 2", len(rows), err)
 	}
 
-	// Save a lower full-buy line: bump v1 → v2 and the match goes behind.
+	// Save a lower full-buy line: bump v2 → v3 and the match goes behind.
 	saved, err := as.SetConfig(models.AnalysisConfig{
 		TradeWindowS: 5, EcoFullBuy: 12000, EcoForce: 10000,
 		TradeOppDistance: 1000, RuleVersion: 1,
@@ -668,8 +670,8 @@ func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetConfig(12000): %v", err)
 	}
-	if saved.RuleVersion != 2 {
-		t.Fatalf("rule_version after eco change = %d, want 2 (exactly one bump)", saved.RuleVersion)
+	if saved.RuleVersion != 3 {
+		t.Fatalf("rule_version after eco change = %d, want 3 (exactly one bump)", saved.RuleVersion)
 	}
 	behind, err := st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
 	if err != nil {
@@ -699,8 +701,8 @@ func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
 	if ct, tc, _, _ := round2(t); ct != "full" || tc != "eco" {
 		t.Errorf("round 2 @12000/10000 = %q/%q, want full/eco (stored rows must follow the thresholds)", ct, tc)
 	}
-	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
-		t.Errorf("stamp after re-run = %d, %v, want 2 (current rules)", v, err)
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 3 {
+		t.Errorf("stamp after re-run = %d, %v, want 3 (current rules)", v, err)
 	}
 	behind, err = st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
 	if err != nil {
@@ -782,9 +784,11 @@ func TestRecomputeAllResolvesBehindSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchRow(queued): %v", err)
 	}
-	// Current: stamped at the live version (defaults = rule v1).
+	// Current: stamped at the live version (defaults = rule v2 —
+	// 2026-11-18 enemy-damage bump; stamping the old v1 would make this
+	// match behind and grow the set).
 	idCurrent := seedReadyMatch(t, st, 4)
-	if err := st.SetMatchRuleVersion(idCurrent, 1); err != nil {
+	if err := st.SetMatchRuleVersion(idCurrent, 2); err != nil {
 		t.Fatalf("stamp current: %v", err)
 	}
 
@@ -812,18 +816,19 @@ func TestRecomputeAllResolvesBehindSet(t *testing.T) {
 
 	drainRecompute(t, as)
 
-	// Every member stamped at the captured version (v1 — the defaults);
+	// Every member stamped at the captured version (v2 — the defaults
+	// since the 2026-11-18 enemy-damage bump);
 	// the rows outside the set are untouched.
 	for _, id := range []int64{id1, id2, id3} {
-		if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
-			t.Errorf("match %d stamp = %d, %v; want 1 (the batch's captured rule version)", id, v, err)
+		if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
+			t.Errorf("match %d stamp = %d, %v; want 2 (the batch's captured rule version)", id, v, err)
 		}
 	}
 	if v, err := st.GetMatchRuleVersion(idQueued); err != nil || v != 0 {
 		t.Errorf("queued match stamp = %d, %v; want 0 (excluded from the behind set)", v, err)
 	}
-	if v, err := st.GetMatchRuleVersion(idCurrent); err != nil || v != 1 {
-		t.Errorf("current match stamp = %d, %v; want 1 (unchanged)", v, err)
+	if v, err := st.GetMatchRuleVersion(idCurrent); err != nil || v != 2 {
+		t.Errorf("current match stamp = %d, %v; want 2 (unchanged)", v, err)
 	}
 
 	// Phase 2: nothing is behind anymore.

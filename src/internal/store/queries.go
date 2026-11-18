@@ -353,10 +353,12 @@ func matchListWhere(query string, filters []MatchListFilter) (string, []any) {
 			// COALESCE wraps the WHOLE subquery (an empty analysis_config
 			// yields no row at all, so a per-row COALESCE would still be
 			// NULL): an unseeded single-row table reads as "no rules saved
-			// yet = v1", analysis_config's own column default, instead of
-			// NULL comparisons that silently match nothing.
+			// yet = v2", analysis_config's own column default (bumped with
+			// store.DefaultConfig.RuleVersion for the 2026-11-18
+			// enemy-damage folds), instead of NULL comparisons that
+			// silently match nothing.
 			conds = append(conds, `m.analyzed_rule_version <
-				COALESCE((SELECT rule_version FROM analysis_config WHERE id = 1), 1)
+				COALESCE((SELECT rule_version FROM analysis_config WHERE id = 1), 2)
 				AND m.status = ?`)
 			args = append(args, models.StatusReady)
 		}

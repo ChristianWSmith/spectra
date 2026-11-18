@@ -127,7 +127,8 @@ func TestBehindFacet(t *testing.T) {
 
 // TestBehindFacetUnseededConfig pins the COALESCE arm: a store whose
 // single analysis_config row has never been written (no GetConfig yet)
-// reads as the schema's rule_version default (1), so every never-analyzed
+// reads as the schema's rule_version default (2 — the 2026-11-18
+// enemy-damage bump of store.DefaultConfig), so every never-analyzed
 // match is still behind — never a NULL comparison that silently matches
 // nothing.
 func TestBehindFacetUnseededConfig(t *testing.T) {
