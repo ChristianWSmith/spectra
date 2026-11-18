@@ -123,7 +123,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	// the victim (b_steam — the untraded_deaths seed's source). The
 	// roster the per-player assertions walk is the scoreboard's
 	// humans-only rows (names for the messages).
-	board, err := st.GetScoreboard(id, "name", false)
+	board, err := st.GetScoreboard(id, "", false)
 	if err != nil {
 		t.Fatalf("GetScoreboard: %v", err)
 	}
@@ -145,6 +145,15 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("read untraded engagements: %v", err)
+	}
+	// The stored headshots column (the scoreboard DTO dropped the
+	// seed-backed passthroughs, 2026-11-18) — the fold's oracle.
+	headshotsRes, err := st.RunReadOnly(
+		`SELECT steam_id, headshots FROM player_stats WHERE match_id = ?`,
+		[]any{id}, 500, 5000,
+	)
+	if err != nil {
+		t.Fatalf("read player_stats.headshots: %v", err)
 	}
 	storedCount := func(v any) int {
 		t.Helper()
@@ -177,6 +186,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	}
 	missedBy := countBySteam(missedRes, "match_trade_opps")
 	untradedBy := countBySteam(untradedRes, "untraded engagements")
+	headshotsBy := countBySteam(headshotsRes, "player_stats.headshots")
 
 	var oppTotal, untradedTotal int
 	for _, r := range board {
@@ -225,9 +235,9 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 			}
 		}
 		anyWeaponHS += sum
-		if sum != p.Headshots {
+		if sum != headshotsBy[p.SteamID] {
 			t.Errorf("player %s: folded per-weapon headshots = %d, player_stats.headshots = %d",
-				p.Name, sum, p.Headshots)
+				p.Name, sum, headshotsBy[p.SteamID])
 		}
 		if sum > p.Kills {
 			t.Errorf("player %s: folded headshots %d > kills %d", p.Name, sum, p.Kills)

@@ -311,16 +311,24 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 			adr["300"], byID["300"].ADR)
 	}
 
-	// hs_pct metric × 100 == the stored ps.hs_pct column.
+	// hs_pct metric × 100 == the stored ps.hs_pct column (read
+	// directly: the scoreboard DTO dropped the zero-reader passthroughs
+	// on 2026-11-18 — the column itself still backs the seed).
 	hs := previewAt(t, st, seedDef(t, st, "hs_pct"), scope)
-	for _, row := range board {
-		got, ok := hs[row.SteamID]
+	hsStored := oracle(t, st,
+		`SELECT steam_id, hs_pct FROM player_stats WHERE match_id = ?`,
+		id)
+	if len(hsStored) != 3 {
+		t.Fatalf("stored hs_pct rows = %d, want 3 (the roster)", len(hsStored))
+	}
+	for sid, want := range hsStored {
+		got, ok := hs[sid]
 		if !ok {
-			t.Errorf("hs_pct: subject %s missing from the preview", row.SteamID)
+			t.Errorf("hs_pct: subject %s missing from the preview", sid)
 			continue
 		}
-		if got*100 != row.HSPct {
-			t.Errorf("hs_pct[%s] ×100 = %v, want stored ps.hs_pct %v (the scoreboard's HS%% cell)", row.SteamID, got*100, row.HSPct)
+		if got*100 != want {
+			t.Errorf("hs_pct[%s] ×100 = %v, want stored ps.hs_pct %v (the scoreboard's HS%% cell)", sid, got*100, want)
 		}
 	}
 
@@ -401,54 +409,56 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 }
 
 // TestStoredColumnSeedsEquivalence: the eleven stored-column seeds the
-// W2a scoreboard swap converts equal, subject for subject, the
-// GetScoreboard field every converted cell served (design §6.3 tier 1 —
-// the semantic proof that no displayed number moves): A, 2K–5K, Open K,
-// Trade and Streak left SCORE_COLS for metric columns over these very
-// columns (Open D joined them as its own pinned column in w13d), and
-// the store keeps serving them as passthroughs (design §5.2 — the sort
-// contract, the top-stats argmax and the roster's raw halves still read
-// them).
+// W2a scoreboard swap converts equal, subject for subject, the stored
+// player_stats column every converted cell rendered from (design §6.3
+// tier 1 — the semantic proof that no displayed number moves): A, 2K–5K,
+// Open K, Trade and Streak left SCORE_COLS for metric columns over these
+// very columns (Open D joined them as its own pinned column in w13d).
+// The scoreboard DTO dropped its zero-reader passthrough fields on
+// 2026-11-18, so each column is read directly here — the columns stay
+// (they back the seeds and the SQL console) and the equality they pin
+// is unchanged.
 func TestStoredColumnSeedsEquivalence(t *testing.T) {
 	st := seededStore(t)
 	cols := []struct {
-		seed  string
-		field func(models.PlayerStatsRow) float64
+		seed string
+		col  string
 	}{
-		{"assists", func(r models.PlayerStatsRow) float64 { return float64(r.Assists) }},
-		{"flash_assists", func(r models.PlayerStatsRow) float64 { return float64(r.FlashAssists) }},
-		{"enemies_flashed", func(r models.PlayerStatsRow) float64 { return float64(r.EnemiesFlashed) }},
-		{"entry_kills", func(r models.PlayerStatsRow) float64 { return float64(r.EntryKills) }},
-		{"entry_deaths", func(r models.PlayerStatsRow) float64 { return float64(r.EntryDeaths) }},
-		{"best_streak", func(r models.PlayerStatsRow) float64 { return float64(r.BestStreak) }},
-		{"two_k", func(r models.PlayerStatsRow) float64 { return float64(r.TwoK) }},
-		{"three_k", func(r models.PlayerStatsRow) float64 { return float64(r.ThreeK) }},
-		{"four_k", func(r models.PlayerStatsRow) float64 { return float64(r.FourK) }},
-		{"five_k", func(r models.PlayerStatsRow) float64 { return float64(r.FiveK) }},
-		{"trade_kills", func(r models.PlayerStatsRow) float64 { return float64(r.TradeKills) }},
+		{"assists", "assists"},
+		{"flash_assists", "flash_assists"},
+		{"enemies_flashed", "enemies_flashed"},
+		{"entry_kills", "entry_kills"},
+		{"entry_deaths", "entry_deaths"},
+		{"best_streak", "best_streak"},
+		{"two_k", "two_k"},
+		{"three_k", "three_k"},
+		{"four_k", "four_k"},
+		{"five_k", "five_k"},
+		{"trade_kills", "trade_kills"},
 	}
 	for _, matchID := range []int64{1, 2, 3} {
 		scope := "match:" + itoa(matchID)
 		t.Run(scope, func(t *testing.T) {
-			board, err := st.GetScoreboard(matchID, "kills", true)
-			if err != nil {
-				t.Fatalf("GetScoreboard: %v", err)
-			}
-			if len(board) == 0 {
-				t.Fatal("scoreboard is empty")
-			}
 			for _, col := range cols {
 				got := previewAt(t, st, seedDef(t, st, col.seed), scope)
-				for _, row := range board {
-					want := col.field(row)
-					v, ok := got[row.SteamID]
+				stored := oracle(t, st,
+					`SELECT steam_id, `+col.col+` FROM player_stats WHERE match_id = ?`,
+					matchID)
+				if len(stored) == 0 {
+					t.Fatalf("stored %s rows = 0", col.col)
+				}
+				if len(got) != len(stored) {
+					t.Errorf("%s: preview rows = %d, stored rows = %d", col.seed, len(got), len(stored))
+				}
+				for sid, want := range stored {
+					v, ok := got[sid]
 					if !ok {
-						t.Errorf("%s: subject %s missing from the preview", col.seed, row.SteamID)
+						t.Errorf("%s: subject %s missing from the preview", col.seed, sid)
 						continue
 					}
 					if v != want {
 						t.Errorf("%s[%s] = %v, want the stored column %v (the scoreboard cell it converts)",
-							col.seed, row.SteamID, v, want)
+							col.seed, sid, v, want)
 					}
 				}
 			}

@@ -117,46 +117,33 @@ var matchListSort = map[string]string{
 }
 
 // scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
+//
+// Slimmed 2026-11-18 to the REACHABLE set: production passes only
+// `kills` (the id-keyed fetch seed every view issues — Match.svelte,
+// Combat, Utility, Heatmaps, Economy, RoundDetail, CompareRounds,
+// FilterBar) or `”` (Reports' default-order fetch, which never reaches
+// this map — the fallback arm below serves it). Every other column
+// sort left this path when Match's scoreboard went to owner C14's
+// client-side minimum-swap fold over that one seed (foldRows — the
+// store cannot re-order a row set the frontend already holds), and the
+// metric-backed columns sort through the frontend's `m:` path (which
+// the store cannot express at all). The retired keys (name, side,
+// deaths, assists, headshots, hs_pct, adr, total_damage, damage_taken,
+// rounds_played, entry/opening/trade counts, streaks, 2K-5K, utility,
+// flashed, plants/defuses, mvps, score, teamkills, suicides,
+// money_spent) compared raw fields the frontend no longer sends through
+// this path, so they read like a live capability the store no longer
+// has — an unknown key (including `”` and every retired name) falls
+// back to the fixed default below (pinned by
+// TestGetScoreboardSorting and TestGetScoreboardKDASortKeyRetired).
+//
 // There is no `kda` key any more: the scoreboard's KDA column left the
 // Go calculation for the seeded `kda` metric (w13d), so the SELECT
-// alias and the computed ratio died with it — the frontend sorts the
-// KDA column through the metric columns' `m:` path like every other
-// converted column. There is no `kd` key either: the K/D column left the
-// scoreboard with the report read-back (dogfooding W4). Both names are
-// unknown keys now and fall back to the fixed default below (pinned by
-// TestGetScoreboardKDASortKeyRetired).
+// alias and the computed ratio died with it. There is no `kd` key
+// either: the K/D column left the scoreboard with the report
+// read-back (dogfooding W4).
 var scoreboardSort = map[string]string{
-	"name":            "p.name",
-	"side":            "ps.side",
-	"kills":           "ps.kills",
-	"deaths":          "ps.deaths",
-	"assists":         "ps.assists",
-	"headshots":       "ps.headshots",
-	"hs_pct":          "ps.hs_pct",
-	"adr":             "ps.adr",
-	"total_damage":    "ps.total_damage",
-	"damage_taken":    "ps.damage_taken",
-	"rounds_played":   "ps.rounds_played",
-	"entry_kills":     "ps.entry_kills",
-	"entry_deaths":    "ps.entry_deaths",
-	"opening_kills":   "ps.opening_kills",
-	"opening_deaths":  "ps.opening_deaths",
-	"trade_kills":     "ps.trade_kills",
-	"best_streak":     "ps.best_streak",
-	"two_k":           "ps.two_k",
-	"three_k":         "ps.three_k",
-	"four_k":          "ps.four_k",
-	"five_k":          "ps.five_k",
-	"utility_damage":  "ps.utility_damage",
-	"enemies_flashed": "ps.enemies_flashed",
-	"flashed_times":   "ps.flashed_times",
-	"bomb_plants":     "ps.bomb_plants",
-	"bomb_defuses":    "ps.bomb_defuses",
-	"mvps":            "ps.mvps",
-	"score":           "ps.score",
-	"teamkills":       "ps.teamkills",
-	"suicides":        "ps.suicides",
-	"money_spent":     "ps.money_spent_total",
+	"kills": "ps.kills",
 }
 
 // playersJoin renders the ONE players-join idiom (roster display names by
@@ -751,7 +738,9 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 
 // GetScoreboard returns one player's-aggregate rows for a match, joined
 // with identity, sorted by a whitelisted sortKey (default kills DESC).
-// There is NO KDA expression here any more (w13d): the scoreboard's KDA
+// The row shape is the slimmed passthrough set (2026-11-18 — see
+// models.PlayerStatsRow: every seed-backed stat cell reads its stored
+// metric row instead). There is NO KDA expression here any more (w13d): the scoreboard's KDA
 // column converted to the seeded `kda` metric — GetScoreboard serves
 // stored passthrough columns only, and `kda` is an unknown sort key that
 // falls back to the default (the former `kd` key left the same way with
@@ -776,12 +765,8 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 	rows, err := s.db.Query(
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
-			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
-			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
-			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
-			ps.two_k, ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.enemies_flashed,
-			ps.bomb_plants, ps.bomb_defuses, ps.mvps, ps.score,
-			ps.teamkills, ps.suicides, ps.money_spent_total, ps.kills_by_weapon, ps.damage_by_weapon
+			ps.assists, ps.adr, ps.total_damage, ps.entry_kills,
+			ps.utility_damage, ps.mvps, ps.score, ps.kills_by_weapon
 		FROM player_stats ps
 		`+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
 		WHERE ps.match_id = ? AND `+HumanOnly("p")+`
@@ -798,11 +783,8 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		if err := rows.Scan(
 			&r.SteamID, &r.Name, &r.IsBot, &r.Side, &r.FinalStatePresent,
 			&r.RoundsPlayed, &r.Kills, &r.Deaths,
-			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.TotalDamage,
-			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
-			&r.TradeKills, &r.BestStreak, &r.TwoK, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
-			&r.EnemiesFlashed, &r.BombPlants, &r.BombDefuses, &r.MVPs,
-			&r.Score, &r.Teamkills, &r.Suicides, &r.MoneySpent, &r.KillsByWeapon, &r.DamageByWeapon,
+			&r.Assists, &r.ADR, &r.TotalDamage, &r.EntryKills,
+			&r.UtilityDamage, &r.MVPs, &r.Score, &r.KillsByWeapon,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 		}
