@@ -91,7 +91,7 @@ export const OVERVIEW_PINS_KEY = 'metric_pins_overview';
 
 // The VISIBILITY twin: which FIXED stats are hidden from their view.
 // Same routing, same storage rules, absent ⇒ nothing hidden. Namespaced
-// keys ('@K' …) — a metric can never be hidden here (metric visibility
+// keys ('@Team' …) — a metric can never be hidden here (metric visibility
 // stays pin-driven); these hold fixed-entry keys only.
 export const HIDDEN_KEYS = Object.freeze({
   match: 'metric_hidden_match',
