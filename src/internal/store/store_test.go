@@ -998,32 +998,21 @@ func TestGetScoreboardSorting(t *testing.T) {
 		t.Errorf("kills asc order = %+v", board)
 	}
 
-	// deaths DESC → bob (2) first.
-	board, err = s.GetScoreboard(id, "deaths", true)
-	if err != nil {
-		t.Fatalf("GetScoreboard deaths desc: %v", err)
-	}
-	if board[0].SteamID != "200" || board[1].SteamID != "100" {
-		t.Errorf("deaths desc order = %+v", board)
-	}
-
-	// name DESC → bob first.
-	board, err = s.GetScoreboard(id, "name", true)
-	if err != nil {
-		t.Fatalf("GetScoreboard name desc: %v", err)
-	}
-	if board[0].Name != "bob" || board[1].Name != "alice" {
-		t.Errorf("name desc order = %+v", board)
-	}
-
-	// two_k ASC → bob (0) before alice (3); the 2K column sorts like its
-	// 3K/4K/5K siblings.
-	board, err = s.GetScoreboard(id, "two_k", false)
-	if err != nil {
-		t.Fatalf("GetScoreboard two_k asc: %v", err)
-	}
-	if board[0].SteamID != "200" || board[1].SteamID != "100" {
-		t.Errorf("two_k asc order = %+v", board)
+	// A retired raw-field key (2026-11-18): production sends no column
+	// sort through this path any more — Match folds client-side over
+	// the id-keyed seed (foldRows) and the metric columns sort through
+	// the frontend's `m:` path — so every key except `kills` is
+	// unknown. Formerly-valid names answer the same kills-DESC
+	// fallback as bogus input, the desc flag ignored (the unknown-key
+	// arm fixes both order and direction).
+	for _, key := range []string{"deaths", "name", "two_k"} {
+		board, err = s.GetScoreboard(id, key, true)
+		if err != nil {
+			t.Fatalf("GetScoreboard retired key %q: %v", key, err)
+		}
+		if board[0].SteamID != "100" || board[1].SteamID != "200" {
+			t.Errorf("retired key %q order = %+v, want kills DESC fallback", key, board)
+		}
 	}
 
 	// Bogus key falls back to default kills DESC.

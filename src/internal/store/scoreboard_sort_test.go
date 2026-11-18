@@ -20,9 +20,13 @@ import (
 // kills DESC is alice(10), carl(8), bob(5), while the retired
 // (kills+assists)/max(deaths,1) order was alice(11), bob(5), carl(4) —
 // the two orders differ from the first row on for DESC and invert
-// completely for ASC. The `kd` key rides along as the W4-retired twin:
-// both names answer the same fallback. Mirrors TestGetScoreboardSorting
-// (store_test.go) with ratio-divergent data.
+// completely for ASC. The `kd` key rides along as the W4-retired twin,
+// and `deaths` (a raw-field key the store dropped from the whitelist on
+// 2026-11-18, when production's only reachable keys turned out to be
+// `kills` and the default — every other column sort moved to the
+// frontend's client-side fold / `m:` path) answers the same fallback:
+// every unknown name behaves identically. Mirrors
+// TestGetScoreboardSorting (store_test.go) with ratio-divergent data.
 func TestGetScoreboardKDASortKeyRetired(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/kd-sort.dem", "sha-kd-sort", time.Now())
@@ -55,6 +59,7 @@ func TestGetScoreboardKDASortKeyRetired(t *testing.T) {
 		{"kda", true},
 		{"kda", false},
 		{"kd", true},
+		{"deaths", true}, // retired raw-field key (2026-11-18) — same fallback
 	}
 	for _, c := range wantOrder {
 		board, err := s.GetScoreboard(id, c.sortKey, c.desc)

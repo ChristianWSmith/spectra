@@ -86,7 +86,7 @@ func TestGoldenProfileSideSplits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRoundPlayerSides: %v", err)
 	}
-	board, err := st.GetScoreboard(id, "name", false)
+	board, err := st.GetScoreboard(id, "", false)
 	if err != nil {
 		t.Fatalf("GetScoreboard: %v", err)
 	}

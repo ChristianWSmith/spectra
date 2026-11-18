@@ -123,7 +123,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	// the victim (b_steam — the untraded_deaths seed's source). The
 	// roster the per-player assertions walk is the scoreboard's
 	// humans-only rows (names for the messages).
-	board, err := st.GetScoreboard(id, "name", false)
+	board, err := st.GetScoreboard(id, "", false)
 	if err != nil {
 		t.Fatalf("GetScoreboard: %v", err)
 	}

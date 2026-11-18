@@ -117,46 +117,33 @@ var matchListSort = map[string]string{
 }
 
 // scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
+//
+// Slimmed 2026-11-18 to the REACHABLE set: production passes only
+// `kills` (the id-keyed fetch seed every view issues — Match.svelte,
+// Combat, Utility, Heatmaps, Economy, RoundDetail, CompareRounds,
+// FilterBar) or `”` (Reports' default-order fetch, which never reaches
+// this map — the fallback arm below serves it). Every other column
+// sort left this path when Match's scoreboard went to owner C14's
+// client-side minimum-swap fold over that one seed (foldRows — the
+// store cannot re-order a row set the frontend already holds), and the
+// metric-backed columns sort through the frontend's `m:` path (which
+// the store cannot express at all). The retired keys (name, side,
+// deaths, assists, headshots, hs_pct, adr, total_damage, damage_taken,
+// rounds_played, entry/opening/trade counts, streaks, 2K-5K, utility,
+// flashed, plants/defuses, mvps, score, teamkills, suicides,
+// money_spent) compared raw fields the frontend no longer sends through
+// this path, so they read like a live capability the store no longer
+// has — an unknown key (including `”` and every retired name) falls
+// back to the fixed default below (pinned by
+// TestGetScoreboardSorting and TestGetScoreboardKDASortKeyRetired).
+//
 // There is no `kda` key any more: the scoreboard's KDA column left the
 // Go calculation for the seeded `kda` metric (w13d), so the SELECT
-// alias and the computed ratio died with it — the frontend sorts the
-// KDA column through the metric columns' `m:` path like every other
-// converted column. There is no `kd` key either: the K/D column left the
-// scoreboard with the report read-back (dogfooding W4). Both names are
-// unknown keys now and fall back to the fixed default below (pinned by
-// TestGetScoreboardKDASortKeyRetired).
+// alias and the computed ratio died with it. There is no `kd` key
+// either: the K/D column left the scoreboard with the report
+// read-back (dogfooding W4).
 var scoreboardSort = map[string]string{
-	"name":            "p.name",
-	"side":            "ps.side",
-	"kills":           "ps.kills",
-	"deaths":          "ps.deaths",
-	"assists":         "ps.assists",
-	"headshots":       "ps.headshots",
-	"hs_pct":          "ps.hs_pct",
-	"adr":             "ps.adr",
-	"total_damage":    "ps.total_damage",
-	"damage_taken":    "ps.damage_taken",
-	"rounds_played":   "ps.rounds_played",
-	"entry_kills":     "ps.entry_kills",
-	"entry_deaths":    "ps.entry_deaths",
-	"opening_kills":   "ps.opening_kills",
-	"opening_deaths":  "ps.opening_deaths",
-	"trade_kills":     "ps.trade_kills",
-	"best_streak":     "ps.best_streak",
-	"two_k":           "ps.two_k",
-	"three_k":         "ps.three_k",
-	"four_k":          "ps.four_k",
-	"five_k":          "ps.five_k",
-	"utility_damage":  "ps.utility_damage",
-	"enemies_flashed": "ps.enemies_flashed",
-	"flashed_times":   "ps.flashed_times",
-	"bomb_plants":     "ps.bomb_plants",
-	"bomb_defuses":    "ps.bomb_defuses",
-	"mvps":            "ps.mvps",
-	"score":           "ps.score",
-	"teamkills":       "ps.teamkills",
-	"suicides":        "ps.suicides",
-	"money_spent":     "ps.money_spent_total",
+	"kills": "ps.kills",
 }
 
 // playersJoin renders the ONE players-join idiom (roster display names by
