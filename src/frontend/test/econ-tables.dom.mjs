@@ -398,6 +398,56 @@ const seedValues = (matchID, ids) => {
   return out;
 };
 
+// The two ECONOMY card seeds' rows (plan §8 M8 rows): the card values
+// are stored metric rows since their migration — pistol_hold
+// (percent — the held ÷ won RATE the card used to render as "1/2") and
+// avg_equip_gap (currency — the mean decided-round winner gap). The
+// driver computes each value with the SAME view aggregate the card
+// used before the migration (an independent in-driver port over
+// economyRows below) and serves it as the STORED row; exact equivalence
+// of the SEEDED expressions to this oracle is pinned in Go
+// (internal/metrics econ_equivalence_test.go), the rendered strings in
+// section M8. Match-subject rows carry subjectKey ''.
+const ECON_SEED_DEFS = Object.freeze([
+  {
+    id: 106, name: 'pistol_hold', title: 'pistol_hold', shortName: '',
+    scope: 'match', subject: 'match', format: 'percent',
+    doc: 'Formula: pistol rounds held ÷ pistol rounds won — addressed per match',
+  },
+  {
+    id: 107, name: 'avg_equip_gap', title: 'avg_equip_gap', shortName: '',
+    scope: 'match', subject: 'match', format: 'currency',
+    doc: 'Formula: mean winner − loser freeze-end equip — addressed per match',
+  },
+]);
+const econSeedValues = (ids, countedN) => {
+  const rows = economyRows(countedN);
+  let held = 0, won = 0, sum = 0, n = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.pistolRound) {
+      const side = r.winner === 'ct' ? 'ct' : r.winner === 't' ? 't' : '';
+      if (side) {
+        won++;
+        const next = rows[i + 1];
+        if (next && (side === 'ct' ? next.wonCT : next.wonT)) held++;
+      }
+    }
+    let win, lose;
+    if (r.winner === 'ct') { win = r.equipCT; lose = r.equipT; }
+    else if (r.winner === 't') { win = r.equipT; lose = r.equipCT; }
+    else continue;
+    sum += (win || 0) - (lose || 0);
+    n++;
+  }
+  const out = [];
+  for (const id of ids || []) {
+    if (id === 106) out.push({ metricId: 106, subjectKey: '', value: won ? held / won : 0, n: rows.length });
+    if (id === 107) out.push({ metricId: 107, subjectKey: '', value: n ? sum / n : 0, n: rows.length });
+  }
+  return out;
+};
+
 const dataFor = (countedN) => ({
   getMatch: match,
   getMatchSummary: summary,
@@ -410,12 +460,16 @@ const dataFor = (countedN) => ({
   getRoundClasses: [],
   // The pinned-column reads (stored-metrics design §5): the canonical
   // stored-value read + the compute-state read. Defaults = the seeded
-  // fixed cells' rows (SEED_DEFS above) and no state landed (a fresh
-  // ROW renders its value whatever the state map says); an unscripted
-  // name resolves [] through the stub, and a section that scripts its
-  // own catalog/read replaces both wholesale (the sections below).
-  listMetrics: SEED_DEFS,
-  getMetricValuesForMatch: seedValues,
+  // fixed cells' rows (SEED_DEFS above) + the two Economy card seeds
+  // (ECON_SEED_DEFS) and no state landed (a fresh ROW renders its value
+  // whatever the state map says); an unscripted name resolves [] through
+  // the stub, and a section that scripts its own catalog/read replaces
+  // both wholesale (the sections below).
+  listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS],
+  getMetricValuesForMatch: (matchID, ids) => [
+    ...seedValues(matchID, ids),
+    ...econSeedValues(ids, countedN),
+  ],
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
@@ -798,7 +852,16 @@ check(
     console.log(`    M8 card${i}: value=${JSON.stringify(val(i))} sub=${JSON.stringify(sub(i))} title=${JSON.stringify(ttl(i))}`);
   }
   check('M8: four summary cards', sumCards.length === 4, String(sumCards.length));
-  check('M8: pistol held/won = 1/2 (rounds 1+13 won, only round 1 held)', val(0) === '1/2', val(0));
+  // M8 re-pin with the card migration (2026-11-17): the pistol card
+  // reads its STORED pistol_hold row (plan §8 M8 — the seed over the
+  // next() round window) — the SAME held/won number (rounds 1+13 won,
+  // only round 1 held → 0.5, asserted exact in Go by internal/metrics'
+  // econ_equivalence_test against this fixture's ported view
+  // aggregate) rendered through the percent format every rate seed
+  // uses. The pre-migration view aggregate displayed the identical
+  // number as the fraction notation "1/2"; a stored metric value is a
+  // single number, so the card's format tag decides the notation.
+  check('M8: pistol held rate = 50% (1/2 — rounds 1+13 won, only round 1 held)', val(0) === '50%', val(0));
   check('M8: force-win = 0% (6 T-side force rounds, none won)', val(1) === '0%', val(1));
   check('M8: force sub = per-team won/total (rounds 1–12 t-side forces attribute to Alpha)', sub(1) === 'Alpha 0/6 · Beta 0/0', sub(1));
   check('M8: avg equip gap = $67 (round(800/12) over 12 decided rounds)', val(2) === '$67', val(2));
