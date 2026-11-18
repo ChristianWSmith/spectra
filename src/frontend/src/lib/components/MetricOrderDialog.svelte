@@ -65,6 +65,9 @@
     readOverviewPins,
     writeOverviewPins,
     resetOverviewPins,
+    readEconomyPins,
+    writeEconomyPins,
+    resetEconomyPins,
   } from '../metricorder.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
@@ -89,6 +92,13 @@
   // kvstore (the write-through idiom the order/hidden twins use; the
   // pref is absent until then).
   let overviewPins = $state([]);
+  // The ECONOMY placement set (owner, 2026-11-18): which match metrics
+  // show their stat on the Economy tab (metricorder ECONOMY_KEY),
+  // RESOLVED on load (absent ⇒ DEFAULT_ECONOMY by name — the shipped
+  // cards; present ⇒ verbatim) — every match row's $ toggle reads this
+  // and the first toggle materializes the resolved set (the
+  // write-through idiom the other pairs use).
+  let economyPins = $state([]);
   // w25 — the dialog's THIRD pref (metricorder.js STARTS_TRANSPOSED_KEY):
   // the scoreboard's opening shape, read with the rest on open (absent ⇒
   // off) and written through setStartsTransposed below.
@@ -111,8 +121,9 @@
       readStartsTransposed(),
       readOrder('overview'),
       readOverviewPins(),
+      readEconomyPins(),
     ])
-      .then(([rows, m, p, hm, hp, st, ov, ovp]) => {
+      .then(([rows, m, p, hm, hp, st, ov, ovp, ec]) => {
         if (!open) return; // closed mid-flight
         defs = rows || [];
         orders = { match: m, profile: p, overview: ov };
@@ -121,6 +132,7 @@
         // The resolved card set (absent ⇒ the default five by name —
         // a default name the catalog lacks drops, §1.6).
         overviewPins = resolvePins('overview', ovp, defs);
+        economyPins = resolvePins('economy', ec, defs);
       })
       .catch((e) => {
         error = errText(e);
@@ -146,7 +158,7 @@
   // toggle ADDS rows (this table is the overview's only picker); the
   // match/profile tables keep the fixed+pinned shape (unpin only, M6).
   function seqOf(scope) {
-    if (scope === 'overview') return composedSequence(scope, orders[scope], defs, []);
+    if (scope === 'overview') return composedSequence(scope, orders[scope], defs, [], economyPins);
     const pins = new Set(pinnedNames(scope));
     return composedSequence(scope, orders[scope], defs, hidden[scope]).filter(
       (e) => e.kind === 'fixed' || pins.has(e.def.name),
@@ -226,6 +238,28 @@
     }
   }
 
+  // toggleEconomy — the match row's ECONOMY placement toggle (owner,
+  // 2026-11-18): moves the metric's stat to the Economy tab (an
+  // identity metric's card leaves the match overview while toggled —
+  // overviewDefs' economy carve-out). Placement ONLY: pin state is
+  // untouched (a metric can be pinned AND economy-toggled), and the
+  // row stays listed here — only WHERE the stat shows changes. The
+  // write goes straight to ECONOMY_KEY (the writeHidden idiom).
+  // Write-through with the same snap-back as every other toggle here.
+  async function toggleEconomy(entry) {
+    const prev = economyPins;
+    const next = prev.includes(entry.name)
+      ? prev.filter((n) => n !== entry.name)
+      : [...prev, entry.name];
+    economyPins = next;
+    try {
+      await writeEconomyPins(next);
+    } catch (e) {
+      economyPins = prev;
+      error = errText(e);
+    }
+  }
+
   // setStartsTransposed — the SHAPE pref write (w25): write-through with
   // the same snap-back contract as toggleHidden above — a write that did
   // not save is never shown as saved. This checkbox is the ONLY writer of
@@ -254,8 +288,13 @@
     const i = shown.findIndex((x) => x.key === entry.key);
     const neighbour = shown[i + 1] || shown[i - 1] || null;
     // w22: the id stays the CALL shape (Builder.togglePin is the one id
-    // → name conversion site — the storage is name-keyed).
-    await onTogglePin(entry.def.id, scope); // Builder's writer resolves before the list updates
+    // → name conversion site — the storage is name-keyed). The intent
+    // 'off' (owner, 2026-11-18): this button is UNPIN-ONLY by design —
+    // every listed metric IS pinned — so the writer applies "remove"
+    // idempotently instead of toggling; a repeat click while the first
+    // write is in flight can never re-pin the metric (the reported
+    // "row does not leave" defect — two toggles used to cancel).
+    await onTogglePin(entry.def.id, scope, 'off'); // Builder's writer resolves before the list updates
     await tick();
     if (neighbour) {
       focusRow(scope, neighbour.name);
@@ -300,9 +339,11 @@
     const prevOrders = orders;
     const prevHidden = hidden;
     const prevOverviewPins = overviewPins;
+    const prevEconomyPins = economyPins;
     orders = { match: null, profile: null, overview: null };
     hidden = { match: [], profile: [] };
     overviewPins = resolvePins('overview', null, defs);
+    economyPins = resolvePins('economy', null, defs);
     error = '';
     try {
       await Promise.all([
@@ -312,11 +353,13 @@
         resetHidden('profile'),
         resetOrder('overview'),
         resetOverviewPins(),
+        resetEconomyPins(),
       ]);
     } catch (e) {
       orders = prevOrders;
       hidden = prevHidden;
       overviewPins = prevOverviewPins;
+      economyPins = prevEconomyPins;
       error = errText(e);
     }
   }
@@ -421,6 +464,27 @@
                 ><span class="codicon codicon-pin"></span
               ></button>
             {:else if e.kind === 'metric'}
+              <!-- The ECONOMY placement toggle (owner, 2026-11-18) —
+                   match rows only: $-placement between the match
+                   overview and the Economy tab, aria-pressed state,
+                   write-through to ECONOMY_KEY. Pin state is untouched
+                   and the row stays listed here. The glyph: the bundled
+                   codicon set (0.0.46-24) has NO dollar/currency
+                   glyph — codicon-credit-card is the plainest money
+                   sign it ships. -->
+              {#if scope === 'match'}
+                <button
+                  class="btn small ghost"
+                  class:mo-pin-on={economyPins.includes(e.name)}
+                  title={economyPins.includes(e.name)
+                    ? S.builder.economyHide
+                    : S.builder.economyShow}
+                  aria-label={S.fill(S.builder.economyToggleAria, { name: e.name })}
+                  aria-pressed={economyPins.includes(e.name)}
+                  onclick={() => toggleEconomy(e)}
+                  ><span class="codicon codicon-credit-card"></span
+                ></button>
+              {/if}
               <!-- M6: unpin only — every listed metric IS pinned (the
                    list is fixed stats + pinned metrics), so the toggle
                    always shows the pinned state and the row leaves the

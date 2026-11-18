@@ -68,6 +68,7 @@
     composedSequence,
     pinnedInSequence,
     readOverviewPins,
+    readEconomyPins,
   } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
@@ -751,8 +752,12 @@
       // Overview.
       readOrder('overview'),
       readOverviewPins().catch(() => null),
+      // The Economy placement set (owner 2026-11-18): an economy-
+      // toggled identity metric shows its stat on the Economy tab
+      // instead — presentation-only fallback to the shipped default.
+      readEconomyPins().catch(() => null),
     ])
-      .then(([defs, order, hiddenKeys, overviewOrder, storedOverviewPins]) => {
+      .then(([defs, order, hiddenKeys, overviewOrder, storedOverviewPins, storedEconomy]) => {
         if (!live) return;
         const rows = defs || [];
         // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
@@ -792,12 +797,15 @@
         // absent pins ⇒ DEFAULT_PINS.overview resolved by name (the
         // shipped card set), present ⇒ verbatim; pinnedInSequence
         // intersects with the identity universe, so a stale stored name
-        // drops here and never reaches the read.
+        // drops here and never reaches the read. The economy placement
+        // carve-out rides as `exclude` (overviewDefs' ONE rule): an
+        // economy-toggled identity metric never renders a card here.
         overviewSeq = pinnedInSequence(
           'overview',
           overviewOrder,
           rows,
           resolvePins('overview', storedOverviewPins, rows),
+          resolvePins('economy', storedEconomy, rows),
         );
         const byName = new Map(rows.map((d) => [d.name, d]));
         // The C14 sort seed re-spells to the metric column (the

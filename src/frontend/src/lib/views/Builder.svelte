@@ -876,7 +876,7 @@
   // scope through getMetric (so a dirty scope select can never mis-file
   // the pin), and a metric is always moved OUT of the other key (one
   // mechanism, one home).
-  async function togglePin(id, scope) {
+  async function togglePin(id, scope, intent) {
     // An absent key resolves its defaults through the catalog — wait
     // for the mount read so a first toggle can never drop them.
     await catalogP;
@@ -894,7 +894,18 @@
     const otherKey = key === PROFILE_PINS_KEY ? PINS_KEY : PROFILE_PINS_KEY;
     const otherScope = s === 'profile' ? 'match' : 'profile';
     const cur = effectivePins(key, s);
-    const next = cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name];
+    // intent (owner, 2026-11-18): the Order dialog's pin button is
+    // UNPIN-ONLY by design (every listed metric IS pinned), so it
+    // passes 'off' and the write is IDEMPOTENT — a repeat click while
+    // the first write is in flight applies "remove" again instead of
+    // toggling the metric back on (the reported "the row does not
+    // leave" defect). List rows keep the plain toggle (undefined).
+    const next =
+      intent === 'off'
+        ? cur.filter((x) => x !== name)
+        : cur.includes(name)
+          ? cur.filter((x) => x !== name)
+          : [...cur, name];
     // The OTHER scope's effective selection minus this name — writing it
     // materializes that key too (same rule as the order's first move:
     // the write carries the selection the other surface already shows).
@@ -1952,7 +1963,7 @@
     open={orderOpen}
     pinnedMatch={pins}
     pinnedProfile={profilePins}
-    onTogglePin={(id, scope) => togglePin(id, scope)}
+    onTogglePin={(id, scope, intent) => togglePin(id, scope, intent)}
     onClose={() => (orderOpen = false)}
   />
 </div>

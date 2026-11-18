@@ -2697,6 +2697,7 @@ console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-ali
       'Reset order deletes BOTH pref PAIRS plus the overview pair — order, visibility and the card selection (the lead: every default restores)',
       JSON.stringify(dels.map((c) => c.args[0]).sort()) ===
         JSON.stringify([
+          'metric_economy',
           'metric_hidden_match',
           'metric_hidden_profile',
           'metric_order_match',
@@ -2994,6 +2995,184 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     const i = METRICS.indexOf(IDENTITY);
     if (i >= 0) METRICS.splice(i, 1);
     services.invalidate();
+  }
+}
+
+console.log('L. the unpin-removes-row contract + the Economy placement toggle (match rows, $ glyph, pref round-trip, overview exclusion, Reset)');
+{
+  // Fresh-install shape: BOTH pins keys absent and a catalog carrying
+  // default-pinned names — kills (DEFAULT_PINS.match), career_adr
+  // (DEFAULT_PINS.profile), pistol_hold (a DEFAULT_ECONOMY member, so
+  // the shipped economy set resolves to it) and the identity pair for
+  // the overview table. GetMetric scripts the WHOLE set (the real
+  // backend serves any stored id).
+  localStorage.setItem('spectra:pinned-metrics', JSON.stringify(['kills', 'pistol_hold', 'top_fragger']));
+  localStorage.setItem('spectra:pinned-profile-metrics', JSON.stringify(['career_adr']));
+  const withDefaults = [
+    ...METRICS,
+    { id: 91, name: 'top_fragger', title: 'Top fragger', shortName: '',
+      expr: 'from player_stats: argmax(kills)', scope: 'match', subject: 'match',
+      format: 'identity', doc: 'Formula: argmax(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '' },
+    { id: 93, name: 'kills', title: 'Kills', shortName: '',
+      expr: 'from player_stats: sum(kills)', scope: 'match', subject: 'player',
+      format: 'int', doc: 'Formula: sum(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '' },
+    { id: 94, name: 'career_adr', title: 'Career ADR', shortName: '',
+      expr: 'from player_stats: avg(adr)', scope: 'profile', subject: 'player',
+      format: 'float1', doc: 'Formula: average ADR', origin: 'builtin', pluginId: '', denominator: '' },
+    { id: 95, name: 'pistol_hold', title: 'Pistol \u2192 next round', shortName: '',
+      expr: 'from rounds, round_classifications: ratio(count(where label = \'pistol\'), count(where label = \'pistol\'))',
+      scope: 'match', subject: 'match', format: 'percent',
+      doc: 'Formula: pistol rounds held \u00f7 pistol rounds won \u2014 addressed per match',
+      origin: 'builtin', pluginId: '', denominator: '' },
+  ];
+  const prevList = bindings.MetricsService.ListMetrics;
+  const prevGet = bindings.handlers.GetMetric;
+  bindings.MetricsService.ListMetrics = () => Promise.resolve(withDefaults);
+  bindings.handlers.GetMetric = (id) => withDefaults.find((m) => m.id === id) || null;
+  services.invalidate();
+  try {
+    r = await mountBuilder();
+    const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('Order'));
+    click(orderBtn);
+    await sleep(150);
+    let dlg = document.querySelector('.dlg-panel.mo-prompt');
+    const sec = (scope) => dlg?.querySelector(`.mo-sec[data-mo-scope="${scope}"]`);
+    const dRows = (scope) => [...(sec(scope)?.querySelectorAll('.mo-row') || [])];
+    const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
+    const econBtn = (row) => row?.querySelector('[aria-label^="Toggle Economy tab"]');
+    const prefSet = (key) =>
+      [...bindings.calls].reverse().find((c) => c.method === 'SetPref' && c.args[0] === key);
+
+    check(
+      'the dialog lists the pinned match/profile metrics (sequence order) and the shipped economy set opens TOGGLED ON (pistol_hold)',
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify(['@Name', '@Team', 'kills', '@Score', 'top_fragger', 'pistol_hold']) &&
+        JSON.stringify(dNames('profile')) === JSON.stringify(['career_adr']),
+      JSON.stringify(dNames('match')) + ' profile=' + JSON.stringify(dNames('profile')),
+    );
+    const pistolRow = () => dRows('match').find((x) => x.dataset.moName === 'pistol_hold');
+    check(
+      'match metric rows carry the Economy toggle with aria-pressed on for a default-set metric (and profile rows never do)',
+      econBtn(pistolRow())?.getAttribute('aria-pressed') === 'true' &&
+        econBtn(pistolRow())?.getAttribute('title') === 'Remove from the Economy tab' &&
+        !!econBtn(pistolRow())?.querySelector('.codicon-credit-card') &&
+        dRows('profile').every((x) => !econBtn(x)),
+      econBtn(pistolRow()) ? `pressed=${econBtn(pistolRow()).getAttribute('aria-pressed')} title=${econBtn(pistolRow()).getAttribute('title')}` : 'no toggle',
+    );
+
+    // The toggle is PLACEMENT only: the row stays listed, pin state is
+    // untouched, and the write lands on the one kvstore key.
+    const matchPinsBefore = localStorage.getItem('spectra:pinned-metrics');
+    click(econBtn(pistolRow()));
+    await sleep(80);
+    let ecoSet = prefSet('metric_economy');
+    check(
+      'untoggling a default-set metric writes ONLY metric_economy (the resolved set minus it) and the row stays listed',
+      !!ecoSet && JSON.stringify(ecoSet.args[1]) === JSON.stringify([]) &&
+        dNames('match').includes('pistol_hold') &&
+        econBtn(pistolRow())?.getAttribute('aria-pressed') === 'false' &&
+        localStorage.getItem('spectra:pinned-metrics') === matchPinsBefore,
+      ecoSet ? JSON.stringify(ecoSet.args) : 'no SetPref' + ' rows=' + JSON.stringify(dNames('match')),
+    );
+
+    // Toggle a NON-default metric on → the set gains it (write-through
+    // from the resolved default).
+    click(econBtn(dRows('match').find((x) => x.dataset.moName === 'kills')));
+    await sleep(80);
+    ecoSet = prefSet('metric_economy');
+    check(
+      'toggling another match metric on adds it to the economy set (write-through: resolved default + the name)',
+      !!ecoSet && JSON.stringify(ecoSet.args[1]) === JSON.stringify(['kills']) &&
+        econBtn(dRows('match').find((x) => x.dataset.moName === 'kills'))?.getAttribute('aria-pressed') === 'true',
+      ecoSet ? JSON.stringify(ecoSet.args) : 'no SetPref',
+    );
+
+    // THE OVERVIEW EXCLUSION (binding): top_fragger is an identity
+    // metric, pinned in BOTH the match section and the overview
+    // section. Economy-toggling it moves its placement — its overview
+    // row disappears (the card would render on the Economy tab
+    // instead), its match row stays with the toggle on. Toggling back
+    // restores the overview row. Driver pin, both directions.
+    const ovNames = () => dRows('overview').map((x) => x.dataset.moName);
+    check(
+      'the identity metric opens in BOTH the match and overview sections (pinned as an overview card)',
+      dNames('match').includes('top_fragger') && ovNames().includes('top_fragger'),
+      JSON.stringify(dNames('match')) + ' overview=' + JSON.stringify(ovNames()),
+    );
+    const topRow = () => dRows('match').find((x) => x.dataset.moName === 'top_fragger');
+    click(econBtn(topRow()));
+    await sleep(80);
+    ecoSet = prefSet('metric_economy');
+    check(
+      'economy-toggling the identity metric KEEPS its match row (toggle on) and REMOVES it from the overview section — the placement carve-out, both directions',
+      !!ecoSet && JSON.stringify(ecoSet.args[1]).includes('top_fragger') &&
+        econBtn(topRow())?.getAttribute('aria-pressed') === 'true' &&
+        !ovNames().includes('top_fragger'),
+      ecoSet ? JSON.stringify(ecoSet.args) + ' overview=' + JSON.stringify(ovNames()) : 'no SetPref',
+    );
+    click(econBtn(topRow()));
+    await sleep(80);
+    ecoSet = prefSet('metric_economy');
+    check(
+      'toggling it OFF restores the overview row (the exclusion is the only thing that hid it)',
+      !!ecoSet && !JSON.stringify(ecoSet.args[1]).includes('top_fragger') &&
+        ovNames().includes('top_fragger'),
+      ecoSet ? JSON.stringify(ecoSet.args) + ' overview=' + JSON.stringify(ovNames()) : 'no SetPref',
+    );
+
+    // THE UNPIN CONTRACT (owner bug 2026-11-18): a repeat click while
+    // the first write is in flight must NOT re-pin the metric — the
+    // dialog's pin button is unpin-ONLY, so the writer applies
+    // "remove" idempotently (intent 'off'). Two rapid clicks used to
+    // toggle twice and the row stayed (RED on base).
+    const killRow = () => dRows('match').find((x) => x.dataset.moName === 'kills');
+    click(econBtn(killRow())); // leave kills economy-untoggled first
+    await sleep(60);
+    const kPin = () => killRow()?.querySelector('[aria-label^="Toggle pin"]');
+    click(kPin());
+    click(kPin());
+    await sleep(150);
+    check(
+      'double-clicking a match metric\u2019s pin still removes the row (the second click cannot re-pin it)',
+      !dNames('match').includes('kills') &&
+        !JSON.parse(localStorage.getItem('spectra:pinned-metrics') || '[]').includes('kills'),
+      JSON.stringify(dNames('match')) + ' storage=' + localStorage.getItem('spectra:pinned-metrics'),
+    );
+    // The same contract for a PROFILE metric (the other unpin-only
+    // section) — one click, idempotent by the same writer.
+    const profPin = () => dRows('profile').find((x) => x.dataset.moName === 'career_adr')
+      ?.querySelector('[aria-label^="Toggle pin"]');
+    click(profPin());
+    await sleep(120);
+    check(
+      'unpinning the profile metric removes its row too (the same intent writer across sections)',
+      !dNames('profile').includes('career_adr'),
+      JSON.stringify(dNames('profile')),
+    );
+
+    // RESET restores the shipped economy set (the placement family is
+    // Reset-cleared) — the toggle snaps back to the default member.
+    click(econBtn(pistolRow())); // toggle pistol_hold OFF (materialize a non-default set)
+    await sleep(60);
+    const resetBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.includes('Reset order'));
+    click(resetBtn);
+    await sleep(100);
+    const dels = bindings.calls.filter((c) => c.method === 'Delete').map((c) => c.args[0]);
+    check(
+      'Reset deletes metric_economy with the other placement prefs and the default set resolves back (pistol_hold toggled on)',
+      dels.includes('metric_economy') &&
+        econBtn(pistolRow())?.getAttribute('aria-pressed') === 'true',
+      JSON.stringify(dels) + ' pressed=' + econBtn(pistolRow())?.getAttribute('aria-pressed'),
+    );
+
+    dlg.querySelector('button[aria-label="Close"]').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await sleep(60);
+  } finally {
+    bindings.MetricsService.ListMetrics = prevList;
+    bindings.handlers.GetMetric = prevGet;
+    services.invalidate();
+    localStorage.removeItem('spectra:pinned-metrics');
+    localStorage.removeItem('spectra:pinned-profile-metrics');
   }
 }
 

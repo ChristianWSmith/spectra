@@ -89,6 +89,37 @@ export const ORDER_KEYS = Object.freeze({
 // the stored selection verbatim — the resolvePins rule unchanged.
 export const OVERVIEW_PINS_KEY = 'metric_pins_overview';
 
+// ECONOMY_KEY — the Economy tab's CARD SET (owner, 2026-11-18): the
+// match-scope metric NAMES whose stats the Economy tab shows instead
+// of (for identity metrics) their match-overview card. Placement
+// ruling (AGENTS "State placement — the forward test"): survives a
+// restart, not a link ⇒ kvstore (prefs.go prefsMetricEconomyKey),
+// frontend-written through this module, Go never consumes it — the
+// same home as the order/hidden/overview twins. ABSENT ⇒
+// DEFAULT_ECONOMY resolved by name (a fresh install renders exactly
+// the cards it ships today); PRESENT (even '[]') ⇒ the stored
+// selection verbatim — the resolvePins rule unchanged. A present key
+// does NOT pick up later-added defaults (same dated caveat as the
+// other families: pre-release, no migration — re-toggle by hand or
+// clear the pref). The toggle does NOT change pin state: a metric can
+// be pinned AND economy-toggled (placement only).
+export const ECONOMY_KEY = 'metric_economy';
+
+// DEFAULT_ECONOMY — the absent-key default card set: exactly the
+// metrics behind the Economy view's shipped summary cards (the six
+// names its hardcoded read wanted — pistol/gap seeds, the force pair
+// and the lost pair), so a fresh install renders today's numbers with
+// no pref present. Membership is metric NAMES (the pins identity,
+// w22). Present key ⇒ verbatim (the dated caveat above).
+export const DEFAULT_ECONOMY = Object.freeze([
+  'pistol_hold',
+  'team_force_wins',
+  'team_force_rounds',
+  'avg_equip_gap',
+  'lost_equip',
+  'team_lost_equip',
+]);
+
 // The VISIBILITY twin: which FIXED stats are hidden from their view.
 // Same routing, same storage rules, absent ⇒ nothing hidden. Namespaced
 // keys ('@Team' …) — a metric can never be hidden here (metric visibility
@@ -279,6 +310,10 @@ export const DEFAULT_PINS = Object.freeze({
     'entry_opens',
     'most_mvps',
   ]),
+  // Economy (owner, 2026-11-18): the shipped Economy-tab card set —
+  // the same absent-vs-present rule as the other scopes (DEFAULT_ECONOMY
+  // above; a present key is the stored selection verbatim).
+  economy: DEFAULT_ECONOMY,
 });
 
 // FIXED_BLOCK — the stats that stay FIXED sequence entries because
@@ -437,8 +472,18 @@ export function isRawId(id) {
 // offering it here could only fabricate one. Every reader of the
 // 'overview' scope filters through THIS function — never a second
 // universe rule.
-export function overviewDefs(defs) {
-  return (defs || []).filter((d) => d && d.scope === 'match' && d.format === 'identity');
+// `exclude` (owner, 2026-11-18) — the ECONOMY placement carve-out:
+// an economy-toggled metric shows its stat on the Economy tab instead
+// of a match-overview card, so the overview universe is
+// (identity ∧ ¬economy) — ONE rule, threaded through every overview
+// reader (inSequence / composedSequence / pinnedInSequence pass it
+// straight through), never re-spelled at a call site. Absent ⇒ no
+// exclusion (byte-identical pre-economy behaviour).
+export function overviewDefs(defs, exclude) {
+  const out = (defs || []).filter((d) => d && d.scope === 'match' && d.format === 'identity');
+  if (!exclude || !exclude.length) return out;
+  const gone = new Set(exclude);
+  return out.filter((d) => !gone.has(d.name));
 }
 
 // HIDE_EXEMPT — THE visibility exemption (owner ruling, W6): the
@@ -561,10 +606,10 @@ export function resolveOrder(saved, catalog, scope = 'match') {
 // that renders fixed stats too composes through composedSequence.
 // scope 'overview' filters through overviewDefs (the identity
 // universe — the ONE rule, no fixed entries to strip).
-export function inSequence(scope, saved, defs) {
+export function inSequence(scope, saved, defs, exclude) {
   const scoped =
     scope === 'overview'
-      ? overviewDefs(defs)
+      ? overviewDefs(defs, exclude)
       : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const fixed = new Set(fixedKeys(scope));
@@ -581,9 +626,9 @@ export function inSequence(scope, saved, defs) {
 // where the sequence puts it, not appended). The selection carries
 // metric NAMES (w22), so a name with no live def here drops out — the
 // defs intersection IS the render-side drop.
-export function pinnedInSequence(scope, saved, defs, pinNames) {
+export function pinnedInSequence(scope, saved, defs, pinNames, exclude) {
   const pinned = new Set(pinNames || []);
-  return inSequence(scope, saved, defs).filter((d) => pinned.has(d.name));
+  return inSequence(scope, saved, defs, exclude).filter((d) => pinned.has(d.name));
 }
 
 // composedSequence(scope, saved, defs, hiddenKeys) — THE merged
@@ -603,12 +648,12 @@ export function pinnedInSequence(scope, saved, defs, pinNames) {
 // VIEW filters it out — never the dialog, never Reports' addable set
 // (lead ruling: visibility is view-display only). Metric visibility is
 // pin-driven and therefore never expressed here.
-export function composedSequence(scope, saved, defs, hiddenKeys = []) {
+export function composedSequence(scope, saved, defs, hiddenKeys = [], exclude) {
   const fixed = new Set(fixedKeys(scope));
   const hidden = new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
   const scoped =
     scope === 'overview'
-      ? overviewDefs(defs)
+      ? overviewDefs(defs, exclude)
       : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const out = [];
@@ -704,6 +749,31 @@ export function writeOverviewPins(names) {
 // (paired with resetOrder('overview') in the dialog's Reset).
 export function resetOverviewPins() {
   return Promise.resolve(deletePref(OVERVIEW_PINS_KEY));
+}
+
+// readEconomyPins() — the Economy card set (ECONOMY_KEY): null when
+// the key is ABSENT (the reader's null marks "apply DEFAULT_ECONOMY"
+// — resolvePins below owns absent-vs-present; every caller passes the
+// result straight through it).
+export function readEconomyPins() {
+  return Promise.resolve(getPref(ECONOMY_KEY)).then((v) =>
+    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
+  );
+}
+
+// writeEconomyPins(names) — persist the selection verbatim (kvstore
+// AutoSave — durable immediately). The ordering dialog's economy
+// toggles are the ONLY writers.
+export function writeEconomyPins(names) {
+  return Promise.resolve(setPref(ECONOMY_KEY, [...names]));
+}
+
+// resetEconomyPins() — delete the key ⇒ the shipped card set again
+// (paired with the other resets in the dialog's Reset — the
+// overview/economy PLACEMENT family is Reset-cleared; the scoreboard-
+// transpose pref is not, see STARTS_TRANSPOSED_KEY).
+export function resetEconomyPins() {
+  return Promise.resolve(deletePref(ECONOMY_KEY));
 }
 
 // parseStoredPins(raw) — THE pins READ: the localStorage getItem string

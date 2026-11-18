@@ -95,6 +95,12 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsMetricPinsOverviewKey != "metric_pins_overview" {
 		t.Errorf("metric pins (overview) key = %q, want %q", prefsMetricPinsOverviewKey, "metric_pins_overview")
 	}
+	// The Economy tab's card-set placement toggle (metricorder.js
+	// ECONOMY_KEY): same contract — one rename silently detaches a
+	// stored selection back to the shipped default set.
+	if prefsMetricEconomyKey != "metric_economy" {
+		t.Errorf("metric economy key = %q, want %q", prefsMetricEconomyKey, "metric_economy")
+	}
 	// The metric VISIBILITY twin (metricorder.js HIDDEN_KEYS): which
 	// fixed stats are hidden per surface. Same contract as the order
 	// pair — one rename silently reverts every stored choice to
