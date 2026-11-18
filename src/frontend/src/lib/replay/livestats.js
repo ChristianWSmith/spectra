@@ -30,10 +30,12 @@
 //   - a disconnect-time World self-kill (killer == victim, weapon World,
 //     a player_disconnect for that identity on the SAME tick — the
 //     (player, tick) disconnect SET PlayerRounds builds) earns NO stat:
-//     no kill, no assist, no death. The row stays in the feed as a
-//     record of what happened; only this stat fold skips it. A genuine
-//     world-hazard self-kill (no same-tick disconnect) still counts as a
-//     death,
+//     no kill, no assist, no death, tested with the ONE frontend
+//     predicate lib/replay/selfkill.js isDisconnectSelfKill (imported
+//     below; its header names the three-way twin of the rule). The row
+//     stays in the feed as a record of what happened; only this stat
+//     fold skips it. A genuine world-hazard self-kill (no same-tick
+//     disconnect) still counts as a death,
 //   - assists: assister set, ≠ victim, cross-team, !assistedFlash,
 //   - deaths: every death of the player (no side gate),
 //   - damage: enemy damage ONLY — same-side damage (friendly fire) is
@@ -46,15 +48,20 @@
 //   - ADR = Σenemy damage ÷ number of counted rounds STARTED at/before
 //     the playhead; 0 rounds → adr is null (rendered "—", never 0).
 //
-// TRANSIENT DRIFT (owner sequencing, until the queued analytics wave):
-// the Sides card's stored PlayerRound DMG still folds ALL attributed
-// damage — internal/analytics/rounds.go's damage line gains the same
-// side gate in that wave, at which point both folds state the identical
-// enemy-only rule. Until then the two disagree in the OPPOSITE
-// direction from before this ruling: they used to agree on
-// FF-inclusive while the stored ADR seeds were already enemy-only;
-// now this playhead fold agrees with the stored ADR and the rounds.go
-// fold is the FF-inclusive one.
+// ONE RULE, NO DRIFT (owner ruling 2026-11-17; the analytics enemy
+// folds landed as rule version 2 — store.DefaultConfig.RuleVersion):
+// this playhead fold and the stored numbers state the identical
+// enemy-only rule. internal/analytics rounds.go PlayerRounds folds the
+// same rows with the same gates (enemy-only kills and damage, unknown
+// side permissive, no stat for a disconnect-time World self-kill) and
+// internal/analytics utility.go Utility sums utility damage under that
+// same side gate, so the stored PlayerRound DMG/UtilDmg agree with the
+// ADR this fold renders. The disconnect-self-kill criterion itself has
+// three named homes, cross-referencing each other by name: Go
+// internal/analytics/rounds.go PlayerRounds (the stored fold), this
+// fold (the playhead — it imports the predicate), and lib/replay/
+// selfkill.js isDisconnectSelfKill (the render surfaces: feed list,
+// kill ticker, death marker).
 //
 // Pure (no DOM, no services, no globals): node-tested by
 // src/lib/livestats.test.js. sideAt is injected so the module stays a
@@ -67,6 +74,7 @@
 //     that only folds the rows the playhead advanced past (the view's
 //     per-tick path — see the cursor section at the bottom).
 import { isCounted } from '../rounds.js';
+import { isDisconnectSelfKill } from './selfkill.js';
 
 // sameSide — the JS twin of internal/analytics/rounds.go sameSide: an
 // unknown side ("") never matches anything, which is exactly what makes
@@ -74,11 +82,6 @@ import { isCounted } from '../rounds.js';
 function sameSide(a, b) {
   return a !== '' && a === b;
 }
-
-// WORLD_WEAPON — the JS twin of internal/analytics/analytics.go
-// WorldWeapon: the stored weapon name of a world kill. One spelling
-// shared with the canonical fold; do not vary the string.
-const WORLD_WEAPON = 'World';
 
 // disconnectSet — the (player, tick) disconnect SET, the JS twin of the
 // map PlayerRounds builds (internal/analytics/rounds.go): every row with
@@ -89,6 +92,9 @@ const WORLD_WEAPON = 'World';
 // match on its own. Built from ALL rows regardless of playhead/round —
 // Go builds it from the whole event list too, and a same-tick match
 // makes a future disconnect unreachable by an already-folded kill anyway.
+// lib/replay/selfkill.js exports the byte-identical twin of this builder
+// for the render surfaces (its disconnectSet) — keep the two in step;
+// this copy stays so resetCursor rebuilds it beside byNumber unchanged.
 function disconnectSet(events) {
   const out = new Map();
   for (const e of events || []) {
@@ -121,17 +127,11 @@ function foldEvent(e, et, byNumber, sideAt, disc, acc) {
     const vic = String(e.victim || '');
     const asr = String(e.assister || '');
     // Disconnect-time World self-kill: not a death, not a kill, not an
-    // assist — no stat at all (PlayerRounds' continue, the canonical
-    // rule; module header). The row itself stays in the feed: a record
-    // of what happened, only the stats stay honest.
-    if (
-      vic &&
-      atk === vic &&
-      String(e.weapon || '') === WORLD_WEAPON &&
-      disc.get(vic)?.has(et)
-    ) {
-      return;
-    }
+    // assist — no stat at all (isDisconnectSelfKill imported from
+    // selfkill.js — THE frontend predicate, the same criterion as
+    // PlayerRounds' continue; module header). The row itself stays in
+    // the feed: a record of what happened, only the stats stay honest.
+    if (isDisconnectSelfKill(e, disc)) return;
     const vt = vic ? side(vic, et, sideAt) : '';
     // attacker ≠ victim is UNCONDITIONAL (PlayerRounds' kill-credit
     // line): without it a self-kill in a round whose sides are unknown
