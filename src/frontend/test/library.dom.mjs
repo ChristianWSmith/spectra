@@ -148,6 +148,27 @@ const bindings = await import('./stubs/bindings.mjs');
 // sources the search inputs are fed from.
 bindings.LibraryService.ListJobs = () => Promise.resolve([]);
 bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
+// ListDemoFiles has NO rec() entry in the shared stub, so the plain
+// replacements in this file would bypass `calls` entirely — every
+// scanCalls() pin would be vacuous (0 === 0, red never possible).
+// Route the property through a recording indirection instead: the
+// getter hands the view a wrapper that records first and delegates to
+// the current impl; each `bindings.LibraryService.ListDemoFiles = …`
+// assignment below swaps that impl. Wrap-and-restore sites capture the
+// RAW impl via takeDemoScan — capturing the getter's wrapper would
+// recurse.
+let demoScanImpl = () => Promise.resolve([]);
+const takeDemoScan = () => demoScanImpl;
+Object.defineProperty(bindings.LibraryService, 'ListDemoFiles', {
+  get: () => (...args) => {
+    bindings.calls.push({ method: 'ListDemoFiles', args });
+    return demoScanImpl(...args);
+  },
+  set: (fn) => {
+    demoScanImpl = fn;
+  },
+  configurable: true,
+});
 bindings.LibraryService.ListMapNames = () =>
   Promise.resolve(['de_ancient', 'de_cache', 'de_mirage']);
 bindings.ProfileService.ListPlayers = () =>
@@ -378,6 +399,12 @@ const pageCalls = () => bindings.calls.filter((c) => c.method === 'ListMatchesPa
 const lastCall = () => pageCalls()[pageCalls().length - 1];
 const navCalls = () => globalThis.__nav || [];
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+// The import-dirs card's manual Refresh (scan trigger (b), owner ruling
+// 2026-11-18: the table refreshes manually only) — scoped so the cold
+// mount's own card can be driven in section O.
+const refreshBtn = (root = document) =>
+  root.querySelector('section[aria-label="Demos from your import dirs"] .row-between .btn');
+const clickRefresh = (root = document) => click(refreshBtn(root));
 const focus = (el) => el.dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
 const enter = (el) =>
   el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -1078,7 +1105,12 @@ rowsForFacet = (f) => (f && f.map === 'queued' ? [queuedMatch] : prevRowsForFace
 // view's subscriptions use (the stub resolves to this file's URL).
 const { fire } = await import(stub('wails-runtime.mjs'));
 fire('spectra:library-changed');
-await sleep(80); // jobs + list + import-dir scan land
+await sleep(80); // jobs + list land
+// The dir fixture lands through the MANUAL Refresh (scan trigger (b)) —
+// library-changed no longer scans (owner ruling 2026-11-18), so the
+// section's ListDemoFiles replacement is picked up by the button.
+clickRefresh();
+await sleep(60);
 
 check(
   'a pure dequeue (cancelled, never started) stays out of "Recent import problems"',
@@ -1368,7 +1400,7 @@ await sleep(350); // past the 250 ms debounce
       },
     ]);
   releaseImport();
-  await sleep(80); // refreshJobs + refreshList + refreshDemoFiles
+  await sleep(80); // refreshJobs + refreshList (NO scan — manual-only)
   const above = matchRows().filter((tr) => tr.hasAttribute('data-pending-import'));
   check(
     'the queued file shows as the synthetic row in the table above (as today)',
@@ -1380,11 +1412,23 @@ await sleep(350); // past the 250 ms debounce
     !rowFor('ready.dem'),
     JSON.stringify(dirRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
   );
+  // Fail-before-fix pin (owner ruling 2026-11-18): the WHOLE timeline
+  // from the import click is scan-free — the enqueue landing included
+  // (base: doImportPaths' post-enqueue refreshDemoFiles fired here).
+  check(
+    'no rescan fired from the import click through the enqueue landing',
+    scanCalls() === scans0,
+    String(scanCalls() - scans0),
+  );
   // Failure leg: the enqueue rejects → the row comes back and the
   // error banner says why (a failed import never swallows the row).
   bindings.LibraryService.ListJobs = prevListJobsT;
   fire('spectra:library-changed');
-  await sleep(400); // jobs restore + the debounced rescan settle
+  await sleep(400); // jobs + list land; no scan is scheduled by the event
+  // The row was spliced out at click time and no event re-lists it —
+  // the manual Refresh (trigger (b)) is how it comes back here.
+  clickRefresh();
+  await sleep(60);
   bindings.handlers.ImportPaths = () => Promise.reject(new Error('queue unavailable'));
   const btn2 = importBtnFor('ready.dem');
   check('the row is listable again for the failure leg', !!btn2, String(!!btn2));
@@ -1424,7 +1468,7 @@ await sleep(350); // past the 250 ms debounce
   const matchListRows = () =>
     matchRows().filter((tr) => !tr.hasAttribute('data-pending-import'));
   const prevJobsB = bindings.LibraryService.ListJobs;
-  const prevDemoB = bindings.LibraryService.ListDemoFiles;
+  const prevDemoB = takeDemoScan(); // RAW impl — the getter's wrapper would recurse
   const prevRowsForFacetB = rowsForFacet;
   // The boundary job: same id/path through both snapshots, only the
   // boundary fields differ (matchId lands, the job keeps RUNNING).
@@ -1519,42 +1563,69 @@ await sleep(350); // past the 250 ms debounce
     matchListRows().some((tr) => tr.textContent.includes('ready.dem')),
     JSON.stringify(matchListRows().map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 40))),
   );
-
-  // (c) Settle: the trailing rescan lands and recognizes the file (the
-  // scan now omits it) → still hidden; job-done cannot bring it back.
-  bindings.LibraryService.ListDemoFiles = () =>
-    Promise.resolve([
-      {
-        path: '/imports/new.dem',
-        root: '/imports',
-        size: 1234,
-        modTime: '2026-01-01T00:00:00Z',
-        hashed: false,
-      },
-    ]);
-  await sleep(400); // past SCAN_DEBOUNCE_MS — the rescan has landed
+  // Fail-before-fix pin (owner ruling 2026-11-18): past every debounce
+  // window the timeline is STILL scan-free — base fired a rescan here
+  // (the boundary's spectra:library-changed scheduled one).
+  await sleep(450);
   check(
-    'once the rescan recognizes the file it stays off the card',
+    'no rescan fires past the debounce after the boundary (manual-only)',
+    scanCalls() === scansAtBoundary,
+    String(scanCalls() - scansAtBoundary),
+  );
+  check(
+    'the claimed row is still off the card after the debounce window',
     !rowFor('ready.dem'),
     dirDump(),
   );
+
+  // (c) Job-done SUCCESS — the whole-timeline pins. The ListDemoFiles
+  // stub stays the CLICK-TIME SNAPSHOT (it still lists the file): that
+  // is the stale demoFiles a real parse leaves behind under manual-only
+  // scanning, and the jobs snapshot now turns the job TERMINAL, so the
+  // claim releases. Without the local job-done splice the row would
+  // flash back from that stale snapshot (and base also scheduled a
+  // rescan here) — both must stay green only after the fix.
+  bindings.LibraryService.ListJobs = jobsWith(
+    boundaryJob({
+      status: 'done',
+      stage: 'done',
+      progress: 1,
+      matchId: 42,
+      finishedAt: '2026-01-05T00:00:10Z',
+    }),
+  );
+  const scansBeforeDone = scanCalls();
   fire('spectra:job-done', { jobId: 19, matchId: 42, status: 'done', error: '' });
-  await sleep(80);
+  await sleep(80); // the jobs read has landed (claim released)
   check(
-    'job-done cannot bring the row back (the file is recognized, claim or not)',
+    'job-done success: the imported row never reappears (claim released, snapshot stale)',
     !rowFor('ready.dem'),
     dirDump(),
+  );
+  check(
+    'no rescan ran to hide it either',
+    scanCalls() === scansBeforeDone,
+    String(scanCalls() - scansBeforeDone),
+  );
+  await sleep(450); // well past any event-driven scan window
+  check(
+    'still absent, still no rescan — the whole job-done timeline is scan-free',
+    !rowFor('ready.dem') && scanCalls() === scansBeforeDone,
+    `${dirDump()} scans=${scanCalls() - scansBeforeDone}`,
   );
 
   // (d) Restore the baseline for the sections below: jobs, the scan
-  // stub and the queued facet fixture.
+  // stub and the queued facet fixture — the row comes back through the
+  // MANUAL Refresh (scan trigger (b)), the only way it can now.
   bindings.LibraryService.ListJobs = prevJobsB;
   bindings.LibraryService.ListDemoFiles = prevDemoB;
   rowsForFacet = prevRowsForFacetB;
   fire('spectra:library-changed');
-  await sleep(400); // jobs restore + the debounced rescan settle
+  await sleep(120); // jobs + list restore (the event schedules no scan)
+  clickRefresh();
+  await sleep(60);
   check(
-    'baseline restored: the file is listable again for the sections below',
+    'manual Refresh restores the file for the sections below (trigger (b))',
     !!rowFor('ready.dem'),
     dirDump(),
   );
@@ -2067,6 +2138,11 @@ const roleStatus = () =>
   // data confirm — there is no file of ours to delete, so the second
   // prompt would be a lie.
   const rows = windowRows();
+  // Scan trigger (c) (owner ruling 2026-11-18): match deletion is one
+  // of the THREE scan triggers — deleting a match brings its demo back
+  // to the import-dirs card, and this pin fails if the delete path ever
+  // stops scanning (DeleteMatch emits no event, so nothing else would).
+  const scansBeforeDelete = bindings.calls.filter((c) => c.method === 'ListDemoFiles').length;
   click(deleteBtn(rows[0]));
   await sleep(40);
   check(
@@ -2087,6 +2163,14 @@ const roleStatus = () =>
       globalThis.__deleted[0][0] === 4 &&
       globalThis.__deleted[0][1] === true,
     JSON.stringify(globalThis.__deleted),
+  );
+  check(
+    'match deletion rescanned the import dirs exactly once (add-back trigger (c))',
+    bindings.calls.filter((c) => c.method === 'ListDemoFiles').length ===
+      scansBeforeDelete + 1,
+    String(
+      bindings.calls.filter((c) => c.method === 'ListDemoFiles').length - scansBeforeDelete,
+    ),
   );
 
   click(deleteBtn(windowRows()[1]));
@@ -2545,8 +2629,8 @@ check(
 );
 
 // Restore the handlers BEFORE the event below: job-done refetches jobs +
-// list + a scheduled (300 ms) demo scan, and that cleanup must not inherit
-// section L's delays.
+// list (the import-dir table settles locally — no scan), and that
+// cleanup must not inherit section L's delays.
 bindings.handlers.ListMatchesPage = prevList;
 bindings.LibraryService.ListJobs = prevJobs;
 const beforeDone = bindings.callCount('GetMatch');
@@ -2561,18 +2645,18 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// Section N: the import-dir scan is off the hot path — event-driven rescans
-// go through the trailing debounce (scheduleDemoScan), so a burst of
-// job-done / library-changed events settles into ONE rescan instead of one
-// per event (a first scan can stream gigabytes through sha256 inside the
-// binding).
-console.log('N. an event burst coalesces into ONE import-dir rescan');
+// Section N: the import-dir table refreshes MANUALLY (owner ruling
+// 2026-11-18) — job/library events must schedule NO demo-dir rescan at
+// all: a parse fires spectra:library-changed at its boundary and
+// spectra:job-done at its end, and neither may touch the table (a
+// mid-parse rescan only flashes the panel). RE-PIN (was: the burst
+// coalesced into ONE rescan — the auto-refresh the ruling removed).
+console.log('N. an event burst schedules NO import-dir rescan (manual-only)');
 {
   // Count scans through the stub (the section-F replacement is a plain
-  // no-recording stub, so wrap it). The job-done above already scheduled
-  // one scan; the events fired below land inside its 300 ms window and
-  // push it out — still ONE call for the whole burst.
-  const prevScan = bindings.LibraryService.ListDemoFiles;
+  // no-recording stub, so wrap it), then fire the exact event pair a
+  // parse produces and wait well past any debounce window.
+  const prevScan = takeDemoScan(); // RAW impl — the getter's wrapper would recurse
   let scanCount = 0;
   bindings.LibraryService.ListDemoFiles = (...args) => {
     scanCount++;
@@ -2580,10 +2664,10 @@ console.log('N. an event burst coalesces into ONE import-dir rescan');
   };
   fire('spectra:library-changed');
   fire('spectra:job-done', { jobId: 100, matchId: 43, status: 'done', error: '' });
-  await sleep(600); // past the 300 ms debounce + the scan itself
+  await sleep(600); // well past the 300 ms any event-driven scan would use
   check(
-    'three events in one burst → exactly one scan',
-    scanCount === 1,
+    'library-changed + job-done schedule NO import-dir rescan (RE-PIN: was "exactly one")',
+    scanCount === 0,
     String(scanCount),
   );
   bindings.LibraryService.ListDemoFiles = prevScan;
@@ -2599,15 +2683,17 @@ console.log('N. an event burst coalesces into ONE import-dir rescan');
 // list is emptied first.
 console.log('O. scan progress drives the StatusChip: indeterminate → determinate → gone');
 {
-  const prevScan = bindings.LibraryService.ListDemoFiles;
+  const prevScan = takeDemoScan(); // RAW impl — the getter's wrapper would recurse
   const dirRoot = () =>
     coldTarget.querySelector('section[aria-label="Demos from your import dirs"]');
   const blockOf = () => dirRoot()?.querySelector('.chip-block');
 
-  // (a) Empty the import-dir list: one rescan resolving zero rows.
+  // (a) Empty the import-dir list: one MANUAL rescan (the Refresh
+  // button — events no longer scan, owner ruling 2026-11-18) resolving
+  // zero rows.
   bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
-  fire('spectra:library-changed');
-  await sleep(500); // 300 ms debounce + the scan itself
+  clickRefresh(coldTarget);
+  await sleep(60); // the button scans directly — no debounce
   check(
     'import-dir list emptied (the display’s precondition)',
     !!dirRoot() && !dirRoot().querySelector('.data-table'),
@@ -2620,8 +2706,8 @@ console.log('O. scan progress drives the StatusChip: indeterminate → determina
   let release;
   bindings.LibraryService.ListDemoFiles = () =>
     new Promise((res) => (release = () => res([])));
-  fire('spectra:library-changed');
-  await sleep(400); // past the debounce: the scan is now in flight
+  clickRefresh(coldTarget);
+  await sleep(60); // the manual scan is now in flight
   const stalledBlock = blockOf();
   check(
     'scan display up: spinner while the scan runs (never "0%", never a ring)',
