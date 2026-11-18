@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -396,5 +397,23 @@ func TestCombatSeedsSweepFresh(t *testing.T) {
 		if c.Behind || c.FreshRows == 0 {
 			t.Errorf("%s coverage = %+v, want fresh rows after one Sweep", name, c)
 		}
+	}
+}
+
+// TestCombatOracleCarriesOnlyTheSeededColumns pins the dead-stat
+// deletion (owner ruling, 2026-11-17): friendly fire's column left the
+// retired-GetCombatStats oracle entirely — the oracle row is exactly
+// the two read shapes that migrated to seeds (dmg_no_kill,
+// kill_conversion). A third field means a no-seed column came back:
+// stop and check the ruling before re-adding it.
+func TestCombatOracleCarriesOnlyTheSeededColumns(t *testing.T) {
+	typ := reflect.TypeOf(combatOracleRow{})
+	got := make([]string, typ.NumField())
+	for i := range got {
+		got[i] = typ.Field(i).Name
+	}
+	want := []string{"NoKill", "ConvPct"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("combatOracleRow fields = %v, want %v (owner ruling, 2026-11-17: friendly fire deleted)", got, want)
 	}
 }
