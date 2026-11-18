@@ -59,7 +59,9 @@ differentiators:
   sample size), never a fabricated number; every metric documents its
   formula. A computed metric is shown as its stored value — while a
   recompute is pending the slot shows a processing/behind state, never
-  a stale number.
+  a stale number. For an **identity** metric N is the pool it chose
+  from: an empty pool shows a dash — the winner is never invented —
+  and 0-beside-N is the numeric answer only, never an identity.
 - **User-facing text speaks the user's domain — never implementation
   language:** every string the UI or an export renders (labels, titles,
   tooltips, empty states, chips, placeholder/help copy, glossary and
@@ -85,6 +87,45 @@ differentiators:
 - **The manual stays in lockstep:** any change that alters user-visible
   behavior, surfaces, or wording updates the user guide in the SAME
   change — the manual is never a follow-up.
+
+### Facts, metrics and records — every number has a class
+
+Ratified 2026-11-18. Every number the app renders belongs to exactly
+one of three classes:
+
+- **Fact** — a recorded observation at its declared grain: a value the
+  demo or its analysis pass recorded, read straight from its row (a
+  player's kills in a match, a round's equipment values, the final
+  scoreline). A fact carries no formula; nothing is derived when it is
+  read.
+- **Metric** — an expression over facts, carrying its formula and its
+  N: the gameplay-statistics layer. Seeded built-ins and user
+  definitions are equal citizens, and **Honest metrics** above is their
+  contract.
+- **Record** — rows, labels and series displayed as what they are:
+  event rows, chat, buy-class chips, chart series. A record never
+  poses as a statistic, and a statistic never hides behind a record.
+
+The classification is **closed**: a new rendered number joins one of
+those three classes — it never invents a fourth, and a number is never
+re-classified at a call site. A number that renders outside the three
+classes is an **exception**, and the exception list is closed and
+ratified (audited 2026-11-18): each member below carries the one-line
+reason it was kept. Growing the list is an owner decision recorded
+here, never an implementation shortcut. View-computed numbers remain
+governed by the view-level-aggregate rule in `AGENTS.md` — a pure
+function over already-fetched rows with its formula on the card, and a
+value a stored metric can carry relocates into one.
+
+| Exception | Where it lives | Why it stays ratified |
+|---|---|---|
+| **Playhead "so far"** — live K/D/A + ADR at the playhead | `lib/replay/livestats.js` (Replay's player cards) | A transient position over the events the playhead has passed: no stored subject can address "partial match up to X" honestly (a stored value there would go stale by definition), and the surface discloses the fold in its own copy. |
+| **`scoreThrough`** — the scoreline as of round N | `lib/rounds.js` (Round detail's score, the replay HUD, round picker labels) | A pure view aggregate over already-fetched rounds — cumulative counted wins by side — and the ONE scoreline aggregate: it cites the view-aggregate rule in its own comment, never re-spelled at a call site. |
+| **UI row counts** — counts of a view's own rows | Library's showing-count, the Reports appendix's row counts, console pagination | Inventory of what is on screen right now — never a statistic about the game, so no formula or N could apply. |
+| **`score`** — the final scoreline | The scoreboard's fixed Score column, the library's score sorts, the appendix's raw offer | A recorded game result read off its column; it has no seed by owner ruling — a sum over a per-match scoreline has no honest reading. |
+| **Sort-on-raw (narrowed)** — recorded columns as ordering keys | `store`'s scoreboard sort whitelist (fetch row order only) and the scoreboard comparator's raw arm (name / side / score) | Ordering keys may name recorded columns only; displayed values always come from their class's canonical read, so a stale row never re-orders the view. The whitelist is narrowed to the id-keyed fetch's one seed — no displayed statistic is ever read raw to sort it. |
+| **Appendix records** — recorded values offered in Reports | The appendix's recorded-value offer, exactly `raw:score` | Recorded fields with no seed, offered as recorded (each player's stored round count beside the value), never as a computed metric — one entity per stat, never a raw twin beside a metric. |
+| **Raw event reads + the dated selfkill render exception** | Event surfaces, exports, and `lib/replay/selfkill.js` | Event surfaces record what happened: raw reads, the events table and every export keep every row. The ONE dated deviation (2026-11-18): a disconnect self-kill death line never renders on the feed list, the kill ticker or the death marker — a disconnect side-effect is not an event-shaped fact worth showing, the row stays in the record, and its predicate is imported, never re-spelled. |
 
 ### Defaults (violate only with strong reason)
 
