@@ -250,7 +250,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 - **The curve** — *Equip value per round* or *Team net worth per round*, one line per team, with a legend and a round strip under it. Hover for values; click a column to open that round.
 - **Summary cards** — one card per stat the tab shows. The shipped set covers *Pistol → next round* (pistol wins held the next round), force rounds won and force rounds played per team, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* with its per-team split (marked **inferred**). Which stats appear is reconfigurable from the metric order dialog's Economy toggles (below); each card's tooltip states the exact formula, and a card whose stat names a round watches that round in the replay.
-- **Buy types** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), equipment values, and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The footnote names what the columns mean: equipment value is the gear a side *holds* at freeze time end — never that round's spend — and the loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
+- **Rounds** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), each side's deaths in that round under **CT Deaths** / **T Deaths**, and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
 
 # Utility
 
@@ -260,7 +260,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 # Combat
 
-- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** field beside them — a type-to-search multi-select whose picked rounds land as chips and combine as OR too, while an empty field (the default) shows every round, with the killer and victim, distance, and a ▶ that follows the *killer*. With every toggle off — the default — nothing is filtered and every duel shows.
+- **Engagements** — every detected duel, filtered by independent **opening** / **trade** / **traded** / **untraded** toggles (one kill can carry several; selected toggles combine as OR, so a duel matching any of them shows) and by a **Round** dropdown beside them — round 1 is selected by default, **All rounds** shows every duel, and each round option is labelled by its scoreline (**RD7 | 4-3**), with the killer and victim, distance, and a ▶ that follows the *killer*. With every kind toggle off — the default — no kind filter applies, so every duel of the selected round shows.
 - **Clutches** — the detected 1vN situations (found by counting who is still alive when a side drops to one player), with size, player, outcome, bomb state and HP left; **won** / **lost** toggles filter the list, and ▶ follows the lone player.
 
 # Heatmaps

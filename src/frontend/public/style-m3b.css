@@ -145,17 +145,21 @@ label.filt-lab {
   align-items: center;
 }
 
-/* The Engagements round scope (owner answer Q2): the ONE round
-   MULTI-select (W17: the sanctioned TokenSelect — chips in the field)
-   sitting in the kind-toggle row, never a second filter row. The
-   visible "Round" label rides the control's aria-label (W7), so this
-   wrapper carries no label element — it only keeps the field a
-   shrink-to-fit flex item beside the toggles. The Clutches card's
-   .comb-kinds row deliberately has none. */
+/* The Engagements round scope (owner, 2026-11-18): the ONE round
+   <select> mirroring the Utility tab's round dropdown (visible "Round"
+   field label, "All rounds" + canonical RD | score options, default
+   round 1) sitting in the kind-toggle row, never a second filter row.
+   The wrapper keeps the field a shrink-to-fit flex item beside the
+   toggles; .comb-field stacks label over control (the util-field
+   shape). The Clutches card's .comb-kinds row deliberately has none. */
 .comb-round-filter {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+}
+.comb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .comb-kind.active {

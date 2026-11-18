@@ -9,8 +9,10 @@
 // its long-event replay loop (H: solo's kill span at the loop length,
 // padded-span fallback, unstatable → no ?loop=), the bare round numbers
 // under the RD heading (A/B/D) and the Engagements ROUND scope — the
-// TokenSelect MULTI-select (picked rounds as chips, empty set = all
-// rounds, Engagements only; N). The retired Combat stats panel and its
+// round <select> dropdown mirroring Utility's (visible "Round" field
+// label, "All rounds" + canonical RD | score options, DEFAULT ROUND 1,
+// Engagements only; N). The clutches title carries no chip (B). The
+// retired Combat stats panel and its
 // KAST drill-down dialog are GONE (J — no section heading and no KAST
 // trigger anywhere), the cold-start gate and the failed-load alert hold
 // over the two surviving panels (K, L), and the view never calls the
@@ -161,24 +163,9 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip']) {
   );
 }
 
-// TokenSelect (W17: the Engagements round MULTI-select) — its Popover
-// leaf compiles beside it, and the strings catalog rebases like every
-// other component this driver mounts.
-svelteCompile(
-  readFileSync('src/lib/components/Popover.svelte', 'utf8'),
-  'Popover.svelte',
-  join(dir, 'components', 'Popover.js'),
-);
-svelteCompile(
-  readFileSync('src/lib/components/TokenSelect.svelte', 'utf8')
-    .replace("from './Popover.svelte'", "from './Popover.js'")
-    .replace(
-      "from '../strings/index.js'",
-      `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
-    ),
-  'TokenSelect.svelte',
-  join(dir, 'components', 'TokenSelect.js'),
-);
+// TokenSelect/Popover are no longer mounted here: the Engagements round
+// scope became a plain <select> (section N), so nothing in this driver
+// compiles the chip input anymore.
 
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
@@ -362,10 +349,12 @@ check(
 console.log('B. clutches card: DEFAULT = won ON / lost OFF (today\'s list), kill-span loop');
 const clutchSec = sections(root, 'Clutches')[0];
 check(
-  'provenance chip states the won/lost toggle scope',
-  clutchSec?.querySelector('.provenance')?.textContent.includes('won/lost toggle') &&
-    /won on, lost off by default/.test(clutchSec?.querySelector('.provenance')?.getAttribute('title') || ''),
-  clutchSec?.querySelector('.provenance')?.textContent,
+  'the Clutches title bar carries no chip (the title-badge removal, 2026-11-18)',
+  !!clutchSec &&
+    !clutchSec.querySelector('h2 .chip') &&
+    !clutchSec.querySelector('h2 .provenance') &&
+    clutchSec.querySelector('h2')?.textContent.trim() === 'Clutches',
+  clutchSec?.querySelector('h2')?.textContent,
 );
 const clutchRows = rows(clutchSec?.querySelector('table') || document.createElement('table'));
 check('one clutch row (the won one)', clutchRows.length === 1, String(clutchRows.length));
@@ -684,10 +673,9 @@ check(
   clutchSecG?.textContent.slice(0, 200),
 );
 check(
-  'provenance chip kept its alive-count rule + toggle wording',
-  /Found by counting who is alive/.test(clutchSecG?.querySelector('.provenance')?.getAttribute('title') || '') &&
-    clutchSecG?.querySelector('.provenance')?.textContent.includes('alive-count · won/lost toggle'),
-  clutchSecG?.querySelector('.provenance')?.textContent,
+  'the Clutches title stays chip-free here too (no badge anywhere on the heading)',
+  !clutchSecG?.querySelector('h2 .chip'),
+  clutchSecG?.querySelector('h2')?.textContent,
 );
 // …and the selection is LOCAL: no navigation happens for a toggle (a
 // state-retention ruling is pending — these never reach the route query).
@@ -932,20 +920,25 @@ console.log('M. the view never reads the retired combat-stats / metric-slot data
 }
 
 // ---------------------------------------------------------------------------
-// Section N: the Engagements ROUND scope (owner answer Q2, W3a; W17
-// multi-select, owner 2026-11-16): the sanctioned TokenSelect on the
-// Engagements card only — picked rounds land as CHIPS in the field,
-// the empty set is the all-rounds default (no filter, the kind toggles'
-// all-off rule), a picked set ORs those rounds together; the Clutches
-// card carries none. Labels read the canonical
-// `RD<n> | <ct>-<t>` (roundScoreLabel, lib/rounds.js); the visible
-// "Round" word rides the control's aria-label (W7), with no empty
-// label element left behind.
-console.log('N. engagements round scope: TokenSelect multi-select, empty set = all, Engagements only');
+// Section N: the Engagements ROUND scope (owner, 2026-11-18): the chip
+// input became a dropdown mirroring the Utility tab's round selector —
+// a visible "Round" field label over ONE <select>, options "All rounds"
+// + the canonical `RD<n> | <ct>-<t>` labels (roundScoreLabel), DEFAULT
+// ROUND 1 (the pre-dropdown default was the empty multi-select set = no
+// filter — the owner narrowed the default), and the Clutches card
+// carries none.
+console.log('N. engagements round scope: round dropdown, default round 1, Engagements only');
 {
   const rootN = await render({
     ...base,
+    rounds: [
+      { number: 1, startTick: 1040, endTick: 2000 },
+      ...base.rounds, // rounds 6 and 7
+    ],
     engagements: [
+      // One kill in round 1 — the DEFAULT selection has its own row to
+      // show, so "starts on round 1" is a value pin, not a fallback.
+      { tick: 1500, round: 1, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 2, wonBy: 't' },
       ...base.engagements, // round 7's opening + untraded pair (two kills)
       // …plus ONE kill in round 6, so the scope has something to drop.
       { tick: 9500, round: 6, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 3, wonBy: 't' },
@@ -954,85 +947,57 @@ console.log('N. engagements round scope: TokenSelect multi-select, empty set = a
   const engN = sections(rootN, 'Engagements')[0];
   const tableN = engN?.querySelector('table');
   const selN = engN?.querySelector('#comb-round-filter');
-  const chipsN = () => [...(engN?.querySelectorAll('.tk-tok') || [])];
-  // TokenSelect's panel opens on focus (its onfocus → open), so the
-  // options are readable once the paint settles — the reports driver's
-  // openBox pattern over the round field.
-  const openRoundBox = async () => {
-    selN?.dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
-    await sleep(60);
-    return [...(engN?.querySelectorAll('.tk-opt') || [])];
-  };
-  const pickN = async (label) => {
-    const opt = (await openRoundBox()).find((o) => o.textContent.trim() === label);
-    if (opt) click(opt);
+  const optsOf = () => [...(selN?.querySelectorAll('option') || [])].map((o) => o.textContent.trim());
+  const roundCellOf = (tr) => tr?.querySelectorAll('td')[2]?.getAttribute('title') || '';
+  const setRoundN = async (v) => {
+    if (!selN) return false;
+    selN.value = v;
+    selN.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     await sleep();
-    return !!opt;
-  };
-  const removeChipN = async (label) => {
-    const chip = chipsN().find((c) => c.textContent.trim() === label);
-    const x = chip?.querySelector('.tk-x');
-    if (x) click(x);
-    await sleep();
-    return !!x;
+    return true;
   };
   check(
-    'the engagement filter row carries the round token field (aria-label "Round", no visible label left behind)',
+    'the engagement filter row carries the round DROPDOWN with its visible "Round" field label',
     !!selN &&
-      selN.getAttribute('aria-label') === 'Round' &&
-      !!engN?.querySelector('.comb-round-filter .tk') &&
-      !engN.querySelector('.comb-round-filter .field-label') &&
-      !engN.querySelector('.comb-round-filter label'),
-    engN
-      ? selN
-        ? `aria=${selN.getAttribute('aria-label')}`
-        : 'no #comb-round-filter'
-      : 'no Engagements section',
-  );
-  const optsN = await openRoundBox();
-  check(
-    'its suggestions are one canonical RD | score label per round with a kill — no "All rounds" row (the empty set IS all rounds)',
-    JSON.stringify(optsN.map((o) => o.textContent.trim())) ===
-      JSON.stringify(['RD6 | 0-0', 'RD7 | 0-0']),
-    optsN.map((o) => o.textContent.trim()).join(','),
+      selN.tagName === 'SELECT' &&
+      engN?.querySelector('label[for="comb-round-filter"] .field-label')?.textContent.trim() === 'Round',
+    selN ? `tag=${selN.tagName}` : engN ? 'no #comb-round-filter' : 'no Engagements section',
   );
   check(
-    'the default is an empty set — no chips, every row shows (the kind toggles’ all-off rule)',
-    chipsN().length === 0 && rows(tableN).length === 3,
-    `${chipsN().length} chips / ${rows(tableN).length} rows`,
+    'its options are "All rounds" + one canonical RD | score label per round with a kill',
+    JSON.stringify(optsOf()) ===
+      JSON.stringify(['All rounds', 'RD1 | 0-0', 'RD6 | 0-0', 'RD7 | 0-0']),
+    optsOf().join(','),
   );
   check(
-    'round 6 picked → only round 6’s kill shows, the pick reads back as a chip',
-    (await pickN('RD6 | 0-0')) &&
+    'the default selection is ROUND 1 — only round 1’s kill shows (never every row)',
+    selN?.value === '1' &&
       rows(tableN).length === 1 &&
-      rows(tableN)[0]?.textContent.includes('bob') &&
-      chipsN().some((c) => c.textContent.trim() === 'RD6 | 0-0'),
-    `${rows(tableN).length} rows / chips=${chipsN().map((c) => c.textContent.trim()).join('|')}`,
+      roundCellOf(rows(tableN)[0]) === 'tick 1500',
+    `${selN?.value} / ${rows(tableN).length} rows / ${roundCellOf(rows(tableN)[0])}`,
   );
   check(
-    'adding round 7 → the picked set ORs both rounds (every row returns, two chips)',
-    (await pickN('RD7 | 0-0')) &&
-      rows(tableN).length === 3 &&
-      chipsN().length === 2,
-    `${rows(tableN).length} rows / chips=${chipsN().length}`,
+    'All rounds → every row shows (the pre-dropdown view stays one pick away)',
+    (await setRoundN('all')) && selN?.value === 'all' && rows(tableN).length === 4,
+    `${selN?.value} / ${rows(tableN).length} rows`,
   );
   check(
-    'removing both chips → the empty set shows every row again',
-    (await removeChipN('RD6 | 0-0')) &&
-      (await removeChipN('RD7 | 0-0')) &&
-      chipsN().length === 0 &&
-      rows(tableN).length === 3,
-    `${rows(tableN).length} rows / chips=${chipsN().length}`,
+    'round 6 picked → only round 6’s kill shows',
+    (await setRoundN('6')) && rows(tableN).length === 1 && roundCellOf(rows(tableN)[0]) === 'tick 9500',
+    `${selN?.value} / ${rows(tableN).length} rows`,
+  );
+  check(
+    'round 1 picked again → the default round stays selectable',
+    (await setRoundN('1')) && rows(tableN).length === 1 && roundCellOf(rows(tableN)[0]) === 'tick 1500',
+    `${selN?.value} / ${rows(tableN).length} rows`,
   );
   const clutchN = sections(rootN, 'Clutches')[0];
   check(
-    'the Clutches card carries NO round control (owner answer Q2)',
+    'the Clutches card carries NO round control',
     !!clutchN &&
       !clutchN.querySelector('#comb-round-filter') &&
-      !clutchN.querySelector('.tk'),
-    clutchN
-      ? `token fields=${clutchN.querySelectorAll('.tk').length}`
-      : 'no Clutches section',
+      !clutchN.querySelector('select'),
+    clutchN ? `selects=${clutchN.querySelectorAll('select').length}` : 'no Clutches section',
   );
 }
 

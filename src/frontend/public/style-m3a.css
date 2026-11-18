@@ -481,14 +481,6 @@
   font-size: 0.9em;
 }
 
-.econ-table-note {
-  font-size: 0.8em;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 /* --- Utility -------------------------------------------------------------- */
 
 .util-filters {
