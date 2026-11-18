@@ -1,5 +1,5 @@
 // strings/economy.js — Economy view chrome (EconCurve head, summary
-// cards, buy-types table)
+// cards, per-round table)
 // Extracted from views/Economy.svelte (Strings Stage 3, Sweep-B); values
 // are plain strings with {arg} placeholders — compose at the call site
 // with S.fill(S.economy.slot, { arg }).
@@ -10,7 +10,7 @@ export const economy = {
   dismissError: 'Dismiss error',
   loadingDetail: 'Loading economy…',
   roundSuffix: ' round',
-  headNote: 'buy types follow saved rules — click a chip for the reason',
+  headNote: 'buy classes follow saved rules — click a chip for the reason',
 
   // summary stat cards (label + sub + drill tooltip formula)
   pistolLabel: 'Pistol → next round',
@@ -25,19 +25,20 @@ export const economy = {
   lostLabel: 'Lost equipment',
   lostTitle: 'Formula: total across decided rounds of the losing team\'s freeze-end equipment value — inferred: assumes the losing side\'s gear was destroyed. Click: watch round {round} in the replay.',
 
-  // provenance chips
+  // provenance chips (the summary cards — the table's inferred
+  // markers left with its footnote, 2026-11-18)
   badgeComputed: 'computed',
   badgeInferred: 'inferred',
-  inferredTitle: 'calculated from the round results',
 
-  // buy-types table
-  buyTypesHeading: 'Buy types',
-  noBuyTypes: 'No buy types recorded yet.',
+  // per-round table
+  roundsHeading: 'Rounds',
+  noRounds: 'No rounds recorded yet.',
   thWinner: 'Winner',
   thCTBuy: 'CT buy',
   thTBuy: 'T buy',
-  thEquipCT: 'Equip CT',
-  thEquipT: 'Equip T',
+  thDeathsCT: 'CT Deaths',
+  thDeathsT: 'T Deaths',
+  deathsTitle: "Deaths suffered by that side's players in this round",
   thLossCT: 'Loss CT',
   thLossT: 'Loss T',
   openRound: 'Open round {round}',
@@ -45,8 +46,4 @@ export const economy = {
   noExplanation: 'no explanation recorded',
   rulesV: 'rules v',
   closeExplanation: 'Close explanation',
-  tableNote:
-    "Equip CT/T = freeze-end gear held (never this round's spend); Loss CT/T shows that side's loss bonus as pips — five rungs from $1400 to $3400 in $500 steps.",
-  tableNoteTail:
-    'on the Loss cells marks those pips as calculated from the round results rather than recorded.',
 };

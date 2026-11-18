@@ -349,6 +349,13 @@ const EXPECTED = {
   // empty-state copy). Sections A–I and N untouched; the base fixtures
   // stats/listMetrics/metricValues/metricStates and the Dialog/SortTh
   // component compiles were dropped as dead.
+  // combat re-pinned in place, SAME count 84 (2026-11-18, Match view
+  // round dropdown + clutches title): section N became the round
+  // <select> (7 checks — the visible "Round" field label, the
+  // "All rounds" + canonical RD | score options, default round 1's own
+  // row, All rounds / round 6 / round 1 round-trip, Clutches none); B
+  // and G each re-pinned 1 → 1 for the clutches title chip's removal
+  // (absence pins). TokenSelect/Popover compiles dropped as dead.
   'combat.dom.mjs': 84,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
@@ -524,7 +531,13 @@ const EXPECTED = {
   // econ-tables 175 → 189 (2026-11-18, floor re-pin): measured by a full
   // probe run — the floor had lagged the sections the drivers gained
   // since the last re-pin.
-  'econ-tables.dom.mjs': 189,
+  // econ-tables 189 → 198 (2026-11-18, Match view per-round table): +7
+  // section D (the Rounds panel title, the Equip → CT Deaths / T Deaths
+  // header swap, no inferred chip inside the table, the footer gone, the
+  // hand-computed round-1 and round-13 death cells and their shared
+  // header hover) and +2 the new section S (no per-round player rows →
+  // both death cells dash, never 0).
+  'econ-tables.dom.mjs': 198,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the

@@ -162,8 +162,6 @@ const HINT_KEYS = {
   'common.mapPackFoundIntro': 'asset-prompt explanatory copy — the paragraph listing what extraction reads',
   'common.mapPackFoundFine': 'asset-prompt explanatory copy — the local-storage assurance',
   'common.metricOrderNote': 'footnote under the metric-order dialog title (what the list holds, how to reorder/hide, how to unpin here)',
-  'economy.tableNote': 'footnote defining the table headers (Equip / Loss) and the loss-bonus pip ladder',
-  'economy.tableNoteTail': 'footnote tail for the Loss-cell inferred marker over the pips',
   'heatmaps.bboxHint': 'drag/click hint under the map — how the region selection behaves',
   'library.encKeyStatus': 'in-place note pointing at the per-match key status',
   'library.importDirsNote': 'footnote under the import listing (scan depth + copy semantics)',

@@ -6,6 +6,7 @@
     getMatch,
     getTeamNames,
     getScoreboard,
+    getPlayerRounds,
     listMetrics,
     getMetricValuesForMatch,
     errText,
@@ -18,7 +19,6 @@
   import { lossPips } from '../econ.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
-  import { EQUIP_DEF } from '../definitions.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
@@ -29,6 +29,10 @@
 
   let rows = $state([]); // models.EconomyRow[]
   let rounds = $state([]); // RoundRow[] (round context)
+  // player_round_stats rows for the match (models.PlayerRoundStat — one
+  // per player per round, with that round's side sample): the record
+  // behind the table's per-round death columns (fold below).
+  let playerRounds = $state([]);
   let match = $state(null); // models.Match — side switches + final score
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
@@ -43,11 +47,13 @@
       getMatch(id).catch(() => null),
       getTeamNames(id).catch(() => null),
       getScoreboard(id, 'kills', true).catch(() => []),
+      getPlayerRounds(id).catch(() => []),
     ])
-      .then(([eco, rs, m, tn, sb]) => {
+      .then(([eco, rs, m, tn, sb, prs]) => {
         if (!live) return;
         rows = eco || [];
         rounds = rs || [];
+        playerRounds = prs || [];
         match = m;
         // Team display names, keyed by each team's FINAL side — demo clan
         // name → synthesized team_<player> → bare side (lib/teams.js).
@@ -68,12 +74,32 @@
     return () => (live = false);
   });
 
-  // Loss-bonus values are never read from the demo — the store
-  // reconstructs them from round results (store.GetEconomy →
-  // applyLossBonuses), so EVERY row is inferred. The fact/inference badge
-  // therefore sits once per loss-bonus column header, not once per cell.
-  const lossInferredCT = $derived(rows.some((r) => r.inferredCT));
-  const lossInferredT = $derived(rows.some((r) => r.inferredT));
+  // The table's per-round death columns (owner, 2026-11-18): CT Deaths
+  // / T Deaths — one number per SIDE per ROUND, folded from the
+  // per-round player RECORD (player_round_stats, read through the one
+  // getPlayerRounds fetch; internal/analytics rounds.go counts those
+  // deaths at analyze time). Criterion: ROUND-grain values come from
+  // round records; MATCH-grain statistics come from metrics — the
+  // metrics system cannot express a round at all (metric rows are
+  // addressed per player/team/match subject and partitioned only by
+  // side/map/weapon — internal/metrics compile.go Address), so no
+  // metric path exists at round grain. A side with no player rows in a
+  // round (no side sample / not analyzed) is UNKNOWN — the dash, never
+  // a fabricated 0.
+  const deathsByRound = $derived.by(() => {
+    const out = new Map();
+    for (const pr of playerRounds) {
+      if (pr.side !== 'ct' && pr.side !== 't') continue;
+      let e = out.get(pr.round);
+      if (!e) {
+        e = { ct: null, t: null };
+        out.set(pr.round, e);
+      }
+      e[pr.side] = (e[pr.side] ?? 0) + (pr.deaths || 0);
+    }
+    return out;
+  });
+  const deathsFor = (round, side) => deathsByRound.get(round)?.[side] ?? null;
 
   // The four summary CARDS read their stored metric rows: pistol/gap
   // (the builtins pistol_hold / avg_equip_gap — plan §8 M8 rows,
@@ -424,9 +450,9 @@
     </div>
 
     <section class="panel">
-      <h2>{S.economy.buyTypesHeading}</h2>
+      <h2>{S.economy.roundsHeading}</h2>
       {#if rows.length === 0}
-        <p class="muted" role="status">{S.economy.noBuyTypes}</p>
+        <p class="muted" role="status">{S.economy.noRounds}</p>
       {:else}
         <div class="table-scroll">
           <table class="data-table econ-table">
@@ -439,28 +465,10 @@
                 <th scope="col">{S.economy.thWinner}</th>
                 <th scope="col">{S.economy.thCTBuy}</th>
                 <th scope="col">{S.economy.thTBuy}</th>
-                <th scope="col" class="num" title={EQUIP_DEF}>{S.economy.thEquipCT}</th>
-                <th scope="col" class="num" title={EQUIP_DEF}>{S.economy.thEquipT}</th>
-                <th scope="col" class="num">
-                  {S.economy.thLossCT}
-                  {#if lossInferredCT}
-                    <span
-                      class="chip badge-inferred"
-                      title={S.economy.inferredTitle}
-                      >{S.economy.badgeInferred}</span
-                    >
-                  {/if}
-                </th>
-                <th scope="col" class="num">
-                  {S.economy.thLossT}
-                  {#if lossInferredT}
-                    <span
-                      class="chip badge-inferred"
-                      title={S.economy.inferredTitle}
-                      >{S.economy.badgeInferred}</span
-                    >
-                  {/if}
-                </th>
+                <th scope="col" class="num" title={S.economy.deathsTitle}>{S.economy.thDeathsCT}</th>
+                <th scope="col" class="num" title={S.economy.deathsTitle}>{S.economy.thDeathsT}</th>
+                <th scope="col" class="num">{S.economy.thLossCT}</th>
+                <th scope="col" class="num">{S.economy.thLossT}</th>
               </tr>
             </thead>
             <tbody>
@@ -503,8 +511,8 @@
                       onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
                     >
                   </td>
-                  <td class="num">{fmtMoney(r.equipCT)}</td>
-                  <td class="num">{fmtMoney(r.equipT)}</td>
+                  <td class="num">{deathsFor(r.round, 'ct') ?? '—'}</td>
+                  <td class="num">{deathsFor(r.round, 't') ?? '—'}</td>
                   <td class="num econ-loss" title={fmtMoney(r.lossBonusCT)}>
                     {#each PIP_SLOTS as pip (pip)}
                       <span class="econ-loss-pip" class:ct={pip <= lossPips(r.lossBonusCT)}></span>
@@ -543,11 +551,6 @@
             </tbody>
           </table>
         </div>
-        <p class="econ-table-note muted">
-          {S.economy.tableNote}
-          <span class="chip badge-inferred">{S.economy.badgeInferred}</span>
-          {S.economy.tableNoteTail}
-        </p>
       {/if}
     </section>
   {/if}

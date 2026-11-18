@@ -320,6 +320,26 @@ const economyRows = (n) =>
     };
   });
 
+// The per-round player RECORD behind the table's CT Deaths / T Deaths
+// columns (player_round_stats — one row per player per round carrying
+// that round's side sample; the fold in Economy.svelte sums deaths per
+// (round, side)). Hand-shaped so every pinned cell is hand-computed:
+// alice dies TWICE in rounds 1 and 13 and once otherwise, bob dies once
+// every round. Sides follow the halftime switch (sideSwitches=1 →
+// rounds 1-12 alice CT / bob T, round 13 alice T / bob CT), so round
+// 13's cells prove the fold keys on the ROUND'S SIDE, never on the
+// player's final side.
+const playerRoundsFor = (countedN) =>
+  Array.from({ length: countedN }, (_, i) => {
+    const n = i + 1;
+    const aliceSide = n <= 12 ? 'ct' : 't';
+    const bobSide = n <= 12 ? 't' : 'ct';
+    return [
+      { round: n, steamId: 'A', name: 'alice', side: aliceSide, deaths: n === 1 || n === 13 ? 2 : 1 },
+      { round: n, steamId: 'B', name: 'bob', side: bobSide, deaths: 1 },
+    ];
+  }).flat();
+
 const match = {
   id: 3,
   map: 'de_mirage',
@@ -597,6 +617,7 @@ const dataFor = (countedN, switches = 1) => ({
   ],
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
+  getPlayerRounds: playerRoundsFor(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
   // The kvstore getter: ABSENT keys answer undefined. (The servicesStub
   // defaults an unscripted service to [] — a present-EMPTY pref — which
@@ -818,10 +839,10 @@ check(
   'm3a palette selector or m3b flat rule missing/overridden',
 );
 
-console.log('D. Economy tab: buy-types table — far-left watch column, RD header, TEAM names, loss pips');
+console.log('D. Economy tab: per-round table — Rounds title, CT/T Deaths columns, watch column, RD header, TEAM names, loss pips');
 root = await showMatch(dataFor(13), { routeTab: 'Economy' });
 table = root.querySelector('.econ-table');
-check('buy-types table rendered', !!table);
+check('per-round table rendered', !!table);
 check(
   'economy header still reads Rd',
   headerTexts(table).includes('RD'),
@@ -923,6 +944,69 @@ check(
     root.querySelectorAll('.econ-strip-cell.pistol').length === 2,
   `bands=${root.querySelectorAll('.econ-pistol-band').length} cells=${root.querySelectorAll('.econ-strip-cell.pistol').length}`,
 );
+
+// The panel rename, the column swap, the chip removal and the footer
+// cut (owner, 2026-11-18) — plus the death VALUES, hand-computed from
+// the playerRoundsFor fixture above: round 1 (sides as finished era 0)
+// → alice dies twice ON CT and bob once ON T = 2 / 1; round 13 (after
+// the halftime switch) → alice dies twice ON T and bob once ON CT =
+// 1 / 2, which is what pins the fold as SIDE-keyed rather than
+// player-keyed. The chips removed are THIS panel's inferred markers
+// (the two Loss-header badges and the footer badge); the summary
+// cards' own provenance badges live in the stat-card region and are
+// untouched here.
+{
+  const panel = table?.closest('section');
+  check(
+    'the panel title reads Rounds (the Buy types rename, 2026-11-18)',
+    panel?.querySelector('h2')?.textContent.trim() === 'Rounds',
+    panel?.querySelector('h2')?.textContent.trim(),
+  );
+  const heads = headerTexts(table);
+  check(
+    'Equip CT / Equip T were replaced by CT Deaths / T Deaths',
+    heads.includes('CT Deaths') &&
+      heads.includes('T Deaths') &&
+      !heads.some((h) => h.startsWith('Equip')),
+    JSON.stringify(heads),
+  );
+  check(
+    'no inferred chip renders anywhere in the table (both Loss-header badges gone)',
+    !table.querySelector('.badge-inferred'),
+    table.querySelector('.badge-inferred')?.outerHTML || '',
+  );
+  check(
+    'the explanatory footer under the table is gone',
+    !panel?.querySelector('.econ-table-note') &&
+      !panel?.textContent.includes('five rungs from $1400'),
+    panel?.querySelector('.econ-table-note')?.textContent || 'no footer',
+  );
+  const deathCells = (n) => {
+    const tr = rowFor(table, n);
+    return tr ? [tr.children[5]?.textContent.trim(), tr.children[6]?.textContent.trim()] : null;
+  };
+  const d1 = deathCells(1);
+  check(
+    'round 1 deaths: CT 2 · T 1 (hand-computed from the per-round player rows)',
+    !!d1 && d1[0] === '2' && d1[1] === '1',
+    JSON.stringify(d1),
+  );
+  const d13 = deathCells(13);
+  check(
+    'round 13 deaths: CT 1 · T 2 (side-keyed — the halftime switch swaps the columns, not the players)',
+    !!d13 && d13[0] === '1' && d13[1] === '2',
+    JSON.stringify(d13),
+  );
+  const deathTitles = [...table.querySelectorAll('thead th')].filter((th) =>
+    /Deaths/.test(th.textContent),
+  );
+  check(
+    'both death headers carry the same hover explaining what is counted',
+    deathTitles.length === 2 &&
+      deathTitles.every((th) => /Deaths suffered by that side/.test(th.getAttribute('title') || '')),
+    JSON.stringify(deathTitles.map((th) => th.getAttribute('title'))),
+  );
+}
 
 // Open round 12's WHY row: it must stay attached ABOVE the boundary line
 // (round row → why row → line → next round row).
@@ -2921,6 +3005,30 @@ console.log('R. seeded fixed cells: seed value + Formula title, the five states,
     );
   }
   localStorage.removeItem('spectra:pinned-metrics');
+}
+
+// ---------------------------------------------------------------------------
+// Section S: the death columns' honest fallback (owner, 2026-11-18): the
+// record path has no rows for the match (not analyzed / no side samples)
+// → BOTH cells read the dash, never a fabricated 0 — the same
+// absence-is-unknown rule the rest of the view applies.
+console.log('S. per-round death columns: the record path is absent → the honest dash, never 0');
+{
+  root = await showMatch({ ...dataFor(13), getPlayerRounds: [] }, { routeTab: 'Economy' });
+  const tableS = root.querySelector('.econ-table');
+  const trS = tableS ? rowFor(tableS, 1) : null;
+  check(
+    'the table renders with its death columns intact',
+    !!tableS &&
+      headerTexts(tableS).includes('CT Deaths') &&
+      headerTexts(tableS).includes('T Deaths'),
+    tableS ? JSON.stringify(headerTexts(tableS)) : 'no .econ-table',
+  );
+  check(
+    'no per-round player rows → both death cells dash (never 0)',
+    !!trS && trS.children[5]?.textContent.trim() === '—' && trS.children[6]?.textContent.trim() === '—',
+    trS ? `${trS.children[5]?.textContent.trim()} / ${trS.children[6]?.textContent.trim()}` : 'no round-1 row',
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
