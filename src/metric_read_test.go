@@ -151,7 +151,7 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 	// The SAME statement PreviewMetric would have run (identical
 	// provenance), and the compile wrote NOTHING: no metric_values row,
 	// no coverage movement — the sweep is still the only writer.
-	pv, err := f.svc.PreviewMetric(m.ID, "", "", 10)
+	pv, err := f.svc.PreviewMetric(m.ID, "", "", "", "", 10)
 	if err != nil {
 		t.Fatalf("PreviewMetric: %v", err)
 	}

@@ -591,10 +591,36 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 	return s.st.DeleteMetric(id)
 }
 
-// PreviewMetric compiles expr (empty expr → use id) and runs it.
-// scope: "" = whole library; scope="match:<id>" limits single-match
-// sources. The engine addresses every preview row by its subject — there
-// is no groupBy argument any more (retired with W2).
+// draftAddress is THE one spelling of a DRAFT's addressing rule (the
+// metrics subject axis): subject "" reads as "player" — the DDL default,
+// like SaveMetric — and scope contributes its profile half. The Builder's
+// live check (ValidateExpr) and the ad-hoc preview leg (PreviewMetric)
+// both build their address here, so a draft can never validate clean and
+// then false-refuse at preview (or the other way round).
+func draftAddress(subject, partition, scope string) metrics.Address {
+	if subject = strings.TrimSpace(subject); subject == "" {
+		subject = "player" // the DDL default — an omitted subject reads as player, like SaveMetric
+	}
+	return metrics.Address{Subject: subject, Partition: partition, Profile: scope == "profile"}
+}
+
+// PreviewMetric compiles expr (empty expr → use id) and runs it over the
+// whole library. The engine addresses every preview row by its subject —
+// there is no groupBy argument any more (retired with W2).
+//
+// Addressing (2026-11-18 — the deferral this leg carried is fulfilled):
+// subject, partition and scope are the DRAFT's own addressing — the same
+// triple ValidateExpr threads, normalized by draftAddress — instead of
+// the zero-value address, which normalized to subject "player" and made
+// a match/team-subject draft false-refuse at Preview whenever its lead
+// was legal only for its own subject (an argmax draft refused with
+// `argmax() needs subject "match"` although the same expression
+// validates and saves clean). A saved definition (expr "") reads its
+// addressing off its row instead; the three arguments then stay out —
+// the row IS the definition. The run itself is library-wide for both
+// legs (every caller passes "" as scope; the single-match run extent
+// was never used — CompileMetric still binds its "match:<id>" extent
+// for provenance).
 //
 // W2b: every metric() reference in the expression is resolved against
 // the saved catalog first (drafts are CALCULATED — a ref resolves
@@ -603,7 +629,7 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 //
 // The reported SQL is the DISPLAY copy (bound values written in as
 // literals — Preview.DisplaySQL); the run itself used the binds.
-func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limit int) (MetricPreview, error) {
+func (s *MetricsService) PreviewMetric(id int64, expr string, subject string, partition string, scope string, limit int) (MetricPreview, error) {
 	var (
 		def        metrics.Def
 		echo       models.MetricRow
@@ -625,10 +651,10 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 		depSubject = full.Subject
 	} else {
 		// Ad-hoc expression: no denominator (rates are a property of the
-		// saved definition); the subject addressing is the engine's — a
-		// draft previews as the player default (the Builder's subject
-		// control lands with the partition plumbing).
-		def = metrics.Def{Expr: expr}
+		// saved definition); the addressing is the DRAFT's own — the
+		// same address the live check validates it under (draftAddress).
+		addr := draftAddress(subject, partition, scope)
+		def = metrics.Def{Expr: expr, Subject: addr.Subject, Partition: addr.Partition, Profile: addr.Profile}
 		echo = models.MetricRow{ID: id, Expr: expr}
 	}
 	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope, depSubject)
@@ -640,8 +666,10 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 	}
 	def.Refs = refs
 	// limit ≤0 is normalized inside metrics.RunPreview — the one canonical
-	// default (PreviewDefaultRow), never here.
-	pv, perr, err := metrics.RunPreview(s.st, def, scope, limit)
+	// default (PreviewDefaultRow), never here. The run extent is the
+	// whole library: `scope` carries the DRAFT's definition scope above,
+	// not a run bound (see the doc comment).
+	pv, perr, err := metrics.RunPreview(s.st, def, "", limit)
 	if perr != nil {
 		return MetricPreview{}, exprErrorErr(perr)
 	}
@@ -704,8 +732,10 @@ func (s *MetricsService) GetMetricSeries(steamID string, metricIDs []int64) ([]m
 // a saved read never runs the plan. expr "" uses the SAVED definition
 // by id (denominator + resolved refs included — exactly what
 // PreviewMetric would have run); a non-empty expr is ad-hoc (no
-// denominator, refs against the saved catalog). scope binds like
-// PreviewMetric's ("" = whole library). Returns the statement(s), never
+// denominator, refs against the saved catalog). scope binds the run
+// extent ("" = whole library; "match:<id>" = one match) — the run
+// bound, NOT a draft's definition scope like PreviewMetric's scope.
+// Returns the statement(s), never
 // a result set; parse/resolution failures come back as the shared
 // ExprError-shaped error.
 //
@@ -770,7 +800,9 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 // authoring state, exactly like the scope that stays out below, so they
 // belong on the live check; the address feeds CompileRefs' subject ×
 // scope matrix (profile is still player-only — a match-subject draft
-// on profile scope refuses here, as it would at save).
+// on profile scope refuses here, as it would at save). draftAddress is
+// the one spelling this shares with PreviewMetric's ad-hoc leg, so the
+// live check and the preview can never disagree about a draft.
 //
 // The cross-scope RULE between references is still deliberately NOT
 // enforced here: ValidateExpr resolves refs against the saved catalog
@@ -784,10 +816,7 @@ func (s *MetricsService) ValidateExpr(expr string, subject string, partition str
 	if perr != nil {
 		return false, exprError(perr), nil
 	}
-	if subject = strings.TrimSpace(subject); subject == "" {
-		subject = "player" // the DDL default — an omitted subject reads as player, like SaveMetric
-	}
-	addr := metrics.Address{Subject: subject, Partition: partition, Profile: scope == "profile"}
+	addr := draftAddress(subject, partition, scope)
 	if _, perr := metrics.CompileRefs(expr, "", "", addr, refs); perr != nil {
 		return false, exprError(perr), nil
 	}
