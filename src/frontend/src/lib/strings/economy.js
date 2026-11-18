@@ -13,17 +13,12 @@ export const economy = {
   headNote: 'buy types follow saved rules — click a chip for the reason',
 
   // summary stat cards (label + sub + drill tooltip formula)
-  pistolLabel: 'Pistol → next round',
   pistolSub: 'pistol wins held next round',
-  pistolTitle: 'Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: watch round {round} in the replay (the round\'s own span, start→end).',
-  forceLabel: 'Force-buy win rate',
-  noForceBuys: 'no force buys',
-  forceTitle: 'Formula: force-buy rounds won ÷ force-buy rounds, pooled across both teams (headline); the sub-line is each team’s own won/rounds across the halftime switch. Click: watch round {round} in the replay.',
-  gapLabel: 'Winner equipment value advantage',
   gapSub: 'avg winner − loser equip per round',
-  gapTitle: 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — never this round\'s spend. Click: watch round {round} (largest gap) in the replay.',
-  lostLabel: 'Lost equipment',
-  lostTitle: 'Formula: total across decided rounds of the losing team\'s freeze-end equipment value — inferred: assumes the losing side\'s gear was destroyed. Click: watch round {round} in the replay.',
+  // The card LABELS and TOOLTITS come from the metric definition now
+  // (title = the catalog's label, doc = the card's Formula tooltip) —
+  // the card-set migration (owner 2026-11-18) retired the hardcoded
+  // label/title/no-force-buys strings with the composed cards.
 
   // provenance chips
   badgeComputed: 'computed',
