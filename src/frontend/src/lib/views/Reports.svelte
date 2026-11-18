@@ -395,9 +395,27 @@
         }
         const next = {};
         for (const id of sel) {
+          const def = defs.get(id);
+          // Subject-aware labels (metrics Phase 7, 2026-11-18 — the
+          // match-subject catalog entries are first-class appendix
+          // citizens): a player row keeps its roster-name label; a
+          // match-subject row's address IS the match (its label says
+          // so); a team row keys by its stamped team; an IDENTITY row's
+          // valueKey names the winner the argmax recorded — the label
+          // renders that name (an unresolvable key is the dash, never a
+          // raw id), and the value stays the stored companion. Records
+          // show what was recorded: every row is a stored read, never a
+          // recompute.
+          const subject = (def && def.subject) || 'player';
+          const labelFor = (v) => {
+            if (v.valueKey) return bySteam.get(v.valueKey) || '—';
+            if (subject === 'match') return `match #${matchId}`;
+            if (subject === 'team') return v.subjectKey;
+            return bySteam.get(v.subjectKey) || v.subjectKey;
+          };
           const valRows = (byMetric.get(id) || []).map((v) => ({
             id: v.subjectKey,
-            label: bySteam.get(v.subjectKey) || v.subjectKey,
+            label: labelFor(v),
             value: v.value,
             n: v.n,
           }));
@@ -571,18 +589,21 @@
   // row without a stored round count states nothing rather than a 0.
   const cellN = (r) => (Number.isFinite(r.n) ? r.n : '—');
 
-  // The per-entry meta line: fresh rows → "per player · N rows" (the
-  // design §5 copy — the groupBy line and the `· N ms` timing are gone:
-  // timing was never provenance); a RAW entry → its parallel recorded-
-  // value line (it has no formula, so there is no computed sample size
-  // to state — only the players it lists); any other state → the honest
-  // "value not computed" line with the state word. No stamp, no
-  // timestamp, ever (design §5's export pin).
+  // The per-entry meta line: fresh rows → "per subject · N rows" (the
+  // design §5 copy with the SUBJECT spelled per metric since Phase 7,
+  // 2026-11-18 — a match-subject entry reads "per match", a team one
+  // "per team", the player default unchanged); a RAW entry → its
+  // parallel recorded-value line (it has no formula, so there is no
+  // computed sample size to state — only the players it lists); any
+  // other state → the honest "value not computed" line with the state
+  // word. No stamp, no timestamp, ever (design §5's export pin).
   function appendixLine(id, a) {
     if (a.raw) return `recorded value · per player · ${a.rows.length} players`;
     const pres = appendixPres(id);
     if (pres && pres.kind === 'value') {
-      return `per player · ${a.rows.length} rows · match #${matchId}`;
+      const subject = (a.metric && a.metric.subject) || 'player';
+      const unit = subject === 'match' ? 'per match' : subject === 'team' ? 'per team' : 'per player';
+      return `${unit} · ${a.rows.length} rows · match #${matchId}`;
     }
     // A chip presentation carries the state word; the neutral dash means
     // the state had not landed — 'no-data' is the honest reading there.

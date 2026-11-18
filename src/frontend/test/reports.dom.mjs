@@ -1020,5 +1020,112 @@ console.log('J. origin surfacing: builtin + user + plugin cards render, select, 
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) await unmount(inst);
+// ---------------------------------------------------------------------------
+// Section K: the appendix catalog's match-subject + identity entries
+// (metrics expansion Phase 7, 2026-11-18 — the plan's Reports row). The
+// scope filter already OFFERS every match-scope definition (subject is
+// not a filter dimension), so the Phase-7 work is first-class
+// presentation: the meta line names the entry's SUBJECT, a match row's
+// label is the match itself, and an identity row renders the recorded
+// WINNER as its label beside the stored companion (records show what
+// was recorded — every row below is a stored read, never a recompute).
+console.log('K. match-subject + identity appendix entries: offered, subject-aware meta line, identity label = the recorded winner');
+{
+  const MATCH_SUBJECT_METRIC = {
+    id: 4, name: 'lost_equip', title: 'Lost equipment', scope: 'match', subject: 'match',
+    format: 'currency', doc: 'Formula: sum of lost freeze-end equipment', origin: 'builtin',
+    expr: 'from round_economy: sum(equip_value)', shortName: '', denominator: '', pluginId: '',
+  };
+  const IDENTITY_METRIC = {
+    id: 5, name: 'top_fragger', title: 'Top fragger', scope: 'match', subject: 'match',
+    format: 'identity', doc: 'Formula: argmax(player_stats.kills) — N = the pool',
+    origin: 'builtin', expr: 'from player_stats: argmax(kills)',
+    shortName: '', denominator: '', pluginId: '',
+  };
+  bindings.handlers.ListMetrics = () => [
+    MATCH_METRIC, PROFILE_METRIC, BEHIND_METRIC, MATCH_SUBJECT_METRIC, IDENTITY_METRIC,
+  ];
+  bindings.handlers.GetMetricComputeState = () => [
+    { metricId: 1, state: 'fresh' },
+    { metricId: 2, state: 'fresh' },
+    { metricId: 3, state: 'behind' },
+    { metricId: 4, state: 'fresh' },
+    { metricId: 5, state: 'fresh' },
+  ];
+  bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
+    storedCalls.push([matchID, metricIDs]);
+    const out = [];
+    for (const id of metricIDs || []) {
+      if (id === 1) out.push({ metricId: 1, subjectKey: '76561198000000001', value: 4.25, n: 7 });
+      if (id === 4) out.push({ metricId: 4, subjectKey: '', value: 42, n: 13 });
+      if (id === 5) out.push({ metricId: 5, subjectKey: '', valueKey: '76561198000000001', value: 20, n: 8 });
+      // id 3 (behind) deliberately has NO stored row.
+    }
+    return out;
+  };
+  services.invalidate();
+  const kr = await mountReports();
+
+  // Start from a clean selection (earlier sections' chips may have
+  // restored through the registry). Bounded — a stuck ✕ must never
+  // spin: the loop below would otherwise never exit.
+  for (let guard = 0; tokenNames(kr).length && guard < 10; guard++) {
+    click(removeBtn(kr, tokenNames(kr)[0]));
+    await sleep(40);
+  }
+
+  const opts = await openBox(kr);
+  const labels = optLabels(opts);
+  check(
+    'the match-subject and identity definitions offer themselves beside the player-subject one (a profile metric still never does)',
+    labels.includes('Lost equipment') &&
+      labels.includes('Top fragger') &&
+      labels.includes('Match stat') &&
+      !labels.includes('Career stat'),
+    JSON.stringify(labels),
+  );
+  click(opts.find((o) => o.textContent.includes('Lost equipment')));
+  await sleep(120);
+  const opts2 = await openBox(kr);
+  click(opts2.find((o) => o.textContent.includes('Top fragger')));
+  await sleep(120);
+  check(
+    'both picks land as chips with fresh row counts',
+    tokenNames(kr).includes('Lost equipment') &&
+      tokenNames(kr).includes('Top fragger') &&
+      /1 rows/.test(readout(kr, 'Lost equipment')?.textContent || '') &&
+      /1 rows/.test(readout(kr, 'Top fragger')?.textContent || ''),
+    JSON.stringify(tokenNames(kr)),
+  );
+
+  const dl = await saveReport(kr);
+  const text = savedText(dl);
+  check(
+    'the exported meta line names the SUBJECT — "per match · 1 rows · match #13" for both entries (the player copy stays for player metrics)',
+    text.includes('per match · 1 rows · match #13') &&
+      (text.match(/per match · 1 rows · match #13/g) || []).length === 2,
+    text.replace(/\s+/g, ' ').slice(text.indexOf('## Stats appendix'), text.indexOf('## Stats appendix') + 600),
+  );
+  check(
+    'the match row labels itself (match #13) with the recorded value and its N',
+    text.includes('|  | match #13 | 42 | 13 |'),
+    text.replace(/\s+/g, ' ').slice(text.indexOf('Lost equipment'), text.indexOf('Lost equipment') + 300),
+  );
+  check(
+    'the identity row renders the recorded WINNER as its label (amy, never a raw id) beside the stored companion',
+    text.includes('|  | amy | 20 | 8 |') && !/\|[^|]*76561198000000001[^|]*\|[^|]*20 \|/.test(text),
+    text.replace(/\s+/g, ' ').slice(text.indexOf('Top fragger'), text.indexOf('Top fragger') + 300),
+  );
+
+  // Leave the shared stubs as the section found them (this is the last
+  // section): the base script's handlers.
+  bindings.handlers.ListMetrics = () => [MATCH_METRIC, PROFILE_METRIC, BEHIND_METRIC];
+  bindings.handlers.GetMetricComputeState = () => [
+    { metricId: 1, state: 'fresh' },
+    { metricId: 2, state: 'fresh' },
+    { metricId: 3, state: 'behind' },
+  ];
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);
