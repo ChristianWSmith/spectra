@@ -593,7 +593,8 @@ where present.
 4. **"The three stamps are tick-join replacements" (owner ruling's premise)** —
    holds for `attacker_inair` (clean) and `same_side` (needs E2+E3); **fails
    for `capped_dmg`** (order-dependent, row-local — `schema.sql:284-296` says
-   so). Recommended: drop 2, keep 1 — **owner ruling required**.
+   so). **Owner ruling 2026-11-18: APPROVED — drop 2, keep `capped_dmg`** (the
+   stamp keeps an honest DDL comment; revisit post-SQL).
 5. **Row-by-row single-tx writes scale to tick volume** — falsified by
    measurement: 14–21.6 s/tx violates `busy_timeout=5000`; chunked is mandatory
    and costs nothing (measured parity).
@@ -619,7 +620,7 @@ where present.
 | Item | Owner | Note |
 |---|---|---|
 | E2/E3 sequencing vs step 3 (they are language features) | lead (`PLANNING.md` step order) | W4 blocked until they exist |
-| `capped_dmg` disposition (keep 1 vs keep all 3) | **product owner** | §5 W5′ — recommended: keep |
+| `capped_dmg` disposition (keep 1 vs keep all 3) | ~~product owner~~ **RULED 2026-11-18: keep `capped_dmg`** | §5 W5′ confirmed; drop `same_side` + `attacker_inair`; revisit post-SQL |
 | N semantics for tick sources with NULL (unsampled) rows — structural `COUNT(*)` vs `COUNT(col)` | step 3 (rule-3 prototype) | §1.3; affects any `avg(speed)` seed |
 | `speed` definition sourcing (horizontal vs 3-D, units; counter-strafing threshold) | implementation-time CS2.md/web lookup (AGENTS rule) | never guessed |
 | "Avg speed at shots" as a *value* under events-primary n:1 refusal | step 3 (SQL authoring) | filters express it today |

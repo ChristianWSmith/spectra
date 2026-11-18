@@ -6,7 +6,7 @@ the lead. Every downstream design step (02 tick-state, 03 queries, 04
 components) contracts against this document; citations are researcher-verified
 against baseline `24de283` and reconciled against `main` at integration.
 
-**Status:** PARTIAL — R31 + R32 in; R33 pending.
+**Status:** COMPLETE — all three inventories in (R31 delivered 14:58, R32 15:05, R33 via wrap report after its deadline — nudge applied, sections complete, gaps explicitly marked).
 
 **Confidence key (as delivered by each researcher):** **H** = read the cited
 code directly · **M** = derived from adjacent code/docs · **L/flagged** = not
@@ -305,4 +305,251 @@ claim → **one budget token taken BEFORE the compute lock** (`library.go:702-70
 
 ## Part C · R33 — surfaces/prefs parity inventory
 
-_Pending._
+**R33 — surfaces/prefs baseline** — worktree `r33-baseline-surfaces`, baseline `24de283`; delivered via wrap report (deadline 15:33 passed; worktree clean, read-only throughout, no new work taken on nudge). Consumer: `MANIFESTO.md` §4 (components/layouts), §8 (three classes), §9 track D. **Class shorthand:** **M** = metric (stored `metric_values` via five-state machine) · **F** = fact (stored scalar/recorded column) · **R** = record (row/event read as-is) · **A** = view-level arithmetic (parity must relocate or sanction) · **UI** = chrome/state.
+
+**Completion:** all sections complete for read surfaces; gaps marked — Heatmaps + CompareRounds rows Med-confidence (grep-level), P07 history ADR/KAST intent unconfirmed, A-class exception status of five view-arithmetic sites not verified against the ratified list (each needs a ruling at design, not a guess). Library.svelte not audited (out of stated scope — listed as non-candidate with flag).
+
+### C1. Match view surfaces (`src/frontend/src/lib/views/Match.svelte`, 1973 lines)
+
+#### C1.1 Shared chrome
+
+| Surface | Cite | Data path | Class |
+|---|---|---|---|
+| Header scoreline (team names + `scoreCT–scoreT`, map, duration, patch, StatusChip, voice badge) | Match.svelte:1216-1262 | `getMatch`/`getMatchSummary`/`getVoicePresence` (399-419) → `MatchService.GetMatch`/`GetMatchSummary` (matchservice.go:26,148), `VoiceService.GetVoicePresence` (voiceservice.go:136) | F/UI |
+| Warnings panel (cap 200 + honest remainder) | Match.svelte:1266-1289 | `getWarnings` → `LibraryService.GetWarnings` (libraryservice.go:324) | R |
+| RoundStrip (per-round winner cells, tooltip winner+reason) | Match.svelte:1291-1299; `components/RoundStrip.svelte:2-27,99-105` | `getRounds` → matchservice.go:44; `sideAtRound`/`teamStartClass` | R |
+| Tab bar (9 deep-linkable tabs) | Match.svelte:1301-1307; `MATCH_TABS` in `lib/router.js` | — | UI |
+| Loading/error | Match.svelte:1204-1213, 1955-1957 | — | UI |
+
+#### C1.2 Overview
+
+| Surface | Cite | Data path | Class |
+|---|---|---|---|
+| Top identity cards (default: top_fragger, best_adr, most_util, entry_opens, most_mvps) | selection `pinnedInSequence('overview')` + economy exclude Match.svelte:803-809; render 1310-1360; `OVERVIEW_COMPOSERS` 170-176; `topStats` 1166-1187 | ONE unioned read: `listMetrics`+`readOrder('overview')`+`readOverviewPins`+`readEconomyPins`+`getMetricValuesForMatch`+`getMetricComputeState` (743-852) → metricservice.go:147,700,317 | M(identity) |
+| Roster CT/T/Other: name + K/D/A compound + ADR chip | 1393-1500; `rosterAdr` 1376-1392; `rosterKda` 967-976; `fixedPres` 895-902 | `FIXED_SLOTS` named slots in same ONE read (368-376, 828-851) | M |
+| Honest states: empty pool ⇒ **no card** (1175); unresolvable key ⇒ no card (1180); state ⇒ chip card w/ progress (1312-1332); roster dash (1381-1390); state in title only (`compoundTitle` 951) | | `metricPresentation` (metricstate.js:57) | UI |
+
+#### C1.3 Scoreboard
+
+| Surface | Cite | Data path | Class |
+|---|---|---|---|
+| Fixed block **Name/Team/Score** | `SCORE_COLS` 134-140; `fixedCell` 1530-1532; team cell 1650-1661; name cell 1629-1649 | `cellText` over `getScoreboard` → matchservice.go:39, humans-only + `listedPlayers` (547-564) | F/descriptor |
+| Metric columns (default 19 pins: K, D, DMG, Util, MVPs, A, ADR, KAST%, HS%, K/D, KDA, 2K–5K, entry K/D, Trade, Streak) | headers 1573-1607; cells `metricCellView` 1536-1555; `sbCols` 680-692; pins effect 727-864 | `parseStoredPins('spectra:pinned-metrics')` → `resolvePins` → `composedSequence('match')` ∩ pins; ONE `getMetricValuesForMatch` + compute state + progress feed (340-393) | M |
+| Sort: multi-key fold, nulls-last, default `kills` re-spelled to `m:<id>`, client-side only | `sortStack` 209-211; 579-632; `toggleSort` 982-986; re-spell 820-827 | stored metric values; raw only name/side/score (630-631) | M/F |
+| Transposed shape | toggle 995-1004; render 1669-1755; `statCols` 699-701 | viewstate `matchKey('selection')` (233-328); open shape pref (290-299) | M/UI |
+| Five-state cells + live progress; `metricError` banner | 1536-1555, 874-886, 1556-1563 | metricstate.js:32-103 | UI |
+
+#### C1.4 Rounds tab
+Round rows: RD, Winner(+team name via `winnerName` parity 1115-1118), Reason, Duration, Site, MVP, First blood, Kills — Match.svelte:1759-1863, all `getRounds` (**R/F**); compare checkbox max 4 + hint + Compare button (1808-1817, 1865-1874, viewstate); separators `separatorFlags` (338); watch ▶ `watchRound` 1030-1036.
+
+#### C1.5 Embedded tabs
+Economy → 1876; Utility → 1878; Heatmaps → 1880; Combat → 1882; Reports embedded → 1884; Details → 1885-1953.
+
+**Details:** Key-facts `<dl>` (server, tickrate, frames, size, imported, parser, voice, warnings, source, demo-copy state + Free) Match.svelte:1894-1952 — **F**; Explorer diagnostics embedded 1953 (`GetProvenance`/`GetEntitySummary`, platformservice.go:160,230).
+
+#### C1.6 Economy tab (`views/Economy.svelte`, 541 lines)
+
+| Surface | Cite | Data path | Class |
+|---|---|---|---|
+| Head `N rounds` + note | 409-417 | `getEconomy` → analyticservice.go:777 | UI count |
+| **EconCurve** (equip/net-worth toggle, winner strip, hover) | embed 419; `components/EconCurve.svelte:2-28,45,245-363` | `econ.js` formulas over economy rows | **A** |
+| **Summary cards** (default 6: pistol_hold, team_force_wins, team_force_rounds, avg_equip_gap, lost_equip, team_lost_equip) — stored rows, badges, drill | selection 121-157 (`resolvePins('economy')` = `metric_economy`); `econCards` 318-331; render 421-434; `matchRow`/`teamValues`/`fmtStored` 161-182 | ONE `getMetricValuesForMatch` | M; drill anchors = sanctioned navigation facts (234-282) |
+| Rounds econ table: buy-class chips + why row + rule version | 443-534, 511-533 | GetEconomy stored rule outputs | stored-rule |
+| **CT/T Deaths per round** | 498-499, fold 90-103 (criterion 78-89) | view fold over `getPlayerRounds` → analyticservice.go:787 | **A (round-grain, documented exception)**; no side sample ⇒ dash |
+| Loss-bonus pips | 500-509 | `lossPips` over recorded bonus | F+A |
+| States: loading 406-407; no rounds 438-439; death dash 498-499 | | | UI |
+
+#### C1.7 Combat tab (`views/Combat.svelte`, 690 lines)
+- **Engagements table** (round, clock, merged kind chips, killer/victim, distance) 511-591 → `getEngagements` analyticservice.go:809, merge presentation-only (209-259) — **R**.
+- Kind multi-select (none-checked = no filter, 446-509, 322-326) + Round select default round 1 (494-509) — control; viewstate `matchKey('combat')` (110-178).
+- **Clutches table** (1vN, won/lost chip, bomb, HP) 623-687 → `getClutches` analyticservice.go:792 — **R**; won ON/lost OFF toggles 604-617; filter-aware empty copy 357-365, 618-621.
+- Loading/error 417-431; `loop_secs` stamps ▶ loops (82-89).
+
+#### C1.8 Utility tab (`views/Utility.svelte`, 708 lines)
+- Throw log rows (kind, thrower, clock, dmg, blind, affected, coords) 428-482 → `getUtility` analyticservice.go:814 — **R**; zero-dash carve-outs (`coordCell` 208-214).
+- Filters kind/thrower/round + N-of-M count 381-422 — control (viewstate 80-112); UI row count sanctioned.
+- **Damage bars** 493-603 and **blind-time bars** 612-704 — **A** (view sums, `damageBars` 279-298 / `flashBars` 307-328); cards hide entirely when `!any` (493, 612).
+
+#### C1.9 Heatmaps (`views/Heatmaps.svelte`) — **Med confidence**
+Raster + `grid.max`/`grid.samples`/grid-size readouts (256-259, 708) → `getHeatmap`/`GetHeatmapKD` (analyticservice.go:867; binding line 383) — Go-computed **R**. Filter toolbar kind/player/team/round-range/layer/region (579-661), viewstate `matchKey('heatmaps')` (61-67, 294-307); sanctioned replay-filter arrival path (433-439); stale/pack notes 563-574.
+
+#### C1.10 Drill-downs
+**RoundDetail** (Med-High): info facts 396-453; kills feed 456-516 (R); bomb timeline 518-564 (R); economy card 566-610 with **money mean `moneySampledSum/moneySamples` = A** (601); chat 614+ (R); fetches 102-109.
+**CompareRounds** (Med): equip/money/spent 301-317 (R), duration 325-328, **nade/dmg/flash summary line 225 = A**, event columns; fetches 112-118.
+
+### C2. Profile view surfaces (`views/PlayerProfile.svelte`, 1050 lines)
+
+| Surface | Cite | Data path | Class |
+|---|---|---|---|
+| Career StatCard tiles (default 13: Matches, Win%, ADR, ADR±σ, K/D, HS%, KAST%, opening/trade rate, clutches, clutch win %, avg flashed, avg util dmg) | `careerCards` 427-437; render 740-781; effect 224-281 | pins `localStorage 'spectra:pinned-profile-metrics'` (189, 210-219) → `pinnedInSequence('profile')`; ONE `getMetricValuesForPlayer('', ids)`+state (253); order/hidden (404-417) | M (+raw `wins` sub on Matches tile, 760 = F) |
+| Empty invariant (no tiles ⇒ no grid) + careerError Retry | 740, 734-739 | | UI |
+| Trend sparkline + dot tooltips + min/max caption; picker over `inSequence('match')` | picker 790-804; spark 483-517; render 811-845; states 806-844 | `getCareerTrend` → profileservice.go:201; viewstate `seed('player')` 56-61 | M |
+| Sides table (Rounds/Win%/ADR/KAST/K-D) | 886-909; `SIDE_SEEDS` 529; 572-587 | partitioned rows via ONE `getMetricValuesForPlayer(sid,…)` (535-570), percent×100 (562) | M |
+| Maps table (Matches/Wins/ADR) | 913-945; `MAP_SEEDS` 530 | same | M + A (sort) |
+| Weapons top-8 (Kills/Damage/HS) | 947-971; `WEAPON_SEEDS` 531 | same | M + A (sort/cap 8) |
+| Split-cell five-state + table-empty consults states | 853-882, 642-676 | metricPresentation | UI |
+| Match history: imported, map, W/L, score, start side, **K/D/A**, ADR, KAST% | headers 978-992; rows 994-1043; empty 1040-1042 | K/D = `getMetricSeries` (299-335 → metricservice.go:725); A = stored assists fold (352-357); **ADR/KAST = raw history fields (1037-1038)** | M + **F** — flagged parity question |
+| Loading/profileError | 712-717, 1047-1049 | | UI |
+
+**Adjacent Profiles list** (Med): ADR/Matches columns metric-backed — Profiles.svelte:15-16, 82-206 (`getMetricValuesForPlayer('')` + compute state, five-state cells, metric sort).
+
+### C3. Reports (`views/Reports.svelte`, 885 lines)
+1. **Template grid** 707-732 → `ListReportTemplates` (platformservice.go:433); empty gated on error (725-731).
+2. **Targets** 734-780: MatchPicker (record list from `ListMatches`, libraryservice.go:196); PlayerPicker statline = **stored seeds** `kills/deaths/assists/adr/rounds_played` via ONE `getMetricValuesForMatch` + career pair (238-284, comment 236-237); round input clamped to counted rounds (199-215).
+3. **Stats appendix**: TokenSelect 814-830; universe = `composedSequence('match')` interleaved with raw (318-330); metric picks → ONE `getMetricValuesForMatch` + `getPlayerRefs`, subject-aware labels incl. identity `valueKey` (374-463); readout = expr line + rows chip or **state chip** (836-867); meta line `per subject · N rows · match #id` vs `value not computed — <state>` (606-618). **Record offer = exactly `raw:score`** (`rawItems` metricorder.js:451-458; comment 299-310); raw rows off `GetScoreboard`, N = stored `roundsPlayed`, static "recorded value" chip (440-453, 846-851). Hidden fixed stats still addable (317). Selection viewstate `seed('reports')` (48-66).
+4. **Export** `render()` 536-554: `RenderReport` (Go template, platformservice.go:474) → client-side `compositeText` 662-667 (`appendixMd` 620-635 / `appendixHtml` 641-657), sections ranked by composed sequence (`appendixEntries` 569-583) → `downloadText`. UI and export render the same object.
+
+### C4. Controls and dialogs
+
+| Control | Cite | Effect | Persistence |
+|---|---|---|---|
+| **MetricOrderDialog** (3 sections) | `components/MetricOrderDialog.svelte:1-580`; opened from Builder (Builder.svelte:96,1975) | ↑/↓ whole-sequence write-through (`move` 175-197); eye show/hide fixed (`toggleHidden` 204); metric unpin via Builder writer (`unpin` 286-304); overview two-way pin (227-239); **Economy `$` toggle** (249-261); **"Scoreboard starts transposed"** checkbox (532-544, only writer, untouched by Reset); **Reset** deletes order+hidden(both scopes)+overview order+pins+economy (338-365) | kvstore prefs |
+| **Builder** | Builder.svelte | list filters origin/scope/subject/denom/pinning (173-262, 511-596); **`togglePin` 879** = ONE writer of both localStorage pin keys (56-57, 437-447); expression editor + debounced `validateExpr` (283); preview table with own sort (306-363, 1830-1930) | localStorage + kvstore |
+| Sort clicks / transpose / compare picker | Match.svelte:982-1004, 1063-1077, 1508-1518 | sort stack (reseed per id 547-550); shape; round selection | component/viewstate → URL for compare |
+| Combat/Utility/Heatmaps/Reports/trend filters | Combat 446-509,604-617; Utility 381-417; Heatmaps 579-661; Reports 744-777,815-830; PlayerProfile 790-804 | rows/cards/sparkline shown | viewstate registry keys (C5.4) |
+| EconCurve toggle | EconCurve.svelte:245-260 | series | component state |
+| MatchPicker / PlayerPicker / TokenSelect / SuggestInput | MatchPicker.svelte:2-18; Reports 744-763; 815-830; PlayerProfile 700-709 | targets/selections | prop-driven |
+
+### C5. Pref families
+
+#### C5.1 kvstore (registered `src/prefs.go`; frontend-written, Go never consumes — services.js:1204-1206)
+
+| Key | prefs.go | Written by | Read by | Component-config absorption |
+|---|---|---|---|---|
+| `metric_order_match` | :46 | dialog `writeOrder('match')` (metricorder.js:700) | Match:745; Reports:179; dialog:117; PlayerProfile trend:142 | scoreboard sequence config |
+| `metric_order_profile` | :47 | dialog | PlayerProfile:236,406; dialog:118 | profile card-block sequence |
+| `metric_order_overview` | :60 | dialog | Match:753; dialog:122 | overview row sequence |
+| `metric_pins_overview` | :61 | dialog only (`writeOverviewPins` metricorder.js:744) | Match:754,803-809; dialog:134 | overview instance-set membership |
+| `metric_economy` | :71 | dialog (`writeEconomyPins` :767) | Match:758,808; Economy:123,131 | Economy tab layout list + overview carve-out placement |
+| `metric_hidden_match` / `metric_hidden_profile` | :78-79 | dialog `writeHidden` (:722) | Match:748,777-780; PlayerProfile:406,431 | per-instance visibility (Name exempt, `HIDE_EXEMPT` metricorder.js:496) |
+| `scoreboard_starts_transposed` | :91 | dialog checkbox only | Match:290-299 | layout open-shape option |
+| `loop_secs` (adjacent) | :157 | Settings | Combat:84, Utility:51, RoundDetail:69, CompareRounds:94 | replay-entry param, not stat display |
+
+Absent/present rule shared: **absent ⇒ default by name; present (even `[]`) ⇒ verbatim** (`resolvePins` metricorder.js:843-852; non-array order ⇒ absent :691-695; strict `true` transpose :814-816); dated caveat — present key does not pick up later defaults (:101-104).
+
+#### C5.2 localStorage pins (two sites, pinned by `webstorage.test.js:30-35`)
+- `spectra:pinned-metrics` — written Builder (56, 437-447, togglePin 879); read Match:659, Builder:424; absent ⇒ `DEFAULT_PINS.match` (19 names, metricorder.js:265-285).
+- `spectra:pinned-profile-metrics` — written Builder (57); read PlayerProfile:189,218; absent ⇒ `DEFAULT_PINS.profile` (13 names, 286-300).
+- Parse + drop-never-migrate only in `parseStoredPins` (metricorder.js:799-808).
+
+#### C5.3 Default tables the component catalog must reproduce (metricorder.js)
+`DEFAULT_RANKS` match 172-196 / profile 205-219 / overview 225-231; `FIXED_BLOCK` 355-362 (Name/Team/Score; profile empty); `FIXED_RANKS` 402-409; `DEFAULT_PINS` 264-317; `DEFAULT_ECONOMY` 114-121; `RAW_FIELDS` = {Score} (431-438); `overviewDefs` identity + economy carve-out (482-487); resolvers `resolveOrder` 548, `inSequence` 609, `pinnedInSequence` 629, `composedSequence` 651.
+
+#### C5.4 Viewstate (process-scoped; component layouts must pick their own durable home)
+`matchKey('selection')` (Match:233-328), `matchKey('combat')` (Combat:110-178), `matchKey('utility')` (Utility:80-112), `matchKey('heatmaps')` (Heatmaps:61-67,307), flat `reports` (Reports:48-66), flat `player` (PlayerProfile:56-61), Builder filter seed (Builder:173-262).
+
+### C6. THE PARITY TABLE (acceptance checklist)
+
+#### Match — shared chrome
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M01 | Team names + final score line | Match.svelte:1218-1222 | GetMatch/GetMatchSummary | F | team color = start-side identity (`teamCls` 1131) |
+| M02 | Map · duration · patch · StatusChip | Match.svelte:1244-1247 | GetMatch | F/UI | |
+| M03 | Voice/encrypted-chat badge | Match.svelte:1248-1254 | GetVoicePresence | F | |
+| M04 | Warnings panel + remainder line | Match.svelte:1266-1289 | GetWarnings | R | loading chip 1274; cap 200; honest hidden count |
+| M05 | RoundStrip per-round winner cells | Match.svelte:1291-1299; RoundStrip.svelte:99-105 | GetRounds | R | no-winner = warmup tint; **design call: candidate vs stay-view** |
+| M06 | Tab bar | Match.svelte:1301-1307 | router | UI | |
+| M07 | Loading / error | Match.svelte:1204-1213, 1955-1957 | — | UI | |
+
+#### Match — Overview
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M08 | Identity cards (default 5) | Match.svelte:1310-1360 | ONE unioned stored read (743-852) | M(identity) | empty pool ⇒ **no card** (1175); state ⇒ chip card (1312-1332); unresolvable key ⇒ no card (1180); number from stored row, never raw field (904-916, 1196-1200) |
+| M09 | Roster CT/T/Other: name + K/D/A + ADR chip | Match.svelte:1393-1500, 1376-1392, 967-976 | named-slot metric rows (368-376) | M | dash on nodata; state in title only (951) |
+
+#### Match — Scoreboard
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M10 | Name / Team columns | Match.svelte:1629-1661 | GetScoreboard | F | Name unhideable; humans-only (1643-1648) |
+| M11 | Score column (raw) | Match.svelte:1530-1532 | GetScoreboard | F | owner ruling: no seed (metricorder.js:347-349) |
+| M12 | Pinned metric columns (default 19) | 1573-1607, 1536-1555 | stored rows (743-864) | M | shortName header; ⓘ=`doc`; value/`—`/chip; tooltip `n=` |
+| M13 | Multi-key sort fold (seed kills DESC) | 209-211, 579-632, 982-986 | stored values / raw name·side·score | M/F | nulls-last both directions; seed re-spell 820-827; never re-requests store order |
+| M14 | Transposed shape | 995-1004, 1669-1755 | same | M/UI | registry per match; pref seeds open shape; entering clears sort marks |
+| M15 | Metric error banner | 1556-1563 | — | UI | |
+| M16 | Five-state cells (processing/failed/fresh/no-data/behind) + live progress | 1536-1555, 874-886; metricstate.js:32-103 | compute state + progress feed | UI | **all five words are parity** |
+
+#### Match — Rounds tab
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M17 | Round rows: RD, Winner(+team), Reason, Duration, Site, MVP, First blood, Kills | Match.svelte:1784-1861 | GetRounds | R/F | dashes for absent fields; separators 338; winner name via parity 1115 |
+| M18 | Compare checkbox (max 4) + hint + button | 1808-1817, 1865-1874 | viewstate → URL `?rounds=` | control | |
+
+#### Match — Economy tab
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M19 | EconCurve (equip/net-worth toggle, winner strip, hover) | Economy.svelte:419; EconCurve.svelte:45,245-363 | `econ.js` formulas over GetEconomy | **A** | sharpest open decision |
+| M20 | Summary cards (default 6) + badges + drill | Economy.svelte:421-434, 318-331 | stored rows via `metric_economy` (121-157) | M | absent row ⇒ dash; half-present team pair ⇒ dash (172-178); drill anchors navigation-only (234-282) |
+| M21 | Rounds econ table + why row + rule version | Economy.svelte:443-534, 511-533 | GetEconomy stored outputs | stored-rule | empty 438 |
+| M22 | CT/T Deaths per round | Economy.svelte:498-499, 90-103 | view fold over GetPlayerRounds | **A (round-grain, documented)** | no side sample ⇒ dash never 0 (78-89) |
+| M23 | Loss-bonus pips | Economy.svelte:500-509 | `lossPips` over recorded bonus | F+A | $ in title |
+
+#### Match — Combat tab
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M24 | Engagements table | Combat.svelte:511-591 | GetEngagements (merge presentation-only) | R | empty/error variants 582-588 |
+| M25 | Kind multi-select + Round select | Combat.svelte:446-509 | viewstate | control | none-checked = no filter |
+| M26 | Clutches table | Combat.svelte:623-687 | GetClutches | R | filter-aware empty 357-365 |
+| M27 | Won/Lost toggles | Combat.svelte:604-617 | viewstate | control | both off ⇒ explicit empty text |
+
+#### Match — Utility tab
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M28 | Throw log rows | Utility.svelte:428-482 | GetUtility | R | zero-dash carve-outs (208-214) |
+| M29 | Kind/Thrower/Round filters + N-of-M | Utility.svelte:381-422 | viewstate | control/UI | options = rounds with throws only |
+| M30 | Damage-per-round bars | Utility.svelte:493-603 | view sums (279-298) | **A** | hides when no drawable data (493); computed badge |
+| M31 | Blind-time bars | Utility.svelte:612-704 | view sums (307-328) | **A** | hides when empty; inferred badge |
+
+#### Match — Heatmaps (Med confidence)
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M32 | Heat raster + max/samples/grid readouts | Heatmaps.svelte:256-259, 708 | GetHeatmap/GetHeatmapKD | Go-computed R | stale/pack notes 563-574 |
+| M33 | Kind/player/team/round-range/layer/region filters | Heatmaps.svelte:579-661, 307 | viewstate | control | sanctioned replay-filter arrival (433-439) |
+
+#### Match — Details + drill-downs
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| M34 | Key facts dl + demo-copy state + Free | Match.svelte:1894-1952 | GetMatch/GetVoicePresence | F | states copied/external/missing/— (1932-1948) |
+| M35 | Explorer diagnostics | Match.svelte:1953; Explorer.svelte:158,212,254 | GetProvenance/GetEntitySummary | R (technical) | |
+| M36 | RoundDetail: info, kills feed, bomb, economy card, chat | RoundDetail.svelte:396-619+ | GetRoundDetail/GetRounds/GetScoreboard/GetEconomy | R/F + **A** (money mean 601) | empties 458,520,605,616 |
+| M37 | CompareRounds: econ columns, utility summary, events | CompareRounds.svelte:225,301-317,325-328 | GetEconomy/GetUtility/GetRoundDetail/GetRoundClasses | R + **A** (summary line 225) | |
+
+#### Profile
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| P01 | Career StatCard tiles (default 13) | PlayerProfile.svelte:740-781, 427-437 | ONE GetMetricValuesForPlayer('') (224-281) | M | no tiles ⇒ no grid; Matches sub = raw `wins` (760); five-state slot; careerError (734) |
+| P02 | Trend sparkline + tooltips + min/max | PlayerProfile.svelte:811-845, 483-517 | GetCareerTrend | M | states error/only-one/no-trend (806-844) |
+| P03 | Trend metric picker | PlayerProfile.svelte:790-804 | inSequence('match') | control | falls back to `adr` (160-163) |
+| P04 | Sides table | PlayerProfile.svelte:883-911 | partitioned stored rows (535-570) | M | per-cell five-state (853-869); empty consults states (870-882) |
+| P05 | Maps table | PlayerProfile.svelte:913-945 | same | M + A sort | row → Library filter |
+| P06 | Weapons top-8 | PlayerProfile.svelte:947-971 | same | M + A sort/cap | |
+| P07 | Match history rows (incl. K/D/A, ADR, KAST%) | PlayerProfile.svelte:974-1046 | K/D = GetMetricSeries; A = assists fold; **ADR/KAST = raw fields (1037-1038)** | M + **F** | empty `noHistory` (1041); state in title (379-395); **raw ADR/KAST = parity question** |
+| P08 | Player finder | PlayerProfile.svelte:700-709 | ListPlayers | control | |
+| P09 | Loading / profileError Retry | PlayerProfile.svelte:712-717, 1047-1049 | — | UI | |
+| P10 | Profiles list ADR/Matches columns (adjacent, Med) | Profiles.svelte:15-16, 82-206 | GetMetricValuesForPlayer('') + state | M | metric sort key (170) |
+
+#### Reports
+| # | Item | Rendered in | Data path | Class | Notes |
+|---|---|---|---|---|---|
+| R01 | Template grid | Reports.svelte:707-732 | ListReportTemplates | R | empty gated on error (725) |
+| R02 | Match target (MatchPicker) | Reports.svelte:742-750 | ListMatches | R | embedded ⇒ fixed, no picker (738) |
+| R03 | Player target + statline | Reports.svelte:752-764, 238-284 | stored seeds GetMetricValuesForMatch | M | per-half dash + state title |
+| R04 | Round target (counted clamp) | Reports.svelte:766-778, 199-215 | GetRounds | F | |
+| R05 | Appendix token field (metrics + `raw:score`) | Reports.svelte:814-830, 318-343 | composedSequence universe | control | |
+| R06 | Per-stat readout: expr, rows chip / state chip / recorded chip | Reports.svelte:836-868, 473-500 | stored read + state | M/R | loading `…`, "failed" (842-845) |
+| R07 | Appendix export (md/html, sequence order, `value not computed — <state>`) | Reports.svelte:620-667, 569-618 | same object as UI | M/R | raw N = stored roundsPlayed, never a formula N |
+| R08 | Save + Generating… | Reports.svelte:827-829 | RenderReport + downloadText | UI | |
+
+**Marked gaps:** Heatmaps rows M32/M33 Med-confidence; CompareRounds M37 column list incomplete (grep-level); P07 raw ADR/KAST status unconfirmed; four **A-class** items (M19 EconCurve, M22 deaths fold, M30/M31 Utility bars, M36 money mean, plus M37 summary line) not checked against the ratified exception list (`MANIFESTO.md:139`) — each needs an owner ruling at design, not a guess.
+
+### C7. Explicit non-candidates (confirm/overturn at design)
+1. **Replay** (`views/Replay.svelte`) — spatial/temporal canvas; named chrome in `MANIFESTO.md:86`.
+2. **Heatmaps raster canvas** — spatial image; its filters/counters (M32/M33) are candidate controls.
+3. **SqlConsole** — read-only power surface (AGENTS power-surface exemption).
+4. **Builder expression editor + preview** — metric-authoring power surface; its pin toggles/filters ARE controls (C4).
+5. **ReportsBuilder** (`ReportsBuilder.svelte:1-40`) — template *authoring* editor; consumption side (Reports) is in scope.
+6. **Settings / Library / Explorer / CommandPalette / MapPackPrompt / DocsPopup** — chrome/record lists/diagnostics (Library not audited in depth — flagged).
+7. **Job/progress widgets** — render only through StatusChip (AGENTS).
+8. **RoundStrip** — borderline (stat-bearing but navigation-coupled); shipped as M05 for an explicit decision.
+9. **Raw event reads (kill feed, chat, bomb)** — records by definition (`MANIFESTO.md:82`), but must become *record-bound components* if the feed is dogfooded — open scope question, listed not presumed.
+
+**Could not determine (flagged):** Heatmaps toolbar exact filter set (Med); CompareRounds full columns (Med); Library internals (not audited); P07 history ADR/KAST intent (comment at PlayerProfile.svelte:294 covers K/D/A only); A-class exception status of the five arithmetic sites.

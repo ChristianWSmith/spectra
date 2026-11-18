@@ -36,6 +36,7 @@ root docs stay untracked; these do not).
 ## Owner rulings (live)
 
 - **2026-11-18 — pre-release breakage is free:** we are pre-release; schema and seed changes break whatever they need to, no compatibility paths, no ensure-column anything. Where verification is a concern, **cut a pre-migration database snapshot before the wipe** and diff metric values+N match-by-match after re-import — the sanctioned comparison instrument for the whole program. Applies directly to Step 2's stamp-drop decision (`events.same_side`/`capped_dmg`/`attacker_inair` drops are ON the table, coordinated with rewrites of the three seeds that reference them).
+- **2026-11-18 — `capped_dmg` (owner):** drop `same_side` + `attacker_inair` as tick-join replacements (same_side needs the two bounded language extensions E2/E3, sequenced at Step 5), **KEEP `capped_dmg`** as an ingest stamp with an honest DDL comment — it is not tick-derivable (order-dependent, row-local; the DDL says so at `schema.sql:284-296`); revisit after the SQL jump. Confirms Step 2's W5′ recommendation; the "three stamps" premise now reads "two drops, one keep" everywhere.
 - **2026-11-18 — formula display = SINGLE FIELD (owner):** the stored metric formula IS the expanded SQL; the Formula tooltip and editor show the stored formula; no separate authored-source field. Flips `03-QUERIES.md` §9 decisions 3/9 (annotated there). Wave-B consequences: sugar input still expands at save; seed expressions in `schema.sql` normalize to their expansion at Open so every row carries one spelling (dedupe holds).
 - **2026-11-18 — freshness precision = FULL NOW (owner):** lift the blanket `rule_version` axis for fact-only metrics in the SAME wave as rule 5 — the conservative fallback in `03-QUERIES.md` §9's deferral table is rejected; the pin updates ride that wave (annotated there). **Owner note, refined same day (this supersedes an earlier "analysis rules convert into ordinary metrics" paraphrase):** analysis rules get **built-in metric stubs** that feed propagation of dependent metrics; **analysis-rule values remain user-editable**, and updating them is **the one thing that pushes a change to the corresponding stubs**, which triggers recalculation of dependents as needed via the existing dependency-cascade machinery. So the blanket `rule_version` axis is replaced by **stub-mediated propagation** (precision = the cascade reaches exactly the dependents), not by a per-metric table-set lift alone; rule 5's touched-table set still governs fact freshness. Tilts manifesto open question 3: analysis outputs keep their identity (editable, Go-computed) but surface in the metrics system as stubs; boundary holds only until a query provably replaces a detector.
 
@@ -57,9 +58,13 @@ empty pool, five metric states, no fabricated zeros).
 
 - [x] **Step 0 — setup:** `dogfood/` created, `FACTS-AND-QUERIES.md` →
       `dogfood/MANIFESTO.md` (now tracked), this file written. *Commit+push.*
-- [ ] **Step 1 — baseline inventory** → `dogfood/01-BASELINE.md`
+- [x] **Step 1 — baseline inventory** → `dogfood/01-BASELINE.md`
       (3 parallel researchers: metrics engine · store/extract/sidecar ·
       surfaces+prefs). *No dependencies. Everything else contracts against it.*
+      **DONE 2026-11-18:** Part A (R31, 14:58) + Part B (R32, 15:05) + Part C
+      (R33, via wrap report after deadline nudge — parity table M01–M37 /
+      P01–P10 / R01–R08 complete, gaps marked). Two rule-1/allowlist
+      corrections propagated to the manifesto at compile time.
 - [x] **Step 2 — tick-state design** → `dogfood/02-TICK-STATE.md`
       (depends: 1). Density/derived-feature policy, schema shape, ingest path,
       sidecar relationship, what rides the owner's wipe. **DONE 2026-11-18
