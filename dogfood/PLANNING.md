@@ -60,9 +60,16 @@ empty pool, five metric states, no fabricated zeros).
 - [ ] **Step 1 — baseline inventory** → `dogfood/01-BASELINE.md`
       (3 parallel researchers: metrics engine · store/extract/sidecar ·
       surfaces+prefs). *No dependencies. Everything else contracts against it.*
-- [ ] **Step 2 — tick-state design** → `dogfood/02-TICK-STATE.md`
+- [x] **Step 2 — tick-state design** → `dogfood/02-TICK-STATE.md`
       (depends: 1). Density/derived-feature policy, schema shape, ingest path,
-      sidecar relationship, what rides the owner's wipe.
+      sidecar relationship, what rides the owner's wipe. **DONE 2026-11-18
+      (18:18, extended deadline):** 64 Hz derived-feature rows — rate pinned by
+      the equality-join mandate, density is a WIDTH decision; `player_ticks`
+      table, streaming `TickSink` with mandatory chunked txs, sidecar =
+      two-sink stance, ordered W1–W10 wipe bundle; §5B ownership
+      classification (rule-5 input). Falsified: "sane tick rate" for joins,
+      velocity-in-sidecar, B5.1 childTables, single-tx at volume, and the
+      three-stamp premise → **owner ruling pending: drop 2 / keep `capped_dmg`**.
 - [x] **Step 3 — query language + five rules, rule-3 prototype** →
       `dogfood/03-QUERIES.md` (depends: 1). **The crux:** worked examples
       proving N derivation/declaration for ratios, rates, per-round aggregates,
