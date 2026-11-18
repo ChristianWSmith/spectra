@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/golang/geo/r3"
@@ -337,9 +338,14 @@ func TestDisconnectWorldKillNotCountedAsDeathOrSuicide(t *testing.T) {
 func TestBotTakenOverBookkeeping(t *testing.T) {
 	human, bot, _ := takeoverPair()
 	a := newAgg()
-	// Tick-accurate transition log only — no row, no stat (owner's
-	// 2026-11-17 ruling: no user-visible output yet). Every field is read
-	// here so the log stays a used, pinned structure.
+	// Tick-accurate transition log AND the typed row (moved deliberately —
+	// criterion ruling, lead; owner report 2026-11-18): the
+	// models.EventBotTakeover row is the replay's coverage-END signal,
+	// fetched through the SAME channel as the connect/disconnect rows
+	// (preload readEvents → indexConnections → presentAt's controlAt).
+	// Every field is read here so both stay pinned structures. The
+	// 91334 tick is synthetic for this unit (the production signal is
+	// the per-frame demoinfocsControls edge in handlers.go).
 	a.botTakeover(91334, human.SteamID64, human.Name, playerKey(bot), bot.Name)
 	if len(a.takeovers) != 1 {
 		t.Fatalf("takeovers = %d, want 1", len(a.takeovers))
@@ -349,8 +355,68 @@ func TestBotTakenOverBookkeeping(t *testing.T) {
 		got.botKey != playerKey(bot) || got.botName != "Rebel" {
 		t.Errorf("takeover = %+v, want the 91334 bvcket←Rebel transition", got)
 	}
-	if len(a.events) != 0 {
-		t.Errorf("bookkeeping leaked %d event rows, want none", len(a.events))
+	if len(a.events) != 1 {
+		t.Fatalf("event rows = %d, want 1 (the bot_takeover row)", len(a.events))
+	}
+	row := a.events[0]
+	if row.Tick != 91334 || row.Kind != models.EventBotTakeover || row.Attacker != keyStr(human.SteamID64) {
+		t.Errorf("row = %+v, want the 91334 bot_takeover row keyed by the taker", row)
+	}
+	if !strings.Contains(row.DetailJSON, `"name":"bvcket"`) || !strings.Contains(row.DetailJSON, `"bot":"Rebel"`) {
+		t.Errorf("detail = %s, want the name/bot payload", row.DetailJSON)
+	}
+}
+
+// TestControlEdges: controlEdges is THE re-assumption detector behind
+// the bot_takeover row (owner report 2026-11-18 — coverage ends at
+// re-assumption, never at the reconnect). Pinned with plain maps: no
+// entities, no parser — the edge rule itself.
+func TestControlEdges(t *testing.T) {
+	human, bot, _ := takeoverPair()
+	k, b := uint64(7), playerKey(bot)
+	ctl := func(botKey uint64, name string) ctlEdge {
+		return ctlEdge{bot: botKey, key: k, taker: "bvcket", botName: name}
+	}
+	// Continuing control is NOT an edge (and a non-controlling taker
+	// never is — losing control is not a re-assumption).
+	if e := controlEdges(
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+	); len(e) != 0 {
+		t.Errorf("unchanged control = %d edges, want 0", len(e))
+	}
+	if e := controlEdges(
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+		map[uint64]ctlEdge{k: ctl(0, "")},
+	); len(e) != 0 {
+		t.Errorf("lost control = %d edges, want 0 (not a re-assumption)", len(e))
+	}
+	// 0 → bot: THE re-assumption edge (the disconnect→takeover close).
+	if e := controlEdges(
+		map[uint64]ctlEdge{k: ctl(0, "")},
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+	); len(e) != 1 || e[0].key != k || e[0].bot != b || e[0].taker != "bvcket" || e[0].botName != "Rebel" {
+		t.Errorf("re-assumption edges = %+v, want the one bvcket←Rebel edge", e)
+	}
+	// A taker absent from `prev` (a disconnect dropped it) controls on
+	// re-sighting → edge, never compared equal across the absence.
+	if e := controlEdges(
+		map[uint64]ctlEdge{},
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+	); len(e) != 1 || e[0].bot != b {
+		t.Errorf("re-sighting after absence = %+v, want the edge", e)
+	}
+	// Control moved to ANOTHER body → edge (botA → botB).
+	other := playerKey(human)
+	if e := controlEdges(
+		map[uint64]ctlEdge{k: ctl(b, "Rebel")},
+		map[uint64]ctlEdge{k: ctl(other, "someone")},
+	); len(e) != 1 || e[0].bot != other {
+		t.Errorf("bot switch = %+v, want the switch edge", e)
+	}
+	// A taker never in `prev` who is NOT controlling is never an edge.
+	if e := controlEdges(map[uint64]ctlEdge{}, map[uint64]ctlEdge{k: ctl(0, "")}); len(e) != 0 {
+		t.Errorf("non-controller = %d edges, want 0", len(e))
 	}
 }
 

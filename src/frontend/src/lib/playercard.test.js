@@ -9,6 +9,7 @@ import {
   armorChip,
   carriesC4,
   connectedAt,
+  controlAt,
   heldItemOf,
   hpBand,
   hpPct,
@@ -224,18 +225,24 @@ const nukeConnRows = [
 test('indexConnections groups the typed rows per player, in tick order', () => {
   const idx = indexConnections(nukeConnRows);
   assert.deepEqual(idx.get(K3SH), [
-    { tick: 23467, connected: false },
-    { tick: 28801, connected: true },
-    { tick: 182637, connected: false },
+    { tick: 23467, connected: false, kind: 'player_disconnect' },
+    { tick: 28801, connected: true, kind: 'player_connect' },
+    { tick: 182637, connected: false, kind: 'player_disconnect' },
   ]);
   assert.deepEqual(idx.get(CREW), [
-    { tick: 25155, connected: true },
-    { tick: 28801, connected: false },
+    { tick: 25155, connected: true, kind: 'player_connect' },
+    { tick: 28801, connected: false, kind: 'player_disconnect' },
   ]);
   assert.equal(idx.size, 2, 'only the players the rows name are indexed');
   // The identity is EventRow.attacker — the SAME spelling as
   // meta.players[].steamId, so a bot id matches its roster slot.
   assert.equal(idx.get(CREW)[0].tick, 25155);
+  // A bot_takeover row joins the same index (kind carried so controlAt
+  // can tell it from a reconnect) and reads connected — the taker just
+  // took a body over, so they are in the match.
+  assert.deepEqual(indexConnections([conn('bot_takeover', 6000, K3SH)]).get(K3SH), [
+    { tick: 6000, connected: true, kind: 'bot_takeover' },
+  ]);
 });
 
 test('indexConnections drops rows that say nothing about presence', () => {
@@ -303,6 +310,24 @@ test('connectedAt: no events is connected — absence is never a disconnect', ()
   assert.equal(connectedAt(indexConnections(nukeConnRows).get(CREW), NaN), true);
 });
 
+test('controlAt: disconnect opens the absence, reconnect does not close it, takeover does', () => {
+  const rows = indexConnections([
+    conn('player_disconnect', 1000, LEAVER),
+    conn('player_connect', 5000, LEAVER),
+    conn('bot_takeover', 6000, LEAVER),
+    conn('player_disconnect', 7000, LEAVER),
+  ]).get(LEAVER);
+  assert.deepEqual(controlAt(rows, 999), { absent: false, tick: 0 }, 'before any row → in control');
+  assert.deepEqual(controlAt(rows, 1000), { absent: true, tick: 1000 }, 'the disconnect opens it');
+  assert.deepEqual(controlAt(rows, 4999), { absent: true, tick: 1000 }, 'the gap stays absent');
+  assert.deepEqual(controlAt(rows, 5000), { absent: true, tick: 1000 }, 'the reconnect does NOT close it');
+  assert.deepEqual(controlAt(rows, 5999), { absent: true, tick: 1000 }, 'still the first absence');
+  assert.deepEqual(controlAt(rows, 6000), { absent: false, tick: 6000 }, 'the re-assumption closes it');
+  assert.deepEqual(controlAt(rows, 7000), { absent: true, tick: 7000 }, 'a later disconnect reopens');
+  assert.deepEqual(controlAt(rows, NaN), { absent: false, tick: 0 }, 'unknown playhead never fakes absence');
+  assert.deepEqual(controlAt(undefined, 123), { absent: false, tick: 0 }, 'no rows → in control');
+});
+
 // --- Card presence: the humans-only rule + the replay exception -----------
 // presentAt is THE one question the columns and the follow dropdown ask.
 // The roster below is the nuke demo's shape: Kr3sh (CT human) out in
@@ -333,7 +358,11 @@ test('presentAt: the substitute bot is listed ONLY inside the gap it covers', ()
   assert.equal(presentAt(idx, nukeRoster, 2, 25154), false, 'before its connect');
   assert.equal(presentAt(idx, nukeRoster, 2, 25155), true, 'connects while Kr3sh is out');
   assert.equal(presentAt(idx, nukeRoster, 2, 28800), true, 'still covering');
-  assert.equal(presentAt(idx, nukeRoster, 2, 28801), false, 'Kr3sh is back / the bot left');
+  // At 28801 BOTH rows land: Crew's own disconnect (condition 1 — the
+  // bot left) and Kr3sh's reconnect. The assertion holds via the BOT's
+  // disconnect: since the 2026-11-18 criterion move Kr3sh's reconnect
+  // alone would NOT have ended coverage (no re-assumption row here).
+  assert.equal(presentAt(idx, nukeRoster, 2, 28801), false, "the bot's own disconnect ends it");
   assert.equal(presentAt(idx, nukeRoster, 2, 0), false, 'never present before its connect');
   // Scrubbing back is pure — never sticky.
   assert.equal(presentAt(idx, nukeRoster, 2, 25154), false);
@@ -520,8 +549,32 @@ test('presentAt: sides are judged at the coverage anchor, not from final sides',
     false,
     'anchor sides disagree → not covering',
   );
-  // The human reconnects → out of coverage regardless of sides.
-  assert.equal(presentAt(idx, flipRoster, 1, 5000, sideAt), false, 'the leaver is back');
+  // COVERAGE-END MOVED — re-pinned (criterion ruling, lead; owner report
+  // 2026-11-18): coverage = the human is NOT PERSONALLY CONTROLLING
+  // their body, from disconnect to RE-ASSESSEMENT. The leaver's
+  // RECONNECT does NOT end it — on the owner's demo bvcket reconnects
+  // at 91334 while his covering bot keeps walking his body until the
+  // re-assumption at 91971/91972, and the old reconnect-ends-coverage
+  // rule hid the bot's card/dot/trail through exactly that window
+  // ("Rebel briefly flashes … then disappears entirely").
+  assert.equal(
+    presentAt(idx, flipRoster, 1, 5000, sideAt),
+    true,
+    'the reconnect alone does NOT end coverage (the walking-bot window)',
+  );
+  // The re-assumption (a bot_takeover row — models.EventBotTakeover,
+  // extract's per-frame control edge) DOES end it — 5000 ≤ tick < 6000
+  // stays covered, 6000 flips out.
+  const reIdx = indexConnections([
+    conn('player_disconnect', 1000, LEAVER),
+    conn('player_connect', 1001, SUBBOT),
+    conn('player_connect', 5000, LEAVER),
+    conn('bot_takeover', 6000, LEAVER),
+  ]);
+  assert.equal(presentAt(reIdx, flipRoster, 1, 5999, sideAt), true, 'still covered until the re-assumption');
+  assert.equal(presentAt(reIdx, flipRoster, 1, 6000, sideAt), false, 're-assumption ends coverage');
+  // Scrubbing back is the same pure function — never sticky.
+  assert.equal(presentAt(reIdx, flipRoster, 1, 5000, sideAt), true, 'back before the takeover → covered again');
 });
 
 test('presentAt: a blank roster row resolves through the anchor sides', () => {

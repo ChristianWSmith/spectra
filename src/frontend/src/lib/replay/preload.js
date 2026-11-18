@@ -545,7 +545,10 @@ async function readEvents(id, entry) {
   const [connRows, blinds, chatLines] = await Promise.all([
     getEvents({
       matchId: id,
-      kinds: ['player_connect', 'player_disconnect'],
+      // Control rows: presence (connect/disconnect) AND re-assumption
+      // (bot_takeover) — all three are playercard.js indexConnections'
+      // vocabulary (the card-visibility rule and the coverage window).
+      kinds: ['player_connect', 'player_disconnect', 'bot_takeover'],
       offset: 0,
       limit: 0,
     }).catch(() => []),

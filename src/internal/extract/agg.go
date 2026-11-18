@@ -1553,9 +1553,12 @@ func (a *agg) disconnect(tick int, key uint64, name string) {
 	}, "")
 }
 
-// botTakeover records a bot_takeover transition (handlers.go) — tick-
-// accurate bookkeeping only, no row and no stat (owner's 2026-11-17
-// takeover ruling; see agg.takeovers).
+// botTakeover records a control re-assumption (extract.handlers' per-frame
+// demoinfocsControls edge): tick-accurate bookkeeping in agg.takeovers AND
+// a typed event row (models.EventBotTakeover — the replay's coverage
+// predicate reads it through the same channel as the connect/disconnect
+// rows; owner report 2026-11-18: coverage spans disconnect →
+// re-assumption, and the reconnect alone does NOT end it). No stat.
 func (a *agg) botTakeover(tick int, takerKey uint64, takerName string, botKey uint64, botName string) {
 	a.takeovers = append(a.takeovers, takeoverRec{
 		tick:      tick,
@@ -1564,6 +1567,12 @@ func (a *agg) botTakeover(tick int, takerKey uint64, takerName string, botKey ui
 		botKey:    botKey,
 		botName:   botName,
 	})
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventBotTakeover,
+		Attacker:   keyStr(takerKey),
+		DetailJSON: detailJSON(map[string]any{"name": takerName, "bot": botName, "bot_key": keyStr(botKey)}),
+	}, "")
 }
 
 func (a *agg) chat(tick int, steam, name, text, channel string) {

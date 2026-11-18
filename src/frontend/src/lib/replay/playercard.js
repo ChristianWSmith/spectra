@@ -162,18 +162,28 @@ export function mainAmmoText(state) {
 // COUNTED-round rows (a mid-match disconnect, a rejoin, a late join)
 // override that; they are the same events and the same rules as before.
 //
-// indexConnections groups a match's typed connect/disconnect rows by the
-// identity EventRow.attacker carries — the SteamID64 for humans, the
-// synthetic bot id — which is EXACTLY meta.players[].steamId's spelling,
-// so the index keys are the roster keys. Rows are kept in tick order per
-// player; any other kind, an empty identity or a non-finite tick says
-// nothing about presence and is dropped.
+// indexConnections groups a match's typed control rows by the identity
+// EventRow.attacker carries — the SteamID64 for humans, the synthetic
+// bot id — which is EXACTLY meta.players[].steamId's spelling, so the
+// index keys are the roster keys. Three kinds belong: player_connect /
+// player_disconnect (presence) and bot_takeover (control re-assumption —
+// models.EventBotTakeover; the coverage criterion below). Rows are kept
+// in tick order per player; any other kind, an empty identity or a
+// non-finite tick says nothing about presence and is dropped. Each kept
+// row carries its `kind` so the two questions (presence via connectedAt,
+// control via controlAt) can read the same list differently.
 export function indexConnections(rows) {
   const out = new Map();
   if (!Array.isArray(rows)) return out;
   for (const r of rows) {
     if (!r) continue;
-    if (r.kind !== 'player_connect' && r.kind !== 'player_disconnect') continue;
+    if (
+      r.kind !== 'player_connect' &&
+      r.kind !== 'player_disconnect' &&
+      r.kind !== 'bot_takeover'
+    ) {
+      continue;
+    }
     const t = Number(r.tick);
     if (!Number.isFinite(t)) continue;
     const sid = r.attacker != null ? String(r.attacker) : '';
@@ -183,7 +193,9 @@ export function indexConnections(rows) {
       list = [];
       out.set(sid, list);
     }
-    list.push({ tick: t, connected: r.kind === 'player_connect' });
+    // A takeover means the taker is IN the match (they just took a body
+    // over), so it reads connected for connectedAt's question.
+    list.push({ tick: t, connected: r.kind !== 'player_disconnect', kind: r.kind });
   }
   for (const list of out.values()) list.sort((a, b) => a.tick - b.tick);
   return out;
@@ -226,6 +238,32 @@ export function connectedAt(events, tick) {
   return ev ? ev.connected : true;
 }
 
+// controlAt — is the player PERSONALLY CONTROLLING their body at `tick`?
+// THE coverage question behind the replay exception (owner report
+// 2026-11-18, the walking-bot window): coverage = the interval during
+// which the bracketing human is NOT in control of their body — from
+// their recorded DISCONNECT until they RE-ASSESSE control (a
+// bot_takeover row, models.EventBotTakeover). Only those two row kinds
+// speak: player_connect deliberately does NOT (a reconnect alone does not
+// end coverage — on the owner's demo bvcket reconnects at 91334 while
+// the covering bot keeps walking HIS body until the re-assumption at
+// 91971/91972; ending coverage at the reconnect hid the bot's dot, card
+// and trail for those ~600 ticks). No relevant row at/before `tick` (or
+// a non-finite playhead) → IN CONTROL (roster default — absence of
+// evidence never fakes an absence, the same honesty as connectedAt).
+// Returns {absent, tick}: tick = the disconnect tick that opened the
+// absence (the bracket presentAt pairs the bot's join against).
+export function controlAt(events, tick) {
+  const t = Number(tick);
+  if (!Number.isFinite(t)) return { absent: false, tick: 0 };
+  let hit = null;
+  for (const e of events || []) {
+    if (e.tick > t) break;
+    if (e.kind === 'player_disconnect' || e.kind === 'bot_takeover') hit = e;
+  }
+  return hit ? { absent: hit.kind === 'player_disconnect', tick: hit.tick } : { absent: false, tick: 0 };
+}
+
 // presentAt — THE one card-presence question for a roster slot (the
 // columns and the follow dropdown both read it): is this slot's player
 // IN the match at `tick`?
@@ -241,11 +279,26 @@ export function connectedAt(events, tick) {
 //          player_connect with no later disconnect (a bot never needs
 //          the roster default below: coverage is evaluated against its
 //          RECORDED join tick — see the no-event branch);
-//       2. some SAME-SIDE human is disconnected at `tick` because of a
-//          recorded player_disconnect whose tick is AT OR BEFORE the
-//          connect that put the bot in the match — the human's absence
-//          brackets the bot's presence (the nuke demo: Kr3sh disconnects
-//          23467 → Crew connects 25155 → both end at 28801).
+//       2. some SAME-SIDE human is NOT IN CONTROL OF THEIR BODY at
+//          `tick` — controlAt: a recorded player_disconnect whose tick
+//          is AT OR BEFORE the connect that put the bot in the match,
+//          with no bot_takeover re-assumption since (the nuke demo:
+//          Kr3sh disconnects 23467 → Crew connects 25155 → both end at
+//          28801 — there via the bot's OWN disconnect, condition 1).
+//     COVERAGE = NOT PERSONALLY CONTROLLING THE BODY (criterion ruling,
+//     lead, grounded in the owner's 2026-11-18 reports): the window
+//     opens at the human's disconnect and closes when they RE-ASSESSE
+//     control — a reconnect alone does NOT close it. On the owner's demo
+//     bvcket reconnects at 91334 while his covering bot keeps walking
+//     his body to the re-assumption at 91971/91972; the old
+//     reconnect-ends-coverage rule hid the bot's card/dot/trail through
+//     exactly that window (owner: "Rebel briefly flashes … then
+//     disappears entirely"). The re-assumption signal is the
+//     models.EventBotTakeover row extract writes on the per-frame
+//     demoinfocsControls edge (the same read the position sink routes
+//     through, so its tick IS the identity handoff — there is no
+//     events.BotTakenOver game event: zero fired on the owner's demo,
+//     ground truth 2026-11-18).
 //     A bot that never disconnects (a DemoRecorder/GOTV-style occupant)
 //     connects before any human has left, so condition 2 can never hold
 //     for it → never listed. Sides are judged AT THE COVERAGE ANCHOR —
@@ -305,9 +358,12 @@ export function presentAt(index, roster, slot, tick, sideAt) {
     if (isBot(q)) continue; // a bot never justifies another bot
     const qSide = sideOf(qi, q);
     if (!qSide || qSide !== pSide) continue; // same side at the anchor, known
-    const out = stateAt(index && qid ? index.get(qid) : undefined, t);
-    if (!out || out.connected) continue; // still in (or no evidence)
-    if (out.tick <= joined.tick) return true; // left before the bot joined
+    // Coverage = the bracketing human is NOT in control (controlAt —
+    // reconnect deliberately does not end it; bot_takeover does). No
+    // evidence → in control → never a bracket (fail toward not listing).
+    const ctl = controlAt(index && qid ? index.get(qid) : undefined, t);
+    if (!ctl.absent) continue;
+    if (ctl.tick <= joined.tick) return true; // the absence opened before the bot joined
   }
   return false;
 }
