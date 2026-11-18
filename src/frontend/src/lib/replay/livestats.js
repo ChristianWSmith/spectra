@@ -74,7 +74,7 @@
 //     that only folds the rows the playhead advanced past (the view's
 //     per-tick path — see the cursor section at the bottom).
 import { isCounted } from '../rounds.js';
-import { isDisconnectSelfKill } from './selfkill.js';
+import { disconnectSet, isDisconnectSelfKill } from './selfkill.js';
 
 // sameSide — the JS twin of internal/analytics/rounds.go sameSide: an
 // unknown side ("") never matches anything, which is exactly what makes
@@ -83,31 +83,17 @@ function sameSide(a, b) {
   return a !== '' && a === b;
 }
 
-// disconnectSet — the (player, tick) disconnect SET, the JS twin of the
-// map PlayerRounds builds (internal/analytics/rounds.go): every row with
-// kind player_disconnect stamps its identity (EventRow.attacker carries
-// the leaver's steam id — lib/replay/playercard.js indexConnections
-// reads the same field) and its tick. A SET, not a last-tick map: a
-// player may disconnect several times and each disconnect tick must
-// match on its own. Built from ALL rows regardless of playhead/round —
-// Go builds it from the whole event list too, and a same-tick match
-// makes a future disconnect unreachable by an already-folded kill anyway.
-// lib/replay/selfkill.js exports the byte-identical twin of this builder
-// for the render surfaces (its disconnectSet) — keep the two in step;
-// this copy stays so resetCursor rebuilds it beside byNumber unchanged.
-function disconnectSet(events) {
-  const out = new Map();
-  for (const e of events || []) {
-    if (!e || e.kind !== 'player_disconnect') continue;
-    const id = String(e.attacker || '');
-    const t = Number(e.tick);
-    if (!id || !Number.isFinite(t)) continue;
-    let set = out.get(id);
-    if (!set) out.set(id, (set = new Set()));
-    set.add(t);
-  }
-  return out;
-}
+// disconnectSet — imported from lib/replay/selfkill.js (the ONE builder;
+// this fold used to carry its own byte-identical copy so resetCursor could
+// rebuild it beside byNumber, but the rebuild is a plain call either way —
+// folded 2026-11-18). It is the (player, tick) disconnect SET, the JS twin
+// of the map PlayerRounds builds (internal/analytics/rounds.go): every row
+// with kind player_disconnect stamps its identity (EventRow.attacker carries
+// the leaver's steam id) and its tick. A SET, not a last-tick map: a player
+// may disconnect several times and each disconnect tick must match on its
+// own. Built from ALL rows regardless of playhead/round — Go builds it from
+// the whole event list too, and a same-tick match makes a future disconnect
+// unreachable by an already-folded kill anyway.
 
 // foldEvent — THE per-row fold rule, the ONE spelling of the kill /
 // assist / death / damage accounting both entry points run (the playhead
