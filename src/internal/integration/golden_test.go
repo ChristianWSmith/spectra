@@ -54,6 +54,9 @@ const (
 	// adds per-event participant reads to every handler. The ceiling
 	// guards against pathological parse regressions, not single-digit
 	// seconds of load; CI runs -short and never reaches this check.
+	// Solo re-measure (2026-11-18, nothing else in flight — load ~0.5):
+	// the same golden parse ran in 34.7s, so 120 keeps its headroom for
+	// the parallel-agent case the bump was for and the ceiling stands.
 	parseSecondsMax = 120
 
 	// lfsPointerPrefix / lfsPointerMaxSize detect a Git LFS pointer file
