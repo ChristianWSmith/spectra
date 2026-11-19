@@ -69,6 +69,16 @@ instance = {
 
 A **layout** = an ordered list of instances for a scope (`match-overview`,
 `match-scoreboard`, `profile-cards`, `economy-tab`, …), stored durably (§5).
+
+**Multi-metric consumption is first-class** (owner, 2026-11-18): a definition
+declares as many slots as it needs (K/D/A compounds, hybrid tables,
+multi-series charts), each slot binds its own metric, and formula/N/state
+evaluate **per binding** (§4) — a component consuming five metrics carries
+five contracts. The boundary: a component may **juxtapose** bound metrics
+(display side by side, align by grain, toggle among them via options) but may
+**never derive a new number from them** — equip + cash is a metric (M19's
+disposition is this rule applied); the component renders the metrics it is
+given.
 A view = a layout + navigation chrome; views hold no statistics (§6).
 
 ### 1.3 Worked definition sketches
@@ -590,6 +600,14 @@ place rendering shapes resolve, and no renderer folds.
 ---
 
 ## 7. A-class dispositions (the sharpest open decisions)
+
+> **OWNER RULING (2026-11-18): RELOCATE ALL SIX** — M19, M22, M30, M31, M36,
+> M37 become round-grain metric values bound by their components (the
+> chart/bar renderers of §1.4 already wait for them); **no additions to the
+> ratified exception list.** This is the same set as the six `metric<rows>`
+> bindings (falsified-assumption #3), so the ruling and the grain-furniture
+> dependency are one sequencing item — Step 5 sequences §10.4 once, for both.
+> M11/M05/M23 need no ruling as reported below.
 
 **Verification basis — MANIFESTO.md:139's ratified exception list (status
 quo to preserve):** playhead partials, `scoreThrough`, UI row counts, `score`,
