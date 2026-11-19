@@ -2,7 +2,8 @@
 
 **Status:** READY FOR EXECUTION. This is the complete handoff: a cold session
 reads it top to bottom and executes the migration. It **replaces
-`PLANNING.md`** (deleted when the lead accepts this plan). Depth — DDL,
+`PLANNING.md`** (deleted at phase close — resolve any `PLANNING:` citation
+through the table in §2). Depth — DDL,
 benchmarks, evidence, designs, dispositions already settled — lives in the
 sub-docs `dogfood/01…05` and `MANIFESTO.md`; this file carries **order,
 gates, verification and lookups**, never copied design. Citations are
@@ -38,12 +39,31 @@ owner's values+N diff at the wipe; it is never relaxed to make a wave pass.
 
 ## 2. Owner rulings (live, complete record — 2026-11-18)
 
-These five rulings are the **entire** owner-ruling record of the planning
+These six rulings are the **entire** owner-ruling record of the planning
 phase; they are binding and override any sub-doc text they conflict with
 (each conflict is recorded as an override in `05 §0` — nine overrides, all
-settled there; never re-litigate them). **An executing session never needs
-`PLANNING.md`:** where sub-docs or 05 cite `PLANNING:39` / `:41` / `:42`,
-they mean these entries. Cite, never re-ask.
+settled there; never re-litigate them).
+
+**`PLANNING.md` (the planning phase's checklist) was deleted at phase close —
+this section is its successor.** Sub-docs cite it by line number as of their
+own baseline; resolve any such citation through this table (**cite, never
+re-ask**):
+
+| Cited in sub-docs | Resolves to |
+|---|---|
+| `PLANNING:36-43`, "owner rulings" | this §2 |
+| `PLANNING:38`, `PLANNING.md:38` | §2 ruling 1 (pre-release + snapshot) |
+| `PLANNING:39` | §2 ruling 2 (A-class ×6) |
+| `PLANNING:40` | §2 ruling 3 (`capped_dmg` + criterion) |
+| `PLANNING:41` | §2 ruling 4 (single field) |
+| `PLANNING:42` | §2 ruling 5 (freshness + stub model) |
+| `PLANNING:45-53`, `PLANNING:50`, `PLANNING.md:50`, "acceptance bar" | §1 |
+| `PLANNING.md` step ordering / step order | `05 §1` / §5 below (E2/E3 = wave A2) |
+| `PLANNING.md:68-71` (migration bundle) | `02 §5` + `05 §4` (dead-code sweep) |
+| `PLANNING:105-107` (final-step instruction) | executed — this file is the successor |
+
+"Step N deliverable of `PLANNING.md`" headers in the sub-docs are provenance
+(the file the phase was planned under), not live pointers.
 
 1. **Pre-release breakage is free + the pre-wipe snapshot is the comparison
    instrument** *(owner, 2026-11-18)*: we are pre-release; schema and seed
@@ -106,6 +126,13 @@ they mean these entries. Cite, never re-ask.
    freshness. Analysis outputs keep their identity (editable, Go-computed)
    but surface in the metrics system as stubs; the boundary holds only until
    a query provably replaces a detector.
+6. **Multi-metric consumption is first-class** *(owner, 2026-11-18)*: a
+   component definition declares as many input slots as it needs, each slot
+   binds its own metric, and formula/N/state evaluate **per binding**. The
+   boundary: a component may **juxtapose** bound metrics (side by side,
+   aligned by grain, toggled by options) but may **never derive a new number
+   from them** — equip + cash is a metric. Full statement where the grammar
+   lives: `04 §1.2`.
 
 ---
 
