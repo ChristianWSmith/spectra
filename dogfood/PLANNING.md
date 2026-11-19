@@ -83,11 +83,20 @@ empty pool, five metric states, no fabricated zeros).
       shapes** (executed against scratch DB); derivation ladder + `n_pool`
       declaration + `src_*` view rule settled; two owner rulings pending
       (formula display two-field vs one, rule_version axis lift).
-- [ ] **Step 4 — components + parity inventory** → `dogfood/04-COMPONENTS.md`
+- [x] **Step 4 — components + parity inventory** → `dogfood/04-COMPONENTS.md`
       (depends: 1; shape vocabulary from the manifesto, cross-checked against
       3 when it lands). Component grammar, input contracts, controls→parameters,
       renderer registry, and the **complete list** of current match/profile
-      content that must be expressible.
+      content that must be expressible. **DONE 2026-11-18 (18:59):** all 55
+      parity rows expressible — three grammar additions declared (hybrid
+      columns, composite cells, chart/strip renderers), no row dropped;
+      kvstore = layout-config home with full pref-absorption map; C7.8/C7.9
+      overturned (RoundStrip + in-layout raw reads → record components);
+      P07 raw-ADR/KAST claim falsified (metric-backed, dissolves). **Six
+      A-class rulings pending owner** (§7: M19/M22/M30/M31/M36/M37 →
+      round-grain row metrics); **sequencing flag for Step 5:** six rows bind
+      `metric<rows>` = 03-QUERIES §10.4 grain furniture, track D cannot close
+      parity until it lands.
 - [ ] **Step 5 — sequencing + verification** → `dogfood/05-SEQUENCING.md`
       (depends: 2, 3, 4). Order tracks A–D into executable waves, bundle every
       schema change for the single owner wipe, per-wave verification strategy,
