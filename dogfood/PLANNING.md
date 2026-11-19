@@ -98,10 +98,17 @@ empty pool, five metric states, no fabricated zeros).
       round-grain row metrics); **sequencing flag for Step 5:** six rows bind
       `metric<rows>` = 03-QUERIES §10.4 grain furniture, track D cannot close
       parity until it lands.
-- [ ] **Step 5 — sequencing + verification** → `dogfood/05-SEQUENCING.md`
+- [x] **Step 5 — sequencing + verification** → `dogfood/05-SEQUENCING.md`
       (depends: 2, 3, 4). Order tracks A–D into executable waves, bundle every
       schema change for the single owner wipe, per-wave verification strategy,
-      dead-code sweep list, open-question dispositions.
+      dead-code sweep list, open-question dispositions. **DONE 2026-11-18
+      (19:46):** full wave graph (tracks A–D + sweep + owner wipe gate),
+      9 reconciliation overrides recorded in §0, wipe choreography
+      (snapshot → wipe → re-import → values+N diff keyed on sha256),
+      per-wave falsifiable verification, dead-fold sweep with prove-first
+      flag on `spatial/series.go` (manifesto deletion list vs live call
+      site), every deferral table dispositioned, §7 = the PLAN.md handoff
+      spec. **No new owner questions.**
 - [ ] **Final — delete this file, write `dogfood/PLAN.md`** — the actual
       migration steps referencing the sub-docs, complete enough for a fresh
       session to execute the whole migration in one session. *Commit+push.*
