@@ -177,6 +177,18 @@ const (
 	// for reconnect-recovery (ground truth on the owner's demo
 	// 2026-11-18 — zero BotTakenOver events across the whole parse).
 	EventBotTakeover = "bot_takeover"
+	// EventWeaponFire is one shot fired by a counted player (the
+	// WeaponFire game event, the same gate as player_stats.shots): the
+	// typed join partner for shots fired and hit rate — shots are
+	// count(*) per attacker, hits are the damage rows joined to it.
+	// Attacker and weapon only; no position (tick-state joins supply the
+	// shooter's speed at the tick, keyed by (match, tick, steam)). The
+	// raw payload stays in generic_events alone (no RawJSON pairing
+	// here: a second copy per shot would double the row cost).
+	// Deliberately NOT a feed or draw kind: no landmark category claims
+	// it, so the feed never lists it (see frontend landmarks.js
+	// typedKindsFor).
+	EventWeaponFire = "weapon_fire"
 )
 
 // Sound-event kinds (sound_events.kind) — the classification of one player

@@ -131,6 +131,13 @@ var modelEventKinds = []string{
 	models.EventRoundEnd,
 	models.EventConnect,
 	models.EventDisconnect,
+	// weapon_fire (models.EventWeaponFire): one row per counted shot —
+	// the same gate as player_stats.shots. This is the expected diff
+	// when the kind was promoted from generic_events (3,880 rows on the
+	// golden demo): eventTotal rises by exactly that count,
+	// eventKindsDistinct by one, genericTotal does not move (the raw
+	// copy stays), and no other events.* entry moves.
+	models.EventWeaponFire,
 }
 
 // update regenerates the fixture when passed on the command line

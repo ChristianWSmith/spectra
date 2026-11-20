@@ -1194,11 +1194,22 @@ func (a *agg) capDamage(victim uint64, dmg, healthAfter int) int {
 	return dealt
 }
 
-func (a *agg) shot(key uint64, name string) {
+// shot counts one fired shot and stores its typed weapon_fire row. Both
+// share this gate (a counted shooter in a counted round), so the stored
+// rows and player_stats.shots agree per attacker: count(weapon_fire rows)
+// for a steam id == that player's shots. source is "" — the raw payload
+// is NOT paired onto the typed row (generic_events keeps the only copy).
+func (a *agg) shot(tick int, key uint64, name, weapon string) {
 	if key == 0 || a.discarding {
 		return
 	}
 	a.ensure(key, name).shots++
+	a.addEvent(models.Event{
+		Tick:     tick,
+		Kind:     models.EventWeaponFire,
+		Attacker: keyStr(key),
+		Weapon:   weapon,
+	}, "")
 }
 
 // blindInfo carries the plain values a PlayerFlashed handler extracts.
