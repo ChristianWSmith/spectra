@@ -182,7 +182,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			return
 		}
 		who, _ := newRemap(gs).pair(e.Shooter)
-		a.shot(playerKey(who), who.Name)
+		a.shot(gs.IngameTick(), playerKey(who), who.Name, wepName(e.Weapon))
 	})
 
 	p.RegisterEventHandler(func(e events.PlayerFlashed) {

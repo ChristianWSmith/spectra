@@ -37,10 +37,11 @@
     "round_start": 23,
     "start_failed": 4,
     "weapon_drop": 273,
+    "weapon_fire": 3880,
     "weapon_pickup": 1030
   },
-  "eventTotal": 4357,
-  "eventKindsDistinct": 21,
+  "eventTotal": 8237,
+  "eventKindsDistinct": 22,
   "genericDistinct": 43,
   "genericTotal": 20647,
   "chat": 33,
