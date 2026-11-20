@@ -39,8 +39,8 @@ import (
 // and the three engine-read tables: `players` (the humans-only lookup),
 // `matches` (the match denominator) and `metric_values` (the ref join,
 // reached only through metric('…') — see AnalyzeMetricSQL's refAliases).
-// Everything else is denied, including generic_events (the unwhitelisted
-// payload table), sqlite_* and the app tables.
+// generic_events is readable by decision (03 §2). Everything else is denied,
+// including sqlite_* and the app tables.
 //
 // TestMetricReadableClassifiesEverySchemaTable fails when a schema table
 // is missing here, so a new table can never become readable by accident.
@@ -62,6 +62,8 @@ var metricReadable = map[string]bool{
 	// Engine-read tables.
 	"matches": true,
 	"players": true,
+	// The raw payload escape hatch (owner, 2026-11-20; 03 §2).
+	"generic_events": true,
 
 	// Denied. metric_values is classified denied for AUTHOR reads: a stored
 	// value is reached only through metric('…'), which the compiler joins
@@ -70,10 +72,12 @@ var metricReadable = map[string]bool{
 	// outside the source list, app state, the engine's own tables and
 	// voice (sidecar-only).
 	"metric_values":      false,
-	"generic_events":     false,
-	"teams":              false,
-	"round_player_money": false,
-	"sound_events":       false,
+	"teams":              true,
+	"round_player_money": true,
+	"sound_events":       true,
+	"player_ticks":       true,
+	"components":         false,
+	"layout_placements":  false,
 	"warnings":           false,
 	"jobs":               false,
 	"query_history":      false,

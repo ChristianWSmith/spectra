@@ -25,7 +25,7 @@ func TestGateSQLRefusals(t *testing.T) {
 		{"create view", "CREATE VIEW v AS SELECT * FROM players", "create statements are not allowed"},
 		{"ddl drop", "DROP TABLE players", "drop statements are not allowed"},
 		{"table not on the allowlist", "SELECT * FROM players JOIN jobs ON 1", `metrics can't read "jobs"`},
-		{"raw payload table", "SELECT * FROM generic_events", `metrics can't read "generic_events"`},
+		{"raw payload table", "SELECT * FROM saved_queries", `metrics can't read "saved_queries"`},
 		{"sqlite table", "SELECT * FROM sqlite_master", `metrics can't read "sqlite_master"`},
 		{"metric() to a missing metric", "SELECT * FROM metric('kills') k, metric('nope') n", `unknown metric reference "nope"`},
 		{"positional bind", "SELECT * FROM players WHERE steam_id = ?", "bind ? isn't available"},
@@ -78,7 +78,7 @@ func TestGatePlanFailsClosed(t *testing.T) {
 	for _, sql := range []string{
 		"SELECT * FROM jobs",
 		"SELECT * FROM [players]",
-		"SELECT * FROM generic_events g, rounds",
+		"SELECT * FROM saved_queries g, rounds",
 	} {
 		p := Plan{SQL: sql}
 		if perr := gatePlan(&p, nil); perr == nil {

@@ -59,9 +59,9 @@ func TestMetricReadableSettledList(t *testing.T) {
 	readable := []string{"events", "engagements", "rounds", "player_stats", "player_round_stats",
 		"round_economy", "clutches", "utility_events", "chat", "match_trade_opps",
 		"round_classifications", "round_side_classes", "round_player_sides", "matches", "players",
-		"PLAYER_STATS"}
-	denied := []string{"sqlite_master", "sqlite_schema", "sqlite_sequence", "generic_events", "metric_values",
-		"round_player_money", "teams", "sound_events", "jobs", "query_history", "saved_queries",
+		"PLAYER_STATS", "generic_events", "teams", "round_player_money", "sound_events", "player_ticks"}
+	denied := []string{"sqlite_master", "sqlite_schema", "sqlite_sequence", "metric_values",
+		"jobs", "query_history", "saved_queries",
 		"saved_filters", "report_templates", "plugins", "analysis_config", "layout_placements",
 		"metrics", "metric_deps", "voice_presence", "warnings", "player_career", "no_such_table"}
 	for _, n := range readable {
@@ -90,7 +90,6 @@ func TestMetricGateRefusals(t *testing.T) {
 		{"explain lead", "EXPLAIN SELECT * FROM players", "one SELECT or WITH statement"},
 		{"values lead", "VALUES (1)", "one SELECT or WITH statement"},
 		{"denied table", "SELECT COUNT(*) FROM jobs", `metrics can't read "jobs"`},
-		{"raw payload table", "SELECT * FROM generic_events", `metrics can't read "generic_events"`},
 		{"metric store direct", "SELECT value FROM metric_values", `metrics can't read "metric_values"`},
 		{"sqlite master", "SELECT name FROM sqlite_master", `metrics can't read "sqlite_master"`},
 		{"sqlite schema mixed case", "SELECT name FROM SQLite_Schema", `metrics can't read "sqlite_schema"`},
@@ -125,7 +124,7 @@ func TestMetricGateResolution(t *testing.T) {
 		{"comma join second", "SELECT * FROM players, jobs", "jobs"},
 		{"comma join third", "SELECT * FROM players p, events e, metrics m WHERE p.match_id = e.match_id", "metrics"},
 		{"comma after join", "SELECT * FROM players p JOIN events e ON p.match_id = e.match_id, jobs j", "jobs"},
-		{"comma join generic", "SELECT * FROM rounds r, generic_events g", "generic_events"},
+		{"comma join generic", "SELECT * FROM rounds r, saved_filters t", "saved_filters"},
 		{"cte body", "WITH x AS (SELECT * FROM jobs) SELECT * FROM x", "jobs"},
 		{"second cte", "WITH a AS (SELECT 1 FROM players), b AS (SELECT * FROM saved_queries) SELECT * FROM a, b", "saved_queries"},
 		{"recursive cte", "WITH RECURSIVE r(n) AS (SELECT 1 FROM plugins UNION ALL SELECT n+1 FROM r) SELECT * FROM r", "plugins"},
