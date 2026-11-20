@@ -139,3 +139,43 @@ func placementList(ps []store.Placement) string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// Placement is one layout_placements row (the frontend contract). Its
+// position is its index in the list a surface is read or written as.
+// Component is a builtin id or a user component name; the frontend decides
+// which builtins exist, so ListPlacements does not flag a missing one.
+type Placement struct {
+	Component string `json:"component"`
+	Props     string `json:"props"`
+	Hidden    bool   `json:"hidden"`
+}
+
+// ListPlacements returns one surface's rows in position order. An empty
+// list means the surface renders its builtin (absence means the builtin).
+func (s *ComponentService) ListPlacements(surface string) ([]Placement, error) {
+	rows, err := s.st.ListPlacements(strings.TrimSpace(surface), nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Placement, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Placement{Component: r.Component, Props: r.Props, Hidden: r.Hidden})
+	}
+	return out, nil
+}
+
+// SetPlacements replaces one surface's layout with rows, in order. The
+// store refuses an empty list (use ResetPlacements), a row with no
+// component, and props that are not a JSON object.
+func (s *ComponentService) SetPlacements(surface string, rows []Placement) error {
+	in := make([]store.PlacementRow, 0, len(rows))
+	for _, r := range rows {
+		in = append(in, store.PlacementRow{Component: strings.TrimSpace(r.Component), Props: r.Props, Hidden: r.Hidden})
+	}
+	return s.st.SetPlacements(strings.TrimSpace(surface), in)
+}
+
+// ResetPlacements deletes one surface's layout, restoring its builtin.
+func (s *ComponentService) ResetPlacements(surface string) error {
+	return s.st.ResetPlacements(strings.TrimSpace(surface))
+}
