@@ -17,6 +17,9 @@ export const components = {
   // The source check (compile.js checkComponentSource): a compile error
   // positioned by line, and an import the runtime cannot provide.
   sourceAtLine: 'Line {line}: {err}',
+  // Components are runes-only: legacy syntax (export let, $:, on:, <slot>)
+  // is refused with the compiler's reason.
+  legacyRefused: 'Components use Svelte 5 runes only: {err}',
   importRefused: 'Components cannot import {name}',
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',

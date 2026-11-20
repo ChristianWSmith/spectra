@@ -26,9 +26,9 @@
 import * as S from '../strings/index.js';
 
 // The registry: every specifier a compiled user module may import. The
-// four svelte/internal entries are what the compiler emits (the runtime
-// spike found flags/legacy beside client/disclose-version, flags/async
-// is the async-mode twin); the public svelte modules are what a user's
+// runes-only compile emits client and disclose-version (flags/async only
+// in async mode); flags/legacy is kept for the legacy-mode runtime but no
+// runes output imports it. The public svelte modules are what a user's
 // own <script> may import. Anything else is refused at check time.
 const RUNTIME_MODULES = {
   'svelte/internal/client': () => import('svelte/internal/client'),
@@ -186,7 +186,31 @@ function importBinding(clause, ref) {
 
 // --- compile + check ---------------------------------------------------------
 
-const COMPILE_OPTIONS = { generate: 'client', css: 'injected', dev: false };
+// User components are runes-only (owner, 2026-11-20): every compile runs
+// with `runes: true`, so legacy syntax (`export let`, `$:`, `$$props`, …)
+// is a compile error at its own line. Builtins get the same mode from
+// svelte.config.js (compilerOptions.runes).
+const COMPILE_OPTIONS = { generate: 'client', css: 'injected', dev: false, runes: true };
+
+// Legacy forms the runes-mode compiler only WARNS about (it still
+// compiles them): refused like the legacy_* errors, so runes-only holds
+// for every legacy form, not just the ones that fail to compile.
+const LEGACY_WARNINGS = new Set([
+  'event_directive_deprecated', // on:click
+  'slot_element_deprecated', // <slot>
+  'script_context_deprecated', // <script context="module">
+  'svelte_component_deprecated', // <svelte:component>
+  'svelte_self_deprecated', // <svelte:self>
+]);
+
+// legacyRefusal words a legacy-syntax refusal through the catalog.
+function legacyRefusal(e) {
+  return new ComponentSourceError(
+    S.fill(S.components.legacyRefused, { err: compilerMessage(e) }),
+    (e.start && e.start.line) || 0,
+    (e.start && e.start.column) || 0,
+  );
+}
 
 // compileSource compiles and rewrites; throws ComponentSourceError for
 // anything the author must fix.
@@ -194,8 +218,13 @@ async function compileSource(source, filename) {
   const { compile } = await loadCompiler();
   let js;
   try {
-    js = compile(String(source), { ...COMPILE_OPTIONS, filename }).js.code;
+    const out = compile(String(source), { ...COMPILE_OPTIONS, filename });
+    const legacy = (out.warnings || []).find((w) => LEGACY_WARNINGS.has(w.code));
+    if (legacy) throw legacyRefusal(legacy);
+    js = out.js.code;
   } catch (e) {
+    if (e instanceof ComponentSourceError) throw e;
+    if (e && typeof e.code === 'string' && e.code.startsWith('legacy_')) throw legacyRefusal(e);
     const start = (e && e.start) || {};
     throw new ComponentSourceError(compilerMessage(e), start.line || 0, start.column || 0);
   }

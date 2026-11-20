@@ -62,7 +62,9 @@ writeFileSync(
 writeFileSync(join(dir, 'componentruntime', 'reads.js'), 'export const serviceReads = {};\n');
 
 const svelteCompile = (src, filename, out) =>
-  writeFileSync(out, compile(src, { filename, generate: 'client', css: 'injected' }).js.code);
+  // Runes-only, as the app compiles builtins (svelte.config.js) and user
+  // components (componentruntime/compile.js).
+  writeFileSync(out, compile(src, { filename, generate: 'client', css: 'injected', runes: true }).js.code);
 svelteCompile(readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8'), 'ComponentFrame.svelte', join(dir, 'components', 'ComponentFrame.js'));
 svelteCompile(readFileSync('test/component-frame.harness.svelte', 'utf8'), 'harness.svelte', join(dir, 'harness.js'));
 // A builtin: app source the bundler compiles (here: the driver), reading
@@ -121,6 +123,10 @@ const SOURCES = {
   syntax: `<script>
     let x = ;
   </script>`,
+  legacy: `<script>
+    export let x = 1;
+  </script>
+  <p>{x}</p>`,
 };
 
 let failures = 0;
@@ -196,6 +202,13 @@ check('$effect error → frame', alertText('effect') === failedCopy('effect boom
 check('builtin beside them still renders', slot('builtin').querySelector('.builtin-ok')?.textContent === 'built');
 const syntax = alertText('syntax');
 check('syntax error → frame with its line', syntax.startsWith(failedCopy(S.fill(S.components.sourceAtLine, { line: 2, err: '' }))), syntax);
+const legacy = alertText('legacy');
+check(
+  'legacy syntax (export let) → frame with its line',
+  legacy.startsWith(failedCopy(S.fill(S.components.sourceAtLine, { line: 2, err: '' }))) &&
+    legacy.includes(S.fill(S.components.legacyRefused, { err: '' })),
+  legacy,
+);
 
 console.log('C. event-handler and async errors are routed into the frame');
 check('handler slot starts clean', alertText('handler') === '');
@@ -226,7 +239,7 @@ await settle();
 check('Try again after the cause clears re-renders the component', alertText('render') === '' && !!slot('render').querySelector('.render-ok'), slot('render').innerHTML);
 
 console.log('E. every frame dismisses in place');
-for (const name of ['effect', 'syntax', 'async', 'read']) {
+for (const name of ['effect', 'syntax', 'legacy', 'async', 'read']) {
   click(dismiss(name));
   flushSync();
   check(`${name} frame dismissed`, alertText(name) === '');
