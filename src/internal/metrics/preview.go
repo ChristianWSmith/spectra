@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -9,13 +10,15 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// Preview execution constants: the runner uses the store's read-only
-// session (preview target < 1 s @ 100 matches — the timeout is a
-// safety net, not the target) and a hard raw-value cap for percentiles.
+// Preview constants. The metric statement itself runs through
+// store.QueryMetric (the metric path: read-only connection, no timeout,
+// no row cap, cancelled through ctx); PreviewDefaultRow bounds only how
+// many grouped rows the preview SHOWS (Truncated reports the rest).
+// labelTimeoutMS bounds the cosmetic name lookup, which is app SQL on
+// the console's read-only session, not metric SQL.
 const (
-	PreviewTimeoutMS  = 10000
 	PreviewDefaultRow = 200
-	percentileCap     = 500000
+	labelTimeoutMS    = 10000
 	steamIDPrefix     = "7656119"
 )
 
@@ -70,12 +73,13 @@ type Preview struct {
 
 // RunPreview compiles def (with its declared addressing), runs it
 // against the whole library (scope "") or a single match
-// ("match:<id>") with a row cap of limit (≤0 → 200), and maps subject
+// ("match:<id>") under ctx (cancel interrupts the statement), shows at
+// most limit grouped rows (≤0 → 200), and maps subject
 // keys. Returns (*ParseError, nil) for validation failures, (nil, err)
 // for execution failures. Subject values that look like SteamID64
 // resolve to the players-table name (scoped match, else library-wide
 // latest); every other group falls back to its raw key as Label.
-func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *ParseError, error) {
+func RunPreview(ctx context.Context, st *store.Store, def Def, scope string, limit int) (Preview, *ParseError, error) {
 	if limit <= 0 {
 		limit = PreviewDefaultRow
 	}
@@ -89,23 +93,25 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 		pv.SQL += "\n" + plan.Secondary
 	}
 
-	fetch := limit
-	if plan.Mode == ModePercentile {
-		fetch = percentileCap
-	}
-	res, err := st.RunReadOnly(plan.SQL, plan.Args, fetch, PreviewTimeoutMS)
+	res, err := st.QueryMetric(ctx, plan.SQL, plan.Args)
 	pv.MS = res.MS
 	if err != nil {
 		return pv, nil, err
 	}
-	pv.Truncated = res.Truncated
+	// The display bound: grouped rows past limit are not shown (the
+	// percentile branch partitions EVERY raw row — its sample is never
+	// cut).
+	if plan.Mode == ModeGrouped && len(res.Rows) > limit {
+		res.Rows = res.Rows[:limit]
+		pv.Truncated = true
+	}
 
 	matchID, _ := ParseScope(scope) // already validated by Compile
 	switch plan.Mode {
 	case ModeGrouped:
 		// Row shape (§6.3/§6.5): [mid] grp [dim] values… n — the
-		// offsets come from the plan's declared addressing, the row cap
-		// logic (the fetch above) unchanged.
+		// offsets come from the plan's declared addressing (the display
+		// bound was applied above).
 		grpIdx := 0
 		if plan.MatchAddress {
 			grpIdx = 1
@@ -301,7 +307,7 @@ func resolveLabels(st *store.Store, rows []PreviewRow, matchID int64) {
 				for _, id := range chunk {
 					args = append(args, id)
 				}
-				res, err := st.RunReadOnly(q, args, len(chunk), PreviewTimeoutMS)
+				res, err := st.RunReadOnly(q, args, len(chunk), labelTimeoutMS)
 				if err != nil {
 					return // labels are cosmetic — give up quietly
 				}

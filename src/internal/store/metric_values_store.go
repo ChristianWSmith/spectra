@@ -507,16 +507,14 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 	return out, nil
 }
 
-// QueryWrite executes a SELECT on the WRITE handle — the compute
-// pass's plan runner (design §4: plan SQL runs on the write handle the
-// pass owns under the compute lock, which avoids the read-only
-// session's single-connection contention with the SQL console and its
-// row caps; interactive previews keep RunReadOnly). Validation is the
-// SAME ValidateReadOnlySQL gate as RunReadOnly (defense in depth: a plan
-// is a SELECT — even a mis-emitted statement can never write), the row
-// cap is the caller's (a truncated plan result is a FAILED compute, never
-// silently partial values), and ctx cancels the statement mid-flight
-// (modernc's progress-handler interrupt) plus every row iteration.
+// QueryWrite executes a SELECT on the WRITE handle — a read for
+// fixtures that have no file to reopen read-only (":memory:" stores)
+// and for test assertions. Metric SQL never runs here: the writer is ONE
+// connection, so a statement open on it parks every write behind it
+// (TestQueryWriteHoldsTheWriter pins that) — the metric path is
+// QueryMetric (metric_exec.go). Validation is the SAME
+// ValidateReadOnlySQL gate as RunReadOnly, the row cap is the caller's,
+// and ctx cancels the statement mid-flight plus every row iteration.
 // Returns the shared ROResult shape (normalized JSON scalars).
 func (s *Store) QueryWrite(ctx context.Context, q string, args []any, limit int) (ROResult, error) {
 	if err := ValidateReadOnlySQL(q); err != nil {

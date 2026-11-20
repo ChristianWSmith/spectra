@@ -205,7 +205,7 @@ func (s *MetricsService) runSweep(ctx context.Context, progress func(metrics.Swe
 			progress(p)
 		}
 	}
-	res, err := metrics.Sweep(ctx, s.st, wrapped)
+	res, err := metrics.Sweep(ctx, s.st, wrapped, s.startRun)
 
 	// Record the outcome: every metric this sweep touched leaves the
 	// in-flight set; failures stick until a later sweep succeeds on the
@@ -230,6 +230,53 @@ func (s *MetricsService) runSweep(ctx context.Context, progress func(metrics.Swe
 		s.emitMetricDone(res, err)
 	}
 	return res, err
+}
+
+// startRun registers one running metric statement under metricID and
+// returns the context it runs with (derived from parent) plus its
+// release — the metrics.MetricContext the sweep takes, and the preview's
+// run context. Every registered run is reachable from CancelMetric
+// until released.
+func (s *MetricsService) startRun(parent context.Context, metricID int64) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	s.runsMu.Lock()
+	if s.runs == nil {
+		s.runs = map[int64]map[uint64]context.CancelFunc{}
+	}
+	s.runSeq++
+	token := s.runSeq
+	if s.runs[metricID] == nil {
+		s.runs[metricID] = map[uint64]context.CancelFunc{}
+	}
+	s.runs[metricID][token] = cancel
+	s.runsMu.Unlock()
+	return ctx, func() {
+		s.runsMu.Lock()
+		delete(s.runs[metricID], token)
+		if len(s.runs[metricID]) == 0 {
+			delete(s.runs, metricID)
+		}
+		s.runsMu.Unlock()
+		cancel()
+	}
+}
+
+// CancelMetric stops every running statement of one metric — its sweep
+// run and any preview of it (id 0 = an unsaved draft's preview). The
+// statement is interrupted and nothing is written: a swept metric is
+// marked failed with the reason "cancelled" (its old rows were already
+// removed, so it reads as failed until a later run succeeds), its
+// dependents are skipped this sweep, and the sweep moves on to the rest;
+// a preview returns the cancellation as its error. Returns whether
+// anything was running.
+func (s *MetricsService) CancelMetric(id int64) bool {
+	s.runsMu.Lock()
+	defer s.runsMu.Unlock()
+	runs := s.runs[id]
+	for _, cancel := range runs {
+		cancel()
+	}
+	return len(runs) > 0
 }
 
 // emitMetricProgress sends one throttled spectra:metric-progress point

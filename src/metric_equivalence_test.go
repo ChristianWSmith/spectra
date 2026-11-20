@@ -165,7 +165,7 @@ func previewOracle(t *testing.T, st *store.Store, def metrics.Def, scope string)
 		}
 	}
 	if scope == "profile" {
-		pv, perr, err := metrics.RunPreview(st, def, "", 2000)
+		pv, perr, err := metrics.RunPreview(t.Context(), st, def, "", 2000)
 		if perr != nil {
 			t.Fatalf("profile preview compile: %v", perr)
 		}
@@ -176,7 +176,7 @@ func previewOracle(t *testing.T, st *store.Store, def metrics.Def, scope string)
 		return out
 	}
 	for _, id := range readyMatchIDs(t, st) {
-		pv, perr, err := metrics.RunPreview(st, def, fmt.Sprintf("match:%d", id), 2000)
+		pv, perr, err := metrics.RunPreview(t.Context(), st, def, fmt.Sprintf("match:%d", id), 2000)
 		if perr != nil {
 			t.Fatalf("scoped preview compile (match %d): %v", id, perr)
 		}

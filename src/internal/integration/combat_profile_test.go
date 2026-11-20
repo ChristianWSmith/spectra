@@ -108,7 +108,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	// production runs in the import/analyze job body has to run here too
 	// — without it the trend would honestly read an empty series and the
 	// kd/hs assertions below could never see a value.
-	if _, err := metrics.Sweep(context.Background(), st, nil); err != nil {
+	if _, err := metrics.Sweep(context.Background(), st, nil, nil); err != nil {
 		t.Fatalf("metrics.Sweep: %v", err)
 	}
 

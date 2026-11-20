@@ -64,7 +64,7 @@ func seedDef(t *testing.T, st *store.Store, name string) Def {
 // scoreboard's grain) and keys the rows by subject.
 func previewAt(t *testing.T, st *store.Store, def Def, scope string) map[string]float64 {
 	t.Helper()
-	pv, perr, err := RunPreview(st, def, scope, 500)
+	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
 	if perr != nil {
 		t.Fatalf("parse %q: %v", def.Expr, perr)
 	}

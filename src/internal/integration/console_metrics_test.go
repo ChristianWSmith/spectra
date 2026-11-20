@@ -93,7 +93,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			if _, perr := metrics.Compile(expr, "", "", addr); perr != nil {
 				t.Fatalf("Compile(%q, subject %q): %v", expr, subject, perr)
 			}
-			pv, perr, err := metrics.RunPreview(st, metrics.Def{
+			pv, perr, err := metrics.RunPreview(t.Context(), st, metrics.Def{
 				Expr: expr, Denominator: denom,
 				Subject: subject, Partition: partition, Profile: scope == "profile",
 			}, "", 500)

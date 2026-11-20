@@ -34,7 +34,7 @@ func TestJoinedAcceptanceRatio(t *testing.T) {
 	st := seededStore(t)
 	const expr = "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))"
 
-	pv, perr, err := RunPreview(st, Def{Expr: expr}, "", 100)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: expr}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v (sql: %s)", perr, err, pv.SQL)
 	}
@@ -68,7 +68,7 @@ func TestJoinedAcceptanceRatio(t *testing.T) {
 
 	// Scoped to one match: sum(trade_kills) = i, sum(opps) = 10i — the
 	// same ratios at N = 1 (scope binds on the primary only).
-	scoped, perr, err := RunPreview(st, Def{Expr: expr}, "match:1", 100)
+	scoped, perr, err := RunPreview(t.Context(), st, Def{Expr: expr}, "match:1", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("scoped preview: %v %v", perr, err)
 	}
@@ -138,7 +138,7 @@ func TestJoinedLeftJoinHonesty(t *testing.T) {
 	// contributes NULL (nothing added) → Value 0 beside N = 3.
 	// Library total: 3 × (10+20+30+40+50+60+0) = 630.
 	wantSums := []float64{30, 60, 90, 120, 150, 180, 0, 0}
-	pv, perr, err := RunPreview(st, Def{Expr: "from player_stats, match_trade_opps: sum(opps)"}, "", 100)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats, match_trade_opps: sum(opps)"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("sum(opps): %v %v (sql: %s)", perr, err, pv.SQL)
 	}
@@ -163,7 +163,7 @@ func TestJoinedLeftJoinHonesty(t *testing.T) {
 	// missing-data indicator, never a fabricated sample).
 	wantMedians := []float64{10, 20, 30, 40, 50, 60, 0, 0}
 	wantN := []int{3, 3, 3, 3, 3, 3, 3, 0}
-	pctl, perr, err := RunPreview(st, Def{Expr: "from player_stats, match_trade_opps: percentile(0.5, opps)"}, "", 100)
+	pctl, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats, match_trade_opps: percentile(0.5, opps)"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("percentile: %v %v (sql: %s)", perr, err, pctl.SQL)
 	}
@@ -184,7 +184,7 @@ func TestJoinedLeftJoinHonesty(t *testing.T) {
 	// 2..6 (3×{20,…,60}) — Alice (10), Grace (0) and Heidi (NULL) drop
 	// out entirely: a subject the statement produced no row for has no
 	// partition (no row).
-	filt, perr, err := RunPreview(st, Def{
+	filt, perr, err := RunPreview(t.Context(), st, Def{
 		Expr: "from player_stats, match_trade_opps: percentile(where opps >= 20, 0.5, opps)",
 	}, "", 100)
 	if perr != nil || err != nil {
@@ -212,7 +212,7 @@ func TestJoinedLeftJoinHonesty(t *testing.T) {
 func TestJoinedScope(t *testing.T) {
 	st := seededStore(t)
 
-	pv, perr, err := RunPreview(st, Def{Expr: "from player_stats, match_trade_opps: count()"}, "match:1", 100)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats, match_trade_opps: count()"}, "match:1", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("scoped: %v %v (sql: %s)", perr, err, pv.SQL)
 	}
@@ -233,7 +233,7 @@ func TestJoinedScope(t *testing.T) {
 		t.Errorf("scope not qualified on the primary:\n%s", pv.SQL)
 	}
 
-	empty, perr, err := RunPreview(st, Def{Expr: "from player_stats, match_trade_opps: count()"}, "match:99", 100)
+	empty, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats, match_trade_opps: count()"}, "match:99", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("empty scope compile/run: %v %v", perr, err)
 	}
@@ -255,7 +255,7 @@ func TestJoinedPopulationAlignment(t *testing.T) {
 
 	// Joined source set: the bot's player_stats row is dropped through
 	// the primary's subject — the only surviving subject is alice.
-	grouped, perr, err := RunPreview(st, Def{
+	grouped, perr, err := RunPreview(t.Context(), st, Def{
 		Expr: "from player_stats, match_trade_opps: count()",
 	}, "", 100)
 	if perr != nil || err != nil {
@@ -268,7 +268,7 @@ func TestJoinedPopulationAlignment(t *testing.T) {
 	// Single-source: the same unconditional rule (the event-shaped
 	// "bots stay" exception is gone — an aggregate records human-subject
 	// rows only).
-	single, perr, err := RunPreview(st, Def{Expr: "from player_stats: count()"}, "", 100)
+	single, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("single-source: %v %v", perr, err)
 	}
@@ -279,7 +279,7 @@ func TestJoinedPopulationAlignment(t *testing.T) {
 	// All-players source set (events + rounds, both popAllPlayers):
 	// unconditional humans-only applies just the same — the bot's kill
 	// never becomes a value.
-	allPlayers, perr, err := RunPreview(st, Def{Expr: "from events, rounds: count()"}, "", 100)
+	allPlayers, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events, rounds: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("all-players join: %v %v", perr, err)
 	}
@@ -479,7 +479,7 @@ func TestJoinedClassificationValues(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			pv, perr, err := RunPreview(st, Def{Expr: c.expr}, scope, 100)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: c.expr}, scope, 100)
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql: %s)", perr, err, pv.SQL)
 			}

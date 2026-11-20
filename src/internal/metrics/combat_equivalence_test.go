@@ -131,7 +131,7 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 // here).
 func combatPreview(t *testing.T, st *store.Store, def Def, scope string) map[string]PreviewRow {
 	t.Helper()
-	pv, perr, err := RunPreview(st, def, scope, 500)
+	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
 	if perr != nil {
 		t.Fatalf("parse %q: %v", def.Expr, perr)
 	}
@@ -387,7 +387,7 @@ func TestCombatSeedActorPairAndRosterEquivalence(t *testing.T) {
 // after one Sweep on a fixture both read fresh, not behind.
 func TestCombatSeedsSweepFresh(t *testing.T) {
 	st, _ := characterizationFixture(t)
-	if _, err := Sweep(context.Background(), st, nil); err != nil {
+	if _, err := Sweep(context.Background(), st, nil, nil); err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
 	cfg, err := st.GetConfig()

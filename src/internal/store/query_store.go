@@ -85,7 +85,15 @@ func roDSN(absPath string) string {
 // (PRAGMA database_list); in-memory stores have no file to reopen and are
 // rejected with a clear error.
 func (s *Store) roDB() (*sql.DB, error) {
-	if h, ok := roHandles.Load(s); ok {
+	return s.openRO(&roHandles, 1)
+}
+
+// openRO returns (creating once) a read-only handle recorded in handles,
+// with at most maxOpen connections (0 = unbounded). Every read-only
+// handle shares roDSN — the console's and the metric path's differ only
+// in pool size and in what runs on them.
+func (s *Store) openRO(handles *sync.Map, maxOpen int) (*sql.DB, error) {
+	if h, ok := handles.Load(s); ok {
 		return h.(*sql.DB), nil
 	}
 	var (
@@ -107,26 +115,32 @@ func (s *Store) roDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(maxOpen)
 	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("couldn't open the read-only connection: %w", err)
 	}
-	if actual, loaded := roHandles.LoadOrStore(s, db); loaded {
+	if actual, loaded := handles.LoadOrStore(s, db); loaded {
 		_ = db.Close() // lost the race; the stored handle wins
 		return actual.(*sql.DB), nil
 	}
 	return db, nil
 }
 
-// CloseRO releases this store's read-only handle (Store.Close in store.go
-// cannot know about the side table). Safe to call when never opened.
+// CloseRO releases this store's read-only handles — the console's and
+// the metric path's (Store.Close in store.go cannot know about the side
+// tables). Safe to call when never opened.
 func (s *Store) CloseRO() error {
-	if h, ok := roHandles.LoadAndDelete(s); ok {
-		return h.(*sql.DB).Close()
+	var first error
+	for _, handles := range []*sync.Map{&roHandles, &metricROHandles} {
+		if h, ok := handles.LoadAndDelete(s); ok {
+			if err := h.(*sql.DB).Close(); err != nil && first == nil {
+				first = err
+			}
+		}
 	}
-	return nil
+	return first
 }
 
 // RunReadOnly validates and executes one statement on the read-only

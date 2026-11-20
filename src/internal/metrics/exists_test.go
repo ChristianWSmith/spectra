@@ -299,7 +299,7 @@ func aliceRow(t *testing.T, pv Preview) PreviewRow {
 
 func mustExistsPreview(t *testing.T, st *store.Store, expr, scope string) Preview {
 	t.Helper()
-	pv, perr, err := RunPreview(st, Def{Expr: expr}, scope, 50)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: expr}, scope, 50)
 	if perr != nil {
 		t.Fatalf("RunPreview(%q): %v", expr, perr)
 	}

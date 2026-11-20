@@ -132,7 +132,7 @@ func TestNextWindowCorpus(t *testing.T) {
 			"round numbers strictly ascend within the match"},
 	}
 	for _, c := range cases {
-		pv, perr, err := RunPreview(st, Def{Expr: c.expr, Subject: "match"}, "", 50)
+		pv, perr, err := RunPreview(t.Context(), st, Def{Expr: c.expr, Subject: "match"}, "", 50)
 		if perr != nil {
 			t.Fatalf("RunPreview(%q): %v", c.expr, perr)
 		}

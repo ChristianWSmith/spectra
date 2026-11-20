@@ -160,8 +160,8 @@
 // so a match-scoped predicate can never bleed across matches. The
 // current row is a candidate like any other (SQL EXISTS semantics);
 // the condition itself distinguishes it (N2's kind predicate). Depth
-// counts toward maxCondDepth; the statement runs on the same
-// read-only session under the same row cap as any other.
+// counts toward maxCondDepth; the statement runs on the metric path
+// (store.QueryMetric) like any other.
 //
 // # Round window (next())
 //
@@ -606,8 +606,8 @@
 // aggregation is what Preview surfaces as the row Value (MetricPreview has
 // a single Value field; the compiled SQL carries every aggregation column
 // for provenance/future metric views), and when the first aggregation is a
-// percentile the preview executes the raw-value statement (cap 500 000
-// rows, Truncated set past the cap); otherwise it executes the aggregate
+// percentile the preview executes the raw-value statement (every raw
+// row — the sample is never cut); otherwise it executes the aggregate
 // statement and a companion percentile statement (if any) is shown but not
 // run. Denominator + percentile-first is supported (the raw statement also
 // selects the denominator). Percentiles over joined sources are
@@ -617,9 +617,10 @@
 //
 // # Preview semantics
 //
-// RunPreview(st, Def{Expr, Denominator}, scope, limit) compiles, runs on
-// the store's read-only session (row cap = limit, default 200; statement
-// timeout 10 s) and maps subjects: values that look like SteamID64 (17
+// RunPreview(ctx, st, Def{Expr, Denominator}, scope, limit) compiles,
+// runs on the metric path (store.QueryMetric: read-only connection, no
+// timeout, no row cap, cancelled through ctx), shows at most limit
+// grouped rows (default 200; Truncated past it) and maps subjects: values that look like SteamID64 (17
 // digits, 7656119…) resolve to the players table name (scoped match,
 // else library-wide latest); other groups fall back to their raw key. N
 // is the sample size behind the value (group row count; numeric value-row

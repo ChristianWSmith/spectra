@@ -154,7 +154,7 @@ func TestArgmaxCorpusIdentities(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.expr, func(t *testing.T) {
-			pv, perr, err := RunPreview(st, Def{Expr: c.expr, Subject: "match"}, "", 500)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: c.expr, Subject: "match"}, "", 500)
 			if perr != nil {
 				t.Fatalf("compile: %v", perr.Message)
 			}
@@ -190,7 +190,7 @@ func TestArgmaxCorpusIdentities(t *testing.T) {
 // (the corpus's four CT players) and the winner comes from inside it.
 func TestArgmaxFilteredPoolN(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{
+	pv, perr, err := RunPreview(t.Context(), st, Def{
 		Expr: "from player_stats: argmax(where side = 'ct', kills)", Subject: "match",
 	}, "", 500)
 	if perr != nil {
@@ -218,7 +218,7 @@ func TestArgmaxFilteredPoolN(t *testing.T) {
 // player-anchored lead, it simply has no rows).
 func TestArgmaxEmptyPoolNoRows(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{Expr: "from clutches: argmax(size)", Subject: "match"}, "", 500)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from clutches: argmax(size)", Subject: "match"}, "", 500)
 	if perr != nil {
 		t.Fatalf("compile: %v", perr.Message)
 	}

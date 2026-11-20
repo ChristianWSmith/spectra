@@ -11,7 +11,7 @@ import (
 // grouped by the engine, so the map is keyed by subject (SteamID64).
 func runValues(t *testing.T, st *store.Store, expr string) map[string]float64 {
 	t.Helper()
-	pv, perr, err := RunPreview(st, Def{Expr: expr}, "", 1000)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: expr}, "", 1000)
 	if perr != nil {
 		t.Fatalf("compile %q: %v", expr, perr)
 	}

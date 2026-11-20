@@ -47,10 +47,23 @@ import (
 //	         anything else = not-fresh (crash matrix: a failure in
 //	         phase 2 leaves the metric absent → behind → retried)
 //
-// ctx cancellation aborts BETWEEN metrics (and mid-query via the write
-// handle's context): whatever was not reached keeps its rows and stays
-// behind — the behind set IS the remaining work, so the next sweep
-// resumes exactly there. Nothing persisted tracks progress.
+// Execution: every statement runs through store.QueryMetric — the
+// metric path's read-only connection, no timeout, no row cap — so a
+// slow metric never holds the single writer (imports keep committing
+// while it runs); only phase 1's delete and phase 2's insert use the
+// writer.
+//
+// Two cancellations, two outcomes:
+//
+//   - the SWEEP's ctx (a cancelled import job, shutdown) aborts BETWEEN
+//     metrics and mid-query: whatever was not reached keeps its rows
+//     and stays behind — the behind set IS the remaining work, so the
+//     next sweep resumes exactly there. Nothing persisted tracks
+//     progress. The interrupted metric is not a failure.
+//   - ONE METRIC's ctx (MetricContext — the user's cancel) interrupts
+//     that metric's statement: it FAILS with CancelledReason, writes no
+//     rows (phase 1 already removed the old ones; the insert never
+//     runs), its dependents are skipped, and the sweep goes on.
 const (
 	// StageRemove / StageCompute are the pass's per-metric stages (the
 	// metric-progress payload's stage values): phase 1 (rows removed)
@@ -59,15 +72,15 @@ const (
 	StageCompute = "compute"
 )
 
-const (
-	// passGroupedCap is the row cap for batched aggregate statements —
-	// one row per (match, subject): matches × players, with headroom. A
-	// truncated plan is a FAILED compute (never silently partial values).
-	passGroupedCap = 1 << 20
-	// passRawCap is the percentile raw-fetch cap — the same bound
-	// RunPreview applies (percentileCap), same truncation rule.
-	passRawCap = percentileCap
-)
+// CancelledReason is the failure text of a metric whose run was
+// cancelled (the state's error word — user's domain, no version).
+const CancelledReason = "cancelled"
+
+// MetricContext derives the context ONE metric's statement runs under
+// from the sweep's (the per-metric cancel seam: the service registers
+// the returned cancel so a user can stop that metric alone). The
+// returned func releases it and is always called. nil = the sweep's ctx.
+type MetricContext func(parent context.Context, metricID int64) (context.Context, context.CancelFunc)
 
 // SweepProgress is one progress point of the sweep: the metric being
 // processed, its stage, and the sweep's honest k/N — Done counts metrics
@@ -106,8 +119,9 @@ type SweepResult struct {
 // context. progress may be nil. The returned error is a SETUP failure
 // (config/catalog read) or ctx.Err() on cancellation — per-metric
 // failures are data in the SweepResult, never a returned error: one
-// broken metric must not abort the sweep of the others.
-func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress)) (SweepResult, error) {
+// broken metric must not abort the sweep of the others. metricCtx may be
+// nil (no per-metric cancel).
+func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), metricCtx MetricContext) (SweepResult, error) {
 	// ONE config read for the whole sweep (design §4 — the
 	// RecomputeAll one-config-read pattern): the live rule stamp every
 	// fresh row is stamped with and every ref join binds.
@@ -245,6 +259,13 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress)) (
 	// metric with NO rows (phase 1 already committed) — absent → behind,
 	// retried by the next sweep.
 	process := func(m models.MetricRow) {
+		// The metric's own context exists before its first progress
+		// point, so a cancel issued while it is processing always lands.
+		mctx, release := ctx, context.CancelFunc(func() {})
+		if metricCtx != nil {
+			mctx, release = metricCtx(ctx, m.ID)
+		}
+		defer release()
 		start(m.ID, StageRemove)
 		if err := st.ClearMetricValues(m.ID); err != nil {
 			res.Attempted = append(res.Attempted, m.ID)
@@ -318,32 +339,37 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress)) (
 			return
 		}
 
-		rowCap := passGroupedCap
-		if plan.Mode == ModePercentile {
-			rowCap = passRawCap
+		fetched, err := st.QueryMetric(mctx, plan.SQL, plan.Args)
+		if ctx.Err() != nil {
+			// The SWEEP was cancelled mid-metric: phase 1 already
+			// committed, so this metric is absent → behind → resumed next
+			// sweep. NOT a metric failure (it was interrupted, not
+			// broken) — the sweep surfaces it as its returned error.
+			return
 		}
-		fetched, err := st.QueryWrite(ctx, plan.SQL, plan.Args, rowCap)
+		if mctx.Err() != nil {
+			// THIS metric was cancelled: failed, no rows written (the
+			// insert below never runs).
+			fail(CancelledReason)
+			return
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				// Cancelled mid-metric: phase 1 already committed, so this
-				// metric is absent → behind → resumed next sweep. NOT a
-				// metric failure (it was interrupted, not broken) — the
-				// sweep surfaces the cancellation as its returned error.
-				return
-			}
 			fail(err.Error())
 			return
-		}
-		if fetched.Truncated {
-			fail("compute returned too many rows (truncated — the metric stays behind)")
-			return
-		}
-		if ctx.Err() != nil {
-			return // interrupted before the insert: absent → behind → resumed
 		}
 		values, err := valuesFromPlan(plan, fetched.Rows)
 		if err != nil {
 			fail(err.Error())
+			return
+		}
+		// Last cancel point: a cancel that lands after the statement
+		// returned still writes nothing. Once the insert starts it
+		// commits whole (one tx) — a later cancel finds a fresh metric.
+		if ctx.Err() != nil {
+			return
+		}
+		if mctx.Err() != nil {
+			fail(CancelledReason)
 			return
 		}
 		if err := st.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, values); err != nil {

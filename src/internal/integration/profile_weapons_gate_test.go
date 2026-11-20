@@ -185,7 +185,7 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 			// career statement (profile scope, weapon partition), expr
 			// loaded from the seeded row itself.
 			def := seededWeaponExpr(t, st, cand.name)
-			pv, perr, err := metrics.RunPreview(st, def, "", 2000)
+			pv, perr, err := metrics.RunPreview(t.Context(), st, def, "", 2000)
 			if perr != nil {
 				t.Fatalf("parse: %v (%s)", perr, def.Expr)
 			}

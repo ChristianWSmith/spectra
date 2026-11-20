@@ -1169,7 +1169,7 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 			if _, perr := Compile(f.expr, "", "", addr); perr != nil {
 				t.Fatalf("Compile: %v", perr)
 			}
-			pv, perr, err := RunPreview(st, Def{
+			pv, perr, err := RunPreview(t.Context(), st, Def{
 				Expr: f.expr, Denominator: f.denominator,
 				Subject: wantSubject, Partition: f.partition, Profile: f.scope == "profile",
 			}, "", 500)
@@ -1245,7 +1245,7 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 // has no row).
 func TestScopePreview(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "match:2", 100)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "match:2", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
@@ -1259,11 +1259,11 @@ func TestScopePreview(t *testing.T) {
 	if total != 648 {
 		t.Errorf("per-subject counts total %d, want 648 (the match's events)", total)
 	}
-	if _, perr, _ := RunPreview(st, Def{Expr: "from events: count()"}, "match:99", 10); perr != nil {
+	if _, perr, _ := RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "match:99", 10); perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
 	// Unknown-but-well-formed match → no rows (no subject in scope).
-	pv, _, err = RunPreview(st, Def{Expr: "from events: count(where kind='kill')"}, "match:99", 10)
+	pv, _, err = RunPreview(t.Context(), st, Def{Expr: "from events: count(where kind='kill')"}, "match:99", 10)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
@@ -1325,7 +1325,7 @@ func TestPercentilePreview(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			pv, perr, err := RunPreview(st, Def{Expr: c.expr}, "", 500)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: c.expr}, "", 500)
 			if perr != nil || err != nil {
 				t.Fatalf("preview %q: %v %v", c.expr, perr, err)
 			}
@@ -1357,7 +1357,7 @@ func TestPercentilePreview(t *testing.T) {
 	// Percentile + denominator: profile scope correlates the denominator
 	// on the subject — 100 (every subject's max) / 72 (its career
 	// rounds), exact for all eight subjects.
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: percentile(1.0, dmg)", Denominator: "rounds"}, "", 100)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events: percentile(1.0, dmg)", Denominator: "rounds"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview with denom: %v %v", perr, err)
 	}
@@ -1379,14 +1379,14 @@ func TestPercentilePreview(t *testing.T) {
 // cap over the SUBJECT rows it returns; Truncated reports hitting it).
 func TestRowCapAndTruncation(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "", 3)
+	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "", 3)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
 	if len(pv.Rows) != 3 || !pv.Truncated {
 		t.Fatalf("rows = %d truncated = %v, want 3 rows capped", len(pv.Rows), pv.Truncated)
 	}
-	pv, _, err = RunPreview(st, Def{Expr: "from events: count()"}, "", 500)
+	pv, _, err = RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "", 500)
 	if err != nil || pv.Truncated {
 		t.Fatalf("uncapped preview truncated = %v (err %v)", pv.Truncated, err)
 	}
