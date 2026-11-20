@@ -151,7 +151,7 @@ func TestRowDifferenceCorpus(t *testing.T) {
 			500.0 / 3.0, "same slice over the join (LEFT side keeps every round)"},
 	}
 	for _, c := range cases {
-		pv, perr, err := RunPreview(st, Def{Expr: c.expr, Subject: "match"}, "", 50)
+		pv, perr, err := RunPreview(t.Context(), st, Def{Expr: c.expr, Subject: "match"}, "", 50)
 		if perr != nil {
 			t.Fatalf("RunPreview(%q): %v", c.expr, perr)
 		}

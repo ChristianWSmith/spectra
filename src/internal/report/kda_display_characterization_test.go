@@ -2,6 +2,7 @@ package report
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,15 +21,17 @@ import (
 // pin), so this display is final; any future seed edit must keep both
 // pins unchanged.
 func TestKDAZeroDeathDisplay(t *testing.T) {
-	st, err := store.Open(":memory:")
+	// File-backed: the sweep runs metric SQL on the read-only
+	// connection, which reopens the database file (":memory:" has none).
+	st, err := store.Open(filepath.Join(t.TempDir(), "kda.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = st.CloseRO(); _ = st.Close() }()
 	id := seedMatch(t, st)
 
 	// The production compute pass — the values a real sweep stores.
-	if _, err := metrics.Sweep(context.Background(), st, nil); err != nil {
+	if _, err := metrics.Sweep(context.Background(), st, nil, nil); err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
 

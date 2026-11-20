@@ -72,7 +72,7 @@ func TestSubjectStatementExcludesBots(t *testing.T) {
 	st := botStore(t)
 
 	// The subject grouping IS the listing: the bot's group never appears.
-	grouped, perr, err := RunPreview(st, Def{Expr: "from player_stats: count()"}, "", 100)
+	grouped, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
@@ -90,7 +90,7 @@ func TestSubjectStatementExcludesBots(t *testing.T) {
 	// actor-less damage) → exactly one value, alice's kill. Both halves
 	// of the subject condition are load-bearing: humans-only drops the
 	// bot, `subject <> ''` drops the actor-less row.
-	plain, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "", 100)
+	plain, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("plain preview: %v %v", perr, err)
 	}
@@ -101,7 +101,7 @@ func TestSubjectStatementExcludesBots(t *testing.T) {
 	// Same rule on the other subject-keyed source (thrower/attacker are
 	// the events/utility_events subjects; the condition is per subject,
 	// not per source population).
-	scoped, perr, err := RunPreview(st, Def{Expr: "from player_stats: count()"}, "match:1", 100)
+	scoped, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats: count()"}, "match:1", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("scoped preview: %v %v", perr, err)
 	}
@@ -109,7 +109,7 @@ func TestSubjectStatementExcludesBots(t *testing.T) {
 		t.Errorf("scoped player_stats by subject = %+v, want only alice", scoped.Rows)
 	}
 
-	scopedEvents, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "match:1", 100)
+	scopedEvents, perr, err := RunPreview(t.Context(), st, Def{Expr: "from events: count()"}, "match:1", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("scoped events preview: %v %v", perr, err)
 	}

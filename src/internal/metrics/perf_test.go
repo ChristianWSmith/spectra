@@ -231,7 +231,7 @@ func TestPerfPreview100Matches(t *testing.T) {
 	}
 	for _, c := range previewCases {
 		start := time.Now()
-		pv, perr, err := RunPreview(st, c.def, "", 200)
+		pv, perr, err := RunPreview(t.Context(), st, c.def, "", 200)
 		el := time.Since(start)
 		if perr != nil || err != nil {
 			t.Fatalf("%s: %v %v", c.name, perr, err)

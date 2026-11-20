@@ -1226,8 +1226,7 @@ func (e *emitter) phaseIdentity(a *Agg) {
 // the aggregate statement (uniform qualification path — the phase-2
 // fetch carries the join/qualification day one), scope WHERE on the
 // primary (+ the subject addressing condition) and the optional per-agg
-// filter. The row cap comes from RunReadOnly — no SQL LIMIT, so
-// truncation is detectable. Batched mode (CompilePassMatch) leads with
+// filter. No SQL LIMIT: the metric path fetches every raw row. Batched mode (CompilePassMatch) leads with
 // the row's match_id — the pass partitions (match_id, subject).
 func (e *emitter) phase2(a *Agg, withDenom bool) {
 	e.sb.WriteString("SELECT ")

@@ -599,7 +599,7 @@ func TestEconomyCardSeedEquivalence(t *testing.T) {
 			{"pistol_hold", seedExpr["pistol_hold"], oraclePistol},
 			{"avg_equip_gap", seedExpr["avg_equip_gap"], oracleGap},
 		} {
-			pv, perr, err := RunPreview(st, Def{Expr: tc.expr, Subject: "match"}, scope, 10)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: tc.expr, Subject: "match"}, scope, 10)
 			if perr != nil {
 				t.Fatalf("%s compile: %v", tc.name, perr)
 			}
@@ -748,7 +748,7 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 			// the preview's rows by subject group.
 			teamRows := func(t *testing.T, name string) map[string]PreviewRow {
 				t.Helper()
-				pv, perr, err := RunPreview(st, Def{Expr: seedExpr[name], Subject: "team"}, scope, 10)
+				pv, perr, err := RunPreview(t.Context(), st, Def{Expr: seedExpr[name], Subject: "team"}, scope, 10)
 				if perr != nil {
 					t.Fatalf("%s compile: %v", name, perr)
 				}
@@ -800,7 +800,7 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 
 			// lost_equip (match subject): one row, EXACTLY the card's
 			// pooled total.
-			pv, perr, err := RunPreview(st, Def{Expr: seedExpr["lost_equip"], Subject: "match"}, scope, 10)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: seedExpr["lost_equip"], Subject: "match"}, scope, 10)
 			if perr != nil {
 				t.Fatalf("lost_equip compile: %v", perr)
 			}

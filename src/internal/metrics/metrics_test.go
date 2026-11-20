@@ -365,7 +365,7 @@ func TestPercentilePartitionsBySubject(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			pv, perr, err := RunPreview(st, Def{Expr: expr}, c.scope, 100)
+			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: expr}, c.scope, 100)
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql %s)", perr, err, pv.SQL)
 			}
@@ -775,7 +775,7 @@ func TestScalarFloorSparesZeroDeathSubject(t *testing.T) {
 
 	// The NULLIF spelling: alice's zero deaths → NULL → Value 0 beside N
 	// (N = her single stored row); bob divides normally.
-	nullif, perr, err := RunPreview(st, Def{Expr: "from player_stats: ratio(sum(kills), sum(deaths))"}, "", 10)
+	nullif, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats: ratio(sum(kills), sum(deaths))"}, "", 10)
 	if perr != nil || err != nil {
 		t.Fatalf("NULLIF preview: %v %v", perr, err)
 	}
@@ -790,7 +790,7 @@ func TestScalarFloorSparesZeroDeathSubject(t *testing.T) {
 	}
 
 	// The floored spelling: MAX(sum(deaths), 1) → alice 5/1 = 5.
-	floored, perr, err := RunPreview(st, Def{Expr: "from player_stats: ratio(sum(kills), max(sum(deaths), 1))"}, "", 10)
+	floored, perr, err := RunPreview(t.Context(), st, Def{Expr: "from player_stats: ratio(sum(kills), max(sum(deaths), 1))"}, "", 10)
 	if perr != nil || err != nil {
 		t.Fatalf("floored preview: %v %v (the scalar statement must execute)", perr, err)
 	}

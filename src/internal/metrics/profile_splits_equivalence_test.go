@@ -57,7 +57,7 @@ func seedByName(t *testing.T, st *store.Store, name string) (expr, denom string)
 func profileSeedRows(t *testing.T, st *store.Store, name, partition string) map[string]map[string]float64 {
 	t.Helper()
 	expr, denom := seedByName(t, st, name)
-	pv, perr, err := RunPreview(st, Def{
+	pv, perr, err := RunPreview(t.Context(), st, Def{
 		Expr: expr, Denominator: denom, Subject: "player",
 		Partition: partition, Profile: true,
 	}, "", 500)

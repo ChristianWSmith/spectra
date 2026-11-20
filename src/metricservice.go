@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,7 +21,7 @@ import (
 // the `metrics` table (origin builtin|user|plugin). Expressions are parsed
 // into a validated AST (whitelisted tables/columns/ops — never interpolated
 // user SQL) and compiled to parameterized SQL. Preview runs against the
-// whole library with a row cap; pinned metrics appear as scoreboard/profile
+// whole library (display-bounded rows); pinned metrics appear as scoreboard/profile
 // columns.
 //
 // W2 (stored-metrics grammar wave) is DONE: the groupBy parameter is gone
@@ -114,6 +115,12 @@ type MetricsService struct {
 	errs         map[int64]string // last failure per metric (cleared on success)
 	progMu       sync.Mutex       // guards the 100 ms progress throttle
 	progLast     time.Time
+	// runs is every metric statement running right now (sweep and
+	// preview), by metric id — what CancelMetric cancels. Guarded by
+	// runsMu (its own lock: never held across a statement).
+	runsMu sync.Mutex
+	runs   map[int64]map[uint64]context.CancelFunc
+	runSeq uint64
 }
 
 // exprError converts a metrics.ParseError into the ExprError contract and
@@ -669,7 +676,14 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, subject string, pa
 	// default (PreviewDefaultRow), never here. The run extent is the
 	// whole library: `scope` carries the DRAFT's definition scope above,
 	// not a run bound (see the doc comment).
-	pv, perr, err := metrics.RunPreview(s.st, def, "", limit)
+	// The run registers under the metric's id (0 for a draft), so
+	// CancelMetric stops it — there is no timeout on the metric path.
+	ctx, release := s.startRun(context.Background(), id)
+	defer release()
+	pv, perr, err := metrics.RunPreview(ctx, s.st, def, "", limit)
+	if err != nil && ctx.Err() != nil {
+		err = errors.New(metrics.CancelledReason)
+	}
 	if perr != nil {
 		return MetricPreview{}, exprErrorErr(perr)
 	}
