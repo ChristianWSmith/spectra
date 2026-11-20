@@ -1013,6 +1013,12 @@ export function onMetricDone(callback) {
 
 export function runQuery(sql, limit, timeoutMS) { return QueryService.Run(sql, limit || 0, timeoutMS || 0); }
 export function getSchema() { return QueryService.GetSchema(); }
+// componentQuery is a user component's query(sql) (lib/componentruntime/
+// readapi.js): the console's read-only connection with no row cap, no
+// timeout and no history entry. Deliberately NOT read-cached: a component
+// read is live and carries no freshness (dogfood/04 §3). Failures come
+// back in .err, like runQuery's.
+export function componentQuery(sql) { return QueryService.ComponentQuery(sql); }
 export function listSavedQueries() { return QueryService.ListSavedQueries(); }
 // listSavedQueriesPage is the console saved list's keyset window ("Load
 // more"): `limit` rows strictly after `afterName` ("" = the first

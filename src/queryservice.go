@@ -39,6 +39,14 @@ func (s *QueryService) Run(sql string, limit int, timeoutMS int) (models.QueryRe
 	return query.New(s.st).Run(sql, limit, timeoutMS), nil
 }
 
+// ComponentQuery is the user-component read (`query(sql)` in the
+// component read API): one read-only statement on the console's read-only
+// connection, with no row cap, no timeout and no history entry. Failures
+// ride QueryResult.Err like Run's.
+func (s *QueryService) ComponentQuery(sql string) (models.QueryResult, error) {
+	return query.New(s.st).ComponentRead(sql), nil
+}
+
 // GetSchema returns tables + columns with notes for the sidebar
 // (internal/query attaches the provenance notes).
 func (s *QueryService) GetSchema() ([]models.SchemaTableRow, error) {

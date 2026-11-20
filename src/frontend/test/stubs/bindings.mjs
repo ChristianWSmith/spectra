@@ -59,6 +59,8 @@ export const MetricsService = {
 // console drivers script the methods they drive on top.
 export const QueryService = {
   Run: rec('Run'),
+  // The user-component read (componentruntime/reads.js → componentQuery).
+  ComponentQuery: rec('ComponentQuery'),
   GetSchema: rec('GetSchema'),
   ListSavedQueries: rec('ListSavedQueries'),
   ListSavedQueriesPage: rec('ListSavedQueriesPage'),

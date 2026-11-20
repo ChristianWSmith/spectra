@@ -97,6 +97,35 @@ func (s *Session) Run(sqlText string, limit, timeoutMS int) models.QueryResult {
 	return out
 }
 
+// ComponentRead is a user component's `query(sql)` (dogfood/04 §3): the
+// same validation and read-only connection as Run, but with no row cap,
+// no timeout, and no history entry — a component read is not a console
+// run, so it never lands in the console's history. Parameters are refused
+// exactly as Run refuses them (this path supplies no values either). The
+// metric-readable table allowlist is not applied yet (see
+// store.ReadUnbounded).
+func (s *Session) ComponentRead(sqlText string) models.QueryResult {
+	var (
+		res store.ROResult
+		err error
+	)
+	if store.HasParameters(sqlText) {
+		err = errStatementParams
+	} else {
+		res, err = s.st.ReadUnbounded(sqlText, nil)
+	}
+	out := models.QueryResult{
+		Columns:  res.Columns,
+		Rows:     res.Rows,
+		RowCount: len(res.Rows),
+		MS:       res.MS,
+	}
+	if err != nil {
+		out.Err = err.Error()
+	}
+	return out
+}
+
 // Schema returns the schema browser model: every user table from
 // sqlite_master with PRAGMA table_info columns (models.SchemaTableRow — the
 // store's raw rows), annotated with the notes below (unknown tables/columns
