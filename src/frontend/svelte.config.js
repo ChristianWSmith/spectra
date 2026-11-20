@@ -4,6 +4,9 @@ export default {
   // Consult https://svelte.dev/docs#compile-time-svelte-preprocess
   // for more information about preprocessors
   preprocess: vitePreprocess(),
+  // Components are runes-only (dogfood/04-COMPONENTS.md §5): builtins
+  // compile in the same mode as user components (componentruntime/compile.js).
+  compilerOptions: { runes: true },
   // Warning gate: warnings never fail the build by themselves (GitHub only
   // fails on a nonzero exit), so for the allowlisted codes we print the
   // warning ourselves and set process.exitCode = 1 — a flag the plugin's

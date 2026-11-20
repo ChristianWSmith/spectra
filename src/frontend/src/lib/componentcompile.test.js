@@ -73,6 +73,40 @@ test('an import outside the runtime is refused at its own line', async () => {
   assert.match(res.message, /\.\/other\.js/);
 });
 
+// Components are runes-only (dogfood/04-COMPONENTS.md §5): legacy syntax is
+// refused at save with its own line, and runes syntax passes.
+test('legacy-mode syntax is refused at save with its line', async () => {
+  const exportLet = await checkComponentSource('<script>\n  export let x = 1;\n</script>\n<p>{x}</p>');
+  assert.equal(exportLet.ok, false);
+  assert.equal(exportLet.line, 2);
+  assert.match(exportLet.message, /runes/);
+
+  const reactive = await checkComponentSource('<script>\n  let a = 1;\n  $: b = a * 2;\n</script>\n<p>{b}</p>');
+  assert.equal(reactive.ok, false);
+  assert.equal(reactive.line, 3);
+
+  const props = await checkComponentSource('<p>{$$props.x}</p>');
+  assert.equal(props.ok, false);
+  assert.equal(props.line, 1);
+});
+
+test('legacy directives and slots, which compile with a warning, are refused too', async () => {
+  const onClick = await checkComponentSource('<p>a</p>\n<button on:click={() => {}}>x</button>');
+  assert.equal(onClick.ok, false);
+  assert.equal(onClick.line, 2);
+
+  const slot = await checkComponentSource('<div>\n  <slot />\n</div>');
+  assert.equal(slot.ok, false);
+  assert.equal(slot.line, 2);
+});
+
+test('a runes component compiles and its checked source loads', async () => {
+  const src = '<script>\n  let n = $state(0);\n</script>\n<button onclick={() => n++}>{n}</button>';
+  assert.deepEqual(await checkComponentSource(src), { ok: true });
+  const C = await loadComponent(src);
+  assert.equal(typeof C, 'function');
+});
+
 test('public svelte imports are allowed', async () => {
   const res = await checkComponentSource(
     "<script>\n  import { onMount } from 'svelte';\n  import { fade as f } from 'svelte/transition';\n  onMount(() => {});\n</script>\n<p transition:f>x</p>",
