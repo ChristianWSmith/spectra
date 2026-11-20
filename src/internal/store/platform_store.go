@@ -90,7 +90,8 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	plugin_id TEXT NOT NULL DEFAULT '',
 	denominator TEXT NOT NULL DEFAULT '',
 	version INTEGER NOT NULL DEFAULT 1,
-	created_at DATETIME
+	created_at DATETIME,
+	held INTEGER NOT NULL DEFAULT 0
 )`
 
 // ensureMetricsTable creates the metrics table when missing (no-op when

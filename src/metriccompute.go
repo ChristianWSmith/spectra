@@ -206,6 +206,13 @@ func (s *MetricsService) runSweep(ctx context.Context, progress func(metrics.Swe
 		}
 	}
 	res, err := metrics.Sweep(ctx, s.st, wrapped, s.startRun)
+	// The user's cancels hold their metrics: the hold is what keeps later
+	// background sweeps from re-running them (metrics.SweepResult.Cancelled).
+	for _, id := range res.Cancelled {
+		if herr := s.st.HoldMetric(id); herr != nil && err == nil {
+			err = herr
+		}
+	}
 
 	// Record the outcome: every metric this sweep touched leaves the
 	// in-flight set; failures stick until a later sweep succeeds on the
@@ -259,6 +266,42 @@ func (s *MetricsService) startRun(parent context.Context, metricID int64) (conte
 		s.runsMu.Unlock()
 		cancel()
 	}
+}
+
+// RunningMetric is one saved metric with a statement running right now
+// (a sweep's or a preview's) — the Builder's running-metrics popup row.
+// Name is the metric's display title (its name when it has none); a
+// draft preview (id 0) has no row here, it has nothing to cancel by id.
+type RunningMetric struct {
+	MetricID int64  `json:"metricId"`
+	Name     string `json:"name"`
+}
+
+// ListRunningMetrics returns every saved metric that has a statement
+// running right now, by id. A metric deleted while running drops out.
+func (s *MetricsService) ListRunningMetrics() ([]RunningMetric, error) {
+	s.runsMu.Lock()
+	ids := make([]int64, 0, len(s.runs))
+	for id := range s.runs {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	s.runsMu.Unlock()
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	out := make([]RunningMetric, 0, len(ids))
+	for _, id := range ids {
+		m, err := s.st.GetMetric(id)
+		if err != nil {
+			continue
+		}
+		name := m.Title
+		if name == "" {
+			name = m.Name
+		}
+		out = append(out, RunningMetric{MetricID: id, Name: name})
+	}
+	return out, nil
 }
 
 // CancelMetric stops every running statement of one metric — its sweep
@@ -370,6 +413,10 @@ func (s *MetricsService) GetMetricComputeState() ([]MetricComputeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	held, err := s.st.HeldMetricIDs()
+	if err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]MetricComputeState, 0, len(coverage))
@@ -390,6 +437,12 @@ func (s *MetricsService) GetMetricComputeState() ([]MetricComputeState, error) {
 			// exactly "failed + no fresh row".
 			state.State = MetricStateFailed
 			state.Error = errMsg
+		case held[c.MetricID] && c.FreshRows == 0:
+			// The user cancelled this metric's run and it has not been
+			// saved since (the hold survives a restart; the reason is the
+			// same word the in-memory failure carries).
+			state.State = MetricStateFailed
+			state.Error = metrics.CancelledReason
 		case c.Behind:
 			state.State = MetricStateBehind
 		case c.FreshRows == 0:

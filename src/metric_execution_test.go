@@ -219,11 +219,23 @@ func TestCancelMetricThroughTheService(t *testing.T) {
 		t.Error("a finished run is still registered as running")
 	}
 
-	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
+	// A cancelled metric does not re-run on its own: the next sweep leaves
+	// it held (still failed, still no rows). Only saving it computes it
+	// again — TestCancelledMetricHoldsUntilSaved pins that.
+	retry, err := f.svc.runSweep(t.Context(), nil)
+	if err != nil {
 		t.Fatalf("retry sweep: %v", err)
 	}
-	if s := stateOf(t, f.svc, m.ID); s.State != MetricStateFresh {
-		t.Errorf("state after retry = %q, want %q", s.State, MetricStateFresh)
+	for _, id := range retry.Attempted {
+		if id == m.ID {
+			t.Errorf("the next sweep re-ran the cancelled metric (attempted %v)", retry.Attempted)
+		}
+	}
+	if n := storedRows(t, f.st, m.ID); n != 0 {
+		t.Errorf("rows = %d after the retry sweep, want 0", n)
+	}
+	if s := stateOf(t, f.svc, m.ID); s.State != MetricStateFailed || s.Error != metrics.CancelledReason {
+		t.Errorf("state after retry = %+v, want failed with %q", s, metrics.CancelledReason)
 	}
 }
 

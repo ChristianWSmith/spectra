@@ -401,7 +401,8 @@ and one **Filters** panel (origin, scope, subject, denominator, format and pinni
 the list to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
 it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
-**Order…** opens the ordering dialog.
+**Order…** opens the ordering dialog; **Running metrics** lists the metrics being computed right now
+and can cancel any of them (see *Cancelling a running metric*).
 
 The **editor** on the right has:
 
@@ -470,6 +471,25 @@ this session keeps the shape you left it in until you restart Spectra.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,
+  },
+  {
+    id: 'metric-cancel',
+    title: 'Cancelling a running metric',
+    blocks: `A metric is **running** while Spectra computes it: when you save a metric, and when a sweep
+recomputes metrics after an import or a save. The Builder's **Running metrics** button opens the list of
+metrics running right now, each with its own **Cancel**. The list refreshes while it is open; a metric
+that finishes drops off it.
+
+Cancelling stops that metric at once and keeps **no values** for it. Its old values are removed with the
+run, so it reads as *failed* with the reason *cancelled* — in the list row and in the editor's state chip
+— and nothing stale is shown in its place. The metrics that build on it are left behind (they read as
+*behind* until they are computed again). Other metrics keep running.
+
+A cancelled metric does **not** run again on its own — not after an import, and not when a metric it
+depends on changes. It runs again only when you **save** it. That save clears the cancel, and the next
+sweep computes it and the metrics that depend on it. Until then, its values stay absent: the cells that
+would show it read as failed, never as an old number.
+`,
   },
 ];
 
