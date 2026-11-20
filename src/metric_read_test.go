@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -32,7 +33,7 @@ func viewMatchRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVal
 			if _, dup := out[key]; dup {
 				t.Errorf("duplicate view row for %+v", key)
 			}
-			out[key] = eqVal{value: r.Value, n: r.N}
+			out[key] = eqVal{value: valueOf(r.Value), n: r.N}
 		}
 	}
 	return out
@@ -53,7 +54,7 @@ func viewCareerRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVa
 		if _, dup := out[key]; dup {
 			t.Errorf("duplicate view row for %+v", key)
 		}
-		out[key] = eqVal{value: r.Value, n: r.N}
+		out[key] = eqVal{value: valueOf(r.Value), n: r.N}
 	}
 	return out
 }
@@ -185,4 +186,13 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 	if _, err := f.svc.CompileMetric(m.ID, "from nope: count()", ""); err == nil {
 		t.Error("CompileMetric accepted an unknown source, want the positioned error")
 	}
+}
+
+// valueOf is a stored value as a float: a NULL (no data) is NaN, so it
+// matches no expected number and an equivalence check reports it.
+func valueOf(p *float64) float64 {
+	if p == nil {
+		return math.NaN()
+	}
+	return *p
 }

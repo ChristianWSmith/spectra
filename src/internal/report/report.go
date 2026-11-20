@@ -267,7 +267,11 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 		if !ok {
 			c = dashCells()
 		}
-		w.fill(&c, reportCell(v.Value, w.format, w.scale))
+		if v.Value == nil {
+			// NULL is no data (ruling 23): the cell stays a dash, never 0.
+			continue
+		}
+		w.fill(&c, reportCell(*v.Value, w.format, w.scale))
 		cells[v.SubjectKey] = c
 	}
 	return cells, nil

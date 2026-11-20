@@ -274,6 +274,67 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	return nil
 }
 
+// RawScope is the reserved-bind scope of one raw-SQL run (03-QUERIES.md
+// §5): MatchID for :match_id (and :round), SteamID for :steam_id, Round
+// for :round. The zero value is the unbound, library-wide run.
+type RawScope struct {
+	MatchID int64
+	SteamID string
+	Round   int
+}
+
+// RawMetricRow is one row of a raw statement's result after the engine has
+// read its reserved columns: Value nil is SQL NULL (no data, ruling 23);
+// RowJSON is the opaque JSON of every other column.
+type RawMetricRow struct {
+	SubjectKey string
+	Dim        string
+	Value      *float64
+	RowJSON    string
+}
+
+// ReplaceRawMetricValues stores one raw run's result. It replaces the rows
+// carrying the run's own scope tags and nothing else: a :match_id run for
+// match 5 leaves match 6's rows alone, and the unbound run replaces the
+// whole unbound result. One transaction, so a failure keeps the previous
+// rows (the caller clears them when the metric as a whole fails).
+func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersion int, scope RawScope, rows []RawMetricRow) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(
+		`DELETE FROM metric_values WHERE metric_id = ? AND match_id = ? AND scope_steam_id = ? AND scope_round = ?`,
+		metricID, scope.MatchID, scrub(scope.SteamID), scope.Round,
+	); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	stmt, err := tx.Prepare(
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, n, metric_version, rule_version, computed_at, scope_steam_id, scope_round, row_json)
+		 VALUES (?, ?, ?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	defer stmt.Close()
+	now := time.Now()
+	for _, r := range rows {
+		var value any // nil binds SQL NULL
+		if r.Value != nil {
+			value = *r.Value
+		}
+		if _, err := stmt.Exec(metricID, scope.MatchID, scrub(r.SubjectKey), scrub(r.Dim), value,
+			metricVersion, ruleVersion, now, scrub(scope.SteamID), scope.Round, scrub(r.RowJSON)); err != nil {
+			return fmt.Errorf("couldn't save the metric values: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	return nil
+}
+
 // ---- The canonical READ (stored-metrics design §5) -------------------------
 //
 // ONE read per value surface: GetMetricValuesForMatch (the match grain —
@@ -324,8 +385,13 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 	var out []models.MetricValue
 	for rows.Next() {
 		var v models.MetricValue
-		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Dim, &v.Value, &v.ValueKey, &v.N); err != nil {
+		var value sql.NullFloat64
+		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Dim, &value, &v.ValueKey, &v.N); err != nil {
 			return nil, err
+		}
+		if value.Valid {
+			x := value.Float64
+			v.Value = &x
 		}
 		out = append(out, v)
 	}
@@ -481,6 +547,7 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 		JOIN metrics m ON m.id = v.metric_id
 		JOIN matches mt ON mt.id = v.match_id
 		WHERE ` + metricValueFreshCond + `
+		  AND v.value IS NOT NULL
 		  AND v.subject_key = ? AND v.match_id > 0 AND mt.extracted_at IS NOT NULL
 		  AND ` + HumanOnlyBySteamID("v.subject_key", "v.match_id") + idCond + `
 		ORDER BY (mt.patch_version = 0) ASC, mt.patch_version ASC,
@@ -656,4 +723,72 @@ func bumpMetricAndDependents(tx *sql.Tx, id int64) error {
 		frontier = f2
 	}
 	return nil
+}
+
+// RawRoundKey is one round of a ready match: the (match_id, number) pair
+// the :round bind is keyed by (03-QUERIES.md §5).
+type RawRoundKey struct {
+	MatchID int64
+	Round   int
+}
+
+// ReadyMatchIDs lists the ready matches, ascending: the units a :match_id
+// raw metric runs over.
+func (s *Store) ReadyMatchIDs() ([]int64, error) {
+	rows, err := s.db.Query(`SELECT id FROM matches WHERE status = 'ready' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't list the ready matches: %w", err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("couldn't list the ready matches: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ReadyHumanSteamIDs lists the distinct human players of ready matches,
+// ascending: the units a :steam_id raw metric runs over.
+func (s *Store) ReadyHumanSteamIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT p.steam_id FROM players p
+		JOIN matches m ON m.id = p.match_id
+		WHERE m.status = 'ready' AND p.is_bot = 0 ORDER BY p.steam_id`)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't list the players: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("couldn't list the players: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ReadyRounds lists the rounds of ready matches in (match, number) order:
+// the units a :match_id + :round raw metric runs over.
+func (s *Store) ReadyRounds() ([]RawRoundKey, error) {
+	rows, err := s.db.Query(`SELECT r.match_id, r.number FROM rounds r
+		JOIN matches m ON m.id = r.match_id
+		WHERE m.status = 'ready' ORDER BY r.match_id, r.number`)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't list the rounds: %w", err)
+	}
+	defer rows.Close()
+	var out []RawRoundKey
+	for rows.Next() {
+		var k RawRoundKey
+		if err := rows.Scan(&k.MatchID, &k.Round); err != nil {
+			return nil, fmt.Errorf("couldn't list the rounds: %w", err)
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }

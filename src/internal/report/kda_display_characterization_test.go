@@ -47,7 +47,9 @@ func TestKDAZeroDeathDisplay(t *testing.T) {
 	}
 	byID := map[string]float64{}
 	for _, v := range values {
-		byID[v.SubjectKey] = v.Value
+		if v.Value != nil {
+			byID[v.SubjectKey] = *v.Value
+		}
 	}
 	t.Logf("stored kda values: %v", byID)
 	if got := byID["A00"]; got != 11 {

@@ -338,6 +338,30 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			fail(CancelledReason)
 		}
 
+		// A raw SQL metric runs its own unit (raw.go): every scope the
+		// statement needs, read on the metric connection. Any stop before
+		// the last scope clears what the earlier scopes stored, so a
+		// failed or cancelled raw metric never serves part of its result.
+		if IsRawSQL(m.Expr) {
+			err := runRawMetric(mctx, st, m, cfg.RuleVersion)
+			if ctx.Err() != nil {
+				_ = st.ClearMetricValues(m.ID)
+				return // sweep cancelled: absent → behind, resumed next sweep
+			}
+			if mctx.Err() != nil {
+				_ = st.ClearMetricValues(m.ID)
+				cancelled()
+				return
+			}
+			if err != nil {
+				_ = st.ClearMetricValues(m.ID)
+				fail(err.Error())
+				return
+			}
+			res.Succeeded = append(res.Succeeded, m.ID)
+			finishAttempt()
+			return
+		}
 		// Resolve the metric()'s references against the CURRENT catalog
 		// (the same RefTarget shape PreviewMetric/SaveMetric bind; live
 		// stamps = this sweep's config read). A dangling name is simply

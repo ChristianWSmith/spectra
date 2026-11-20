@@ -551,13 +551,21 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
 	subject_key     TEXT    NOT NULL DEFAULT '',  -- player SteamID64 | team key ('ct'/'t') | '' (match subject)
 	dim             TEXT    NOT NULL DEFAULT '',  -- partition key ('' = unpartitioned)
-	value           REAL    NOT NULL DEFAULT 0,
+	value           REAL,                         -- NULL = the statement had no data (raw SQL, dogfood/PLAN.md ruling 23); shown as a dash, never 0
 	value_key       TEXT    NOT NULL DEFAULT '',  -- identity value (identity metrics only; '' otherwise)
 	n               INTEGER NOT NULL DEFAULT 0,   -- sample size behind the value
 	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
 	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
 	computed_at     DATETIME,
-	PRIMARY KEY (metric_id, match_id, subject_key, dim),
+	-- Raw-SQL scope tags (dogfood/03-QUERIES.md §5): the reserved binds a
+	-- run was supplied. '' and 0 for the unbound (library-wide) run and for
+	-- every sugar row. A run replaces the rows carrying its own tags.
+	scope_steam_id  TEXT    NOT NULL DEFAULT '',
+	scope_round     INTEGER NOT NULL DEFAULT 0,
+	-- Raw-SQL result columns other than subject_key, dim and value, as one
+	-- JSON object. Opaque to the engine. '' for every sugar row.
+	row_json        TEXT    NOT NULL DEFAULT '',
+	PRIMARY KEY (metric_id, match_id, subject_key, dim, scope_steam_id, scope_round),
 	CHECK (match_id >= 0)
 );
 
