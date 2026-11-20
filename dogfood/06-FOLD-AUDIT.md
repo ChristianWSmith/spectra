@@ -263,3 +263,42 @@ as metrics until the samples are stored).
   convention 2 excludes bots, and bots have no `round_player_sides`
   rows. The snapshot has 3 bot rows in `player_stats`. Confirm F2 compares
   humans only.
+
+## DECISIONS (orchestrator, 2026-11-20)
+
+Applied from the rules in AGENTS and PLAN §2. Open product calls are marked
+OPEN and go to the owner.
+
+- **Q1 (post-match gate): decided.** Stamp a `real` flag at ingest on event
+  rows, under item 18 (engine state is emulated at ingest). Folds reproduce the
+  gate from the stamp. Expect value changes only on demos with a post-match tail;
+  F2 shows any change.
+- **Q2 (first-of-round, streaks): decided, detector.** Item 21's criterion: a
+  sequence interpretation is a detector. `entry_*`, `first_kill_steam`, first
+  death and `best_streak` move to analysis-owned detectors. Their counts are
+  metrics. Folding them into metrics is not a fold.
+- **Q3 (`money_spent_total`): OPEN, owner.** See the product question below.
+- **Q4 (`damage_taken` in `detail_json`): decided, accept the JSON read** for
+  the metric. No new typed column in this migration.
+- **Q5 (`hs_pct` zero vs dash): decided, dash.** Builtin convention 3: no
+  value for an empty pool. F2's equality check treats a stored 0 against a
+  metric dash, with zero kills, as an expected, documented difference.
+- **Q6 (denormalized stamps): decided, keep as join helpers.** They are cheap
+  partition keys for user SQL. Item 17's fold removal does not apply to them.
+- **Q7 (two damage bases): OPEN, owner.** See the product question below.
+- **Q8 (`kast`): decided, stays a stored analysis output.** Rule-derived values
+  are stored at analyze time (AGENTS, Analysis-rule derived values).
+- **Q9 (`round_economy` samples): decided, keep the three sum columns as ingest
+  facts.** The per-player freeze-end samples are not stored, so the sums cannot
+  become metrics without a new fact. Item 17's fold move does not apply.
+- **Q10 (bots in F2): decided, humans only.** Builtin convention 2. Bots have no
+  `round_player_sides` rows; the three bot `player_stats` rows are excluded.
+
+### Product questions for the owner
+
+1. **`money_spent_total` (Q3).** Keep it as the engine's final cumulative counter
+   (a fact), or redefine it as the sum of per-round spend (the values will differ
+   from the snapshot on 8 of 73 rows)?
+2. **Two damage bases (Q7).** `total_damage` is HP-capped and `dmg` is uncapped,
+   so the metrics will disagree by design. Is that acceptable, or should one
+   basis be chosen everywhere?
