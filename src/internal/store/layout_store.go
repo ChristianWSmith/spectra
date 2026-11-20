@@ -1,11 +1,16 @@
 package store
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // Storage for user components and layout placements (`components` and
 // `layout_placements` in the baseline schema.sql). Builtin components are
-// code, never rows. This file holds only the column lists and the one read
-// the missing-component contract needs; the components API owns the writers.
+// code, never rows. This file holds the column lists, the placement read the
+// missing-component contract needs, and the placement writers (replace one
+// surface's rows, reset one surface).
 
 // componentCols is the components column list in scan order (every column
 // except id), pinned to the DDL by TestColumnListConstsMatchSchema.
@@ -53,4 +58,90 @@ func (s *Store) ListPlacements(surface string, isBuiltin func(string) bool) ([]P
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// PlacementRow is one layout_placements row as written: the position is
+// its index in the slice SetPlacements is given, so a surface's rows are
+// always dense and ordered. Props is JSON text (an object); empty means
+// "{}".
+type PlacementRow struct {
+	Component string
+	Props     string
+	Hidden    bool
+}
+
+// SetPlacements replaces one surface's rows with rows, in one transaction:
+// the surface's old rows are deleted and the new ones inserted, and no
+// other surface is touched. It refuses an empty surface, an empty rows
+// slice (absence means the builtin, so an empty layout is written as a
+// reset, never as zero rows), a row with no component, and props that are
+// not a JSON object. A component that names nothing known is stored as
+// given: a dangling reference is reported at read time, never refused.
+func (s *Store) SetPlacements(surface string, rows []PlacementRow) error {
+	surface = scrub(surface)
+	if surface == "" {
+		return fmt.Errorf("a placement needs a surface")
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("a surface with no placements is reset, not written empty")
+	}
+	for i, r := range rows {
+		if strings.TrimSpace(r.Component) == "" {
+			return fmt.Errorf("placement %d needs a component", i)
+		}
+		if err := checkPlacementProps(r.Props); err != nil {
+			return fmt.Errorf("placement %d: %w", i, err)
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("couldn't save the layout: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM layout_placements WHERE surface = ?`, surface); err != nil {
+		return fmt.Errorf("couldn't save the layout: %w", err)
+	}
+	for i, r := range rows {
+		props := r.Props
+		if strings.TrimSpace(props) == "" {
+			props = "{}"
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO layout_placements (`+layoutPlacementCols+`) VALUES (?, ?, ?, ?, ?)`,
+			surface, i, r.Component, props, b2i(r.Hidden),
+		); err != nil {
+			return fmt.Errorf("couldn't save the layout: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("couldn't save the layout: %w", err)
+	}
+	return nil
+}
+
+// ResetPlacements deletes every placement on one surface, so the surface
+// renders its builtin again. Resetting a surface with no rows is not an
+// error; other surfaces are untouched.
+func (s *Store) ResetPlacements(surface string) error {
+	surface = scrub(surface)
+	if surface == "" {
+		return fmt.Errorf("a placement needs a surface")
+	}
+	if _, err := s.db.Exec(`DELETE FROM layout_placements WHERE surface = ?`, surface); err != nil {
+		return fmt.Errorf("couldn't reset the layout: %w", err)
+	}
+	return nil
+}
+
+// checkPlacementProps accepts an empty string (stored as "{}") or a JSON
+// object.
+func checkPlacementProps(props string) error {
+	if strings.TrimSpace(props) == "" {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(props), &obj); err != nil || obj == nil {
+		return fmt.Errorf("props must be a JSON object")
+	}
+	return nil
 }
