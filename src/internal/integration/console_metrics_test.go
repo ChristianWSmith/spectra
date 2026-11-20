@@ -64,8 +64,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 109 {
-		t.Fatalf("builtins = %d, want 109 (trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum + the M7 weapon addendum + the grammar addendum + the M7 weapon-damage flip + the view-aggregate relocation addendum — the 2026-11-17/18 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6 rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit)", len(res.Rows))
+	if len(res.Rows) != 142 {
+		t.Fatalf("builtins = %d, want 142 (109 sugar builtins + 33 raw-SQL fold seeds F2; trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum + the M7 weapon addendum + the grammar addendum + the M7 weapon-damage flip + the view-aggregate relocation addendum — the 2026-11-17/18 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6 rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit)", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -118,7 +118,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 76 match / 33
+	// The scope split is part of the seed contract: 76 match / 33 (+ 33 F2 match)
 	// profile (w13d's kda row, the plan §7 M3 combat pair, the Option A
 	// count addendum's 16 raw-count rows, the subject-axis
 	// addendum's 3 economy rows, the identity addendum's 5 M1 rows,
@@ -128,8 +128,9 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// M7 weapon addendum's 3 rows are profile — the 2026-11-17/18
 	// re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6
 	// rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit).
-	if scopes["match"] != 76 || scopes["profile"] != 33 {
-		t.Errorf("scope split = %d match / %d profile, want 76 / 33", scopes["match"], scopes["profile"])
+	// + 33 raw fold seeds (F2), all match scope.
+	if scopes["match"] != 109 || scopes["profile"] != 33 {
+		t.Errorf("scope split = %d match / %d profile, want 109 / 33", scopes["match"], scopes["profile"])
 	}
 }
 
