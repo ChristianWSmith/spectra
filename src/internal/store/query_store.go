@@ -144,12 +144,34 @@ func (s *Store) RunReadOnly(q string, args []any, limit, timeoutMS int) (ROResul
 	if timeoutMS <= 0 {
 		timeoutMS = DefaultTimeoutMS
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMS)*time.Millisecond)
+	defer cancel()
+	return s.runRO(ctx, q, args, limit, timeoutMS)
+}
+
+// ReadUnbounded validates and executes one statement on the same
+// read-only connection as RunReadOnly (layers 1–2), with NO row cap and
+// NO timeout: the user-component read path (`query(sql)` in the component
+// read API — dogfood/04-COMPONENTS.md §3: "the same read-only connection
+// as the console, with no timeout, and no row cap"). Truncated is never
+// set. The table allowlist that limits component reads to the
+// metric-readable tables is not applied here yet; it lands with the
+// metric save gate and must be enforced on this path too.
+func (s *Store) ReadUnbounded(q string, args []any) (ROResult, error) {
+	if err := ValidateReadOnlySQL(q); err != nil {
+		return ROResult{}, err
+	}
+	return s.runRO(context.Background(), q, args, 0, 0)
+}
+
+// runRO is the one execution body behind RunReadOnly and ReadUnbounded:
+// limit ≤0 means no row cap; timeoutMS only words the deadline error and
+// is 0 when ctx carries no deadline. The statement is already validated.
+func (s *Store) runRO(ctx context.Context, q string, args []any, limit, timeoutMS int) (ROResult, error) {
 	db, err := s.roDB()
 	if err != nil {
 		return ROResult{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMS)*time.Millisecond)
-	defer cancel()
 	start := time.Now()
 	elapsed := func() int64 { return time.Since(start).Milliseconds() }
 
@@ -168,7 +190,7 @@ func (s *Store) RunReadOnly(q string, args []any, limit, timeoutMS int) (ROResul
 		if cerr := ctx.Err(); cerr != nil {
 			return ROResult{MS: elapsed()}, timeoutErr(cerr, timeoutMS)
 		}
-		if len(out.Rows) >= limit {
+		if limit > 0 && len(out.Rows) >= limit {
 			out.Truncated = true // one row beyond the cap was fetched and discarded
 			break
 		}
