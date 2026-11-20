@@ -380,6 +380,10 @@ aggregates, and the raw default scoreboard sort (the latter with C5, or with
 C4 if C5 is skipped). Prove zero readers before each delete.
 - **Check:** no non-test reader remains; `go vet` and `golangci-lint` green.
 
+**Owner decision (2026-11-20):** `GetSpatialSeries` and
+`internal/spatial` are deleted (no UI consumer; its sidecar series cannot be
+expressed over `player_ticks`, which carries no positions).
+
 ## 6. The wipe, and the gate
 
 Schema changes gathered by the waves:

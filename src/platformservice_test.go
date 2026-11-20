@@ -12,11 +12,9 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
-	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/plugin"
-	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -143,54 +141,6 @@ func TestGetProvenanceAndEntitySummary(t *testing.T) {
 	}
 	if !strings.Contains(es.Notes, "descoped") {
 		t.Fatalf("entity notes missing descoped text: %q", es.Notes)
-	}
-}
-
-func TestGetSpatialSeries(t *testing.T) {
-	useTempXDG(t)
-	st, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer func() { _ = st.Close() }()
-	id := seedPlatformMatch(t, st)
-	svc := &PlatformService{st: st}
-
-	// Synthetic sidecar under the temp XDG match dir: 2 CT 10 units apart,
-	// 2 T 10 units apart, 100 frames @ tick = frame index.
-	dir := filepath.Join(data.MatchesDir(), "1")
-	w, err := sidecar.NewWriter(dir, 64)
-	if err != nil {
-		t.Fatalf("NewWriter: %v", err)
-	}
-	for i := 0; i < 100; i++ {
-		players := []extract.PositionPlayer{
-			{SteamID: 1, X: 0, Y: 0}, {SteamID: 2, X: 10, Y: 0},
-			{SteamID: 3, X: 0, Y: 100}, {SteamID: 4, X: 0, Y: 110},
-		}
-		if err := w.AddFrame(int32(i), players); err != nil {
-			t.Fatalf("AddFrame: %v", err)
-		}
-	}
-	if _, err := w.Close(64); err != nil {
-		t.Fatalf("Close sidecar: %v", err)
-	}
-
-	sp, err := svc.GetSpatialSeries(id, "spacing", 1)
-	if err != nil {
-		t.Fatalf("GetSpatialSeries(spacing): %v", err)
-	}
-	if sp.Kind != "spacing" || sp.Buckets != 1 || sp.ToTick != 1280 {
-		t.Fatalf("spacing header mismatch: %+v", sp)
-	}
-	if sp.Values[0] != 10 {
-		t.Fatalf("spacing = %v, want 10", sp.Values[0])
-	}
-	if sp.MS < 0 {
-		t.Fatalf("ms not measured: %+v", sp)
-	}
-	if _, err := svc.GetSpatialSeries(id, "diagonal", 1); err == nil {
-		t.Fatal("unknown kind succeeded")
 	}
 }
 

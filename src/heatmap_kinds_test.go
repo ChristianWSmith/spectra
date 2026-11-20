@@ -746,9 +746,8 @@ func TestHeatmapEventBandUnknownZ(t *testing.T) {
 // TestHeatmapPresenceBandFilter pins the sidecar (presence) side of the
 // band: BOTH passes honor it — the raster's bounds come from the kept
 // samples only (the raster is bounds-derived) and no dropped sample
-// deposits dwell. Sidecar seeding mirrors TestGetSpatialSeries
-// (platformservice_test.go); extract.PositionPlayer carries the Z the
-// band reads.
+// deposits dwell. Sidecar seeding writes extract.PositionPlayer,
+// which carries the Z the band reads.
 func TestHeatmapPresenceBandFilter(t *testing.T) {
 	useTempXDG(t)
 	st, id := seedHeatmapMatch(t, nil)

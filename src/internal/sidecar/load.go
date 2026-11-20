@@ -15,7 +15,7 @@ type Stream struct {
 // Load opens the sidecar in dir and returns the header plus every decoded
 // frame in [fromFrame, toFrame) — the Open → walk → DecodeFrames boilerplate
 // every whole-stream consumer repeats (the presence heatmap in the root
-// services, internal/spatial's series). 0, 0 means the whole match. The
+// services). 0, 0 means the whole match. The
 // error names the failing stage (open/read/decode); a missing sidecar is
 // ErrNoSidecar either way (errors.Is works through the wrap).
 //

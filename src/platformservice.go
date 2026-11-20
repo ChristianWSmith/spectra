@@ -4,20 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/plugin"
 	"github.com/ChristianWSmith/spectra/internal/report"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
-	"github.com/ChristianWSmith/spectra/internal/spatial"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -63,17 +60,6 @@ type EntitySummary struct {
 	GenericTypes  int    `json:"genericTypes"`
 	GenericTotal  int    `json:"genericTotal"`
 	Notes         string `json:"notes"`
-}
-
-// SpatialSeries is one recomputable sidecar series (M5 §2.4 subset that
-// needs no region polygons): values in world units over time buckets.
-type SpatialSeries struct {
-	Kind     string    `json:"kind"` // spacing|spread
-	Buckets  int       `json:"buckets"`
-	FromTick int       `json:"fromTick"`
-	ToTick   int       `json:"toTick"`
-	Values   []float64 `json:"values"` // same length; -1 = no data (team dead / warmup)
-	MS       int64     `json:"ms"`
 }
 
 // PluginManifest is the spectra-plugin.json contract (M5 §2.7 v1:
@@ -246,43 +232,6 @@ func (s *PlatformService) GetEntitySummary(matchID int64) (EntitySummary, error)
 		GenericTypes:  len(hist),
 		GenericTotal:  total,
 		Notes:         "entity schema browser descoped (parse-time capture)",
-	}, nil
-}
-
-// --- Spatial series ----------------------------------------------------------
-
-// GetSpatialSeries computes a sidecar-derived series (kind spacing|spread)
-// over time buckets (≤0 → 120). Spacing = average distance between alive
-// teammates; spread = mean pairwise distance across all alive players —
-// see internal/spatial for the exact per-frame definitions. Values are
-// world units; -1 buckets carry no valid sample.
-func (s *PlatformService) GetSpatialSeries(matchID int64, kind string, buckets int) (SpatialSeries, error) {
-	m, err := s.st.GetMatch(matchID)
-	if err != nil {
-		return SpatialSeries{}, err
-	}
-	refs, err := s.st.GetPlayerRefs(matchID)
-	if err != nil {
-		return SpatialSeries{}, err
-	}
-	sides := make(map[uint64]string, len(refs))
-	for _, r := range refs {
-		if id, err := strconv.ParseUint(r.SteamID, 10, 64); err == nil {
-			sides[id] = r.Side
-		}
-	}
-	t0 := time.Now()
-	ser, err := spatial.Compute(
-		filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)),
-		kind, buckets, m.DurationTicks, sides,
-	)
-	if err != nil {
-		return SpatialSeries{}, fmt.Errorf("couldn't compute the spatial series: %w", err)
-	}
-	return SpatialSeries{
-		Kind: ser.Kind, Buckets: ser.Buckets, FromTick: ser.FromTick,
-		ToTick: ser.ToTick, Values: ser.Values,
-		MS: time.Since(t0).Milliseconds(),
 	}, nil
 }
 
