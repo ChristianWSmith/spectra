@@ -89,6 +89,11 @@ Settled (owner, 2026-11-20 unless noted):
     `bomb_defuses`, `money_spent_total`, `kills_by_weapon`, `shots`, `hits`,
     `rounds_played`, `adr` and `hs_pct` (derived), and the round-level folds
     (`03-QUERIES.md` §10).
+    **Amended by the F1 audit (`06-FOLD-AUDIT.md`, decisions 2026-11-20):**
+    `entry_kills`, `entry_deaths`, `first_kill`/`first_death` and `best_streak`
+    are sequence interpretations and move to detectors (item 21), not folds.
+    `money_spent_total` and `total_damage`'s basis are open owner questions.
+    The three round-economy sum columns stay ingest facts.
 18. **Game-emulation stays at ingest (decided):** `mvps` and `score` are
     engine-internal decisions, so they stay as stamps under the emulation
     criterion. `capped_dmg` also stays.
