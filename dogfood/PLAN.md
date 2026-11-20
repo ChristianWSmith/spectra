@@ -293,6 +293,10 @@ builder and storing compiled JavaScript, and record why.
 - **Check:** a written result with the test component, the rewrite used, and
   the outcome of each of the four checks.
 - **Deps:** none. Can run in parallel with A and B.
+- **Result (2026-11-20): passed under Node + jsdom** with Svelte 5.57.3. All
+  four checks pass; the event-handler and async gaps are confirmed. Details in
+  `04 §5`. The WebKitGTK check is not yet run. Scratch harness:
+  `~/Programming/spectra-verify/c0-spike/` (outside the repo).
 
 **C2 · Runtime.** The read API (`04 §3`), the `<svelte:boundary>` wrapper with
 a dismissible failure frame (`04 §4`), the event and async wrapper, the lazy

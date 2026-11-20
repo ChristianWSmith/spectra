@@ -1,8 +1,8 @@
 # 04 · COMPONENTS — Svelte components, stored in the database, editable by duplication
 
 **Status:** design, updated 2026-11-20. Locked decisions are marked
-**Decided**. One item is still to be verified: the runtime import rewrite (§5),
-which a spike must confirm before the component wave relies on it.
+**Decided**. The runtime import rewrite (§5) passed its spike (C0, 2026-11-20)
+under Node and jsdom; the WebKitGTK check is still owed.
 
 ---
 
@@ -99,7 +99,7 @@ version (5.57.3).
 
 Every error shown is dismissible in place (PRODUCT.md **Defaults**).
 
-## 5. Runtime compilation (D-1, decided; spike pending)
+## 5. Runtime compilation (D-1, decided; spike passed 2026-11-20)
 
 **Decided approach:** user Svelte source is compiled in the webview, lazily, on
 first use. The compiler is not loaded at launch. Compiled output is cached in
@@ -118,6 +118,35 @@ memory keyed by source hash. Only the source is stored.
 If the import rewrite fails, the fallback is compiling in the builder only and
 storing the compiled JavaScript alongside the source, which couples stored
 output to the Svelte version. The spike decides this, not the design.
+
+**Spike result (C0, 2026-11-20).** Passed in Node with jsdom 31 and Svelte
+5.57.3 (the lockfile pin). Harness in `~/Programming/spectra-verify/c0-spike/`
+(outside the repo). Not run in WebKitGTK; the webview check is still owed.
+
+- Rewrite used: the compiler emits only `import 'svelte/internal/…';` and
+  `import * as $ from 'svelte/internal/…';`. The loader turns each into a lookup
+  in one registry that holds the app's runtime instance (`svelte/internal/client`,
+  `disclose-version`, and the `flags/legacy` and `flags/async` modules, which
+  set runtime flags when evaluated). It replaces `export default function` with
+  a returned value and evaluates the result with `new Function`. The registry
+  must contain every `svelte/internal/*` specifier the compiler emits. The spike
+  found `flags/legacy` in addition to the two above.
+- Shared instance: user and wrapper modules mount through the same runtime, so
+  reactivity works (`0` → `1` on click).
+- Scoped style: the hashed rule is injected, the user element carries the hash,
+  and the host element does not. jsdom's computed colour is `rgb(1, 2, 3)`.
+- `<svelte:boundary>`: catches a render error and shows its `failed` snippet;
+  dismiss re-renders the component.
+- Boundary also catches errors thrown inside `$effect`.
+- Gap confirmed: an error in an event handler, or in async code the component
+  started (`setTimeout`), is not caught by the boundary. The read API and event
+  wrapper must route those (C2).
+- Save-time syntax check: `compile()` throws a parse error with `start.line`.
+- Side probe: a `data:` URL that imports a bare runtime specifier fails to
+  resolve in Node (`ERR_UNSUPPORTED_RESOLVE_REQUEST`). That is why the registry
+  rewrite is needed. The WebKit behaviour is assumed, not measured.
+- Svelte's server build resolves for `svelte` under plain Node. The spike runs
+  with `--conditions=browser` so the client build is used.
 
 No Content Security Policy is set in `index.html`, so runtime evaluation is not
 blocked by policy. The Wails configuration was not checked for one.
