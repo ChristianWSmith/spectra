@@ -2,7 +2,7 @@
 // (lib/componentruntime/): a broken component shows its own dismissible
 // frame while the rest of the surface keeps rendering; render, $effect,
 // event-handler, guarded async and read-API failures all land in the
-// frame; a syntax error shows its line; the compiler is not loaded until
+// frame; a render failure retries in place; a syntax error shows its line; the compiler is not loaded until
 // a user source mounts.
 //
 // Run (from frontend/):  node test/component-frame.dom.mjs
@@ -101,9 +101,9 @@ const SOURCES = {
   <p class="ok-count">{n}</p>
   <button class="ok-inc" onclick={() => n++}>+</button>`,
   render: `<script>
-    throw new Error('render boom');
+    if (globalThis.__renderBoom) throw new Error('render boom');
   </script>
-  <p>never</p>`,
+  <p class="render-ok">recovered</p>`,
   effect: `<script>
     $effect(() => { throw new Error('effect boom'); });
   </script>
@@ -141,7 +141,10 @@ const settle = async () => {
 const slot = (name) => document.querySelector(`[data-slot="${name}"]`);
 const alertText = (name) => {
   const a = slot(name) && slot(name).querySelector('[role="alert"]');
-  return a ? a.textContent.trim() : '';
+  if (!a) return '';
+  const copy = a.cloneNode(true); // the message only, never the buttons' labels
+  for (const b of copy.querySelectorAll('button')) b.remove();
+  return copy.textContent.trim();
 };
 const failedCopy = (err) => S.fill(S.components.frameFailed, { err });
 const dismiss = (name) => slot(name).querySelector(`[role="alert"] button[aria-label="${S.components.frameDismiss}"]`);
@@ -177,6 +180,7 @@ first.remove();
 console.log('B. user sources: each failure stays in its own frame');
 const target = document.createElement('div');
 document.body.appendChild(target);
+globalThis.__renderBoom = true;
 mount(Harness, { target, props: { withUser: true, sources: SOURCES, builtin: Builtin, reads } });
 await settle();
 check('compiler requested once a user source mounts', runtime.compilerRequested() === true);
@@ -210,8 +214,19 @@ await settle();
 check('a refused query → frame banner', alertText('read') === failedCopy('no such table: nope'), alertText('read'));
 check('other frames untouched by these errors', alertText('ok') === '' && alertText('builtin') === '');
 
-console.log('D. every frame dismisses in place');
-for (const name of ['render', 'effect', 'syntax', 'async', 'read']) {
+console.log('D. a render failure retries in place');
+const retry = slot('render').querySelector(`[role="alert"] button:not([aria-label])`);
+check('render frame offers Try again', retry?.textContent.trim() === S.components.frameRetry, retry?.textContent);
+click(retry);
+await settle();
+check('Try again while still failing shows the frame again', alertText('render') === failedCopy('render boom'), alertText('render'));
+globalThis.__renderBoom = false;
+click(slot('render').querySelector(`[role="alert"] button:not([aria-label])`));
+await settle();
+check('Try again after the cause clears re-renders the component', alertText('render') === '' && !!slot('render').querySelector('.render-ok'), slot('render').innerHTML);
+
+console.log('E. every frame dismisses in place');
+for (const name of ['effect', 'syntax', 'async', 'read']) {
   click(dismiss(name));
   flushSync();
   check(`${name} frame dismissed`, alertText(name) === '');

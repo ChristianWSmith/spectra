@@ -75,13 +75,16 @@ function toError(e) {
 }
 
 // storedRead is the ONE mapping from reserved binds to today's stored-value
-// reads: match_id → the match read; no match_id → the career bucket (the
-// whole bucket, so sibling coverage is honest), narrowed by steam_id below.
-// Round grain has no stored read yet and is refused, never guessed.
+// reads: match_id → the match read; steam_id alone → the career bucket
+// (the whole bucket, so sibling coverage is honest), narrowed by steam_id
+// below. Round grain and unbound (library-wide) reads have no stored read
+// yet and are refused — never served another scope's values (builtin
+// convention 3: no fabricated values).
 function storedRead(reads, def, binds) {
   if (binds.round != null) throw new Error(S.components.metricRoundUnavailable);
   if (binds.match_id != null) return reads.getMetricValuesForMatch(Number(binds.match_id), [def.id]);
-  return reads.getMetricValuesForPlayer('', [def.id]);
+  if (binds.steam_id != null && binds.steam_id !== '') return reads.getMetricValuesForPlayer('', [def.id]);
+  throw new Error(S.components.metricLibraryUnavailable);
 }
 
 /**

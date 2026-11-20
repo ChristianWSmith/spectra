@@ -103,6 +103,14 @@ test('an unknown metric rejects and is reported to the frame once', async () => 
   assert.equal(reported.length, 1);
 });
 
+test('an unbound (library-wide) read is refused, never served career values', async () => {
+  const { api, calls, reported } = harness();
+  await assert.rejects(api.metric('adr'), { message: S.components.metricLibraryUnavailable });
+  await assert.rejects(api.metric('adr', {}), { message: S.components.metricLibraryUnavailable });
+  assert.deepEqual(calls, [], 'no stored read was issued');
+  assert.equal(reported.length, 2);
+});
+
 test('a round-grain read is refused until round values are stored', async () => {
   const { api, reported } = harness();
   await assert.rejects(api.metric('adr', { match_id: 5, round: 3 }), { message: S.components.metricRoundUnavailable });

@@ -9,6 +9,8 @@ export const components = {
   // The failure frame (render/effect failures, handler and async errors).
   frameFailed: 'This component failed: {err}',
   frameDismiss: 'Dismiss component error',
+  // Render failures only: re-render the component in place.
+  frameRetry: 'Try again',
   frameLoading: 'Loading component…',
   // A placement that names a component which no longer exists.
   frameMissing: 'This component is missing: {name}',
@@ -19,4 +21,5 @@ export const components = {
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',
   metricRoundUnavailable: 'Per-round metric values are not available yet',
+  metricLibraryUnavailable: 'Library-wide metric values are not available yet',
 };
