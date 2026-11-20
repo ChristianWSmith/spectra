@@ -247,22 +247,123 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `mode=ro` + `query_only` connection (timeout + row cap); the write
   handle is never reachable from the console. Keep that layering when
   touching either side.
-- **Metrics carry their formula and their N:** PRODUCT.md **Honest
-  metrics** is THE statement — never restate it here. Implementation
-  side: the metrics system's fallback `Formula: <expr>` is how a metric
-  documents itself (see the onboarding rule below).
-- **New metrics are onboarded through the metrics system, never
-  hand-rolled in Go (owner, 2026-11-14):** adding a stat/metric = a
-  seeded built-in (or saved user metric) with an expression. A hardcoded
-  calculation in a service, store query, or view duplicates what the
-  metrics system already provides — storage with the formula/N honesty
-  contract (PRODUCT.md **Honest metrics**), ordering, the state vocabulary, the Builder —
-  and would only need migrating later (adoption means migration).
-  Provenance still decides what is NOT a metric: raw event reads stay in
-  `internal/extract`, analysis-rule stored outputs stay in
-  `internal/analytics` Compute (canonical row below), and the narrow
-  view-level-aggregate exception (below) still applies — stats *derived
-  from* those inputs become expressions.
+- **Migration in progress (2026-11-20):** the metrics grammar, the
+  Go-side expression compiler, and the layout pref model are being
+  replaced by raw-SQL metrics and database-stored raw components. Until
+  `dogfood/PLAN.md` completes, the code still implements the old
+  grammar; the rules in this file describe the target and say so where
+  the code lags. Do not extend the grammar or add pref keys for layouts.
+- **Metric pipeline (target):**
+  - *Save gate.* One gate serves the Builder's live check, save, preview,
+    and sweep: exactly one statement; it is read-only (the console's
+    `ValidateReadOnlySQL` layering, without the timeout or row cap);
+    `CREATE VIEW` and every write verb are refused; every table read must
+    be on the metric-readable allowlist, and any other table refuses the
+    save. Read-only means the `select|with` leading keyword set, as the
+    metric path needs no more. The allowlist is one explicit list that
+    classifies every schema table as readable or not, pinned by a test, so
+    a new table cannot become readable by accident. The list lives in
+    `dogfood/03-QUERIES.md` §2 until the code exists.
+  - *Touched tables.* The gate stores the set of physical tables a metric
+    reads (`metrics` furniture, derived from the SQL at save, never
+    versioned). That set drives freshness.
+  - *Execution.* Metric SQL runs on the read-only connection, including
+    during sweeps, so a slow metric never holds the single writer. There
+    is no timeout and no row cap; a running metric is cancellable from
+    the UI.
+  - *Scope and storage.* A metric's scope is the set of reserved binds its
+    SQL references: `:match_id` (match grain), `:steam_id` (career grain),
+    and `:round` with `:match_id` (round grain). A metric with no binds is
+    library-wide. The engine fans a change out to the affected values, taken
+    from fact tables (the players and rounds in a match). Each run replaces
+    the stored rows for its own bound values, and a library-wide run replaces
+    the whole result. The engine never reads an output column. The full
+    decision is `dogfood/03-QUERIES.md` §5.
+  - *Freshness.* A metric is behind when a table it touches changes, or
+    when an analysis rule it depends on changes (see **Analysis-rule
+    derived values**). Freshness carries scope: a change at match M and
+    player P marks behind only the dependents bound to those values. Editing
+    an analysis rule value fires that rule's builtin stub, which recalculates
+    its dependents. A code change to analysis bumps the analysis version, and
+    only that version change marks metrics behind broadly.
+  - *Career metrics* are built from stored per-match components through
+    `metric('…')`, and combine them as ratios of sums (career ADR is total
+    damage over total rounds, never a mean of per-match ADRs). Per-match
+    metrics store additive components, and the metric that combines them
+    computes the ratio.
+- **User metrics (power surface, PRODUCT.md **Power surfaces**):** user
+  SQL has no bot filter, no sample-size guarantee, no timeout, and no row
+  cap. Nothing is injected into it. Users may read the metric-readable
+  tables on the allowlist, which include `players`. Denied: `sqlite_*`,
+  `jobs`, `query_history`, `saved_queries`, `saved_filters`,
+  `report_templates`, `plugins`, `analysis_config`, `components`,
+  `layout_placements`, `metrics`, `metric_values`, `metric_deps`,
+  `voice_presence` (voice stays in the sidecar). Metrics reach other metrics
+  only through `metric('…')`.
+- **Builtin conventions (rigid; enforced by the builtin test suite, not
+  by a compiler):**
+  1. Each builtin's canonical expression is its SQL. Ports from the old
+     grammar take the compiled SQL as-is, with the bot predicate added in
+     the same canonical fragment every port uses.
+  2. Every roster, aggregate, or selection read excludes bots: the SQL
+     form of `store.HumanOnly` / `HumanOnlyBySteamID` is the one fragment
+     a builtin uses. Event-shaped reads keep bot names (PRODUCT.md
+     **Event surfaces record what happened**).
+  3. No fabricated values. An absent row, an empty pool, or an unresolved
+     identity shows a dash. Zero appears only when the query produced a
+     zero.
+  4. Round-grain statistics are metrics keyed by round. Round records are
+     shown as records.
+  5. Every builtin is verified against the pre-migration snapshot in
+     `~/Programming/spectra-home` (see `dogfood/PLAN.md`). A value that
+     differs from the snapshot is a bug, not an accepted change. Copy the
+     snapshot before opening it.
+  6. A builtin's touched tables are stored at save like any metric, and
+     every analysis-rule stub a builtin depends on is declared.
+- **Components (power surface; target):** a component is Svelte 5 source
+  stored in the database. Builtin components are Svelte source shipped
+  with the app. User code and builtins speak the same language. User
+  source is compiled in the webview, lazily, on first use, with an
+  in-memory cache keyed by source hash; the Svelte compiler is not loaded
+  at launch. The compiled module's runtime imports are rewritten to the
+  app's own Svelte runtime, a step verified by a spike before the
+  component wave relies on it. Components read metrics through the shared
+  read services, and read tables only through the read-only connection,
+  limited to the same allowlist as metrics. Components are created and previewed
+  in the **Component Builder** tab, a top-level tab alongside the Metric
+  Builder and Reports Builder. Each mounted component runs inside its
+  own error boundary: a failure shows a dismissible error inside that
+  component's frame and nowhere else. No sandbox: user components run in
+  the webview with the same bindings as the app.
+- **Duplicate to edit:** a user cannot edit a builtin in place. They
+  duplicate it into a user component, edit the copy, and place it. A copy
+  does not receive later upstream fixes to its builtin; that is accepted.
+- **Use as my view:** a user may replace the Match view's area below the
+  header (the tab bar and everything under it) or an individual player's
+  Profile view with one of their components. The header, warnings, and
+  round strip stay hardcoded. The profiles list stays hardcoded. Reset
+  removes the replacement and restores the builtin view.
+- **Formatting belongs to components.** A metric carries no display format.
+  Percent, millisecond, and money formatting live in the component that
+  shows the value.
+- **View computation (owner, 2026-11-20):** views may compute for
+  presentation, from rows they have already fetched. The earlier
+  exception list and relocation rule are retired. A statistic another
+  surface needs is a metric (see **Shared statistics** above).
+- **Metrics are raw SQL, and stored values stay fresh:** a metric is a
+  SQL expression, builtin or user-authored. Its stored expression is its
+  formula and is shown wherever the metric is shown. PRODUCT.md
+  **Freshness** is the statement; the pipeline is in **Metric pipeline**
+  below. Do not reintroduce a sample-size (N) field, a sugar grammar, or
+  a second expression language.
+- **Shared statistics are metrics (owner, 2026-11-14, restated
+  2026-11-20):** a statistic that more than one surface shows is a
+  metric — stored, freshness-tracked, and shown through the metrics
+  system's ordering, state vocabulary, and Builder — never a copy in a
+  service, store query, or view. Raw event reads stay in
+  `internal/extract`, and analysis-rule stored outputs stay in
+  `internal/analytics` Compute (canonical rows below). Views may compute
+  for presentation (see **View computation** below).
 - **`PRD §X.Y` citations in comments are historical:** the product spec
   is retrievable from git history only (it left the tree with the
   reference docs); leave the comments as-is — when a citation encodes a
@@ -340,16 +441,16 @@ Canonical homes (extend these, don't fork them):
 | Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (Progress presentation); never restate it in this file |
 | Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |
 | Library-wide index coverage | `internal/store/schema.sql` — the one baseline index block; new library-wide (`steam_id`/`kind`-leading, pending-job) indexes go in the Tier-1 block with their rationale comment, never beside their table alone |
-| Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
+| Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter. Builtin metric SQL uses the same predicate as its one SQL fragment (Builtin conventions, rule 2); user metric SQL is not filtered |
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
-| Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12); a rules change bumps `analyzed_rule_version` → behind set → `RecomputeAll` |
-| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `subject`/`partition` written at save, resolved by `internal/metrics` compile — a DRAFT's addressing is `metricservice.draftAddress`, its own row below) |
+| Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12). Editing a rule value fires that rule's builtin metric stub, which recalculates its dependents only; a code change to analysis bumps `analyzed_rule_version` → behind set → `RecomputeAll` (the broad path, reserved for code changes) |
+| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `expr` is raw SQL; result storage is by bound scope, `dogfood/03-QUERIES.md` §5; touched tables are derived at save — see **Metric pipeline** in the conventions) |
 | Metric ordering (columns, cards, appendix) | `frontend/src/lib/metricorder.js` — THE sequence: kvstore pref keys `metric_order_match`/`metric_order_profile` plus the VISIBILITY twin `metric_hidden_match`/`metric_hidden_profile` (registered in `prefs.go`; frontend-written, Go never consumes), the OVERVIEW family `metric_order_overview` + `metric_pins_overview` (the Match-overview card list's order + selection — its own table, written beside its order key) and the `metric_economy` placement pref (its own row below) + `resolveOrder` over `FIXED_RANKS` (the fixed stats are '@'-namespaced sequence entries with negative default ranks — no code prefix, no version marker; the fixed block is Name/Team/Score since the 2026-11-18 unification and the profile block is empty), `DEFAULT_RANKS` and `DEFAULT_PINS` (per scope: match, profile, overview, economy), `composedSequence` as THE merged fixed+metric entry list (ordering dialog, Match scoreboard, profile card block) and `inSequence`/`pinnedInSequence` as its metric-only twins (Reports appendix, trend picker) — pins SELECT metrics, the sequence orders everything (the pins array's own order orders nothing), and a hidden fixed stat leaves only the VIEW (never the dialog's rows, never Reports' addable set; the scoreboard's Name column is the one unhideable entry, `hideable()`); `RAW_FIELDS`/`rawItems` derive from the fixed block's `field`s — the appendix's recorded-value offer is exactly `raw:score` — and the scoreboard columns, the profile career rows, the Reports appendix list AND its exported document all compose through it, never a view-local sort |
 | Metric placement (Economy tab) | `frontend/src/lib/metricorder.js` `ECONOMY_KEY` (`metric_economy`) + `readEconomyPins`/`writeEconomyPins`/`resetEconomyPins` — THE placement-only idiom: kvstore (registered in `prefs.go`; frontend-written, Go never consumes), ABSENT ⇒ `DEFAULT_ECONOMY` resolved by name, PRESENT (even `[]`) ⇒ the stored selection verbatim (dated caveat: a present key does not pick up later-added defaults — pre-release, no migration). A toggle moves WHERE a match-scope metric's stat shows — the Economy tab vs its match-overview card (`overviewDefs`' economy carve-out threads through every overview reader) — and never touches pin state; **Reset order** restores the shipped set |
-| Draft metric addressing | `metricservice.go` `draftAddress` — THE one spelling of a draft's (subject, partition, scope) → engine address, shared by `ValidateExpr`'s live check and `PreviewMetric`'s ad-hoc preview leg; no call site re-derives a draft's addressing |
-| Round-grain vs match-grain placement | `frontend/src/lib/views/Economy.svelte`'s per-round-deaths comment — THE criterion: ROUND-grain values come from round records (`player_round_stats` via the one `getPlayerRounds` fetch), MATCH-grain statistics come from metrics (the metrics system has no round subject); a side with no player rows in a round is the dash, never a guessed 0. The grammar's own round-grain legality for `next()` stays `internal/metrics` `whitelist.go` `roundGrain` |
+| Metric save gate | `metricservice.go` — THE one validation (one read-only statement, no `CREATE VIEW`, every table on the metric-readable allowlist, touched tables derived), shared by the Builder's live check, save, preview and sweep; no call site re-validates |
+| Round-grain statistics | Round-grain statistics are metrics keyed by round (owner ruling 2026-11-18). Round records (`player_round_stats` read through the one `getPlayerRounds` fetch) are displayed as records; a side with no player rows in a round shows a dash, never a guessed 0 |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
@@ -360,7 +461,7 @@ Canonical homes (extend these, don't fork them):
   retired read-time fill `EconomyRows` survives only as the oracle in
   `internal/analytics/eco_equivalence_test.go`);
   the combat damage conversions live as the `dmg_no_kill` /
-  `kill_conversion` builtin seeds over the EXISTS construct (owner,
+  `kill_conversion` builtin seeds (raw SQL after the SQL port; owner,
   2026-11-17); the retired `store.GetCombatStats` SQL survives only as
   the reference oracle in `internal/metrics/combat_equivalence_test.go`;
   counted
@@ -379,7 +480,9 @@ Canonical homes (extend these, don't fork them):
   the canonical implementation instead.
 - **Bot exclusion lives in one place:** `store.HumanOnly` /
   `store.HumanOnlyBySteamID` (Go) and `frontend/src/lib/players.js`
-  (`isHuman`/`listedPlayers`, frontend twin) are THE filter; every
+  (`isHuman`/`listedPlayers`, frontend twin) are THE filter for app
+  reads; builtin metric SQL carries the same predicate as its one fragment.
+  User metric SQL is not filtered (accepted footgun). Every
   roster/aggregate/selection read routes through it. Event-shaped reads
   (round MVP/first-blood rows, kill-feed attacker/victim cells, chat,
   engagements) deliberately keep bot names — they record what happened
@@ -571,14 +674,11 @@ Canonical homes (extend these, don't fork them):
   `frontend/src/lib/strings-audit.test.js`. Adopted 2026-11-15 together with
   its sweep — statement, sweep and pin ship as one change (see "Adopting
   principles (meta)" above).
-- **View-level aggregates are allowed** only when they are pure functions
-  over already-fetched rows, the formula is documented in the card's title
-  or tooltip, and the value is not derivable from a stored metric without
-  cost. If a view aggregate duplicates a stored metric, relocate it. The
-  closed list of numbers rendered outside PRODUCT.md's three classes
-  (**Facts, metrics and records**, ratified 2026-11-18) is THE exception
-  list — an exception is added there by the owner, never at a call site;
-  every deferred relocation has landed, so nothing on it is pending.
+- **View aggregates (owner, 2026-11-20):** views may fold rows they have
+  already fetched, for presentation. The formula should be stated in the
+  card's title or tooltip. The former exception list and relocation rule
+  are retired; the shared-statistics rule above is the only constraint on
+  where a statistic lives.
 - **Probing the install goes through `cs2find`** (`cmd/cs2find` +
   `internal/mappack/devtool.go`, `make cs2find ARGS='…'`): the ONE
   read-only search/decode CLI over `pak01_dir.vpk` and the canonical
