@@ -541,6 +541,15 @@ export const NAV_ACTIONS = [
     hash: '/reportbuilder',
     active: (r) => r.name === 'reportbuilder',
   },
+  // The Component builder authors components (its own top-level route, a
+  // sibling of the two builders above — see router.js). Single-route
+  // action: no `memory` field, always enabled, like Reports builder.
+  {
+    label: 'Component builder',
+    icon: 'codicon-symbol-class',
+    hash: '/componentbuilder',
+    active: (r) => r.name === 'componentbuilder',
+  },
   { label: 'SQL console', icon: 'codicon-terminal', hash: '/sql', active: (r) => r.name === 'sql' },
   {
     label: 'Settings',

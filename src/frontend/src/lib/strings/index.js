@@ -34,6 +34,7 @@ export { utility } from './utility.js';
 export { heatmaps } from './heatmaps.js';
 export { compare } from './compare.js';
 export { components } from './components.js';
+export { componentbuilder } from './componentbuilder.js';
 
 // fill() — the ONE composition helper: substitutes `{arg}` placeholders at
 // the call site so catalog values stay plain strings. Lives here beside the

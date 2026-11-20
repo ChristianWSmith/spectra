@@ -181,3 +181,10 @@ export const SoundService = {
 };
 export const DialogService = {};
 export const KVStoreService = { Get: rec('GetPref'), Set: rec('SetPref'), Delete: rec('Delete') };
+// The Component builder's service (views/ComponentBuilder.svelte): the list,
+// the save and the delete. The builder drives them through handlers.
+export const ComponentService = {
+  ListComponents: rec('ListComponents'),
+  SaveComponent: rec('SaveComponent'),
+  DeleteComponent: rec('DeleteComponent'),
+};

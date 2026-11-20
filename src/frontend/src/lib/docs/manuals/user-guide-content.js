@@ -556,6 +556,39 @@ templates can't be edited*), but you can still read and preview them. Plugin tem
 deleted.`,
   },
   {
+    id: 'component-builder',
+    title: 'The Component builder',
+    blocks: `**Component builder** (sidebar) is where components are written. A component is a small piece
+of a view that shows figures from your matches: it reads the stored stats it asks for and shows them
+the way it is written. This view writes and checks them; **Preview** shows one running as it would
+on a match or a player you choose.
+
+The **left panel** lists the components. **Built-in** comes first: the shipped example, which
+loads read-only. Below it, **Yours** lists the components you saved. Click a row to open it in the
+editor, and **New** starts an empty one.
+
+**Built-in components can't be changed.** Open one and **Duplicate** saves a copy as yours and opens
+the copy, which you can then edit. A copy is yours alone: it does not follow later changes to the
+built-in it came from.
+
+The **editor** has the **Name** and the **Source** of the component. The source is the component's
+text: what it shows and how it responds. Under the source, the check reads **Ready to save.** when the
+source is sound, or names the line that needs fixing. **Save** stays off until the check passes, and
+then it stores the component under its name. A name must be unique among yours, at most 60
+characters, and can't begin with *built-in*.
+
+**Preview** shows the component as written. **Preview with** chooses what it runs against: **A match**
+or **A player**, picked from the lists beside it. Nothing is chosen for you, so a component that reads
+a match shows its prompt until you pick one. The preview appears once the source checks out, and it
+keeps the last version that checked out while you type, so a half-finished edit never blanks it.
+
+When a component fails while it runs, its own box shows the error and the rest of the screen keeps
+working. **Try again** redraws a component whose display failed, and the box's ✕ dismisses the error.
+
+**Delete** removes one of yours. It is the red button in the editor, or the trash button on the row.
+Built-in components can't be deleted.`,
+  },
+  {
     id: 'sql-console',
     title: 'SQL console',
     blocks: `**SQL console** (sidebar) is a read-only query window over your whole library — for when you want

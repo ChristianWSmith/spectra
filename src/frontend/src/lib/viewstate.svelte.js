@@ -135,6 +135,7 @@ function scrollKey(route) {
       return `reports:${route.id || 0}`;
     case 'builder':
     case 'reportbuilder':
+    case 'componentbuilder':
     case 'sql':
     case 'profiles':
     case 'settings':

@@ -131,6 +131,8 @@ test('the shipped user guide: exact section order, every section is real content
   // 27 → 28 (2026-11-18, metrics Phase 7): the metric-language chapter
   // gained its `partitions` section (the partition option's manual
   // home).
+  // 28 → 29 (C3, components): the Component builder gained its own
+  // section beside `reports-builder`.
   assert.deepEqual(
     guide.sections.map((s) => s.id),
     [
@@ -160,13 +162,14 @@ test('the shipped user guide: exact section order, every section is real content
       'common-errors',
       'reports',
       'reports-builder',
+      'component-builder',
       'sql-console',
       'settings',
     ],
     'the TOC order the popup renders (the researched guide sections bracketing the metric chapter)',
   );
   const real = guide.sections.filter((s) => !s.placeholder);
-  assert.equal(real.length, 28, 'every section is written since the content onboarding');
+  assert.equal(real.length, 29, 'every section is written since the content onboarding');
   // The Builder `?` deep target must exist as a section (App's
   // openDocs('metric-language') composes its anchor from this id).
   assert.ok(
@@ -196,10 +199,11 @@ test('the shipped guide is exactly two tiers: majors/minors partition it, every 
   const majors = guide.sections.filter((s) => s.parent === undefined);
   const minors = guide.sections.filter((s) => s.parent !== undefined);
   // Partition: the two classes cover the set exactly, at the model's
-  // counts (14 + 14 = the 28 the order pin above lists; minors 13 → 14
-  // with the 2026-11-18 `partitions` section).
+  // counts (15 + 14 = the 29 the order pin above lists; minors 13 → 14
+  // with the 2026-11-18 `partitions` section; majors 14 → 15 with the
+  // C3 Component builder section).
   assert.equal(majors.length + minors.length, guide.sections.length, 'no section is unclassified or double-counted');
-  assert.equal(majors.length, 14, 'the 13 guide sections + Metric language');
+  assert.equal(majors.length, 15, 'the 14 guide sections + Metric language');
   assert.equal(minors.length, 14, "the metric chapter's other sections");
   // Every minor's parent exists, IS a major, precedes it in document
   // order (TOC order must stay body order — the driver's index pins
