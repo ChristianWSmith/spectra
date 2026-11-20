@@ -405,6 +405,15 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			fail(cperr.Message)
 			return
 		}
+		// A sugar row whose touched set is unknown (a plugin upsert clears
+		// it) takes its first gate pass here: the plan's own touched set,
+		// stored before the compute, so the behind predicate can read it.
+		if m.Touched == nil {
+			if err := st.SetMetricTouched(m.ID, plan.Touched); err != nil {
+				fail(err.Error())
+				return
+			}
+		}
 
 		fetched, err := st.QueryMetric(mctx, plan.SQL, plan.Args)
 		if ctx.Err() != nil {

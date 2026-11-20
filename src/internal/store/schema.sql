@@ -569,6 +569,23 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	CHECK (match_id >= 0)
 );
 
+-- Raw-SQL run records (dogfood/PLAN.md B4): one row per (metric, scope) run
+-- that completed, stamped with the versions it ran under. A run that returned
+-- zero rows leaves no metric_values row, so this table is what proves the
+-- scope was computed. Keyed like metric_values' raw scope tags; cleared with
+-- the same match/career rules (childTables, RebuildCareer) and with the
+-- metric's own rows (ClearMetricValues).
+CREATE TABLE IF NOT EXISTS metric_runs (
+	metric_id      INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+	match_id       INTEGER NOT NULL DEFAULT 0,
+	scope_steam_id TEXT    NOT NULL DEFAULT '',
+	scope_round    INTEGER NOT NULL DEFAULT 0,
+	metric_version INTEGER NOT NULL DEFAULT 0,
+	rule_version   INTEGER NOT NULL DEFAULT 0,
+	computed_at    DATETIME,
+	PRIMARY KEY (metric_id, match_id, scope_steam_id, scope_round)
+);
+
 -- Metric→metric dependencies (owner ruling 6): extracted from expr at save
 -- (the metric('name') ref) and stored by the referenced metric's UNIQUE
 -- name — the name IS the expression's identity; ids churn on plugin replace

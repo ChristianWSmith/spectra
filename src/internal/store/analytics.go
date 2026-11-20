@@ -967,6 +967,9 @@ func (s *Store) RebuildCareer() error {
 	if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
+	if _, err := tx.Exec(`DELETE FROM metric_runs WHERE match_id = 0`); err != nil {
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
+	}
 	_, err = tx.Exec(
 		`INSERT INTO player_career (`+playerCareerCols+`)
 		SELECT ps.steam_id,

@@ -72,6 +72,7 @@ var metricReadable = map[string]bool{
 	// outside the source list, app state, the engine's own tables and
 	// voice (sidecar-only).
 	"metric_values":      false,
+	"metric_runs":        false,
 	"teams":              true,
 	"round_player_money": true,
 	"sound_events":       true,
