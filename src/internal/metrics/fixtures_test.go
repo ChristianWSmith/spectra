@@ -114,7 +114,7 @@ var builtinSeed = []struct {
 }{
 	{
 		name:        "trade_rate",
-		expr:        "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, 1.0*(SUM(player_stats.trade_kills)) / NULLIF((SUM(match_trade_opps.opps)), 0) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:        "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, 1.0*(SUM(player_stats.trade_kills)) / NULLIF((SUM(match_trade_opps.opps)), 0) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.match_id = :match_id AND (player_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope:       "match",
 		format:      "percent",
 		shortName:   "",
@@ -137,7 +137,7 @@ var builtinSeed = []struct {
 		// values did not move. The corpus's hand-written adr column is
 		// an independent gradient (55…90) and is NOT this seed's oracle
 		// — see scoreboard_equivalence_test.go).
-		name: "adr", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(total_damage)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "adr", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(total_damage)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "float1", shortName: "ADR", denominator: "rounds",
 		interpretation: "damage per round of the match re-computed from raw inputs (extract's adr formula)",
 		rows:           8,
@@ -149,7 +149,7 @@ var builtinSeed = []struct {
 		// retired opening_kills column); the preview runs at library
 		// scope, so the value is the career 3i over the seed's `rounds`
 		// denominator (72 career rounds) = i/24 per player.
-		name: "entry_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(entry_kills)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "entry_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(entry_kills)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "Entry%", denominator: "rounds",
 		interpretation: "entry (first-blood) kills per round (corpus: career 3i / 72 rounds)",
 		rows:           8,
@@ -158,7 +158,7 @@ var builtinSeed = []struct {
 	},
 	{
 		// D4: sum(headshots)/sum(kills) = 3i/6i = 0.5 for every player.
-		name: "hs_pct", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(headshots)) / NULLIF((SUM(kills)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "hs_pct", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(headshots)) / NULLIF((SUM(kills)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "HS%", denominator: "",
 		interpretation: "headshot share of kills (corpus: headshots = kills/2 → 0.5)",
 		rows:           8, wantAll: 0.5, wantN: 3, wantLabels: eightLabels,
@@ -166,7 +166,7 @@ var builtinSeed = []struct {
 	{
 		// D6: AVG over the player's 72 player_round_stats rows — 36
 		// KAST rounds each → 0.5, N = 72 (the source rows, not matches).
-		name: "kast", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(kast) AS v FROM player_round_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kast", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(kast) AS v FROM player_round_stats WHERE player_round_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "KAST%", denominator: "",
 		interpretation: "per-round KAST flag mean (36/72 per player)",
 		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
@@ -174,7 +174,7 @@ var builtinSeed = []struct {
 	{
 		// D5: sum(kills)/sum(deaths) = 6i/3i = 2 for every player (no
 		// zero-death subject here — Q1's NULLIF edge is the doc note).
-		name: "kd", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kd", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "float2", shortName: "K/D", denominator: "",
 		interpretation: "kills per death (corpus: kills = 2×deaths → 2)",
 		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
@@ -187,7 +187,7 @@ var builtinSeed = []struct {
 		// Corpus math: (2i + 0)/max(i, 1) = 2 (assists = 0, deaths = i
 		// ≥ 1 — the zero-death floor has no subject here, so that edge
 		// is the equivalence test's, with its own zero-death row).
-		name: "kda", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(kills + assists)) / NULLIF((MAX(SUM(deaths), 1)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kda", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(kills + assists)) / NULLIF((MAX(SUM(deaths), 1)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "float2", shortName: "KDA", denominator: "",
 		interpretation: "kills plus assists per floored death (corpus: kills = 2×deaths, assists = 0 → 2)",
 		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
@@ -195,7 +195,7 @@ var builtinSeed = []struct {
 	{
 		// D8: sum(trade_kills)/sum(deaths) = 3i/3i = 1 (100%) — a ratio
 		// over OWN deaths, unlike trade_rate's opportunities denominator.
-		name: "trade_rate_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(trade_kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "trade_rate_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(trade_kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "Trade%", denominator: "",
 		interpretation: "trades as a share of the player's own deaths (corpus: equal → 1)",
 		rows:           8, wantAll: 1, wantN: 3, wantLabels: eightLabels,
@@ -286,68 +286,68 @@ var builtinSeed = []struct {
 	// per-round flags are exact, and the N of a player_stats-backed seed
 	// is the subject's 3 matches.
 	{
-		name: "assists", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(assists) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "assists", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(assists) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "A", denominator: "",
 		interpretation: "cross-team assist count (corpus records assists = 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "flash_assists", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(flash_assists) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "flash_assists", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(flash_assists) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "AssistedFlash-split assists (column absent from the corpus → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "enemies_flashed", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(enemies_flashed) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "enemies_flashed", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(enemies_flashed) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "blinded enemies (column absent from the corpus → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "entry_kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_kills) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "entry_kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_kills) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "Open K", denominator: "",
 		interpretation: "first bloods (corpus: entry_kills = i per match × 3 matches = 3i — the 2026-11-18 swap of the retired opening_kills column)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "entry_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_deaths) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "entry_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_deaths) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "Open D", denominator: "",
 		interpretation: "first-blood victims (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "best_streak", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, MAX(best_streak) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "best_streak", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, MAX(best_streak) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "Streak", denominator: "",
 		interpretation: "longest streak (column absent → 0); one player_stats row per subject-match, so max == the stored value",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "two_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(two_k) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "two_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(two_k) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "2K", denominator: "",
 		interpretation: "rounds with exactly 2 kills (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "three_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(three_k) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "three_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(three_k) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "3K", denominator: "",
 		interpretation: "rounds with exactly 3 kills (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "four_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(four_k) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "four_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(four_k) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "4K", denominator: "",
 		interpretation: "rounds with exactly 4 kills (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "five_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(five_k) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "five_k", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(five_k) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "5K", denominator: "",
 		interpretation: "rounds with exactly 5 kills (column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
 		// The corpus writes assists = 0 in every player_round_stats row.
-		name: "rounds_with_assist", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(CASE WHEN (assists > 0) THEN 1 ELSE 0 END) AS v FROM player_round_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "rounds_with_assist", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(CASE WHEN (assists > 0) THEN 1 ELSE 0 END) AS v FROM player_round_stats WHERE player_round_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds with ≥1 assist (the KAST A component as a count — corpus: 0)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
@@ -355,14 +355,14 @@ var builtinSeed = []struct {
 	{
 		// traded iff the player died and the round ≤ 12 → 3 per match
 		// (seed.sql header) → 9 over the three identical matches.
-		name: "rounds_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(traded) AS v FROM player_round_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "rounds_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(traded) AS v FROM player_round_stats WHERE player_round_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "the player's traded deaths (the KAST T flag; corpus: 3/match × 3)",
 		rows:           8, wantAll: 9, wantN: 72, wantLabels: eightLabels,
 	},
 	{
 		// trade_kills = i per match for player i (1..8) → library 3i.
-		name: "trade_kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(trade_kills) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "trade_kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(trade_kills) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "Trade", denominator: "",
 		interpretation: "stored trade-kill count (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
@@ -372,7 +372,7 @@ var builtinSeed = []struct {
 		// missed = i per match for i ≤ 6, Grace stored-zero, Heidi
 		// absent (LEFT JOIN → NULL → 0 beside N), exactly like
 		// TestJoinedAcceptanceRatio's opps side.
-		name: "missed_trades", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, SUM(match_trade_opps.missed) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "missed_trades", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, SUM(match_trade_opps.missed) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.match_id = :match_id AND (player_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "missed trade opps over the player_stats-anchored LEFT JOIN (corpus: 3i / 0 / 0)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 0, 0}, wantN: 3,
@@ -382,27 +382,27 @@ var builtinSeed = []struct {
 		// engagements: 1 opening + 1 trade + 1 untraded per round over
 		// 8 players; the subject's N is its own a_steam rows (36/18
 		// alternating), so N is deliberately not asserted (wantN 0).
-		name: "eng_opening", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'opening') THEN 1 ELSE 0 END) AS v FROM engagements WHERE a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "eng_opening", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'opening') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "opening duels with the subject as A-side (corpus: 18/0 alternating)",
 		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
 		wantLabels: eightLabels,
 	},
 	{
-		name: "eng_trade", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'trade') THEN 1 ELSE 0 END) AS v FROM engagements WHERE a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "eng_trade", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'trade') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "strict-window trades, A-side (corpus: the opening pattern's complement)",
 		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
 		wantLabels: eightLabels,
 	},
 	{
-		name: "eng_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'traded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "eng_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'traded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "A-side kills that got answered — the corpus records NO traded rows (the traded FLAG lives on player_round_stats)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
 	},
 	{
-		name: "eng_untraded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "eng_untraded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "A-side kills nobody answered (corpus: 18/0 alternating)",
 		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
@@ -412,31 +412,31 @@ var builtinSeed = []struct {
 		// Clutchless corpus (TestSyntheticCorpusCounts) — honest empty,
 		// never a fabricated 0 row: rows 0 for all five match-scope
 		// clutch seeds and the profile twin below.
-		name: "clutches", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, COUNT(*) AS v FROM clutches WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutches", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, COUNT(*) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "1vN attempt count (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_win_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(won) AS v FROM clutches WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_win_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(won) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "", denominator: "",
 		interpretation: "share of clutches won (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_size", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(size) AS v FROM clutches WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_size", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(size) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "float1", shortName: "", denominator: "",
 		interpretation: "mean clutch size (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_hp", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(hp_left) AS v FROM clutches WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_hp", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(hp_left) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "float1", shortName: "", denominator: "",
 		interpretation: "mean ending HP (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_equip", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(equip) AS v FROM clutches WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_equip", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(equip) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "currency", shortName: "", denominator: "",
 		interpretation: "mean held equipment value (clutchless corpus → no rows)",
 		rows:           0,
@@ -444,19 +444,19 @@ var builtinSeed = []struct {
 	{
 		// utility_events: 216 rows over 8 subjects (3 matches × 24
 		// rounds × 1 detonation of each of 3 kinds ÷ 8) → 27 each.
-		name: "util_nades", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, COUNT(*) AS v FROM utility_events WHERE thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "util_nades", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, COUNT(*) AS v FROM utility_events WHERE utility_events.match_id = :match_id AND (thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "detonation count (corpus: 27 per subject)",
 		rows:           8, wantAll: 27, wantN: 27, wantLabels: eightLabels,
 	},
 	{
-		name: "util_dmg", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, SUM(damage) AS v FROM utility_events WHERE thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "util_dmg", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, SUM(damage) AS v FROM utility_events WHERE utility_events.match_id = :match_id AND (thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "paired detonation damage (corpus: 180 per subject)",
 		rows:           8, wantAll: 180, wantN: 27, wantLabels: eightLabels,
 	},
 	{
-		name: "util_flash_ms", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, SUM(flash_ms) AS v FROM utility_events WHERE thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "util_flash_ms", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, thrower AS grp, SUM(flash_ms) AS v FROM utility_events WHERE utility_events.match_id = :match_id AND (thrower <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = utility_events.match_id AND p.steam_id = utility_events.thrower AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "paired blind milliseconds (corpus: 5400 per subject)",
 		rows:           8, wantAll: 5400, wantN: 27, wantLabels: eightLabels,
@@ -464,7 +464,7 @@ var builtinSeed = []struct {
 	{
 		// No weapon_drop events in the corpus → value 0; the subject's N
 		// is its own event count (270/234 alternating) → not asserted.
-		name: "weapon_drops", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, attacker AS grp, SUM(CASE WHEN (kind = 'weapon_drop') THEN 1 ELSE 0 END) AS v FROM events WHERE attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "weapon_drops", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, attacker AS grp, SUM(CASE WHEN (kind = 'weapon_drop') THEN 1 ELSE 0 END) AS v FROM events WHERE events.match_id = :match_id AND (attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "death-drop count (corpus: none recorded)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
@@ -479,31 +479,31 @@ var builtinSeed = []struct {
 	// the value-acceptance rig with INSERTed class rows lives in
 	// join_test.go TestJoinedClassificationValues.
 	{
-		name: "round_label_eco", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'eco') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "round_label_eco", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'eco') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.match_id = :match_id AND (player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds labeled eco (empty secondary → 0 beside N = the primary's rounds)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
 	},
 	{
-		name: "round_label_force", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'force') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "round_label_force", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'force') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.match_id = :match_id AND (player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds labeled force (empty secondary → 0)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
 	},
 	{
-		name: "round_label_full", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'full') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "round_label_full", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'full') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.match_id = :match_id AND (player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds labeled full (empty secondary → 0)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
 	},
 	{
-		name: "round_label_save", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'save') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "round_label_save", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'save') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.match_id = :match_id AND (player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds labeled save (empty secondary → 0)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
 	},
 	{
-		name: "pistol_rounds", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'pistol') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "pistol_rounds", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT player_round_stats.match_id AS mid, player_round_stats.steam_id AS grp, SUM(CASE WHEN (round_classifications.label = 'pistol') THEN 1 ELSE 0 END) AS v FROM player_round_stats LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id AND player_round_stats.round = round_classifications.round WHERE player_round_stats.match_id = :match_id AND (player_round_stats.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds carrying the stored pistol label (empty secondary → 0)",
 		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
@@ -514,31 +514,31 @@ var builtinSeed = []struct {
 		// match 1 contributes 0 force rounds, matches 2-3 contribute 3
 		// each → 6 per player over the library-scope preview, N = the
 		// 72 side-sample rows behind them.
-		name: "side_class_eco", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'eco') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "side_class_eco", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'eco') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.match_id = :match_id AND (round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds played on an eco-classified side (class rows are force-only → 0 beside N)",
 		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
-		name: "side_class_force", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'force') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "side_class_force", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'force') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.match_id = :match_id AND (round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds played on a force-classified side (0 + 3 + 3 across the three matches)",
 		rows:           8, wantAll: 6, wantN: 72,
 	},
 	{
-		name: "side_class_full", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'full') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "side_class_full", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'full') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.match_id = :match_id AND (round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds played on a full-buy side (force-only class rows → 0 beside N)",
 		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
-		name: "side_class_save", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'save') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "side_class_save", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'save') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.match_id = :match_id AND (round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds played on a save side (force-only class rows → 0 beside N)",
 		rows:           8, wantAll: 0, wantN: 72,
 	},
 	{
-		name: "side_class_pistol", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'pistol') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "side_class_pistol", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_player_sides.match_id AS mid, round_player_sides.steam_id AS grp, SUM(CASE WHEN (round_side_classes.class = 'pistol') THEN 1 ELSE 0 END) AS v FROM round_player_sides LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id AND round_player_sides.round = round_side_classes.round AND round_player_sides.side = round_side_classes.side WHERE round_player_sides.match_id = :match_id AND (round_player_sides.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = round_player_sides.match_id AND p.steam_id = round_player_sides.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds played on a pistol-classified side (force-only class rows → 0 beside N)",
 		rows:           8, wantAll: 0, wantN: 72,
@@ -584,7 +584,7 @@ var builtinSeed = []struct {
 		// 18, the other 4 with 0 — rows with no untraded duel, never a
 		// missing row), and the per-subject N is that victim's own
 		// engagement rows (18/36 alternating) → not asserted.
-		name: "untraded_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements AS engagements_victim WHERE b_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements_victim.match_id AND p.steam_id = engagements_victim.b_steam AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "untraded_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements AS engagements_victim WHERE engagements_victim.match_id = :match_id AND (b_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements_victim.match_id AND p.steam_id = engagements_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "unanswered deaths (b_steam side; corpus: 0,18,0,18,18,0,18,0)",
 		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
@@ -608,7 +608,7 @@ var builtinSeed = []struct {
 		// (wantN 0), like untraded_deaths above; the ME0 value
 		// semantics pin in combat_equivalence_test.go.
 		name:  "dmg_no_kill",
-		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, SUM(CASE WHEN ((events.kind = 'damage') AND (NOT EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = 'kill' AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim)) AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, SUM(CASE WHEN ((events.kind = 'damage') AND (NOT EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = 'kill' AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim)) AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "enemy damage that never converted into a kill (corpus: no shared tick → all damage, 9900)",
 		rows:           8, wantAll: 9900, wantLabels: eightLabels,
@@ -623,7 +623,7 @@ var builtinSeed = []struct {
 		// are pinned in combat_equivalence_test.go against the
 		// retired SQL's gated values.
 		name:  "kill_conversion",
-		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, 1.0*(SUM(CASE WHEN ((events.kind = 'damage') AND EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = 'kill' AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim) AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END)) / NULLIF((SUM(CASE WHEN ((events.kind = 'damage') AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END)), 0) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, 1.0*(SUM(CASE WHEN ((events.kind = 'damage') AND EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = 'kill' AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim) AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END)) / NULLIF((SUM(CASE WHEN ((events.kind = 'damage') AND (NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, '')))) THEN events.dmg END)), 0) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "percent", shortName: "", denominator: "",
 		interpretation: "share of this player's enemy damage that converts into kills (corpus: 0 — no shared tick)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
@@ -638,97 +638,97 @@ var builtinSeed = []struct {
 	// flashed_times/bomb_plants/bomb_defuses/utility_damage are absent
 	// → 0 (schema DEFAULT), every sum N = the 3 player_stats rows.
 	{
-		name: "kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(kills) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(kills) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "K", denominator: "",
 		interpretation: "kill count (corpus: 6i over the three identical matches)",
 		rows:           8, wantValues: []float64{6, 12, 18, 24, 30, 36, 42, 48}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(deaths) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(deaths) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "D", denominator: "",
 		interpretation: "death count (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "mvps", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(mvps) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "mvps", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(mvps) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "MVPs", denominator: "",
 		interpretation: "MVP award count (corpus: 1 per match → 3)",
 		rows:           8, wantAll: 3, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "total_damage", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(total_damage) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "total_damage", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(total_damage) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "DMG", denominator: "",
 		interpretation: "damage dealt (corpus: 300i)",
 		rows:           8, wantValues: []float64{300, 600, 900, 1200, 1500, 1800, 2100, 2400}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "utility_damage", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(utility_damage) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "utility_damage", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(utility_damage) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "Util", denominator: "",
 		interpretation: "scoreboard Util total (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "headshots", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(headshots) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "headshots", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(headshots) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "headshot kills (corpus: 3i)",
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "teamkills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(teamkills) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "teamkills", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(teamkills) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "team-kill count (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "suicides", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(suicides) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "suicides", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(suicides) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "suicide count (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "damage_taken", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(damage_taken) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "damage_taken", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(damage_taken) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "damage absorbed (corpus: 150i)",
 		rows:           8, wantValues: []float64{150, 300, 450, 600, 750, 900, 1050, 1200}, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "shots", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(shots) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "shots", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(shots) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "shots fired (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "hits", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(hits) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "hits", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(hits) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "shots that connected (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "rounds_played", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(rounds_played) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "rounds_played", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(rounds_played) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "rounds the player appeared in (corpus: 24 per match → 72)",
 		rows:           8, wantAll: 72, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "flashed_times", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(flashed_times) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "flashed_times", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(flashed_times) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "times blinded (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "bomb_plants", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(bomb_plants) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "bomb_plants", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(bomb_plants) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "bomb plants (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "bomb_defuses", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(bomb_defuses) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "bomb_defuses", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(bomb_defuses) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "bomb defuses (corpus: column absent → 0)",
 		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
 	},
 	{
-		name: "money_spent_total", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(money_spent_total) AS v FROM player_stats WHERE steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "money_spent_total", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(money_spent_total) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "", denominator: "",
 		interpretation: "money spent (corpus: 150000 per match → 450000)",
 		rows:           8, wantAll: 450000, wantN: 3, wantLabels: eightLabels,
@@ -781,7 +781,7 @@ var builtinSeed = []struct {
 		// every economy row of the match (24 rounds × 2 sides = 48) —
 		// the filter shapes the value, never N (one spelling).
 		name:  "lost_equip",
-		expr:  "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.match_id AS grp, SUM(CASE WHEN (((rounds.winner != '') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:  "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.match_id AS grp, SUM(CASE WHEN (((rounds.winner != '') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number WHERE round_economy.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "currency", shortName: "", denominator: "",
 		interpretation: "freeze-end money lost by the losing side over decided, team-known rounds — the card total, addressed per match (over the joined sources)",
 		rows:           3, wantAll: 54000, wantN: 48, wantLabels: "1,2,3",
@@ -793,7 +793,7 @@ var builtinSeed = []struct {
 		// classification rig owns that match's analysis tables) — two
 		// matches × two teams, N = the team's classified rounds.
 		name:  "team_force_win_rate",
-		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_side_classes.match_id AS mid, round_side_classes.team AS grp, 1.0*(SUM(CASE WHEN ((round_side_classes.class = 'force') AND (rounds.winner = round_side_classes.side)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN (round_side_classes.class = 'force') THEN 1 ELSE 0 END)), 0) AS v FROM round_side_classes LEFT JOIN rounds ON round_side_classes.match_id = rounds.match_id AND round_side_classes.round = rounds.number WHERE round_side_classes.team <> '' GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_side_classes.match_id AS mid, round_side_classes.team AS grp, 1.0*(SUM(CASE WHEN ((round_side_classes.class = 'force') AND (rounds.winner = round_side_classes.side)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN (round_side_classes.class = 'force') THEN 1 ELSE 0 END)), 0) AS v FROM round_side_classes LEFT JOIN rounds ON round_side_classes.match_id = rounds.match_id AND round_side_classes.round = rounds.number WHERE round_side_classes.match_id = :match_id AND (round_side_classes.team <> '') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "team", format: "percent", shortName: "", denominator: "",
 		interpretation: "force-buy rounds won ÷ that team's own force rounds — the card's per-team force rate (over the joined sources)",
 		rows:           4, wantValues: []float64{1.0 / 3, 2.0 / 3, 1.0 / 3, 2.0 / 3}, wantN: 3, wantLabels: "ct,t,ct,t",
@@ -804,7 +804,7 @@ var builtinSeed = []struct {
 		// (30000), t the 12 odd rounds at 2000 (24000), per match; N is
 		// the group's rows — every economy row of that team (24 rounds).
 		name:  "team_lost_equip",
-		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.team AS grp, SUM(CASE WHEN (((rounds.winner != '') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number WHERE round_economy.team <> '' GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		expr:  "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.team AS grp, SUM(CASE WHEN (((rounds.winner != '') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number WHERE round_economy.match_id = :match_id AND (round_economy.team <> '') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "team", format: "currency", shortName: "", denominator: "",
 		interpretation: "the losing side's freeze-end money credited to its team — the card's per-team split (over the joined sources)",
 		rows:           6, wantValues: []float64{30000, 24000, 30000, 24000, 30000, 24000}, wantN: 24, wantLabels: "ct,t,ct,t,ct,t",
@@ -832,31 +832,31 @@ var builtinSeed = []struct {
 	// engine-side pins (emission, refusal set,
 	// filtered pool, empty pool) live in argmax_test.go.
 	{
-		name: "top_fragger", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY kills DESC, steam_id ASC) AS rn FROM player_stats WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '') WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "top_fragger", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
 		interpretation: "the match's leading fragger by stored kills (corpus: Heidi, 16 kills, over the 8-player pool)",
 		rows:           3, wantValues: []float64{16, 16, 16}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
 	},
 	{
-		name: "best_adr", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, adr AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY adr DESC, steam_id ASC) AS rn FROM player_stats WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '') WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "best_adr", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, adr AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY adr DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
 		interpretation: "the match's highest stored ADR (corpus: Heidi, 90, over the 8-player pool)",
 		rows:           3, wantValues: []float64{90, 90, 90}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
 	},
 	{
-		name: "most_util", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, utility_damage AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY utility_damage DESC, steam_id ASC) AS rn FROM player_stats WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '') WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "most_util", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, utility_damage AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY utility_damage DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
 		interpretation: "the match's leading utility-damage player (corpus: column absent → 0 for everyone → tie → Alice by key ASC)",
 		rows:           3, wantValues: []float64{0, 0, 0}, wantN: 8, wantLabels: "Alice,Alice,Alice",
 	},
 	{
-		name: "entry_opens", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, entry_kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY entry_kills DESC, steam_id ASC) AS rn FROM player_stats WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '') WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "entry_opens", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, entry_kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY entry_kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
 		interpretation: "the match's round-opening first-blood leader (corpus: entry_kills = i since the 2026-11-18 swap → Heidi, 8)",
 		rows:           3, wantValues: []float64{8, 8, 8}, wantN: 8, wantLabels: "Heidi,Heidi,Heidi",
 	},
 	{
-		name: "most_mvps", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, mvps AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY mvps DESC, steam_id ASC) AS rn FROM player_stats WHERE NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '') WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "most_mvps", expr: "SELECT '' AS subject_key, '' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, mvps AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY mvps DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "identity", shortName: "", denominator: "",
 		interpretation: "the match's MVP-award leader (corpus: 1 per player → tie → Alice by key ASC)",
 		rows:           3, wantValues: []float64{1, 1, 1}, wantN: 8, wantLabels: "Alice,Alice,Alice",
@@ -1011,13 +1011,13 @@ var builtinSeed = []struct {
 	// — the alternation and the empty label table make them
 	// structurally unreachable on the shared corpus.
 	{
-		name: "pistol_hold", expr: "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT rounds.match_id AS mid, rounds.match_id AS grp, 1.0*(SUM(CASE WHEN (((round_classifications.label = 'pistol') AND (rounds.winner != '')) AND ((SELECT nx0.winner FROM rounds AS nx0 WHERE nx0.match_id = rounds.match_id AND nx0.number > rounds.number ORDER BY nx0.number LIMIT 1) = rounds.winner)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN ((round_classifications.label = 'pistol') AND (rounds.winner != '')) THEN 1 ELSE 0 END)), 0) AS v FROM rounds LEFT JOIN round_classifications ON rounds.match_id = round_classifications.match_id AND rounds.number = round_classifications.round GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "pistol_hold", expr: "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT rounds.match_id AS mid, rounds.match_id AS grp, 1.0*(SUM(CASE WHEN (((round_classifications.label = 'pistol') AND (rounds.winner != '')) AND ((SELECT nx0.winner FROM rounds AS nx0 WHERE nx0.match_id = rounds.match_id AND nx0.number > rounds.number ORDER BY nx0.number LIMIT 1) = rounds.winner)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN ((round_classifications.label = 'pistol') AND (rounds.winner != '')) THEN 1 ELSE 0 END)), 0) AS v FROM rounds LEFT JOIN round_classifications ON rounds.match_id = round_classifications.match_id AND rounds.number = round_classifications.round WHERE rounds.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "percent", shortName: "", denominator: "",
 		interpretation: "pistol rounds won where that side also won the following round ÷ pistol rounds won (no label rows in the shared corpus → 0 beside N)",
 		rows:           3, wantAll: 0, wantN: 24, wantLabels: "1,2,3",
 	},
 	{
-		name: "avg_equip_gap", expr: "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, match_id AS grp, AVG(CASE WHEN (winner != '') THEN (CASE WHEN (winner = 'ct') THEN (equip_ct - equip_t) ELSE (equip_t - equip_ct) END) END) AS v FROM rounds GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "avg_equip_gap", expr: "SELECT '' AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, match_id AS grp, AVG(CASE WHEN (winner != '') THEN (CASE WHEN (winner = 'ct') THEN (equip_ct - equip_t) ELSE (equip_t - equip_ct) END) END) AS v FROM rounds WHERE rounds.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "match", format: "currency", shortName: "", denominator: "",
 		interpretation: "mean winner-minus-loser freeze-end equip over decided rounds (alternating ±500 → 0; N = the match's rounds)",
 		rows:           3, wantAll: 0, wantN: 24, wantLabels: "1,2,3",
@@ -1035,13 +1035,13 @@ var builtinSeed = []struct {
 	// 2 and 4 (2); N is the team's class rows behind the value (3),
 	// never the filtered force rows.
 	{
-		name: "team_force_wins", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_side_classes.match_id AS mid, round_side_classes.team AS grp, SUM(CASE WHEN ((round_side_classes.class = 'force') AND (rounds.winner = round_side_classes.side)) THEN 1 ELSE 0 END) AS v FROM round_side_classes LEFT JOIN rounds ON round_side_classes.match_id = rounds.match_id AND round_side_classes.round = rounds.number WHERE round_side_classes.team <> '' GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "team_force_wins", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT round_side_classes.match_id AS mid, round_side_classes.team AS grp, SUM(CASE WHEN ((round_side_classes.class = 'force') AND (rounds.winner = round_side_classes.side)) THEN 1 ELSE 0 END) AS v FROM round_side_classes LEFT JOIN rounds ON round_side_classes.match_id = rounds.match_id AND round_side_classes.round = rounds.number WHERE round_side_classes.match_id = :match_id AND (round_side_classes.team <> '') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "team", format: "int", shortName: "", denominator: "",
 		interpretation: "force rounds that team won (corpus matches 2-3: ct 1, t 2; match 1 unanalyzed → no row)",
 		rows:           4, wantValues: []float64{1, 2, 1, 2}, wantN: 3, wantLabels: "ct,t,ct,t",
 	},
 	{
-		name: "team_force_rounds", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, team AS grp, SUM(CASE WHEN (class = 'force') THEN 1 ELSE 0 END) AS v FROM round_side_classes WHERE team <> '' GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "team_force_rounds", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, team AS grp, SUM(CASE WHEN (class = 'force') THEN 1 ELSE 0 END) AS v FROM round_side_classes WHERE round_side_classes.match_id = :match_id AND (team <> '') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", subject: "team", format: "int", shortName: "", denominator: "",
 		interpretation: "that team's own force-buy rounds (corpus matches 2-3: 3 each — every class row there is force)",
 		rows:           4, wantValues: []float64{3, 3, 3, 3}, wantN: 3, wantLabels: "ct,t,ct,t",
