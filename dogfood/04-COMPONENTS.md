@@ -155,6 +155,12 @@ blocked by policy. The Wails configuration was not checked for one.
 compile error is refused with its line and message, and nothing is written.
 Runtime errors are the error boundary's job.
 
+**Runes-only (owner, 2026-11-20).** User components are Svelte 5 runes
+components. The save-time check compiles with `runes: true`, so legacy syntax
+(`export let`, `$:`, `$$props`, `on:` directives) is refused at its own line.
+Builtins are runes too. The legacy runtime entry is needed only if a builtin
+uses it.
+
 ## 6. The Component Builder
 
 A new top-level tab, **Component Builder**, beside the Metric Builder and the
