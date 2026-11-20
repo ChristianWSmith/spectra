@@ -158,6 +158,7 @@ test('sidebar active(): exactly one action lights up per route', () => {
     'profiles',
     'builder',
     'reportbuilder',
+    'componentbuilder',
     'sql',
     'settings',
   ];

@@ -79,6 +79,7 @@ const NAV_SECTIONS = {
   Profiles: 'profiles',
   Builder: 'metric-builder',
   'Reports builder': 'reports-builder',
+  'Component builder': 'component-builder',
   'SQL console': 'sql-console',
   Settings: 'settings',
 };
@@ -114,6 +115,7 @@ const VIEW_SECTIONS = {
   'Replay.svelte': 'replay',
   'Reports.svelte': 'reports',
   'ReportsBuilder.svelte': 'reports-builder',
+  'ComponentBuilder.svelte': 'component-builder',
   'RoundDetail.svelte': 'understanding-a-match',
   'Settings.svelte': 'settings',
   'SqlConsole.svelte': 'sql-console',

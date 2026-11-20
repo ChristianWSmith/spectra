@@ -20,6 +20,7 @@ import {
   IconService,
   SoundService,
   DialogService,
+  ComponentService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
 import { resetIconManifest } from './replay/icons.js';
@@ -29,6 +30,7 @@ import { resetSoundManifest } from './replay/sfx.js';
 // and the source list. The deliberate ⇄ cycle with this file is documented
 // there (neither side calls across at module-eval time).
 import { runWork } from './workstate.svelte.js';
+import { gateComponentSave, refusalText } from './componentruntime/savegate.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -1019,6 +1021,21 @@ export function getSchema() { return QueryService.GetSchema(); }
 // read is live and carries no freshness (dogfood/04 §3). Failures come
 // back in .err, like runQuery's.
 export function componentQuery(sql) { return QueryService.ComponentQuery(sql); }
+
+// --- ComponentService (Component builder) -----------------------------------
+// The user components the builder lists, saves and deletes. Not read-cached:
+// the builder re-reads the list after every write. saveComponent runs the
+// save gate FIRST (componentruntime/savegate.js) and refuses a source the
+// gate rejects, so the write never happens for an uncompilable source.
+// Go refuses what it can decide (a name, the built-in namespace, a duplicate,
+// a delete or rename while placed); those rejections pass through unchanged.
+export function listComponents() { return ComponentService.ListComponents(); }
+export async function saveComponent(original, name, source) {
+  const gate = await gateComponentSave(source);
+  if (!gate.ok) throw new Error(refusalText(gate));
+  return ComponentService.SaveComponent(original || '', name || '', source);
+}
+export function deleteComponent(name) { return ComponentService.DeleteComponent(name); }
 export function listSavedQueries() { return QueryService.ListSavedQueries(); }
 // listSavedQueriesPage is the console saved list's keyset window ("Load
 // more"): `limit` rows strictly after `afterName` ("" = the first

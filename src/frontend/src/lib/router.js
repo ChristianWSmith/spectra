@@ -46,7 +46,7 @@
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
-//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/reportbuilder | #/settings
+//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/reportbuilder | #/componentbuilder | #/settings
 //
 // Legacy raw-event routes resolve to the canonical Replay landmark feed
 // with the equivalent scope (the Timeline tab, the Match Chat tab and the
@@ -58,7 +58,7 @@
 //   #/match/:id/context            → #/replay/:id?cat=connects (the only
 //                                     survivor of chat,connects,team_changes)
 //
-// Prefix routes (builder/reportbuilder/sql/profiles/explorer/reports/
+// Prefix routes (builder/reportbuilder/componentbuilder/sql/profiles/explorer/reports/
 // settings) match with startsWith, so "#/settings/foo" is still Settings;
 // every other shape falls through to the library default.
 
@@ -197,6 +197,9 @@ export function parseHash(hash) {
   // would swallow it) and not a /reports sub-path either: it is a
   // sibling top-level view, parsed on its own name.
   if (path.startsWith('/reportbuilder')) return withQuery({ name: 'reportbuilder' });
+  // The Component builder's own route, parsed on its own name like the
+  // Reports builder's (a sibling top-level view, not a sub-path).
+  if (path.startsWith('/componentbuilder')) return withQuery({ name: 'componentbuilder' });
   if (path.startsWith('/sql')) return withQuery({ name: 'sql' });
   // The player directory (the sidebar's Profiles entry) — prefix route,
   // no params; a row click drills into /player/:steamid instead.
