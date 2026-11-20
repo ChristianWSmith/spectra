@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -29,35 +28,9 @@ const (
 	rawBindRound = ":round"
 )
 
-// IsRawSQL reports whether an expr is raw SQL: its first keyword, after any
-// whitespace and -- or /* */ comments, is SELECT or WITH.
-func IsRawSQL(expr string) bool {
-	s := expr
-	for {
-		s = strings.TrimLeftFunc(s, unicode.IsSpace)
-		switch {
-		case strings.HasPrefix(s, "--"):
-			i := strings.IndexByte(s, '\n')
-			if i < 0 {
-				return false
-			}
-			s = s[i+1:]
-		case strings.HasPrefix(s, "/*"):
-			i := strings.Index(s[2:], "*/")
-			if i < 0 {
-				return false
-			}
-			s = s[2+i+2:]
-		default:
-			end := 0
-			for end < len(s) && (s[end] == '_' || unicode.IsLetter(rune(s[end]))) {
-				end++
-			}
-			word := strings.ToLower(s[:end])
-			return word == "select" || word == "with"
-		}
-	}
-}
+// IsRawSQL reports whether an expr is raw SQL (store.IsRawExpr: the first
+// keyword is SELECT or WITH). Kept as the metrics-package name for callers.
+func IsRawSQL(expr string) bool { return store.IsRawExpr(expr) }
 
 // allRawBinds is what a save gates against: every reserved bind is
 // nameable, and the shape rule below decides which combinations may run.
@@ -298,6 +271,13 @@ func runRawMetric(ctx context.Context, st *store.Store, m models.MetricRow, rule
 	}
 	if perr != nil {
 		return errors.New(perr.Message)
+	}
+	// First gate pass for a raw row whose touched set is unknown (a plugin
+	// upsert clears it): store the gate's set before the scopes run.
+	if len(m.Touched) == 0 {
+		if err := st.SetMetricTouched(m.ID, g.Touched); err != nil {
+			return err
+		}
 	}
 	scopes, err := RawScopes(st, g.Binds)
 	if err != nil {

@@ -45,7 +45,7 @@ var childTables = []string{
 	"round_player_sides", "round_player_money", "player_stats", "players", "teams", "warnings",
 	"round_classifications", "round_side_classes", "player_round_stats", "clutches",
 	"engagements", "utility_events", "match_trade_opps",
-	"voice_presence", "metric_values",
+	"voice_presence", "metric_values", "metric_runs",
 }
 
 // Store is a SQLite-backed persistence handle. The underlying database is
@@ -85,6 +85,10 @@ func Open(path string) (*Store, error) {
 	}
 	s := &Store{db: db}
 	if err := s.applySchema(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := s.backfillTouched(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

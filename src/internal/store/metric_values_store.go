@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
@@ -132,7 +133,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		return "m.partition <> '' AND m.scope = 'profile' AND EXISTS (SELECT 1 FROM player_stats) AND " + inner
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id,
+		`SELECT m.id, m.expr, m.touched, m.version,
 			CASE WHEN (
 				EXISTS (SELECT 1 FROM metric_values v
 					WHERE v.metric_id = m.id
@@ -161,20 +162,142 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
 	defer rows.Close()
-	var out []MetricCoverage
+	type pending struct {
+		cov     MetricCoverage
+		expr    string
+		touched string
+		version int
+	}
+	var list []pending
 	for rows.Next() {
-		var c MetricCoverage
+		var p pending
 		var behind int
-		if err := rows.Scan(&c.MetricID, &behind, &c.FreshRows); err != nil {
+		if err := rows.Scan(&p.cov.MetricID, &p.expr, &p.touched, &p.version, &behind, &p.cov.FreshRows); err != nil {
 			return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 		}
-		c.Behind = behind != 0
-		out = append(out, c)
+		p.cov.Behind = behind != 0
+		list = append(list, p)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
+	// Classification runs after the cursor closes: a raw metric's coverage
+	// is its own run-record predicate (rawBehind), never the sugar clauses
+	// above, and a metric whose touched set is unknown ('') reads behind,
+	// never fresh (dogfood/PLAN.md B4).
+	_ = rows.Close()
+	out := make([]MetricCoverage, 0, len(list))
+	for _, p := range list {
+		c := p.cov
+		switch {
+		case p.touched == "":
+			c.Behind = true
+		case IsRawExpr(p.expr):
+			behind, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.expr)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
+			}
+			c.Behind = behind
+		}
+		out = append(out, c)
+	}
 	return out, nil
+}
+
+// IsRawExpr reports whether a metric expression is raw SQL: its first
+// keyword, after whitespace and -- or /* */ comments, is SELECT or WITH.
+// Every raw/sugar split in the store and the metrics package asks this.
+func IsRawExpr(expr string) bool {
+	s := expr
+	for {
+		s = strings.TrimLeftFunc(s, unicode.IsSpace)
+		switch {
+		case strings.HasPrefix(s, "--"):
+			i := strings.IndexByte(s, '\n')
+			if i < 0 {
+				return false
+			}
+			s = s[i+1:]
+		case strings.HasPrefix(s, "/*"):
+			i := strings.Index(s[2:], "*/")
+			if i < 0 {
+				return false
+			}
+			s = s[2+i+2:]
+		default:
+			end := 0
+			for end < len(s) && (s[end] == '_' || unicode.IsLetter(rune(s[end]))) {
+				end++
+			}
+			word := strings.ToLower(s[:end])
+			return word == "select" || word == "with"
+		}
+	}
+}
+
+// rawBehind is the raw metric's behind predicate (dogfood/PLAN.md B4):
+// behind iff some UNIT the metric's bind shape expects has no run record
+// at the current metric version and the current rule version. The units
+// are the sweep's own enumeration (metrics.RawScopes): library-wide (one
+// unit), :match_id (each ready match), :steam_id (each ready human) and
+// :match_id with :round (each ready round). A ready match with no rounds
+// contributes no round unit, so it is covered (no-data, not behind). A
+// statement whose binds cannot be classified is behind, never fresh.
+func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, expr string) (bool, error) {
+	st, gerr := AnalyzeMetricSQL(expr, nil)
+	if gerr != nil {
+		return true, nil
+	}
+	used := map[string]bool{}
+	for _, b := range st.Binds {
+		used[b] = true
+	}
+	const fresh = `r.metric_version >= ? AND r.rule_version >= ?`
+	var unitsMissing string
+	switch {
+	case used[":steam_id"] && (used[":match_id"] || used[":round"]):
+		return true, nil
+	case used[":round"] && !used[":match_id"]:
+		return true, nil
+	case used[":steam_id"]:
+		unitsMissing = `EXISTS (SELECT 1 FROM players p JOIN matches mt ON mt.id = p.match_id
+			WHERE mt.status = 'ready' AND p.is_bot = 0
+			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = 0
+				AND r.scope_steam_id = p.steam_id AND r.scope_round = 0 AND ` + fresh + `))`
+	case used[":round"]:
+		unitsMissing = `EXISTS (SELECT 1 FROM rounds rd JOIN matches mt ON mt.id = rd.match_id
+			WHERE mt.status = 'ready'
+			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = rd.match_id
+				AND r.scope_steam_id = '' AND r.scope_round = rd.number AND ` + fresh + `))`
+	case used[":match_id"]:
+		unitsMissing = `EXISTS (SELECT 1 FROM matches mt WHERE mt.status = 'ready'
+			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = mt.id
+				AND r.scope_steam_id = '' AND r.scope_round = 0 AND ` + fresh + `))`
+	default:
+		// The library-wide unit exists only once a ready match does: an
+		// empty library owes nothing (the same guard the profile clause
+		// uses), so a failed import never leaves a builtin behind.
+		unitsMissing = `EXISTS (SELECT 1 FROM matches mt WHERE mt.status = 'ready')
+			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = 0
+			AND r.scope_steam_id = '' AND r.scope_round = 0 AND ` + fresh + `)`
+	}
+	var missing int
+	if err := s.db.QueryRow(`SELECT CASE WHEN `+unitsMissing+` THEN 1 ELSE 0 END`,
+		metricID, version, liveRuleVersion).Scan(&missing); err != nil {
+		return false, err
+	}
+	return missing != 0, nil
+}
+
+// SetMetricTouched stores a metric's derived touched set (the save gate's
+// output). nil or empty stores ” — not derived (the behind predicate reads
+// that as unknown).
+func (s *Store) SetMetricTouched(metricID int64, tables []string) error {
+	res, err := s.db.Exec(`UPDATE metrics SET touched = ? WHERE id = ?`, touchedColumn(tables), metricID)
+	if err != nil {
+		return fmt.Errorf("couldn't save the metric's touched tables: %w", err)
+	}
+	return affectedOrNotFound(res, "saving the metric's touched tables")
 }
 
 // MetricValueRow is ONE fresh stored value the compute pass inserts
@@ -213,7 +336,18 @@ type MetricValueRow struct {
 // but INVISIBLE — MetricCoverage's fresh count excludes them, so no
 // reader can see them.
 func (s *Store) ClearMetricValues(metricID int64) error {
-	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ?`, metricID); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM metric_values WHERE metric_id = ?`, metricID); err != nil {
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM metric_runs WHERE metric_id = ?`, metricID); err != nil {
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't clear the metric values: %w", err)
 	}
 	return nil
@@ -307,6 +441,22 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 	if _, err := tx.Exec(
 		`DELETE FROM metric_values WHERE metric_id = ? AND match_id = ? AND scope_steam_id = ? AND scope_round = ?`,
 		metricID, scope.MatchID, scrub(scope.SteamID), scope.Round,
+	); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	// The run record is replaced in the same transaction: a scope with no
+	// rows still gets one, so "computed, zero rows" is distinguishable from
+	// "never computed" (rawBehind).
+	if _, err := tx.Exec(
+		`DELETE FROM metric_runs WHERE metric_id = ? AND match_id = ? AND scope_steam_id = ? AND scope_round = ?`,
+		metricID, scope.MatchID, scrub(scope.SteamID), scope.Round,
+	); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO metric_runs (metric_id, match_id, scope_steam_id, scope_round, metric_version, rule_version, computed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		metricID, scope.MatchID, scrub(scope.SteamID), scope.Round, metricVersion, ruleVersion, time.Now(),
 	); err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
@@ -791,4 +941,48 @@ func (s *Store) ReadyRounds() ([]RawRoundKey, error) {
 		out = append(out, k)
 	}
 	return out, rows.Err()
+}
+
+// backfillTouched is the first gate pass for raw metrics whose touched set
+// is unknown: the baseline schema inserts the builtins with touched ”, so
+// Open derives each one's set through the statement gate (AnalyzeMetricSQL,
+// the same statement half GateSQL runs at save). A statement the gate
+// refuses keeps ” and reads behind. Rows are collected before any write:
+// the store's one connection cannot hold a cursor across an UPDATE.
+func (s *Store) backfillTouched() error {
+	rows, err := s.db.Query(`SELECT id, expr FROM metrics WHERE touched = ''`)
+	if err != nil {
+		return fmt.Errorf("couldn't derive the touched tables: %w", err)
+	}
+	type todo struct {
+		id   int64
+		expr string
+	}
+	var list []todo
+	for rows.Next() {
+		var t todo
+		if err := rows.Scan(&t.id, &t.expr); err != nil {
+			rows.Close()
+			return fmt.Errorf("couldn't derive the touched tables: %w", err)
+		}
+		list = append(list, t)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("couldn't derive the touched tables: %w", err)
+	}
+	rows.Close()
+	for _, t := range list {
+		if !IsRawExpr(t.expr) {
+			continue
+		}
+		st, gerr := AnalyzeMetricSQL(t.expr, nil)
+		if gerr != nil {
+			continue
+		}
+		if err := s.SetMetricTouched(t.id, st.Touched); err != nil {
+			return err
+		}
+	}
+	return nil
 }

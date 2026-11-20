@@ -27,7 +27,18 @@ func seedValueMetric(t *testing.T, s *Store, name, scope string) models.MetricRo
 	if err != nil {
 		t.Fatalf("CreateMetric(%s): %v", name, err)
 	}
+	markTouched(t, s, m.ID)
 	return m
+}
+
+// markTouched gives a fixture metric a known touched set, as the save gate
+// would. A metric with an unknown set (”) reads behind by design (B4), so
+// every fixture that tests the sugar or raw predicate must set one.
+func markTouched(t *testing.T, s *Store, id int64) {
+	t.Helper()
+	if err := s.SetMetricTouched(id, []string{"events", "players"}); err != nil {
+		t.Fatalf("SetMetricTouched(%d): %v", id, err)
+	}
 }
 
 // seedReadyMatch inserts a match row and flips it to ready (the
@@ -93,6 +104,7 @@ func seedSubjectMetric(t *testing.T, s *Store, name, scope, subject string) int6
 	if err != nil {
 		t.Fatalf("subject metric id: %v", err)
 	}
+	markTouched(t, s, id)
 	return id
 }
 
@@ -478,6 +490,7 @@ func TestMetricCoverageSubjectBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMetric(%s): %v", name, err)
 		}
+		markTouched(t, s, m.ID)
 		return m
 	}
 	mm := subjMetric("cov_match_subject", "match")
@@ -553,6 +566,7 @@ func TestMetricCoveragePartitionDimRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)
 	}
+	markTouched(t, s, m.ID)
 
 	// Both input sides expect a fresh dim row: absent → behind (the
 	// match clause alone already says so; the dim axis takes over once
