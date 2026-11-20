@@ -599,23 +599,14 @@ func TestEconomyCardSeedEquivalence(t *testing.T) {
 			{"pistol_hold", seedExpr["pistol_hold"], oraclePistol},
 			{"avg_equip_gap", seedExpr["avg_equip_gap"], oracleGap},
 		} {
-			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: tc.expr, Subject: "match"}, scope, 10)
-			if perr != nil {
-				t.Fatalf("%s compile: %v", tc.name, perr)
+			rows := previewRowsFor(t, st, tc.expr, "match", scope)
+			if len(rows) != 1 {
+				t.Fatalf("%s %s rows = %d, want 1", tc.name, scope, len(rows))
 			}
-			if err != nil {
-				t.Fatalf("%s run: %v (sql %s)", tc.name, err, pv.SQL)
-			}
-			if len(pv.Rows) != 1 {
-				t.Fatalf("%s %s rows = %d, want 1", tc.name, scope, len(pv.Rows))
-			}
-			got := pv.Rows[0].Value
+			got := rows[0].Value
 			if got != tc.want {
 				t.Errorf("%s %s value = %v, want EXACT %v (the card view aggregate)",
 					tc.name, scope, got, tc.want)
-			}
-			if pv.Rows[0].N != c.wantRows {
-				t.Errorf("%s %s N = %d, want %d (the match's rounds)", tc.name, scope, pv.Rows[0].N, c.wantRows)
 			}
 		}
 	}
@@ -748,15 +739,9 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 			// the preview's rows by subject group.
 			teamRows := func(t *testing.T, name string) map[string]PreviewRow {
 				t.Helper()
-				pv, perr, err := RunPreview(t.Context(), st, Def{Expr: seedExpr[name], Subject: "team"}, scope, 10)
-				if perr != nil {
-					t.Fatalf("%s compile: %v", name, perr)
-				}
-				if err != nil {
-					t.Fatalf("%s run: %v (sql %s)", name, err, pv.SQL)
-				}
+				rows := previewRowsFor(t, st, seedExpr[name], "team", scope)
 				out := map[string]PreviewRow{}
-				for _, r := range pv.Rows {
+				for _, r := range rows {
 					out[r.Group] = r
 				}
 				return out
@@ -791,31 +776,23 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 							t.Errorf("%s match %d team %s value = %v, want EXACT %v (the card's count pair)",
 								name, c.matchID, key, row.Value, want)
 						}
-						if c.classN != 0 && row.N != c.classN {
-							t.Errorf("%s match %d team %s N = %d, want %d (the team's class rows)", name, c.matchID, key, row.N, c.classN)
-						}
 					}
 				}
 			}
 
 			// lost_equip (match subject): one row, EXACTLY the card's
 			// pooled total.
-			pv, perr, err := RunPreview(t.Context(), st, Def{Expr: seedExpr["lost_equip"], Subject: "match"}, scope, 10)
-			if perr != nil {
-				t.Fatalf("lost_equip compile: %v", perr)
+			lostEquip := previewRowsFor(t, st, seedExpr["lost_equip"], "match", scope)
+			if len(lostEquip) != 1 {
+				t.Fatalf("lost_equip %s rows = %d, want 1", scope, len(lostEquip))
 			}
-			if err != nil {
-				t.Fatalf("lost_equip run: %v (sql %s)", err, pv.SQL)
-			}
-			if len(pv.Rows) != 1 {
-				t.Fatalf("lost_equip %s rows = %d, want 1", scope, len(pv.Rows))
-			}
-			if got := pv.Rows[0].Value; got != float64(c.wantTot) {
+			if got := lostEquip[0].Value; got != float64(c.wantTot) {
 				t.Errorf("lost_equip %s value = %v, want EXACT %d (the card's headline total)", scope, got, c.wantTot)
 			}
 
-			// team_lost_equip: per team, EXACTLY the oracle's halves,
-			// with N = the team's stored economy rows.
+			// team_lost_equip: per team, EXACTLY the oracle's halves.
+			// (The retired N column is not asserted: raw statements store
+			// no N.)
 			lostRows := teamRows(t, "team_lost_equip")
 			for _, key := range []string{"ct", "t"} {
 				row, ok := lostRows[key]
@@ -826,10 +803,6 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 				if want := float64(c.wantLost[key]); row.Value != want {
 					t.Errorf("team_lost_equip match %d team %s value = %v, want EXACT %v (the card's sub-line half)",
 						c.matchID, key, row.Value, want)
-				}
-				if c.econN != 0 && row.N != c.econN {
-					t.Errorf("team_lost_equip match %d team %s N = %d, want %d (the team's economy rows)",
-						c.matchID, key, row.N, c.econN)
 				}
 			}
 		}

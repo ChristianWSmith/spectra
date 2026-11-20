@@ -57,6 +57,20 @@ func seedByName(t *testing.T, st *store.Store, name string) (expr, denom string)
 func profileSeedRows(t *testing.T, st *store.Store, name, partition string) map[string]map[string]float64 {
 	t.Helper()
 	expr, denom := seedByName(t, st, name)
+	if IsRawSQL(expr) {
+		// Raw partitioned seeds (ruling 22) run through the raw path.
+		raw := map[string]map[string]float64{}
+		for _, r := range rawPreviewRows(t, st, expr, "") {
+			if raw[r.SubjectKey] == nil {
+				raw[r.SubjectKey] = map[string]float64{}
+			}
+			if _, dup := raw[r.SubjectKey][r.Dim]; dup {
+				t.Errorf("%s: duplicate row for (%s, %q)", name, r.SubjectKey, r.Dim)
+			}
+			raw[r.SubjectKey][r.Dim] = rawValue(r)
+		}
+		return raw
+	}
 	pv, perr, err := RunPreview(t.Context(), st, Def{
 		Expr: expr, Denominator: denom, Subject: "player",
 		Partition: partition, Profile: true,

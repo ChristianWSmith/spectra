@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -64,6 +65,15 @@ func seedDef(t *testing.T, st *store.Store, name string) Def {
 // scoreboard's grain) and keys the rows by subject.
 func previewAt(t *testing.T, st *store.Store, def Def, scope string) map[string]float64 {
 	t.Helper()
+	if IsRawSQL(def.Expr) {
+		// Raw seeds (ruling 22) run through the raw path; sugar has no
+		// preview for them. One row per subject (no dims in these seeds).
+		out := map[string]float64{}
+		for _, r := range rawPreviewRows(t, st, def.Expr, scope) {
+			out[r.SubjectKey] = rawValue(r)
+		}
+		return out
+	}
 	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
 	if perr != nil {
 		t.Fatalf("parse %q: %v", def.Expr, perr)
@@ -370,8 +380,11 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 		t.Errorf("kd = %v/%v, want the floored spelling %v/%v (deaths > 0 must agree)",
 			kd["100"], kd["200"], floored["100"], floored["200"])
 	}
-	if kd["300"] != 0 || floored["300"] != 7 {
-		t.Errorf("zero-death kd = metric %v vs floored %v, want 0 (NULLIF) vs 7 (MAX(deaths,1)) — Q1's ruled edge",
+	// Zero deaths: the ratio's NULLIF makes the statement's value NULL,
+	// which is no data (ruling 23): a dash, not 0. The floored spelling
+	// still gives 7 (MAX(deaths,1)) — Q1's ruled edge.
+	if !math.IsNaN(kd["300"]) || floored["300"] != 7 {
+		t.Errorf("zero-death kd = metric %v vs floored %v, want NULL (NULLIF, ruling 23) vs 7 (MAX(deaths,1)) — Q1's ruled edge",
 			kd["300"], floored["300"])
 	}
 
@@ -487,27 +500,40 @@ func TestMissedTradesEquivalence(t *testing.T) {
 			// GetCombatStats' rule spelled in plain SQL: the human
 			// roster (base query's INNER players join + is_bot = 0)
 			// LEFT JOINed to the stored counts, missing → 0.
-			want := oracle(t, st,
-				`SELECT ps.steam_id, COALESCE(mo.missed, 0)
+			// A roster player with no trade-opportunity row has no data:
+			// the statement's SUM is NULL and the cell is a dash, not 0
+			// (dogfood/PLAN.md ruling 23). The oracle keeps that NULL.
+			res, err := st.RunReadOnly(
+				`SELECT ps.steam_id, mo.missed
 				 FROM player_stats ps
 				 JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id
 				 LEFT JOIN match_trade_opps mo ON mo.match_id = ps.match_id AND mo.steam_id = ps.steam_id
 				 WHERE ps.match_id = ? AND p.is_bot = 0`,
-				matchID)
-			if len(want) == 0 {
+				[]any{matchID}, 500, 5000)
+			if err != nil {
+				t.Fatalf("oracle: %v", err)
+			}
+			if len(res.Rows) == 0 {
 				t.Fatal("oracle returned no roster rows")
 			}
-			if len(got) != len(want) {
-				t.Errorf("preview rows = %d, roster rows = %d", len(got), len(want))
+			if len(got) != len(res.Rows) {
+				t.Errorf("preview rows = %d, roster rows = %d", len(got), len(res.Rows))
 			}
-			for sid, v := range want {
+			for _, r := range res.Rows {
+				sid := r[0].(string)
 				gotV, ok := got[sid]
 				if !ok {
 					t.Errorf("missed_trades: subject %s missing from the preview", sid)
 					continue
 				}
-				if gotV != v {
-					t.Errorf("missed_trades[%s] = %v, want GetCombatStats' TradeOppMissed rule %v", sid, gotV, v)
+				if r[1] == nil {
+					if !math.IsNaN(gotV) {
+						t.Errorf("missed_trades[%s] = %v, want NULL (no trade-opportunity rows)", sid, gotV)
+					}
+					continue
+				}
+				if want := toFloat(r[1]); gotV != want {
+					t.Errorf("missed_trades[%s] = %v, want GetCombatStats' TradeOppMissed rule %v", sid, gotV, want)
 				}
 			}
 		})
