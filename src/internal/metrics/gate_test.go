@@ -134,6 +134,22 @@ func TestEveryBuiltinPassesTheGate(t *testing.T) {
 		t.Fatal("no builtins")
 	}
 	for _, m := range ms {
+		if IsRawSQL(m.Expr) {
+			// Raw builtins (ruling 22) pass the save gate itself: one
+			// statement, the reserved binds, no metric() refs. The sugar
+			// source-clause checks below do not apply to them.
+			g, perr, err := CheckRawSave(st, m.Expr)
+			if err != nil {
+				t.Fatalf("%s: %v", m.Name, err)
+			}
+			if perr != nil {
+				t.Fatalf("%s: refused by the gate: %s", m.Name, perr.Message)
+			}
+			if len(g.Touched) == 0 {
+				t.Errorf("%s: touched set not derived", m.Name)
+			}
+			continue
+		}
 		spec, perr := Parse(m.Expr)
 		if perr != nil {
 			t.Fatalf("%s: %v", m.Name, perr)

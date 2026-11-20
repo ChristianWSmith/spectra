@@ -76,11 +76,10 @@ func TestKDAZeroDeathDisplay(t *testing.T) {
 	// (the sweep stores their seeds — owner ruling 2026-11-17; same
 	// numbers the raw fields carried) plus the assists half 1, the kd
 	// metric's zero-death edge rendering 0.00
-	// (ratio's NULLIF — Q1's RULED divergence), and the floored kda
-	// rendering 11.00 (MAX(deaths,1) — the floor closes the edge for
-	// KDA). This is the display the collapsed ME1 (scalar max, no
-	// greatest()) must not move.
-	want := "K/D/A: **10/0/1** (KD 0.00, KDA 11.00)"
+	// (NULLIF, a raw statement with no data — ruling 23 — so the cell is
+	// a dash, not 0.00), and the floored kda rendering 11.00
+	// (MAX(deaths,1) — the floor closes the edge for KDA).
+	want := "K/D/A: **10/0/1** (KD —, KDA 11.00)"
 	if !strings.Contains(pout, want) {
 		t.Errorf("player.md missing %q:\n%s", want, pout)
 	}

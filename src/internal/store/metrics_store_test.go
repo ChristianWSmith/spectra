@@ -369,8 +369,9 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		if m.Version != 1 {
 			t.Errorf("builtin %q version = %d, want 1 (the seed omits the column — DEFAULT 1)", m.Name, m.Version)
 		}
-		if !strings.HasPrefix(m.Expr, "from ") {
-			t.Errorf("builtin %q expr %q missing source clause", m.Name, m.Expr)
+		// Builtins are raw SQL (dogfood/PLAN.md ruling 22): one SELECT.
+		if !strings.HasPrefix(m.Expr, "SELECT ") {
+			t.Errorf("builtin %q expr %q is not a raw SELECT", m.Name, m.Expr)
 		}
 	}
 }

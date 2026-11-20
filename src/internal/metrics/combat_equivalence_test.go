@@ -131,6 +131,15 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 // here).
 func combatPreview(t *testing.T, st *store.Store, def Def, scope string) map[string]PreviewRow {
 	t.Helper()
+	if IsRawSQL(def.Expr) {
+		// Raw seeds carry no N or label column (ruling 22: only
+		// subject_key, dim and value are read; the rest is opaque JSON).
+		out := map[string]PreviewRow{}
+		for _, r := range rawPreviewRows(t, st, def.Expr, scope) {
+			out[r.SubjectKey] = PreviewRow{Group: r.SubjectKey, Value: rawValue(r)}
+		}
+		return out
+	}
 	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
 	if perr != nil {
 		t.Fatalf("parse %q: %v", def.Expr, perr)
@@ -206,7 +215,35 @@ func characterizationFixture(t *testing.T) (*store.Store, int64) {
 			{Seq: 3, Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10, SameSide: true},
 		},
 	}
-	return st, saveCombatMatch(t, st, "combat-equiv-a", em)
+	id := saveCombatMatch(t, st, "combat-equiv-a", em)
+	// The same-side gate is a side join over player_ticks now (events
+	// no longer carry same_side, dogfood/PLAN.md A3): every event tick
+	// needs each participant's side. carl (ct) shares alice's side, so
+	// his damage is gated out exactly as the SameSide stamp gated it.
+	addCombatSides(t, st, id, []models.TickSample{
+		{SteamID: "100", Side: "ct", Alive: true, HP: 100},
+		{SteamID: "200", Side: "t", Alive: true, HP: 100},
+		{SteamID: "300", Side: "ct", Alive: true, HP: 100},
+	}, 10, 20, 30)
+	return st, id
+}
+
+// addCombatSides writes one player_ticks frame per tick for the given
+// participants (the store's TickWriter, as extract's tick sink does).
+func addCombatSides(t *testing.T, st *store.Store, id int64, players []models.TickSample, ticks ...int32) {
+	t.Helper()
+	w, err := st.NewTickWriter(id)
+	if err != nil {
+		t.Fatalf("NewTickWriter: %v", err)
+	}
+	for _, tk := range ticks {
+		if err := w.AddTicks(tk, 1, 64, players); err != nil {
+			t.Fatalf("AddTicks(%d): %v", tk, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 }
 
 // TestCombatDamageSeedEquivalence is THE m3 acceptance: the seeded
@@ -242,11 +279,8 @@ func TestCombatDamageSeedEquivalence(t *testing.T) {
 	if int(aNoKill.Value) != alice.NoKill || aNoKill.Value != 40 {
 		t.Errorf("dmg_no_kill(alice) = %v, want the gated 40", aNoKill.Value)
 	}
-	// N = alice's four event rows — the group behind the aggregate (the
-	// gate lives inside the sum's where, not the group).
-	if aNoKill.N != 4 {
-		t.Errorf("dmg_no_kill(alice) N = %d, want 4 (alice's event rows)", aNoKill.N)
-	}
+	// (The retired N column — alice's four event rows — is gone with the
+	// positional n column; raw statements store no N.)
 	aConv, ok := conv["100"]
 	if !ok {
 		t.Fatalf("kill_conversion has no alice row: %+v", conv)
@@ -368,16 +402,17 @@ func TestCombatSeedActorPairAndRosterEquivalence(t *testing.T) {
 	if row, ok := noKill[botSteamID]; ok {
 		t.Errorf("dmg_no_kill(bot) = %v, want no row (humans-only, engine side)", row.Value)
 	}
-	// Carl only ever holds a kill row: his damage sums are 0 on both
-	// sides (the old roster zeros for damage-less subjects).
-	if v, ok := noKill["300"]; !ok || v.Value != 0 {
-		t.Errorf("dmg_no_kill(carl) = %+v, want a 0 row (his kill event anchors the group)", v)
+	// Carl only ever holds a kill row: his damage sum has no rows, so the
+	// statement's value is NULL, a dash (ruling 23), not 0. His kill event
+	// still anchors the group.
+	if v, ok := noKill["300"]; !ok || !math.IsNaN(v.Value) {
+		t.Errorf("dmg_no_kill(carl) = %+v, want a NULL row (his kill event anchors the group; no damage rows)", v)
 	}
 	if v := conv["100"].Value * 100; math.Abs(v-zoe.ConvPct) > 1e-9 {
 		t.Errorf("kill_conversion(zoe) × 100 = %v, want the oracle's %v (40/90)", v, zoe.ConvPct)
 	}
-	if v := conv["400"].Value; v != 0 {
-		t.Errorf("kill_conversion(dave) = %v, want 0 (no on-kill damage)", v)
+	if v := conv["400"].Value; !math.IsNaN(v) {
+		t.Errorf("kill_conversion(dave) = %v, want NULL (no kills, so no ratio: ruling 23)", v)
 	}
 }
 
