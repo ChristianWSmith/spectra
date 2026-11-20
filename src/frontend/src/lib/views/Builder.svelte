@@ -34,6 +34,7 @@
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
+  import RunningMetricsDialog from '../components/RunningMetricsDialog.svelte';
   import Popover from '../components/Popover.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -92,6 +93,7 @@
   // The Order dialog's open state — transient by the state-placement
   // rule: never seeded, never remembered, never in the URL.
   let orderOpen = $state(false);
+  let runningOpen = $state(false);
 
   function openOrder() {
     orderOpen = true;
@@ -1308,6 +1310,12 @@
               class="codicon codicon-arrow-down"></span
             > {S.builder.orderLabel}</button
           >
+          <button
+            class="btn small"
+            onclick={() => (runningOpen = true)}
+            title={S.builder.runningTitle}
+            ><span class="codicon codicon-pulse"></span> {S.builder.runningLabel}</button
+          >
           <button class="btn small" onclick={newMetric}
             ><span class="codicon codicon-add"></span> {S.builder.newLabel}</button
           >
@@ -1972,6 +1980,7 @@
        dialog's pin toggle (M6) routes back through the ONE pins
        writer — togglePin writes both pin keys and never the order
        pref, so this view stays the only place prefs are written. -->
+  <RunningMetricsDialog open={runningOpen} onClose={() => (runningOpen = false)} />
   <MetricOrderDialog
     open={orderOpen}
     pinnedMatch={pins}

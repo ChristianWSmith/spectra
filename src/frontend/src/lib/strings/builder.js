@@ -49,6 +49,19 @@ export const builder = {
   metricLanguageHelp: 'Metric language help',
   retry: 'Retry',
 
+  // list toolbar + running-metrics popup (components/RunningMetricsDialog)
+  runningLabel: 'Running metrics',
+  runningTitle: 'See the metrics running now, and cancel any of them',
+  runningHeading: 'Running metrics',
+  runningNote: 'Cancelled metrics keep no values until you save them again.',
+  runningNone: 'No metrics are running.',
+  runningCancel: 'Cancel',
+  runningCancelAria: 'Cancel {name}',
+  runningClose: 'Close running metrics',
+  runningLoadError: "Couldn't read the running metrics.",
+  runningCancelError: "Couldn't cancel {name}.",
+  runningDismiss: 'Dismiss',
+
   // list toolbar + filters
   metricsHeading: 'Metrics',
   orderDialogTitle: 'Set the order of scoreboard columns and profile cards',

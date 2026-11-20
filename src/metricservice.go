@@ -553,11 +553,19 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if err != nil {
 		return models.MetricRow{}, err
 	}
+	// Saving is the explicit trigger that clears a user cancel's hold: a
+	// cancelled metric re-runs only when it is saved (or the user runs it
+	// again), never on its own.
+	released, err := s.st.ReleaseMetricHold(saved.ID)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
 	// Invalidation trigger (design §4): behind work exists → sweep now
 	// (coalesced — a sweep already running re-resolves the behind set on
 	// its follow-up run). Display-only/rename saves deliberately do not
-	// schedule: no bump, no recompute.
-	if created || semantic {
+	// schedule: no bump, no recompute — unless they clear a hold, whose
+	// metric has no rows and must be computed.
+	if created || semantic || released {
 		s.scheduleSweep()
 	}
 	return saved, nil

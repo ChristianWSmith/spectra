@@ -896,6 +896,9 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- SQL CHECK: its vocabulary is the app-level contract
 -- (metricservice.metricFormats — which gains 'identity', the key-valued
 -- format, beside this readiness change).
+-- held: 1 = the user cancelled this metric's stored run. Background sweeps
+-- skip a held metric and its dependents; only saving the metric clears the
+-- hold (metric_hold_store.go). Compute state, not definition.
 CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT UNIQUE NOT NULL,
@@ -916,7 +919,8 @@ CREATE TABLE IF NOT EXISTS metrics (
 	-- after an upsert until the next gate pass).
 	touched TEXT NOT NULL DEFAULT '',
 	version INTEGER NOT NULL DEFAULT 1,
-	created_at DATETIME
+	created_at DATETIME,
+	held INTEGER NOT NULL DEFAULT 0
 );
 
 -- Console run history: appended after every Run (success or error), capped

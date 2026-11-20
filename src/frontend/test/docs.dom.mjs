@@ -319,6 +319,17 @@ compileSvelte(
   'HelpButton.svelte',
   localURL('helpbutton.js'),
 );
+// RunningMetricsDialog — the Builder's running-metrics popup (closed by
+// default; this harness never opens it), its services and strings resolve
+// from the COPIED tree like MetricOrderDialog's.
+compileSvelte(
+  readFileSync('src/lib/components/RunningMetricsDialog.svelte', 'utf8')
+    .replace("from '../services.js'", `from '${libURL('services.js')}'`)
+    .replace("from './Dialog.svelte'", `from '${localURL('dialog.js')}'`)
+    .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`),
+  'RunningMetricsDialog.svelte',
+  localURL('runningmetricsdialog.js'),
+);
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
@@ -332,6 +343,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/SortTh.svelte'", `from '${localURL('sortth.js')}'`)
   .replace("from '../components/StatusChip.svelte'", `from '${localURL('statuschip.js')}'`)
   .replace("from '../components/MetricOrderDialog.svelte'", `from '${localURL('metricorderdialog.js')}'`)
+  .replace("from '../components/RunningMetricsDialog.svelte'", `from '${localURL('runningmetricsdialog.js')}'`)
   .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)
   .replace("from '../components/HelpButton.svelte'", `from '${localURL('helpbutton.js')}'`)
   .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
@@ -491,8 +503,8 @@ check(
   // 28 → 29 (C3, components): the Component builder's own section.
   // 27 → 28 (2026-11-18, metrics Phase 7): the metric-language chapter
   // gained its `partitions` section.
-  'the full TOC renders (29 section entries, the guide opens at its first section)',
-  tocItems().length === 29 && tocCurrent()?.textContent.trim() === 'Introduction',
+  'the full TOC renders (30 section entries, the guide opens at its first section)',
+  tocItems().length === 30 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -829,7 +841,7 @@ check(
 check(
   // 28 → 29 body sections (C3: the Component builder section).
   'the filter is TOC-only: the body still renders every section while it is active',
-  docBody().querySelectorAll('.doc-section').length === 29,
+  docBody().querySelectorAll('.doc-section').length === 30,
   docBody().querySelectorAll('.doc-section').length + ' body sections',
 );
 check(
@@ -900,8 +912,8 @@ check(
 await typeQuery('');
 check(
   // 28 → 29 entries (C3: the Component builder section).
-  'clearing the input restores the full TOC (29 entries, no empty-state line)',
-  tocItems().length === 29 && !emptyTocLine(),
+  'clearing the input restores the full TOC (30 entries, no empty-state line)',
+  tocItems().length === 30 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
 
@@ -1024,8 +1036,8 @@ click(toggleOf('Metric language'));
 await sleep();
 check(
   // 14 → 15 majors remain when the chapter folds (C3).
-  'folding the chapter hides its minors (15 entries remain) and flips aria-expanded to false',
-  tocItems().length === 15 &&
+  'folding the chapter hides its minors (16 entries remain) and flips aria-expanded to false',
+  tocItems().length === 16 &&
     toggleOf('Metric language')?.getAttribute('aria-expanded') === 'false' &&
     document.querySelectorAll('.doc-toc-children').length === 0,
   `${tocItems().length} entries / children containers ${document.querySelectorAll('.doc-toc-children').length}`,
@@ -1034,8 +1046,8 @@ click(toggleOf('Metric language'));
 await sleep();
 check(
   // 27 → 28 entries (2026-11-18, metrics Phase 7 `partitions`).
-  'unfolding restores every entry (29) and aria-expanded back to true',
-  tocItems().length === 29 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  'unfolding restores every entry (30) and aria-expanded back to true',
+  tocItems().length === 30 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
   `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
 );
 click(tocItems().find((b) => b.textContent.trim() === 'Denominators'));
@@ -1076,8 +1088,8 @@ check(
 );
 await typeQuery('');
 check(
-  'clearing the query keeps the user’s fold state (the chapter stays folded: 15 entries)',
-  tocItems().length === 15,
+  'clearing the query keeps the user’s fold state (the chapter stays folded: 16 entries)',
+  tocItems().length === 16,
   `${tocItems().length} entries`,
 );
 await typeQuery('INTRODUCTION');

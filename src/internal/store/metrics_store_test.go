@@ -23,7 +23,7 @@ import (
 // their current generation (metric_values), never definitions.
 var metricColumnsContract = []string{
 	"id", "name", "title", "short_name", "expr", "scope", "subject", "partition", "format", "doc", "origin",
-	"plugin_id", "denominator", "touched", "version", "created_at",
+	"plugin_id", "denominator", "touched", "version", "created_at", "held",
 }
 
 // schemaSeededBuiltins is the schema.sql seed's per-row contract: every

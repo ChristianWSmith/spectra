@@ -458,6 +458,16 @@ svelteCompile(
 // their real module locations — viewstate through the SAME absolute URL
 // the pins below import, so the view and the test share one registry
 // instance (the jsdom cross-talk rule in that module's header).
+// RunningMetricsDialog — the Builder's running-metrics popup (closed by
+// default), its services and strings resolved like MetricOrderDialog's.
+svelteCompile(
+  readFileSync('src/lib/components/RunningMetricsDialog.svelte', 'utf8')
+    .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+    .replace("from './Dialog.svelte'", "from './dialog.js'")
+    .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`),
+  'RunningMetricsDialog.svelte',
+  join(dir, 'runningmetricsdialog.js'),
+);
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
@@ -471,6 +481,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'")
+  .replace("from '../components/RunningMetricsDialog.svelte'", "from './runningmetricsdialog.js'")
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
   .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);

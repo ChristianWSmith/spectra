@@ -63,7 +63,9 @@ import (
 //   - ONE METRIC's ctx (MetricContext — the user's cancel) interrupts
 //     that metric's statement: it FAILS with CancelledReason, writes no
 //     rows (phase 1 already removed the old ones; the insert never
-//     runs), its dependents are skipped, and the sweep goes on.
+//     runs), its dependents are skipped, and the sweep goes on. The
+//     service then HOLDS it (SweepResult.Cancelled): later sweeps leave
+//     it and its dependents alone until the metric is saved again.
 const (
 	// StageRemove / StageCompute are the pass's per-metric stages (the
 	// metric-progress payload's stage values): phase 1 (rows removed)
@@ -104,12 +106,15 @@ type SweepProgress struct {
 //	           the texts are the engine's own error copies)
 //	Skipped    Attempted but not computed: an upstream failed or was
 //	           skipped this run (rows cleared → behind, not failed)
+//	Cancelled  Failed by the USER's cancel (a subset of Failed) — the
+//	           service holds these so no background sweep re-runs them
 //	Total      the work list's size (the progress denominator)
 type SweepResult struct {
 	Attempted []int64
 	Succeeded []int64
 	Failed    map[int64]string
 	Skipped   []int64
+	Cancelled []int64
 	Total     int
 }
 
@@ -186,6 +191,38 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 				}
 			}
 		}
+	}
+	// The user-cancel hold: a held metric and everything downstream of it
+	// leave the work list before ordering. Nothing about them is touched
+	// (no phase 1, no attempt): the held metric keeps reading as cancelled
+	// and its dependents as behind, until saving the metric clears the hold.
+	held, err := st.HeldMetricIDs()
+	if err != nil {
+		return SweepResult{}, err
+	}
+	blocked := map[int64]bool{}
+	for id := range held {
+		if _, ok := byID[id]; ok {
+			blocked[id] = true
+		}
+	}
+	for changed := len(blocked) > 0; changed; {
+		changed = false
+		for _, m := range all {
+			if blocked[m.ID] {
+				continue
+			}
+			for _, d := range depsOf[m.ID] {
+				if blocked[d] {
+					blocked[m.ID] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	for id := range blocked {
+		delete(work, id)
 	}
 	res := SweepResult{Failed: map[int64]string{}, Total: len(work)}
 	if len(work) == 0 {
@@ -294,6 +331,12 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			unavailable[m.ID] = true
 			finishAttempt()
 		}
+		// cancelled: the user stopped THIS metric — failed with the
+		// cancel reason, and reported so the service holds it.
+		cancelled := func() {
+			res.Cancelled = append(res.Cancelled, m.ID)
+			fail(CancelledReason)
+		}
 
 		// Resolve the metric()'s references against the CURRENT catalog
 		// (the same RefTarget shape PreviewMetric/SaveMetric bind; live
@@ -350,7 +393,7 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 		if mctx.Err() != nil {
 			// THIS metric was cancelled: failed, no rows written (the
 			// insert below never runs).
-			fail(CancelledReason)
+			cancelled()
 			return
 		}
 		if err != nil {
@@ -369,7 +412,7 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			return
 		}
 		if mctx.Err() != nil {
-			fail(CancelledReason)
+			cancelled()
 			return
 		}
 		if err := st.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, values); err != nil {

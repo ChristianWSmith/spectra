@@ -950,6 +950,18 @@ export function getMetricComputeState() {
   return MetricsService.GetMetricComputeState();
 }
 
+// listRunningMetrics / cancelMetric back the Builder's running-metrics
+// popup: the saved metrics with a statement running right now (never
+// cached — a run starts and ends without a data event), and the user's
+// cancel of one of them. A cancelled metric keeps no values and is held
+// until it is saved again (Go side: metrics.SweepResult.Cancelled).
+export function listRunningMetrics() {
+  return MetricsService.ListRunningMetrics();
+}
+export function cancelMetric(id) {
+  return MetricsService.CancelMetric(id);
+}
+
 // compileMetric is the no-execution Compile (design §5): the
 // provenance SQL a clean-saved preview shows beside its stored rows,
 // without calculating a value. expr "" uses the saved definition by id.
