@@ -48,6 +48,8 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"soundEventsCols", "sound_events", soundEventsCols},
 		{"jobsCols", "jobs", jobsCols},
 		{"metricColumns", "metrics", metricColumns},
+		{"componentCols", "components", componentCols},
+		{"layoutPlacementCols", "layout_placements", layoutPlacementCols},
 	}
 	for _, l := range lists {
 		cols, err := s.schemaColumns(l.table)

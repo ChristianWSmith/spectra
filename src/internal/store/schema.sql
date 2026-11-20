@@ -904,6 +904,30 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
+-- User components and the surfaces they are placed on (Svelte 5 source stored
+-- in the database; builtin components are code, never rows). `components.name`
+-- is what a placement references; a placement's `component` is either a
+-- builtin id or a components.name, so it carries NO foreign key: a name that
+-- resolves to neither is reported by the reader, never refused by the DDL.
+-- Absence means the builtin: a surface with no placement rows renders its
+-- builtin. One baseline, no versioning.
+CREATE TABLE IF NOT EXISTS components (
+	id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL UNIQUE,
+	source TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS layout_placements (
+	surface TEXT NOT NULL,
+	position INTEGER NOT NULL,
+	component TEXT NOT NULL,
+	props TEXT NOT NULL DEFAULT '{}',
+	hidden INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (surface, position)
+);
+
 -- THE builtins, seeded (see header): exactly one hundred and nine —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-
