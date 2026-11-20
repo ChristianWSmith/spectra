@@ -6,9 +6,8 @@
   //
   // What reaches the frame:
   //   render / $effect errors   <svelte:boundary> → the failed snippet
-  //                             replaces the component; Dismiss empties
-  //                             the slot (a deterministic failure would
-  //                             only fail again on a re-render)
+  //                             replaces the component; Try again
+  //                             re-renders it, Dismiss empties the slot
   //   event-handler errors      componentruntime/eventerrors.js
   //   read API failures, guard  componentruntime/readapi.js
   //                             → the banner above the still-running
@@ -102,9 +101,10 @@
   {:else}
     <svelte:boundary>
       <Comp {...props} spectra={api} />
-      {#snippet failed(error)}
+      {#snippet failed(error, reset)}
         <p class="error" role="alert">
           {S.fill(S.components.frameFailed, { err: errText(error) })}
+          <button class="btn small" onclick={reset}>{S.components.frameRetry}</button>
           <button class="btn small" aria-label={S.components.frameDismiss} onclick={() => (dismissed = true)}>
             <span class="codicon codicon-close"></span>
           </button>
