@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS components (
     id         INTEGER PRIMARY KEY,
     name       TEXT    NOT NULL UNIQUE,  -- what the user sees and what placements reference
     source     TEXT    NOT NULL,         -- Svelte 5 source, as written
-    created_at TEXT    NOT NULL,
-    updated_at TEXT    NOT NULL
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS layout_placements (
