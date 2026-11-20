@@ -146,7 +146,6 @@ bindings.ProfileService.GetProfile = () =>
     name: 'amy',
     matches: 2,
     wins: 1,
-    winPct: 50,
     adrAvg: 37.5,
     adrStd: 3.5,
     kd: 1.1,

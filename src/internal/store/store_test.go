@@ -56,8 +56,8 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			ExtractedAt: extractedAt, ParseMS: 42, WarningsCount: 1,
 		},
 		Teams: []models.Team{
-			{Side: "ct", Name: "alpha", Flag: "se", Score: 1, MoneySpent: 16000, EquipTotal: 25000},
-			{Side: "t", Name: "beta", Flag: "de", Score: 0, MoneySpent: 14000, EquipTotal: 20000},
+			{Side: "ct", Name: "alpha", Flag: "se", Score: 1},
+			{Side: "t", Name: "beta", Flag: "de", Score: 0},
 		},
 		Players: []models.Player{
 			{SteamID: "100", Name: "al\x00ice", Side: "ct", ClanTag: "cl\x00an", Rank: 4,

@@ -308,15 +308,15 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	teamsStmt, err := tx.Prepare(
-		`INSERT INTO teams (match_id, side, name, flag, score, money_spent, equip_total)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO teams (match_id, side, name, flag, score)
+		 VALUES (?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
 	}
 	defer teamsStmt.Close()
 	for _, t := range em.Teams {
-		if _, err := teamsStmt.Exec(matchID, scrub(t.Side), scrub(t.Name), scrub(t.Flag), t.Score, t.MoneySpent, t.EquipTotal); err != nil {
+		if _, err := teamsStmt.Exec(matchID, scrub(t.Side), scrub(t.Name), scrub(t.Flag), t.Score); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
 		}
 	}

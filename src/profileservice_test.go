@@ -161,7 +161,7 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 	// the M7 weapon migration (2026-11-18): the Weapons table reads the
 	// weapon_* seed rows.
 	staying := []string{
-		"steamId", "name", "matches", "wins", "winPct",
+		"steamId", "name", "matches", "wins",
 		"history",
 	}
 	converted := []string{
@@ -220,9 +220,9 @@ func TestGetProfileDesignedHybrid(t *testing.T) {
 		}
 	}
 	// The staying Go stats are still REAL values, not zeros: two
-	// matches, one win (alice's ct match), 50%.
-	if p.Matches != 2 || p.Wins != 1 || p.WinPct < 49.9 || p.WinPct > 50.1 {
-		t.Errorf("matches/wins/winPct = %d/%d/%v, want 2/1/50", p.Matches, p.Wins, p.WinPct)
+	// matches, one win (alice's ct match).
+	if p.Matches != 2 || p.Wins != 1 {
+		t.Errorf("matches/wins = %d/%d, want 2/1", p.Matches, p.Wins)
 	}
 }
 

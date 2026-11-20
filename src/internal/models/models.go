@@ -248,12 +248,10 @@ type Match struct {
 
 // Team is one side's summary for a match (teams table).
 type Team struct {
-	Side       string `json:"side"` // "ct" | "t"
-	Name       string `json:"name"`
-	Flag       string `json:"flag"`
-	Score      int    `json:"score"`
-	MoneySpent int    `json:"moneySpent"`
-	EquipTotal int    `json:"equipTotal"`
+	Side  string `json:"side"` // "ct" | "t"
+	Name  string `json:"name"`
+	Flag  string `json:"flag"`
+	Score int    `json:"score"`
 }
 
 // Player is identity/final-state data for one participant (players table).

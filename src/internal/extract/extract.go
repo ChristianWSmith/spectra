@@ -474,20 +474,16 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	ctTeam, tTeam := teamFinal{}, teamFinal{}
 	if ct := gs.TeamCounterTerrorists(); ct != nil {
 		ctTeam = teamFinal{
-			name:       ct.ClanName(),
-			flag:       ct.Flag(),
-			score:      ct.Score(),
-			moneySpent: ct.MoneySpentTotal(),
-			equipTotal: ct.CurrentEquipmentValue(),
+			name:  ct.ClanName(),
+			flag:  ct.Flag(),
+			score: ct.Score(),
 		}
 	}
 	if t := gs.TeamTerrorists(); t != nil {
 		tTeam = teamFinal{
-			name:       t.ClanName(),
-			flag:       t.Flag(),
-			score:      t.Score(),
-			moneySpent: t.MoneySpentTotal(),
-			equipTotal: t.CurrentEquipmentValue(),
+			name:  t.ClanName(),
+			flag:  t.Flag(),
+			score: t.Score(),
 		}
 	}
 	a.setFinalTeam("ct", ctTeam)
