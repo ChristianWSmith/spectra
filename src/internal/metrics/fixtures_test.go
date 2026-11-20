@@ -1100,7 +1100,8 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 	// of exactly the multi-source exprs (the criterion that partitions
 	// the two phrasings).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, subject, partition, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		// The F2 raw fold seeds (raw_*) are locked by TestRawFoldSeeds, not this table.
+		`SELECT name, expr, scope, subject, partition, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' AND name NOT LIKE 'raw\_%' ESCAPE '\' ORDER BY name`,
 		nil, 200, 5000,
 	)
 	if err != nil {
