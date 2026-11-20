@@ -92,12 +92,13 @@ is a derived cache of the SQL and is never versioned.
 | Change | What should happen |
 |---|---|
 | A match is imported or reprocessed | Metrics whose touched set includes a table that match wrote go behind. For a per-match metric, only that match's output goes behind. |
-| An analysis rule **value** is edited | The rule's builtin **stub** recalculates. Its dependents recalculate through `metric_deps`. Metrics that read that rule's analysis table directly also go behind. Nothing else moves. |
+| An analysis rule **value** is edited | The app recalculates the metrics that depend on that rule value: those whose touched set includes the rule's analysis table, and their dependents through `metric_deps`. Nothing else moves. (Ruling 26: no stub rows.) |
 | Analysis **code** changes (version bump) | Every metric whose touched set includes an analysis table goes behind. Metrics that read only facts stay fresh. |
 
-**Stubs.** Each analysis rule value has one builtin stub metric, reading that
-rule's stored analysis output. **Decided** (carried from the 2026-11-18 stub
-model).
+**No stubs (owner ruling 26, 2026-11-20).** Analysis rule values have no
+builtin stub metrics. A rule-value edit is handled by the app, which recalculates
+the affected metrics directly, as the table above states. `analysis_config`
+stays denied to metric reads.
 
 **`player_stats`** is written by extract (base columns) and analysis (`trade_kills`).
 Any metric that touches it is treated as analysis-dependent. Column-level
@@ -173,8 +174,8 @@ Two graphs, and only one is new.
   unchanged: re-derived on save, cycle-checked, rename-spliced, cascaded.
 - **Metric to table** (`metrics.touched`). New. Drives §4.
 
-Stubs connect them: an analysis table is a table, and a stub is a metric that
-reads it.
+Analysis tables connect to metrics through the touched set like any other table.
+There are no stub metrics (ruling 26).
 
 ## 7. The builtin port
 
@@ -194,8 +195,8 @@ compiler still exists.
 4. **Store** the result as `expr`. The sugar text is kept in git history only.
 5. **Verify** against the snapshot (§8).
 
-**Stubs and the analysis-rule builtins** are written by hand against the
-analysis tables, and checked against the same snapshot.
+**Analysis-rule builtins** are written by hand against the analysis tables, and
+checked against the same snapshot. No stub rows are seeded (ruling 26).
 
 **Formats.** The port drops the `format` of each seed. Components that show
 those values take on the formatting. The list of which component shows which

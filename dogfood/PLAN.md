@@ -133,6 +133,10 @@ Settled (owner, 2026-11-20 unless noted):
     accepted footgun under PRODUCT.md Power surfaces. Builtins still apply the
     shared bot predicate. The `src_*` view rule is retired (03 §10).
 
+26. **No analysis stubs (owner ruling, 2026-11-20):** analysis rule values have
+    no stub metrics. A rule-value edit makes the app recalculate the affected
+    metrics directly. This replaces the stub design in 03 §6 and B4. `analysis_config`
+    stays denied to metric reads.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -268,15 +272,15 @@ schema change. Any mismatch is a port bug.
 
 **B4 · Freshness.** `metrics.touched` drives the behind predicate, so a
 metric goes behind when a table it touches changes. Analysis rules get
-builtin stubs (one per rule value). A rule-value edit recalculates the stub,
-the stub's dependents through the cascade, and the metrics whose touched set
-contains the rule's analysis table. The analysis code-change path (version
+direct recalculation, with no stub metrics (ruling 26). A rule-value edit
+recalculates the metrics whose touched set contains the rule's analysis table,
+and their dependents through the cascade. The analysis code-change path (version
 bump) is the only broad recalculation, and it marks only metrics that touch an
 analysis table. `player_stats` stays in the analysis class (conservative).
 - **Check:** a fact-only metric does not go behind on an analysis code bump; a
-  rule-value edit recalculates exactly the stub, its dependents and the
-  direct readers; the five state words are unchanged (`metricstate.js`).
-- **Deps:** B2, B3 (stubs need the analysis tables known). The scope-aware
+  rule-value edit recalculates exactly the metrics that touch the analysis
+  table, and their dependents; the five state words are unchanged (`metricstate.js`).
+- **Deps:** B2, B3. The scope-aware
   cascade (item 20) is a change to the existing cascade and is pinned here.
 
 **B5 · Retire the grammar.** Delete the sugar parser, the compiler's emitters,

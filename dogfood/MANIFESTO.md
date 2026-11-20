@@ -29,7 +29,7 @@ be a guarantee is dropped and accepted as a power-user footgun.
 |---|---|---|
 | Metric expressions | SQL; one statement; read-only; no `CREATE VIEW`; every table resolved to a fixed app table or view at save; freshness from touched tables | the sugar grammar and its compiler; sample size (N) as a guarantee; the honest-metrics contract; the timeout and row cap; automatic bot filtering for user metrics |
 | Metric values | stored values; processing / failed / fresh / no-data / behind states; the dependency graph (`metric('…')` references) | the rule that every number carries its formula and N |
-| Analysis rules | rule outputs stored at analyze time; rule-value edits fire builtin stubs; code changes bump the analysis version | nothing else changes here |
+| Analysis rules | rule outputs stored at analyze time; rule-value edits recalculate the affected metrics (no stubs, ruling 26); code changes bump the analysis version | nothing else changes here |
 | Components | Svelte source in the database; Component Builder with preview; error boundary per component; metrics and allowlisted tables readable; duplicate-to-edit; "use as my view" for the Match view (tab bar and below) and individual Profile views | the component grammar; contract refusals at save (syntax-only at save); the stale-reference placeholder machinery; in-place editing of builtins |
 | Formatting | components format values | metric display formats |
 | Views | they may compute for presentation | the exception list; the relocation rule; "views contain zero statistics logic" |
@@ -56,7 +56,7 @@ be a guarantee is dropped and accepted as a power-user footgun.
 1. **Freshness.** A stored value is shown only when it is current with the
    data it was computed from. Each metric stores the set of tables it reads.
    A re-import or reprocess marks dependents behind through those tables. A
-   rule-value edit fires that rule's builtin stub. A code change to analysis
+   rule-value edit recalculates the metrics that depend on it (ruling 26). A code change to analysis
    bumps the analysis version, which is the one broad recalculation path.
    Nothing recalculates blanket-style on a value edit.
 2. **Read-only execution.** Metric SQL runs on a read-only connection, even
