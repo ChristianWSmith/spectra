@@ -577,6 +577,61 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 	PRIMARY KEY (metric_id, dep_name)
 );
 
+-- Per-tick player state: one row per (match, tick, present participant)
+-- at the demo's full frame rate, carrying DERIVED features only — the
+-- joinable projections a metric needs at an event's tick (speed and
+-- in-air at a shot or kill). Raw positions, view angles and the full
+-- sparse state stream stay in the per-match sidecar (internal/sidecar);
+-- this table never duplicates them. Every row is a direct parser sample
+-- except speed, which is derived at write time.
+--
+-- Population: the per-frame sidecar population (every playing
+-- participant, dead included, through the takeover routing — extract's
+-- appendTargets), restricted to COUNTED rounds: frames before the first
+-- counted round's start tick and frames while a discarded (knife/warmup/
+-- post-match) round is current are never written, exactly like every
+-- other row of a discarded round. steam_id is the accumulator key (a
+-- bot keeps its synthetic 0xFF key: this is an event-shaped record —
+-- humans-only readers route through HumanOnly). round is the stored
+-- (counted, 1..N) round number at that frame.
+--
+-- Honest gaps: in_air and speed are NULL when the frame carries no
+-- position sample (the position stream is alive-only), never 0 — a dead
+-- player's speed was not observed. speed is the HORIZONTAL (x/y)
+-- movement speed in world units per second between this frame and the
+-- player's previous frame (the quantity the game's movement-inaccuracy
+-- rule reads — CS2.md "Player movement speed for accuracy"), computed
+-- from the raw float positions; it is also NULL on the first positioned
+-- frame of a stretch (no previous frame), across a round change, after a
+-- frame the player was absent or unpositioned, and when the tick rate is
+-- unknown. weapon is the canonical weapon name (the events.weapon
+-- vocabulary), NULL when dead (not sampled); hp is forced to 0 when dead
+-- (a sample, not an inference); money is the controller's account as
+-- read (it survives death).
+--
+-- Lifecycle: the rows STREAM in during the parse (store.TickWriter, in
+-- chunked transactions of at most tickChunkRows rows so no single
+-- transaction holds the writer long), so the table is deliberately NOT a
+-- childTables entry — SaveExtracted runs after the parse and would erase
+-- the freshly streamed rows. A reprocess wipes the match's rows when its
+-- writer is created, every import failure path deletes them with the
+-- half-written sidecar, and DeleteMatchData clears them through
+-- streamedChildTables (the FK cascade is the backstop).
+CREATE TABLE IF NOT EXISTS player_ticks (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	tick     INTEGER NOT NULL,
+	steam_id TEXT    NOT NULL,
+	round    INTEGER NOT NULL DEFAULT 0,
+	side     TEXT    NOT NULL DEFAULT '',
+	alive    INTEGER NOT NULL DEFAULT 1,
+	hp       INTEGER NOT NULL DEFAULT 100,
+	money    INTEGER NOT NULL DEFAULT 0,
+	in_air   INTEGER,
+	speed    REAL,
+	weapon   TEXT,
+	PRIMARY KEY (match_id, tick, steam_id)
+);
+
 -- Tier 1 index pass (library-wide reads). Placed here because every table
 -- they target now exists (the baseline script runs top-to-bottom).
 --
@@ -634,6 +689,14 @@ CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, me
 CREATE INDEX IF NOT EXISTS idx_metric_values_subject ON metric_values(subject_key, match_id, metric_id, dim);
 CREATE INDEX IF NOT EXISTS idx_metric_deps_dep ON metric_deps(dep_name);
 CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
+-- idx_player_ticks_steam serves the library-wide per-player reads of the
+-- tick table (one player's frames in one match, or across the library):
+-- the match_id-first primary key cannot seek on steam_id, and a scan of
+-- a ~1.3M-row-per-match table is the cost this block exists to avoid
+-- (measured 2.6x on a golden-sized match — dogfood/02-TICK-STATE.md
+-- §2.2). Same leading-column mirror of the match_id-first key as the
+-- other steam_id members.
+CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
 
 CREATE TABLE IF NOT EXISTS clutches (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,

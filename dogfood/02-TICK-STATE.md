@@ -637,3 +637,44 @@ where present.
 event-tick count (option d's row estimate stays derived); current
 `SaveExtracted` wall-clock duration for a golden-sized match (unmeasured
 in-tree — measure at execution, it sizes the busy-timeout headroom).
+
+### 6.1 Execution measurements (2026-11-20, tick table + sink landed)
+
+Measured by `TestGoldenPlayerTicks` (`internal/integration/player_ticks_test.go`)
+on the golden demo `de_cache.dem.zst`: real parse, `store.TickWriter` on a
+file-backed WAL DB, PK + `idx_player_ticks_steam`. The machine was shared
+with parallel agent worktrees, so the timings are upper bounds. **H**.
+
+| Quantity | Run 1 | Run 2 |
+|---|---|---|
+| rows written / frames delivered | 1,334,370 / 133,599 | same |
+| tick-sink wall-clock (buffering + all chunk flushes + final Close) | 33.62 s | 30.96 s |
+| parse wall-clock with the sink (parse-only probe, no sink: 67.4 s) | 94.37 s | 86.85 s |
+| longest single `AddTicks` call (one ≤50 k-row chunk flush = writer hold) | — | 1.533 s |
+| `SaveExtracted` wall-clock (4,357 events) | 1.328 s | 0.554 s |
+
+- **Busy-timeout headroom:** the longest writer hold is a chunk flush at
+  ~1.5 s, about 3× under `busy_timeout=5000`. `SaveExtracted` at 0.55–1.3 s
+  stays far under it. The §3.2 chunk bound holds. The single-transaction
+  alternative (14–21.6 s) would not.
+- **Sink cost:** about 31–34 s per golden-sized import, all inside
+  `StageParse`. It is higher than the §3.2 synthetic 21–22 s, probably
+  because of the file DB, the WAL and the shared machine.
+- **Findings from execution:**
+  1. The golden demo delivers **36 frames whose tick repeats the previous
+     frame's tick**, one every 3,840 ticks (the periodic full-packet
+     frame). The PK `(match_id, tick, steam_id)` rejects the second
+     observation. Rule implemented: the first observation of a tick
+     wins and the repeat is dropped (`store.TickWriter.AddTicks`).
+  2. Rows are written only while a **counted** round is current. Frames
+     of a discarded (post-match/knife/warmup) round after the first
+     counted round are skipped, because their rows would belong to no
+     stored round. `round` is the stored 1..N number (`len(a.rounds)`).
+  3. **Same-frame in-air re-proof (§2.3 gate risk):** for 159/159 kills
+     with a player attacker, a row exists at (match, kill tick, attacker)
+     (0 join misses), and `in_air` equals the payload's `attackerinair`
+     (0 mismatches). The attacker_inair replacement holds on the golden
+     corpus.
+  4. `speed` is the horizontal (x/y) frame-difference speed in u/s
+     (sourced: CS2.md "Player movement speed for accuracy"). The golden
+     maximum is 506.1 u/s, logged and not pinned.

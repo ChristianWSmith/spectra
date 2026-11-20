@@ -38,6 +38,8 @@ const interruptedJobErr = "interrupted by restart"
 // extract's other children (SaveExtracted re-inserts the rows every
 // reprocess). The voice CHUNK index is not
 // a table — it lives in the per-match sidecar (internal/sidecar).
+// player_ticks is deliberately NOT here: it streams in during the parse,
+// before SaveExtracted, so it rides streamedChildTables (ticks.go).
 var childTables = []string{
 	"events", "generic_events", "chat", "sound_events", "round_economy", "rounds",
 	"round_player_sides", "round_player_money", "player_stats", "players", "teams", "warnings",

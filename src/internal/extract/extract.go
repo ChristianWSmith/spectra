@@ -104,6 +104,12 @@ type StatePlayer struct {
 	Attack      bool
 	Reloading   bool // active weapon mid-reload (pl.IsReloading); false when !Alive
 	Alive       bool
+	// Side is the identity's team at this frame (sideString: "ct"/"t", ""
+	// when unassigned), sampled alive or dead — a direct read, never
+	// carried forward. The sidecar state stream does not encode it (the
+	// position stream carries side for the replay); the tick sink's
+	// per-frame side column reads it.
+	Side string
 }
 
 // RosterSink is an OPTIONAL capability of a PositionSink: after the parse
@@ -132,6 +138,21 @@ type StateSink interface {
 	AddState(seed bool, players []StatePlayer) error
 }
 
+// TickSink receives one call per parsed frame of a COUNTED round with
+// every playing participant's merged sample (models.TickSample — the state
+// sample joined with the alive-only position sample), the frame's tick,
+// the stored (counted, 1..N) round number current at that frame and the
+// demo's tick rate (<= 0 when the parser does not know it yet). It is
+// called after the Positions and State sinks, through the same takeover
+// routing (appendTargets). Frames before the first counted round and
+// frames while a discarded (knife/warmup/post-match) round is current are
+// never delivered — their rows would belong to no stored round.
+// Implementations must not retain players (the slice is reused across
+// frames). An error returned from AddTicks aborts the parse.
+type TickSink interface {
+	AddTicks(tick int32, round int, tickRate float64, players []models.TickSample) error
+}
+
 // ParseOptions configures one Parse call. Progress, if non-nil, is called
 // with (framesDone, framesTotal) throttled to ~every 1000 frames plus one
 // final call; framesTotal is 0 until the playback values are known (they
@@ -146,6 +167,9 @@ type StateSink interface {
 // before the first counted round's start tick is delivered — see the
 // gate comment in Parse's FrameDone handler. Progress is NOT gated (it
 // counts the demo's frames, not the delivered stream).
+// Ticks, if non-nil, receives the per-frame merged sample stream of the
+// counted rounds (see TickSink) — the player_ticks table's input; it is
+// gated by the same sanitization rule plus the counted-round rule.
 // NetKey, when non-empty, is the chat decryption key extracted from a
 // <demo>.info companion (demoinfocs.MatchInfoDecryptionKey) and enables
 // decryption of svc_EncryptedData net-messages during the parse.
@@ -154,6 +178,7 @@ type ParseOptions struct {
 	Positions PositionSink
 	State     StateSink
 	Voice     VoiceSink
+	Ticks     TickSink
 	NetKey    []byte
 }
 
@@ -310,6 +335,7 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	// Reused across frames: the sinks consume their slices synchronously.
 	frameBuf := make([]PositionPlayer, 0, 10)
 	stateBuf := make([]StatePlayer, 0, 10)
+	tickBuf := make([]models.TickSample, 0, 10)
 	targetBuf := make([]identityTarget, 0, 10)
 	// Round-start seeds for the state stream: the first frame after each
 	// round-counter change carries seed=true (see StateSink).
@@ -388,6 +414,25 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			}
 			if err := sink.AddState(seeds.take(a.currentRound), stateBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: state sink: %w", err)
+				cancel()
+			}
+		}
+		// Tick stream (see TickSink): the same population as the state
+		// stream, restricted to counted rounds — a.discarding marks a
+		// knife/warmup/post-match round whose rows are never stored, and
+		// while the gate is open and no discarded round is current the
+		// current round is the LAST of a.rounds, whose stored number
+		// (build.renumber's dense 1..N) is len(a.rounds).
+		if sink := opts.Ticks; gateOpen && !a.discarding && sink != nil && sinkErr == nil {
+			gs := p.GameState()
+			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
+			tickBuf = tickBuf[:0]
+			for _, t := range targetBuf {
+				pos, hasPos := positionRow(t)
+				tickBuf = append(tickBuf, tickSample(sampleStatePlayer(t.identity, t.pawn), pos, hasPos))
+			}
+			if err := sink.AddTicks(int32(gs.IngameTick()), len(a.rounds), p.TickRate(), tickBuf); err != nil {
+				sinkErr = fmt.Errorf("extract: tick sink: %w", err)
 				cancel()
 			}
 		}
@@ -598,8 +643,36 @@ func sampleStatePlayer(identity, pawn *common.Player) StatePlayer {
 		}
 		reloading = pawn.IsReloading
 	}
-	return buildStateSample(playerKey(identity), alive, pawn.Health(), pawn.Armor(), identity.Money(), pawn.HasHelmet(),
+	s := buildStateSample(playerKey(identity), alive, pawn.Health(), pawn.Armor(), identity.Money(), pawn.HasHelmet(),
 		weapon, inventory, mag, reserve, mainMag, mainReserve, pawn.IsPressingButton(common.ButtonAttack), reloading)
+	s.Side = sideString(identity.Team)
+	return s
+}
+
+// tickSample merges one target's state sample with its position sample
+// (hasPos false = no position this frame: the pawn is dead) into the tick
+// sink's unit. Pure — the shaping rule the player_ticks honesty contract
+// depends on: the state sample's death rules carry over unchanged (HP 0
+// and no weapon when dead), and the position fields are only set when a
+// position was sampled, so a dead frame can never carry a fabricated
+// position, speed or in-air flag downstream.
+func tickSample(st StatePlayer, pos PositionPlayer, hasPos bool) models.TickSample {
+	ts := models.TickSample{
+		SteamID: keyStr(st.SteamID),
+		Side:    st.Side,
+		Alive:   st.Alive,
+		HP:      st.HP,
+		Money:   st.Money,
+	}
+	if st.Alive {
+		ts.Weapon = st.Weapon
+	}
+	if hasPos {
+		ts.HasPosition = true
+		ts.X, ts.Y, ts.Z = float64(pos.X), float64(pos.Y), float64(pos.Z)
+		ts.InAir = pos.Air
+	}
+	return ts
 }
 
 // scanWeapons walks one participant's weapon list IN ORDER (pl.Weapons()
