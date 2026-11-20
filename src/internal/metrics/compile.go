@@ -113,6 +113,10 @@ type Plan struct {
 	// PreviewRow.ValueKey. Numeric plans never set it; an identity plan
 	// is always subject=match, sole aggregation (compile enforces both).
 	Identity bool
+	// Touched is the physical tables the compiled statements read (sorted),
+	// derived by the metric gate (gate.go) — the set SaveMetric stores as
+	// metrics.touched. metric() ref joins read stored values and add none.
+	Touched []string
 }
 
 // Compile parses + validates (grammar, sources, the subject anchor per
@@ -533,6 +537,9 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 			comp.phase1(sqlAggs, denomTable != "")
 			plan.Secondary = comp.sb.String()
 		}
+		if perr := gatePlan(&plan, refAliases); perr != nil {
+			return Plan{}, perr
+		}
 		return plan, nil
 	}
 
@@ -557,6 +564,9 @@ func compileRefs(expr, denominator, scope string, addr Address, refs map[string]
 		raw := newEmitter()
 		raw.phase2(pctl, false)
 		plan.Secondary = raw.sb.String()
+	}
+	if perr := gatePlan(&plan, refAliases); perr != nil {
+		return Plan{}, perr
 	}
 	return plan, nil
 }
