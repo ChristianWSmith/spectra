@@ -131,8 +131,11 @@ grain, and it is named in code so it can be read in one place.
 
 **Storage.** Each run replaces the stored rows for its own bound values. Rows
 are tagged with the bound values, and an unbound dimension is NULL. A
-library-wide run replaces the metric's whole stored result. The output columns
-are stored as opaque JSON. The engine never reads an output column.
+library-wide run replaces the metric's whole stored result. The engine reads
+three reserved output columns: `subject_key`, `dim` and `value` (owner ruling,
+2026-11-20). `value` may be NULL, meaning no data; a NULL is stored as NULL and
+shown as a dash, never as 0. Every other output column is stored as opaque JSON,
+and the engine never reads it.
 
 **Freshness.** A change propagates with its scope, through the dependency
 graph. A change to match M and player P marks behind only the dependents bound
@@ -234,6 +237,7 @@ into the app tree.
 | `subject`, `scope`, `partition` as furniture | **Not kept**: scope comes from the bind; touched set stays on the row |
 | `denominator` | **Retired** |
 | The 2026-11-18 derivation ladder, declared pool, shape declaration, `src_*` views | **Retired** |
+| Gate refusal of raw reads of player-carrying tables | **Not kept** (owner ruling, 2026-11-20): raw reads are allowed; bot contamination is an accepted footgun. Builtins still apply the bot predicate. |
 
 ## 11. Folds versus detectors (proposed, 2026-11-20)
 

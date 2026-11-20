@@ -76,7 +76,9 @@ Settled (owner, 2026-11-20 unless noted):
     grain). Unbound metrics are library-wide. The engine fans a change out to
     the affected values from fact tables (players and rounds in a match). Each
     run replaces the stored rows for its own bound values, and library-wide runs
-    replace the whole result. The engine never reads output columns. Freshness
+    replace the whole result. The engine reads only the reserved output columns
+    `subject_key`, `dim` and `value` (ruling 22); every other output column is
+    opaque JSON. Freshness
     propagates with scope through the dependency graph, which is a change to the
     existing cascade (B4). Career metrics are built from stored per-match
     components as ratios of sums.
@@ -110,6 +112,27 @@ Settled (owner, 2026-11-20 unless noted):
     (decided). Clutch becomes a builtin over that family. The port is verified
     against the snapshot's `clutches` rows. The Go detector stays only if the
     port can't reproduce it, which the test decides.
+22. **Raw result to stored value (owner ruling, 2026-11-20):** a raw statement
+    returns reserved columns `subject_key`, `dim` and `value`. The engine reads
+    those three; every other column is opaque JSON. This amends 03 §5, which
+    said the engine reads no output column.
+23. **NULL is not zero (owner ruling, 2026-11-20):** where a statement has no
+    data, `value` is NULL and is shown as a dash. The current engine turns NULL
+    into 0 when it reads a value. The snapshot stores 0 in 461 cells: 460
+    `weapon_damage` cells and 1 `team_force_win_rate` cell. Those cells are a
+    ratified change from the snapshot, so the snapshot check accepts them as the
+    only exception. Any other mismatch remains a port bug.
+24. **Unverifiable values are checked at the wipe (owner ruling, 2026-11-20):**
+    `shots` and the three tick-join builtins (`dmg_no_kill`, `kill_conversion`,
+    `weapon_damage` gate) cannot be checked against the snapshot before the
+    wipe, because it predates typed weapon-fire rows and `player_ticks`. They
+    are checked at the owner's wipe gate diff (step 4). A mismatch there means a
+    second wipe, which is an owner decision.
+25. **Raw reads of player tables are allowed (owner ruling, 2026-11-20):** the
+    save gate does not refuse raw reads of player-carrying tables. This is an
+    accepted footgun under PRODUCT.md Power surfaces. Builtins still apply the
+    shared bot predicate. The `src_*` view rule is retired (03 §10).
+
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
