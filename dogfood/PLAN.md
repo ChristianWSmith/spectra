@@ -92,8 +92,11 @@ Settled (owner, 2026-11-20 unless noted):
     **Amended by the F1 audit (`06-FOLD-AUDIT.md`, decisions 2026-11-20):**
     `entry_kills`, `entry_deaths`, `first_kill`/`first_death` and `best_streak`
     are sequence interpretations and move to detectors (item 21), not folds.
-    `money_spent_total` and `total_damage`'s basis are open owner questions.
-    The three round-economy sum columns stay ingest facts.
+    Owner decisions (2026-11-20): `money_spent_total` is redefined as the
+    per-round sum (one ratified exception to the snapshot equality bar, F2);
+    damage is capped only: `events.capped_dmg` stays an ingest stamp, and the
+    uncapped `player_round_stats.dmg` column is removed (F3). The three
+    round-economy sum columns stay ingest facts.
 18. **Game-emulation stays at ingest (decided):** `mvps` and `score` are
     engine-internal decisions, so they stay as stamps under the emulation
     criterion. `capped_dmg` also stays.

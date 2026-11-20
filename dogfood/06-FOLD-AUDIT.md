@@ -277,7 +277,11 @@ OPEN and go to the owner.
   sequence interpretation is a detector. `entry_*`, `first_kill_steam`, first
   death and `best_streak` move to analysis-owned detectors. Their counts are
   metrics. Folding them into metrics is not a fold.
-- **Q3 (`money_spent_total`): OPEN, owner.** See the product question below.
+- **Q3 (`money_spent_total`): decided by the owner (2026-11-20): redefined** as
+  the sum of per-round spend. The value changes from the snapshot on 8 of 73
+  rows. This is the one owner-ratified exception to the equality bar: F2 checks
+  the new definition against a hand computation over the per-round samples, and
+  the snapshot diff for this metric is recorded, not treated as a bug.
 - **Q4 (`damage_taken` in `detail_json`): decided, accept the JSON read** for
   the metric. No new typed column in this migration.
 - **Q5 (`hs_pct` zero vs dash): decided, dash.** Builtin convention 3: no
@@ -285,7 +289,10 @@ OPEN and go to the owner.
   metric dash, with zero kills, as an expected, documented difference.
 - **Q6 (denormalized stamps): decided, keep as join helpers.** They are cheap
   partition keys for user SQL. Item 17's fold removal does not apply to them.
-- **Q7 (two damage bases): OPEN, owner.** See the product question below.
+- **Q7 (two damage bases): decided by the owner (2026-11-20).** The HP-capped
+  damage is game emulation and stays an ingest stamp (`events.capped_dmg`, item
+  18). The uncapped `player_round_stats.dmg` need not exist: F3 removes it, and
+  round damage metrics use the capped basis.
 - **Q8 (`kast`): decided, stays a stored analysis output.** Rule-derived values
   are stored at analyze time (AGENTS, Analysis-rule derived values).
 - **Q9 (`round_economy` samples): decided, keep the three sum columns as ingest
@@ -294,11 +301,7 @@ OPEN and go to the owner.
 - **Q10 (bots in F2): decided, humans only.** Builtin convention 2. Bots have no
   `round_player_sides` rows; the three bot `player_stats` rows are excluded.
 
-### Product questions for the owner
+### Product questions: resolved
 
-1. **`money_spent_total` (Q3).** Keep it as the engine's final cumulative counter
-   (a fact), or redefine it as the sum of per-round spend (the values will differ
-   from the snapshot on 8 of 73 rows)?
-2. **Two damage bases (Q7).** `total_damage` is HP-capped and `dmg` is uncapped,
-   so the metrics will disagree by design. Is that acceptable, or should one
-   basis be chosen everywhere?
+- `money_spent_total`: redefined as the per-round sum (above).
+- Damage basis: capped is the one basis; the uncapped column is removed (above).
