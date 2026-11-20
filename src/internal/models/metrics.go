@@ -17,21 +17,25 @@ import "time"
 
 // MetricRow is one `metrics` table row (origin builtin|user|plugin).
 type MetricRow struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"` // UNIQUE across all origins
-	Title       string    `json:"title"`
-	ShortName   string    `json:"shortName"` // optional; read only at width-constrained metric column headers
-	Expr        string    `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
-	Scope       string    `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
-	Subject     string    `json:"subject"`   // player|match|team — who its values are keyed by (DDL CHECK)
-	Partition   string    `json:"partition"` // ''|side|map|weapon — how match/team rows split (DDL CHECK)
-	Format      string    `json:"format"`    // ""|int|float1|float2|percent|currency|identity
-	Doc         string    `json:"doc"`
-	Origin      string    `json:"origin"` // builtin|user|plugin
-	PluginID    string    `json:"pluginId"`
-	Denominator string    `json:"denominator"` // ""|rounds|matches
-	Version     int       `json:"-"`           // internal staleness stamp (metrics.version) — never marshalled to the frontend
-	CreatedAt   time.Time `json:"createdAt"`   // nullable column → zero when NULL
+	ID          int64  `json:"id"`
+	Name        string `json:"name"` // UNIQUE across all origins
+	Title       string `json:"title"`
+	ShortName   string `json:"shortName"` // optional; read only at width-constrained metric column headers
+	Expr        string `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
+	Scope       string `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
+	Subject     string `json:"subject"`   // player|match|team — who its values are keyed by (DDL CHECK)
+	Partition   string `json:"partition"` // ''|side|map|weapon — how match/team rows split (DDL CHECK)
+	Format      string `json:"format"`    // ""|int|float1|float2|percent|currency|identity
+	Doc         string `json:"doc"`
+	Origin      string `json:"origin"` // builtin|user|plugin
+	PluginID    string `json:"pluginId"`
+	Denominator string `json:"denominator"` // ""|rounds|matches
+	// Touched is the physical tables the metric's compiled statement reads
+	// (sorted), derived by the save gate and stored as metrics.touched.
+	// nil = not derived. Internal until freshness reads it.
+	Touched   []string  `json:"-"`
+	Version   int       `json:"-"`         // internal staleness stamp (metrics.version) — never marshalled to the frontend
+	CreatedAt time.Time `json:"createdAt"` // nullable column → zero when NULL
 }
 
 // MetricValue is ONE stored metric value the canonical read serves

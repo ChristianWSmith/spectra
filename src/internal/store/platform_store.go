@@ -89,6 +89,11 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	denominator TEXT NOT NULL DEFAULT '',
+	-- The physical tables the metric's compiled statement reads, comma-
+	-- joined and sorted (dogfood/03-QUERIES.md §6.3), derived by the save
+	-- gate. '' means not derived (builtins until their port; plugin rows
+	-- after an upsert until the next gate pass).
+	touched TEXT NOT NULL DEFAULT '',
 	version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME
 )`
@@ -263,7 +268,8 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		 ON CONFLICT(name) DO UPDATE SET
 			title = excluded.title, expr = excluded.expr, scope = excluded.scope,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
-			plugin_id = excluded.plugin_id, denominator = excluded.denominator`,
+			plugin_id = excluded.plugin_id, denominator = excluded.denominator,
+			touched = ''`,
 	)
 	if err != nil {
 		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)

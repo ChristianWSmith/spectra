@@ -470,9 +470,13 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// the partition column rule, so a definition that could never
 	// compute never lands.
 	addr := metrics.Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
-	if _, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", addr, refs); perr != nil {
+	plan, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", addr, refs)
+	if perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
+	// The save gate's touched set (the statements the sweep runs), stored
+	// beside the expression it was derived from.
+	m.Touched = plan.Touched
 	depNames := metrics.DistinctNames(metrics.MetricRefs(spec))
 	// Cycle rejection: pure walk over {existing edges} ∪ {new refs}.
 	if err := s.checkMetricCycle(m.Name, existing.Name, depNames); err != nil {

@@ -259,6 +259,7 @@ var readOnlyPragmas = map[string]bool{
 type sqlTok struct {
 	kind byte // 'i' ident, 'n' number, 's' string, 'p' punctuation
 	text string
+	pos  int // byte offset of the token's first character in the statement
 }
 
 // lexSQL tokenizes a statement for validation. Quoted strings/idents and
@@ -306,7 +307,7 @@ func lexSQL(q string) ([]sqlTok, error) {
 			if c == '"' {
 				kind = 'i' // quoted identifier (e.g. "select") stays an ident
 			}
-			toks = append(toks, sqlTok{kind: byte(kind), text: q[i : j+1]})
+			toks = append(toks, sqlTok{kind: byte(kind), text: q[i : j+1], pos: i})
 			i = j + 1
 		case c >= '0' && c <= '9' || (c == '.' && i+1 < len(q) && q[i+1] >= '0' && q[i+1] <= '9'):
 			j := i
@@ -331,25 +332,25 @@ func lexSQL(q string) ([]sqlTok, error) {
 					j = k
 				}
 			}
-			toks = append(toks, sqlTok{kind: 'n', text: q[i:j]})
+			toks = append(toks, sqlTok{kind: 'n', text: q[i:j], pos: i})
 			i = j
 		case isIdentStart(c):
 			j := i
 			for j < len(q) && isIdent(q[j]) {
 				j++
 			}
-			toks = append(toks, sqlTok{kind: 'i', text: q[i:j]})
+			toks = append(toks, sqlTok{kind: 'i', text: q[i:j], pos: i})
 			i = j
 		case c == '!' || c == '<' || c == '>' || c == '=':
 			if i+1 < len(q) && q[i+1] == '=' {
-				toks = append(toks, sqlTok{kind: 'p', text: q[i : i+2]})
+				toks = append(toks, sqlTok{kind: 'p', text: q[i : i+2], pos: i})
 				i += 2
 			} else {
-				toks = append(toks, sqlTok{kind: 'p', text: string(c)})
+				toks = append(toks, sqlTok{kind: 'p', text: string(c), pos: i})
 				i++
 			}
 		default:
-			toks = append(toks, sqlTok{kind: 'p', text: string(c)})
+			toks = append(toks, sqlTok{kind: 'p', text: string(c), pos: i})
 			i++
 		}
 	}

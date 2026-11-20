@@ -19,7 +19,21 @@ import (
 // metricColumns is the full metrics column list in scan order: the DDL's
 // 15 columns in schema order, pinned by metricColumnsContract.
 const metricColumns = `id, name, title, short_name, expr, scope, subject, partition, format, doc, origin,
-	plugin_id, denominator, version, created_at`
+	plugin_id, denominator, touched, version, created_at`
+
+// touchedColumn encodes a touched set for metrics.touched: the sorted table
+// names, comma-joined (” = not derived). Table names never contain a comma.
+func touchedColumn(tables []string) string {
+	return strings.Join(tables, ",")
+}
+
+// parseTouched decodes metrics.touched; ” is nil (not derived).
+func parseTouched(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
 
 // scanMetric reads one metrics row (created_at is nullable → zero time on
 // NULL, which the coordination-contract DDL allows).
@@ -27,14 +41,16 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 	var (
 		m         models.MetricRow
 		createdAt sql.NullTime
+		touched   string
 	)
 	err := row.Scan(
 		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.Scope, &m.Subject, &m.Partition,
-		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &m.Denominator, &m.Version, &createdAt,
+		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &m.Denominator, &touched, &m.Version, &createdAt,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
+	m.Touched = parseTouched(touched)
 	m.CreatedAt = nullTime(createdAt)
 	return m, nil
 }
@@ -596,12 +612,12 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 		m.Subject = "player"
 	}
 	res, err := q.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, plugin_id, denominator, touched, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Subject), scrub(m.Partition),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
-		scrub(m.Denominator), time.Now(),
+		scrub(m.Denominator), touchedColumn(m.Touched), time.Now(),
 	)
 	if err != nil {
 		if isUniqueErr(err) {
@@ -638,10 +654,10 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 	}
 	if _, err := q.Exec(
 		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, subject = ?, partition = ?, format = ?,
-			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
+			doc = ?, plugin_id = ?, denominator = ?, touched = ? WHERE id = ?`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Subject), scrub(m.Partition),
-		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
+		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), touchedColumn(m.Touched), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {
 			return fmt.Errorf("a metric named %q already exists", scrub(m.Name))
