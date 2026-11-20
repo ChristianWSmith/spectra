@@ -54,20 +54,16 @@ func (a *agg) build() *models.ExtractedMatch {
 
 	out.Teams = []models.Team{
 		{
-			Side:       "ct",
-			Name:       a.ctTeam.name,
-			Flag:       a.ctTeam.flag,
-			Score:      a.ctTeam.score,
-			MoneySpent: a.ctTeam.moneySpent,
-			EquipTotal: a.ctTeam.equipTotal,
+			Side:  "ct",
+			Name:  a.ctTeam.name,
+			Flag:  a.ctTeam.flag,
+			Score: a.ctTeam.score,
 		},
 		{
-			Side:       "t",
-			Name:       a.tTeam.name,
-			Flag:       a.tTeam.flag,
-			Score:      a.tTeam.score,
-			MoneySpent: a.tTeam.moneySpent,
-			EquipTotal: a.tTeam.equipTotal,
+			Side:  "t",
+			Name:  a.tTeam.name,
+			Flag:  a.tTeam.flag,
+			Score: a.tTeam.score,
 		},
 	}
 

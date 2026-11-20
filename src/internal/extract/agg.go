@@ -34,11 +34,9 @@ type metaInfo struct {
 
 // teamFinal is one side's end-of-demo team state.
 type teamFinal struct {
-	name       string
-	flag       string
-	score      int
-	moneySpent int
-	equipTotal int
+	name  string
+	flag  string
+	score int
 }
 
 // finalPlayer is one row of the end-of-demo roster snapshot (the subset of

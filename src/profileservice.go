@@ -62,7 +62,6 @@ type Profile struct {
 	Name    string                     `json:"name"`
 	Matches int                        `json:"matches"`
 	Wins    int                        `json:"wins"`
-	WinPct  float64                    `json:"winPct"`
 	History []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
@@ -111,9 +110,6 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p.Name = career.Name
 	p.Matches = career.Matches
 	p.Wins = career.Wins
-	if p.Matches > 0 {
-		p.WinPct = 100 * float64(p.Wins) / float64(p.Matches)
-	}
 
 	history, err := s.st.GetPlayerHistory(steamID)
 	if err != nil {
