@@ -789,6 +789,26 @@ at the end of the section.
   (2026-11-04); meters observation from this repo's golden-demo events
   (2026-11-04).
 
+- **Player movement speed for accuracy (horizontal vs 3-D)** — which
+  speed does the game's movement-inaccuracy rule read? The HORIZONTAL
+  (x/y) speed: `weapon_csbase.cpp` computes
+  `RemapValClamped(pPlayer->GetAbsVelocity().Length2D(), fMaxSpeed *
+  CS_PLAYER_SPEED_DUCK_MODIFIER, fMaxSpeed * 0.95f, 0.0f, 1.0f)` — the
+  movement penalty ramps from the ducking speed up to 95% of the weapon's
+  run speed; vertical motion gets a SEPARATE jump term
+  (`fSqrtVerticalSpeed`). Units are world units per second. This is the
+  CS:GO (cstrike15) source; CS2 guides describe the same horizontal
+  `cl_showpos` vel readout but quote inconsistent stop thresholds
+  (~73–88 u/s for rifles) — do not hard-code a threshold from them.
+  Spectra's `player_ticks.speed` is this horizontal quantity, derived from
+  consecutive frame positions (a frame-difference, not the engine's
+  velocity prop).
+  **Source** — demoinfocs issue #318 quoting cstrike15_src
+  `game/shared/cstrike15/weapon_csbase.cpp#L1208`,
+  https://github.com/markus-wa/demoinfocs-golang/issues/318 (2026-11-20);
+  csdb.gg movement guide (u/s speeds, no 2D/3D statement),
+  https://csdb.gg/guides/movement-guide/ (2026-11-20).
+
 - **Starting money (`mp_startmoney`) on pistol rounds** — how much cash does
   each side start a half with? Competitive/Premier/Wingman start every
   player at **$800** (`mp_startmoney` default 800; Casual starts at $1000),

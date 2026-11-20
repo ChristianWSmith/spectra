@@ -988,16 +988,34 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		im.failJob(jobID, matchID, models.StageParse, werr.Error(), false)
 		return
 	}
-	cleanupSidecar := func() { _ = os.RemoveAll(sidecarPath) }
+	// Tick stream (player_ticks): rows stream into the store during the
+	// parse beside the sidecar writers — one parse, two consumers — in
+	// chunked transactions (store.TickWriter). It mirrors the sidecar's
+	// lifecycle exactly: the writer wipes a previous parse's rows at
+	// creation (reprocess), and cleanupPartial deletes the half-written
+	// rows together with the half-written sidecar on every failure path
+	// below, so a failed match never serves partial ticks. A cleanup
+	// error is dropped like the sidecar's RemoveAll error: the job is
+	// already failing, and the next reprocess wipes the rows anyway.
+	cleanupPartial := func() {
+		_ = os.RemoveAll(sidecarPath)
+		_ = im.st.DeletePlayerTicks(matchID)
+	}
+	tw, terr := im.st.NewTickWriter(matchID)
+	if terr != nil {
+		cleanupPartial()
+		im.failJob(jobID, matchID, models.StageParse, terr.Error(), false)
+		return
+	}
 
 	if err := os.RemoveAll(filepath.Join(sidecarPath, sidecar.VoiceDirName)); err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageParse, err.Error(), false)
 		return
 	}
 	vw, verr := sidecar.NewVoiceWriter(sidecarPath)
 	if verr != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageParse, verr.Error(), false)
 		return
 	}
@@ -1024,14 +1042,15 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		},
 		Positions: sw,
 		// State stream rides the same Writer: it reuses the position
-		// stream's slot table and shares its lifecycle (cleanupSidecar
+		// stream's slot table and shares its lifecycle (cleanupPartial
 		// removes state.bin/idx with the rest on any failure below).
 		State:  sw,
 		Voice:  vw,
+		Ticks:  tw,
 		NetKey: netKey,
 	})
 	if err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		cancelled := ctx.Err() != nil
 		msg := err.Error()
 		if cancelled {
@@ -1043,7 +1062,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// A parser that ignores cancellation must not overwrite the terminal
 	// state a concurrent Cancel() already wrote.
 	if err := ctx.Err(); err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageParse, "cancelled", true)
 		return
 	}
@@ -1065,7 +1084,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// rounds (warmup/knife-only recordings, all rounds discarded at
 	// ingest) or no players leaves the same blank, un-freshenable match.
 	if len(em.Players) == 0 || len(em.Rounds) == 0 {
-		cleanupSidecar()
+		cleanupPartial()
 		msg := "no rounds were found in this demo"
 		if len(em.Rounds) > 0 {
 			msg = "no players were found in this demo"
@@ -1074,9 +1093,17 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 
+	// Final tick chunk: flushed before the match row is saved, like the
+	// sidecar closes below — ready implies the tick rows are complete.
+	if err := tw.Close(); err != nil {
+		cleanupPartial()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
+		return
+	}
+
 	meta, err := sw.Close(em.Match.TickRate)
 	if err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
@@ -1088,7 +1115,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// presence header still needs the store, after SaveExtracted.
 	voiceMeta, _, cerr := vw.Close()
 	if cerr != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, cerr.Error(), false)
 		return
 	}
@@ -1098,12 +1125,12 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
 	// forces match status ready itself — don't double-set.
 	if err := im.st.SetPositionMeta(matchID, meta.SampleRate, meta.Frames); err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
 	if err := im.st.SaveExtracted(matchID, em); err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
@@ -1124,7 +1151,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		KeyFound:      netKey != nil,
 		OutSampleRate: models.VoiceOutSampleRate,
 	}); err != nil {
-		cleanupSidecar()
+		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
@@ -1260,6 +1287,9 @@ func (im *Importer) failJob(jobID, matchID int64, stage, errMsg string, cancelle
 	im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: status, Error: errMsg})
 	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 }
+
+// The store's tick writer is the job body's extract.TickSink.
+var _ extract.TickSink = (*store.TickWriter)(nil)
 
 // emitEvent forwards to the injected Emit hook (nil-safe).
 func (im *Importer) emitEvent(name string, data any) {

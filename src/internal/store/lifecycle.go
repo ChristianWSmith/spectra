@@ -578,7 +578,8 @@ func (s *Store) SetPositionMeta(matchID int64, sampleRate, frames int) error {
 	return affectedOrNotFound(res, "recording the position data")
 }
 
-// DeleteMatchData removes a match row and all of its child data in one
+// DeleteMatchData removes a match row and all of its child data — the
+// childTables and the parse-streamed streamedChildTables — in one
 // transaction. Returns ErrNotFound when no such match exists.
 func (s *Store) DeleteMatchData(id int64) error {
 	tx, err := s.db.Begin()
@@ -594,7 +595,7 @@ func (s *Store) DeleteMatchData(id int64) error {
 		}
 		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
-	for _, table := range childTables {
+	for _, table := range append(append([]string(nil), childTables...), streamedChildTables...) {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, id); err != nil {
 			return fmt.Errorf("couldn't delete the match data: %w", err)
 		}

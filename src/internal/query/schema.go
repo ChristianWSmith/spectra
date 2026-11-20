@@ -21,6 +21,7 @@ var tableNotes = map[string]string{
 	"generic_events":     "raw parser events not in the normalized taxonomy (name/tick/payload JSON)",
 	"chat":               "in-game chat/user messages (with decryption provenance columns)",
 	"sound_events":       "per-match player sounds (step/jump/land/fall) with tick, round, surface material and side prefix — bots included (event-shaped read)",
+	"player_ticks":       "per-frame player state in counted rounds (side, alive, hp, money, in-air, horizontal speed u/s, weapon) — NULL in-air/speed when unpositioned; bots included",
 	"warnings":           "parser warnings captured during extraction, per match, ordered",
 	"jobs":               "import job queue state (queued/running/done/failed + progress)",
 

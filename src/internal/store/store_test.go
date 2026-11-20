@@ -157,7 +157,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		"voice_presence",
 		"metrics", "saved_queries", "query_history",
 		"plugins", "round_player_sides",
-		"components", "layout_placements",
+		"components", "layout_placements", "player_ticks",
 	} {
 		var name string
 		if err := s2.db.QueryRow(
