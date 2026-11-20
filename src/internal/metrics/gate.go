@@ -41,6 +41,8 @@ type Gate struct {
 	// Refs is every metric('…') reference in textual order (Pos is the
 	// quoted literal's offset).
 	Refs []MetricRef
+	// Binds is every reserved bind the statement uses, in textual order.
+	Binds []string
 }
 
 // RefLookup reports whether a metric with this name exists (any origin).
@@ -66,7 +68,7 @@ func GateSQL(sql string, exists RefLookup, supplied map[string]bool) (Gate, *Par
 			return Gate{}, errf(0, "bind %s isn't supplied by this metric's run", b), nil
 		}
 	}
-	g := Gate{Touched: st.Touched}
+	g := Gate{Touched: st.Touched, Binds: st.Binds}
 	for _, r := range st.Refs {
 		ok, err := exists(r.Name)
 		if err != nil {

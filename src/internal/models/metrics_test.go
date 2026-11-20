@@ -47,7 +47,8 @@ func TestMetricRowJSONContract(t *testing.T) {
 // must not even be expressible here), so no view, tooltip or export can
 // render a version number by construction (design §5's no-version pin).
 func TestMetricValueJSONContract(t *testing.T) {
-	b, err := json.Marshal(MetricValue{MetricID: 7, SubjectKey: "76561198000000001", Value: 1.5, N: 3})
+	ptr := func(x float64) *float64 { return &x }
+	b, err := json.Marshal(MetricValue{MetricID: 7, SubjectKey: "76561198000000001", Value: ptr(1.5), N: 3})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

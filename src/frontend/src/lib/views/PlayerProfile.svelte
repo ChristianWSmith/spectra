@@ -559,7 +559,8 @@
           // Percent seeds store the 0..1 fraction; these tables have
           // always rendered 0..100 (the retired folds' scale) — the
           // MetricDisplayScale rule every percent surface applies.
-          const scaled = hit.def.format === 'percent' ? v.value * 100 : v.value;
+          // A NULL value is no data (ruling 23): it stays null, never 0 * 100.
+          const scaled = v.value == null ? null : hit.def.format === 'percent' ? v.value * 100 : v.value;
           if (!out.has(hit.name)) out.set(hit.name, new Map());
           out.get(hit.name).set(v.dim, { value: scaled, n: v.n });
         }

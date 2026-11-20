@@ -192,7 +192,7 @@ func TestGetMetricValuesForPlayerGrain(t *testing.T) {
 		t.Fatalf("bucket rows = %d, want 3 (career grain only): %+v", len(bucket), bucket)
 	}
 	for _, r := range bucket {
-		if r.MetricID == other.ID && r.SubjectKey == amy && r.Value == 99 {
+		if r.MetricID == other.ID && r.SubjectKey == amy && r.Value != nil && *r.Value == 99 {
 			t.Errorf("match-grain row leaked into the career read: %+v", r)
 		}
 	}
@@ -328,7 +328,7 @@ func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
 	}
 	for _, r := range rows {
 		if r.MetricID == ident.ID {
-			if r.ValueKey != "76561198000000008" || r.Value != 16 || r.N != 8 || r.SubjectKey != "" {
+			if r.ValueKey != "76561198000000008" || r.Value == nil || *r.Value != 16 || r.N != 8 || r.SubjectKey != "" {
 				t.Errorf("identity row = %+v, want ValueKey …008 / Value 16 / N 8 (the pool) / subject \"\"", r)
 			}
 		} else if r.ValueKey != "" {

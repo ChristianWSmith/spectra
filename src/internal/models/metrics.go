@@ -50,12 +50,12 @@ type MetricRow struct {
 // rule_version / computed_at are INTERNAL-ONLY and never leave the
 // store, so no view, tooltip or export can render one.
 type MetricValue struct {
-	MetricID   int64   `json:"metricId"`
-	SubjectKey string  `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
-	Dim        string  `json:"dim"`        // partition value ('' = unpartitioned — §6.5)
-	Value      float64 `json:"value"`
-	ValueKey   string  `json:"valueKey"` // identity winner's key (identity rows only; '' otherwise)
-	N          int     `json:"n"`        // sample size behind the value (for an identity, the pool)
+	MetricID   int64    `json:"metricId"`
+	SubjectKey string   `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
+	Dim        string   `json:"dim"`        // partition value ('' = unpartitioned — §6.5)
+	Value      *float64 `json:"value"`      // nil = no data (raw SQL NULL, ruling 23): a dash, never 0
+	ValueKey   string   `json:"valueKey"`   // identity winner's key (identity rows only; '' otherwise)
+	N          int      `json:"n"`          // sample size behind the value (for an identity, the pool)
 }
 
 // MetricSeriesPoint is ONE fresh stored match-grain value carrying the
