@@ -100,7 +100,7 @@ console.log('C. busy-button labels stay plain text (owner ruling: the exemption)
   const reports = src('builtins/reports/ReportsAppendix.svelte');
   check(
     'Reports: "Generating…" still rides the Generate button as plain text',
-    /\{#if m\.rendering\}Generating…\{:else\}/.test(reports) && !reports.includes('chip-spin'),
+    /\{#if m\.rendering\}\{S\.reports\.rendering\}\{:else\}/.test(reports) && !reports.includes('chip-spin'),
     '',
   );
 }
@@ -184,9 +184,9 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
   const expl = src('builtins/explorer/ExplorerProvenance.svelte') + src('builtins/explorer/ExplorerDiagnostics.svelte');
   check(
     'Explorer: both bare "Loading…" lines are block chips, none left as raw <p>',
-    (expl.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&
+    (expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length === 2 &&
       !/role="status">Loading…<\/p>/.test(expl),
-    String((expl.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
+    String((expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length),
   );
   // The two borderline provenance cells (Rules version / Trade window)
   // left Explorer with the details-technicals rework (owner ruling,

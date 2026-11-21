@@ -52,4 +52,45 @@ export const utility = {
   // The place cell shows the THROW origin (the throw-based ruling) — an
   // unpaired row, whose origin was never observed, dashes instead.
   coordTitle: 'throw world coordinates',
+  // Builtin panel copy (ruling 46, dogfood C5i): read by builtins/panels.
+  blindTotalTitle: "total blind time from this team's flashes, by thrower team",
+  titleAffected: "affected players (blinded or damaged by this throw)",
+  damageTotalTitle: "total damage in the current filter, by thrower team",
+  blindSub: " blind/round · totals of recorded blind time",
+  titleComputedBlind: "calculated from the demo's blind events",
+  noMatch: "No grenades match the current filters.",
+  damageSub: " dmg/round · totals of recorded damage",
+  watchThrowTitle: "Watch this throw in the replay",
+  damageTeamTitle: "Team utility damage per round",
+  watchThrowFollow: "Watch this throw — follow ",
+  blindTeamTitle: "Team blind time per round",
+  panelDamage: "Utility damage per round",
+  loading: "Loading utility events…",
+  titleCoords: "throw world coordinates",
+  panelBlind: "Blind time per round",
+  timeIntoRound: " — time into round ",
+  panelLog: "Utility throw log",
+  titleTotalBlind: "total blind time",
+  titleDamageDealt: "damage dealt",
+  blindSuffix: " blind time",
+  throwLogHead: "Throw log",
+  grenadeWord: " grenade",
+  colThrower: "Thrower",
+  panelUtility: "Utility",
+  roundPrefix: "Round ",
+  colRound: "Round",
+  openPrefix: "Open ",
+  colKind: "Kind",
+  ofSeparator: " of ",
+  axisMax: "max ",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  panelBlindUtility: "Utility blind time per round",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  unitDamage: "dmg",
+  unitAffected: "aff",
+  tickPrefix: "tick ",
+  profileSuffix: " profile",
+
 };

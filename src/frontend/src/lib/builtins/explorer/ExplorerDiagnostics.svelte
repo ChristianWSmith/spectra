@@ -40,7 +40,7 @@
       <button class="btn small" onclick={() => loadEnt(context.matchId)}>{S.library.retry}</button>
     </p>
   {:else if !entities}
-    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
   {:else}
     <dl class="facts">
       <div>

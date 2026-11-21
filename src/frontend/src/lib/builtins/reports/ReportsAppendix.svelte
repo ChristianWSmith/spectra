@@ -105,7 +105,7 @@
           const subject = (def && def.subject) || 'player';
           const labelFor = (v) => {
             if (v.valueKey) return bySteam.get(v.valueKey) || '—';
-            if (subject === 'match') return `match #${mid}`;
+            if (subject === 'match') return S.fill(S.reports.matchNumber, { id: mid });
             if (subject === 'team') return v.subjectKey;
             return bySteam.get(v.subjectKey) || v.subjectKey;
           };
@@ -175,15 +175,15 @@
   // The per-entry line: fresh rows "per subject · N rows", a recorded value its
   // parallel line, any other state the honest "value not computed" line.
   function appendixLine(id, a) {
-    if (a.raw) return `recorded value · per player · ${a.rows.length} players`;
+    if (a.raw) return S.fill(S.reports.rawRecorded, { n: a.rows.length });
     const pres = appendixPres(id);
     if (pres && pres.kind === 'value') {
       const subject = (a.metric && a.metric.subject) || 'player';
-      const unit = subject === 'match' ? 'per match' : subject === 'team' ? 'per team' : 'per player';
-      return `${unit} · ${a.rows.length} rows · match #${matchId}`;
+      const unit = subject === 'match' ? S.reports.unitPerMatch : subject === 'team' ? S.reports.unitPerTeam : S.reports.unitPerPlayer;
+      return S.fill(S.reports.rowsMatch, { unit, n: a.rows.length, id: matchId });
     }
     const word = pres && pres.kind === 'chip' ? pres.state : 'no-data';
-    return `value not computed — ${word}`;
+    return S.fill(S.reports.valueNotComputed, { word });
   }
 
   // The entries as the export and the readouts see them: the title, the
@@ -254,7 +254,7 @@
       onremove={removeStat}
     />
     <button class="btn primary" disabled={m.rendering || !canSave} onclick={render}>
-      {#if m.rendering}Generating…{:else}<span class="codicon codicon-save" aria-hidden="true"></span> {S.reports.generateReport}{/if}
+      {#if m.rendering}{S.reports.rendering}{:else}<span class="codicon codicon-save" aria-hidden="true"></span> {S.reports.generateReport}{/if}
     </button>
   </div>
   {#each picked as x (x.id)}

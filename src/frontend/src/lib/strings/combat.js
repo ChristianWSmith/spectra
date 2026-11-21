@@ -60,4 +60,23 @@ export const combat = {
   loading: 'Loading…',
   kastDotAll: 'all parts',
   noKastRows: 'No per-round rows for this player.',
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  clutchNoneSelected: "No clutch outcome selected — toggle won or lost above.",
+  clutchNoneWon: "No won clutches in this match.",
+  clutchNoneLost: "No lost clutches in this match.",
+  clutchNoneAny: "No clutches in this match.",
+  clutchSize: "1v",
+  versus: "vs",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  watchKillFollow: "Watch this kill — follow {name}",
+  killerSuffix: " (killer)",
+  watchClutchFollow: "Watch this clutch — follow {name}",
+  watchClutchRoundFollow: "Watch the clutch in round {round} — follow {name}",
+  watchClutchRoundReplay: "Watch the clutch in round {round} in the replay",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  clutchWon: "won",
+  clutchLost: "lost",
+
 };

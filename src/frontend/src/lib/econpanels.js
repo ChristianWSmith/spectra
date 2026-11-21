@@ -19,6 +19,7 @@
 // value shows a dash, never a zero (ruling 23).
 
 import { FMT_HELPERS, TICK_HELPERS, TEAM_HELPERS, ECON_HELPERS, NAV_HELPERS } from './builtinhelpers.js';
+import * as S from './strings/index.js';
 
 export const ECON_PANEL_IDS = Object.freeze({
   economy: 'builtin-economy',
@@ -112,7 +113,7 @@ export const ECONOMY_SOURCE = `<script>
       () => {
         // A failed read is reported into this frame by the read API; the view
         // stays up on an empty set, as before (the banner names the failure).
-        if (live) state = { rows: [], rounds: [], names: { ct: 'CT', t: 'T' }, sideSwitches: 0, matchWinner: '' };
+        if (live) state = { rows: [], rounds: [], names: { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, sideSwitches: 0, matchWinner: '' };
       },
     );
     return () => {
@@ -126,7 +127,7 @@ export const ECONOMY_SOURCE = `<script>
     <div class="econ-head">
       <span class="muted">{state.rows.length}{state.rows.length === 1 ? ' round' : ' rounds'}</span>
       <span class="spacer"></span>
-      <span class="muted econ-head-note">buy classes follow saved rules — click a chip for the reason</span>
+      <span class="muted econ-head-note">${S.economy.headNote}</span>
     </div>
 
     <spectra.Child name="${ECON_PANEL_IDS.curve}" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
@@ -134,7 +135,7 @@ export const ECONOMY_SOURCE = `<script>
     <spectra.Child name="${ECON_PANEL_IDS.rounds}" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
   </div>
 {:else}
-  <p class="muted" role="status">Loading economy…</p>
+  <p class="muted" role="status">${S.economy.loading}</p>
 {/if}
 `;
 
@@ -143,7 +144,7 @@ export const ECONOMY_SOURCE = `<script>
 // the teams across the halftime side switch; each money era is its own path.
 export const ECON_CURVE_SOURCE = `<script>
   // Economy curve: hand-drawn SVG, one line per team, the winner strip under it.
-  let { spectra, context, rows = [], names = { ct: 'CT', t: 'T' }, sideSwitches = 0, matchWinner = '', back = '' } = $props();
+  let { spectra, context, rows = [], names = { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, sideSwitches = 0, matchWinner = '', back = '' } = $props();
   ${FMT_HELPERS}
   ${TICK_HELPERS}
   ${TEAM_HELPERS}
@@ -154,8 +155,8 @@ export const ECON_CURVE_SOURCE = `<script>
   const H = 220;
   const PAD_TOP = 10;
   const PAD_BOTTOM = 10;
-  const EQUIP_DEF = 'Equipment value — freeze-time-end value of the gear a side actually holds — every weapon (picked up and carried over included), armor, grenades and the defuse kit. Never this round’s spend.';
-  const NETWORTH_DEF = 'Net worth — equipment value plus the team’s unspent money at freeze time end — the total the team holds then. Never below equipment value: unspent money never goes negative.';
+  const EQUIP_DEF = '${S.economy.equipDef}';
+  const NETWORTH_DEF = '${S.economy.netWorthDef}';
 
   let metric = $state('equip');
   let hover = $state(-1);
@@ -184,8 +185,8 @@ export const ECON_CURVE_SOURCE = `<script>
 
   const clsCT = $derived(teamStartClass('ct', sideSwitches));
   const clsT = $derived(teamStartClass('t', sideSwitches));
-  const nameCT = $derived(names.ct || 'CT');
-  const nameT = $derived(names.t || 'T');
+  const nameCT = $derived(names.ct || '${S.match.sideCt}');
+  const nameT = $derived(names.t || '${S.match.sideT}');
   const winnerKnown = $derived(matchWinner === 'ct' || matchWinner === 't');
   const loserCT = $derived(winnerKnown && matchWinner === 't');
   const loserT = $derived(winnerKnown && matchWinner === 'ct');
@@ -258,17 +259,17 @@ export const ECON_CURVE_SOURCE = `<script>
   }
 
   function verdict(r) {
-    if (!r.winner) return 'no winner recorded';
+    if (!r.winner) return '${S.economy.verdictNoWinner}';
     const rr = ranks(r);
-    if (rr[0] === null || rr[1] === null) return 'unknown buy type — neutral';
-    if (rr[0] > rr[1]) return 'favorite (higher buy type) held';
-    if (rr[0] < rr[1]) return 'upset (lower buy type won)';
-    return 'toss-up (even buy)';
+    if (rr[0] === null || rr[1] === null) return '${S.economy.verdictUnknown}';
+    if (rr[0] > rr[1]) return '${S.economy.verdictFavorite}';
+    if (rr[0] < rr[1]) return '${S.economy.verdictUpset}';
+    return '${S.economy.verdictEven}';
   }
 
   function cellTitle(r) {
     const w = r.winner ? r.winner.toUpperCase() : '—';
-    return 'Round ' + r.round + ' — ' + w + ' wins · buy CT ' + (r.classCT || 'unknown') + ' / T ' + (r.classT || 'unknown') + ' · ' + verdict(r) + (r.pistolRound ? ' · pistol' : '');
+    return '${S.economy.cellRound}' + r.round + ' — ' + w + '${S.economy.cellWinsBuy}' + (r.classCT || 'unknown') + '${S.economy.cellBuySep}' + (r.classT || 'unknown') + ' · ' + verdict(r) + (r.pistolRound ? '${S.economy.cellPistol}' : '');
   }
 
   function openRound(round) {
@@ -289,22 +290,22 @@ export const ECON_CURVE_SOURCE = `<script>
 
 <section class="panel econ-curve-panel">
   <div class="row-between econ-curve-head">
-    <h2>{metric === 'equip' ? 'Equip value per round' : 'Team net worth per round'}</h2>
+    <h2>{metric === 'equip' ? '${S.economy.curveHeadEquip}' : '${S.economy.curveHeadNetWorth}'}</h2>
     <div class="econ-curve-meta">
       {#if n > 0}
         <span class="econ-axis-note mono">0 – {fmtMoney(series.max)}</span>
       {/if}
-      <div class="econ-toggle" role="group" aria-label="Curve metric">
-        <button class="econ-toggle-btn" class:active={metric === 'equip'} aria-pressed={metric === 'equip'} title={EQUIP_DEF} onclick={() => (metric = 'equip')}>Equip value</button>
-        <button class="econ-toggle-btn" class:active={metric === 'networth'} aria-pressed={metric === 'networth'} title={NETWORTH_DEF} onclick={() => (metric = 'networth')}>Net worth</button>
+      <div class="econ-toggle" role="group" aria-label="${S.economy.curveMetricGroup}">
+        <button class="econ-toggle-btn" class:active={metric === 'equip'} aria-pressed={metric === 'equip'} title={EQUIP_DEF} onclick={() => (metric = 'equip')}>${S.economy.curveToggleEquip}</button>
+        <button class="econ-toggle-btn" class:active={metric === 'networth'} aria-pressed={metric === 'networth'} title={NETWORTH_DEF} onclick={() => (metric = 'networth')}>${S.economy.curveToggleNetWorth}</button>
       </div>
     </div>
   </div>
 
   {#if n === 0}
-    <p class="muted" role="status">No economy rows for this match.</p>
+    <p class="muted" role="status">${S.economy.noRows}</p>
   {:else}
-    <div class="econ-legend" aria-label="Team lines">
+    <div class="econ-legend" aria-label="${S.economy.curveLegendLabel}">
       <span class="econ-legend-item {clsCT}">
         <span class="econ-legend-line" class:loser={loserCT} aria-hidden="true"></span>
         {nameCT}
@@ -316,7 +317,7 @@ export const ECON_CURVE_SOURCE = `<script>
     </div>
 
     <div class="econ-chart" onmousemove={onMove} onmouseleave={() => (hover = -1)} role="img"
-      aria-label={(metric === 'equip' ? 'equipment value' : 'net worth') + ' per round, one line per team — click a column to open the round'}
+      aria-label={(metric === 'equip' ? '${S.economy.curveAriaEquip}' : '${S.economy.curveAriaNetWorth}') + '${S.economy.curveAriaSuffix}'}
     >
       <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
         {#each rows as r, i (r.round)}
@@ -335,11 +336,11 @@ export const ECON_CURVE_SOURCE = `<script>
         {/if}
         {#each rows as r, i (r.round)}
           <rect class="econ-hit" x={i * (W / n)} y="0" width={W / n} height={H} role="button" tabindex="0"
-            aria-label={'Open round ' + r.round}
+            aria-label={'${S.economy.openRoundAria}' + r.round}
             onclick={() => openRound(r.round)}
             onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openRound(r.round)}
           >
-            <title>Round {r.round}</title>
+            <title>${S.economy.cellRound}{r.round}</title>
           </rect>
         {/each}
       </svg>
@@ -349,15 +350,15 @@ export const ECON_CURVE_SOURCE = `<script>
         {@const tCols = columns(hoverRow, 't')}
         <div class="econ-tooltip" style="left:{hoverPct}%">
           <div class="econ-tip-head">
-            <strong>Round {hoverRow.round}</strong>
+            <strong>${S.economy.cellRound}{hoverRow.round}</strong>
             <span class="chip side {hoverRow.winner || 'none'}">{hoverRow.winner ? hoverRow.winner.toUpperCase() : '—'}</span>
             {#if hoverRow.pistolRound}
-              <span class="chip econ-cls pistol">pistol</span>
+              <span class="chip econ-cls pistol">${S.economy.chipPistol}</span>
             {/if}
           </div>
           <div class="econ-tip-cols" aria-hidden="true">
-            <span class:active={metric === 'equip'}>equip</span>
-            <span class:active={metric === 'networth'}>net worth</span>
+            <span class:active={metric === 'equip'}>${S.economy.tipEquip}</span>
+            <span class:active={metric === 'networth'}>${S.economy.curveAriaNetWorth}</span>
           </div>
           <div class="econ-tip-row">
             <span class={clsCT}>{nameCT}</span>
@@ -373,10 +374,10 @@ export const ECON_CURVE_SOURCE = `<script>
       {/if}
     </div>
 
-    <div class="econ-strip" aria-label="Round strip">
+    <div class="econ-strip" aria-label="${S.economy.stripLabel}">
       {#each rows as r (r.round)}
         <button class="econ-strip-cell" class:ct={r.winner === 'ct'} class:t={r.winner === 't'} class:pistol={r.pistolRound}
-          title={cellTitle(r)} aria-label={'Open round ' + r.round} onclick={() => openRound(r.round)}
+          title={cellTitle(r)} aria-label={'${S.economy.openRoundAria}' + r.round} onclick={() => openRound(r.round)}
         >
           <span class="econ-strip-num">{r.round}</span>
           <span class="econ-strip-mark" class:hold={mark(r) === '✓'} class:upset={mark(r) === '✗'}
@@ -386,7 +387,7 @@ export const ECON_CURVE_SOURCE = `<script>
       {/each}
     </div>
     <p class="econ-strip-note muted">
-      <span class="econ-strip-swatch pistol" aria-hidden="true"></span> pistol round · <span class="codicon codicon-check"></span> favorite (higher buy type) held · <span class="codicon codicon-error"></span> upset (lower buy type won) · <span class="codicon codicon-grabber"></span> even buy (toss-up) · <span class="codicon codicon-circle-small"></span> no verdict · click a round to open it
+      <span class="econ-strip-swatch pistol" aria-hidden="true"></span> ${S.economy.stripPistol} <span class="codicon codicon-check"></span> ${S.economy.stripFavorite} <span class="codicon codicon-error"></span> ${S.economy.stripUpset} <span class="codicon codicon-grabber"></span> ${S.economy.stripEven} <span class="codicon codicon-circle-small"></span> ${S.economy.stripNoVerdict}
     </p>
   {/if}
 </section>
@@ -398,63 +399,63 @@ export const ECON_CURVE_SOURCE = `<script>
 const ECON_CARDS = [
   {
     metric: 'pistol_hold',
-    label: 'Pistol → next round',
+    label: S.economy.cardPistolLabel,
     format: 'percent',
     subject: 'match',
     drill: 'firstPistol',
-    sub: 'pistol wins held next round',
+    sub: S.economy.cardPistolSub,
     inferred: false,
-    doc: 'Formula: pistol rounds won where that side also won the following round ÷ pistol rounds won — the held-pistol rate, addressed per match (no partition), over the joined sources.',
+    doc: S.economy.cardPistolDoc,
   },
   {
     metric: 'team_force_wins',
-    label: 'Force rounds won',
+    label: S.economy.cardForceWonLabel,
     format: 'int',
     subject: 'team',
     drill: 'firstForce',
     sub: '',
     inferred: false,
-    doc: 'Formula: count(round_side_classes rows joined to rounds WHERE class = force AND winner = side) — force rounds that team won, addressed per team (no partition), over the joined sources.',
+    doc: S.economy.cardForceWonDoc,
   },
   {
     metric: 'team_force_rounds',
-    label: 'Force rounds',
+    label: S.economy.cardForceLabel,
     format: 'int',
     subject: 'team',
     drill: 'firstForce',
     sub: '',
     inferred: false,
-    doc: "Formula: count(round_side_classes rows WHERE class = force) — that team's own force-buy rounds, addressed per team (no partition).",
+    doc: S.economy.cardForceDoc,
   },
   {
     metric: 'avg_equip_gap',
-    label: 'Winner equipment value advantage',
+    label: S.economy.cardGapLabel,
     format: 'currency',
     subject: 'match',
     drill: 'gapRound',
-    sub: 'avg winner − loser equip per round',
+    sub: S.economy.cardGapSub,
     inferred: false,
-    doc: 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time — addressed per match (no partition).',
+    doc: S.economy.cardGapDoc,
   },
   {
     metric: 'lost_equip',
-    label: 'Lost equipment',
+    label: S.economy.cardLostLabel,
     format: 'currency',
     subject: 'match',
     drill: 'lostRound',
     sub: '',
     inferred: true,
-    doc: 'Formula: sum(round_economy.equip_value) of the losing side over decided, team-known rounds — freeze-time money lost, addressed per match (no partition), over the joined sources — a total.',
+    doc: S.economy.cardLostDoc,
   },
   {
     metric: 'team_lost_equip',
-    label: 'Team lost equipment',
+    label: S.economy.cardTeamLostLabel,
     format: 'currency',
     subject: 'team',
     drill: 'lostRound',
     sub: '',
     inferred: true,
-    doc: "Formula: sum(round_economy.equip_value) of that team's losing rounds — freeze-time money the team lost, addressed per team (no partition), over the joined sources — a total.",
+    doc: S.economy.cardTeamLostDoc,
   },
 ];
 
@@ -463,7 +464,7 @@ const ECON_CARDS = [
 export const ECON_CARDS_SOURCE = `<script>
   // Economy summary cards: six stored statistics of the match, each read with
   // metric() under the context's match. A card that is not fresh shows a dash.
-  let { spectra, context, rows = [], rounds = [], names = { ct: 'CT', t: 'T' }, back = '' } = $props();
+  let { spectra, context, rows = [], rounds = [], names = { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, back = '' } = $props();
   ${FMT_HELPERS}
   ${TICK_HELPERS}
   ${NAV_HELPERS}
@@ -603,7 +604,7 @@ export const ECON_ROUNDS_SOURCE = `<script>
   // Economy rounds: one row per counted round. Deaths are the stored round-grain
   // metric raw_player_round_deaths, read per round and summed per side; a round
   // with no stored value shows a dash.
-  let { spectra, context, rows = [], rounds = [], names = { ct: 'CT', t: 'T' }, sideSwitches = 0, back = '' } = $props();
+  let { spectra, context, rows = [], rounds = [], names = { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, sideSwitches = 0, back = '' } = $props();
   ${FMT_HELPERS}
   ${TICK_HELPERS}
   ${TEAM_HELPERS}
@@ -669,7 +670,7 @@ export const ECON_ROUNDS_SOURCE = `<script>
   function classChip(side, r) {
     const cls = side === 'ct' ? r.classCT : r.classT;
     const why = side === 'ct' ? r.classWhyCT : r.classWhyT;
-    return { cls: cls || 'unknown', why: why || 'no explanation recorded', rule: r.ruleVersion };
+    return { cls: cls || 'unknown', why: why || '${S.economy.noExplanation}', rule: r.ruleVersion };
   }
 
   function toggleWhy(r, side) {
@@ -698,23 +699,23 @@ export const ECON_ROUNDS_SOURCE = `<script>
 </script>
 
 <section class="panel">
-  <h2>Rounds</h2>
+  <h2>${S.economy.colRounds}</h2>
   {#if rows.length === 0}
-    <p class="muted" role="status">No rounds recorded yet.</p>
+    <p class="muted" role="status">${S.economy.noRounds}</p>
   {:else}
     <div class="table-scroll">
       <table class="data-table econ-table">
         <thead>
           <tr>
-            <th scope="col"><span class="sr-only">Watch</span></th>
-            <th scope="col" class="num">RD</th>
-            <th scope="col">Winner</th>
-            <th scope="col">CT buy</th>
-            <th scope="col">T buy</th>
-            <th scope="col" class="num" title="Deaths suffered by that side's players in this round">CT Deaths</th>
-            <th scope="col" class="num" title="Deaths suffered by that side's players in this round">T Deaths</th>
-            <th scope="col" class="num">Loss CT</th>
-            <th scope="col" class="num">Loss T</th>
+            <th scope="col"><span class="sr-only">${S.match.colWatch}</span></th>
+            <th scope="col" class="num">${S.match.colRd}</th>
+            <th scope="col">${S.match.colWinner}</th>
+            <th scope="col">${S.economy.colCtBuy}</th>
+            <th scope="col">${S.economy.colTBuy}</th>
+            <th scope="col" class="num" title="${S.economy.titleDeaths}">${S.economy.colCtDeaths}</th>
+            <th scope="col" class="num" title="${S.economy.titleDeaths}">${S.economy.colTDeaths}</th>
+            <th scope="col" class="num">${S.economy.colCtLoss}</th>
+            <th scope="col" class="num">${S.economy.colTLoss}</th>
           </tr>
         </thead>
         <tbody>
@@ -723,19 +724,19 @@ export const ECON_ROUNDS_SOURCE = `<script>
             {@const tc = classChip('t', r)}
             <tr class:split-before={ri > 0 && sepFlags[ri - 1]}>
               <td>
-                <button class="btn small ghost" title={'Watch round ' + r.round + ' from its start in the replay'} aria-label={'Watch round ' + r.round} onclick={() => watchRound(r.round)}><span class="codicon codicon-play"></span></button>
+                <button class="btn small ghost" title={'${S.economy.watchRoundPrefix}' + r.round + '${S.economy.watchRoundSuffix}'} aria-label={'${S.economy.watchRoundPrefix}' + r.round} onclick={() => watchRound(r.round)}><span class="codicon codicon-play"></span></button>
               </td>
               <td class="num">
-                <button class="btn small ghost econ-rd" title={'Open round ' + r.round} onclick={() => openRound(r.round)}>{r.round}</button>
+                <button class="btn small ghost econ-rd" title={'${S.economy.openRoundAria}' + r.round} onclick={() => openRound(r.round)}>{r.round}</button>
               </td>
               <td>
                 <span class="chip side {r.winner || 'none'}">{winnerName(r) || (r.winner ? r.winner.toUpperCase() : '—')}</span>
               </td>
               <td>
-                <button class="chip econ-cls {ctc.cls}" title={ctc.why + ' (rules v' + ctc.rule + ') — click for full text'} aria-expanded={whyOpen === r.round + ':ct'} onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button>
+                <button class="chip econ-cls {ctc.cls}" title={ctc.why + '${S.economy.ruleOpen}' + ctc.rule + '${S.economy.ruleClose}'} aria-expanded={whyOpen === r.round + ':ct'} onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button>
               </td>
               <td>
-                <button class="chip econ-cls {tc.cls}" title={tc.why + ' (rules v' + tc.rule + ') — click for full text'} aria-expanded={whyOpen === r.round + ':t'} onclick={() => toggleWhy(r, 't')}>{tc.cls}</button>
+                <button class="chip econ-cls {tc.cls}" title={tc.why + '${S.economy.ruleOpen}' + tc.rule + '${S.economy.ruleClose}'} aria-expanded={whyOpen === r.round + ':t'} onclick={() => toggleWhy(r, 't')}>{tc.cls}</button>
               </td>
               <td class="num">{deathText(r.round, 'ct')}</td>
               <td class="num">{deathText(r.round, 't')}</td>
@@ -755,10 +756,10 @@ export const ECON_ROUNDS_SOURCE = `<script>
                 <td colspan="9">
                   <div class="econ-why">
                     <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}">{whyText?.side === 'ct' ? ctc.cls : tc.cls}</span>
-                    <span class="econ-why-text">{whyText?.why || 'no explanation recorded'}</span>
+                    <span class="econ-why-text">{whyText?.why || '${S.economy.noExplanation}'}</span>
                     <span class="spacer"></span>
-                    <span class="econ-why-rules mono">rules v{whyText?.rule ?? r.ruleVersion}</span>
-                    <button class="btn small ghost" aria-label="Close explanation" onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button>
+                    <span class="econ-why-rules mono">${S.economy.rulesPrefix}{whyText?.rule ?? r.ruleVersion}</span>
+                    <button class="btn small ghost" aria-label="${S.economy.closeExplanation}" onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button>
                   </div>
                 </td>
               </tr>
@@ -773,8 +774,8 @@ export const ECON_ROUNDS_SOURCE = `<script>
 
 // The registry of the Economy builtins, in mount order.
 export const ECON_PANELS = Object.freeze([
-  Object.freeze({ id: ECON_PANEL_IDS.economy, label: 'Economy', source: ECONOMY_SOURCE }),
-  Object.freeze({ id: ECON_PANEL_IDS.curve, label: 'Economy curve', source: ECON_CURVE_SOURCE }),
-  Object.freeze({ id: ECON_PANEL_IDS.cards, label: 'Economy cards', source: ECON_CARDS_SOURCE }),
-  Object.freeze({ id: ECON_PANEL_IDS.rounds, label: 'Economy rounds', source: ECON_ROUNDS_SOURCE }),
+  Object.freeze({ id: ECON_PANEL_IDS.economy, label: S.economy.panelEconomy, source: ECONOMY_SOURCE }),
+  Object.freeze({ id: ECON_PANEL_IDS.curve, label: S.economy.panelCurve, source: ECON_CURVE_SOURCE }),
+  Object.freeze({ id: ECON_PANEL_IDS.cards, label: S.economy.panelCards, source: ECON_CARDS_SOURCE }),
+  Object.freeze({ id: ECON_PANEL_IDS.rounds, label: S.economy.panelRounds, source: ECON_ROUNDS_SOURCE }),
 ]);

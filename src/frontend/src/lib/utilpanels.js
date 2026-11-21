@@ -19,6 +19,7 @@
 // from builtinhelpers.js. A missing value shows a dash (ruling 23).
 
 import { FMT_HELPERS, TICK_HELPERS, TEAM_HELPERS, NAV_HELPERS } from './builtinhelpers.js';
+import * as S from './strings/index.js';
 
 export const UTIL_PANEL_IDS = Object.freeze({
   utility: 'builtin-utility',
@@ -117,7 +118,7 @@ export const UTILITY_SOURCE = `<script>
       () => {
         // A failed read is reported into this frame by the read API; the view
         // stays up on an empty set, as before (the banner names the failure).
-        if (live) data = { rows: [], rounds: [], players: [], names: { ct: 'CT', t: 'T' }, tickRate: 64, sideSwitches: 0 };
+        if (live) data = { rows: [], rounds: [], players: [], names: { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, tickRate: 64, sideSwitches: 0 };
       },
     );
     return () => {
@@ -142,7 +143,7 @@ export const UTILITY_SOURCE = `<script>
     </div>
   </div>
 {:else}
-  <p class="muted" role="status">Loading utility events…</p>
+  <p class="muted" role="status">${S.utility.loading}</p>
 {/if}
 `;
 
@@ -152,7 +153,7 @@ export const UTILITY_SOURCE = `<script>
 export const UTIL_LOG_SOURCE = `<script>
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).
-  let { spectra, context, rows = [], rounds = [], players = [], names = { ct: 'CT', t: 'T' }, sideSwitches = 0, tickRate = 64, loopSecs = 5, back = '', filt, setFilt } = $props();
+  let { spectra, context, rows = [], rounds = [], players = [], names = { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, sideSwitches = 0, tickRate = 64, loopSecs = 5, back = '', filt, setFilt } = $props();
   ${FMT_HELPERS}
   ${TICK_HELPERS}
   ${TEAM_HELPERS}
@@ -229,39 +230,39 @@ export const UTIL_LOG_SOURCE = `<script>
 </script>
 
 <section class="panel util-throwlog">
-  <h2>Throw log</h2>
+  <h2>${S.utility.throwLogHead}</h2>
   <div class="util-filters toolbar">
     <label class="util-field" for="util-kind">
-      <span class="field-label">Kind</span>
+      <span class="field-label">${S.utility.colKind}</span>
       <select class="input" id="util-kind" value={filt.kindF} onchange={(e) => update({ kindF: e.currentTarget.value })}>
-        <option value="">All kinds</option>
+        <option value="">${S.utility.allKinds}</option>
         {#each kindOptions as k (k)}
           <option value={k}>{k}</option>
         {/each}
       </select>
     </label>
     <label class="util-field" for="util-thrower">
-      <span class="field-label">Thrower</span>
+      <span class="field-label">${S.utility.colThrower}</span>
       <select class="input" id="util-thrower" value={filt.throwerF} onchange={(e) => update({ throwerF: e.currentTarget.value })}>
-        <option value="">All players</option>
+        <option value="">${S.utility.allPlayers}</option>
         {#each players as p (p.steamId)}
           <option value={p.steamId}>{p.name}</option>
         {/each}
       </select>
     </label>
     <label class="util-field" for="util-round">
-      <span class="field-label">Round</span>
+      <span class="field-label">${S.utility.colRound}</span>
       <select class="input" id="util-round" value={roundValue} onchange={(e) => update({ roundSel: e.currentTarget.value })}>
-        <option value="all">All rounds</option>
+        <option value="all">${S.utility.allRounds}</option>
         {#each roundOptions as n (n)}
           <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
         {/each}
       </select>
     </label>
-    <span class="muted">{filtered.length} of {rows.length} grenade{rows.length === 1 ? '' : 's'}</span>
+    <span class="muted">{filtered.length}${S.utility.ofSeparator}{rows.length}${S.utility.grenadeWord}{rows.length === 1 ? '' : 's'}</span>
   </div>
   {#if groups.length === 0}
-    <p class="muted" role="status">No grenades match the current filters.</p>
+    <p class="muted" role="status">${S.utility.noMatch}</p>
   {:else}
     <div class="util-lists">
       {#each shownGroups as [round, list] (round)}
@@ -270,19 +271,19 @@ export const UTIL_LOG_SOURCE = `<script>
             {@const name = r.throwerName || r.thrower}
             <li class="util-nade">
               <span class="util-actions">
-                <button class="btn small ghost" title={r.thrower ? 'Watch this throw — follow ' + name : 'Watch this throw in the replay'} aria-label={r.thrower ? 'Watch this throw — follow ' + name : 'Watch this throw in the replay'} onclick={() => openReplay(r)}><span class="codicon codicon-play"></span></button>
+                <button class="btn small ghost" title={r.thrower ? '${S.utility.watchThrowFollow}' + name : '${S.utility.watchThrowTitle}'} aria-label={r.thrower ? '${S.utility.watchThrowFollow}' + name : '${S.utility.watchThrowTitle}'} onclick={() => openReplay(r)}><span class="codicon codicon-play"></span></button>
               </span>
               <span class="chip util-kind {r.kind}">{r.kind}</span>
               {#if /^\\d{17}$/.test(r.thrower)}
-                <button class="comb-name-btn util-thrower {playerCls(r.round, r.thrower, r.throwerName)}" title={'Open ' + name + ' profile'} onclick={() => openProfile(r.thrower)}>{name || DASH}</button>
+                <button class="comb-name-btn util-thrower {playerCls(r.round, r.thrower, r.throwerName)}" title={'${S.utility.openPrefix}' + name + '${S.utility.profileSuffix}'} onclick={() => openProfile(r.thrower)}>{name || DASH}</button>
               {:else}
                 <span class="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}">{name || DASH}</span>
               {/if}
-              <span class="mono muted util-tick" title={'tick ' + effTick(r) + ' — time into round ' + roundIndexLabel(rbn.get(r.round) ?? r.round)}>{roundClock(effTick(r), rbn.get(r.round), tickRate)}</span>
-              <span class="util-num" title="damage dealt">{fmtZeroDash(r.damage, 'dmg')}</span>
-              <span class="util-num muted" title="total blind time">{r.flashMsTotal > 0 ? fmtMs(r.flashMsTotal) : DASH}</span>
-              <span class="util-num muted" title="affected players (blinded or damaged by this throw)">{fmtZeroDash(affectedCount(r.affected), 'aff')}</span>
-              <span class="util-coord muted mono" title="throw world coordinates">{coordCell(r)}</span>
+              <span class="mono muted util-tick" title={'${S.utility.tickPrefix}' + effTick(r) + '${S.utility.timeIntoRound}' + roundIndexLabel(rbn.get(r.round) ?? r.round)}>{roundClock(effTick(r), rbn.get(r.round), tickRate)}</span>
+              <span class="util-num" title="${S.utility.titleDamageDealt}">{fmtZeroDash(r.damage, '${S.utility.unitDamage}')}</span>
+              <span class="util-num muted" title="${S.utility.titleTotalBlind}">{r.flashMsTotal > 0 ? fmtMs(r.flashMsTotal) : DASH}</span>
+              <span class="util-num muted" title="${S.utility.titleAffected}">{fmtZeroDash(affectedCount(r.affected), '${S.utility.unitAffected}')}</span>
+              <span class="util-coord muted mono" title="${S.utility.titleCoords}">{coordCell(r)}</span>
             </li>
           {/each}
         </ul>
@@ -299,28 +300,28 @@ function barsSource(measure) {
   const copy =
     measure === 'damage'
       ? {
-          heading: 'Utility damage per round',
-          aria: 'Team utility damage per round',
+          heading: S.utility.panelDamage,
+          aria: S.utility.damageTeamTitle,
           stripeId: 'util-stripe',
           panelClass: 'util-card-damage',
           unit: ' damage',
-          maxSuffix: ' dmg/round · totals of recorded damage',
-          maxTitle: 'total damage in the current filter, by thrower team',
+          maxSuffix: S.utility.damageSub,
+          maxTitle: S.utility.damageTotalTitle,
         }
       : {
-          heading: 'Blind time per round',
-          aria: 'Team blind time per round',
+          heading: S.utility.panelBlind,
+          aria: S.utility.blindTeamTitle,
           stripeId: 'util-stripe-blind',
           panelClass: 'util-card-blind',
-          unit: ' blind time',
-          maxSuffix: ' blind/round · totals of recorded blind time',
-          maxTitle: "total blind time from this team's flashes, by thrower team",
+          unit: S.utility.blindSuffix,
+          maxSuffix: S.utility.blindSub,
+          maxTitle: S.utility.blindTotalTitle,
         };
   return `<script>
   // Utility per-round bars (${measure}): one bar per team per round, its colour
   // the side that team held that round, one team striped. The card hides when the
   // filtered throws have nothing to draw.
-  let { spectra, context, rows = [], rounds = [], players = [], names = { ct: 'CT', t: 'T' }, sideSwitches = 0 } = $props();
+  let { spectra, context, rows = [], rounds = [], players = [], names = { ct: '${S.match.sideCt}', t: '${S.match.sideT}' }, sideSwitches = 0 } = $props();
   ${FMT_HELPERS}
   ${TICK_HELPERS}
   ${TEAM_HELPERS}
@@ -395,13 +396,13 @@ function barsSource(measure) {
         {@const ctX = x + slot * 0.08}
         {@const tX = x + slot * 0.08 + bw + 2}
         <rect class="util-bar {barSide(p.round, 'ct')}" x={ctX} y={barH - hCt} width={bw} height={hCt}>
-          <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{' '}{valueText(p.ct)}</title>
+          <title>${S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{' '}{valueText(p.ct)}</title>
         </rect>
         {#if STRIPED_KEY === 'ct'}
           <rect class="util-bar-stripe" x={ctX} y={barH - hCt} width={bw} height={hCt} fill={'url(#' + COPY.stripeId + ')'} pointer-events="none" />
         {/if}
         <rect class="util-bar {barSide(p.round, 't')}" x={tX} y={barH - hT} width={bw} height={hT}>
-          <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{' '}{valueText(p.t)}</title>
+          <title>${S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{' '}{valueText(p.t)}</title>
         </rect>
         {#if STRIPED_KEY === 't'}
           <rect class="util-bar-stripe" x={tX} y={barH - hT} width={bw} height={hT} fill={'url(#' + COPY.stripeId + ')'} pointer-events="none" />
@@ -409,9 +410,9 @@ function barsSource(measure) {
       {/each}
     </svg>
     <div class="util-legend">
-      <span><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span>{names.ct}{#if MEASURE === 'damage'} <span class="chip badge-computed">computed</span>{:else} <span class="chip badge-inferred" title="calculated from the demo's blind events">inferred</span>{/if}</span>
+      <span><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span>{names.ct}{#if MEASURE === 'damage'} <span class="chip badge-computed">${S.utility.badgeComputed}</span>{:else} <span class="chip badge-inferred" title="${S.utility.titleComputedBlind}">${S.utility.badgeInferred}</span>{/if}</span>
       <span><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span>{names.t}</span>
-      <span class="muted" title={COPY.maxTitle}>max {maxText}{COPY.maxSuffix}</span>
+      <span class="muted" title={COPY.maxTitle}>${S.utility.axisMax}{maxText}{COPY.maxSuffix}</span>
     </div>
   </section>
 {/if}
@@ -420,8 +421,8 @@ function barsSource(measure) {
 
 // The registry of the Utility builtins, in mount order.
 export const UTIL_PANELS = Object.freeze([
-  Object.freeze({ id: UTIL_PANEL_IDS.utility, label: 'Utility', source: UTILITY_SOURCE }),
-  Object.freeze({ id: UTIL_PANEL_IDS.log, label: 'Utility throw log', source: UTIL_LOG_SOURCE }),
-  Object.freeze({ id: UTIL_PANEL_IDS.damage, label: 'Utility damage per round', source: barsSource('damage') }),
-  Object.freeze({ id: UTIL_PANEL_IDS.blind, label: 'Utility blind time per round', source: barsSource('blind') }),
+  Object.freeze({ id: UTIL_PANEL_IDS.utility, label: S.utility.panelUtility, source: UTILITY_SOURCE }),
+  Object.freeze({ id: UTIL_PANEL_IDS.log, label: S.utility.panelLog, source: UTIL_LOG_SOURCE }),
+  Object.freeze({ id: UTIL_PANEL_IDS.damage, label: S.utility.panelDamage, source: barsSource('damage') }),
+  Object.freeze({ id: UTIL_PANEL_IDS.blind, label: S.utility.panelBlindUtility, source: barsSource('blind') }),
 ]);

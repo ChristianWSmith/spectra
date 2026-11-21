@@ -26,7 +26,7 @@
   let {
     spectra,
     context = null,
-    tab = 'Overview',
+    tab = MATCH_TABS[0],
     ontab = () => {},
     nav = () => {},
     panelProps = {},

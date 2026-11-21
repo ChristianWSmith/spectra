@@ -50,7 +50,7 @@
   const trendLabel = $derived.by(() => {
     const def = trendItems.find((d) => d.name === metric);
     if (def) return def.title || def.name;
-    return metric === 'adr' ? 'ADR' : metric;
+    return metric === 'adr' ? S.profiles.thAdr : metric;
   });
   $effect(() => (trendText = trendLabel));
 
@@ -122,7 +122,7 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: `${fmtPatch(p.patch)} · Imported ${fmtDate(p.extractedAt)} · ${fmtTrendValue(p.value, trendFormat)}`,
+        title: S.fill(S.profiles.trendImportedTitle, { patch: fmtPatch(p.patch), date: fmtDate(p.extractedAt), value: fmtTrendValue(p.value, trendFormat) }),
       })),
     };
   });

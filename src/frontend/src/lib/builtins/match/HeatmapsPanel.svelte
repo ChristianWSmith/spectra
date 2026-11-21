@@ -77,9 +77,9 @@
   // grenadeHeatmapKinds by its test) — core kinds, then one option per
   // grenade type in each flavor (thrown origins / detonations).
   const KIND_GROUPS = [
-    { label: 'Overview', kinds: HEAT_CORE_KINDS },
-    { label: 'Grenade thrown', kinds: HEAT_GRENADE_THROW_KINDS },
-    { label: 'Grenade detonation', kinds: HEAT_GRENADE_DET_KINDS },
+    { label: S.heatmaps.kindOverview, kinds: HEAT_CORE_KINDS },
+    { label: S.heatmaps.kindGrenadeThrown, kinds: HEAT_GRENADE_THROW_KINDS },
+    { label: S.heatmaps.kindGrenadeDetonation, kinds: HEAT_GRENADE_DET_KINDS },
   ];
 
   let kind = $state(heatSeed.kind);
@@ -137,7 +137,7 @@
   // region was NOT applied — and that one never navigates (the gate in
   // onRegion, mirroring the affordance HeatmapLayer hides). Both render
   // only while regionNote is set.
-  let regionChip = $state('filtered by region');
+  let regionChip = $state(S.heatmaps.regionFiltered);
 
   let navTimer = null;
 
@@ -195,15 +195,15 @@
 
   const packNote = $derived.by(() => {
     if (!matchLoaded) return '';
-    if (!map) return 'map name unknown — heatmap overlay unavailable';
+    if (!map) return S.heatmaps.noMapName;
     if (!pack)
       return packTried
-        ? `map not found for ${map} — plain grid, no radar art`
-        : 'loading map pack…';
+        ? S.fill(S.heatmaps.mapNotFound, { map })
+        : S.heatmaps.loadingMapPack;
     if (!pack.transform)
-      return `map pack for ${map} has no transform — plain grid, no radar art`;
+      return S.fill(S.heatmaps.mapNoTransform, { map });
     if (!pack.meta.radar)
-      return `map pack for ${map} has no radar image — overlay on dark grid only`;
+      return S.fill(S.heatmaps.mapNoRadar, { map });
     return '';
   });
 
@@ -256,10 +256,10 @@
   const unitKind = $derived(grid && grid.kind ? grid.kind : kind);
   const unit = $derived(
     unitKind === 'presence'
-      ? 'time-weighted seconds · live play'
+      ? S.heatmaps.timeWeighted
       : unitKind === 'kd'
-        ? 'kills − deaths (net)'
-        : 'count',
+        ? S.heatmaps.killsMinusDeaths
+        : S.heatmaps.unitCount,
   );
   const maxLabel = $derived(
     grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : '—',
@@ -344,13 +344,13 @@
   // changes (heatmap generate is the expensive op).
   async function generate() {
     if (roundFrom >= 0 && roundTo >= 0 && roundFrom > roundTo) {
-      error = 'First round can’t be higher than the last round.';
+      error = S.heatmaps.roundRangeError;
       return;
     }
     loading = true;
     error = '';
     regionNote = '';
-    regionChip = 'filtered by region';
+    regionChip = S.heatmaps.regionFiltered;
     // Drop any progress a previous run left behind — without this the bar
     // could open at a stale "N of N" (the asset-extraction run clears
     // mpProgress the same way).
@@ -481,8 +481,8 @@
   function onRegion(bbox, value, source) {
     const carries = heatRegionTakesBBox(src.kind);
     if (!carries) {
-      regionChip = 'region not applied';
-      regionNote = `${src.kind} has no event rows behind it — nothing to query, so the click did not open the replay`;
+      regionChip = S.heatmaps.regionNotApplied;
+      regionNote = S.fill(S.heatmaps.noEventRows, { kind: src.kind });
       return;
     }
     // The raster's settings mirrored into the arrival filter (cats, the
@@ -544,8 +544,8 @@
       maxX: bbox.maxX + pad,
       maxY: bbox.maxY + pad,
     };
-    regionChip = 'filtered by region';
-    regionNote = `bbox (${Math.round(applied.minX)}, ${Math.round(applied.minY)}) → (${Math.round(applied.maxX)}, ${Math.round(applied.maxY)})`;
+    regionChip = S.heatmaps.regionFiltered;
+    regionNote = S.fill(S.heatmaps.bboxLabel, { x0: Math.round(applied.minX), y0: Math.round(applied.minY), x1: Math.round(applied.maxX), y1: Math.round(applied.maxY) });
     const target = replayHash(id, { ...filter, bbox: applied }, { back: `match/${id}/heatmaps` });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
@@ -645,8 +645,8 @@
         <label class="field-label" for="heat-side">{S.heatmaps.sideLabel}</label>
         <select class="input" id="heat-side" bind:value={team}>
           <option value="">{S.heatmaps.bothSides}</option>
-          <option value="ct">CT</option>
-          <option value="t">T</option>
+          <option value="ct">{S.match.sideCt}</option>
+          <option value="t">{S.match.sideT}</option>
         </select>
       </div>
       <div class="heat-field">
@@ -753,7 +753,7 @@
       {/if}
       <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
         <span class="codicon codicon-play" aria-hidden="true"></span>
-        {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
+        {loading ? S.heatmaps.generating : grid ? S.heatmaps.regenerate : S.heatmaps.generate}
       </button>
     </div>
   </section>
