@@ -36,6 +36,9 @@ export const MetricsService = {
   ListMetricsPage: rec('ListMetricsPage'),
   SaveMetric: rec('SaveMetric'),
   DeleteMetric: rec('DeleteMetric'),
+  // The builtin metric edit and restore (owner ruling 44).
+  SaveBuiltinMetric: rec('SaveBuiltinMetric'),
+  RestoreBuiltinMetric: rec('RestoreBuiltinMetric'),
   // The Builder form's reads (builder.dom.mjs drives them): the live
   // expression check and the row play's preview.
   ValidateExpr: rec('ValidateExpr'),
@@ -86,6 +89,9 @@ export const PlatformService = {
   SaveReportTemplate: rec('SaveReportTemplate'),
   DeleteReportTemplate: rec('DeleteReportTemplate'),
   RenderReportDraft: rec('RenderReportDraft'),
+  // The builtin report edit and restore (owner ruling 44).
+  SaveBuiltinReport: rec('SaveBuiltinReport'),
+  RestoreBuiltinReport: rec('RestoreBuiltinReport'),
   // w18: the plugin-op wrappers the cache tests invoke (invalidate on
   // success — see services.js).
   InstallPlugin: rec('InstallPlugin'),

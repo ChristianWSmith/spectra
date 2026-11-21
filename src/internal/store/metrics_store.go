@@ -550,7 +550,7 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 // path calls it on the write handle, the atomic save on its transaction
 // — the gate reads the stored row through the SAME surface, so it sees
 // the transaction's own view).
-func updateMetric(q metricsExec, m models.MetricRow) error {
+func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 	// Same omitted-scope rule as insertMetric: '' → the DDL DEFAULT
 	// 'match', never the empty string the CHECK rejects.
 	if m.Scope == "" {
@@ -560,7 +560,7 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 	if err != nil {
 		return err
 	}
-	if existing.Origin != "user" {
+	if existing.Origin != "user" && !(builtinEdit && existing.Origin == "builtin") {
 		return fmt.Errorf("the %s metric %q cannot be modified", existing.Origin, existing.Name)
 	}
 	if m.Subject == "" {
@@ -604,7 +604,7 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // service routes through; this plain overwrite stays the raw store API
 // (no-history model — no shadow rows, no versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
-	if err := updateMetric(s.db, m); err != nil {
+	if err := updateMetric(s.db, m, false); err != nil {
 		return models.MetricRow{}, err
 	}
 	return s.GetMetric(m.ID)
@@ -670,6 +670,26 @@ type DependentRewrite struct {
 // transaction and never parses exprs), so this method's edge
 // maintenance can never block a plugin replace.
 func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool) (models.MetricRow, error) {
+	return s.saveMetricWithOverride(m, deps, rewrites, semanticBump, nil)
+}
+
+// MetricOverrideWrite is the builtin_overrides change a builtin metric's
+// save carries in its own transaction (owner ruling 44). An edit stores the
+// saved expr as the override, keeping Shipped (the shipped SQL) for restore;
+// a restore deletes the override and the saved expr is the shipped SQL.
+type MetricOverrideWrite struct {
+	Restore bool
+	Shipped string
+}
+
+// SaveBuiltinMetric saves a builtin metric's edited definition (or its
+// restored one) and its override in ONE transaction, with the same dependency
+// rewrite and semantic-bump cascade as SaveMetricWithDeps.
+func (s *Store) SaveBuiltinMetric(m models.MetricRow, deps []string, semanticBump bool, ov MetricOverrideWrite) (models.MetricRow, error) {
+	return s.saveMetricWithOverride(m, deps, nil, semanticBump, &ov)
+}
+
+func (s *Store) saveMetricWithOverride(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool, ov *MetricOverrideWrite) (models.MetricRow, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
@@ -678,7 +698,7 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 
 	var id int64
 	if m.ID > 0 {
-		if err := updateMetric(tx, m); err != nil {
+		if err := updateMetric(tx, m, ov != nil); err != nil {
 			return models.MetricRow{}, err
 		}
 		id = m.ID
@@ -689,6 +709,11 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 	}
 	if err := replaceMetricDeps(tx, id, deps); err != nil {
 		return models.MetricRow{}, err
+	}
+	if ov != nil {
+		if err := writeMetricOverride(tx, m, *ov); err != nil {
+			return models.MetricRow{}, err
+		}
 	}
 	for _, r := range rewrites {
 		res, err := tx.Exec(`UPDATE metrics SET expr = ? WHERE id = ?`, scrub(r.Expr), r.ID)
@@ -714,6 +739,21 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
 	}
 	return s.GetMetric(id)
+}
+
+// writeMetricOverride keeps builtin_overrides in step with a builtin
+// metric's save, inside the save's transaction: an edit upserts the saved
+// expr as the override (the shipped SQL is kept from the existing row, or
+// from the row's expr before the edit), a restore deletes it.
+func writeMetricOverride(q builtinOverrideExec, m models.MetricRow, ov MetricOverrideWrite) error {
+	key := MetricOverridePrefix + m.Name
+	if ov.Restore {
+		if _, err := q.Exec(`DELETE FROM builtin_overrides WHERE id = ?`, scrub(key)); err != nil {
+			return fmt.Errorf("couldn't restore the builtin metric: %w", err)
+		}
+		return nil
+	}
+	return writeBuiltinOverride(q, key, m.Expr, ov.Shipped)
 }
 
 // replaceMetricDeps rewrites ONE metric's edge set from the extracted

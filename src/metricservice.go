@@ -172,7 +172,31 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
 func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit)
+	page, err := s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.markEdited(page.Rows); err != nil {
+		return nil, err
+	}
+	return page, nil
+}
+
+// markEdited sets Edited on every builtin row whose override is in place,
+// from one read of the override table.
+func (s *MetricsService) markEdited(rows []models.MetricRow) error {
+	ovs, err := s.st.ListBuiltinOverrides()
+	if err != nil {
+		return err
+	}
+	edited := make(map[string]bool, len(ovs))
+	for _, o := range ovs {
+		edited[o.ID] = true
+	}
+	for i := range rows {
+		rows[i].Edited = rows[i].Origin == "builtin" && edited[store.MetricOverridePrefix+rows[i].Name]
+	}
+	return nil
 }
 
 // GetMetric returns one by id (or name).
@@ -187,7 +211,7 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 	if err != nil {
 		return models.MetricRow{}, err
 	}
-	return r, nil
+	return s.withEdited(r), nil
 }
 
 // SaveMetric validates + upserts (origin forced to user for API saves;
@@ -212,6 +236,109 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 // doc), a no-op save and a rename bump nothing and schedule nothing — a
 // rename changes no semantics (W2b's pin, kept).
 func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error) {
+	return s.saveMetric(m, nil)
+}
+
+// SaveBuiltinMetric stores an edit of one builtin metric's SQL (owner ruling
+// 44). The edit is the builtin's own row with a new expr: its name, title,
+// scope, subject, partition, format and doc are kept, so its value identity
+// is kept. It passes the same save gate and scope rule as a user metric, and
+// the same semantic bump and sweep, then records the override in the same
+// transaction. The shipped SQL is kept on the override for restore.
+func (s *MetricsService) SaveBuiltinMetric(id int64, expr string) (models.MetricRow, error) {
+	cur, err := s.builtinRow(id)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	shipped, err := s.shippedExpr(cur)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	cur.Expr = expr
+	saved, err := s.saveMetric(cur, &store.MetricOverrideWrite{Shipped: shipped})
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	return s.withEdited(saved), nil
+}
+
+// RestoreBuiltinMetric deletes a builtin metric's override and puts the
+// shipped SQL back as its expr. The restore is a semantic change like any
+// other, so the metric and its dependents go behind and the sweep recomputes
+// them with the shipped statement. A builtin with no override is returned as
+// it is (nothing to restore, nothing scheduled).
+func (s *MetricsService) RestoreBuiltinMetric(id int64) (models.MetricRow, error) {
+	cur, err := s.builtinRow(id)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	ov, err := s.st.GetBuiltinOverride(store.MetricOverridePrefix + cur.Name)
+	if errors.Is(err, store.ErrNotFound) {
+		return s.withEdited(cur), nil
+	}
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	if strings.TrimSpace(ov.Shipped) == "" {
+		return models.MetricRow{}, fmt.Errorf("the shipped expression of %q is not recorded, so it can't be restored", cur.Name)
+	}
+	cur.Expr = ov.Shipped
+	saved, err := s.saveMetric(cur, &store.MetricOverrideWrite{Restore: true})
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	return s.withEdited(saved), nil
+}
+
+// builtinRow loads the stored row a builtin edit addresses; any other origin
+// is refused (a user metric is edited through SaveMetric).
+func (s *MetricsService) builtinRow(id int64) (models.MetricRow, error) {
+	if id <= 0 {
+		return models.MetricRow{}, errors.New("metric id is required")
+	}
+	cur, err := s.st.GetMetric(id)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	if cur.Origin != "builtin" {
+		return models.MetricRow{}, fmt.Errorf("%q is not a built-in metric", cur.Name)
+	}
+	return cur, nil
+}
+
+// shippedExpr is the SQL a builtin metric restores to: the shipped text
+// recorded on its override, or, with no override yet, its current expr (the
+// row is still shipped, since only an override ever changes a builtin's expr).
+func (s *MetricsService) shippedExpr(cur models.MetricRow) (string, error) {
+	ov, err := s.st.GetBuiltinOverride(store.MetricOverridePrefix + cur.Name)
+	if errors.Is(err, store.ErrNotFound) {
+		return cur.Expr, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(ov.Shipped) == "" {
+		return cur.Expr, nil
+	}
+	return ov.Shipped, nil
+}
+
+// withEdited marks a row whose builtin has an override in place (the Builder's
+// "edited" chip and Restore control read it).
+func (s *MetricsService) withEdited(m models.MetricRow) models.MetricRow {
+	if m.Origin != "builtin" {
+		return m
+	}
+	if _, err := s.st.GetBuiltinOverride(store.MetricOverridePrefix + m.Name); err == nil {
+		m.Edited = true
+	}
+	return m
+}
+
+// saveMetric is SaveMetric's body. ov is nil for a user save; for a builtin
+// edit or restore it is the override write the save carries (the builtin's
+// origin is kept, and only its expr may change).
+func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverrideWrite) (models.MetricRow, error) {
 	m.Name = strings.TrimSpace(m.Name)
 	if m.Name == "" {
 		return models.MetricRow{}, errors.New("metric name is required")
@@ -271,7 +398,8 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// created or hijacked through here.
 	m.Origin = "user"
 	m.PluginID = ""
-	// Built-ins are immutable through this API. The verdict reads the
+	// Built-ins are immutable through this API, except the override write
+	// (SaveBuiltinMetric / RestoreBuiltinMetric), which keeps the origin. The verdict reads the
 	// STORED row's origin — never what the caller sent (the payload's
 	// origin was just forced to "user" above, so it could not tell us
 	// anything anyway). Placement: cheapest-first — one indexed
@@ -287,8 +415,14 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 		if err != nil {
 			return models.MetricRow{}, err // unknown id: the store's ErrNotFound, as before
 		}
-		if existing.Origin == "builtin" {
+		if existing.Origin == "builtin" && ov == nil {
 			return models.MetricRow{}, errors.New("built-in metrics can't be edited")
+		}
+		if ov != nil {
+			if existing.Origin != "builtin" {
+				return models.MetricRow{}, fmt.Errorf("%q is not a built-in metric", existing.Name)
+			}
+			m.Origin = "builtin"
 		}
 	}
 	// The expression is one SELECT or WITH statement, gated by the one save
@@ -327,7 +461,12 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// ONE transaction: the metric row, its edges wholesale, and (semantic)
 	// the version bump for this metric + every transitive dependent —
 	// atomic, so nothing is partially behind after commit.
-	saved, err := s.st.SaveMetricWithDeps(m, depNames, nil, semantic)
+	var saved models.MetricRow
+	if ov != nil {
+		saved, err = s.st.SaveBuiltinMetric(m, depNames, semantic, *ov)
+	} else {
+		saved, err = s.st.SaveMetricWithDeps(m, depNames, nil, semantic)
+	}
 	if err != nil {
 		return models.MetricRow{}, err
 	}

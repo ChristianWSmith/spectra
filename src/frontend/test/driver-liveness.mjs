@@ -290,7 +290,9 @@ const EXPECTED = {
   // builder 169 → 116 (2026-11-21, C5e ruling 33): the Order dialog section
   // (J), the unpin and Economy placement section (L) and the Pinning filter
   // section left with pinning; the measured run executes 116 checks.
-  'builder.dom.mjs': 116,
+  // 116 → 122 (2026-11-21, C5h ruling 44): a builtin metric's expression is
+  // edited in place; section D pins the edit, the refused edit, the restore.
+  'builder.dom.mjs': 122,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -879,7 +881,9 @@ const EXPECTED = {
   // DRAFT body through RenderReportDraft, an edit clearing the stale
   // document, the player/round field gates) and I the registry
   // round-trip + resetViewState() defaults.
-  'reports-builder.dom.mjs': 51,
+  // 51 → 58 (2026-11-21, C5h ruling 44): a builtin report's text is edited in
+  // place; section E pins the edit, the stored override, and the restore.
+  'reports-builder.dom.mjs': 58,
   // reports 44 → 50 (2026-11-16, w21 reports-builder): +6 the NEW
   // section J — the template CARDS' origin surfacing, now that the
   // Reports builder adds user templates to this catalog: one card per

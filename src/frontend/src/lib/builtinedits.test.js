@@ -128,3 +128,33 @@ test('(f) the guide describes editing, restore to default and use as my view', (
     assert.ok(!text.includes(term), `the guide must not name ${term}`);
   }
 });
+
+// (f) for C5h (owner ruling 44): the guide describes editing a builtin report,
+// editing a builtin metric, and restore to default, in the user's domain.
+test('C5h (f): the guide describes editing a builtin report and metric, and restore to default', () => {
+  const all = [...guideSectionsBeforeManual, ...guideSectionsAfterManual];
+  const metric = all.find((s) => s.id === 'metric-builder');
+  const report = all.find((s) => s.id === 'reports-builder');
+  assert.ok(metric && report, 'the metric and report builder guide sections exist');
+  assert.match(metric.blocks, /Built-in metrics are edited in place/);
+  assert.match(metric.blocks, /\*\*Expression\*\*/);
+  assert.match(metric.blocks, /\*\*Restore to default\*\*/);
+  assert.match(report.blocks, /Built-in templates are edited in place/);
+  assert.match(report.blocks, /\*\*Template body\*\*/);
+  assert.match(report.blocks, /\*\*Restore to default\*\*/);
+  // The copy stays in the user's domain: no table, column or storage terms
+  // in the built-in edit paragraphs.
+  const paragraph = (text, lead) => {
+    const start = text.indexOf(lead);
+    return text.slice(start, text.indexOf('\n\n', start));
+  };
+  const edits = [
+    paragraph(metric.blocks, 'Built-in metrics are edited in place'),
+    paragraph(report.blocks, 'Built-in templates are edited in place'),
+  ];
+  for (const text of edits) {
+    for (const term of ['table', 'column', 'override', 'builtin_overrides', 'SQL']) {
+      assert.ok(!text.includes(term), `the built-in edit copy must not name ${term}`);
+    }
+  }
+});

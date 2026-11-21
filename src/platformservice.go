@@ -94,6 +94,9 @@ type ReportTemplate struct {
 	Format string `json:"format"` // md|html
 	Origin string `json:"origin"` // builtin|plugin
 	Body   string `json:"body"`   // template source (text/template)
+	// Edited is set on a builtin whose body the user has edited in place
+	// (owner ruling 44); restore to default brings the shipped body back.
+	Edited bool `json:"edited"`
 }
 
 // PlatformService — see doc comment above.
@@ -380,10 +383,15 @@ func reportTplFromPlugin(r plugin.ReportTemplate) ReportTemplate {
 // (user rows) owns.
 func (s *PlatformService) ListReportTemplates() ([]ReportTemplate, error) {
 	out := []ReportTemplate{}
-	for _, t := range report.Builtins() {
+	builtins, edits, err := builtinReportsWithEdits(s.st)
+	if err != nil {
+		return out, err
+	}
+	for _, t := range builtins {
+		_, edited := edits[t.ID]
 		out = append(out, ReportTemplate{
 			ID: t.ID, Title: t.Title, Scope: t.Scope, Format: t.Format,
-			Origin: t.Origin, Body: t.Body,
+			Origin: t.Origin, Body: t.Body, Edited: edited,
 		})
 	}
 	rows, err := s.st.ListReportTemplates()
@@ -666,6 +674,81 @@ func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID 
 	return out, tpl.Format, nil
 }
 
+// builtinReportsWithEdits returns the embedded builtin templates with each
+// one's edited body applied (owner ruling 44: an override stores the body
+// under report:<id> in builtin_overrides). The second value is the set of
+// edited ids, so a list can mark them. Title, scope and format stay shipped.
+func builtinReportsWithEdits(st *store.Store) ([]report.Template, map[string]string, error) {
+	rows, err := st.ListBuiltinOverrides()
+	if err != nil {
+		return nil, nil, fmt.Errorf("couldn't load the report templates: %w", err)
+	}
+	edits := map[string]string{}
+	for _, r := range rows {
+		if id, ok := strings.CutPrefix(r.ID, store.ReportOverridePrefix); ok {
+			edits[id] = r.Source
+		}
+	}
+	tpls := report.Builtins()
+	for i := range tpls {
+		if body, ok := edits[tpls[i].ID]; ok {
+			tpls[i].Body = body
+		}
+	}
+	return tpls, edits, nil
+}
+
+// builtinReportByID finds one embedded builtin by id (its shipped fields).
+func builtinReportByID(id string) (report.Template, error) {
+	for _, t := range report.Builtins() {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return report.Template{}, fmt.Errorf("%q is not a built-in report template", id)
+}
+
+// SaveBuiltinReport stores an edit of one builtin report's body as its
+// override (owner ruling 44). Title, scope and format are the shipped ones:
+// only the text and layout change. The body is validated as a user template's
+// is (a non-empty body); the override then applies wherever the template is
+// listed or rendered.
+func (s *PlatformService) SaveBuiltinReport(id, body string) (ReportTemplate, error) {
+	shipped, err := builtinReportByID(strings.TrimSpace(id))
+	if err != nil {
+		return ReportTemplate{}, err
+	}
+	if err := validateReportBody(body); err != nil {
+		return ReportTemplate{}, err
+	}
+	if _, err := s.st.SaveBuiltinOverride(store.ReportOverridePrefix+shipped.ID, body); err != nil {
+		return ReportTemplate{}, err
+	}
+	return builtinReportDTO(shipped, body, true), nil
+}
+
+// RestoreBuiltinReport deletes a builtin report's override and returns the
+// shipped template. A builtin with no override is returned as shipped.
+func (s *PlatformService) RestoreBuiltinReport(id string) (ReportTemplate, error) {
+	shipped, err := builtinReportByID(strings.TrimSpace(id))
+	if err != nil {
+		return ReportTemplate{}, err
+	}
+	if err := s.st.DeleteBuiltinOverride(store.ReportOverridePrefix + shipped.ID); err != nil {
+		return ReportTemplate{}, err
+	}
+	return builtinReportDTO(shipped, shipped.Body, false), nil
+}
+
+// builtinReportDTO maps a builtin (shipped fields) with the body it carries
+// now to the service DTO.
+func builtinReportDTO(t report.Template, body string, edited bool) ReportTemplate {
+	return ReportTemplate{
+		ID: t.ID, Title: t.Title, Scope: t.Scope, Format: t.Format,
+		Origin: t.Origin, Body: body, Edited: edited,
+	}
+}
+
 // reportTemplatesFor is THE resolution list every template read shares:
 // builtins, then the stored user templates, then the enabled plugins'
 // (the builtin → user → plugin origin rank). ListReportTemplates maps the
@@ -673,7 +756,10 @@ func renderReportDoc(st *store.Store, templateID string, matchID int64, steamID 
 // RenderReportDraft resolve through it, so what the list shows and what
 // a render finds can never diverge.
 func reportTemplatesFor(st *store.Store) ([]report.Template, error) {
-	tpls := report.Builtins()
+	tpls, _, err := builtinReportsWithEdits(st)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := st.ListReportTemplates()
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the report templates: %w", err)

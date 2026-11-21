@@ -35,8 +35,15 @@ export const reportbuilder = {
   // editor form
   editTemplate: 'Edit template',
   newTemplate: 'New template',
-  builtinReadOnly: "Built-in templates can't be edited",
+  // A built-in is edited in place (owner ruling 44): its text is the one
+  // thing that changes; restore to default brings the shipped text back.
+  builtinEditNote: 'Your edits replace this built-in. Restore to default undoes them.',
+  builtinEditedNote: 'Edited. Restore to default brings back the shipped text.',
   builtinChip: 'built-in',
+  editedChip: 'edited',
+  editedTitle: 'You have edited this built-in. Its shipped text is the default.',
+  restoreDefault: 'Restore to default',
+  restoreTitle: 'Discard your edit and use the shipped text',
   pluginImmutable:
     'Plugin templates are read-only — saving one stores a copy of this template as your own.',
   readOnlyChip: 'read-only source',

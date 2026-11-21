@@ -5,10 +5,12 @@
   // template on the left, the editor + its live preview on the right.
   //
   // Ownership rules copied from the metric editor, not reinvented:
-  //   * a BUILT-IN loads read-only (Save disabled — Builder's
-  //     `saveDisabled` / `builtinReadOnly` rule), a PLUGIN row forks on
-  //     save (payload id "" — Builder's `id: 0` payload), a USER row
-  //     edits in place and is the only one with a delete;
+  //   * a BUILT-IN edits in place (owner ruling 44): only its text is
+  //     editable, Save stores it as the built-in's override, and Restore to
+  //     default deletes the override. Its title, scope and format stay as
+  //     shipped. A PLUGIN row forks on save (payload id "" — Builder's
+  //     `id: 0` payload), a USER row edits in place and is the only one
+  //     with a delete;
   //   * validation is SERVER-side only (SaveReportTemplate re-checks
   //     scope/format/title/body) — one gate, never a second frontend
   //     copy that could drift from it;
@@ -20,6 +22,8 @@
     listReportTemplates,
     saveReportTemplate,
     deleteReportTemplate,
+    saveBuiltinReport,
+    restoreBuiltinReport,
     renderReportDraft,
     listMatches,
     listPlayers,
@@ -42,7 +46,7 @@
   // shareable or durable); dialogs and the composed preview document
   // stay transient and never restore.
   function newForm() {
-    return { id: '', title: '', scope: 'match', format: 'md', body: '', origin: 'user' };
+    return { id: '', title: '', scope: 'match', format: 'md', body: '', origin: 'user', edited: false };
   }
 
   // The dirty check covers exactly the fields a save writes — id and
@@ -153,7 +157,9 @@
   // and neither ever shows a delete.
   const readOnly = $derived(form.origin !== 'user');
   const builtinLoaded = $derived(form.origin === 'builtin');
-  const saveDisabled = $derived(saving || builtinLoaded);
+  // A built-in saves only an edit of its text (owner ruling 44): Save is
+  // off until the body is dirty. A plugin row always saves (it forks).
+  const saveDisabled = $derived(saving || (builtinLoaded && !dirty));
 
   function editTemplate(t) {
     form = {
@@ -163,6 +169,7 @@
       format: t.format || 'md',
       body: t.body || '',
       origin: t.origin || 'builtin',
+      edited: !!t.edited,
     };
     baseline = snapshot(form);
     saveError = '';
@@ -178,10 +185,19 @@
     saveError = '';
     saving = true;
     try {
-      // A BUILT-IN never reaches here (saveDisabled) and a PLUGIN row
-      // forks — an empty id tells the service to mint a new user row,
-      // exactly the metric editor's `id: 0` payload rule. Every field is
-      // re-validated server-side; the frontend sends, Go decides.
+      // A BUILT-IN saves its edited text as its override (owner ruling 44);
+      // the service refuses everything else about it, which stays shipped.
+      if (builtinLoaded) {
+        const edit = await saveBuiltinReport(form.id, form.body);
+        form.edited = edit.edited;
+        form.body = edit.body;
+        baseline = snapshot(form);
+        await refreshList();
+        return;
+      }
+      // A PLUGIN row forks — an empty id tells the service to mint a new
+      // user row, exactly the metric editor's `id: 0` payload rule. Every
+      // field is re-validated server-side; the frontend sends, Go decides.
       const saved = await saveReportTemplate({
         id: readOnly ? '' : form.id,
         title: form.title,
@@ -215,6 +231,22 @@
       await refreshList();
     } catch (e) {
       saveError = errText(e);
+    }
+  }
+
+  // Restore to default (owner ruling 44): the built-in's override is deleted
+  // and the editor shows the shipped text again.
+  async function restoreBuiltin() {
+    saveError = '';
+    saving = true;
+    try {
+      const shipped = await restoreBuiltinReport(form.id);
+      editTemplate(shipped);
+      await refreshList();
+    } catch (e) {
+      saveError = errText(e);
+    } finally {
+      saving = false;
     }
   }
 
@@ -324,8 +356,9 @@
 {#snippet templateRow(t)}
   <div class="rb-row" class:active={form.id === t.id}>
     <!-- Every stored row loads into the editor: a user row edits, a
-         plugin row forks, a BUILT-IN loads read-only (Save disabled —
-         the metric editor's rule). Delete stays user-only. -->
+         plugin row forks, a BUILT-IN edits in place (owner ruling 44:
+         its text is saved as an override, restore brings it back).
+         Delete stays user-only. -->
     <button class="rb-row-main" onclick={() => editTemplate(t)}>
       <span class="rb-row-title">{t.title}</span>
       <span class="rb-row-sub">
@@ -334,6 +367,9 @@
         <!-- The origin chip carries the row's own origin word — the
              same spelling the Reports template cards show. -->
         <span class="chip">{t.origin || 'builtin'}</span>
+        {#if t.edited}
+          <span class="chip" title={S.reportbuilder.editedTitle}>{S.reportbuilder.editedChip}</span>
+        {/if}
       </span>
     </button>
     <span class="rb-row-acts">
@@ -439,11 +475,14 @@
         <div class="row-between">
           <h2>{form.id ? S.reportbuilder.editTemplate : S.reportbuilder.newTemplate}</h2>
           {#if builtinLoaded}
-            <!-- A built-in loads read-only (the metric editor's rule):
-                 the chip names it in the user's words. -->
-            <span class="chip rb-readonly" title={S.reportbuilder.builtinReadOnly}
+            <!-- A built-in edits in place (owner ruling 44): the chip names
+                 it in the user's words, and an edit shows beside it. -->
+            <span class="chip rb-readonly" title={S.reportbuilder.builtinEditNote}
               >{S.reportbuilder.builtinChip}</span
             >
+            {#if form.edited}
+              <span class="chip" title={S.reportbuilder.editedTitle}>{S.reportbuilder.editedChip}</span>
+            {/if}
           {:else if readOnly}
             <!-- Plugin rows: immutable through Save — saving stores a
                  copy of this template as your own. -->
@@ -494,7 +533,6 @@
               rows="10"
               spellcheck="false"
               bind:value={form.body}
-              readonly={builtinLoaded}
             ></textarea>
           </div>
         </div>
@@ -549,6 +587,11 @@
              editor-action layout the metric editor uses. -->
         <div class="row-between rb-actions">
           <span class="rb-destructive">
+            {#if builtinLoaded && form.edited}
+              <button class="btn" onclick={restoreBuiltin} title={S.reportbuilder.restoreTitle}
+                >{S.reportbuilder.restoreDefault}</button
+              >
+            {/if}
             {#if form.origin === 'user' && form.id}
               <button
                 class="btn danger"
@@ -562,7 +605,11 @@
           </span>
           <span class="toolbar">
             <span class="muted rb-note">
-              {builtinLoaded ? S.reportbuilder.builtinReadOnly : S.reportbuilder.saveNoteDefault}
+              {builtinLoaded
+                ? form.edited
+                  ? S.reportbuilder.builtinEditedNote
+                  : S.reportbuilder.builtinEditNote
+                : S.reportbuilder.saveNoteDefault}
             </span>
             <button class="btn" onclick={runPreview} disabled={previewDisabled}
               ><span class="codicon codicon-play" aria-hidden="true"></span>
@@ -572,12 +619,11 @@
               class="btn primary"
               onclick={save}
               disabled={saveDisabled}
-              title={builtinLoaded ? S.reportbuilder.builtinReadOnly : undefined}
             >
               <span class="codicon codicon-save" aria-hidden="true"></span>
               {saving
                 ? S.reportbuilder.saving
-                : !readOnly && form.id && !dirty
+                : (!readOnly || builtinLoaded) && form.id && !dirty
                   ? S.reportbuilder.saved
                   : S.reportbuilder.saveTemplate}
             </button>
