@@ -59,7 +59,7 @@ const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'component-frame
 for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(dir, sub), { recursive: true });
 const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
-for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'matchpanels.js']) copy(rel);
+for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'matchpanels.js', 'econpanels.js', 'utilpanels.js', 'builtinhelpers.js']) copy(rel);
 for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js', 'frameContext.js']) copy(join('componentruntime', rel));
 // The service layer stays out: errText is the real one-liner, and the
 // frame's default reads are a recorder (the driver passes its own).

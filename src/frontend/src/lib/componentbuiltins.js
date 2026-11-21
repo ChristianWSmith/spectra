@@ -18,6 +18,8 @@
 
 import * as S from './strings/index.js';
 import { MATCH_PANELS } from './matchpanels.js';
+import { ECON_PANELS } from './econpanels.js';
+import { UTIL_PANELS } from './utilpanels.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -76,6 +78,10 @@ export const BUILTIN_COMPONENTS = Object.freeze([
   // The Match view's panels (matchpanels.js, dogfood C5b). Each is mounted
   // by the Match view with its context; duplicating one gives a user copy.
   ...MATCH_PANELS,
+  // The Economy and Utility views (econpanels.js, utilpanels.js, dogfood C5c):
+  // each view's composer and the panels it mounts.
+  ...ECON_PANELS,
+  ...UTIL_PANELS,
 ]);
 
 // isBuiltinId reports whether a placement's component reference names a

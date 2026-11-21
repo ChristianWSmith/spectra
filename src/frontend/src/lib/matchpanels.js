@@ -544,7 +544,7 @@ export const SCOREBOARD_SOURCE = `<script>
 // and the compare button belong to the surface (the Match view keeps them per
 // match), so they arrive as props (`picks`, `onPick`, `onCompare`).
 const SQL_ROUNDS =
-  "SELECT r.number, r.winner, r.reason, r.duration_s, r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
+  "SELECT r.number, r.winner, r.reason, (CAST(r.end_tick - r.start_tick AS REAL) / (SELECT m.tick_rate FROM matches m WHERE m.id = r.match_id)), r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
   "r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''), " +
   "(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'), " +
   "r.start_tick, r.end_tick FROM rounds r " +

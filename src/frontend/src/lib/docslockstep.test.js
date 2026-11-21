@@ -104,7 +104,6 @@ const SIDEBAR_SECTIONS = {
 const VIEW_SECTIONS = {
   'Builder.svelte': 'metric-builder',
   'CompareRounds.svelte': 'understanding-a-match',
-  'Economy.svelte': 'match-analysis',
   'Explorer.svelte': 'understanding-a-match', // the Details tab's diagnostics block
   'Library.svelte': 'library',
   'Match.svelte': 'understanding-a-match', // per-tab coverage is TAB_SECTIONS
@@ -117,7 +116,6 @@ const VIEW_SECTIONS = {
   'RoundDetail.svelte': 'understanding-a-match',
   'Settings.svelte': 'settings',
   'SqlConsole.svelte': 'sql-console',
-  'Utility.svelte': 'match-analysis',
 };
 
 // assertCovered — one surface's half of the contract: it must be mapped,
