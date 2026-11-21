@@ -39,7 +39,7 @@ registerHooks({
 
 const { JSDOM } = await import('jsdom');
 const { compile } = await import('svelte/compiler');
-const { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } = await import('node:fs');
+const { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, realpathSync } = await import('node:fs');
 const { dirname, join, normalize, relative } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
 // The stored-row oracle below resolves per-team keys with the REAL
@@ -613,7 +613,7 @@ const identitySeedValues = (ids) => {
 // an in-memory database built from the same fixture rows, with the store's own
 // DDL (the store's schema.sql), so the SQL the builtins send is the SQL that runs.
 const { DatabaseSync } = await import('node:sqlite');
-const STORE_DDL = readFileSync(join('..', 'internal', 'store', 'schema.sql'), 'utf8');
+const STORE_DDL = readFileSync(join(realpathSync(import.meta.dirname), '..', '..', 'internal', 'store', 'schema.sql'), 'utf8');
 function econDb(countedN, switches) {
   const tables = ['matches', 'rounds', 'round_economy', 'round_classifications', 'round_side_classes', 'round_player_sides', 'players', 'player_stats', 'teams', 'events'];
   const db = new DatabaseSync(':memory:');

@@ -292,7 +292,7 @@ const base = {
 
 console.log('A. engagement columns: round → time into round → killer vs victim → dist (m)');
 const root = await render(base);
-const eng = sections(root, 'Engagements')[0];
+const eng = sections(root, 'Kill tags')[0];
 const engTable = eng?.querySelector('table');
 check('engagements table rendered', !!engTable);
 check(
@@ -317,7 +317,7 @@ check(
   first[0]?.querySelectorAll('button').length === 1 &&
     !first[1]?.querySelector('button') &&
     !!engPlayBtn &&
-    engPlayBtn.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+    engPlayBtn.getAttribute('title') === 'Watch this kill — follow alice (killer)',
   JSON.stringify([engPlayBtn?.getAttribute('title'), first[1]?.innerHTML]),
 );
 check('time cell is time INTO the round', first[2]?.textContent.trim() === '0:10', first[2]?.textContent);
@@ -394,7 +394,7 @@ check(
 check(
   'engagement ▶ is icon-only play with a follow-aware title',
   !!engPlayBtn && engPlayBtn.textContent.trim() === '' && !!engPlayBtn.querySelector('.codicon-play') &&
-    engPlayBtn.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+    engPlayBtn.getAttribute('title') === 'Watch this kill — follow alice (killer)',
   engPlayBtn?.getAttribute('title'),
 );
 click(engPlayBtn);
@@ -513,7 +513,7 @@ const rootD = await render({
     { ...pairKill, kind: 'untraded' },
   ],
 });
-const engD = sections(rootD, 'Engagements')[0];
+const engD = sections(rootD, 'Kill tags')[0];
 const tableD = engD?.querySelector('table');
 check('engagements table rendered', !!tableD);
 const dRows = rows(tableD);
@@ -551,7 +551,7 @@ check(
 );
 check(
   'the merged row ▶ still follows the killer',
-  dPlay?.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+  dPlay?.getAttribute('title') === 'Watch this kill — follow alice (killer)',
   dPlay?.getAttribute('title'),
 );
 check(
@@ -566,7 +566,7 @@ check(
 // none-checked default), checking every box is the SAME every-row
 // filter (closed state reads "All kinds" either way), and checking only
 // a kind the pair does not carry empties the table.
-const dMatched = () => !tableD.textContent.includes('No engagements match this filter.');
+const dMatched = () => !tableD.textContent.includes('No kill tags match this filter.');
 const popD = await openKinds(engD);
 click(kindCheck(engD, 'trade'));
 await sleep();
@@ -612,7 +612,7 @@ click(kindCheck(engD, 'opening'));
 await sleep();
 check(
   'opening alone → no match (the pair carries no opening fact)',
-  !dMatched() && tableD.textContent.includes('No engagements match this filter.'),
+  !dMatched() && tableD.textContent.includes('No kill tags match this filter.'),
   tableD.textContent.slice(-90),
 );
 
@@ -635,7 +635,7 @@ const rootE = await render({
     { ...pairKill2, kind: 'untraded' },
   ],
 });
-const engE = sections(rootE, 'Engagements')[0];
+const engE = sections(rootE, 'Kill tags')[0];
 const tableE = engE?.querySelector('table');
 const eRows = rows(tableE);
 check('opening+untraded renders ONE row', eRows.length === 1, String(eRows.length));
@@ -652,7 +652,7 @@ click(kindCheck(engE, 'opening'));
 await sleep();
 check(
   'checking opening → the merged row shows',
-  rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
+  rows(tableE).length === 1 && !tableE.textContent.includes('No kill tags match this filter.'),
   String(rows(tableE).length),
 );
 click(kindCheck(engE, 'untraded'));
@@ -660,7 +660,7 @@ await sleep();
 check(
   'OR union: opening+untraded both checked → the SAME row shows once, both boxes checked',
   rows(tableE).length === 1 &&
-    !tableE.textContent.includes('No engagements match this filter.') &&
+    !tableE.textContent.includes('No kill tags match this filter.') &&
     [...tableE.querySelectorAll('.comb-kind-chip')].length === 2 &&
     kindCheck(engE, 'opening')?.checked === true &&
     kindCheck(engE, 'untraded')?.checked === true,
@@ -685,7 +685,7 @@ const rootF = await render({
     { tick: 10640, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 4, wonBy: 't' },
   ],
 });
-const tableF = sections(rootF, 'Engagements')[0]?.querySelector('table');
+const tableF = sections(rootF, 'Kill tags')[0]?.querySelector('table');
 const fRows = rows(tableF);
 check('three rows: earlier single + merged pair + same-tick other pair', fRows.length === 3, String(fRows.length));
 const fCells = (i) => fRows[i]?.querySelectorAll('td') || [];
@@ -825,7 +825,7 @@ const rootI = await render({
     { ...tradedKill, kind: 'traded' },
   ],
 });
-const engI = sections(rootI, 'Engagements')[0];
+const engI = sections(rootI, 'Kill tags')[0];
 const tableI = engI?.querySelector('table');
 const iRows = rows(tableI);
 check('trade+traded merge into ONE row', iRows.length === 1, String(iRows.length));
@@ -853,7 +853,7 @@ click(kindCheck(engI, 'traded'));
 await sleep();
 check(
   'checking traded → the merged row CONTAINS-matches and shows',
-  rows(tableI).length === 1 && !tableI.textContent.includes('No engagements match this filter.'),
+  rows(tableI).length === 1 && !tableI.textContent.includes('No kill tags match this filter.'),
   String(rows(tableI).length),
 );
 click(kindCheck(engI, 'untraded'));
@@ -864,7 +864,7 @@ await sleep();
 check(
   'adding untraded (OR, never exclusive) → the row still shows — it contains traded',
   rows(tableI).length === 1 &&
-    !tableI.textContent.includes('No engagements match this filter.') &&
+    !tableI.textContent.includes('No kill tags match this filter.') &&
     [...tableI.querySelectorAll('.comb-kind-chip')].length === 2,
   tableI.textContent.slice(-90),
 );
@@ -915,7 +915,7 @@ console.log('K. cold start: the two panels never render mid-load (the loading li
     'after the fetch lands: gate gone, both panels render',
     !rootK.textContent.includes('Loading combat data…') &&
       sections(rootK, 'Combat stats').length === 0 &&
-      sections(rootK, 'Engagements').length === 1 &&
+      sections(rootK, 'Kill tags').length === 1 &&
       sections(rootK, 'Clutches').length === 1,
     rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
@@ -1026,7 +1026,7 @@ console.log('N. engagements round scope: round dropdown, default round 1, Engage
       { tick: 9500, round: 6, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 3, wonBy: 't' },
     ],
   });
-  const engN = sections(rootN, 'Engagements')[0];
+  const engN = sections(rootN, 'Kill tags')[0];
   const tableN = engN?.querySelector('table');
   const selN = engN?.querySelector('#comb-round-filter');
   const optsOf = () => [...(selN?.querySelectorAll('option') || [])].map((o) => o.textContent.trim());

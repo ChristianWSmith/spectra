@@ -259,7 +259,7 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 
 # Combat
 
-- **Engagements** — every detected duel, filtered through a **Kind** dropdown of checkboxes — **opening** / **trade** / **traded** / **untraded** (one kill can carry several; checked kinds combine as OR, so a duel matching any of them shows, and the closed dropdown states the current selection, reading **All kinds** whenever nothing narrows the list) and by a **Round** dropdown beside it — round 1 is selected by default, **All rounds** shows every duel, and each round option is labelled by its scoreline (**RD7 | 4-3**), with the killer and victim, distance, and a ▶ that follows the *killer*. With no kind checked — the default — no kind filter applies, so every duel of the selected round shows.
+- **Kill tags** — every detected kill, one row per kill, filtered through a **Kind** dropdown of checkboxes — **opening** / **trade** / **traded** / **untraded** (one kill can carry several; checked kinds combine as OR, so a kill matching any of them shows, and the closed dropdown states the current selection, reading **All kinds** whenever nothing narrows the list) and by a **Round** dropdown beside it — round 1 is selected by default, **All rounds** shows every kill, and each round option is labelled by its scoreline (**RD7 | 4-3**), with the killer and victim, distance, and a ▶ that follows the *killer*. With no kind checked — the default — no kind filter applies, so every kill of the selected round shows.
 - **Clutches** — the detected 1vN situations (found by counting who is still alive when a side drops to one player), with size, player, outcome, bomb state and HP left; **won** / **lost** toggles filter the list, and ▶ follows the lone player.
 
 # Heatmaps
@@ -375,7 +375,7 @@ id, and a player search box to jump to someone else. Then:
 
 - **Headline and career cards** — one block of square name/value cards, the same set in the
   same order for every player: Matches (with its wins sub-line), Win %, ADR, ADR σ, K/D, HS %,
-  KAST %, opening duels, trade rate, clutches, clutch win %, average enemies flashed and average
+  KAST %, opening kill tags, trade rate, clutches, clutch win %, average enemies flashed and average
   utility damage. Each card shows a number, a dash when there is no data for this player, or a
   state chip while a value is recomputing. The cards wrap outward from the center.
 - **Trend** — any match-scope metric you have (ADR, KAST%, K/D, HS%, …) across the player's

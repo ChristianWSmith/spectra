@@ -267,10 +267,10 @@
                 <EventPlay
                   tick={g.tick}
                   title={g.aSteam
-                    ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
+                    ? `Watch this kill — follow ${g.aName || g.aSteam} (killer)`
                     : S.combat.watchEngagement}
                   label={g.aSteam
-                    ? `Watch this engagement — follow ${g.aName || g.aSteam}`
+                    ? `Watch this kill — follow ${g.aName || g.aSteam}`
                     : S.combat.watchEngagement}
                   onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
                 />
