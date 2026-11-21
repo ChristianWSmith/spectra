@@ -142,10 +142,15 @@ type GateError struct {
 func (e *GateError) Error() string { return e.Message }
 
 // MetricSQLRef is one metric('name') construct in a statement: the
-// referenced name and the byte offset of its quoted literal.
+// referenced name, the byte offset of its quoted literal (Pos) and the
+// half-open byte span of the whole construct (Start up to End, the
+// `metric` keyword through the closing parenthesis), which the run uses
+// to rewrite it.
 type MetricSQLRef struct {
-	Name string
-	Pos  int
+	Name  string
+	Pos   int
+	Start int
+	End   int
 }
 
 // MetricStatement is what the gate's statement half derives from an
@@ -399,8 +404,10 @@ func (r *tableResolver) metricRef(i int) *GateError {
 	}
 	lit := r.toks[i+2].text
 	r.refs = append(r.refs, MetricSQLRef{
-		Name: strings.ReplaceAll(lit[1:len(lit)-1], "''", "'"),
-		Pos:  r.toks[i+2].pos,
+		Name:  strings.ReplaceAll(lit[1:len(lit)-1], "''", "'"),
+		Pos:   r.toks[i+2].pos,
+		Start: r.toks[i].pos,
+		End:   r.toks[i+3].pos + len(")"),
 	})
 	return nil
 }

@@ -34,10 +34,16 @@ const RETIRED = [
   'localStorage',
 ];
 
-test('the Match view has three panels, each a builtin under the builtin namespace', () => {
-  assert.equal(MATCH_PANELS.length, 3);
+test('the Match view has its five panels, each a builtin under the builtin namespace', () => {
+  assert.equal(MATCH_PANELS.length, 5);
   const ids = MATCH_PANELS.map((p) => p.id);
-  assert.deepEqual(ids, [MATCH_PANEL_IDS.overview, MATCH_PANEL_IDS.rosters, MATCH_PANEL_IDS.scoreboard]);
+  assert.deepEqual(ids, [
+    MATCH_PANEL_IDS.overview,
+    MATCH_PANEL_IDS.rosters,
+    MATCH_PANEL_IDS.scoreboard,
+    MATCH_PANEL_IDS.rounds,
+    MATCH_PANEL_IDS.details,
+  ]);
   for (const p of MATCH_PANELS) {
     assert.ok(p.id.startsWith(BUILTIN_PREFIX), `${p.id} is in the builtin namespace`);
     assert.ok(BUILTIN_COMPONENTS.some((b) => b.id === p.id), `${p.id} is in the builtin registry`);

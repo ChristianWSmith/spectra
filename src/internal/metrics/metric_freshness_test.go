@@ -21,8 +21,8 @@ func TestRawScopesReadFreshAfterOneSweep(t *testing.T) {
 	for name, expr := range map[string]string{
 		"fresh_lib_count": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events",
 		"fresh_lib_empty": "SELECT '' AS subject_key, '' AS dim, 1.0 AS value FROM events WHERE 1 = 0",
-		"fresh_steam":     "SELECT steam_id AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE steam_id = :steam_id GROUP BY steam_id",
-		"fresh_match":     "SELECT steam_id AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id GROUP BY steam_id",
+		"fresh_steam":     "SELECT steam_id AS subject_key, '' AS dim, SUM(entry_kills) AS value FROM player_stats WHERE steam_id = :steam_id GROUP BY steam_id",
+		"fresh_match":     "SELECT steam_id AS subject_key, '' AS dim, SUM(entry_kills) AS value FROM player_stats WHERE match_id = :match_id GROUP BY steam_id",
 		"fresh_round":     "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM rounds WHERE match_id = :match_id AND number = :round",
 	} {
 		g, perr, err := CheckRawSave(st, expr)

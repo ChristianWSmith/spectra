@@ -121,28 +121,29 @@ type RoundSideClass struct {
 // player-round without a sample reads 0 (absence-as-zero, owner ruling
 // 2026-11-18).
 type PlayerRoundStat struct {
-	MatchID     int64  `json:"matchId"`
-	Round       int    `json:"round"`
-	SteamID     string `json:"steamId"`
-	Name        string `json:"name"`
-	Kills       int    `json:"kills"`
-	Assists     int    `json:"assists"`
-	Deaths      int    `json:"deaths"`
-	Traded      bool   `json:"traded"`
-	Survived    bool   `json:"survived"`
-	KAST        bool   `json:"kast"`
-	DMG         int    `json:"dmg"`
-	UtilDmg     int    `json:"utilDmg"`
-	MoneyStart  int    `json:"moneyStart"`
-	Equip       int    `json:"equip"`
-	Spent       int    `json:"spent"`
-	RuleVersion int    `json:"ruleVersion"`
+	MatchID int64  `json:"matchId"`
+	Round   int    `json:"round"`
+	SteamID string `json:"steamId"`
+	Name    string `json:"name"`
+	// Kills, Assists, Deaths, DMG, UtilDmg and Survived are event-derived folds
+	// (store.GetPlayerRounds fills them from the event rows; they are not stored).
+	Kills       int  `json:"kills"`
+	Assists     int  `json:"assists"`
+	Deaths      int  `json:"deaths"`
+	DMG         int  `json:"dmg"`
+	UtilDmg     int  `json:"utilDmg"`
+	Survived    bool `json:"survived"`
+	Traded      bool `json:"traded"`
+	KAST        bool `json:"kast"`
+	MoneyStart  int  `json:"moneyStart"`
+	Equip       int  `json:"equip"`
+	Spent       int  `json:"spent"`
+	RuleVersion int  `json:"ruleVersion"`
 	// Side is the player's freeze-end side sample for this round
 	// (round_player_sides' exact value; "" = no sample — never guessed).
 	Side string `json:"side"`
 	// Won is 1 when rounds.winner equals Side (the per-round twin of
 	// player_stats.won; 0 for an unknown side or undecided round).
-	Won int `json:"won"`
 }
 
 // Clutch is one clutches row: a 1vN detected by alive-count analysis

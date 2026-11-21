@@ -146,14 +146,20 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read untraded engagements: %v", err)
 	}
-	// The stored headshots column (the scoreboard DTO dropped the
-	// seed-backed passthroughs, 2026-11-18) — the fold's oracle.
+	// Enemy headshot kills by attacker, from the event rows (the stored
+	// headshots column is retired): the same-side gate of the fold.
 	headshotsRes, err := st.RunReadOnly(
-		`SELECT steam_id, headshots FROM player_stats WHERE match_id = ?`,
+		`SELECT e.attacker, COUNT(*) FROM events e
+		 WHERE e.match_id = ? AND e.kind = 'kill' AND e.headshot = 1 AND e.post_match = 0
+		   AND e.attacker <> '' AND e.attacker <> e.victim
+		   AND NOT EXISTS (SELECT 1 FROM round_player_sides a
+		     JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim
+		     WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)
+		 GROUP BY e.attacker`,
 		[]any{id}, 500, 5000,
 	)
 	if err != nil {
-		t.Fatalf("read player_stats.headshots: %v", err)
+		t.Fatalf("read enemy headshot kills: %v", err)
 	}
 	storedCount := func(v any) int {
 		t.Helper()
@@ -186,7 +192,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	}
 	missedBy := countBySteam(missedRes, "match_trade_opps")
 	untradedBy := countBySteam(untradedRes, "untraded engagements")
-	headshotsBy := countBySteam(headshotsRes, "player_stats.headshots")
+	headshotsBy := countBySteam(headshotsRes, "enemy headshot kills")
 
 	var oppTotal, untradedTotal int
 	for _, r := range board {

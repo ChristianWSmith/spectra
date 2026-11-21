@@ -2,9 +2,24 @@ package metrics
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
+
+// withTable returns the sorted, distinct set of tables plus table.
+func withTable(tables []string, table string) []string {
+	set := map[string]bool{table: true}
+	for _, t := range tables {
+		set[t] = true
+	}
+	out := make([]string, 0, len(set))
+	for t := range set {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // The metric gate — THE one validation every metric statement passes
 // (dogfood/03-QUERIES.md §2–§3), serving the Builder's live check, save
@@ -82,9 +97,16 @@ func GateSQL(sql string, exists RefLookup, supplied map[string]bool) (Gate, *Gat
 			return Gate{}, nil, err
 		}
 		if !ok {
-			return Gate{}, gateErr(r.Pos, "unknown metric reference %q", r.Name), nil
+			return Gate{}, gateErr(r.Pos, "unknown metric reference %q: no metric has that name; save that metric first", r.Name), nil
 		}
 		g.Refs = append(g.Refs, r)
+	}
+	if len(g.Refs) > 0 {
+		// A metric() reference reads stored values (its rewrite in RunRaw
+		// reads metric_values), so the statement's touched set holds that
+		// table. Only freshness uses it: the author still cannot read the
+		// table, and the allowlist keeps metric_values denied.
+		g.Touched = withTable(g.Touched, "metric_values")
 	}
 	return g, nil, nil
 }

@@ -424,14 +424,6 @@ func nearTeammateDist(killer r3.Vector, mates []r3.Vector) float64 {
 	return math.Round(best*10) / 10
 }
 
-// pct is the percentage helper ported from the extractor (0 when b is 0).
-func pct(a, b int) float64 {
-	if b == 0 {
-		return 0
-	}
-	return 100 * float64(a) / float64(b)
-}
-
 // detailJSON marshals a compact derived detail object. Values are plain
 // strings/numbers/bools, so marshaling cannot fail in practice.
 func detailJSON(v map[string]any) string {

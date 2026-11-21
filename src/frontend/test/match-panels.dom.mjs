@@ -7,7 +7,10 @@
 //   B. the rosters split the players by side, with K/D/A and ADR;
 //   C. the scoreboard shows the default columns in the default order, a dash
 //      where a stored value is missing, and 0 where the value is zero;
-//   D. a header click sorts on that column;
+//   D. a header click sorts on that column, and clicks chain: a new header
+//      sorts on top of the keys already sorted, which break its ties;
+//   D2. every sortable header, in sequence, gives the chained order;
+//   D3. every metric header carries its formula as its tooltip;
 //   E. a row click opens the replay following that player, back to the tab
 //      the panel sits on;
 //   F. a panel mounted with another match's context reads only that match;
@@ -21,7 +24,7 @@ import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
 
 installEsmDirHook();
@@ -35,6 +38,17 @@ registerHooks({
     if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
     if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
     return nextResolve(specifier, context);
+  },
+  // Builtin panels reach .svelte files through plain .js modules (builtins/
+  // panels.js imports the Profile panels), which the bundle above does not
+  // rewrite: compile any .svelte module that node loads directly.
+  load(url, context, nextLoad) {
+    if (url.endsWith('.svelte')) {
+      const filename = fileURLToPath(url);
+      const source = compile(readFileSync(filename, 'utf8'), { filename, generate: 'client', css: 'injected', runes: true }).js.code;
+      return { format: 'module', source, shortCircuit: true };
+    }
+    return nextLoad(url, context);
   },
 });
 
@@ -74,16 +88,18 @@ const cacheDir = join('node_modules', '.cache', 'spectra-dom-tests', 'match-pane
 mkdirSync(cacheDir, { recursive: true });
 const compiled = new Map();
 let seq = 0;
+// Svelte files compile; .js files are rewritten so that any .svelte or .js they
+// import (builtins/panels.js imports the profile panels) is bundled too.
 function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
@@ -127,7 +143,8 @@ const DEF_NAMES = [
   'kast', 'hs_pct', 'kd', 'kda', 'two_k', 'three_k', 'four_k', 'five_k', 'trade_kills', 'best_streak',
   'top_fragger', 'best_adr', 'most_util', 'entry_opens', 'most_mvps',
 ];
-const DEFS = DEF_NAMES.map((name, i) => ({ id: i + 1, name }));
+// Each metric carries its formula as its doc (the header tooltip reads it).
+const DEFS = DEF_NAMES.map((name, i) => ({ id: i + 1, name, doc: `Formula of ${name}` }));
 const idOf = (name) => DEFS.find((d) => d.name === name).id;
 
 const IDENTITY = {
@@ -292,6 +309,44 @@ await settle(6);
 rows = tableRows(root);
 check('a second click reverses the order', rows.map((r) => r[0]).join('|') === 'Echo|Alpha|Bravo|Charlie|Delta', rows.map((r) => r[0]).join('|'));
 
+// D2. the chain: each click on a new header sorts on top of the ones before it.
+// Fixture kills: Alpha 20, Charlie 20, Bravo 12, Delta 5, Echo 3 (Alpha and
+// Charlie tie); open kills: Alpha 4, Charlie 1, Bravo/Delta/Echo 0; sides:
+// Alpha/Bravo ct, Charlie/Delta t, Echo none.
+console.log('D2. chained header sort');
+root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK });
+const clickHeader = (label) => click([...root.querySelectorAll('thead th button')].find((b) => text(b) === label));
+const order = () => tableRows(root).map((r) => r[0]).join('|');
+const CHAIN = [
+  ['start: kills, name breaks the tie', null, 'Alpha|Charlie|Bravo|Delta|Echo'],
+  ['Team (descending)', 'Team', 'Charlie|Delta|Alpha|Bravo|Echo'],
+  ['K on top of Team: Team breaks the kills tie', 'K', 'Charlie|Alpha|Bravo|Delta|Echo'],
+  ['K again reverses the newest key only', 'K', 'Echo|Delta|Bravo|Charlie|Alpha'],
+  ['Name (descending) on top', 'Name', 'Echo|Delta|Charlie|Bravo|Alpha'],
+  ['Open K on top: Name order breaks the zero ties', 'Open K', 'Alpha|Charlie|Echo|Delta|Bravo'],
+];
+for (const [what, label, want] of CHAIN) {
+  if (label) {
+    clickHeader(label);
+    await settle(6);
+  }
+  check('chain ' + what, order() === want, order() + ' (want ' + want + ')');
+}
+const sortedMarks = [...root.querySelectorAll('thead th[aria-sort]')].filter((th) => th.getAttribute('aria-sort') !== 'none');
+check('only the newest key carries a sort mark', sortedMarks.length === 1 && text(sortedMarks[0].querySelector('button')) === 'Open K', sortedMarks.length);
+
+// --- D3. the formula tooltips ------------------------------------------------------
+console.log('D3. header formula tooltips');
+root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK });
+const ths = [...root.querySelectorAll('thead th')];
+check('Name, Team and Score carry no formula tooltip', ths.slice(0, 3).every((th) => !th.title), ths.slice(0, 3).map((th) => th.title).join('|'));
+const metricThs = ths.slice(3);
+check('every metric header has its formula as its tooltip',
+  metricThs.length === 19 && metricThs.every((th) => /^Formula of [a-z_]+$/.test(th.title)),
+  metricThs.map((th) => th.title).join('|'));
+const dHead = ths.find((th) => text(th) === 'D');
+check('the D header names the deaths formula', dHead && dHead.title === 'Formula of deaths', dHead && dHead.title);
+
 // --- E. the row click follows the player, back to this tab -------------------------
 console.log('E. row click');
 root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK });
@@ -328,6 +383,9 @@ rows = tableRows(root);
 check('a metric being calculated shows its state word in every row, not a number',
   rows.every((r) => r[3] === 'Calculating'), JSON.stringify(rows.map((r) => r[3])));
 const failedCells = [...root.querySelectorAll('tbody tr td:nth-child(10)')];
+check('a failed metric header names the failure in its tooltip',
+  root.querySelectorAll('thead th')[9].title === 'Formula of adr — couldn’t calculate: adr engine error',
+  root.querySelectorAll('thead th')[9].title);
 check('a failed metric shows Failed, with the engine error as its title',
   failedCells.length === 5 && failedCells.every((td) => td.textContent.trim() === 'Failed' && td.title === 'adr engine error'),
   failedCells.map((td) => td.textContent.trim() + '|' + td.title).join(' '));
@@ -337,7 +395,7 @@ check('a card whose number is still calculating names no number for that part',
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the three panels are registered as builtins', panels.MATCH_PANELS.length === 3 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
+check('the five panels are registered as builtins', panels.MATCH_PANELS.length === 5 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 unmountAll();

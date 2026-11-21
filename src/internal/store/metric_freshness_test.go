@@ -143,12 +143,12 @@ func TestBuiltinsDeriveTouchedAtOpen(t *testing.T) {
 			t.Errorf("builtin %s is refused by the gate: %s", m.Name, gerr.Message)
 			continue
 		}
-		if !equalStrings(m.Touched, st.Touched) {
+		if !equalStrings(m.Touched, StoredTouched(st.Touched, len(st.Refs) > 0)) {
 			t.Errorf("builtin %s touched = %v, gate derives %v", m.Name, m.Touched, st.Touched)
 		}
 	}
-	if n != 150 {
-		t.Fatalf("builtins = %d, want 150 (109 + 33 raw fold seeds F2 + clutch and alive_count, PLAN item 19, + 6 B7 round-grain seeds)", n)
+	if n != 127 {
+		t.Fatalf("builtins = %d, want 127 (150 minus the 23 raw_* twins retired by F3, ruling 30)", n)
 	}
 	tr, err := s.GetMetricByName("trade_rate")
 	if err != nil {

@@ -59,7 +59,7 @@ The reserved binds are \`:match_id\`, \`:steam_id\` and \`:round\`. The engine s
 - **Per-player and per-round statistics:** \`player_stats\`, \`player_round_stats\`, \`round_economy\`, \`round_player_money\`, \`round_player_sides\`, \`round_classifications\`, \`round_side_classes\`, \`clutches\`, \`match_trade_opps\`.
 - **The raw event payload:** \`generic_events\`. Its \`payload_json\` keys come from the game's own event schema, so a statement that reads one key can break after a parser change.
 
-Everything else is closed to a statement, including the app's own tables (metric and component definitions, reports, saved queries, plugins, the analysis rule table) and the metric store itself. Metrics reach stored values only through \`metric('name')\`, which is not available yet (see [Other metrics](#metric-references)).
+Everything else is closed to a statement, including the app's own tables (metric and component definitions, reports, saved queries, plugins, the analysis rule table) and the metric store itself. Metrics reach stored values only through \`metric('name')\`, which reads a saved metric's stored value for the same match, player or round (see [Other metrics](#metric-references)).
 
 A metric's statement sees the players in the library as they are, bots included, because a metric you write is not filtered. The built-in metrics do filter bots, and they show the same rule in their SQL (see [Built-in metrics](#built-in-metrics)).`,
   },
@@ -74,7 +74,7 @@ A metric's statement sees the players in the library as they are, bots included,
 3. **Tables.** Every table the statement reads is on the list in [Tables you can read](#sources). Tables inside subqueries and CTEs count too.
 4. **Binds.** Only \`:match_id\`, \`:steam_id\` and \`:round\` are used. \`:round\` needs \`:match_id\`.
 5. **Scope.** The binds decide the scope, and the stored scope must agree with them (see [Scope](#scope)).
-6. **Metric references.** \`metric('name')\` is refused for now.
+6. **Metric references.** Each \`metric('name')\` must name a saved metric, and the references must not loop back to the metric being saved.
 
 The gate does not check whether the numbers are right. It checks what the statement may read and how it runs. A statement that is valid but returns the wrong number saves without complaint.
 
@@ -126,9 +126,9 @@ A division by zero is a \`NULL\` in SQL, so a rate over no rounds or no deaths s
     id: 'metric-references',
     title: 'Other metrics',
     parent: 'metric-language',
-    blocks: `\`metric('name')\` — reading another saved metric's value — is not available yet. A statement that uses it is refused with \`metric() references aren't available in raw SQL yet; read the tables directly\`. Until it is, write the statement against the tables and repeat the work it needs; the values stay the same, and every metric still shows the state of its own work.
+    blocks: `\`metric('name')\` reads another saved metric's stored value for the same match, player or round your statement is bound to, as rows of \`subject_key\`, \`dim\` and \`value\`. Use it to build a career or profile figure from per-match values without reading the raw rows again. A stored value that is out of date, or has no row for that unit, reads as \`NULL\`, shown as a dash, never as zero.
 
-Dependencies between metrics are not stored or recalculated while this is unavailable, so a metric never waits on another one.`,
+The other metric must already be saved, and a metric cannot reference itself, directly or through other metrics. A change to the other metric marks this metric behind for the affected match or player only.`,
   },
   {
     id: 'previewing',
@@ -205,7 +205,8 @@ Scope: match. One row for the match, with an empty subject because the value bel
 | \`a metric that reads :steam_id is career-scoped and can't also bind :match_id or :round\` | A career statement selects the player by \`:steam_id\` alone. Drop the match or round bind. |
 | \`:round needs :match_id (a round is one round of one match)\` | A round statement binds the match as well. |
 | \`a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is …-scoped)\` | Set the scope to match the binds the statement uses (see [Scope](#scope)). |
-| \`metric() references aren't available in raw SQL yet; read the tables directly\` | Read the tables instead (see [Other metrics](#metric-references)). |
+| \`unknown metric reference "x": no metric has that name; save that metric first\` | Save the metric the reference reads, or fix the name (see [Other metrics](#metric-references)). |
+| \`metric "x" would reference itself through a cycle (…); remove one of the references\` | Remove the reference that loops back (see [Other metrics](#metric-references)). |
 | \`the statement must return the columns subject_key, dim and value (missing: …)\` | Name the three columns as the statement's result (see [Writing a statement](#writing-an-expression)). |
 | \`row N repeats subject_key "…" and dim "…"; each subject and dim may appear once per run\` | Group the statement so each subject and dim has one row. |
 | \`row N: value must be a number or NULL\` | Return a number, or \`NULL\` for no data. |

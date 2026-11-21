@@ -39,8 +39,8 @@ func sideClassTeamFixture() *models.ExtractedMatch {
 			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 24},
-			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 24},
+			{SteamID: "100", Side: "ct", Name: "alice"},
+			{SteamID: "200", Side: "t", Name: "bob"},
 		},
 	}
 	for n := 1; n <= 24; n++ {

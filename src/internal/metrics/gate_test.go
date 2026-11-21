@@ -59,7 +59,9 @@ func TestGateSQLAccepts(t *testing.T) {
 	if err != nil || perr != nil {
 		t.Fatalf("refused: %v %v", perr, err)
 	}
-	if !reflect.DeepEqual(g.Touched, []string{"player_stats", "players"}) {
+	// A metric() reference adds metric_values to the touched set (freshness
+	// only: the rewrite reads the stored values; the author still cannot).
+	if !reflect.DeepEqual(g.Touched, []string{"metric_values", "player_stats", "players"}) {
 		t.Fatalf("touched = %v", g.Touched)
 	}
 	if len(g.Refs) != 1 || g.Refs[0].Name != "rounds_played" {

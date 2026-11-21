@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -61,8 +62,7 @@ const (
 
 	roundSideClassCols = `round, side, class, why, team`
 
-	playerRoundCols = `round, steam_id, name, kills, assists, deaths, traded, survived,
-		kast, dmg, util_dmg, money_start, equip, spent, rule_version, side, won`
+	playerRoundCols = `round, steam_id, name, traded, kast, money_start, equip, spent, rule_version, side`
 
 	clutchCols = `round, size, steam_id, name, start_tick, end_tick, bomb_state, hp_left,
 		equip, won, kill_ticks, replay_anchor`
@@ -224,9 +224,9 @@ func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
 			if _, err := stmt.Exec(
-				matchID, r.Round, scrub(r.SteamID), scrub(r.Name), r.Kills, r.Assists, r.Deaths,
-				b2i(r.Traded), b2i(r.Survived), b2i(r.KAST), r.DMG, r.UtilDmg,
-				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion, scrub(r.Side), r.Won,
+				matchID, r.Round, scrub(r.SteamID), scrub(r.Name),
+				b2i(r.Traded), b2i(r.KAST),
+				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion, scrub(r.Side),
 			); err != nil {
 				return fmt.Errorf("%s: %w", op, err)
 			}
@@ -446,9 +446,9 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 		var r models.PlayerRoundStat
 		r.MatchID = matchID
 		if err := rows.Scan(
-			&r.Round, &r.SteamID, &r.Name, &r.Kills, &r.Assists, &r.Deaths,
-			&r.Traded, &r.Survived, &r.KAST, &r.DMG, &r.UtilDmg,
-			&r.MoneyStart, &r.Equip, &r.Spent, &r.RuleVersion, &r.Side, &r.Won,
+			&r.Round, &r.SteamID, &r.Name,
+			&r.Traded, &r.KAST,
+			&r.MoneyStart, &r.Equip, &r.Spent, &r.RuleVersion, &r.Side,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
 		}
@@ -456,6 +456,15 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the player rounds: %w", err)
+	}
+	folds, err := s.roundFolds(matchID, scrub(steamID))
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		f := folds[roundSteam{out[i].Round, out[i].SteamID}]
+		out[i].Kills, out[i].Assists, out[i].Deaths = f.Kills, f.Assists, f.Deaths
+		out[i].DMG, out[i].UtilDmg, out[i].Survived = f.DMG, f.UtilDmg, f.Survived
 	}
 	return out, nil
 }
@@ -1389,7 +1398,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
 			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
-			ps.kills, ps.deaths
+			0, 0
 		 `+playerHistoryFrom, scrub(steamID),
 	)
 	if err != nil {
@@ -1419,10 +1428,10 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		return out, nil
 	}
 
-	// The three metric-backed cells, filled from ONE series read (the
-	// history rows are keyed by match id, so the read's trend order does
-	// not matter here). A metric definition absent from the catalog (or a
-	// match with no fresh row) simply leaves that cell nil.
+	// The metric-backed cells (K, D, A, ADR, KAST%), filled from ONE series
+	// read (the history rows are keyed by match id, so the read's trend order
+	// does not matter here). A metric definition absent from the catalog (or
+	// a match with no fresh row) leaves that cell nil, or 0 for K and D.
 	assists, assistsFound, err := s.seriesMetricFor("assists")
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the player history: %w", err)
@@ -1435,7 +1444,21 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the player history: %w", err)
 	}
-	ids := make([]int64, 0, 3)
+	kills, killsFound, err := s.seriesMetricFor("kills")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
+	}
+	deaths, deathsFound, err := s.seriesMetricFor("deaths")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the player history: %w", err)
+	}
+	ids := make([]int64, 0, 5)
+	if killsFound {
+		ids = append(ids, kills.id)
+	}
+	if deathsFound {
+		ids = append(ids, deaths.id)
+	}
 	if assistsFound {
 		ids = append(ids, assists.id)
 	}
@@ -1465,6 +1488,16 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		m := byMatch[out[i].MatchID]
 		if m == nil {
 			continue
+		}
+		if killsFound {
+			if v, ok := m[kills.id]; ok {
+				out[i].Kills = int(v)
+			}
+		}
+		if deathsFound {
+			if v, ok := m[deaths.id]; ok {
+				out[i].Deaths = int(v)
+			}
 		}
 		if assistsFound {
 			if v, ok := m[assists.id]; ok {
@@ -1501,31 +1534,79 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 // honest "—"), never a fabricated 0.
 func (s *Store) GetPlayerMapADR(steamID string) ([]models.ProfileMapADR, error) {
 	rows, err := s.db.Query(
-		`SELECT map, 1.0 * SUM(damage) / NULLIF(SUM(rounds), 0) FROM (
-			SELECT m.map AS map, ps.total_damage AS damage,
-				(SELECT COUNT(*) FROM rounds r WHERE r.match_id = m.id) AS rounds
-			`+playerHistoryFrom+`
-		 ) h GROUP BY map ORDER BY map`, scrub(steamID),
+		`SELECT m.id, m.map, (SELECT COUNT(*) FROM rounds r WHERE r.match_id = m.id)
+			`+playerHistoryFrom, scrub(steamID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
 	}
 	defer rows.Close()
-	var out []models.ProfileMapADR
+	type matchRow struct {
+		id      int64
+		mapName string
+		rounds  int
+	}
+	var matches []matchRow
 	for rows.Next() {
-		var r models.ProfileMapADR
-		var adr sql.NullFloat64
-		if err := rows.Scan(&r.Map, &adr); err != nil {
+		var m matchRow
+		if err := rows.Scan(&m.id, &m.mapName, &m.rounds); err != nil {
 			return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
 		}
-		if adr.Valid {
-			v := adr.Float64
-			r.ADR = &v
-		}
-		out = append(out, r)
+		matches = append(matches, m)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
+	}
+	// Per map: the pooled damage over the map's matches divided by their
+	// counted rounds. A map with a match that has no fresh damage value, or
+	// no rounds, has no ADR (nil) — never a fabricated 0.
+	dmg, found, err := s.seriesMetricFor("total_damage")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
+	}
+	byMatch := map[int64]float64{}
+	if found {
+		series, err := s.GetPlayerMetricSeries(steamID, []int64{dmg.id})
+		if err != nil {
+			return nil, fmt.Errorf("couldn't load the per-map ADR: %w", err)
+		}
+		for _, p := range series {
+			byMatch[p.MatchID] = p.Value
+		}
+	}
+	type mapAgg struct {
+		damage   float64
+		rounds   int
+		complete bool
+	}
+	aggs := map[string]*mapAgg{}
+	for _, m := range matches {
+		a := aggs[m.mapName]
+		if a == nil {
+			a = &mapAgg{complete: true}
+			aggs[m.mapName] = a
+		}
+		v, ok := byMatch[m.id]
+		if !found || !ok {
+			a.complete = false
+			continue
+		}
+		a.damage += v
+		a.rounds += m.rounds
+	}
+	names := make([]string, 0, len(aggs))
+	for name := range aggs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]models.ProfileMapADR, 0, len(names))
+	for _, name := range names {
+		r := models.ProfileMapADR{Map: name}
+		if a := aggs[name]; a.complete && a.rounds > 0 {
+			v := a.damage / float64(a.rounds)
+			r.ADR = &v
+		}
+		out = append(out, r)
 	}
 	return out, nil
 }
@@ -1554,7 +1635,7 @@ func (s *Store) GetPlayerMapADR(steamID string) ([]models.ProfileMapADR, error) 
 // headshots to player_stats.headshots for every player.
 func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSONs, error) {
 	rows, err := s.db.Query(
-		`SELECT ps.kills_by_weapon,
+		`SELECT ps.match_id,
 			COALESCE((SELECT json_group_object(w.weapon, w.n) FROM (
 				SELECT e.weapon, COUNT(*) AS n
 				FROM events e
@@ -1575,16 +1656,46 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 		return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 	}
 	defer rows.Close()
-	var out []models.ProfileWeaponJSONs
+	type weaponRow struct {
+		matchID int64
+		heads   string
+	}
+	var wrows []weaponRow
 	for rows.Next() {
-		var r models.ProfileWeaponJSONs
-		if err := rows.Scan(&r.KillsByWeapon, &r.HeadshotsByWeapon); err != nil {
+		var w weaponRow
+		if err := rows.Scan(&w.matchID, &w.heads); err != nil {
 			return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
 		}
-		out = append(out, r)
+		wrows = append(wrows, w)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
+	}
+	kbw, found, err := s.seriesMetricFor("raw_kills_by_weapon")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
+	}
+	out := make([]models.ProfileWeaponJSONs, 0, len(wrows))
+	for _, w := range wrows {
+		r := models.ProfileWeaponJSONs{HeadshotsByWeapon: w.heads}
+		if found {
+			vals, err := s.GetMetricValuesForMatch(w.matchID, []int64{kbw.id})
+			if err != nil {
+				return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
+			}
+			byWeapon := map[string]int{}
+			for _, mv := range vals {
+				if mv.SubjectKey == steamID && mv.Value != nil {
+					byWeapon[mv.Dim] = int(*mv.Value)
+				}
+			}
+			j, err := json.Marshal(byWeapon)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't load the weapon stats: %w", err)
+			}
+			r.KillsByWeapon = string(j)
+		}
+		out = append(out, r)
 	}
 	return out, nil
 }
@@ -1610,7 +1721,7 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 			SUM(prs.kills), SUM(prs.deaths),
 			1.0 * SUM(prs.dmg) / COUNT(*),
 			100.0 * AVG(prs.kast)
-		 FROM player_round_stats prs
+		 FROM `+playerRoundFoldsAll+` prs
 		 JOIN round_player_sides rps
 		   ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
 		 JOIN rounds rd ON rd.match_id = prs.match_id AND rd.number = prs.round

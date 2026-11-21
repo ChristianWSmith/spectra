@@ -98,6 +98,14 @@ const DENYLIST_EXEMPT = {
       text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
       why: 'the Match scoreboard panel’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
     },
+    {
+      text: "AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ",
+      why: 'the Match scoreboard panel’s component query (read-only SQL, the roster order by the kill count from the event rows) — not user copy',
+    },
+    {
+      text: "JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ",
+      why: 'the Match scoreboard panel’s component query (read-only SQL, the roster order by the kill count from the event rows) — not user copy',
+    },
   ],
   'internal/store/query_store.go': [
     {

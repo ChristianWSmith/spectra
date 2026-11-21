@@ -72,9 +72,8 @@ var columnNotes = map[string]map[string]string{
 		"side": "player's side in that round (ct|t) — freeze-end sample; sides switch at halftime, so this is the exact per-round truth",
 	},
 	"player_round_stats": {
-		"traded":   "victim's death was answered inside the trade window",
-		"survived": "player was alive at round end",
-		"kast":     "KAST round component: kill/assist/traded-death/survived",
+		"traded": "victim's death was answered inside the trade window",
+		"kast":   "KAST round component: kill/assist/traded-death/survived",
 	},
 	"engagements": {
 		"kind":    "opening|trade|traded|untraded (a = killer, b = victim)",
@@ -94,10 +93,7 @@ var columnNotes = map[string]map[string]string{
 		"kind": "he|flash|smoke|molotov|incendiary|decoy",
 	},
 	"player_stats": {
-		"trade_kills":     "kills answering a teammate death inside the trade window",
-		"assists":         "cross-team assists, AssistedFlash excluded (external-scoreboard convention)",
-		"flash_assists":   "AssistedFlash assists, split out of assists (the game's m_iAssists includes them)",
-		"kills_by_weapon": "JSON object (not a metric column: metric statements read the typed tables)",
+		"trade_kills": "kills answering a teammate death inside the trade window",
 	},
 	"metrics": {
 		"origin":     "builtin|user|plugin — the builtin origin ships seeded with the app (exactly one row: trade_rate)",

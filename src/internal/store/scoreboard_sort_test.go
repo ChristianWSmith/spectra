@@ -39,15 +39,19 @@ func TestGetScoreboardKDASortKeyRetired(t *testing.T) {
 	em.PlayerStats = []models.PlayerStats{
 		// alice: the most kills (kills order → first) but the worst
 		// retired ratio — kda (10+100)/10 = 11.0.
-		{SteamID: "100", Name: "alice", Side: "ct", Kills: 10, Deaths: 10, Assists: 100, RoundsPlayed: 2},
+		{SteamID: "100", Name: "alice", Side: "ct"},
 		// bob: retired kda (5+0)/1 = 5.0.
-		{SteamID: "200", Name: "bob", Side: "t", Kills: 5, Deaths: 1, RoundsPlayed: 2},
+		{SteamID: "200", Name: "bob", Side: "t"},
 		// carl: retired kda (8+0)/2 = 4.0.
-		{SteamID: "300", Name: "carl", Side: "ct", Kills: 8, Deaths: 2, RoundsPlayed: 2},
+		{SteamID: "300", Name: "carl", Side: "ct"},
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	// The kills sort reads the stored kills metric (alice 10, carl 8, bob 5).
+	insertSeedMetricValue(t, s, "kills", "100", id, 10, true)
+	insertSeedMetricValue(t, s, "kills", "300", id, 8, true)
+	insertSeedMetricValue(t, s, "kills", "200", id, 5, true)
 
 	// Every retired key falls back to kills DESC — the desc flag is
 	// ignored too (the unknown-key arm fixes both order and direction),

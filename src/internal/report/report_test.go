@@ -46,10 +46,9 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 		})
 		em.PlayerStats = append(em.PlayerStats, models.PlayerStats{
 			SteamID: string(rune('A'+i)) + "00", Side: side, Name: "player" + string(rune('0'+i)),
-			Kills: 10 - i, Deaths: i, Assists: 1, Headshots: 2, MVPs: 1, Score: 20,
-			TotalDamage: 1000, DamageTaken: 800, ADR: 50, HSPct: 20,
-			RoundsPlayed: 5, TradeKills: 2, UtilityDamage: 30,
-			MoneySpentTotal: 12000, KillsByWeapon: `{"ak47":3}`,
+			MVPs: 1, Score: 20,
+
+			TradeKills: 2,
 		})
 	}
 	for r := 1; r <= 5; r++ {
@@ -58,7 +57,7 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 			winner = "t"
 		}
 		em.Rounds = append(em.Rounds, models.Round{
-			Number: r, Winner: winner, Reason: winner + "Win", DurationS: 115.5,
+			Number: r, Winner: winner, Reason: winner + "Win",
 			StartTick: (r - 1) * 400, EndTick: r*400 - 1, FreezeEndTick: (r-1)*400 + 30,
 			MVP: "A00", MVPReason: "kill", EquipCT: 24000, EquipT: 21000,
 			FirstKillSteam: "A00", FirstDeathSteam: "A05",
@@ -72,6 +71,23 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 		{Tick: 100, Round: 1, Kind: "kill", Attacker: "A00", Victim: "A05", Weapon: "ak47", Headshot: true, Dmg: 100},
 		{Tick: 120, Round: 1, Kind: "damage", Attacker: "A05", Victim: "A00", Weapon: "glock", Dmg: 30},
 	}
+	// The K/D/A counts come from these event rows (the fold seeds read events):
+	// A00 ends with 10 kills (the event above + 9), 1 assist, 0 deaths; B00 with
+	// 9 kills (8 + the assist kill), 1 assist (F00's kill of G00), 1 death.
+	enemies := []string{"F00", "G00", "H00", "I00", "J00"}
+	for i := 0; i < 9; i++ {
+		em.Events = append(em.Events, models.Event{Tick: 600 + i, Round: 2, Kind: models.EventKill,
+			Attacker: "A00", Victim: enemies[i%5], Weapon: "ak47"})
+	}
+	for i := 0; i < 8; i++ {
+		em.Events = append(em.Events, models.Event{Tick: 700 + i, Round: 2, Kind: models.EventKill,
+			Attacker: "B00", Victim: enemies[i%5], Weapon: "ak47"})
+	}
+	em.Events = append(em.Events,
+		models.Event{Tick: 720, Round: 2, Kind: models.EventKill, Attacker: "B00", Victim: "G00", Assister: "A00", Weapon: "ak47"},
+		models.Event{Tick: 730, Round: 2, Kind: models.EventKill, Attacker: "F00", Victim: "B00", Weapon: "ak47"},
+		models.Event{Tick: 740, Round: 2, Kind: models.EventKill, Attacker: "F00", Victim: "G00", Assister: "B00", Weapon: "ak47"},
+	)
 	// Chat in round 2 (the round the report test renders): one all-chat,
 	// one team-chat and one system row — pins the Channel column spellings
 	// ([ALL] / TEAM / empty) end to end through SaveExtracted → GetRoundDetail.
@@ -89,8 +105,8 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 	for r := 1; r <= 5; r++ {
 		prs = append(prs, models.PlayerRoundStat{
 			MatchID: id, Round: r, SteamID: "A00", Name: "player0",
-			Kills: 2, Assists: 1, Deaths: 0, Traded: r%2 == 0, Survived: true,
-			KAST: true, DMG: 180, UtilDmg: 10, MoneyStart: 800, Equip: 4500, Spent: 4500,
+			Traded: r%2 == 0,
+			KAST:   true, MoneyStart: 800, Equip: 4500, Spent: 4500,
 		})
 	}
 	if err := st.ReplacePlayerRounds(id, prs); err != nil {

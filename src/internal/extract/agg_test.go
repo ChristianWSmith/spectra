@@ -2,7 +2,6 @@ package extract
 
 import (
 	"encoding/json"
-	"math"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -40,15 +39,10 @@ func TestRoundStateMachine(t *testing.T) {
 	if a.rounds[0].winner != "ct" || a.rounds[0].reason != "CTWin" {
 		t.Errorf("round 1 end state = %s/%s, want ct/CTWin", a.rounds[0].winner, a.rounds[0].reason)
 	}
-	wantDur := float64(500) / 64
-	if math.Abs(a.rounds[0].durationSec-wantDur) > 1e-9 {
-		t.Errorf("round 1 duration = %v, want %v", a.rounds[0].durationSec, wantDur)
-	}
 	// The discarded round's end state must NOT land on the stored rounds:
 	// its roundEnd was dropped (rounds[1] is the still-open third round).
-	if a.rounds[1].winner != "" || a.rounds[1].durationSec != 0 {
-		t.Errorf("round 3 end state = %q/%v, want empty/0 (the warmup roundEnd was discarded)",
-			a.rounds[1].winner, a.rounds[1].durationSec)
+	if a.rounds[1].winner != "" {
+		t.Errorf("round 3 end state = %q, want empty (the warmup roundEnd was discarded)", a.rounds[1].winner)
 	}
 
 	// Side switch + half scores + final scores land in the match row.
@@ -232,98 +226,6 @@ func TestStreakAcrossDeaths(t *testing.T) {
 	kill(1, 7, 60)
 	if p := a.players[1]; p.killStreak != 3 || p.bestStreak != 3 {
 		t.Fatalf("after comeback streak=%d best=%d, want 3/3 (best tracks across deaths)", p.killStreak, p.bestStreak)
-	}
-}
-
-// statsFor finds one player's built stats row by accumulator key.
-func statsFor(m *models.ExtractedMatch, key uint64) *models.PlayerStats {
-	id := keyStr(key)
-	for i := range m.PlayerStats {
-		if m.PlayerStats[i].SteamID == id {
-			return &m.PlayerStats[i]
-		}
-	}
-	return nil
-}
-
-func TestMultiKillCounts(t *testing.T) {
-	a := newAgg()
-	a.roundStart(0, false, false, 115, "BOMB TARGET")
-
-	kill := func(tick int, victim uint64) {
-		a.kill(killInfo{
-			tick: tick, tickRate: 64, real: true,
-			killerKey: 1, killerName: "ace", killerSide: "t",
-			victimKey: victim, victimName: "x", victimSide: "ct",
-			weapon: "AK-47",
-		})
-	}
-
-	for i := 0; i < 5; i++ {
-		kill(10*i+1, uint64(100+i))
-	}
-	kill(61, 105) // 6th kill: still one 5K (5+ counts once)
-
-	// Per-round counter restarts with the round: 2 kills now add one 2K.
-	a.roundStart(1000, false, false, 115, "BOMB TARGET")
-	kill(1010, 200)
-	kill(1020, 201)
-
-	// Tiers resolve in build() from each round's final kill total.
-	m := a.build()
-	p := statsFor(m, 1)
-	if p == nil {
-		t.Fatal("killer missing from built player stats")
-	}
-	if p.TwoK != 1 || p.ThreeK != 0 || p.FourK != 0 || p.FiveK != 1 {
-		t.Fatalf("2K/3K/4K/5K = %d/%d/%d/%d, want 1/0/0/1 (one 5+ round = one 5K, one 2-kill round = one 2K)",
-			p.TwoK, p.ThreeK, p.FourK, p.FiveK)
-	}
-}
-
-// A round counts at EXACTLY one multi-kill tier: a 4-kill round is one 4K
-// and no 3K (the golden demo's official scoreboard: adamS 1×3K + 2×4K,
-// FREELOOK 1×4K + 0×3K — cumulative counting gave adamS 3×3K). The same
-// exclusivity holds at the 2K tier: a 3-kill round is a 3K, not a 2K.
-func TestMultiKillTiersAreExact(t *testing.T) {
-	a := newAgg()
-	kill := func(tick int, victim uint64) {
-		a.kill(killInfo{
-			tick: tick, tickRate: 64, real: true,
-			killerKey: 7, killerName: "entry", killerSide: "ct",
-			victimKey: victim, victimName: "x", victimSide: "t",
-			weapon: "M4A1-S",
-		})
-	}
-
-	a.roundStart(0, false, false, 115, "BOMB TARGET")
-	for i := 0; i < 4; i++ {
-		kill(10*i+1, uint64(100+i))
-	}
-	a.roundStart(1000, false, false, 115, "BOMB TARGET")
-	for i := 0; i < 3; i++ {
-		kill(1010+10*i, uint64(200+i))
-	}
-	a.roundStart(2000, false, false, 115, "BOMB TARGET")
-	kill(2010, 300)
-	kill(2020, 301)
-	kill(2030, 302)
-	kill(2040, 303)
-	kill(2050, 304)
-	a.roundStart(3000, false, false, 115, "BOMB TARGET")
-	kill(3010, 400)
-	kill(3020, 401)
-
-	m := a.build()
-	p := statsFor(m, 7)
-	if p == nil {
-		t.Fatal("killer missing from built player stats")
-	}
-	// rounds: 4 kills → 4K only; 3 kills → 3K only; 5 kills → 5K only;
-	// 2 kills → 2K only.
-	if p.TwoK != 1 || p.ThreeK != 1 || p.FourK != 1 || p.FiveK != 1 {
-		t.Fatalf("2K/3K/4K/5K = %d/%d/%d/%d, want exactly 1/1/1/1 across four rounds",
-			p.TwoK, p.ThreeK, p.FourK, p.FiveK)
 	}
 }
 
@@ -535,15 +437,6 @@ func TestDamageSameSideStamp(t *testing.T) {
 	// Parity with the stat gate: only the enemy hit credited the attacker
 	// (the same `same` computation — a divergence here means the stamp
 	// and total_damage disagree).
-	if p := a.players[1]; p == nil || p.totalDamage != 25 {
-		t.Errorf("enemy damage credited = %+v, want totalDamage 25", p)
-	}
-	if p := a.players[4]; p == nil || p.totalDamage != 25 {
-		t.Errorf("unknown-side damage credited (permissive) = %+v, want totalDamage 25", p)
-	}
-	if p := a.players[6]; p == nil || p.totalDamage != 25 {
-		t.Errorf("half-unknown-side damage credited (permissive) = %+v, want totalDamage 25", p)
-	}
 }
 
 // TestDamageCappedDmgStamp pins the ingest-owned `capped_dmg` event
@@ -620,70 +513,6 @@ func TestDamageCappedDmgStamp(t *testing.T) {
 	// The non-real hit must NOT have drained the replay: row 5 credited
 	// the full 50 against a fresh 100-HP pool (a leaked replay would
 	// have left 30 and credited 30).
-	if p := a.players[6]; p == nil || p.totalDamage != 50 {
-		t.Errorf("later real damage credited = %+v, want totalDamage 50", p)
-	}
-}
-
-func TestWeaponMapJSONShape(t *testing.T) {
-	a := newAgg()
-	a.roundStart(0, false, false, 115, "BOMB TARGET")
-
-	kill := func(tick int, victim uint64, weapon string, hs bool) {
-		a.kill(killInfo{
-			tick: tick, tickRate: 64, real: true,
-			killerKey: 1, killerName: "a", killerSide: "ct",
-			victimKey: victim, victimName: "v", victimSide: "t",
-			weapon: weapon, headshot: hs,
-		})
-	}
-	kill(10, 100, "AK-47", true)
-	kill(20, 101, "AK-47", false)
-	kill(30, 102, "AWP", false)
-
-	a.hurt(hurtInfo{
-		tick: 15, real: true, attackerKey: 1, attackerName: "a",
-		victimKey: 100, victimName: "v",
-		weapon: "AK-47", healthDamage: 34, healthDamageTaken: 30, health: 66, hitgroup: "Chest",
-	})
-
-	m := a.build()
-
-	var st, victim *models.PlayerStats
-	for i := range m.PlayerStats {
-		switch m.PlayerStats[i].SteamID {
-		case "1":
-			st = &m.PlayerStats[i]
-		case "100":
-			victim = &m.PlayerStats[i]
-		}
-	}
-	if st == nil || victim == nil {
-		t.Fatalf("missing player stats: %d rows", len(m.PlayerStats))
-	}
-
-	var kb map[string]int
-	if err := json.Unmarshal([]byte(st.KillsByWeapon), &kb); err != nil {
-		t.Fatalf("KillsByWeapon is not a JSON object: %q (%v)", st.KillsByWeapon, err)
-	}
-	if kb["AK-47"] != 2 || kb["AWP"] != 1 || len(kb) != 2 {
-		t.Errorf("KillsByWeapon = %v, want AK-47:2 AWP:1", kb)
-	}
-
-	if st.TotalDamage != 34 || st.Hits != 1 || st.Kills != 3 || st.Headshots != 1 {
-		t.Errorf("damage/hit/kill stats wrong: %+v", st)
-	}
-	if math.Abs(st.HSPct-33.333333) > 0.01 {
-		t.Errorf("HSPct = %v, want ~33.3", st.HSPct)
-	}
-
-	// A player with no weapon rows still gets an empty object, never "null".
-	if victim.KillsByWeapon != "{}" {
-		t.Errorf("victim weapon map = %q, want {}", victim.KillsByWeapon)
-	}
-	if victim.DamageTaken != 30 {
-		t.Errorf("victim damageTaken = %d, want 30", victim.DamageTaken)
-	}
 }
 
 func TestRawPayloadPairing(t *testing.T) {
@@ -828,9 +657,6 @@ func TestPregameRoundDiscard(t *testing.T) {
 		{key: 1, name: "k", side: "t", money: 800},
 		{key: 2, name: "v", side: "ct", money: 800},
 	})
-	if p := a.players[1]; p == nil || p.kills != 1 {
-		t.Fatalf("real kill not counted: %+v", p)
-	}
 	m := a.build()
 	if m.Match.RealRounds != 1 {
 		t.Errorf("realRounds = %d, want 1", m.Match.RealRounds)
@@ -871,10 +697,6 @@ func TestSuicideTeamkillCredit(t *testing.T) {
 		weapon: "World",
 	})
 	a.flushWorldSelf() // frame end: no disconnect at tick 10 → real suicide
-	p := a.players[1]
-	if p == nil || p.kills != 0 || p.deaths != 1 || p.suicides != 1 {
-		t.Fatalf("suicide accounting = %+v, want 0 kills / 1 death / 1 suicide", p)
-	}
 	if r := a.rounds[0]; r.firstKillSteam != "" || r.firstDeathSteam != "" {
 		t.Fatalf("suicide must not open the round's first blood: %+v", r)
 	}
@@ -885,12 +707,6 @@ func TestSuicideTeamkillCredit(t *testing.T) {
 		victimKey: 3, victimName: "mate", victimSide: "ct",
 		weapon: "M4A1",
 	})
-	if p := a.players[2]; p == nil || p.kills != 0 || p.teamkills != 1 {
-		t.Fatalf("teamkill accounting = %+v, want 0 kills / 1 teamkill", p)
-	}
-	if p := a.players[3]; p == nil || p.deaths != 1 {
-		t.Fatalf("teamkill victim accounting = %+v, want 1 death", p)
-	}
 
 	// First blood still opens on the first real enemy kill.
 	a.kill(killInfo{
@@ -901,47 +717,6 @@ func TestSuicideTeamkillCredit(t *testing.T) {
 	})
 	if r := a.rounds[0]; r.firstKillSteam != "4" || r.firstDeathSteam != "5" {
 		t.Fatalf("first blood = %q killed %q, want 4 killed 5", r.firstKillSteam, r.firstDeathSteam)
-	}
-}
-
-// TestFlashAssistSplit: AssistedFlash assists land in flashAssists, not
-// assists; cross-team only.
-func TestFlashAssistSplit(t *testing.T) {
-	a := newAgg()
-	a.roundStart(0, false, false, 115, "BOMB TARGET")
-
-	a.kill(killInfo{
-		tick: 10, tickRate: 64, real: true,
-		killerKey: 1, killerName: "k", killerSide: "t",
-		victimKey: 2, victimName: "v", victimSide: "ct",
-		assisterKey: 3, assisterName: "flashy", assisterSide: "t",
-		assistedFlash: true, weapon: "AK-47",
-	})
-	if p := a.players[3]; p == nil || p.assists != 0 || p.flashAssists != 1 {
-		t.Fatalf("flash assist split = %+v, want 0 assists / 1 flashAssist", p)
-	}
-
-	a.kill(killInfo{
-		tick: 20, tickRate: 64, real: true,
-		killerKey: 1, killerName: "k", killerSide: "t",
-		victimKey: 4, victimName: "v2", victimSide: "ct",
-		assisterKey: 5, assisterName: "damager", assisterSide: "t",
-		weapon: "AK-47",
-	})
-	if p := a.players[5]; p == nil || p.assists != 1 || p.flashAssists != 0 {
-		t.Fatalf("normal assist = %+v, want 1 assist / 0 flashAssists", p)
-	}
-
-	// A same-side assister (teamkill assist) counts nothing.
-	a.kill(killInfo{
-		tick: 30, tickRate: 64, real: true,
-		killerKey: 1, killerName: "k", killerSide: "t",
-		victimKey: 4, victimName: "v2", victimSide: "ct",
-		assisterKey: 6, assisterName: "victim-mate", assisterSide: "ct",
-		weapon: "AK-47",
-	})
-	if p := a.players[6]; p != nil && (p.assists != 0 || p.flashAssists != 0) {
-		t.Fatalf("same-side assister credited: %+v", p)
 	}
 }
 
@@ -1199,102 +974,6 @@ func TestGameEventPayloadJSON(t *testing.T) {
 	}
 	if got := gameEventPayloadJSON(nil); got != "{}" {
 		t.Errorf("empty payload = %q, want {}", got)
-	}
-}
-
-// TestEnemiesFlashed pins the thrower-side flash stat: one credit per
-// ENEMY player blinded by the thrower's flash during counted play, and
-// nothing for teammate/self blinds, an unknown thrower, or non-counted
-// rounds. The victim-side flashedTimes counter still counts every blind it
-// always counted. (This replaced flashesPopped, which counted flashbang
-// DETONATIONS — any flash that popped — and could not answer "enemies
-// flashed".)
-func TestEnemiesFlashed(t *testing.T) {
-	a := newAgg()
-
-	// An enemy blind credits the thrower AND the victim's times-flashed.
-	a.blind(blindInfo{
-		tick: 10, real: true,
-		playerKey: 2, playerName: "enemy-v", playerSide: "ct",
-		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
-		flashMs: 1200,
-	})
-	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
-		t.Fatalf("enemy blind = %+v, want enemiesFlashed 1 for the thrower", p)
-	}
-	if p := a.players[2]; p == nil || p.flashedTimes != 1 {
-		t.Fatalf("victim flashedTimes = %+v, want 1", p)
-	}
-
-	// A teammate blind credits no enemy-flashed row…
-	a.blind(blindInfo{
-		tick: 20, real: true,
-		playerKey: 3, playerName: "mate", playerSide: "t",
-		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
-		flashMs: 900,
-	})
-	// …a self-blind neither…
-	a.blind(blindInfo{
-		tick: 30, real: true,
-		playerKey: 1, playerName: "flasher", playerSide: "t",
-		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
-		flashMs: 400,
-	})
-	// …and neither does a blind with no resolved thrower.
-	a.blind(blindInfo{
-		tick: 40, real: true,
-		playerKey: 4, playerName: "attackerless", playerSide: "ct",
-		flashMs: 700,
-	})
-	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
-		t.Fatalf("after team/self/attackerless blinds = %+v, want enemiesFlashed still 1", p)
-	}
-	// Every blind still lands on the victim — flashed_times is the
-	// victim-side counter and is untouched by the enemy gate.
-	for _, key := range []uint64{3, 4} {
-		if p := a.players[key]; p == nil || p.flashedTimes != 1 {
-			t.Fatalf("victim %d flashedTimes = %+v, want 1", key, p)
-		}
-	}
-
-	// Non-real blinds (post-match play — a discarded round never reaches
-	// blind at all) credit neither counter (the real gate)…
-	a.blind(blindInfo{
-		tick: 50, real: false,
-		playerKey: 5, playerName: "warmup-v", playerSide: "ct",
-		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
-		flashMs: 1500,
-	})
-	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
-		t.Fatalf("non-real blind credited: %+v, want enemiesFlashed still 1", p)
-	}
-	if p := a.players[5]; p != nil && p.flashedTimes != 0 {
-		t.Fatalf("non-real blind reached flashedTimes: %+v", p)
-	}
-
-	// Each further blinded enemy counts again — the unit is the blinded
-	// enemy player, not the flashbang.
-	a.blind(blindInfo{
-		tick: 60, real: true,
-		playerKey: 6, playerName: "enemy2", playerSide: "ct",
-		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
-		flashMs: 2000,
-	})
-	if p := a.players[1]; p == nil || p.enemiesFlashed != 2 {
-		t.Fatalf("second enemy blind = %+v, want enemiesFlashed 2", p)
-	}
-
-	// Unknown sides follow the canonical permissive rule shared with
-	// damage/assists attribution (sameSide never matches an unknown side,
-	// so an unknown pair reads as cross-team).
-	a.blind(blindInfo{
-		tick: 70, real: true,
-		playerKey: 7, playerName: "noside-v",
-		attackerKey: 8, attackerName: "noside-thrower",
-		flashMs: 800,
-	})
-	if p := a.players[8]; p == nil || p.enemiesFlashed != 1 {
-		t.Fatalf("unknown-side blind = %+v, want enemiesFlashed 1 (permissive attribution)", p)
 	}
 }
 

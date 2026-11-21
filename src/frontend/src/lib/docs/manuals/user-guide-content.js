@@ -212,12 +212,16 @@ duplicate the scoreboard in the Component Builder and edit the copy.
 number, winner, win reason, duration, bomb site, MVP, the first blood, and the kill count. The ▶
 opens the replay at that round's own start with the round's span looped and a return to this tab;
 clicking anywhere else in the row opens the round page. Tick the **Cmp** boxes on up to four
-rounds and a **Compare N rounds** button appears.
+rounds and a **Compare N rounds** button appears. A dash is a round fact the demo does not
+record, such as a round with no bomb site. The rounds table is a component like the scoreboard:
+to change its columns or its layout, duplicate it in the Component Builder and edit the copy.
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
 warning count, the source file and whether a managed copy exists)
 followed by the demo's import diagnostics: import details (parse time, notes) and advanced
-diagnostics.
+diagnostics. The stored facts (server, tickrate, frame count, file size, import date, parser,
+warning count and source file) are a component, so you can duplicate them in the Component
+Builder and edit the copy. Voice presence and the managed-copy line stay as they are.
 
 # Round detail
 

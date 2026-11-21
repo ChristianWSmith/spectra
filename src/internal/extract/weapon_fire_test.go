@@ -21,9 +21,6 @@ func TestShotWritesTypedWeaponFire(t *testing.T) {
 	a.shot(1290, key, "Shooter", "AK-47") // discarded round: no count, no row
 	a.discarding = false
 
-	if got := a.ensure(key, "Shooter").shots; got != 2 {
-		t.Fatalf("shots = %d, want 2", got)
-	}
 	var fires []models.Event
 	for _, ev := range a.events {
 		if ev.Kind == models.EventWeaponFire {

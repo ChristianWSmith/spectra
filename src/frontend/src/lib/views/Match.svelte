@@ -1,20 +1,20 @@
 <script>
   import * as S from '../strings/index.js';
-  import { replayHash, entryLoopSpan } from '../nav.js';
+  import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getEconomy, getClutches, getEngagements, getUtility, getVoicePresence, getMatchSummary, evictDemoCopy, subscribeJobProgress, errText } from '../services.js';
-  import { fmtDuration, fmtBytes, fmtDate, fmt1, fmtInt, fmtPatch } from '../fmt.js';
-  import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
-  import { roundIndexLabel, separatorFlags, roundStartTick, roundEndTick } from '../rounds.js';
-  import { winnerTeamKey } from '../sideparity.js';
+  import { fmtDuration, fmtBytes, fmtInt, fmtPatch } from '../fmt.js';
+  import { teamNames, teamStartClass } from '../teams.js';
   import { MATCH_TABS, MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
-  import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE } from '../matchpanels.js';
+  import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE, ROUNDS_SOURCE, DETAILS_SOURCE } from '../matchpanels.js';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
-  import Heatmaps from './Heatmaps.svelte';
-  import Combat from './Combat.svelte';
+  // The Heatmaps and Combat tabs are builtin components (PLAN C5-Heat-Combat):
+  // the tab mounts its component through a frame with the match as context.
+  import MatchHeatmaps from '../builtins/match/Heatmaps.svelte';
+  import MatchCombat from '../builtins/match/Combat.svelte';
   // The Reports and Details (Explorer) tabs mount their builtin components
   // with this match as the context (no picker, no newest-match default).
   import ReportsView from '../builtins/reports/ReportsView.svelte';
@@ -22,9 +22,6 @@
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
-  import ProfileLink from '../components/ProfileLink.svelte';
-  import WinnerCell from '../components/WinnerCell.svelte';
-  import EventPlay from '../components/EventPlay.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
@@ -49,9 +46,12 @@
   const TABS = MATCH_TABS;
 
   // The panels (matchpanels.js) read through this context (ruling 34): the
-  // match, and nothing else. `back` is the tab the replay returns to.
+  // match, and nothing else. `back` is the tab the replay returns to. The
+  // rounds panel also takes the compare picks, which this view keeps per match
+  // (see compareSel below).
   const panelContext = $derived({ matchId: id });
   const panelProps = $derived({ back: backPath() });
+  const roundsProps = $derived({ back: backPath(), picks: compareSel, onPick: toggleCompare, onCompare: goCompare });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
   // per-tab help button (Part 8's per-tab ruling): one button in the
@@ -121,17 +121,6 @@
     }
     remember(k, cur);
   });
-
-  // Side-switch boundary per row (index-aligned with rounds): the
-  // round-group separator gating from the canonical helper
-  // (lib/rounds.js separatorFlags — cadence + counted-gating + trailing
-  // suppression). Row i carries the boundary that follows row i-1 as its
-  // `.split-before` class (public/style.css, the table twin of
-  // RoundStrip's `.round-split`); counted-gating keeps a legacy
-  // pre-reprocess negative row from shifting a line and the last row can
-  // never carry a trailing one.
-  const sepFlags = $derived(separatorFlags(rounds));
-
 
   // Match header + rounds + summary. Scoreboard has its own effect below
   // (sort changes must not re-trigger this one). The summary row is the
@@ -308,21 +297,6 @@
     return tab === 'Overview' ? `match/${id}` : `match/${id}/${matchTabSlug(tab)}`;
   }
 
-  // Rounds-tab row ▶ — ROUND-level watch, byte-identical to Economy's
-  // drill() and RoundDetail's "Watch round": the round's start tick as
-  // ?tick=, its OWN start→end span as ?loop= (nav.entryLoopSpan — the
-  // round IS the sequence, never an event-level pad) and THIS tab as the
-  // ?back= origin. No landmark filter: outside the replay, buttons seek.
-  // The row-click handler ignores button targets, so the row still opens
-  // the round summary beside it.
-  function watchRound(n) {
-    const start = roundStartTick(rounds, n);
-    // An unknown end stamps NO loop rather than a guessed bound —
-    // entryLoopSpan yields undefined and buildHash drops it.
-    const end = roundEndTick(rounds, n);
-    nav(replayHash(id, {}, { tick: start, loop: entryLoopSpan(start, end), back: backPath() }));
-  }
-
   // Player entry → THE event browser with the camera on that player. The
   // Overview cards, rosters and scoreboard panels open the replay themselves
   // (they follow the player the row or card names). back + follow are
@@ -382,36 +356,8 @@
     }),
   );
 
-  // Winner cell label for ONE round row: the TEAM that won it, resolved
-  // by the canonical round-number parity (sideparity.winnerTeamKey) and
-  // looked up in `teams` (keyed by final side). A side never names a
-  // team past the halftime switch. Unknown (no winner side, round not
-  // loaded) → '' so WinnerCell falls back to the bare side chip — never
-  // a guessed name.
-  function winnerName(r) {
-    const key = winnerTeamKey(rounds, match?.sideSwitches || 0, r.number, r.winner);
-    return key ? teams[key] : '';
-  }
-
   function teamCls(finalSide) {
     return teamStartClass(finalSide, match?.sideSwitches || 0);
-  }
-
-  // Per-round SIDE color for a NAME carried as steam id + display name
-  // (round MVP / first-blood rows): the side that player had IN THAT
-  // round, resolved through lib/teams.js playerSideClassAt (scoreboard
-  // lookup by id, then exact name, then the round's era) — not the
-  // team's start side, which is what the aggregate surfaces above use.
-  // Unresolved player → '' (never a guessed color).
-  function playerRoundCls(roundNumber, steamId, name) {
-    return playerSideClassAt(
-      viewRows,
-      match?.sideSwitches || 0,
-      rounds,
-      roundNumber,
-      steamId,
-      name,
-    );
   }
 
 </script>
@@ -528,129 +474,15 @@
     {:else if tab === 'Scoreboard'}
       <ComponentFrame source={SCOREBOARD_SOURCE} context={panelContext} props={panelProps} {nav} />
     {:else if tab === 'Rounds'}
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <!-- Far-left watch column (W3a): the canonical ghost ▶ cell
-                   (EventPlay) — same sr-only header idiom RoundDetail's
-                   kill/bomb tables use. -->
-              <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
-              <th
-                scope="col"
-                class="num cmp-cmp-col"
-                title={S.match.compareSelectTitle}
-              >{S.match.colCmp}</th>
-              <th scope="col" class="num">RD</th>
-              <th scope="col">{S.match.colWinner}</th>
-              <th scope="col">{S.match.colReason}</th>
-              <th scope="col" class="num">{S.match.colDuration}</th>
-              <th scope="col">{S.match.colSite}</th>
-              <th scope="col">{S.match.colMvp}</th>
-              <th scope="col">{S.match.firstBloodLabel}</th>
-              <th scope="col" class="num">{S.match.colKills}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each rounds as r, ri (r.number)}
-              <tr
-                class="clickable"
-                class:split-before={ri > 0 && sepFlags[ri - 1]}
-                onclick={(e) => {
-                  if (e.target instanceof Element && e.target.closest('input, button, a'))
-                    return;
-                  nav(buildHash(`/match/${id}/round/${r.number}`, { back: backPath() }));
-                }}
-                onkeydown={(e) =>
-                  e.key === 'Enter' && nav(buildHash(`/match/${id}/round/${r.number}`, { back: backPath() }))}
-                tabindex="0"
-              >
-                <td>
-                  <!-- The row's own ▶ — ROUND-level stamping (watchRound
-                       above); the row handler ignores button targets, so
-                       the row still opens the round summary. -->
-                  <EventPlay
-                    tick={roundStartTick(rounds, r.number)}
-                    title={S.fill(S.match.watchRoundTitle, { round: r.number })}
-                    label={S.fill(S.match.watchRoundAria, { round: r.number })}
-                    onclick={() => watchRound(r.number)}
-                  />
-                </td>
-                <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    class="cmp-cb"
-                    checked={compareSel.includes(r.number)}
-                    disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
-                    aria-label={S.fill(S.match.compareRoundAria, { round: roundIndexLabel(r) })}
-                    onchange={() => toggleCompare(r.number)}
-                  />
-                </td>
-                <td class="num">{roundIndexLabel(r)}</td>
-                <td>
-                  <WinnerCell winner={r.winner} name={winnerName(r)} />
-                </td>
-                <td>{r.reason || '—'}</td>
-                <td class="num">{fmtDuration(r.durationS)}</td>
-                <td>{r.bombSite || '—'}</td>
-                <td>
-                  {#if r.mvpName}
-                    <ProfileLink
-                      steam={r.mvp}
-                      name={r.mvpName}
-                      {nav}
-                      cls={playerRoundCls(r.number, r.mvp, r.mvpName)}
-                      title={S.fill(S.match.openProfile, { name: r.mvpName })}
-                    />
-                  {:else}
-                    —
-                  {/if}
-                </td>
-                <td>
-                  {#if r.firstKillName && r.firstDeathName}
-                    <ProfileLink
-                      steam={r.firstKillSteam}
-                      name={r.firstKillName}
-                      {nav}
-                      cls={playerRoundCls(r.number, r.firstKillSteam, r.firstKillName)}
-                      title={S.fill(S.match.openProfile, { name: r.firstKillName })}
-                    />
-                    {S.match.killedVerb}
-                    <ProfileLink
-                      steam={r.firstDeathSteam}
-                      name={r.firstDeathName}
-                      {nav}
-                      cls={playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName)}
-                      title={S.fill(S.match.openProfile, { name: r.firstDeathName })}
-                    />
-                  {:else}
-                    —
-                  {/if}
-                </td>
-                <td class="num">{r.kills}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      {#if compareSel.length > 0}
-        <p class="cmp-hint">
-          {S.fill(S.match.roundsSelected, { n: compareSel.length })}
-        </p>
-      {/if}
-      {#if compareSel.length >= 2}
-        <button class="btn primary cmp-float" onclick={goCompare}>
-          {S.fill(S.match.compareBtn, { n: compareSel.length })} <span class="codicon codicon-chevron-right"></span>
-        </button>
-      {/if}
+      <ComponentFrame source={ROUNDS_SOURCE} context={panelContext} props={roundsProps} {nav} />
     {:else if tab === 'Economy'}
       <Economy {id} {nav} />
     {:else if tab === 'Utility'}
       <Utility {id} />
     {:else if tab === 'Heatmaps'}
-      <Heatmaps {id} {nav} />
+      <ComponentFrame component={MatchHeatmaps} context={panelContext} {nav} />
     {:else if tab === 'Combat'}
-      <Combat {id} {nav} />
+      <ComponentFrame component={MatchCombat} context={panelContext} {nav} />
     {:else if tab === 'Reports'}
       <ComponentFrame component={ReportsView} context={panelContext} props={{ embedded: true }} {nav} />
     {:else if tab === 'Details'}
@@ -662,15 +494,13 @@
            is Library copy, not this match's data, so it stays out of the
            tab. Gameplay-derived facts (the first blood) live on the
            Rounds tab. Map/Duration live in the match header. -->
+      <!-- The stored facts are the details panel (matchpanels.js). Voice and
+           the demo copy stay here: voice presence is not a component read
+           (the query allowlist denies it), and the copy state comes from the
+           filesystem on this read. -->
+      <ComponentFrame source={DETAILS_SOURCE} context={panelContext} props={panelProps} {nav} />
       <section class="panel">
-        <h2>{S.match.keyFacts}</h2>
         <dl class="facts">
-          <div><dt>{S.match.factServer}</dt><dd>{match.serverName || '—'}</dd></div>
-          <div><dt>{S.match.factTickrate}</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
-          <div><dt>{S.match.factFrames}</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
-          <div><dt>{S.match.factSize}</dt><dd>{fmtBytes(match.size)}</dd></div>
-          <div><dt>{S.match.factImported}</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
-          <div><dt>{S.match.factParser}</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
           <div>
             <dt>{S.match.factVoice}</dt>
             <dd>
@@ -692,8 +522,6 @@
               {/if}
             </dd>
           </div>
-          <div><dt>{S.match.factWarnings}</dt><dd>{match.warningsCount}</dd></div>
-          <div class="fact-wide"><dt>{S.match.factSource}</dt><dd class="mono">{match.path}</dd></div>
           <!-- State line under Source: which demo file Re-parse would read
                right now (copyState is fs-derived by Go on this read —
                store never fills it). -->

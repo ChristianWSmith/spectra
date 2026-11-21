@@ -269,6 +269,18 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 // SetMetricTouched stores a metric's derived touched set (the save gate's
 // output). nil or empty stores ” — not derived (the behind predicate reads
 // that as unknown).
+// StoredTouched is the touched set a metric keeps. A statement that reads only
+// metric() references touches no physical table (the reference adds none to the
+// gate's set), but its stored set must not read as unknown (” reads behind),
+// so it stores the stored-values table it reads through. hasRefs reports
+// whether the statement carries any metric() reference.
+func StoredTouched(touched []string, hasRefs bool) []string {
+	if len(touched) == 0 && hasRefs {
+		return []string{"metric_values"}
+	}
+	return touched
+}
+
 func (s *Store) SetMetricTouched(metricID int64, tables []string) error {
 	res, err := s.db.Exec(`UPDATE metrics SET touched = ? WHERE id = ?`, touchedColumn(tables), metricID)
 	if err != nil {
@@ -963,7 +975,7 @@ func (s *Store) backfillTouched() error {
 		if gerr != nil {
 			continue
 		}
-		if err := s.SetMetricTouched(t.id, st.Touched); err != nil {
+		if err := s.SetMetricTouched(t.id, StoredTouched(st.Touched, len(st.Refs) > 0)); err != nil {
 			return err
 		}
 	}
