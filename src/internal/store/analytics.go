@@ -991,7 +991,9 @@ func (s *Store) RebuildCareer() error {
 // RebuildCareerFor rebuilds the career rollup for a change that touched only
 // the given players (their matches were analyzed or deleted). The career
 // values of every other player stay fresh; a player whose career row
-// disappears in the rebuild is invalidated too.
+// disappears in the rebuild is invalidated too. Within those players, only the
+// career values of metrics whose touched set holds a match-data table are
+// cleared (invalidateCareerValues).
 func (s *Store) RebuildCareerFor(steamIDs []string) error {
 	return s.rebuildCareer(steamIDs, false)
 }
@@ -1096,11 +1098,15 @@ func careerSteamIDs(tx *sql.Tx) ([]string, error) {
 }
 
 // invalidateCareerValues clears the career-grain (match_id = 0) values and run
-// records a rollup change reaches. whole clears every such value. Otherwise a
-// metric bound to :steam_id loses only the rows and runs of the changed
-// players (its units are per player, so the others stay fresh). Every other
-// career metric (a library-wide raw metric, a profile sugar metric) reads the
-// whole rollup, so it loses its whole career bucket.
+// records a rollup change reaches. whole clears every such value. Otherwise
+// only metrics whose touched set holds a match-data table (matchDataTables: the
+// tables a match write or delete changes) are reached. A metric bound to
+// :steam_id loses only the rows and runs of the changed players (its units are
+// per player, so the others stay fresh), and any other career metric (a
+// library-wide raw metric, a profile sugar metric) loses its whole career
+// bucket. A metric that reads none of those tables (a matches-only metric)
+// stays fresh. A metric with an unknown touched set (”) is reached
+// conservatively.
 func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
 	if whole {
 		if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
@@ -1111,20 +1117,21 @@ func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
 		}
 		return nil
 	}
-	rows, err := tx.Query(`SELECT id, expr FROM metrics WHERE id IN (
+	rows, err := tx.Query(`SELECT id, expr, touched FROM metrics WHERE id IN (
 		SELECT metric_id FROM metric_values WHERE match_id = 0
 		UNION SELECT metric_id FROM metric_runs WHERE match_id = 0)`)
 	if err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	type career struct {
-		id   int64
-		expr string
+		id      int64
+		expr    string
+		touched string
 	}
 	var list []career
 	for rows.Next() {
 		var c career
-		if err := rows.Scan(&c.id, &c.expr); err != nil {
+		if err := rows.Scan(&c.id, &c.expr, &c.touched); err != nil {
 			rows.Close()
 			return fmt.Errorf("couldn't rebuild the career: %w", err)
 		}
@@ -1143,6 +1150,9 @@ func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
 	}
 	in := strings.Join(ph, ",")
 	for _, c := range list {
+		if c.touched != "" && !touchesAnyOf(c.touched, matchDataTables()) {
+			continue // reads none of the changed tables: this metric's units stay fresh
+		}
 		if perPlayer(c.expr) {
 			if len(steamIDs) == 0 {
 				continue // no player's career changed: this metric's units stay fresh

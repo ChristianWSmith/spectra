@@ -284,6 +284,18 @@ func matchDataTables() []string {
 	return out
 }
 
+// touchesAnyOf reports whether an encoded touched set holds one of tables.
+func touchesAnyOf(touched string, tables []string) bool {
+	for _, t := range parseTouched(touched) {
+		for _, want := range tables {
+			if t == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // markMatchWritesBehind is the write-side freshness hook (03-QUERIES §4, B4):
 // a write that changed tables of one match marks behind every metric whose
 // touched set holds one of them. A library-wide metric goes behind as a whole;
@@ -292,16 +304,7 @@ func matchDataTables() []string {
 // the write may have changed). Runs inside the caller's transaction, before
 // its commit.
 func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players []string) error {
-	touchesAny := func(touched string) bool {
-		for _, t := range parseTouched(touched) {
-			for _, want := range tables {
-				if t == want {
-					return true
-				}
-			}
-		}
-		return false
-	}
+	touchesAny := func(touched string) bool { return touchesAnyOf(touched, tables) }
 	type root struct {
 		id                int64
 		name, expr, scope string
