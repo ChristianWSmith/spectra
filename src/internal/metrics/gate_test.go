@@ -71,55 +71,8 @@ func TestGateSQLAccepts(t *testing.T) {
 	}
 }
 
-// TestGatePlanFailsClosed: a compiled statement the gate cannot resolve is
-// an engine defect and refuses the plan — it is never saved with a short
-// touched set.
-func TestGatePlanFailsClosed(t *testing.T) {
-	for _, sql := range []string{
-		"SELECT * FROM jobs",
-		"SELECT * FROM [players]",
-		"SELECT * FROM saved_queries g, rounds",
-	} {
-		p := Plan{SQL: sql}
-		if perr := gatePlan(&p, nil); perr == nil {
-			t.Errorf("gatePlan passed %q", sql)
-		}
-	}
-	p := Plan{SQL: "SELECT * FROM rounds r JOIN metric_values md0 ON md0.metric_id = ?", Secondary: "SELECT 1 FROM players"}
-	if perr := gatePlan(&p, map[string]string{"x": "md0"}); perr != nil {
-		t.Fatalf("aliased ref join refused: %v", perr)
-	}
-	if !reflect.DeepEqual(p.Touched, []string{"players", "rounds"}) {
-		t.Fatalf("touched = %v", p.Touched)
-	}
-}
-
-// TestCompiledExpressionTouchedSet: a sugar expression's compiled plan
-// carries the physical tables it reads — its sources, its denominator
-// table and the humans-only lookup — and a metric() reference adds none.
-func TestCompiledExpressionTouchedSet(t *testing.T) {
-	addr := Address{Subject: "player"}
-	p, perr := CompileRefs("from player_stats: sum(kills)", "", "", addr, nil)
-	if perr != nil {
-		t.Fatalf("compile: %v", perr)
-	}
-	if want := []string{"player_stats", "players"}; !reflect.DeepEqual(p.Touched, want) {
-		t.Fatalf("touched = %v, want %v", p.Touched, want)
-	}
-	// Scope "" is the career statement: its rounds denominator counts the
-	// subject's player_round_stats rows (03 §3 denominator rule), so that
-	// table — not the rounds table — is what the statement reads.
-	p, perr = CompileRefs("from player_stats: sum(kills)", "rounds", "", addr, nil)
-	if perr != nil {
-		t.Fatalf("compile: %v", perr)
-	}
-	if want := []string{"player_round_stats", "player_stats", "players"}; !reflect.DeepEqual(p.Touched, want) {
-		t.Fatalf("career rounds-denominator touched = %v, want %v", p.Touched, want)
-	}
-}
-
-// TestEveryBuiltinPassesTheGate: every builtin compiles through the gate at
-// the library shape, and each derived touched set contains its sources.
+// TestEveryBuiltinPassesTheGate: every builtin passes the save gate, and
+// each derived touched set is non-empty.
 func TestEveryBuiltinPassesTheGate(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -134,55 +87,37 @@ func TestEveryBuiltinPassesTheGate(t *testing.T) {
 		t.Fatal("no builtins")
 	}
 	for _, m := range ms {
-		if IsRawSQL(m.Expr) {
-			// Raw builtins (ruling 22) pass the save gate itself: one
-			// statement, the reserved binds, no metric() refs. The sugar
-			// source-clause checks below do not apply to them.
-			g, perr, err := CheckRawSave(st, m.Expr)
-			if err != nil {
-				t.Fatalf("%s: %v", m.Name, err)
-			}
-			if perr != nil {
-				t.Fatalf("%s: refused by the gate: %s", m.Name, perr.Message)
-			}
-			if len(g.Touched) == 0 {
-				t.Errorf("%s: touched set not derived", m.Name)
-			}
-			continue
+		g, perr, err := CheckRawSave(st, m.Expr)
+		if err != nil {
+			t.Fatalf("%s: %v", m.Name, err)
 		}
-		spec, perr := Parse(m.Expr)
 		if perr != nil {
-			t.Fatalf("%s: %v", m.Name, perr)
+			t.Fatalf("%s: refused by the gate: %s", m.Name, perr.Message)
 		}
-		refs := map[string]RefTarget{}
-		for _, r := range MetricRefs(spec) {
-			row, err := st.GetMetricByName(r.Name)
-			if err != nil {
-				t.Fatalf("%s: ref %s: %v", m.Name, r.Name, err)
-			}
-			refs[r.Name] = RefTarget{ID: row.ID, Scope: row.Scope, Subject: row.Subject, Version: row.Version}
-		}
-		addr := Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
-		plan, perr := CompileRefs(m.Expr, m.Denominator, "", addr, refs)
-		if perr != nil {
-			t.Fatalf("%s: compile refused by the gate: %v", m.Name, perr)
-		}
-		if len(plan.Touched) == 0 {
+		if len(g.Touched) == 0 {
 			t.Errorf("%s: touched set not derived", m.Name)
-		}
-		for _, src := range spec.Sources {
-			if !contains(plan.Touched, tableFor(src.Name)) {
-				t.Errorf("%s: touched %v misses source table %s", m.Name, plan.Touched, tableFor(src.Name))
-			}
 		}
 	}
 }
 
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
+// TestGateRefusesNonSelect: a statement that is not one SELECT or WITH is
+// refused at the gate with the clear message, never parsed as anything else.
+func TestGateRefusesNonSelect(t *testing.T) {
+	for _, q := range []string{
+		"from events: count()",
+		"DELETE FROM players",
+		"PRAGMA table_info(players)",
+	} {
+		_, perr, err := GateSQL(q, lookupOf(), nil)
+		if err != nil {
+			t.Fatalf("%q: %v", q, err)
+		}
+		if perr == nil {
+			t.Errorf("%q: accepted, want refused", q)
 		}
 	}
-	return false
+	_, perr, _ := GateSQL("from events: count()", lookupOf(), nil)
+	if perr == nil || !strings.Contains(perr.Message, "SELECT or WITH") {
+		t.Errorf("sugar text refusal = %+v, want the SELECT or WITH message", perr)
+	}
 }

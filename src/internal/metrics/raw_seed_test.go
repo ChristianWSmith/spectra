@@ -3,6 +3,8 @@ package metrics
 import (
 	"database/sql"
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -15,11 +17,7 @@ import (
 // sweep. Scope "match:<id>" binds :match_id; "" runs unbound.
 func rawPreviewRows(t *testing.T, st *store.Store, expr, scope string) []store.RawMetricRow {
 	t.Helper()
-	matchID, perr := ParseScope(scope)
-	if perr != nil {
-		t.Fatalf("scope %q: %v", scope, perr.Message)
-	}
-	rs := store.RawScope{MatchID: matchID}
+	rs := store.RawScope{MatchID: parseTestScope(t, scope)}
 	g, gperr, err := GateSQL(expr, rawExists(st), rawSuppliedFor(rs))
 	if err != nil {
 		t.Fatalf("gate %q: %v", expr, err)
@@ -44,6 +42,10 @@ func rawPreviewRows(t *testing.T, st *store.Store, expr, scope string) []store.R
 	return rows
 }
 
+// botSteamID is the synthetic 0xFF-prefixed identity extract gives bots
+// (extract.isBotKey) — the same spelling the store tests use.
+const botSteamID = "18374686479671623692"
+
 // rawValue is a raw row's stored value as a float; NULL is NaN, so a
 // comparison against any expected number fails rather than reading 0.
 func rawValue(r store.RawMetricRow) float64 {
@@ -53,24 +55,50 @@ func rawValue(r store.RawMetricRow) float64 {
 	return *r.Value
 }
 
-// previewRowsFor previews one seed expression at a scope and returns its
-// rows keyed by subject group. A raw seed runs through the raw path
-// (rawPreviewRows); a sugar expression keeps RunPreview.
-func previewRowsFor(t *testing.T, st *store.Store, expr, subject, scope string) []PreviewRow {
+// toFloat coerces a query-oracle cell to float64 (NULL and text read 0).
+// The oracles here are plain SQL the test runs itself; their numbers come
+// back as int64 or float64.
+func toFloat(v any) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case int64:
+		return float64(t)
+	}
+	return 0
+}
+
+// seedRow is one row of a raw run, keyed by its subject group (the
+// reserved subject_key column) and its partition (dim). NULL is NaN.
+type seedRow struct {
+	Group string
+	Dim   string
+	Value float64
+}
+
+// previewRowsFor runs one statement at a scope and returns its rows.
+func previewRowsFor(t *testing.T, st *store.Store, expr, scope string) []seedRow {
 	t.Helper()
-	if IsRawSQL(expr) {
-		var out []PreviewRow
-		for _, r := range rawPreviewRows(t, st, expr, scope) {
-			out = append(out, PreviewRow{Group: r.SubjectKey, Value: rawValue(r)})
-		}
-		return out
+	var out []seedRow
+	for _, r := range rawPreviewRows(t, st, expr, scope) {
+		out = append(out, seedRow{Group: r.SubjectKey, Dim: r.Dim, Value: rawValue(r)})
 	}
-	pv, perr, err := RunPreview(t.Context(), st, Def{Expr: expr, Subject: subject}, scope, 10)
-	if perr != nil {
-		t.Fatalf("compile %q: %v", expr, perr)
+	return out
+}
+
+// parseTestScope reads a test scope: "" is the library-wide run (0) and
+// "match:<id>" binds that match.
+func parseTestScope(t *testing.T, scope string) int64 {
+	t.Helper()
+	if scope == "" {
+		return 0
 	}
+	if !strings.HasPrefix(scope, "match:") {
+		t.Fatalf("scope %q: want \"\" or \"match:<id>\"", scope)
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(scope, "match:"), 10, 64)
 	if err != nil {
-		t.Fatalf("run %q: %v (sql %s)", expr, err, pv.SQL)
+		t.Fatalf("scope %q: %v", scope, err)
 	}
-	return pv.Rows
+	return id
 }

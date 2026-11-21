@@ -599,7 +599,7 @@ func TestEconomyCardSeedEquivalence(t *testing.T) {
 			{"pistol_hold", seedExpr["pistol_hold"], oraclePistol},
 			{"avg_equip_gap", seedExpr["avg_equip_gap"], oracleGap},
 		} {
-			rows := previewRowsFor(t, st, tc.expr, "match", scope)
+			rows := previewRowsFor(t, st, tc.expr, scope)
 			if len(rows) != 1 {
 				t.Fatalf("%s %s rows = %d, want 1", tc.name, scope, len(rows))
 			}
@@ -737,10 +737,10 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 
 			// team rows are addressed by their stored team key — map
 			// the preview's rows by subject group.
-			teamRows := func(t *testing.T, name string) map[string]PreviewRow {
+			teamRows := func(t *testing.T, name string) map[string]seedRow {
 				t.Helper()
-				rows := previewRowsFor(t, st, seedExpr[name], "team", scope)
-				out := map[string]PreviewRow{}
+				rows := previewRowsFor(t, st, seedExpr[name], scope)
+				out := map[string]seedRow{}
 				for _, r := range rows {
 					out[r.Group] = r
 				}
@@ -782,7 +782,7 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 
 			// lost_equip (match subject): one row, EXACTLY the card's
 			// pooled total.
-			lostEquip := previewRowsFor(t, st, seedExpr["lost_equip"], "match", scope)
+			lostEquip := previewRowsFor(t, st, seedExpr["lost_equip"], scope)
 			if len(lostEquip) != 1 {
 				t.Fatalf("lost_equip %s rows = %d, want 1", scope, len(lostEquip))
 			}

@@ -94,8 +94,8 @@ func TestMetricsTableDDLByteEqual(t *testing.T) {
 func TestPluginMetricsRows(t *testing.T) {
 	s := openMem(t)
 	defs := []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count", Expr: "from events: count()", Scope: "profile"},
-		{Name: "plug_dmg", Title: "Plug dmg", Expr: "from events: sum(dmg)"},
+		{Name: "plug_count", Title: "Plug count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events", Scope: "profile"},
+		{Name: "plug_dmg", Title: "Plug dmg", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(dmg) AS value FROM events WHERE match_id = :match_id"},
 	}
 	if err := s.ReplacePluginMetrics("p1", defs); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
@@ -132,8 +132,8 @@ func TestPluginMetricsRows(t *testing.T) {
 	}
 	// Upsert keyed by name: re-replace with one changed row + one new name.
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count v2", Expr: "from events: count()"},
-		{Name: "plug_new", Title: "New", Expr: "from events: count()"},
+		{Name: "plug_count", Title: "Plug count v2", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
+		{Name: "plug_new", Title: "New", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics(replace): %v", err)
 	}
@@ -182,8 +182,8 @@ func TestReplacePluginMetricsRefusesBuiltinCollision(t *testing.T) {
 	}
 
 	err = s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_ok", Title: "Ok", Expr: "from events: count()"},
-		{Name: "trade_rate", Title: "Hijack", Expr: "from events: count()"},
+		{Name: "plug_ok", Title: "Ok", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
+		{Name: "trade_rate", Title: "Hijack", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
 	})
 	if err == nil {
 		t.Fatal("ReplacePluginMetrics with a builtin name succeeded, want the collision refusal")
@@ -207,7 +207,7 @@ func TestReplacePluginMetricsRefusesBuiltinCollision(t *testing.T) {
 
 	// A fresh name still lands through the same writer.
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_ok", Title: "Ok", Expr: "from events: count()"},
+		{Name: "plug_ok", Title: "Ok", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics(fresh name): %v", err)
 	}

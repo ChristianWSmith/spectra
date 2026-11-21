@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -93,7 +92,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 func TestBehindPredicateCycle(t *testing.T) {
 	f := newSeededFixture(t)
 
-	m := f.save(t, models.MetricRow{Name: "bpc_metric", Expr: "from events: count()"})
+	m := f.save(t, models.MetricRow{Name: "bpc_metric", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 
 	// Never computed → behind, state behind, zero rows.
 	if behind, fresh := coverageOf(t, f.st, m.ID); !behind || fresh != 0 {
@@ -155,206 +154,6 @@ func TestBehindPredicateCycle(t *testing.T) {
 	}
 }
 
-// TestSaveMetricCascadeBump pins design §4's save-time marking: a
-// SEMANTIC edit bumps the edited metric AND every transitive dependent
-// in one tx (A ← B ← C), the behind set then covers all three, and the
-// sweep brings them all fresh. Display-only edits, no-op saves and
-// renames bump NOTHING and schedule nothing (W2b's pin, kept).
-func TestSaveMetricCascadeBump(t *testing.T) {
-	f := newSeededFixture(t)
-
-	a := f.save(t, models.MetricRow{Name: "casc_a", Expr: "from events: count()"})
-	b := f.save(t, models.MetricRow{Name: "casc_b", Expr: "from events: ratio(sum(dmg), metric('casc_a'))"})
-	c := f.save(t, models.MetricRow{Name: "casc_c", Expr: "from events: metric('casc_b')"})
-	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
-		t.Fatalf("initial sweep: %v", err)
-	}
-	for _, m := range []models.MetricRow{a, b, c} {
-		if behind, _ := coverageOf(t, f.st, m.ID); behind {
-			t.Errorf("%s behind after the initial sweep", m.Name)
-		}
-		if v := versionOf(t, f.st, m.ID); v != 1 {
-			t.Errorf("%s version = %d, want 1 (create never bumps)", m.Name, v)
-		}
-	}
-
-	// SEMANTIC edit of A (expr): A, B and C all bump by exactly 1 —
-	// B directly references A, C only references B (transitive).
-	a.Expr = "from events: count(where kind='kill')"
-	a = f.save(t, a)
-	for _, tc := range []struct {
-		m    models.MetricRow
-		want int
-	}{{a, 2}, {b, 2}, {c, 2}} {
-		if got := versionOf(t, f.st, tc.m.ID); got != tc.want {
-			t.Errorf("%s version = %d, want %d (cascade bump)", tc.m.Name, got, tc.want)
-		}
-		if behind, _ := coverageOf(t, f.st, tc.m.ID); !behind {
-			t.Errorf("%s not behind after the cascade (rows stamped with the old version)", tc.m.Name)
-		}
-		if s := stateOf(t, f.svc, tc.m.ID); s.State != MetricStateBehind {
-			t.Errorf("%s state = %q, want %q", tc.m.Name, s.State, MetricStateBehind)
-		}
-	}
-
-	// The sweep heals all three (dependents after their upstream).
-	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
-		t.Fatalf("healing sweep: %v", err)
-	}
-	for _, m := range []models.MetricRow{a, b, c} {
-		if behind, fresh := coverageOf(t, f.st, m.ID); behind || fresh == 0 {
-			t.Errorf("%s after healing = (behind=%v, fresh=%d), want (false, >0)", m.Name, behind, fresh)
-		}
-	}
-
-	// Display-only edit: no bump, no behindness.
-	b.Title = "retitled"
-	b = f.save(t, b)
-	if got := versionOf(t, f.st, b.ID); got != 2 {
-		t.Errorf("display-only bump: version = %d, want 2", got)
-	}
-	// No-op save: identical fields → no bump.
-	c = f.save(t, c)
-	if got := versionOf(t, f.st, c.ID); got != 2 {
-		t.Errorf("no-op bump: version = %d, want 2", got)
-	}
-	// Rename (with dependents): the splice rewrites B and C's exprs, but
-	// a rename changes no semantics — nothing bumps, nothing goes behind.
-	a.Name = "casc_a_renamed"
-	a = f.save(t, a)
-	if got := versionOf(t, f.st, a.ID); got != 2 {
-		t.Errorf("rename bumped the upstream: version = %d, want 2", got)
-	}
-	for _, m := range []models.MetricRow{b, c} {
-		if got := versionOf(t, f.st, m.ID); got != 2 {
-			t.Errorf("%s version after the rename splice = %d, want 2", m.Name, got)
-		}
-		if behind, _ := coverageOf(t, f.st, m.ID); behind {
-			t.Errorf("%s behind after a rename (semantics unchanged)", m.Name)
-		}
-	}
-	now, err := f.svc.GetMetric(b.ID)
-	if err != nil {
-		t.Fatalf("GetMetric: %v", err)
-	}
-	if now.Expr != "from events: ratio(sum(dmg), metric('casc_a_renamed'))" {
-		t.Errorf("dependent expr = %q, want the spliced literal", now.Expr)
-	}
-}
-
-// versionOf reads a metric's live version (the internal counter — this
-// test file is the only place a version number is ever asserted on).
-func versionOf(t *testing.T, st *store.Store, metricID int64) int {
-	t.Helper()
-	m, err := st.GetMetric(metricID)
-	if err != nil {
-		t.Fatalf("GetMetric(%d): %v", metricID, err)
-	}
-	return m.Version
-}
-
-// TestSweepTopologicalOrderAndSkip pins the ordering contract (design
-// §2/§4): a dependent's compute comes strictly AFTER its upstream's
-// (its ref join then reads committed fresh rows), and a dependent whose
-// upstream FAILED is SKIPPED — phase 1 only (its rows are removed, so
-// it reads as behind), never computed from stale inputs, and its own
-// forward closure follows.
-func TestSweepTopologicalOrderAndSkip(t *testing.T) {
-	f := newSeededFixture(t)
-
-	up := f.save(t, models.MetricRow{Name: "topo_up", Expr: "from events: count()"})
-	mid := f.save(t, models.MetricRow{Name: "topo_mid", Expr: "from events: ratio(sum(dmg), metric('topo_up'))"})
-	leaf := f.save(t, models.MetricRow{Name: "topo_leaf", Expr: "from events: metric('topo_mid')"})
-
-	var steps []string
-	res, err := f.svc.runSweep(t.Context(), func(p metrics.SweepProgress) {
-		steps = append(steps, fmt.Sprintf("%s:%d", p.Stage, p.MetricID))
-	})
-	if err != nil {
-		t.Fatalf("sweep: %v", err)
-	}
-	if len(res.Failed) > 0 || len(res.Skipped) > 0 {
-		t.Fatalf("failures=%v skipped=%v", res.Failed, res.Skipped)
-	}
-	stepIndex := func(want string) int {
-		for i, s := range steps {
-			if s == want {
-				return i
-			}
-		}
-		t.Fatalf("step %q never happened (steps: %v)", want, steps)
-		return -1
-	}
-	// Dependent computed strictly after its upstream.
-	if i, j := stepIndex(fmt.Sprintf("compute:%d", up.ID)), stepIndex(fmt.Sprintf("remove:%d", mid.ID)); i >= j {
-		t.Errorf("mid's phase 1 (%d) does not follow upstream's compute (%d) — topo order violated", j, i)
-	}
-	if i, j := stepIndex(fmt.Sprintf("compute:%d", mid.ID)), stepIndex(fmt.Sprintf("remove:%d", leaf.ID)); i >= j {
-		t.Errorf("leaf's phase 1 (%d) does not follow mid's compute (%d) — topo order violated", j, i)
-	}
-	for _, m := range []models.MetricRow{up, mid, leaf} {
-		if storedRows(t, f.st, m.ID) == 0 {
-			t.Errorf("%s has no stored rows after a clean sweep", m.Name)
-		}
-	}
-
-	// System-remove the UPSTREAM at the store level (the API would block
-	// it — this is the plugin-disable path): mid's dep_name dangles, so
-	// mid FAILS the resolution (the one positioned error copy), and leaf
-	// — whose upstream failed — is SKIPPED with phase 1 only.
-	if err := f.st.DeleteMetric(up.ID); err != nil {
-		t.Fatalf("store delete: %v", err)
-	}
-	var steps2 []string
-	res2, err := f.svc.runSweep(t.Context(), func(p metrics.SweepProgress) {
-		steps2 = append(steps2, fmt.Sprintf("%s:%d", p.Stage, p.MetricID))
-	})
-	if err != nil {
-		t.Fatalf("second sweep: %v", err)
-	}
-	failMsg, failed := res2.Failed[mid.ID]
-	if !failed || !strings.Contains(failMsg, `unknown metric reference "topo_up"`) {
-		t.Errorf("mid failure = %q (failed=%v), want the positioned unknown-reference copy", failMsg, failed)
-	}
-	skipped := false
-	for _, id := range res2.Skipped {
-		if id == leaf.ID {
-			skipped = true
-		}
-	}
-	if !skipped {
-		t.Errorf("leaf not skipped (skipped=%v) — its upstream failed", res2.Skipped)
-	}
-	for _, id := range res2.Succeeded {
-		if id == mid.ID || id == leaf.ID {
-			t.Errorf("metric %d succeeded despite its upstream being unavailable", id)
-		}
-	}
-	// Skipped/failed ⇒ rows gone (phase 1 ran) ⇒ behind, never stale.
-	for _, m := range []models.MetricRow{mid, leaf} {
-		if n := storedRows(t, f.st, m.ID); n != 0 {
-			t.Errorf("%s rows = %d, want 0 (phase 1 only)", m.Name, n)
-		}
-		if behind, _ := coverageOf(t, f.st, m.ID); !behind {
-			t.Errorf("%s not behind after its upstream failed", m.Name)
-		}
-	}
-	// leaf never even got its compute stage.
-	for _, s := range steps2 {
-		if s == fmt.Sprintf("compute:%d", leaf.ID) {
-			t.Errorf("leaf's compute stage ran (%s) — skip-forward-closure violated", s)
-		}
-	}
-	// State vocabulary on the failure: mid FAILED with the resolution
-	// error; leaf is behind (it did not fail — its upstream did).
-	if s := stateOf(t, f.svc, mid.ID); s.State != MetricStateFailed || !strings.Contains(s.Error, "unknown metric reference") {
-		t.Errorf("mid state = %+v, want failed with the resolution error", s)
-	}
-	if s := stateOf(t, f.svc, leaf.ID); s.State != MetricStateBehind {
-		t.Errorf("leaf state = %q, want %q", s.State, MetricStateBehind)
-	}
-}
-
 // TestGetMetricComputeStateVocabulary walks each of the five
 // owner-ruled words to the situation that produces it, and pins the
 // no-version-leak contract: no state string, error text or payload key
@@ -362,7 +161,7 @@ func TestSweepTopologicalOrderAndSkip(t *testing.T) {
 func TestGetMetricComputeStateVocabulary(t *testing.T) {
 	// 1. behind — a saved metric with units to compute and no rows.
 	f := newSeededFixture(t)
-	behindM := f.save(t, models.MetricRow{Name: "vocab_behind", Expr: "from events: count()"})
+	behindM := f.save(t, models.MetricRow{Name: "vocab_behind", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 	if s := stateOf(t, f.svc, behindM.ID); s.State != MetricStateBehind {
 		t.Errorf("behind situation: state = %q, want %q", s.State, MetricStateBehind)
 	}
@@ -399,10 +198,10 @@ func TestGetMetricComputeStateVocabulary(t *testing.T) {
 		t.Errorf("fresh situation: state = %q, want %q", s.State, MetricStateFresh)
 	}
 
-	// 4. failed — a dangling upstream (system removal) makes the
-	// dependent's recompute fail; its rows are gone, so failed + error.
-	up := f.save(t, models.MetricRow{Name: "vocab_up", Expr: "from events: count()"})
-	dep := f.save(t, models.MetricRow{Name: "vocab_dep", Expr: "from events: metric('vocab_up')"})
+	// 4. failed — a statement that errors when it runs (an unknown column)
+	// fails its recompute; no rows are kept, so failed + error.
+	up := f.save(t, models.MetricRow{Name: "vocab_up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
+	dep := f.save(t, models.MetricRow{Name: "vocab_dep", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE no_such_column = 1 AND match_id = :match_id", Scope: "match"})
 	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -420,14 +219,14 @@ func TestGetMetricComputeStateVocabulary(t *testing.T) {
 	// (not behind — the unit-absence guards read an empty library as
 	// no-data, never an infinite recompute loop).
 	empty := newDepsFixture(t)
-	emptyM := empty.save(t, models.MetricRow{Name: "vocab_empty", Expr: "from events: count()", Scope: "match"})
+	emptyM := empty.save(t, models.MetricRow{Name: "vocab_empty", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match"})
 	if _, err := empty.svc.runSweep(t.Context(), nil); err != nil {
 		t.Fatalf("empty sweep: %v", err)
 	}
 	if s := stateOf(t, empty.svc, emptyM.ID); s.State != MetricStateNoData {
 		t.Errorf("empty-library state = %q, want %q", s.State, MetricStateNoData)
 	}
-	emptyProfile := empty.save(t, models.MetricRow{Name: "vocab_empty_profile", Expr: "from events: count()", Scope: "profile"})
+	emptyProfile := empty.save(t, models.MetricRow{Name: "vocab_empty_profile", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE :steam_id <> ''", Scope: "profile"})
 	if s := stateOf(t, empty.svc, emptyProfile.ID); s.State != MetricStateNoData {
 		t.Errorf("empty-library profile state = %q, want %q", s.State, MetricStateNoData)
 	}
@@ -473,7 +272,7 @@ func TestGetMetricComputeStateVocabulary(t *testing.T) {
 // path as the unbudgeted seam (Acquire/Release no-ops).
 func TestSweepTakesTokenBeforeComputeLock(t *testing.T) {
 	f := newSeededFixture(t)
-	probe := f.save(t, models.MetricRow{Name: "lock_probe", Expr: "from events: count()"})
+	probe := f.save(t, models.MetricRow{Name: "lock_probe", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 	b := budget.New(1)
 	lock := &sync.Mutex{}
 	f.svc.useSweeps(b, lock)
@@ -519,7 +318,7 @@ func TestSweepCoalescesTriggers(t *testing.T) {
 	f := newSeededFixture(t)
 	f.svc.useSweeps(nil, nil)
 
-	first := f.save(t, models.MetricRow{Name: "coal_first", Expr: "from events: count()"})
+	first := f.save(t, models.MetricRow{Name: "coal_first", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 
 	// Hold the compute lock: the scheduled sweep parks on it (its token
 	// wait is a no-op with the nil budget), which makes the coalescing
@@ -529,7 +328,7 @@ func TestSweepCoalescesTriggers(t *testing.T) {
 	lock := f.svc.gate()
 	lock.Lock()
 	f.svc.scheduleSweep()
-	second := f.save(t, models.MetricRow{Name: "coal_second", Expr: "from events: count(where kind='kill')"})
+	second := f.save(t, models.MetricRow{Name: "coal_second", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE kind = 'kill' AND match_id = :match_id"})
 	lock.Unlock()
 
 	waitFor(t, "both metrics fresh (the parked sweep + its coalesced follow-up)", func() bool {

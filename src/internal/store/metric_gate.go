@@ -32,12 +32,9 @@ import (
 
 // metricReadable is THE metric-readable allowlist (dogfood/03-QUERIES.md
 // §3.2), ONE explicit classification of every schema table: readable
-// (true) or denied (false). It is derived from the declarations the
-// metric grammar already carries — the source tables (whitelist.go's
-// `sources`, with engagements_victim resolving to engagements), the
-// denominator tables (`denominatorTables` and `denominatorCareerTables`)
-// and the three engine-read tables: `players` (the humans-only lookup),
-// `matches` (the match denominator) and `metric_values` (the ref join,
+// (true) or denied (false). The readable tables are the fact tables and
+// the engine-read tables: `players` (the humans-only lookup), `matches`
+// and `metric_values` (the ref join,
 // reached only through metric('…') — see AnalyzeMetricSQL's refAliases).
 // generic_events is readable by decision (03 §2). Everything else is denied,
 // including sqlite_* and the app tables.
@@ -68,7 +65,7 @@ var metricReadable = map[string]bool{
 	// Denied. metric_values is classified denied for AUTHOR reads: a stored
 	// value is reached only through metric('…'), which the compiler joins
 	// under its own alias (AnalyzeMetricSQL's refAliases). generic_events
-	// is the unwhitelisted raw-payload table; the rest are fact tables
+	// is the raw-payload table; the rest are fact tables
 	// outside the source list, app state, the engine's own tables and
 	// voice (sidecar-only).
 	"metric_values":      false,
@@ -173,6 +170,12 @@ type MetricStatement struct {
 // refAliases nil — is refused like every denied table.
 func AnalyzeMetricSQL(q string, refAliases map[string]bool) (MetricStatement, *GateError) {
 	if err := ValidateReadOnlySQL(q); err != nil {
+		// A statement that is not a read at all (sugar text, a bare
+		// keyword the read-only layer does not know) gets the metric's
+		// own clear message; the write verbs keep their specific copy.
+		if strings.HasPrefix(err.Error(), "expected SELECT/WITH") {
+			return MetricStatement{}, &GateError{Message: "a metric is one SELECT or WITH statement"}
+		}
 		return MetricStatement{}, &GateError{Message: err.Error()}
 	}
 	toks, err := lexSQL(q) // cannot fail: ValidateReadOnlySQL lexed it
@@ -182,6 +185,11 @@ func AnalyzeMetricSQL(q string, refAliases map[string]bool) (MetricStatement, *G
 	if toks[len(toks)-1].text == ";" {
 		toks = toks[:len(toks)-1]
 	}
+	if len(toks) == 0 {
+		return MetricStatement{}, &GateError{Message: "a metric is one SELECT or WITH statement"}
+	}
+	// The read-only layer admits EXPLAIN, PRAGMA and VALUES; a metric is
+	// one SELECT or WITH and nothing else (the file doc's rule 2).
 	if lead := strings.ToLower(toks[0].text); toks[0].kind != 'i' || (lead != "select" && lead != "with") {
 		return MetricStatement{}, &GateError{Message: "a metric is one SELECT or WITH statement", Pos: toks[0].pos}
 	}

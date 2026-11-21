@@ -28,7 +28,7 @@ func TestSaveMetricScope(t *testing.T) {
 
 	// Create with a real scope: profile round-trips.
 	saved, err := svc.SaveMetric(models.MetricRow{
-		Name: "w2_rate", Title: "W2 rate", Expr: "from events: count()",
+		Name: "w2_rate", Title: "W2 rate", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE :steam_id <> ''",
 		Format: "int", Origin: "user", Scope: "profile",
 	})
 	if err != nil {
@@ -58,40 +58,18 @@ func TestSaveMetricScope(t *testing.T) {
 	// always writes a real scope now (the W1 '' → 'match' force is gone).
 	for _, bad := range []string{"", "career", "MATCH", "player"} {
 		_, err := svc.SaveMetric(models.MetricRow{
-			Name: "bad_scope", Expr: "from events: count()", Format: "int", Scope: bad,
+			Name: "bad_scope", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "int", Scope: bad,
 		})
 		if err == nil || !strings.Contains(err.Error(), "unknown scope") {
 			t.Errorf("scope %q: err = %v, want the friendly unknown-scope error", bad, err)
 		}
 	}
 
-	// The player anchor reaches the save path like any invalid expression.
-	_, err = svc.SaveMetric(models.MetricRow{
-		Name: "no_anchor", Expr: "from rounds: count()", Format: "int", Scope: "match",
-	})
-	if err == nil || !strings.Contains(err.Error(), "not player-anchored") {
-		t.Errorf("round-grain save err = %v, want the anchor rejection", err)
-	}
-
-	// PreviewMetric: the W2 arity (id, expr, scope, limit) — an empty
-	// expr runs the saved definition, and the preview is subject-grouped.
-	pv, err := svc.PreviewMetric(saved.ID, "", "", "", "", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric: %v", err)
-	}
-	if !strings.Contains(pv.SQL, "attacker AS grp") {
-		t.Errorf("preview SQL not subject-grouped:\n%s", pv.SQL)
-	}
-
 	// ValidateExpr: the W2 arity (expr only) — the anchor reports on the
 	// live check too, identically to a save.
-	ok, ee, err := svc.ValidateExpr("from events: count()", "player", "", "match")
+	ok, ee, err := svc.ValidateExpr("SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", "player", "", "match")
 	if err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr = (%v, %+v, %v), want ok", ok, ee, err)
-	}
-	ok, ee, _ = svc.ValidateExpr("from rounds: count()", "player", "", "match")
-	if ok || !strings.Contains(ee.Message, "not player-anchored") {
-		t.Errorf("ValidateExpr(round-grain) = (%v, %+v), want the anchor rejection", ok, ee)
 	}
 }
 
@@ -110,7 +88,7 @@ func TestSaveMetricFormatEnum(t *testing.T) {
 
 	for _, format := range []string{"", "int", "float1", "float2", "percent", "currency", "identity"} {
 		saved, err := svc.SaveMetric(models.MetricRow{
-			Name: "fmt_" + orName(format), Expr: "from events: count()",
+			Name: "fmt_" + orName(format), Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
 			Format: format, Scope: "match", Origin: "user",
 		})
 		if err != nil {
@@ -122,7 +100,7 @@ func TestSaveMetricFormatEnum(t *testing.T) {
 		}
 	}
 	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "fmt_bad", Expr: "from events: count()", Format: "float3", Scope: "match",
+		Name: "fmt_bad", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "float3", Scope: "match",
 	}); err == nil || !strings.Contains(err.Error(), "unknown format") ||
 		!strings.Contains(err.Error(), "float2") {
 		t.Errorf("float3 err = %v, want the friendly unknown-format copy naming float2", err)
@@ -159,7 +137,7 @@ func TestSaveMetricShortNameCap(t *testing.T) {
 				}
 				return r
 			}, short),
-			Expr: "from events: count()", Format: "int", Scope: "match",
+			Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "int", Scope: "match",
 			Origin: "user", ShortName: short,
 		}
 	}
@@ -267,7 +245,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	// (3) The DISTINCT path: a NEW metric whose name collides with the
 	// builtin still reports the uniqueness error — never the edit copy.
 	_, err = svc.SaveMetric(models.MetricRow{
-		Name: builtin.Name, Title: "Shadow", Expr: "from events: count()",
+		Name: builtin.Name, Title: "Shadow", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
 		Scope: "match", Doc: "d", Origin: "user",
 	})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
@@ -278,7 +256,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 
 	// (4) A user metric stays fully writable: create, edit, delete.
 	user, err := svc.SaveMetric(models.MetricRow{
-		Name: "my_rate", Title: "My rate", Expr: "from events: count()",
+		Name: "my_rate", Title: "My rate", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
 		Scope: "match", Doc: "Formula: count()", Origin: "user",
 	})
 	if err != nil {
@@ -298,7 +276,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	// builtin copy — the store's pre-existing origin!=user rejection
 	// still owns that path (plugin rows are the loader's territory).
 	if err := st.ReplacePluginMetrics("p1", []store.PluginMetricDef{
-		{Name: "plug_x", Title: "Plugin X", Expr: "from events: count()"},
+		{Name: "plug_x", Title: "Plugin X", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
@@ -333,7 +311,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 
 // TestListMetricsPageArity pins the service passthrough: all EIGHT
 // arguments reach the store in their positions — the five filter words
-// (origin, scope, subject, denominator, format) included — since a dropped,
+// (origin, scope, subject, format) included — since a dropped,
 // defaulted or reordered arg would select a different window than the
 // one asserted here. The filter vocabulary is the store's: each unknown
 // word comes back as the store's own pre-SQL rejection (which is only
@@ -347,14 +325,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	svc := &MetricsService{st: st}
 
 	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "per_round_rate", Title: "Per round rate", Expr: "from player_stats: ratio(sum(kills), sum(rounds_played))",
-		Scope: "match", Format: "float1", Denominator: "rounds", Doc: "Formula: kills / rounds played",
+		Name: "per_round_rate", Title: "Per round rate", Expr: "SELECT '' AS subject_key, '' AS dim, 1.0*SUM(kills)/NULLIF(SUM(rounds_played), 0) AS value FROM player_stats WHERE match_id = :match_id",
+		Scope: "match", Format: "float1", Doc: "Formula: kills / rounds played",
 		Origin: "user",
 	}); err != nil {
 		t.Fatalf("SaveMetric(match/rounds): %v", err)
 	}
 	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "career_rate", Title: "Career rate", Expr: "from player_stats: avg(adr)",
+		Name: "career_rate", Title: "Career rate", Expr: "SELECT '' AS subject_key, '' AS dim, AVG(adr) AS value FROM player_stats WHERE :steam_id <> ''",
 		Scope: "profile", Format: "float1", Doc: "Formula: mean ADR", Origin: "user",
 	}); err != nil {
 		t.Fatalf("SaveMetric(profile): %v", err)
@@ -374,7 +352,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// default window (the 2026-11-18 view-aggregate relocation re-pin,
 	// ME8 audit — 109 rows > 100), so
 	// limit 0's default window could no longer hold the whole list.
-	page, err := svc.ListMetricsPage("", "", "", "", "", "", 0, len(all))
+	page, err := svc.ListMetricsPage("", "", "", "", "", 0, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all empty): %v", err)
 	}
@@ -388,22 +366,22 @@ func TestListMetricsPageArity(t *testing.T) {
 	}
 
 	// The five filters in one call: origin 'user,plugin' + scope 'match' +
-	// subject 'player' + denominator 'rounds' + format 'float1' selects exactly the one
+	// subject 'player' + format 'float1' selects exactly the one
 	// seeded user row (the plugin's/other users' rows differ on a
 	// predicate, the builtins are excluded by origin) — so every filter
 	// word landed where it belongs.
-	page, err = svc.ListMetricsPage("", "user,plugin", "match", "player", "rounds", "float1", 0, 0)
+	page, err = svc.ListMetricsPage("", "user,plugin", "match", "player", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, match, rounds, float1): %v", err)
 	}
 	if len(page.Rows) != 1 || page.Rows[0].Name != "per_round_rate" ||
-		page.Rows[0].Scope != "match" || page.Rows[0].Denominator != "rounds" ||
+		page.Rows[0].Scope != "match" ||
 		page.Rows[0].Format != "float1" {
 		got := make([]string, 0, len(page.Rows))
 		for _, m := range page.Rows {
-			got = append(got, m.Name+"("+m.Scope+"/"+m.Denominator+"/"+m.Format+")")
+			got = append(got, m.Name+"("+m.Scope+"/"+m.Format+")")
 		}
-		t.Errorf("mine+match+rounds+float1 = %v, want [per_round_rate(match/rounds/float1)]", got)
+		t.Errorf("mine+match+float1 = %v, want [per_round_rate(match/float1)]", got)
 	}
 
 	// The format word answers in ITS position (arg 5): both seeded user
@@ -425,14 +403,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	if mineFloat1 == 0 {
 		t.Fatalf("fixture has no float1 mine row — the format narrowing check would be vacuous")
 	}
-	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "", "float1", 0, 0)
+	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=float1): %v", err)
 	}
 	if len(f1.Rows) != mineFloat1 {
 		t.Errorf("mine+float1 = %d rows, want every float1 mine row (%d)", len(f1.Rows), mineFloat1)
 	}
-	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "", "percent", 0, 0)
+	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "percent", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=percent): %v", err)
 	}
@@ -443,7 +421,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// The cursor (arg 6): the first row as afterID drops it and keeps
 	// the rest, in order — the explicit limit again (the list outgrew
 	// the store's default window with the partition addendum).
-	cursored, err := svc.ListMetricsPage("", "", "", "", "", "", all[0].ID, len(all))
+	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(cursor): %v", err)
 	}
@@ -453,7 +431,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	}
 
 	// The limit (arg 8): 1 row + the has-next probe.
-	limited, err := svc.ListMetricsPage("", "", "", "", "", "", 0, 1)
+	limited, err := svc.ListMetricsPage("", "", "", "", "", 0, 1)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(limit 1): %v", err)
 	}
@@ -464,296 +442,26 @@ func TestListMetricsPageArity(t *testing.T) {
 	// Each filter slot answers in ITS position: the store's pre-SQL
 	// rejection names the argument that carried the bad word — an arg
 	// dropped or shifted on the way down would surface as "" and pass.
-	// The denominator rows carry Reading B's vocabulary (2026-11-16): a
-	// bogus word, a known token mixed with an unknown one and an empty
-	// element are all the store's own `unknown denominator filter` —
-	// token-level rejection, not just word-level.
 	for _, tc := range []struct{ slot, word, want string }{
 		{"origin", "everything", `unknown origin filter "everything"`},
 		{"scope", "career", `unknown scope filter "career"`},
 		{"subject", "map", `unknown subject filter "map"`},
 		{"subject", "player,team,match", `unknown subject filter "player,team,match"`},
-		{"denominator", "games", `unknown denominator filter "games"`},
-		{"denominator", "rounds,games", `unknown denominator filter "rounds,games"`},
-		{"denominator", "rounds,", `unknown denominator filter "rounds,"`},
 		{"format", "huge", `unknown format filter "huge"`},
 	} {
 		var err error
 		switch tc.slot {
 		case "origin":
-			_, err = svc.ListMetricsPage("", tc.word, "", "", "", "", 0, 100)
+			_, err = svc.ListMetricsPage("", tc.word, "", "", "", 0, 100)
 		case "scope":
-			_, err = svc.ListMetricsPage("", "", tc.word, "", "", "", 0, 100)
+			_, err = svc.ListMetricsPage("", "", tc.word, "", "", 0, 100)
 		case "subject":
-			_, err = svc.ListMetricsPage("", "", "", tc.word, "", "", 0, 100)
-		case "denominator":
-			_, err = svc.ListMetricsPage("", "", "", "", tc.word, "", 0, 100)
+			_, err = svc.ListMetricsPage("", "", "", tc.word, "", 0, 100)
 		case "format":
-			_, err = svc.ListMetricsPage("", "", "", "", "", tc.word, 0, 100)
+			_, err = svc.ListMetricsPage("", "", "", "", tc.word, 0, 100)
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s filter %q: err = %v, want the store's %s", tc.slot, tc.word, err, tc.want)
 		}
-	}
-}
-
-// TestSaveMetricSubjectScopeMatrix pins the §3.1 save-time half of the
-// subject axis: the addressing vocabulary validates beside Scope/Format
-// with its own friendly messages, the INVALID subject × scope
-// combinations are rejected with their own copy (a match or team has no
-// career), valid rows round-trip subject + partition through the write,
-// and the ref key-containment rule (§3.1) reaches the save beside the
-// pre-existing cross-scope rule — same refusal, the save's message.
-// The compile enforces the same matrix on every path (metrics package
-// pins), so a swept row can exist only through this door.
-func TestSaveMetricSubjectScopeMatrix(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "subject-scope.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
-	svc := &MetricsService{st: st}
-
-	// Valid: a match-subject round-grain metric saves and round-trips
-	// its addressing (the anchor is the match grain — any source).
-	matchSubj, err := svc.SaveMetric(models.MetricRow{
-		Name: "rounds_total", Title: "Rounds total", Expr: "from rounds: count()",
-		Format: "int", Scope: "match", Subject: "match", Origin: "user",
-	})
-	if err != nil {
-		t.Fatalf("SaveMetric(match subject): %v", err)
-	}
-	if matchSubj.Subject != "match" || matchSubj.Partition != "" {
-		t.Errorf("saved = subject %q partition %q, want match/'' (round-trip)", matchSubj.Subject, matchSubj.Partition)
-	}
-
-	// Valid: a team-subject metric with a declared partition round-trips.
-	teamSubj, err := svc.SaveMetric(models.MetricRow{
-		Name: "team_equip", Title: "Team equip", Expr: "from round_economy: sum(equip_value)",
-		Format: "currency", Scope: "match", Subject: "team", Origin: "user",
-	})
-	if err != nil {
-		t.Fatalf("SaveMetric(team subject): %v", err)
-	}
-	if teamSubj.Subject != "team" {
-		t.Errorf("saved subject = %q, want team", teamSubj.Subject)
-	}
-
-	// Invalid combinations — one message each (§3.1's per-combination rule).
-	for _, subject := range []string{"match", "team"} {
-		_, err := svc.SaveMetric(models.MetricRow{
-			Name: "bad_career", Expr: "from rounds: count()", Format: "int",
-			Scope: "profile", Subject: subject, Origin: "user",
-		})
-		if err == nil || !strings.Contains(err.Error(), "can't be profile-scoped") {
-			t.Errorf("%s subject at profile scope: err = %v, want the subject × scope refusal", subject, err)
-		}
-	}
-	// Vocabulary — friendly pre-write errors, the Format pattern.
-	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "bad_subject", Expr: "from events: count()", Format: "int",
-		Scope: "match", Subject: "squad", Origin: "user",
-	}); err == nil || !strings.Contains(err.Error(), "unknown subject") {
-		t.Errorf("unknown subject: err = %v, want the friendly vocabulary error", err)
-	}
-	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "bad_partition", Expr: "from events: count()", Format: "int",
-		Scope: "match", Partition: "floor", Origin: "user",
-	}); err == nil || !strings.Contains(err.Error(), "unknown partition") {
-		t.Errorf("unknown partition: err = %v, want the friendly vocabulary error", err)
-	}
-	// The partition column rule reaches the save like any invalid
-	// expression (events carries no side).
-	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "bad_partition_col", Expr: "from events: count()", Format: "int",
-		Scope: "match", Partition: "side", Origin: "user",
-	}); err == nil || !strings.Contains(err.Error(), "must carry the partition column") {
-		t.Errorf("partitionless source: err = %v, want the §6.5 refusal", err)
-	}
-
-	// Ref containment at SAVE (§3.1): a player metric cannot read the
-	// team-subject metric above — the save's copy (not the compile's
-	// "...subject key)" spelling).
-	_, err = svc.SaveMetric(models.MetricRow{
-		Name: "player_reads_team", Expr: "from events: metric('team_equip')", Format: "int",
-		Scope: "match", Subject: "player", Origin: "user",
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be used inside a player-subject metric") ||
-		!strings.Contains(err.Error(), "reading metric's subject)") {
-		t.Errorf("player→team ref: err = %v, want the save-side containment refusal", err)
-	}
-	// Allowed the other way: a team metric may read the match-subject
-	// metric (its row key pins the match) — saves clean.
-	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "team_reads_match", Expr: "from round_economy: metric('rounds_total')",
-		Format: "int", Scope: "match", Subject: "team", Origin: "user",
-	}); err != nil {
-		t.Fatalf("team→match ref save: %v", err)
-	}
-	// A match-subject metric reading the team metric must be refused
-	// (a match row cannot point at one of its two teams).
-	_, err = svc.SaveMetric(models.MetricRow{
-		Name: "match_reads_team", Expr: "from rounds: metric('team_equip')", Format: "int",
-		Scope: "match", Subject: "match", Origin: "user",
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be used inside a match-subject metric") {
-		t.Errorf("match→team ref: err = %v, want the containment refusal", err)
-	}
-}
-
-// TestPreviewMetricSubjectShapes pins §6.7's preview row SHAPE at the
-// service seam: the compiled statement groups by the declared subject's
-// key (a team statement leads with its match address — the row shape is
-// subject key + address, ready for its surface).
-func TestPreviewMetricSubjectShapes(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "subject-preview.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
-	svc := &MetricsService{st: st}
-
-	matchSubj, err := svc.SaveMetric(models.MetricRow{
-		Name: "pv_rounds", Title: "PV rounds", Expr: "from rounds: count()",
-		Format: "int", Scope: "match", Subject: "match", Origin: "user",
-	})
-	if err != nil {
-		t.Fatalf("SaveMetric: %v", err)
-	}
-	pv, err := svc.PreviewMetric(matchSubj.ID, "", "", "", "", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric(match subject): %v", err)
-	}
-	if !strings.Contains(pv.SQL, "match_id AS grp") {
-		t.Errorf("match-subject preview not grouped by the match address:\n%s", pv.SQL)
-	}
-
-	teamSubj, err := svc.SaveMetric(models.MetricRow{
-		Name: "pv_team", Title: "PV team", Expr: "from round_economy: sum(equip_value)",
-		Format: "currency", Scope: "match", Subject: "team", Origin: "user",
-	})
-	if err != nil {
-		t.Fatalf("SaveMetric: %v", err)
-	}
-	pv, err = svc.PreviewMetric(teamSubj.ID, "", "", "", "", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric(team subject): %v", err)
-	}
-	if !strings.Contains(pv.SQL, "match_id AS mid, team AS grp") {
-		t.Errorf("team-subject preview row shape lacks the match address + team key:\n%s", pv.SQL)
-	}
-}
-
-// TestValidateExprCarriesDraftAddressing pins the address-aware live
-// check (2026-11-18): the Builder's debounced validation compiles a
-// draft under ITS OWN subject/partition/scope instead of the zero-value
-// address (which normalized to subject "player"). Before it, opening an
-// identity built-in reported a FALSE refusal — `argmax() needs subject
-// "match" … (declared subject "player")` at the argmax's byte position —
-// and no argmax metric could ever be authored, because the same
-// player-only address gated Save.
-func TestValidateExprCarriesDraftAddressing(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "live-check.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
-	svc := &MetricsService{st: st}
-
-	// (a) The FIVE identity built-ins validate CLEAN under their STORED
-	// addresses — the fail-before-fix case (base: top_fragger refused
-	// with `argmax() needs subject "match"`).
-	for _, name := range []string{"top_fragger", "best_adr", "most_util", "entry_opens", "most_mvps"} {
-		m, err := st.GetMetricByName(name)
-		if err != nil {
-			t.Fatalf("GetMetricByName(%s): %v", name, err)
-		}
-		ok, ee, err := svc.ValidateExpr(m.Expr, m.Subject, m.Partition, m.Scope)
-		if err != nil || !ok || ee.Message != "" {
-			t.Errorf("ValidateExpr(%s) = (%v, %+v, %v), want clean under its stored address", name, ok, ee, err)
-		}
-	}
-
-	// (b) A subject=match DRAFT validates correctly (the authoring path
-	// the player-only address used to gate), while the same expression
-	// on a PLAYER subject still refuses — compile.go's argmax contract
-	// stays load-bearing.
-	const argmax = "from player_stats: argmax(kills)"
-	if ok, ee, err := svc.ValidateExpr(argmax, "match", "", "match"); err != nil || !ok || ee.Message != "" {
-		t.Errorf("ValidateExpr(argmax, subject=match) = (%v, %+v, %v), want clean", ok, ee, err)
-	}
-	ok, ee, err := svc.ValidateExpr(argmax, "player", "", "match")
-	if err != nil {
-		t.Fatalf("ValidateExpr(argmax, subject=player): %v", err)
-	}
-	if ok || !strings.Contains(ee.Message, `argmax() needs subject "match"`) {
-		t.Errorf("ValidateExpr(argmax, subject=player) = (%v, %+v), want the argmax subject refusal", ok, ee)
-	}
-
-	// The subject × scope half of the matrix reaches the live check too:
-	// a match-subject draft on PROFILE scope refuses exactly as the save
-	// would (a match has no career), while the player default stays clean.
-	if ok, ee, err := svc.ValidateExpr("from player_stats: avg(adr)", "match", "", "profile"); err != nil || ok {
-		t.Errorf("ValidateExpr(match subject, profile scope) = (%v, %+v, %v), want the matrix refusal", ok, ee, err)
-	} else if !strings.Contains(ee.Message, "can't be profile-scoped") && !strings.Contains(ee.Message, "profile") {
-		t.Errorf("profile refusal message = %q, want it to name the profile scope", ee.Message)
-	}
-}
-
-// TestPreviewMetricCarriesDraftAddressing pins the address-aware ad-hoc
-// preview (2026-11-18 — the deferral PreviewMetric's draft leg carried
-// is fulfilled): a draft previews under ITS OWN subject/partition/scope
-// — the same draftAddress the live check and the save use — instead of
-// the zero-value address, which normalized to subject "player". Before
-// it, a match-subject argmax draft false-refused at Preview with
-// `invalid metric expression: argmax() needs subject "match": it picks
-// each match's leading player (declared subject "player")` although the
-// same expression validates and saves clean.
-func TestPreviewMetricCarriesDraftAddressing(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "preview-address.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
-	svc := &MetricsService{st: st}
-
-	// (a) A subject=match draft whose lead is legal ONLY for its own
-	// subject previews successfully under the draft's addressing (the
-	// base false-refusal above).
-	const argmax = "from player_stats: argmax(kills)"
-	pv, err := svc.PreviewMetric(0, argmax, "match", "", "match", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric(match-subject argmax draft): %v", err)
-	}
-	if pv.SQL == "" {
-		t.Error("match-subject argmax draft previewed without provenance SQL")
-	}
-
-	// (b) The same expression on a PLAYER subject still refuses — the
-	// compile's argmax contract stays load-bearing at preview exactly as
-	// the live check pins it.
-	if _, err := svc.PreviewMetric(0, argmax, "player", "", "match", 10); err == nil ||
-		!strings.Contains(err.Error(), `argmax() needs subject "match"`) {
-		t.Errorf("PreviewMetric(argmax, subject=player) err = %v, want the argmax subject refusal", err)
-	}
-
-	// (c) Default addressing is byte-unchanged: an omitted subject
-	// previews statement-for-statement like an explicit player one
-	// (draftAddress's "" → player), and the statement is the one the
-	// player-default leg produced before the threading landed.
-	def, err := svc.PreviewMetric(0, "from events: count()", "", "", "", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric(default addressing): %v", err)
-	}
-	const baseSQL = `SELECT attacker AS grp, COUNT(*), COUNT(*) AS n FROM events WHERE attacker <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY grp ORDER BY grp`
-	if def.SQL != baseSQL {
-		t.Errorf("default-addressing draft SQL changed (byte-unchanged expected):\ngot:  %s\nwant: %s", def.SQL, baseSQL)
-	}
-	pl, err := svc.PreviewMetric(0, "from events: count()", "player", "", "match", 10)
-	if err != nil {
-		t.Fatalf("PreviewMetric(explicit player): %v", err)
-	}
-	if def.SQL != pl.SQL {
-		t.Errorf("default-addressing SQL != explicit player SQL\ndefault: %s\nplayer:  %s", def.SQL, pl.SQL)
 	}
 }

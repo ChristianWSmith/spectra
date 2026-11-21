@@ -49,7 +49,7 @@ import (
 // attacker's (`events` has no side column; the side-carrying sources
 // (player_stats, round_player_sides) join only on the row's own
 // subject; exists()'s inner scan is the primary events table alone —
-// whitelist.go), so it was never seedable and never had a surface.
+// the grammar), so it was never seedable and never had a surface.
 // Nothing of it survives here — not the column, its SQL, or its
 // assertions.
 //
@@ -129,29 +129,12 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 	return out
 }
 
-// combatPreview runs one seed definition at a scope and keys its rows
-// by subject (previewAt's row-preserving twin — N and Label matter
-// here).
-func combatPreview(t *testing.T, st *store.Store, def Def, scope string) map[string]PreviewRow {
+// combatPreview runs one seed statement at a scope and keys its rows by
+// subject. Raw rows carry only subject_key, dim and value (ruling 22).
+func combatPreview(t *testing.T, st *store.Store, expr string, scope string) map[string]seedRow {
 	t.Helper()
-	if IsRawSQL(def.Expr) {
-		// Raw seeds carry no N or label column (ruling 22: only
-		// subject_key, dim and value are read; the rest is opaque JSON).
-		out := map[string]PreviewRow{}
-		for _, r := range rawPreviewRows(t, st, def.Expr, scope) {
-			out[r.SubjectKey] = PreviewRow{Group: r.SubjectKey, Value: rawValue(r)}
-		}
-		return out
-	}
-	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
-	if perr != nil {
-		t.Fatalf("parse %q: %v", def.Expr, perr)
-	}
-	if err != nil {
-		t.Fatalf("run %q (scope %q): %v (sql: %s)", def.Expr, scope, err, pv.SQL)
-	}
-	out := make(map[string]PreviewRow, len(pv.Rows))
-	for _, r := range pv.Rows {
+	out := map[string]seedRow{}
+	for _, r := range previewRowsFor(t, st, expr, scope) {
 		out[r.Group] = r
 	}
 	return out

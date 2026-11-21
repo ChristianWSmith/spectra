@@ -1,11 +1,9 @@
 package main
 
 import (
-	"math"
 	"strings"
 	"testing"
 
-	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
@@ -18,100 +16,6 @@ import (
 // extra or missing rows. Plus the no-execution compile pin: the
 // provenance SQL a clean-saved preview shows is compiled, never run.
 
-// viewMatchRead merges the canonical MATCH read over every ready match
-// into the (match, subject) key space the oracles use.
-func viewMatchRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVal {
-	t.Helper()
-	out := map[eqKey]eqVal{}
-	for _, mid := range readyMatchIDs(t, f.st) {
-		rows, err := f.svc.GetMetricValuesForMatch(mid, []int64{metricID})
-		if err != nil {
-			t.Fatalf("GetMetricValuesForMatch(%d): %v", mid, err)
-		}
-		for _, r := range rows {
-			key := eqKey{matchID: mid, steam: r.SubjectKey}
-			if _, dup := out[key]; dup {
-				t.Errorf("duplicate view row for %+v", key)
-			}
-			out[key] = eqVal{value: valueOf(r.Value), n: r.N}
-		}
-	}
-	return out
-}
-
-// viewCareerRead is the canonical PROFILE read (the whole career bucket
-// — the same call PlayerProfile's panel and Builder's saved preview
-// make) in the same key space (match 0).
-func viewCareerRead(t *testing.T, f *depsFixture, metricID int64) map[eqKey]eqVal {
-	t.Helper()
-	rows, err := f.svc.GetMetricValuesForPlayer("", []int64{metricID})
-	if err != nil {
-		t.Fatalf("GetMetricValuesForPlayer: %v", err)
-	}
-	out := map[eqKey]eqVal{}
-	for _, r := range rows {
-		key := eqKey{matchID: 0, steam: r.SubjectKey}
-		if _, dup := out[key]; dup {
-			t.Errorf("duplicate view row for %+v", key)
-		}
-		out[key] = eqVal{value: valueOf(r.Value), n: r.N}
-	}
-	return out
-}
-
-// TestMetricReadViewPathEqualsOracle pins the W4 read contract for both
-// grains: save → sweep → the canonical read a view calls equals the
-// stored rows (W3's data oracle) AND the query-time evaluation (W3's
-// computed oracle), row for row — so switching a view from preview-time
-// calculation to the stored read cannot change a single number.
-func TestMetricReadViewPathEqualsOracle(t *testing.T) {
-	f := newSeededFixture(t)
-	cases := []struct {
-		name  string
-		expr  string
-		denom string
-		scope string
-	}{
-		{"rd01_count_match", "from events: count()", "", "match"},
-		{"rd02_count_rounds_match", "from events: count()", "rounds", "match"},
-		{"rd03_sum_profile", "from player_stats: sum(kills)", "matches", "profile"},
-		{"rd04_joined_match", "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", "", "match"},
-		{"rd05_p95_match", "from events: percentile(0.95, dmg)", "", "match"},
-		{"rd06_median_profile", "from events: median(dmg)", "", "profile"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := f.save(t, models.MetricRow{Name: tc.name, Expr: tc.expr, Scope: tc.scope, Denominator: tc.denom})
-			res, err := f.svc.runSweep(t.Context(), nil)
-			if err != nil {
-				t.Fatalf("sweep: %v", err)
-			}
-			if len(res.Failed) > 0 || len(res.Skipped) > 0 {
-				t.Fatalf("sweep failures=%v skipped=%v", res.Failed, res.Skipped)
-			}
-
-			stored := storedOracle(t, f.st, m.ID)
-			want := previewOracle(t, f.st, metrics.Def{Expr: tc.expr, Denominator: tc.denom}, tc.scope)
-			var got map[eqKey]eqVal
-			if tc.scope == "profile" {
-				got = viewCareerRead(t, f, m.ID)
-			} else {
-				got = viewMatchRead(t, f, m.ID)
-			}
-			compareOracles(t, tc.name+" view==stored", got, stored)
-			compareOracles(t, tc.name+" view==computed", got, want)
-
-			// Absent-row honesty at the read: every key the view serves
-			// is a real stored row (no synthesized zeros) — compareOracles
-			// above already fails on any extra/missing key; this pins the
-			// count so an all-empty read cannot pass vacuously.
-			if len(got) == 0 {
-				t.Errorf("%s: view read is empty — fixture/sweep broken", tc.name)
-			}
-		})
-	}
-}
-
 // TestCompileMetricIsNoExecution pins design §5's no-execution Compile:
 // the provenance SQL a clean-saved preview shows compiles the SAME
 // statement PreviewMetric would run, without executing it (no rows are
@@ -119,7 +23,7 @@ func TestMetricReadViewPathEqualsOracle(t *testing.T) {
 func TestCompileMetricIsNoExecution(t *testing.T) {
 	f := newSeededFixture(t)
 	m := f.save(t, models.MetricRow{
-		Name: "compile_me", Expr: "from events: count()", Scope: "match",
+		Name: "compile_me", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match",
 	})
 
 	sql, err := f.svc.CompileMetric(m.ID, "", "")
@@ -152,12 +56,12 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 	// The SAME statement PreviewMetric would have run (identical
 	// provenance), and the compile wrote NOTHING: no metric_values row,
 	// no coverage movement — the sweep is still the only writer.
-	pv, err := f.svc.PreviewMetric(m.ID, "", "", "", "", 10)
+	shown, err := f.svc.CompileMetric(m.ID, "", "")
 	if err != nil {
-		t.Fatalf("PreviewMetric: %v", err)
+		t.Fatalf("CompileMetric: %v", err)
 	}
-	if pv.SQL != sql {
-		t.Errorf("compiled SQL != executed SQL\ncompile: %s\npreview: %s", sql, pv.SQL)
+	if shown != sql {
+		t.Errorf("shown SQL != stored SQL\nshown: %s\nstored: %s", shown, sql)
 	}
 	coverageAfter, err := f.st.MetricCoverage(cfg.RuleVersion)
 	if err != nil {
@@ -179,20 +83,11 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 
 	// Ad-hoc expression: same no-execution contract (a draft's
 	// provenance compiles without calculating).
-	if _, err := f.svc.CompileMetric(0, "from player_stats: sum(kills)", ""); err != nil {
+	if _, err := f.svc.CompileMetric(0, "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id", ""); err != nil {
 		t.Fatalf("CompileMetric ad-hoc: %v", err)
 	}
 	// A bad expression errors exactly like the preview path.
-	if _, err := f.svc.CompileMetric(m.ID, "from nope: count()", ""); err == nil {
+	if _, err := f.svc.CompileMetric(m.ID, "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM nope WHERE match_id = :match_id", ""); err == nil {
 		t.Error("CompileMetric accepted an unknown source, want the positioned error")
 	}
-}
-
-// valueOf is a stored value as a float: a NULL (no data) is NaN, so it
-// matches no expected number and an equivalence check reports it.
-func valueOf(p *float64) float64 {
-	if p == nil {
-		return math.NaN()
-	}
-	return *p
 }

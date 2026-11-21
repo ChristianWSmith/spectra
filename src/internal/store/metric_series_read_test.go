@@ -505,7 +505,7 @@ func TestGetTrendAnyMetricName(t *testing.T) {
 
 	// A profile-scope name resolves but never reaches a match-grain
 	// series — an empty series, not an error and not a recompute.
-	seedScopedMetric(t, s, "career_probe", "profile", "rounds")
+	seedScopedMetric(t, s, "career_probe", "profile")
 	pts, err = s.GetTrend("100", "career_probe")
 	if err != nil {
 		t.Fatalf("GetTrend(career_probe): %v", err)

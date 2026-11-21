@@ -28,7 +28,6 @@
   } from '../metricstate.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
   import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
-  import { denomFilterWord } from '../metricdenoms.js';
   import { originFilterWord } from '../metricorigins.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import SortTh from '../components/SortTh.svelte';
@@ -187,13 +186,10 @@
     // Origin group: the owner's STANDING default — Built-in OFF, the
     // two other origins ON — so the initial view lists every
     // non-builtin metric (user + plugin), the same rows the group
-    // showed before it gained its third box. The Scope and Denominator
-    // groups start ALL their
-    // options ON (the owner's addendum: "both scopes and both
-    // denominators toggled on"; the Denominator group gained its third
-    // None box with Reading B, 2026-11-16, also ON), so neither narrows
-    // the first render. Each group narrows SERVER-side only when an
-    // option goes off (originFilter / scopeFilter / denomFilter below),
+    // showed before it gained its third box. The Scope group starts ALL
+    // its options ON, so it does not narrow the first render. Each group
+    // narrows SERVER-side only when an option goes off (originFilter /
+    // scopeFilter below),
     // and all-off is legal in every group.
     builtin: false,
     custom: true,
@@ -206,9 +202,6 @@
     subjectPlayer: true,
     subjectMatch: true,
     subjectTeam: true,
-    denomRounds: true,
-    denomMatches: true,
-    denomNone: true,
     // Type group: the owner's ruling ("all six checked — auto + int +
     // float1 + float2 + percent + currency") extended by the seventh
     // Identity box (metrics Phase 7, 2026-11-18 — the key-valued
@@ -240,9 +233,6 @@
   let subjectPlayer = $state(bldSeed.subjectPlayer);
   let subjectMatch = $state(bldSeed.subjectMatch);
   let subjectTeam = $state(bldSeed.subjectTeam);
-  let denomRounds = $state(bldSeed.denomRounds);
-  let denomMatches = $state(bldSeed.denomMatches);
-  let denomNone = $state(bldSeed.denomNone);
   let formatAuto = $state(bldSeed.formatAuto);
   let formatInt = $state(bldSeed.formatInt);
   let formatFloat1 = $state(bldSeed.formatFloat1);
@@ -265,9 +255,6 @@
       subjectPlayer,
       subjectMatch,
       subjectTeam,
-      denomRounds,
-      denomMatches,
-      denomNone,
       formatAuto,
       formatInt,
       formatFloat1,
@@ -391,7 +378,6 @@
       // partition plumbing), so a saved copy never silently drops it.
       partition: '',
       format: '',
-      denominator: '',
       doc: '',
       origin: 'user',
       pluginId: '',
@@ -408,7 +394,6 @@
       subject: f.subject,
       partition: f.partition,
       format: f.format,
-      denominator: f.denominator,
       doc: f.doc,
     });
   }
@@ -525,18 +510,9 @@
     originFilterWord({ builtin, user: custom, plugin }),
   );
 
-  // scopeFilter / denomFilter — the SAME derivation over the other two
-  // SERVER-side groups (Match / Profile, Rounds / Matches / None). The
-  // store owns what each word means. scopeFilter is the pair shape:
-  // both checked = no predicate, one checked = that side, neither =
-  // 'none'. denomFilter is the CHECKED-SET shape since Reading B (the
-  // owner-accepted overturn of the 2026-11-14 denominator-less rule,
-  // 2026-11-16): the group's boxes are exactly the column's three
-  // values, so the word is the canonical comma-subset of the checked
-  // buckets — all three = '' (no predicate), none = 'empty' (the empty
-  // set, nothing passes), otherwise the subset ("rounds,none") — the
-  // ONE composer in lib/metricdenoms.js, mirroring the store's
-  // metricDenomTokens.
+  // scopeFilter — the Match / Profile group (the pair shape: both
+  // checked = no predicate, one checked = that side, neither = 'none').
+  // The store owns what each word means.
   const scopeFilter = $derived.by(() => {
     if (scopeMatch && scopeProfile) return '';
     if (scopeMatch) return 'match';
@@ -558,9 +534,6 @@
     if (subjectTeam) on.push('team');
     return on.length ? on.join(',') : 'none';
   });
-  const denomFilter = $derived(
-    denomFilterWord({ rounds: denomRounds, matches: denomMatches, none: denomNone }),
-  );
 
   // pinFilter — the Pinning group's (the fifth) checked set → word:
   // both checked = no filter, one = that word, neither = nothing passes
@@ -614,8 +587,7 @@
 
   // formatFilter — the fourth group's (Type) checked-set → server word:
   // unlike the pair-shaped groups (Origin / Scope / Pinning) it is
-  // seven checkboxes (the Denominator group's three are the checked-set
-  // shape too — denomFilterWord above), so the derivation is the canonical one
+  // seven checkboxes, so the derivation is the canonical one
   // in lib/metricformats.js (all seven = '' no
   // predicate, none = 'none', otherwise the canonical comma-subset —
   // "auto" being the format select's Auto, the '' format, "identity"
@@ -650,7 +622,6 @@
   let appliedFilter = $state('');
   let appliedScope = $state('');
   let appliedSubject = $state('');
-  let appliedDenom = $state('');
   let appliedFormat = $state('');
   // listGen distinguishes the current window sequence from stale replies
   // (see refreshList/loadMore); non-reactive on purpose — it is not state.
@@ -694,7 +665,7 @@
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR filter change (the Library's debounce)
   // so typing doesn't hammer the store — and ANY checkbox flip in the
-  // multi-select's four SERVER-side groups (origin, scope, denominator
+  // multi-select's four SERVER-side groups (origin, scope,
   // or format) lands on this SAME path, which restarts the window at
   // cursor 0 (a filter change never appends onto the previous filter's
   // windows). The fifth group (Pinning) is render-time and deliberately
@@ -706,14 +677,13 @@
     const f = originFilter;
     const sc = scopeFilter;
     const sj = subjectFilter;
-    const dn = denomFilter;
     const fm = formatFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, f, sc, sj, dn, fm);
+      refreshList(q, f, sc, sj, fm);
       return;
     }
-    const t = setTimeout(() => refreshList(q, f, sc, sj, dn, fm), 250);
+    const t = setTimeout(() => refreshList(q, f, sc, sj, fm), 250);
     return () => clearTimeout(t);
   });
 
@@ -721,7 +691,7 @@
   // window for the query/filters currently in play.
   async function loadLists() {
     loadPluginStates();
-    await refreshList(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter);
+    await refreshList(query, originFilter, scopeFilter, subjectFilter, formatFilter);
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
@@ -731,23 +701,22 @@
   // Load-more reply landing after a restart is dropped instead of
   // appended (the Library's refreshList/loadMore shape). Every
   // narrowing here is SERVER-side (query LIKE + originFilter +
-  // scopeFilter + denomFilter + formatFilter — store.ListMetricsPage),
+  // scopeFilter + formatFilter — store.ListMetricsPage),
   // never a client-side slice of a window. The ONE sanctioned exception
   // is the Pinning group (visibleMetrics above): a filter over state
   // the backend cannot know — pins live in localStorage — is a
   // render-time filter over these accumulated windows, never a slice of
   // a window handed to it.
-  async function refreshList(q = '', f = '', sc = '', sj = '', dn = '', fm = '') {
+  async function refreshList(q = '', f = '', sc = '', sj = '', fm = '') {
     appliedQuery = q;
     appliedFilter = f;
     appliedScope = sc;
     appliedSubject = sj;
-    appliedDenom = dn;
     appliedFormat = fm;
     const gen = ++listGen;
     loading = true;
     try {
-      const page = await listMetricsPage(q, f, sc, sj, dn, fm, 0, PAGE_SIZE);
+      const page = await listMetricsPage(q, f, sc, sj, fm, 0, PAGE_SIZE);
       if (gen !== listGen) return;
       metrics = (page && page.rows) || [];
       hasNext = !!(page && page.hasNext);
@@ -781,7 +750,6 @@
         appliedFilter,
         appliedScope,
         appliedSubject,
-        appliedDenom,
         appliedFormat,
         last.id,
         PAGE_SIZE,
@@ -848,7 +816,6 @@
       subject: m.subject || 'player',
       partition: m.partition || '',
       format: m.format || '',
-      denominator: m.denominator || '',
       doc: m.doc || '',
       origin: m.origin,
       pluginId: m.pluginId || '',
@@ -942,7 +909,7 @@
         preview = null;
         previewKey = null;
       }
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject, appliedDenom);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
     } catch (e) {
       saveError = errText(e);
     }
@@ -996,7 +963,6 @@
         partition: form.partition,
         format: form.format,
         doc: form.doc.trim(),
-        denominator: form.denominator,
         origin: 'user',
         pluginId: '',
       };
@@ -1007,7 +973,7 @@
       form.title = saved.title;
       form.shortName = saved.shortName;
       baseline = snapshot(form);
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject, appliedDenom);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -1194,13 +1160,6 @@
   </span>
   <span class="bld-row-sub">
     <span class="chip">{m.scope || 'match'}</span>
-    <!-- The denominator chip (w19 owner ruling): ALWAYS visible — the
-         SAME plain .chip the scope chip renders (no new concept
-         class), and a denominator-less row states the vocabulary's own
-         denominator-less word (lib/metricdenoms.js METRIC_DENOMS'
-         'none' bucket — the same word the editor's Denominator select
-         shows) instead of dropping the chip. -->
-    <span class="chip">{m.denominator || S.builder.denomNone}</span>
     <span class="chip">{m.format || 'raw'}</span>
     <!-- The compute-state surface (design §4/§5): EVERY list item wears
          its state chip through StatusChip — processing quantifies with
@@ -1333,8 +1292,8 @@
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
-           panel with six labelled groups (Origin / Scope / Subject /
-           Denominator / Type / Pinning) over the SAME viewstate
+           panel with five labelled groups (Origin / Scope / Subject /
+           Type / Pinning) over the SAME viewstate
            booleans and the SAME debounced list read below — the first
            four SERVER-side, the Pinning group render-time (the one
            sanctioned exception — see visibleMetrics). The FilterBar
@@ -1440,35 +1399,6 @@
                   /> {S.builder.filterTeam}</label
                 >
               </div>
-              <div class="bld-filter-group" role="group" aria-label={S.builder.denominatorLabel}>
-                <span class="filt-lab">{S.builder.denominatorLabel}</span>
-                <!-- Reading B (2026-11-16): the group's boxes are
-                     exactly the column's three values — Rounds, Matches
-                     then None (the denominator-less rows) — and a row
-                     passes iff its bucket is checked (all three = no
-                     predicate, none = nothing passes). The word each
-                     checked set sends is denomFilterWord's, in this box
-                     order. -->
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={denomRounds}
-                    onchange={(e) => (denomRounds = e.currentTarget.checked)}
-                  /> {S.builder.filterRounds}</label
-                >
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={denomMatches}
-                    onchange={(e) => (denomMatches = e.currentTarget.checked)}
-                  /> {S.builder.filterMatches}</label>
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={denomNone}
-                    onchange={(e) => (denomNone = e.currentTarget.checked)}
-                  /> {S.builder.filterNone}</label>
-              </div>
               <!-- Type = the metric's format (the canonical format
                    vocabulary, lib/metricformats.js): every
                    option its own checkbox, ALL seven checked by default
@@ -1557,8 +1487,8 @@
         {:else}
           <!-- Empty: either a server-side filter group narrowed the
                window to nothing (an empty My-metrics side, both origin
-               options off, Match+Profile off, every Type box off, the
-               Denominator boxes down to none) or the render-time
+               options off, Match+Profile off, every Type box off) or the
+               render-time
                Pinning group hid every fetched row — legal, and said so
                here instead of leaving a blank panel. The gate is the
                FILTERED count (visibleMetrics), so a fully pin-filtered
@@ -1643,10 +1573,9 @@
         {/if}
 
         <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
-             name, row 2 = Scope / Denominator / Format — the grid below
-             is a fixed three columns, so the DOM order IS the row order
-             (Denominator therefore precedes Format). Doc and Expression
-             keep their full-width rows underneath. -->
+             name, row 2 = Scope / Format — the grid below is a fixed
+             three columns, so the DOM order IS the row order. Doc and
+             Expression keep their full-width rows underneath. -->
         <div class="bld-fields">
           <!-- readonly, never disabled, on the text fields (owner wave):
                a built-in's contents stay selectable and copyable while
@@ -1686,8 +1615,8 @@
             />
           </div>
           <!-- Subject sits immediately LEFT of Scope (the owner's
-               placement), the two alone on their row with Denominator
-               / Format on the row below (owner, 2026-11-18): the
+               placement), the two alone on their row with Format on the
+               row below (owner, 2026-11-18): the
                metrics subject axis — what the number is
                about — beside where it is addressed. The server's
                subject × scope matrix guards the pair (an illegal
@@ -1706,14 +1635,6 @@
             <select id="bld-scope" class="input" bind:value={form.scope} disabled={builtinLoaded}>
               <option value="match">{S.builder.scopeMatchOption}</option>
               <option value="profile">{S.builder.scopeProfileOption}</option>
-            </select>
-          </div>
-          <div class="bld-field half">
-            <label class="field-label" for="bld-denom">{S.builder.denominatorLabel}</label>
-            <select id="bld-denom" class="input" bind:value={form.denominator} disabled={builtinLoaded}>
-              <option value="">{S.builder.denomNone}</option>
-              <option value="rounds">{S.builder.denomRounds}</option>
-              <option value="matches">{S.builder.denomMatches}</option>
             </select>
           </div>
           <div class="bld-field half">
@@ -1752,7 +1673,7 @@
               placeholder={EXAMPLE}
               readonly={builtinLoaded}
             ></textarea>
-            <p class="bld-hint mono">from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) | percentile(p, col) — a comma list LEFT JOINs the sources (no ON/join syntax); denominator: rounds | matches</p>
+            <p class="bld-hint mono">One SELECT or WITH statement over the metric-readable tables; it returns subject_key, dim and value. :match_id, :steam_id and :round are the reserved binds.</p>
           </div>
         </div>
 
@@ -1870,11 +1791,6 @@
         {#if previewError}
           <p class="error" role="alert">{previewError}</p>
         {:else if preview}
-          {#if previewAdhoc && form.denominator}
-            <p class="muted bld-note">
-              {S.fill(S.builder.adhocNote, { denominator: form.denominator })}
-            </p>
-          {/if}
           {#if !previewAdhoc}
             <!-- Which unit the stored rows came from (design §5: the
                  match is stated in the panel; profile reads every
@@ -1953,14 +1869,8 @@
               </table>
             </div>
           {/if}
-          <!-- Provenance copy: the statement arrives with its bound
-               values WRITTEN IN (metrics.Plan/Preview.DisplaySQL — display
-               only, the run itself used binds), so a single-statement
-               metric pastes and runs as-is. A metric whose formula mixes
-               percentile with other aggregations appends its companion
-               statement, whose values are not carried on the plan — those
-               markers stay `?`, honestly, and two statements need running
-               one at a time. -->
+          <!-- Provenance copy: the statement as written. A raw statement is
+               its own display SQL and runs as it reads. -->
           <details class="bld-sql">
             <summary>{S.builder.compiledSql}</summary>
             <pre class="mono">{preview.sql}</pre>

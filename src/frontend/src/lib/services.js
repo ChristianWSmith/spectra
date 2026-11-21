@@ -779,33 +779,29 @@ export function listMetrics() {
 // `subjectFilter` (Subject: '' = every box, 'none' = no box, or the
 // canonical comma-subset of the three subject tokens player/match/team
 // — store.ListMetricsPage's SUBJECT FILTER vocabulary),
-// `denomFilter` (Denominator: '' = every box, 'empty' = no box, or the
-// canonical comma-subset of the three bucket tokens rounds/matches/none
-// where 'none' names the denominator-less rows — Reading B 2026-11-16,
-// store.ListMetricsPage's vocabulary) and `formatFilter`
+// `formatFilter`
 // (Type: '' = every format, 'none' = none, or the canonical comma-subset
 // of format tokens where 'auto' names the '' format — the store's
 // vocabulary, store.ListMetricsPage), returned as {rows, hasNext}. The
 // sixth group (Pinning) is render-time in the view — pins live in
 // localStorage and never reach this call.
 // Read-cached keyed (query, originFilter, scopeFilter, subjectFilter,
-// denomFilter, formatFilter, afterID, limit) — every filter rides the args, so they
+// formatFilter, afterID, limit) — every filter rides the args, so they
 // join the ONE existing cache key and need no second cache — like
 // listMatchesPage, and the WHOLE cache (this entry included) flushes on
 // every spectra:* event and inside the mutating wrappers below:
 // invalidate() is readCache.clear(), so one save/delete refetches both
 // the paged window and listMetrics.
-export function listMetricsPage(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit) {
+export function listMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit) {
   return cachedRead(
     'ListMetricsPage',
-    [query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit],
+    [query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit],
     () =>
       MetricsService.ListMetricsPage(
         query,
         originFilter,
         scopeFilter,
         subjectFilter,
-        denomFilter,
         formatFilter,
         afterID,
         limit,
@@ -831,7 +827,7 @@ export function deleteMetric(id) {
   });
 }
 // previewMetric runs a compiled expression: id rides an empty expr (the
-// SAVED definition — denominator included, addressing read off its row),
+// SAVED definition, addressing read off its row),
 // a non-empty expr is ad-hoc. subject/partition/scope are the DRAFT's own
 // addressing (2026-11-18 — the same triple validateExpr threads): the
 // server compiles the draft under them, so a match/team-subject draft

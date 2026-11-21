@@ -334,7 +334,6 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
   .replace("from '../metricformats.js'", `from '${libURL('metricformats.js')}'`)
-  .replace("from '../metricdenoms.js'", `from '${libURL('metricdenoms.js')}'`)
   .replace("from '../metricorigins.js'", `from '${libURL('metricorigins.js')}'`)
   .replace("from '../fmt.js'", `from '${libURL('fmt.js')}'`)
   .replace("from '../metricstate.js'", `from '${libURL('metricstate.js')}'`)
@@ -503,8 +502,8 @@ check(
   // 28 → 29 (C3, components): the Component builder's own section.
   // 27 → 28 (2026-11-18, metrics Phase 7): the metric-language chapter
   // gained its `partitions` section.
-  'the full TOC renders (30 section entries, the guide opens at its first section)',
-  tocItems().length === 30 && tocCurrent()?.textContent.trim() === 'Introduction',
+  'the full TOC renders (27 section entries, the guide opens at its first section)',
+  tocItems().length === 27 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -646,12 +645,12 @@ const scrollSpy = async () => {
 };
 const sourcesEl = headingEl('sources');
 const srcIdx = headIdx('sources');
-const sourcesToc = tocItems().find((b) => b.textContent.trim() === 'Sources');
+const sourcesToc = tocItems().find((b) => b.textContent.trim() === 'Tables you can read');
 click(sourcesToc);
 await sleep();
 check(
   'clicking a TOC entry moves aria-current to that section',
-  tocCurrent()?.textContent.trim() === 'Sources',
+  tocCurrent()?.textContent.trim() === 'Tables you can read',
   tocCurrent()?.textContent.trim(),
 );
 check(
@@ -670,7 +669,7 @@ check('the hash never moved (TOC entries are buttons, never href="#…")', locat
 await scrollSpy();
 check(
   'after goTo’s scroll lands the spy still agrees with the clicked section',
-  tocCurrent()?.textContent.trim() === 'Sources',
+  tocCurrent()?.textContent.trim() === 'Tables you can read',
   tocCurrent()?.textContent.trim(),
 );
 // Manual scrolling: park the scroll top just PAST a section heading —
@@ -757,7 +756,7 @@ check(
   // Re-pinned with the reconciliation edit (2026-11-14): the section's
   // opener went count-free ("Ten sources …" died with W1's 14 sources).
   'the sources section renders real prose (its count-free opener) and no placeholder note',
-  normalized(sourcesSec).includes('Every source the language offers is listed below') &&
+  normalized(sourcesSec).includes('A statement may read these tables') &&
     !normalized(sourcesSec).includes('Coming soon'),
   normalized(sourcesSec).slice(0, 80),
 );
@@ -775,28 +774,23 @@ check(
 console.log('F. accuracy pins — rendered text from the manual AND the newly written guide sections');
 const bodyText = normalized(docBody());
 check(
-  'subject-anchor rule: a round source may not lead, with the verbatim refusal',
-  bodyText.includes('expression is not player-anchored') &&
-    bodyText.includes('primary source "rounds" has no player subject'),
-  bodyText.slice(0, 0),
-);
-check(
-  "metric(): exactly two legal positions, denied inside sum() and inside a condition",
-  bodyText.includes('Exactly two positions') &&
-    bodyText.includes('metric() is a value reference — it cannot appear inside sum()') &&
-    bodyText.includes('cannot appear in a condition or filter'),
+  'the save gate: a statement that is not SELECT or WITH is refused with the metric message',
+  bodyText.includes('a metric is one SELECT or WITH statement'),
   '',
 );
 check(
-  'the sum(a + b) additive chain, with avg/min/max staying single-column',
-  bodyText.includes('only sum(a + b) may add columns') &&
-    bodyText.includes('avg() takes a single column — only sum() accepts an additive column expression'),
+  'metric() references are refused for now, with the raw-SQL message',
+  bodyText.includes("metric() references aren't available in raw SQL yet"),
   '',
 );
 check(
-  'denominators are exactly rounds/matches counted in the units of the scope',
-  bodyText.includes('exactly two choices, rounds and matches') &&
-    bodyText.includes('the denominator always counts the units of the scope'),
+  'a statement returns subject_key, dim and value (the reserved columns)',
+  bodyText.includes('subject_key') && bodyText.includes('dim') && bodyText.includes('value'),
+  '',
+);
+check(
+  'the binds set the scope: a career statement is career-scoped (no match or round bind)',
+  bodyText.includes(':steam_id') && bodyText.includes("career-scoped and can't also bind"),
   '',
 );
 // Guide-section accuracy pins (2026-11-14 content onboarding), each
@@ -841,7 +835,7 @@ check(
 check(
   // 28 → 29 body sections (C3: the Component builder section).
   'the filter is TOC-only: the body still renders every section while it is active',
-  docBody().querySelectorAll('.doc-section').length === 30,
+  docBody().querySelectorAll('.doc-section').length === 27,
   docBody().querySelectorAll('.doc-section').length + ' body sections',
 );
 check(
@@ -912,8 +906,8 @@ check(
 await typeQuery('');
 check(
   // 28 → 29 entries (C3: the Component builder section).
-  'clearing the input restores the full TOC (30 entries, no empty-state line)',
-  tocItems().length === 30 && !emptyTocLine(),
+  'clearing the input restores the full TOC (27 entries, no empty-state line)',
+  tocItems().length === 27 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
 
@@ -1023,10 +1017,10 @@ const rowOf = (majorText) =>
 const toggleOf = (majorText) => rowOf(majorText)?.querySelector('.doc-toc-toggle') ?? null;
 const minorEntries = () => [...document.querySelectorAll('.doc-toc-children .doc-toc-item')];
 check(
-  // 13 → 14 minors (2026-11-18, metrics Phase 7 `partitions`).
+  // 14 → 11 minors (B5, the metric chapter retires its sugar sections).
   'the ONE subsection toggle sits on the metric-language row (expanded by default, catalog label) — no toggle on a childless major',
   document.querySelectorAll('.doc-toc-toggle').length === 1 &&
-    minorEntries().length === 14 &&
+    minorEntries().length === 11 &&
     toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true' &&
     toggleOf('Metric language')?.getAttribute('aria-label') === stringsCommon.collapseSubsections &&
     toggleOf('Introduction') === null,
@@ -1046,13 +1040,13 @@ click(toggleOf('Metric language'));
 await sleep();
 check(
   // 27 → 28 entries (2026-11-18, metrics Phase 7 `partitions`).
-  'unfolding restores every entry (30) and aria-expanded back to true',
-  tocItems().length === 30 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  'unfolding restores every entry (27) and aria-expanded back to true',
+  tocItems().length === 27 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
   `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
 );
-click(tocItems().find((b) => b.textContent.trim() === 'Denominators'));
+click(tocItems().find((b) => b.textContent.trim() === 'Touched tables and freshness'));
 await sleep();
-const denEntry = tocItems().find((b) => b.textContent.trim() === 'Denominators');
+const denEntry = tocItems().find((b) => b.textContent.trim() === 'Touched tables and freshness');
 const mlEntry = tocItems().find((b) => b.textContent.trim() === 'Metric language');
 check(
   'dual highlight: the current minor wears .active + aria-current, its major .parent-active — aria-current sits on exactly one entry (the true current)',
@@ -1076,14 +1070,14 @@ check(
 );
 click(toggleOf('Metric language')); // fold the chapter, then search into it
 await sleep();
-await typeQuery('denominators');
-const denUnderQuery = tocItems().find((b) => b.textContent.trim() === 'Denominators');
+await typeQuery('freshness');
+const denUnderQuery = tocItems().find((b) => b.textContent.trim() === 'Touched tables and freshness');
 check(
   'a query expands a FOLDED chapter: its matching minor stays listed, marked, beneath the visible major',
   !!denUnderQuery &&
     !!tocItems().find((b) => b.textContent.trim() === 'Metric language') &&
     !!denUnderQuery.querySelector('mark') &&
-    denUnderQuery.querySelector('mark').textContent === 'Denominators',
+    denUnderQuery.querySelector('mark').textContent === 'freshness',
   tocItems().map((b) => b.textContent.trim()).join(', '),
 );
 await typeQuery('');

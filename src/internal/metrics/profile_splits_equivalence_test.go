@@ -37,61 +37,38 @@ import (
 // the same Address the sweep uses, so the equivalence covers the actual
 // shipped definition.
 
-// seedByName loads a seeded builtin's expression + denominator from the
-// catalog — the test must pin what schema.sql actually ships.
-func seedByName(t *testing.T, st *store.Store, name string) (expr, denom string) {
+// seedByName loads a seeded builtin's statement from the catalog — the
+// test must pin what schema.sql actually ships.
+func seedByName(t *testing.T, st *store.Store, name string) string {
 	t.Helper()
 	res, err := st.RunReadOnly(
-		`SELECT expr, denominator FROM metrics WHERE name = ? AND origin = 'builtin'`,
+		`SELECT expr FROM metrics WHERE name = ? AND origin = 'builtin'`,
 		[]any{name}, 1, 5000,
 	)
 	if err != nil || len(res.Rows) != 1 {
 		t.Fatalf("seed %q: rows=%d err=%v", name, len(res.Rows), err)
 	}
-	return res.Rows[0][0].(string), res.Rows[0][1].(string)
+	return res.Rows[0][0].(string)
 }
 
 // profileSeedRows runs one profile-scope partitioned seed over the whole
 // library (the sweep's career statement) and keys its rows by
-// (subject, dim) — the shape the stored read serves the surface.
+// (subject, dim) — the shape the stored read serves the surface. Raw
+// partitioned seeds run through the raw path (ruling 22).
 func profileSeedRows(t *testing.T, st *store.Store, name, partition string) map[string]map[string]float64 {
 	t.Helper()
-	expr, denom := seedByName(t, st, name)
-	if IsRawSQL(expr) {
-		// Raw partitioned seeds (ruling 22) run through the raw path.
-		raw := map[string]map[string]float64{}
-		for _, r := range rawPreviewRows(t, st, expr, "") {
-			if raw[r.SubjectKey] == nil {
-				raw[r.SubjectKey] = map[string]float64{}
-			}
-			if _, dup := raw[r.SubjectKey][r.Dim]; dup {
-				t.Errorf("%s: duplicate row for (%s, %q)", name, r.SubjectKey, r.Dim)
-			}
-			raw[r.SubjectKey][r.Dim] = rawValue(r)
+	expr := seedByName(t, st, name)
+	raw := map[string]map[string]float64{}
+	for _, r := range rawPreviewRows(t, st, expr, "") {
+		if raw[r.SubjectKey] == nil {
+			raw[r.SubjectKey] = map[string]float64{}
 		}
-		return raw
-	}
-	pv, perr, err := RunPreview(t.Context(), st, Def{
-		Expr: expr, Denominator: denom, Subject: "player",
-		Partition: partition, Profile: true,
-	}, "", 500)
-	if perr != nil {
-		t.Fatalf("%s: parse: %v", name, perr)
-	}
-	if err != nil {
-		t.Fatalf("%s: run: %v (sql %s)", name, err, pv.SQL)
-	}
-	out := map[string]map[string]float64{}
-	for _, r := range pv.Rows {
-		if out[r.Group] == nil {
-			out[r.Group] = map[string]float64{}
+		if _, dup := raw[r.SubjectKey][r.Dim]; dup {
+			t.Errorf("%s: duplicate row for (%s, %q)", name, r.SubjectKey, r.Dim)
 		}
-		if _, dup := out[r.Group][r.Dim]; dup {
-			t.Errorf("%s: duplicate row for (%s, %q)", name, r.Group, r.Dim)
-		}
-		out[r.Group][r.Dim] = r.Value
+		raw[r.SubjectKey][r.Dim] = rawValue(r)
 	}
-	return out
+	return raw
 }
 
 // corpusHumans returns the corpus roster (human player_stats rows) in

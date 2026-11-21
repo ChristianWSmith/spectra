@@ -242,17 +242,9 @@ func bumpRuleAffectedMetrics(tx *sql.Tx, tables []string) error {
 
 // bindsOf reports which unit keys a metric's stored rows are keyed by:
 // byMatch for a match (or round) unit, bySteam for a player unit. Raw SQL
-// reads its reserved binds. Sugar rows are keyed by the scope they were saved
-// under: a "profile" metric is per player, any other is per match. A raw
-// statement the gate refuses keeps neither key, so it reads as library-wide
-// (the conservative whole change).
+// reads its reserved binds. A statement the gate refuses keeps neither key,
+// so it reads as library-wide (the conservative whole change).
 func bindsOf(expr, scope string) (byMatch, bySteam bool) {
-	if !IsRawExpr(expr) {
-		if scope == "profile" {
-			return false, true
-		}
-		return true, false
-	}
 	st, gerr := AnalyzeMetricSQL(expr, nil)
 	if gerr != nil {
 		return false, false

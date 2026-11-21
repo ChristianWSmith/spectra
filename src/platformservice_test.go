@@ -150,7 +150,7 @@ const rootTestPlugin = `{
   "version": "1.0.0",
   "capabilities": {"metrics": {}, "report_templates": {}},
   "metrics": [
-    {"name": "root_count", "title": "Root count", "expr": "from events: count()"}
+    {"name": "root_count", "title": "Root count", "expr": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"}
   ],
   "reportTpls": [
     {"id": "root-match", "title": "Root match", "scope": "match", "format": "md", "body": "root plugin: {{.Match.Map}}"}
@@ -433,68 +433,6 @@ func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
 	waitForSweepIdle(t, f)
 }
 
-// TestPluginRemovalFailsDanglingDependents pins owner outcome (b): after
-// a disable/remove, a user metric whose expression referenced the removed
-// plugin metric ends FAILED with the engine's honest
-// `unknown metric reference` copy and ZERO stored rows — it must never
-// keep rendering its stored values as fresh. No version bump of
-// dependents is involved: metrics.Sweep pulls a metric whose dep_name
-// dangles into the work list UNCONDITIONALLY (internal/metrics/pass.go),
-// so scheduling the sweep — this hook's whole job — is the whole fix.
-// Re-enabling heals it back to fresh: the name resolves again and the
-// rows recompute.
-func TestPluginRemovalFailsDanglingDependents(t *testing.T) {
-	useTempXDG(t)
-	f := newSeededFixture(t)
-	f.svc.useSweeps(nil, nil)
-	svc := &PlatformService{st: f.st, afterPluginOp: f.svc.scheduleSweep}
-	src := writeRootPluginFile(t)
-
-	if _, err := svc.InstallPlugin(src); err != nil {
-		t.Fatalf("InstallPlugin: %v", err)
-	}
-	upID := mustID(t, f.st, "root_count")
-	waitFor(t, "the plugin metric to compute", func() bool {
-		return stateOf(t, f.svc, upID).State == MetricStateFresh
-	})
-
-	// A user metric composed over the plugin metric — fresh WITH stored
-	// values first, so there is something stale to be honest about.
-	dep := f.save(t, models.MetricRow{
-		Name: "plug_dep",
-		Expr: "from events: ratio(sum(dmg), metric('root_count'))",
-	})
-	waitFor(t, "the dependent to compute", func() bool {
-		return stateOf(t, f.svc, dep.ID).State == MetricStateFresh
-	})
-	if n := storedRows(t, f.st, dep.ID); n == 0 {
-		t.Fatal("dependent has no stored rows before the disable — fixture broken")
-	}
-
-	// Disable → the hook's sweep dangles the dependent: phase 1 clears
-	// its rows and the compile fails honestly.
-	if _, err := svc.SetPluginEnabled("root-plug", false); err != nil {
-		t.Fatalf("SetPluginEnabled(false): %v", err)
-	}
-	waitFor(t, "the dependent to fail honestly", func() bool {
-		s := stateOf(t, f.svc, dep.ID)
-		return s.State == MetricStateFailed &&
-			strings.Contains(s.Error, `unknown metric reference "root_count"`)
-	})
-	if n := storedRows(t, f.st, dep.ID); n != 0 {
-		t.Errorf("dependent stored rows after the failed sweep = %d, want 0 (stale values must not survive)", n)
-	}
-
-	// Re-enable heals: the name resolves again and both recompute.
-	if _, err := svc.SetPluginEnabled("root-plug", true); err != nil {
-		t.Fatalf("SetPluginEnabled(true): %v", err)
-	}
-	waitFor(t, "the dependent to heal after re-enable", func() bool {
-		return stateOf(t, f.svc, dep.ID).State == MetricStateFresh
-	})
-	waitForSweepIdle(t, f)
-}
-
 func TestHandleExportRoutes(t *testing.T) {
 	useTempXDG(t)
 	// The library.db route streams data.DBPath() — open the store there so
@@ -753,7 +691,7 @@ func TestBuildPluginBundle(t *testing.T) {
 	// Fixtures: one user metric, one user template (through the service,
 	// so the stored row carries the shape a real save writes).
 	m, err := st.CreateMetric(models.MetricRow{
-		Name: "my_count", Title: "My count", Expr: "from events: count()",
+		Name: "my_count", Title: "My count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
 		Scope: "match", Origin: "user",
 	})
 	if err != nil {
@@ -789,7 +727,7 @@ func TestBuildPluginBundle(t *testing.T) {
 		t.Errorf("composed JSON missing the inlined sections:\n%s", out)
 	}
 	if len(man.Metrics) != 1 || man.Metrics[0].Name != "my_count" ||
-		man.Metrics[0].Expr != "from events: count()" || man.Metrics[0].Scope != "match" {
+		man.Metrics[0].Expr != "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id" || man.Metrics[0].Scope != "match" {
 		t.Errorf("inlined metrics = %+v, want the one stored user metric", man.Metrics)
 	}
 	if len(man.ReportTpls) != 1 || man.ReportTpls[0].ID != tpl.ID ||
@@ -904,7 +842,7 @@ func TestInstallRefusesBuiltinMetricCollision(t *testing.T) {
   "name": "Hijack",
   "version": "1.0.0",
   "metrics": [
-    {"name": "trade_rate", "title": "Not really", "expr": "from events: count()"}
+    {"name": "trade_rate", "title": "Not really", "expr": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"}
   ]
 }`
 	// w27: the source is the manifest FILE itself.

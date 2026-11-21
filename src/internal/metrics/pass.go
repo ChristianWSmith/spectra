@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -40,12 +39,12 @@ import (
 //	phase 1  ClearMetricValues — remove the metric's rows, commit
 //	         (design §4's remove-outdated step; wholesale per metric,
 //	         see the store doc for why the two spellings coincide)
-//	phase 2  run the plan (CompilePassMatch batched for match scope,
-//	         scope "" for profile), fetch, insert the fresh set stamped
-//	         with BOTH current versions + computed_at — ONE tx, and
-//	         THAT commit is the commit marker: committed-insert = fresh,
-//	         anything else = not-fresh (crash matrix: a failure in
-//	         phase 2 leaves the metric absent → behind → retried)
+//	phase 2  run the statement once per scope its binds select (RunRaw),
+//	         replacing that scope's rows in one tx stamped with BOTH
+//	         current versions — THAT commit is the commit marker:
+//	         committed = fresh, anything else = not-fresh (crash matrix:
+//	         a failure in phase 2 leaves the metric absent → behind →
+//	         retried)
 //
 // Execution: every statement runs through store.QueryMetric — the
 // metric path's read-only connection, no timeout, no row cap — so a
@@ -338,120 +337,22 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			fail(CancelledReason)
 		}
 
-		// A raw SQL metric runs its own unit (raw.go): every scope the
-		// statement needs, read on the metric connection. Any stop before
-		// the last scope clears what the earlier scopes stored, so a
-		// failed or cancelled raw metric never serves part of its result.
-		if IsRawSQL(m.Expr) {
-			err := runRawMetric(mctx, st, m, cfg.RuleVersion)
-			if ctx.Err() != nil {
-				_ = st.ClearMetricValues(m.ID)
-				return // sweep cancelled: absent → behind, resumed next sweep
-			}
-			if mctx.Err() != nil {
-				_ = st.ClearMetricValues(m.ID)
-				cancelled()
-				return
-			}
-			if err != nil {
-				_ = st.ClearMetricValues(m.ID)
-				fail(err.Error())
-				return
-			}
-			res.Succeeded = append(res.Succeeded, m.ID)
-			finishAttempt()
-			return
-		}
-		// Resolve the metric()'s references against the CURRENT catalog
-		// (the same RefTarget shape PreviewMetric/SaveMetric bind; live
-		// stamps = this sweep's config read). A dangling name is simply
-		// left out — CompileRefs reports the ONE positioned
-		// "unknown metric reference" copy, so pass, save and preview can
-		// never disagree.
-		refs := map[string]RefTarget{}
-		spec, perr := Parse(m.Expr)
-		if perr != nil {
-			fail(perr.Message)
-			return
-		}
-		for _, r := range MetricRefs(spec) {
-			if t, ok := byName[r.Name]; ok {
-				refs[r.Name] = RefTarget{
-					ID: t.ID, Scope: t.Scope, Version: t.Version,
-					RuleVersion: cfg.RuleVersion,
-				}
-			}
-		}
-		// Compile ONCE for execution — the plan itself carries every
-		// validation (a failure here IS the validation failure; the
-		// compiler is pure and cheap, so error and plan ride one path).
-		// The metric's declared addressing rides every compile: subject
-		// and partition from the stored row, Profile from its scope —
-		// the career path's player-only rule (§3.1) refuses HERE, at
-		// compile time, with the Address.normalize message.
-		addr := Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
-		var plan Plan
-		var cperr *ParseError
-		if m.Scope == "profile" {
-			// Profile computes with the "" library statement — the
-			// career grain, one row per subject at match_id = 0 (design
-			// §3: a career value is stored directly, never rolled up
-			// from per-match rows).
-			plan, cperr = CompileRefs(m.Expr, m.Denominator, "", addr, refs)
-		} else {
-			plan, cperr = CompilePassMatch(m.Expr, m.Denominator, addr, refs)
-		}
-		if cperr != nil {
-			fail(cperr.Message)
-			return
-		}
-		// A sugar row whose touched set is unknown (a plugin upsert clears
-		// it) takes its first gate pass here: the plan's own touched set,
-		// stored before the compute, so the behind predicate can read it.
-		if m.Touched == nil {
-			if err := st.SetMetricTouched(m.ID, plan.Touched); err != nil {
-				fail(err.Error())
-				return
-			}
-		}
-
-		fetched, err := st.QueryMetric(mctx, plan.SQL, plan.Args)
+		// A metric runs its own unit (raw.go): every scope its statement
+		// needs, read on the metric connection. Any stop before the last
+		// scope clears what the earlier scopes stored, so a failed or
+		// cancelled metric never serves part of its result.
+		err := runRawMetric(mctx, st, m, cfg.RuleVersion)
 		if ctx.Err() != nil {
-			// The SWEEP was cancelled mid-metric: phase 1 already
-			// committed, so this metric is absent → behind → resumed next
-			// sweep. NOT a metric failure (it was interrupted, not
-			// broken) — the sweep surfaces it as its returned error.
-			return
+			_ = st.ClearMetricValues(m.ID)
+			return // sweep cancelled: absent → behind, resumed next sweep
 		}
 		if mctx.Err() != nil {
-			// THIS metric was cancelled: failed, no rows written (the
-			// insert below never runs).
+			_ = st.ClearMetricValues(m.ID)
 			cancelled()
 			return
 		}
 		if err != nil {
-			fail(err.Error())
-			return
-		}
-		values, err := valuesFromPlan(plan, fetched.Rows)
-		if err != nil {
-			fail(err.Error())
-			return
-		}
-		// Last cancel point: a cancel that lands after the statement
-		// returned still writes nothing. Once the insert starts it
-		// commits whole (one tx) — a later cancel finds a fresh metric.
-		if ctx.Err() != nil {
-			return
-		}
-		if mctx.Err() != nil {
-			cancelled()
-			return
-		}
-		if err := st.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, values); err != nil {
-			if ctx.Err() != nil {
-				return // interrupted: the insert tx rolled back → absent → behind
-			}
+			_ = st.ClearMetricValues(m.ID)
 			fail(err.Error())
 			return
 		}
@@ -567,181 +468,4 @@ func containsID(ids []int64, id int64) bool {
 		}
 	}
 	return false
-}
-
-// valuesFromPlan turns a plan's fetched rows into the metric_values
-// insert set — the pass's row-shape adapter (THE one place the stored
-// layout is derived from a Plan):
-//
-//	ModeGrouped     [match_id,] subject_key [, dim] v0..vK, n — the
-//	                stored value is the FIRST aggregation (the same row
-//	                Value Preview surfaces), n the trailing sample
-//	                size, the match key 0 for the profile grain. The
-//	                subject_key is the DECLARED subject's key (§6.3): a
-//	                player's SteamID64, a team key, or '' for a match
-//	                subject (its address IS the row's match — mapped
-//	                from the match id the shape carries); dim is the
-//	                partition value ('' = unpartitioned — §6.5). An
-//	                IDENTITY (argmax) plan swaps the value columns for
-//	                idkey + the companion value: idkey lands in
-//	                ValueKey, the companion in Value (§3.3).
-//	ModePercentile   raw rows partitioned by the row's address —
-//	                (match_id, subject_key, dim) when the shape
-//	                carries the match (batched pass, team subject),
-//	                subject_key alone at player scope — the p-quantile
-//	                over each partition's own sample, denominator from
-//	                the partition's OWN row (career-correlated at
-//	                profile scope, the row's match scalar in the batch),
-//	                N = the numeric values behind it. Mirrors
-//	                RunPreview's percentile branch exactly — preview
-//	                and stored agree by construction.
-//
-// value_key IS written for identity rows: an argmax plan's row shape
-// ([mid] grp [dim] idkey v n) maps idkey into MetricValueRow.ValueKey
-// beside the companion value (§3.3 — the Phase 5 writer); every numeric
-// row writes ”. A row too short to carry its shape is skipped
-// (defensive — the emitter always emits the full shape).
-func valuesFromPlan(plan Plan, rows [][]any) ([]store.MetricValueRow, error) {
-	out := make([]store.MetricValueRow, 0, len(rows))
-	// The row-shape offsets from the plan's declared addressing (the
-	// same derivation RunPreview applies).
-	grpIdx := 0
-	if plan.MatchAddress {
-		grpIdx = 1
-	}
-	valueIdx := grpIdx + 1
-	if plan.Partition != "" {
-		valueIdx++
-	}
-	// Identity rows carry one extra value column: idkey sits at
-	// valueIdx, the companion value right after it (§3.3).
-	need := valueIdx + 2
-	if plan.Identity {
-		need = valueIdx + 3
-	}
-	switch plan.Mode {
-	case ModeGrouped:
-		for _, r := range rows {
-			if len(r) < need { // [mid] subject, [dim], idkey?, value, n — never shorter
-				continue
-			}
-			var mid int64
-			if plan.MatchAddress {
-				f, ok := numeric(r[0])
-				if !ok {
-					continue
-				}
-				mid = int64(f)
-			}
-			var subjectKey string
-			switch plan.Subject {
-			case "match":
-				// The match subject's key IS its match: the group column
-				// repeats the id the address carries, and the stored
-				// subject_key is '' (schema.sql metric_values).
-				if plan.MatchAddress {
-					// mid already parsed above
-				} else if f, ok := numeric(r[grpIdx]); ok {
-					mid = int64(f)
-				}
-			default:
-				subjectKey = toKey(r[grpIdx])
-			}
-			var dim string
-			if plan.Partition != "" {
-				dim = toKey(r[grpIdx+1])
-			}
-			row := store.MetricValueRow{
-				MatchID:    mid,
-				SubjectKey: subjectKey,
-				Dim:        dim,
-				N:          toN(r[len(r)-1]),
-			}
-			if plan.Identity {
-				row.ValueKey = toKey(r[valueIdx])
-				row.Value = toFloat(r[valueIdx+1])
-			} else {
-				row.Value = toFloat(r[valueIdx])
-			}
-			out = append(out, row)
-		}
-		return out, nil
-	case ModePercentile:
-		// Partition address: (match_id, subject_key, dim) when the shape
-		// carries the match — a struct key keeps the parts apart
-		// without string surgery.
-		type partKey struct {
-			mid     int64
-			subject string
-			dim     string
-		}
-		type partition struct {
-			vals     []float64
-			denom    float64
-			denomSet bool
-		}
-		parts := map[partKey]*partition{}
-		for _, r := range rows {
-			if len(r) < grpIdx+2 {
-				continue
-			}
-			var mid int64
-			if plan.MatchAddress {
-				f, ok := numeric(r[0])
-				if !ok {
-					continue
-				}
-				mid = int64(f)
-			}
-			var subjectKey string
-			if plan.Subject == "match" {
-				if !plan.MatchAddress {
-					if f, ok := numeric(r[grpIdx]); ok {
-						mid = int64(f)
-					}
-				}
-			} else {
-				subjectKey = toKey(r[grpIdx])
-			}
-			if len(r) < valueIdx+1 { // the x column must exist
-				continue
-			}
-			key := partKey{mid: mid, subject: subjectKey}
-			if plan.Partition != "" {
-				key.dim = toKey(r[grpIdx+1])
-			}
-			p := parts[key]
-			if p == nil {
-				p = &partition{}
-				parts[key] = p
-			}
-			if v, ok := numeric(r[valueIdx]); ok {
-				p.vals = append(p.vals, v)
-			}
-			if plan.HasDenom && !p.denomSet {
-				p.denom = toFloat(r[len(r)-1])
-				p.denomSet = true
-			}
-		}
-		for key, p := range parts {
-			sort.Float64s(p.vals)
-			v := percentileOf(p.vals, plan.PercentileP)
-			if plan.HasDenom {
-				if p.denom != 0 {
-					v /= p.denom
-				} else {
-					v = 0
-				}
-			}
-			out = append(out, store.MetricValueRow{
-				MatchID:    key.mid,
-				SubjectKey: key.subject,
-				Dim:        key.dim,
-				Value:      v,
-				N:          len(p.vals),
-			})
-		}
-		return out, nil
-	}
-	return nil, fmt.Errorf("unsupported metrics plan mode %d", plan.Mode)
 }

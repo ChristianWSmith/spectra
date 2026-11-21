@@ -17,7 +17,7 @@ func TestSaveMetricStoresTouchedTables(t *testing.T) {
 	svc := f.svc
 
 	saved, err := svc.SaveMetric(models.MetricRow{
-		Name: "touched_kills", Expr: "from player_stats: sum(kills)", Scope: "match",
+		Name: "touched_kills", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id", Scope: "match",
 	})
 	if err != nil {
 		t.Fatalf("SaveMetric: %v", err)
@@ -26,47 +26,25 @@ func TestSaveMetricStoresTouchedTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// players: the humans-only lookup every subject statement carries.
-	if want := []string{"player_stats", "players"}; !reflect.DeepEqual(got.Touched, want) {
+	// The raw statement reads player_stats only.
+	if want := []string{"player_stats"}; !reflect.DeepEqual(got.Touched, want) {
 		t.Fatalf("touched = %v, want %v", got.Touched, want)
 	}
 
 	// An edit re-derives: a rounds-denominator rate reads rounds at match
 	// scope (the sweep's per-match statement).
-	got.Expr = "from player_stats: sum(total_damage)"
-	got.Denominator = "rounds"
+	got.Expr = "SELECT '' AS subject_key, '' AS dim, SUM(total_damage) AS value FROM player_stats WHERE match_id = :match_id"
 	if _, err := svc.SaveMetric(got); err != nil {
 		t.Fatalf("SaveMetric(edit): %v", err)
 	}
 	got, _ = f.st.GetMetric(saved.ID)
-	if want := []string{"player_round_stats", "player_stats", "players"}; !reflect.DeepEqual(got.Touched, want) {
+	if want := []string{"player_stats"}; !reflect.DeepEqual(got.Touched, want) {
 		t.Fatalf("edited touched = %v, want %v", got.Touched, want)
-	}
-
-	// A dependent reads stored values through metric(); that adds no table.
-	dep, err := svc.SaveMetric(models.MetricRow{
-		Name: "touched_dep", Expr: "from events: count(), metric('touched_kills')", Scope: "match",
-	})
-	if err != nil {
-		t.Fatalf("SaveMetric(dep): %v", err)
-	}
-	depRow, _ := f.st.GetMetric(dep.ID)
-	wantDep := depRow.Touched
-	if !reflect.DeepEqual(wantDep, []string{"events", "players"}) {
-		t.Fatalf("dependent touched = %v (stored values are reached through metric(), never a touched table)", wantDep)
-	}
-	got.Name = "touched_kills_renamed"
-	if _, err := svc.SaveMetric(got); err != nil {
-		t.Fatalf("SaveMetric(rename): %v", err)
-	}
-	depRow, _ = f.st.GetMetric(dep.ID)
-	if !reflect.DeepEqual(depRow.Touched, wantDep) {
-		t.Fatalf("dependent touched after rename = %v, want %v", depRow.Touched, wantDep)
 	}
 
 	// Plugin rows are never derived by the gate; an upsert clears a set
 	// derived from the expression it replaces.
-	if err := f.st.ReplacePluginMetrics("p", []store.PluginMetricDef{{Name: "touched_dep", Expr: "from rounds: count()"}}); err != nil {
+	if err := f.st.ReplacePluginMetrics("p", []store.PluginMetricDef{{Name: "touched_dep", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM rounds WHERE match_id = :match_id"}}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
 	pr, _ := f.st.GetMetricByName("touched_dep")

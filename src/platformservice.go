@@ -351,7 +351,6 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 		out.Metrics = append(out.Metrics, models.MetricRow{
 			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
 			Format: d.Format, Doc: d.Doc, Origin: "plugin", PluginID: m.ID,
-			Denominator: d.Denominator,
 		})
 	}
 	for _, r := range m.ReportTpls {
@@ -794,7 +793,7 @@ func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []in
 		}
 		man.Metrics = append(man.Metrics, plugin.MetricDef{
 			Name: row.Name, Title: row.Title, Expr: row.Expr, Scope: row.Scope,
-			Format: row.Format, Doc: row.Doc, Denominator: row.Denominator,
+			Format: row.Format, Doc: row.Doc,
 		})
 	}
 	// The stored report_templates table holds ONE origin's rows (every

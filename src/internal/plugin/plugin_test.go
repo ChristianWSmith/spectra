@@ -29,7 +29,7 @@ const goodManifest = `{
   "description": "fixture",
   "capabilities": {"metrics": {}, "report_templates": {}},
   "metrics": [
-    {"name": "plug_count", "title": "Plug count", "expr": "from events: count()", "doc": "counts events"}
+    {"name": "plug_count", "title": "Plug count", "expr": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", "doc": "counts events"}
   ],
   "reportTpls": [
     {"id": "plug-match", "title": "Plug match", "scope": "match", "format": "md", "body": "plug report for {{.Match.Map}}"}
@@ -158,8 +158,8 @@ func TestPluginMetricScopeWriteThrough(t *testing.T) {
   "name": "Test Plug",
   "version": "1.0.0",
   "metrics": [
-    {"name": "plug_career", "title": "Career", "expr": "from events: count()", "scope": "profile", "doc": "counts events"},
-    {"name": "plug_match", "title": "Match", "expr": "from events: count()", "doc": "counts events"}
+    {"name": "plug_career", "title": "Career", "expr": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events", "scope": "profile", "doc": "counts events"},
+    {"name": "plug_match", "title": "Match", "expr": "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", "doc": "counts events"}
   ]
 }`
 	src := writeGoodManifest(t, t.TempDir(), manifest)
@@ -202,7 +202,7 @@ func TestInstallValidationMatrix(t *testing.T) {
 		{"missing name", `{"id":"no-name","version":"1"}`, "name is required"},
 		{"missing version", `{"id":"no-ver","name":"B"}`, "version is required"},
 		{"empty metric expr", `{"id":"no-expr","name":"B","version":"1","metrics":[{"name":"m1","expr":"  "}]}`, "empty expr"},
-		{"bad metric scope", `{"id":"bad-mscope","name":"B","version":"1","metrics":[{"name":"m1","expr":"from events: count()","scope":"career"}]}`, "match|profile"},
+		{"bad metric scope", `{"id":"bad-mscope","name":"B","version":"1","metrics":[{"name":"m1","expr":"SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events","scope":"career"}]}`, "match|profile"},
 		{"bad tpl scope", `{"id":"bad-scope","name":"B","version":"1","reportTpls":[{"id":"tpl-r","scope":"deck","format":"md","body":"x"}]}`, "scope"},
 		{"bad tpl format", `{"id":"bad-fmt","name":"B","version":"1","reportTpls":[{"id":"tpl-r","scope":"match","format":"pdf","body":"x"}]}`, "format"},
 		{"not json", `not json at all`, "not valid JSON"},

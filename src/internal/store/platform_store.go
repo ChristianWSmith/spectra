@@ -27,7 +27,6 @@ import (
 //		doc TEXT NOT NULL DEFAULT '',
 //		origin TEXT NOT NULL DEFAULT 'user',
 //		plugin_id TEXT NOT NULL DEFAULT '',
-//		denominator TEXT NOT NULL DEFAULT '',
 //		version INTEGER NOT NULL DEFAULT 1,
 //		created_at DATETIME
 //	);
@@ -65,13 +64,12 @@ type PluginRow struct {
 // manifest's validated `scope` ("" = omitted → the store's omitted-field
 // rule normalizes it to 'match', see ReplacePluginMetrics).
 type PluginMetricDef struct {
-	Name        string
-	Title       string
-	Expr        string
-	Scope       string
-	Format      string
-	Doc         string
-	Denominator string
+	Name   string
+	Title  string
+	Expr   string
+	Scope  string
+	Format string
+	Doc    string
 }
 
 // metricsTableDDL is the exact coordination contract (see file doc).
@@ -88,7 +86,6 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
-	denominator TEXT NOT NULL DEFAULT '',
 	-- The physical tables the metric's compiled statement reads, comma-
 	-- joined and sorted (dogfood/03-QUERIES.md §6.3), derived by the save
 	-- gate. '' means not derived (builtins until their port; plugin rows
@@ -264,12 +261,12 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?, ?)
+		`INSERT INTO metrics (name, title, expr, scope, format, doc, origin, plugin_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
 			title = excluded.title, expr = excluded.expr, scope = excluded.scope,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
-			plugin_id = excluded.plugin_id, denominator = excluded.denominator,
+			plugin_id = excluded.plugin_id,
 			touched = ''`,
 	)
 	if err != nil {
@@ -283,7 +280,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		}
 		if _, err := stmt.Exec(
 			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(scope),
-			scrub(d.Format), scrub(d.Doc), scrub(pluginID), scrub(d.Denominator), time.Now(),
+			scrub(d.Format), scrub(d.Doc), scrub(pluginID), time.Now(),
 		); err != nil {
 			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 		}
