@@ -194,6 +194,15 @@ Settled (owner, 2026-11-20 unless noted):
 42. **Golden headline test (owner ruling, 2026-11-21):** add a store-backed test
     of the headline values (kills, deaths, assists, ADR, HS%) against the stored
     metric values, replacing the golden headline check that F3 removed.
+43. **Edit builtins in place; restore to default (owner ruling, 2026-11-21).**
+    Duplicate-to-edit is cancelled for all builtins. A user edits a builtin
+    component directly. The edited source is stored as an override of that
+    builtin, and the builtin's shipped source stays as the default. Restore
+    to default deletes the override. An override applies wherever the builtin
+    is mounted. "Use as my view" stays: a surface's placement can point at any
+    single component, including one leaf panel, so a user can see one edited
+    component on a surface without rebuilding the whole composition tree.
+    Supersedes 04 §7's duplicate action.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -458,10 +467,16 @@ its own commit with the guide updated in the same change.
   and the metric ordering dialog. Update the guide. **Deps:** C5c, C5d (the views
   must have their components before their controls go). **Check:** grep finds
   no reader of a retired key; the guide has no pinning section.
-- **C5f · Duplicate to edit and use as my view (`04 §7`).** Wire the actions to the
-  placement store (C4 writers, merged). **Deps:** C5c, C5d, C4. **Check:** a
-  duplicated builtin renders its copy; "use as my view" writes one placement that
-  Reset removes.
+- **C5f · Edit builtins in place, restore to default, and use as my view
+  (ruling 43).** A builtin's source is embedded in the app at build time. An edit
+  stores an override of that builtin's source. Restore to default deletes the
+  override. "Use as my view" writes one placement for a surface, pointing at
+  any component (a builtin, or an edited one, or a single leaf panel). Reset
+  removes the placement. **Deps:** C5c, C5d, C4 (writers, merged). **Check:**
+  an edit to a builtin shows wherever that builtin is mounted; restore brings
+  the shipped source back; a placement that points at one panel renders only
+  that panel on its surface; Reset removes the placement and the surface renders
+  its default again; a surface with no placement renders exactly as before.
 - **C5g · Rename engagements to "kill tags" (ruling 32).** Schema, API and UI names,
   and the guide. Run after C5b so the panels' names change once. **Deps:** C5b. **Check:** grep finds no `engagements` label in user-facing text; the
   stored data is unchanged.
