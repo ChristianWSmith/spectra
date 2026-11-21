@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/metrics"
+	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // The metric compute machinery (stored-metrics design §4): scheduling,
@@ -448,38 +451,108 @@ func (s *MetricsService) GetMetricComputeState() ([]MetricComputeState, error) {
 	defer s.mu.Unlock()
 	out := make([]MetricComputeState, 0, len(coverage))
 	for _, c := range coverage {
-		state := MetricComputeState{MetricID: c.MetricID}
-		errMsg := ""
-		if s.errs != nil {
-			errMsg = s.errs[c.MetricID]
-		}
-		switch {
-		case s.inflight[c.MetricID]:
-			// In lieu of everything (design §5): never a stale number,
-			// never bare no-data mid-flight.
-			state.State = MetricStateProcessing
-		case errMsg != "" && c.FreshRows == 0:
-			// Failed requires NO fresh row (design §5 state 2): the last
-			// attempt's phase 1 already removed the old rows, so this is
-			// exactly "failed + no fresh row".
-			state.State = MetricStateFailed
-			state.Error = errMsg
-		case held[c.MetricID] && c.FreshRows == 0:
-			// The user cancelled this metric's run and it has not been
-			// saved since (the hold survives a restart; the reason is the
-			// same word the in-memory failure carries).
-			state.State = MetricStateFailed
-			state.Error = metrics.CancelledReason
-		case c.Behind:
-			state.State = MetricStateBehind
-		case c.FreshRows == 0:
-			// Not behind and nothing stored: the sweep had nothing to
-			// compute (empty library) — an honest "no data", never a 0.
-			state.State = MetricStateNoData
-		default:
-			state.State = MetricStateFresh
-		}
-		out = append(out, state)
+		out = append(out, s.computeStateLocked(c.MetricID, c.Behind, c.FreshRows, held[c.MetricID]))
 	}
 	return out, nil
+}
+
+// GetMetricStates is the SCOPED state read: EVERY metric's state for ONE unit,
+// where scope is "match" (id is a match id) or "player" (id is a steam id).
+// A metric is behind for that unit only when that unit is behind, so another
+// match or player being behind never marks it. A metric with no per-unit
+// breakdown (library-wide or round units) keeps the library answer.
+// GetMetricComputeState stays the library-wide word the Builder labels "any
+// match behind".
+func (s *MetricsService) GetMetricStates(scope, id string) ([]MetricComputeState, error) {
+	cfg, err := s.st.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	coverage, err := s.st.MetricCoverage(cfg.RuleVersion)
+	if err != nil {
+		return nil, err
+	}
+	var fresh map[int64]int
+	var behindOf func(c store.MetricCoverage) bool
+	switch scope {
+	case "match":
+		matchID, perr := strconv.ParseInt(id, 10, 64)
+		if perr != nil {
+			return nil, fmt.Errorf("match id %q is not a number", id)
+		}
+		if fresh, err = s.st.MetricFreshForMatch(matchID, cfg.RuleVersion); err != nil {
+			return nil, err
+		}
+		behindOf = func(c store.MetricCoverage) bool {
+			if len(c.BehindMatches) > 0 {
+				return slices.Contains(c.BehindMatches, matchID)
+			}
+			return c.Behind
+		}
+	case "player":
+		if id == "" {
+			return nil, fmt.Errorf("player id is empty")
+		}
+		if fresh, err = s.st.MetricFreshForPlayer(id, cfg.RuleVersion); err != nil {
+			return nil, err
+		}
+		behindOf = func(c store.MetricCoverage) bool {
+			if len(c.BehindSteams) > 0 {
+				return slices.Contains(c.BehindSteams, id)
+			}
+			return c.Behind
+		}
+	default:
+		return nil, fmt.Errorf("unknown metric state scope %q", scope)
+	}
+	held, err := s.st.HeldMetricIDs()
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]MetricComputeState, 0, len(coverage))
+	for _, c := range coverage {
+		out = append(out, s.computeStateLocked(c.MetricID, behindOf(c), fresh[c.MetricID], held[c.MetricID]))
+	}
+	return out, nil
+}
+
+// computeStateLocked is the precedence both reads share: processing in lieu of
+// everything, then failed (an error or a cancel hold with no fresh row), then
+// behind, then fresh or no-data by the fresh-row count. behind and fresh are the
+// read's own scope. The caller holds s.mu.
+func (s *MetricsService) computeStateLocked(metricID int64, behind bool, fresh int, held bool) MetricComputeState {
+	state := MetricComputeState{MetricID: metricID}
+	errMsg := ""
+	if s.errs != nil {
+		errMsg = s.errs[metricID]
+	}
+	switch {
+	case s.inflight[metricID]:
+		// In lieu of everything (design §5): never a stale number,
+		// never bare no-data mid-flight.
+		state.State = MetricStateProcessing
+	case errMsg != "" && fresh == 0:
+		// Failed requires NO fresh row (design §5 state 2): the last
+		// attempt's phase 1 already removed the old rows, so this is
+		// exactly "failed + no fresh row".
+		state.State = MetricStateFailed
+		state.Error = errMsg
+	case held && fresh == 0:
+		// The user cancelled this metric's run and it has not been
+		// saved since (the hold survives a restart; the reason is the
+		// same word the in-memory failure carries).
+		state.State = MetricStateFailed
+		state.Error = metrics.CancelledReason
+	case behind:
+		state.State = MetricStateBehind
+	case fresh == 0:
+		// Not behind and nothing stored: the sweep had nothing to
+		// compute (empty library) — an honest "no data", never a 0.
+		state.State = MetricStateNoData
+	default:
+		state.State = MetricStateFresh
+	}
+	return state
 }

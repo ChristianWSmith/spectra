@@ -150,6 +150,9 @@ export const builder = {
   colLabel: 'Label',
   colValue: 'Value',
   noDataBehind: 'no data behind this value',
+  // The Builder's behind chip: its word is the library-wide one (any match
+  // behind), so the title says so. The match view reads per match instead.
+  behindAnyMatch: 'behind for any match — a match needs a recompute',
   compiledSql: 'compiled SQL (provenance)',
   noPreviewYetLead: 'Nothing previewed yet — press Preview (or',
   noPreviewYetTail: 'on a metric).',

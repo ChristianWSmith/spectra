@@ -1955,8 +1955,8 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     );
     const idChip = rowNamed(r, 'top_fragger')?.querySelector('.bld-row-sub .chip.status');
     check(
-      'the identity row renders the established five-state chip (behind — the computed state, never a fabricated value)',
-      !!idChip && (idChip.getAttribute('title') || '').includes('value not available yet'),
+      'the identity row renders the established five-state chip (behind — the library word, labelled any match behind)',
+      !!idChip && (idChip.getAttribute('title') || '') === 'behind for any match — a match needs a recompute',
       idChip ? `class=${idChip.className} title=${idChip.getAttribute('title')}` : 'no status chip',
     );
     click(rowNamed(r, 'top_fragger')?.querySelector('button.bld-row-main'));

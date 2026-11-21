@@ -197,6 +197,7 @@ const reads = {
   getMetricValuesForMatch: async (matchId, ids) => VALUES.filter((v) => v.matchId === matchId && ids.includes(v.metricId)),
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => [],
+  getMetricStates: async () => [],
   componentQuery: async (sql) => answer(sql),
 };
 
@@ -376,12 +377,14 @@ check('a match with no stored values shows no cards', root.querySelectorAll('.st
 
 // --- H. the metric states: calculating and failed --------------------------------------
 console.log('H. metric states (match 7)');
+const MATCH_STATES = [
+  { metricId: idOf('kills'), state: 'processing', error: '' },
+  { metricId: idOf('adr'), state: 'failed', error: 'adr engine error' },
+];
 const stateReads = {
   ...reads,
-  getMetricComputeState: async () => [
-    { metricId: idOf('kills'), state: 'processing', error: '' },
-    { metricId: idOf('adr'), state: 'failed', error: 'adr engine error' },
-  ],
+  getMetricComputeState: async () => MATCH_STATES,
+  getMetricStates: async () => MATCH_STATES,
 };
 root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK, reads: stateReads });
 rows = tableRows(root);
@@ -397,6 +400,18 @@ check('a failed metric shows Failed, with the engine error as its title',
 root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props: BACK, reads: stateReads });
 check('a card whose number is still calculating names no number for that part',
   text(cardIn(root, 'Top fragger')?.querySelector('.stat-value')) === 'Calculating/10/3', text(cardIn(root, 'Top fragger')?.querySelector('.stat-value')));
+
+// --- I. the match view reads its own match's state -----------------------------------
+console.log('I. per-match state (the library word says behind, this match is fresh)');
+const perMatchReads = {
+  ...reads,
+  getMetricComputeState: async () => [{ metricId: idOf('kills'), state: 'behind', error: '' }],
+  getMetricStates: async () => [{ metricId: idOf('kills'), state: 'fresh', error: '' }],
+};
+root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK, reads: perMatchReads });
+rows = tableRows(root);
+check('the library-wide behind word does not reach this match: its stored values show',
+  rows.length > 0 && rows.every((r) => r[3] !== 'Out of date' && /^\d/.test(r[3])), JSON.stringify(rows.map((r) => r[3])));
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');

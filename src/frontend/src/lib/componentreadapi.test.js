@@ -18,6 +18,7 @@ const DEFS = [
 
 function harness({ values = [], states = [], query = null } = {}) {
   const calls = [];
+  const stateCalls = [];
   const reported = [];
   const navs = [];
   const reads = {
@@ -34,14 +35,21 @@ function harness({ values = [], states = [], query = null } = {}) {
       calls.push(['player', s, ids]);
       return values;
     },
-    getMetricComputeState: async () => states,
+    getMetricComputeState: async () => {
+      stateCalls.push(['library-state']);
+      return states;
+    },
+    getMetricStates: async (scope, id) => {
+      stateCalls.push([scope + '-state', id]);
+      return states;
+    },
     componentQuery: async (sql) => {
       calls.push(['query', sql]);
       return query ? query(sql) : { columns: ['x'], rows: [[1]] };
     },
   };
   const api = createReadApi({ reads, report: (e) => reported.push(e.message), nav: (h) => navs.push(h) });
-  return { api, calls, reported, navs };
+  return { api, calls, stateCalls, reported, navs };
 }
 
 const row = (subjectKey, value) => ({ metricId: 1, subjectKey, dim: '', value, valueKey: '' });
@@ -54,6 +62,68 @@ test('a match-grain read for one player is fresh with that player’s value', as
   assert.equal(r.value, 81.5);
   assert.equal(r.n, undefined, 'the component read carries no sample size');
   assert.deepEqual(r.rows.map((x) => x.subject), ['7656']);
+});
+
+// Two matches in one API: match A's metric is behind, match B's is fresh. The
+// per-match word answers each match from its own state, so A's behind never
+// reaches B (and the library word is not consulted for a match read).
+test('a metric behind for match A and fresh for match B reads per match', async () => {
+  const statesByMatch = { 5: [{ metricId: 1, state: 'behind' }], 6: [{ metricId: 1, state: 'fresh' }] };
+  const valuesByMatch = { 5: [], 6: [row('7656', 81.5)] };
+  const calls = [];
+  const reads = {
+    listMetrics: async () => DEFS,
+    getMetricValuesForMatch: async (m, ids) => (ids.length ? valuesByMatch[m] : []),
+    getMetricValuesForRound: async () => [],
+    getMetricValuesForPlayer: async () => [],
+    getMetricComputeState: async () => {
+      calls.push('library');
+      return [{ metricId: 1, state: 'behind' }];
+    },
+    getMetricStates: async (scope, id) => {
+      calls.push([scope, id]);
+      return scope === 'match' ? statesByMatch[id] : [];
+    },
+    componentQuery: async () => ({ columns: [], rows: [] }),
+  };
+  const api = createReadApi({ reads, report: () => {} });
+  const a = await api.metric('adr', { match_id: 5 });
+  const b = await api.metric('adr', { match_id: 6, steam_id: '7656' });
+  assert.equal(a.state, 'behind');
+  assert.equal(b.state, 'fresh');
+  assert.equal(b.value, 81.5);
+  assert.deepEqual(calls, [['match', 5], ['match', 6]], 'the library word is never read for a match');
+});
+
+// A profile (player) read: a career metric behind for one player and fresh
+// for another reads per player through metric(), never the library word.
+test('a player behind for one player and fresh for another reads per player', async () => {
+  const statesByPlayer = { '7656': [{ metricId: 2, state: 'behind' }], '7657': [{ metricId: 2, state: 'fresh' }] };
+  const reads = {
+    listMetrics: async () => DEFS,
+    getMetricValuesForMatch: async () => [],
+    getMetricValuesForRound: async () => [],
+    // The career bucket (the read passes no steam id): both players' rows.
+    getMetricValuesForPlayer: async () => [{ metricId: 2, subjectKey: '7657', dim: '', value: 60, valueKey: '' }],
+    getMetricComputeState: async () => {
+      throw new Error('the library word is not read for a player');
+    },
+    getMetricStates: async (scope, id) => (scope === 'player' ? statesByPlayer[id] : []),
+    componentQuery: async () => ({ columns: [], rows: [] }),
+  };
+  const api = createReadApi({ reads, report: () => {} });
+  const behind = await api.metric('career_adr', { steam_id: '7656' });
+  const fresh = await api.metric('career_adr', { steam_id: '7657' });
+  assert.equal(behind.state, 'behind');
+  assert.equal(fresh.state, 'fresh');
+  assert.equal(fresh.value, 60);
+});
+
+test('a read with no bind keeps the library-wide word', async () => {
+  const { api, stateCalls } = harness({ states: [{ metricId: 2, state: 'behind' }] });
+  await api.metric('career_adr', {}).catch(() => {});
+  assert.ok(stateCalls.some((c) => c[0] === 'library-state'));
+  assert.ok(!stateCalls.some((c) => c[0] === 'match-state' || c[0] === 'player-state'));
 });
 
 test('a unit read without a subject returns every fresh row of the unit', async () => {
