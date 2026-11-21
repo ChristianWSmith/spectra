@@ -247,6 +247,11 @@ Settled (owner, 2026-11-20 unless noted):
     chip wherever the builtin is listed or shown in the Builder, so the user can
     see it differs from the shipped version. The chip is removed when the edit is
     restored to default.
+51. **Remove scope, subject and partition from metrics (owner ruling, 2026-11-21).**
+    Per 03 §10, these are not kept as furniture. A metric's scope comes from its
+    binds (`RawScopeOf`); partitioning is `dim`. Remove the three from the metric
+    editor, the save validation, the schema (`metrics` table; rides the wipe), and
+    the readers. Plugin manifests stop declaring scope and migrate with the change.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
