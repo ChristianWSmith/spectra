@@ -15,10 +15,10 @@
   import Utility from './Utility.svelte';
   import Heatmaps from './Heatmaps.svelte';
   import Combat from './Combat.svelte';
-  // Details / Reports tabs embed the standalone views (embedded=true
-  // fixes them to THIS match — no picker, no newest-match default).
-  import Explorer from './Explorer.svelte';
-  import Reports from './Reports.svelte';
+  // The Reports and Details (Explorer) tabs mount their builtin components
+  // with this match as the context (no picker, no newest-match default).
+  import ReportsView from '../builtins/reports/ReportsView.svelte';
+  import ExplorerView from '../builtins/explorer/ExplorerView.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
@@ -652,7 +652,7 @@
     {:else if tab === 'Combat'}
       <Combat {id} {nav} />
     {:else if tab === 'Reports'}
-      <Reports embedded routeId={id} {nav} />
+      <ComponentFrame component={ReportsView} context={panelContext} props={{ embedded: true }} {nav} />
     {:else if tab === 'Details'}
       <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
            facts panel (server, tickrate, frames, size, import, parser,
@@ -721,7 +721,7 @@
           </div>
         </dl>
       </section>
-      <Explorer embedded routeId={id} {nav} />
+      <ComponentFrame component={ExplorerView} context={panelContext} props={{ embedded: true }} {nav} />
     {/if}
   {:else if !error}
     <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>

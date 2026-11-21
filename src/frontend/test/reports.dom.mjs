@@ -58,162 +58,37 @@
 // there provides it (never `npm i --no-save`). From frontend/ run:
 //   node --test test/reports.dom.mjs
 // (must be run with frontend/ as the working directory)
-import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { boot } from './profile-harness.mjs';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { registerHooks } from 'node:module';
-import { installEsmDirHook } from './esm-dir-hook.mjs';
 
-installEsmDirHook();
-
-const stub = (name) => pathToFileURL(join('test', 'stubs', name)).href;
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === 'svelte') {
-      return { url: pathToFileURL('node_modules/svelte/src/index-client.js').href, shortCircuit: true };
-    }
-    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
-    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
-    return nextResolve(specifier, context);
-  },
-});
-
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-  pretendToBeVisual: true,
-  url: 'http://localhost/',
-});
-for (const k of [
-  'window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement',
-  'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement',
-  'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
-  'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
-  'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver',
-  'DOMParser', 'localStorage',
-]) {
-  if (!(k in dom.window)) continue;
-  try {
-    globalThis[k] = dom.window[k];
-  } catch {
-    Object.defineProperty(globalThis, k, {
-      value: dom.window[k],
-      configurable: true,
-      writable: true,
-    });
-  }
-}
-globalThis.window = dom.window;
-globalThis.document = dom.window.document;
-globalThis.navigator = dom.window.navigator;
-
-const errors = [];
-process.on('uncaughtException', (e) => {
-  errors.push(e);
-  console.error('UNCAUGHT: ' + (e && e.stack ? e.stack : e));
-});
-process.on('unhandledRejection', (e) => {
-  errors.push(e);
-  console.error('REJECTION: ' + (e && e.stack ? e.stack : e));
-});
-
-const bindings = await import('./stubs/bindings.mjs');
-const services = await import(pathToFileURL('src/lib/services.js').href);
+// The shared harness (test/profile-harness.mjs) owns the jsdom setup, the Wails
+// stub and the bundler; this driver mounts the standalone Reports surface
+// (views/Reports.svelte), which mounts the builtin Reports component (C5c).
+const h = await boot('reports');
+const { bindings, services, escaped } = h;
 const { fire } = await import(pathToFileURL(join('test', 'stubs', 'wails-runtime.mjs')).href);
+const dom = h.dom;
+const errors = escaped;
 
-const fileURL = (p) => pathToFileURL(p).href;
-const svelteCompile = (src, filename, out) => {
-  const code = compile(src, { filename, generate: 'client' }).js.code;
-  writeFileSync(out, code);
-  return out;
+// The save goes through the native dialog (save.js → DialogService). Record it
+// at the binding as [filename, mime, text], the shape the old download stub
+// recorded: SaveFile names the file, WriteFile carries its base64 bytes.
+bindings.DialogService.SaveFile = (name) => {
+  globalThis.__pendingSave = name;
+  return Promise.resolve('/dev/null/' + name);
 };
-
-const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'reports');
-mkdirSync(dir, { recursive: true });
-
-// Leaf components (StatusChip, Popover) → local bundles; the pickers
-// import fmt + those leaves, so their specifiers are rebased too.
-for (const name of ['StatusChip', 'Popover']) {
-  svelteCompile(
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
-    `${name}.svelte`,
-    join(dir, `${name.toLowerCase()}.js`),
-  );
-}
-const matchPickerSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from './StatusChip.svelte'", "from './statuschip.js'")
-  .replace("from './Popover.svelte'", "from './popover.js'")
-  // plumbing (Strings Stage 3): the picker imports the strings catalog.
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'));
-const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
-  .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
-  // plumbing (Strings Stage 3): the picker imports the strings catalog.
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
-// The appendix selector (TokenSelect — the token field over the metric
-// catalog): Popover leaf + the strings catalog rebased like every other
-// component this driver mounts.
-const tokenSelectSrc = readFileSync('src/lib/components/TokenSelect.svelte', 'utf8')
-  .replace("from './Popover.svelte'", "from './popover.js'")
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(tokenSelectSrc, 'TokenSelect.svelte', join(dir, 'tokenselect.js'));
-
-// HelpButton — the shared header `?` (help-buttons wave, 2026-11-15):
-// the view's header button is this component; its strings catalog
-// import resolves from the real tree like every other component here.
-const helpButtonSrc = readFileSync('src/lib/components/HelpButton.svelte', 'utf8').replace(
-  "from '../strings/index.js'",
-  `from '${fileURL('src/lib/strings/index.js')}'`,
-);
-svelteCompile(helpButtonSrc, 'HelpButton.svelte', join(dir, 'helpbutton.js'));
-
-// download.js — the save path the view drives (the ruling: the composed
-// document goes through downloadText + the native dialog, NOT
-// /api/export). Every helper RECORDS its call in globalThis.__downloads
-// and resolves "" (save.js's cancel contract), so a pin can read back
-// the exact bytes that would have been written.
-writeFileSync(
-  join(dir, 'download.js'),
-  `export const downloadText = (...a) => {
-  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind: 'text', args: a });
-  return Promise.resolve('');
+bindings.DialogService.WriteFile = (path, b64) => {
+  const name = globalThis.__pendingSave || path;
+  const mime = name.endsWith('.html') ? 'text/html' : 'text/markdown';
+  const text = Buffer.from(b64, 'base64').toString('utf8');
+  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind: 'text', args: [name, mime, text] });
+  return Promise.resolve(null);
 };
-export const downloadBlob = (...a) => {
-  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind: 'blob', args: a });
-  return Promise.resolve('');
-};
-`,
-);
-
-// The view: plain-ESM imports resolve from their real module locations
-// (services → the stubs, metricorder/players/viewstate absolute), the
-// .svelte imports point at the local bundles, download.js at the
-// recording stub above.
-const repSrc = readFileSync('src/lib/views/Reports.svelte', 'utf8')
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
-  .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
-  .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
-  .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
-  .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
-  .replace("from '../download.js'", "from './download.js'")
-  .replace("from '../components/MatchPicker.svelte'", "from './matchpicker.js'")
-  .replace("from '../components/PlayerPicker.svelte'", "from './playerpicker.js'")
-  .replace("from '../components/TokenSelect.svelte'", "from './tokenselect.js'")
-  .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
-  .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
-  // plumbing (Strings Stage 3): the view imports the strings catalog —
-  // resolve it from the real tree, like every other ../ module above.
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(repSrc, 'Reports.svelte', join(dir, 'reports-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
-const mod = await import(pathToFileURL(join(dir, 'reports-bundle.js')).href);
-// The registry the view imports (same URL → same instance).
-const viewstate = await import(pathToFileURL('src/lib/viewstate.svelte.js').href);
+const mod = await import(pathToFileURL(h.bundle(resolve('src/lib/views/Reports.svelte'))).href);
+const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
@@ -578,10 +453,11 @@ console.log('F. no version number or timestamp in any rendered metric output');
   check('no version number or timestamp appears anywhere in the appendix output', leaks.length === 0, leaks.join(' | '));
 }
 
-console.log('G. the field follows the match ORDER pref (metricorder — the one sequence); chips restore, Backspace/✕ clear, no chips → no appendix');
+console.log('G. the field and the document keep the default stat order; the retired order pref is never read (ruling 33); chips restore, Backspace/✕ clear, no chips → no appendix');
 {
-  // Absent pref ⇒ the default sequence, which over this unranks catalog
-  // equals catalog order (already pinned by A's default options).
+  // The retired match order pref (ruling 33) is stored under this key. The
+  // Reports view must not read it: a stored order does not re-sequence the
+  // field, the chips or the document. (The default order is catalog order.)
   bindings.handlers.GetPref = (key) =>
     key === 'metric_order_match' ? ['behind_stat', 'match_stat'] : undefined;
   const r2 = await mountReports();
@@ -600,10 +476,14 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   const opts = await openBox(r2);
   const labels = optLabels(opts);
   check(
-    'a saved order re-sequences the metric list (behind_stat first) — the raw values keep leading at their fixed positions',
-    JSON.stringify(labels) ===
-      JSON.stringify([...RAW_LABELS, 'Behind stat', 'Match stat']),
+    'a stored order is never read: the metric list keeps the default order (raw values, then Match stat, then Behind stat)',
+    JSON.stringify(labels) === JSON.stringify([...RAW_LABELS, 'Match stat', 'Behind stat']),
     JSON.stringify(labels),
+  );
+  check(
+    'the retired metric_order_match key is never read by the Reports view',
+    bindings.calls.filter((c) => c.method === 'GetPref' && c.args[0] === 'metric_order_match').length === 0,
+    JSON.stringify(bindings.calls.filter((c) => c.method === 'GetPref').map((c) => c.args[0])),
   );
   // Pick in the OPPOSITE order: the chips still render in the sequence
   // (the exported document's sections follow the same one).
@@ -613,8 +493,8 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   click(opts2.find((o) => o.textContent.includes('Behind stat')));
   await sleep(60);
   check(
-    'the chips render in the metric-order sequence, not the pick order',
-    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Behind stat', 'Match stat']),
+    'the chips render in the default sequence, not the pick order',
+    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Match stat', 'Behind stat']),
     JSON.stringify(tokenNames(r2)),
   );
   const dl = await saveReport(r2);
@@ -622,8 +502,8 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   {
     const [m, b] = [text.indexOf('### Match stat'), text.indexOf('### Behind stat')];
     check(
-      'the saved document orders its sections by the match sequence (behind_stat first)',
-      m > -1 && b > -1 && b < m,
+      'the saved document orders its sections by the default sequence (match_stat first)',
+      m > -1 && b > -1 && m < b,
       text.replace(/\s+/g, ' ').slice(0, 300),
     );
   }
@@ -637,10 +517,10 @@ console.log('G. the field follows the match ORDER pref (metricorder — the one 
   await sleep(60);
   check(
     'Backspace on an empty field removes the last chip (sequence order)',
-    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Behind stat']),
+    JSON.stringify(tokenNames(r2)) === JSON.stringify(['Match stat']),
     JSON.stringify(tokenNames(r2)),
   );
-  click(removeBtn(r2, 'Behind stat'));
+  click(removeBtn(r2, 'Match stat'));
   await sleep(60);
   check(
     'the remaining chip’s ✕ clears the field',
@@ -920,8 +800,8 @@ console.log('H. the player picker statline composes per half — every half is a
 {
   const panels = root.querySelectorAll('section.panel');
   check(
-    'exactly ONE section.panel renders (both sections live in the single card)',
-    panels.length === 1,
+    'three section.panel cards: the match picker (standalone), the templates and targets, the stats appendix',
+    panels.length === 3,
     `${panels.length} panels`,
   );
 }

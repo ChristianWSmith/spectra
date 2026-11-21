@@ -95,10 +95,11 @@ console.log('B. Replay’s four loading sites (harness exists but never holds a 
 
 console.log('C. busy-button labels stay plain text (owner ruling: the exemption)');
 {
-  const reports = src('views/Reports.svelte');
+  // The save button moved into the Reports builtin's appendix panel (C5c).
+  const reports = src('builtins/reports/ReportsAppendix.svelte');
   check(
     'Reports: "Generating…" still rides the Generate button as plain text',
-    /\{#if rendering\}Generating…\{:else\}/.test(reports) && !reports.includes('chip-spin'),
+    /\{#if m\.rendering\}Generating…\{:else\}/.test(reports) && !reports.includes('chip-spin'),
     '',
   );
 }
@@ -178,7 +179,8 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
     '',
   );
 
-  const expl = src('views/Explorer.svelte');
+  // The two Loading lines moved into the Explorer builtin's panels (C5c).
+  const expl = src('builtins/explorer/ExplorerProvenance.svelte') + src('builtins/explorer/ExplorerDiagnostics.svelte');
   check(
     'Explorer: both bare "Loading…" lines are block chips, none left as raw <p>',
     (expl.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&

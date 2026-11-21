@@ -59,11 +59,15 @@ function stripComments(src) {
 const panelFiles = readdirSync(PANEL_DIR).filter((f) => f.endsWith('.svelte') || f.endsWith('.js'));
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
-test('the registry names the Profile component and six panels, all in the builtin namespace', () => {
+test('the registry names the Profile, Reports and Explorer components and their panels, all in the builtin namespace', () => {
   const ids = [...registry.matchAll(/'(builtin-[a-z-]+)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(ids)].sort(),
     [
+      'builtin-explorer',
+      'builtin-explorer-diagnostics',
+      'builtin-explorer-provenance',
+      'builtin-explorer-reference',
       'builtin-profile-career',
       'builtin-profile-history',
       'builtin-profile-maps',
@@ -71,6 +75,9 @@ test('the registry names the Profile component and six panels, all in the builti
       'builtin-profile-trend',
       'builtin-profile-view',
       'builtin-profile-weapons',
+      'builtin-reports',
+      'builtin-reports-appendix',
+      'builtin-reports-templates',
     ],
   );
   for (const id of ids) assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} carries the builtin prefix`);
