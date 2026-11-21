@@ -327,11 +327,13 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 		byMatch, bySteam := bindsOf(r.expr, r.scope)
 		scopes := []changeScope{{Whole: true}}
 		if byMatch || bySteam {
+			// Every bound root fans out to the match's players, not only a
+			// player-bound one: a match-bound root's dependents may bind
+			// :steam_id (a career metric built through metric()), and the
+			// cascade reaches them only through a player scope.
 			scopes = []changeScope{{MatchID: matchID}}
-			if bySteam {
-				for _, p := range players {
-					scopes = append(scopes, changeScope{MatchID: matchID, SteamID: p})
-				}
+			for _, p := range players {
+				scopes = append(scopes, changeScope{MatchID: matchID, SteamID: p})
 			}
 		}
 		for _, sc := range scopes {
@@ -419,4 +421,54 @@ func MetricRefSQL(name string, binds []string, ruleVersion int) string {
 	return "(SELECT v.subject_key AS subject_key, v.dim AS dim, CASE WHEN " + fresh + " THEN v.value END AS value" +
 		" FROM metric_values v JOIN metrics m ON m.id = v.metric_id" +
 		" WHERE m.name = " + lit + " AND " + scope + ")"
+}
+
+// deriveBuiltinDeps writes metric_deps for every builtin metric from its
+// metric('name') references (dogfood/03-QUERIES.md §6). schema.sql seeds a
+// builtin with no edges, and only a user save re-derives them, so without
+// this the dependency cascade (invalidateDependents) never reaches a builtin
+// that reads another metric. It runs on every Open inside the schema
+// transaction; each builtin's edge set is replaced wholesale, so it is
+// idempotent.
+func deriveBuiltinDeps(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id, expr FROM metrics WHERE origin = 'builtin'`)
+	if err != nil {
+		return fmt.Errorf("couldn't derive the builtin dependencies: %w", err)
+	}
+	type builtin struct {
+		id   int64
+		expr string
+	}
+	var all []builtin
+	for rows.Next() {
+		var b builtin
+		if err := rows.Scan(&b.id, &b.expr); err != nil {
+			rows.Close()
+			return fmt.Errorf("couldn't derive the builtin dependencies: %w", err)
+		}
+		all = append(all, b)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("couldn't derive the builtin dependencies: %w", err)
+	}
+	rows.Close()
+	for _, b := range all {
+		st, gerr := AnalyzeMetricSQL(b.expr, nil)
+		if gerr != nil {
+			continue
+		}
+		seen := map[string]bool{}
+		var deps []string
+		for _, r := range st.Refs {
+			if !seen[r.Name] {
+				seen[r.Name] = true
+				deps = append(deps, r.Name)
+			}
+		}
+		if err := replaceMetricDeps(tx, b.id, deps); err != nil {
+			return err
+		}
+	}
+	return nil
 }
