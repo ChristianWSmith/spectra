@@ -407,16 +407,48 @@ survives.
   for a retired key (grep).
 - **Deps:** C2, C3.
 
-**C5 · Dogfood surfaces (decided, D-2).** Rebuild the Match view below the
-header (the tab bar and everything under it) and the individual Profile view
-as builtin Svelte components that read metrics through the read API. The
-header, warnings, round strip and profiles list stay hardcoded. Each surface
-migrates in its own commit, with the guide updated in the same change. Then
-add "duplicate to edit" and "use as my view" (`04 §7`).
-- **Check:** for each migrated surface, the snapshot's stored values appear
-  unchanged on screen. This is a display check, not a GUI smoke. GUI smoke is
-  on request only (AGENTS).
-- **Deps:** C4, B6.
+**C5 · Dogfood surfaces (decided, D-2), decomposed.** Rebuild the Match view below
+the header (tab bar and everything under it), the scoreboard, and the individual
+Profile view as builtin components. The header, warnings, round strip and
+profiles list stay hardcoded. Pinning is removed (ruling 33). Each sub-item is
+its own commit with the guide updated in the same change.
+
+- **C5a · Context and nested mount (rulings 34, 36).** The read API gives every
+  mounted component a read-only `context` (`matchId`, `steamId`, `round`), and
+  `metric()` and `query()` default their binds from it. A component can mount
+  child components itself and pass `context` down. A child failure stays in its
+  own frame. **Deps:** C2, C3. **Check:** a parent and child test where the child
+  reads `context` from its parent; a failing child shows its own frame and the
+  parent keeps rendering; `metric()` with no explicit binds reads the context's
+  match.
+- **C5b · Match view tab bar and content as builtins.** Split the Match view into
+  builtin components for the tab bar and each tab's content, mounted by the
+  hardcoded shell. **Deps:** C5a. **Check:** on the snapshot, each stored value shown
+  by the Match view appears unchanged (display check, not GUI smoke).
+- **C5c · Scoreboard as a builtin (ruling 33).** The scoreboard is a builtin
+  component mounted by C5b's content. Its transposed layout is not a preference:
+  a user who wants it transposed duplicates it and edits it. **Deps:** C5a, C5b.
+  **Check:** scoreboard values match the snapshot; no read of
+  `scoreboard_starts_transposed` remains (grep).
+- **C5d · Individual Profile view as a builtin.** **Deps:** C5a. **Check:** profile
+  values match the snapshot; the profile header and profiles list stay hardcoded.
+- **C5e · Pinning removal (ruling 33).** Remove the pin, order and hide controls and
+  their keys (`metric_order_*`, `metric_pins_overview`, `metric_economy`,
+  `metric_hidden_*`, `scoreboard_starts_transposed`, the two localStorage pin keys),
+  and the metric ordering dialog. Update the guide. **Deps:** C5b, C5c, C5d (the
+  views must have their components before their controls go). **Check:** grep finds
+  no reader of a retired key; the guide has no pinning section.
+- **C5f · Duplicate to edit and use as my view (`04 §7`).** Wire the actions to the
+  placement store (C4 writers, merged). **Deps:** C5b, C5d, C4. **Check:** a
+  duplicated builtin renders its copy; "use as my view" writes one placement that
+  Reset removes.
+- **C5g · Rename engagements to "kill tags" (ruling 32).** Schema, API and UI names,
+  and the guide. Run after C5b so the Match view's names change once. **Deps:**
+  C5b. **Check:** grep finds no `engagements` label in user-facing text; the
+  stored data is unchanged.
+
+Open for the owner: whether the Economy view (it reads `metric_economy` pins,
+retired by ruling 33) is also a builtin component in this wave. Not decided.
 
 ### Track F — fact/calculation split (decided, item 17)
 
