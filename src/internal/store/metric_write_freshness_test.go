@@ -162,3 +162,54 @@ func TestImportLeavesUnrelatedMatchStateAlone(t *testing.T) {
 		t.Fatalf("unrelated M run version = %d, want current %d", got, m.Version)
 	}
 }
+
+// Deleting a match leaves a library-wide metric that reads only matches fresh:
+// the career rebuild clears only the career values of metrics whose touched
+// set holds a table the delete changed.
+func TestDeleteLeavesMatchesOnlyLibraryMetricFresh(t *testing.T) {
+	s := mustOpenMemory(t)
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	live := cfg.RuleVersion
+	doomed := seedReadyMatch(t, s, "del-b-1")
+	seedReadyMatch(t, s, "del-b-2")
+	fact := createRaw(t, s, "delete_lib_matches", matchesRawSQL, []string{"matches"})
+	if err := s.ReplaceRawMetricValues(fact.ID, fact.Version, live, RawScope{}, nil); err != nil {
+		t.Fatalf("ReplaceRawMetricValues: %v", err)
+	}
+	if err := s.DeleteMatchData(doomed); err != nil {
+		t.Fatalf("DeleteMatchData: %v", err)
+	}
+	if c := coverageOf(t, s, fact.ID, live); c.Behind {
+		t.Fatalf("matches-only metric after delete = %+v, want fresh", c)
+	}
+}
+
+// Reprocessing match M (the write, then the analysis rebuild a reprocess runs)
+// does not change the state of a career metric whose touched set holds none of
+// the changed tables.
+func TestReprocessLeavesUntouchedCareerMetricFresh(t *testing.T) {
+	s := mustOpenMemory(t)
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	live := cfg.RuleVersion
+	m1 := seedReadyMatch(t, s, "reproc-c-m")
+	seedReadyMatch(t, s, "reproc-c-n")
+	fact := createRaw(t, s, "reproc_career_matches", matchesRawSQL, []string{"matches"})
+	if err := s.ReplaceRawMetricValues(fact.ID, fact.Version, live, RawScope{}, nil); err != nil {
+		t.Fatalf("ReplaceRawMetricValues: %v", err)
+	}
+	if err := s.SaveExtracted(m1, &models.ExtractedMatch{Events: []models.Event{{Seq: 0, Kind: "kill"}}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	if err := s.RebuildCareerForMatches([]int64{m1}); err != nil {
+		t.Fatalf("RebuildCareerForMatches: %v", err)
+	}
+	if c := coverageOf(t, s, fact.ID, live); c.Behind {
+		t.Fatalf("matches-only career metric after reprocess = %+v, want fresh", c)
+	}
+}

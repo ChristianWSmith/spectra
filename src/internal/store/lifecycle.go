@@ -631,6 +631,8 @@ func (s *Store) DeleteMatchData(id int64) error {
 	}
 	// The deleted match's rows no longer exist — refresh the career rollup
 	// so profiles stay correct (M3: LibraryService.DeleteMatch → rebuild).
+	// Only the career values of metrics that read a table this delete changed
+	// are cleared (invalidateCareerValues).
 	if err := s.RebuildCareerFor(steamIDs); err != nil {
 		return err
 	}
