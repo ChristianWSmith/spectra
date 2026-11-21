@@ -10,36 +10,11 @@ import { readFileSync } from 'node:fs';
 import { checkComponentSource } from './componentruntime/compile.js';
 import { gateComponentSave, refusalText } from './componentruntime/savegate.js';
 import { parseProps, placedEntries } from './componentruntime/placementrows.js';
-import { PANEL_SOURCES } from './builtins/generated/sources.js';
+import { PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
+import { BUILTIN_HELPERS } from './componentruntime/compile.js';
 import { BUILTIN_COMPONENTS, builtinShippedSource } from './componentbuiltins.js';
 import { guideSectionsBeforeManual, guideSectionsAfterManual } from './docs/manuals/user-guide-content.js';
 import { generate, OUT_FILE, panelRegistry } from '../../scripts/gen-builtin-sources.mjs';
-
-// The compiled panels whose shipped source imports a helper module or a
-// sibling (services.js, strings, shared.js). A user component imports
-// nothing (compile.js refuses it at its line), so these panels' generated
-// source is refused by the gate today. Owner decision pending: rewrite each to
-// a self-contained user-language source (spectra.Child for children, helpers
-// inlined), or keep them compiled and not editable. Pinned here so a change
-// to this set is deliberate.
-const PANELS_BLOCKED_BY_IMPORTS = [
-  'builtin-explorer-diagnostics',
-  'builtin-explorer-provenance',
-  'builtin-explorer-reference',
-  'builtin-match-heatmap',
-  'builtin-match-combat-clutches',
-  'builtin-match-combat-engagements',
-  'builtin-match-tabs',
-  'builtin-profile-career',
-  'builtin-profile-history',
-  'builtin-profile-maps',
-  'builtin-profile-sides',
-  'builtin-profile-trend',
-  'builtin-profile-weapons',
-  'builtin-reports',
-  'builtin-reports-appendix',
-  'builtin-reports-templates',
-];
 
 // (a) every builtin the Component builder lists passes the save gate.
 test('(a) each listed builtin source compiles through the save gate', async () => {
@@ -50,20 +25,66 @@ test('(a) each listed builtin source compiles through the save gate', async () =
   }
 });
 
-// (a) every generated panel source compiles, except the pinned import set,
-// and each of those is refused with its import line (not a silent failure).
-test('(a) each generated panel source compiles, or is refused for its import', async () => {
-  const refused = [];
+// (a) every generated panel source compiles through the save gate under the
+// built-in rules (ruling 45): its relative imports are curated helpers.
+test('(a) each generated panel source compiles under the built-in rules', async () => {
+  assert.equal(Object.keys(PANEL_SOURCES).length, 20, 'every compiled panel is embedded');
   for (const [id, src] of Object.entries(PANEL_SOURCES)) {
-    const r = await checkComponentSource(src);
-    if (!r.ok) {
-      refused.push(id);
-      assert.match(r.message, /^Components cannot import /, `${id}: ${r.message}`);
-      assert.ok(r.line > 0, `${id} refusal has no line`);
+    const r = await checkComponentSource(src, 'Component.svelte', PANEL_DIRS[id]);
+    assert.equal(r.ok, true, `${id}: ${r.message} (line ${r.line})`);
+  }
+});
+
+// Every helper the built-in panels import is listed, and the built-in rules
+// refuse a helper name the registry does not list (ruling 45).
+test('(a) built-in imports are curated: an unlisted name or module is refused', async () => {
+  const dir = 'src/lib/builtins/profile';
+  const ok = await checkComponentSource(`<script>
+  import { fmt1 } from '../../fmt.js';
+  let { spectra } = $props();
+</script>
+<p>{fmt1(1)}</p>`, 'Component.svelte', dir);
+  assert.equal(ok.ok, true, ok.message);
+  const name = await checkComponentSource(`<script>
+  import { saveMetric } from '../../services.js';
+  let { spectra } = $props();
+</script>
+<p>x</p>`, 'Component.svelte', dir);
+  assert.equal(name.ok, false);
+  assert.equal(name.line, 2);
+  assert.match(name.message, /cannot import saveMetric from/);
+  const mod = await checkComponentSource(`<script>
+  import { x } from '../../not-a-helper.js';
+  let { spectra } = $props();
+</script>
+<p>x</p>`, 'Component.svelte', dir);
+  assert.equal(mod.ok, false);
+  assert.equal(mod.line, 2);
+});
+
+// A user component imports nothing: the built-in rules are not its rules.
+test('(a) a user component cannot import a helper', async () => {
+  const r = await checkComponentSource(`<script>
+  import { fmt1 } from '../../fmt.js';
+  let { spectra } = $props();
+</script>
+<p>{fmt1(1)}</p>`);
+  assert.equal(r.ok, false);
+  assert.equal(r.line, 2);
+});
+
+// The curated surface: every listed name is exported by its module (read from
+// the module's source, since the modules themselves need the Wails bindings).
+test('(a) every curated helper name is exported by its module', () => {
+  for (const [key, h] of Object.entries(BUILTIN_HELPERS)) {
+    if (key.startsWith('bindings/') || key.endsWith('.svelte')) continue;
+    const text = readFileSync(new URL('../../' + key, import.meta.url), 'utf8');
+    for (const name of Object.keys(h.names)) {
+      if (name === '*' || name === 'default') continue;
+      const exported = new RegExp(`export\\s+(const|let|function|async function|class)\\s+${name}\\b|export\\s*\\{[^}]*\\b${name}\\b`).test(text);
+      assert.ok(exported, `${key} does not export ${name}`);
     }
   }
-  assert.deepEqual(refused.sort(), [...PANELS_BLOCKED_BY_IMPORTS].sort());
-  assert.equal(Object.keys(PANEL_SOURCES).length, 20, 'every compiled panel is embedded');
 });
 
 test('(a) the builtin shipped source is the text the build embedded', () => {

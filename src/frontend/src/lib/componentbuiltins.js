@@ -20,7 +20,7 @@ import * as S from './strings/index.js';
 import { MATCH_PANELS } from './matchpanels.js';
 import { ECON_PANELS } from './econpanels.js';
 import { UTIL_PANELS } from './utilpanels.js';
-import { PANEL_SOURCES } from './builtins/generated/sources.js';
+import { PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -99,6 +99,14 @@ export function builtinById(id) {
 // here, or for a compiled builtin panel the text the build embedded
 // (builtins/generated/sources.js, written by scripts/gen-builtin-sources.mjs).
 // "Restore to default" and an unedited builtin's editor read this.
+// builtinSourceDir is the frontend-relative directory a built-in's source
+// lives in (its relative imports resolve against it), or null when the id is
+// not a built-in. The registry's own components live in src/lib.
+export function builtinSourceDir(id) {
+  if (Object.hasOwn(PANEL_DIRS, id)) return PANEL_DIRS[id];
+  return builtinById(id) ? 'src/lib' : null;
+}
+
 export function builtinShippedSource(id) {
   const b = builtinById(id);
   if (b) return b.source;

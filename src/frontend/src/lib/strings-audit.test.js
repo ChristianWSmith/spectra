@@ -150,6 +150,16 @@ const DENYLIST_EXEMPT = {
       why: 'the Utility builtin’s roster query (read-only SQL) — not user copy',
     },
   ],
+  'frontend/src/lib/componentruntime/compile.js': [
+    {
+      text: 'load the profile’s seed values (read)',
+      why: 'a developer description of a curated helper name in the built-in registry (BUILTIN_HELPERS, ruling 45) — never rendered',
+    },
+    {
+      text: 'bindings/github.com/ChristianWSmith/spectra',
+      why: 'the registry key of the analytics binding (a module path, not copy)',
+    },
+  ],
   'frontend/src/lib/matchpanels.js': [
     {
       text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',

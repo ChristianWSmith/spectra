@@ -11,6 +11,8 @@
 //      Reset (no placement) renders the default again;
 //   E. a placement that names no component shows its refusal in its slot.
 //
+//   F. an edit may import a curated helper (ruling 45) and renders.
+//
 // Run (from frontend/):  node test/builtin-edits.dom.mjs
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
@@ -214,6 +216,19 @@ check('a missing component shows its refusal in its slot', !!root.querySelector(
 check('the surface does not crash on a missing component', !root.querySelector('.default-marker'));
 unmounted();
 PLACEMENTS = {};
+
+// --- F. an edit that imports a curated helper (ruling 45) --------------------
+console.log('F. an edit that imports a helper');
+const HELPER_EDIT = `<script>
+  import { fmt1 } from './fmt.js';
+  let { spectra } = $props();
+</script>
+<p class="helper-marker">{fmt1(2.5)}</p>`;
+OVERRIDES = [{ id: OVERVIEW, source: HELPER_EDIT }];
+root = await mountHarness({ mode: 'child', name: OVERVIEW });
+check('an edit may import a listed helper and it renders', root.querySelector('.helper-marker')?.textContent.trim() === '2.5', root.innerHTML.slice(0, 200));
+unmounted();
+OVERRIDES = [];
 
 check('no write happened from the render path', setCalls.length === 0 && resetCalls.length === 0);
 check('nothing escaped the drivers', escaped.length === 0, escaped.join(' | '));

@@ -47,6 +47,7 @@
     reads = null,
     nav = undefined,
     context = null,
+    builtinDir = null,
   } = $props();
 
   const ctx = $derived(frozenContext(context));
@@ -90,7 +91,7 @@
     loadError = '';
     if (src == null) return;
     let live = true;
-    loadComponent(src).then(
+    loadComponent(src, 'Component.svelte', builtinDir).then(
       (c) => {
         if (live) loaded = c;
       },
