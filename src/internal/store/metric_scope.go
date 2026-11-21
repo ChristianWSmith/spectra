@@ -387,3 +387,36 @@ func (s *Store) RebuildCareerForMatches(matchIDs []int64) error {
 	}
 	return s.RebuildCareerFor(steamIDs)
 }
+
+// MetricRefSQL is the subquery a metric('name') reference is rewritten to
+// when the statement runs (dogfood/03-QUERIES.md §5-§6). It reads the stored
+// value of the named metric for the statement's own bound scope, carrying
+// subject_key and dim through, and yields NULL for a stored value that is
+// behind (the same freshness spelling every read uses, metricValueFreshCond,
+// with the run's rule version). A missing value yields no row. binds is the
+// statement's own bind list: the reference reads the scope the statement
+// runs under, and an unbound statement reads the library-wide values. The
+// name is written as a SQL literal, so it cannot break the text.
+func MetricRefSQL(name string, binds []string, ruleVersion int) string {
+	used := map[string]bool{}
+	for _, b := range binds {
+		used[b] = true
+	}
+	var scope string
+	switch {
+	case used[":steam_id"]:
+		// A profile-scoped value, or a per-match value of this player.
+		scope = "(v.scope_steam_id = :steam_id OR (v.match_id > 0 AND v.scope_round = 0 AND v.subject_key = :steam_id))"
+	case used[":round"]:
+		scope = "v.match_id = :match_id AND v.scope_round IN (0, :round)"
+	case used[":match_id"]:
+		scope = "v.match_id = :match_id AND v.scope_round = 0"
+	default:
+		scope = "v.match_id = 0 AND v.scope_steam_id = '' AND v.scope_round = 0"
+	}
+	fresh := strings.Replace(metricValueFreshCond, "?", fmt.Sprint(ruleVersion), 1)
+	lit := "'" + strings.ReplaceAll(name, "'", "''") + "'"
+	return "(SELECT v.subject_key AS subject_key, v.dim AS dim, CASE WHEN " + fresh + " THEN v.value END AS value" +
+		" FROM metric_values v JOIN metrics m ON m.id = v.metric_id" +
+		" WHERE m.name = " + lit + " AND " + scope + ")"
+}

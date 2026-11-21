@@ -201,7 +201,11 @@ func TestMetricGateRefs(t *testing.T) {
 	if gerr != nil {
 		t.Fatal(gerr.Message)
 	}
-	want := []MetricSQLRef{{Name: "kills", Pos: strings.Index(q, "'kills'")}, {Name: "it's", Pos: strings.Index(q, "'it''s'")}}
+	kills, its := strings.Index(q, "metric('kills')"), strings.Index(q, "metric('it''s')")
+	want := []MetricSQLRef{
+		{Name: "kills", Pos: strings.Index(q, "'kills'"), Start: kills, End: kills + len("metric('kills')")},
+		{Name: "it's", Pos: strings.Index(q, "'it''s'"), Start: its, End: its + len("metric('it''s')")},
+	}
 	if !reflect.DeepEqual(st.Refs, want) {
 		t.Fatalf("refs = %+v, want %+v", st.Refs, want)
 	}
