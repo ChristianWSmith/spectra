@@ -108,8 +108,8 @@ const EXPECTED = {
   // Profiles lit, a click returning to the remembered FULL hash — path
   // AND query — through resolveNavTarget, plus the two style.css source
   // pins: the greyed .nav-item:disabled rule and the
-  // :hover:not(:disabled) neutralization, since jsdom never applies
-  // :hover and has no layout).
+  // hover:not(:disabled) neutralization, since jsdom never applies
+  // hover and has no layout).
   // app-dock 66 → 68 (2026-11-16, N7 — the Profiles sidebar tab's
   // session memory): +1 the boot pair (the Profiles tab is ENABLED on
   // the Library — its policy is 'fallback', always a directory to go
@@ -198,8 +198,8 @@ const EXPECTED = {
   // DOM (the N1 source-pin idiom — jsdom has no layout): the title bar
   // sits OUTSIDE .mo-body as the panel's direct child above it, the
   // panel clips (overflow:hidden) with .mo-head flex:0 0 auto and
-  // .mo-body THE scroll region (min-height:0 + overflow-y:auto) while
-  // .mo-list carries neither max-height nor overflow, the row's
+  // mo-body THE scroll region (min-height:0 + overflow-y:auto) while
+  // mo-list carries neither max-height nor overflow, the row's
   // controls ride ONE right-aligned .mo-acts cluster (margin-left:auto
   // there, gone from .mo-moves) with no title= on the eye; +2 the new
   // M6 unpin leg (both pin keys written and never metric_order_match,
@@ -296,7 +296,7 @@ const EXPECTED = {
   // in the list; section D pins the chip on save, its absence on the shipped
   // and user rows, and its removal on restore.
   'builder.dom.mjs': 125,
-  // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
+  // combat 75 → 86: +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
   // +2 section L (a dead backend now surfaces the metric-slot alert too
@@ -419,7 +419,7 @@ const EXPECTED = {
   // metric-language row with its default-expanded + catalog-label pins,
   // fold → 13 entries + aria-expanded false, unfold → 26, the dual
   // highlight on a current MINOR (.active + aria-current vs the major's
-  // .parent-active, exactly one aria-current) and on a current MAJOR
+  // parent-active, exactly one aria-current) and on a current MAJOR
   // (no .parent-active anywhere), a query expanding a FOLDED chapter so
   // its marked match stays listed, the fold state surviving the query,
   // <mark> in a TOC label AND a body section heading with byte-identical
@@ -453,7 +453,7 @@ const EXPECTED = {
   // stepping with focus returned to the input. Section C's Escape
   // contract untouched.
   'docs.dom.mjs': 83,
-  // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
+  // econ-tables 107 → 108: −3 the KAST%
   // error-dismissal sub-checks (combatError died with the KAST% metric
   // column), +4 the new section K (fixed block first, the four
   // converted metric columns after it, the m5-mth cap scope, the
@@ -490,7 +490,7 @@ const EXPECTED = {
   // column order, plain row headers with no sort button, the same cell
   // renderers incl. the Opening K/D compound, the profile link + side
   // chip on the player headers, no row-click → replay), the three
-  // .scoreboard.transposed CSS-text pins, the round trip (order kept,
+  // scoreboard.transposed CSS-text pins, the round trip (order kept,
   // zero marks — the owner's kills example included), and the pinned-
   // metric stat rows (sequence, stored value, state chip). Section K's
   // fixed-block pin dropped 'Rnds' in place (the column left SCORE_COLS).
@@ -507,7 +507,7 @@ const EXPECTED = {
   // open why row spans all nine columns), +2 section F (the curve hit
   // rect AND the winner-strip button both carry ?back=match/3/economy —
   // the Overview-fallback fix), +4 section M (the arrow-swap glyph, the
-  // .sb-name wrapper with the chip as its following sibling, the
+  // sb-name wrapper with the chip as its following sibling, the
   // stylesheet's display:block pin, and the bare-name shape's own
   // mount). Column-index pins re-based IN PLACE for the new far-left
   // column (roundOf/children[2], chipFor nth-child(4), winnerChips 3)
@@ -813,7 +813,7 @@ const EXPECTED = {
   // row/playing pin, the seek delta and the glyph mirror kept
   // their shape; the old pause-delta leg became the play-delta leg.
   'replay.dom.mjs': 473,
-  // reports 18 → 20 (2026-11-14, dogfooding W4): section G gained the
+  // reports 18 → 20: section G gained the
   // two EXPORTED-document order pins (the appendix sections follow the
   // match sequence with the pref, and return to the default order when
   // the key is gone — design §2.5's addendum).
@@ -967,7 +967,7 @@ const EXPECTED = {
   // the first commit are untouched.
   // settings 94 → 111 (2026-11-17, w23 Build plugin…): +17 the new
   // section K — the card-header trigger (codicon-export + label on the
-  // .row-between beside the Plugins heading, clear of the install row),
+  // row-between beside the Plugins heading, clear of the install row),
   // the dialog anatomy (name field + verb hint, the 1.0.0 version
   // default, both TokenSelect fields' placeholders/aria), the
   // USER-ORIGIN-ONLY offer (a mixed-origin fixture: each picker offers

@@ -56,9 +56,7 @@ type MatchListPage struct {
 // whitelists it — never interpolate user input).
 //
 // K/D and KDA are deliberately NOT here: the stored `kd` and `kda`
-// metric rows are THE values every surface renders (dogfooding W4 for
-// K/D, w13d for KDA — reports read them back, the scoreboard columns
-// are metric-backed), so a Go-computed copy would be a second
+// metric rows are THE values every surface renders, so a Go-computed copy would be a second
 // presentation of the same number.
 //
 // Slimmed 2026-11-18: every seed-backed stat cell (HS%, damage taken,

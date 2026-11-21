@@ -4,7 +4,7 @@ export default {
   // Consult https://svelte.dev/docs#compile-time-svelte-preprocess
   // for more information about preprocessors
   preprocess: vitePreprocess(),
-  // Components are runes-only (dogfood/04-COMPONENTS.md §5): builtins
+  // Components are runes-only: builtins
   // compile in the same mode as user components (componentruntime/compile.js).
   compilerOptions: { runes: true },
   // Warning gate: warnings never fail the build by themselves (GitHub only

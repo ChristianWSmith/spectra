@@ -1,6 +1,6 @@
 import '../../test/compile-worker-node.mjs';
 // matchbuiltins.test.js — the Match view's Heatmaps and Combat tabs as builtin
-// components (PLAN C5-Heat-Combat; dogfood/04-COMPONENTS.md §3, §7). Pins:
+// components. Pins:
 //   1. the registry (builtins/panels.js) names the two tab components and their
 //      panels, every id sits in the reserved builtin namespace, and each
 //      panel's file exists;
@@ -24,7 +24,7 @@ import { clutchKillTicks, groupEngagements } from './builtins/match/combatmodel.
 const LIB = fileURLToPath(new URL('.', import.meta.url));
 const MATCH_DIR = path.join(LIB, 'builtins', 'match');
 
-// The retired keys and their readers (dogfood/04 §2, ruling 33), as in
+// The retired keys and their readers, as in
 // builtinpanels.test.js.
 const RETIRED = [
   'metric_order_match',

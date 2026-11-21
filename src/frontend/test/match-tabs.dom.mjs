@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Match tab set (builtins/match/MatchTabs.svelte; PLAN C5c,
-// dogfood/04-COMPONENTS.md §3). The tab set mounts through the real
+// jsdom driver for the Match tab set. The tab set mounts through the real
 // ComponentFrame with only its context (and the tab the URL owns). Its data is
 // its own: the panels read the fixture below through the real read API, and the
 // facts panel reads the match services through the bindings stub.

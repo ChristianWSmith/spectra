@@ -1,5 +1,4 @@
-// The key a ComponentFrame provides to the frames nested inside it (the
-// nested mount API, dogfood/04-COMPONENTS.md §3.5). Its value is
+// The key a ComponentFrame provides to the frames nested inside it. Its value is
 //   { reads, nav, depth, context: () => ctx }
 // where `context` is a getter (the parent's context changes while it
 // lives) and `depth` counts the frames above this one.

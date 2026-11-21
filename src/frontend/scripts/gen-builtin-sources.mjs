@@ -1,5 +1,5 @@
 // Generates src/lib/builtins/generated/sources.js: the Svelte source text of
-// every compiled builtin panel (dogfood/04-COMPONENTS.md §1, owner ruling 43).
+// every compiled builtin panel.
 //
 // A builtin panel is a .svelte file the bundler compiles. Its source text is
 // embedded here so the Component builder can show it, and so an edit of it can

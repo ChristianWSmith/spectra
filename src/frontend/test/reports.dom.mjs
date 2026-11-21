@@ -29,7 +29,7 @@ import './compile-worker-node.mjs';
 //      refetches the stored rows (the cache flushed);
 //   F. the no-version pin over every rendered metric output (the
 //      readout chips/lines AND the saved file);
-//   G. the field follows the match ORDER pref (dogfooding design §1)
+//   G. the field follows the match ORDER pref
 //      AND the saved document's sections follow the same sequence (the
 //      W4 addendum — design §2.5): the selection restores from the
 //      registry on remount, chips render in the sequence (not the pick
@@ -271,7 +271,7 @@ console.log('A. the item universe behind the field is the raw recorded values pl
 // W17 (owner, 2026-11-16): the save button left the panel header and
 // parks at the RIGHT end of the stats-inputs line — the field whose
 // picks it exports and the button that writes the document share ONE
-// .row-between. The play glyph died with the move: the save codicon
+// row-between. The play glyph died with the move: the save codicon
 // LEADS the label now (the busy shape itself is progress-presentation's
 // pin). This fixture scripts a template, so the whole appendix block
 // ({#if tpl}) — button included — renders.

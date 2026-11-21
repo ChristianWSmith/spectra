@@ -3,11 +3,7 @@ package store
 // Profile read-model queries: the Sides card's per-round side splits and
 // the history row's freeze-end start side. Each pins the decisions its
 // doc comment states — no side/proximity/round guess ever produces a
-// value. (The counters that used to live here followed their cards into
-// the metric reads: GetPlayerMatchAverages in dogfooding W3 and the
-// Trade rate's library-wide opportunity denominator,
-// CountPlayerTradeOpportunities, in W4 — the cards read career_*/trade
-// metric rows now.)
+// value.
 
 import (
 	"testing"

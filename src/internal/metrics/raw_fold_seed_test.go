@@ -4,8 +4,7 @@ import (
 	"testing"
 )
 
-// TestRawFoldSeeds runs every F2 raw-SQL fold seed (schema.sql, dogfood/PLAN.md
-// F2) through the sweep's own unit on the synthetic corpus. Each statement
+// TestRawFoldSeeds runs every F2 raw-SQL fold seed through the sweep's own unit on the synthetic corpus. Each statement
 // must gate, run for every scope it needs, and store at least one row. The
 // snapshot equality check is recorded in spectra-verify/f2/RESULTS-raw.md.
 func TestRawFoldSeeds(t *testing.T) {

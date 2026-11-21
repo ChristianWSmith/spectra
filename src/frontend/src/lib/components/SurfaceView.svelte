@@ -1,6 +1,5 @@
 <script>
-  // SurfaceView — a surface's placed components, or its default (dogfood/04
-  // §2; owner ruling 43). A surface with no placement renders its default
+  // SurfaceView — a surface's placed components, or its default. A surface with no placement renders its default
   // composition (the `fallback` snippet) exactly as before. A surface with
   // placements renders each placed component, in order, in its own frame
   // (ChildFrame resolves the name: an edited builtin, a shipped builtin, or a

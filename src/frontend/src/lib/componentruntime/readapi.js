@@ -1,4 +1,4 @@
-// THE read API a mounted component receives (dogfood/04-COMPONENTS.md §3)
+// THE read API a mounted component receives
 // — the whole surface between a component and the app, typed here in one
 // module. ComponentFrame.svelte builds one per mounted component and
 // passes it as the reserved `spectra` prop beside the component's own

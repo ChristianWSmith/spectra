@@ -3,8 +3,7 @@ package store
 import "testing"
 
 // (d) A change to a referenced metric x marks the statement that reads
-// metric('x') behind for the changed match only (scope-aware cascade,
-// dogfood/PLAN.md B4 and ruling 20).
+// metric('x') behind for the changed match only.
 func TestMetricRefChangeMarksReaderBehindForOneMatch(t *testing.T) {
 	s := mustOpenMemory(t)
 	cfg, err := s.GetConfig()

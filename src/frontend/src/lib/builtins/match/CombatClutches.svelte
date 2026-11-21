@@ -1,5 +1,5 @@
 <script>
-  // Combat · Clutches (builtin panel; PLAN C5-Heat-Combat). The detected 1vN
+  // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
   // OFF by default. It reads the match from `context`; the loop-length pref

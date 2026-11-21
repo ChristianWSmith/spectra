@@ -1,5 +1,5 @@
 // The builtin component registry: every component shipped with the app,
-// as Svelte source (dogfood/04-COMPONENTS.md §1). A builtin is edited in place
+// as Svelte source. A builtin is edited in place
 // (ruling 43): the Component builder loads it, and Save stores an override of
 // that builtin. Duplicate-to-edit is cancelled for builtins, so the builder
 // offers no Duplicate for one; Duplicate is for the user's own components.
@@ -101,10 +101,10 @@ export const BUILTIN_COMPONENTS = registryList([
     placeholder: true,
     source: PLACEHOLDER_SOURCE,
   }),
-  // The Match view's panels (matchpanels.js, dogfood C5b). Each is mounted
+  // The Match view's panels. Each is mounted
   // by the Match view with its context; duplicating one gives a user copy.
   ...MATCH_PANELS,
-  // The Economy and Utility views (econpanels.js, utilpanels.js, dogfood C5c):
+  // The Economy and Utility views:
   // each view's composer and the panels it mounts.
   ...ECON_PANELS,
   ...UTIL_PANELS,

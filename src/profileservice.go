@@ -23,7 +23,7 @@ import (
 // value as "0001-01-01T00:00:00Z" (indistinguishable from a real value
 // for those readers) and add a time-of-day they don't want.
 //
-// Deliberately NO ADR field (dogfooding W4): the picker and the
+// Deliberately NO ADR field: the picker and the
 // suggestion rows read the stored `career_adr` metric rows through
 // services.careerAdrRows — the canonical career read — so a
 // Go-computed ADR never reaches a view while player_career carries raw
@@ -48,8 +48,7 @@ type ProfileWeapon struct {
 }
 
 // Profile is the full cross-match read model — the DESIGNED HYBRID
-// (dogfooding design §3.5, completed by the inferred-conversion W3a
-// swap): the raw/inferred and non-expressible stats (N2–N6 + raw) stay
+// the raw/inferred and non-expressible stats (N2–N6 + raw) stay
 // Go-rendered here, while every converted stat (ADR ± σ, K/D, HS%,
 // KAST%, Trade rate, the Clutches count + its win share, the
 // Opening-duels rate, avg enemies flashed, avg util damage) is
@@ -91,9 +90,7 @@ type ProfileService struct {
 // stored rows through the canonical stored-value read in
 // PlayerProfile.svelte, like the Sides/Maps tables before it. The stats
 // that converted to metrics
-// (dogfooding design §3.5's nine — ADR ± σ, K/D, HS%, KAST%, Trade
-// rate, clutch win share, avg enemies flashed, avg util damage — plus
-// W3a's Clutches count and Opening-duels rate) are computed NOWHERE in
+// are computed NOWHERE in
 // this function any more: the profile reads them as stored rows through
 // the canonical career read, and the history's Assists/ADR/KAST cells
 // read the match-scope rows inside store.GetPlayerHistory.

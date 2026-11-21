@@ -1,7 +1,6 @@
 package store
 
-// W3g — the profile's trend/history conversion (dogfooding design §3.5's
-// gated sub-wave, owner ruling Q3 APPROVED): GetTrend and
+// W3g — the profile's trend/history conversion: GetTrend and
 // GetPlayerHistory stop running SQL arithmetic over player_stats and
 // read the STORED match-scope metric rows instead, through the one new
 // series read GetPlayerMetricSeries.
@@ -63,7 +62,7 @@ func insertSeedMetricValue(t *testing.T, s *Store, name, steamID string, matchID
 
 // legacyTrendExpr is the RETIRED trendMetricWhitelist, verbatim: the
 // per-match SQL expressions GetTrend used before it read stored metric
-// rows (dogfooding W3). Identifiers only — no user input ever reaches
+// rows. Identifiers only — no user input ever reaches
 // the oracle's query text either. The kast/kd entries reuse the shared
 // scope consts in queries.go, exactly as the production map did.
 

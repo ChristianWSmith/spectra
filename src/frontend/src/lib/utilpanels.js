@@ -1,5 +1,4 @@
-// The Utility view as builtin components (dogfood/PLAN.md C5c, C5a's nested
-// mount, dogfood/04-COMPONENTS.md §3, §3.5, §7). The Utility builtin is a
+// The Utility view as builtin components. The Utility builtin is a
 // composer: it loads the match's grenades, rounds and roster once, holds the
 // view's filters (kind, thrower, round), and mounts three panels with
 // `spectra.Child`, each receiving the same read-only `context` from the Match

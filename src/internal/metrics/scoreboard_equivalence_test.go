@@ -31,8 +31,7 @@ import (
 //     extract/build.go; HSPct = 100·hs/k — extract/helpers.go pct) and
 //     proves the stored-column seeds (adr, hs_pct, kast) equal the
 //     columns GetScoreboard serves — plus the kd seed against the
-//     store's FLOORED per-match spelling (kdPerMatchSQL, test-only since
-//     dogfooding W4 removed the scoreboard's kd column), where Q1's one
+//     store's FLOORED per-match spelling, where Q1's one
 //     deliberate divergence lives (zero deaths: ratio's NULLIF → value 0
 //     beside N, where the floor MAX(deaths, 1) → the kill count) — and
 //     the kda seed (w13d's conversion) against the FLOORED arithmetic
@@ -106,7 +105,7 @@ func TestMissedTradesEquivalence(t *testing.T) {
 			// LEFT JOINed to the stored counts, missing → 0.
 			// A roster player with no trade-opportunity row has no data:
 			// the statement's SUM is NULL and the cell is a dash, not 0
-			// (dogfood/PLAN.md ruling 23). The oracle keeps that NULL.
+			// The oracle keeps that NULL.
 			res, err := st.RunReadOnly(
 				`SELECT ps.steam_id, mo.missed
 				 FROM player_stats ps

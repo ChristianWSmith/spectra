@@ -30,8 +30,7 @@ import (
 //  4. Binds are collected (see MetricStatement.Binds); the metrics gate
 //     decides which are accepted.
 
-// metricReadable is THE metric-readable allowlist (dogfood/03-QUERIES.md
-// §3.2), ONE explicit classification of every schema table: readable
+// metricReadable is THE metric-readable allowlist, ONE explicit classification of every schema table: readable
 // (true) or denied (false). The readable tables are the fact tables and
 // the engine-read tables: `players` (the humans-only lookup), `matches`
 // and `metric_values` (the ref join,

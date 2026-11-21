@@ -1,4 +1,4 @@
-// The Reports and Explorer builtins (dogfood/PLAN C5c): the pure export
+// The Reports and Explorer builtins: the pure export
 // helpers, and the guard that no panel reads a retired preference (ruling 33).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,5 +1,5 @@
 <script>
-  // The Explorer builtin (dogfood/04-COMPONENTS.md §7): the demo-file
+  // The Explorer builtin: the demo-file
   // diagnostics for the match in the context, composed from its panels. The
   // Match view's Details tab mounts it embedded (the facts above it stay
   // hardcoded there); the standalone Explorer route mounts it with the picked

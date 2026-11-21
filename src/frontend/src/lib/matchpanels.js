@@ -1,5 +1,4 @@
-// The Match view's panels as builtin components (dogfood/PLAN.md C5b,
-// dogfood/04-COMPONENTS.md §3, §3.5, §7). Each panel is Svelte 5 source
+// The Match view's panels as builtin components. Each panel is Svelte 5 source
 // held here as text, so it can be mounted through ComponentFrame like a user
 // component and duplicated as one. A panel is the unit of composition: it
 // reads metrics through `spectra.metric()` and facts through

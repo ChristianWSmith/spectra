@@ -129,8 +129,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 // TestGetProfileDesignedHybrid pins the DTO contract dogfooding design
 // §3.5 leaves behind — the audit's §5.2.5 prediction made literal: the
 // raw/inferred and non-expressible stats (N2–N6) STAY on the Go DTO and
-// every converted stat is GONE from it (the dogfood nine plus W3a's
-// Clutches count and Opening-duels rate). The profile reads those as
+// every converted stat is GONE from it. The profile reads those as
 // stored metric rows through the canonical career read (the "Career
 // metrics" panel), so a reintroduced field here would be exactly the
 // second presentation path the conversion removes — the JSON key SET is

@@ -1,6 +1,6 @@
 <script>
   // ComponentFrame — the frame every mounted component sits in
-  // (dogfood/04-COMPONENTS.md §4): one failing component shows a
+  // one failing component shows a
   // dismissible error inside its own frame and the rest of the surface
   // keeps rendering.
   //

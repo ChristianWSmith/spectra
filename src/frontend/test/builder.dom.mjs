@@ -71,8 +71,7 @@ import './compile-worker-node.mjs';
 //      bar in the row), metric-done refetches the state and clears the
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
 //      state output carries a version number or timestamp;
-//   J. the Order dialog (dogfooding design §2 + metrics UI wave B,
-//      reworked by N2/N4, M1/M4/M5/M6): the list-header entry point,
+//   J. the Order dialog: the list-header entry point,
 //      ONE dialog with its visible TITLE BAR + icon-only ✕ (N2) that
 //      never scrolls (M4/M5 — the head sits outside the ONE scroll
 //      region, the panel clips, the list no longer scrolls itself),
@@ -597,7 +596,7 @@ const chipsOf = (r, name) =>
     c.textContent.trim(),
   );
 // The editor card's Save button and its read-only chip (the one
-// .bld-readonly in the view — the form header's).
+// bld-readonly in the view — the form header's).
 const saveButton = (r) => r.querySelector('.bld-actions .btn.primary');
 const formChip = (r) => r.querySelector('.bld-readonly');
 
@@ -1022,7 +1021,7 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
       .join(' '),
   );
   // The form's FIXED ROWS (owner rulings, origin-independent — it pins
-  // .bld-fields markup, not the built-in state): row 1 Name / Title /
+  // bld-fields markup, not the built-in state): row 1 Name / Title /
   // Short name, row 2 Subject / Scope alone (Subject sits immediately
   // LEFT of Scope — the owner's placement), row 3 Denominator / Format
   // below it (the owner's row split, 2026-11-18), then the full-width

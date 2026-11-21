@@ -594,7 +594,7 @@ function collectSvelte(file) {
 
 // ---------------------------------------------------------------------------
 // Medium 2 — JS modules (comment-stripped; import/export specifiers skipped —
-// ../../bindings/… paths are module wiring, not copy).
+// /../bindings/… paths are module wiring, not copy).
 // ---------------------------------------------------------------------------
 function jsLiterals(file) {
   let code = stripComments(readFileSync(file, 'utf8'));
@@ -1411,7 +1411,7 @@ test('Check E — input hints are verb-like: every placeholder’s first word is
 });
 
 // ---------------------------------------------------------------------------
-// Check F — builtin panel copy (ruling 46, dogfood C5i): a builtin panel's
+// Check F — builtin panel copy: a builtin panel's
 // user-facing text is read through the catalog (S.<module>.<key>), never an
 // English literal in the panel source. Scope: every compiled builtin Svelte
 // file under lib/builtins/ (generated/ excluded) and the four JS modules that

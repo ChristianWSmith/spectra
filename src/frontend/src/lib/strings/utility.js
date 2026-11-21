@@ -52,7 +52,7 @@ export const utility = {
   // The place cell shows the THROW origin (the throw-based ruling) — an
   // unpaired row, whose origin was never observed, dashes instead.
   coordTitle: 'throw world coordinates',
-  // Builtin panel copy (ruling 46, dogfood C5i): read by builtins/panels.
+  // Builtin panel copy: read by builtins/panels.
   blindTotalTitle: "total blind time from this team's flashes, by thrower team",
   titleAffected: "affected players (blinded or damaged by this throw)",
   damageTotalTitle: "total damage in the current filter, by thrower team",
@@ -84,10 +84,10 @@ export const utility = {
   ofSeparator: " of ",
   axisMax: "max ",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   panelBlindUtility: "Utility blind time per round",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   unitDamage: "dmg",
   unitAffected: "aff",
   tickPrefix: "tick ",

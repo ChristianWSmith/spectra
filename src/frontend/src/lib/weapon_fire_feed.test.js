@@ -1,7 +1,6 @@
 // src/lib/weapon_fire_feed.test.js (from frontend/)
 //
-// Feed double-surface pin for the weapon_fire promotion (A5 in
-// dogfood/PLAN.md, 02 W8). The typed weapon_fire row is stored in
+// Feed double-surface pin for the weapon_fire promotion. The typed weapon_fire row is stored in
 // `events`, and the same shot also remains in generic_events. The feed
 // must list the shot exactly once, through no path: no landmark category
 // claims the kind, no draw/world fetch asks for it, and no generic

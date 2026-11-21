@@ -97,7 +97,7 @@ func (s *Session) Run(sqlText string, limit, timeoutMS int) models.QueryResult {
 	return out
 }
 
-// ComponentRead is a user component's `query(sql)` (dogfood/04 §3): the
+// ComponentRead is a user component's `query(sql)`: the
 // same validation and read-only connection as Run, but with no row cap,
 // no timeout, and no history entry — a component read is not a console
 // run, so it never lands in the console's history. Parameters are refused

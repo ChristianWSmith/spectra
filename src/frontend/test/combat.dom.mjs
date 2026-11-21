@@ -174,9 +174,9 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
 
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
-// .svelte component imports need rewriting to their compiled .js.
-// The Combat tab is two builtin panels (src/lib/builtins/match, PLAN
-// C5-Heat-Combat): they land under dir/builtins/match/, so their ../../
+// svelte component imports need rewriting to their compiled .js.
+// The Combat tab is two builtin panels (src/lib/builtins/match):
+// they land under dir/builtins/match/, so their ../../
 // imports resolve to the copies above. Only the .svelte component imports
 // and the strings catalog are rewritten; combatdata.js is plain ESM.
 mkdirSync(join(dir, 'builtins', 'match'), { recursive: true });
@@ -954,9 +954,7 @@ console.log('L. failed load: the error is dismissible in place, the retired sect
   );
   const panelsBefore = rootL.querySelectorAll('section.panel').length;
   check('the two panels render around the failure', panelsBefore === 2, String(panelsBefore));
-  // A dead backend fails each panel's own load (PLAN C5-Heat-Combat: the
-  // Combat tab composes two panels, and a failure shows in its own panel's
-  // frame), so one alert surfaces per panel, each dismissible in place.
+  // A dead backend fails each panel's own load, so one alert surfaces per panel, each dismissible in place.
   const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
     'the failure surfaces as one dismissible alert per panel',

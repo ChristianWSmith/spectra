@@ -1,5 +1,5 @@
 // profile-harness.mjs — the jsdom setup the Profile panel tests share
-// (dogfood/PLAN C5d). `boot()` installs the module hooks and the DOM globals,
+// `boot()` installs the module hooks and the DOM globals,
 // compiles every .svelte the panels reach (a .js module that imports a .svelte
 // file is bundled too, so the builtin registry loads), and returns the mount
 // helpers. The read services are the real services.js over the Wails stub

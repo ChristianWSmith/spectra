@@ -218,7 +218,7 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"team_force_wins":   {"match", "int", ""},
 	"team_force_rounds": {"match", "int", ""},
 	// addendum — the raw-SQL fold seeds (33, match scope, subject=player
-	// or match) — dogfood/PLAN.md F2. Each row is pinned here like the
+	// or match). Each row is pinned here like the
 	// sugar seeds; the statements run through the raw dispatch (raw_seed_test.go).
 	"raw_rounds_played":         {"match", "int", ""},
 	"raw_kills_by_weapon":       {"match", "int", ""},
@@ -238,7 +238,7 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"raw_round_side_blind_ms":   {"match", "int", ""},
 	"raw_round_side_money_mean": {"match", "currency", ""},
 	"raw_round_util_summary":    {"match", "int", ""},
-	// addendum — round-grain deaths per player (ruling 41, dogfood/PLAN.md):
+	// addendum — round-grain deaths per player:
 	// the Economy view reads it through the round read, keyed by the side.
 	"raw_player_round_deaths": {"match", "int", ""},
 	// per-match inputs of the per-player profile metrics (ruling 48): one
@@ -283,7 +283,7 @@ var nonPlayerSubjects = map[string]string{
 	"team_force_wins":           "team",  // ME8 exception audit, 2026-11-18
 	"team_force_rounds":         "team",  // ME8 exception audit, 2026-11-18
 	"raw_round_duration_s":      "match", // F2 raw seed: per match round, no player subject
-	"alive_count":               "team",  // alive-count situation family (PLAN item 19): subject = side
+	"alive_count":               "team",  // alive-count situation family: subject = side
 	"raw_round_econ_series":     "team",  // B7 round-grain series: subject = side
 	"raw_round_side_deaths":     "team",  // B7 round-grain series: subject = side
 	"raw_round_side_util_dmg":   "team",  // B7 round-grain series: subject = side
@@ -401,7 +401,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 			t.Errorf("builtin %q has empty doc", m.Name)
 		}
 		if m.ShortName != seeded.shortName {
-			t.Errorf("builtin %q short_name = %q, want %q (per-seed: trade_rate ships empty, the dogfooding set its header label)",
+			t.Errorf("builtin %q short_name = %q, want %q",
 				m.Name, m.ShortName, seeded.shortName)
 		}
 		if m.Scope != seeded.scope {
@@ -422,7 +422,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		if m.Version != 1 {
 			t.Errorf("builtin %q version = %d, want 1 (the seed omits the column — DEFAULT 1)", m.Name, m.Version)
 		}
-		// Builtins are raw SQL (dogfood/PLAN.md ruling 22): one SELECT.
+		// Builtins are raw SQL: one SELECT.
 		if !strings.HasPrefix(m.Expr, "SELECT ") && !strings.HasPrefix(m.Expr, "WITH ") {
 			t.Errorf("builtin %q expr %q is not a raw SELECT or WITH", m.Name, m.Expr)
 		}
@@ -1013,9 +1013,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	seedUserMetric(t, s, "adr_per_round", "ADR per round")
 	ref := metricRowsRef(t, s) // 109 builtins (incl. trade_rate + career_trade_rate) + 2 users
 
-	// "trade rate" matches TWO builtin titles (trade_rate — the original
-	// seed — and career_trade_rate — the profile twin the dogfooding set
-	// added) and the user's title — one term spanning both sides of the
+	// "trade rate" matches TWO builtin titles and the user's title — one term spanning both sides of the
 	// partition.
 	hit := filterMetricRef(ref, "trade rate")
 	if len(hit) != 3 {

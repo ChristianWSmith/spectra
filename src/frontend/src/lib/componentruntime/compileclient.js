@@ -1,5 +1,4 @@
-// The main-thread client of the compile worker (dogfood/04-COMPONENTS.md §5;
-// owner ruling 47). Every user-component compile (the save-time check, the
+// The main-thread client of the compile worker. Every user-component compile (the save-time check, the
 // live check, a preview's first mount) is sent here; the compiler itself runs
 // in compile.worker.js, so a large component never blocks the UI thread.
 //
