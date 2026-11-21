@@ -19,15 +19,9 @@
   import * as S from '../../strings/index.js';
   import { MATCH_TABS } from '../../router.js';
   import { fmtBytes } from '../../fmt.js';
-  import ComponentFrame from '../../components/ComponentFrame.svelte';
-  import ChildFrame from '../../components/ChildFrame.svelte';
   import { MATCH_PANEL_IDS } from '../../matchpanels.js';
   import { ECON_PANEL_IDS } from '../../econpanels.js';
   import { UTIL_PANEL_IDS } from '../../utilpanels.js';
-  import MatchHeatmaps from './Heatmaps.svelte';
-  import MatchCombat from './Combat.svelte';
-  import ReportsView from '../reports/ReportsView.svelte';
-  import ExplorerView from '../explorer/ExplorerView.svelte';
 
   let {
     spectra,
@@ -58,22 +52,22 @@
 </nav>
 
 {#if tab === 'Overview'}
-  <ChildFrame name={MATCH_PANEL_IDS.overview} props={panelProps} {nav} />
-  <ChildFrame name={MATCH_PANEL_IDS.rosters} props={panelProps} {nav} />
+  <spectra.Child name={MATCH_PANEL_IDS.overview} props={panelProps} />
+  <spectra.Child name={MATCH_PANEL_IDS.rosters} props={panelProps} />
 {:else if tab === 'Scoreboard'}
-  <ChildFrame name={MATCH_PANEL_IDS.scoreboard} props={panelProps} {nav} />
+  <spectra.Child name={MATCH_PANEL_IDS.scoreboard} props={panelProps} />
 {:else if tab === 'Rounds'}
-  <ChildFrame name={MATCH_PANEL_IDS.rounds} props={roundsProps} {nav} />
+  <spectra.Child name={MATCH_PANEL_IDS.rounds} props={roundsProps} />
 {:else if tab === 'Economy'}
-  <ChildFrame name={ECON_PANEL_IDS.economy} props={panelProps} {nav} />
+  <spectra.Child name={ECON_PANEL_IDS.economy} props={panelProps} />
 {:else if tab === 'Utility'}
-  <ChildFrame name={UTIL_PANEL_IDS.utility} props={utilityProps} {nav} />
+  <spectra.Child name={UTIL_PANEL_IDS.utility} props={utilityProps} />
 {:else if tab === 'Heatmaps'}
-  <ComponentFrame component={MatchHeatmaps} {context} {nav} />
+  <spectra.Child name="builtin-match-heatmaps" />
 {:else if tab === 'Combat'}
-  <ComponentFrame component={MatchCombat} {context} {nav} />
+  <spectra.Child name="builtin-match-combat" />
 {:else if tab === 'Reports'}
-  <ComponentFrame component={ReportsView} {context} props={{ embedded: true }} {nav} />
+  <spectra.Child name="builtin-reports" props={{ embedded: true }} />
 {:else if tab === 'Details'}
   <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
        facts panel (server, tickrate, frames, size, import, parser,
@@ -87,7 +81,7 @@
        the demo copy stay here: voice presence is not a component read
        (the query allowlist denies it), and the copy state comes from the
        filesystem on this read. -->
-  <ChildFrame name={MATCH_PANEL_IDS.details} props={panelProps} {nav} />
+  <spectra.Child name={MATCH_PANEL_IDS.details} props={panelProps} />
   <section class="panel">
     <dl class="facts">
       <div>
@@ -138,5 +132,5 @@
       </div>
     </dl>
   </section>
-  <ComponentFrame component={ExplorerView} {context} props={{ embedded: true }} {nav} />
+  <spectra.Child name="builtin-explorer" props={{ embedded: true }} />
 {/if}

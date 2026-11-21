@@ -14,8 +14,11 @@ import { checkComponentSource } from './compile.js';
 // gateComponentSave resolves {ok: true} or {ok: false, line, column,
 // message}: the refusal is the author's to fix, and message is the bare
 // reason (refusalText positions it).
-export function gateComponentSave(source) {
-  return checkComponentSource(source);
+// `builtinDir` (frontend-relative directory of a built-in's source, or null
+// for a user component) selects the built-in rules: its relative imports are
+// curated helpers (compile.js BUILTIN_HELPERS, ruling 45).
+export function gateComponentSave(source, builtinDir = null) {
+  return checkComponentSource(source, 'Component.svelte', builtinDir);
 }
 
 // refusalText is the one user-facing sentence for a refused gate result:

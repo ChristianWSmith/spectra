@@ -1114,7 +1114,7 @@ const EXPECTED = {
   // mounted (top, nested, placed), restore brings the shipped one back, a
   // surface with no placement renders its default, Reset restores it, and a
   // placement naming nothing shows its refusal.
-  'builtin-edits.dom.mjs': 14,
+  'builtin-edits.dom.mjs': 15,
   'component-context.dom.mjs': 16,
   'component-frame.dom.mjs': 32,
   'econ-util-panels.dom.mjs': 42,

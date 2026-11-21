@@ -27,6 +27,7 @@
   // component).
   let source = $state(null);
   let component = $state(null);
+  let builtinDir = $state(null); // a built-in's source directory (null for yours)
   let resolved = $state(false);
   let failure = $state('');
   let dismissed = $state(false);
@@ -45,6 +46,7 @@
         if (live) {
           source = hit ? hit.source : null;
           component = hit ? hit.component : null;
+          builtinDir = hit ? hit.dir : null;
           resolved = true;
         }
       },
@@ -90,6 +92,7 @@
   <ComponentFrame
     {source}
     {component}
+    {builtinDir}
     {props}
     {name}
     reads={parent ? parent.reads : null}

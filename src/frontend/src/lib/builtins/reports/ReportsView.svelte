@@ -23,8 +23,6 @@
   // (getScoreboard is read by the template panel's player picker, not here.)
   import { listedPlayers } from '../../players.js';
   import { seed, remember } from '../../viewstate.svelte.js';
-  import ReportsTemplates from './ReportsTemplates.svelte';
-  import ReportsAppendix from './ReportsAppendix.svelte';
 
   let { spectra, context, embedded = false } = $props();
 

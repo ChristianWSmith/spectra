@@ -31,6 +31,7 @@ import { resetSoundManifest } from './replay/sfx.js';
 // there (neither side calls across at module-eval time).
 import { runWork } from './workstate.svelte.js';
 import { gateComponentSave, refusalText } from './componentruntime/savegate.js';
+import { builtinSourceDir } from './componentbuiltins.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -1062,7 +1063,8 @@ export function listBuiltinOverrides() { return ComponentService.ListBuiltinOver
 // edited builtin that does not compile is refused with its line and never
 // stored.
 export async function saveBuiltinOverride(id, source) {
-  const gate = await gateComponentSave(source);
+  // The built-in's own rules: its relative imports are curated helpers.
+  const gate = await gateComponentSave(source, builtinSourceDir(id || ''));
   if (!gate.ok) throw new Error(refusalText(gate));
   return ComponentService.SaveBuiltinOverride(id || '', source);
 }

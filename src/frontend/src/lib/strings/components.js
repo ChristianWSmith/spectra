@@ -21,6 +21,8 @@ export const components = {
   // is refused with the compiler's reason.
   legacyRefused: 'Components use Svelte 5 runes only: {err}',
   importRefused: 'Components cannot import {name}',
+  // A built-in's import of a helper name the registry does not list (ruling 45).
+  helperNameRefused: 'Built-in components cannot import {name} from {module}',
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',
   metricLibraryUnavailable: 'Library-wide metric values are not available yet',

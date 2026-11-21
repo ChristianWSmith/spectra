@@ -47,6 +47,287 @@ const RUNTIME_MODULES = {
 
 export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 
+// --- built-in helpers (owner ruling 45; dogfood/04 §5) ----------------------
+// A BUILT-IN panel may import a small, curated set of app helpers. A USER
+// component may import none (the save gate refuses every import of a user
+// component, at its line). Each helper module is listed here by its path
+// from the frontend root, with the NAMES a built-in may take from it and a
+// line on what each name is for. A name not listed is refused at save
+// (checkComponentSource with a builtin directory). Adding a helper or a name
+// is a review: add it here, document it, and the coverage test in
+// builtinedits.test.js pins that the name is exported by its module.
+//
+// The key of a helper is its path from the frontend root (`src/lib/…`), so a
+// built-in's relative import (`../../services.js`) resolves to the same key
+// from every panel that imports it. `load` is a dynamic import, so the
+// helper modules are not loaded until a built-in that uses them mounts.
+//
+// `names` maps each allowed export to its purpose. `'*'` allows the whole
+// namespace (`import * as S`); `'default'` allows a component's default export.
+export const BUILTIN_HELPERS = Object.freeze({
+  'src/lib/services.js': {
+    load: () => import('../services.js'),
+    names: {
+      errText: 'the one error-text normalizer (a rejection to a sentence)',
+      listMetrics: 'the metric definitions (read)',
+      listPlayers: 'the player list (read)',
+      listReportTemplates: 'the report templates (read)',
+      getProfile: 'one player profile (read)',
+      getCareerTrend: 'one metric across a player’s matches (read)',
+      getMatch: 'one match row (read)',
+      getScoreboard: 'a match scoreboard (read)',
+      getRounds: 'a match’s rounds (read)',
+      getHeatmap: 'heatmap points for a match (read)',
+      getEngagements: 'a match’s engagements (read)',
+      getClutches: 'a match’s clutches (read)',
+      getEntitySummary: 'a diagnostics summary for one entity (read)',
+      getProvenance: 'a match’s provenance (read)',
+      getPref: 'one stored preference (read)',
+      getMetricValuesForMatch: 'stored metric values for a match (read)',
+      getMetricComputeState: 'a metric’s compute state (read)',
+      getPlayerRefs: 'player references for a report (read)',
+      renderReport: 'a report rendered from stored values (read)',
+      subscribeMetricProgress: 'subscribe to metric progress (event)',
+      onMetricDone: 'listen for a metric finishing (event)',
+      onEvent: 'listen for a backend event (event)',
+    },
+  },
+  'src/lib/strings/index.js': {
+    load: () => import('../strings/index.js'),
+    names: { '*': 'the app copy catalog (S.*)' },
+  },
+  'src/lib/fmt.js': {
+    load: () => import('../fmt.js'),
+    names: {
+      fmt1: 'a number to one decimal',
+      fmt2: 'a number to two decimals',
+      fmtInt: 'a whole number with grouping',
+      fmtPercent: 'a fraction as a percentage',
+      fmtDate: 'a timestamp as a date',
+      fmtMetric: 'a stored value in its metric format',
+      fmtBytes: 'a byte count as a size',
+      fmtPatch: 'a game patch label',
+      roundClock: 'a round time as a clock',
+    },
+  },
+  'src/lib/metricorder.js': {
+    load: () => import('../metricorder.js'),
+    names: {
+      DEFAULT_CARDS: 'the default card set of the Profile view',
+      composedSequence: 'the default metric order, merged with fixed entries',
+      inSequence: 'the default metric order (metric entries only)',
+      rawItems: 'the recorded-value offers',
+      isRawId: 'whether an id is a recorded value',
+    },
+  },
+  'src/lib/metricstate.js': {
+    load: () => import('../metricstate.js'),
+    names: {
+      metricPresentation: 'how a metric state is shown',
+      metricStateTitle: 'the hover title of a metric state',
+      liveMetricState: 'a metric’s live state',
+      metricProgressFrac: 'a metric computation’s progress fraction',
+      metricProgressStage: 'a metric computation’s progress stage',
+    },
+  },
+  'src/lib/teams.js': {
+    load: () => import('../teams.js'),
+    names: {
+      playerSideClassAt: 'the team colour class of a player on a round',
+      teamStartClass: 'the team colour class of a side at the start',
+    },
+  },
+  'src/lib/rounds.js': {
+    load: () => import('../rounds.js'),
+    names: {
+      isCounted: 'whether a round counts in the match',
+      roundScoreLabel: 'a round’s score label',
+    },
+  },
+  'src/lib/players.js': {
+    load: () => import('../players.js'),
+    names: { listedPlayers: 'the players a list shows (bots filtered)' },
+  },
+  'src/lib/viewstate.svelte.js': {
+    load: () => import('../viewstate.svelte.js'),
+    names: {
+      seed: 'a view’s remembered state when it opens (view-local)',
+      remember: 'store a view’s state for its next open (view-local)',
+      matchKey: 'the key a match’s view state is kept under',
+    },
+  },
+  'src/lib/nav.js': {
+    load: () => import('../nav.js'),
+    names: {
+      replayHash: 'the route to a replay at a point',
+      entryLoopAround: 'the loop span around a replay entry',
+      entryLoopSpanAround: 'the loop span around a replay entry, as a span',
+      LOOP_SECS_DEFAULT: 'the default loop length in seconds',
+      prefLoopSecs: 'the loop length the user prefers',
+    },
+  },
+  'src/lib/download.js': {
+    load: () => import('../download.js'),
+    names: {
+      downloadCanvasPNG: 'the user saves a canvas as a PNG (a chosen file)',
+      downloadText: 'the user saves text as a file (a chosen file)',
+    },
+  },
+  'src/lib/heatkinds.js': {
+    load: () => import('../heatkinds.js'),
+    names: {
+      HEAT_CORE_KINDS: 'the heatmap event kinds shown by default',
+      HEAT_GRENADE_THROW_KINDS: 'the grenade throw kinds',
+      HEAT_GRENADE_DET_KINDS: 'the grenade detonation kinds',
+      heatKindLabel: 'the label of a heatmap kind',
+      heatRegionFilter: 'the region filter of a heatmap kind',
+      heatRegionTakesBBox: 'whether a region filter takes a box',
+    },
+  },
+  'src/lib/heatramp.js': {
+    load: () => import('../heatramp.js'),
+    names: {
+      HEAT_STOPS: 'the colour stops of a heatmap',
+      DEATH_STOPS: 'the colour stops of a death heatmap',
+      rampCss: 'a colour ramp as CSS',
+      signedRampCss: 'a signed colour ramp as CSS',
+    },
+  },
+  'src/lib/components/mapxform.js': {
+    load: () => import('../components/mapxform.js'),
+    names: { loadMapPack: 'the map pack a radar is drawn on (read)' },
+  },
+  'src/lib/definitions.js': {
+    load: () => import('../definitions.js'),
+    names: {
+      ENG_DIST_DEF: 'the default engagement distance',
+      ENG_KIND_TITLES: 'the titles of engagement kinds',
+    },
+  },
+  'src/lib/replay/landmarks.js': {
+    load: () => import('../replay/landmarks.js'),
+    names: { roundsByNumber: 'a match’s rounds keyed by number' },
+  },
+  'src/lib/router.js': {
+    load: () => import('../router.js'),
+    names: { MATCH_TABS: 'the Match view’s tab names, in order' },
+  },
+  'src/lib/workstate.svelte.js': {
+    load: () => import('../workstate.svelte.js'),
+    names: { runWork: 'run a piece of background work, shown in the work indicator' },
+  },
+  'src/lib/matchpanels.js': {
+    load: () => import('../matchpanels.js'),
+    names: { MATCH_PANEL_IDS: 'the ids of the Match view’s panels' },
+  },
+  'src/lib/econpanels.js': {
+    load: () => import('../econpanels.js'),
+    names: { ECON_PANEL_IDS: 'the ids of the Economy panels' },
+  },
+  'src/lib/utilpanels.js': {
+    load: () => import('../utilpanels.js'),
+    names: { UTIL_PANEL_IDS: 'the ids of the Utility panels' },
+  },
+  'src/lib/builtins/match/combatdata.js': {
+    load: () => import('../builtins/match/combatdata.js'),
+    names: { loadCombatSide: 'one side’s combat rows for a match (read)' },
+  },
+  'src/lib/builtins/match/combatmodel.js': {
+    load: () => import('../builtins/match/combatmodel.js'),
+    names: {
+      ENG_KINDS: 'the engagement kinds',
+      groupEngagements: 'group engagements into duels',
+      clutchKillTicks: 'the kill ticks of a clutch',
+    },
+  },
+  'src/lib/builtins/profile/shared.js': {
+    load: () => import('../builtins/profile/shared.js'),
+    names: {
+      cell: 'one stored value as a table cell',
+      dimValue: 'one dimension value of a breakdown',
+      dimsOf: 'the dimensions of a breakdown',
+      emptyChip: 'the chip shown for an empty breakdown',
+      loadSeeds: 'load the profile’s seed values (read)',
+      failedRead: 'the message for a failed read',
+    },
+  },
+  'src/lib/builtins/reports/shared.js': {
+    load: () => import('../builtins/reports/shared.js'),
+    names: {
+      findTemplate: 'find a report template by id',
+      reportFilename: 'the file name of a report export',
+      targetReady: 'whether a report target is ready to render',
+      compositeText: 'the text of a composed report',
+    },
+  },
+  'src/lib/components/StatusChip.svelte': {
+    load: () => import('../components/StatusChip.svelte'),
+    names: { default: 'the state chip (a component)' },
+  },
+  'src/lib/components/StatCard.svelte': {
+    load: () => import('../components/StatCard.svelte'),
+    names: { default: 'a stat card (a component)' },
+  },
+  'src/lib/components/SuggestInput.svelte': {
+    load: () => import('../components/SuggestInput.svelte'),
+    names: { default: 'a suggestion input (a component)' },
+  },
+  'src/lib/components/PlayerPicker.svelte': {
+    load: () => import('../components/PlayerPicker.svelte'),
+    names: { default: 'a player picker (a component)' },
+  },
+  'src/lib/components/TokenSelect.svelte': {
+    load: () => import('../components/TokenSelect.svelte'),
+    names: { default: 'a token select (a component)' },
+  },
+  'src/lib/components/EventPlay.svelte': {
+    load: () => import('../components/EventPlay.svelte'),
+    names: { default: 'a replay play control for one event (a component)' },
+  },
+  'src/lib/components/ProfileLink.svelte': {
+    load: () => import('../components/ProfileLink.svelte'),
+    names: { default: 'a link to a player’s profile (a component)' },
+  },
+  'src/lib/components/Popover.svelte': {
+    load: () => import('../components/Popover.svelte'),
+    names: { default: 'a popover (a component)' },
+  },
+  'src/lib/components/HeatmapLayer.svelte': {
+    load: () => import('../components/HeatmapLayer.svelte'),
+    names: { default: 'a heatmap layer (a component)' },
+  },
+  'bindings/github.com/ChristianWSmith/spectra': {
+    load: () => import('../../../bindings/github.com/ChristianWSmith/spectra'),
+    names: { AnalyticsService: 'the analytics service the heatmap reads (read)' },
+  },
+});
+
+// helperKey resolves a built-in's relative import to its helper key: the
+// directory of the built-in's source (frontend-relative) joined with the
+// import's path, with `.` and `..` folded.
+export function helperKey(dir, spec) {
+  const parts = [];
+  for (const p of `${dir}/${spec}`.split('/')) {
+    if (p === '' || p === '.') continue;
+    if (p === '..') parts.pop();
+    else parts.push(p);
+  }
+  return parts.join('/');
+}
+
+// loadRuntimeModule gives the module object one import reads: a runtime
+// module as it is, a helper as only its listed names (or the whole namespace
+// when `'*'` is listed).
+async function loadRuntimeModule(key) {
+  if (Object.hasOwn(RUNTIME_MODULES, key)) return RUNTIME_MODULES[key]();
+  const h = BUILTIN_HELPERS[key];
+  const m = await h.load();
+  if (Object.hasOwn(h.names, '*')) return m;
+  const out = {};
+  for (const n of Object.keys(h.names)) out[n] = m[n];
+  return out;
+}
+
 // --- lazy compiler ----------------------------------------------------------
 
 let compilerPromise = null;
@@ -112,7 +393,7 @@ function specifierPosition(source, spec) {
 // {unknownSpecifier} for an import outside the registry. Only the leading
 // import block is rewritten (the compiler hoists every import there), so
 // markup text that happens to start a line with "import" is never touched.
-export function rewriteModule(js, known = RUNTIME_SPECIFIERS) {
+export function rewriteModule(js, known = RUNTIME_SPECIFIERS, builtinDir = null) {
   const allowed = new Set(known);
   const specs = [];
   const head = [];
@@ -131,13 +412,21 @@ export function rewriteModule(js, known = RUNTIME_SPECIFIERS) {
     if (bare) [whole, , spec] = bare;
     else if (from) [whole, clause, , spec] = from;
     else break;
+    // A runtime module is imported by its own specifier. A built-in's
+    // relative import is a curated helper (BUILTIN_HELPERS), keyed by the
+    // built-in's directory. Anything else is refused.
+    let key = spec;
     if (!allowed.has(spec)) {
-      const err = new Error('unknown runtime import: ' + spec);
-      err.unknownSpecifier = spec;
-      throw err;
+      key = builtinDir != null && spec.startsWith('.') ? helperKey(builtinDir, spec) : null;
+      if (!key || !Object.hasOwn(BUILTIN_HELPERS, key)) {
+        const err = new Error('unknown runtime import: ' + spec);
+        err.unknownSpecifier = spec;
+        throw err;
+      }
     }
-    if (!specs.includes(spec)) specs.push(spec);
-    const ref = `__runtime[${JSON.stringify(spec)}]`;
+    if (clause && Object.hasOwn(BUILTIN_HELPERS, key)) checkHelperNames(key, spec, clause);
+    if (!specs.includes(key)) specs.push(key);
+    const ref = `__runtime[${JSON.stringify(key)}]`;
     if (clause) head.push(importBinding(clause.trim(), ref));
     rest = rest.slice(whole.length);
   }
@@ -150,6 +439,36 @@ export function rewriteModule(js, known = RUNTIME_SPECIFIERS) {
   }
   body = head.join('\n') + '\n' + body + '\nreturn __default;\n';
   return { body, specs };
+}
+
+// checkHelperNames refuses a built-in's import of a name the helper does not
+// list (ruling 45): a default, a namespace, or each named binding must be in
+// the helper's `names`. The error carries the name and the module specifier.
+function checkHelperNames(key, spec, clause) {
+  const names = BUILTIN_HELPERS[key].names;
+  const refuse = (name) => {
+    const err = new Error('helper name not listed: ' + name);
+    err.unknownName = name;
+    err.unknownSpecifier = spec;
+    throw err;
+  };
+  let c = clause.trim();
+  const def = c.match(/^([\w$]+)\s*(?:,\s*|$)/);
+  if (def) {
+    if (!Object.hasOwn(names, 'default')) refuse('default');
+    c = c.slice(def[0].length).trim();
+  }
+  if (c.startsWith('*')) {
+    if (!Object.hasOwn(names, '*')) refuse('*');
+  } else if (c.startsWith('{')) {
+    for (const part of c.replace(/^\{|\}$/g, '').split(',')) {
+      const p = part.trim();
+      if (!p) continue;
+      const m = p.match(/^([\w$]+)(?:\s+as\s+[\w$]+)?$/);
+      if (!m) throw new Error('unsupported import clause: ' + clause);
+      if (!Object.hasOwn(names, m[1])) refuse(m[1]);
+    }
+  }
 }
 
 // importBinding renders one import clause as a const over the registry
@@ -214,7 +533,7 @@ function legacyRefusal(e) {
 
 // compileSource compiles and rewrites; throws ComponentSourceError for
 // anything the author must fix.
-async function compileSource(source, filename) {
+async function compileSource(source, filename, builtinDir = null) {
   const { compile } = await loadCompiler();
   let js;
   try {
@@ -229,8 +548,16 @@ async function compileSource(source, filename) {
     throw new ComponentSourceError(compilerMessage(e), start.line || 0, start.column || 0);
   }
   try {
-    return rewriteModule(js);
+    return rewriteModule(js, RUNTIME_SPECIFIERS, builtinDir);
   } catch (e) {
+    if (e && e.unknownName) {
+      const pos = specifierPosition(String(source), e.unknownSpecifier);
+      throw new ComponentSourceError(
+        S.fill(S.components.helperNameRefused, { name: e.unknownName, module: e.unknownSpecifier }),
+        pos.line,
+        pos.column,
+      );
+    }
     if (e && e.unknownSpecifier) {
       const pos = specifierPosition(String(source), e.unknownSpecifier);
       throw new ComponentSourceError(
@@ -247,9 +574,9 @@ async function compileSource(source, filename) {
 // without evaluating anything. {ok: true} or {ok: false, line, column,
 // message} (line/column 1-based, 0 when unknown; message is the bare
 // reason — the caller positions it).
-export async function checkComponentSource(source, filename = 'Component.svelte') {
+export async function checkComponentSource(source, filename = 'Component.svelte', builtinDir = null) {
   try {
-    await compileSource(source, filename);
+    await compileSource(source, filename, builtinDir);
     return { ok: true };
   } catch (e) {
     if (e instanceof ComponentSourceError) {
@@ -284,16 +611,19 @@ const cache = new Map(); // hash -> {source, promise}
 // fails the same way); any other failure (the compiler chunk did not
 // load, the module threw while evaluating) is dropped so the next mount
 // retries.
-export function loadComponent(source, filename = 'Component.svelte') {
-  const key = sourceHash(source);
+export function loadComponent(source, filename = 'Component.svelte', builtinDir = null) {
+  // A built-in (builtinDir set) and a user component with the same source
+  // compile differently (only a built-in may import helpers), so the key
+  // carries the directory.
+  const key = sourceHash(source) + '|' + (builtinDir || '');
   const hit = cache.get(key);
   if (hit && hit.source === source) return hit.promise;
   const promise = (async () => {
-    const { body, specs } = await compileSource(source, filename);
+    const { body, specs } = await compileSource(source, filename, builtinDir);
     const runtime = {};
     // Sequential, in import order: evaluation order matters for the
     // flag modules exactly as it would under ESM.
-    for (const spec of specs) runtime[spec] = await RUNTIME_MODULES[spec]();
+    for (const spec of specs) runtime[spec] = await loadRuntimeModule(spec);
     return new Function('__runtime', body)(runtime);
   })();
   cache.set(key, { source, promise });

@@ -99,8 +99,11 @@ test('the Match surface mounts the tabs as components, and the old views are gon
   const match = stripComments(readFileSync(path.join(LIB, 'views', 'Match.svelte'), 'utf8'));
   const tabs = stripComments(readFileSync(path.join(MATCH_DIR, 'MatchTabs.svelte'), 'utf8'));
   assert.ok(match.includes("from '../builtins/match/MatchTabs.svelte'"), 'Match mounts the tab set builtin');
-  assert.ok(tabs.includes("from './Heatmaps.svelte'"), 'the tab set imports the Heatmaps tab component');
-  assert.ok(tabs.includes("from './Combat.svelte'"), 'the tab set imports the Combat tab component');
+  // The tab set mounts its tab components by name (a built-in imports no sibling
+  // file: ruling 45 — helpers only).
+  assert.ok(tabs.includes('name="builtin-match-heatmaps"'), 'the tab set mounts the Heatmaps tab component');
+  assert.ok(tabs.includes('name="builtin-match-combat"'), 'the tab set mounts the Combat tab component');
+  assert.ok(!/from '\.\/[^']+\.svelte'/.test(tabs), 'the tab set imports no sibling component file');
   assert.ok(!/from '\.\/(Heatmaps|Combat)\.svelte'/.test(match), 'Match no longer imports the old views');
   assert.ok(!existsSync(path.join(LIB, 'views', 'Heatmaps.svelte')), 'views/Heatmaps.svelte is removed');
   assert.ok(!existsSync(path.join(LIB, 'views', 'Combat.svelte')), 'views/Combat.svelte is removed');

@@ -40,7 +40,7 @@
     errText,
   } from '../services.js';
   import { gateComponentSave, refusalText } from '../componentruntime/savegate.js';
-  import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource } from '../componentbuiltins.js';
+  import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource, builtinSourceDir } from '../componentbuiltins.js';
   import { placedEntries } from '../componentruntime/placementrows.js';
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
@@ -189,7 +189,7 @@
     }
     check = { status: 'pending', line: 0, message: '' };
     const timer = setTimeout(() => {
-      gateComponentSave(src).then(
+      gateComponentSave(src, builtinSourceDir(form.builtinId)).then(
         (r) => {
           if (gen !== checkGen) return;
           if (r.ok) {
@@ -619,7 +619,12 @@
         {#if previewSource == null}
           <p class="muted" role="status">{S.componentbuilder.noPreviewYet}</p>
         {:else}
-          <ComponentFrame source={previewSource} context={previewContext} {nav} />
+          <ComponentFrame
+            source={previewSource}
+            builtinDir={builtinSourceDir(form.builtinId)}
+            context={previewContext}
+            {nav}
+          />
         {/if}
       </div>
     </section>
