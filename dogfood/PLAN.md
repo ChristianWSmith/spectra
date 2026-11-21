@@ -429,7 +429,9 @@ its own commit with the guide updated in the same change.
   setting: a user who wants it transposed duplicates the panel and edits it
   (ruling 33). No read of `scoreboard_starts_transposed` remains (grep).
 - **C5c · Match view tabs as components, and the Match view as tabs.** Each tab's
-  content is a component that composes that tab's panels from C5b. The Match view
+  content is a component that composes that tab's panels from C5b. A tab with a
+  single panel mounts that panel directly, with no content wrapper (the scoreboard
+  tab is an example). The Match view
   composes those tab components into a set of tabs, with the tab bar and the
   hardcoded header, warnings, round strip and profiles list around it. **Deps:**
   C5b. **Check:** each tab renders the same panels as before; the tab bar is
