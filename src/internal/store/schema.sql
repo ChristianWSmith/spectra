@@ -261,26 +261,10 @@ CREATE TABLE IF NOT EXISTS events (
 	noscope INTEGER NOT NULL DEFAULT 0,
 	through_smoke INTEGER NOT NULL DEFAULT 0,
 	attacker_blind INTEGER NOT NULL DEFAULT 0,
-	-- player_death's `attackerinair`: the attacker was midair. Derived
-	-- from the paired raw payload at extract time (demoinfocs' typed Kill
-	-- has no MidAir field) — no migration: a stale dev DB lacks the
-	-- column and must be re-imported.
-	attacker_inair INTEGER NOT NULL DEFAULT 0,
 	assisted_flash INTEGER NOT NULL DEFAULT 0,
 	distance REAL NOT NULL DEFAULT 0,
 	hitgroup TEXT NOT NULL DEFAULT '',
 	dmg INTEGER NOT NULL DEFAULT 0,
-	-- same_side (owner ruling 2026-11-17 — damage stats differentiate
-	-- enemy damage; friendly fire stays an accounting quantity inside
-	-- expressions/filters, never a surfaced stat): 1 iff attacker and
-	-- victim sides were BOTH known and EQUAL at the event — the exact
-	-- predicate extract's "count ENEMY damage only" gate uses
-	-- (internal/extract/agg.go hurt), stamped at ingest by
-	-- store.SaveExtracted. 0 otherwise, so an unknown side reads as
-	-- ENEMY (the same permissive rule `if enemy` applies). No
-	-- migration: the baseline only CREATEs — a stale dev DB lacks the
-	-- column and must be re-imported (wipe + re-import).
-	same_side INTEGER NOT NULL DEFAULT 0,
 	-- capped_dmg (owner ruling 2026-11-17 "fix the metric until they
 	-- match"; M7 weapon-damage gate escalation, 2026-11-18): the
 	-- HP-capped damage credit of THIS hit — the value extract.agg.hurt
@@ -289,8 +273,9 @@ CREATE TABLE IF NOT EXISTS events (
 	-- (extract.agg.capDamage), so a query-time SUM(events.dmg) can
 	-- never reproduce it (round 5 of the golden demo: 206 raw dmg on
 	-- one victim, fold credits <=100); the fact is row-local at ingest.
-	-- The enemy gate stays OFF this column: same_side + the actor
-	-- columns carry it (the weapon_damage seed spells all three).
+	-- The enemy gate stays OFF this column: the tick join (player_ticks
+	-- sides) and the actor columns carry it (the weapon_damage seed
+	-- spells all three).
 	-- No migration: the baseline only CREATEs — a stale dev DB lacks
 	-- the column and must be re-imported (wipe + re-import).
 	capped_dmg INTEGER NOT NULL DEFAULT 0,

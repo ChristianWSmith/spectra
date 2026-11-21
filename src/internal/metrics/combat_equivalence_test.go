@@ -76,7 +76,7 @@ type combatOracleRow struct {
 
 // combatStatsOracle runs the RETIRED store.GetCombatStats SQL plus the
 // enemy gate (the retired query predated the W43 `same_side` stamp, so
-// `AND e.same_side = 0` is the one addition — the reference oracle must
+// the player_ticks side join is the one addition — the reference oracle must
 // agree with the gated seeds, owner ruling 2026-11-17; friendly fire's
 // column itself stays deleted per that ruling, see the file header):
 // the damage aggregate with its same-tick EXISTS split, over the
@@ -92,7 +92,10 @@ func combatStatsOracle(t *testing.T, st *store.Store, matchID int64) map[string]
 					AND k.attacker = e.attacker AND k.victim = e.victim
 			) THEN e.dmg ELSE 0 END)
 		 FROM events e
-		 WHERE e.match_id = ? AND e.kind = 'damage' AND e.attacker <> '' AND e.same_side = 0
+		 LEFT JOIN player_ticks pa ON pa.match_id = e.match_id AND pa.tick = e.tick AND pa.steam_id = e.attacker
+		 LEFT JOIN player_ticks pv ON pv.match_id = e.match_id AND pv.tick = e.tick AND pv.steam_id = e.victim
+		 WHERE e.match_id = ? AND e.kind = 'damage' AND e.attacker <> ''
+		   AND NOT (COALESCE(pa.side, '') <> '' AND COALESCE(pa.side, '') = COALESCE(pv.side, ''))
 		 GROUP BY e.attacker`,
 		[]any{matchID}, 500, 5000)
 	if err != nil {

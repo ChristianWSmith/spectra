@@ -331,48 +331,11 @@ func TestTwoKColumn(t *testing.T) {
 	}
 }
 
-// TestSaveExtractedWritesSameSide pins the write half of the ingest-owned
-// `same_side` stamp (owner ruling 2026-11-17): SaveExtracted persists the
-// model field into the events column (the read path deliberately does NOT
-// carry it — eventRowCols stays un-widened; the playhead resolves sides
-// itself). eventCols + the placeholder count + the Exec args are pinned to
-// the DDL by TestColumnListConstsMatchSchema; this pins the VALUE.
-func TestSaveExtractedWritesSameSide(t *testing.T) {
-	s := openMem(t)
-	id, err := s.CreateMatchRow("/d/side.dem", "sha-side-stamp", 1)
-	if err != nil {
-		t.Fatalf("CreateMatchRow: %v", err)
-	}
-	em := &models.ExtractedMatch{Events: []models.Event{
-		{Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 30, SameSide: true},
-		{Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // default 0
-	}}
-	if err := s.SaveExtracted(id, em); err != nil {
-		t.Fatalf("SaveExtracted: %v", err)
-	}
-	rows, err := s.db.Query(`SELECT seq, same_side FROM events WHERE match_id = ? ORDER BY seq`, id)
-	if err != nil {
-		t.Fatalf("query same_side: %v", err)
-	}
-	defer rows.Close()
-	got := map[int]int{}
-	for rows.Next() {
-		var seq, same int
-		if err := rows.Scan(&seq, &same); err != nil {
-			t.Fatalf("scan same_side: %v", err)
-		}
-		got[seq] = same
-	}
-	if got[0] != 1 || got[1] != 0 {
-		t.Errorf("same_side = %v, want {0:1, 1:0} (stamp written, zero value = enemy/unknown)", got)
-	}
-}
-
 // TestSaveExtractedWritesCappedDmg pins the write half of the ingest-owned
 // `capped_dmg` stamp (owner ruling 2026-11-17 "fix the metric until they
 // match"; M7 weapon-damage gate escalation 2026-11-18): SaveExtracted
 // persists the model field into the events column in eventCols order
-// (hitgroup, dmg, same_side, capped_dmg — an arg swap would silently
+// (hitgroup, dmg, capped_dmg — an arg swap would silently
 // corrupt every damage row). The read path deliberately does NOT carry it
 // (eventRowCols stays un-widened; only the metric expressions read it).
 func TestSaveExtractedWritesCappedDmg(t *testing.T) {
@@ -388,21 +351,21 @@ func TestSaveExtractedWritesCappedDmg(t *testing.T) {
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
-	rows, err := s.db.Query(`SELECT seq, dmg, same_side, capped_dmg FROM events WHERE match_id = ? ORDER BY seq`, id)
+	rows, err := s.db.Query(`SELECT seq, dmg, capped_dmg FROM events WHERE match_id = ? ORDER BY seq`, id)
 	if err != nil {
 		t.Fatalf("query capped_dmg: %v", err)
 	}
 	defer rows.Close()
-	got := map[int][3]int{}
+	got := map[int][2]int{}
 	for rows.Next() {
-		var seq, dmg, same, cap int
-		if err := rows.Scan(&seq, &dmg, &same, &cap); err != nil {
+		var seq, dmg, cap int
+		if err := rows.Scan(&seq, &dmg, &cap); err != nil {
 			t.Fatalf("scan capped_dmg: %v", err)
 		}
-		got[seq] = [3]int{dmg, same, cap}
+		got[seq] = [2]int{dmg, cap}
 	}
-	if got[0] != [3]int{80, 0, 40} || got[1] != [3]int{10, 0, 0} {
-		t.Errorf("(dmg, same_side, capped_dmg) = %v, want {0:{80 0 40} 1:{10 0 0}} (stamp written in eventCols order, zero value default)",
+	if got[0] != [2]int{80, 40} || got[1] != [2]int{10, 0} {
+		t.Errorf("(dmg, capped_dmg) = %v, want {0:{80 40} 1:{10 0}} (stamp written in eventCols order, zero value default)",
 			got)
 	}
 }
@@ -434,6 +397,12 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	at := time.Now().Truncate(time.Microsecond)
 	if err := s.SaveExtracted(id, testExtracted(sha, at)); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
+	}
+	// attacker_inair is read from the attacker's tick row at the kill tick
+	// (A2): the kill at tick 100 by steam 100 is airborne in that frame.
+	if _, err := s.db.Exec(`INSERT INTO player_ticks (match_id, tick, steam_id, round, side, alive, hp, money, in_air)
+		VALUES (?, 100, '100', 1, 'ct', 1, 100, 0, 1)`, id); err != nil {
+		t.Fatalf("insert attacker tick row: %v", err)
 	}
 
 	m, err = s.GetMatch(id)
