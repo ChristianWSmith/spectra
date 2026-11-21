@@ -183,6 +183,17 @@ Settled (owner, 2026-11-20 unless noted):
     Both come from the demo. The cause is probably timing: the kill event is set
     when damage applies, and replicated player state can lag. We trust the tick
     sample for consistency. The mismatch is a known data limit, not a parser bug.
+40. **post_match ingest stamp (owner ruling, 2026-11-21):** accepted. Kill,
+    damage, blind, shot and bomb events carry `post_match`, set at ingest from
+    the real-period gate. Folds and weapon/damage seeds exclude post-match rows.
+    This is a new ingest stamp, alongside `mvps`, `score` and `capped_dmg`.
+41. **Economy deaths read the stored metric (owner ruling, 2026-11-21):** add a
+    round-grain metric for each player's deaths per round, and have the Economy
+    view read it through `metric()` with the round bind. The view must not
+    compute deaths from event rows.
+42. **Golden headline test (owner ruling, 2026-11-21):** add a store-backed test
+    of the headline values (kills, deaths, assists, ADR, HS%) against the stored
+    metric values, replacing the golden headline check that F3 removed.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
