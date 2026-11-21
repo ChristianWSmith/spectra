@@ -177,7 +177,6 @@ export const builder = {
   colGroup: 'Group',
   colLabel: 'Label',
   colValue: 'Value',
-  sampleSizeTitle: 'Sample size behind the value',
   noDataBehind: 'no data behind this value',
   compiledSql: 'compiled SQL (provenance)',
   noPreviewYetLead: 'Nothing previewed yet — press Preview (or',

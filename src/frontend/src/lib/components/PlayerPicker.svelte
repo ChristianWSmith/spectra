@@ -113,7 +113,7 @@
     const e = seedEntry(name);
     if (pres.kind === 'value') {
       if (e && e.def.doc) return e.def.doc;
-      return `${(e && e.def.title) || name} — sample size n=${pres.n}`;
+      return `${(e && e.def.title) || name}`;
     }
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, (e && states.get(e.def.id) && states.get(e.def.id).error) || '');

@@ -122,7 +122,6 @@ export function createReadApi({ reads, report, nav }) {
             subject: v.subjectKey,
             dim: v.dim || '',
             value: v.value,
-            n: v.n,
             valueKey: v.valueKey || '',
           }))
         : [];
@@ -131,7 +130,6 @@ export function createReadApi({ reads, report, nav }) {
         state,
         error: state === 'failed' ? (entry && entry.error) || '' : '',
         value: fresh && steam ? row.value : null,
-        n: fresh && steam ? row.n : null,
         valueKey: (fresh && steam && row.valueKey) || '',
         rows,
       };

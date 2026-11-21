@@ -525,8 +525,8 @@ CREATE TABLE IF NOT EXISTS match_trade_opps (
 -- NO HISTORY: rows exist only for the CURRENT generation; outdated rows
 -- (either stamp behind) are DELETED by the compute pass, never retained.
 -- Stamps are INTERNAL-ONLY: the canonical read serves only rows where both
--- stamps are live; no app surface renders a stamp. value 0 always beside n;
--- a group the statement did not produce has NO row. subject_key has no FK —
+-- stamps are live; no app surface renders a stamp. A group the statement
+-- did not produce has NO row. subject_key has no FK —
 -- a career key does not FK to the per-match roster (player_career
 -- precedent, schema.sql:566-584). Reaching this table's shape on an
 -- existing DB is the wipe's job (pre-release: wipe + re-import, never
@@ -538,7 +538,6 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	dim             TEXT    NOT NULL DEFAULT '',  -- partition key ('' = unpartitioned)
 	value           REAL,                         -- NULL = the statement had no data (raw SQL, dogfood/PLAN.md ruling 23); shown as a dash, never 0
 	value_key       TEXT    NOT NULL DEFAULT '',  -- identity value (identity metrics only; '' otherwise)
-	n               INTEGER NOT NULL DEFAULT 0,   -- sample size behind the value
 	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
 	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
 	computed_at     DATETIME,
@@ -1109,7 +1108,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 ('kd', 'K/D', 'K/D',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'float2',
- 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death, addressed per player — no deaths → 0 beside N, where the scoreboard''s K/D shows the kill count.',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death, addressed per player — no deaths → 0, where the scoreboard''s K/D shows the kill count.',
  'builtin', CURRENT_TIMESTAMP),
 ('trade_rate_deaths', 'Trade%', 'Trade%',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(trade_kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
@@ -1156,7 +1155,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
 ('career_kd', 'K/D', 'K/D',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT steam_id AS grp, 1.0*(SUM(kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp ORDER BY grp)',
  'profile', 'float2',
- 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s career, addressed per player — no deaths → 0 beside N (the scoreboard floors instead).',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s career, addressed per player — no deaths → 0 (the scoreboard floors instead).',
  'builtin', CURRENT_TIMESTAMP),
 ('career_trade_rate', 'Trade rate', 'Trade%',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT player_stats.steam_id AS grp, 1.0*(SUM(player_stats.trade_kills)) / NULLIF((SUM(match_trade_opps.opps)), 0) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp ORDER BY grp)',
@@ -1568,22 +1567,22 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('lost_equip', 'Lost equipment', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.match_id AS grp, SUM(CASE WHEN (((rounds.winner != '''') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '''')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number WHERE round_economy.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'currency',
- 'Formula: sum(round_economy.equip_value) of the losing side over decided, team-known rounds — freeze-end money lost, addressed per match (no partition), over the joined sources — a total; N = rounds.',
+ 'Formula: sum(round_economy.equip_value) of the losing side over decided, team-known rounds — freeze-end money lost, addressed per match (no partition), over the joined sources — a total.',
  'builtin', CURRENT_TIMESTAMP),
 ('team_force_win_rate', 'Force win %', '',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT round_side_classes.match_id AS mid, round_side_classes.team AS grp, 1.0*(SUM(CASE WHEN ((round_side_classes.class = ''force'') AND (rounds.winner = round_side_classes.side)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN (round_side_classes.class = ''force'') THEN 1 ELSE 0 END)), 0) AS v FROM round_side_classes LEFT JOIN rounds ON round_side_classes.match_id = rounds.match_id AND round_side_classes.round = rounds.number WHERE round_side_classes.match_id = :match_id AND (round_side_classes.team <> '''') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'team', '', 'percent',
- 'Formula: force-buy rounds won ÷ that team''s own force-buy rounds — per-team force win rate, addressed per team (no partition), over the joined sources — a percent; N is the team''s classified rounds.',
+ 'Formula: force-buy rounds won ÷ that team''s own force-buy rounds — per-team force win rate, addressed per team (no partition), over the joined sources — a percent.',
  'builtin', CURRENT_TIMESTAMP),
 ('team_lost_equip', 'Team lost equipment', '',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT round_economy.match_id AS mid, round_economy.team AS grp, SUM(CASE WHEN (((rounds.winner != '''') AND (round_economy.side != rounds.winner)) AND (round_economy.team != '''')) THEN round_economy.equip_value END) AS v FROM round_economy LEFT JOIN rounds ON round_economy.match_id = rounds.match_id AND round_economy.round = rounds.number WHERE round_economy.match_id = :match_id AND (round_economy.team <> '''') GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'team', '', 'currency',
- 'Formula: sum(round_economy.equip_value) of that team''s losing rounds — freeze-end money the team lost, addressed per team (no partition), over the joined sources — a total; N counts its lost rounds.',
+ 'Formula: sum(round_economy.equip_value) of that team''s losing rounds — freeze-end money the team lost, addressed per team (no partition), over the joined sources — a total.',
  'builtin', CURRENT_TIMESTAMP),
 ('win_pct', 'Win %', '',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT steam_id AS grp, 1.0*(SUM(won)) / NULLIF((COUNT(*)), 0) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp ORDER BY grp)',
  'profile', 'player', '', 'percent',
- 'Formula: sum(player_stats.won) / count() — match wins ÷ matches played over a career, addressed per player (no partition) — a percent; ties count as no wins; N = matches played.',
+ 'Formula: sum(player_stats.won) / count() — match wins ÷ matches played over a career, addressed per player (no partition) — a percent; ties count as no wins.',
  'builtin', CURRENT_TIMESTAMP);
 
 -- Identity addendum (metrics expansion §6.4/§8 M1 identity row,
@@ -1595,34 +1594,34 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 -- UNIQUE name), addressing written explicitly: subject=match,
 -- format=identity, no partition, no denominator (an identity's N is
 -- the pool it chose from — §3.3, stated in every doc below). Every
--- doc is Formula-first, states subject + partition + the N semantics
+-- doc is Formula-first, states subject + partition + the value's semantics
 -- and stays inside the tier-2 doc limit (AGENTS doc rule; no doc
 -- hard-codes a count).
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, created_at) VALUES
 ('top_fragger', 'Top fragger', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'identity',
- 'Formula: argmax(player_stats.kills) — the player with the most kills in the match, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'Formula: argmax(player_stats.kills) — the player with the most kills in the match, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('best_adr', 'Best ADR', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, adr AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY adr DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'identity',
- 'Formula: argmax(player_stats.adr) — the match''s highest-ADR player, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'Formula: argmax(player_stats.adr) — the match''s highest-ADR player, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('most_util', 'Most util', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, utility_damage AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY utility_damage DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'identity',
- 'Formula: argmax(player_stats.utility_damage) — the match''s leading utility-damage player, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'Formula: argmax(player_stats.utility_damage) — the match''s leading utility-damage player, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('entry_opens', 'Entry opens', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, entry_kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY entry_kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'identity',
- 'Formula: argmax(player_stats.entry_kills) — the player with the most round-opening first bloods, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'Formula: argmax(player_stats.entry_kills) — the player with the most round-opening first bloods, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('most_mvps', 'Most MVPs', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, mvps AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY mvps DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'identity',
- 'Formula: argmax(player_stats.mvps) — the match''s MVP-award leader, addressed per match (no partition) — N = the pool of players considered; an empty pool shows a dash.',
+ 'Formula: argmax(player_stats.mvps) — the match''s MVP-award leader, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP);
 
 -- Partition addendum (metrics expansion §8 M5/M6 rows, 2026-11-17):
@@ -1646,42 +1645,42 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('side_rounds', 'Rounds', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, side AS dim, COUNT(*) AS v FROM player_round_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'side', 'int',
- 'Formula: count(player_round_stats) — rounds played on that side across the career, addressed per player, partitioned by side — N = the rounds counted.',
+ 'Formula: count(player_round_stats) — rounds played on that side across the career, addressed per player, partitioned by side.',
  'builtin', CURRENT_TIMESTAMP),
 ('side_win_pct', 'Round win %', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, side AS dim, 1.0*(SUM(won)) / NULLIF((COUNT(*)), 0) AS v FROM player_round_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'side', 'percent',
- 'Formula: sum(player_round_stats.won) / count() — rounds won on that side ÷ rounds played on it, addressed per player, partitioned by side — a percent; N = rounds on the side.',
+ 'Formula: sum(player_round_stats.won) / count() — rounds won on that side ÷ rounds played on it, addressed per player, partitioned by side — a percent.',
  'builtin', CURRENT_TIMESTAMP),
 ('side_adr', 'ADR', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, side AS dim, 1.0*(SUM(dmg)) / NULLIF((COUNT(*)), 0) AS v FROM player_round_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'side', 'float1',
- 'Formula: sum(player_round_stats.dmg) / count() — damage dealt on that side ÷ rounds played on it, addressed per player, partitioned by side — damage per round; N = rounds on the side.',
+ 'Formula: sum(player_round_stats.dmg) / count() — damage dealt on that side ÷ rounds played on it, addressed per player, partitioned by side — damage per round.',
  'builtin', CURRENT_TIMESTAMP),
 ('side_kast', 'KAST%', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, side AS dim, AVG(kast) AS v FROM player_round_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'side', 'percent',
- 'Formula: avg(player_round_stats.kast) — share of that side''s rounds with a K, A, T or S, addressed per player, partitioned by side — a percent; N = rounds on the side.',
+ 'Formula: avg(player_round_stats.kast) — share of that side''s rounds with a K, A, T or S, addressed per player, partitioned by side — a percent.',
  'builtin', CURRENT_TIMESTAMP),
 ('side_kd', 'K/D', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, side AS dim, 1.0*(SUM(kills)) / NULLIF((MAX(SUM(deaths), 1)), 0) AS v FROM player_round_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_round_stats.match_id AND p.steam_id = player_round_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'side', 'float2',
- 'Formula: sum(player_round_stats.kills) / max(sum(player_round_stats.deaths), 1) — kills per death, addressed per player, partitioned by side — a deathless side divides by 1; N = rounds on the side.',
+ 'Formula: sum(player_round_stats.kills) / max(sum(player_round_stats.deaths), 1) — kills per death, addressed per player, partitioned by side — a deathless side divides by 1.',
  'builtin', CURRENT_TIMESTAMP),
 ('map_matches', 'Matches', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, map AS dim, COUNT(*) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'map', 'int',
- 'Formula: count(player_stats) — matches played on that map across the career, addressed per player, partitioned by map — N = the matches counted.',
+ 'Formula: count(player_stats) — matches played on that map across the career, addressed per player, partitioned by map.',
  'builtin', CURRENT_TIMESTAMP),
 ('map_wins', 'Wins', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, map AS dim, SUM(won) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'map', 'int',
- 'Formula: sum(player_stats.won) — matches won on that map, addressed per player, partitioned by map — ties count as no wins; N = matches on the map.',
+ 'Formula: sum(player_stats.won) — matches won on that map, addressed per player, partitioned by map — ties count as no wins.',
  'builtin', CURRENT_TIMESTAMP),
 ('map_win_pct', 'Win %', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, map AS dim, 1.0*(SUM(won)) / NULLIF((COUNT(*)), 0) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'map', 'percent',
- 'Formula: sum(player_stats.won) / count() — matches won ÷ played on that map, addressed per player, partitioned by map — a percent; ties count as no wins; N = matches on the map.',
+ 'Formula: sum(player_stats.won) / count() — matches won ÷ played on that map, addressed per player, partitioned by map — a percent; ties count as no wins.',
  'builtin', CURRENT_TIMESTAMP),
 ('map_adr', 'ADR', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, map AS dim, 1.0*(SUM(total_damage)) / NULLIF(((SELECT COUNT(*) FROM player_round_stats AS d JOIN player_stats AS dm ON dm.match_id = d.match_id AND dm.steam_id = d.steam_id WHERE d.steam_id = player_stats.steam_id AND dm.map = player_stats.map)), 0) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
@@ -1691,7 +1690,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('map_kd', 'K/D', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT steam_id AS grp, map AS dim, 1.0*(SUM(kills)) / NULLIF((SUM(deaths)), 0) AS v FROM player_stats WHERE steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'map', 'float2',
- 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death on that map, addressed per player, partitioned by map — no deaths → 0 beside N; N = matches on the map.',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death on that map, addressed per player, partitioned by map — no deaths → 0.',
  'builtin', CURRENT_TIMESTAMP);
 
 -- Weapon addendum (metrics expansion §8 M7 row, 2026-11-17; damage
@@ -1720,17 +1719,17 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('weapon_kills', 'Weapon kills', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT attacker AS grp, weapon AS dim, SUM(CASE WHEN ((kind = ''kill'') AND (attacker != victim)) THEN 1 ELSE 0 END) AS v FROM events WHERE attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'weapon', 'int',
- 'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon — N = the event rows recorded for that weapon.',
+ 'Formula: count(events) of enemy kills with that weapon across the career, addressed per player, partitioned by weapon.',
  'builtin', CURRENT_TIMESTAMP),
 ('weapon_damage', 'Weapon damage', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT events.attacker AS grp, events.weapon AS dim, SUM(CASE WHEN ((events.kind = ''damage'') AND (events.attacker != events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.capped_dmg END) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'weapon', 'int',
- 'Formula: sum(events.capped_dmg over enemy damage events with that weapon) — HP-capped damage dealt across the career, addressed per player, partitioned by weapon — N = the event rows for that weapon.',
+ 'Formula: sum(events.capped_dmg over enemy damage events with that weapon) — HP-capped damage dealt across the career, addressed per player, partitioned by weapon.',
  'builtin', CURRENT_TIMESTAMP),
 ('weapon_headshots', 'Weapon headshots', '',
  'SELECT grp AS subject_key, dim AS dim, v AS value FROM (SELECT attacker AS grp, weapon AS dim, SUM(CASE WHEN (((kind = ''kill'') AND (headshot = 1)) AND (attacker != victim)) THEN 1 ELSE 0 END) AS v FROM events WHERE attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY grp, dim ORDER BY grp, dim)',
  'profile', 'player', 'weapon', 'int',
- 'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon — N = the event rows recorded for that weapon.',
+ 'Formula: count(events) of enemy headshot kills with that weapon across the career, addressed per player, partitioned by weapon.',
  'builtin', CURRENT_TIMESTAMP);
 
 -- Grammar addendum (metrics expansion §8 M8 rows, 2026-11-17): TWO
@@ -1754,12 +1753,12 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 ('pistol_hold', 'Pistol → next round', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value FROM (SELECT rounds.match_id AS mid, rounds.match_id AS grp, 1.0*(SUM(CASE WHEN (((round_classifications.label = ''pistol'') AND (rounds.winner != '''')) AND ((SELECT nx0.winner FROM rounds AS nx0 WHERE nx0.match_id = rounds.match_id AND nx0.number > rounds.number ORDER BY nx0.number LIMIT 1) = rounds.winner)) THEN 1 ELSE 0 END)) / NULLIF((SUM(CASE WHEN ((round_classifications.label = ''pistol'') AND (rounds.winner != '''')) THEN 1 ELSE 0 END)), 0) AS v FROM rounds LEFT JOIN round_classifications ON rounds.match_id = round_classifications.match_id AND rounds.number = round_classifications.round WHERE rounds.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'percent',
- 'Formula: pistol rounds won where that side also won the following round ÷ pistol rounds won — the held-pistol rate, addressed per match (no partition), over the joined sources; N = rounds.',
+ 'Formula: pistol rounds won where that side also won the following round ÷ pistol rounds won — the held-pistol rate, addressed per match (no partition), over the joined sources.',
  'builtin', CURRENT_TIMESTAMP),
 ('avg_equip_gap', 'Winner equipment value advantage', '',
  'SELECT '''' AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, match_id AS grp, AVG(CASE WHEN (winner != '''') THEN (CASE WHEN (winner = ''ct'') THEN (equip_ct - equip_t) ELSE (equip_t - equip_ct) END) END) AS v FROM rounds WHERE rounds.match_id = :match_id GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'match', 'match', '', 'currency',
- 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time — addressed per match (no partition); N = rounds.',
+ 'Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time — addressed per match (no partition).',
  'builtin', CURRENT_TIMESTAMP);
 
 -- View-aggregate relocation addendum (ME8 exception audit, 2026-11-18):
@@ -1767,7 +1766,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
 -- total pairs, the last piece of that card's numbers still computed in
 -- the view (the view-aggregate rule's third clause: a value derivable
 -- from a stored metric relocates; a pooled ratio seed deliberately does
--- NOT exist here — a zero denominator stores 0 beside N, which cannot
+-- NOT exist here — a zero denominator stores 0, which cannot
 -- carry the card's "no force buys" dash, so the honest stored form of
 -- the card is its counts). Same INSERT OR IGNORE add-on path (keyed on
 -- the UNIQUE name), addressing written explicitly: subject=team,
@@ -2105,7 +2104,7 @@ LEFT JOIN agg ON agg.steam_id = p.steam_id
 WHERE p.match_id = :match_id AND p.is_bot = 0
 ORDER BY p.steam_id',
  'match', 'player', '', 'float1',
- 'Formula: sum(capped enemy damage) ÷ the match''s rounds — damage per round, addressed per player — a dash when the match has no rounds; N = rounds.',
+ 'Formula: sum(capped enemy damage) ÷ the match''s rounds — damage per round, addressed per player — a dash when the match has no rounds.',
  'builtin', CURRENT_TIMESTAMP),
 ('raw_hs_pct', 'HS% (raw SQL)', '',
  'WITH k AS (

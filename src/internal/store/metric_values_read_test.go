@@ -67,14 +67,14 @@ func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
 	// Fresh rows for match A: two players on the builtin metric, one on
 	// the others (subject_key ties break the order inside a metric).
 	if err := s.InsertMetricValues(builtin.ID, builtin.Version, live, []MetricValueRow{
-		{MatchID: matchA, SubjectKey: "76561198000000002", Value: 2, N: 5},
-		{MatchID: matchA, SubjectKey: "76561198000000001", Value: 1, N: 4},
+		{MatchID: matchA, SubjectKey: "76561198000000002", Value: 2},
+		{MatchID: matchA, SubjectKey: "76561198000000001", Value: 1},
 	}); err != nil {
 		t.Fatalf("insert builtin: %v", err)
 	}
 	for _, m := range []models.MetricRow{user, plugin} {
 		if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-			{MatchID: matchA, SubjectKey: "76561198000000001", Value: 9, N: 9},
+			{MatchID: matchA, SubjectKey: "76561198000000001", Value: 9},
 		}); err != nil {
 			t.Fatalf("insert %s: %v", m.Name, err)
 		}
@@ -82,7 +82,7 @@ func TestGetMetricValuesForMatchFreshOrderedAndHonest(t *testing.T) {
 	// An OUTDATED row for the same match (metric_version 0 = never
 	// stamped = behind): physically present, never served.
 	if err := s.InsertMetricValues(user.ID, 0, live, []MetricValueRow{
-		{MatchID: matchA, SubjectKey: "76561198000000003", Value: 77, N: 77},
+		{MatchID: matchA, SubjectKey: "76561198000000003", Value: 77},
 	}); err != nil {
 		t.Fatalf("insert stale: %v", err)
 	}
@@ -170,14 +170,14 @@ func TestGetMetricValuesForPlayerGrain(t *testing.T) {
 	// Career rows (match 0) for two players + a MATCH row for the same
 	// metric — the grain split must keep them apart.
 	if err := s.InsertMetricValues(other.ID, other.Version, live, []MetricValueRow{
-		{MatchID: 0, SubjectKey: bob, Value: 20, N: 8},
-		{MatchID: 0, SubjectKey: amy, Value: 10, N: 4},
-		{MatchID: matchID, SubjectKey: amy, Value: 99, N: 1},
+		{MatchID: 0, SubjectKey: bob, Value: 20},
+		{MatchID: 0, SubjectKey: amy, Value: 10},
+		{MatchID: matchID, SubjectKey: amy, Value: 99},
 	}); err != nil {
 		t.Fatalf("insert career: %v", err)
 	}
 	if err := s.InsertMetricValues(second.ID, second.Version, live, []MetricValueRow{
-		{MatchID: 0, SubjectKey: amy, Value: 3, N: 2},
+		{MatchID: 0, SubjectKey: amy, Value: 3},
 	}); err != nil {
 		t.Fatalf("insert second: %v", err)
 	}
@@ -250,12 +250,12 @@ func TestGetMetricValuesReadsCarryNoStampKeys(t *testing.T) {
 	matchID := seedReadyMatch(t, s, "read-dto")
 	m := seedValueMetric(t, s, "dto_metric", "match")
 	if err := s.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1},
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, cfg.RuleVersion, []MetricValueRow{
-		{MatchID: 0, SubjectKey: "76561198000000001", Value: 2, N: 2},
+		{MatchID: 0, SubjectKey: "76561198000000001", Value: 2},
 	}); err != nil {
 		t.Fatalf("insert career: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestGetMetricValuesReadsCarryNoStampKeys(t *testing.T) {
 			}
 		}
 		if !strings.Contains(s, `"metricId"`) || !strings.Contains(s, `"subjectKey"`) ||
-			!strings.Contains(s, `"value"`) || !strings.Contains(s, `"n"`) {
+			!strings.Contains(s, `"value"`) || !strings.Contains(s, `"valueKey"`) || strings.Contains(s, `"n":`) {
 			t.Errorf("%s read JSON missing a DTO key: %s", name, s)
 		}
 	}
@@ -309,12 +309,12 @@ func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
 	numeric := seedOrderMetric(t, s, "plain_count", "user")
 
 	if err := s.InsertMetricValues(ident.ID, ident.Version, live, []MetricValueRow{
-		{MatchID: match, SubjectKey: "", ValueKey: "76561198000000008", Value: 16, N: 8},
+		{MatchID: match, SubjectKey: "", ValueKey: "76561198000000008", Value: 16},
 	}); err != nil {
 		t.Fatalf("insert identity: %v", err)
 	}
 	if err := s.InsertMetricValues(numeric.ID, numeric.Version, live, []MetricValueRow{
-		{MatchID: match, SubjectKey: "76561198000000001", Value: 3, N: 8},
+		{MatchID: match, SubjectKey: "76561198000000001", Value: 3},
 	}); err != nil {
 		t.Fatalf("insert numeric: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
 	}
 	for _, r := range rows {
 		if r.MetricID == ident.ID {
-			if r.ValueKey != "76561198000000008" || r.Value == nil || *r.Value != 16 || r.N != 8 || r.SubjectKey != "" {
+			if r.ValueKey != "76561198000000008" || r.Value == nil || *r.Value != 16 || r.SubjectKey != "" {
 				t.Errorf("identity row = %+v, want ValueKey …008 / Value 16 / N 8 (the pool) / subject \"\"", r)
 			}
 		} else if r.ValueKey != "" {
@@ -340,7 +340,7 @@ func TestMetricValueIdentityKeyRoundTrip(t *testing.T) {
 	// freshness spelling — an identity rides it unchanged).
 	staleMatch := seedReadyMatch(t, s, "identity-read-stale")
 	if err := s.InsertMetricValues(ident.ID, 0, live, []MetricValueRow{
-		{MatchID: staleMatch, SubjectKey: "", ValueKey: "76561198000000001", Value: 99, N: 8},
+		{MatchID: staleMatch, SubjectKey: "", ValueKey: "76561198000000001", Value: 99},
 	}); err != nil {
 		t.Fatalf("insert stale identity: %v", err)
 	}

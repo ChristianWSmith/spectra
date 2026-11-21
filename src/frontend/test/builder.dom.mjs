@@ -1545,7 +1545,7 @@ compileCalls.length = 0;
   const valueCell = r.querySelector('.bld-preview table.data-table tbody tr td.num')?.textContent;
   check(
     "the value formats from the BUILTIN's stored format (percent), not the empty form",
-    valueCell === '41.2%',
+    valueCell === '90%',
     String(valueCell),
   );
   const previewText = r.querySelector('.bld-preview')?.textContent || '';
@@ -1593,57 +1593,40 @@ compileCalls.length = 0;
   }
 
   // --- The preview table sorts CLIENT-side (owner ruling, row 28) ---
-  // The stub above returns THREE rows for this metric — alice n=13
-  // (41.2%), bob n=7 (90%), carl n=3 (5%): N arrives already descending
-  // (the default), the values are numeric where their percent TEXT is
+  // The stub above returns THREE rows for this metric — alice 41.2%,
+  // bob 90%, carl 5%: the values are numeric where their percent TEXT is
   // not ("5%" < "41.2%" lexically, 5 > 41.2 never), and the labels mix
-  // a name with two ids so a text sort is observable too.
+  // a name with two ids so a text sort is observable too. The preview
+  // carries no N column (a value has no sample size), so Value is the
+  // numeric column and its active default is highest first.
   const pRows = () => [...r.querySelectorAll('.bld-preview table.data-table tbody tr')];
   const pCol = (i) => pRows().map((row) => row.querySelectorAll('td')[i]?.textContent);
   const pTh = () => [...r.querySelectorAll('.bld-preview table.data-table thead th button')];
 
   check(
-    'preview rows default to N descending — highest N first (owner ruling)',
-    JSON.stringify(pCol(3)) === JSON.stringify(['13', '7', '3']),
-    JSON.stringify(pCol(3)),
+    'preview rows default to value descending — highest value first (owner ruling)',
+    JSON.stringify(pCol(2)) === JSON.stringify(['90%', '41.2%', '5%']),
+    JSON.stringify(pCol(2)),
+  );
+  check(
+    'the preview has no N column (a value carries no sample size)',
+    pTh().length === 3 && !pTh().some((b) => b.textContent.trim() === 'N'),
+    pTh().map((b) => b.textContent.trim()).join('|'),
   );
 
-  click(pTh()[2]); // Value — a numeric column's natural direction is highest first
+  click(pTh()[2]); // Value is the active header: the click flips it
   await sleep(60);
   check(
-    'the first click on Value sorts by VALUE, highest first (never the formatted text)',
-    JSON.stringify(pCol(2)) === JSON.stringify(['90%', '41.2%', '5%']),
+    'a click on the active Value header sorts by VALUE, lowest first (never the formatted text)',
+    JSON.stringify(pCol(2)) === JSON.stringify(['5%', '41.2%', '90%']),
     JSON.stringify(pCol(2)),
   );
   click(pTh()[2]); // Value again
   await sleep(60);
   check(
-    'a second click on Value flips to lowest first',
-    JSON.stringify(pCol(2)) === JSON.stringify(['5%', '41.2%', '90%']),
+    'a second click on Value flips back to highest first',
+    JSON.stringify(pCol(2)) === JSON.stringify(['90%', '41.2%', '5%']),
     JSON.stringify(pCol(2)),
-  );
-
-  click(pTh()[3]); // N — inactive after the Value clicks → its natural direction
-  await sleep(60);
-  const nTh = r.querySelector('.bld-preview table.data-table thead th:nth-child(4)');
-  check(
-    'the first click on N sorts highest-first and marks that header active',
-    JSON.stringify(pCol(3)) === JSON.stringify(['13', '7', '3']) &&
-      nTh.querySelector('button')?.classList.contains('sorted') &&
-      !!nTh.querySelector('.codicon-arrow-down'),
-    `${JSON.stringify(pCol(3))} ${nTh.innerHTML.slice(0, 120)}`,
-  );
-  check(
-    'the N header keeps its sample-size tooltip',
-    (nTh.getAttribute('title') || '').length > 0,
-    nTh.getAttribute('title'),
-  );
-  click(pTh()[3]); // N again
-  await sleep(60);
-  check(
-    'a second click on N flips to lowest first',
-    JSON.stringify(pCol(3)) === JSON.stringify(['3', '7', '13']),
-    JSON.stringify(pCol(3)),
   );
 
   click(pTh()[1]); // Label — text columns start A→Z

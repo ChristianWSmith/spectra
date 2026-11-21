@@ -292,7 +292,6 @@ type MetricValueRow struct {
 	Dim        string
 	Value      float64
 	ValueKey   string
-	N          int
 }
 
 // ClearMetricValues is the compute pass's PHASE 1 (design §4): it
@@ -366,8 +365,8 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(
-		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, n, metric_version, rule_version, computed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, metric_version, rule_version, computed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
@@ -375,7 +374,7 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 	defer stmt.Close()
 	now := time.Now()
 	for _, r := range rows {
-		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SubjectKey), scrub(r.Dim), r.Value, scrub(r.ValueKey), r.N, metricVersion, ruleVersion, now); err != nil {
+		if _, err := stmt.Exec(metricID, r.MatchID, scrub(r.SubjectKey), scrub(r.Dim), r.Value, scrub(r.ValueKey), metricVersion, ruleVersion, now); err != nil {
 			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
 	}
@@ -438,8 +437,8 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, n, metric_version, rule_version, computed_at, scope_steam_id, scope_round, row_json)
-		 VALUES (?, ?, ?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, metric_version, rule_version, computed_at, scope_steam_id, scope_round, row_json)
+		 VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
@@ -483,7 +482,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
 // caller can ever render a stale value. The DTO is exactly
-// {metricId, subjectKey, value, valueKey, n}: no stamps, no
+// {metricId, subjectKey, dim, value, valueKey}: no stamps, no
 // computed_at (they are INTERNAL-ONLY — models.MetricValue carries no
 // such field, so a stamp cannot reach a view, tooltip or export by
 // construction). Rows come
@@ -496,7 +495,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 // analysis rule version — metricValueFreshCond, prefixed with the join
 // it needs (m.version). value_key rides every row (the identity slot —
 // §3.3 — ” on numeric rows).
-var metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.dim, v.value, v.value_key, v.n
+var metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.dim, v.value, v.value_key
 	FROM metric_values v
 	JOIN metrics m ON m.id = v.metric_id
 	WHERE ` + metricValueFreshCond
@@ -523,7 +522,7 @@ func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
 	for rows.Next() {
 		var v models.MetricValue
 		var value sql.NullFloat64
-		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Dim, &value, &v.ValueKey, &v.N); err != nil {
+		if err := rows.Scan(&v.MetricID, &v.SubjectKey, &v.Dim, &value, &v.ValueKey); err != nil {
 			return nil, err
 		}
 		if value.Valid {
@@ -679,7 +678,7 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 		return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
-	q := `SELECT v.metric_id, v.match_id, v.value, v.n, mt.patch_version, mt.extracted_at
+	q := `SELECT v.metric_id, v.match_id, v.value, mt.patch_version, mt.extracted_at
 		FROM metric_values v
 		JOIN metrics m ON m.id = v.metric_id
 		JOIN matches mt ON mt.id = v.match_id
@@ -699,7 +698,7 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 	for rows.Next() {
 		var p models.MetricSeriesPoint
 		var extracted sql.NullTime
-		if err := rows.Scan(&p.MetricID, &p.MatchID, &p.Value, &p.N, &p.Patch, &extracted); err != nil {
+		if err := rows.Scan(&p.MetricID, &p.MatchID, &p.Value, &p.Patch, &extracted); err != nil {
 			return nil, fmt.Errorf("couldn't load the metric series: %w", err)
 		}
 		p.ExtractedAt = nullTime(extracted)

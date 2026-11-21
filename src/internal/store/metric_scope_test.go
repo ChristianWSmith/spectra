@@ -36,7 +36,7 @@ func touchedMetric(t *testing.T, s *Store, name, scope, expr string, touched []s
 func insertFreshMatchRow(t *testing.T, s *Store, m models.MetricRow, matchID int64, rule int) {
 	t.Helper()
 	if err := s.InsertMetricValues(m.ID, m.Version, rule, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1},
 	}); err != nil {
 		t.Fatalf("InsertMetricValues(%s): %v", m.Name, err)
 	}

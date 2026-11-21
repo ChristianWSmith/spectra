@@ -26,7 +26,7 @@
     metricProgressFrac,
     metricProgressStage,
   } from '../metricstate.js';
-  import { fmtInt, fmtMetric } from '../fmt.js';
+  import { fmtMetric } from '../fmt.js';
   import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
   import { originFilterWord } from '../metricorigins.js';
   import ProfileLink from '../components/ProfileLink.svelte';
@@ -298,16 +298,16 @@
   // the URL (a sort is not shareable) and never in the registry (this
   // view's own placement comment above keeps previews transient).
   //
-  // Each header sorts its column. The NUMERIC columns (value, N) compare
+  // Each header sorts its column. The NUMERIC column (value) compares
   // by VALUE — never the formatted text, so "5%" cannot sort before
-  // "41.2%" as text — and both take DESCENDING as their natural
-  // direction, so the default order is N highest-first (the owner's
-  // ruling); text columns start A→Z. Rows whose key is not a number sort
+  // "41.2%" as text — and it takes DESCENDING as its natural
+  // direction, so the default order is value highest-first; text columns
+  // start A→Z. Rows whose key is not a number sort
   // last either way (a gap is not a zero), and ties keep arrival order
   // (Array#sort is stable), so a fresh preview still renders what the
   // read returned.
-  const PREVIEW_SORT_DEFAULT_DESC = { group: false, label: false, value: true, n: true };
-  let previewSortKey = $state('n');
+  const PREVIEW_SORT_DEFAULT_DESC = { group: false, label: false, value: true };
+  let previewSortKey = $state('value');
   let previewSortDesc = $state(true);
 
   // numKey reads a sort key as a NUMBER: numeric text ("13", "0.412")
@@ -327,7 +327,7 @@
     const dir = previewSortDesc ? -1 : 1;
     const rows = [...(preview ? preview.rows : [])];
     rows.sort((a, b) => {
-      if (key === 'value' || key === 'n') {
+      if (key === 'value') {
         const av = numKey(a[key]);
         const bv = numKey(b[key]);
         if (av === null || bv === null) {
@@ -1106,7 +1106,6 @@
       group: v.subjectKey,
       label: names.get(v.subjectKey) || v.subjectKey,
       value: v.value,
-      n: v.n,
     }));
   }
 
@@ -1836,22 +1835,14 @@
                       desc={previewSortDesc}
                       onclick={() => togglePreviewSort('value')}
                     />
-                    <SortTh
-                      label="N"
-                      cls="num"
-                      title={S.builder.sampleSizeTitle}
-                      active={previewSortKey === 'n'}
-                      desc={previewSortDesc}
-                      onclick={() => togglePreviewSort('n')}
-                    />
                   </tr>
                 </thead>
                 <tbody>
                   {#each sortedPreviewRows as r, i (i)}
                     <tr
-                      class:bld-missing={r.n === 0}
+                      class:bld-missing={r.value == null}
                       class:bld-egroup={!r.group}
-                      title={r.n === 0 ? S.builder.noDataBehind : ''}
+                      title={r.value == null ? S.builder.noDataBehind : ''}
                     >
                       <td class="mono">{r.group || '—'}</td>
                       <td>
@@ -1862,7 +1853,6 @@
                         <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
                       </td>
                       <td class="num">{fmtMetric(r.value, previewFormat, r.valueKey, () => r.label)}</td>
-                      <td class="num">{fmtInt(r.n)}</td>
                     </tr>
                   {/each}
                 </tbody>

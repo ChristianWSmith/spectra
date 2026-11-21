@@ -97,7 +97,7 @@
   // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
   // rows are the CANONICAL read's stored values for THIS match (design
   // §5: a picked metric reads stored rows — no per-toggle query-time
-  // run), shaped {id, label, value, n} with the label from the roster
+  // run), shaped {id, label, value} with the label from the roster
   // read (GetPlayerRefs). `unitHasRows` is the sibling coverage that
   // separates '—' from the behind chip.
   let appendix = $state({});
@@ -229,7 +229,7 @@
   // resolve by NAME through the catalog this view already loads and ride
   // the ONE canonical stored read beside sbBySteam
   // (getMetricValuesForMatch, fresh rows only). Shape: seed name →
-  // {def, bySteam: steamId → {value, n, format}}. A player with no
+  // {def, bySteam: steamId → {value, format}}. A player with no
   // FRESH row for a seed has no entry there — that half renders the
   // honest dash with the state word in its title, never the scoreboard
   // column behind it, never a fabricated 0. The picker owns the CAREER
@@ -270,7 +270,7 @@
         for (const v of values || []) {
           const name = nameById.get(v.metricId);
           const entry = name && out.get(name);
-          if (entry) entry.bySteam.set(v.subjectKey, { value: v.value, n: v.n, format: entry.def.format });
+          if (entry) entry.bySteam.set(v.subjectKey, { value: v.value, format: entry.def.format });
         }
         seeds = out;
       })
@@ -423,7 +423,6 @@
             id: v.subjectKey,
             label: labelFor(v),
             value: v.value,
-            n: v.n,
           }));
           next[id] = {
             loading: false,
@@ -434,15 +433,12 @@
         }
         // Raw rows: one row per ROSTER player (listedPlayers — bots are
         // never listed; the shape is the metric rows' own), the value
-        // read straight off the recorded field, and N = that player's
-        // stored round count (honest — never a formula's sample size,
-        // because this is not a formula).
+        // read straight off the recorded field.
         for (const r of rawSel) {
           const rawRows = (listedPlayers(board || []) || []).map((p) => ({
             id: p.steamId,
             label: bySteam.get(p.steamId) || p.name || p.steamId,
             value: Number.isFinite(p[r.field]) ? p[r.field] : null,
-            n: Number.isFinite(p.roundsPlayed) ? p.roundsPlayed : null,
           }));
           next[r.id] = {
             loading: false,
@@ -591,10 +587,6 @@
   // earns its line alone.
   const entryHasTable = (id) => ['value', 'raw'].includes((appendixPres(id) || {}).kind);
 
-  // The sample-size cell: a real count, else the honest dash — a raw
-  // row without a stored round count states nothing rather than a 0.
-  const cellN = (r) => (Number.isFinite(r.n) ? r.n : '—');
-
   // The per-entry meta line: fresh rows → "per subject · N rows" (the
   // design §5 copy with the SUBJECT spelled per metric since Phase 7,
   // 2026-11-18 — a match-subject entry reads "per match", a team one
@@ -625,9 +617,9 @@
       out += `### ${entryTitle(a)}\n\n`;
       out += `${appendixLine(id, a)}\n\n`;
       if (!entryHasTable(id)) continue;
-      out += '| Group | Label | Value | n |\n|---|---|---|---|\n';
+      out += '| Group | Label | Value |\n|---|---|---|\n';
       for (const r of a.rows) {
-        out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} | ${cellN(r)} |\n`;
+        out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} |\n`;
       }
       out += '\n';
     }
@@ -646,9 +638,9 @@
       out += `<h3>${esc(entryTitle(a))}</h3>`;
       out += `<p>${esc(appendixLine(id, a))}</p>`;
       if (!entryHasTable(id)) continue;
-      out += '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th><th class="num">n</th></tr></thead><tbody>';
+      out += '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th></tr></thead><tbody>';
       for (const r of a.rows) {
-        out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td><td class="num">${cellN(r)}</td></tr>`;
+        out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td></tr>`;
       }
       out += '</tbody></table>';
     }
