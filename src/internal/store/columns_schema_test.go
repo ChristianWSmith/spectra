@@ -126,11 +126,11 @@ func TestDiscardedWarmupColumnsGone(t *testing.T) {
 	}
 }
 
-// TestStampDropsColumnsGone pins the tick-join stamp drops (A3): the
-// events.same_side and events.attacker_inair stamps are not columns any
-// more. Their seeds and the timeline read join player_ticks, so a fresh
-// database must not grow either column back. events.capped_dmg stays
-// (ruling 18): it is an engine emulation no per-tick row can reproduce.
+// TestStampDropsColumnsGone pins the stamp drops that remain: events.same_side
+// is not a column any more (its seeds read the player_ticks side join, so a
+// fresh database must not grow it back). events.attacker_inair stays a stored
+// game fact (PLAN ruling 39), and events.capped_dmg stays an ingest stamp
+// (ruling 18): no per-tick row can reproduce it.
 func TestStampDropsColumnsGone(t *testing.T) {
 	s := openMem(t)
 	have, err := s.schemaColumns("events")
@@ -141,10 +141,11 @@ func TestStampDropsColumnsGone(t *testing.T) {
 	for _, c := range have {
 		names[c.Name] = true
 	}
-	for _, col := range []string{"same_side", "attacker_inair"} {
-		if names[col] {
-			t.Errorf("events.%s exists in the baseline — it is a tick-join read now, not a stamp", col)
-		}
+	if names["same_side"] {
+		t.Error("events.same_side exists in the baseline — it is a tick-join read now, not a stamp")
+	}
+	if !names["attacker_inair"] {
+		t.Error("events.attacker_inair is missing — it is a stored game fact (PLAN ruling 39)")
 	}
 	if !names["capped_dmg"] {
 		t.Error("events.capped_dmg is missing — it stays an ingest stamp (ruling 18)")

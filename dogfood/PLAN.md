@@ -506,7 +506,7 @@ Schema changes gathered by the waves:
 - New: `player_ticks` and its index (A1), `metrics.touched` (B2), `components`
   and `layout_placements` (C1), stub rows (B4), and the round dimension (B7).
   The exact storage shape is set by item 20.
-- Dropped: `events.same_side`, `events.attacker_inair` (A3), `metric_values.n`
+- Dropped: `events.same_side` (A3), `metric_values.n`
   (B6), plus the already-committed drops (opening, damage-by-weapon, warmup).
 - Changed text: every builtin `expr` (B3). `INSERT OR IGNORE` never rewrites
   an existing row, so the wipe is what applies the port.

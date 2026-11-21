@@ -88,11 +88,12 @@ and value parity with the snapshot.
 The fact substrate is one table, `player_ticks`, with one row per (match,
 tick, present player) at 64 Hz. It carries derived features only: round,
 side, alive, hp, money, in_air, speed and weapon. Position and view angles
-stay in the replay sidecar. The two stamps that the tick table can replace,
-`events.same_side` and `events.attacker_inair`, are dropped, and their seeds
-become SQL joins. `events.capped_dmg` stays as an ingest stamp because it
-emulates an engine rule: it is order-dependent and row-local, so no per-tick
-row can reproduce it.
+stay in the replay sidecar. The stamp that the tick table can replace,
+`events.same_side`, is dropped, and its seeds become SQL joins.
+`events.attacker_inair` stays a stored game fact (PLAN ruling 39).
+`events.capped_dmg` stays as an ingest stamp because it emulates an engine
+rule: it is order-dependent and row-local, so no per-tick row can reproduce
+it.
 
 **Speed must be sourced, not guessed.** The definition (horizontal or 3D,
 units) and any counter-strafing threshold come from CS2 documentation or
