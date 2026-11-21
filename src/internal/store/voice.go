@@ -26,12 +26,23 @@ const voicePresenceCols = `match_id, chunk_count, player_count, caster_count, ke
 // is NOT written by this call — it is already on disk in the sidecar.
 // Callers run it after SaveExtracted so the match row exists.
 func (s *Store) SaveVoicePresence(matchID int64, presence models.VoicePresenceRow) error {
-	if _, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("couldn't save the voice presence: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(
 		`INSERT INTO voice_presence (`+voicePresenceCols+`)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		matchID, presence.ChunkCount, presence.PlayerCount, presence.CasterCount,
 		b2i(presence.KeyFound), presence.OutSampleRate,
 	); err != nil {
+		return fmt.Errorf("couldn't save the voice presence: %w", err)
+	}
+	if err := markTableWriteBehind(tx, matchID, "voice_presence"); err != nil {
+		return fmt.Errorf("couldn't save the voice presence: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't save the voice presence: %w", err)
 	}
 	return nil

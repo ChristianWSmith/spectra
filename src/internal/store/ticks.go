@@ -94,7 +94,18 @@ func (s *Store) NewTickWriter(matchID int64) (*TickWriter, error) {
 // DeletePlayerTicks removes one match's player_ticks rows — the reprocess
 // wipe and every import failure path's cleanup of a half-written stream.
 func (s *Store) DeletePlayerTicks(matchID int64) error {
-	if _, err := s.db.Exec(`DELETE FROM player_ticks WHERE match_id = ?`, matchID); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("clearing the match's tick data: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM player_ticks WHERE match_id = ?`, matchID); err != nil {
+		return fmt.Errorf("clearing the match's tick data: %w", err)
+	}
+	if err := markTableWriteBehind(tx, matchID, "player_ticks"); err != nil {
+		return fmt.Errorf("clearing the match's tick data: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("clearing the match's tick data: %w", err)
 	}
 	return nil
@@ -196,6 +207,9 @@ func (w *TickWriter) flush() error {
 			r.hp, r.money, r.inAir, r.speed, r.weapon); err != nil {
 			return fmt.Errorf("saving the match's tick data: %w", err)
 		}
+	}
+	if err := markTableWriteBehind(tx, w.matchID, "player_ticks"); err != nil {
+		return fmt.Errorf("saving the match's tick data: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("saving the match's tick data: %w", err)

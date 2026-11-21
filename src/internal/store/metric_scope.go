@@ -131,16 +131,17 @@ func invalidateDependents(tx *sql.Tx, rootID int64, sc changeScope) error {
 
 // dependentRow is one metric that references a name in metric_deps.
 type dependentRow struct {
-	ID   int64
-	Name string
-	Expr string
+	ID    int64
+	Name  string
+	Expr  string
+	Scope string
 }
 
 // dependentsOfName reads the metrics that reference name. It closes the cursor
 // before returning, so the caller may write in the same transaction.
 func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	rows, err := tx.Query(
-		`SELECT DISTINCT m.id, m.name, m.expr FROM metric_deps d
+		`SELECT DISTINCT m.id, m.name, m.expr, m.scope FROM metric_deps d
 		 JOIN metrics m ON m.id = d.metric_id WHERE d.dep_name = ?`, name)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -149,7 +150,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	var out []dependentRow
 	for rows.Next() {
 		var d dependentRow
-		if err := rows.Scan(&d.ID, &d.Name, &d.Expr); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Expr, &d.Scope); err != nil {
 			return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
 		}
 		out = append(out, d)
@@ -163,17 +164,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 // invalidateDependent applies the scoped rule to one dependent and reports
 // whether the change reached it (so its own dependents are walked).
 func invalidateDependent(tx *sql.Tx, d dependentRow, sc changeScope) (bool, error) {
-	var bindsMatch, bindsSteam bool
-	if st, gerr := AnalyzeMetricSQL(d.Expr, nil); gerr == nil {
-		for _, b := range st.Binds {
-			switch b {
-			case ":match_id", ":round":
-				bindsMatch = true
-			case ":steam_id":
-				bindsSteam = true
-			}
-		}
-	}
+	bindsMatch, bindsSteam := bindsOf(d.Expr, d.Scope)
 	if sc.Whole || (!bindsMatch && !bindsSteam) {
 		if _, err := tx.Exec(`UPDATE metrics SET version = version + 1 WHERE id = ?`, d.ID); err != nil {
 			return false, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -244,6 +235,117 @@ func bumpRuleAffectedMetrics(tx *sql.Tx, tables []string) error {
 	for _, id := range roots {
 		if err := bumpMetricAndDependents(tx, id); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// bindsOf reports which unit keys a metric's stored rows are keyed by:
+// byMatch for a match (or round) unit, bySteam for a player unit. Raw SQL
+// reads its reserved binds. Sugar rows are keyed by the scope they were saved
+// under: a "profile" metric is per player, any other is per match. A raw
+// statement the gate refuses keeps neither key, so it reads as library-wide
+// (the conservative whole change).
+func bindsOf(expr, scope string) (byMatch, bySteam bool) {
+	if !IsRawExpr(expr) {
+		if scope == "profile" {
+			return false, true
+		}
+		return true, false
+	}
+	st, gerr := AnalyzeMetricSQL(expr, nil)
+	if gerr != nil {
+		return false, false
+	}
+	for _, b := range st.Binds {
+		switch b {
+		case ":match_id", ":round":
+			byMatch = true
+		case ":steam_id":
+			bySteam = true
+		}
+	}
+	return byMatch, bySteam
+}
+
+// matchDataTables are the tables a match's own rows live in, the ones a write
+// to that match changes: the child tables and the streamed tick table, minus
+// the derived metric stores (metric_values and metric_runs are outputs a
+// metric produces, not inputs it reads). The matches header is excluded: its
+// lifecycle columns (status, path, sha) are not facts a metric reads.
+func matchDataTables() []string {
+	out := []string{"player_ticks"}
+	for _, t := range childTables {
+		if t == "metric_values" || t == "metric_runs" {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// markMatchWritesBehind is the write-side freshness hook (03-QUERIES §4, B4):
+// a write that changed tables of one match marks behind every metric whose
+// touched set holds one of them. A library-wide metric goes behind as a whole;
+// a metric bound to a match goes behind for that match only; a metric bound to
+// a player goes behind for the match's players (players lists every player
+// the write may have changed). Runs inside the caller's transaction, before
+// its commit.
+func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players []string) error {
+	touchesAny := func(touched string) bool {
+		for _, t := range parseTouched(touched) {
+			for _, want := range tables {
+				if t == want {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	type root struct {
+		id                int64
+		name, expr, scope string
+	}
+	rows, err := tx.Query(`SELECT id, name, expr, scope, touched FROM metrics`)
+	if err != nil {
+		return fmt.Errorf("couldn't update the metric versions: %w", err)
+	}
+	var roots []root
+	for rows.Next() {
+		var r root
+		var touched string
+		if err := rows.Scan(&r.id, &r.name, &r.expr, &r.scope, &touched); err != nil {
+			rows.Close()
+			return fmt.Errorf("couldn't update the metric versions: %w", err)
+		}
+		if touchesAny(touched) {
+			roots = append(roots, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("couldn't update the metric versions: %w", err)
+	}
+	rows.Close()
+	for _, r := range roots {
+		d := dependentRow{ID: r.id, Name: r.name, Expr: r.expr, Scope: r.scope}
+		byMatch, bySteam := bindsOf(r.expr, r.scope)
+		scopes := []changeScope{{Whole: true}}
+		if byMatch || bySteam {
+			scopes = []changeScope{{MatchID: matchID}}
+			if bySteam {
+				for _, p := range players {
+					scopes = append(scopes, changeScope{MatchID: matchID, SteamID: p})
+				}
+			}
+		}
+		for _, sc := range scopes {
+			if _, err := invalidateDependent(tx, d, sc); err != nil {
+				return err
+			}
+			if err := invalidateDependents(tx, r.id, sc); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
