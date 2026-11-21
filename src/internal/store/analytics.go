@@ -318,6 +318,9 @@ func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
+	if err := markTableWriteBehind(tx, matchID, "player_stats"); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}

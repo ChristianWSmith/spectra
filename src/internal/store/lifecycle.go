@@ -301,6 +301,10 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	oldPlayers, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
 	for _, table := range childTables {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, matchID); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
@@ -557,6 +561,15 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	if err := affectedOrNotFound(res, "saving the match data"); err != nil {
 		return err
 	}
+	// Every player the save replaced, before and after: a reprocess can drop
+	// a player whose career the old rows fed.
+	newPlayers, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
+	if err := markMatchWritesBehind(tx, matchID, matchDataTables(), append(oldPlayers, newPlayers...)); err != nil {
+		return fmt.Errorf("saving the match data: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
 	}
@@ -599,6 +612,11 @@ func (s *Store) DeleteMatchData(id int64) error {
 	steamIDs, err := playerIDsOf(tx, []int64{id})
 	if err != nil {
 		return err
+	}
+	// The deleted match's data leaves: every metric it fed goes behind (a
+	// library-wide one as a whole, a per-match one for this match only).
+	if err := markMatchWritesBehind(tx, id, matchDataTables(), steamIDs); err != nil {
+		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
 	for _, table := range append(append([]string(nil), childTables...), streamedChildTables...) {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, id); err != nil {
@@ -662,8 +680,21 @@ func (s *Store) replaceMatchRows(op, table, cols string, matchID int64, n int, f
 			return err
 		}
 	}
+	if err := markTableWriteBehind(tx, matchID, table); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
+}
+
+// markTableWriteBehind is markMatchWritesBehind for a write to one table of
+// one match: it reads the match's players inside the caller's transaction.
+func markTableWriteBehind(tx *sql.Tx, matchID int64, table string) error {
+	players, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
+	return markMatchWritesBehind(tx, matchID, []string{table}, players)
 }
