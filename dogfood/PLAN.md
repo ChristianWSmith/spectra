@@ -137,7 +137,7 @@ Settled (owner, 2026-11-20 unless noted):
     no stub metrics. A rule-value edit makes the app recalculate the affected
     metrics directly. This replaces the stub design in 03 §6 and B4. `analysis_config`
     stays denied to metric reads.
-27. **attacker_inair (owner ruling, 2026-11-20):** accept the two-row change.
+27. **(Superseded by ruling 39.)** attacker_inair (owner ruling, 2026-11-20): accept the two-row change.
     The tick-sample `in_air` and the payload flag disagree on two HE grenade
     kills in seven golden demos. A3 drops the column. The golden fixture gets an
     explained update.
@@ -174,6 +174,10 @@ Settled (owner, 2026-11-20 unless noted):
     name only the top-level component. See 04 §3.5.
 37. **Alive-count family name (owner ruling, 2026-11-20):** "XvY" (for example
     1v1, 1v3). The rename of `engagements` to "kill tags" is folded into C5.
+39. **Keep attacker_inair (owner ruling, 2026-11-20):** keep ingesting the game's
+    `attacker_inair` flag as a stored fact column, and keep the event reader on
+    it. The tick-sample version is reverted, because the two sources can't be
+    shown to be right. Ruling 27's drop is superseded. `same_side` is still dropped.
 38. **attacker_inair note (2026-11-20, not a ruling on the change):** the stored
     payload flag and the tick sample disagree on two kills in seven golden demos.
     Both come from the demo. The cause is probably timing: the kill event is set
@@ -262,7 +266,7 @@ those three seeds.
   oracle rewritten to the tick join.
 - **Deps:** A1, B3.
 
-**A3 · Stamp drops.** Drop `events.same_side` and `events.attacker_inair`
+**A3 · Stamp drops.** Drop `events.same_side` (ruling 39 keeps `events.attacker_inair`)
 after A2 removes their readers. Keep `events.capped_dmg` with its honest
 comment. Keep the extract predicates that gate `player_stats.total_damage`.
 - **Check:** a pin that the dropped columns are absent from the schema;

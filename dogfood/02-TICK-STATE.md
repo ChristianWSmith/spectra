@@ -22,7 +22,7 @@ them.
 3. **Chunked writes are mandatory.** A single transaction holding about 1.3 M
    rows takes 14–22 s, which exceeds `busy_timeout=5000` for concurrent
    writers. Chunks of at most 50,000 rows hold the writer for about 0.8 s each.
-4. **Stamps.** `events.same_side` and `events.attacker_inair` are dropped; their
+4. **Stamps.** `events.same_side` is dropped; `events.attacker_inair` is kept (PLAN ruling 39); their
    seeds become SQL joins against `player_ticks`. `events.capped_dmg` stays.
    It is an engine emulation (order-dependent, row-local), so no per-tick row
    can reproduce it. Standing test for any future stamp:
@@ -141,7 +141,7 @@ Pre-release, so the bundle is one wipe, followed by a re-import from the
 snapshot's demo copies, followed by a value diff against the snapshot.
 
 - New: `player_ticks` and its index.
-- Dropped: `events.same_side`, `events.attacker_inair`.
+- Dropped: `events.same_side`. (`events.attacker_inair` is kept, ruling 39.)
 - Dropped (already committed): the opening, damage-by-weapon and warmup columns.
 - New on `metrics`: touched-table set (`03-QUERIES.md`).
 - New on `metrics`: stub rows for analysis rules (`03-QUERIES.md`).
