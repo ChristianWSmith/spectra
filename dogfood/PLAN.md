@@ -256,6 +256,15 @@ Settled (owner, 2026-11-20 unless noted):
     design (learned reads per panel, tag-based invalidation with generation
     counters, speculative warms, compute states never cached) is recorded and
     held. It is polish, not migration scope.
+53. **Clutch removal by inlining (owner ruling, 2026-11-21).** The Go clutch
+    detector is removed. The three metrics that read the `clutches` table
+    (`match_clutch_wins`, `clutches`, and the career clutch metrics through them)
+    compute clutches inline from `player_ticks` across all rounds of the match.
+    The `clutches` table is dropped with the wipe. The parity result (183 of 183
+    rows, exact) stands.
+54. **Registry helpers kept (owner ruling, 2026-11-21).** `getVoicePresence`,
+    `evictDemoCopy`, `matchTabSlug`, `comparePicks` and `setComparePicks` stay on
+    the curated surface.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
