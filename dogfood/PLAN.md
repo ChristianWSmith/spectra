@@ -203,6 +203,14 @@ Settled (owner, 2026-11-20 unless noted):
     single component, including one leaf panel, so a user can see one edited
     component on a surface without rebuilding the whole composition tree.
     Supersedes 04 §7's duplicate action.
+44. **Edit builtin reports and metrics in place (owner ruling, 2026-11-21).** The
+    ruling 43 model applies to builtin reports and builtin metrics: a user edits
+    the builtin, the edit stores an override, and restore to default deletes the
+    override. There is no "use as my view" for reports or metrics. A metric
+    override is a user statement that replaces the shipped SQL; an edit marks
+    its values behind and recomputes them, and restore recomputes the shipped
+    statement. Builtin metric values stay the snapshot reference only while the
+    shipped SQL is in place.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -477,6 +485,12 @@ its own commit with the guide updated in the same change.
   the shipped source back; a placement that points at one panel renders only
   that panel on its surface; Reset removes the placement and the surface renders
   its default again; a surface with no placement renders exactly as before.
+- **C5h · Edit builtin reports and metrics in place (ruling 44).** The same edit
+  and restore-to-default model as C5f, applied to builtin reports and builtin
+  metrics. No "use as my view" for these. **Deps:** C5f. **Check:** an edited
+  report or metric shows the edit; a metric edit marks its values behind and
+  recomputes them; restore brings back the shipped text and recomputes it; the
+  snapshot check still passes with the shipped SQL in place.
 - **C5g · Rename engagements to "kill tags" (ruling 32).** Schema, API and UI names,
   and the guide. Run after C5b so the panels' names change once. **Deps:** C5b. **Check:** grep finds no `engagements` label in user-facing text; the
   stored data is unchanged.
