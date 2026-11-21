@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -68,7 +69,7 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 		t.Fatalf("MetricCoverage (after): %v", err)
 	}
 	for i, c := range coverageAfter {
-		if coverageBefore[i] != c {
+		if !reflect.DeepEqual(coverageBefore[i], c) {
 			t.Errorf("compile moved coverage: %+v -> %+v (a read never writes)", coverageBefore[i], c)
 		}
 	}

@@ -36,11 +36,12 @@ import (
 //
 // Per metric, TWO committed phases (no stale-value retention):
 //
-//	phase 1  ClearMetricValues — remove the metric's rows, commit
-//	         (design §4's remove-outdated step; wholesale per metric,
-//	         see the store doc for why the two spellings coincide)
-//	phase 2  run the statement once per scope its binds select (RunRaw),
-//	         replacing that scope's rows in one tx stamped with BOTH
+//	phase 1  ClearMetricUnits — remove the rows of the STALE units only
+//	         (SweepUnits), commit (design §4's remove-outdated step, per
+//	         unit: a sweep of match M never removes another match's rows,
+//	         ruling 20; a library-wide unit is the whole unbound result)
+//	phase 2  run the statement once per stale unit (RunRaw), replacing
+//	         that unit's rows in one tx stamped with BOTH
 //	         current versions — THAT commit is the commit marker:
 //	         committed = fresh, anything else = not-fresh (crash matrix:
 //	         a failure in phase 2 leaves the metric absent → behind →
@@ -303,17 +304,32 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 		}
 		defer release()
 		start(m.ID, StageRemove)
-		if err := st.ClearMetricValues(m.ID); err != nil {
+		// The units this run recomputes: the STALE units only (raw.go
+		// SweepUnits). A gate or scope-read failure means the metric cannot
+		// run at all, so its rows go as a whole and it fails.
+		units, err := SweepUnits(st, m, cfg.RuleVersion)
+		if err != nil {
+			_ = st.ClearMetricValues(m.ID)
 			res.Attempted = append(res.Attempted, m.ID)
 			res.Failed[m.ID] = err.Error()
 			unavailable[m.ID] = true
 			finishAttempt()
 			return
 		}
-		res.Attempted = append(res.Attempted, m.ID) // phase 1 committed: old rows gone
+		// Phase 1 removes only those units' rows (ruling 20): every fresh
+		// unit of this metric, and every other match's values, stay as they
+		// are.
+		if err := st.ClearMetricUnits(m.ID, units); err != nil {
+			res.Attempted = append(res.Attempted, m.ID)
+			res.Failed[m.ID] = err.Error()
+			unavailable[m.ID] = true
+			finishAttempt()
+			return
+		}
+		res.Attempted = append(res.Attempted, m.ID) // phase 1 committed: stale units gone
 		// An upstream that failed or was skipped this run: never compute
-		// from stale/absent inputs. The rows are already cleared, so the
-		// metric reads as behind (not failed — it did not fail), and the
+		// from stale/absent inputs. The stale units are already cleared, so
+		// the metric reads as behind (not failed — it did not fail), and the
 		// next sweep retries it once its upstream is healthy.
 		for _, d := range depsOf[m.ID] {
 			if unavailable[d] {
@@ -330,31 +346,30 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 			unavailable[m.ID] = true
 			finishAttempt()
 		}
-		// cancelled: the user stopped THIS metric — failed with the
-		// cancel reason, and reported so the service holds it.
+		// cancelled: the user stopped THIS metric — failed with the cancel
+		// reason, and reported so the service holds it.
 		cancelled := func() {
 			res.Cancelled = append(res.Cancelled, m.ID)
 			fail(CancelledReason)
 		}
 
-		// A metric runs its own unit (raw.go): every scope its statement
-		// needs, read on the metric connection. Any stop before the last
-		// scope clears what the earlier scopes stored, so a failed or
-		// cancelled metric never serves part of its result.
-		err := runRawMetric(mctx, st, m, cfg.RuleVersion)
-		if ctx.Err() != nil {
-			_ = st.ClearMetricValues(m.ID)
-			return // sweep cancelled: absent → behind, resumed next sweep
-		}
-		if mctx.Err() != nil {
-			_ = st.ClearMetricValues(m.ID)
-			cancelled()
-			return
-		}
-		if err != nil {
-			_ = st.ClearMetricValues(m.ID)
-			fail(err.Error())
-			return
+		// Each unit is one atomic run (RunRaw replaces its own rows in one
+		// transaction), so a stop never leaves a unit half-written: a unit
+		// that did not commit stays absent (behind), and the units that did
+		// commit stay fresh.
+		for _, sc := range units {
+			err = RunRaw(mctx, st, m.ID, m.Version, cfg.RuleVersion, m.Expr, sc)
+			if ctx.Err() != nil {
+				return // sweep cancelled: absent → behind, resumed next sweep
+			}
+			if mctx.Err() != nil {
+				cancelled()
+				return
+			}
+			if err != nil {
+				fail(err.Error())
+				return
+			}
 		}
 		res.Succeeded = append(res.Succeeded, m.ID)
 		finishAttempt()

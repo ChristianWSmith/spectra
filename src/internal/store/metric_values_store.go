@@ -32,6 +32,11 @@ type MetricCoverage struct {
 	MetricID  int64
 	Behind    bool
 	FreshRows int
+	// BehindMatches is the per-unit answer for a :match_id metric: the
+	// ready matches with no fresh run record. Behind is true when this is
+	// non-empty (or another unit is behind). Other matches keep their fresh
+	// values, so a per-match read answers from its own unit.
+	BehindMatches []int64
 }
 
 // metricValueFreshCond is THE row-level freshness test (the behind
@@ -196,11 +201,12 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		case "":
 			c.Behind = true
 		default:
-			behind, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
+			behind, units, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
 			if err != nil {
 				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 			}
 			c.Behind = behind
+			c.BehindMatches = units
 		}
 		out = append(out, c)
 	}
@@ -215,10 +221,10 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 // :match_id with :round (each ready round). A ready match with no rounds
 // contributes no round unit, so it is covered (no-data, not behind). A
 // statement whose binds cannot be classified is behind, never fresh.
-func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched, expr string) (bool, error) {
+func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched, expr string) (bool, []int64, error) {
 	st, gerr := AnalyzeMetricSQL(expr, nil)
 	if gerr != nil {
-		return true, nil
+		return true, nil, nil
 	}
 	// Only an analysis-dependent metric answers to the rule generation: a
 	// fact-only run is fresh across a rule bump (rule 0 is always met).
@@ -229,13 +235,16 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 	for _, b := range st.Binds {
 		used[b] = true
 	}
+	if used[":match_id"] && !used[":steam_id"] && !used[":round"] {
+		return s.staleMatchUnits(metricID, version, liveRuleVersion)
+	}
 	const fresh = `r.metric_version >= ? AND r.rule_version >= ?`
 	var unitsMissing string
 	switch {
 	case used[":steam_id"] && (used[":match_id"] || used[":round"]):
-		return true, nil
+		return true, nil, nil
 	case used[":round"] && !used[":match_id"]:
-		return true, nil
+		return true, nil, nil
 	case used[":steam_id"]:
 		unitsMissing = `EXISTS (SELECT 1 FROM players p JOIN matches mt ON mt.id = p.match_id
 			WHERE mt.status = 'ready' AND p.is_bot = 0
@@ -246,10 +255,6 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 			WHERE mt.status = 'ready'
 			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = rd.match_id
 				AND r.scope_steam_id = '' AND r.scope_round = rd.number AND ` + fresh + `))`
-	case used[":match_id"]:
-		unitsMissing = `EXISTS (SELECT 1 FROM matches mt WHERE mt.status = 'ready'
-			AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = mt.id
-				AND r.scope_steam_id = '' AND r.scope_round = 0 AND ` + fresh + `))`
 	default:
 		// The library-wide unit exists only once a ready match does: an
 		// empty library owes nothing (the same guard the profile clause
@@ -261,9 +266,56 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 	var missing int
 	if err := s.db.QueryRow(`SELECT CASE WHEN `+unitsMissing+` THEN 1 ELSE 0 END`,
 		metricID, version, liveRuleVersion).Scan(&missing); err != nil {
-		return false, err
+		return false, nil, err
 	}
-	return missing != 0, nil
+	return missing != 0, nil, nil
+}
+
+// staleMatchUnits lists the ready matches whose unit of a :match_id metric has
+// no fresh run record (the per-unit spelling of the match clause). An empty
+// list means every ready match is fresh for this metric.
+func (s *Store) staleMatchUnits(metricID int64, version, liveRuleVersion int) (bool, []int64, error) {
+	rows, err := s.db.Query(`SELECT mt.id FROM matches mt WHERE mt.status = 'ready'
+		AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = mt.id
+			AND r.scope_steam_id = '' AND r.scope_round = 0
+			AND r.metric_version >= ? AND r.rule_version >= ?)
+		ORDER BY mt.id`, metricID, version, liveRuleVersion)
+	if err != nil {
+		return false, nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return false, nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return false, nil, err
+	}
+	return len(ids) > 0, ids, nil
+}
+
+// UnitFresh reports whether ONE unit (a run scope) of a metric holds a fresh
+// run record: the per-unit spelling of rawBehind's fresh clause. touched is the
+// metric's stored touched set; the rule axis counts only for an
+// analysis-dependent metric, as in rawBehind.
+func (s *Store) UnitFresh(metricID int64, version int, touched []string, liveRuleVersion int, scope RawScope) (bool, error) {
+	if !touchesAnalysis(touchedColumn(touched)) {
+		liveRuleVersion = 0
+	}
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM metric_runs r
+		 WHERE r.metric_id = ? AND r.match_id = ? AND r.scope_steam_id = ? AND r.scope_round = ?
+		   AND r.metric_version >= ? AND r.rule_version >= ?`,
+		metricID, scope.MatchID, scrub(scope.SteamID), scope.Round, version, liveRuleVersion,
+	).Scan(&n); err != nil {
+		return false, fmt.Errorf("couldn't read the metric's unit: %w", err)
+	}
+	return n > 0, nil
 }
 
 // SetMetricTouched stores a metric's derived touched set (the save gate's
@@ -306,17 +358,11 @@ type MetricValueRow struct {
 	ValueKey   string
 }
 
-// ClearMetricValues is the compute pass's PHASE 1 (design §4): it
-// removes ALL of one metric's stored rows in one small transaction and
-// commits. The delete is WHOLESALE per metric (not just the rows failing
-// the predicate): the table is derived data, phase 2 recomputes the
-// metric's whole set in one batched statement, and keeping live rows
-// would collide with the fresh insert on the primary key
-// (metric_id, match_id, subject_key, dim). Only behind metrics reach this call
-// (the sweep's work list), so "all of this metric's rows" and "the rows
-// failing the predicate" are the same set in practice — and for a
-// closure-added metric whose rows still looked live, removing them is
-// the intent: never serve a value built on changed inputs.
+// ClearMetricValues removes ALL of one metric's stored rows in one small
+// transaction and commits. The sweep no longer calls it for a metric that
+// can run (its phase 1 is ClearMetricUnits, per unit, ruling 20); it is the
+// whole-metric clear for a metric that cannot run at all (a gate or cycle
+// failure), where no unit of it is valid.
 //
 // The commit IS the crash boundary (design §4's crash matrix): after
 // this commits, the metric has no rows → absent → behind → retried; a
@@ -334,6 +380,36 @@ func (s *Store) ClearMetricValues(metricID int64) error {
 	}
 	if _, err := tx.Exec(`DELETE FROM metric_runs WHERE metric_id = ?`, metricID); err != nil {
 		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	return nil
+}
+
+// ClearMetricUnits is the sweep's phase 1 for a raw metric (ruling 20): it
+// removes the rows and run records of the given units ONLY, in one
+// transaction. Every other unit of the metric keeps its rows, so a sweep of
+// match M never deletes another match's values. The zero RawScope is the
+// library-wide unit and clears the metric's unbound result.
+func (s *Store) ClearMetricUnits(metricID int64, scopes []RawScope) error {
+	if len(scopes) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("couldn't clear the metric values: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, sc := range scopes {
+		if _, err := tx.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND match_id = ? AND scope_steam_id = ? AND scope_round = ?`,
+			metricID, sc.MatchID, scrub(sc.SteamID), sc.Round); err != nil {
+			return fmt.Errorf("couldn't clear the metric values: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM metric_runs WHERE metric_id = ? AND match_id = ? AND scope_steam_id = ? AND scope_round = ?`,
+			metricID, sc.MatchID, scrub(sc.SteamID), sc.Round); err != nil {
+			return fmt.Errorf("couldn't clear the metric values: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't clear the metric values: %w", err)
