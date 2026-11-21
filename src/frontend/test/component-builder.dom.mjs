@@ -83,9 +83,15 @@ function bundle(absPath) {
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    // A .js module that imports a .svelte file (the builtin panel registry) is
+    // bundled too; every other .js stays where it is.
+    if (target.endsWith('.js') && /from '[^']*\.svelte'/.test(readFileSync(target, 'utf8'))) {
+      return `from '${pathToFileURL(bundle(target)).href}'`;
+    }
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  else writeFileSync(out, src);
   return out;
 }
 const viewBundle = bundle(resolve('src/lib/views/ComponentBuilder.svelte'));

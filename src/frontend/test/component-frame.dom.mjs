@@ -68,6 +68,10 @@ writeFileSync(
   `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\nexport async function listComponents() { return []; }\n`,
 );
 writeFileSync(join(dir, 'componentruntime', 'reads.js'), 'export const serviceReads = {};\n');
+// ChildFrame resolves builtin panels through the panel registry. This driver
+// has no panels (it tests the source path), so the registry is an empty stub.
+mkdirSync(join(dir, 'builtins'), { recursive: true });
+writeFileSync(join(dir, 'builtins', 'panels.js'), 'export function builtinPanelById() { return null; }\n');
 
 const svelteCompile = (src, filename, out) =>
   // Runes-only, as the app compiles builtins (svelte.config.js) and user

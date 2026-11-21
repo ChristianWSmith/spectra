@@ -32,7 +32,8 @@ const PREF_SITES = new Set([
   //   'spectra:pinned-metrics' (match scope → the scoreboard) and
   //   'spectra:pinned-profile-metrics' (profile scope → PlayerProfile's
   //   Career metrics panel; stored-metrics design §3's scope-routed pin)
-  'lib/views/PlayerProfile.svelte', // 'spectra:pinned-profile-metrics' (read side)
+  // PlayerProfile.svelte left this list in C5d: the Profile panels show the
+  // default selection and read no pin key (owner ruling 33).
 ]);
 
 const SRC_EXT = new Set(['.js', '.svelte', '.mjs']);
