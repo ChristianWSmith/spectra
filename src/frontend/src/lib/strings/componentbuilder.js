@@ -67,4 +67,29 @@ export const componentbuilder = {
   matchLabel: 'Match',
   playerLabel: 'Player',
   noPreviewYet: 'The preview appears once the source checks out.',
+  // The names of the compiled built-in components in the list, keyed by
+  // builtin id (every id in the registry, builtins/panels.js, has one:
+  // componentbuiltins.test.js pins it).
+  builtinNames: {
+    'builtin-profile-view': 'Profile view',
+    'builtin-profile-career': 'Career',
+    'builtin-profile-trend': 'Trend',
+    'builtin-profile-sides': 'Sides',
+    'builtin-profile-maps': 'Maps',
+    'builtin-profile-weapons': 'Weapons',
+    'builtin-profile-history': 'History',
+    'builtin-reports': 'Reports view',
+    'builtin-reports-templates': 'Report templates',
+    'builtin-reports-appendix': 'Stats appendix',
+    'builtin-explorer': 'Explorer view',
+    'builtin-explorer-provenance': 'Explorer provenance',
+    'builtin-explorer-diagnostics': 'Explorer diagnostics',
+    'builtin-explorer-reference': 'Explorer reference',
+    'builtin-match-tabs': 'Match tabs',
+    'builtin-match-heatmaps': 'Match heatmaps',
+    'builtin-match-heatmap': 'Heatmap',
+    'builtin-match-combat': 'Match combat',
+    'builtin-match-combat-engagements': 'Kill tags',
+    'builtin-match-combat-clutches': 'Clutches',
+  },
 };
