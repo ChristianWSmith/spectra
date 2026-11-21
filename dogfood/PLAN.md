@@ -163,6 +163,10 @@ Settled (owner, 2026-11-20 unless noted):
     `scoreboard_starts_transposed`: the scoreboard becomes a dogfooded builtin
     component that a user can duplicate and edit. Ruling 28 (empty lists) no
     longer applies.
+34. **Component context (owner ruling, 2026-11-20):** a mounted component gets a
+    read-only `context` (`matchId`, `steamId`, `round`) from the surface that
+    mounts it. `metric()` and `query()` default their binds from it. The context
+    is never stored in a placement row. See 04 §3.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned

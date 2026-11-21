@@ -77,7 +77,16 @@ A component receives a small read API from the app. Nothing else.
   same allowlist as metrics (`03-QUERIES.md` §2). **Decided** (owner,
   2026-11-20).
 - `navigate(route)`: the route query used everywhere else.
-- Its own props.
+- Its own props (the component's own settings, from its placement row).
+- A read-only `context` object (owner ruling 34, 2026-11-20): `{ matchId,
+  steamId, round }`, set by the surface that mounts the component. The Match
+  view sets `matchId`; the Profile view sets `matchId` and `steamId`; the
+  Builder preview sets the chosen match or player. `metric(name)` and `query()`
+  take their binds from `context` by default, so `metric('adr')` reads this
+  match's or player's value. Explicit arguments override the context for other
+  matches or players. A component that does not read the context ignores it.
+  The context is never stored in a placement row, because a placement belongs
+  to a surface, not to a match.
 
 **Freshness.** Metric reads are fresh-or-state. `query` reads are live and carry
 no freshness; they never had any.
