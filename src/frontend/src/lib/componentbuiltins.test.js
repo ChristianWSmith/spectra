@@ -5,7 +5,7 @@ import '../../test/compile-worker-node.mjs';
 // passes the save gate, so Duplicate never saves a refused copy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinById, isBuiltinId } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinById, builtinSourceDir, isBuiltinId } from './componentbuiltins.js';
 import { gateComponentSave } from './componentruntime/savegate.js';
 
 test('every built-in id is in the reserved namespace and resolves back to itself', () => {
@@ -19,9 +19,12 @@ test('every built-in id is in the reserved namespace and resolves back to itself
   assert.equal(builtinById('builtin-missing'), null);
 });
 
-test('every built-in source passes the save gate, so Duplicate never saves a refused copy', async () => {
+// A built-in is checked under the built-in rules (its curated helper imports,
+// ruling 45): the gate gets its source directory. A panel that imports a helper
+// is refused as a user copy, so a Duplicate of it is refused at save.
+test('every built-in source passes the save gate under its built-in rules', async () => {
   for (const b of BUILTIN_COMPONENTS) {
-    const gate = await gateComponentSave(b.source);
+    const gate = await gateComponentSave(b.source, builtinSourceDir(b.id));
     assert.equal(gate.ok, true, `${b.id}: ${gate.message}`);
   }
 });

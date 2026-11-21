@@ -13,7 +13,7 @@ import { gateComponentSave, refusalText } from './componentruntime/savegate.js';
 import { parseProps, placedEntries } from './componentruntime/placementrows.js';
 import { PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
 import { BUILTIN_HELPERS } from './componentruntime/compile.js';
-import { BUILTIN_COMPONENTS, builtinShippedSource } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, builtinShippedSource, builtinSourceDir } from './componentbuiltins.js';
 import { guideSectionsBeforeManual, guideSectionsAfterManual } from './docs/manuals/user-guide-content.js';
 import { generate, OUT_FILE, panelRegistry } from '../../scripts/gen-builtin-sources.mjs';
 
@@ -21,7 +21,7 @@ import { generate, OUT_FILE, panelRegistry } from '../../scripts/gen-builtin-sou
 test('(a) each listed builtin source compiles through the save gate', async () => {
   assert.ok(BUILTIN_COMPONENTS.length > 0);
   for (const b of BUILTIN_COMPONENTS) {
-    const r = await gateComponentSave(b.source);
+    const r = await gateComponentSave(b.source, builtinSourceDir(b.id));
     assert.equal(r.ok, true, `${b.id}: ${refusalText(r)}`);
   }
 });

@@ -238,7 +238,7 @@ const mountPanel = async ({ source, context, props = {}, reads: readsOverride = 
   document.body.appendChild(target);
   instance = mount(Harness, {
     target,
-    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h) },
+    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h), builtinDir: 'src/lib' },
   });
   await settle();
   return target;
@@ -400,7 +400,7 @@ check('a card whose number is still calculating names no number for that part',
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the five panels are registered as builtins', panels.MATCH_PANELS.length === 5 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
+check('the six panels are registered as builtins', panels.MATCH_PANELS.length === 6 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 unmountAll();

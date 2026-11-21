@@ -237,6 +237,8 @@ const PREFIX_EXEMPT = {
 // stale, the PENDING_DENYLIST liveness contract). Every entry renders as a
 // tooltip, footnote or in-place explanatory note, never as a label.
 const HINT_KEYS = {
+  'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (matchpanels.js, read through a panel source)',
+  'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (matchpanels.js, read through a panel source)',
   'builder.headNoteScopes': 'in-form note under the scope picker — a footnote explaining scope granularity',
   'common.mapPackNotFoundIntro': 'asset-prompt explanatory copy — the paragraph guiding the no-radar decision',
   'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
