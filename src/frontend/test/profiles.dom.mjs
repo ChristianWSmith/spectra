@@ -889,7 +889,7 @@ console.log(
       format: 'percent', doc: 'Formula: ratio(sum(trade_kills), sum(opps))', origin: 'builtin',
     },
     {
-      id: 71, name: 'career_opening_rate', title: 'Opening duels', scope: 'profile',
+      id: 71, name: 'career_opening_rate', title: 'Opening kill tags', scope: 'profile',
       format: 'percent', doc: 'Formula: ratio(sum(entry_kills), sum(entry_kills + entry_deaths))', origin: 'builtin',
     },
     {
@@ -1002,7 +1002,7 @@ console.log(
     // stat may render twice (head card AND metric tile).
     for (const gone of [
       'ADR ± σ', 'Trade rate', 'Avg enemies flashed', 'Avg util damage',
-      'Opening duels', 'Clutches',
+      'Opening kill tags', 'Clutches',
     ]) {
       check(
         `the converted card "${gone}" never renders twice (head card AND metric tile)`,
@@ -1020,7 +1020,7 @@ console.log(
     'the metric tiles render the eleven default pins in DEFAULT order (catalog order is reversed above)',
     JSON.stringify(j1Titles) ===
       JSON.stringify([
-        'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Opening duels', 'Trade rate',
+        'ADR', 'ADR σ', 'K/D', 'HS%', 'KAST%', 'Opening kill tags', 'Trade rate',
         'Clutches', 'Clutch win %', 'Avg enemies flashed', 'Avg util damage',
       ]),
     JSON.stringify(j1Titles),

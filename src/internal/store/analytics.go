@@ -253,7 +253,7 @@ func (s *Store) ReplaceClutches(matchID int64, rows []models.Clutch) error {
 // ReplaceEngagements swaps a match's engagements rows in one transaction
 // (seq is rewritten 0..n-1 in slice order so the PK stays dense).
 func (s *Store) ReplaceEngagements(matchID int64, rows []models.Engagement) error {
-	const op = "couldn't save the engagements"
+	const op = "couldn't save the kill tags"
 	return s.replaceMatchRows(op, "engagements", "match_id, "+engagementCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
@@ -510,7 +510,7 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 	q += ` ORDER BY seq ASC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't load the engagements: %w", err)
+		return nil, fmt.Errorf("couldn't load the kill tags: %w", err)
 	}
 	defer rows.Close()
 	var out []models.Engagement
@@ -518,12 +518,12 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 		var r models.Engagement
 		r.MatchID = matchID
 		if err := rows.Scan(&r.Seq, &r.Tick, &r.Round, &r.Kind, &r.ASteam, &r.AName, &r.BSteam, &r.BName, &r.Distance, &r.WonBy); err != nil {
-			return nil, fmt.Errorf("couldn't load the engagements: %w", err)
+			return nil, fmt.Errorf("couldn't load the kill tags: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("couldn't load the engagements: %w", err)
+		return nil, fmt.Errorf("couldn't load the kill tags: %w", err)
 	}
 	return out, nil
 }

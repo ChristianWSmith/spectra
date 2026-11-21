@@ -30,7 +30,7 @@ var tableNotes = map[string]string{
 	"round_side_classes":    "per-round per-SIDE stored buy class + why (the eco rule's output — full|force|eco|save|pistol) — written by analytics.Compute at analyze time, read verbatim by GetEconomy",
 	"player_round_stats":    "per-player per-round stats: KAST components, traded/survived, damage, spend",
 	"clutches":              "detected 1vN clutch attempts + outcome",
-	"engagements":           "detected opening/trade/traded/untraded engagements between two players",
+	"engagements":           "detected kill tags (opening/trade/traded/untraded) between two players",
 	"utility_events":        "grenade throws/detonations: damage, flash ms, site",
 	"match_trade_opps":      "per-match stored trade-opportunity counts per player (opps = profile Trade-rate denominator, missed = Combat badge) — written by analytics.Compute under the match's rule version",
 	"player_career":         "cross-match career rollup per SteamID64 (rebuilt after imports)",
@@ -77,7 +77,7 @@ var columnNotes = map[string]map[string]string{
 	},
 	"engagements": {
 		"kind":    "opening|trade|traded|untraded (a = killer, b = victim)",
-		"won_by":  "side that won the engagement (ct|t)",
+		"won_by":  "side that won the kill tag (ct|t)",
 		"a_steam": "SteamID64 of the acting player (killer for all kinds)",
 		"b_steam": "SteamID64 of the counterpart (victim for all kinds)",
 	},

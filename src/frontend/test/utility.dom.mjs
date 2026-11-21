@@ -49,7 +49,7 @@ registerHooks({
 
 const { JSDOM } = await import('jsdom');
 const { compile } = await import('svelte/compiler');
-const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
+const { readFileSync, writeFileSync, mkdirSync, realpathSync } = await import('node:fs');
 const { dirname, join, resolve } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
 const { DatabaseSync } = await import('node:sqlite');
@@ -120,7 +120,7 @@ const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.j
 // --- the data: an in-memory database built from the store's own DDL ----------
 // The view reads through componentQuery (the same SQL the Go store runs), so the
 // fixture below is stored as rows and the SQL answers from them.
-const DDL = readFileSync(resolve('../internal/store/schema.sql'), 'utf8');
+const DDL = readFileSync(resolve(realpathSync(import.meta.dirname), '..', '..', 'internal', 'store', 'schema.sql'), 'utf8');
 const TABLES = ['matches', 'rounds', 'players', 'player_stats', 'teams', 'utility_events', 'events', 'round_player_sides'];
 function openDb() {
   const db = new DatabaseSync(':memory:');
