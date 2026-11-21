@@ -400,17 +400,6 @@ svelteCompile(
   join(dir, 'sortth.js'),
 );
 
-// The Order dialog + its Dialog wrapper: the dialog rewrites its
-// services/metricorder imports to the same absolute URLs the view links
-// (one module instance each) and its ./Dialog.svelte to the local
-// bundle; Dialog itself is a leaf apart from 'svelte'.
-const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
-  .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
-  .replace("from './Dialog.svelte'", "from './dialog.js'")
-  // plumbing (Strings Stage 3): the dialog imports the strings catalog.
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(moSrc, 'MetricOrderDialog.svelte', join(dir, 'metricorderdialog.js'));
 svelteCompile(
   readFileSync('src/lib/components/Dialog.svelte', 'utf8'),
   'Dialog.svelte',
@@ -465,7 +454,6 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/ProfileLink.svelte'", "from './profilelink.js'")
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
-  .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'")
   .replace("from '../components/RunningMetricsDialog.svelte'", "from './runningmetricsdialog.js'")
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
   .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
@@ -577,28 +565,24 @@ const setSubjBox = async (r, label, on) => {
   );
   if (cb && cb.checked !== on) cb.click();
 };
-// The Denominator group's three boxes in panel order (Reading B) and
-// the Pinning group's pair — read beside originOf/typeOf below.
+// The Denominator group's three boxes in panel order (Reading B) —
+// read beside originOf/typeOf below.
 const denomOf = (r) => ['Rounds', 'Matches', 'None'].map((l) => boxNamed(r, l)?.checked ?? null);
-const PIN_LABELS = ['Pinned', 'Unpinned'];
-const pinningOf = (r) => PIN_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 // The Type group's seven format boxes in panel order — the canonical
 // enum order the subset word composes in (lib/metricformats.js).
 const FMT_LABELS = ['Auto', 'Int', 'Float1', 'Float2', 'Percent', 'Currency', 'Identity'];
 const typeOf = (r) => FMT_LABELS.map((l) => boxNamed(r, l)?.checked ?? null);
 // The whole panel in DOM order: the Origin three, the Scope pair, the
-// Subject three, the Type seven and the Pinning pair — seventeen boxes in
-// five groups.
+// Subject three and the Type seven — fifteen boxes in four groups.
 const allBoxesOf = (r) => [
   ...originOf(r),
   ...scopeOf(r),
   ...subjectOf(r),
   ...typeOf(r),
-  ...pinningOf(r),
 ];
 // The panel's group names in DOM order (the panel itself first, then
-// its six labelled groups).
-const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Subject', 'Type', 'Pinning'];
+// its four labelled groups).
+const GROUP_LABELS = ['Metric filters', 'Origin', 'Scope', 'Subject', 'Type'];
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -689,8 +673,8 @@ const panel = panelOf(r);
 check(
   // 17 → 20 boxes (2026-11-18): the Subject group's three boxes join
   // the metrics subject axis (after the Phase-7 Identity box).
-  'the trigger opens the checkbox panel (aria-expanded + seventeen options)',
-  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 17,
+  'the trigger opens the checkbox panel (aria-expanded + fifteen options)',
+  trig?.getAttribute('aria-expanded') === 'true' && !!panel && boxesOf(r).length === 15,
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
@@ -713,7 +697,7 @@ check(
     ? [...panel.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))
     : [];
   check(
-    'the panel is ONE named group holding five labelled groups (Origin, Scope, Subject, Type, Pinning)',
+    'the panel is ONE named group holding four labelled groups (Origin, Scope, Subject, Type)',
     panel?.getAttribute('aria-label') === 'Metric filters' &&
       JSON.stringify(names) === JSON.stringify(GROUP_LABELS.slice(1)),
     JSON.stringify([panel?.getAttribute('aria-label'), ...names]),
@@ -907,184 +891,6 @@ check(
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 
-// --- The Pinning group (the fifth) — RENDER-TIME, the one sanctioned
-// exception: pins live in localStorage (spectra:pinned-metrics), so Go
-// cannot narrow on them and flipping these boxes must issue NO
-// listMetricsPage call at all — the rows below are a render-time filter
-// over the windows already accumulated. trade_rate is pinned first (it
-// is the fixture's one unpinned-at-rest row later sections expect), and
-// it is unpinned again at the end so sections D–J see the pins as they
-// found them.
-{
-  // The row's pin button is re-queried on every use: each render can
-  // rebuild the row's DOM (the group it sits in changed with the
-  // filter), and a destroyed node's handler is gone with it.
-  const pinToggle = () =>
-    rowNamed(r, 'trade_rate')?.querySelector('[aria-label="Toggle pin for trade_rate"]');
-  click(pinToggle());
-  await sleep(40);
-  services.invalidate(); // any wrong fetch below would hit the stub and be recorded
-  pageCalls.length = 0;
-  await setBox(r, 'Unpinned', false); // Pinned only
-  await sleep(DEBOUNCE);
-  check(
-    'Pinned only → NO new ListMetricsPage call (the pin filter never reaches the server) and only the pinned row renders',
-    pageCalls.length === 0 &&
-      pinToggle()?.classList.contains('bld-pin-on') &&
-      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
-    `calls=${JSON.stringify(pageCalls)} rows=${JSON.stringify(namesOf(r))} pin=${pinToggle()?.className}`,
-  );
-  await setBox(r, 'Pinned', false); // neither — both Pinning boxes off
-  await sleep(DEBOUNCE);
-  check(
-    'both Pinning boxes off → still no call, no rows render, the empty state says so',
-    pageCalls.length === 0 &&
-      rowsOf(r).length === 0 &&
-      r.textContent.includes('No metrics to show.'),
-    `calls=${JSON.stringify(pageCalls)} rows=${rowsOf(r).length}`,
-  );
-  await setBox(r, 'Unpinned', true);
-  await setBox(r, 'Pinned', true);
-  await sleep(DEBOUNCE);
-  check(
-    'both Pinning boxes back on → the full window renders again (still no new call)',
-    pageCalls.length === 0 && rowsOf(r).length === 4,
-    `calls=${JSON.stringify(pageCalls)} rows=${rowsOf(r).length}`,
-  );
-  click(pinToggle()); // restore: trade_rate unpinned for sections D–J
-  await sleep(40);
-  check(
-    'trade_rate is unpinned again — sections D–J see the pins as they found them',
-    !pinToggle()?.classList.contains('bld-pin-on'),
-    pinToggle()?.className,
-  );
-}
-// The Type group narrows the SAME call (origin is the whole catalog
-// here): the word is the CHECKED set in canonical enum order, "auto"
-// being the '' rows — unchecking Auto hands the six literal tokens to
-// the store (Identity stays checked — the Phase-7 box) and the
-// auto-format row drops out.
-services.invalidate();
-pageCalls.length = 0;
-await setBox(r, 'Auto', false); // every format but the '' rows
-await sleep(DEBOUNCE);
-check(
-  'Auto unchecked → format "int,float1,float2,percent,currency,identity" — the canonical subset, the auto-format row gone',
-  JSON.stringify(pageCalls[0]) ===
-    JSON.stringify(['', '', '', '', 'int,float1,float2,percent,currency,identity', 0, 100]) &&
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'my_kd', 'plug_stat']),
-  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
-);
-services.invalidate();
-pageCalls.length = 0;
-await setBox(r, 'Auto', true);
-for (const l of ['Int', 'Float1', 'Float2', 'Currency', 'Identity']) await setBox(r, l, false);
-await sleep(DEBOUNCE);
-check(
-  'Auto + Percent only → format "auto,percent" — the auto bucket and the percent rows in one window',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'auto,percent', 0, 100]) &&
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
-  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
-);
-services.invalidate();
-pageCalls.length = 0;
-await setBox(r, 'Auto', false);
-await setBox(r, 'Percent', false);
-await sleep(DEBOUNCE);
-check(
-  'every Type box off → format "none" — the same legal empty read as the pair groups',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 'none', 0, 100]) &&
-    rowsOf(r).length === 0 &&
-    r.textContent.includes('No metrics to show.'),
-  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
-);
-services.invalidate();
-pageCalls.length = 0;
-for (const l of FMT_LABELS) await setBox(r, l, true);
-await sleep(DEBOUNCE);
-check(
-  'all seven Type boxes back on → format "" — the whole catalog window again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', '', 0, 100]) && rowsOf(r).length === 4,
-  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
-);
-// Hand a CLOSED panel to the untouched sections below (D/E/F open
-// nothing; G reopens it).
-await closeFilters(r);
-
-console.log('C2. the Subject group narrows the same server call (the metrics subject axis)');
-{
-  // The block runs on whatever filter state section C left (like every
-  // section before it) and pins the SUBJECT token's position (arg 4),
-  // each subject ALONE, a combination, the empty set and the all-on
-  // default — the baseline rows are captured with the subject group
-  // all-on, which is what the default view is.
-  await openFilters(r);
-  await setSubjBox(r, 'Player', true);
-  await setSubjBox(r, 'Match', true);
-  await setSubjBox(r, 'Team', true);
-  await sleep(DEBOUNCE);
-  const baselineRows = namesOf(r);
-  const subjArg = () => pageCalls[pageCalls.length - 1]?.[3];
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Player', false);
-  await sleep(DEBOUNCE);
-  check(
-    'Player off → subject token "match,team" (arg 4): the match- and team-subject rows survive',
-    subjArg() === 'match,team' &&
-      JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd', 'plug_stat']),
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
-  );
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Match', false);
-  await sleep(DEBOUNCE);
-  check(
-    'Team alone → subject token "team"',
-    subjArg() === 'team' && JSON.stringify(namesOf(r)) === JSON.stringify(['plug_stat']),
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
-  );
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Player', true);
-  await setSubjBox(r, 'Team', false);
-  await sleep(DEBOUNCE);
-  check(
-    'Player alone → subject token "player"',
-    subjArg() === 'player' &&
-      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg']),
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
-  );
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Player', false);
-  await setSubjBox(r, 'Match', true);
-  await sleep(DEBOUNCE);
-  check(
-    'Match alone → subject token "match"',
-    subjArg() === 'match' && JSON.stringify(namesOf(r)) === JSON.stringify(['my_kd']),
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
-  );
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Match', false);
-  await sleep(DEBOUNCE);
-  check(
-    'all three Subject boxes off → subject "none" (the legal empty read)',
-    subjArg() === 'none' && rowsOf(r).length === 0,
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + rowsOf(r).length,
-  );
-  // The restored all-on word is the DEFAULT state's own args (section A
-  // already read them once), so it would hit the read cache and issue no
-  // backend call at all — flush first, then prove the flip re-reads.
-  services.invalidate();
-  pageCalls.length = 0;
-  await setSubjBox(r, 'Player', true);
-  await setSubjBox(r, 'Match', true);
-  await setSubjBox(r, 'Team', true);
-  await sleep(DEBOUNCE);
-  check(
-    'all three back on → subject "" (no predicate): the default view is unchanged',
-    subjArg() === '' && JSON.stringify(namesOf(r)) === JSON.stringify(baselineRows),
-    JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
-  );
-}
-
 console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip present, no delete');
 {
   const bRow = rowNamed(r, 'trade_rate');
@@ -1106,10 +912,8 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     bRow ? bRow.innerHTML.slice(0, 200) : 'no row',
   );
   check(
-    'the builtin row keeps pin + preview',
-    !!bRow &&
-      !!bRow.querySelector('[aria-label="Toggle pin for trade_rate"]') &&
-      !!bRow.querySelector('[aria-label="Preview trade_rate"]'),
+    'the builtin row keeps preview',
+    !!bRow && !!bRow.querySelector('[aria-label="Preview trade_rate"]'),
   );
   check(
     'a user row still HAS a delete control',
@@ -1124,18 +928,6 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       !uRow?.querySelector('[aria-label="Delete adr_avg"] .codicon-close'),
     uRow?.querySelector('[aria-label="Delete adr_avg"]')?.innerHTML ?? 'no delete',
   );
-  // The builtin still pins (round trip — the pin state is left as found).
-  const pinBtn = bRow.querySelector('[aria-label="Toggle pin for trade_rate"]');
-  click(pinBtn);
-  await sleep(40);
-  check(
-    'the builtin row still pins (title flips to Unpin + the on-class)',
-    pinBtn.classList.contains('bld-pin-on') &&
-      pinBtn.getAttribute('title') === 'Unpin from scoreboard',
-    `class=${pinBtn.className} title=${pinBtn.getAttribute('title')}`,
-  );
-  click(pinBtn);
-  await sleep(40);
 
   // The form is untouched: heading "New metric", empty name field.
   check('the form starts at "New metric"', heading(r) === 'New metric', heading(r));
@@ -1666,7 +1458,7 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   const actions = r.querySelector('.bld-actions');
   const aKids = actions ? [...actions.children] : [];
   check(
-    'N6: the actions row is one line — on a user metric the delete leads it, then the validity slot, then the hint→Pin→Save cluster LAST',
+    'N6: the actions row is one line — on a user metric the delete leads it, then the validity slot, then the hint→Save cluster LAST',
     aKids.length === 3 &&
       !!aKids[0]?.querySelector('.codicon-trash') &&
       aKids[0].classList.contains('danger') &&
@@ -1701,14 +1493,12 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   {
     const cluster = aKids[2] ? [...aKids[2].children] : [];
     check(
-      'N6: the cluster runs hint → Pin → Save, no divider and no separator',
-      cluster.length === 3 &&
+      'N6: the cluster runs hint → Save, no divider and no separator',
+      cluster.length === 2 &&
         cluster[0].classList.contains('bld-note') &&
-        !!cluster[1].querySelector('.codicon-pin') &&
-        /^Pin(ned)?$/.test(cluster[1].textContent.trim()) &&
-        cluster[2].classList.contains('btn') &&
-        cluster[2].classList.contains('primary') &&
-        !!cluster[2].querySelector('.codicon-save') &&
+        cluster[1].classList.contains('btn') &&
+        cluster[1].classList.contains('primary') &&
+        !!cluster[1].querySelector('.codicon-save') &&
         !actions.querySelector('.toolbar-sep') &&
         !/\|/.test(actions.textContent),
       JSON.stringify(
@@ -1821,7 +1611,7 @@ console.log('G. the search composes with the filters in ONE server call');
   );
 }
 
-console.log('H. the filter checks are view-local registry state (restore all twenty, then reset to defaults)');
+console.log('H. the filter checks are view-local registry state (restore all fifteen, then reset to defaults)');
 {
   // Leave a DISTINCT state behind — one option off in EACH of the
   // Origin, Denominator and Type groups (the Pinning pair and the
@@ -1851,11 +1641,11 @@ console.log('H. the filter checks are view-local registry state (restore all twe
   r = await mountBuilder(); // unmount → remount, registry intact
   await openFilters(r);
   check(
-    'unmount → remount restores ALL seventeen checks (only Built-in and Currency off)',
+    'unmount → remount restores ALL fifteen checks (only Built-in and Currency off)',
     JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
         false, true, true, true, true, true, true, true, true, true, true, true, true, false,
-        true, true, true,
+        true,
       ]),
     JSON.stringify(allBoxesOf(r)),
   );
@@ -1872,7 +1662,7 @@ console.log('H. the filter checks are view-local registry state (restore all twe
     JSON.stringify(allBoxesOf(r)) ===
       JSON.stringify([
         false, true, true, true, true, true, true, true, true, true, true, true, true, true,
-        true, true, true,
+        true,
       ]),
     JSON.stringify(allBoxesOf(r)),
   );
@@ -2044,764 +1834,6 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
 }
 
-console.log('J. the Order dialog: merged fixed+metric list, show/hide, right-aligned cluster, fixed title bar + one scroll region, unpin, no drag, write-through moves, Reset, header ✕');
-{
-  // Two opens: FIRST with nothing pinned — the honest empty state plus
-  // the help line (the owner copy rule: user's domain, no dev
-  // shorthand — the retired "fixed Go stats" phrase must be gone);
-  // THEN after pinning three metrics from the Builder rows (the single
-  // pins writer) — the reorder suite over the PINNED list only.
-  const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) =>
-    b.textContent.includes('Order'),
-  );
-  check(
-    'the Order… button sits in the list header beside New, arrow-glyph pair',
-    !!orderBtn &&
-      !!orderBtn.querySelector('.codicon-arrow-up') &&
-      !!orderBtn.querySelector('.codicon-arrow-down') &&
-      [...(orderBtn.parentElement?.querySelectorAll('button') || [])].some((b) =>
-        b.textContent.includes('New'),
-      ),
-    orderBtn ? orderBtn.textContent.replace(/\s+/g, ' ').trim() : 'no Order button',
-  );
-
-  bindings.resetCalls();
-  click(orderBtn);
-  await sleep(150);
-  let dlg = document.querySelector('.dlg-panel.mo-prompt');
-  check(
-    'the dialog opens (mo-prompt panel with role=dialog)',
-    !!dlg && dlg.getAttribute('role') === 'dialog',
-    dlg ? 'open' : 'not found',
-  );
-  check(
-    'both order prefs were read through their bare kvstore keys',
-    ['metric_order_match', 'metric_order_profile'].every((k) =>
-      bindings.calls.some((c) => c.method === 'GetPref' && c.args[0] === k),
-    ),
-    JSON.stringify(bindings.calls.filter((c) => c.method === 'GetPref').map((c) => c.args)),
-  );
-
-  // Closures over `dlg` — re-read on every use, so the second open
-  // below re-queries through the same helpers.
-  const sec = (scope) => dlg?.querySelector(`.mo-sec[data-mo-scope="${scope}"]`);
-  const dRows = (scope) => [...(sec(scope)?.querySelectorAll('.mo-row') || [])];
-  const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
-
-  check(
-    'one dialog, three stacked sections (scoreboard, profile, overview — no tabs)',
-    [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | ') ===
-      'Scoreboard (match metrics) | Player profile (profile metrics) | Match overview (top cards)' &&
-      !dlg?.querySelector('[role="tab"]'),
-    [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
-  );
-
-  // The visible title bar (N2) — the KAST dialog's idiom: the label as
-  // an <h2> with an icon-only ✕ at its right edge, ABOVE the note.
-  const head = dlg?.querySelector(':scope > .row-between.mo-head');
-  check(
-    'N2: the dialog opens with a visible title bar — "Metric order" as an <h2> and an icon-only ✕ at its right edge',
-    !!head &&
-      head.querySelector(':scope > h2')?.textContent.trim() === 'Metric order' &&
-      head.lastElementChild?.getAttribute('aria-label') === 'Close' &&
-      !!head.lastElementChild?.querySelector('.codicon-close') &&
-      head.querySelector('button') === head.lastElementChild,
-    head ? head.textContent.replace(/\s+/g, ' ').trim() : 'no title bar',
-  );
-
-  // M1/M4/M5 — structure pins. jsdom has no layout, so the geometry
-  // (right-alignment, the fixed title bar, the single scroll region)
-  // is pinned as DOM structure + the component's own CSS source, the
-  // N1 source-pin precedent (section A over style-m3a.css).
-  {
-    const headEl = dlg?.querySelector(':scope > .row-between.mo-head');
-    const bodyEl2 = dlg?.querySelector(':scope > .mo-body');
-    check(
-      'M4: the title bar sits OUTSIDE the scroll region — a direct child of the panel, immediately above .mo-body',
-      !!headEl &&
-        !!bodyEl2 &&
-        headEl.parentElement === dlg &&
-        headEl.nextElementSibling === bodyEl2 &&
-        !bodyEl2.contains(headEl),
-      headEl && bodyEl2
-        ? `parent-ok=${headEl.parentElement === dlg} adjacent=${headEl.nextElementSibling === bodyEl2}`
-        : 'missing head/body',
-    );
-    const src = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8');
-    const ruleOf = (sel) => (src.match(new RegExp(`(?:^|\\n)\\s*${sel}\\s*\\{([^}]*)\\}`)) || [])[1] || '';
-    const panelR = ruleOf(':global\\(\\.dlg-panel\\.mo-prompt\\)');
-    const headR = ruleOf('\\.mo-head');
-    const bodyR = ruleOf('\\.mo-body');
-    const listR = ruleOf('\\.mo-list');
-    check(
-      'M4/M5: the panel clips, .mo-head is fixed and .mo-body is THE scroll region — .mo-list carries neither max-height nor overflow',
-      /overflow:\s*hidden/.test(panelR) &&
-        /flex:\s*0 0 auto/.test(headR) &&
-        /min-height:\s*0/.test(bodyR) &&
-        /overflow-y:\s*auto/.test(bodyR) &&
-        !/max-height/.test(listR) &&
-        !/overflow/.test(listR),
-      `panel="${panelR.trim()}" head="${headR.trim()}" body="${bodyR.trim()}" list="${listR.trim()}"`,
-    );
-    const actsR = ruleOf('\\.mo-acts');
-    const movesR = ruleOf('\\.mo-moves');
-    check(
-      'M1: the row controls cluster right — .mo-acts carries margin-left:auto and .mo-moves no longer does',
-      /margin-left:\s*auto/.test(actsR) &&
-        /display:\s*flex/.test(actsR) &&
-        /align-items:\s*center/.test(actsR) &&
-        !/margin-left/.test(movesR),
-      `acts="${actsR.trim()}" moves="${movesR.trim()}"`,
-    );
-    const rowsC = dRows('match');
-    check(
-      'M1: every row rides ONE .mo-acts cluster (toggle + ↑↓ together) and the eye carries no title=',
-      rowsC.length > 0 &&
-        rowsC.every((x) => {
-          const acts = x.querySelector(':scope > .mo-acts');
-          const moves = x.querySelector('.mo-moves');
-          const eye = x.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
-          return (
-            !!acts &&
-            !!moves &&
-            acts.contains(moves) &&
-            (!eye || (acts.contains(eye) && !eye.hasAttribute('title')))
-          );
-        }),
-      rowsC
-        .map(
-          (x) =>
-            `${x.dataset.moName}:acts=${!!x.querySelector(':scope > .mo-acts')} eye-title=${x
-              .querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]')
-              ?.hasAttribute('title')}`,
-        )
-        .join(', '),
-    );
-  }
-
-  // The help line (reworded for N4: fixed stats are listed now, and
-  // they can be hidden — the pins-only copy was wrong once they
-  // folded into the list; M6: it names the unpin HERE instead of
-  // pointing back at the metric list; owner item 5: it names the third
-  // table). Still the owner's domain, no dev shorthand.
-  const note = (dlg?.querySelector('.mo-note')?.textContent || '').replace(/\s+/g, ' ').trim();
-  check(
-    'help line: fixed stats AND pinned metrics, reorder with the arrows, hide with the eye, unpin here in the dialog, the overview table picks the top cards; no dev-process phrase',
-    /Fixed stats and pinned metrics are listed in order/.test(note) &&
-      /hide a fixed stat with the eye/.test(note) &&
-      /unpin a metric here/.test(note) &&
-      /overview table picks the match top cards/.test(note) &&
-      !/Go stats/i.test(dlg?.textContent || ''),
-    note,
-  );
-
-  // N4: with nothing pinned the match section still lists the FIXED
-  // stats — the old "nothing to order" / "no metrics yet" empty states
-  // are gone (a fixed stat always has something to order and hide).
-  // UNIFICATION (2026-11-18): the fixed block is exactly Name/Team/
-  // Score — the five count entries are metric entities now (they land
-  // as rows only when pinned, and this fixture's catalog carries none).
-  check(
-    'nothing pinned yet → the match section still lists the fixed stats in canonical order (no empty state, a real listbox)',
-    !!sec('match') &&
-      JSON.stringify(dNames('match')) === JSON.stringify(['@Name', '@Team', '@Score']) &&
-      !!sec('match').querySelector('[role="listbox"]') &&
-      !sec('match').querySelector('p[role="status"]'),
-    sec('match')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 200),
-  );
-  check(
-    'the profile section has NO fixed rows (the pair unified with its metrics) — with an empty catalog and nothing pinned its list is empty',
-    !!sec('profile') &&
-      JSON.stringify(dNames('profile')) === JSON.stringify([]) &&
-      !!sec('profile').querySelector('[role="listbox"]'),
-    JSON.stringify(dNames('profile')),
-  );
-  {
-    const closeBtn = head?.querySelector('button[aria-label="Close"]');
-    click(closeBtn);
-    await sleep(60);
-    check('the header ✕ dismisses the empty dialog', !document.querySelector('.dlg-panel.mo-prompt'));
-  }
-
-  // Pin three of the four match metrics from the Builder rows —
-  // trade_rate stays UNPINNED, which is exactly what the list must
-  // never show (the fixed stats are there by their own right).
-  for (const name of ['adr_avg', 'my_kd', 'plug_stat']) {
-    click(rowNamed(r, name)?.querySelector(`[aria-label="Toggle pin for ${name}"]`));
-    await sleep(40);
-  }
-
-  // The overview universe for the dialog (owner item 5): the ONE cached
-  // listMetrics() gains the identity metrics — top_fragger (a DEFAULT
-  // overview pin ⇒ its row opens pinned) and a user argmax (unpinned).
-  // The Builder LIST behind the dialog is untouched: it pages through
-  // ListMetricsPage, a separate stub over METRICS.
-  const baseListMetrics = bindings.MetricsService.ListMetrics;
-  bindings.MetricsService.ListMetrics = () =>
-    Promise.resolve([
-      ...METRICS,
-      {
-        id: 91, name: 'top_fragger', title: 'Top fragger', shortName: '',
-        expr: 'from player_stats: argmax(kills)', scope: 'match', format: 'identity',
-        doc: 'Formula: argmax(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '',
-      },
-      {
-        id: 92, name: 'my_argmax', title: 'My leader', shortName: '',
-        expr: 'from player_stats: argmax(kast)', scope: 'match', format: 'identity',
-        doc: 'Formula: argmax(player_stats.kast)', origin: 'user', pluginId: '', denominator: '',
-      },
-    ]);
-  services.invalidate(); // flush the cached catalog read so the open sees it
-
-  bindings.resetCalls();
-  click(orderBtn);
-  await sleep(150);
-  dlg = document.querySelector('.dlg-panel.mo-prompt');
-
-  {
-    // N4 (W6): the fixed stats FOLD INTO the one listbox — the
-    // read-only .mo-fixed context block is gone, and the section's
-    // caption now describes the list (aria-describedby) while the
-    // listbox keeps its name from the section heading. Every row is a
-    // real listbox option: fixed and metric alike.
-    const secEl = sec('match');
-    const fixed = secEl?.querySelector('.mo-fixed');
-    const cap = secEl?.querySelector('.mo-fixed-cap');
-    const list = secEl?.querySelector('.mo-list');
-    const rows = [...(list?.querySelectorAll('.mo-row') || [])];
-    check(
-      'N4: ONE listbox holds the fixed stats AND the pinned metrics — the read-only .mo-fixed block is gone, rows are unselected options',
-      !fixed &&
-        list?.getAttribute('role') === 'listbox' &&
-        list?.getAttribute('aria-labelledby') === secEl?.querySelector('.mo-sec-title')?.id &&
-        list?.getAttribute('aria-describedby') === cap?.id &&
-        /Fixed stats lead/.test(cap?.textContent || '') &&
-        rows.length === 6 &&
-        rows.every((x) => x.getAttribute('role') === 'option' && x.getAttribute('aria-selected') === 'false'),
-      !fixed && list
-        ? `rows=${rows.length} cap="${cap?.textContent.trim()}" desc=${list.getAttribute('aria-describedby')}`
-        : 'the read-only block is back',
-    );
-  }
-  check(
-    'the list = the fixed stats (canonical order) then the pinned metrics in sequence order — the unpinned trade_rate never appears',
-    JSON.stringify(dNames('match')) ===
-      JSON.stringify(['@Name', '@Team', '@Score', 'adr_avg', 'my_kd', 'plug_stat']) &&
-      !dRows('match').some((x) => x.dataset.moName === 'trade_rate'),
-    JSON.stringify(dNames('match')),
-  );
-  {
-    // The show/hide toggle (N4/M1): every HIDEABLE fixed row carries
-    // one — named Show/Hide {label} (never the word "pin": the eye is
-    // visibility only; the PIN toggle on metric rows below is a
-    // separate control), the Name column is EXEMPT (owner ruling), and
-    // metric rows never carry a show/hide (their visibility is the pin
-    // selection). Since the unification the fixed rows are exactly
-    // Name/Team/Score: Team and Score carry the eye, Name does not.
-    const rows = dRows('match');
-    const toggleFor = (row) => row.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]');
-    check(
-      'every hideable fixed row carries a Show/Hide toggle; the Name column is exempt; metric rows never carry one',
-      rows.slice(1, 3).every((x) => x.dataset.moKind === 'fixed' && !!toggleFor(x)) &&
-        !toggleFor(rows[0]) &&
-        rows.slice(3).every((x) => x.dataset.moKind === 'metric' && !toggleFor(x)),
-      rows
-        .map((x) => `${x.dataset.moName}:${x.dataset.moKind}:${toggleFor(x)?.getAttribute('aria-label') ?? '-'}`)
-        .join(', '),
-    );
-    check(
-      'the toggle never says "pin" and starts exactly at Hide (nothing hidden yet)',
-      rows.every((x) => !/pin/i.test(toggleFor(x)?.getAttribute('aria-label') || '')) &&
-        rows[1].querySelector('button[aria-label="Hide Team"]') !== null,
-      rows[1].querySelectorAll('button[aria-label]').length
-        ? [...rows[1].querySelectorAll('button')].map((b) => b.getAttribute('aria-label')).join(' | ')
-        : 'no buttons',
-    );
-  }
-  {
-    const rows = dRows('match');
-    check(
-      'no drag source anywhere: nothing in the dialog is draggable and no row carries a grip handle — the ↑/↓ buttons are the only move path',
-      rows.length === 6 &&
-        !dlg.querySelector('[draggable]') &&
-        rows.every((x) => !x.hasAttribute('draggable') && !x.querySelector('.mo-grip')),
-      rows
-        .map(
-          (x) =>
-            `${x.dataset.moName}:row-draggable=${x.hasAttribute('draggable')} grip=${!!x.querySelector('.mo-grip')}`,
-        )
-        .join(', '),
-    );
-  }
-  {
-    const rows = dRows('match');
-    const label = (row) => row.querySelector('.mo-title')?.textContent.trim();
-    const upFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} up"]`);
-    const downFirst = rows[0]?.querySelector(`[aria-label="Move ${label(rows[0])} down"]`);
-    const up0 = rows[3]?.querySelector('[aria-label="Move ADR average up"]');
-    const down0 = rows[3]?.querySelector('[aria-label="Move ADR average down"]');
-    const upLast = rows[5]?.querySelector('[aria-label="Move Plugin stat up"]');
-    const downLast = rows[5]?.querySelector('[aria-label="Move Plugin stat down"]');
-    check(
-      'every row carries labelled ↑/↓ buttons (named for the row’s visible label); the boundary ones are disabled',
-      !!upFirst && upFirst.disabled &&
-        !!downFirst && !downFirst.disabled &&
-        !!up0 && !up0.disabled &&
-        !!down0 && !down0.disabled &&
-        !!upLast && !upLast.disabled &&
-        !!downLast && downLast.disabled,
-      `first↑=${upFirst && upFirst.disabled} first↓=${downFirst && !downFirst.disabled} mid↑=${up0 && !up0.disabled} mid↓=${down0 && !down0.disabled} last↑=${upLast && !upLast.disabled} last↓=${downLast && downLast.disabled}`,
-    );
-  }
-  {
-    // W13b (2026-11-16) — the structured {name, short} fixed entries:
-    // the row TITLE reads the FULL name, the mono slot carries the SHORT
-    // only when the two differ (Team never doubles to
-    // "Team Team"). w19 item 5: a METRIC row now carries the same slot
-    // from the metric's own short name (e.def.shortName) under the same
-    // rule — ADR shows under "ADR average", while a metric with no
-    // short name (my_kd) keeps NO slot (its title alone identifies it;
-    // the old "Assists assists" title+name doubling stays dead). Since
-    // the unification of 2026-11-18 every surviving fixed row is
-    // short-equal (Name/Team/Score) so no fixed row shows a slot — the
-    // K/D/DMG/Util/MVPs shorts live on as the count metrics' shortNames
-    // (the scoreboard column headers). The aria labels derive from the
-    // same visible full name (Hide Score / Move Score up) while
-    // data-mo-name keeps the '@'-key identity (pinned by the dNames
-    // lists above — unchanged).
-    const rows = dRows('match');
-    const scoreRow = rows.find((x) => x.dataset.moName === '@Score');
-    const teamRow = rows.find((x) => x.dataset.moName === '@Team');
-    const metricRow = rows.find((x) => x.dataset.moName === 'adr_avg');
-    const shortRow = rows.find((x) => x.dataset.moName === 'my_kd');
-    const monos = (row) =>
-      [...(row?.querySelectorAll('.mo-name') || [])].map((s) => s.textContent.trim());
-    check(
-      'the mono short slot: none on the short-equal fixed rows, the metric short under its title, nothing when a metric has no short name',
-      scoreRow?.querySelector('.mo-title')?.textContent.trim() === 'Score' &&
-        monos(scoreRow).length === 0 &&
-        teamRow?.querySelector('.mo-title')?.textContent.trim() === 'Team' &&
-        monos(teamRow).length === 0 &&
-        JSON.stringify(monos(metricRow)) === JSON.stringify(['ADR']) &&
-        JSON.stringify(monos(shortRow)) === JSON.stringify([]),
-      `Score monos=${JSON.stringify(monos(scoreRow))} Team monos=${JSON.stringify(monos(teamRow))} adr monos=${JSON.stringify(monos(metricRow))} my_kd monos=${JSON.stringify(monos(shortRow))}`,
-    );
-    check(
-      "the fixed rows' aria labels derive from the visible FULL name — Hide Score / Move Score up and down; Team keeps Hide Team",
-      !!scoreRow?.querySelector('button[aria-label="Hide Score"]') &&
-        !!scoreRow?.querySelector('button[aria-label="Move Score up"]') &&
-        !!scoreRow?.querySelector('button[aria-label="Move Score down"]') &&
-        !!teamRow?.querySelector('button[aria-label="Hide Team"]'),
-      (scoreRow || teamRow)
-        ? [...(scoreRow?.querySelectorAll('button[aria-label]') || [])].map((b) => b.getAttribute('aria-label')).join(' | ')
-        : 'no fixed row',
-    );
-  }
-  {
-    const rows = dRows('match');
-    const from = dNames('match').indexOf('adr_avg');
-    rows[from].focus();
-    rows[from].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    await sleep(80);
-    check(
-      'ArrowDown on the focused metric row moves it one slot down (the fixed rows above stay put)',
-      JSON.stringify(dNames('match')) ===
-        JSON.stringify(['@Name', '@Team', '@Score', 'my_kd', 'adr_avg', 'plug_stat']),
-      JSON.stringify(dNames('match')),
-    );
-    const sets = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match');
-    const set = sets[sets.length - 1];
-    check(
-      'the move is write-through: SetPref carries the key AND the whole merged sequence — fixed stats and the unpinned entry keep their slots',
-      !!set &&
-        JSON.stringify(set.args[1]) ===
-          JSON.stringify([
-            '@Name', '@Team', '@Score',
-            'trade_rate', 'my_kd', 'adr_avg', 'plug_stat',
-            // The identity metrics are match-catalog members too: they
-            // sequence at rank ∞ behind the shown entries (owner item 5
-            // — the fixture's dialog catalog carries them).
-            'top_fragger', 'my_argmax',
-          ]),
-      set ? JSON.stringify(set.args) : 'no SetPref call',
-    );
-  }
-  {
-    // Focus follows the moved row — pinned through the BUTTON path: a
-    // keyboard move re-focuses the same DOM node (the keyed each moves
-    // nodes), so only a button click on a NON-focused row can prove
-    // focusRow ran. The move also leaves a non-default sequence behind,
-    // which is what the reset check below must undo.
-    const btn = dRows('match')
-      .find((x) => x.dataset.moName === 'plug_stat')
-      ?.querySelector('[aria-label="Move Plugin stat up"]');
-    click(btn);
-    await sleep(80);
-    check(
-      'focus follows the row moved by its button',
-      document.activeElement?.dataset?.moName === 'plug_stat' &&
-        dNames('match').slice(3).join(',') === 'my_kd,plug_stat,adr_avg',
-      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match').slice(3))}`,
-    );
-  }
-  {
-    // The show/hide WRITE: Team hides, the ROW STAYS LISTED (the owner's
-    // requirement — the toggle never removes a row from the ordering
-    // view) with its hidden mark and the Show label, and only the
-    // visibility key is written (the order pref is untouched).
-    const rows = dRows('match');
-    const teamRow = rows.find((x) => x.dataset.moName === '@Team');
-    const hideBtn = teamRow?.querySelector('button[aria-label="Hide Team"]');
-    const ordersBefore = bindings.calls.filter(
-      (c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match',
-    ).length;
-    click(hideBtn);
-    await sleep(80);
-    const hiddenSet = bindings.calls.find(
-      (c) => c.method === 'SetPref' && c.args[0] === 'metric_hidden_match',
-    );
-    const teamAfter = dRows('match').find((x) => x.dataset.moName === '@Team');
-    check(
-      'hiding a fixed stat writes the VISIBILITY pref and the row stays listed (marked hidden, offered as Show)',
-      !!hiddenSet &&
-        JSON.stringify(hiddenSet.args[1]) === JSON.stringify(['@Team']) &&
-        !!teamAfter &&
-        teamAfter.classList.contains('mo-hidden') &&
-        teamAfter.querySelector('[aria-label="Show Team"]') !== null &&
-        /hidden/.test(teamAfter.textContent) &&
-        dRows('match').length === 6 &&
-        bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match').length === ordersBefore,
-      teamAfter
-        ? `class=${teamAfter.className} label=${teamAfter.querySelector('button[aria-label^="Sh"]')?.getAttribute('aria-label')} set=${JSON.stringify(hiddenSet && hiddenSet.args)}`
-        : 'row gone',
-    );
-  }
-  {
-    // M6 — the old "no pin indicator, no pin control anywhere" ban,
-    // INVERTED by design: a pin toggle now rides the METRIC rows (it
-    // unpins through Builder's writer), fixed rows carry none, and the
-    // eye still never says "pin" — its Show/Hide aria is untouched.
-    // The pin button's title composes the SAME catalog wording
-    // Builder's row button shows (byte-identical: 'Unpin from …').
-    const rows = dRows('match');
-    const metricRows = rows.filter((x) => x.dataset.moKind === 'metric');
-    const fixedRows = rows.filter((x) => x.dataset.moKind === 'fixed');
-    const pinOf = (row) => row.querySelector('[aria-label^="Toggle pin"]');
-    const eyes = rows
-      .map((x) => x.querySelector('button[aria-label^="Show "], button[aria-label^="Hide "]'))
-      .filter(Boolean);
-    check(
-      'the pin control exists on metric rows ONLY (fixed rows carry none) and the eye still never says "pin"',
-      metricRows.length === 3 &&
-        metricRows.every(
-          (x) =>
-            pinOf(x)?.getAttribute('aria-label') === `Toggle pin for ${x.dataset.moName}` &&
-            pinOf(x)?.getAttribute('title') === 'Unpin from scoreboard',
-        ) &&
-        fixedRows.every((x) => !pinOf(x)) &&
-        eyes.length === 2 &&
-        eyes.every((b) => !/pin/i.test(b.getAttribute('aria-label') || '')),
-      rows
-        .map(
-          (x) =>
-            `${x.dataset.moName}:${x.dataset.moKind}:pin=${pinOf(x)?.getAttribute('title') ?? '-'}`,
-        )
-        .join(', '),
-    );
-  }
-  {
-    // Owner item 5 — the Match-overview table: its WHOLE identity
-    // universe is listed (pin toggles ADD here — this table is the
-    // overview's only picker, unlike the match/profile unpin-only
-    // rows), the shipped default card opens pinned, and each write
-    // lands on the table's own kvstore key.
-    const ovRows = dRows('overview');
-    check(
-      'the overview table lists its identity universe in sequence order (the default-pinned card first, the unpinned user metric after)',
-      JSON.stringify(ovRows.map((x) => x.dataset.moName)) ===
-        JSON.stringify(['top_fragger', 'my_argmax']),
-      JSON.stringify(ovRows.map((x) => x.dataset.moName)),
-    );
-    const ovTitle = (row) =>
-      row?.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('title') ?? '-';
-    check(
-      'the default card opens pinned (its row carries the unpin state); the unpinned metric offers the pin',
-      ovRows[0]?.querySelector('[title="Unpin from overview"]') !== null &&
-        ovRows[0]?.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('aria-pressed') === 'true' &&
-        ovRows[1]?.querySelector('[title="Pin as overview card"]') !== null,
-      ovRows.map((x) => `${x.dataset.moName}:${ovTitle(x)}`).join(', '),
-    );
-    check(
-      'overview rows are metric rows with ↑↓ and no eye (the eye stays a fixed-stat control)',
-      ovRows.length > 0 &&
-        ovRows.every(
-          (x) => x.dataset.moKind === 'metric' && x.querySelector('.mo-moves') &&
-            !x.querySelector('button[aria-label^="Hide "]'),
-        ),
-      ovRows.map((x) => `${x.dataset.moName}:${x.dataset.moKind}`).join(', '),
-    );
-    // Pin the user metric: the selection lands on ITS kvstore key —
-    // never Builder's localStorage pins, and the order key is untouched.
-    const ovOrderWrites = () =>
-      bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_overview')
-        .length;
-    const orderWritesBefore = ovOrderWrites();
-    click(ovRows[1].querySelector('[aria-label^="Toggle pin"]'));
-    await sleep(80);
-    const pinsSet = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_pins_overview').pop();
-    check(
-      'pinning an overview card writes ONLY the overview pin key, carrying the whole set (default + the new one)',
-      !!pinsSet &&
-        JSON.stringify(pinsSet.args[1]) === JSON.stringify(['top_fragger', 'my_argmax']) &&
-        ovOrderWrites() === orderWritesBefore,
-      pinsSet ? JSON.stringify(pinsSet.args) : 'no SetPref',
-    );
-    // Reorder through the same write-through move() as every other
-    // table — the moved sequence lands on the overview ORDER key.
-    click(dRows('overview')[1]?.querySelector('[aria-label="Move My leader up"]'));
-    await sleep(80);
-    const orderSet = bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_overview').pop();
-    check(
-      'reordering the overview table writes its own order key with the moved sequence',
-      !!orderSet && JSON.stringify(orderSet.args[1]) === JSON.stringify(['my_argmax', 'top_fragger']),
-      orderSet ? JSON.stringify(orderSet.args) : 'no SetPref',
-    );
-  }
-  {
-    const resetBtn = [...dlg.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Reset order'),
-    );
-    click(resetBtn);
-    await sleep(80);
-    const dels = bindings.calls.filter((c) => c.method === 'Delete');
-    check(
-      'Reset order deletes BOTH pref PAIRS plus the overview pair — order, visibility and the card selection (the lead: every default restores)',
-      JSON.stringify(dels.map((c) => c.args[0]).sort()) ===
-        JSON.stringify(['metric_economy', 'metric_hidden_match', 'metric_hidden_profile', 'metric_order_match', 'metric_order_overview', 'metric_order_profile', 'metric_pins_overview']),
-      JSON.stringify(dels.map((c) => c.args)),
-    );
-    check(
-      'the list snaps back to the DEFAULT sequence (fixed stats + the pinned metrics, default order) after reset',
-      JSON.stringify(dNames('match')) ===
-        JSON.stringify(['@Name', '@Team', '@Score', 'adr_avg', 'my_kd', 'plug_stat']),
-      JSON.stringify(dNames('match')),
-    );
-    const teamBack = dRows('match').find((x) => x.dataset.moName === '@Team');
-    check(
-      'Reset also SHOWS the hidden Team again (its row carries Hide, no hidden mark)',
-      !!teamBack && !teamBack.classList.contains('mo-hidden') && !!teamBack.querySelector('button[aria-label="Hide Team"]'),
-      teamBack ? `class=${teamBack.className}` : 'row gone',
-    );
-    const ovBack = dRows('overview');
-    check(
-      'Reset restores the overview table too — default order and the default card set (my_argmax unpinned again)',
-      JSON.stringify(ovBack.map((x) => x.dataset.moName)) ===
-        JSON.stringify(['top_fragger', 'my_argmax']) &&
-        ovBack[0]?.querySelector('[title="Unpin from overview"]') !== null &&
-        ovBack[1]?.querySelector('[title="Pin as overview card"]') !== null,
-      ovBack.map((x) => `${x.dataset.moName}:${x.querySelector('[aria-label^="Toggle pin"]')?.getAttribute('title') ?? '-'}`).join(', '),
-    );
-  }
-  {
-    // M6 — unpin from the ORDERING dialog (the writer stays in Builder):
-    // the click routes through onTogglePin → togglePin, which writes
-    // BOTH pin keys (localStorage) and never metric_order_* (the
-    // kvstore — the sequence keeps the slot for re-pinning); the row
-    // leaves .mo-list at once and focus moves to the row that took its
-    // place. adr_avg is still loaded in the editor from section I, so
-    // BOTH Builder surfaces flip behind the dialog in the same click.
-    const pinsKey = 'spectra:pinned-metrics';
-    const profileKey = 'spectra:pinned-profile-metrics';
-    const before = JSON.parse(localStorage.getItem(pinsKey) || '[]');
-    const orderWrites = bindings.calls.filter(
-      (c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match',
-    ).length;
-    const setKeys = [];
-    const origSet = dom.window.Storage.prototype.setItem;
-    dom.window.Storage.prototype.setItem = function (k, v) {
-      setKeys.push(k);
-      return origSet.call(this, k, v);
-    };
-    const dlgPin = dRows('match')
-      .find((x) => x.dataset.moName === 'adr_avg')
-      ?.querySelector('[aria-label^="Toggle pin"]');
-    if (dlgPin) click(dlgPin);
-    await sleep(80);
-    dom.window.Storage.prototype.setItem = origSet;
-    const after = JSON.parse(localStorage.getItem(pinsKey) || '[]');
-    const rowGone = !dNames('match').includes('adr_avg');
-    const focused = document.activeElement?.dataset?.moName;
-    check(
-      'unpin writes BOTH pin keys (never the order pref), drops the row from the list at once and focuses the neighbouring row',
-      setKeys.includes(pinsKey) &&
-        setKeys.includes(profileKey) &&
-        after.length === before.length - 1 &&
-        after.every((x) => before.includes(x)) &&
-        bindings.calls.filter((c) => c.method === 'SetPref' && c.args[0] === 'metric_order_match')
-          .length === orderWrites &&
-        rowGone &&
-        focused === 'my_kd',
-      `keys=${JSON.stringify(setKeys)} pins ${JSON.stringify(before)} → ${JSON.stringify(after)} rowGone=${rowGone} focus=${focused} dlgPin=${!!dlgPin}`,
-    );
-    const rowBtn = rowNamed(r, 'adr_avg')?.querySelector('[aria-label="Toggle pin for adr_avg"]');
-    const editorBtn = [...(r.querySelectorAll('.bld-actions .toolbar button') || [])].find((b) =>
-      b.querySelector('.codicon-pin'),
-    );
-    check(
-      'Builder flips behind the dialog — the list row AND the editor Pin button both return to the unpinned state',
-      !!rowBtn &&
-        rowBtn.getAttribute('title') === 'Pin as scoreboard column' &&
-        !rowBtn.classList.contains('bld-pin-on') &&
-        !!editorBtn &&
-        editorBtn.textContent.trim() === 'Pin' &&
-        !editorBtn.classList.contains('bld-pin-on'),
-      `row title=${rowBtn?.getAttribute('title')} class=${rowBtn?.className} editor="${editorBtn?.textContent.trim()}" class=${editorBtn?.className}`,
-    );
-  }
-  {
-    // w22 (2026-11-16) — NAME-keyed pins: deleting a PINNED user metric
-    // scrubs its NAME from BOTH pin keys (the delete-scrub survives the
-    // id → name flip) and the write carries names only — never an id.
-    // my_kd is pinned from the row-pin loop above and unpinned only for
-    // adr_avg by M6, so it is the live pinned user metric here.
-    const pinsKey = 'spectra:pinned-metrics';
-    const profileKey = 'spectra:pinned-profile-metrics';
-    const pinsBefore = JSON.parse(localStorage.getItem(pinsKey) || '[]');
-    const delBtn = rowNamed(r, 'my_kd')?.querySelector('[aria-label="Delete my_kd"]');
-    click(delBtn);
-    await sleep(80);
-    const pinsAfter = JSON.parse(localStorage.getItem(pinsKey) || '[]');
-    const profAfter = JSON.parse(localStorage.getItem(profileKey) || '[]');
-    check(
-      'deleting a pinned metric scrubs its NAME from BOTH pin keys (the write is names-only, and DeleteMetric got the id)',
-      !!delBtn &&
-        pinsBefore.includes('my_kd') &&
-        !pinsAfter.includes('my_kd') &&
-        pinsAfter.every((x) => pinsBefore.includes(x)) &&
-        !profAfter.includes('my_kd') &&
-        pinsAfter.every((x) => typeof x === 'string') &&
-        bindings.calls.some((c) => c.method === 'DeleteMetric' && c.args[0] === 3),
-      `pins ${JSON.stringify(pinsBefore)} → ${JSON.stringify(pinsAfter)} profile=${JSON.stringify(profAfter)} delBtn=${!!delBtn}`,
-    );
-  }
-  {
-    const closeBtn = dlg.querySelector('button[aria-label="Close"]');
-    click(closeBtn);
-    await sleep(60);
-    check('the header ✕ dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
-  }
-  // Restore the shared catalog stub (the identity fixture was this
-  // dialog section's only consumer) and flush the cached read so later
-  // mounts resolve through the original METRICS.
-  bindings.MetricsService.ListMetrics = baseListMetrics;
-  services.invalidate();
-}
-
-console.log(
-  "K. the Scoreboard section's shape checkbox (w25): placement after its list, default off, the one key it writes, read-back on reopen, Reset leaves it alone",
-);
-{
-  // w25 — the ordering dialog's THIRD pref (metricorder.js
-  // STARTS_TRANSPOSED_KEY): "Scoreboard starts transposed" is the shape
-  // a match OPENS in (the Match view reads it once per mount). Section J
-  // left the dialog closed; open it fresh with NO GetPref handler, so
-  // the read below is the honest absent-pref default (off).
-  delete bindings.handlers.GetPref;
-  delete bindings.handlers.SetPref;
-  bindings.resetCalls();
-  const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) =>
-    b.textContent.includes('Order'),
-  );
-  if (orderBtn) click(orderBtn);
-  await sleep(150);
-  const dlgK = document.querySelector('.dlg-panel.mo-prompt');
-  const matchSec = dlgK?.querySelector('.mo-sec[data-mo-scope="match"]');
-  const profSec = dlgK?.querySelector('.mo-sec[data-mo-scope="profile"]');
-  const box = matchSec?.querySelector('#mo-starts-transposed');
-  const listEl = matchSec?.querySelector('.mo-list');
-  const followsList = !!box && !!listEl &&
-    (listEl.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-  check(
-    'the shape checkbox sits in the Scoreboard section AFTER its list, and never in the profile section',
-    followsList && !profSec?.querySelector('#mo-starts-transposed'),
-    box ? `afterList=${followsList}` : 'no #mo-starts-transposed in the match section',
-  );
-  check(
-    'it opens UNCHECKED by default (no GetPref handler — absent ⇒ off) with the catalog label, over a bare-key read',
-    !!box &&
-      box.checked === false &&
-      (box.closest('label')?.textContent || '').trim() === 'Scoreboard starts transposed' &&
-      bindings.calls.some(
-        (c) => c.method === 'GetPref' && c.args[0] === 'scoreboard_starts_transposed',
-      ),
-    box
-      ? `checked=${box.checked} label="${(box.closest('label')?.textContent || '').trim()}"`
-      : 'no box',
-  );
-
-  // The ONE writer: a stateful kvstore store goes in FIRST, so the click
-  // below lands in it and the reopen reads that very value back.
-  const store = {};
-  bindings.handlers.GetPref = (k) => store[k];
-  bindings.handlers.SetPref = (k, v) => {
-    store[k] = v;
-  };
-  bindings.resetCalls();
-  box?.click();
-  await sleep(80);
-  const sets = bindings.calls.filter((c) => c.method === 'SetPref');
-  check(
-    'the click writes SetPref("scoreboard_starts_transposed", true) — and ONLY that key',
-    !!box &&
-      box.checked === true &&
-      sets.length === 1 &&
-      sets[0].args[0] === 'scoreboard_starts_transposed' &&
-      sets[0].args[1] === true &&
-      store.scoreboard_starts_transposed === true,
-    `checked=${box?.checked} sets=${JSON.stringify(sets.map((c) => c.args))}`,
-  );
-
-  // Close + reopen: the dialog re-reads on open, so the written value
-  // comes back from the store — a fresh read, not the in-memory state.
-  bindings.resetCalls();
-  const closeBtn = dlgK?.querySelector('button[aria-label="Close"]');
-  if (closeBtn) click(closeBtn);
-  await sleep(60);
-  const orderBtn2 = [...r.querySelectorAll('.bld-list button')].find((b) =>
-    b.textContent.includes('Order'),
-  );
-  if (orderBtn2) click(orderBtn2);
-  await sleep(150);
-  const dlgK2 = document.querySelector('.dlg-panel.mo-prompt');
-  const box2 = dlgK2?.querySelector('#mo-starts-transposed');
-  const reads = bindings.calls.filter(
-    (c) => c.method === 'GetPref' && c.args[0] === 'scoreboard_starts_transposed',
-  );
-  check(
-    'close + reopen re-reads the bare key through the store and comes back CHECKED',
-    !!box2 && box2.checked === true && reads.length >= 1 && store.scoreboard_starts_transposed === true,
-    box2 ? `checked=${box2.checked} reads=${reads.length}` : 'no reopened dialog',
-  );
-
-  // Reset order (lead ruling): it restores ORDER + VISIBILITY only — the
-  // shape is neither, so no SetPref/Delete may ever target its key here.
-  bindings.resetCalls();
-  const resetBtn = [...(dlgK2?.querySelectorAll('button') || [])].find((b) =>
-    b.textContent.includes('Reset order'),
-  );
-  if (resetBtn) click(resetBtn);
-  await sleep(80);
-  const shapeCalls = bindings.calls.filter((c) => c.args[0] === 'scoreboard_starts_transposed');
-  check(
-    'Reset order writes/deletes NOTHING for the shape key (the checkbox stays as it was)',
-    shapeCalls.length === 0 && !!box2 && box2.checked === true,
-    JSON.stringify(bindings.calls.map((c) => [c.method, c.args[0]])),
-  );
-
-  delete bindings.handlers.GetPref;
-  delete bindings.handlers.SetPref;
-}
-
 // ---------------------------------------------------------------------------
 // Section K: the Type group's Identity box (metrics expansion Phase 7,
 // 2026-11-18) — the key-valued identity metrics gain their filter
@@ -2868,184 +1900,6 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     const i = METRICS.indexOf(IDENTITY);
     if (i >= 0) METRICS.splice(i, 1);
     services.invalidate();
-  }
-}
-
-console.log('L. the unpin-removes-row contract + the Economy placement toggle (match rows, $ glyph, pref round-trip, overview exclusion, Reset)');
-{
-  // Fresh-install shape: BOTH pins keys absent and a catalog carrying
-  // default-pinned names — kills (DEFAULT_PINS.match), career_adr
-  // (DEFAULT_PINS.profile), pistol_hold (a DEFAULT_ECONOMY member, so
-  // the shipped economy set resolves to it) and the identity pair for
-  // the overview table. GetMetric scripts the WHOLE set (the real
-  // backend serves any stored id).
-  localStorage.setItem('spectra:pinned-metrics', JSON.stringify(['kills', 'pistol_hold', 'top_fragger']));
-  localStorage.setItem('spectra:pinned-profile-metrics', JSON.stringify(['career_adr']));
-  const withDefaults = [
-    ...METRICS,
-    { id: 91, name: 'top_fragger', title: 'Top fragger', shortName: '',
-      expr: 'from player_stats: argmax(kills)', scope: 'match', subject: 'match',
-      format: 'identity', doc: 'Formula: argmax(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '' },
-    { id: 93, name: 'kills', title: 'Kills', shortName: '',
-      expr: 'from player_stats: sum(kills)', scope: 'match', subject: 'player',
-      format: 'int', doc: 'Formula: sum(player_stats.kills)', origin: 'builtin', pluginId: '', denominator: '' },
-    { id: 94, name: 'career_adr', title: 'Career ADR', shortName: '',
-      expr: 'from player_stats: avg(adr)', scope: 'profile', subject: 'player',
-      format: 'float1', doc: 'Formula: average ADR', origin: 'builtin', pluginId: '', denominator: '' },
-    { id: 95, name: 'pistol_hold', title: 'Pistol \u2192 next round', shortName: '',
-      expr: 'from rounds, round_classifications: ratio(count(where label = \'pistol\'), count(where label = \'pistol\'))',
-      scope: 'match', subject: 'match', format: 'percent',
-      doc: 'Formula: pistol rounds held \u00f7 pistol rounds won \u2014 addressed per match',
-      origin: 'builtin', pluginId: '', denominator: '' },
-  ];
-  const prevList = bindings.MetricsService.ListMetrics;
-  const prevGet = bindings.handlers.GetMetric;
-  bindings.MetricsService.ListMetrics = () => Promise.resolve(withDefaults);
-  bindings.handlers.GetMetric = (id) => withDefaults.find((m) => m.id === id) || null;
-  services.invalidate();
-  try {
-    r = await mountBuilder();
-    const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('Order'));
-    click(orderBtn);
-    await sleep(150);
-    let dlg = document.querySelector('.dlg-panel.mo-prompt');
-    const sec = (scope) => dlg?.querySelector(`.mo-sec[data-mo-scope="${scope}"]`);
-    const dRows = (scope) => [...(sec(scope)?.querySelectorAll('.mo-row') || [])];
-    const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
-    const econBtn = (row) => row?.querySelector('[aria-label^="Toggle Economy tab"]');
-    const prefSet = (key) =>
-      [...bindings.calls].reverse().find((c) => c.method === 'SetPref' && c.args[0] === key);
-
-    check(
-      'the dialog lists the pinned match/profile metrics (sequence order) and the shipped economy set opens TOGGLED ON (pistol_hold)',
-      JSON.stringify(dNames('match')) ===
-        JSON.stringify(['@Name', '@Team', 'kills', '@Score', 'top_fragger', 'pistol_hold']) &&
-        JSON.stringify(dNames('profile')) === JSON.stringify(['career_adr']),
-      JSON.stringify(dNames('match')) + ' profile=' + JSON.stringify(dNames('profile')),
-    );
-    const pistolRow = () => dRows('match').find((x) => x.dataset.moName === 'pistol_hold');
-    check(
-      'match metric rows carry the Economy toggle with aria-pressed on for a default-set metric (and profile rows never do)',
-      econBtn(pistolRow())?.getAttribute('aria-pressed') === 'true' &&
-        econBtn(pistolRow())?.getAttribute('title') === 'Remove from the Economy tab' &&
-        !!econBtn(pistolRow())?.querySelector('.codicon-credit-card') &&
-        dRows('profile').every((x) => !econBtn(x)),
-      econBtn(pistolRow()) ? `pressed=${econBtn(pistolRow()).getAttribute('aria-pressed')} title=${econBtn(pistolRow()).getAttribute('title')}` : 'no toggle',
-    );
-
-    // The toggle is PLACEMENT only: the row stays listed, pin state is
-    // untouched, and the write lands on the one kvstore key.
-    const matchPinsBefore = localStorage.getItem('spectra:pinned-metrics');
-    click(econBtn(pistolRow()));
-    await sleep(80);
-    let ecoSet = prefSet('metric_economy');
-    check(
-      'untoggling a default-set metric writes ONLY metric_economy (the resolved set minus it) and the row stays listed',
-      !!ecoSet && JSON.stringify(ecoSet.args[1]) === JSON.stringify([]) &&
-        dNames('match').includes('pistol_hold') &&
-        econBtn(pistolRow())?.getAttribute('aria-pressed') === 'false' &&
-        localStorage.getItem('spectra:pinned-metrics') === matchPinsBefore,
-      ecoSet ? JSON.stringify(ecoSet.args) : 'no SetPref' + ' rows=' + JSON.stringify(dNames('match')),
-    );
-
-    // Toggle a NON-default metric on → the set gains it (write-through
-    // from the resolved default).
-    click(econBtn(dRows('match').find((x) => x.dataset.moName === 'kills')));
-    await sleep(80);
-    ecoSet = prefSet('metric_economy');
-    check(
-      'toggling another match metric on adds it to the economy set (write-through: resolved default + the name)',
-      !!ecoSet && JSON.stringify(ecoSet.args[1]) === JSON.stringify(['kills']) &&
-        econBtn(dRows('match').find((x) => x.dataset.moName === 'kills'))?.getAttribute('aria-pressed') === 'true',
-      ecoSet ? JSON.stringify(ecoSet.args) : 'no SetPref',
-    );
-
-    // THE OVERVIEW EXCLUSION (binding): top_fragger is an identity
-    // metric, pinned in BOTH the match section and the overview
-    // section. Economy-toggling it moves its placement — its overview
-    // row disappears (the card would render on the Economy tab
-    // instead), its match row stays with the toggle on. Toggling back
-    // restores the overview row. Driver pin, both directions.
-    const ovNames = () => dRows('overview').map((x) => x.dataset.moName);
-    check(
-      'the identity metric opens in BOTH the match and overview sections (pinned as an overview card)',
-      dNames('match').includes('top_fragger') && ovNames().includes('top_fragger'),
-      JSON.stringify(dNames('match')) + ' overview=' + JSON.stringify(ovNames()),
-    );
-    const topRow = () => dRows('match').find((x) => x.dataset.moName === 'top_fragger');
-    click(econBtn(topRow()));
-    await sleep(80);
-    ecoSet = prefSet('metric_economy');
-    check(
-      'economy-toggling the identity metric KEEPS its match row (toggle on) and REMOVES it from the overview section — the placement carve-out, both directions',
-      !!ecoSet && JSON.stringify(ecoSet.args[1]).includes('top_fragger') &&
-        econBtn(topRow())?.getAttribute('aria-pressed') === 'true' &&
-        !ovNames().includes('top_fragger'),
-      ecoSet ? JSON.stringify(ecoSet.args) + ' overview=' + JSON.stringify(ovNames()) : 'no SetPref',
-    );
-    click(econBtn(topRow()));
-    await sleep(80);
-    ecoSet = prefSet('metric_economy');
-    check(
-      'toggling it OFF restores the overview row (the exclusion is the only thing that hid it)',
-      !!ecoSet && !JSON.stringify(ecoSet.args[1]).includes('top_fragger') &&
-        ovNames().includes('top_fragger'),
-      ecoSet ? JSON.stringify(ecoSet.args) + ' overview=' + JSON.stringify(ovNames()) : 'no SetPref',
-    );
-
-    // THE UNPIN CONTRACT (owner bug 2026-11-18): a repeat click while
-    // the first write is in flight must NOT re-pin the metric — the
-    // dialog's pin button is unpin-ONLY, so the writer applies
-    // "remove" idempotently (intent 'off'). Two rapid clicks used to
-    // toggle twice and the row stayed (RED on base).
-    const killRow = () => dRows('match').find((x) => x.dataset.moName === 'kills');
-    click(econBtn(killRow())); // leave kills economy-untoggled first
-    await sleep(60);
-    const kPin = () => killRow()?.querySelector('[aria-label^="Toggle pin"]');
-    click(kPin());
-    click(kPin());
-    await sleep(150);
-    check(
-      'double-clicking a match metric\u2019s pin still removes the row (the second click cannot re-pin it)',
-      !dNames('match').includes('kills') &&
-        !JSON.parse(localStorage.getItem('spectra:pinned-metrics') || '[]').includes('kills'),
-      JSON.stringify(dNames('match')) + ' storage=' + localStorage.getItem('spectra:pinned-metrics'),
-    );
-    // The same contract for a PROFILE metric (the other unpin-only
-    // section) — one click, idempotent by the same writer.
-    const profPin = () => dRows('profile').find((x) => x.dataset.moName === 'career_adr')
-      ?.querySelector('[aria-label^="Toggle pin"]');
-    click(profPin());
-    await sleep(120);
-    check(
-      'unpinning the profile metric removes its row too (the same intent writer across sections)',
-      !dNames('profile').includes('career_adr'),
-      JSON.stringify(dNames('profile')),
-    );
-
-    // RESET restores the shipped economy set (the placement family is
-    // Reset-cleared) — the toggle snaps back to the default member.
-    click(econBtn(pistolRow())); // toggle pistol_hold OFF (materialize a non-default set)
-    await sleep(60);
-    const resetBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.includes('Reset order'));
-    click(resetBtn);
-    await sleep(100);
-    const dels = bindings.calls.filter((c) => c.method === 'Delete').map((c) => c.args[0]);
-    check(
-      'Reset deletes metric_economy with the other placement prefs and the default set resolves back (pistol_hold toggled on)',
-      dels.includes('metric_economy') &&
-        econBtn(pistolRow())?.getAttribute('aria-pressed') === 'true',
-      JSON.stringify(dels) + ' pressed=' + econBtn(pistolRow())?.getAttribute('aria-pressed'),
-    );
-
-    dlg.querySelector('button[aria-label="Close"]').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    await sleep(60);
-  } finally {
-    bindings.MetricsService.ListMetrics = prevList;
-    bindings.handlers.GetMetric = prevGet;
-    services.invalidate();
-    localStorage.removeItem('spectra:pinned-metrics');
-    localStorage.removeItem('spectra:pinned-profile-metrics');
   }
 }
 

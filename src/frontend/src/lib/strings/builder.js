@@ -11,30 +11,6 @@ export const builder = {
   pluginDisabled: 'disabled',
   previewThisMetric: 'Preview this metric',
   previewAria: 'Preview {name}',
-  togglePinAria: 'Toggle pin for {name}',
-  // Pin-button titles — BOTH pin sites compose these (Builder's list
-  // row through pinTitle, the Order dialog's metric row directly): the
-  // scope names the SURFACE the metric reaches (design §3 — match → a
-  // scoreboard column, profile → the player's Career metrics panel),
-  // the state whether it is being pinned or unpinned. Wording is
-  // byte-identical to the four literals pinTitle carried inline before
-  // they moved here (one canonical way, tests pin the exact strings).
-  pinToScoreboard: 'Pin as scoreboard column',
-  pinToProfile: 'Pin to player profile',
-  unpinFromScoreboard: 'Unpin from scoreboard',
-  unpinFromProfile: 'Unpin from player profile',
-  // The Match-overview table's two-way pin (the dialog's third section,
-  // owner item 5 2026-11-18 — that table is the overview's only picker,
-  // so its rows carry BOTH states; Builder's rows never pin here).
-  pinToOverview: 'Pin as overview card',
-  unpinFromOverview: 'Unpin from overview',
-  // The match row's ECONOMY placement toggle (the dialog's scoreboard
-  // section, owner 2026-11-18): state-based titles beside the pin
-  // pair — the toggle moves the metric's stat to the Economy tab (an
-  // identity metric's card leaves the match overview while toggled).
-  economyToggleAria: 'Toggle Economy tab for {name}',
-  economyShow: 'Show on the Economy tab',
-  economyHide: 'Remove from the Economy tab',
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
   // Both delete sites compose these (w19 item 23): the list row's
@@ -43,7 +19,6 @@ export const builder = {
 
   // header
   heading: 'Metric builder',
-  headNotePinned: 'Saved metrics are appended to match reports in Reports · pinned (',
   headNoteScopes:
     ')\n        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as stat cards\n        on a player profile.',
   metricLanguageHelp: 'Metric language help',
@@ -64,8 +39,6 @@ export const builder = {
 
   // list toolbar + filters
   metricsHeading: 'Metrics',
-  orderDialogTitle: 'Set the order of scoreboard columns and profile cards',
-  orderLabel: 'Order…',
   newLabel: 'New',
   searchAria: 'Search metrics',
   searchPlaceholder: 'Search metrics…',
@@ -108,12 +81,6 @@ export const builder = {
   groupBuiltins: 'Builtins',
   groupCustom: 'Custom',
   groupPlugins: 'Plugins',
-  // The Pinning group (the list's fifth filter — client-side: pins live
-  // in localStorage, so the backend cannot narrow on them).
-  pinningLabel: 'Pinning',
-  filterPinned: 'Pinned',
-  filterUnpinned: 'Unpinned',
-
   // empty states + paging
   noMetricsMatch: 'No metrics match “{q}.”',
   noMetricsToShow: 'No metrics to show.',
@@ -159,8 +126,6 @@ export const builder = {
   saving: 'Saving…',
   saved: 'Saved',
   saveMetric: 'Save metric',
-  pinned: 'Pinned',
-  pin: 'Pin',
   saveNoteDefault: 'Saved metrics are appended to match reports in Reports.',
 
   // preview panel

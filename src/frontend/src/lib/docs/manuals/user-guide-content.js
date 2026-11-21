@@ -393,12 +393,12 @@ a player ("this player's trade rate"), a match or a team — and every metric ca
 formula (a value is never invented; missing data shows as a dash, never as a zero).
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
-and one **Filters** panel (origin, scope, subject, format and pinning — the last narrows
-the list to pinned or to unpinned metrics). The list scrolls when it grows
+and one **Filters** panel (origin, scope, subject and format). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
-it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
-**Order…** opens the ordering dialog; **Running metrics** lists the metrics being computed right now
-and can cancel any of them (see *Cancelling a running metric*).
+it and, for metrics you created, a delete. **New** starts a fresh metric;
+**Running metrics** lists the metrics being computed right now
+and can cancel any of them (see *Cancelling a running metric*). Every list shows its metrics in
+their default order: there is no ordering dialog, no pinning and no hiding.
 
 The **editor** on the right has:
 
@@ -416,13 +416,12 @@ The editor heading carries the metric's state chip — *fresh*, *behind*, *faile
 the left of the *built-in* / *read-only source* chip; while a sweep is running, the card shows the
 progress block underneath instead.
 
-**Save metric** stores it; the button reads *Saved* while nothing has changed. **Pin** places the
-metric: a profile-scoped one becomes a row on the player's profile. Saved metrics are appended to match reports in Reports. For a metric you
+**Save metric** stores it; the button reads *Saved* while nothing has changed. Saved metrics are appended to match reports in Reports. For a metric you
 created, that actions line opens with a **trash** button that deletes it; built-in and plugin
 metrics show none (neither here nor on their list row).
 
 **Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
-metrics can't be edited*), but you can still preview, reference and pin them. Plugin metrics
+metrics can't be edited*), but you can still preview and reference them. Plugin metrics
 carry a *read-only source* chip; saving one stores a copy as your own metric.
 
 **Preview** is not available for a statement yet. Save the metric, and its values appear once the sweep has run it (see *Previewing* in the metric language chapter). State chips appear in place
@@ -436,10 +435,9 @@ in the SQL console or any SQLite tool. A formula that mixes a percentile with ot
 shows a second statement beside the first; that one still reads \`?\` where its values belong (they
 are not carried over), and statements like these run one at a time.
 
-**Order…** arranges the profile cards. The Match view's scoreboard, overview cards and Economy cards
-show their default columns and cards whatever this dialog holds: its order, hidden and pinned settings
-do not change them.
-**Reset order** restores the shipped defaults.
+A view shows what its component shows. The Match view's scoreboard, the profile cards and the
+Reports list each show their default columns and cards in their default order. Nothing in the app
+pins, reorders or hides them: to change a view, duplicate its component and edit the copy.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,
@@ -490,8 +488,7 @@ round count beside the value. Every other scoreboard number offers through the m
 one entity per stat, never a recorded twin beside it. Remove a chip with its ✕, or with Backspace
 while the field is
 empty; with no chips the saved document carries no appendix. Picked stats and their sections
-follow the default order of the stats: the metric order dialog does not change the order a
-document is written in, so the same picks always give the same sections.
+follow the default order of the stats, so the same picks always give the same sections.
 
 **Save report** renders the template's body, composes every picked stat's table onto it and
 hands the whole document to the save dialog; the filename ends in .md or .html to match the

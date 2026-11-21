@@ -32,64 +32,6 @@ const (
 	// consumes it.
 	prefsFontSizeKey = "font_size"
 
-	// prefsMetricOrderMatchKey / prefsMetricOrderProfileKey hold the
-	// user's preferred render order of the FIXED stats AND the metrics on
-	// the two surfaces (the fixed stats are sequence entries under their
-	// own '@'-prefixed keys — metricorder.js owns the namespace, the
-	// negative default ranks and the composition). Value: a JSON array of
-	// entry NAMES (a metric's name is the stable identity — ids churn on
-	// plugin replace), scope-matched on read; absent = the default order
-	// (metricorder.js DEFAULT_RANKS + FIXED_RANKS). Written by the
-	// Builder's Order dialog through the kvstore service — the frontend
-	// reads/writes it directly; Go never consumes it (font_size
-	// precedent).
-	prefsMetricOrderMatchKey   = "metric_order_match"
-	prefsMetricOrderProfileKey = "metric_order_profile"
-
-	// prefsMetricOrderOverviewKey / prefsMetricPinsOverviewKey are the
-	// ordering dialog's THIRD table (metricorder.js 'overview' scope —
-	// owner item 5 of 2026-11-18): the ORDER of the match overview's
-	// card metrics and the PIN SET selecting which cards render (absent
-	// = the default card set — metricorder.js DEFAULT_PINS.overview).
-	// Values: JSON arrays of metric NAMES (the same stable identity the
-	// other order pair uses; ids churn on plugin replace). Same
-	// frontend-written / Go-never-consumes contract as the order pair
-	// (font_size precedent); the selection lives in the kvstore rather
-	// than the localStorage pins because the dialog owns this table's
-	// picker (Builder's rows never pin here).
-	prefsMetricOrderOverviewKey = "metric_order_overview"
-	prefsMetricPinsOverviewKey  = "metric_pins_overview"
-
-	// prefsMetricEconomyKey is the Economy tab's CARD SET placement
-	// toggle (metricorder.js ECONOMY_KEY — owner, 2026-11-18): a JSON
-	// array of match-scope metric NAMES whose stats the Economy tab
-	// shows (an identity metric's card moves off the match overview
-	// while toggled — overviewDefs' economy carve-out). Absent = the
-	// shipped card set (metricorder.js DEFAULT_ECONOMY); present =
-	// verbatim. Same frontend-written / Go-never-consumes contract as
-	// the overview pair (font_size precedent).
-	prefsMetricEconomyKey = "metric_economy"
-
-	// prefsMetricHiddenMatchKey / prefsMetricHiddenProfileKey hold which
-	// FIXED stats are hidden from their view (metricorder.js HIDDEN_KEYS:
-	// '@'-prefixed entry names). Absent = nothing hidden; metric
-	// visibility stays pin-driven and is never stored here. Same
-	// frontend-written / Go-never-consumes contract as the order keys.
-	prefsMetricHiddenMatchKey   = "metric_hidden_match"
-	prefsMetricHiddenProfileKey = "metric_hidden_profile"
-
-	// prefsScoreboardStartsTransposedKey is the ordering dialog's THIRD
-	// pref (metricorder.js STARTS_TRANSPOSED_KEY): whether a match's
-	// scoreboard opens TRANSPOSED (players as columns). Boolean,
-	// DEFAULT false (unset/corrupt ⇒ player rows — the frontend reads
-	// only the literal true). Written by the dialog's "Scoreboard starts
-	// transposed" checkbox, read by the Match view once per mount as the
-	// shape a match opens in — it is NOT part of the order sequence and
-	// NOT visibility, so Reset order never touches it. Same
-	// frontend-written / Go-never-consumes contract as the pair above
-	// (font_size precedent).
-	prefsScoreboardStartsTransposedKey = "scoreboard_starts_transposed"
-
 	// The knife/warmup display pref (show knife + warmup rounds in the
 	// round lists) is RETIRED: the extractor discards knife/warmup
 	// rounds at ingest, so every stored round is a counted round and

@@ -160,37 +160,6 @@ export const common = {
   pickerEnterSelect: 'Enter select',
   pickerEscClose: 'Esc close',
 
-  // metric order dialog (MetricOrderDialog.svelte — the order + visibility UI)
-  metricOrderDialogLabel: 'Metric order', // the Dialog accessible name AND its visible <h2>
-  metricOrderFixedCaption: 'Fixed stats lead the list; the eye hides one from the view.', // above the SCOREBOARD listbox
-  // The PROFILE section's caption (unification, owner 2026-11-18): that
-  // table has no fixed rows left — Matches and Win% are pinned metric
-  // tiles now (career_matches / win_pct), so its rows are all pins.
-  metricOrderProfileCaption: 'Pinned metrics in the order they appear; the pin on a row unpins it.',
-  // The THIRD table (owner item 5, 2026-11-18): the match overview's
-  // card set — whose cards show on top of a match, and in what order.
-  metricOrderOverviewSection: 'Match overview (top cards)',
-  metricOrderOverviewCaption: 'Pin a card to show it on the match overview; the arrows set the order.',
-  metricOrderMoveUp: 'Move {name} up', // per-row move button aria-label (fill: name = the row's label)
-  metricOrderMoveDown: 'Move {name} down', // per-row move button aria-label (fill: name = the row's label)
-  metricOrderShow: 'Show {name}', // per-row show/hide toggle, hidden state (fill: name = the label)
-  metricOrderHide: 'Hide {name}', // per-row show/hide toggle, visible state (fill: name = the label)
-  metricOrderHiddenMark: 'hidden', // the in-place state mark on a hidden fixed row
-  metricOrderScoreboardSection: 'Scoreboard (match metrics)', // the match section's heading
-  metricOrderProfileSection: 'Player profile (profile metrics)', // the profile section's heading
-  metricOrderReset: 'Reset order', // the reset button label
-  metricOrderClose: 'Close', // the header ✕ button label
-  // Help line: the text run after the ↑↓ glyphs (the value carries
-  // the exact spacing the static text rendered with).
-  metricOrderHintKeys: ' move · Esc close',
-  metricOrderNote:
-    'Fixed stats and pinned metrics are listed in order — reorder with the arrows, hide a fixed stat with the eye, unpin a metric here with its pin; the overview table picks the match top cards.',
-  // w25 — the Scoreboard section's shape checkbox (after its list):
-  // the label stays tier 1; the behavior sentence rides its title= hint.
-  metricOrderStartsTransposed: 'Scoreboard starts transposed', // the checkbox label
-  metricOrderStartsTransposedHint:
-    'The checkbox sets the shape a match opens in; a match you flip during this session keeps the shape you left it in until you restart Spectra.', // title= tooltip on the checkbox row
-
   // payload browser (PayloadTree.svelte — Explorer's generic payload tree)
   payloadTreeNoKeys: 'No keys match “{query}.”', // the key-filter empty state (fill: query = the filter text)
 

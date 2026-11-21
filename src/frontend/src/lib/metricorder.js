@@ -1,148 +1,21 @@
-// THE metric ordering mechanism (dogfooding design §1) — reader,
-// writer, resolver and the default tables, all in one module (AGENTS
-// "One canonical way"): no view ever composes sequence order itself,
-// and this is the ONLY place `pref ∩ pins` is computed.
+// The metric sequence (dogfooding design §1), default order only.
 //
-// Storage ruling (design §1.1): the order is a durable preference in
-// the kvstore (prefs.go's metric_order_match / metric_order_profile),
-// frontend-written, Go never consumes it — the font_size precedent.
-// NOT localStorage (webstorage.test.js bans new references), NOT the
-// route query (not a link), NOT the registry (not view state).
-// Visibility rides its own twin key pair (metric_hidden_match /
-// metric_hidden_profile) under the same rules — the same writers, the
-// same kvstore, absent ⇒ nothing hidden. A THIRD dialog pref (w25) sits
-// beside them without joining either table: STARTS_TRANSPOSED_KEY, the
-// scoreboard's opening shape (boolean, absent ⇒ off) — see its const
-// below for the placement ruling. And a THIRD TABLE (owner item 5,
-// 2026-11-18): the Match-overview card list carries its own pair —
-// ORDER_KEYS.overview + OVERVIEW_PINS_KEY (kvstore; the selection lives
-// HERE rather than in Builder's localStorage pins because this dialog
-// owns that table — its pin toggles write it directly, exactly like
-// writeHidden writes visibility).
+// Every metric list shows its DEFAULT rank order: the fixed entries (the
+// scoreboard's Name, Team and Score) and the metrics, sequenced by
+// DEFAULT_RANKS (negative fixed ranks lead; a metric with no rank appends in
+// catalog order). Ruling 33 retired pinning, the user metric order, hiding,
+// the economy placement and the transposed toggle: none of them is stored or
+// read, and no list takes a saved order. A view shows what its component shows.
 //
-// Composition (W6, 2026-11-16; unified 2026-11-18 — owner "fully
-// dogfooded" ruling):  composedSequence = resolveOrder over the FIXED
-// stats AND the metrics, one merged entry list.
-//   - The fixed stats that have NO metric twin are first-class
-//     SEQUENCE entries under a namespace key ('@Name', '@Team',
-//     '@Score'): identity is the metric NAME and users may name a
-//     metric anything, so the fixed side needs a namespace no metric
-//     name can hold (metric names are validated identifiers — the '@'
-//     prefix is theirs alone). Every count stat whose seed landed in
-//     the 2026-11-17 addendum (kills / deaths / total_damage /
-//     utility_damage / mvps, and the profile's career_matches /
-//     win_pct) LEFT this block for its metric entity — there is now
-//     exactly ONE "Kills" row in this sequence (the `kills` metric),
-//     never an '@K' twin beside it. They carry NEGATIVE default ranks
-//     (DEFAULT_RANKS), so an absent pref leads with the fixed block
-//     exactly as before and an EXISTING metric-name array re-inserts
-//     them ahead of every metric (today's rendering).
-//     No migration, no version marker: the first user move persists
-//     the full merged sequence (pre-release no-versioning policy);
-//     a stale '@K'-style key in a stored pref simply drops out of the
-//     universe on read (same by-construction drop as the retired
-//     `raw:kda` below).
-//   - A fixed stat's VISIBILITY is separate from its position: hidden
-//     entries stay in the sequence (and stay listed in the ordering
-//     dialog — the toggle never removes a row), they just do not
-//     render on the view. Every fixed stat is hideable except the
-//     scoreboard's Name column (owner ruling: only Name is exempt).
-//   - resolveOrder(pref, catalog) sequences the whole universe;
-//     inSequence / pinnedInSequence stay METRIC-only (the Reports
-//     appendix and the trend picker are metric-only surfaces) — they
-//     strip the fixed keys right after resolveOrder.
-//   - Pins are a pure SELECTION set: the pins array's own order stops
-//     being an ordering source — render order is always the sequence
-//     filtered to the pinned set (pinnedInSequence below).
+// Identity is the metric NAME. Names are unique and stable (ids churn on
+// plugin replace); a name that is not in the catalog drops out of the sequence.
 //
-// Identity is the metric NAME (ids churn on plugin replace; names are
-// UNIQUE and stable), scope-matched on read: a scope-changed or deleted
-// name simply drops out of the sequence — read-time filtering only, no
-// writer ever needs to know about deletes or renames. A renamed
-// USER metric re-enters unknown → its default rank (rank ∞ → append),
-// losing its custom position; that is accepted and documented here
-// (built-ins are immutable, so only user/plugin metrics can hit it).
-import { getPref, setPref, deletePref } from './services.js';
-
-// The kvstore keys (mirror the pins' scope routing —
-// 'spectra:pinned-metrics' = match, 'spectra:pinned-profile-metrics' =
-// profile — without the spectra: prefix; kvstore keys are bare and the
-// file already lives under spectra/).
-export const ORDER_KEYS = Object.freeze({
-  match: 'metric_order_match',
-  profile: 'metric_order_profile',
-  overview: 'metric_order_overview',
-});
-
-// OVERVIEW_PINS_KEY — the Match-overview table's PIN SET (owner item 5,
-// 2026-11-18). The third table orders AND selects: a metric's card
-// shows on the match overview exactly when its name is in this set, and
-// the sequence above decides where. Placement ruling (AGENTS "State
-// placement"): survives a restart, not a link ⇒ kvstore (prefs.go
-// prefsMetricPinsOverviewKey), frontend-written through this module,
-// Go never consumes it — the same home as the order/hidden twins and
-// deliberately NOT Builder's localStorage pins: those are the
-// scoreboard/profile selections (Builder's rows pin there), while this
-// is the ordering dialog's own selection for its own table, written
-// beside its order key. ABSENT ⇒ DEFAULT_PINS.overview resolved by name
-// (a fresh install shows the default card set); PRESENT (even '[]') ⇒
-// the stored selection verbatim — the resolvePins rule unchanged.
-export const OVERVIEW_PINS_KEY = 'metric_pins_overview';
-
-// ECONOMY_KEY — the Economy tab's CARD SET (owner, 2026-11-18): the
-// match-scope metric NAMES whose stats the Economy tab shows instead
-// of (for identity metrics) their match-overview card. Placement
-// ruling (AGENTS "State placement — the forward test"): survives a
-// restart, not a link ⇒ kvstore (prefs.go prefsMetricEconomyKey),
-// frontend-written through this module, Go never consumes it — the
-// same home as the order/hidden/overview twins. ABSENT ⇒
-// DEFAULT_ECONOMY resolved by name (a fresh install renders exactly
-// the cards it ships today); PRESENT (even '[]') ⇒ the stored
-// selection verbatim — the resolvePins rule unchanged. A present key
-// does NOT pick up later-added defaults (same dated caveat as the
-// other families: pre-release, no migration — re-toggle by hand or
-// clear the pref). The toggle does NOT change pin state: a metric can
-// be pinned AND economy-toggled (placement only).
-export const ECONOMY_KEY = 'metric_economy';
-
-// DEFAULT_ECONOMY — the absent-key default card set: exactly the
-// metrics behind the Economy view's shipped summary cards (the six
-// names its hardcoded read wanted — pistol/gap seeds, the force pair
-// and the lost pair), so a fresh install renders today's numbers with
-// no pref present. Membership is metric NAMES (the pins identity,
-// w22). Present key ⇒ verbatim (the dated caveat above).
-export const DEFAULT_ECONOMY = Object.freeze([
-  'pistol_hold',
-  'team_force_wins',
-  'team_force_rounds',
-  'avg_equip_gap',
-  'lost_equip',
-  'team_lost_equip',
-]);
-
-// The VISIBILITY twin: which FIXED stats are hidden from their view.
-// Same routing, same storage rules, absent ⇒ nothing hidden. Namespaced
-// keys ('@Team' …) — a metric can never be hidden here (metric visibility
-// stays pin-driven); these hold fixed-entry keys only.
-export const HIDDEN_KEYS = Object.freeze({
-  match: 'metric_hidden_match',
-  profile: 'metric_hidden_profile',
-});
-
-// The dialog's THIRD pref (w25, 2026-11-16) — the scoreboard's opening
-// SHAPE: "Scoreboard starts transposed" under the dialog's Scoreboard
-// section, boolean, ABSENT = off (player rows). NOT part of the order
-// sequence and not visibility: a separate boolean the Match view reads
-// once per mount as the shape a match OPENS in (a session record for
-// that match still wins), written only by that checkbox — Reset order
-// never touches it.
-// Placement ruling (AGENTS "State placement — the forward test"): it
-// survives a restart and is not a link ⇒ the kvstore (prefs.go's
-// prefsScoreboardStartsTransposedKey; frontend-written, Go never
-// consumes it) — NOT the route query, NOT localStorage
-// (webstorage.test.js bans new references), NOT the view-state registry
-// (that holds only the per-session shape a match was left in).
-export const STARTS_TRANSPOSED_KEY = 'scoreboard_starts_transposed';
+// The fixed entries have their own '@'-prefixed keys, so no metric name can
+// collide with them. Metric-only consumers (the Reports appendix, the trend
+// picker) use inSequence; the merged lists use composedSequence.
+//
+// Raw recorded values (RAW_FIELDS, rawItems, isRawId) derive from the fixed
+// block's fields. Only Score carries one today.
 
 // DEFAULT_RANKS — the default METRIC sequence per scope (design §1.6),
 // name-keyed. A rank places the metric at that position among the
@@ -217,103 +90,6 @@ export const DEFAULT_RANKS = Object.freeze({
     career_avg_enemies_flashed: 10,
     career_avg_util_damage: 11,
   }),
-  // Overview (owner item 5, 2026-11-18): the card table's default order
-  // is exactly the shipped card row — Top fragger, Best ADR, Most util,
-  // Entry opens, Most MVPs. This scope has NO fixed entries (the
-  // universe is the identity metrics — overviewDefs below), so rank ∞
-  // (an unlisted identity metric) appends in catalog order.
-  overview: Object.freeze({
-    top_fragger: 1,
-    best_adr: 2,
-    most_util: 3,
-    entry_opens: 4,
-    most_mvps: 5,
-  }),
-});
-
-// DEFAULT_PINS — the absent-key default SELECTION (design §1.6), the
-// mechanism that makes the conversion visually transparent: these are
-// today's always-on derived columns / cards, so post-conversion they
-// reappear as metric entries in default order. The pins reader
-// (resolvePins below) applies it ONLY when the key is absent — a
-// present key (even '[]') is the stored selection verbatim; an
-// explicit "pin nothing" is never overridden. No migration marker
-// (pre-release no-versioning policy). PINs are METRIC NAMES only (w22,
-// owner 2026-11-16 — the same identity the order prefs use: ids churn
-// on plugin replace, names don't): the fixed stats are sequence
-// entries, never a selection.
-//
-// match = the fourteen always-on scoreboard columns PLUS the five
-// count metrics that left the fixed block (unification, owner
-// 2026-11-18: kills/deaths/total_damage/utility_damage/mvps were
-// always-on columns as '@' entries — as metrics they render only when
-// pinned, so the absent-key default pins them). The fourteen: the four
-// that converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
-// moved (NOT trade_rate — today it is not a scoreboard column), plus
-// w13d's two (owner, 2026-11-16): kda — the scoreboard's KDA column
-// as a metric — and entry_deaths, which the comment this replaces kept
-// unpinned ONLY because it rendered inside the Opening K/D pair cell
-// (that cell is gone: both halves stand as their own columns now).
-// Instances that already saved a pins pref will NOT pick these five
-// up: a present key is the stored selection verbatim — pre-release, no
-// migration (re-pin by hand or clear the pref). profile = the eleven
-// rank-1..11 names below (the always-on card set: the nine dogfood
-// cards plus W3a's Opening-duels rate and Clutches count) PLUS
-// career_matches / win_pct — the two cards that lived as the fixed
-// pair, same present-key caveat as the match five.
-export const DEFAULT_PINS = Object.freeze({
-  match: Object.freeze([
-    'kills',
-    'deaths',
-    'total_damage',
-    'utility_damage',
-    'mvps',
-    'assists',
-    'adr',
-    'kast',
-    'hs_pct',
-    'kd',
-    'kda',
-    'two_k',
-    'three_k',
-    'four_k',
-    'five_k',
-    'entry_kills',
-    'entry_deaths',
-    'trade_kills',
-    'best_streak',
-  ]),
-  profile: Object.freeze([
-    'career_matches',
-    'win_pct',
-    'career_adr',
-    'career_adr_sigma',
-    'career_kd',
-    'career_hs_pct',
-    'career_kast',
-    'career_opening_rate',
-    'career_trade_rate',
-    'career_clutches',
-    'career_clutch_win_rate',
-    'career_avg_enemies_flashed',
-    'career_avg_util_damage',
-  ]),
-  // Overview (owner item 5, 2026-11-18): the shipped card set — the five
-  // M1 identity builtins, same absent-vs-present rule as the other
-  // scopes (a present key is the stored selection verbatim — an
-  // instance that saved one before this table existed re-pins its cards
-  // once; pre-release no migration).
-  overview: Object.freeze([
-    'top_fragger',
-    'best_adr',
-    'most_util',
-    'entry_opens',
-    'most_mvps',
-  ]),
-  // Economy (owner, 2026-11-18): the shipped Economy-tab card set —
-  // the same absent-vs-present rule as the other scopes (DEFAULT_ECONOMY
-  // above; a present key is the stored selection verbatim).
-  economy: DEFAULT_ECONOMY,
 });
 
 // FIXED_BLOCK — the stats that stay FIXED sequence entries because
@@ -386,7 +162,6 @@ export function fixedKeys(scope) {
   return (FIXED_BLOCK[scope] || []).map((e) => e.key);
 }
 
-// FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
 // FIXED_RANKS — the fixed entries' NEGATIVE default ranks, one per
 // scope, in canonical order (@Name -10 … @Score -1 — the descriptors
 // and Score now, after the unification of 2026-11-18 moved the five
@@ -463,50 +238,6 @@ export function isRawId(id) {
   return typeof id === 'string' && id.startsWith('raw:');
 }
 
-// overviewDefs(defs) — THE Match-overview universe (owner item 5,
-// 2026-11-18): match-scope metrics that RECORDED a leader — the
-// identity format (`format: 'identity'`, the engine's argmax rows,
-// doc.go "Identity values"). The criterion: a card can name the
-// metric's leading player + that player's stored value only when the
-// metric carries a value_key — a numeric metric records no winner, so
-// offering it here could only fabricate one. Every reader of the
-// 'overview' scope filters through THIS function — never a second
-// universe rule.
-// `exclude` (owner, 2026-11-18) — the ECONOMY placement carve-out:
-// an economy-toggled metric shows its stat on the Economy tab instead
-// of a match-overview card, so the overview universe is
-// (identity ∧ ¬economy) — ONE rule, threaded through every overview
-// reader (inSequence / composedSequence / pinnedInSequence pass it
-// straight through), never re-spelled at a call site. Absent ⇒ no
-// exclusion (byte-identical pre-economy behaviour).
-export function overviewDefs(defs, exclude) {
-  const out = (defs || []).filter((d) => d && d.scope === 'match' && d.format === 'identity');
-  if (!exclude || !exclude.length) return out;
-  const gone = new Set(exclude);
-  return out.filter((d) => !gone.has(d.name));
-}
-
-// HIDE_EXEMPT — THE visibility exemption (owner ruling, W6): the
-// scoreboard's Name column is structural (the row identity every other
-// cell hangs off), so it is the ONE fixed stat a user may not hide;
-// the profile scope has no fixed stats at all since the 2026-11-18
-// unification (its two cards are metric entries — visibility is
-// pin-driven there). A stored hidden key outside this predicate never
-// hides anything — the exemption wins on read, no writer filter needed.
-const HIDE_EXEMPT = Object.freeze({
-  match: Object.freeze([FIXED_PREFIX + 'Name']),
-  profile: Object.freeze([]),
-});
-
-// hideable(scope, key) — may this fixed entry be hidden at all? Metric
-// entries are never hideable (their visibility is the pin selection),
-// so a metric key answers false.
-export function hideable(scope, key) {
-  if (typeof key !== 'string' || !key.startsWith(FIXED_PREFIX)) return false;
-  if (!(FIXED_BLOCK[scope] || []).some((e) => e.key === key)) return false;
-  return !(HIDE_EXEMPT[scope] || []).includes(key);
-}
-
 // defaultRanker(scope) — name → default rank (∞ for unknown/user/
 // plugin names), the rankOf of design §1.4's resolveOrder contract.
 // Fixed keys rank from FIXED_RANKS; a fixed key this scope does not
@@ -522,34 +253,35 @@ export function defaultRanker(scope) {
   };
 }
 
-// resolveOrder(saved, catalog, scope) — THE pure sequencing function
-// (design §1.4, the whole contract), over the MERGED universe:
-//   0. universe = the scope's fixed keys ++ the catalog's metric names
-//      (deduped, first occurrence wins — the fixed keys seed the dedupe
-//      set, so a metric name wearing a fixed key drops and the fixed
-//      entry stands)
-//   1. base = saved present ? saved ∩ universe (entries, deduped, saved
-//      order; deleted/renamed/wrong-scope names drop out here) : []
-//   2. saved absent  → the DEFAULT sequence: sort(universe, by
-//      (rank, index)) — negative fixed ranks lead, never the pins array
-//   3. each universe entry not in base inserts at the FIRST index whose
-//      rank is greater than its own, else appends — so a newly seeded
-//      metric lands at its default rank wherever that rank's slot sits,
-//      while rank ∞ (user/plugin) never satisfies the predicate and
-//      appends in catalog order
-//   4. return base (now the full sequence)
-// `saved` non-array (absent/corrupt pref) is step 2. A present-but-
-// empty array walks 1/3 and resolves to the same default sequence. A
-// stored METRIC-NAME-ONLY array (every pref written before W6) hits
-// step 3 for the fixed keys, whose negative ranks land them ahead of
-// every metric — today's rendering, no migration.
-// scope defaults to 'match' for the two-argument call shape; every
-// profile-scope call site passes 'profile' explicitly.
-export function resolveOrder(saved, catalog, scope = 'match') {
+
+// DEFAULT_CARDS — the Profile career panel's shipped card set: the metric
+// names the career panel shows, in default rank order. It is a fixed list of
+// the component, not a selection the user can change (ruling 33).
+export const DEFAULT_CARDS = Object.freeze({
+  profile: Object.freeze([
+    'career_matches',
+    'win_pct',
+    'career_adr',
+    'career_adr_sigma',
+    'career_kd',
+    'career_hs_pct',
+    'career_kast',
+    'career_opening_rate',
+    'career_trade_rate',
+    'career_clutches',
+    'career_clutch_win_rate',
+    'career_avg_enemies_flashed',
+    'career_avg_util_damage',
+  ]),
+});
+
+// resolveOrder(catalog, scope) — the default sequence over the scope's fixed
+// entries and the catalog's metric names (deduped, first occurrence wins).
+// Entries sort by (rank, catalog index); an unranked name (rank ∞) appends in
+// catalog order.
+export function resolveOrder(catalog, scope = 'match') {
   const rankOf = defaultRanker(scope);
   const fixed = fixedKeys(scope);
-  // Catalog: metric names only, deduped against the fixed namespace
-  // (first occurrence wins), order kept.
   const seen = new Set(fixed);
   const names = [];
   for (const n of catalog || []) {
@@ -557,296 +289,53 @@ export function resolveOrder(saved, catalog, scope = 'match') {
     seen.add(n);
     names.push(n);
   }
-  const universe = fixed.concat(names);
-
-  if (!Array.isArray(saved)) {
-    // Step 2 — the default sequence (rank asc, ties by universe index).
-    return universe
-      .map((n, i) => ({ n, i }))
-      .sort((a, b) => {
-        const ra = rankOf(a.n);
-        const rb = rankOf(b.n);
-        if (ra !== rb) return ra < rb ? -1 : 1;
-        return a.i - b.i;
-      })
-      .map((x) => x.n);
-  }
-
-  // Step 1 — saved ∩ universe, deduped, saved order.
-  const inUniverse = new Set(universe);
-  const base = [];
-  const placed = new Set();
-  for (const n of saved) {
-    if (typeof n !== 'string' || !inUniverse.has(n) || placed.has(n)) continue;
-    placed.add(n);
-    base.push(n);
-  }
-
-  // Step 3 — everything the pref did not name, at its default rank.
-  // Universe order (fixed keys first) decides which entries try first,
-  // so the fixed block re-assembles ahead of the metrics whatever the
-  // stored array carried.
-  for (const n of universe) {
-    if (placed.has(n)) continue;
-    const r = rankOf(n);
-    const i = base.findIndex((b) => rankOf(b) > r); // ∞ never satisfies ⇒ append
-    if (i === -1) base.push(n);
-    else base.splice(i, 0, n);
-    placed.add(n);
-  }
-  return base;
+  return fixed
+    .concat(names)
+    .map((n, i) => ({ n, i }))
+    .sort((a, b) => {
+      const ra = rankOf(a.n);
+      const rb = rankOf(b.n);
+      if (ra !== rb) return ra < rb ? -1 : 1;
+      return a.i - b.i;
+    })
+    .map((x) => x.n);
 }
 
-// inSequence(scope, saved, defs) — the scope's METRIC defs in sequence
-// order: resolveOrder over the scope-filtered catalog, the fixed keys
-// stripped, mapped back to defs. A def whose scope field is missing
-// counts as match (the store always sets it; the rule matches both
-// views' historical filters). Metric-only by contract — the Reports
-// appendix and the trend picker are metric-only surfaces; a surface
-// that renders fixed stats too composes through composedSequence.
-// scope 'overview' filters through overviewDefs (the identity
-// universe — the ONE rule, no fixed entries to strip).
-export function inSequence(scope, saved, defs, exclude) {
-  const scoped =
-    scope === 'overview'
-      ? overviewDefs(defs, exclude)
-      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+// inSequence(scope, defs) — the scope's metric entries in default order (the
+// fixed entries are left out). defs are the catalog rows ({name, scope, ...}).
+export function inSequence(scope, defs) {
+  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const fixed = new Set(fixedKeys(scope));
-  return resolveOrder(saved, scoped.map((d) => d.name), scope)
+  return resolveOrder(
+    scoped.map((d) => d.name),
+    scope,
+  )
     .filter((n) => !fixed.has(n))
     .map((n) => byName.get(n))
     .filter(Boolean);
 }
 
-// pinnedInSequence(scope, saved, defs, pinNames) — THE composition of
-// design §1.3: `resolveOrder ∩ pins`. Pins SELECT what renders; the
-// sequence decides where the selection renders (the pins array's own
-// order is never consulted — a newly pinned metric appears exactly
-// where the sequence puts it, not appended). The selection carries
-// metric NAMES (w22), so a name with no live def here drops out — the
-// defs intersection IS the render-side drop.
-export function pinnedInSequence(scope, saved, defs, pinNames, exclude) {
-  const pinned = new Set(pinNames || []);
-  return inSequence(scope, saved, defs, exclude).filter((d) => pinned.has(d.name));
-}
-
-// composedSequence(scope, saved, defs, hiddenKeys) — THE merged
-// sequence (W6): fixed stats AND metrics as ONE ordered entry list —
-// the input for the ordering dialog, the Match scoreboard and the
-// profile card block. Each entry:
-//   { kind:'fixed',  key, name, short, label, hidden }
-//   { kind:'metric', key, name, label, def, hidden:false }
-// `key`/`name` are the sequence identity (fixed entries carry their
-// '@'-key — the data-mo-name/focus contract — metrics their name);
-// `label` is the display label (the fixed entry's FULL name from the
-// ONE label table — W13b, so the dialog reads "Kills" — else the
-// metric's title||name) and `short` the fixed entry's compact header
-// form (the SCORE_COLS mirror; metrics carry none — they have no
-// column-header twin here). `hidden` marks a fixed entry the user hid:
-// it stays in the sequence (and stays listed in the dialog) and the
-// VIEW filters it out — never the dialog, never Reports' addable set
-// (lead ruling: visibility is view-display only). Metric visibility is
-// pin-driven and therefore never expressed here.
-export function composedSequence(scope, saved, defs, hiddenKeys = [], exclude) {
+// composedSequence(scope, defs) — the scope's fixed entries and metrics in
+// default order, one merged list. Fixed entries carry kind 'fixed'; metrics
+// carry kind 'metric' and their catalog row as def.
+export function composedSequence(scope, defs) {
   const fixed = new Set(fixedKeys(scope));
-  const hidden = new Set(Array.isArray(hiddenKeys) ? hiddenKeys : []);
-  const scoped =
-    scope === 'overview'
-      ? overviewDefs(defs, exclude)
-      : (defs || []).filter((d) => d && (d.scope || 'match') === scope);
+  const scoped = (defs || []).filter((d) => d && (d.scope || 'match') === scope);
   const byName = new Map(scoped.map((d) => [d.name, d]));
   const out = [];
-  for (const n of resolveOrder(saved, scoped.map((d) => d.name), scope)) {
+  for (const n of resolveOrder(
+    scoped.map((d) => d.name),
+    scope,
+  )) {
     if (fixed.has(n)) {
       const entry = FIXED_BY_KEY.get(n);
-      out.push({
-        kind: 'fixed',
-        key: n,
-        name: n,
-        short: entry.short,
-        label: entry.name,
-        hidden: hideable(scope, n) && hidden.has(n),
-      });
+      out.push({ kind: 'fixed', key: n, name: n, short: entry.short, label: entry.name });
     } else {
       const def = byName.get(n);
       if (!def) continue;
-      out.push({
-        kind: 'metric',
-        key: n,
-        name: n,
-        label: def.title || def.name,
-        def,
-        hidden: false,
-      });
+      out.push({ kind: 'metric', key: n, name: n, label: def.title || def.name, def });
     }
-  }
-  return out;
-}
-
-// readOrder(scope) — the saved sequence, or null when the key is
-// ABSENT (design §1.2: absent = default order). A non-array pref
-// (corrupt) reads as absent too — a broken pref falls back to the
-// default instead of breaking the surface.
-export function readOrder(scope) {
-  return Promise.resolve(getPref(ORDER_KEYS[scope])).then((v) =>
-    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
-  );
-}
-
-// writeOrder(scope, names) — persist the FULL resolved sequence (the
-// first move materializes it: default-resolved, then the move applied).
-// kvstore AutoSave makes every write durable immediately.
-export function writeOrder(scope, names) {
-  return Promise.resolve(setPref(ORDER_KEYS[scope], [...names]));
-}
-
-// resetOrder(scope) — delete the key ⇒ the next read is the default
-// sequence again. The hidden set is its OWN key with its own reset
-// (resetHidden) — the dialog's Reset clears both, but a caller that
-// only means the order never silently wipes visibility.
-export function resetOrder(scope) {
-  return Promise.resolve(deletePref(ORDER_KEYS[scope]));
-}
-
-// readHidden(scope) — the saved hidden fixed-entry keys, [] when the
-// key is ABSENT (absent ⇒ nothing hidden) or corrupt. Same raw-read
-// shape as readOrder: a broken pref must not break the surface.
-export function readHidden(scope) {
-  return Promise.resolve(getPref(HIDDEN_KEYS[scope])).then((v) =>
-    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : [],
-  );
-}
-
-// writeHidden(scope, keys) — persist the hidden set verbatim.
-export function writeHidden(scope, keys) {
-  return Promise.resolve(setPref(HIDDEN_KEYS[scope], [...keys]));
-}
-
-// resetHidden(scope) — delete the key ⇒ nothing hidden again.
-export function resetHidden(scope) {
-  return Promise.resolve(deletePref(HIDDEN_KEYS[scope]));
-}
-
-// readOverviewPins() — the overview table's PIN SET (OVERVIEW_PINS_KEY):
-// null when the key is ABSENT (the reader's null marks "apply the
-// default card set" — resolvePins below owns absent-vs-present; every
-// caller passes the result straight through it).
-export function readOverviewPins() {
-  return Promise.resolve(getPref(OVERVIEW_PINS_KEY)).then((v) =>
-    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
-  );
-}
-
-// writeOverviewPins(names) — persist the selection verbatim (kvstore
-// AutoSave — durable immediately). The ordering dialog's overview
-// section pin toggles are the ONLY writers.
-export function writeOverviewPins(names) {
-  return Promise.resolve(setPref(OVERVIEW_PINS_KEY, [...names]));
-}
-
-// resetOverviewPins() — delete the key ⇒ the default card set again
-// (paired with resetOrder('overview') in the dialog's Reset).
-export function resetOverviewPins() {
-  return Promise.resolve(deletePref(OVERVIEW_PINS_KEY));
-}
-
-// readEconomyPins() — the Economy card set (ECONOMY_KEY): null when
-// the key is ABSENT (the reader's null marks "apply DEFAULT_ECONOMY"
-// — resolvePins below owns absent-vs-present; every caller passes the
-// result straight through it).
-export function readEconomyPins() {
-  return Promise.resolve(getPref(ECONOMY_KEY)).then((v) =>
-    Array.isArray(v) ? v.filter((n) => typeof n === 'string') : null,
-  );
-}
-
-// writeEconomyPins(names) — persist the selection verbatim (kvstore
-// AutoSave — durable immediately). The ordering dialog's economy
-// toggles are the ONLY writers.
-export function writeEconomyPins(names) {
-  return Promise.resolve(setPref(ECONOMY_KEY, [...names]));
-}
-
-// resetEconomyPins() — delete the key ⇒ the shipped card set again
-// (paired with the other resets in the dialog's Reset — the
-// overview/economy PLACEMENT family is Reset-cleared; the scoreboard-
-// transpose pref is not, see STARTS_TRANSPOSED_KEY).
-export function resetEconomyPins() {
-  return Promise.resolve(deletePref(ECONOMY_KEY));
-}
-
-// parseStoredPins(raw) — THE pins READ: the localStorage getItem string
-// → the stored NAME selection (or null when the key is ABSENT —
-// missing, unparseable or a non-array, so a broken key falls to the
-// default rule instead of breaking the surface). Shared by the three
-// sanctioned localStorage sites (Builder the writer, Match and
-// PlayerProfile the readers — AGENTS "One canonical way": the parse and
-// the format live HERE, the sites only perform their getItem call).
-//
-// DROP, NEVER MIGRATE (owner, 2026-11-16 — pre-release no-versioning
-// policy): pins used to be stored as METRIC-ID arrays, and plugin
-// metrics get FRESH database ids on every disable→re-enable
-// (ReplacePluginMetrics), so pins are keyed by the metric NAME now —
-// the same identity metric_order_* already uses. There is NO format
-// flag, NO version, NO conversion pass: an entry that is not a string
-// is dropped by this same read path that carries current names — a
-// numeric id can never be a metric name (names are `[a-z0-9][a-z0-9_-]*`
-// slugs, ids are numbers), so an old id-array resolves to "no
-// selection" naturally and the user re-pins once. Reads never write:
-// the old bytes stay in localStorage untouched until the next real pin
-// toggle overwrites them with names.
-export function parseStoredPins(raw) {
-  if (raw == null) return null;
-  try {
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return null;
-    return [...new Set(arr.filter((n) => typeof n === 'string'))];
-  } catch {
-    return null;
-  }
-}
-
-// readStartsTransposed() — the SHAPE pref (STARTS_TRANSPOSED_KEY), with
-// the absent⇒default idiom of resolvePins below over a boolean:
-// ABSENT or corrupt ⇒ false (the default, player rows). Only the literal
-// `true` reads as on, so a broken pref can never open a match transposed.
-export function readStartsTransposed() {
-  return Promise.resolve(getPref(STARTS_TRANSPOSED_KEY)).then((v) => v === true);
-}
-
-// writeStartsTransposed(on) — persist the shape pref as a strict boolean
-// (kvstore AutoSave — durable immediately). The order dialog's
-// "Scoreboard starts transposed" checkbox is the ONLY writer: toggling a
-// match's scoreboard never writes it, and no reset path deletes it.
-export function writeStartsTransposed(on) {
-  return Promise.resolve(setPref(STARTS_TRANSPOSED_KEY, on === true));
-}
-
-// resolvePins(scope, stored, catalog) — THE absent-vs-present pins
-// rule (design §1.6), the pins readers' shared reader (Builder, Match,
-// PlayerProfile), fed by parseStoredPins above:
-//   stored null  (key ABSENT)  ⇒ DEFAULT_PINS[scope] resolved by NAME
-//     through the catalog — names not yet seeded resolve to nothing,
-//     so before W2's seeds an absent key behaves exactly like today's
-//     "absent ⇒ []";
-//   stored array (key PRESENT) ⇒ the stored NAME selection verbatim,
-//     even '[]' — an explicit "pin nothing" is never overridden. A
-//     name no live metric carries rides along here untouched and is
-//     dropped where the selection meets the defs (every reader
-//     intersects the catalog — pinnedInSequence / composedSequence
-//     above), NEVER by a write: that read-side drop is what keeps a
-//     plugin metric's pin across the window its plugin is disabled and
-//     its name is absent from the catalog.
-// localStorage stays where it is (webstorage.test.js pins the three
-// durable-pref sites); this function only maps the raw read.
-export function resolvePins(scope, stored, catalog) {
-  if (Array.isArray(stored)) return [...stored];
-  const byName = new Map((catalog || []).map((d) => [d.name, d]));
-  const out = [];
-  for (const n of DEFAULT_PINS[scope] || []) {
-    const d = byName.get(n);
-    if (d && Number.isFinite(d.id)) out.push(d.name);
   }
   return out;
 }

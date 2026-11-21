@@ -38,7 +38,7 @@
   });
 
   // The default sequence over the match scope (no order preference is read).
-  const trendItems = $derived(inSequence('match', null, trendDefs));
+  const trendItems = $derived(inSequence('match', trendDefs));
 
   // A selection the loaded catalog no longer carries falls back to the
   // default, but only from a non-default selection.
