@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -116,8 +117,25 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 }
 
 // SetConfig upserts the analysis_config row and returns the stored value.
+//
+// A rule-value edit is a direct recalculation of the affected metrics (ruling
+// 26, no stub metrics): in the same transaction, every metric whose touched
+// set holds the edited rule's analysis table is bumped, with its dependents
+// through metric_deps. Metric values computed under the previous rule
+// generation are then restamped to the new one, so the metrics no edit reached
+// stay fresh (the rule axis would otherwise move every analysis metric).
 func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error) {
-	if _, err := s.db.Exec(
+	old, err := s.GetConfig()
+	if err != nil {
+		return models.AnalysisConfig{}, err
+	}
+	tables := affectedRuleTables(old, c)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(
 		`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
 		 VALUES (1, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET trade_window_s = excluded.trade_window_s,
@@ -126,6 +144,24 @@ func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error
 			rule_version = excluded.rule_version`,
 		c.TradeWindowS, c.EcoFullBuy, c.EcoForce, c.TradeOppDistance, c.RuleVersion,
 	); err != nil {
+		return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
+	}
+	if len(tables) > 0 {
+		if err := bumpRuleAffectedMetrics(tx, tables); err != nil {
+			return models.AnalysisConfig{}, err
+		}
+		if c.RuleVersion != old.RuleVersion {
+			if _, err := tx.Exec(`UPDATE metric_values SET rule_version = ? WHERE rule_version = ?`,
+				c.RuleVersion, old.RuleVersion); err != nil {
+				return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
+			}
+			if _, err := tx.Exec(`UPDATE metric_runs SET rule_version = ? WHERE rule_version = ?`,
+				c.RuleVersion, old.RuleVersion); err != nil {
+				return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return models.AnalysisConfig{}, fmt.Errorf("couldn't save the analysis rules: %w", err)
 	}
 	return s.GetConfig()
@@ -946,11 +982,32 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 //     (latest match by extracted_at, then id), so a rename lands on the
 //     newest import — the name ListPlayers shows for the same id.
 func (s *Store) RebuildCareer() error {
+	return s.rebuildCareer(nil, true)
+}
+
+// RebuildCareerFor rebuilds the career rollup for a change that touched only
+// the given players (their matches were analyzed or deleted). The career
+// values of every other player stay fresh; a player whose career row
+// disappears in the rebuild is invalidated too.
+func (s *Store) RebuildCareerFor(steamIDs []string) error {
+	return s.rebuildCareer(steamIDs, false)
+}
+
+// rebuildCareer regenerates player_career. whole clears every career-grain
+// metric value (the rollup's full input changed); otherwise only the changed
+// players' values are cleared (invalidateCareerValues). Both in one
+// transaction with the rollup, so no crash leaves fresh-looking values built
+// on the pre-rebuild rollup.
+func (s *Store) rebuildCareer(steamIDs []string, whole bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	oldIDs, err := careerSteamIDs(tx)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM player_career`); err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
@@ -964,12 +1021,6 @@ func (s *Store) RebuildCareer() error {
 	// no metric's version moves here, and per-match metric rows are
 	// untouched (their inputs are this match's rows, cleared through
 	// childTables on reprocess instead).
-	if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
-		return fmt.Errorf("couldn't rebuild the career: %w", err)
-	}
-	if _, err := tx.Exec(`DELETE FROM metric_runs WHERE match_id = 0`); err != nil {
-		return fmt.Errorf("couldn't rebuild the career: %w", err)
-	}
 	_, err = tx.Exec(
 		`INSERT INTO player_career (`+playerCareerCols+`)
 		SELECT ps.steam_id,
@@ -991,10 +1042,150 @@ func (s *Store) RebuildCareer() error {
 	if err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
+	// Source-data axis for the stored metrics (design §4): the career values
+	// of the changed players were computed over inputs that just changed.
+	// They are cleared in the SAME transaction, so a crash can never leave
+	// fresh-looking career values built from pre-rebuild data. The sweep
+	// re-derives them: absent → behind. No metric version moves here.
+	scope := steamIDs
+	if whole {
+		scope = nil
+	} else {
+		newIDs, err := careerSteamIDs(tx)
+		if err != nil {
+			return err
+		}
+		have := map[string]bool{}
+		for _, id := range newIDs {
+			have[id] = true
+		}
+		for _, id := range oldIDs {
+			if !have[id] {
+				scope = append(scope, id) // its career row is gone
+			}
+		}
+	}
+	if err := invalidateCareerValues(tx, scope, whole); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't rebuild the career: %w", err)
 	}
 	return nil
+}
+
+// careerSteamIDs lists the players that have a career row.
+func careerSteamIDs(tx *sql.Tx) ([]string, error) {
+	rows, err := tx.Query(`SELECT steam_id FROM player_career`)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't rebuild the career: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// invalidateCareerValues clears the career-grain (match_id = 0) values and run
+// records a rollup change reaches. whole clears every such value. Otherwise a
+// metric bound to :steam_id loses only the rows and runs of the changed
+// players (its units are per player, so the others stay fresh). Every other
+// career metric (a library-wide raw metric, a profile sugar metric) reads the
+// whole rollup, so it loses its whole career bucket.
+func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
+	if whole {
+		if _, err := tx.Exec(`DELETE FROM metric_values WHERE match_id = 0`); err != nil {
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM metric_runs WHERE match_id = 0`); err != nil {
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+		return nil
+	}
+	rows, err := tx.Query(`SELECT id, expr FROM metrics WHERE id IN (
+		SELECT metric_id FROM metric_values WHERE match_id = 0
+		UNION SELECT metric_id FROM metric_runs WHERE match_id = 0)`)
+	if err != nil {
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
+	}
+	type career struct {
+		id   int64
+		expr string
+	}
+	var list []career
+	for rows.Next() {
+		var c career
+		if err := rows.Scan(&c.id, &c.expr); err != nil {
+			rows.Close()
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+		list = append(list, c)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("couldn't rebuild the career: %w", err)
+	}
+	rows.Close()
+	ph := make([]string, len(steamIDs))
+	args := make([]any, len(steamIDs))
+	for i, id := range steamIDs {
+		ph[i] = "?"
+		args[i] = scrub(id)
+	}
+	in := strings.Join(ph, ",")
+	for _, c := range list {
+		if perPlayer(c.expr) {
+			if len(steamIDs) == 0 {
+				continue // no player's career changed: this metric's units stay fresh
+			}
+			ids := append([]any{c.id}, args...)
+			if _, err := tx.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND match_id = 0
+				AND (subject_key IN (`+in+`) OR scope_steam_id IN (`+in+`))`, append(ids, args...)...); err != nil {
+				return fmt.Errorf("couldn't rebuild the career: %w", err)
+			}
+			if _, err := tx.Exec(`DELETE FROM metric_runs WHERE metric_id = ? AND match_id = 0
+				AND scope_steam_id IN (`+in+`)`, ids...); err != nil {
+				return fmt.Errorf("couldn't rebuild the career: %w", err)
+			}
+			continue
+		}
+		if _, err := tx.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND match_id = 0`, c.id); err != nil {
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM metric_runs WHERE metric_id = ? AND match_id = 0`, c.id); err != nil {
+			return fmt.Errorf("couldn't rebuild the career: %w", err)
+		}
+	}
+	return nil
+}
+
+// perPlayer reports whether a metric's career values are units of one player:
+// a raw statement bound to :steam_id and no match or round (the raw bind shapes
+// rawBehind accepts for a per-player unit).
+func perPlayer(expr string) bool {
+	if !IsRawExpr(expr) {
+		return false
+	}
+	st, gerr := AnalyzeMetricSQL(expr, nil)
+	if gerr != nil {
+		return false
+	}
+	steam := false
+	for _, b := range st.Binds {
+		switch b {
+		case ":steam_id":
+			steam = true
+		case ":match_id", ":round":
+			return false
+		}
+	}
+	return steam
 }
 
 // GetCareer returns one player's career rollup (ErrNotFound when absent).

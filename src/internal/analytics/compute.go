@@ -221,7 +221,11 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		return err
 	}
 	if rebuildCareer {
-		if err := st.RebuildCareer(); err != nil {
+		steamIDs := make([]string, 0, len(players))
+		for _, p := range players {
+			steamIDs = append(steamIDs, p.SteamID)
+		}
+		if err := st.RebuildCareerFor(steamIDs); err != nil {
 			return fmt.Errorf("couldn't rebuild the career: %w", err)
 		}
 	}

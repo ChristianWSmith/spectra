@@ -203,16 +203,16 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 		t.Errorf("live = %+v, want fresh (not behind)", c)
 	}
 
-	// (3) Rule axis: a rules bump (SetConfig's rule_version + 1) makes
-	// every existing row fail rule_version < live — behind immediately,
-	// with NO write of its own (design §4: SetConfig stays a pure config
-	// bump).
+	// (3) Rule axis: a rules bump (SetConfig's rule_version + 1) moves no
+	// fact-only metric. This fixture reads only facts (events, players), so
+	// its row stays fresh across the bump, with NO write of its own. The
+	// analysis-touched case is pinned in metric_scope_test.go.
 	cfg.RuleVersion = live + 1
 	if _, err := s.SetConfig(cfg); err != nil {
 		t.Fatalf("SetConfig: %v", err)
 	}
-	if c := coverageOf(t, s, m.ID, live+1); !c.Behind || c.FreshRows != 0 {
-		t.Errorf("rules-behind = %+v, want behind with 0 fresh (outdated rows present but invisible)", c)
+	if c := coverageOf(t, s, m.ID, live+1); c.Behind || c.FreshRows != 1 {
+		t.Errorf("fact-only across a rules bump = %+v, want fresh with its row", c)
 	}
 	if n := storedCount(t, s, m.ID); n != 1 {
 		t.Errorf("physical rows after rules bump = %d, want 1 (no write — deletion is the sweep's alone)", n)

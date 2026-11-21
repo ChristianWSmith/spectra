@@ -43,7 +43,12 @@ type MetricCoverage struct {
 // analyzed_rule_version 0/never-behind precedent. Kept as one const so
 // the sweep's selection, the canonical read and any coverage query can
 // never spell the comparison differently (design §4: one spelling).
-const metricValueFreshCond = `v.metric_version >= m.version AND v.rule_version >= ?`
+//
+// The rule stamp counts only for an analysis-dependent metric (its touched
+// set holds an analysis table, see analysisTables): a fact-only metric
+// stays fresh across an analysis code bump, because nothing it reads was
+// computed under the rules.
+var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >= ? OR NOT ` + analysisTouchedExpr + `)`
 
 // MetricCoverage answers THE behind predicate (stored-metrics design §4,
 // "one spelling shared by sweep and read") for EVERY metric, in the
@@ -137,7 +142,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 			CASE WHEN (
 				EXISTS (SELECT 1 FROM metric_values v
 					WHERE v.metric_id = m.id
-					  AND (v.metric_version < m.version OR v.rule_version < ?))
+					  AND (v.metric_version < m.version OR (v.rule_version < ? AND `+analysisTouchedExpr+`)))
 				OR (m.scope = 'match' AND EXISTS (
 					SELECT 1 FROM matches mt WHERE mt.status = 'ready'
 					  AND NOT EXISTS (SELECT 1 FROM metric_values v
@@ -193,7 +198,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		case p.touched == "":
 			c.Behind = true
 		case IsRawExpr(p.expr):
-			behind, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.expr)
+			behind, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
 			if err != nil {
 				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 			}
@@ -243,10 +248,15 @@ func IsRawExpr(expr string) bool {
 // :match_id with :round (each ready round). A ready match with no rounds
 // contributes no round unit, so it is covered (no-data, not behind). A
 // statement whose binds cannot be classified is behind, never fresh.
-func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, expr string) (bool, error) {
+func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched, expr string) (bool, error) {
 	st, gerr := AnalyzeMetricSQL(expr, nil)
 	if gerr != nil {
 		return true, nil
+	}
+	// Only an analysis-dependent metric answers to the rule generation: a
+	// fact-only run is fresh across a rule bump (rule 0 is always met).
+	if !touchesAnalysis(touched) {
+		liveRuleVersion = 0
 	}
 	used := map[string]bool{}
 	for _, b := range st.Binds {
@@ -479,6 +489,16 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
 	}
+	// This run's result is a change to metricID's data for its own unit:
+	// the dependents bound to that unit go behind, the rest stay fresh
+	// (scope-aware cascade). A library-wide run is a whole change.
+	sc := changeScope{MatchID: scope.MatchID, SteamID: scope.SteamID}
+	if scope.MatchID == 0 && scope.SteamID == "" {
+		sc.Whole = true
+	}
+	if err := invalidateDependents(tx, metricID, sc); err != nil {
+		return fmt.Errorf("couldn't save the metric values: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
 	}
@@ -509,7 +529,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 // analysis rule version — metricValueFreshCond, prefixed with the join
 // it needs (m.version). value_key rides every row (the identity slot —
 // §3.3 — ” on numeric rows).
-const metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.dim, v.value, v.value_key, v.n
+var metricValueFreshSQL = `SELECT v.metric_id, v.subject_key, v.dim, v.value, v.value_key, v.n
 	FROM metric_values v
 	JOIN metrics m ON m.id = v.metric_id
 	WHERE ` + metricValueFreshCond
