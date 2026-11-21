@@ -449,6 +449,13 @@ func (s *MetricsService) GetMetricValuesForMatch(matchID int64, metricIDs []int6
 	return s.st.GetMetricValuesForMatch(matchID, metricIDs)
 }
 
+// GetMetricValuesForRound returns the requested metrics' fresh stored rows
+// for ONE round of one match (matchID > 0, round > 0); metricIDs empty =
+// every metric. Round-grain metrics bind :match_id and :round (ruling 41).
+func (s *MetricsService) GetMetricValuesForRound(matchID, round int64, metricIDs []int64) ([]models.MetricValue, error) {
+	return s.st.GetMetricValuesForRound(matchID, round, metricIDs)
+}
+
 // GetMetricValuesForPlayer returns fresh CAREER rows (match_id = 0):
 // steamID "" = the whole career bucket (every player — the value
 // slot's unit coverage plus Builder's all-players profile preview),

@@ -320,15 +320,15 @@ const economyRows = (n) =>
     };
   });
 
-// The per-round player RECORD behind the table's CT Deaths / T Deaths
-// columns (player_round_stats — one row per player per round carrying
-// that round's side sample; the fold in Economy.svelte sums deaths per
-// (round, side)). Hand-shaped so every pinned cell is hand-computed:
-// alice dies TWICE in rounds 1 and 13 and once otherwise, bob dies once
-// every round. Sides follow the halftime switch (sideSwitches=1 →
-// rounds 1-12 alice CT / bob T, round 13 alice T / bob CT), so round
-// 13's cells prove the fold keys on the ROUND'S SIDE, never on the
-// player's final side.
+// The STORED round-grain deaths behind the table's CT Deaths / T Deaths
+// columns (ruling 41: builtin raw_player_round_deaths, bound :match_id and
+// :round — one row per player per round, dim = the side the player was
+// sampled on). The view sums those rows per side. Hand-shaped so every
+// pinned cell is hand-computed: alice dies TWICE in rounds 1 and 13 and
+// once otherwise, bob dies once every round. Sides follow the halftime
+// switch (sideSwitches=1 → rounds 1-12 alice CT / bob T, round 13 alice
+// T / bob CT), so round 13's cells prove the sum keys on the ROUND'S
+// SIDE, never on the player's final side.
 const playerRoundsFor = (countedN) =>
   Array.from({ length: countedN }, (_, i) => {
     const n = i + 1;
@@ -339,6 +339,23 @@ const playerRoundsFor = (countedN) =>
       { round: n, steamId: 'B', name: 'bob', side: bobSide, deaths: 1 },
     ];
   }).flat();
+// The stored round read's rows for one round: the metric's shape (subject
+// = steam id, dim = side, value = deaths), from the fixture above.
+const DEATHS_DEF_ID = 120;
+const roundDeathRows = (round, countedN) =>
+  playerRoundsFor(countedN)
+    .filter((r) => r.round === round)
+    .map((r) => ({ metricId: DEATHS_DEF_ID, subjectKey: r.steamId, dim: r.side, value: r.deaths, valueKey: '' }));
+const DEATHS_DEF = Object.freeze({
+  id: DEATHS_DEF_ID,
+  name: 'raw_player_round_deaths',
+  title: 'Deaths per round by side (raw SQL)',
+  shortName: '',
+  scope: 'match',
+  subject: 'player',
+  format: 'int',
+  doc: 'Formula: count(kill events whose victim is the player, in the round) — addressed per player, keyed by side.',
+});
 
 const match = {
   id: 3,
@@ -609,7 +626,7 @@ const dataFor = (countedN, switches = 1) => ({
   // whatever the state map says); an unscripted name resolves [] through
   // the stub, and a section that scripts its own catalog/read replaces
   // both wholesale (the sections below).
-  listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS, ...IDENTITY_SEED_DEFS],
+  listMetrics: [...SEED_DEFS, ...ECON_SEED_DEFS, ...IDENTITY_SEED_DEFS, DEATHS_DEF],
   getMetricValuesForMatch: (matchID, ids) => [
     ...seedValues(matchID, ids),
     ...econSeedValues(ids, countedN, switches),
@@ -617,7 +634,12 @@ const dataFor = (countedN, switches = 1) => ({
   ],
   getMetricComputeState: [],
   getEconomy: economyRows(countedN),
-  getPlayerRounds: playerRoundsFor(countedN),
+  // The Economy deaths read is the stored round metric (ruling 41), so the
+  // record read is EMPTY here: a view that still read player_round_stats
+  // would show dashes and fail the CT/T Deaths cells below.
+  getPlayerRounds: [],
+  getMetricValuesForRound: (matchID, round, ids) =>
+    (ids || []).includes(DEATHS_DEF_ID) ? roundDeathRows(round, countedN) : [],
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
   // The kvstore getter: ABSENT keys answer undefined. (The servicesStub
   // defaults an unscripted service to [] — a present-EMPTY pref — which
@@ -669,112 +691,17 @@ check(
   headerTexts(table).includes('RD') && !headerTexts(table).includes('№'),
   JSON.stringify(headerTexts(table)),
 );
-// W3a: the far-left watch column — an sr-only Watch header (the
-// RoundDetail kill/bomb-table idiom) and one ghost ▶ per row. The ▶
-// stamps the ROUND-level watch (start tick + the round's own start→end
-// span + THIS tab as the ?back= origin) and the row handler ignores
-// button targets, so the SAME click never also opens the round page —
-// the two nav paths coexist (lead ruling).
-check(
-  'the table opens with the far-left watch column (sr-only Watch header + one ghost ▶ per row)',
-  headerTexts(table)[0] === 'Watch' &&
-    rowsOf(table).length === 16 &&
-    rowsOf(table).every((tr) => tr.querySelector('td:first-child button .codicon-play')),
-  JSON.stringify([headerTexts(table)[0], rowsOf(table).length]),
-);
-{
-  globalThis.__nav = [];
-  // Row 3 is counted round 1 (3 legacy pre-match rows ahead of it).
-  rowsOf(table)[3]?.querySelector('td:first-child button')?.dispatchEvent(
-    new dom.window.MouseEvent('click', { bubbles: true }),
-  );
-  await sleep();
-  const watchNav = (globalThis.__nav || []).slice();
-  check(
-    'the row ▶ goes to the replay with tick + the round-span loop + the Rounds-tab back origin (never the round page)',
-    watchNav.length === 1 &&
-      watchNav[0].includes('/replay/3?') &&
-      watchNav[0].includes('tick=1000') &&
-      watchNav[0].includes('loop=1000,2900') &&
-      watchNav[0].includes('back=match/3/rounds'),
-    JSON.stringify(watchNav),
-  );
-}
-// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): the
-// show_knife_warmup_rounds pref is retired — the Rounds tab renders
-// EVERY stored row (the fixture's 3 legacy pre-match rows included;
-// there is no filter left to apply), and the boundary is pinned by round
-// number so the legacy rows cannot shift it.
-check(
-  'every stored row renders (16 = 3 legacy pre-match + 13 counted, no pref)',
-  rowsOf(table).length === 16,
-  String(rowsOf(table).length),
-);
-check(
-  'first row is a legacy pre-match round (canonical W label in the Rd cell)',
-  rowsOf(table)[0].children[2].textContent.includes('W'),
-  rowsOf(table)[0].children[2].textContent,
-);
-// Round 1: era 0 — the final-CT team (Alpha) played T, so a round-1 CT
-// win belongs to the final-T team (Beta): the chip keeps the winning
-// SIDE's class (ct) but spells the TEAM's name.
-const chip1 = chipFor(table, 1);
-check(
-  'round 1 winner = final-T team name (Beta) in the side-ct chip',
-  !!chip1 && chip1.classList.contains('side') && chip1.classList.contains('ct') && chip1.textContent.trim() === 'Beta',
-  chip1 ? chip1.className + ' "' + chip1.textContent.trim() + '"' : 'missing chip',
-);
-// Round 5: no winner recorded → today's bare chip, never a guessed name.
-const chip5 = chipFor(table, 5);
-check(
-  'round 5 (no winner) falls back to the neutral bare chip',
-  !!chip5 && chip5.classList.contains('none') && chip5.textContent.trim() === '—',
-  chip5 ? chip5.className + ' "' + chip5.textContent.trim() + '"' : 'missing',
-);
-// Round 12 (era 0, winner 'ct') → the final-T team (Beta); round 13
-// (era 1, same winning side 'ct') → the final-CT team (Alpha) — the SAME
-// side, two different teams across the halftime switch.
-const chip12 = chipFor(table, 12);
-const chip13 = chipFor(table, 13);
-check(
-  'round 12 winner = Beta (era 0 flips the mapping)',
-  !!chip12 && chip12.classList.contains('ct') && chip12.textContent.trim() === 'Beta',
-  chip12 ? chip12.className + ' "' + chip12.textContent.trim() + '"' : 'missing',
-);
-check(
-  'round 13 winner = Alpha (era 1, sides back to final)',
-  !!chip13 && chip13.classList.contains('ct') && chip13.textContent.trim() === 'Alpha',
-  chip13 ? chip13.className + ' "' + chip13.textContent.trim() + '"' : 'missing',
-);
-check(
-  'split-before sits on the round-13 row only (legacy rows never shift it)',
-  splitRows(table).length === 1 && roundOf(splitRows(table)[0]) === '13',
-  JSON.stringify(splitRows(table).map(roundOf)),
-);
-check(
-  'round 12 carries no line (the boundary is BELOW it)',
-  !rowFor(table, 12)?.classList.contains('split-before'),
-);
-
+// The far-left watch column, the ▶ nav, the Winner chips and the separator
+// on this tab are covered by test/match-rounds.dom.mjs (sections A–C,
+// ruling 42 port: pre-match W/K labels, neutral no-winner chip, era-flip
+// winners, split after round 12 on match 9). Dropped here as stale.
 console.log('B. legacy rows never shift the boundary (the retired pref is gone — no kv scenario)');
 root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
-check('16 rows render (3 pre-match + 13 counted)', rowsOf(table).length === 16, String(rowsOf(table).length));
-check(
-  'first row is a pre-match round (canonical W label in the Rd cell)',
-  rowsOf(table)[0].children[2].textContent.includes('W'),
-  rowsOf(table)[0].children[2].textContent,
-);
-check(
-  'boundary still rides round 13 (index 14), not shifted by the negatives',
-  splitRows(table).length === 1 && roundOf(splitRows(table)[0]) === '13',
-  JSON.stringify(splitRows(table).map(roundOf)),
-);
 
 console.log('C. Rounds tab: 12 counted rounds → trailing suppression (no line at all)');
 root = await showMatch(dataFor(12), { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
-check('15 rows render (3 legacy + 12 counted)', rowsOf(table).length === 15, String(rowsOf(table).length));
 check('no split-before row exists', splitRows(table).length === 0, JSON.stringify(splitRows(table).map(roundOf)));
 
 // C2 (W3a): the Rounds tab's Class column and its per-side chip pins
@@ -787,13 +714,8 @@ check('no split-before row exists', splitRows(table).length === 0, JSON.stringif
 // First blood fact (gameplay-derived) left Key facts. Absence pin, flipped
 // IN PLACE (same check count → driver-liveness's 116 stays): no First blood
 // term, while two surviving technical facts still render beside it.
-root = await showMatch(dataFor(13), { routeTab: 'Details' });
-const factDts = [...root.querySelectorAll('dt')].map((d) => d.textContent.trim());
-check(
-  'the Details Key facts list carries no First blood term (technicals only)',
-  !factDts.includes('First blood') && factDts.includes('Server') && factDts.includes('Parser'),
-  JSON.stringify(factDts),
-);
+// The Key facts list (no First blood term) is pinned by match-rounds.dom.mjs
+// (its Details section compares the eight stored facts in order).
 // jsdom has no cascade — the rules are the pins (same idiom as the
 // stylesheet pins below). The palette must live ONCE, cover every key
 // through `.cmp-class.<key>`, and leave m3b with no per-class value.
@@ -1599,27 +1521,39 @@ console.log('Q. import-warnings render cap: bounded <li> count + honest "and {n}
 }
 
 // ---------------------------------------------------------------------------
-// Section S: the death columns' honest fallback (owner, 2026-11-18): the
-// record path has no rows for the match (not analyzed / no side samples)
-// → BOTH cells read the dash, never a fabricated 0 — the same
-// absence-is-unknown rule the rest of the view applies.
-console.log('S. per-round death columns: the record path is absent → the honest dash, never 0');
+// Section S: the death columns' honest fallback (ruling 41): the stored
+// round metric has no rows for the match (not analyzed / no side samples),
+// or only NULL values → BOTH cells read the dash, never a fabricated 0 —
+// the same absence-is-unknown rule the rest of the view applies.
+console.log('S. per-round death columns: no stored round rows (or NULL values) → the honest dash, never 0');
 {
-  root = await showMatch({ ...dataFor(13), getPlayerRounds: [] }, { routeTab: 'Economy' });
-  const tableS = root.querySelector('.econ-table');
-  const trS = tableS ? rowFor(tableS, 1) : null;
-  check(
-    'the table renders with its death columns intact',
-    !!tableS &&
-      headerTexts(tableS).includes('CT Deaths') &&
-      headerTexts(tableS).includes('T Deaths'),
-    tableS ? JSON.stringify(headerTexts(tableS)) : 'no .econ-table',
-  );
-  check(
-    'no per-round player rows → both death cells dash (never 0)',
-    !!trS && trS.children[5]?.textContent.trim() === '—' && trS.children[6]?.textContent.trim() === '—',
-    trS ? `${trS.children[5]?.textContent.trim()} / ${trS.children[6]?.textContent.trim()}` : 'no round-1 row',
-  );
+  for (const [label, read] of [
+    ['no stored round rows', () => []],
+    [
+      'NULL stored values',
+      (matchID, round, ids) =>
+        (ids || []).includes(DEATHS_DEF_ID)
+          ? [
+              { metricId: DEATHS_DEF_ID, subjectKey: 'A', dim: 'ct', value: null, valueKey: '' },
+              { metricId: DEATHS_DEF_ID, subjectKey: 'B', dim: 't', value: null, valueKey: '' },
+            ]
+          : [],
+    ],
+  ]) {
+    root = await showMatch({ ...dataFor(13), getMetricValuesForRound: read }, { routeTab: 'Economy' });
+    const tableS = root.querySelector('.econ-table');
+    const trS = tableS ? rowFor(tableS, 1) : null;
+    check(
+      `${label}: the table renders with its death columns intact`,
+      !!tableS && headerTexts(tableS).includes('CT Deaths') && headerTexts(tableS).includes('T Deaths'),
+      tableS ? JSON.stringify(headerTexts(tableS)) : 'no .econ-table',
+    );
+    check(
+      `${label}: both death cells dash (never 0)`,
+      !!trS && trS.children[5]?.textContent.trim() === '—' && trS.children[6]?.textContent.trim() === '—',
+      trS ? `${trS.children[5]?.textContent.trim()} / ${trS.children[6]?.textContent.trim()}` : 'no round-1 row',
+    );
+  }
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

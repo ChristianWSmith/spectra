@@ -44,6 +44,7 @@ export const MetricsService = {
   // (stored-metrics design §5 — the read-path tests drive these; the
   // value reads are cachedRead, the state read deliberately is not).
   GetMetricValuesForMatch: rec('GetMetricValuesForMatch'),
+  GetMetricValuesForRound: rec('GetMetricValuesForRound'),
   GetMetricValuesForPlayer: rec('GetMetricValuesForPlayer'),
   // The match-grain SERIES read (the profile history's per-match halves).
   GetMetricSeries: rec('GetMetricSeries'),

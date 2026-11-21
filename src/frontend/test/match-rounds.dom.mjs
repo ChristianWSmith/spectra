@@ -135,21 +135,35 @@ const ROUNDS_7 = [
   [14, 't', 'Bomb exploded', 50, 'A', '', '', '', '', '', '', 0, 11000, 11500],
 ];
 
+// Match 9 (ruling 42 port of the Rounds-tab pre-match checks): two pre-match
+// rows (-2 K, -1 W) ahead of 13 counted rounds. Round 5 has no winner (the
+// neutral chip); rounds 1 and 12 are CT wins in era 0 (the final-T side),
+// round 13 a CT win after the switch.
+const ROUNDS_9 = [
+  [-2, '', '', null, '', '', '', '', '', '', '', 0, 0, null],
+  [-1, '', '', null, '', '', '', '', '', '', '', 0, 0, null],
+  ...Array.from({ length: 13 }, (_, i) => {
+    const n = i + 1;
+    const winner = n === 5 ? '' : n === 1 || n === 12 || n === 13 ? 'ct' : 't';
+    return [n, winner, 'Elimination', 30, 'A', '', '', '', '', '', '', 0, 100 * n, 100 * n + 50];
+  }),
+];
+
 const FACTS_7 = [
   'Test Server', 64.0, 125742, 181793649, '2026-11-18 21:00:15.014365321 +0000 UTC',
   'demoinfocs/v6', '/demos/de_mirage.dem.zst', 2,
 ];
 const FACTS_8 = [null, null, null, null, null, '', '', 0];
 
-const SWITCHES = { 7: 1, 8: 0 };
-const TEAMS = { 7: [['ct', 'Alpha Squad'], ['t', '']], 8: [] };
+const SWITCHES = { 7: 1, 8: 0, 9: 1 };
+const TEAMS = { 7: [['ct', 'Alpha Squad'], ['t', '']], 8: [], 9: [['ct', 'Alpha Squad'], ['t', 'Charlie Crew']] };
 
 // The component queries, answered for the fixture (a match with no rows answers none).
 function answer(sql) {
   const m = /\b(?:match_id|id) = (\d+)/.exec(sql);
   const matchId = m ? Number(m[1]) : NaN;
   if (/FROM rounds r/.test(sql)) {
-    const rows = matchId === 7 ? ROUNDS_7 : [];
+    const rows = matchId === 7 ? ROUNDS_7 : matchId === 9 ? ROUNDS_9 : [];
     return { columns: [], rows: rows.map((r) => [...r]) };
   }
   // The switches query also reads FROM matches, so it is answered first.
@@ -157,8 +171,8 @@ function answer(sql) {
     return { columns: [], rows: matchId in SWITCHES ? [[SWITCHES[matchId]]] : [] };
   }
   if (/FROM matches WHERE id/.test(sql)) {
-    if (matchId !== 7 && matchId !== 8) return { columns: [], rows: [] };
-    return { columns: [], rows: [matchId === 7 ? [...FACTS_7] : [...FACTS_8]] };
+    if (matchId !== 7 && matchId !== 8 && matchId !== 9) return { columns: [], rows: [] };
+    return { columns: [], rows: [matchId === 8 ? [...FACTS_8] : [...FACTS_7]] };
   }
   if (/FROM player_stats/.test(sql)) {
     return { columns: [], rows: matchId === 7 ? ROSTER_7.map((r) => [...r]) : [] };
@@ -293,6 +307,24 @@ click(rowsOf(root)[3].querySelector('td .comb-name-btn'));
 await settle(4);
 check('a name button opens the profile, not the round', navCalls.length === 1 && navCalls[0] === '/player/' + ALPHA, JSON.stringify(navCalls));
 
+// --- E2. pre-match labels, winner chips and the boundary (match 9) ----------------------------
+console.log('E2. pre-match K/W labels, winners, neutral chip, boundary (match 9)');
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 9, steamId: null, round: null }, props: roundsProps() });
+const r9 = rowsOf(root);
+check('match 9: every stored row renders (2 pre-match + 13 counted, no pref)', r9.length === 15, String(r9.length));
+check('match 9: the pre-match rows carry the K and W labels in the Rd cell',
+  text(r9[0].children[2]) === 'K' && text(r9[1].children[2]) === 'W', `${text(r9[0].children[2])} / ${text(r9[1].children[2])}`);
+const winnerChip = (i) => r9[i].children[3].querySelector('.chip');
+check('match 9: round 1 (CT win, era 0) names the final-T team', text(r9[2].children[3]) === 'Charlie Crew', text(r9[2].children[3]));
+const chip5r = winnerChip(6);
+check('match 9: round 5 (no winner) falls back to the neutral bare chip',
+  !!chip5r && chip5r.classList.contains('none') && text(chip5r) === '—', chip5r ? chip5r.className + ' "' + text(chip5r) + '"' : 'missing');
+check('match 9: round 12 (era 0, CT win) names the final-T team', text(r9[13].children[3]) === 'Charlie Crew', text(r9[13].children[3]));
+check('match 9: round 13 (era 1, CT win) names the final-CT team', text(r9[14].children[3]) === 'Alpha Squad', text(r9[14].children[3]));
+const splits9 = r9.map((tr, i) => (tr.classList.contains('split-before') ? i + 1 : 0)).filter(Boolean);
+check('match 9: the boundary rides round 13 (1-based row 15), not shifted by the pre-match rows',
+  JSON.stringify(splits9) === '[15]', JSON.stringify(splits9));
+
 // --- F. the compare box ----------------------------------------------------------------------------
 console.log('F. compare picks');
 root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: roundsProps([1]) });
@@ -342,8 +374,6 @@ root = await mountPanel({ source: panels.DETAILS_SOURCE, context: { matchId: 8, 
 const nullFacts = [...root.querySelectorAll('dl.facts > div')].map((d) => text(d.querySelector('dd')));
 check('a NULL fact shows a dash, and a stored zero shows 0',
   JSON.stringify(nullFacts) === JSON.stringify(['—', '—', '—', '—', '—', '—', '0', '—']), JSON.stringify(nullFacts));
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 9, steamId: null, round: null }, props: roundsProps() });
-check('a match with no stored rounds shows no rows', rowsOf(root).length === 0, String(rowsOf(root).length));
 root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 8, steamId: null, round: null }, props: roundsProps() });
 check('a match with no stored rounds shows no rows (match 8)', rowsOf(root).length === 0);
 

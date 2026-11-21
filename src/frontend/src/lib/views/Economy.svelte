@@ -6,9 +6,9 @@
     getMatch,
     getTeamNames,
     getScoreboard,
-    getPlayerRounds,
     listMetrics,
     getMetricValuesForMatch,
+    getMetricValuesForRound,
     errText,
   } from '../services.js';
   import { fmtMoney, fmtMetric } from '../fmt.js';
@@ -30,10 +30,6 @@
 
   let rows = $state([]); // models.EconomyRow[]
   let rounds = $state([]); // RoundRow[] (round context)
-  // player_round_stats rows for the match (models.PlayerRoundStat — one
-  // per player per round, with that round's side sample): the record
-  // behind the table's per-round death columns (fold below).
-  let playerRounds = $state([]);
   let match = $state(null); // models.Match — side switches + final score
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
@@ -48,13 +44,11 @@
       getMatch(id).catch(() => null),
       getTeamNames(id).catch(() => null),
       getScoreboard(id, 'kills', true).catch(() => []),
-      getPlayerRounds(id).catch(() => []),
     ])
-      .then(([eco, rs, m, tn, sb, prs]) => {
+      .then(([eco, rs, m, tn, sb]) => {
         if (!live) return;
         rows = eco || [];
         rounds = rs || [];
-        playerRounds = prs || [];
         match = m;
         // Team display names, keyed by each team's FINAL side — demo clan
         // name → synthesized team_<player> → bare side (lib/teams.js).
@@ -75,32 +69,53 @@
     return () => (live = false);
   });
 
-  // The table's per-round death columns (owner, 2026-11-18): CT Deaths
-  // / T Deaths — one number per SIDE per ROUND, folded from the
-  // per-round player RECORD (player_round_stats, read through the one
-  // getPlayerRounds fetch; internal/analytics rounds.go counts those
-  // deaths at analyze time). Criterion: ROUND-grain values come from
-  // round records; MATCH-grain statistics come from metrics — the
-  // metrics system cannot express a round at all (metric rows are
-  // addressed per player/team/match subject and partitioned only by
-  // side/map/weapon — internal/metrics compile.go Address), so no
-  // metric path exists at round grain. A side with no player rows in a
-  // round (no side sample / not analyzed) is UNKNOWN — the dash, never
-  // a fabricated 0.
-  const deathsByRound = $derived.by(() => {
-    const out = new Map();
-    for (const pr of playerRounds) {
-      if (pr.side !== 'ct' && pr.side !== 't') continue;
-      let e = out.get(pr.round);
-      if (!e) {
-        e = { ct: null, t: null };
-        out.set(pr.round, e);
-      }
-      e[pr.side] = (e[pr.side] ?? 0) + (pr.deaths || 0);
+  // The table's per-round death columns (owner ruling 41): CT Deaths /
+  // T Deaths — one number per SIDE per ROUND, summed from the STORED
+  // round-grain metric raw_player_round_deaths (bound :match_id and
+  // :round; one row per player per round, dim = the side that player was
+  // sampled on). The view reads that metric through the round read and
+  // never derives deaths from event or record rows. A side with no stored
+  // row, or only NULL rows, in a round is UNKNOWN: the dash, never a 0.
+  const DEATHS_METRIC = 'raw_player_round_deaths';
+  let roundDeaths = $state(new Map()); // round → { ct, t } (null = no data)
+  $effect(() => {
+    let live = true;
+    // Counted rounds only: a round number is 1-based, and the legacy
+    // pre-match rows have none to read (the round read refuses them).
+    const nums = rounds.map((r) => r.number).filter((n) => n > 0);
+    if (!nums.length) {
+      roundDeaths = new Map();
+      return undefined;
     }
-    return out;
+    listMetrics()
+      .then((defs) => {
+        const def = (defs || []).find((d) => d && d.name === DEATHS_METRIC);
+        if (!def) return [];
+        return Promise.all(
+          nums.map((n) =>
+            getMetricValuesForRound(id, n, [def.id])
+              .then((vals) => [n, vals || []])
+              .catch(() => [n, []]),
+          ),
+        );
+      })
+      .catch(() => [])
+      .then((pairs) => {
+        if (!live) return;
+        const out = new Map();
+        for (const [n, vals] of pairs) {
+          const e = { ct: null, t: null };
+          for (const v of vals) {
+            if ((v.dim !== 'ct' && v.dim !== 't') || v.value == null) continue;
+            e[v.dim] = (e[v.dim] ?? 0) + v.value;
+          }
+          out.set(n, e);
+        }
+        roundDeaths = out;
+      });
+    return () => (live = false);
   });
-  const deathsFor = (round, side) => deathsByRound.get(round)?.[side] ?? null;
+  const deathsFor = (round, side) => roundDeaths.get(round)?.[side] ?? null;
 
   // The summary CARDS read their stored metric rows through the ONE
   // economy card set (owner, 2026-11-18): which stats the tab shows
