@@ -160,8 +160,8 @@ type EventRow struct {
 	AttackerPosX *float64 `json:"attackerPosX,omitempty"`
 	AttackerPosY *float64 `json:"attackerPosY,omitempty"`
 	AttackerPosZ *float64 `json:"attackerPosZ,omitempty"`
-	// AttackerInAir mirrors events.attacker_inair — the payload-only
-	// kill flag (see models.Event.AttackerInAir).
+	// AttackerInAir is the attacker's in_air at the kill tick, read from
+	// player_ticks (eventRowFrom's tick join; 0 with no tick row).
 	AttackerInAir bool `json:"attackerInAir"`
 }
 

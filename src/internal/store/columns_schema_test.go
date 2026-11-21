@@ -126,6 +126,31 @@ func TestDiscardedWarmupColumnsGone(t *testing.T) {
 	}
 }
 
+// TestStampDropsColumnsGone pins the tick-join stamp drops (A3): the
+// events.same_side and events.attacker_inair stamps are not columns any
+// more. Their seeds and the timeline read join player_ticks, so a fresh
+// database must not grow either column back. events.capped_dmg stays
+// (ruling 18): it is an engine emulation no per-tick row can reproduce.
+func TestStampDropsColumnsGone(t *testing.T) {
+	s := openMem(t)
+	have, err := s.schemaColumns("events")
+	if err != nil {
+		t.Fatalf("schemaColumns(events): %v", err)
+	}
+	names := make(map[string]bool, len(have))
+	for _, c := range have {
+		names[c.Name] = true
+	}
+	for _, col := range []string{"same_side", "attacker_inair"} {
+		if names[col] {
+			t.Errorf("events.%s exists in the baseline — it is a tick-join read now, not a stamp", col)
+		}
+	}
+	if !names["capped_dmg"] {
+		t.Error("events.capped_dmg is missing — it stays an ingest stamp (ruling 18)")
+	}
+}
+
 // TestReplaceMatchRowsPlaceholderCount: replaceMatchRows derives the
 // placeholder count from the column list, so a list whose commas stop
 // matching its columns would bind the wrong arity. One row through every

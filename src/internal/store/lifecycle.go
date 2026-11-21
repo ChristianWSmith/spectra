@@ -275,8 +275,8 @@ const (
 	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value, team`
 
 	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
-		headshot, wallbang, noscope, through_smoke, attacker_blind, attacker_inair, assisted_flash, distance,
-		hitgroup, dmg, same_side, capped_dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z`
+		headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
+		hitgroup, dmg, capped_dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z`
 
 	// chatCols is the chat row WITHOUT match_id; the reader additionally
 	// selects `id, ` + it + `, decrypted` (decrypted is M4 provenance with
@@ -301,6 +301,10 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	oldPlayers, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
 	for _, table := range childTables {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, matchID); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
@@ -462,7 +466,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	eventsStmt, err := tx.Prepare(
 		`INSERT INTO events (match_id, ` + eventCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -472,8 +476,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		if _, err := eventsStmt.Exec(
 			matchID, i, e.Tick, e.Round, scrub(e.Kind), scrub(e.Attacker), scrub(e.Victim),
 			scrub(e.Assister), scrub(e.Weapon), b2i(e.Headshot), b2i(e.Wallbang), b2i(e.Noscope),
-			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AttackerInAir), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
-			e.Dmg, b2i(e.SameSide), e.CappedDmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
+			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
+			e.Dmg, e.CappedDmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
 			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
 			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ),
 		); err != nil {
@@ -557,6 +561,15 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	if err := affectedOrNotFound(res, "saving the match data"); err != nil {
 		return err
 	}
+	// Every player the save replaced, before and after: a reprocess can drop
+	// a player whose career the old rows fed.
+	newPlayers, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
+	if err := markMatchWritesBehind(tx, matchID, matchDataTables(), append(oldPlayers, newPlayers...)); err != nil {
+		return fmt.Errorf("saving the match data: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
 	}
@@ -600,6 +613,11 @@ func (s *Store) DeleteMatchData(id int64) error {
 	if err != nil {
 		return err
 	}
+	// The deleted match's data leaves: every metric it fed goes behind (a
+	// library-wide one as a whole, a per-match one for this match only).
+	if err := markMatchWritesBehind(tx, id, matchDataTables(), steamIDs); err != nil {
+		return fmt.Errorf("couldn't delete the match data: %w", err)
+	}
 	for _, table := range append(append([]string(nil), childTables...), streamedChildTables...) {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, id); err != nil {
 			return fmt.Errorf("couldn't delete the match data: %w", err)
@@ -613,6 +631,8 @@ func (s *Store) DeleteMatchData(id int64) error {
 	}
 	// The deleted match's rows no longer exist — refresh the career rollup
 	// so profiles stay correct (M3: LibraryService.DeleteMatch → rebuild).
+	// Only the career values of metrics that read a table this delete changed
+	// are cleared (invalidateCareerValues).
 	if err := s.RebuildCareerFor(steamIDs); err != nil {
 		return err
 	}
@@ -662,8 +682,21 @@ func (s *Store) replaceMatchRows(op, table, cols string, matchID int64, n int, f
 			return err
 		}
 	}
+	if err := markTableWriteBehind(tx, matchID, table); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
+}
+
+// markTableWriteBehind is markMatchWritesBehind for a write to one table of
+// one match: it reads the match's players inside the caller's transaction.
+func markTableWriteBehind(tx *sql.Tx, matchID int64, table string) error {
+	players, err := playerIDsOf(tx, []int64{matchID})
+	if err != nil {
+		return err
+	}
+	return markMatchWritesBehind(tx, matchID, []string{table}, players)
 }

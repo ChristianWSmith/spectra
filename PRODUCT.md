@@ -84,7 +84,7 @@ differentiators:
   language:** every string the UI or an export renders (labels, titles,
   tooltips, empty states, chips, placeholder/help copy, glossary and
   seed-doc prose, exported report prose, surfaced errors) names what the
-  user knows — matches, players, rounds, stats, metrics, pins, built-ins,
+  user knows — matches, players, rounds, stats, metrics, built-ins,
   processing/behind states — and never an implementation artifact: no
   programming language, no database table or column, no developer
   shorthand. Metric expression text, the expression editor and the SQL

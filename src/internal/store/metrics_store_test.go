@@ -253,6 +253,8 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"raw_round_util_dmg":    {"match", "int", ""},
 	"raw_round_won":         {"match", "int", ""},
 	"raw_round_duration_s":  {"match", "float2", ""},
+	"alive_count":           {"match", "int", ""},
+	"clutch":                {"match", "int", ""},
 }
 
 // nonPlayerSubjects is the subject-axis pin beside the shape map: the
@@ -274,6 +276,7 @@ var nonPlayerSubjects = map[string]string{
 	"team_force_wins":      "team",  // ME8 exception audit, 2026-11-18
 	"team_force_rounds":    "team",  // ME8 exception audit, 2026-11-18
 	"raw_round_duration_s": "match", // F2 raw seed: per match round, no player subject
+	"alive_count":          "team",  // alive-count situation family (PLAN item 19): subject = side
 }
 
 // TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
@@ -454,7 +457,7 @@ func TestMetricCRUD(t *testing.T) {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(all) != len(schemaSeededBuiltins)+1 {
-		t.Fatalf("list len = %d, want %d (142 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
+		t.Fatalf("list len = %d, want %d (144 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
 	}
 	for i, m := range all[:len(schemaSeededBuiltins)] {
 		if m.Origin != "builtin" {
@@ -661,12 +664,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 375 {
-		t.Fatalf("reference list = %d rows, want 375 (142 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 377 {
+		t.Fatalf("reference list = %d rows, want 377 (144 builtins + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
-	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 75 {
-		t.Errorf("window sizes = %v, want [100 100 100 75]", sizes)
+	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 77 {
+		t.Errorf("window sizes = %v, want [100 100 100 77]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -771,8 +774,8 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 292 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 292, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 294 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 294, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
 		t.Errorf("mid cursor rows = %v…, want the 259 ids after the cursor", metricIDs(page.Rows)[:3])
@@ -932,8 +935,8 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
 	ref := metricRowsRef(t, s) // 109 builtins + 5 user + 2 plugin
-	if len(ref) != 149 {
-		t.Fatalf("reference = %d rows, want 149 (142 builtins + 5 user + 2 plugin)", len(ref))
+	if len(ref) != 151 {
+		t.Fatalf("reference = %d rows, want 151 (144 builtins + 5 user + 2 plugin)", len(ref))
 	}
 
 	// Every filter value in ONE window: exactly its checked set, in the

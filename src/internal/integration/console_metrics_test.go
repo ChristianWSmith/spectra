@@ -64,8 +64,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 142 {
-		t.Fatalf("builtins = %d, want 142 (109 sugar builtins + 33 raw-SQL fold seeds F2; trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum + the M7 weapon addendum + the grammar addendum + the M7 weapon-damage flip + the view-aggregate relocation addendum — the 2026-11-17/18 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6 rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit)", len(res.Rows))
+	if len(res.Rows) != 144 {
+		t.Fatalf("builtins = %d, want 144 (109 sugar builtins + 33 raw-SQL fold seeds F2 + clutch and alive_count; trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum + the M7 weapon addendum + the grammar addendum + the M7 weapon-damage flip + the view-aggregate relocation addendum — the 2026-11-17/18 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6 rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit)", len(res.Rows))
 	}
 	scopes := map[string]int{}
 	// A seed over an EMPTY primary or an empty corpus table honestly
@@ -78,6 +78,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 		"clutches": true, "clutch_win_rate": true, "clutch_avg_size": true,
 		"clutch_avg_hp": true, "clutch_avg_equip": true,
 		"career_clutches": true, "career_clutch_win_rate": true,
+		// PLAN item 19: the fixture has no player_ticks or kill rounds to fold.
+		"clutch": true, "alive_count": true,
 	}
 	for _, r := range res.Rows {
 		name, expr, scope, subject := r[0].(string), r[1].(string), r[2].(string), r[4].(string)
@@ -126,8 +128,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6
 	// rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit).
 	// + 33 raw fold seeds (F2), all match scope.
-	if scopes["match"] != 109 || scopes["profile"] != 33 {
-		t.Errorf("scope split = %d match / %d profile, want 109 / 33", scopes["match"], scopes["profile"])
+	if scopes["match"] != 111 || scopes["profile"] != 33 {
+		t.Errorf("scope split = %d match / %d profile, want 111 / 33", scopes["match"], scopes["profile"])
 	}
 }
 

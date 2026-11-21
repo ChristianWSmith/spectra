@@ -137,6 +137,41 @@ Settled (owner, 2026-11-20 unless noted):
     no stub metrics. A rule-value edit makes the app recalculate the affected
     metrics directly. This replaces the stub design in 03 §6 and B4. `analysis_config`
     stays denied to metric reads.
+27. **attacker_inair (owner ruling, 2026-11-20):** accept the two-row change.
+    The tick-sample `in_air` and the payload flag disagree on two HE grenade
+    kills in seven golden demos. A3 drops the column. The golden fixture gets an
+    explained update.
+28. **Empty preference lists (owner question, answered as context):** these are
+    the Match and Profile view settings, which C4 moves into placement rows.
+    Options were a sentinel row (recommended) or a `props` marker. Ruling
+    deferred to C4 start.
+29. **Raw values numeric or NULL (owner ruling, 2026-11-20):** keep numeric-only.
+    Text output is shown by the component from the numeric value. No text
+    column.
+30. **Duplicate fold metrics (owner ruling, 2026-11-20):** accepted, with the
+    expectation that the duplicates are retired. The retirement happens in F3.
+31. **Delete over-invalidation (owner ruling, 2026-11-20):** fix next. Narrow
+    the career rebuild on delete to the touched tables.
+32. **Naming (owner ruling, 2026-11-20):** the engagements family is renamed
+    "kill tags", since a kill can carry several classes. The alive-count family
+    name is still open.
+
+33. **Pinning removed (owner ruling, 2026-11-20):** the whole pinning concept goes:
+    pinned metrics, metric ordering, hiding and economy pins. Dogfooded view
+    components replace it: a user changes a view by duplicating and editing its
+    component. Retired keys are not absorbed, including
+    `scoreboard_starts_transposed`: the scoreboard becomes a dogfooded builtin
+    component that a user can duplicate and edit. Ruling 28 (empty lists) no
+    longer applies.
+34. **Component context (owner ruling, 2026-11-20):** a mounted component gets a
+    read-only `context` (`matchId`, `steamId`, `round`) from the surface that
+    mounts it. `metric()` and `query()` default their binds from it. The context
+    is never stored in a placement row. See 04 §3.
+35. **Component composability (owner note, 2026-11-20):** components are
+    composable, and the builtin views are built from smaller components.
+36. **Nested mount API (owner ruling, 2026-11-20):** a component mounts child
+    components itself and passes `context` down. Placements stay per surface and
+    name only the top-level component. See 04 §3.5.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -350,11 +385,13 @@ action (`04 §6`). Guide section in the same wave.
   `docslockstep` green.
 - **Deps:** C2.
 
-**C4 · Builtin placements and pref absorption.** Builtin default layouts render
-through placement rows. Absorb each pref key into placement `props`/`hidden`
-rows with present/absent semantics preserved. Reset deletes rows. Retire the
-two localStorage pin keys. Guide note on the retained absent-default /
-present-verbatim caveat.
+**C4 · Builtin placements and pinning removal.** Builtin default layouts render
+through placement rows. Pinning is removed (ruling 33): retire the pin, order,
+hide and transposed keys and the two localStorage pin keys, with no absorption.
+The scoreboard becomes a dogfooded builtin component. Reset deletes placement rows.
+Guide note on the absent-default / present-verbatim caveat for placements.
+The empty-list question (ruling 28) no longer applies, because no list preference
+survives.
 - **Check:** per-key tests for absent, present and Reset; no reader remains
   for a retired key (grep).
 - **Deps:** C2, C3.

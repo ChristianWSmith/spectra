@@ -56,12 +56,15 @@ CREATE TABLE IF NOT EXISTS layout_placements (
 - A placement that references a missing component renders an error frame in its
   slot. It does not crash the surface.
 
-**Prefs absorbed.** `metric_order_match`, `metric_order_profile`,
-`metric_order_overview`, `metric_pins_overview`, `metric_economy`,
-`metric_hidden_match`, `metric_hidden_profile` and
-`scoreboard_starts_transposed` become placement rows and their `props`/`hidden`
-fields. The two localStorage pin keys are retired. `loop_secs` stays a plain
-pref. The exact per-key mapping is written in the wave that does it.
+**Pinning is removed (owner ruling 33, 2026-11-20).** The pinning concept goes
+away entirely: pinned metrics, metric ordering, hiding, and the economy pins.
+A view shows what its component shows; a user changes a view by duplicating and
+editing its component. Those keys are retired, not absorbed: `metric_order_match`,
+`metric_order_profile`, `metric_order_overview`, `metric_pins_overview`,
+`metric_economy`, `metric_hidden_match`, `metric_hidden_profile`, `scoreboard_starts_transposed`,
+and the two localStorage pin keys. The scoreboard becomes a dogfooded builtin
+component, so a user who wants it transposed duplicates it and edits it.
+`loop_secs` stays a plain pref.
 
 ## 3. What a component can read
 
@@ -74,7 +77,16 @@ A component receives a small read API from the app. Nothing else.
   same allowlist as metrics (`03-QUERIES.md` §2). **Decided** (owner,
   2026-11-20).
 - `navigate(route)`: the route query used everywhere else.
-- Its own props.
+- Its own props (the component's own settings, from its placement row).
+- A read-only `context` object (owner ruling 34, 2026-11-20): `{ matchId,
+  steamId, round }`, set by the surface that mounts the component. The Match
+  view sets `matchId`; the Profile view sets `matchId` and `steamId`; the
+  Builder preview sets the chosen match or player. `metric(name)` and `query()`
+  take their binds from `context` by default, so `metric('adr')` reads this
+  match's or player's value. Explicit arguments override the context for other
+  matches or players. A component that does not read the context ignores it.
+  The context is never stored in a placement row, because a placement belongs
+  to a surface, not to a match.
 
 **Freshness.** Metric reads are fresh-or-state. `query` reads are live and carry
 no freshness; they never had any.
@@ -85,6 +97,14 @@ live in the component that shows the value. The metric carries none. **Decided.*
 **Bots.** The frontend bot filter (`players.js`: `isHuman` / `listedPlayers`) is
 available as a helper. Components that display rosters should use it, and the
 builtins do.
+
+**Composability (owner note, 2026-11-20).** Components are composable, and the
+builtins use that: a builtin view is assembled from smaller components rather
+than written as one monolith. A child component receives the same read-only
+`context` from its parent, and a failure in a child shows in the child's own
+frame, not the parent's. **Decided (owner ruling 36, 2026-11-20): a nested mount
+API.** A component mounts child components itself, passing `context` down. The
+placement rows stay per surface and name only the top-level component.
 
 ## 4. Error boundaries
 
