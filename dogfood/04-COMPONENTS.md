@@ -102,8 +102,9 @@ builtins do.
 builtins use that: a builtin view is assembled from smaller components rather
 than written as one monolith. A child component receives the same read-only
 `context` from its parent, and a failure in a child shows in the child's own
-frame, not the parent's. The mechanism is not yet decided (see PLAN ruling 35):
-either a nested mount API, or composition expressed only through placements.
+frame, not the parent's. **Decided (owner ruling 36, 2026-11-20): a nested mount
+API.** A component mounts child components itself, passing `context` down. The
+placement rows stay per surface and name only the top-level component.
 
 ## 4. Error boundaries
 
