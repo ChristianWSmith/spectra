@@ -217,6 +217,11 @@ Settled (owner, 2026-11-20 unless noted):
     listed by name, documented, and reviewed when added. Anything not listed stays
     refused at save. This keeps user components inside the read API and the
     Svelte runtime, while letting the builtin panels stay editable. See 04 §5.
+46. **Builtin copy goes through the string catalog (owner ruling, 2026-11-21).**
+    Builtin panels take their user-facing copy from the string catalog, through
+    the helper surface of ruling 45, not from English literals in the panel
+    source. This supersedes the earlier acceptance of English panel copy (ruling
+    3) and prepares the app for localization. Item C5i.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -497,6 +502,11 @@ its own commit with the guide updated in the same change.
   report or metric shows the edit; a metric edit marks its values behind and
   recomputes them; restore brings back the shipped text and recomputes it; the
   snapshot check still passes with the shipped SQL in place.
+- **C5i · Builtin copy through the string catalog (ruling 46).** Every
+  user-facing string in a builtin panel is read through the string catalog helper
+  (ruling 45), not written as an English literal. **Deps:** C5f (helper surface).
+  **Check:** the strings audit finds no English literal in a builtin panel; every
+  builtin's rendered text is unchanged in English; each string has a catalog key.
 - **C5g · Rename engagements to "kill tags" (ruling 32).** Schema, API and UI names,
   and the guide. Run after C5b so the panels' names change once. **Deps:** C5b. **Check:** grep finds no `engagements` label in user-facing text; the
   stored data is unchanged.
