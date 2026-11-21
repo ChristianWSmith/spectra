@@ -388,7 +388,9 @@ func TestPluginOpsTriggerTheMetricSweep(t *testing.T) {
 // selects them, and the sweep the op triggered computes them to FRESH —
 // not stuck behind for the session. The hook is wired exactly as main
 // wires it (afterPluginOp → scheduleSweep over the useSweeps(nil, nil)
-// unbudgeted seam); waitFor tolerates the async hop.
+// unbudgeted seam); waitForSweepIdle waits on the scheduler's own idle
+// signal (no wall-clock budget), since the hook starts the sweep before
+// the op returns.
 func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
 	useTempXDG(t)
 	f := newSeededFixture(t)
@@ -401,9 +403,10 @@ func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
 		t.Fatalf("InstallPlugin: %v", err)
 	}
 	upID := mustID(t, f.st, "root_count")
-	waitFor(t, "the installed plugin metric to compute", func() bool {
-		return stateOf(t, f.svc, upID).State == MetricStateFresh
-	})
+	waitForSweepIdle(t, f)
+	if got := stateOf(t, f.svc, upID).State; got != MetricStateFresh {
+		t.Fatalf("installed plugin metric state after the sweep = %q, want %q", got, MetricStateFresh)
+	}
 	if n := storedRows(t, f.st, upID); n == 0 {
 		t.Fatal("installed plugin metric has no stored rows after the sweep")
 	}
@@ -424,9 +427,10 @@ func TestPluginEnableRecomputesPluginMetrics(t *testing.T) {
 		t.Fatalf("SetPluginEnabled(true): %v", err)
 	}
 	upID = mustID(t, f.st, "root_count") // delete + re-insert churns the id
-	waitFor(t, "the re-enabled plugin metric to compute", func() bool {
-		return stateOf(t, f.svc, upID).State == MetricStateFresh
-	})
+	waitForSweepIdle(t, f)
+	if got := stateOf(t, f.svc, upID).State; got != MetricStateFresh {
+		t.Fatalf("re-enabled plugin metric state after the sweep = %q, want %q", got, MetricStateFresh)
+	}
 	if n := storedRows(t, f.st, upID); n == 0 {
 		t.Fatal("re-enabled plugin metric has no stored rows after the sweep")
 	}

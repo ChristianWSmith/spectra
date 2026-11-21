@@ -302,10 +302,13 @@ func TestSweepTakesTokenBeforeComputeLock(t *testing.T) {
 
 	// The token returns → the parked sweep proceeds and computes.
 	b.Release()
-	waitFor(t, "the token-released sweep", func() bool {
-		behind, _ := coverageOf(t, f.st, probe.ID)
-		return !behind
-	})
+	// Wait on the scheduler's idle signal, not a wall-clock budget: the
+	// sweep covers every seeded built-in (~147 metrics) and can outlast any
+	// fixed deadline while still making progress.
+	waitForSweepIdle(t, f)
+	if behind, _ := coverageOf(t, f.st, probe.ID); behind {
+		t.Fatal("the token-released sweep finished but the probe is still behind")
+	}
 }
 
 // TestSweepCoalescesTriggers pins the scheduler's coalescing (design
@@ -331,15 +334,14 @@ func TestSweepCoalescesTriggers(t *testing.T) {
 	second := f.save(t, models.MetricRow{Name: "coal_second", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE kind = 'kill' AND match_id = :match_id"})
 	lock.Unlock()
 
-	waitFor(t, "both metrics fresh (the parked sweep + its coalesced follow-up)", func() bool {
-		for _, id := range []int64{first.ID, second.ID} {
-			behind, _ := coverageOf(t, f.st, id)
-			if behind {
-				return false
-			}
+	// Wait on the scheduler's idle signal (the parked sweep and its
+	// coalesced follow-up have both drained), not a wall-clock budget.
+	waitForSweepIdle(t, f)
+	for _, id := range []int64{first.ID, second.ID} {
+		if behind, _ := coverageOf(t, f.st, id); behind {
+			t.Fatalf("metric %d still behind after the parked sweep and its coalesced follow-up drained", id)
 		}
-		return true
-	})
+	}
 	if s := stateOf(t, f.svc, second.ID); s.State != MetricStateFresh {
 		t.Errorf("second metric state = %q, want %q after the coalesced run", s.State, MetricStateFresh)
 	}
