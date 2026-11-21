@@ -40,7 +40,7 @@ import * as S from '../strings/index.js';
  * precedence). With `steam_id` bound, `value`/`n`/`valueKey` are that
  * player's (null when the state is not 'fresh'); otherwise `rows` carries
  * every fresh row of the bound unit. `rows` is empty unless 'fresh'.
- * @typedef {{name: string, state: MetricState, error: string,
+ * @typedef {{name: string, doc: string, state: MetricState, error: string,
  *   value: number|null, n: number|null, valueKey: string, rows: MetricRow[]}} MetricRead
  *
  * @typedef {{columns: string[], rows: any[][]}} QueryRead
@@ -189,6 +189,7 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
         : [];
       return {
         name,
+        doc: def.doc || '',
         state,
         error: state === 'failed' ? (entry && entry.error) || '' : '',
         value: fresh && steam ? row.value : null,
