@@ -293,8 +293,8 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	}
 	// The expression is one SELECT or WITH statement, gated by the one save
 	// gate (metrics.CheckRawSave). Its scope is its binds (03-QUERIES.md §5),
-	// so the stored scope must agree with them. A metric() reference is
-	// refused by the gate, so a saved statement has no dependency edges.
+	// so the stored scope must agree with them. Its metric() references must
+	// name existing metrics; they become its dependency edges.
 	gate, perr, err := metrics.CheckRawSave(s.st, m.Expr)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -306,7 +306,13 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 		return models.MetricRow{}, fmt.Errorf("a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is %s-scoped)", want)
 	}
 	m.Touched = gate.Touched
-	var depNames []string // metric() references: refused by the gate, so none
+	// metric() references are the statement's dependency edges. A reference
+	// that would close a cycle through this metric is refused before any
+	// write, using the same walk as the rest of the graph.
+	depNames := metrics.RefNames(gate)
+	if err := s.checkMetricCycle(m.Name, existing.Name, depNames); err != nil {
+		return models.MetricRow{}, err
+	}
 	if strings.TrimSpace(m.Doc) == "" {
 		m.Doc = "Formula: " + m.Expr // PRD §5.16: formula documentation on every metric
 	}
@@ -341,6 +347,29 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 		s.scheduleSweep()
 	}
 	return saved, nil
+}
+
+// checkMetricCycle refuses a save whose references would close a cycle
+// through the metric being saved. The graph is the stored edges, with the
+// saved metric's own out-edges replaced by its new references (and its old
+// name's edges dropped on a rename). metrics.FindCycle walks it; a
+// self-reference is the one-node cycle.
+func (s *MetricsService) checkMetricCycle(name, oldName string, refs []string) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	edges, err := s.st.ListMetricEdges()
+	if err != nil {
+		return err
+	}
+	if oldName != "" && oldName != name {
+		delete(edges, oldName)
+	}
+	edges[name] = refs
+	if cycle := metrics.FindCycle(name, edges); cycle != nil {
+		return fmt.Errorf("metric %q would reference itself through a cycle (%s); remove one of the references", name, strings.Join(cycle, " -> "))
+	}
+	return nil
 }
 
 // DeleteMetric removes a user metric. Built-ins are rejected HERE with

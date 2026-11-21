@@ -779,8 +779,8 @@ check(
   '',
 );
 check(
-  'metric() references are refused for now, with the raw-SQL message',
-  bodyText.includes("metric() references aren't available in raw SQL yet"),
+  'the metric() reference refusal names the missing metric and the cycle refusal is documented',
+  bodyText.includes('no metric has that name') && bodyText.includes('would reference itself through a cycle'),
   '',
 );
 check(

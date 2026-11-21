@@ -78,10 +78,10 @@ func rawExists(st *store.Store) RefLookup {
 }
 
 // CheckRawSave gates a raw statement at save and at the Builder's live
-// check: the gate's statement rules, the scope shape, and no metric()
-// references (their rewrite into joins is not built yet, so a statement
-// that uses one is refused rather than stored half-working). It returns
-// the gate result (touched tables and binds) on success.
+// check: the gate's statement rules, the scope shape, and every metric()
+// reference resolving to an existing metric. It returns the gate result
+// (touched tables, binds and references) on success. The cycle check needs
+// the saved metric's own name, so the save path runs it separately.
 func CheckRawSave(st *store.Store, expr string) (Gate, *GateError, error) {
 	g, perr, err := GateSQL(expr, rawExists(st), allRawBinds)
 	if err != nil || perr != nil {
@@ -90,16 +90,40 @@ func CheckRawSave(st *store.Store, expr string) (Gate, *GateError, error) {
 	if err := checkRawShape(g.Binds); err != nil {
 		return Gate{}, gateErr(0, "%s", err.Error()), nil
 	}
-	if len(g.Refs) > 0 {
-		return Gate{}, gateErr(g.Refs[0].Pos, "metric() references aren't available in raw SQL yet; read the tables directly"), nil
-	}
 	return g, nil, nil
+}
+
+// RefNames returns the distinct metric names a gate result references, in
+// textual order: the dependency edges a saved statement carries.
+func RefNames(g Gate) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range g.Refs {
+		if !seen[r.Name] {
+			seen[r.Name] = true
+			out = append(out, r.Name)
+		}
+	}
+	return out
+}
+
+// rewriteRawRefs replaces every metric('name') construct in expr with the
+// subquery that reads the stored value for the statement's scope (see
+// store.MetricRefSQL). It works from the gate's byte spans, last first, so
+// earlier offsets stay valid.
+func rewriteRawRefs(expr string, g Gate, ruleVersion int) string {
+	out := expr
+	for i := len(g.Refs) - 1; i >= 0; i-- {
+		r := g.Refs[i]
+		out = out[:r.Start] + store.MetricRefSQL(r.Name, g.Binds, ruleVersion) + out[r.End:]
+	}
+	return out
 }
 
 // Validate gates an expression without a catalog (a plugin manifest is
 // checked at install, before any metric row exists): the statement rules
-// and the bind rule. A metric() reference is refused, as CheckRawSave
-// refuses it, so no catalog lookup is ever needed.
+// and the bind rule. A metric() reference is refused here because there is
+// no catalog to resolve it against, so the install path never needs one.
 func Validate(expr string) *GateError {
 	g, perr, err := GateSQL(expr, func(string) (bool, error) { return false, nil }, allRawBinds)
 	if err != nil {
@@ -109,7 +133,7 @@ func Validate(expr string) *GateError {
 		return perr
 	}
 	if len(g.Refs) > 0 {
-		return gateErr(g.Refs[0].Pos, "metric() references aren't available in raw SQL yet; read the tables directly")
+		return gateErr(g.Refs[0].Pos, "a plugin's metric() references can't be checked at install; read the tables directly")
 	}
 	return nil
 }
@@ -182,6 +206,9 @@ func RunRaw(ctx context.Context, st *store.Store, metricID int64, version, ruleV
 	if perr != nil {
 		return errors.New(perr.Message)
 	}
+	if err := checkRawShape(g.Binds); err != nil {
+		return err
+	}
 	args := make([]any, 0, len(g.Binds))
 	for _, b := range g.Binds {
 		switch b {
@@ -193,7 +220,7 @@ func RunRaw(ctx context.Context, st *store.Store, metricID int64, version, ruleV
 			args = append(args, sql.Named("round", int64(scope.Round)))
 		}
 	}
-	res, err := st.QueryMetric(ctx, expr, args)
+	res, err := st.QueryMetric(ctx, rewriteRawRefs(expr, g, ruleVersion), args)
 	if err != nil {
 		return err
 	}
