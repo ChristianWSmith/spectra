@@ -1,5 +1,5 @@
-// The metric sequence's contract pins after ruling 33 (pinning, metric
-// ordering and hiding are retired): every metric list shows its DEFAULT rank
+// The metric sequence's contract after ruling 33 (metric ordering and
+// hiding are retired): every metric list shows its DEFAULT rank
 // order. resolveOrder implements the default sequence over the MERGED
 // universe (the scope's fixed entries, negative ranks, plus the catalog's
 // metric names); inSequence and composedSequence are its metric-only and

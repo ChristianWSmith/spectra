@@ -143,8 +143,8 @@
   // travel together so the unsaved-changes flag, the search and the
   // filter checks read exactly as they did on leave; the search is the
   // Profiles precedent). The panel's OPEN state is transient (above).
-  // Saving, previews, errors, the window cursor and the pin list stay
-  // transient / their own store.
+  // Saving, previews, errors and the window cursor stay transient / their
+  // own store.
   const bldSeed = seed('builder', {
     form: newForm(),
     baseline: '',
@@ -245,7 +245,7 @@
   let previewAdhoc = $state(false);
   // previewKey identifies the SAVED definition a clean-saved preview
   // read ({id, scope}; null for an ad-hoc draft) — what a completed
-  // sweep reloads and what pins the draft-vs-saved criterion.
+  // sweep reloads and what decides the draft-vs-saved criterion.
   let previewKey = $state(null);
   let previewError = $state('');
   let previewBusy = $state(false);
@@ -437,7 +437,7 @@
   });
 
   // formatFilter — the fourth group's (Type) checked-set → server word:
-  // unlike the pair-shaped groups (Origin / Scope / Pinning) it is
+  // unlike the pair-shaped groups (Origin / Scope) it is
   // seven checkboxes, so the derivation is the canonical one
   // in lib/metricformats.js (all seven = '' no
   // predicate, none = 'none', otherwise the canonical comma-subset —
@@ -499,12 +499,10 @@
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR filter change (the Library's debounce)
   // so typing doesn't hammer the store — and ANY checkbox flip in the
-  // multi-select's four SERVER-side groups (origin, scope,
-  // or format) lands on this SAME path, which restarts the window at
-  // cursor 0 (a filter change never appends onto the previous filter's
-  // windows). The fifth group (Pinning) is render-time and deliberately
-  // absent from these deps — flipping it must issue NO list read (see
-  // the sanctioned-exception note at metrics).
+  // multi-select's four groups (origin, scope, subject, type) are all
+  // SERVER-side, so any checkbox flip lands on this SAME path, which
+  // restarts the window at cursor 0 (a filter change never appends onto
+  // the previous filter's windows).
   let firstList = true;
   $effect(() => {
     const q = query;
@@ -536,11 +534,8 @@
   // appended (the Library's refreshList/loadMore shape). Every
   // narrowing here is SERVER-side (query LIKE + originFilter +
   // scopeFilter + formatFilter — store.ListMetricsPage),
-  // never a client-side slice of a window. The ONE sanctioned exception
-  // is the Pinning group (metrics above): a filter over state
-  // the backend cannot know — pins live in localStorage — is a
-  // render-time filter over these accumulated windows, never a slice of
-  // a window handed to it.
+  // never a client-side slice of a window: every filter group is
+  // server-side (metrics above).
   async function refreshList(q = '', f = '', sc = '', sj = '', fm = '') {
     appliedQuery = q;
     appliedFilter = f;
@@ -565,14 +560,11 @@
   }
 
   // loadMore appends the NEXT window: the cursor is the last FETCHED
-  // row's id (metrics — the server's list, never the pin-filtered
-  // render, so the cursor keeps tiling the store's order even when the
-  // Pinning group hides rows; the store resolves it to its stored
-  // origin-rank/name key, so windows never skip or duplicate a row).
+  // row's id (metrics — the server's list, so the cursor keeps tiling the
+  // store's order; the store resolves it to its stored origin-rank/name
+  // key, so windows never skip or duplicate a row).
   // Duplicate ids are filtered out anyway — a repeated keyed {#each} id
-  // would throw. Under a Pinning filter this is exactly how a
-  // pinned-only view keeps loading: fewer rows render, Load more stays
-  // live.
+  // would throw.
   async function loadMore() {
     if (loadingMore || !hasNext || !metrics.length) return;
     loadingMore = true;
@@ -1035,11 +1027,9 @@
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
-           panel with five labelled groups (Origin / Scope / Subject /
-           Type / Pinning) over the SAME viewstate
-           booleans and the SAME debounced list read below — the first
-           four SERVER-side, the Pinning group render-time (the one
-           sanctioned exception — see metrics). The FilterBar
+           panel with four labelled groups (Origin / Scope / Subject /
+           Type) over the SAME viewstate booleans and the SAME debounced
+           list read below — all four SERVER-side. The FilterBar
            vein — the control commits, the parent owns the filter state,
            the debounced refetch follows — without reusing FilterBar
            itself (that is the landmark feed's conditional-fields
@@ -1211,11 +1201,10 @@
           <!-- Empty: either a server-side filter group narrowed the
                window to nothing (an empty My-metrics side, both origin
                options off, Match+Profile off, every Type box off) or the
-               render-time
-               Pinning group hid every fetched row — legal, and said so
-               here instead of leaving a blank panel. The gate is the
-               FILTERED count (metrics), so a fully pin-filtered
-               list shows this copy instead of rendering blank. -->
+               filter hid every fetched row — legal, and said so here
+               instead of leaving a blank panel. The gate is the FILTERED
+               count (metrics), so a fully filtered list shows this copy
+               instead of rendering blank. -->
           <p class="muted" role="status">{S.builder.noMetricsToShow}</p>
         {/if}
       {:else}
@@ -1474,7 +1463,7 @@
           <div class="toolbar">
             <!-- The preview panel's state chip sits immediately LEFT of
                  the Preview button (w19 item 23c — the owner's ruling),
-                 the same cluster order as hint → Pin → Save in the
+                 the same cluster order as hint → Save in the
                  editor's actions line. Position only: the chip's markup
                  and wording are untouched, and the ms/truncated chips
                  keep their slots after the button. -->

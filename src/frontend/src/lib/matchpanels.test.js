@@ -3,8 +3,8 @@
 //   - it is registered as a builtin, under the builtin namespace;
 //   - it reads through `context` (the mount's match) and mounts nothing else;
 //   - no panel, and no Match view code, reads a retired preference (ruling 33:
-//     pins, order, hidden, the economy pins, the transposed shape, the two
-//     localStorage pin keys). C5e removes the controls and keys later.
+//     order, hidden, the economy placement, the transposed shape, and the
+//     retired localStorage keys).
 // The rendered values are pinned by test/match-panels.dom.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';

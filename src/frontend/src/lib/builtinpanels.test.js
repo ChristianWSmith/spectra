@@ -3,7 +3,7 @@
 //   1. the registry (builtins/panels.js) names the Profile component and its
 //      six panels, every id sits in the reserved builtin namespace, and each
 //      id's component file exists;
-//   2. no panel reads a retired preference: the pin, order, hidden, economy,
+//   2. no panel reads a retired preference: the order, hidden, economy,
 //      transposed and localStorage keys (owner ruling 33, retired keys listed
 //      in dogfood/04 §2), nor the readers of them. Comments are stripped
 //      first, so a comment that names a retired key is not a read;

@@ -12,7 +12,7 @@
 // stores, which is the point of the wording. sessionStorage must not
 // survive as code ANYWHERE; localStorage is confined to the three
 // pre-existing durable-PREF sites below — theme, the font-size
-// pre-paint cache and pinned-metrics are preferences that legitimately
+// pre-paint cache are preferences that legitimately
 // survive a restart (they are not view state; moving them onto the
 // kvstore is a separate decision, out of scope for the registry
 // ruling). A NEW reference anywhere fails.

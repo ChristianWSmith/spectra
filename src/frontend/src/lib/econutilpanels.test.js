@@ -6,8 +6,8 @@
 //   - every source passes the save-time check (runes, valid syntax);
 //   - each panel reads through `context` (the mount's match) and imports nothing;
 //   - no panel and no Match view code reads a retired preference (ruling 33):
-//     the metric_economy pin, the pin/order/hidden keys, the transposed shape,
-//     and the economy pin readers. Comments are stripped first.
+//     the order/hidden keys, the transposed shape, and the economy readers.
+//     Comments are stripped first.
 //   - no panel reads the per-round player_round_stats.deaths column (F3 removes
 //     it): the per-round deaths come from the stored metric raw_round_side_deaths.
 // The rendered values are pinned by test/econ-util-panels.dom.mjs.
