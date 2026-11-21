@@ -137,6 +137,25 @@ Settled (owner, 2026-11-20 unless noted):
     no stub metrics. A rule-value edit makes the app recalculate the affected
     metrics directly. This replaces the stub design in 03 §6 and B4. `analysis_config`
     stays denied to metric reads.
+27. **attacker_inair (owner ruling, 2026-11-20):** accept the two-row change.
+    The tick-sample `in_air` and the payload flag disagree on two HE grenade
+    kills in seven golden demos. A3 drops the column. The golden fixture gets an
+    explained update.
+28. **Empty preference lists (owner question, answered as context):** these are
+    the Match and Profile view settings, which C4 moves into placement rows.
+    Options were a sentinel row (recommended) or a `props` marker. Ruling
+    deferred to C4 start.
+29. **Raw values numeric or NULL (owner ruling, 2026-11-20):** keep numeric-only.
+    Text output is shown by the component from the numeric value. No text
+    column.
+30. **Duplicate fold metrics (owner ruling, 2026-11-20):** accepted, with the
+    expectation that the duplicates are retired. The retirement happens in F3.
+31. **Delete over-invalidation (owner ruling, 2026-11-20):** fix next. Narrow
+    the career rebuild on delete to the touched tables.
+32. **Naming (owner ruling, 2026-11-20):** the engagements family is renamed
+    "kill tags", since a kill can carry several classes. The alive-count family
+    name is still open.
+
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
