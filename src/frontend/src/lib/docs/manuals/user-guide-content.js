@@ -474,9 +474,10 @@ export const guideSectionsAfterManual = [
 
 **Template & target** — pick one of the templates: **Match report**, **Match report (HTML)**,
 **Player report**, **Round report** (plus any a plugin contributes); each card shows its scope
-and format. Then pick the target the template needs — the match, a player, or a round number —
+and format. Then pick the target the template needs — a player, or a round number —
 and press **Save report** — beside the stats field further down this panel — to write the
-document to disk.
+document to disk. The match is the one the tab belongs to, or the one the match picker above
+the page holds.
 
 **Stats appendix** — type into the stats field to search and pick what goes under the report: it
 lands as a highlighted chip in the field, and each picked stat earns a line under the field
@@ -489,7 +490,8 @@ round count beside the value. Every other scoreboard number offers through the m
 one entity per stat, never a recorded twin beside it. Remove a chip with its ✕, or with Backspace
 while the field is
 empty; with no chips the saved document carries no appendix. Picked stats and their sections
-follow the same order as everywhere else.
+follow the default order of the stats: the metric order dialog does not change the order a
+document is written in, so the same picks always give the same sections.
 
 **Save report** renders the template's body, composes every picked stat's table onto it and
 hands the whole document to the save dialog; the filename ends in .md or .html to match the

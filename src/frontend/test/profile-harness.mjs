@@ -119,5 +119,8 @@ export async function boot(cacheName = 'profile-panels') {
     sleep,
     settle,
     mountComponent,
+    // bundle(abs): compile one app .svelte (or a .js that imports one) for a
+    // driver that mounts a surface directly, e.g. views/Reports.svelte.
+    bundle,
   };
 }
