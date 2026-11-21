@@ -10,6 +10,7 @@ import {
   getMetricValuesForRound,
   getMetricValuesForPlayer,
   getMetricComputeState,
+  getMetricStates,
   componentQuery,
 } from '../services.js';
 
@@ -19,5 +20,6 @@ export const serviceReads = Object.freeze({
   getMetricValuesForRound,
   getMetricValuesForPlayer,
   getMetricComputeState,
+  getMetricStates,
   componentQuery,
 });

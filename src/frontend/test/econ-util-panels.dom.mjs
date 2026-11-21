@@ -226,6 +226,7 @@ const reads = {
   },
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => computeStates,
+  getMetricStates: async () => computeStates,
   componentQuery: async (sql) => answer(sql),
 };
 

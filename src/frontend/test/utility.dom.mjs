@@ -147,6 +147,7 @@ const reads = {
   getMetricValuesForRound: async () => [],
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => [],
+  getMetricStates: async () => [],
   // __utilityError (section I) makes the data read FAIL — the load-failure path
   // the frame's dismissible error is pinned against; unset it for plain reads.
   componentQuery: async (sql) =>

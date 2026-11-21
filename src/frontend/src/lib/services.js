@@ -970,6 +970,13 @@ export function getMetricComputeState() {
   return MetricsService.GetMetricComputeState();
 }
 
+// getMetricStates is the uncached scoped read: each metric's state for ONE
+// unit. scope is 'match' (id = match id) or 'player' (id = steam id); another
+// unit being behind never marks this one.
+export function getMetricStates(scope, id) {
+  return MetricsService.GetMetricStates(scope, String(id));
+}
+
 // listRunningMetrics / cancelMetric back the Builder's running-metrics
 // popup: the saved metrics with a statement running right now (never
 // cached — a run starts and ends without a data event), and the user's

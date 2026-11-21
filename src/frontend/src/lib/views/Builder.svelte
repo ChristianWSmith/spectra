@@ -129,6 +129,13 @@
     const s = computeStates.get(id);
     return (s && s.error) || '';
   }
+  // A chip's title. The behind word here is the library-wide one (any match
+  // behind), so its title says that rather than the per-metric copy.
+  function chipTitleOf(id) {
+    const state = stateOf(id);
+    if (state === 'behind') return S.builder.behindAnyMatch;
+    return metricStateTitle(state, stateErrorOf(id));
+  }
   // The editor card's honest k/N detail (design §4: "k/N detail
   // underneath"); falls back to the plain word while the feed carries
   // no denominator for this metric yet (never a fabricated 0 of 0).
@@ -966,7 +973,7 @@
     {#if stateOf(m.id)}
       <StatusChip
         status={stateOf(m.id)}
-        title={metricStateTitle(stateOf(m.id), stateErrorOf(m.id))}
+        title={chipTitleOf(m.id)}
         progress={metricProgressFrac(metricProgress, m.id)}
         stage={metricProgressStage(metricProgress, m.id)}
       />
@@ -1299,7 +1306,7 @@
             {#if form.id > 0 && stateOf(form.id) && stateOf(form.id) !== 'processing'}
               <StatusChip
                 status={stateOf(form.id)}
-                title={metricStateTitle(stateOf(form.id), stateErrorOf(form.id))}
+                title={chipTitleOf(form.id)}
               />
             {/if}
             {#if builtinLoaded}
@@ -1526,7 +1533,7 @@
             {#if preview && !previewAdhoc && previewKey}
               <StatusChip
                 status={stateOf(previewKey.id)}
-                title={metricStateTitle(stateOf(previewKey.id), stateErrorOf(previewKey.id))}
+                title={chipTitleOf(previewKey.id)}
                 progress={metricProgressFrac(metricProgress, previewKey.id)}
                 stage={metricProgressStage(metricProgress, previewKey.id)}
               />

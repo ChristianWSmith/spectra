@@ -113,6 +113,8 @@ function script() {
   bindings.MetricsService.GetMetricValuesForMatch = (matchId, ids) =>
     Promise.resolve((MATCH_ROWS[matchId] || []).filter((r) => ids.includes(r.metricId)).map((r) => ({ ...r, matchId })));
   bindings.MetricsService.GetMetricComputeState = () => Promise.resolve(STATES);
+  // The scoped read answers from the same states (every player reads them).
+  bindings.MetricsService.GetMetricStates = (scope, id) => bindings.MetricsService.GetMetricComputeState(scope, id);
   bindings.MetricsService.GetMetricSeries = () => Promise.resolve([]);
   bindings.ProfileService.GetProfile = (sid) =>
     Promise.resolve({

@@ -37,6 +37,10 @@ type MetricCoverage struct {
 	// non-empty (or another unit is behind). Other matches keep their fresh
 	// values, so a per-match read answers from its own unit.
 	BehindMatches []int64
+	// BehindSteams is the per-player answer for a :steam_id metric: the
+	// humans of ready matches with no fresh run record. Behind is true when
+	// this is non-empty. A player not listed reads fresh for this metric.
+	BehindSteams []string
 }
 
 // metricValueFreshCond is THE row-level freshness test (the behind
@@ -207,6 +211,11 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 			}
 			c.Behind = behind
 			c.BehindMatches = units
+			steams, err := s.staleSteamUnits(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
+			}
+			c.BehindSteams = steams
 		}
 		out = append(out, c)
 	}
@@ -271,6 +280,71 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 	return missing != 0, nil, nil
 }
 
+// staleSteamUnits lists the human players of ready matches whose unit of a
+// :steam_id-only metric has no fresh run record: the per-unit spelling of
+// rawBehind's steam branch. Empty for any other bind shape.
+func (s *Store) staleSteamUnits(metricID int64, version, liveRuleVersion int, touched, expr string) ([]string, error) {
+	st, gerr := AnalyzeMetricSQL(expr, nil)
+	if gerr != nil {
+		return nil, nil
+	}
+	used := map[string]bool{}
+	for _, b := range st.Binds {
+		used[b] = true
+	}
+	if !(used[":steam_id"] && !used[":match_id"] && !used[":round"]) {
+		return nil, nil
+	}
+	if !touchesAnalysis(touched) {
+		liveRuleVersion = 0
+	}
+	rows, err := s.db.Query(`SELECT DISTINCT p.steam_id FROM players p JOIN matches mt ON mt.id = p.match_id
+		WHERE mt.status = 'ready' AND p.is_bot = 0
+		AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = 0
+			AND r.scope_steam_id = p.steam_id AND r.scope_round = 0
+			AND r.metric_version >= ? AND r.rule_version >= ?)
+		ORDER BY p.steam_id`, metricID, version, liveRuleVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MetricFreshForPlayer counts, per metric, the FRESH career rows (match_id 0)
+// of ONE player: the per-player half of the coverage read.
+func (s *Store) MetricFreshForPlayer(steamID string, liveRuleVersion int) (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT v.metric_id, COUNT(*) FROM metric_values v JOIN metrics m ON m.id = v.metric_id
+		 WHERE v.match_id = 0 AND v.subject_key = ? AND `+metricValueFreshCond+` GROUP BY v.metric_id`,
+		steamID, liveRuleVersion)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+	}
+	return out, nil
+}
+
 // staleMatchUnits lists the ready matches whose unit of a :match_id metric has
 // no fresh run record (the per-unit spelling of the match clause). An empty
 // list means every ready match is fresh for this metric.
@@ -296,6 +370,33 @@ func (s *Store) staleMatchUnits(metricID int64, version, liveRuleVersion int) (b
 		return false, nil, err
 	}
 	return len(ids) > 0, ids, nil
+}
+
+// MetricFreshForMatch counts, per metric, the FRESH rows (metricValueFreshCond)
+// that belong to ONE match: the per-match half of the coverage read. The match
+// view's state asks only whether this match holds fresh values.
+func (s *Store) MetricFreshForMatch(matchID int64, liveRuleVersion int) (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT v.metric_id, COUNT(*) FROM metric_values v JOIN metrics m ON m.id = v.metric_id
+		 WHERE v.match_id = ? AND `+metricValueFreshCond+` GROUP BY v.metric_id`,
+		matchID, liveRuleVersion)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+	}
+	return out, nil
 }
 
 // UnitFresh reports whether ONE unit (a run scope) of a metric holds a fresh

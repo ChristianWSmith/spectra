@@ -27,6 +27,7 @@ function harness(ctx = {}) {
       return [{ metricId: 1, subjectKey: s, dim: '', value: 60, valueKey: '' }];
     },
     getMetricComputeState: async () => [{ metricId: 1, state: 'fresh' }],
+    getMetricStates: async () => [{ metricId: 1, state: 'fresh' }],
     componentQuery: async (sql) => {
       calls.push(['query', sql]);
       return { columns: ['x'], rows: [[1]] };
