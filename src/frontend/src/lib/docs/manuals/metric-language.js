@@ -3,7 +3,7 @@
 // metric-language position; every other guide section is written in
 // user-guide-content.js).
 //
-// B5 (dogfood/PLAN.md): the sugar grammar is retired. A metric is one raw
+// B5: the sugar grammar is retired. A metric is one raw
 // SQL statement, and this chapter documents exactly what the save gate
 // (internal/metrics GateSQL / CheckRawSave, internal/store
 // AnalyzeMetricSQL) checks and the messages it returns. Every quoted

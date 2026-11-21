@@ -1,5 +1,4 @@
-// The helper blocks the Economy and Utility builtins (dogfood/PLAN.md C5c,
-// dogfood/04-COMPONENTS.md §3) carry. A builtin is self-contained source: a
+// The helper blocks the Economy and Utility builtins carry. A builtin is self-contained source: a
 // component cannot import app modules (componentruntime/compile.js refuses
 // every import outside the Svelte registry), so the functions it needs are
 // copied here as text, the way matchpanels.js copies lib/fmt.js.

@@ -69,7 +69,7 @@ const (
 // unify): the store floors the denominator — `MAX(deaths, 1)` — so a
 // player with no deaths reports K/D 0 instead of NULL, because this is a
 // typed float with no "missing" state. The display surfaces read stored
-// metric rows (dogfooding W3/W4): the trend, history and report
+// metric rows: the trend, history and report
 // read-backs render the metric's generic `ratio()` spelling (a NULL
 // denominator is the honest "no rows to divide by", shown as value 0
 // with N or as "—"). Same intent, two spellings.
@@ -1472,37 +1472,6 @@ func (s *Store) GetDropDetails(matchID int64) ([]models.DropDetail, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the drop details: %w", err)
-	}
-	return out, nil
-}
-
-// GetHurtHealthDetails returns detail_json for every player_hurt event
-// of a match, keyed by events.seq (UNIQUE (match_id, seq)). Same narrow
-// read as GetBlindFlashDetails: analytics.Compute stamps these onto the
-// typed event copies so the clutch HPLeft reconstruction can use the
-// game's sampled victim health (detail_json.health) instead of damage
-// arithmetic — without widening eventRowCols (the typed-columns
-// boundary — models.EventRow — stays payload-free).
-func (s *Store) GetHurtHealthDetails(matchID int64) (map[int]string, error) {
-	rows, err := s.db.Query(
-		`SELECT seq, detail_json FROM events WHERE match_id = ? AND kind = ?`,
-		matchID, models.EventDamage,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
-	}
-	defer rows.Close()
-	out := map[int]string{}
-	for rows.Next() {
-		var seq int
-		var det string
-		if err := rows.Scan(&seq, &det); err != nil {
-			return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
-		}
-		out[seq] = det
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("couldn't load the hurt details: %w", err)
 	}
 	return out, nil
 }

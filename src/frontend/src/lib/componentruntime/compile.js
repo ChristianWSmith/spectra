@@ -1,5 +1,5 @@
 // The user-component compiler: Svelte 5 source → a mountable component,
-// in the webview, lazily (dogfood/04-COMPONENTS.md §5).
+// in the webview, lazily.
 //
 // - The compile itself runs in a Web Worker (ruling 47): compileclient.js
 //   sends the source to compile.worker.js, which holds svelte/compiler and
@@ -51,7 +51,7 @@ const RUNTIME_MODULES = {
 
 export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 
-// --- built-in helpers (owner ruling 45; dogfood/04 §5) ----------------------
+// --- built-in helpers ----------------------
 // A BUILT-IN panel may import a small, curated set of app helpers. A USER
 // component may import none (the save gate refuses every import of a user
 // component, at its line). Each helper module is listed here by its path
@@ -79,6 +79,8 @@ export const BUILTIN_HELPERS = Object.freeze({
       getProfile: 'one player profile (read)',
       getCareerTrend: 'one metric across a player’s matches (read)',
       getMatch: 'one match row (read)',
+      getVoicePresence: 'a match’s voice presence (read)',
+      evictDemoCopy: 'free Spectra’s own copy of a match’s demo (write, the Free copy button)',
       getScoreboard: 'a match scoreboard (read)',
       getRounds: 'a match’s rounds (read)',
       getHeatmap: 'heatmap points for a match (read)',
@@ -158,6 +160,8 @@ export const BUILTIN_HELPERS = Object.freeze({
       seed: 'a view’s remembered state when it opens (view-local)',
       remember: 'store a view’s state for its next open (view-local)',
       matchKey: 'the key a match’s view state is kept under',
+      comparePicks: 'the Rounds compare picks of a match (read)',
+      setComparePicks: 'the Rounds compare picks of a match (write)',
     },
   },
   'src/lib/nav.js': {
@@ -214,7 +218,10 @@ export const BUILTIN_HELPERS = Object.freeze({
   },
   'src/lib/router.js': {
     load: () => import('../router.js'),
-    names: { MATCH_TABS: 'the Match view’s tab names, in order' },
+    names: {
+      MATCH_TABS: 'the Match view’s tab names, in order',
+      matchTabSlug: 'a Match tab’s URL segment (the back path a drill-down returns to)',
+    },
   },
   'src/lib/workstate.svelte.js': {
     load: () => import('../workstate.svelte.js'),

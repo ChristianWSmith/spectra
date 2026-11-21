@@ -71,8 +71,7 @@ import './compile-worker-node.mjs';
 //      bar in the row), metric-done refetches the state and clears the
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
 //      state output carries a version number or timestamp;
-//   J. the Order dialog (dogfooding design §2 + metrics UI wave B,
-//      reworked by N2/N4, M1/M4/M5/M6): the list-header entry point,
+//   J. the Order dialog: the list-header entry point,
 //      ONE dialog with its visible TITLE BAR + icon-only ✕ (N2) that
 //      never scrolls (M4/M5 — the head sits outside the ONE scroll
 //      region, the panel clips, the list no longer scrolls itself),
@@ -543,7 +542,7 @@ const chipsOf = (r, name) =>
     c.textContent.trim(),
   );
 // The editor card's Save button and its read-only chip (the one
-// .bld-readonly in the view — the form header's).
+// bld-readonly in the view — the form header's).
 const saveButton = (r) => r.querySelector('.bld-actions .btn.primary');
 const formChip = (r) => r.querySelector('.bld-readonly');
 
@@ -1736,8 +1735,8 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     );
     const idChip = rowNamed(r, 'top_fragger')?.querySelector('.bld-row-sub .chip.status');
     check(
-      'the identity row renders the established five-state chip (behind — the computed state, never a fabricated value)',
-      !!idChip && (idChip.getAttribute('title') || '').includes('value not available yet'),
+      'the identity row renders the established five-state chip (behind — the library word, labelled any match behind)',
+      !!idChip && (idChip.getAttribute('title') || '') === 'behind for any match — a match needs a recompute',
       idChip ? `class=${idChip.className} title=${idChip.getAttribute('title')}` : 'no status chip',
     );
     click(rowNamed(r, 'top_fragger')?.querySelector('button.bld-row-main'));

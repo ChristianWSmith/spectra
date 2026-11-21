@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestMetricValuesHasNoNColumn pins B6 (dogfood/PLAN.md ruling 2): a metric
+// TestMetricValuesHasNoNColumn pins B6: a metric
 // value carries no sample size. The column is gone from the schema, so no
 // writer can store it and no reader can select it.
 func TestMetricValuesHasNoNColumn(t *testing.T) {

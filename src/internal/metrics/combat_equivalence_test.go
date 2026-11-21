@@ -202,8 +202,7 @@ func characterizationFixture(t *testing.T) (*store.Store, int64) {
 		},
 	}
 	id := saveCombatMatch(t, st, "combat-equiv-a", em)
-	// The same-side gate is a side join over player_ticks now (events
-	// no longer carry same_side, dogfood/PLAN.md A3): every event tick
+	// The same-side gate is a side join over player_ticks now: every event tick
 	// needs each participant's side. carl (ct) shares alice's side, so
 	// his damage is gated out exactly as the SameSide stamp gated it.
 	addCombatSides(t, st, id, []models.TickSample{

@@ -1,6 +1,5 @@
 import './compile-worker-node.mjs';
-// jsdom driver for the Heatmaps tab's card (src/lib/builtins/match/
-// HeatmapsPanel.svelte; PLAN C5-Heat-Combat), mounted with a FIXED context
+// jsdom driver for the Heatmaps tab's card, mounted with a FIXED context
 // { matchId: 7 } the way the Heatmaps builtin mounts it. The services are
 // scripted (no Wails backend): the match, the roster, the rounds and the
 // heatmap binding. Checks: the card reads the context's match (every read

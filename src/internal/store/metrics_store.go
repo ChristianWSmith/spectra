@@ -17,7 +17,7 @@ import (
 // all of it — the read-only console session never reaches these methods.
 
 // metricColumns is the stored metrics column list in scan order. There is
-// no scope, subject or partition column (dogfood/PLAN.md ruling 51): scope
+// no scope, subject or partition column (ruling 51): scope
 // is derived from the expr's binds on scan (ScopeOfExpr).
 const metricColumns = `id, name, title, short_name, expr, format, doc, origin,
 	plugin_id, touched, version, created_at`

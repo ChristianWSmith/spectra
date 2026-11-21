@@ -128,6 +128,7 @@ const reads = {
   getMetricValuesForMatch: async () => [{ metricId: 1, subjectKey: 'a', dim: '', value: 81.5, valueKey: '', n: 20 }],
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => [{ metricId: 1, state: 'fresh' }],
+  getMetricStates: async () => [{ metricId: 1, state: 'fresh' }],
   componentQuery: async (sql) => (sql.includes('bad') ? { err: 'no such table: nope' } : { columns: ['x'], rows: [[1]] }),
 };
 

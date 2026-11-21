@@ -11,10 +11,6 @@ import (
 // rules-derived value is STORED at analyze time; read-time thresholding
 // of rule outputs is forbidden). This file is the ONE implementation of
 // both predicates; the stored numbers are read back ONLY as metric rows
-// (`missed_trades` and the `trade_rate`/`career_trade_rate` denominators
-// over this source — GetCombatStats' reads left with the W2b conversion,
-// and the library-wide SUM the profile's Trade rate card used to need
-// left with that card's metric conversion in dogfooding W4).
 //
 // Both counts replicate, exactly, the two query-time SQL derivations
 // retired on 2026-11-12 — kept verbatim as reference oracles in

@@ -168,6 +168,9 @@ paths (everything else) — resolve project paths against `src/`.
 | `main.go` | composition root: app + services + window + updater wiring; also `spectra -import <path>` headless CLI smoke import |
 | `appservice.go` | `AppService` — frontend-callable methods (`GetVersion`, `SaveWindowSize`) and the update-check flow |
 | `libraryservice.go` / `matchservice.go` | `LibraryService` / `MatchService` — the M1 frontend API surface (import/list/jobs/inspectors; match/scoreboard/rounds/events/chat) over `internal/store` |
+| `metricservice.go` | `MetricsService` — metric definitions, the save gate forwarder, sweeps (`scheduleSweep`), metric runs and the metric state reads |
+| `componentservice.go` | `ComponentService` — user components, placements (`layout_placements`) and builtin overrides (`builtin_overrides`) |
+| `internal/metrics` | the metric gate (`GateSQL`, `CheckRawSave`), the raw-SQL run path and the per-unit sweep pass |
 | `internal/models` | normalized domain types + read DTOs — the contract between extract, store, and the bindings |
 | `internal/store` | SQLite (modernc, single-writer, WAL) + embedded baseline schema (`schema.sql`, applied on every Open) + batch writers/queries; scrubs NUL bytes on every write |
 | `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
@@ -247,64 +250,79 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `mode=ro` + `query_only` connection (timeout + row cap); the write
   handle is never reachable from the console. Keep that layering when
   touching either side.
-- **Migration in progress (2026-11-20):** the metrics grammar, the
-  Go-side expression compiler, and the layout pref model are being
-  replaced by raw-SQL metrics and database-stored raw components. Until
-  `dogfood/PLAN.md` completes, the code still implements the old
-  grammar; the rules in this file describe the target and say so where
-  the code lags. Do not extend the grammar or add pref keys for layouts.
-- **Metric pipeline (target):**
-  - *Save gate.* One gate serves the Builder's live check, save, preview,
-    and sweep: exactly one statement; it is read-only (the console's
-    `ValidateReadOnlySQL` layering, without the timeout or row cap);
-    `CREATE VIEW` and every write verb are refused; every table read must
-    be on the metric-readable allowlist, and any other table refuses the
-    save. Read-only means the `select|with` leading keyword set, as the
-    metric path needs no more. The allowlist is one explicit list that
-    classifies every schema table as readable or not, pinned by a test, so
-    a new table cannot become readable by accident. The list lives in
-    `dogfood/03-QUERIES.md` §2 until the code exists.
-  - *Touched tables.* The gate stores the set of physical tables a metric
-    reads (`metrics` furniture, derived from the SQL at save, never
-    versioned). That set drives freshness.
-  - *Execution.* Metric SQL runs on the read-only connection, including
-    during sweeps, so a slow metric never holds the single writer. There
-    is no timeout and no row cap; a running metric is cancellable from
-    the UI.
-  - *Scope and storage.* A metric's scope is the set of reserved binds its
-    SQL references: `:match_id` (match grain), `:steam_id` (career grain),
-    and `:round` with `:match_id` (round grain). A metric with no binds is
-    library-wide. The engine fans a change out to the affected values, taken
-    from fact tables (the players and rounds in a match). Each run replaces
-    the stored rows for its own bound values, and a library-wide run replaces
-    the whole result. The engine never reads an output column. The full
-    decision is `dogfood/03-QUERIES.md` §5.
-  - *Freshness.* A metric is behind when a table it touches changes, or
-    when an analysis rule it depends on changes (see **Analysis-rule
-    derived values**). Freshness carries scope: a change at match M and
-    player P marks behind only the dependents bound to those values. Editing
-    an analysis rule value fires that rule's builtin stub, which recalculates
-    its dependents. A code change to analysis bumps the analysis version, and
-    only that version change marks metrics behind broadly.
-  - *Career metrics* are built from stored per-match components through
-    `metric('…')`, and combine them as ratios of sums (career ADR is total
-    damage over total rounds, never a mean of per-match ADRs). Per-match
-    metrics store additive components, and the metric that combines them
-    computes the ratio.
+- **Metric pipeline (landed 2026-11-21):** metrics are raw SQL, and
+  components are Svelte source stored in the database. What the migration
+  did not finish is listed in `FOLLOWUP.md`. Where the code still differs
+  from a rule in this file, the rule says so. Do not extend the retired
+  grammar, and do not add pref keys for layout or ordering.
+- **Save gate (one gate):** `internal/metrics` `CheckRawSave` (over
+  `GateSQL`, reached from `metricservice.go`) validates a metric's SQL on
+  every path: the Builder's live check, save, preview and sweep. It
+  accepts exactly one statement whose leading keyword is `SELECT` or
+  `WITH`, with no write verb anywhere (so no `CREATE VIEW`). Every table
+  it reads, including tables inside subqueries and CTE bodies, must be on
+  the metric-readable allowlist (`internal/store/metric_gate.go`, which
+  classifies every schema table and is pinned by a test), or be a CTE
+  name, a `metric('…')` reference or a pure table-valued function. The
+  gate refuses any bind other than the reserved ones, and any reserved
+  bind the run does not supply. Saves go through `SaveMetricWithDeps`,
+  which re-derives the dependency rows from the current SQL.
+- **Scope is the reserved binds.** `:match_id` (match grain), `:steam_id`
+  (career grain) and `:round` (round grain, always with `:match_id`) say
+  which units a metric's stored rows are keyed by (`internal/store/metric_scope.go`).
+  A metric with no binds is library-wide. The `metrics` table still has
+  legacy `scope`, `subject` and `partition` columns, and `ValidateExpr`
+  still takes them. Their removal is cleanup tracked in `FOLLOWUP.md`; the
+  binds are the rule.
+- **Touched tables.** The save derives the physical tables the statement
+  reads and stores them on the metric row (`metrics.touched`, comma-joined).
+  The set is derived from the SQL and never versioned. A builtin's touched
+  set is stored at save like any other metric's.
+- **Execution and metric runs.** Metric SQL runs on the read-only
+  connection, sweeps included, so a slow metric never holds the single
+  writer. There is no timeout and no row cap. Each running statement is a
+  metric run (`metric_runs`; `ListRunningMetrics`), and `CancelMetric`
+  cancels one from the UI.
+- **Freshness.** A stored value is behind when a table it touches changes
+  for the unit it is keyed by (`markMatchWritesBehind`), or when a metric
+  it references through `metric('…')` (`metric_deps`) is behind. The
+  change walks the dependency graph with its scope (`invalidateDependents`).
+  An analysis-rule value edit fires that rule's builtin stub and reaches
+  only the analysis tables the rule owns (`affectedRuleTables`). A code
+  change to analysis bumps `analyzed_rule_version`, and only that bump
+  marks metrics behind broadly (`RecomputeAll`).
+- **Sweeps.** Every trigger (import analyze, save, plugin operation,
+  `RecomputeAll` completion, startup) goes through `scheduleSweep`, and
+  nowhere else. At most one sweep runs, and at most one follow-up is
+  pending: triggers during a run set one flag, so a batch of N imports
+  runs one sweep plus at most one follow-up. A running sweep is never
+  cancelled. Each sweep re-resolves the behind set when it starts, and
+  works per unit (`ClearMetricUnits` per unit). `GetMetricStates(scope, id)`
+  answers one match's or one player's states, and another unit being
+  behind never marks it.
+- **Career and profile metrics** are built from stored per-match
+  components through `metric('…')` and combine them as ratios of sums
+  (career ADR is total damage over total rounds, never a mean of per-match
+  ADRs). Per-match metrics store additive components.
+- **Round grain, capped damage, post-match and clutches.** Round-grain
+  metrics are keyed by `:round`. Damage metrics read the capped damage
+  credit per hit (`capped_dmg`). Events stamped `post_match` are excluded
+  from event-derived folds. The clutch family is seeded builtins over the
+  `clutches` table, which analysis owns.
 - **User metrics (power surface, PRODUCT.md **Power surfaces**):** user
   SQL has no bot filter, no sample-size guarantee, no timeout, and no row
   cap. Nothing is injected into it. Users may read the metric-readable
-  tables on the allowlist, which include `players`. Denied: `sqlite_*`,
+  tables on the allowlist, which include `players`. Every other table is
+  denied, including `metric_values`, `metric_runs`, `metric_deps`,
+  `metrics`, `components`, `layout_placements`, `builtin_overrides`,
   `jobs`, `query_history`, `saved_queries`, `saved_filters`,
-  `report_templates`, `plugins`, `analysis_config`, `components`,
-  `layout_placements`, `metrics`, `metric_values`, `metric_deps`,
-  `voice_presence` (voice stays in the sidecar). Metrics reach other metrics
-  only through `metric('…')`.
+  `report_templates`, `plugins`, `analysis_config`, `warnings`,
+  `player_career`, `voice_presence` (voice stays in the sidecar), and
+  `sqlite_*`. Metrics reach other metrics only through `metric('…')`.
 - **Builtin conventions (rigid; enforced by the builtin test suite, not
   by a compiler):**
-  1. Each builtin's canonical expression is its SQL. Ports from the old
-     grammar take the compiled SQL as-is, with the bot predicate added in
-     the same canonical fragment every port uses.
+  1. Each builtin's canonical expression is its SQL, seeded in
+     `internal/store/schema.sql`.
   2. Every roster, aggregate, or selection read excludes bots: the SQL
      form of `store.HumanOnly` / `HumanOnlyBySteamID` is the one fragment
      a builtin uses. Event-shaped reads keep bot names (PRODUCT.md
@@ -315,37 +333,73 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   4. Round-grain statistics are metrics keyed by round. Round records are
      shown as records.
   5. Every builtin is verified against the pre-migration snapshot in
-     `~/Programming/spectra-home` (see `dogfood/PLAN.md`). A value that
-     differs from the snapshot is a bug, not an accepted change. Copy the
-     snapshot before opening it.
+     `~/Programming/spectra-home` (verification notes in `FOLLOWUP.md`). A
+     value that differs from the snapshot is a bug, not an accepted
+     change. Copy the snapshot before opening it.
   6. A builtin's touched tables are stored at save like any metric, and
      every analysis-rule stub a builtin depends on is declared.
-- **Components (power surface; target):** a component is Svelte 5 source
-  stored in the database. Builtin components are Svelte source shipped
-  with the app. User code and builtins speak the same language. User
-  source is compiled in the webview, lazily, on first use, with an
-  in-memory cache keyed by source hash; the Svelte compiler is not loaded
-  at launch. The compiled module's runtime imports are rewritten to the
-  app's own Svelte runtime, a step verified by a spike before the
-  component wave relies on it. Components read metrics through the shared
-  read services, and read tables only through the read-only connection,
-  limited to the same allowlist as metrics. Components are created and previewed
-  in the **Component Builder** tab, a top-level tab alongside the Metric
-  Builder and Reports Builder. Each mounted component runs inside its
-  own error boundary: a failure shows a dismissible error inside that
-  component's frame and nowhere else. No sandbox: user components run in
-  the webview with the same bindings as the app.
-- **Duplicate to edit:** a user cannot edit a builtin in place. They
-  duplicate it into a user component, edit the copy, and place it. A copy
-  does not receive later upstream fixes to its builtin; that is accepted.
-- **Use as my view:** a user may replace the Match view's area below the
-  header (the tab bar and everything under it) or an individual player's
-  Profile view with one of their components. The header, warnings, and
-  round strip stay hardcoded. The profiles list stays hardcoded. Reset
-  removes the replacement and restores the builtin view.
-- **Formatting belongs to components.** A metric carries no display format.
-  Percent, millisecond, and money formatting live in the component that
-  shows the value.
+- **Components (power surface).** A component is Svelte 5 source. User
+  components are rows in the `components` table. Builtin components ship
+  as source, with ids under the `builtin-` prefix (registry:
+  `frontend/src/lib/componentbuiltins.js`). Both use the same language and
+  runtime. They are written and previewed in the **Component Builder** tab
+  (`#/componentbuilder`, beside the Metric and Reports builders). Save is
+  gated by `componentruntime/savegate.js`, debounced; while a compile is
+  running the Builder shows a background-work indicator with **Cancel**
+  beside Save (`cancelCompiles`).
+- **Component runtime.** Compilation runs in a Web Worker
+  (`componentruntime/compile.worker.js`), lazily on first use.
+  `svelte/compiler` is loaded by dynamic import inside that worker, never
+  on the main thread or at launch. Compiled modules are cached in memory
+  by source hash, and their runtime imports are rewritten to the app's own
+  Svelte runtime. The WebKitGTK runtime check is still owed (FOLLOWUP.md).
+  Each mounted component receives one read API as the `spectra` prop
+  (`componentruntime/readapi.js`): `metric(name, binds)` (stored values
+  with the five states), `query(sql, binds)` (a live read-only read with no
+  freshness), `context` (the mounting surface's match, steam id and round;
+  binds default from it), `navigate`, `guard(fn)` for event and async work,
+  `isHuman` and `listedPlayers`, and `<spectra.Child>` to mount a named
+  component inside another. A failed `metric()` or `query()` is reported
+  into the component's frame and also rejects. Each component renders
+  inside its own error boundary. There is no sandbox: components run in the
+  webview with the app's bindings.
+- **Helper surface.** A builtin may import a curated set of app modules:
+  the `BUILTIN_HELPERS` registry in `componentruntime/compile.js` lists
+  each module and the names a builtin may take from it. A user component
+  may import nothing, and the save gate refuses every import from one. A
+  new helper name is a review: add it to the registry with a line on what
+  it is for.
+- **Builtin registry and generator.** Builtin panels are `.svelte` files
+  under `frontend/src/lib/builtins/`, declared in `builtins/panels.js`.
+  `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
+  `npm run dev`) writes `builtins/generated/sources.js`, which holds each
+  builtin's source text and id list. That file is gitignored, so never
+  hand-maintain a builtin id list. `componentbuiltins.js` adds the
+  placeholder and the Match, Economy and Utility text panels.
+- **Builtin edits are in place, with restore.** A builtin component,
+  metric or report is edited in place. Save stores one row per edited
+  builtin in `builtin_overrides` (keys `builtin-…`, `metric:<name>`,
+  `report:<id>`), and the Builder shows an Edited chip. **Restore to
+  default** removes the row and returns the shipped source
+  (`DeleteBuiltinOverride`, `RestoreBuiltinMetric`, `RestoreBuiltinReport`).
+  Duplicate-to-edit is cancelled for builtins (owner ruling 43). The
+  Component Builder's leftover builtin Duplicate action is still present
+  and is tracked in `FOLLOWUP.md`.
+- **Placements and "use as my view".** A surface renders its stored
+  placements (`layout_placements`, read through `ComponentService.ListPlacements`
+  and mounted by `components/SurfaceView.svelte`). Two surfaces exist:
+  `match-view`, the Match view's area below the header (the tab bar and
+  everything under it), and `profile-view`, an individual player's Profile
+  view. "Use as my view" places one component on a surface. A surface
+  with no rows renders its builtin composition. A hidden row is kept in
+  storage but not rendered. **Reset to default** (`ResetPlacements`) removes
+  the replacement. The Match header, warnings, round strip and the profiles
+  list stay hardcoded.
+- **Formatting belongs to components (target).** A metric carries no
+  display format. Percent, millisecond, and money formatting live in the
+  component that shows the value. The `metrics.format` tag and the Builder's
+  Format select still exist in code (`lib/metricformats.js`). Removing them
+  is not yet done, and `FOLLOWUP.md` does not list it.
 - **View computation (owner, 2026-11-20):** views may compute for
   presentation, from rows they have already fetched. The earlier
   exception list and relocation rule are retired. A statistic another
@@ -353,13 +407,13 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **Metrics are raw SQL, and stored values stay fresh:** a metric is a
   SQL expression, builtin or user-authored. Its stored expression is its
   formula and is shown wherever the metric is shown. PRODUCT.md
-  **Freshness** is the statement; the pipeline is in **Metric pipeline**
-  below. Do not reintroduce a sample-size (N) field, a sugar grammar, or
-  a second expression language.
+  **Freshness** is the statement; the pipeline is in the **Metric
+  pipeline** bullets above. Do not reintroduce a sample-size (N) field, a
+  sugar grammar, or a second expression language.
 - **Shared statistics are metrics (owner, 2026-11-14, restated
   2026-11-20):** a statistic that more than one surface shows is a
   metric — stored, freshness-tracked, and shown through the metrics
-  system's ordering, state vocabulary, and Builder — never a copy in a
+  system's state vocabulary and Builder — never a copy in a
   service, store query, or view. Raw event reads stay in
   `internal/extract`, and analysis-rule stored outputs stay in
   `internal/analytics` Compute (canonical rows below). Views may compute
@@ -446,9 +500,9 @@ Canonical homes (extend these, don't fork them):
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
 | Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12). Editing a rule value fires that rule's builtin metric stub, which recalculates its dependents only; a code change to analysis bumps `analyzed_rule_version` → behind set → `RecomputeAll` (the broad path, reserved for code changes) |
-| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `expr` is raw SQL; result storage is by bound scope, `dogfood/03-QUERIES.md` §5; touched tables are derived at save — see **Metric pipeline** in the conventions) |
+| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `expr` is raw SQL; result storage is by bound scope (`internal/store/metric_scope.go`); touched tables are derived at save — see **Metric pipeline** in the conventions) |
 | Metric sequence (every metric list) | `frontend/src/lib/metricorder.js` — THE default sequence: `resolveOrder` over the scope's fixed entries (`@Name`, `@Team`, `@Score`) and the catalog's metric names, by `DEFAULT_RANKS` and `FIXED_RANKS`. `inSequence` (metric-only) and `composedSequence` (merged) are its views, `DEFAULT_CARDS.profile` is the shipped career card set, and `rawItems`/`isRawId` derive the recorded-value offers. There is no user-chosen order, pinning, hiding or economy placement (ruling 33): every list composes through this module, and a view shows what its component shows |
-| Metric save gate | `metricservice.go` — THE one validation (one read-only statement, no `CREATE VIEW`, every table on the metric-readable allowlist, touched tables derived), shared by the Builder's live check, save, preview and sweep; no call site re-validates |
+| Metric save gate | `internal/metrics` `CheckRawSave` (over `GateSQL`; `metricservice.go` forwards to it) — THE one validation (one read-only statement, no `CREATE VIEW`, every table on the metric-readable allowlist, touched tables derived), shared by the Builder's live check, save, preview and sweep; no call site re-validates |
 | Round-grain statistics | Round-grain statistics are metrics keyed by round (owner ruling 2026-11-18). Round records (`player_round_stats` read through the one `getPlayerRounds` fetch) are displayed as records; a side with no player rows in a round shows a dash, never a guessed 0 |
 
 - **Domain rules live in one place:** side-parity arithmetic in

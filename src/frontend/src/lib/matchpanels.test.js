@@ -1,6 +1,5 @@
 import '../../test/compile-worker-node.mjs';
-// matchpanels.test.js — the Match view's panels as builtins (dogfood/PLAN.md
-// C5b, dogfood/04-COMPONENTS.md §3, §3.5). The contract a panel keeps:
+// matchpanels.test.js — the Match view's panels as builtins. The contract a panel keeps:
 //   - it is registered as a builtin, under the builtin namespace;
 //   - it reads through `context` (the mount's match) and mounts nothing else;
 //   - no panel, and no Match view code, reads a retired preference (ruling 33:
@@ -18,7 +17,7 @@ import { gateComponentSave } from './componentruntime/savegate.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// The retired keys and their readers (dogfood/04 §2, ruling 33).
+// The retired keys and their readers.
 const RETIRED = [
   'scoreboard_starts_transposed',
   'metric_order_',
@@ -35,8 +34,8 @@ const RETIRED = [
   'localStorage',
 ];
 
-test('the Match view has its five panels, each a builtin under the builtin namespace', () => {
-  assert.equal(MATCH_PANELS.length, 5);
+test('the Match view has its six panels, each a builtin under the builtin namespace', () => {
+  assert.equal(MATCH_PANELS.length, 6);
   const ids = MATCH_PANELS.map((p) => p.id);
   assert.deepEqual(ids, [
     MATCH_PANEL_IDS.overview,
@@ -44,6 +43,7 @@ test('the Match view has its five panels, each a builtin under the builtin names
     MATCH_PANEL_IDS.scoreboard,
     MATCH_PANEL_IDS.rounds,
     MATCH_PANEL_IDS.details,
+    MATCH_PANEL_IDS.facts,
   ]);
   for (const p of MATCH_PANELS) {
     assert.ok(p.id.startsWith(BUILTIN_PREFIX), `${p.id} is in the builtin namespace`);
@@ -53,17 +53,28 @@ test('the Match view has its five panels, each a builtin under the builtin names
 
 test('every panel passes the save-time check (runes, valid syntax)', async () => {
   for (const p of MATCH_PANELS) {
-    const gate = await gateComponentSave(p.source);
+    const gate = await gateComponentSave(p.source, 'src/lib');
     assert.equal(gate.ok, true, `${p.id}: ${gate.message}`);
   }
 });
 
+// The registry helpers a panel may import (ruling 45): the only imports a
+// built-in carries, each name listed in compile.js BUILTIN_HELPERS.
+const HELPER_IMPORTS = {
+  [MATCH_PANEL_IDS.rounds]: ['./viewstate.svelte.js'],
+  [MATCH_PANEL_IDS.facts]: ['./services.js'],
+};
+
 test('every panel reads through context and mounts nothing else', () => {
   for (const p of MATCH_PANELS) {
     assert.match(p.source, /let \{[^}]*\bcontext\b[^}]*\} = \$props\(\);/, `${p.id} takes context as a prop`);
-    assert.match(p.source, /spectra\.metric\(|spectra\.query\(/, `${p.id} reads metrics or facts`);
+    // The facts panel reads the match services (voice, the demo copy), not a query.
+    if (p.id !== MATCH_PANEL_IDS.facts) {
+      assert.match(p.source, /spectra\.metric\(|spectra\.query\(/, `${p.id} reads metrics or facts`);
+    }
     assert.doesNotMatch(p.source, /spectra\.Child/, `${p.id} mounts no child`);
-    assert.doesNotMatch(p.source, /^\s*import\s/m, `${p.id} imports nothing (builtins are self-contained source)`);
+    const imports = [...p.source.matchAll(/^\s*import\s.*?from\s*'([^']+)'/gm)].map((m) => m[1]);
+    assert.deepEqual(imports, HELPER_IMPORTS[p.id] || [], `${p.id} imports only its registry helpers`);
   }
 });
 

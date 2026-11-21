@@ -7,8 +7,7 @@ package integration_test
 // event-tick join the table exists for (every kill's attacker has a row
 // at the kill's tick), and the same-frame in-air re-proof against the
 // kill payload's attackerinair flag. It also logs the wall-clock of the
-// tick stream and of SaveExtracted on a golden-sized match (the
-// busy-timeout headroom numbers — dogfood/02-TICK-STATE.md).
+// tick stream and of SaveExtracted on a golden-sized match.
 
 import (
 	"context"

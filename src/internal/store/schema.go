@@ -3,6 +3,7 @@ package store
 import (
 	_ "embed"
 	"fmt"
+	"strings"
 )
 
 //go:embed schema.sql
@@ -20,7 +21,9 @@ func (s *Store) applySchema() error {
 	if err != nil {
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
-	if _, err := tx.Exec(schemaSQL); err != nil {
+	// The clutch metrics splice the shared clutch CTE in (clutch_sql.go).
+	seed := strings.ReplaceAll(schemaSQL, clutchPlaceholder, clutchSeedText())
+	if _, err := tx.Exec(seed); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}

@@ -52,6 +52,7 @@ export const MetricsService = {
   // The match-grain SERIES read (the profile history's per-match halves).
   GetMetricSeries: rec('GetMetricSeries'),
   GetMetricComputeState: rec('GetMetricComputeState'),
+  GetMetricStates: rec('GetMetricStates'),
   // The no-execution Compile (provenance for a clean-saved preview) +
   // the one-definition read the scope-routed pin resolves through.
   CompileMetric: rec('CompileMetric'),

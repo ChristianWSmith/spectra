@@ -54,10 +54,9 @@ func TestUnclassifiedTablesFlagsANewTable(t *testing.T) {
 }
 
 // TestMetricReadableSettledList pins the classification itself
-// (dogfood/03-QUERIES.md §3.2).
 func TestMetricReadableSettledList(t *testing.T) {
 	readable := []string{"events", "engagements", "rounds", "player_stats", "player_round_stats",
-		"round_economy", "clutches", "utility_events", "chat", "match_trade_opps",
+		"round_economy", "utility_events", "chat", "match_trade_opps",
 		"round_classifications", "round_side_classes", "round_player_sides", "matches", "players",
 		"PLAYER_STATS", "generic_events", "teams", "round_player_money", "sound_events", "player_ticks"}
 	denied := []string{"sqlite_master", "sqlite_schema", "sqlite_sequence", "metric_values",
@@ -170,7 +169,7 @@ func TestMetricGateResolution(t *testing.T) {
 		{"comma join", "SELECT * FROM players p, events e, rounds", []string{"events", "players", "rounds"}},
 		{"joins", "SELECT * FROM player_stats ps LEFT OUTER JOIN players AS p ON p.steam_id = ps.steam_id INNER JOIN rounds r USING (match_id)", []string{"player_stats", "players", "rounds"}},
 		{"cte", "WITH k AS (SELECT steam_id FROM events), d AS (SELECT * FROM k) SELECT * FROM d JOIN players ON 1", []string{"events", "players"}},
-		{"subqueries", "SELECT (SELECT COUNT(*) FROM rounds), x.a FROM (SELECT 1 AS a FROM chat) x WHERE EXISTS (SELECT 1 FROM clutches) AND 1 IN (SELECT 1 FROM matches)", []string{"chat", "clutches", "matches", "rounds"}},
+		{"subqueries", "SELECT (SELECT COUNT(*) FROM rounds), x.a FROM (SELECT 1 AS a FROM chat) x WHERE EXISTS (SELECT 1 FROM player_ticks) AND 1 IN (SELECT 1 FROM matches)", []string{"chat", "matches", "player_ticks", "rounds"}},
 		{"quoted", `SELECT * FROM "Players" "p" JOIN main."events" ON 1`, []string{"events", "players"}},
 		{"in table", "SELECT * FROM players WHERE match_id IN matches", []string{"matches", "players"}},
 		{"json_each", "SELECT j.value FROM rounds r, json_each('[1,2]') j", []string{"rounds"}},

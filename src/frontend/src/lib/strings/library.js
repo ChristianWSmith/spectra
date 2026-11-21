@@ -106,7 +106,7 @@ export const library = {
   importRowTitle: 'Import this demo into your library',
   deleteDemoFileTitle: 'Delete this demo file from disk',
   deleteFromDisk: 'Delete from disk',
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   msSuffix: " ms",
   provPresenceNote: "Spectra records presence, not content",
   provNotesPrefix: " · key/provenance notes: ",
@@ -116,7 +116,7 @@ export const library = {
   refSosSounds: "CMsgSosStartSoundEvent 25,266 / legacy game events 21,029 — sound + pre-S2 event layers.",
   refBallistics: "Ballistics-adjacent: CMsgTEFireBullets 3,302 + CMsgPlaceDecalEvent 1,514.",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   encryptedNote: "{n} encrypted network message(s) present in this demo — ",
 
 };

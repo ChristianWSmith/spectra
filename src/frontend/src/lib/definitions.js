@@ -92,8 +92,7 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // --- Tooltips with no glossary entry ----------------------------------------
 
 // Entry% (Combat scoreboard column) — the `entry_rate` metric's tooltip
-// (the column is metric-backed since dogfooding W2; the formula the
-// seed documents): the stored entry_kills is the extractor's first-blood
+// the stored entry_kills is the extractor's first-blood
 // attribution (internal/extract/agg.go: at most one first blood exists
 // per round, so the percent stays within 0..100), NOT the engagement
 // detector (internal/analytics/analytics.go defers the entry kind).
@@ -103,8 +102,7 @@ export const ENTRY_DEF =
   'Entry rate — entry kills ÷ the match’s rounds, as a percent (0–100): the share of the match’s rounds where this player drew first blood.';
 
 // Trade% (Combat scoreboard column) — the `trade_rate_deaths` metric's
-// tooltip (the column is metric-backed since dogfooding W2; the formula
-// the seed documents): 100 × player_stats.trade_kills / the player's
+// tooltip: 100 × player_stats.trade_kills / the player's
 // OWN deaths (a trade kill answers a teammate's death inside the trade
 // window; the denominator is the player's own deaths, so the rate is
 // not a share of teammate deaths). It is a ratio rather than a share,

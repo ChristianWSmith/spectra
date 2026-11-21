@@ -8,18 +8,18 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Scope-aware freshness (03-QUERIES.md §4-§6, dogfood/PLAN.md B4). A metric's
+// Scope-aware freshness. A metric's
 // touched set decides WHICH data it reads; its binds decide WHICH units of
 // that data a change reaches. This file holds the analysis classification the
 // rule axis gates on, the rule-value edit's affected tables, and the scoped
 // cascade a dependency's change walks through metric_deps.
 
 // analysisTables are the analysis-owned tables: the rows analytics writes from
-// the rule values (round classes, engagements, trade opportunities, clutches,
-// utility, the trade-kill column of player_stats). player_stats counts as
+// the rule values (round classes, engagements, trade opportunities, utility,
+// the trade-kill column of player_stats). player_stats counts as
 // analysis even though extract writes its base columns (03 §4, conservative).
 var analysisTables = []string{
-	"clutches", "engagements", "match_trade_opps", "player_round_stats",
+	"engagements", "match_trade_opps", "player_round_stats",
 	"player_stats", "round_classifications", "round_side_classes", "utility_events",
 }
 
@@ -240,7 +240,7 @@ func bumpRuleAffectedMetrics(tx *sql.Tx, tables []string) error {
 }
 
 // ScopeOfBinds is a metric's scope, derived from the reserved binds its
-// statement uses (dogfood/03-QUERIES.md §5, ruling 51): profile (career)
+// statement uses (03-QUERIES.md §5, ruling 51): profile (career)
 // when it reads :steam_id, match otherwise. It is the one definition;
 // metrics.RawScopeOf delegates here. Nothing stores a scope.
 func ScopeOfBinds(binds []string) string {
@@ -350,7 +350,7 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 		if byMatch || bySteam {
 			// Every bound root fans out to the match's players, not only a
 			// player-bound one: a match-bound root's dependents may bind
-			// :steam_id (a career metric built through metric()), and the
+			// steam_id (a career metric built through metric()), and the
 			// cascade reaches them only through a player scope.
 			scopes = []changeScope{{MatchID: matchID}}
 			for _, p := range players {
@@ -412,7 +412,7 @@ func (s *Store) RebuildCareerForMatches(matchIDs []int64) error {
 }
 
 // MetricRefSQL is the subquery a metric('name') reference is rewritten to
-// when the statement runs (dogfood/03-QUERIES.md §5-§6). It reads the stored
+// when the statement runs. It reads the stored
 // value of the named metric for the statement's own bound scope, carrying
 // subject_key and dim through, and yields NULL for a stored value that is
 // behind (the same freshness spelling every read uses, metricValueFreshCond,
@@ -445,7 +445,7 @@ func MetricRefSQL(name string, binds []string, ruleVersion int) string {
 }
 
 // deriveBuiltinDeps writes metric_deps for every builtin metric from its
-// metric('name') references (dogfood/03-QUERIES.md §6). schema.sql seeds a
+// metric('name') references. schema.sql seeds a
 // builtin with no edges, and only a user save re-derives them, so without
 // this the dependency cascade (invalidateDependents) never reaches a builtin
 // that reads another metric. It runs on every Open inside the schema

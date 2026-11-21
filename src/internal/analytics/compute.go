@@ -100,20 +100,6 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	if err != nil {
 		return fmt.Errorf("couldn't load the blind details: %w", err)
 	}
-	// player_hurt payloads are the second narrow read (same reason, same
-	// boundary): the clutch HPLeft reconstruction needs the game's
-	// sampled victim health (detail_json.health) — stamped onto the
-	// typed copies below so Clutches reads one shape (detail_json) in
-	// production and in tests alike.
-	hurtDetails, err := st.GetHurtHealthDetails(matchID)
-	if err != nil {
-		return fmt.Errorf("couldn't load the hurt details: %w", err)
-	}
-	for i, er := range events {
-		if det, ok := hurtDetails[er.Seq]; ok {
-			evs[i].DetailJSON = det
-		}
-	}
 	// Exact per-round sides from the extractor's freeze-end samples; a
 	// round without stored sides produces no side-derived rows.
 	sides, err := st.GetRoundPlayerSides(matchID)
@@ -156,7 +142,6 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		sideClasses[i].Team = rules.TeamKeyAt(sideClasses[i].Side, idx, len(rounds), m.SideSwitches)
 	}
 	prs := PlayerRounds(evs, rounds, players, cfg, sides, money)
-	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg, sides, blindDetails)
 
@@ -173,9 +158,6 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		return err
 	}
 	if err := st.ReplacePlayerRounds(matchID, prs); err != nil {
-		return err
-	}
-	if err := st.ReplaceClutches(matchID, clutches); err != nil {
 		return err
 	}
 	if err := st.ReplaceEngagements(matchID, engs); err != nil {

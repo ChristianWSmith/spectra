@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Write-side freshness (03-QUERIES §4, dogfood/PLAN.md B4): an import, a
+// Write-side freshness: an import, a
 // reprocess or a deletion of one match marks behind the metrics whose touched
 // set holds a table that write changed. A library-wide metric goes behind as a
 // whole; a per-match metric goes behind for that match only.

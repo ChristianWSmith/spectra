@@ -29,7 +29,6 @@ var tableNotes = map[string]string{
 	"round_classifications": "per-round buy classification with rule_version + human explanation",
 	"round_side_classes":    "per-round per-SIDE stored buy class + why (the eco rule's output — full|force|eco|save|pistol) — written by analytics.Compute at analyze time, read verbatim by GetEconomy",
 	"player_round_stats":    "per-player per-round stats: KAST components, traded/survived, damage, spend",
-	"clutches":              "detected 1vN clutch attempts + outcome",
 	"engagements":           "detected kill tags (opening/trade/traded/untraded) between two players",
 	"utility_events":        "grenade throws/detonations: damage, flash ms, site",
 	"match_trade_opps":      "per-match stored trade-opportunity counts per player (opps = profile Trade-rate denominator, missed = Combat badge) — written by analytics.Compute under the match's rule version",

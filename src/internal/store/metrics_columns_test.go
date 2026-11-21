@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestMetricsTableHasNoScopeSubjectPartition pins dogfood/PLAN.md ruling 51:
+// TestMetricsTableHasNoScopeSubjectPartition pins ruling 51:
 // the metrics table carries no scope, subject or partition column. A
 // metric's scope is derived from its binds (ScopeOfExpr) and partitioning is
 // the statement's dim column, so none of the three is stored.

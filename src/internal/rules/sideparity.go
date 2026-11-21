@@ -14,7 +14,7 @@
 // for the stored `team` column on the round-scoped rows (round_economy,
 // round_player_sides, round_side_classes).
 //
-// Production callers today: rules.OtherSide (analytics.Clutches),
+// Production callers today: rules.OtherSide (the team stamp below),
 // rules.StartSide (store.queryEvents' Team key — the replay filter's
 // start-side identity) and rules.TeamKeyAt (the team stamp beside each
 // row it describes). Every import stores round_player_sides, so data

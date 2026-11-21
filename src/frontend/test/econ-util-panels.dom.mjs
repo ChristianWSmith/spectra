@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Economy and Utility builtins (dogfood/PLAN.md C5c,
-// dogfood/04-COMPONENTS.md §3, §3.5). Each view mounts through the real
+// jsdom driver for the Economy and Utility builtins. Each view mounts through the real
 // ComponentFrame (its composer, then the panels the composer mounts with
 // spectra.Child), reads through the real read API, and renders from a fixture
 // whose every value this file can compute by hand. Fixture: match 9, four
@@ -226,6 +225,7 @@ const reads = {
   },
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => computeStates,
+  getMetricStates: async () => computeStates,
   componentQuery: async (sql) => answer(sql),
 };
 

@@ -1,7 +1,7 @@
 import './compile-worker-node.mjs';
 import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js';
 // jsdom driver for the component context and the nested mount
-// (dogfood/04-COMPONENTS.md §3, §3.5; owner rulings 34 and 36), run against
+// run against
 // the real ComponentFrame, ChildFrame, read API and component compiler, with
 // the real services.js over the scripted Wails stub:
 //   A. a parent mounts a child by name, and the child reads context.matchId

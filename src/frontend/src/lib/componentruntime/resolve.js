@@ -1,5 +1,4 @@
-// What a component reference mounts (dogfood/04-COMPONENTS.md §2, §3.5;
-// owner ruling 43). A reference is a builtin id (builtin-…) or a user
+// What a component reference mounts. A reference is a builtin id (builtin-…) or a user
 // component's name. The result is exactly one of:
 //   {component, dir}  a compiled builtin panel (app Svelte the bundler compiled)
 //   {source, dir}     Svelte 5 source to compile: an edited builtin, a text

@@ -1,7 +1,8 @@
 // The builtin component registry: every component shipped with the app,
-// as Svelte source the user can duplicate (dogfood/04-COMPONENTS.md §1).
-// Builtins are not editable in place; the Component builder loads them
-// read-only and "Duplicate" saves a user copy of `source`.
+// as Svelte source. A builtin is edited in place
+// (ruling 43): the Component builder loads it, and Save stores an override of
+// that builtin. Duplicate-to-edit is cancelled for builtins, so the builder
+// offers no Duplicate for one; Duplicate is for the user's own components.
 //
 // Ids live in a reserved namespace: every id starts with BUILTIN_PREFIX
 // (the Go twin is componentservice.go BuiltinComponentPrefix, which
@@ -18,8 +19,8 @@
 // module's id list (builtins/generated/sources.js, written by
 // scripts/gen-builtin-sources.mjs from panels.js), so no id is kept here by
 // hand. Every builtin is mounted from its source like a user component
-// (ComponentFrame's `source`), so its source text here is the one a duplicate
-// starts from.
+// (ComponentFrame's `source`), so its source text here is the default that
+// Restore to default returns to.
 
 import * as S from './strings/index.js';
 import { MATCH_PANELS } from './matchpanels.js';
@@ -100,10 +101,10 @@ export const BUILTIN_COMPONENTS = registryList([
     placeholder: true,
     source: PLACEHOLDER_SOURCE,
   }),
-  // The Match view's panels (matchpanels.js, dogfood C5b). Each is mounted
+  // The Match view's panels. Each is mounted
   // by the Match view with its context; duplicating one gives a user copy.
   ...MATCH_PANELS,
-  // The Economy and Utility views (econpanels.js, utilpanels.js, dogfood C5c):
+  // The Economy and Utility views:
   // each view's composer and the panels it mounts.
   ...ECON_PANELS,
   ...UTIL_PANELS,

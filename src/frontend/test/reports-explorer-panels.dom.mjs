@@ -1,6 +1,6 @@
 import './compile-worker-node.mjs';
 // jsdom driver for the Reports and Explorer panels as builtin components
-// (dogfood/PLAN C5c; dogfood/04-COMPONENTS.md §3.5, §7). Each panel mounts in
+// Each panel mounts in
 // a real ComponentFrame with a FIXED context ({ matchId, steamId: null,
 // round: null }) and the real read services over the scripted Wails stub.
 //

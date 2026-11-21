@@ -1,16 +1,15 @@
 <script>
   import * as S from '../strings/index.js';
-  import { replayHash, LOOP_SECS_DEFAULT, prefLoopSecs } from '../nav.js';
-  import { onMount } from 'svelte';
+  import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
-  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getEngagements, getPref, getVoicePresence, getMatchSummary, evictDemoCopy, subscribeJobProgress, errText } from '../services.js';
+  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getEngagements, getVoicePresence, getMatchSummary, subscribeJobProgress, errText } from '../services.js';
   import { fmtDuration, fmtInt, fmtPatch } from '../fmt.js';
   import { teamNames, teamStartClass } from '../teams.js';
-  import { MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
+  import { MATCH_TAB_SECTIONS, matchTabSlug } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
   import SurfaceView from '../components/SurfaceView.svelte';
-  // The tab bar and the tab set are one builtin component (PLAN C5c):
+  // The tab bar and the tab set are one builtin component:
   // Match.svelte keeps the header, the warnings, the round strip and the
   // tab state; the tabs and their content are MatchTabs.
   import MatchTabs from '../builtins/match/MatchTabs.svelte';
@@ -18,7 +17,6 @@
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
   import HelpButton from '../components/HelpButton.svelte';
-  import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
   import { preloadReplay } from '../replay/preload.js';
@@ -36,44 +34,11 @@
   // fresh-entry replayHash below, exactly as before.
   let { id = 0, nav = () => {}, routeTab = '', expandReplay = null, openDocs = () => {} } = $props();
 
-  // The panels (matchpanels.js) read through this context (ruling 34): the
-  // match, and nothing else. `back` is the tab the replay returns to. The
-  // rounds panel also takes the compare picks, which this view keeps per match
-  // (see compareSel below).
+  // The tab set and its panels read through this context (ruling 34): the
+  // match, and nothing else. The tab set reads its own data from it, so the
+  // view passes nothing else but the active tab and its select.
   const panelContext = $derived({ matchId: id });
-  const panelProps = $derived({ back: backPath() });
-  // The Utility builtin's props (utilpanels.js): the loop length, read here once
-  // because a builtin cannot read preferences, and this match's remembered
-  // filters (kind, thrower, round), kept in the view registry as before.
-  let loopSecs = $state(LOOP_SECS_DEFAULT);
-  onMount(() => {
-    getPref('loop_secs')
-      .then((v) => (loopSecs = prefLoopSecs(v)))
-      .catch(() => {
-        /* keep the default */
-      });
-  });
-  const utilityProps = $derived({
-    ...panelProps,
-    loopSecs,
-    filters: seed(matchKey('utility', id), { kindF: '', throwerF: '', roundSel: '' }),
-    onfilters: (f) => remember(matchKey('utility', id), f),
-  });
-  const roundsProps = $derived({ back: backPath(), picks: compareSel, onPick: toggleCompare, onCompare: goCompare });
-  // The tab set's props (MatchTabs.svelte): the active tab, its select, and
-  // the Details facts that are not panel reads (voice, the demo copy).
-  const tabsProps = $derived({
-    tab,
-    ontab: selectTab,
-    nav,
-    panelProps,
-    roundsProps,
-    utilityProps,
-    match,
-    voice,
-    copyBusy,
-    onfreecopy: onFreeCopy,
-  });
+  const tabsProps = $derived({ tab, ontab: selectTab });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
   // per-tab help button (Part 8's per-tab ruling): one button in the
@@ -89,14 +54,6 @@
   let scoreboard = $state([]);
   let tab = $state('Overview');
 
-  // Selection state (the Rounds-tab compare picks) restores per match through
-  // the process-scoped registry (viewstate.svelte.js): the key carries the
-  // match id (matchKey), so match A's picks never show in match B. The tab
-  // stays URL-owned and is never registered.
-  const selDefaults = () => ({ compareSel: [] });
-  const selKey = $derived(matchKey('selection', id));
-  const selInit = () => ({ ...seed(selKey, selDefaults()), key: selKey });
-  const selSeed = selInit();
   let warnings = $state(null); // null = not loaded; then the page {messages,total}
   // Render cap for the warnings list: the DOM NEVER grows unbounded
   // whatever a fetch returns (independent of the store's fetch cap —
@@ -120,30 +77,6 @@
   // The per-player KAST path (combatBySteam + its fetch + the combatError
   // panel) died with the dogfooding conversion (W2) — KAST% is a pinned
   // metric column now.
-  // Rounds-tab compare picker: round numbers (max 4).
-  let compareSel = $state(selSeed.compareSel);
-  let selLastKey = selSeed.key;
-  // Seed on the first run and on a match change; write through otherwise.
-  let selSeeded = false;
-  $effect(() => {
-    const k = selKey;
-    const cur = { compareSel };
-    if (k !== selLastKey || !selSeeded) {
-      // SEED — the first run after the pref lands, or another match
-      // without a remount: apply this key's record (the pref-carrying
-      // defaults when it has none) and do not write — the entry keeps
-      // exactly what was applied, so the old match's values can never
-      // land under the new key (the write-through re-arms on the next
-      // selection change, which reads the re-seeded values).
-      selLastKey = k;
-      selSeeded = true;
-      const s = seed(k, selDefaults());
-      compareSel = s.compareSel;
-      return;
-    }
-    remember(k, cur);
-  });
-
   // Match header + rounds + summary. Scoreboard has its own effect below
   // (sort changes must not re-trigger this one). The summary row is the
   // one-match GetMatchSummary getter (same JSON shape as a ListMatches
@@ -223,25 +156,6 @@
     ]);
     return off;
   });
-
-  // Demo-copy state line (Details → Key facts): copyState is fs-derived
-  // by Go on this read (copied / external / missing). Freeing re-reads the
-  // header through the normal getter (the mutating wrapper invalidated the
-  // read cache), so the state line re-derives instead of being guessed.
-  let copyBusy = $state(false);
-
-  async function onFreeCopy() {
-    if (copyBusy || !match) return;
-    copyBusy = true;
-    try {
-      await evictDemoCopy(match.id);
-      match = await getMatch(id);
-    } catch (e) {
-      error = errText(e);
-    } finally {
-      copyBusy = false;
-    }
-  }
 
   // Warnings fetch — only when the match actually has warnings
   // (match.warningsCount > 0; a clean match renders no panel at all).
@@ -332,23 +246,6 @@
     nav(replayHash(id, {}, { back: backPath() }));
   }
 
-  // SteamID64 guard — bots/short ids never match #/player/(\d{17}).
-  // --- Rounds-tab compare picker (max 4) --------------------------------
-  function toggleCompare(n) {
-    if (compareSel.includes(n)) compareSel = compareSel.filter((x) => x !== n);
-    else if (compareSel.length < 4) compareSel = [...compareSel, n];
-  }
-
-  // The compared rounds ride the URL — CompareRounds reads ?rounds= and
-  // ?back=.
-  function goCompare() {
-    nav(
-      buildHash(`/compare/${id}`, {
-        rounds: compareSel.join(','),
-        back: backPath(),
-      }),
-    );
-  }
 
   // Tab switch: the active tab mirrors itself in the URL so every tab is
   // deep-linkable (#/match/:id/<slug>, slugs from MATCH_TABS in

@@ -1,5 +1,5 @@
 <script>
-  // Combat · Engagements (builtin panel; PLAN C5-Heat-Combat). The duels of
+  // Combat · Engagements. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
   // in its Kind cell). The kind filter is a MULTI-SELECT DROPDOWN whose

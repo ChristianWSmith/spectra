@@ -1,5 +1,4 @@
-// The Match view's panels as builtin components (dogfood/PLAN.md C5b,
-// dogfood/04-COMPONENTS.md §3, §3.5, §7). Each panel is Svelte 5 source
+// The Match view's panels as builtin components. Each panel is Svelte 5 source
 // held here as text, so it can be mounted through ComponentFrame like a user
 // component and duplicated as one. A panel is the unit of composition: it
 // reads metrics through `spectra.metric()` and facts through
@@ -28,6 +27,7 @@ export const MATCH_PANEL_IDS = Object.freeze({
   scoreboard: 'builtin-match-scoreboard',
   rounds: 'builtin-match-rounds',
   details: 'builtin-match-details',
+  facts: 'builtin-match-facts',
 });
 
 // The copy every panel shares, written once here and spliced into each
@@ -541,8 +541,9 @@ export const SCOREBOARD_SOURCE = `<script>
 // number, the winner, the reason, the duration, the bomb site, the MVP, the
 // first blood and the kill count. The rows come from the stored `rounds`
 // table through query(); a NULL stored value shows a dash. The compare picks
-// and the compare button belong to the surface (the Match view keeps them per
-// match), so they arrive as props (`picks`, `onPick`, `onCompare`).
+// are view state of this match (viewstate.svelte.js, keyed by matchKey), so the
+// panel reads and writes them there: a tab switch keeps them, and another
+// match never sees them.
 const SQL_ROUNDS =
   "SELECT r.number, r.winner, r.reason, (CAST(r.end_tick - r.start_tick AS REAL) / (SELECT m.tick_rate FROM matches m WHERE m.id = r.match_id)), r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
   "r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''), " +
@@ -701,16 +702,36 @@ const ROUND_HELPERS = `
 export const ROUNDS_SOURCE = `<script>
   // Match rounds: one row per round, in round order. The ▶ watches the round
   // in the replay from its own start, its span looped, back to this tab. The
-  // compare box picks up to four rounds (the surface keeps the picks); the
-  // button under the table compares them. A click on the rest of the row
+  // compare box picks up to four rounds, kept for this match in view state;
+  // the button under the table compares them. A click on the rest of the row
   // opens the round's page.
-  let { spectra, context, back = '', picks = [], onPick, onCompare } = $props();
+  import { comparePicks, setComparePicks } from './viewstate.svelte.js';
+  let { spectra, context, back = '' } = $props();
   ${HELPERS}
   ${ROUND_HELPERS}
   const COPY = ${JSON.stringify(ROUNDS_COPY)};
   const ROUNDS_SQL = ${JSON.stringify(SQL_ROUNDS)};
-  const pick = (n) => (onPick ? onPick(n) : undefined);
-  const compare = () => (onCompare ? onCompare() : undefined);
+
+  // The picks are read when the match changes and written on every change.
+  let picks = $state([]);
+  let pickedFor = null;
+  $effect(() => {
+    const id = context.matchId;
+    const cur = picks;
+    if (id !== pickedFor) {
+      pickedFor = id;
+      picks = comparePicks(id);
+      return;
+    }
+    setComparePicks(id, cur);
+  });
+  function pick(n) {
+    if (picks.includes(n)) picks = picks.filter((x) => x !== n);
+    else if (picks.length < 4) picks = [...picks, n];
+  }
+  function compare() {
+    spectra.navigate({ path: '/compare/' + context.matchId, query: { rounds: picks.join(','), back } });
+  }
 
   let data = $state(null);
 
@@ -856,9 +877,8 @@ export const ROUNDS_SOURCE = `<script>
 
 // --- the details: key facts -------------------------------------------------------
 // The stored facts of the match. Voice presence and the demo-copy state are NOT
-// here: voice is kept out of the component reads (the query allowlist denies
-// it) and the copy state is read from the filesystem, so the Match view keeps
-// both beside this panel.
+// here: they are the facts panel (FACTS_SOURCE below), which reads them through
+// the match services.
 const SQL_FACTS =
   'SELECT server_name, tick_rate, frames, size, extracted_at, parser_version, path, warnings_count ' +
   'FROM matches WHERE id = :match_id';
@@ -986,6 +1006,115 @@ export const DETAILS_SOURCE = `<script>
 {/if}
 `;
 
+// --- the facts: voice and the demo copy ------------------------------------------
+// The two Details facts the stored-facts panel cannot carry. Voice presence is
+// not a query read (the query allowlist denies it), so it comes from the voice
+// service. The demo copy's state is derived from the filesystem on the match
+// read, so it comes from the match service. Both are read through the component
+// registry (compile.js BUILTIN_HELPERS, ruling 45) for this match
+// (context.matchId). The Free copy button frees Spectra's own copy through the
+// same registry, then re-reads the match so the state line re-derives.
+const FACTS_COPY = Object.freeze({
+  factVoice: S.match.factVoice,
+  factDemoCopy: S.match.factDemoCopy,
+  voiceRecordedTitle: S.match.voiceRecordedTitle,
+  voiceRecordedBadge: S.match.voiceRecordedBadge,
+  voiceNoneTitle: S.match.voiceNoneTitle,
+  voiceNoneBadge: S.match.voiceNoneBadge,
+  copyPrefix: S.match.copyPrefix,
+  freeCopyTitle: S.match.freeCopyTitle,
+  freeing: S.match.freeing,
+  freeCopy: S.match.freeCopy,
+  copyExternal: S.match.copyExternal,
+  copyMissing: S.match.copyMissing,
+});
+
+export const FACTS_SOURCE = `<script>
+  // Match facts: voice presence and the demo copy's state (the two Details
+  // facts that are not stored-fact reads). A failed read is reported into this
+  // frame.
+  import { getMatch, getVoicePresence, evictDemoCopy } from './services.js';
+  let { spectra, context } = $props();
+  ${HELPERS}
+  ${DETAIL_HELPERS}
+  const COPY = ${JSON.stringify(FACTS_COPY)};
+
+  let match = $state(null);
+  let voice = $state(null);
+  let copyBusy = $state(false);
+
+  $effect(() => {
+    const matchId = context.matchId;
+    let live = true;
+    match = null;
+    voice = null;
+    Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
+      ([m, v]) => {
+        if (live) {
+          match = m;
+          voice = v;
+        }
+      },
+      (e) => spectra.guard(() => {
+        throw e;
+      })(),
+    );
+    return () => {
+      live = false;
+    };
+  });
+
+  async function freeCopy() {
+    if (copyBusy || !match) return;
+    copyBusy = true;
+    try {
+      await evictDemoCopy(context.matchId);
+      match = await getMatch(context.matchId);
+    } catch (e) {
+      spectra.guard(() => {
+        throw e;
+      })();
+    } finally {
+      copyBusy = false;
+    }
+  }
+</script>
+
+{#if match}
+  <section class="panel">
+    <dl class="facts">
+      <div>
+        <dt>{COPY.factVoice}</dt>
+        <dd>
+          {#if !voice}
+            <span class="muted">{DASH}</span>
+          {:else if voice.hasVoice}
+            <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}><span class="codicon codicon-unmute"></span> {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span>
+          {:else}
+            <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
+          {/if}
+        </dd>
+      </div>
+      <div class="fact-wide">
+        <dt>{COPY.factDemoCopy}</dt>
+        <dd>
+          {#if match.copyState === 'copied'}
+            <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
+            <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}>{copyBusy ? COPY.freeing : COPY.freeCopy}</button>
+          {:else if match.copyState === 'external'}
+            <span class="muted">{COPY.copyExternal}</span>
+          {:else if match.copyState === 'missing'}
+            <span class="muted">{COPY.copyMissing}</span>
+          {:else}
+            <span class="muted">{DASH}</span>
+          {/if}
+        </dd>
+      </div>
+    </dl>
+  </section>
+{/if}
+`;
+
 // The builtin panels, in the order the Match view mounts them.
 export const MATCH_PANELS = Object.freeze([
   Object.freeze({ id: MATCH_PANEL_IDS.overview, label: S.match.panelOverviewLabel, source: OVERVIEW_SOURCE }),
@@ -993,4 +1122,5 @@ export const MATCH_PANELS = Object.freeze([
   Object.freeze({ id: MATCH_PANEL_IDS.scoreboard, label: S.match.panelScoreboardLabel, source: SCOREBOARD_SOURCE }),
   Object.freeze({ id: MATCH_PANEL_IDS.rounds, label: S.match.panelRoundsLabel, source: ROUNDS_SOURCE }),
   Object.freeze({ id: MATCH_PANEL_IDS.details, label: S.match.panelDetailsLabel, source: DETAILS_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.facts, label: S.match.panelFactsLabel, source: FACTS_SOURCE }),
 ]);

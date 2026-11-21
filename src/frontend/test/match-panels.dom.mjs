@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Match view's panels (dogfood/PLAN.md C5b,
-// dogfood/04-COMPONENTS.md §3, §3.5): each panel mounts through the real
+// jsdom driver for the Match view's panels: each panel mounts through the real
 // ComponentFrame, compiles from its source, and reads through the real read
 // API. The read services are a fixture (one match, seven players, one bot),
 // so every rendered value here is one this file can compute by hand:
@@ -197,6 +196,7 @@ const reads = {
   getMetricValuesForMatch: async (matchId, ids) => VALUES.filter((v) => v.matchId === matchId && ids.includes(v.metricId)),
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => [],
+  getMetricStates: async () => [],
   componentQuery: async (sql) => answer(sql),
 };
 
@@ -238,7 +238,7 @@ const mountPanel = async ({ source, context, props = {}, reads: readsOverride = 
   document.body.appendChild(target);
   instance = mount(Harness, {
     target,
-    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h) },
+    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h), builtinDir: 'src/lib' },
   });
   await settle();
   return target;
@@ -376,12 +376,14 @@ check('a match with no stored values shows no cards', root.querySelectorAll('.st
 
 // --- H. the metric states: calculating and failed --------------------------------------
 console.log('H. metric states (match 7)');
+const MATCH_STATES = [
+  { metricId: idOf('kills'), state: 'processing', error: '' },
+  { metricId: idOf('adr'), state: 'failed', error: 'adr engine error' },
+];
 const stateReads = {
   ...reads,
-  getMetricComputeState: async () => [
-    { metricId: idOf('kills'), state: 'processing', error: '' },
-    { metricId: idOf('adr'), state: 'failed', error: 'adr engine error' },
-  ],
+  getMetricComputeState: async () => MATCH_STATES,
+  getMetricStates: async () => MATCH_STATES,
 };
 root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK, reads: stateReads });
 rows = tableRows(root);
@@ -398,9 +400,21 @@ root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props:
 check('a card whose number is still calculating names no number for that part',
   text(cardIn(root, 'Top fragger')?.querySelector('.stat-value')) === 'Calculating/10/3', text(cardIn(root, 'Top fragger')?.querySelector('.stat-value')));
 
+// --- I. the match view reads its own match's state -----------------------------------
+console.log('I. per-match state (the library word says behind, this match is fresh)');
+const perMatchReads = {
+  ...reads,
+  getMetricComputeState: async () => [{ metricId: idOf('kills'), state: 'behind', error: '' }],
+  getMetricStates: async () => [{ metricId: idOf('kills'), state: 'fresh', error: '' }],
+};
+root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK, reads: perMatchReads });
+rows = tableRows(root);
+check('the library-wide behind word does not reach this match: its stored values show',
+  rows.length > 0 && rows.every((r) => r[3] !== 'Out of date' && /^\d/.test(r[3])), JSON.stringify(rows.map((r) => r[3])));
+
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the five panels are registered as builtins', panels.MATCH_PANELS.length === 5 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
+check('the six panels are registered as builtins', panels.MATCH_PANELS.length === 6 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 unmountAll();

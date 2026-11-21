@@ -19,7 +19,7 @@ import (
 func TestAnalyticsTablesFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
 	analyticsTables := []string{
-		"round_classifications", "round_side_classes", "player_round_stats", "clutches", "engagements",
+		"round_classifications", "round_side_classes", "player_round_stats", "engagements",
 		"utility_events", "match_trade_opps", "player_career", "saved_filters",
 		"analysis_config",
 	}
@@ -634,7 +634,7 @@ func TestCareerRebuildMath(t *testing.T) {
 	}
 
 	// ListPlayers + trend. The trend reads the STORED match-scope `adr`
-	// rows now (dogfooding design §3.5's D13 conversion), so seed the
+	// rows now, so seed the
 	// rows a completed sweep would have written — 60 for match 1, 90 for
 	// match 2.
 	seedFreshMetricValue(t, s, "adr", "100", id, 60)

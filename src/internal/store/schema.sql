@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	-- Match header mirror: svc_EncryptedData count seen during the parse.
 	enc_messages INTEGER NOT NULL DEFAULT 0,
 	-- Analytics provenance: the analysis_config.rule_version the match's
-	-- derived rows (round_classifications / player_round_stats / clutches /
+	-- derived rows (round_classifications / player_round_stats /
 	-- engagements / utility_events + player_stats.trade_kills) were last
 	-- computed under. Written ONLY at the end of a successful
 	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS events (
 	-- player_death's `attackerinair`: the attacker was midair. Derived
 	-- from the paired raw payload at extract time (demoinfocs' typed Kill
 	-- has no MidAir field) — no migration: a stale dev DB lacks the
-	-- column and must be re-imported. A stored game fact (PLAN ruling 39);
+	-- column and must be re-imported. A stored game fact;
 	-- the tick-join in_air on player_ticks is a separate derived feature
 	-- and does not replace it.
 	attacker_inair INTEGER NOT NULL DEFAULT 0,
@@ -489,12 +489,12 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
 	subject_key     TEXT    NOT NULL DEFAULT '',  -- player SteamID64 | team key ('ct'/'t') | '' (match subject)
 	dim             TEXT    NOT NULL DEFAULT '',  -- partition key ('' = unpartitioned)
-	value           REAL,                         -- NULL = the statement had no data (raw SQL, dogfood/PLAN.md ruling 23); shown as a dash, never 0
+	value           REAL,                         -- NULL = the statement had no data; shown as a dash, never 0
 	value_key       TEXT    NOT NULL DEFAULT '',  -- identity value (identity metrics only; '' otherwise)
 	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
 	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
 	computed_at     DATETIME,
-	-- Raw-SQL scope tags (dogfood/03-QUERIES.md §5): the reserved binds a
+	-- Raw-SQL scope tags: the reserved binds a
 	-- run was supplied. '' and 0 for the unbound (library-wide) run and for
 	-- every sugar row. A run replaces the rows carrying its own tags.
 	scope_steam_id  TEXT    NOT NULL DEFAULT '',
@@ -506,7 +506,7 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	CHECK (match_id >= 0)
 );
 
--- Raw-SQL run records (dogfood/PLAN.md B4): one row per (metric, scope) run
+-- Raw-SQL run records: one row per (metric, scope) run
 -- that completed, stamped with the versions it ran under. A run that returned
 -- zero rows leaves no metric_values row, so this table is what proves the
 -- scope was computed. Keyed like metric_values' raw scope tags; cleared with
@@ -617,8 +617,7 @@ CREATE TABLE IF NOT EXISTS player_ticks (
 -- idx_match_trade_opps_steam was the profile's stored trade-
 -- opportunity denominator: one `SUM(opps) WHERE steam_id = ?` seek per
 -- profile open. That reader (store.CountPlayerTradeOpportunities) left
--- with the profile Trade rate card's metric conversion (dogfooding W3/W4
--- — no production reader of the library-wide SUM remains), and the
+-- with the profile Trade rate card's metric conversion, and the
 -- metric expressions join match_trade_opps through its (match_id,
 -- steam_id) primary key instead. The index STAYS: dropping it is DDL,
 -- which the pre-release no-DDL rule forbids — it remains the
@@ -655,28 +654,9 @@ CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_
 -- tick table (one player's frames in one match, or across the library):
 -- the match_id-first primary key cannot seek on steam_id, and a scan of
 -- a ~1.3M-row-per-match table is the cost this block exists to avoid
--- (measured 2.6x on a golden-sized match — dogfood/02-TICK-STATE.md
--- §2.2). Same leading-column mirror of the match_id-first key as the
+-- Same leading-column mirror of the match_id-first key as the
 -- other steam_id members.
 CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
-
-CREATE TABLE IF NOT EXISTS clutches (
-	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-	round INTEGER NOT NULL,
-	size INTEGER NOT NULL DEFAULT 0,
-	steam_id TEXT NOT NULL,
-	name TEXT NOT NULL DEFAULT '',
-	start_tick INTEGER NOT NULL DEFAULT 0,
-	end_tick INTEGER NOT NULL DEFAULT 0,
-	bomb_state TEXT NOT NULL DEFAULT '',
-	hp_left INTEGER NOT NULL DEFAULT 0,
-	equip INTEGER NOT NULL DEFAULT 0,
-	won INTEGER NOT NULL DEFAULT 0,
-	kill_ticks TEXT NOT NULL DEFAULT '',
-	replay_anchor INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (match_id, round, steam_id, start_tick)
-);
-CREATE INDEX IF NOT EXISTS idx_clutches_player ON clutches(steam_id);
 
 CREATE TABLE IF NOT EXISTS engagements (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
@@ -850,7 +830,7 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- compiles and returns the hand-computed seed values under the join
 -- grammar (internal/metrics/doc.go).
 
--- No scope, subject or partition column (dogfood/PLAN.md ruling 51): a
+-- No scope, subject or partition column (ruling 51): a
 -- metric's scope is derived from its binds (metrics.RawScopeOf), and
 -- partitioning is the statement's dim column. format carries no
 -- SQL CHECK: its vocabulary is the app-level contract
@@ -870,7 +850,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	-- The physical tables the metric's compiled statement reads, comma-
-	-- joined and sorted (dogfood/03-QUERIES.md §6.3), derived by the save
+	-- joined and sorted, derived by the save
 	-- gate. '' means not derived (builtins until their port; plugin rows
 	-- after an upsert until the next gate pass).
 	touched TEXT NOT NULL DEFAULT '',
@@ -1023,7 +1003,7 @@ CREATE TABLE IF NOT EXISTS builtin_overrides (
 -- Every short_name is at most SIX characters — the same cap
 -- SaveMetric enforces on user input (metricservice.go).
 -- version is omitted (DEFAULT 1) on every row.
--- Every builtin expr is RAW SQL (dogfood/PLAN.md B3, rulings 22-24): one
+-- Every builtin expr is RAW SQL: one
 -- read-only SELECT returning subject_key, dim and value. Match-scope rows
 -- bind :match_id (one run per ready match, so the stored rows are per
 -- match); profile rows run library-wide (match_id 0). The bot predicate
@@ -1550,27 +1530,27 @@ fold AS (
  'Formula: count(engagements rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutches', 'Clutches', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, COUNT(*) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'int',
  'Formula: count(clutches) — the 1vN attempts recorded for this player in the match, addressed per player — the count; the clutch list stays a match detail.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_win_rate', 'Clutch win %', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(won) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.won) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'percent',
  'Formula: avg(clutches.won) — the share of the player''s clutches won, shown as a percent, addressed per player — the match-scope twin of career Clutch win %.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_size', 'Avg clutch size', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(size) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.size) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'float1',
  'Formula: avg(clutches.size) — the mean size (the N of the 1vN) of the player''s clutches, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_hp', 'Avg clutch HP', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(hp_left) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.hp_left) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'float1',
  'Formula: avg(clutches.hp_left) — the mean hit points the player ended their clutches with (0 = died alone), addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_equip', 'Avg clutch equip', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(equip) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.equip) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'currency',
  'Formula: avg(clutches.equip) — the mean equipment value the player held in their clutches, in whole dollars, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
@@ -2313,7 +2293,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
  'Formula: count(round_side_classes rows WHERE class = force) — that team''s own force-buy rounds, addressed per team (no partition).',
  'builtin', CURRENT_TIMESTAMP);
 
--- Raw-SQL fold metrics (dogfood/PLAN.md F2, rulings 22-25): one raw
+-- Raw-SQL fold metrics: one raw
 -- statement per fold column that the snapshot stores. Each statement
 -- returns subject_key, dim and value; NULL is no data (ruling 23).
 -- Humans only (ruling Q10), match grain binds :match_id and round grain
@@ -2683,12 +2663,11 @@ WHERE ro.match_id = :match_id AND ro.number = :round',
  'Formula: (end tick - start tick) ÷ the match''s tick rate — round length in seconds, addressed per match per round — no value when the tick rate is unknown.',
  'builtin', CURRENT_TIMESTAMP);
 
--- Alive-count situation family and the clutch builtin (dogfood/PLAN.md item 19,
--- rulings 22-24). Both are raw round-grain statements over player_ticks
--- (binds :match_id and :round). The clutch statement is the detector's
--- definition re-expressed as SQL; it reproduces the snapshot's clutches rows
--- on the snapshot's 183 rows across every field, checked against a player_ticks
--- proxy built from events (the snapshot itself has no player_ticks table).
+-- Alive-count situation family and the clutch builtin. Both are raw round-grain statements over player_ticks
+-- (binds :match_id and :round). The clutch statement is the retired detector's
+-- definition re-expressed as SQL; it reproduces the stored clutches rows of the detector
+-- (183 of 183, every field, on the snapshot via a player_ticks proxy). The six clutch metrics
+-- below compute the same logic over every round through the clutch CTE that clutch_sql.go splices in.
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origin, created_at) VALUES
 ('alive_count', 'Alive count (raw SQL)', '',
  'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'') SELECT sd.side AS subject_key, CAST(kt.tick AS TEXT) AS dim, (SELECT COUNT(*) FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.tick = kt.tick AND pt.side = sd.side AND pt.alive = 1) AS value FROM kt CROSS JOIN sd ORDER BY kt.tick, sd.side',
@@ -2701,8 +2680,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
  'Formula: one row per 1vN clutch: the sole alive player on a side with an opponent alive, ending at their death, the last opponent''s death or round end — value = opponents alive at start (N).',
  'builtin', CURRENT_TIMESTAMP);
 
--- Round-grain statistics as metrics (dogfood/PLAN.md B7, D-3; 03-QUERIES.md
--- §5 and §10). Each statement binds :match_id and :round (ruling 20) and
+-- Round-grain statistics as metrics. Each statement binds :match_id and :round (ruling 20) and
 -- returns the reserved columns subject_key, dim and value (ruling 22). An
 -- absent value is NULL, shown as a dash, never a fabricated zero (ruling 23).
 -- They are the M19, M22, M30, M31, M36 and M37 round-grain series of the
@@ -2821,7 +2799,7 @@ ORDER BY dim',
  'int',
  'Formula: per round, nades = count of utility_events, dmg = sum of damage, flash = sum of flash_ms, human throwers only. Dash when the round is absent.',
  'builtin', CURRENT_TIMESTAMP),
--- Round-grain deaths for the Economy view (dogfood/PLAN.md ruling 41).
+-- Round-grain deaths for the Economy view.
 -- Enumerates player_round_stats, the analyzer's own per-round record
 -- (one row per counted human × round, carrying that round's side sample),
 -- so a player with no death in the round is a real 0, never absent. The
@@ -2870,15 +2848,14 @@ CREATE TABLE IF NOT EXISTS plugins (
 	installed_at DATETIME
 );
 
--- Per-match inputs of the per-player profile metrics (dogfood/PLAN.md
--- ruling 48). Match scope, one row per player per dim: the career metric
+-- Per-match inputs of the per-player profile metrics. Match scope, one row per player per dim: the career metric
 -- sums these through metric('...') (ratio of sums, never a mean of per-match
 -- values). dim convention: the raw split value as the career row carries it
 -- (ps.map = the map name, prs.side = ct/t/'', events.weapon = the weapon name).
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origin, created_at) VALUES
 ('match_won', 'Match won', '', 'SELECT ps.steam_id AS subject_key, '''' AS dim, ps.won AS value FROM player_stats ps WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'int', 'Formula: won — 1 when the player won this match, 0 otherwise, addressed per player (no partition) — the per-match input of Win % and Matches.', 'builtin', CURRENT_TIMESTAMP),
 ('match_trade_opps', 'Trade opportunities', '', 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(mto.opps, 0) AS value FROM player_stats ps LEFT JOIN match_trade_opps mto ON mto.match_id = ps.match_id AND mto.steam_id = ps.steam_id WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'int', 'Formula: match_trade_opps.opps — trade opportunities this player had in this match, addressed per player (no partition); a player with no row counts 0.', 'builtin', CURRENT_TIMESTAMP),
-('match_clutch_wins', 'Clutches won', '', 'SELECT c.steam_id AS subject_key, '''' AS dim, SUM(c.won) AS value FROM clutches c WHERE c.match_id = :match_id AND c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id', 'int', 'Formula: sum(clutches.won) — clutches this player won in this match, addressed per player (no partition) — the numerator of the career Clutch win %.', 'builtin', CURRENT_TIMESTAMP),
+('match_clutch_wins', 'Clutches won', '', '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, SUM(c.won) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id', 'int', 'Formula: sum(clutches.won) — clutches this player won in this match, addressed per player (no partition) — the numerator of the career Clutch win %.', 'builtin', CURRENT_TIMESTAMP),
 ('match_kast_flags', 'KAST flags', '', 'SELECT r.steam_id AS subject_key, '''' AS dim, SUM(r.kast) AS value FROM player_round_stats r WHERE r.match_id = :match_id AND r.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = r.match_id AND p.steam_id = r.steam_id AND p.is_bot = 1) GROUP BY r.steam_id', 'int', 'Formula: sum(player_round_stats.kast) — rounds with a K, A, T or S this player had in this match, addressed per player (no partition) — the numerator of career KAST%.', 'builtin', CURRENT_TIMESTAMP),
 ('match_rounds', 'Rounds recorded', '', 'SELECT r.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM player_round_stats r WHERE r.match_id = :match_id AND r.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = r.match_id AND p.steam_id = r.steam_id AND p.is_bot = 1) GROUP BY r.steam_id', 'int', 'Formula: count(player_round_stats) — rounds this player has a stored round row for in this match, addressed per player (no partition) — the denominator of career ADR and KAST%.', 'builtin', CURRENT_TIMESTAMP),
 ('match_map_won', 'Match won by map', '', 'SELECT ps.steam_id AS subject_key, ps.map AS dim, ps.won AS value FROM player_stats ps WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'int', 'Formula: won, partitioned by map — 1 when the player won this match on that map, 0 otherwise, addressed per player, dim = the map name (player_stats.map). Input of the career map splits.', 'builtin', CURRENT_TIMESTAMP),

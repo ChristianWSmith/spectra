@@ -22,7 +22,7 @@ export const heatmaps = {
     'Drag a box on the map to open the replay events for that region (padded\n        to the splat’s reach); a single click opens one square.',
   noRowsSuffix: ' has no event rows behind it — a drag or click opens nothing.',
   saveImage: 'Save image', // the floating Save on the radar card (V8e)
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   kindOverview: "Overview",
   kindGrenadeThrown: "Grenade thrown",
   kindGrenadeDetonation: "Grenade detonation",
@@ -37,14 +37,14 @@ export const heatmaps = {
   regenerate: "Regenerate",
   generate: "Generate",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   mapNotFound: "map not found for {map} — plain grid, no radar art",
   mapNoTransform: "map pack for {map} has no transform — plain grid, no radar art",
   mapNoRadar: "map pack for {map} has no radar image — overlay on dark grid only",
   noEventRows: "{kind} has no event rows behind it — nothing to query, so the click did not open the replay",
   bboxLabel: "bbox ({x0}, {y0}) → ({x1}, {y1})",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   unitCount: "count",
 
 };

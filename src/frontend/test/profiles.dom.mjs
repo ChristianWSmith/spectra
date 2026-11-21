@@ -119,6 +119,9 @@ process.on('unhandledRejection', (e) => {
 });
 
 const bindings = await import('./stubs/bindings.mjs');
+// The scoped state read answers from the same per-metric states the harness
+// sets on GetMetricComputeState, so every player reads the same word here.
+bindings.MetricsService.GetMetricStates = (scope, id) => bindings.MetricsService.GetMetricComputeState(scope, id);
 
 // The history row's stored cells (K/D/A, ADR, KAST) are one metric() read per
 // match (a match-bound read of the player's stored value). The sections below

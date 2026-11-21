@@ -1,6 +1,5 @@
 import './compile-worker-node.mjs';
-// jsdom driver for the Profile panels as builtin components (dogfood/PLAN
-// C5d; dogfood/04-COMPONENTS.md §3, §7). Each panel mounts in a real
+// jsdom driver for the Profile panels as builtin components. Each panel mounts in a real
 // ComponentFrame with a FIXED context ({ matchId: null, steamId, round: null })
 // and the real read services over the scripted Wails stub. The checks read the
 // rendered values:
@@ -113,6 +112,8 @@ function script() {
   bindings.MetricsService.GetMetricValuesForMatch = (matchId, ids) =>
     Promise.resolve((MATCH_ROWS[matchId] || []).filter((r) => ids.includes(r.metricId)).map((r) => ({ ...r, matchId })));
   bindings.MetricsService.GetMetricComputeState = () => Promise.resolve(STATES);
+  // The scoped read answers from the same states (every player reads them).
+  bindings.MetricsService.GetMetricStates = (scope, id) => bindings.MetricsService.GetMetricComputeState(scope, id);
   bindings.MetricsService.GetMetricSeries = () => Promise.resolve([]);
   bindings.ProfileService.GetProfile = (sid) =>
     Promise.resolve({

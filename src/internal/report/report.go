@@ -72,9 +72,7 @@ type PlayerReport struct {
 }
 
 // MetricCells is one report subject's metric-backed display cells — the
-// Go read-back (dogfooding design §3.6, extended by the inferred
-// conversion's Q2 per-half rule, §3.1, and by the owner ruling of
-// 2026-11-17 that closed the count exemption): the builtin templates
+// Go read-back: the builtin templates
 // render ADR / HS% / KD / KDA, every converting compound half — the
 // match tables' A / Openings / Trades cells, the player report's K/D/A
 // A-half, both opening pairs, Trades, Best streak and Enemies flashed
@@ -308,7 +306,7 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	// derived values" forbids re-classifying at read time). Report and
 	// Economy tab therefore agree by construction, and a match analyzed
 	// under older rules shows the same honestly-stale classes in both.
-	clutches, err := st.GetClutches(matchID)
+	clutches, err := st.ClutchRows(matchID)
 	if err != nil {
 		return nil, err
 	}

@@ -927,7 +927,7 @@ export function careerRows(names) {
   });
 }
 // careerAdrRows is THE one fetch of the stored `career_adr` bucket for a
-// roster-sized surface (the player suggestions — dogfooding W4): the
+// roster-sized surface: the
 // careerRows projection of that one seed, keyed steamId → row. A
 // definition missing from the catalog (or a failed read) yields an EMPTY
 // map: the caller renders the honest dash — never a Go-computed number,
@@ -953,6 +953,13 @@ export function getPlayerRefs(matchID) {
 // that moved fresh/behind), which is exactly when it changes.
 export function getMetricComputeState() {
   return MetricsService.GetMetricComputeState();
+}
+
+// getMetricStates is the uncached scoped read: each metric's state for ONE
+// unit. scope is 'match' (id = match id) or 'player' (id = steam id); another
+// unit being behind never marks this one.
+export function getMetricStates(scope, id) {
+  return MetricsService.GetMetricStates(scope, String(id));
 }
 
 // listRunningMetrics / cancelMetric back the Builder's running-metrics
@@ -1035,7 +1042,7 @@ export function getSchema() { return QueryService.GetSchema(); }
 // componentQuery is a user component's query(sql) (lib/componentruntime/
 // readapi.js): the console's read-only connection with no row cap, no
 // timeout and no history entry. Deliberately NOT read-cached: a component
-// read is live and carries no freshness (dogfood/04 §3). Failures come
+// read is live and carries no freshness. Failures come
 // back in .err, like runQuery's.
 export function componentQuery(sql) { return QueryService.ComponentQuery(sql); }
 

@@ -30,7 +30,6 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"roundClassCols", "round_classifications", roundClassCols},
 		{"roundSideClassCols", "round_side_classes", roundSideClassCols},
 		{"playerRoundCols", "player_round_stats", playerRoundCols},
-		{"clutchCols", "clutches", clutchCols},
 		{"engagementCols", "engagements", engagementCols},
 		{"utilityCols", "utility_events", utilityCols},
 		{"matchTradeOppsCols", "match_trade_opps", matchTradeOppsCols},
@@ -130,7 +129,7 @@ func TestDiscardedWarmupColumnsGone(t *testing.T) {
 // TestStampDropsColumnsGone pins the stamp drops that remain: events.same_side
 // is not a column any more (its seeds read the player_ticks side join, so a
 // fresh database must not grow it back). events.attacker_inair stays a stored
-// game fact (PLAN ruling 39), and events.capped_dmg stays an ingest stamp
+// game fact, and events.capped_dmg stays an ingest stamp
 // (ruling 18): no per-tick row can reproduce it.
 func TestStampDropsColumnsGone(t *testing.T) {
 	s := openMem(t)
@@ -146,7 +145,7 @@ func TestStampDropsColumnsGone(t *testing.T) {
 		t.Error("events.same_side exists in the baseline — it is a tick-join read now, not a stamp")
 	}
 	if !names["attacker_inair"] {
-		t.Error("events.attacker_inair is missing — it is a stored game fact (PLAN ruling 39)")
+		t.Error("events.attacker_inair is missing — it is a stored game fact")
 	}
 	if !names["capped_dmg"] {
 		t.Error("events.capped_dmg is missing — it stays an ingest stamp (ruling 18)")
@@ -179,9 +178,6 @@ func TestReplaceMatchRowsPlaceholderCount(t *testing.T) {
 			return s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
 				{Round: 1, SteamID: "100", Name: "p"},
 			})
-		}},
-		{"clutches", func() error {
-			return s.ReplaceClutches(id, []models.Clutch{{Round: 1, Size: 1, SteamID: "100", Name: "p"}})
 		}},
 		{"engagements", func() error {
 			return s.ReplaceEngagements(id, []models.Engagement{{Round: 1, Kind: "opening", ASteam: "100"}})

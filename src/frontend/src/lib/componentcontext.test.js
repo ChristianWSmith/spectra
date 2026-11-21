@@ -1,4 +1,4 @@
-// The component context (dogfood/04-COMPONENTS.md §3, ruling 34): metric()
+// The component context: metric()
 // and query() take their binds from the mounting surface's context by
 // default, an explicit bind object replaces that set, and the context is
 // frozen with its three fields.
@@ -27,6 +27,7 @@ function harness(ctx = {}) {
       return [{ metricId: 1, subjectKey: s, dim: '', value: 60, valueKey: '' }];
     },
     getMetricComputeState: async () => [{ metricId: 1, state: 'fresh' }],
+    getMetricStates: async () => [{ metricId: 1, state: 'fresh' }],
     componentQuery: async (sql) => {
       calls.push(['query', sql]);
       return { columns: ['x'], rows: [[1]] };

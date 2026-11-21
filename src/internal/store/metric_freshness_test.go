@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Freshness at the store (dogfood/PLAN.md B4): unknown touched sets read
+// Freshness at the store: unknown touched sets read
 // behind, raw runs are covered by their run records, and the builtins'
 // touched sets are derived at Open through the statement gate.
 

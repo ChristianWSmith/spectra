@@ -1,6 +1,6 @@
 package integration_test
 
-// Golden headline acceptance (dogfood/PLAN.md ruling 42). F3 removed the
+// Golden headline acceptance. F3 removed the
 // golden playersHeadline / topPlayer check, because the headline values
 // now come from the stored metric rows. This test restores the check
 // against those rows: the golden demo runs through the real extract,

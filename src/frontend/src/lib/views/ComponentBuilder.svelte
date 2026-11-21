@@ -1,5 +1,5 @@
 <script>
-  // The Component builder (dogfood/04-COMPONENTS.md §6): the component
+  // The Component builder: the component
   // AUTHORING surface, beside the metric Builder and the Reports builder
   // and in their visual language. A list of components (the built-ins,
   // then yours), the source editor, and the live preview mounted in the
@@ -582,7 +582,7 @@
       </div>
 
       <!-- Use as my view: one placement per surface, pointing at the open
-           component (dogfood/04 §2; owner ruling 43). -->
+           component. -->
       {#if viewTarget}
         <div class="cb-views">
           <span class="field-label">{S.componentbuilder.viewsHeading}</span>

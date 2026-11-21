@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -31,8 +30,7 @@ import (
 //     extract/build.go; HSPct = 100·hs/k — extract/helpers.go pct) and
 //     proves the stored-column seeds (adr, hs_pct, kast) equal the
 //     columns GetScoreboard serves — plus the kd seed against the
-//     store's FLOORED per-match spelling (kdPerMatchSQL, test-only since
-//     dogfooding W4 removed the scoreboard's kd column), where Q1's one
+//     store's FLOORED per-match spelling, where Q1's one
 //     deliberate divergence lives (zero deaths: ratio's NULLIF → value 0
 //     beside N, where the floor MAX(deaths, 1) → the kill count) — and
 //     the kda seed (w13d's conversion) against the FLOORED arithmetic
@@ -106,7 +104,7 @@ func TestMissedTradesEquivalence(t *testing.T) {
 			// LEFT JOINed to the stored counts, missing → 0.
 			// A roster player with no trade-opportunity row has no data:
 			// the statement's SUM is NULL and the cell is a dash, not 0
-			// (dogfood/PLAN.md ruling 23). The oracle keeps that NULL.
+			// The oracle keeps that NULL.
 			res, err := st.RunReadOnly(
 				`SELECT ps.steam_id, mo.missed
 				 FROM player_stats ps
@@ -146,66 +144,6 @@ func TestMissedTradesEquivalence(t *testing.T) {
 
 // itoa formats a match id for a scope string.
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
-
-// TestCareerClutchesEquivalence is the profile Clutches card's
-// acceptance oracle (design §6.3): career_clutches == the raw clutch
-// count over the library, computed here as an INDEPENDENT plain-SQL
-// oracle over the clutches table instead of reading the career rollup
-// (whose derived columns the career dual-write removal deleted). The
-// oracle applies the seed's own semantics: the `career_clutches` expr is
-// `from clutches: count()` and every statement is subject-addressed by
-// the engine — a non-empty `steam_id` beside the humans-only NOT EXISTS
-// over players (store.HumanOnlyBySteamID's spelling, match-scoped). The
-// committed corpus is clutchless (an empty primary table yields no
-// preview rows, the same treatment the fixtures give
-// career_clutch_win_rate), so this one INSERTS clutches first: a player
-// with clutches gets the same count from both sides, and a player
-// without them keeps 0 AND no metric row — the profile's honest "—",
-// never a fabricated 0.
-func TestCareerClutchesEquivalence(t *testing.T) {
-	st := seededStore(t)
-	inserted := map[int64][]models.Clutch{
-		1: {
-			{Round: 5, Size: 1, SteamID: "76561198000000001", Name: "Alice", StartTick: 100, Won: true},
-			{Round: 9, Size: 2, SteamID: "76561198000000001", Name: "Alice", StartTick: 200, Won: false},
-		},
-		2: {
-			{Round: 3, Size: 1, SteamID: "76561198000000003", Name: "Carol", StartTick: 300, Won: true},
-		},
-		3: {
-			{Round: 12, Size: 3, SteamID: "76561198000000005", Name: "Eve", StartTick: 400, Won: true},
-			{Round: 16, Size: 1, SteamID: "76561198000000008", Name: "Heidi", StartTick: 500, Won: false},
-		},
-	}
-	for matchID, rows := range inserted {
-		if err := st.ReplaceClutches(matchID, rows); err != nil {
-			t.Fatalf("ReplaceClutches(%d): %v", matchID, err)
-		}
-	}
-
-	want := oracle(t, st,
-		`SELECT c.steam_id, COUNT(*) FROM clutches c
-		 WHERE c.steam_id <> ''
-		   AND NOT EXISTS (SELECT 1 FROM players p
-			WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1)
-		 GROUP BY c.steam_id`)
-	got := careerPreview(t, st, seedDef(t, st, "career_clutches"))
-	for i := 1; i <= 8; i++ {
-		sid := fmt.Sprintf("7656119800000000%d", i)
-		// want[sid] is 0 for every subject with no clutch rows.
-		if got[sid] != want[sid] {
-			t.Errorf("career_clutches[%s] = %v, want the raw clutch count %v", sid, got[sid], want[sid])
-		}
-		if want[sid] == 0 {
-			if _, ok := got[sid]; ok {
-				t.Errorf("career_clutches[%s] = %v, want NO row (a clutchless player renders —)",
-					sid, got[sid])
-			}
-		} else if _, ok := got[sid]; !ok {
-			t.Errorf("career_clutches: subject %s missing from the preview", sid)
-		}
-	}
-}
 
 // TestCareerOpeningEquivalence is the opening-duel trio's acceptance
 // oracle (design addendum I9): the three profile seeds equal the raw

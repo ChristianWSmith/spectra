@@ -1,4 +1,4 @@
-// THE read API a mounted component receives (dogfood/04-COMPONENTS.md §3)
+// THE read API a mounted component receives
 // — the whole surface between a component and the app, typed here in one
 // module. ComponentFrame.svelte builds one per mounted component and
 // passes it as the reserved `spectra` prop beside the component's own
@@ -52,6 +52,7 @@ import * as S from '../strings/index.js';
  *   getMetricValuesForMatch: (matchId: number, ids: number[]) => Promise<any[]>,
  *   getMetricValuesForPlayer: (steamId: string, ids: number[]) => Promise<any[]>,
  *   getMetricComputeState: () => Promise<any[]>,
+ *   getMetricStates: (scope: 'match'|'player', id: number|string) => Promise<any[]>,
  *   componentQuery: (sql: string) => Promise<{columns?: string[], rows?: any[][], err?: string}>,
  * }} ReadServices
  *
@@ -175,13 +176,28 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
       const defs = (await reads.listMetrics()) || [];
       const def = defs.find((d) => d && d.name === name);
       if (!def) throw new Error(S.fill(S.components.metricUnknown, { name }));
-      const [values, states] = await Promise.all([storedRead(reads, def, resolved), reads.getMetricComputeState()]);
+      // A bound unit takes its state from the scoped read: a match-grain read
+      // from its match, a player read from its player, so another unit being
+      // behind never marks this one. The library word (any match behind) is
+      // the Builder list's alone.
+      const steamBind = resolved.steam_id != null && resolved.steam_id !== '' ? String(resolved.steam_id) : null;
+      const stateRead = resolved.match_id != null
+        ? reads.getMetricStates('match', Number(resolved.match_id))
+        : steamBind != null
+          ? reads.getMetricStates('player', steamBind)
+          : reads.getMetricComputeState();
+      const [values, states] = await Promise.all([storedRead(reads, def, resolved), stateRead]);
       const unit = (values || []).filter((v) => v.metricId === def.id);
       const entry = (states || []).find((s) => s.metricId === def.id) || null;
       const computeState = (entry && entry.state) || '';
       const steam = resolved.steam_id != null && resolved.steam_id !== '' ? String(resolved.steam_id) : null;
       const row = steam ? unit.find((v) => v.subjectKey === steam) || null : unit[0] || null;
-      const state = stateWord(metricPresentation(computeState, row, unit.length > 0));
+      // Sibling coverage (metricstate.js): a player-bound career read's unit is
+      // that player, so another player's row is no coverage of it. A match or
+      // round unit keeps the unit's own rows as its coverage.
+      const playerUnit = resolved.match_id == null && steam != null;
+      const unitHasRows = playerUnit ? row != null : unit.length > 0;
+      const state = stateWord(metricPresentation(computeState, row, unitHasRows));
       const fresh = state === 'fresh';
       const rows = fresh
         ? (steam ? unit.filter((v) => v.subjectKey === steam) : unit).map((v) => ({

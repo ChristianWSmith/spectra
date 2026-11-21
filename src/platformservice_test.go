@@ -293,13 +293,14 @@ func TestChoosePluginFile(t *testing.T) {
 // waitForSweepIdle waits for the background sweep loop to drain — fixture
 // cleanup closes the store, so no sweep goroutine may outlive the test
 // (the pattern from TestSweepCoalescesTriggers in metricpass_test.go).
+// It waits on the scheduler's own completion signal (sweepIdle, broadcast
+// when the loop stops) with NO wall-clock budget: a sweep runs every
+// seeded built-in (~147 metrics), so it can take longer than any fixed
+// deadline counted from here while still making progress. A scheduler
+// that never returns to idle is caught by the package's go test -timeout.
 func waitForSweepIdle(t *testing.T, f *depsFixture) {
 	t.Helper()
-	waitFor(t, "the sweep scheduler to go idle", func() bool {
-		f.svc.mu.Lock()
-		defer f.svc.mu.Unlock()
-		return !f.svc.sweepRunning
-	})
+	f.svc.waitSweepsIdle()
 }
 
 // TestPluginOpsTriggerTheMetricSweep pins the TRIGGER side of the ruling:

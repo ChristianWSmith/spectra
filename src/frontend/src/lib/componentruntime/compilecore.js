@@ -1,4 +1,4 @@
-// The compile core (dogfood/04-COMPONENTS.md §5; owner ruling 47): the one
+// The compile core: the one
 // place svelte/compiler runs. It has NO app imports, so the same code runs
 // in the compile Web Worker (compile.worker.js) and in the node worker the
 // jsdom tests install (test/compile-worker-node-entry.mjs).

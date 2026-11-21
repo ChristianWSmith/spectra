@@ -237,6 +237,8 @@ const PREFIX_EXEMPT = {
 // stale, the PENDING_DENYLIST liveness contract). Every entry renders as a
 // tooltip, footnote or in-place explanatory note, never as a label.
 const HINT_KEYS = {
+  'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (matchpanels.js, read through a panel source)',
+  'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (matchpanels.js, read through a panel source)',
   // builtin panel copy (ruling 46, C5i): the Economy definitions and card
   // formulas are tooltips (a title or a card's hover text), and the Explorer
   // reference notes and the heatmap's no-rows note are footnotes — hints, not
@@ -592,7 +594,7 @@ function collectSvelte(file) {
 
 // ---------------------------------------------------------------------------
 // Medium 2 — JS modules (comment-stripped; import/export specifiers skipped —
-// ../../bindings/… paths are module wiring, not copy).
+// /../bindings/… paths are module wiring, not copy).
 // ---------------------------------------------------------------------------
 function jsLiterals(file) {
   let code = stripComments(readFileSync(file, 'utf8'));
@@ -1409,7 +1411,7 @@ test('Check E — input hints are verb-like: every placeholder’s first word is
 });
 
 // ---------------------------------------------------------------------------
-// Check F — builtin panel copy (ruling 46, dogfood C5i): a builtin panel's
+// Check F — builtin panel copy: a builtin panel's
 // user-facing text is read through the catalog (S.<module>.<key>), never an
 // English literal in the panel source. Scope: every compiled builtin Svelte
 // file under lib/builtins/ (generated/ excluded) and the four JS modules that

@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Match view's rounds and details panels (dogfood/PLAN.md
-// C5c, dogfood/04-COMPONENTS.md §3, §3.5). Each panel mounts through the real
+// jsdom driver for the Match view's rounds and details panels. Each panel mounts through the real
 // ComponentFrame, compiles from its source and reads through the real read API.
 // The read services are a fixture, so every rendered value is one this file
 // computes by hand:
@@ -83,10 +82,15 @@ function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
-  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+  // Static and dynamic relative imports both: a built-in's helper modules are
+  // loaded by the registry's dynamic import (compile.js), and must be the same
+  // bundled instance the static imports reach.
+  const src = readFileSync(absPath, 'utf8').replace(/(from |import\()'(\.{1,2}\/[^']+)'/g, (whole, lead, rel, offset, str) => {
+    // Inside a template literal (a built-in's source text) the import is text, not code: leave it.
+    if ((str.slice(0, offset).match(/(?<!\\)`/g) || []).length % 2 === 1) return whole;
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/'))) return `from '${pathToFileURL(bundle(target)).href}'`;
-    return `from '${pathToFileURL(target).href}'`;
+    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/'))) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
+    return `${lead}'${pathToFileURL(target).href}'`;
   });
   writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
@@ -188,6 +192,7 @@ const reads = {
   getMetricValuesForMatch: async () => [],
   getMetricValuesForPlayer: async () => [],
   getMetricComputeState: async () => [],
+  getMetricStates: async () => [],
   componentQuery: async (sql) => answer(sql),
 };
 
@@ -217,8 +222,6 @@ function check(name, cond, detail = '') {
 let target = null;
 let instance = null;
 let navCalls = [];
-let pickCalls = [];
-let compareCalls = 0;
 const unmountAll = () => {
   if (instance) unmount(instance);
   instance = null;
@@ -232,7 +235,7 @@ const mountPanel = async ({ source, context, props = {} }) => {
   document.body.appendChild(target);
   instance = mount(Harness, {
     target,
-    props: { source, context, props, reads, nav: (h) => navCalls.push(h) },
+    props: { source, context, props, reads, nav: (h) => navCalls.push(h), builtinDir: 'src/lib' },
   });
   await settle();
   return target;
@@ -246,18 +249,16 @@ const MATCH = { matchId: 7, steamId: null, round: null };
 const BACK = { back: 'match/7/rounds' };
 const rounds = (root) => rowsOf(root);
 
-const propsWith = (extra) => ({ ...BACK, ...extra });
-const roundsProps = (picks = []) => propsWith({
-  picks,
-  onPick: (n) => pickCalls.push(n),
-  onCompare: () => {
-    compareCalls++;
-  },
-});
+// The compare picks live in view state, keyed by match (viewstate.svelte.js).
+// The bundled instance is the one the panel's registry import reaches.
+const vs = await import(pathToFileURL(bundle(resolve('src/lib/viewstate.svelte.js'))).href);
+const router = await import(pathToFileURL(bundle(resolve('src/lib/router.js'))).href);
+const setPicks = (matchId, compareSel) => vs.remember(vs.matchKey('selection', matchId), { compareSel });
+const getPicks = (matchId) => vs.seed(vs.matchKey('selection', matchId), { compareSel: [] }).compareSel;
 
 // --- A. the rounds: the stored values -----------------------------------------------------
 console.log('A. rounds: stored values (match 7)');
-let root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: roundsProps() });
+let root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
 let rs = rounds(root);
 check('one row per round, in round order', rs.length === 14 && text(rs[0].children[2]) === '1' && text(rs[13].children[2]) === '14', String(rs.length));
 let r1 = tableRows(root)[0];
@@ -314,7 +315,7 @@ check('a name button opens the profile, not the round', navCalls.length === 1 &&
 
 // --- E2. pre-match labels, winner chips and the boundary (match 9) ----------------------------
 console.log('E2. pre-match K/W labels, winners, neutral chip, boundary (match 9)');
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 9, steamId: null, round: null }, props: roundsProps() });
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 9, steamId: null, round: null }, props: BACK });
 const r9 = rowsOf(root);
 check('match 9: every stored row renders (2 pre-match + 13 counted, no pref)', r9.length === 15, String(r9.length));
 check('match 9: the pre-match rows carry the K and W labels in the Rd cell',
@@ -332,24 +333,27 @@ check('match 9: the boundary rides round 13 (1-based row 15), not shifted by the
 
 // --- F. the compare box ----------------------------------------------------------------------------
 console.log('F. compare picks');
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: roundsProps([1]) });
+setPicks(7, [1]);
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
 let boxes = [...root.querySelectorAll('input.cmp-cb')];
-check('a pick from the surface shows as checked', boxes[0].checked === true && boxes[1].checked === false);
+check('a pick kept in view state shows as checked', boxes[0].checked === true && boxes[1].checked === false);
 check('one pick shows no compare button', root.querySelector('.cmp-float') === null);
 check('one pick shows the count line', text(root.querySelector('.cmp-hint')) === '1 of 4 rounds selected.', text(root.querySelector('.cmp-hint')));
-pickCalls = [];
 boxes[1].checked = true;
 change(boxes[1]);
 await settle(4);
-check('ticking a box reports that round to the surface', pickCalls.length === 1 && pickCalls[0] === 2, JSON.stringify(pickCalls));
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: roundsProps([1, 2]) });
+check('ticking a box adds that round to this match’s picks', JSON.stringify(getPicks(7)) === '[1,2]', JSON.stringify(getPicks(7)));
+setPicks(7, [1, 2]);
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
 const floatBtn = root.querySelector('.cmp-float');
 check('two picks show the compare button', !!floatBtn && text(floatBtn) === 'Compare 2 rounds', floatBtn && text(floatBtn));
-compareCalls = 0;
 click(floatBtn);
 await settle(4);
-check('the compare button calls the surface', compareCalls === 1, String(compareCalls));
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: roundsProps([1, 2, 3, 4]) });
+check('the compare button opens the compare page with the picks, back to the tab',
+  navCalls.length === 1 && navCalls[0] === router.buildHash('/compare/7', { rounds: '1,2', back: 'match/7/rounds' }),
+  JSON.stringify(navCalls));
+setPicks(7, [1, 2, 3, 4]);
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
 boxes = [...root.querySelectorAll('input.cmp-cb')];
 check('four picks disable every other box', boxes[4].disabled === true && boxes[0].disabled === false);
 
@@ -379,7 +383,7 @@ root = await mountPanel({ source: panels.DETAILS_SOURCE, context: { matchId: 8, 
 const nullFacts = [...root.querySelectorAll('dl.facts > div')].map((d) => text(d.querySelector('dd')));
 check('a NULL fact shows a dash, and a stored zero shows 0',
   JSON.stringify(nullFacts) === JSON.stringify(['—', '—', '—', '—', '—', '—', '0', '—']), JSON.stringify(nullFacts));
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 8, steamId: null, round: null }, props: roundsProps() });
+root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 8, steamId: null, round: null }, props: BACK });
 check('a match with no stored rounds shows no rows (match 8)', rowsOf(root).length === 0);
 
 // --- G. the registry ------------------------------------------------------------------------------------------

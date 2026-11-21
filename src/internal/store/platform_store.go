@@ -26,7 +26,6 @@ import (
 //		plugin_id TEXT NOT NULL DEFAULT '',
 //		version INTEGER NOT NULL DEFAULT 1,
 //		created_at DATETIME
-//	);
 //
 // ensureMetricsTable creates that table IF NOT EXISTS before any plugin
 // metric write: a no-op once the baseline schema has created it, and a
@@ -77,7 +76,7 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	-- The physical tables the metric's compiled statement reads, comma-
-	-- joined and sorted (dogfood/03-QUERIES.md §6.3), derived by the save
+	-- joined and sorted, derived by the save
 	-- gate. '' means not derived (builtins until their port; plugin rows
 	-- after an upsert until the next gate pass).
 	touched TEXT NOT NULL DEFAULT '',

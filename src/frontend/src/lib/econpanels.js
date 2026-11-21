@@ -1,5 +1,4 @@
-// The Economy view as builtin components (dogfood/PLAN.md C5c, C5a's nested
-// mount, dogfood/04-COMPONENTS.md §3, §3.5, §7). The Economy builtin is a
+// The Economy view as builtin components. The Economy builtin is a
 // composer: it loads the match's rounds and economy rows once, then mounts
 // three panels with `spectra.Child`, each receiving the same read-only
 // `context` ({ matchId }) from the Match view:

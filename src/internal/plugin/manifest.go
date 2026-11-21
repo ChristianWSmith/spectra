@@ -54,7 +54,7 @@ var allowedCapabilities = map[string]bool{
 // metric-definition contract — models.MetricRow minus createdAt/id
 // stamps; id/origin/pluginId are loader-assigned). A plugin declares no
 // scope: it is derived from the statement's binds like any metric's
-// (dogfood/PLAN.md ruling 51).
+// (ruling 51).
 type MetricDef struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`

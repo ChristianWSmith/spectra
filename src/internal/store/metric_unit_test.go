@@ -13,8 +13,7 @@ func unitRows(v float64) []RawMetricRow {
 
 // TestMatchUnitCoverageIsPerMatch: a match with no fresh run record is the
 // only behind unit of a :match_id metric. The metric's other matches keep
-// their fresh rows, and the coverage names the behind match alone (ruling 20,
-// dogfood/PLAN.md B4).
+// their fresh rows, and the coverage names the behind match alone.
 func TestMatchUnitCoverageIsPerMatch(t *testing.T) {
 	s, _ := openFileStore(t)
 	a := seedReadyMatch(t, s, "unit-cov-a")

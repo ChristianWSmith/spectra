@@ -1,12 +1,11 @@
 import '../../test/compile-worker-node.mjs';
 // builtinpanels.test.js — the Profile view's panels as builtin components
-// (dogfood/PLAN C5d; dogfood/04-COMPONENTS.md §1, §7). Three pins:
+// Three pins:
 //   1. the registry (builtins/panels.js) names the Profile component and its
 //      six panels, every id sits in the reserved builtin namespace, and each
 //      id's component file exists;
 //   2. no panel reads a retired preference: the order, hidden, economy,
-//      transposed and localStorage keys (owner ruling 33, retired keys listed
-//      in dogfood/04 §2), nor the readers of them. Comments are stripped
+//      transposed and localStorage keys, nor the readers of them. Comments are stripped
 //      first, so a comment that names a retired key is not a read;
 //   3. the surface the panels mount from (PlayerProfile.svelte) reads none of
 //      them either.
@@ -22,7 +21,7 @@ const LIB = fileURLToPath(new URL('.', import.meta.url));
 const PANEL_DIR = path.join(LIB, 'builtins', 'profile');
 
 // The retired preference keys and the readers of them. A panel that names one
-// of these in code reads a retired preference (PLAN C5d item 3).
+// of these in code reads a retired preference.
 const RETIRED = [
   'metric_order_match',
   'metric_order_profile',

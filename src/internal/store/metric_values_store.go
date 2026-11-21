@@ -38,6 +38,10 @@ type MetricCoverage struct {
 	// non-empty (or another unit is behind). Other matches keep their fresh
 	// values, so a per-match read answers from its own unit.
 	BehindMatches []int64
+	// BehindSteams is the per-player answer for a :steam_id metric: the
+	// humans of ready matches with no fresh run record. Behind is true when
+	// this is non-empty. A player not listed reads fresh for this metric.
+	BehindSteams []string
 }
 
 // metricValueFreshCond is THE row-level freshness test (the behind
@@ -66,7 +70,7 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 //	         OR (profile) the career bucket has no fresh row WHILE the
 //	            library has player data to compute it over
 //
-// There is no subject column (dogfood/PLAN.md ruling 51): the match-scope
+// There is no subject column (ruling 51): the match-scope
 // clause answers every metric at match extent, and the career clause every
 // profile-scoped one (scope is derived from the binds, see ScopeOfExpr).
 //
@@ -174,7 +178,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	// Classification runs after the cursor closes: a raw metric's coverage
 	// is its own run-record predicate (rawBehind), never the sugar clauses
 	// above, and a metric whose touched set is unknown ('') reads behind,
-	// never fresh (dogfood/PLAN.md B4).
+	// never fresh.
 	_ = rows.Close()
 	out := make([]MetricCoverage, 0, len(list))
 	for _, p := range list {
@@ -189,18 +193,23 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 			}
 			c.Behind = behind
 			c.BehindMatches = units
+			steams, err := s.staleSteamUnits(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
+			}
+			c.BehindSteams = steams
 		}
 		out = append(out, c)
 	}
 	return out, nil
 }
 
-// rawBehind is the raw metric's behind predicate (dogfood/PLAN.md B4):
+// rawBehind is the raw metric's behind predicate:
 // behind iff some UNIT the metric's bind shape expects has no run record
 // at the current metric version and the current rule version. The units
 // are the sweep's own enumeration (metrics.RawScopes): library-wide (one
 // unit), :match_id (each ready match), :steam_id (each ready human) and
-// :match_id with :round (each ready round). A ready match with no rounds
+// match_id with :round (each ready round). A ready match with no rounds
 // contributes no round unit, so it is covered (no-data, not behind). A
 // statement whose binds cannot be classified is behind, never fresh.
 func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched, expr string) (bool, []int64, error) {
@@ -253,6 +262,71 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 	return missing != 0, nil, nil
 }
 
+// staleSteamUnits lists the human players of ready matches whose unit of a
+// steam_id-only metric has no fresh run record: the per-unit spelling of
+// rawBehind's steam branch. Empty for any other bind shape.
+func (s *Store) staleSteamUnits(metricID int64, version, liveRuleVersion int, touched, expr string) ([]string, error) {
+	st, gerr := AnalyzeMetricSQL(expr, nil)
+	if gerr != nil {
+		return nil, nil
+	}
+	used := map[string]bool{}
+	for _, b := range st.Binds {
+		used[b] = true
+	}
+	if !(used[":steam_id"] && !used[":match_id"] && !used[":round"]) {
+		return nil, nil
+	}
+	if !touchesAnalysis(touched) {
+		liveRuleVersion = 0
+	}
+	rows, err := s.db.Query(`SELECT DISTINCT p.steam_id FROM players p JOIN matches mt ON mt.id = p.match_id
+		WHERE mt.status = 'ready' AND p.is_bot = 0
+		AND NOT EXISTS (SELECT 1 FROM metric_runs r WHERE r.metric_id = ? AND r.match_id = 0
+			AND r.scope_steam_id = p.steam_id AND r.scope_round = 0
+			AND r.metric_version >= ? AND r.rule_version >= ?)
+		ORDER BY p.steam_id`, metricID, version, liveRuleVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MetricFreshForPlayer counts, per metric, the FRESH career rows (match_id 0)
+// of ONE player: the per-player half of the coverage read.
+func (s *Store) MetricFreshForPlayer(steamID string, liveRuleVersion int) (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT v.metric_id, COUNT(*) FROM metric_values v JOIN metrics m ON m.id = v.metric_id
+		 WHERE v.match_id = 0 AND v.subject_key = ? AND `+metricValueFreshCond+` GROUP BY v.metric_id`,
+		steamID, liveRuleVersion)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the player's metric rows: %w", err)
+	}
+	return out, nil
+}
+
 // staleMatchUnits lists the ready matches whose unit of a :match_id metric has
 // no fresh run record (the per-unit spelling of the match clause). An empty
 // list means every ready match is fresh for this metric.
@@ -278,6 +352,33 @@ func (s *Store) staleMatchUnits(metricID int64, version, liveRuleVersion int) (b
 		return false, nil, err
 	}
 	return len(ids) > 0, ids, nil
+}
+
+// MetricFreshForMatch counts, per metric, the FRESH rows (metricValueFreshCond)
+// that belong to ONE match: the per-match half of the coverage read. The match
+// view's state asks only whether this match holds fresh values.
+func (s *Store) MetricFreshForMatch(matchID int64, liveRuleVersion int) (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT v.metric_id, COUNT(*) FROM metric_values v JOIN metrics m ON m.id = v.metric_id
+		 WHERE v.match_id = ? AND `+metricValueFreshCond+` GROUP BY v.metric_id`,
+		matchID, liveRuleVersion)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("couldn't load the match's metric rows: %w", err)
+	}
+	return out, nil
 }
 
 // UnitFresh reports whether ONE unit (a run scope) of a metric holds a fresh
@@ -408,8 +509,8 @@ func (s *Store) ClearMetricUnits(metricID int64, scopes []RawScope) error {
 // strictly fresh-or-nothing at rest.
 //
 // The store is the ONE write chokepoint for both phase writers. There is no
-// subject column to check a match-grain rule against (dogfood/PLAN.md ruling
-// 51), so the writer stores whatever rows the statement returns.
+// subject column to check a match-grain rule against (ruling 51),
+// so the writer stores whatever rows the statement returns.
 func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion int, rows []MetricValueRow) error {
 	if len(rows) == 0 {
 		return nil // nothing to commit — the metric simply has no rows (absent → behind)
@@ -531,8 +632,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 // ONE read per value surface: GetMetricValuesForMatch (the match grain —
 // scoreboard pins, Reports appendix) and GetMetricValuesForPlayer (the
 // career grain — PlayerProfile's panel, Builder's saved preview), plus
-// GetPlayerMetricSeries (the match-grain SERIES — the profile's trend
-// and history cells, dogfooding design §3.5 W3g/D13). All three
+// GetPlayerMetricSeries. All three
 // serve FRESH rows only — the SAME metricValueFreshCond the sweep's
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
@@ -625,8 +725,7 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 	return out, nil
 }
 
-// GetMetricValuesForRound is THE round-grain value read (dogfood/03-QUERIES
-// §5, `:match_id` with `:round`): FRESH stored rows of one round of one
+// GetMetricValuesForRound is THE round-grain value read: FRESH stored rows of one round of one
 // match, in canonical metric order then subject_key then dim. metricIDs
 // narrows the read (empty = every metric). Absent rows are absent: a
 // player or side the statement did not produce has no row, and a NULL
@@ -701,7 +800,7 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 // it stands (scale 1). One spelling — seriesMetricFor (the trend and
 // history series read) and the report package's Go read-back both derive
 // from it, so a format tag can never mean two scales in two readers
-// (dogfooding design §3.6: "percent values ×100"). This is a unit
+// This is a unit
 // conversion on a fresh stored value, never a recomputation: a subject
 // with no fresh row never reaches it (the reads omit it).
 func MetricDisplayScale(format string) float64 {
@@ -740,7 +839,7 @@ func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {
 
 // GetPlayerMetricSeries is THE match-grain SERIES read — the one store
 // read behind the profile's trend sparkline and match-history cells
-// (dogfooding design §3.5's gated sub-wave W3g / D13): every FRESH
+// every FRESH
 // stored row of the requested metrics for ONE subject at match grain
 // (match_id > 0), carrying the match's patch and import time.
 //
