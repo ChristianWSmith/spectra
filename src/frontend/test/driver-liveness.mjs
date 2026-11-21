@@ -292,7 +292,10 @@ const EXPECTED = {
   // section left with pinning; the measured run executes 116 checks.
   // 116 → 122 (2026-11-21, C5h ruling 44): a builtin metric's expression is
   // edited in place; section D pins the edit, the refused edit, the restore.
-  'builder.dom.mjs': 122,
+  // 122 → 125 (2026-11-21, ruling 50): an edited metric wears the Edited chip
+  // in the list; section D pins the chip on save, its absence on the shipped
+  // and user rows, and its removal on restore.
+  'builder.dom.mjs': 125,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
@@ -1118,7 +1121,9 @@ const EXPECTED = {
   // a large check shows Cancel and the floater while it runs and keeps the
   // event loop ticking, Cancel during a save reports the cancel and leaves
   // the store unchanged, and the next save starts a fresh worker: 67 → 83.
-  'component-builder.dom.mjs': 83,
+  // 83 → 84 (2026-11-21, ruling 50): a built-in with no override shows no
+  // Edited chip in the list (section C), before any edit is made.
+  'component-builder.dom.mjs': 84,
   // C5f (owner ruling 43): NEW — an edited builtin renders wherever it is
   // mounted (top, nested, placed), restore brings the shipped one back, a
   // surface with no placement renders its default, Reset restores it, and a

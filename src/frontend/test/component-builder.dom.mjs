@@ -270,6 +270,11 @@ console.log('C. built-in edited in place; restore to default');
 COMPONENTS = [];
 OVERRIDES = [];
 await mounted();
+check(
+  'a built-in with no override shows no Edited chip in the list',
+  !!rowNamed(S.componentbuilder.placeholderName, '.cb-builtins') &&
+    !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+);
 click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
 await settle();
 check('the built-in name field is read-only', q('#cb-name')?.readOnly === true);
@@ -299,7 +304,11 @@ click(q('.cb-restore'));
 await settle(10);
 check('Restore to default deletes the override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === PLACEHOLDER_ID);
 check('Restore to default brings back the shipped source', q('#cb-source')?.value.includes('spectra.query') && !q('#cb-source')?.value.includes('EDITED BUILTIN'));
-check('after restore the built-in has no edit', !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check(
+  'after restore the built-in row is still listed and carries no Edited chip',
+  !!rowNamed(S.componentbuilder.placeholderName, '.cb-builtins') &&
+    !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+);
 unmounted();
 
 // --- C2. a refused edit of a built-in ------------------------------------------
