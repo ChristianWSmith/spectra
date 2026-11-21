@@ -248,8 +248,8 @@ out* — a dotted header or an **inferred** badge means calculated, with the rul
 # Economy
 
 - **The curve** — *Equip value per round* or *Team net worth per round*, one line per team, with a legend and a round strip under it. Hover for values; click a column to open that round.
-- **Summary cards** — one card per stat the tab shows. The shipped set covers *Pistol → next round* (pistol wins held the next round), force rounds won and force rounds played per team, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* with its per-team split (marked **inferred**). Which stats appear is reconfigurable from the metric order dialog's Economy toggles (below); each card's tooltip states the exact formula, and a card whose stat names a round watches that round in the replay.
-- **Rounds** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), each side's deaths in that round under **CT Deaths** / **T Deaths**, and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
+- **Summary cards** — one card per stat the tab shows. The shipped set covers *Pistol → next round* (pistol wins held the next round), force rounds won and force rounds played per team, *Winner equipment value advantage* (average winner−loser equipment at freeze time end), and *Lost equipment* with its per-team split (marked **inferred**). The card set is the shipped one and does not change; each card's tooltip states the exact formula, and a card whose stat names a round watches that round in the replay.
+- **Rounds** — one row per round: a ▶ that watches the round in the replay, both sides' buy-class chips (click a chip for the reason it was classified that way), each side's deaths in that round under **CT Deaths** / **T Deaths** (a dash where the round's deaths are not stored), and each side's round loss bonus drawn as a stack of five pips filled up to that side's step (hover a cell for the exact amount). The loss-bonus ladder runs $1400 → $3400 in $500 steps: a loss steps it up, a win steps it down (never a full reset), and every half starts one level up, so a pistol loss pays $1900.
 
 # Utility
 
@@ -436,9 +436,9 @@ in the SQL console or any SQLite tool. A formula that mixes a percentile with ot
 shows a second statement beside the first; that one still reads \`?\` where its values belong (they
 are not carried over), and statements like these run one at a time.
 
-**Order…** arranges the profile cards, and the **Economy** toggle on a row chooses which stats
-the Economy tab shows. The Match view's scoreboard and overview cards show their default columns
-and cards whatever this dialog holds: its order, hidden and pinned settings do not change them.
+**Order…** arranges the profile cards. The Match view's scoreboard, overview cards and Economy cards
+show their default columns and cards whatever this dialog holds: its order, hidden and pinned settings
+do not change them.
 **Reset order** restores the shipped defaults.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and

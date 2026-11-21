@@ -609,6 +609,56 @@ const identitySeedValues = (ids) => {
   return out;
 };
 
+// The component queries the Economy and Utility builtins run are answered from
+// an in-memory database built from the same fixture rows, with the store's own
+// DDL (the store's schema.sql), so the SQL the builtins send is the SQL that runs.
+const { DatabaseSync } = await import('node:sqlite');
+const STORE_DDL = readFileSync(join('..', 'internal', 'store', 'schema.sql'), 'utf8');
+function econDb(countedN, switches) {
+  const tables = ['matches', 'rounds', 'round_economy', 'round_classifications', 'round_side_classes', 'round_player_sides', 'players', 'player_stats', 'teams', 'events'];
+  const db = new DatabaseSync(':memory:');
+  for (const t of tables) {
+    const m = new RegExp('CREATE TABLE IF NOT EXISTS ' + t + ' \\([\\s\\S]*?\\n\\);').exec(STORE_DDL);
+    if (!m) throw new Error('no DDL for ' + t);
+    db.exec(m[0]);
+  }
+  const run = (sql, ...args) => db.prepare(sql).run(...args);
+  run("INSERT INTO matches (id, sha256, tick_rate, score_ct, score_t, side_switches) VALUES (3, 'fixture', 64, 13, 11, ?)", switches);
+  const eco = economyRows(countedN);
+  const cnt = counted(countedN);
+  cnt.forEach((r, i) => {
+    run('INSERT INTO rounds (match_id, number, winner, start_tick, end_tick, equip_ct, equip_t) VALUES (3, ?, ?, ?, ?, ?, ?)', r.number, r.winner, r.startTick, r.endTick, r.equipCT, r.equipT);
+    const e = eco[i];
+    run("INSERT INTO round_economy (match_id, round, side, equip_value, money_sampled_sum, spent, free_pistol_value) VALUES (3, ?, 'ct', ?, ?, 0, 0)", r.number, e.equipCT, e.moneyCT);
+    run("INSERT INTO round_economy (match_id, round, side, equip_value, money_sampled_sum, spent, free_pistol_value) VALUES (3, ?, 't', ?, ?, 0, 0)", r.number, e.equipT, e.moneyT);
+    run('INSERT INTO round_classifications (match_id, round, label, explanation, rule_version) VALUES (3, ?, ?, ?, ?)', r.number, e.pistolRound ? 'pistol' : '', e.classWhyCT, e.ruleVersion);
+    run("INSERT INTO round_side_classes (match_id, round, side, class, why) VALUES (3, ?, 'ct', ?, ?)", r.number, e.classCT, e.classWhyCT);
+    run("INSERT INTO round_side_classes (match_id, round, side, class, why) VALUES (3, ?, 't', ?, ?)", r.number, e.classT, e.classWhyT);
+  });
+  let seq = 0;
+  for (const p of scoreboard) {
+    run('INSERT INTO players (match_id, steam_id, name, side, is_bot) VALUES (3, ?, ?, ?, 0)', p.steamId, p.name, p.side);
+    run('INSERT INTO player_stats (match_id, steam_id, name, side, score) VALUES (3, ?, ?, ?, 0)', p.steamId, p.name, p.side);
+    for (let k = 0; k < p.kills; k++) {
+      seq += 1;
+      run("INSERT INTO events (match_id, seq, round, kind, attacker, victim) VALUES (3, ?, 1, 'kill', ?, '')", seq, p.steamId);
+    }
+  }
+  run("INSERT INTO teams (match_id, side, name) VALUES (3, 'ct', 'Alpha')");
+  run("INSERT INTO teams (match_id, side, name) VALUES (3, 't', 'Beta')");
+  return db;
+}
+const dbCache = new Map();
+const econDbCached = (countedN, switches) => {
+  const key = countedN + ':' + switches;
+  if (!dbCache.has(key)) dbCache.set(key, econDb(countedN, switches));
+  return dbCache.get(key);
+};
+const answerSql = (db, sql) => {
+  const objs = db.prepare(sql).all();
+  return { columns: objs.length ? Object.keys(objs[0]) : [], rows: objs.map((o) => Object.values(o)) };
+};
+
 const dataFor = (countedN, switches = 1) => ({
   getMatch: { ...match, sideSwitches: switches },
   getMatchSummary: summary,
@@ -638,6 +688,7 @@ const dataFor = (countedN, switches = 1) => ({
   // record read is EMPTY here: a view that still read player_round_stats
   // would show dashes and fail the CT/T Deaths cells below.
   getPlayerRounds: [],
+  componentQuery: (sql) => answerSql(econDbCached(countedN, switches), sql),
   getMetricValuesForRound: (matchID, round, ids) =>
     (ids || []).includes(DEATHS_DEF_ID) ? roundDeathRows(round, countedN) : [],
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
@@ -838,12 +889,12 @@ check(
   const filledOf = (cell, cls) =>
     cell ? [...cell.querySelectorAll('.econ-loss-pip')].filter((p) => p.classList.contains(cls)).length : -1;
   check(
-    'Loss cells render five pips, filled to the side’s bonus in the side colours (CT 1400 → 1, T 1900 → 2)',
+    'Loss cells render five pips, filled to the side’s bonus in the side colours (CT 1900 → 2, T 1900 → 2; derived from the round winners)',
     !!ctCell &&
       !!tCell &&
       ctCell.querySelectorAll('.econ-loss-pip').length === 5 &&
       tCell.querySelectorAll('.econ-loss-pip').length === 5 &&
-      filledOf(ctCell, 'ct') === 1 &&
+      filledOf(ctCell, 'ct') === 2 &&
       filledOf(tCell, 't') === 2 &&
       filledOf(ctCell, 't') === 0 &&
       filledOf(tCell, 'ct') === 0,
@@ -851,7 +902,7 @@ check(
   );
   check(
     'the exact dollar amount stays in the Loss cell title (honesty)',
-    ctCell?.getAttribute('title') === '$1,400' && tCell?.getAttribute('title') === '$1,900',
+    ctCell?.getAttribute('title') === '$1,900' && tCell?.getAttribute('title') === '$1,900',
     `${ctCell?.getAttribute('title')} | ${tCell?.getAttribute('title')}`,
   );
 }
@@ -1429,7 +1480,7 @@ const dismissInPlace = async (r, needle, stillThere) => {
 // classError alert died with its Class column in W3a — the tab no
 // longer reads getEconomy at all, so there is nothing to fail.)
 {
-  const d = { ...dataFor(13), getEconomy: new Error('eco backend down') };
+  const d = { ...dataFor(13), componentQuery: new Error('eco backend down') };
   root = await showMatch(d, { routeTab: 'Economy' });
   const p = alertP(root, 'eco backend down');
   check('Economy failure renders its own alert', !!p, 'no Economy alert');

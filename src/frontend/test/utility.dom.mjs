@@ -32,6 +32,7 @@ import { registerHooks } from 'node:module';
 // svelte's package exports pick the SERVER build without the `browser`
 // condition (mount() then throws "lifecycle_function_unavailable"), so the
 // driver adds it for every svelte specifier before anything imports one.
+const stub = (name) => pathToFileURL(join('test', 'stubs', name)).href;
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === 'svelte' || specifier.startsWith('svelte/')) {
@@ -40,6 +41,8 @@ registerHooks({
         conditions: ['browser', ...(context.conditions || [])],
       });
     }
+    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
     return nextResolve(specifier, context);
   },
 });
@@ -47,8 +50,9 @@ registerHooks({
 const { JSDOM } = await import('jsdom');
 const { compile } = await import('svelte/compiler');
 const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
-const { join } = await import('node:path');
+const { dirname, join, resolve } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
+const { DatabaseSync } = await import('node:sqlite');
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   pretendToBeVisual: true,
@@ -57,7 +61,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
 for (const k of [
   'window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement',
   'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement',
-  'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
+  'HTMLSelectElement', 'SVGElement', 'SVGSVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
   'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
   'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver',
   'DOMParser',
@@ -87,96 +91,92 @@ process.on('unhandledRejection', (e) => {
   console.error('REJECTION: ' + (e && e.stack ? e.stack : e));
 });
 
-const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'utility');
-mkdirSync(join(dir, 'replay'), { recursive: true });
-mkdirSync(join(dir, 'components'), { recursive: true });
-mkdirSync(join(dir, 'views'), { recursive: true });
+// --- bundling (as econ-util-panels.dom.mjs): the ComponentFrame mount ---------
+const cacheDir = join('node_modules', '.cache', 'spectra-dom-tests', 'utility');
+mkdirSync(cacheDir, { recursive: true });
+const panelStub = join(cacheDir, 'panels-stub.js');
+writeFileSync(panelStub, 'export function builtinPanelById() { return null; }\n');
+const compiled = new Map();
+let seq = 0;
+function bundle(absPath) {
+  if (compiled.has(absPath)) return compiled.get(absPath);
+  const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
+  compiled.set(absPath, out);
+  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+    const target = resolve(dirname(absPath), rel);
+    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('builtins/panels.js')) return `from '${pathToFileURL(panelStub).href}'`;
+    return `from '${pathToFileURL(target).href}'`;
+  });
+  writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  return out;
+}
+const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
+const { mount, unmount, flushSync } = await import('svelte');
+const utilpanels = await import(pathToFileURL(resolve('src/lib/utilpanels.js')).href);
+const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
+const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
 
-const svelteCompile = (src, filename, out) => {
-  writeFileSync(out, compile(src, { filename, generate: 'client' }).js.code);
+// --- the data: an in-memory database built from the store's own DDL ----------
+// The view reads through componentQuery (the same SQL the Go store runs), so the
+// fixture below is stored as rows and the SQL answers from them.
+const DDL = readFileSync(resolve('../internal/store/schema.sql'), 'utf8');
+const TABLES = ['matches', 'rounds', 'players', 'player_stats', 'teams', 'utility_events', 'events', 'round_player_sides'];
+function openDb() {
+  const db = new DatabaseSync(':memory:');
+  for (const t of TABLES) {
+    const m = new RegExp('CREATE TABLE IF NOT EXISTS ' + t + ' \\([\\s\\S]*?\\n\\);').exec(DDL);
+    if (!m) throw new Error('no DDL for ' + t);
+    db.exec(m[0]);
+  }
+  return db;
+}
+function answerSql(db, sql) {
+  const objs = db.prepare(sql).all();
+  return { columns: objs.length ? Object.keys(objs[0]) : [], rows: objs.map((o) => Object.values(o)) };
+}
+const reads = {
+  listMetrics: async () => [],
+  getMetricValuesForMatch: async () => [],
+  getMetricValuesForRound: async () => [],
+  getMetricValuesForPlayer: async () => [],
+  getMetricComputeState: async () => [],
+  // __utilityError (section I) makes the data read FAIL — the load-failure path
+  // the frame's dismissible error is pinned against; unset it for plain reads.
+  componentQuery: async (sql) =>
+    globalThis.__utilityError ? { err: String(globalThis.__utilityError) } : answerSql(globalThis.__utilityDb, sql),
 };
-
-// Plain-ESM deps copied verbatim with their relative layout intact
-// (fmt → rounds; nav → router + replay/landmarks → rounds/fmt/teams;
-// teams → sideparity; landmarks → rounds/fmt/teams) — the same copy the
-// combat / round-detail drivers do. viewstate.svelte.js is Utility's
-// view-state registry (match-scoped seed/remember — see its header;
-// plain JS, copied raw).
-for (const rel of [
-  'rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js',
-  'fmt.js', 'players.js', 'viewstate.svelte.js',
-]) {
-  writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
-}
-writeFileSync(
-  join(dir, 'replay', 'landmarks.js'),
-  readFileSync('src/lib/replay/landmarks.js', 'utf8'),
-);
-
-// The view's data source is scripted, never a live Wails backend: the
-// driver sets globalThis.__utility before each mount.
-writeFileSync(
-  join(dir, 'services.js'),
-  `const d = () => globalThis.__utility || {};
-// __utilityError (section I) makes the data read REJECT — the load-failure
-// path the dismissible alert is pinned against; unset it for plain reads.
-export const getUtility = () =>
-  globalThis.__utilityError
-    ? Promise.reject(new Error(globalThis.__utilityError))
-    : Promise.resolve(d().rows || []);
-export const getRounds = () => Promise.resolve(d().rounds || []);
-export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
-export const getMatch = () => Promise.resolve(d().match || null);
-export const getTeamNames = () => Promise.resolve(d().teams || null);
-// The one pref read at mount (the loop length) — unset, so the view
-// seeds LOOP_SECS_DEFAULT; a link-level getPref is a link error without.
-export const getPref = () => Promise.resolve(undefined);
-export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
-export const warmProfile = () => {};
-`,
-);
-
-for (const name of ['ProfileLink', 'StatusChip', 'EventPlay']) {
-  svelteCompile(
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
-    `${name}.svelte`,
-    join(dir, 'components', `${name}.js`),
-  );
+let evSeq = 0;
+function buildDb() {
+  const db = openDb();
+  evSeq = 0;
+  db.prepare("INSERT INTO matches (id, sha256, tick_rate, side_switches) VALUES (?, 'fixture', ?, ?)").run(match.id, match.tickRate, match.sideSwitches);
+  for (const r of rounds) {
+    db.prepare('INSERT INTO rounds (match_id, number, winner, start_tick, end_tick) VALUES (?, ?, ?, ?, ?)').run(match.id, r.number, r.winner, r.startTick, r.endTick);
+  }
+  for (const p of scoreboard) {
+    db.prepare('INSERT INTO players (match_id, steam_id, name, side, is_bot) VALUES (?, ?, ?, ?, 0)').run(match.id, p.steamId, p.name, p.side);
+    db.prepare('INSERT INTO player_stats (match_id, steam_id, name, side, score) VALUES (?, ?, ?, ?, 0)').run(match.id, p.steamId, p.name, p.side);
+    // The roster orders by kill events (the fold columns are gone): one kill
+    // event per kill the fixture gives the player.
+    for (let k = 0; k < p.kills; k++) {
+      evSeq += 1;
+      db.prepare("INSERT INTO events (match_id, seq, round, kind, attacker, victim) VALUES (?, ?, 1, 'kill', ?, '')").run(match.id, evSeq, p.steamId);
+    }
+  }
+  db.prepare('INSERT INTO teams (match_id, side, name) VALUES (?, ?, ?)').run(match.id, 'ct', teams.ct);
+  db.prepare('INSERT INTO teams (match_id, side, name) VALUES (?, ?, ?)').run(match.id, 't', teams.t);
+  for (const r of rows) {
+    db.prepare(
+      'INSERT INTO utility_events (match_id, seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y, damage, flash_ms, affected, site, trajectory_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      match.id, r.seq, r.tick, r.throwTick, r.round, r.thrower, r.throwerName, r.kind,
+      r.throwX, r.throwY, r.detX, r.detY, r.damage, r.flashMsTotal, r.affected, r.site || '', '',
+    );
+  }
+  return db;
 }
 
-// Utility.svelte → its ../ imports land in dir/ (services.js above,
-// fmt/nav/rounds/sideparity/teams/players/replay-landmarks are copied
-// there); only the .svelte component imports need rewriting to their
-// compiled .js.
-const utilSrc = readFileSync('src/lib/views/Utility.svelte', 'utf8')
-  .replace(
-    /from '\.\.\/components\/(\w+)\.svelte'/g,
-    "from '../components/$1.js'",
-  )
-  // plumbing (Strings Stage 3): the view imports the strings catalog —
-  // resolve it from the real tree, like every other ../ module here.
-  .replace(
-    "from '../strings/index.js'",
-    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
-  );
-svelteCompile(utilSrc, 'Utility.svelte', join(dir, 'views', 'Utility.js'));
-
-const harnessSrc = `<script>
-  import Utility from './views/Utility.js';
-</script>
-<Utility id={3} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} />`;
-const harnessOut = join(dir, 'harness.js');
-svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
-
-const { mount, unmount } = await import('svelte');
-const mod = await import(pathToFileURL(harnessOut).href);
-// The view-state registry Utility links (the copied file → same
-// instance): reset in EVERY mount's setup — the jsdom cross-talk rule in
-// viewstate.svelte.js' header. The kind/thrower filters and the round
-// scope are registry state, so a fresh mount must never inherit an
-// earlier section's filter or round choice (and the preselect the Q1
-// pins rest on is only pristine after a reset).
-const viewstate = await import(pathToFileURL(join(dir, 'viewstate.svelte.js')).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
@@ -235,18 +235,33 @@ const rows = [
 const match = { id: 3, tickRate: 64, sideSwitches: 1 };
 const teams = { ct: 'Alpha', t: 'Beta' };
 
+async function settle(n = 12) {
+  for (let i = 0; i < n; i++) {
+    await sleep(25);
+    flushSync();
+  }
+}
 let inst = null;
 async function show() {
   if (inst) {
     unmount(inst);
     inst = null;
   }
-  globalThis.__utility = { rows, rounds, scoreboard, match, teams };
+  globalThis.__utilityDb = buildDb();
   viewstate.resetViewState();
   const target = document.createElement('div');
   document.body.appendChild(target);
-  inst = mount(mod.default, { target });
-  await sleep();
+  inst = mount(Harness, {
+    target,
+    props: {
+      source: utilpanels.UTILITY_SOURCE,
+      context: { matchId: match.id, steamId: null, round: null },
+      props: { back: 'match/3/utility', loopSecs: 5 },
+      reads,
+      nav: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)),
+    },
+  });
+  await settle();
   return target;
 }
 

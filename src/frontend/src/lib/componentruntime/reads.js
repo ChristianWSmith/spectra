@@ -7,6 +7,7 @@
 import {
   listMetrics,
   getMetricValuesForMatch,
+  getMetricValuesForRound,
   getMetricValuesForPlayer,
   getMetricComputeState,
   componentQuery,
@@ -15,6 +16,7 @@ import {
 export const serviceReads = Object.freeze({
   listMetrics,
   getMetricValuesForMatch,
+  getMetricValuesForRound,
   getMetricValuesForPlayer,
   getMetricComputeState,
   componentQuery,

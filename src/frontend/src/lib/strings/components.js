@@ -23,7 +23,6 @@ export const components = {
   importRefused: 'Components cannot import {name}',
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',
-  metricRoundUnavailable: 'Per-round metric values are not available yet',
   metricLibraryUnavailable: 'Library-wide metric values are not available yet',
   // Binds (readapi.js resolveBinds, bindQuery): one bind given twice, a
   // query bind the surface has no value for, and a value of the wrong shape.

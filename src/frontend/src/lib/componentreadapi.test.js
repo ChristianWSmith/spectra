@@ -25,6 +25,10 @@ function harness({ values = [], states = [], query = null } = {}) {
       calls.push(['match', m, ids]);
       return values;
     },
+    getMetricValuesForRound: async (m, r, ids) => {
+      calls.push(['round', m, r, ids]);
+      return values;
+    },
     getMetricValuesForPlayer: async (s, ids) => {
       calls.push(['player', s, ids]);
       return values;
@@ -111,10 +115,18 @@ test('an unbound (library-wide) read is refused, never served career values', as
   assert.equal(reported.length, 2);
 });
 
-test('a round-grain read is refused until round values are stored', async () => {
+test('a round-grain read takes the stored rows of that round only', async () => {
+  const { api, calls } = harness({ values: [row('ct', 4)], states: [{ metricId: 1, state: 'fresh' }] });
+  const r = await api.metric('adr', { match_id: 5, round: 3 });
+  assert.deepEqual(calls[0], ['round', 5, 3, [1]], 'the round read, not the match read');
+  assert.equal(r.state, 'fresh');
+  assert.deepEqual(r.rows.map((x) => [x.subject, x.value]), [['ct', 4]]);
+});
+
+test('a round read without its match is refused', async () => {
   const { api, reported } = harness();
-  await assert.rejects(api.metric('adr', { match_id: 5, round: 3 }), { message: S.components.metricRoundUnavailable });
-  assert.deepEqual(reported, [S.components.metricRoundUnavailable]);
+  await assert.rejects(api.metric('adr', { round: 3 }), { message: S.fill(S.components.bindUnset, { name: 'match_id' }) });
+  assert.equal(reported.length, 1);
 });
 
 test('query returns columns and rows; a refusal rejects and is reported', async () => {

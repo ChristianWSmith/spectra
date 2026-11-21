@@ -1,16 +1,17 @@
 <script>
   import * as S from '../strings/index.js';
-  import { replayHash } from '../nav.js';
+  import { replayHash, LOOP_SECS_DEFAULT, prefLoopSecs } from '../nav.js';
+  import { onMount } from 'svelte';
   import { listedPlayers } from '../players.js';
-  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getEconomy, getClutches, getEngagements, getUtility, getVoicePresence, getMatchSummary, evictDemoCopy, subscribeJobProgress, errText } from '../services.js';
+  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getEngagements, getPref, getVoicePresence, getMatchSummary, evictDemoCopy, subscribeJobProgress, errText } from '../services.js';
   import { fmtDuration, fmtBytes, fmtInt, fmtPatch } from '../fmt.js';
   import { teamNames, teamStartClass } from '../teams.js';
   import { MATCH_TABS, MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
   import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE, ROUNDS_SOURCE, DETAILS_SOURCE } from '../matchpanels.js';
-  import Economy from './Economy.svelte';
-  import Utility from './Utility.svelte';
+  import { ECONOMY_SOURCE } from '../econpanels.js';
+  import { UTILITY_SOURCE } from '../utilpanels.js';
   // The Heatmaps and Combat tabs are builtin components (PLAN C5-Heat-Combat):
   // the tab mounts its component through a frame with the match as context.
   import MatchHeatmaps from '../builtins/match/Heatmaps.svelte';
@@ -51,6 +52,23 @@
   // (see compareSel below).
   const panelContext = $derived({ matchId: id });
   const panelProps = $derived({ back: backPath() });
+  // The Utility builtin's props (utilpanels.js): the loop length, read here once
+  // because a builtin cannot read preferences, and this match's remembered
+  // filters (kind, thrower, round), kept in the view registry as before.
+  let loopSecs = $state(LOOP_SECS_DEFAULT);
+  onMount(() => {
+    getPref('loop_secs')
+      .then((v) => (loopSecs = prefLoopSecs(v)))
+      .catch(() => {
+        /* keep the default */
+      });
+  });
+  const utilityProps = $derived({
+    ...panelProps,
+    loopSecs,
+    filters: seed(matchKey('utility', id), { kindF: '', throwerF: '', roundSel: '' }),
+    onfilters: (f) => remember(matchKey('utility', id), f),
+  });
   const roundsProps = $derived({ back: backPath(), picks: compareSel, onPick: toggleCompare, onCompare: goCompare });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
@@ -195,11 +213,9 @@
     });
     if (running) return off;
     void Promise.allSettled([
-      getEconomy(mid),
       getRoundClasses(mid),
       getClutches(mid),
       getEngagements(mid, ''),
-      getUtility(mid),
     ]);
     return off;
   });
@@ -476,9 +492,9 @@
     {:else if tab === 'Rounds'}
       <ComponentFrame source={ROUNDS_SOURCE} context={panelContext} props={roundsProps} {nav} />
     {:else if tab === 'Economy'}
-      <Economy {id} {nav} />
+      <ComponentFrame source={ECONOMY_SOURCE} context={panelContext} props={panelProps} {nav} />
     {:else if tab === 'Utility'}
-      <Utility {id} />
+      <ComponentFrame source={UTILITY_SOURCE} context={panelContext} props={utilityProps} {nav} />
     {:else if tab === 'Heatmaps'}
       <ComponentFrame component={MatchHeatmaps} context={panelContext} {nav} />
     {:else if tab === 'Combat'}

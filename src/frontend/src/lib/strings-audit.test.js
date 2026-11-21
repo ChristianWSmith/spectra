@@ -93,6 +93,62 @@ const PENDING_DENYLIST = {};
 // belong in the ledger. Same `file` → literal keying as PENDING_DENYLIST and
 // the same liveness contract (Check A-ledger); `why` is mandatory.
 const DENYLIST_EXEMPT = {
+  'frontend/src/lib/econpanels.js': [
+    {
+      text: 'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ',
+      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
+    },
+    {
+      text: 'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ',
+      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
+    },
+    {
+      text: "LEFT JOIN round_economy ct ON ct.match_id = r.match_id AND ct.round = r.number AND ct.side = 'ct' ",
+      why: 'the Economy builtin’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
+    },
+    {
+      text: "LEFT JOIN round_economy t ON t.match_id = r.match_id AND t.round = r.number AND t.side = 't' ",
+      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
+    },
+    {
+      text: 'LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number ',
+      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
+    },
+    {
+      text: "LEFT JOIN round_side_classes rsct ON rsct.match_id = r.match_id AND rsct.round = r.number AND rsct.side = 'ct' ",
+      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
+    },
+    {
+      text: "LEFT JOIN round_side_classes rst ON rst.match_id = r.match_id AND rst.round = r.number AND rst.side = 't' ",
+      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
+    },
+    {
+      text: 'SELECT round, steam_id, side FROM round_player_sides WHERE match_id = :match_id ORDER BY round ASC, steam_id ASC',
+      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
+    },
+    {
+      text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
+      why: 'the Economy builtin’s roster query (read-only SQL) — not user copy',
+    },
+  ],
+  'frontend/src/lib/utilpanels.js': [
+    {
+      text: 'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ',
+      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
+    },
+    {
+      text: 'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ',
+      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
+    },
+    {
+      text: 'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC',
+      why: 'the Utility builtin’s component query (read-only SQL the panels run, bound from its context) — not user copy',
+    },
+    {
+      text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
+      why: 'the Utility builtin’s roster query (read-only SQL) — not user copy',
+    },
+  ],
   'frontend/src/lib/matchpanels.js': [
     {
       text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
