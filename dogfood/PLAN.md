@@ -222,6 +222,11 @@ Settled (owner, 2026-11-20 unless noted):
     the helper surface of ruling 45, not from English literals in the panel
     source. This supersedes the earlier acceptance of English panel copy (ruling
     3) and prepares the app for localization. Item C5i.
+47. **Compiles run as background work (owner ruling, 2026-11-21).** Save-time and
+    first-use compilation of user components runs in a Web Worker so the UI stays
+    responsive. There is no time limit. Each compile appears in the same
+    background-work floater that backend jobs use (the `runWork` path), and the
+    user can cancel it there. Compile output is not stored (ruling in 04 §5 stands).
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
