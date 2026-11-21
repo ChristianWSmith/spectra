@@ -420,9 +420,12 @@ progress block underneath instead.
 created, that actions line opens with a **trash** button that deletes it; built-in and plugin
 metrics show none (neither here nor on their list row).
 
-**Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
-metrics can't be edited*), but you can still preview and reference them. Plugin metrics
-carry a *read-only source* chip; saving one stores a copy as your own metric.
+**Built-in metrics are edited in place.** A built-in loads with a \`built-in\` chip. Change its **Expression**
+and **Save** keeps the edit: the metric's numbers recompute with it. Its name, title, format, scope and
+subject stay as shipped, and an edited built-in shows an *edited* chip. **Restore to default** sits
+beside Save while the edit is in place. It discards the edit, brings the shipped expression back and
+recomputes the numbers with it. You can still preview and reference built-ins. Plugin metrics carry a
+*read-only source* chip; saving one stores a copy as your own metric.
 
 **Preview** is not available for a statement yet. Save the metric, and its values appear once the sweep has run it (see *Previewing* in the metric language chapter). State chips appear in place
 of numbers while a value is recomputing or has failed. Click a column header to sort the rows:
@@ -539,12 +542,14 @@ values the built-ins print — ADR, HS%, KD, KDA, assists, openings, trades, bes
 flashed — under each player's \`SteamID\`, a dash where a value isn't current, fetched as
 \`{{index $.Metrics .SteamID}}\`. Number formatting (\`{{printf "%.1f" .DurationS}}\`) and value
 tests (\`{{if eq .Channel "all"}}\`) appear in the built-ins as well — and each built-in's body
-loads read-only in the editor, so the templates are worked examples to copy from.
+loads in the editor, so the templates are worked examples to copy from.
 
-**Built-ins are read-only** — they load with a \`built-in\` chip and a disabled Save (*Built-in
-templates can't be edited*), but you can still read and preview them. Plugin templates carry a
-*read-only source* chip; saving one stores a copy as your own. Only your own templates can be
-deleted.`,
+**Built-in templates are edited in place.** A built-in loads with a \`built-in\` chip. Change its
+**Template body**, the text and layout of the report, and **Save** keeps the edit: every report that
+uses the template shows it. Its title, scope and format stay as shipped. An edited built-in shows an
+*edited* chip, and **Restore to default** beside Save discards the edit and brings the shipped text
+back. You can still read and preview built-ins. Plugin templates carry a *read-only source* chip;
+saving one stores a copy as your own. Only your own templates can be deleted.`,
   },
   {
     id: 'component-builder',

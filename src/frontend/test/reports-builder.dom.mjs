@@ -225,6 +225,20 @@ bindings.handlers.DeleteReportTemplate = (id) => {
   TPLS = TPLS.filter((x) => x.id !== id);
   return null;
 };
+// The builtin edit and restore (owner ruling 44): the override replaces the
+// body of the one served builtin; restore brings its shipped body back.
+const builtinCalls = [];
+const SHIPPED_BODY = { 'match.md': 'builtin body' };
+bindings.handlers.SaveBuiltinReport = (id, body) => {
+  builtinCalls.push({ op: 'save', id, body });
+  TPLS = TPLS.map((x) => (x.id === id ? { ...x, body, edited: true } : x));
+  return { ...TPLS.find((x) => x.id === id) };
+};
+bindings.handlers.RestoreBuiltinReport = (id) => {
+  builtinCalls.push({ op: 'restore', id });
+  TPLS = TPLS.map((x) => (x.id === id ? { ...x, body: SHIPPED_BODY[id], edited: false } : x));
+  return { ...TPLS.find((x) => x.id === id) };
+};
 bindings.handlers.RenderReportDraft = (scope, body, matchId, steamId, round) => {
   draftCalls.push({ scope, body, matchId, steamId, round });
   return `DRAFT ${scope} ${body} ${matchId} ${steamId} ${round}`;
@@ -368,25 +382,61 @@ console.log('D. the editor form — field order and vocabularies');
     r.querySelector('.rb-right h2')?.textContent.trim());
 }
 
-console.log('E. built-ins are read-only; plugin rows fork on save (the metric-editor rule)');
+console.log('E. built-ins edit in place (owner ruling 44); plugin rows fork on save');
 {
   // Load the built-in.
   click($('.rb-row')[0].querySelector('.rb-row-main'));
   await sleep();
-  check('the built-in loads read-only: chip + disabled Save + the reason note',
+  // The editor's own chips (the list rows carry their own edited marks).
+  const hasChip = (text) => [...r.querySelectorAll('.rb-right .chip')].some((c) => c.textContent.trim() === text);
+  check('the built-in loads with its built-in chip, unedited, and Save disabled while clean',
     r.querySelector('.rb-readonly')?.textContent.trim() === 'built-in' &&
-      r.querySelector('.rb-readonly').getAttribute('title') === "Built-in templates can't be edited" &&
-      $('.rb-actions button.primary')[0].disabled === true &&
-      r.querySelector('.rb-note')?.textContent.trim() === "Built-in templates can't be edited",
+      !hasChip('edited') &&
+      $('.rb-actions button.primary')[0].disabled === true,
     `${r.querySelector('.rb-readonly')?.textContent.trim()} / disabled=${$('.rb-actions button.primary')[0].disabled}`);
-  check('its text fields are readonly (selectable) and its selects disabled',
-    $('#rb-title')[0].readOnly === true && $('#rb-body')[0].readOnly === true &&
+  check('its text is editable; its title, scope and format stay as shipped (readonly / disabled)',
+    $('#rb-body')[0].readOnly === false && $('#rb-title')[0].readOnly === true &&
       $('#rb-scope')[0].disabled === true && $('#rb-format')[0].disabled === true,
-    `title RO=${$('#rb-title')[0].readOnly} scope disabled=${$('#rb-scope')[0].disabled}`);
+    `body RO=${$('#rb-body')[0].readOnly} title RO=${$('#rb-title')[0].readOnly} scope disabled=${$('#rb-scope')[0].disabled}`);
+  check('an unedited built-in offers no restore control',
+    [...r.querySelectorAll('.rb-destructive button')].every((b) => b.textContent.trim() !== 'Restore to default'),
+    '');
   check('a built-in never offers a delete anywhere',
     $('.rb-actions .codicon-trash').length === 0 &&
       $('.rb-row')[0].querySelector('.codicon-trash') === null,
     `actions=${$('.rb-actions .codicon-trash').length} row0=${!!$('.rb-row')[0].querySelector('.codicon-trash')}`);
+
+  // Edit the text and save: the edit is stored as the built-in's override.
+  const EDIT = 'builtin body\n<!-- my edit -->';
+  await setInput($('#rb-body')[0], EDIT);
+  check('editing the text enables Save', $('.rb-actions button.primary')[0].disabled === false, '');
+  click($('.rb-actions button.primary')[0]);
+  await sleep(80);
+  const saveCall = builtinCalls.at(-1);
+  check('Save stores the edit as the built-in override: SaveBuiltinReport(id, text)',
+    saveCall?.op === 'save' && saveCall.id === 'match.md' && saveCall.body === EDIT,
+    JSON.stringify(saveCall));
+  check('after the save the built-in shows the edited chip, Save is clean, and the list marks it',
+    hasChip('edited') && $('.rb-actions button.primary')[0].disabled === true &&
+      $('.rb-row')[0].textContent.includes('edited'),
+    `edited=${hasChip('edited')} disabled=${$('.rb-actions button.primary')[0].disabled}`);
+  check('the edited built-in offers Restore to default beside Save',
+    [...r.querySelectorAll('.rb-destructive button')].some((b) => b.textContent.trim() === 'Restore to default'),
+    '');
+
+  // Restore to default: the override is deleted and the shipped text comes back.
+  const restoreBtn = [...r.querySelectorAll('.rb-destructive button')].find((b) => b.textContent.trim() === 'Restore to default');
+  click(restoreBtn);
+  await sleep(80);
+  const restoreCall = builtinCalls.at(-1);
+  check('Restore to default calls RestoreBuiltinReport and the shipped text is back in the editor',
+    restoreCall?.op === 'restore' && restoreCall.id === 'match.md' && $('#rb-body')[0].value === SHIPPED_BODY['match.md'] &&
+      !hasChip('edited'),
+    `${JSON.stringify(restoreCall)} body=${$('#rb-body')[0].value}`);
+  check('the restored built-in is unedited again: Save disabled, no restore control',
+    $('.rb-actions button.primary')[0].disabled === true &&
+      [...r.querySelectorAll('.rb-destructive button')].every((b) => b.textContent.trim() !== 'Restore to default'),
+    '');
   // Load the plugin row (last row).
   click($('.rb-row')[3].querySelector('.rb-row-main'));
   await sleep();

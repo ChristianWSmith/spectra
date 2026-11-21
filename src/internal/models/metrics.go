@@ -35,6 +35,10 @@ type MetricRow struct {
 	Touched   []string  `json:"-"`
 	Version   int       `json:"-"`         // internal staleness stamp (metrics.version) — never marshalled to the frontend
 	CreatedAt time.Time `json:"createdAt"` // nullable column → zero when NULL
+	// Edited is set on a builtin whose override is in place (owner ruling 44):
+	// the Builder shows the edited chip and Restore to default. Service-set;
+	// the store never reads it.
+	Edited bool `json:"edited"`
 }
 
 // MetricValue is ONE stored metric value the canonical read serves

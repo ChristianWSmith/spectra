@@ -8,6 +8,8 @@
     getMetric,
     saveMetric,
     deleteMetric,
+    saveBuiltinMetric,
+    restoreBuiltinMetric,
     previewMetric,
     compileMetric,
     getMetricValuesForMatch,
@@ -338,6 +340,7 @@
       doc: '',
       origin: 'user',
       pluginId: '',
+      edited: false,
     };
   }
 
@@ -378,13 +381,11 @@
   // BUILT-IN row is not savable at all (saveDisabled below). Both wear
   // the form's read-only chip; neither ever shows a delete control.
   const readOnly = $derived(form.origin !== 'user');
-  // saveDisabled — THE promise for a loaded built-in (owner wave): the
-  // Save button stays off whatever the dirty flag says — the baseline
-  // is re-snapshotted with every load, so neither a clean load nor an
-  // edit can re-enable it. The service-level SaveMetric/DeleteMetric
-  // guards (60ecdb7) are the backstop behind this, not a substitute.
+  // A built-in edits in place (owner ruling 44): only its SQL is editable.
+  // Save stays off until the SQL is dirty, and saving stores the SQL as the
+  // built-in's override. Its name, title, format and addressing stay shipped.
   const builtinLoaded = $derived(form.origin === 'builtin');
-  const saveDisabled = $derived(saving || builtinLoaded);
+  const saveDisabled = $derived(saving || (builtinLoaded && !dirty));
 
   // originFilter — THE one checked-set → server-word derivation (the
   // multi-select's Origin group): the group's boxes are exactly the
@@ -645,6 +646,7 @@
       doc: m.doc || '',
       origin: m.origin,
       pluginId: m.pluginId || '',
+      edited: !!m.edited,
     };
     baseline = snapshot(form);
     saveError = '';
@@ -671,8 +673,48 @@
     }
   }
 
+  // A built-in's Save stores its edited SQL as the override (owner ruling 44).
+  // The save gate is the same live check the user save uses; the service
+  // refuses anything else. Name, doc and addressing are not part of the edit.
+  async function saveBuiltin() {
+    saveError = '';
+    if (exprCheck.state === 'error') {
+      saveError = `Fix the expression error first: ${exprCheck.msg}`;
+      return;
+    }
+    saving = true;
+    try {
+      const edit = await saveBuiltinMetric(form.id, form.expr);
+      form.expr = edit.expr;
+      form.edited = edit.edited;
+      baseline = snapshot(form);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+    } catch (e) {
+      saveError = errText(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  // Restore to default (owner ruling 44): the override is deleted, the shipped
+  // SQL is back in the form, and the metric recomputes with it.
+  async function restoreBuiltin() {
+    saveError = '';
+    saving = true;
+    try {
+      const shipped = await restoreBuiltinMetric(form.id);
+      editMetric(shipped);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+    } catch (e) {
+      saveError = errText(e);
+    } finally {
+      saving = false;
+    }
+  }
+
   async function save() {
     saveError = '';
+    if (builtinLoaded) return saveBuiltin();
     const name = form.name.trim();
     if (!name) {
       saveError = 'Name is required.';
@@ -1255,10 +1297,13 @@
               />
             {/if}
             {#if builtinLoaded}
-              <!-- A built-in loads read-only (owner wave): the chip names
-                   it in the user's words, mirroring the plugin chip. -->
-              <span class="chip bld-readonly" title={S.builder.builtinReadOnly}
+              <!-- A built-in edits in place (owner ruling 44): the chip names
+                   it in the user's words, and an edit shows beside it. -->
+              <span class="chip bld-readonly" title={S.builder.builtinEditNote}
                 >{S.builder.builtinChip}</span>
+              {#if form.edited}
+                <span class="chip" title={S.builder.editedTitle}>{S.builder.editedChip}</span>
+              {/if}
             {:else if readOnly}
               <!-- Plugin rows: immutable through Save — saving stores a
                    copy of this definition as your own metric. -->
@@ -1383,7 +1428,6 @@
               spellcheck="false"
               bind:value={form.expr}
               placeholder={EXAMPLE}
-              readonly={builtinLoaded}
             ></textarea>
             <p class="bld-hint mono">One SELECT or WITH statement over the metric-readable tables; it returns subject_key, dim and value. :match_id, :steam_id and :round are the reserved binds.</p>
           </div>
@@ -1409,6 +1453,11 @@
              instead of pushing the cluster to a second line, with the
              full text on the message's title. -->
         <div class="row-between bld-actions">
+          {#if builtinLoaded && form.edited}
+            <button class="btn" onclick={restoreBuiltin} title={S.builder.restoreTitle}
+              >{S.builder.restoreDefault}</button
+            >
+          {/if}
           {#if form.id > 0 && form.origin === 'user'}
             <button
               class="btn danger"
@@ -1437,19 +1486,20 @@
               <!-- The disabled Save's reason, in the user's words (the
                    button carries the same string as its tooltip). -->
               {builtinLoaded
-                ? S.builder.builtinReadOnly
+                ? form.edited
+                  ? S.builder.builtinEditedNote
+                  : S.builder.builtinEditNote
                 : S.builder.saveNoteDefault}
             </span>
             <button
               class="btn primary"
               onclick={save}
               disabled={saveDisabled}
-              title={builtinLoaded ? S.builder.builtinReadOnly : undefined}
             >
               <span class="codicon codicon-save"></span>
               {saving
                 ? S.builder.saving
-                : !builtinLoaded && form.id && !dirty
+                : (builtinLoaded ? form.edited : form.id) && !dirty
                   ? S.builder.saved
                   : S.builder.saveMetric}
             </button>

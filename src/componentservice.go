@@ -196,6 +196,11 @@ func (s *ComponentService) ListBuiltinOverrides() ([]BuiltinOverride, error) {
 	}
 	out := make([]BuiltinOverride, 0, len(rows))
 	for _, r := range rows {
+		// The table also holds the report and metric overrides (their keys
+		// are kind-prefixed, never builtin-); a component reader sees only its own.
+		if !strings.HasPrefix(r.ID, BuiltinComponentPrefix) {
+			continue
+		}
 		out = append(out, BuiltinOverride{ID: r.ID, Source: r.Source})
 	}
 	return out, nil

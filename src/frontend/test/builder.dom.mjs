@@ -891,14 +891,33 @@ check(
   JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
 );
 
-console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip present, no delete');
+console.log('D. a built-in row loads with its expression editable (owner ruling 44): Save stores the edit, Restore to default brings the shipped one back, no delete');
 {
   const bRow = rowNamed(r, 'trade_rate');
   const uRow = rowNamed(r, 'adr_avg');
   const pRow = rowNamed(r, 'plug_stat');
   const saveBtn = () => saveButton(r);
   const chip = () => formChip(r);
-  const REASON = "Built-in metrics can't be edited";
+  const REASON = 'Your edit replaces this built-in. Restore to default undoes it.';
+  // The scripted override: SaveBuiltinMetric stores the expression on the
+  // served row, RestoreBuiltinMetric puts the shipped one back (the value the
+  // store would return). A refused edit rejects with the gate's message.
+  const SHIPPED_TRADE_EXPR = 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))';
+  const builtinCalls = [];
+  let refuseEdit = null;
+  bindings.handlers.SaveBuiltinMetric = (id, expr) => {
+    builtinCalls.push({ op: 'save', id, expr });
+    if (refuseEdit) return Promise.reject(new Error(refuseEdit));
+    const row = METRICS.find((x) => x.id === id);
+    row.expr = expr;
+    return { ...row, edited: true };
+  };
+  bindings.handlers.RestoreBuiltinMetric = (id) => {
+    builtinCalls.push({ op: 'restore', id });
+    const row = METRICS.find((x) => x.id === id);
+    row.expr = SHIPPED_TRADE_EXPR;
+    return { ...row, edited: false };
+  };
 
   check('the builtin row renders', !!bRow, JSON.stringify(namesOf(r)));
   check(
@@ -966,11 +985,13 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
       .join(' '),
   );
   check(
-    'the two textareas (Doc, Expression) are readonly for a built-in, not disabled',
-    ['bld-doc', 'bld-expr'].every((id) => {
-      const el = r.querySelector('#' + id);
-      return el && el.readOnly === true && el.disabled === false;
-    }),
+    'the Doc textarea is readonly for a built-in, and the Expression textarea is editable (the one edit)',
+    (() => {
+      const doc = r.querySelector('#bld-doc');
+      const expr = r.querySelector('#bld-expr');
+      return !!doc && doc.readOnly === true && doc.disabled === false &&
+        !!expr && expr.readOnly === false && expr.disabled === false;
+    })(),
     ['bld-doc', 'bld-expr']
       .map((id) => {
         const el = r.querySelector('#' + id);
@@ -1039,14 +1060,18 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     chip() ? `${chip().className} title=${chip().getAttribute('title')}` : 'no chip',
   );
   check(
-    'Save is DISABLED and states the reason',
+    'Save is disabled while the built-in is unedited (clean form), with its label kept',
     !!saveBtn() &&
       saveBtn().disabled &&
-      saveBtn().getAttribute('title') === REASON &&
       saveBtn().textContent.trim() === 'Save metric',
     saveBtn()
-      ? `disabled=${saveBtn().disabled} text="${saveBtn().textContent.trim()}" title=${saveBtn().getAttribute('title')}`
+      ? `disabled=${saveBtn().disabled} text="${saveBtn().textContent.trim()}"`
       : 'no Save button',
+  );
+  check(
+    'no restore control is offered for an unedited built-in',
+    ![...r.querySelectorAll('.bld-actions button')].some((b) => b.textContent.trim() === 'Restore to default'),
+    '',
   );
   // w19 item 23: the editor delete is USER-metric-only — a loaded
   // built-in gets neither the control nor the extra slot (the footer
@@ -1091,14 +1116,63 @@ console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip p
     r.querySelector('.bld-actions .bld-note')?.textContent?.replace(/\s+/g, ' ').trim(),
   );
 
-  // Dirtying the form must NEVER re-enable Save for a loaded built-in.
-  type(r.querySelector('#bld-name'), 'trade_rate_edited');
-  await sleep(20);
+  // A refused edit (the save gate's message) surfaces and stores nothing.
+  // The live check runs first on the typed expression, so the refusal is
+  // the save's own: the scripted backend rejects with the gate's wording.
+  type(r.querySelector('#bld-expr'), 'from jobs: count()');
+  await sleep(500); // the debounced live check settles
+  refuseEdit = 'invalid metric expression: the table jobs is not readable by a metric';
+  click(saveBtn());
+  await sleep(80);
   check(
-    'editing the loaded built-in keeps Save disabled (the dirty flag never re-enables it)',
-    !!saveBtn() && saveBtn().disabled && !!chip() && heading(r) === 'Edit metric',
-    `disabled=${saveBtn().disabled} chip=${!!chip()}`,
+    'a refused built-in edit shows the gate message and stores nothing',
+    (r.querySelector('p.error')?.textContent || '').includes('jobs') &&
+      builtinCalls.at(-1)?.op === 'save' && !chip()?.textContent.includes('edited') &&
+      ![...r.querySelectorAll('.bld-right .chip')].some((c) => c.textContent.trim() === 'edited'),
+    `err="${r.querySelector('p.error')?.textContent}"`,
   );
+  refuseEdit = null;
+
+  // The valid edit: typing enables Save; Save stores it as the override.
+  const EDIT = 'from events: count()';
+  type(r.querySelector('#bld-expr'), EDIT);
+  await sleep(500);
+  check('editing the expression enables Save', !!saveBtn() && !saveBtn().disabled, `disabled=${saveBtn()?.disabled}`);
+  click(saveBtn());
+  await sleep(80);
+  const saveCall = builtinCalls.filter((c) => c.op === 'save').at(-1);
+  check(
+    'Save stores the edit as the built-in override: SaveBuiltinMetric(id, expression)',
+    saveCall?.id === 1 && saveCall.expr === EDIT,
+    JSON.stringify(saveCall),
+  );
+  check(
+    'after the save the built-in shows the edited chip, Save is clean again, and Restore to default appears',
+    !!chip() && heading(r) === 'Edit metric' && [...r.querySelectorAll('.bld-readonly ~ .chip, .bld-actions .chip')].some((c) => c.textContent.trim() === 'edited') &&
+      saveBtn().disabled &&
+      [...r.querySelectorAll('.bld-actions button')].some((b) => b.textContent.trim() === 'Restore to default'),
+    `disabled=${saveBtn()?.disabled}`,
+  );
+  // Restore to default: the override goes, the shipped expression is back.
+  const restoreBtn = [...r.querySelectorAll('.bld-actions button')].find((b) => b.textContent.trim() === 'Restore to default');
+  click(restoreBtn);
+  await sleep(80);
+  const restoreCall = builtinCalls.at(-1);
+  check(
+    'Restore to default calls RestoreBuiltinMetric and the shipped expression is back in the form',
+    restoreCall?.op === 'restore' && restoreCall.id === 1 &&
+      (r.querySelector('#bld-expr')?.value || '') === SHIPPED_TRADE_EXPR &&
+      ![...r.querySelectorAll('.chip')].some((c) => c.textContent.trim() === 'edited'),
+    `${JSON.stringify(restoreCall)} expr=${r.querySelector('#bld-expr')?.value}`,
+  );
+  check(
+    'the restored built-in is unedited again: Save disabled, no restore control',
+    saveBtn().disabled &&
+      ![...r.querySelectorAll('.bld-actions button')].some((b) => b.textContent.trim() === 'Restore to default'),
+    '',
+  );
+  delete bindings.handlers.SaveBuiltinMetric;
+  delete bindings.handlers.RestoreBuiltinMetric;
 
   // → a USER row restores the fully editable state.
   click(uRow.querySelector('button.bld-row-main'));

@@ -91,8 +91,15 @@ export const builder = {
   // editor form
   editMetric: 'Edit metric',
   newMetric: 'New metric',
-  builtinReadOnly: "Built-in metrics can't be edited",
+  // A built-in is edited in place (owner ruling 44): its SQL is the one
+  // thing that changes; restore to default brings the shipped SQL back.
+  builtinEditNote: 'Your edit replaces this built-in. Restore to default undoes it.',
+  builtinEditedNote: 'Edited. Restore to default brings back the shipped expression.',
   builtinChip: 'built-in',
+  editedChip: 'edited',
+  editedTitle: 'You have edited this built-in. Its shipped expression is the default.',
+  restoreDefault: 'Restore to default',
+  restoreTitle: 'Discard your edit and use the shipped expression',
   pluginImmutable:
     'Plugin metrics are immutable — saving stores a copy of this definition as your own metric.',
   pluginReadOnlyChip: 'read-only source',

@@ -827,6 +827,21 @@ export function deleteMetric(id) {
     return r;
   });
 }
+// saveBuiltinMetric / restoreBuiltinMetric: the in-place edit of a builtin
+// metric's SQL (owner ruling 44). They change the stored definition and its
+// values, so they invalidate on success like saveMetric.
+export function saveBuiltinMetric(id, expr) {
+  return MetricsService.SaveBuiltinMetric(id, expr).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+export function restoreBuiltinMetric(id) {
+  return MetricsService.RestoreBuiltinMetric(id).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 // previewMetric runs a compiled expression: id rides an empty expr (the
 // SAVED definition, addressing read off its row),
 // a non-empty expr is ad-hoc. subject/partition/scope are the DRAFT's own
@@ -1154,6 +1169,11 @@ export function renderReport(templateId, matchId, steamId, round) {
 // there is nothing to invalidate here.
 export function saveReportTemplate(t) { return PlatformService.SaveReportTemplate(t); }
 export function deleteReportTemplate(id) { return PlatformService.DeleteReportTemplate(id); }
+// saveBuiltinReport / restoreBuiltinReport: the in-place edit of a builtin
+// report's text (owner ruling 44). Only the body is edited; the list is
+// re-read by the caller.
+export function saveBuiltinReport(id, body) { return PlatformService.SaveBuiltinReport(id, body); }
+export function restoreBuiltinReport(id) { return PlatformService.RestoreBuiltinReport(id); }
 // renderReportDraft renders a DRAFT body (unsaved edits) through the
 // SAME Go render path renderReport takes — the builder's Preview. It
 // stores nothing; scope/body are re-validated server-side.

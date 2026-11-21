@@ -961,14 +961,19 @@ CREATE TABLE IF NOT EXISTS layout_placements (
 	PRIMARY KEY (surface, position)
 );
 
--- The edited source of a builtin component (owner ruling 43): one row per
--- builtin id that the user has edited in place. The row overrides the
--- builtin's shipped source wherever that builtin is mounted; restore to
--- default deletes the row. The id is a builtin id (the builtin- namespace),
--- so it never collides with a components.name. One baseline, no versioning.
+-- The in-place edits of builtins (owner rulings 43 and 44): one row per
+-- builtin the user has edited. The key is namespaced by kind so the three
+-- kinds never collide: `builtin-…` is a builtin component (its source), `report:<id>`
+-- a builtin report template (its body), and `metric:<name>` a builtin metric
+-- (its expr). The row overrides the shipped text wherever that builtin is used;
+-- restore to default deletes the row. `shipped` holds a metric's shipped SQL
+-- (its metrics.expr is overwritten by the edit, so restore reads it back here);
+-- empty for the other kinds, whose shipped text is embedded in the app.
+-- One baseline, no versioning.
 CREATE TABLE IF NOT EXISTS builtin_overrides (
 	id TEXT PRIMARY KEY,
 	source TEXT NOT NULL,
+	shipped TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL
 );
