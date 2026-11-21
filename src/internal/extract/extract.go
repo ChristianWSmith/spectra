@@ -493,19 +493,18 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	for _, pl := range playing {
 		rosterColors[playerKey(pl)] = teammateColor(pl)
 		finals = append(finals, finalPlayer{
-			key:             playerKey(pl),
-			name:            pl.Name,
-			side:            sideString(pl.Team),
-			isBot:           pl.IsBot,
-			clanTag:         pl.ClanTag(),
-			crosshairCode:   pl.CrosshairCode(),
-			rank:            pl.Rank(),
-			rankType:        pl.RankType(),
-			wins:            pl.CompetitiveWins(),
-			ping:            pl.Ping(),
-			alive:           pl.IsAlive(),
-			score:           pl.Score(),
-			moneySpentTotal: pl.MoneySpentTotal(),
+			key:           playerKey(pl),
+			name:          pl.Name,
+			side:          sideString(pl.Team),
+			isBot:         pl.IsBot,
+			clanTag:       pl.ClanTag(),
+			crosshairCode: pl.CrosshairCode(),
+			rank:          pl.Rank(),
+			rankType:      pl.RankType(),
+			wins:          pl.CompetitiveWins(),
+			ping:          pl.Ping(),
+			alive:         pl.IsAlive(),
+			score:         pl.Score(),
 		})
 	}
 	a.applyFinal(finals)

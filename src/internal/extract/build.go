@@ -1,7 +1,6 @@
 package extract
 
 import (
-	"encoding/json"
 	"sort"
 	"strconv"
 
@@ -14,10 +13,6 @@ func (a *agg) build() *models.ExtractedMatch {
 	// Ingest round numbering first: rows stamped during the parse carry the
 	// chronological index and are remapped together with the rounds.
 	a.renumber()
-	// Multi-kill tiers from each round's final kill total (exact-hit:
-	// a round counts at ONE tier, 2K included — see buildMultiKills).
-	a.buildMultiKills()
-
 	out := &models.ExtractedMatch{}
 
 	playbackTimeS := 0.0
@@ -67,12 +62,6 @@ func (a *agg) build() *models.ExtractedMatch {
 		},
 	}
 
-	// The match's counted round count — the ADR divisor for every
-	// player (a.rounds holds ONLY counted rounds: renumber() above has
-	// already folded the ingest numbering onto them and the discarded
-	// knife/warmup/post-match rounds never entered the slice).
-	matchRounds := len(a.rounds)
-
 	keys := make([]uint64, 0, len(a.players))
 	for k := range a.players {
 		keys = append(keys, k)
@@ -100,64 +89,16 @@ func (a *agg) build() *models.ExtractedMatch {
 			FinalStatePresent: a.finalPresent[key],
 		})
 
-		killsByWeapon, err := json.Marshal(p.weaponKills)
-		if err != nil {
-			killsByWeapon = []byte("{}")
-		}
-		roundsPlayed := 0
-		if rs := a.participation[key]; rs != nil {
-			roundsPlayed = len(rs)
-		}
-		// ADR = enemy damage per ROUND OF THE MATCH: every player
-		// divides by the match's counted round count, never by the
-		// rounds they personally played (owner rule 2026-11-16 — the
-		// roster ADR cells, the Best ADR card and the `adr` metric all
-		// read this column, so they must agree on every demo; a player
-		// present for one round of a 24-round match who dealt 100
-		// damage has ADR ≈ 4.2, not 100). Damage is capped per hit at
-		// the victim's remaining HP while parsing (see agg.capDamage)
-		// — the external-board basis the golden demo's official values
-		// were checked against.
-		adr := 0.0
-		if matchRounds > 0 {
-			adr = float64(p.totalDamage) / float64(matchRounds)
-		}
-
 		out.PlayerStats = append(out.PlayerStats, models.PlayerStats{
-			SteamID:         steam,
-			Side:            p.side,
-			Name:            p.name,
-			Kills:           p.kills,
-			Deaths:          p.deaths,
-			Assists:         p.assists,
-			FlashAssists:    p.flashAssists,
-			Headshots:       p.headshots,
-			Teamkills:       p.teamkills,
-			Suicides:        p.suicides,
-			MVPs:            p.mvps,
-			Score:           p.score,
-			TotalDamage:     p.totalDamage,
-			DamageTaken:     p.damageTaken,
-			Shots:           p.shots,
-			Hits:            p.hits,
-			ADR:             adr,
-			HSPct:           pct(p.headshots, p.kills),
-			RoundsPlayed:    roundsPlayed,
-			EntryKills:      p.entryKills,
-			EntryDeaths:     p.entryDeaths,
-			TradeKills:      p.tradeKills,
-			BestStreak:      p.bestStreak,
-			TwoK:            p.twoK,
-			ThreeK:          p.threeK,
-			FourK:           p.fourK,
-			FiveK:           p.fiveK,
-			UtilityDamage:   p.utilityDamage,
-			EnemiesFlashed:  p.enemiesFlashed,
-			FlashedTimes:    p.flashedTimes,
-			BombPlants:      p.bombPlants,
-			BombDefuses:     p.bombDefuses,
-			MoneySpentTotal: p.moneySpentTotal,
-			KillsByWeapon:   string(killsByWeapon),
+			SteamID:     steam,
+			Side:        p.side,
+			Name:        p.name,
+			MVPs:        p.mvps,
+			Score:       p.score,
+			EntryKills:  p.entryKills,
+			EntryDeaths: p.entryDeaths,
+			TradeKills:  p.tradeKills,
+			BestStreak:  p.bestStreak,
 		})
 	}
 
@@ -167,7 +108,6 @@ func (a *agg) build() *models.ExtractedMatch {
 			Number:          r.number,
 			Winner:          r.winner,
 			Reason:          r.reason,
-			DurationS:       r.durationSec,
 			StartTick:       r.startTick,
 			EndTick:         r.endTick,
 			MVP:             r.mvp,
@@ -240,33 +180,5 @@ func (a *agg) renumber() {
 	}
 	for i := range a.roundMoney {
 		a.roundMoney[i].Round = remap(a.roundMoney[i].Round)
-	}
-}
-
-// buildMultiKills resolves each player's 2K/3K/4K/5K columns from the final
-// per-round kill totals. External scoreboards count a round at EXACTLY one
-// tier — a round with 4 kills is one 4K and no 3K (the golden demo's
-// official scoreboard: adamS 1×3K + 2×4K, not 3×3K) — so the tiers are
-// mutually exclusive: exactly 2 → twoK, exactly 3 → threeK, exactly 4 →
-// fourK, 5+ → fiveK. roundKills only ever holds stats-eligible kills
-// (warmup/knife/post-match kills never reach it).
-func (a *agg) buildMultiKills() {
-	for _, perRound := range a.roundKills {
-		for key, n := range perRound {
-			p, ok := a.players[key]
-			if !ok {
-				continue
-			}
-			switch {
-			case n == 2:
-				p.twoK++
-			case n == 3:
-				p.threeK++
-			case n == 4:
-				p.fourK++
-			case n >= 5:
-				p.fiveK++
-			}
-		}
 	}
 }

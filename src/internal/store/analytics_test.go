@@ -98,121 +98,6 @@ func TestConfigSeedAndSet(t *testing.T) {
 	}
 }
 
-func TestAnalyticsReplaceAndGetters(t *testing.T) {
-	s := openMem(t)
-	id := saveTestMatch(t, s, "/d/m3b.dem", "sha-replace", time.Now())
-
-	cls := []models.RoundClassification{{Round: 1, Label: "pistol", Confidence: 1, RuleVersion: 1, Explanation: "why\x00nul"}}
-	prs := []models.PlayerRoundStat{{
-		Round: 1, SteamID: "100", Name: "al\x00ice", Kills: 2, Assists: 1, Deaths: 0,
-		Traded: false, Survived: true, KAST: true, DMG: 130, UtilDmg: 30,
-		MoneyStart: 800, Equip: 2000, Spent: 1200, RuleVersion: 1,
-	}}
-	clutches := []models.Clutch{{
-		Round: 1, Size: 2, SteamID: "100", Name: "alice", StartTick: 150, EndTick: 300,
-		BombState: "planted", HPLeft: 40, Equip: 2000, Won: true,
-		KillTicks: "[200,250]", ReplayAnchor: 150,
-	}}
-	engs := []models.Engagement{{
-		Tick: 100, Round: 1, Kind: "opening", ASteam: "100", AName: "alice",
-		BSteam: "200", BName: "bob", Distance: 12.5, WonBy: "ct",
-	}}
-	utils := []models.UtilityEvent{{
-		// Paired row: the throw-side facts (tick + origin) round-trip
-		// beside the detonation's own position.
-		Tick: 120, ThrowTick: 100, Round: 1, Thrower: "100", ThrowerName: "alice", Kind: "he",
-		ThrowX: pf(7.5), ThrowY: pf(-8.25), DetX: pf(1.5), DetY: pf(-2.5),
-		Damage: 45, FlashMs: 0, Affected: `["200"]`, Site: "", TrajectoryRef: "",
-	}, {
-		// Unpaired row: throw_tick 0 and nil throw coordinates — the NULL
-		// path must read back as nil, never as a fabricated 0 position.
-		Tick: 300, Round: 1, Thrower: "100", ThrowerName: "alice", Kind: "smoke",
-		DetX: pf(9), DetY: nil, Damage: 0, FlashMs: 0, Affected: "", Site: "", TrajectoryRef: "",
-	}}
-
-	for _, step := range []struct {
-		name string
-		fn   func() error
-	}{
-		{"classifications", func() error { return s.ReplaceRoundClassifications(id, cls) }},
-		{"side classes", func() error {
-			return s.ReplaceRoundSideClasses(id, []models.RoundSideClass{
-				{Round: 1, Side: "ct", Class: "full", Why: "equip 24000 ≥ full-buy threshold 20000 → full buy\x00nul"},
-				{Round: 1, Side: "t", Class: "eco", Why: "equip 3000 < force threshold 10000 → eco"},
-			})
-		}},
-		{"player rounds", func() error { return s.ReplacePlayerRounds(id, prs) }},
-		{"clutches", func() error { return s.ReplaceClutches(id, clutches) }},
-		{"engagements", func() error { return s.ReplaceEngagements(id, engs) }},
-		{"utility", func() error { return s.ReplaceUtility(id, utils) }},
-	} {
-		if err := step.fn(); err != nil {
-			t.Fatalf("%s: %v", step.name, err)
-		}
-	}
-
-	gotCls, err := s.GetRoundClasses(id)
-	if err != nil || len(gotCls) != 1 || gotCls[0].Explanation != "whynul" {
-		t.Errorf("GetRoundClasses = %+v, %v (NUL scrubbed)", gotCls, err)
-	}
-	// The per-side classes round-trip through GetEconomy (stored read).
-	econ, err := s.GetEconomy(id)
-	if err != nil || len(econ) != 1 {
-		t.Fatalf("GetEconomy = %d rows, %v, want 1", len(econ), err)
-	}
-	if econ[0].ClassCT != "full" || econ[0].ClassT != "eco" {
-		t.Errorf("economy classes = %q/%q, want full/eco (stored round_side_classes)", econ[0].ClassCT, econ[0].ClassT)
-	}
-	if econ[0].ClassWhyCT != "equip 24000 ≥ full-buy threshold 20000 → full buynul" {
-		t.Errorf("ClassWhyCT = %q (NUL scrubbed)", econ[0].ClassWhyCT)
-	}
-	gotPrs, err := s.GetPlayerRounds(id, "")
-	if err != nil || len(gotPrs) != 1 || !gotPrs[0].KAST || gotPrs[0].DMG != 130 {
-		t.Errorf("GetPlayerRounds = %+v, %v", gotPrs, err)
-	}
-	if gotPrs, err := s.GetPlayerRounds(id, "100"); err != nil || len(gotPrs) != 1 {
-		t.Errorf("GetPlayerRounds(100) = %+v, %v", gotPrs, err)
-	}
-	if gotPrs, err := s.GetPlayerRounds(id, "999"); err != nil || len(gotPrs) != 0 {
-		t.Errorf("GetPlayerRounds(999) = %+v, %v", gotPrs, err)
-	}
-	gotClutches, err := s.GetClutches(id)
-	if err != nil || len(gotClutches) != 1 || !gotClutches[0].Won || gotClutches[0].KillTicks != "[200,250]" {
-		t.Errorf("GetClutches = %+v, %v", gotClutches, err)
-	}
-	gotEngs, err := s.GetEngagements(id, "")
-	if err != nil || len(gotEngs) != 1 || gotEngs[0].Kind != "opening" || gotEngs[0].Distance != 12.5 {
-		t.Errorf("GetEngagements = %+v, %v", gotEngs, err)
-	}
-	if gotEngs, err := s.GetEngagements(id, "trade"); err != nil || len(gotEngs) != 0 {
-		t.Errorf("GetEngagements(trade) = %+v, %v", gotEngs, err)
-	}
-	gotUtil, err := s.GetUtility(id)
-	if err != nil || len(gotUtil) != 2 || gotUtil[0].Damage != 45 || gotUtil[0].DetX == nil || *gotUtil[0].DetX != 1.5 {
-		t.Errorf("GetUtility = %+v, %v", gotUtil, err)
-	}
-	// Paired row: the throw facts round-trip (tick + origin) and the
-	// effective tick is the throw's.
-	if u := gotUtil[0]; u.ThrowTick != 100 || u.ThrowX == nil || *u.ThrowX != 7.5 ||
-		u.ThrowY == nil || *u.ThrowY != -8.25 || u.EffectiveTick() != 100 {
-		t.Errorf("paired utility row = %+v, want throw tick 100 at (7.5, -8.25), effective 100", u)
-	}
-	// Unpaired row: throw_tick 0 + nil throw positions (NULL round-trip),
-	// effective tick falling back to the detonation's.
-	if u := gotUtil[1]; u.ThrowTick != 0 || u.ThrowX != nil || u.ThrowY != nil ||
-		u.DetX == nil || *u.DetX != 9 || u.DetY != nil || u.EffectiveTick() != 300 {
-		t.Errorf("unpaired utility row = %+v, want throw tick 0, nil throw coords, effective 300", u)
-	}
-
-	// Replace semantics: a second call swaps the rows.
-	if err := s.ReplaceClutches(id, nil); err != nil {
-		t.Fatalf("ReplaceClutches(nil): %v", err)
-	}
-	if got, err := s.GetClutches(id); err != nil || len(got) != 0 {
-		t.Errorf("GetClutches after empty replace = %+v, %v", got, err)
-	}
-}
-
 func TestGetEconomyLossBonusFollowsTeams(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/teams.dem", "sha-teams", time.Now())
@@ -726,7 +611,7 @@ func TestCareerRebuildMath(t *testing.T) {
 		t.Fatalf("CreateMatchRow: %v", err)
 	}
 	em2 := testExtracted("sha-career2", time.Now().Add(time.Hour))
-	em2.PlayerStats = []models.PlayerStats{{SteamID: "100", Side: "t", Name: "alice2", Kills: 9, Deaths: 9, ADR: 90, RoundsPlayed: 12}}
+	em2.PlayerStats = []models.PlayerStats{{SteamID: "100", Side: "t", Name: "alice2"}}
 	em2.Players = []models.Player{{SteamID: "100", Name: "alice2", Side: "t"}}
 	em2.Rounds = nil
 	em2.RoundEconomy = nil
@@ -776,75 +661,6 @@ func TestCareerRebuildMath(t *testing.T) {
 	}
 }
 
-// TestGetTrend pins the trend series' ROW ORDER — the sparkline's x axis
-// (store.GetTrend): known CS2 patch numbers ascending (the authoritative
-// "when this match was played": a demo carries no played-at date, see
-// CS2.md), import time (extracted_at) as the tiebreak inside a patch
-// (id after that), and unknown patches (patch_version = 0) trailing no
-// matter how early they imported. Seq is computed from that row order,
-// so it follows automatically. The VALUES come from the stored
-// match-scope `adr` metric rows (dogfooding W3's D13 conversion) — each
-// save stores the row a completed sweep would have written; the
-// equivalence against the retired SQL lives in
-// metric_series_read_test.go. The value/seq/unknown-metric assertions
-// live in TestCareerRebuildMath above.
-func TestGetTrend(t *testing.T) {
-	s := openMem(t)
-	base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
-
-	// save stores one match for player "100" with the given patch, import
-	// time and ADR — the ADR identifies the row in the returned series.
-	// The trend reads the STORED match-scope `adr` rows since dogfooding
-	// W3, so each save also stores the row a completed sweep would have
-	// written (the same ADR value, so both readings identify the row
-	// identically).
-	save := func(name string, patch int, at time.Time, adr float64) int64 {
-		t.Helper()
-		id, err := s.CreateMatchRow("/d/"+name+".dem", "sha-"+name, 1234)
-		if err != nil {
-			t.Fatalf("CreateMatchRow(%s): %v", name, err)
-		}
-		em := testExtracted("sha-"+name, at)
-		em.Match.PatchVersion = patch
-		em.PlayerStats[0].ADR = adr
-		if err := s.SaveExtracted(id, em); err != nil {
-			t.Fatalf("SaveExtracted(%s): %v", name, err)
-		}
-		seedFreshMetricValue(t, s, "adr", "100", id, adr)
-		return id
-	}
-
-	// A/B/C share patch 14089 (→ extracted_at ASC, then id ASC for B/C
-	// which share an import time), D is a LATER patch with the EARLIEST
-	// import, and E is unknown (0) yet imported first of all — it still
-	// trails every known patch.
-	idA := save("trend-a", 14089, base.Add(time.Hour), 10)
-	idB := save("trend-b", 14089, base.Add(2*time.Hour), 20)
-	idC := save("trend-c", 14089, base.Add(2*time.Hour), 30)
-	idD := save("trend-d", 14113, base, 40)
-	idE := save("trend-e", 0, base, 50)
-
-	trend, err := s.GetTrend("100", "adr")
-	if err != nil {
-		t.Fatalf("GetTrend: %v", err)
-	}
-	wantIDs := []int64{idA, idB, idC, idD, idE}
-	wantPatches := []int{14089, 14089, 14089, 14113, 0}
-	wantValues := []float64{10, 20, 30, 40, 50}
-	if len(trend) != len(wantIDs) {
-		t.Fatalf("GetTrend returned %d points, want %d: %+v", len(trend), len(wantIDs), trend)
-	}
-	for i, p := range trend {
-		if p.MatchID != wantIDs[i] || p.Patch != wantPatches[i] || p.Value != wantValues[i] || p.Seq != i {
-			t.Errorf("trend[%d] = %+v, want match %d patch %d value %v seq %d",
-				i, p, wantIDs[i], wantPatches[i], wantValues[i], i)
-		}
-		if p.ExtractedAt.IsZero() {
-			t.Errorf("trend[%d].ExtractedAt = zero, want the match's import time", i)
-		}
-	}
-}
-
 // TestGetPlayerWeaponJSONsHeadshots pins the headshots-by-weapon
 // derivation in GetPlayerWeaponJSONs: it counts exactly the headshot
 // kills extract would credit to player_stats.headshots/kills_by_weapon
@@ -860,7 +676,7 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 		{SteamID: "300", Name: "carl", Side: "ct"},
 	}
 	em.PlayerStats = []models.PlayerStats{
-		{SteamID: "100", Side: "ct", Name: "alice", KillsByWeapon: `{"ak47":10}`},
+		{SteamID: "100", Side: "ct", Name: "alice"},
 	}
 	em.RoundSides = []models.RoundPlayerSide{
 		{Round: 1, SteamID: "100", Side: "ct"},
@@ -889,6 +705,8 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	// The kills-by-weapon JSON reads the stored raw_kills_by_weapon metric rows.
+	insertSeedMetricDim(t, s, "raw_kills_by_weapon", "100", "ak47", id, 10)
 	rows, err := s.GetPlayerWeaponJSONs("100")
 	if err != nil {
 		t.Fatalf("GetPlayerWeaponJSONs: %v", err)
@@ -1093,5 +911,24 @@ func TestDeleteMatchRebuildsCareer(t *testing.T) {
 	}
 	if _, err := s.GetCareer("100"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetCareer after delete err = %v, want ErrNotFound (career rebuilt without the deleted match)", err)
+	}
+}
+
+// insertSeedMetricDim stores one fresh match-scope row of a dimensioned metric
+// (a per-weapon count, say) for one player.
+func insertSeedMetricDim(t *testing.T, s *Store, name, steamID, dim string, matchID int64, value float64) {
+	t.Helper()
+	def, err := s.GetMetricByName(name)
+	if err != nil {
+		t.Fatalf("GetMetricByName(%s): %v", name, err)
+	}
+	cfg, err := s.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if err := s.InsertMetricValues(def.ID, def.Version, cfg.RuleVersion, []MetricValueRow{
+		{MatchID: matchID, SubjectKey: steamID, Dim: dim, Value: value},
+	}); err != nil {
+		t.Fatalf("InsertMetricValues(%s): %v", name, err)
 	}
 }

@@ -65,19 +65,18 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: false},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Side: "ct", Name: "al\x00ice", Kills: 10, Deaths: 0, Assists: 2,
-				FlashAssists: 1, Headshots: 4, MVPs: 1, Score: 22, TotalDamage: 1200, DamageTaken: 400, Shots: 50,
-				Hits: 20, ADR: 60, HSPct: 40, RoundsPlayed: 2, EntryKills: 1,
-				TradeKills: 2, BestStreak: 5, TwoK: 3, ThreeK: 1, UtilityDamage: 50, EnemiesFlashed: 3,
-				BombPlants: 1, MoneySpentTotal: 7500,
-				KillsByWeapon: `{"ak47":10}`},
-			{SteamID: "200", Side: "t", Name: "bob", Kills: 5, Deaths: 2, Assists: 1,
-				Headshots: 1, Score: 11, TotalDamage: 600, DamageTaken: 1100, ADR: 30,
-				HSPct: 20, RoundsPlayed: 2, EntryDeaths: 1,
-				KillsByWeapon: `{"awp":5}`},
+			{SteamID: "100", Side: "ct", Name: "al\x00ice",
+				MVPs: 1, Score: 22,
+				EntryKills: 1,
+				TradeKills: 2, BestStreak: 5,
+			},
+			{SteamID: "200", Side: "t", Name: "bob",
+				Score:       11,
+				EntryDeaths: 1,
+			},
 		},
 		Rounds: []models.Round{
-			{Number: 1, Winner: "ct", Reason: "CTWin", DurationS: 117.5, StartTick: 100,
+			{Number: 1, Winner: "ct", Reason: "CTWin", StartTick: 100,
 				EndTick: 7620, MVP: "100", MVPReason: "kill", EquipCT: 25000, EquipT: 20000,
 				FreezeEndTick: 150, FirstKillSteam: "100", FirstDeathSteam: "200"},
 		},
@@ -183,8 +182,6 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		{"events", "apos_y", "REAL", 0, ""},
 		{"events", "apos_z", "REAL", 0, ""},
 		{"rounds", "freeze_end_tick", "INTEGER", 1, "0"},
-		{"player_stats", "flash_assists", "INTEGER", 1, "0"},
-		{"player_stats", "two_k", "INTEGER", 1, "0"},
 		{"chat", "decrypted", "INTEGER", 1, "0"},
 		{"chat", "key_source", "TEXT", 1, "''"},
 		{"chat", "channel", "TEXT", 1, "''"},
@@ -283,51 +280,6 @@ func TestSetPositionMeta(t *testing.T) {
 	}
 	if err := s.SetPositionMeta(999999, 64, 1); !errors.Is(err, ErrNotFound) {
 		t.Errorf("SetPositionMeta(999999) err = %v, want ErrNotFound", err)
-	}
-}
-
-// TestTwoKColumn: player_stats.two_k exists after a fresh Open as
-// INTEGER NOT NULL DEFAULT 0 — the exclusive 2K scoreboard tier (same
-// rule as 3K/4K/5K; the extractor writes the value on import) — and the
-// scoreboard reads it back.
-func TestTwoKColumn(t *testing.T) {
-	s := openMem(t)
-	var n int
-	if err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('player_stats')
-		 WHERE name = 'two_k' AND type = 'INTEGER' AND "notnull" = 1 AND dflt_value = '0'`,
-	).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("player_stats.two_k column match count = %d (err %v), want INTEGER NOT NULL DEFAULT 0", n, err)
-	}
-	id := saveTestMatch(t, s, "/d/twok.dem", "sha-twok", time.Now())
-	// Read back through a direct column read: the scoreboard DTO
-	// dropped its zero-reader passthrough fields (2026-11-18); the
-	// column itself is what this test pins.
-	rows, err := s.db.Query(
-		`SELECT steam_id, two_k FROM player_stats WHERE match_id = ? ORDER BY steam_id`, id)
-	if err != nil {
-		t.Fatalf("read player_stats.two_k: %v", err)
-	}
-	defer rows.Close()
-	seen := map[string]int{}
-	for rows.Next() {
-		var sid string
-		var n int
-		if err := rows.Scan(&sid, &n); err != nil {
-			t.Fatalf("scan two_k: %v", err)
-		}
-		seen[sid] = n
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate two_k: %v", err)
-	}
-	if len(seen) != 2 {
-		t.Fatalf("two_k rows = %d, want 2", len(seen))
-	}
-	for sid, want := range map[string]int{"100": 3, "200": 0} {
-		if seen[sid] != want {
-			t.Errorf("player %s two_k = %d, want %d", sid, seen[sid], want)
-		}
 	}
 }
 
@@ -436,6 +388,11 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("MatchSummary mismatch: %+v", sum)
 	}
 
+	// The scoreboard fold cells read stored metric values (not player_stats columns).
+	insertSeedMetricValue(t, s, "kills", "100", id, 10, true)
+	insertSeedMetricValue(t, s, "deaths", "100", id, 0, true)
+	insertSeedMetricValue(t, s, "assists", "100", id, 2, true)
+	insertSeedMetricValue(t, s, "adr", "100", id, 60, true)
 	board, err := s.GetScoreboard(id, "", false)
 	if err != nil {
 		t.Fatalf("GetScoreboard: %v", err)
@@ -450,24 +407,8 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	// KDA is gone from the row (w13d): the stored `kda` metric is THE
 	// KDA value — a Go-computed copy would be a second presentation of
 	// the same number (models.PlayerStatsRow's doc comment).
-	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 ||
-		alice.ADR != 60 || alice.KillsByWeapon != `{"ak47":10}` {
+	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 || alice.ADR != 60 {
 		t.Errorf("alice stats mismatch: %+v", alice)
-	}
-	// The seed-backed passthroughs left the scoreboard DTO (2026-11-18,
-	// zero readers): their write path is pinned by reading the stored
-	// columns directly instead.
-	var flashAssists, moneySpent, twoK, threeK int
-	var hsPct float64
-	if err := s.db.QueryRow(
-		`SELECT flash_assists, hs_pct, money_spent_total, two_k, three_k
-		   FROM player_stats WHERE match_id = ? AND steam_id = '100'`, id,
-	).Scan(&flashAssists, &hsPct, &moneySpent, &twoK, &threeK); err != nil {
-		t.Fatalf("read alice's stored stats: %v", err)
-	}
-	if flashAssists != 1 || hsPct != 40 || moneySpent != 7500 || twoK != 3 || threeK != 1 {
-		t.Errorf("alice stored stats mismatch: flash_assists=%d hs_pct=%v money_spent=%d two_k=%d three_k=%d",
-			flashAssists, hsPct, moneySpent, twoK, threeK)
 	}
 	if bob.SteamID != "200" || bob.Name != "bob" || bob.Side != "t" {
 		t.Errorf("bob row mismatch: %+v", bob)
@@ -941,6 +882,8 @@ func TestListMapNames(t *testing.T) {
 func TestGetScoreboardSorting(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/a.dem", "sha-sort", time.Now())
+	insertSeedMetricValue(t, s, "kills", "100", id, 10, true)
+	insertSeedMetricValue(t, s, "kills", "200", id, 5, true)
 
 	// Default: kills DESC → alice (10), bob (5).
 	board, err := s.GetScoreboard(id, "", false)

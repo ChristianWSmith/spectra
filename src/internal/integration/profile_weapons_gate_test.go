@@ -43,6 +43,7 @@ package integration_test
 // like every other golden-demo test here.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -52,6 +53,7 @@ import (
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
+	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -203,6 +205,11 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 	}, 0)
 	if err := analytics.Compute(st, id, cfg); err != nil {
 		t.Fatalf("analytics.Compute: %v", err)
+	}
+	// The oracle reads the stored per-weapon kill metric (raw_kills_by_weapon):
+	// the production sweep stores it for the imported match.
+	if _, err := metrics.Sweep(context.Background(), st, nil, nil); err != nil {
+		t.Fatalf("metrics.Sweep: %v", err)
 	}
 
 	refs, err := st.GetPlayerRefs(id)

@@ -164,6 +164,7 @@ func TestSideSplitSeedEquivalence(t *testing.T) {
 // seeds' values for every player and map.
 func TestMapSplitSeedEquivalence(t *testing.T) {
 	st := seededStore(t)
+	storeCorpusFolds(t, st)
 
 	matches := profileSeedRows(t, st, "map_matches", "map")
 	wins := profileSeedRows(t, st, "map_wins", "map")
@@ -243,5 +244,15 @@ func TestMapSplitSeedEquivalence(t *testing.T) {
 				t.Errorf("%s: seed maps = %d, fold maps = %d", steamID, len(mm[steamID]), len(fold))
 			}
 		}
+	}
+}
+
+// storeCorpusFolds stores the per-match fold values the profile reads take
+// from metric rows (kills, deaths, damage, assists) for the corpus's three
+// matches, through the production raw run.
+func storeCorpusFolds(t *testing.T, st *store.Store) {
+	t.Helper()
+	for _, name := range []string{"kills", "deaths", "total_damage", "assists"} {
+		storeMatchMetric(t, st, name, []int64{1, 2, 3})
 	}
 }

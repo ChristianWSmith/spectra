@@ -295,40 +295,15 @@ type PlayerStats struct {
 	SteamID string `json:"steamId"`
 	Side    string `json:"side"`
 	Name    string `json:"name"` // denormalized for display convenience
-	Kills   int    `json:"kills"`
-	Deaths  int    `json:"deaths"`
-	Assists int    `json:"assists"`
 	// FlashAssists are AssistedFlash assists, split out of Assists —
 	// external scoreboards exclude them from the assist column (the game's
 	// own m_iAssists includes them; see models.Round/CS2 knowledge).
-	FlashAssists    int     `json:"flashAssists"`
-	Headshots       int     `json:"headshots"`
-	Teamkills       int     `json:"teamkills"`
-	Suicides        int     `json:"suicides"`
-	MVPs            int     `json:"mvps"`
-	Score           int     `json:"score"`
-	TotalDamage     int     `json:"totalDamage"`
-	DamageTaken     int     `json:"damageTaken"`
-	Shots           int     `json:"shots"`
-	Hits            int     `json:"hits"`
-	ADR             float64 `json:"adr"`
-	HSPct           float64 `json:"hsPct"`
-	RoundsPlayed    int     `json:"roundsPlayed"`
-	EntryKills      int     `json:"entryKills"`
-	EntryDeaths     int     `json:"entryDeaths"`
-	TradeKills      int     `json:"tradeKills"`
-	BestStreak      int     `json:"bestStreak"`
-	TwoK            int     `json:"twoK"`
-	ThreeK          int     `json:"threeK"`
-	FourK           int     `json:"fourK"`
-	FiveK           int     `json:"fiveK"`
-	UtilityDamage   int     `json:"utilityDamage"`
-	EnemiesFlashed  int     `json:"enemiesFlashed"`
-	FlashedTimes    int     `json:"flashedTimes"`
-	BombPlants      int     `json:"bombPlants"`
-	BombDefuses     int     `json:"bombDefuses"`
-	MoneySpentTotal int     `json:"moneySpentTotal"`
-	KillsByWeapon   string  `json:"killsByWeapon"` // JSON object weapon→count
+	MVPs        int `json:"mvps"`
+	Score       int `json:"score"`
+	EntryKills  int `json:"entryKills"`
+	EntryDeaths int `json:"entryDeaths"`
+	TradeKills  int `json:"tradeKills"`
+	BestStreak  int `json:"bestStreak"`
 }
 
 // Round is one round's summary (rounds table). Number is the extractor's
@@ -338,21 +313,20 @@ type PlayerStats struct {
 // demos never emit round-MVP data (the golden demo does not) — empty
 // means "absent", not zero.
 type Round struct {
-	MatchID         int64   `json:"matchId"`
-	Number          int     `json:"number"`
-	Winner          string  `json:"winner"` // "ct" | "t" | "" (unresolved)
-	Reason          string  `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
-	DurationS       float64 `json:"durationS"`
-	StartTick       int     `json:"startTick"`
-	EndTick         int     `json:"endTick"`
-	MVP             string  `json:"mvp"` // SteamID64, may be empty
-	MVPReason       string  `json:"mvpReason"`
-	EquipCT         int     `json:"equipCT"`
-	EquipT          int     `json:"equipT"`
-	BombSite        string  `json:"bombSite"` // "A" | "B" | ""
-	FreezeEndTick   int     `json:"freezeEndTick"`
-	FirstKillSteam  string  `json:"firstKillSteam"`
-	FirstDeathSteam string  `json:"firstDeathSteam"`
+	MatchID         int64  `json:"matchId"`
+	Number          int    `json:"number"`
+	Winner          string `json:"winner"` // "ct" | "t" | "" (unresolved)
+	Reason          string `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
+	StartTick       int    `json:"startTick"`
+	EndTick         int    `json:"endTick"`
+	MVP             string `json:"mvp"` // SteamID64, may be empty
+	MVPReason       string `json:"mvpReason"`
+	EquipCT         int    `json:"equipCT"`
+	EquipT          int    `json:"equipT"`
+	BombSite        string `json:"bombSite"` // "A" | "B" | ""
+	FreezeEndTick   int    `json:"freezeEndTick"`
+	FirstKillSteam  string `json:"firstKillSteam"`
+	FirstDeathSteam string `json:"firstDeathSteam"`
 }
 
 // RoundEconomy is one side's economy sample for one round
@@ -424,7 +398,10 @@ type Event struct {
 	// in: it stays on the SameSide stamp + the actor columns, exactly
 	// where every other damage seed reads it. Stamped at ingest
 	// (extract.agg.hurt); non-damage rows keep the zero value.
-	CappedDmg    int      `json:"cappedDmg"`
+	CappedDmg int `json:"cappedDmg"`
+	// PostMatch is set at ingest when the row fell outside the real period (the
+	// post-match tail); the event-derived folds exclude it (store post_match).
+	PostMatch    bool     `json:"postMatch"`
 	Site         string   `json:"site"`
 	DetailJSON   string   `json:"detailJson"`
 	RawJSON      string   `json:"rawJson"`

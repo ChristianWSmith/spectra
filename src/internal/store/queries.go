@@ -2,8 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -71,26 +73,7 @@ const (
 // read-backs render the metric's generic `ratio()` spelling (a NULL
 // denominator is the honest "no rows to divide by", shown as value 0
 // with N or as "—"). Same intent, two spellings.
-const (
-	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1.
-	// RETIRED as a production read by dogfooding W4 — GetScoreboard's
-	// SELECT/sort lost it when the report templates switched to the
-	// stored `kd` metric rows — and kept as the reference oracle's
-	// expression in metric_series_read_test.go (the same fate
-	// kastPerMatchSQL met in W3); the aliases m/ps must exist in the
-	// outer query.
-	kdPerMatchSQL = `CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)`
-
-	// kastPerMatchSQL is a player's KAST% WITHIN one match, correlated
-	// from the outer row to that match's player_round_stats rows (0 when
-	// the match has no analytics rows). RETIRED as a production read by
-	// dogfooding W3 — GetTrend and GetPlayerHistory read the stored `kast`
-	// metric rows now — and kept as the reference oracle's expression in
-	// metric_series_read_test.go; the aliases m/ps must exist in the outer
-	// query.
-	kastPerMatchSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
-		WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)`
-)
+const ()
 
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
 // user value is bound as a parameter).
@@ -114,44 +97,6 @@ var matchListSort = map[string]string{
 	"duration":     "m.playback_time_s",
 	"rounds":       "m.real_rounds",
 	"status":       "m.status",
-}
-
-// scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
-//
-// Slimmed 2026-11-18 to the REACHABLE set: production passes only
-// `kills` (the id-keyed fetch seed every view issues — Match.svelte,
-// Combat, Utility, Heatmaps, Economy, RoundDetail, CompareRounds,
-// FilterBar) or `”` (Reports' default-order fetch, which never reaches
-// this map — the fallback arm below serves it). Every other column
-// sort left this path when Match's scoreboard went to owner C14's
-// client-side minimum-swap fold over that one seed (foldRows — the
-// store cannot re-order a row set the frontend already holds), and the
-// metric-backed columns sort through the frontend's `m:` path (which
-// the store cannot express at all). The retired keys (name, side,
-// deaths, assists, headshots, hs_pct, adr, total_damage, damage_taken,
-// rounds_played, entry/opening/trade counts, streaks, 2K-5K, utility,
-// flashed, plants/defuses, mvps, score, teamkills, suicides,
-// money_spent) compared raw fields the frontend no longer sends through
-// this path, so they read like a live capability the store no longer
-// has — an unknown key (including `”` and every retired name) falls
-// back to the fixed default below (pinned by
-// TestGetScoreboardSorting and TestGetScoreboardKDASortKeyRetired).
-//
-// There is no `kda` key any more: the scoreboard's KDA column left the
-// Go calculation for the seeded `kda` metric (w13d), so the SELECT
-// alias and the computed ratio died with it. There is no `kd` key
-// either: the K/D column left the scoreboard with the report
-// read-back (dogfooding W4).
-//
-// `kills` is EXEMPT from the "no raw reads of seeded stats" rule
-// (unification ruling, 2026-11-18 — R3): this is the fetch's ROW
-// ORDER for the id-keyed GetScoreboard call (Match.svelte's kills-DESC
-// seed), not a displayed statistic — the K cell and the K column's own
-// sort both read the `kills` metric rows on the frontend. A row order
-// the store must express in SQL has no metric equivalent to lean on,
-// so ps.kills stays here and nowhere else.
-var scoreboardSort = map[string]string{
-	"kills": "ps.kills",
 }
 
 // playersJoin renders the ONE players-join idiom (roster display names by
@@ -262,7 +207,10 @@ var eventRowFrom = ` FROM events e
 // ("" when the SteamID is absent or unknown). Every stored round is
 // counted play (knife/warmup rounds are discarded at ingest), so no
 // warmup/pregame columns exist to select.
-var roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.bomb_site,
+var roundRowSelect = `SELECT r.number, r.winner, r.reason,
+	COALESCE((SELECT CASE WHEN r.start_tick > 0 AND r.end_tick > r.start_tick AND m2.tick_rate > 0
+		THEN CAST(r.end_tick - r.start_tick AS REAL) / m2.tick_rate ELSE 0 END
+		FROM matches m2 WHERE m2.id = r.match_id), 0), r.bomb_site,
 	r.mvp, COALESCE(mp.name, ''), r.mvp_reason, r.equip_ct, r.equip_t,
 	(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'),
 	r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''),
@@ -744,41 +692,25 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 	return &m, nil
 }
 
-// GetScoreboard returns one player's-aggregate rows for a match, joined
-// with identity, sorted by a whitelisted sortKey (default kills DESC).
-// The row shape is the slimmed passthrough set (2026-11-18 — see
-// models.PlayerStatsRow: every seed-backed stat cell reads its stored
-// metric row instead). There is NO KDA expression here any more (w13d): the scoreboard's KDA
-// column converted to the seeded `kda` metric — GetScoreboard serves
-// stored passthrough columns only, and `kda` is an unknown sort key that
-// falls back to the default (the former `kd` key left the same way with
-// the report read-back in dogfooding W4: reports render the stored `kd`
-// metric rows now, no caller sorts by it, and the frontend reads
-// `m:`-keyed metric columns). Pinned by TestGetScoreboardKDASortKeyRetired.
-// BOTS ARE EXCLUDED (HumanOnly) — this is THE roster read, so every
-// consumer inherits the exclusion (Match's tables/cards and top-stats,
-// the Combat/Utility/Heatmaps/Economy/CompareRounds/RoundDetail/Reports/
-// FilterBar player lists, the library player facet's roster side, the
-// report export's Scoreboard). Event-shaped reads keep bot names.
+// scoreboardMetrics are the stored per-match metric values the scoreboard
+// cells and its sort read (the builtin fold seeds; raw_* are the rounds
+// played and the per-weapon kill counts, which have no builtin twin).
+var scoreboardMetrics = []string{"kills", "deaths", "assists", "adr", "total_damage",
+	"utility_damage", "raw_rounds_played", "raw_kills_by_weapon"}
+
+// GetScoreboard returns one match's roster rows (bots excluded — HumanOnly),
+// with the fold cells read from the stored metric values for the match
+// (a player with no fresh value leaves that cell at its zero). The rows are
+// sorted by the kills metric (kills DESC by default, ASC when desc is false
+// and the key is "kills"), then by name.
 func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.PlayerStatsRow, error) {
-	order, ok := scoreboardSort[sortKey]
-	dir := "ASC"
-	if desc {
-		dir = "DESC"
-	}
-	if !ok {
-		// Unknown/empty key falls back to the fixed default kills DESC.
-		order, dir = "ps.kills", "DESC"
-	}
 	rows, err := s.db.Query(
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
-			ps.rounds_played, ps.kills, ps.deaths,
-			ps.assists, ps.adr, ps.total_damage, ps.entry_kills,
-			ps.utility_damage, ps.mvps, ps.score, ps.kills_by_weapon
+			ps.entry_kills, ps.mvps, ps.score
 		FROM player_stats ps
 		`+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
 		WHERE ps.match_id = ? AND `+HumanOnly("p")+`
-		ORDER BY `+order+` `+dir+`, p.name ASC`,
+		ORDER BY p.name ASC`,
 		id,
 	)
 	if err != nil {
@@ -790,9 +722,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		var r models.PlayerStatsRow
 		if err := rows.Scan(
 			&r.SteamID, &r.Name, &r.IsBot, &r.Side, &r.FinalStatePresent,
-			&r.RoundsPlayed, &r.Kills, &r.Deaths,
-			&r.Assists, &r.ADR, &r.TotalDamage, &r.EntryKills,
-			&r.UtilityDamage, &r.MVPs, &r.Score, &r.KillsByWeapon,
+			&r.EntryKills, &r.MVPs, &r.Score,
 		); err != nil {
 			return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 		}
@@ -801,7 +731,95 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
 	}
+
+	scalars, weapons, err := s.scoreboardValues(id)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
+	}
+	for i := range out {
+		sid := out[i].SteamID
+		v := scalars[sid]
+		out[i].Kills = int(v["kills"])
+		out[i].Deaths = int(v["deaths"])
+		out[i].Assists = int(v["assists"])
+		out[i].ADR = v["adr"]
+		out[i].TotalDamage = int(v["total_damage"])
+		out[i].UtilityDamage = int(v["utility_damage"])
+		out[i].RoundsPlayed = int(v["raw_rounds_played"])
+		kb := weapons[sid]
+		if kb == nil {
+			kb = map[string]int{}
+		}
+		j, err := json.Marshal(kb)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't load the scoreboard: %w", err)
+		}
+		out[i].KillsByWeapon = string(j)
+	}
+	if sortKey != "kills" {
+		desc = true
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kills == out[j].Kills {
+			return false
+		}
+		if desc {
+			return out[i].Kills > out[j].Kills
+		}
+		return out[i].Kills < out[j].Kills
+	})
 	return out, nil
+}
+
+// scoreboardValues reads one match's stored scoreboard metric values: the
+// scalar cells per subject and the per-weapon kill counts (raw_kills_by_weapon
+// rows, one per weapon). Metrics with no catalog row or no fresh value are
+// absent from the maps.
+func (s *Store) scoreboardValues(matchID int64) (map[string]map[string]float64, map[string]map[string]int, error) {
+	names := make(map[int64]string, len(scoreboardMetrics))
+	ids := make([]int64, 0, len(scoreboardMetrics))
+	for _, name := range scoreboardMetrics {
+		m, err := s.GetMetricByName(name)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		names[m.ID] = name
+		ids = append(ids, m.ID)
+	}
+	scalars := map[string]map[string]float64{}
+	weapons := map[string]map[string]int{}
+	if len(ids) == 0 {
+		return scalars, weapons, nil
+	}
+	vals, err := s.GetMetricValuesForMatch(matchID, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, mv := range vals {
+		name := names[mv.MetricID]
+		if mv.Value == nil {
+			continue
+		}
+		if name == "raw_kills_by_weapon" {
+			w := weapons[mv.SubjectKey]
+			if w == nil {
+				w = map[string]int{}
+				weapons[mv.SubjectKey] = w
+			}
+			w[mv.Dim] = int(*mv.Value)
+			continue
+		}
+		m := scalars[mv.SubjectKey]
+		if m == nil {
+			m = map[string]float64{}
+			scalars[mv.SubjectKey] = m
+		}
+		m[name] = *mv.Value
+	}
+	return scalars, weapons, nil
 }
 
 // GetRounds returns a match's rounds by number ASC.

@@ -414,10 +414,10 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 			{SteamID: "400", Name: "dave", Side: "ct", FinalStatePresent: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 1},
-			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 1},
-			{SteamID: "300", Side: "ct", Name: "carl", RoundsPlayed: 1},
-			{SteamID: "400", Side: "ct", Name: "dave", RoundsPlayed: 1},
+			{SteamID: "100", Side: "ct", Name: "alice"},
+			{SteamID: "200", Side: "t", Name: "bob"},
+			{SteamID: "300", Side: "ct", Name: "carl"},
+			{SteamID: "400", Side: "ct", Name: "dave"},
 		},
 		Rounds: []models.Round{
 			{Number: 1, Winner: "ct", StartTick: 64, EndTick: 7200, FreezeEndTick: 64},
@@ -602,8 +602,8 @@ func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
 			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 2},
-			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 2},
+			{SteamID: "100", Side: "ct", Name: "alice"},
+			{SteamID: "200", Side: "t", Name: "bob"},
 		},
 		Rounds: []models.Round{
 			// Round 1: the index-0 pistol round (equip irrelevant).

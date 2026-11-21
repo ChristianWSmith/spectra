@@ -176,7 +176,7 @@ func TestReplaceMatchRowsPlaceholderCount(t *testing.T) {
 		}},
 		{"player_round_stats", func() error {
 			return s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
-				{Round: 1, SteamID: "100", Name: "p", Kills: 1},
+				{Round: 1, SteamID: "100", Name: "p"},
 			})
 		}},
 		{"clutches", func() error {

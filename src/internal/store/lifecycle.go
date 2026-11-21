@@ -261,14 +261,10 @@ func scanJob(row interface{ Scan(...any) error }) (models.Job, error) {
 // eventRowCols, roundRowSelect, GetScoreboard), so they are named here for
 // the schema test to pin against the DDL instead.
 const (
-	playerStatsCols = `steam_id, side, name, kills, deaths, assists, flash_assists, headshots,
-		teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
-		rounds_played, entry_kills, entry_deaths, trade_kills,
-		best_streak, two_k, three_k, four_k, five_k, utility_damage, enemies_flashed, flashed_times,
-		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon,
-		team, won, map`
+	playerStatsCols = `steam_id, side, name, mvps, score, entry_kills, entry_deaths, trade_kills,
+		best_streak, team, won, map`
 
-	roundCols = `number, winner, reason, duration_s, start_tick, end_tick,
+	roundCols = `number, winner, reason, start_tick, end_tick,
 		mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
 		first_kill_steam, first_death_steam`
 
@@ -276,7 +272,7 @@ const (
 
 	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
 		headshot, wallbang, noscope, through_smoke, attacker_blind, attacker_inair, assisted_flash, distance,
-		hitgroup, dmg, capped_dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z`
+		hitgroup, dmg, capped_dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z, post_match`
 
 	// chatCols is the chat row WITHOUT match_id; the reader additionally
 	// selects `id, ` + it + `, decrypted` (decrypted is M4 provenance with
@@ -385,7 +381,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	statsStmt, err := tx.Prepare(
 		`INSERT INTO player_stats (match_id, ` + playerStatsCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -393,12 +389,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	defer statsStmt.Close()
 	for _, ps := range em.PlayerStats {
 		if _, err := statsStmt.Exec(
-			matchID, scrub(ps.SteamID), scrub(ps.Side), scrub(ps.Name), ps.Kills, ps.Deaths, ps.Assists,
-			ps.FlashAssists, ps.Headshots, ps.Teamkills, ps.Suicides, ps.MVPs, ps.Score, ps.TotalDamage,
-			ps.DamageTaken, ps.Shots, ps.Hits, ps.ADR, ps.HSPct, ps.RoundsPlayed, ps.EntryKills,
-			ps.EntryDeaths, ps.TradeKills, ps.BestStreak, ps.TwoK,
-			ps.ThreeK, ps.FourK, ps.FiveK, ps.UtilityDamage, ps.EnemiesFlashed, ps.FlashedTimes, ps.BombPlants,
-			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon),
+			matchID, scrub(ps.SteamID), scrub(ps.Side), scrub(ps.Name), ps.MVPs, ps.Score,
+			ps.EntryKills, ps.EntryDeaths, ps.TradeKills, ps.BestStreak,
 			teamOfPlayer(ps.Side), b2i(models.WinFor(ps.Side, em.Match.ScoreCT, em.Match.ScoreT)),
 			scrub(em.Match.Map),
 		); err != nil {
@@ -408,7 +400,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	roundsStmt, err := tx.Prepare(
 		`INSERT INTO rounds (match_id, ` + roundCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -416,7 +408,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	defer roundsStmt.Close()
 	for _, r := range em.Rounds {
 		if _, err := roundsStmt.Exec(
-			matchID, r.Number, scrub(r.Winner), scrub(r.Reason), r.DurationS, r.StartTick, r.EndTick,
+			matchID, r.Number, scrub(r.Winner), scrub(r.Reason), r.StartTick, r.EndTick,
 			scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT,
 			scrub(r.BombSite), r.FreezeEndTick, scrub(r.FirstKillSteam), scrub(r.FirstDeathSteam),
 		); err != nil {
@@ -466,7 +458,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	eventsStmt, err := tx.Prepare(
 		`INSERT INTO events (match_id, ` + eventCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)
@@ -479,7 +471,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AttackerInAir), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
 			e.Dmg, e.CappedDmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
 			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
-			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ),
+			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ), b2i(e.PostMatch),
 		); err != nil {
 			return fmt.Errorf("saving the match data: %w", err)
 		}

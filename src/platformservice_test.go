@@ -65,7 +65,6 @@ func seedPlatformMatch(t *testing.T, st *store.Store) int64 {
 		})
 		em.PlayerStats = append(em.PlayerStats, models.PlayerStats{
 			SteamID: string(rune('1' + i)), Side: side, Name: "p" + string(rune('0'+i)),
-			KillsByWeapon: "{}",
 		})
 	}
 	em.Rounds = []models.Round{{Number: 1, Winner: "ct", Reason: "CTWin", StartTick: 0, EndTick: 1279}}

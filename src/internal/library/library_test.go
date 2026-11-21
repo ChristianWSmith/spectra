@@ -312,8 +312,8 @@ func TestImportRunsAnalyzeStage(t *testing.T) {
 				{SteamID: "2", Name: "two", Side: "t"},
 			},
 			PlayerStats: []models.PlayerStats{
-				{SteamID: "1", Name: "one", Side: "ct", Kills: 1, ADR: 50, RoundsPlayed: 1},
-				{SteamID: "2", Name: "two", Side: "t", Deaths: 1, ADR: 25, RoundsPlayed: 1},
+				{SteamID: "1", Name: "one", Side: "ct"},
+				{SteamID: "2", Name: "two", Side: "t"},
 			},
 			Rounds: []models.Round{
 				{Number: 1, Winner: "ct", EquipCT: 5000, EquipT: 4200, StartTick: 100, EndTick: 7600},
@@ -341,8 +341,10 @@ func TestImportRunsAnalyzeStage(t *testing.T) {
 	if err != nil || len(prs) != 2 {
 		t.Fatalf("player rounds = %+v, %v, want 2 rows", prs, err)
 	}
-	if prs[0].Kills != 1 && prs[1].Kills != 1 {
-		t.Errorf("kills not attributed: %+v", prs)
+	// A round kill makes the killer's KAST (kill component); the per-round kill
+	// count itself is an event-derived metric now, pinned by the metrics tests.
+	if !prs[0].KAST && !prs[1].KAST {
+		t.Errorf("no kill credited (KAST) in any round: %+v", prs)
 	}
 	career, err := st.GetCareer("1")
 	if err != nil || career.Matches != 1 {

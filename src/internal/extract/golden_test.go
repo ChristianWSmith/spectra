@@ -2,8 +2,6 @@ package extract
 
 import (
 	"context"
-	"encoding/json"
-	"math"
 	"os"
 	"slices"
 	"sort"
@@ -301,21 +299,6 @@ func TestParseGolden(t *testing.T) {
 	if forever == nil {
 		t.Fatal("forever2kELO (76561198296382419) missing from player stats")
 	}
-	if forever.Kills != 25 {
-		t.Errorf("forever2kELO kills = %d, want 25", forever.Kills)
-	}
-	// ADR = enemy damage capped per hit at the victim's remaining HP
-	// (overkill is not damage dealt), divided by THE MATCH's counted
-	// rounds — every player divides by the same count since w16 (every
-	// stored round is counted — the discard already removed knife/warmup
-	// play — and in this demo every player played all of them, so the
-	// divisor matches the player's own rounds here). 116.9 is the
-	// external scoreboard's official value for this demo (its external
-	// scoreboard screenshot) — the extractor now matches it for all ten
-	// players.
-	if math.Abs(forever.ADR-116.9) > 0.05 {
-		t.Errorf("forever2kELO ADR = %.4f, want ≈116.9", forever.ADR)
-	}
 
 	// ---- end-of-demo teammate colors (m_iCompTeammateColor) ----
 	// Ground truth: the ten colors exactly as they read IN-GAME on this
@@ -365,26 +348,6 @@ func TestParseGolden(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("expected player %q missing from the snapshot", name)
 		}
-	}
-
-	// Weapon maps must be valid JSON objects.
-	for _, s := range m.PlayerStats {
-		var kb map[string]int
-		if err := json.Unmarshal([]byte(s.KillsByWeapon), &kb); err != nil {
-			t.Errorf("%s KillsByWeapon invalid JSON %q: %v", s.SteamID, s.KillsByWeapon, err)
-		}
-	}
-
-	// Enemies-flashed credits must all trace back to player_blind events,
-	// and the real pipeline must produce some — guards the blind handler's
-	// side attribution feeding the cross-team gate (see TestEnemiesFlashed).
-	enemyFlashed := 0
-	for _, ps := range m.PlayerStats {
-		enemyFlashed += ps.EnemiesFlashed
-	}
-	if enemyFlashed <= 0 || enemyFlashed > counts[models.EventBlind] {
-		t.Errorf("enemies flashed total = %d, want within 1..%d (blind events)",
-			enemyFlashed, counts[models.EventBlind])
 	}
 
 	// ---- progress ----
