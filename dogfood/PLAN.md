@@ -237,6 +237,11 @@ Settled (owner, 2026-11-20 unless noted):
     side splits and weapon splits read per-match values keyed by `dim`. An import
     then marks only that match's players behind, and the sweep recomputes only
     them. Snapshot values must still match after the rewrite.
+49. **side_adr on the capped basis (owner ruling, 2026-11-21).** `side_adr` (average
+    damage per round by side) uses capped damage, as Q7 does for round damage and
+    utility damage. Its snapshot reference changes accordingly: 110 of 116 cells
+    differ by this ratified change. It becomes per player (a ratio of sums over
+    per-match side values, bound to `:steam_id`), like the other side splits.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
