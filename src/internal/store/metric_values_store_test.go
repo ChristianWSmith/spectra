@@ -129,7 +129,7 @@ func TestMatchAndTeamValuesNeedAMatch(t *testing.T) {
 	// transaction opens, and nothing lands.
 	for _, id := range []int64{team, matchSubj} {
 		err := s.InsertMetricValues(id, 1, 1, []MetricValueRow{
-			{MatchID: 0, SubjectKey: "ct", Value: 1, N: 1},
+			{MatchID: 0, SubjectKey: "ct", Value: 1},
 		})
 		if err == nil || !strings.Contains(err.Error(), "must belong to a match") {
 			t.Errorf("career-bucket insert = %v, want the match-required error", err)
@@ -141,23 +141,23 @@ func TestMatchAndTeamValuesNeedAMatch(t *testing.T) {
 
 	// The same subjects addressed to a real match land.
 	if err := s.InsertMetricValues(team, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "ct", Value: 1, N: 1},
+		{MatchID: matchID, SubjectKey: "ct", Value: 1},
 	}); err != nil {
 		t.Errorf("team value at a match: %v", err)
 	}
 	if err := s.InsertMetricValues(matchSubj, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "", Value: 2, N: 1},
+		{MatchID: matchID, SubjectKey: "", Value: 2},
 	}); err != nil {
 		t.Errorf("match-subject value at a match: %v", err)
 	}
 	// Player subject: match grain (> 0) and career bucket (= 0) both pass.
 	if err := s.InsertMetricValues(player.ID, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3},
 	}); err != nil {
 		t.Errorf("player match-grain value: %v", err)
 	}
 	if err := s.InsertMetricValues(career.ID, 1, 1, []MetricValueRow{
-		{MatchID: 0, SubjectKey: "76561198000000001", Value: 4, N: 1},
+		{MatchID: 0, SubjectKey: "76561198000000001", Value: 4},
 	}); err != nil {
 		t.Errorf("player career-bucket value: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 	// unit → not behind, one fresh row (and the OUTDATED rows are what
 	// count as invisible — see (4)).
 	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3, N: 7},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3},
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 		t.Fatalf("clear: %v", err)
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, live+1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3, N: 7},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3},
 	}); err != nil {
 		t.Fatalf("reinsert: %v", err)
 	}
@@ -285,8 +285,8 @@ func TestInsertMetricValuesRollsBackAtomically(t *testing.T) {
 
 	// A clean set lands.
 	good := []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 2},
-		{MatchID: matchID, SubjectKey: "76561198000000002", Value: 2, N: 3},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000002", Value: 2},
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, 1, good); err != nil {
 		t.Fatalf("insert good: %v", err)
@@ -300,8 +300,8 @@ func TestInsertMetricValuesRollsBackAtomically(t *testing.T) {
 	// roll back everything, INCLUDING that first row: no half-written
 	// metric, no partially replaced generation.
 	bad := []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 9, N: 9},
-		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 10, N: 10}, // PK conflict
+		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 9},
+		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 10}, // PK conflict
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, 1, bad); err == nil {
 		t.Fatal("duplicate-key insert succeeded, want a constraint error")
@@ -330,7 +330,7 @@ func TestInsertMetricValuesRollsBackAtomically(t *testing.T) {
 		t.Fatalf("rows after re-run phase 1 = %d, want 0 (absent → behind)", n)
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 9, N: 9},
+		{MatchID: matchID, SubjectKey: "76561198000000003", Value: 9},
 	}); err != nil {
 		t.Fatalf("re-run insert: %v", err)
 	}
@@ -351,8 +351,8 @@ func TestClearMetricValuesIsPerMetric(t *testing.T) {
 	b := seedValueMetric(t, s, "clear_b", "match")
 	for _, m := range []models.MetricRow{a, b} {
 		if err := s.InsertMetricValues(m.ID, m.Version, 1, []MetricValueRow{
-			{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 1},
-			{MatchID: matchID, SubjectKey: "76561198000000002", Value: 2, N: 2},
+			{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1},
+			{MatchID: matchID, SubjectKey: "76561198000000002", Value: 2},
 		}); err != nil {
 			t.Fatalf("insert %s: %v", m.Name, err)
 		}

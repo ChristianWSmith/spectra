@@ -855,7 +855,7 @@ export function validateExpr(expr, subject, partition, scope) {
 // THE canonical reads: fresh stored rows only (the store applies the
 // same behind predicate the sweep selects with, so a stale row never
 // leaves it), canonical metric order, DTO exactly
-// {metricId, subjectKey, value, n} — no stamp field exists to render.
+// {metricId, subjectKey, dim, value, valueKey} — no stamp field exists to render.
 // Read-cached through the SAME cachedRead as every other read here
 // (keyed (method, args), flushed by the spectra:* listeners above —
 // metric-done joins them precisely because these rows are what it
@@ -909,7 +909,7 @@ export function careerRows(names) {
       for (const v of values || []) {
         for (const d of wanted) {
           if (v.metricId === d.id) {
-            out.get(d.name).bySteam.set(v.subjectKey, { value: v.value, n: v.n, format: d.format });
+            out.get(d.name).bySteam.set(v.subjectKey, { value: v.value, format: d.format });
           }
         }
       }

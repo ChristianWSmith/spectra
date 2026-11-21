@@ -39,7 +39,7 @@ function harness({ values = [], states = [], query = null } = {}) {
   return { api, calls, reported, navs };
 }
 
-const row = (subjectKey, value, n = 10) => ({ metricId: 1, subjectKey, dim: '', value, valueKey: '', n });
+const row = (subjectKey, value) => ({ metricId: 1, subjectKey, dim: '', value, valueKey: '' });
 
 test('a match-grain read for one player is fresh with that player’s value', async () => {
   const { api, calls } = harness({ values: [row('7656', 81.5), row('7657', 60)], states: [{ metricId: 1, state: 'fresh' }] });
@@ -47,7 +47,7 @@ test('a match-grain read for one player is fresh with that player’s value', as
   assert.deepEqual(calls[0], ['match', 5, [1]]);
   assert.equal(r.state, 'fresh');
   assert.equal(r.value, 81.5);
-  assert.equal(r.n, 10);
+  assert.equal(r.n, undefined, 'the component read carries no sample size');
   assert.deepEqual(r.rows.map((x) => x.subject), ['7656']);
 });
 
@@ -89,7 +89,7 @@ test('a failed metric carries the compute error text', async () => {
 
 test('without match_id the read is the career bucket, narrowed by steam_id', async () => {
   const { api, calls } = harness({
-    values: [{ metricId: 2, subjectKey: 'p', dim: '', value: 77, valueKey: '', n: 40 }],
+    values: [{ metricId: 2, subjectKey: 'p', dim: '', value: 77, valueKey: '' }],
     states: [{ metricId: 2, state: 'fresh' }],
   });
   const r = await api.metric('career_adr', { steam_id: 'p' });

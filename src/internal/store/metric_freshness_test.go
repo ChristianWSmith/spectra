@@ -29,7 +29,7 @@ func TestUnknownTouchedReadsBehind(t *testing.T) {
 		t.Fatalf("CreateMetric: %v", err)
 	}
 	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1, N: 1},
+		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 1},
 	}); err != nil {
 		t.Fatalf("InsertMetricValues: %v", err)
 	}

@@ -40,7 +40,7 @@ type MetricRow struct {
 // MetricValue is ONE stored metric value the canonical read serves
 // (stored-metrics design §5) — the frontend contract for a value slot,
 // at either grain (match rows at match_id > 0, career rows at 0):
-// exactly {metricId, subjectKey, value, valueKey, n}. subjectKey is
+// exactly {metricId, subjectKey, dim, value, valueKey}. subjectKey is
 // the row's subject: a player's SteamID64, a team key, or ” (match
 // subject / career bucket). valueKey is the IDENTITY slot (§3.3): the
 // argmax winner's player key on an identity row, ” on every numeric
@@ -54,7 +54,6 @@ type MetricValue struct {
 	Dim        string   `json:"dim"`        // partition value ('' = unpartitioned — §6.5)
 	Value      *float64 `json:"value"`      // nil = no data (raw SQL NULL, ruling 23): a dash, never 0
 	ValueKey   string   `json:"valueKey"`   // identity winner's key (identity rows only; '' otherwise)
-	N          int      `json:"n"`          // sample size behind the value (for an identity, the pool)
 }
 
 // MetricSeriesPoint is ONE fresh stored match-grain value carrying the
@@ -69,7 +68,6 @@ type MetricSeriesPoint struct {
 	MetricID    int64     `json:"metricId"`
 	MatchID     int64     `json:"matchId"`
 	Value       float64   `json:"value"`
-	N           int       `json:"n"` // sample size behind the value
 	Patch       int       `json:"patch"`
 	ExtractedAt time.Time `json:"extractedAt"` // the match's import time
 }

@@ -58,7 +58,7 @@ export function metricPresentation(state, row, unitHasRows) {
   if (state === 'processing') return { kind: 'chip', state: 'processing' };
   if (state === 'failed') return { kind: 'chip', state: 'failed' };
   if (row) {
-    const out = { kind: 'value', value: row.value, n: row.n };
+    const out = { kind: 'value', value: row.value };
     if (row.valueKey) out.valueKey = row.valueKey;
     return out;
   }

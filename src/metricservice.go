@@ -53,7 +53,6 @@ type MetricPreviewRow struct {
 	Label    string  `json:"label"`   // display name (player name etc when resolvable; an identity row labels its WINNER)
 	Value    float64 `json:"value"`
 	ValueKey string  `json:"valueKey"` // identity winner's key (argmax rows only — §3.3; "" on numeric rows)
-	N        int     `json:"n"`        // sample size behind the value (PRD §5.16; for an identity, the pool)
 }
 
 // MetricPreview is a preview response. Metric is models.MetricRow — the
@@ -409,7 +408,7 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, subject string, pa
 //
 // ONE read per value surface, straight through to the store's canonical
 // read: fresh rows only, canonical metric order, DTO exactly
-// {metricId, subjectKey, value, valueKey, n} (no stamps — internal-only
+// {metricId, subjectKey, dim, value, valueKey} (no stamps — internal-only
 // by construction). These are what every view reads for a SAVED metric;
 // PreviewMetric stays the on-demand calculator for unsaved/dirty
 // drafts, which have no stored rows to read.

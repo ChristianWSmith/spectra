@@ -181,7 +181,7 @@
   }
 
   function adrTitle(pres) {
-    if (pres.kind === 'value') return `${(adrMetric && adrMetric.title) || 'ADR'} — sample size n=${pres.n}`;
+    if (pres.kind === 'value') return `${(adrMetric && adrMetric.title) || 'ADR'}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, adrError);
   }
@@ -190,7 +190,7 @@
   // machine, the same read, the seed's OWN `doc` as the value tooltip
   // (the Formula is the tooltip medium the tiering rule measures
   // wholesale — a seeded cell documents itself exactly like a metric
-  // cell's header), falling back to the title + n form when the
+  // cell's header), falling back to the title when the
   // definition carries no doc.
   function matchesPres(p) {
     const st = liveMetricState(adrProgress, adrStates, matchesMetric ? matchesMetric.id : undefined);
@@ -200,7 +200,7 @@
   function matchesTitle(pres) {
     if (pres.kind === 'value') {
       if (matchesMetric && matchesMetric.doc) return matchesMetric.doc;
-      return `${(matchesMetric && matchesMetric.title) || 'Matches'} — sample size n=${pres.n}`;
+      return `${(matchesMetric && matchesMetric.title) || 'Matches'}`;
     }
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, adrError);

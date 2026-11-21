@@ -17,7 +17,7 @@ import {
   metricProgressStage,
 } from './metricstate.js';
 
-const ROW = { steamId: '76561198000000001', value: 4.25, n: 13 };
+const ROW = { steamId: '76561198000000001', value: 4.25 };
 
 test('the vocabulary is exactly the five design states', () => {
   assert.deepEqual(METRIC_STATES, ['processing', 'failed', 'fresh', 'no-data', 'behind']);
@@ -46,16 +46,14 @@ test('failed wins over a row (no fresh row exists on a failure, but never a numb
   assert.deepEqual(metricPresentation('failed', ROW, true), { kind: 'chip', state: 'failed' });
 });
 
-test('fresh renders the VALUE with its sample size', () => {
+test('fresh renders the VALUE and nothing else (no sample size)', () => {
   assert.deepEqual(metricPresentation('fresh', ROW, true), {
     kind: 'value',
     value: 4.25,
-    n: 13,
   });
   // A value-kind presentation never carries a state word or a stamp.
   assert.deepEqual(Object.keys(metricPresentation('fresh', ROW, true)).sort(), [
     'kind',
-    'n',
     'value',
   ]);
 });
@@ -103,8 +101,8 @@ test('every presentation carries EXACTLY its documented keys (no stamp field)', 
     const allowed =
       pres.kind === 'value'
         ? pres.valueKey
-          ? ['kind', 'n', 'value', 'valueKey']
-          : ['kind', 'n', 'value']
+          ? ['kind', 'value', 'valueKey']
+          : ['kind', 'value']
         : pres.kind === 'chip'
           ? ['kind', 'state']
           : ['kind'];
@@ -121,16 +119,15 @@ test('every presentation carries EXACTLY its documented keys (no stamp field)', 
 // --- Identity rows (metrics expansion §3.3) --------------------------------
 
 test('fresh renders an IDENTITY row with its value_key — fresh = identity present', () => {
-  const ident = { valueKey: '76561198000000008', value: 16, n: 8 };
+  const ident = { valueKey: '76561198000000008', value: 16 };
   assert.deepEqual(metricPresentation('fresh', ident, true), {
     kind: 'value',
     value: 16,
-    n: 8,
     valueKey: '76561198000000008',
   });
   // A numeric row never grows the key slot (the shape pin above stays
   // exact for it).
-  assert.deepEqual(Object.keys(metricPresentation('fresh', ROW, true)).sort(), ['kind', 'n', 'value']);
+  assert.deepEqual(Object.keys(metricPresentation('fresh', ROW, true)).sort(), ['kind', 'value']);
 });
 
 test('the EMPTY POOL is the dash — fresh with no identity row → nodata, never a fabricated winner', () => {
@@ -145,7 +142,7 @@ test('state titles never carry a digit — no version number is expressible', ()
   // Design §5: no chip, tooltip, header or title ever contains a
   // version number or a computed-at timestamp. The fixed copy is
   // digit-free by construction; 'fresh' has NO fixed title (the caller
-  // builds "formula — sample size n=…" itself), and the failed title is
+  // builds the formula title itself), and the failed title is
   // the engine's error text (checked separately at the DOM level for
   // version-shaped leaks).
   for (const state of ['processing', 'failed', 'no-data', 'behind']) {
@@ -153,7 +150,7 @@ test('state titles never carry a digit — no version number is expressible', ()
     assert.ok(title.length > 0, `${state} has a title`);
     assert.ok(!/\d/.test(title), `${state} title carries a digit: ${JSON.stringify(title)}`);
   }
-  assert.equal(metricStateTitle('fresh', ''), '', 'fresh titles are the caller’s formula + n');
+  assert.equal(metricStateTitle('fresh', ''), '', 'fresh titles are the caller’s formula');
   // failed → the error text verbatim (its tooltip IS the failure).
   assert.equal(metricStateTitle('failed', 'upstream vanished'), 'upstream vanished');
   // An absent error still yields honest copy, never 'undefined'.

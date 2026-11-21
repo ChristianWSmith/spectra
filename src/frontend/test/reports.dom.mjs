@@ -493,8 +493,8 @@ console.log('C. Save report lands the composed document — body + appendix, des
     text.replace(/\s+/g, ' ').slice(0, 400),
   );
   check(
-    'the saved rows carry the roster label, the value and n',
-    text.includes('| 76561198000000001 | amy | 4.25 | 7 |'),
+    'the saved rows carry the roster label and the value (no N column)',
+    text.includes('| 76561198000000001 | amy | 4.25 |') && !text.includes('| n |'),
     text.replace(/\s+/g, ' ').slice(0, 400),
   );
 }
@@ -736,7 +736,8 @@ console.log('G2. a RAW recorded value (N5): addable without a definition — the
     'the saved document carries the recorded-value heading, the honest meta line and the table — never "value not computed"',
     rawText.includes('### Score') &&
       rawText.includes('recorded value · per player · 1 players') &&
-      rawText.includes('| 76561198000000001 | amy | 48 | 24 |') &&
+      rawText.includes('| 76561198000000001 | amy | 48 |') &&
+      !rawText.includes('| 24 |') &&
       !rawText.includes('value not computed'),
     rawText.replace(/\s+/g, ' ').slice(0, 600),
   );
@@ -1109,13 +1110,13 @@ console.log('K. match-subject + identity appendix entries: offered, subject-awar
     text.replace(/\s+/g, ' ').slice(text.indexOf('## Stats appendix'), text.indexOf('## Stats appendix') + 600),
   );
   check(
-    'the match row labels itself (match #13) with the recorded value and its N',
-    text.includes('|  | match #13 | 42 | 13 |'),
+    'the match row labels itself (match #13) with the recorded value',
+    text.includes('|  | match #13 | 42 |'),
     text.replace(/\s+/g, ' ').slice(text.indexOf('Lost equipment'), text.indexOf('Lost equipment') + 300),
   );
   check(
     'the identity row renders the recorded WINNER as its label (amy, never a raw id) beside the stored companion',
-    text.includes('|  | amy | 20 | 8 |') && !/\|[^|]*76561198000000001[^|]*\|[^|]*20 \|/.test(text),
+    text.includes('|  | amy | 20 |') && !/\|[^|]*76561198000000001[^|]*\|[^|]*20 \|/.test(text),
     text.replace(/\s+/g, ' ').slice(text.indexOf('Top fragger'), text.indexOf('Top fragger') + 300),
   );
 

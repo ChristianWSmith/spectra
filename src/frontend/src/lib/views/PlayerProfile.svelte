@@ -443,7 +443,7 @@
   }
 
   function careerTitle(col, pres) {
-    if (pres.kind === 'value') return `${col.def.title || col.def.name} — sample size n=${pres.n}`;
+    if (pres.kind === 'value') return `${col.def.title || col.def.name}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, col.error);
   }
@@ -562,7 +562,7 @@
           // A NULL value is no data (ruling 23): it stays null, never 0 * 100.
           const scaled = v.value == null ? null : hit.def.format === 'percent' ? v.value * 100 : v.value;
           if (!out.has(hit.name)) out.set(hit.name, new Map());
-          out.get(hit.name).set(v.dim, { value: scaled, n: v.n });
+          out.get(hit.name).set(v.dim, { value: scaled });
         }
         splitValues = out;
       })
@@ -651,7 +651,7 @@
   function splitTitle(name, pres) {
     const def = splitDefs.get(name);
     const label = def ? def.title || def.name : name;
-    if (pres.kind === 'value') return `${label} — sample size n=${pres.n}`;
+    if (pres.kind === 'value') return `${label}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, (def && metricStates.get(def.id)?.error) || '');
   }
@@ -747,7 +747,7 @@
             <!-- One tile per pinned metric through the canonical StatCard:
                  children[0] the label (its `labelTitle` carries the metric's
                  doc), children[1] the value slot running the state machine —
-                 the cell's own `title` carries n=/state — never a fabricated
+                 the cell's own `title` carries the state — never a fabricated
                  0 and never a version number. -->
             <!-- R4 (unification wave ruling): the Matches tile's sub
                  line stays a RAW RECORD READ — `wins` has no seed (only

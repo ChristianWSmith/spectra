@@ -876,11 +876,11 @@
     return metricPresentation(st, metricCell(mc, p), mc.unitHasRows);
   }
 
-  // The cell's tooltip: fresh → formula + sample size n (never a
+  // The cell's tooltip: fresh → the metric's formula (never a
   // stamp); '—' → the no-data copy; a chip → the state title (failed
   // carries the engine's error text).
   function metricCellTitle(mc, pres) {
-    if (pres.kind === 'value') return `${mc.def.title || mc.def.name} — sample size n=${pres.n}`;
+    if (pres.kind === 'value') return `${mc.def.title || mc.def.name}`;
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, mc.error);
   }
@@ -919,7 +919,7 @@
   // fresh → the seed's OWN `doc` (the Formula — the tooltip medium the
   // tiering rule measures wholesale; owner ruling 2026-11-17: a seeded
   // fixed cell documents itself exactly like a metric cell's header),
-  // falling back to the title + sample-size form when the definition
+  // falling back to the title when the definition
   // carries no doc; dash → the no-data copy; a state → its state title
   // (failed carries the engine's error text).
   function fixedTitle(name, pres) {
@@ -927,7 +927,7 @@
     const label = mc ? mc.def.title || mc.def.name : name;
     if (pres.kind === 'value') {
       if (mc && mc.def.doc) return mc.def.doc;
-      return `${label} — sample size n=${pres.n}`;
+      return `${label}`;
     }
     if (pres.kind === 'nodata') return 'no data for this player';
     return metricStateTitle(pres.state, (mc && mc.error) || '');

@@ -1769,8 +1769,7 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
 
   // The no-version pin: no stamp, version number or timestamp anywhere
   // in the metric columns' rendered output (titles + chip text). The
-  // sample size "n=5" is data, not a stamp — the regex targets
-  // version-shaped and date-shaped strings specifically.
+  // regex targets version-shaped and date-shaped strings specifically.
   const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
   const metricThs = ths.filter((t) => t.classList.contains('m5-mth'));
   const leaks = [];
@@ -2908,9 +2907,9 @@ console.log('R. seeded fixed cells: seed value + Formula title, the five states,
     const cell = cellAt('K', 'bob');
     const kTh = ths[idxOf('K')];
     check(
-      'the unified K column renders the stored seed value (18); the cell wears the metric n= title and the seed Formula rides the header ⓘ (unification — K is a metric column now)',
+      'the unified K column renders the stored seed value (18); the cell wears its metric label as the title and the seed Formula rides the header ⓘ (unification — K is a metric column now)',
       !!cell && cell.textContent.trim() === '18' &&
-        cell.getAttribute('title') === 'K — sample size n=13' &&
+        cell.getAttribute('title') === 'K' &&
         (kTh?.querySelector('.m5-ib')?.getAttribute('title') || '').startsWith(
           'Formula: sum(player_stats.kills)',
         ),

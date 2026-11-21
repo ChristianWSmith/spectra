@@ -18,7 +18,7 @@
   // dash / state chip), which needs markup a string cannot carry.
   // `labelTitle` is an additive tooltip on the LABEL span alone — the
   // career tiles carry two tooltips (the name's metric doc lives here,
-  // the value's n=/state rides the cell's own `title`), and a nested
+  // the value's formula/state rides the cell's own `title`), and a nested
   // element's own title always wins over its ancestor's.
   let {
     label,

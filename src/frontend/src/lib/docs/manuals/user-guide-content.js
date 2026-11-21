@@ -393,8 +393,7 @@ id, and a player search box to jump to someone else. Then:
     title: 'The metric Builder',
     blocks: `**Builder** (sidebar) is where numbers are defined. A **metric** is one number for one subject —
 a player ("this player's trade rate"), a match or a team — and every metric carries its own written
-formula and sample-size honesty (a value is never invented; missing data shows as a dash or an
-honest zero beside its \`N\`).
+formula (a value is never invented; missing data shows as a dash, never as a zero).
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
 and one **Filters** panel (origin, scope, subject, format and pinning — the last narrows
@@ -432,7 +431,7 @@ carry a *read-only source* chip; saving one stores a copy as your own metric.
 
 **Preview** is not available for a statement yet. Save the metric, and its values appear once the sweep has run it (see *Previewing* in the metric language chapter). State chips appear in place
 of numbers while a value is recomputing or has failed. Click a column header to sort the rows:
-they open with the highest **N** first, the numeric columns order by their value (never by how the
+they open with the highest **value** first, the numeric columns order by their value (never by how the
 number happens to be written), and a second click on the active header flips the direction.
 
 Under the table, **compiled SQL (provenance)** shows the statement behind those values with the

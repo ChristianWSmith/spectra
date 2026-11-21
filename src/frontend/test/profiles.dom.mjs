@@ -787,9 +787,9 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
     const tile = rows[0];
     const cell = tile?.children[1];
     check(
-      'fresh renders the STORED value with n in the tooltip',
+      'fresh renders the STORED value with its label as the tooltip (no sample size)',
       !!cell && cell.textContent.trim() === '1.5' && !cell.querySelector('.chip.status') &&
-        (tile.getAttribute('title') || '').includes('sample size n=40'),
+        (tile.getAttribute('title') || '') === 'Career K/D',
       cell ? `${cell.textContent.trim()} title=${tile.getAttribute('title')}` : 'no cell',
     );
   }
@@ -1031,9 +1031,9 @@ console.log(
     const tile = j1Rows[0];
     const cell = tile?.children[1];
     check(
-      'the ADR tile renders amy\'s STORED value with n in the tooltip',
+      'the ADR tile renders amy\'s STORED value with its label as the tooltip (no sample size)',
       !!cell && cell.textContent.trim() === '63.5' &&
-        (tile.getAttribute('title') || '').includes('sample size n=42'),
+        (tile.getAttribute('title') || '') === 'ADR',
       cell ? `${cell.textContent.trim()} title=${tile.getAttribute('title')}` : 'no cell',
     );
     check(
@@ -1339,11 +1339,11 @@ console.log('L. the Matches card reads the career_matches seed row (never profil
     freshValue ? freshValue.textContent.trim() : 'no Matches card',
   );
   check(
-    'the card carries the seed Formula on its label and the sample size on the cell',
+    'the card carries the seed Formula on its label and its metric label on the cell',
     (freshCard?.querySelector('.field-label')?.getAttribute('title') || '').startsWith(
       'Formula: count(player_stats)',
     ) &&
-      (freshCard?.getAttribute('title') || '').includes('sample size n=7'),
+      (freshCard?.getAttribute('title') || '') === 'Matches played',
     `label=${freshCard?.querySelector('.field-label')?.getAttribute('title')} cell=${freshCard?.getAttribute('title')}`,
   );
   document.body.removeChild(fresh);
