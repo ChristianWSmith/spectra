@@ -48,7 +48,8 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
 });
 for (const k of [
   'window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement', 'HTMLSelectElement',
-  'HTMLTextAreaElement', 'HTMLButtonElement', 'SVGElement', 'Element', 'Node', 'Text', 'Comment',
+  'HTMLTextAreaElement', 'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement',
+  'SVGElement', 'Element', 'Node', 'Text', 'Comment',
   'DocumentFragment', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
   'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'localStorage',
 ]) {
@@ -333,6 +334,29 @@ bindings.handlers.ListComponents = () => COMPONENTS.map((c) => ({ ...c }));
 click(buttonByText(S.componentbuilder.retry));
 await settle(10);
 check('Try again reloads the list and clears the error', !q('.error'));
+unmounted();
+
+// --- I. the preview's context ----------------------------------------------------
+console.log('I. the preview context');
+const CONTEXT_SOURCE = `<script>
+  let { context } = $props();
+</script>
+<p class="ctx-match">{context.matchId ?? 'none'}</p>`;
+// The match list is read through the services cache, which holds the empty
+// list the earlier mounts read: clear it so this mount sees the match.
+services.invalidate();
+bindings.handlers.ListMatches = () => [{ id: 42, map: 'de_ctx', scoreCT: 1, scoreT: 0, realRounds: 1, status: 'ready' }];
+COMPONENTS = [];
+await mounted();
+await setText(q('#cb-source'), CONTEXT_SOURCE);
+await settle(10);
+check('with no match chosen the preview context carries no matchId', q('.cb-stage .ctx-match')?.textContent.trim() === 'none', q('.cb-stage')?.textContent);
+click(q('#cb-match'));
+await settle(4);
+check('the match picker lists the ready match', !!q('#mp-opt-42'), qa('[id^="mp-opt-"]').map((e) => e.id).join(','));
+if (q('#mp-opt-42')) click(q('#mp-opt-42'));
+await settle(10);
+check('a chosen match is the preview context (context.matchId)', q('.cb-stage .ctx-match')?.textContent.trim() === '42', q('.cb-stage .ctx-match')?.textContent);
 unmounted();
 
 check('nothing escaped the view', escaped.length === 0, escaped.join(' | '));

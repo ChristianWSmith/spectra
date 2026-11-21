@@ -5,7 +5,10 @@
 // props; builtin and user components receive the same object.
 //
 //   metric(name, binds)  stored values with the five states
-//   query(sql)           a live read-only SQL read (no freshness)
+//   query(sql, binds)    a live read-only SQL read (no freshness)
+//   context              the read-only context the surface mounted this
+//                        component with (04 §3, ruling 34), passed as a prop
+//                        by ComponentFrame; binds default from it
 //   navigate(route)      the route hash every view navigates with
 //   guard(fn)            the event and async wrapper (see below)
 //   isHuman / listedPlayers   the frontend bot filter (lib/players.js)
@@ -54,7 +57,7 @@ import * as S from '../strings/index.js';
  *
  * @typedef {{
  *   metric: (name: string, binds?: MetricBinds) => Promise<MetricRead>,
- *   query: (sql: string) => Promise<QueryRead>,
+ *   query: (sql: string, binds?: MetricBinds) => Promise<QueryRead>,
  *   navigate: (route: string | {path: string, query?: object}) => void,
  *   guard: <F extends (...args: any[]) => any>(fn: F) => F,
  *   isHuman: typeof isHuman,
@@ -63,6 +66,60 @@ import * as S from '../strings/index.js';
  */
 
 const PRESENTATION_STATE = { value: 'fresh', nodata: 'no-data' };
+
+// The context names (04 §3) and the reserved bind names they stand for
+// (03-QUERIES §5). A bind object may use either spelling of one bind.
+const CONTEXT_TO_BIND = { matchId: 'match_id', steamId: 'steam_id', round: 'round' };
+const RESERVED_BINDS = ['match_id', 'steam_id', 'round'];
+
+// contextBinds is the bind set a context implies: each set field becomes
+// its reserved bind, and unset fields are left out.
+export function contextBinds(ctx) {
+  const out = {};
+  if (!ctx) return out;
+  if (ctx.matchId != null) out.match_id = Number(ctx.matchId);
+  if (ctx.steamId != null && ctx.steamId !== '') out.steam_id = String(ctx.steamId);
+  if (ctx.round != null) out.round = Number(ctx.round);
+  return out;
+}
+
+// resolveBinds picks the binds of one read. An explicit bind object
+// REPLACES the context's set as a whole (so a career read given a steamId
+// does not pick up the context's match); no object, or an empty one, uses
+// the context. Keys come back in the reserved spelling; giving one bind
+// twice (matchId and match_id) is refused.
+export function resolveBinds(binds, ctx) {
+  if (binds == null || Object.keys(binds).length === 0) return contextBinds(ctx);
+  const out = {};
+  for (const [key, value] of Object.entries(binds)) {
+    const reserved = CONTEXT_TO_BIND[key] || key;
+    if (value == null) continue;
+    if (reserved in out) throw new Error(S.fill(S.components.bindConflict, { name: reserved }));
+    out[reserved] = value;
+  }
+  return out;
+}
+
+const QUERY_BIND = /:(match_id|steam_id|round)\b/g;
+
+// bindQuery replaces the reserved binds a query names with SQL literals.
+// The backend refuses bound parameters in a component query (session.go
+// ComponentRead), so the values go in as literals, checked first: an
+// integer for match_id and round, digits only (quoted) for steam_id.
+// A bind that is named but unset, or not of its shape, is refused.
+export function bindQuery(sql, binds) {
+  return String(sql).replace(QUERY_BIND, (_, name) => {
+    const v = binds[name];
+    if (v == null || v === '') throw new Error(S.fill(S.components.bindUnset, { name }));
+    if (name === 'steam_id') {
+      if (!/^\d+$/.test(String(v))) throw new Error(S.fill(S.components.bindInvalid, { name }));
+      return `'${v}'`;
+    }
+    const n = Number(v);
+    if (!Number.isSafeInteger(n)) throw new Error(S.fill(S.components.bindInvalid, { name }));
+    return String(n);
+  });
+}
 
 // stateWord maps a metricPresentation result onto the five-state word.
 function stateWord(p) {
@@ -88,10 +145,14 @@ function storedRead(reads, def, binds) {
 }
 
 /**
- * @param {{reads: ReadServices, report: (err: Error) => void, nav?: (hash: string) => void}} deps
+ * `context` is a getter for the mounting surface's context, read at each
+ * call (the Builder preview's context changes while the frame lives).
+ *
+ * @param {{reads: ReadServices, report: (err: Error) => void, nav?: (hash: string) => void,
+ *   context?: () => {matchId?: number|null, steamId?: string|null, round?: number|null}}} deps
  * @returns {ReadApi}
  */
-export function createReadApi({ reads, report, nav }) {
+export function createReadApi({ reads, report, nav, context = () => ({}) }) {
   const reported = new WeakSet();
   const fail = (e) => {
     const err = toError(e);
@@ -104,16 +165,17 @@ export function createReadApi({ reads, report, nav }) {
   const go = nav || ((hash) => (location.hash = hash));
 
   /** @type {ReadApi['metric']} */
-  async function metric(name, binds = {}) {
+  async function metric(name, binds) {
     try {
+      const resolved = resolveBinds(binds, context());
       const defs = (await reads.listMetrics()) || [];
       const def = defs.find((d) => d && d.name === name);
       if (!def) throw new Error(S.fill(S.components.metricUnknown, { name }));
-      const [values, states] = await Promise.all([storedRead(reads, def, binds), reads.getMetricComputeState()]);
+      const [values, states] = await Promise.all([storedRead(reads, def, resolved), reads.getMetricComputeState()]);
       const unit = (values || []).filter((v) => v.metricId === def.id);
       const entry = (states || []).find((s) => s.metricId === def.id) || null;
       const computeState = (entry && entry.state) || '';
-      const steam = binds.steam_id != null && binds.steam_id !== '' ? String(binds.steam_id) : null;
+      const steam = resolved.steam_id != null && resolved.steam_id !== '' ? String(resolved.steam_id) : null;
       const row = steam ? unit.find((v) => v.subjectKey === steam) || null : unit[0] || null;
       const state = stateWord(metricPresentation(computeState, row, unit.length > 0));
       const fresh = state === 'fresh';
@@ -139,9 +201,10 @@ export function createReadApi({ reads, report, nav }) {
   }
 
   /** @type {ReadApi['query']} */
-  async function query(sql) {
+  async function query(sql, binds) {
     try {
-      const res = await reads.componentQuery(String(sql));
+      const text = bindQuery(sql, resolveBinds(binds, context()));
+      const res = await reads.componentQuery(text);
       if (res && res.err) throw new Error(res.err);
       return { columns: (res && res.columns) || [], rows: (res && res.rows) || [] };
     } catch (e) {

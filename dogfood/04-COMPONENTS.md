@@ -83,8 +83,14 @@ A component receives a small read API from the app. Nothing else.
   view sets `matchId`; the Profile view sets `matchId` and `steamId`; the
   Builder preview sets the chosen match or player. `metric(name)` and `query()`
   take their binds from `context` by default, so `metric('adr')` reads this
-  match's or player's value. Explicit arguments override the context for other
-  matches or players. A component that does not read the context ignores it.
+  match's or player's value. An explicit bind object (`{ matchId }` or
+  `{ steamId }`, or the reserved `match_id` spelling) replaces the context's
+  set as a whole, so a career read given a `steamId` does not pick up the
+  context's match. `query(sql)` names its binds in SQL as `:match_id`,
+  `:steam_id` and `:round`, which the read API replaces with checked literals
+  (the backend refuses bound parameters). A bind the context does not set is
+  refused, not left in the SQL. A component that does not read the context
+  ignores it.
   The context is never stored in a placement row, because a placement belongs
   to a surface, not to a match.
 
@@ -105,6 +111,42 @@ than written as one monolith. A child component receives the same read-only
 frame, not the parent's. **Decided (owner ruling 36, 2026-11-20): a nested mount
 API.** A component mounts child components itself, passing `context` down. The
 placement rows stay per surface and name only the top-level component.
+
+### 3.5 Nested mount (ruling 36, built in C5a)
+
+A component mounts a child component with the `Child` value the read API
+carries, as an ordinary Svelte component in its markup:
+
+```svelte
+<spectra.Child name="Round strip" props={{ compact: true }} />
+<spectra.Child name="builtin-example" />
+```
+
+- **Shape.** `spectra.Child` takes `name` (a user component's name, or a
+  builtin id, which starts with `builtin-`) and `props` (the child's own
+  props, optional). It has no other prop: the child's context is not
+  passed in, it is inherited.
+- **Context.** The child receives the parent frame's `context` (the same
+  read-only object, §3). It cannot change it, and the context is still never
+  stored in a placement row.
+- **Reads.** The child gets the same read API as any mounted component, with
+  its own `spectra`, and its `metric()` and `query()` take binds from the
+  inherited context.
+- **Failures.** The child mounts in a `ComponentFrame` of its own (§4). A child
+  that throws in render, effects, handlers or async work shows its error in its
+  own frame, dismissible. The parent keeps rendering.
+- **Refusals.** A name with no component shows "No component named …" in the
+  child's slot. A chain of components nested more than eight deep (for example
+  a component that mounts itself) shows a refusal at the depth limit, and the
+  chain stops there.
+- **Shape of the mount.** The child loads on its own (one name lookup, then
+  its source compiles like any user component). The placement rows are
+  unchanged: they name only the top-level component (ruling 36).
+
+Implementation: `components/ComponentFrame.svelte` (the frame, which provides
+`spectra.Child`), `components/ChildFrame.svelte` (the child mount, which
+resolves the name and renders a frame), `componentruntime/frameContext.js`
+(the frame-to-frame context key, the depth limit, and the frozen context).
 
 ## 4. Error boundaries
 
