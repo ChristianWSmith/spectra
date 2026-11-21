@@ -961,6 +961,18 @@ CREATE TABLE IF NOT EXISTS layout_placements (
 	PRIMARY KEY (surface, position)
 );
 
+-- The edited source of a builtin component (owner ruling 43): one row per
+-- builtin id that the user has edited in place. The row overrides the
+-- builtin's shipped source wherever that builtin is mounted; restore to
+-- default deletes the row. The id is a builtin id (the builtin- namespace),
+-- so it never collides with a components.name. One baseline, no versioning.
+CREATE TABLE IF NOT EXISTS builtin_overrides (
+	id TEXT PRIMARY KEY,
+	source TEXT NOT NULL,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+);
+
 -- THE builtins, seeded (see header): exactly one hundred and nine —
 -- trade_rate
 -- (the original owner ruling), the dogfooding set (seven more match-

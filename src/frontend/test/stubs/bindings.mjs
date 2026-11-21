@@ -188,4 +188,11 @@ export const ComponentService = {
   ListComponents: rec('ListComponents'),
   SaveComponent: rec('SaveComponent'),
   DeleteComponent: rec('DeleteComponent'),
+  // Edited builtins (owner ruling 43) and the surfaces' placements (C5f).
+  ListBuiltinOverrides: rec('ListBuiltinOverrides'),
+  SaveBuiltinOverride: rec('SaveBuiltinOverride'),
+  DeleteBuiltinOverride: rec('DeleteBuiltinOverride'),
+  ListPlacements: rec('ListPlacements'),
+  SetPlacements: rec('SetPlacements'),
+  ResetPlacements: rec('ResetPlacements'),
 };

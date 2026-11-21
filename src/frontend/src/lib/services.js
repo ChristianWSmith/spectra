@@ -1052,6 +1052,27 @@ export async function saveComponent(original, name, source) {
   return ComponentService.SaveComponent(original || '', name || '', source);
 }
 export function deleteComponent(name) { return ComponentService.DeleteComponent(name); }
+
+// --- Builtin edits and view placements (owner ruling 43; C5f) ----------------
+// listBuiltinOverrides is the edited builtins ({id, source}); a builtin absent
+// from it renders its shipped source. Not read-cached: the Builder re-reads it
+// after every write, and every mounted builtin resolves through it.
+export function listBuiltinOverrides() { return ComponentService.ListBuiltinOverrides(); }
+// saveBuiltinOverride runs the save gate FIRST, as saveComponent does, so an
+// edited builtin that does not compile is refused with its line and never
+// stored.
+export async function saveBuiltinOverride(id, source) {
+  const gate = await gateComponentSave(source);
+  if (!gate.ok) throw new Error(refusalText(gate));
+  return ComponentService.SaveBuiltinOverride(id || '', source);
+}
+// deleteBuiltinOverride restores one builtin to its shipped source.
+export function deleteBuiltinOverride(id) { return ComponentService.DeleteBuiltinOverride(id || ''); }
+// Placements: one surface's rows (match-view, profile-view). An empty list
+// means the surface renders its default composition.
+export function listPlacements(surface) { return ComponentService.ListPlacements(surface || ''); }
+export function setPlacements(surface, rows) { return ComponentService.SetPlacements(surface || '', rows); }
+export function resetPlacements(surface) { return ComponentService.ResetPlacements(surface || ''); }
 export function listSavedQueries() { return QueryService.ListSavedQueries(); }
 // listSavedQueriesPage is the console saved list's keyset window ("Load
 // more"): `limit` rows strictly after `afterName` ("" = the first

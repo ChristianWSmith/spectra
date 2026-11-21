@@ -20,6 +20,7 @@ import * as S from './strings/index.js';
 import { MATCH_PANELS } from './matchpanels.js';
 import { ECON_PANELS } from './econpanels.js';
 import { UTIL_PANELS } from './utilpanels.js';
+import { PANEL_SOURCES } from './builtins/generated/sources.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -92,4 +93,14 @@ export function isBuiltinId(id) {
 
 export function builtinById(id) {
   return BUILTIN_COMPONENTS.find((b) => b.id === id) || null;
+}
+
+// builtinShippedSource is the Svelte source a builtin ships with: its text
+// here, or for a compiled builtin panel the text the build embedded
+// (builtins/generated/sources.js, written by scripts/gen-builtin-sources.mjs).
+// "Restore to default" and an unedited builtin's editor read this.
+export function builtinShippedSource(id) {
+  const b = builtinById(id);
+  if (b) return b.source;
+  return Object.hasOwn(PANEL_SOURCES, id) ? PANEL_SOURCES[id] : null;
 }

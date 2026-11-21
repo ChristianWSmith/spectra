@@ -54,6 +54,7 @@
 //   node --test test/profiles.dom.mjs
 // (must be run with frontend/ as the working directory; the same file
 // also runs under `node --conditions browser test/profiles.dom.mjs`)
+import { reachesSvelte } from './bundle-reach.mjs';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -227,7 +228,7 @@ let bundleSeq = 0;
 // A .js module that imports a .svelte file (the builtin panel registry) is
 // bundled too: node cannot load a .svelte specifier itself. Every other .js
 // stays where it is, so the shared module graph keeps one instance.
-const importsSvelte = (file) => /from '[^']*\.svelte'/.test(readFileSync(file, 'utf8'));
+const importsSvelte = (file) => reachesSvelte(file);
 function bundleSvelte(absPath, outName = null) {
   if (bundled.has(absPath)) return bundled.get(absPath);
   const out = outName

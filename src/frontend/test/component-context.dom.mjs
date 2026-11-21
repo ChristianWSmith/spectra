@@ -12,6 +12,7 @@
 //
 // Run (from frontend/):  node test/component-context.dom.mjs
 // Then grep the log for FAIL and UNCAUGHT: the exit code is not the verdict.
+import { reachesSvelte } from './bundle-reach.mjs';
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
@@ -84,7 +85,7 @@ function bundle(absPath) {
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
     // A .js module that imports a .svelte file (the builtin panel registry)
     // is bundled too; every other .js stays where it is.
-    if (target.endsWith('.js') && /from '[^']*\.svelte'/.test(readFileSync(target, 'utf8'))) {
+    if (target.endsWith('.js') && reachesSvelte(target)) {
       return `from '${pathToFileURL(bundle(target)).href}'`;
     }
     return `from '${pathToFileURL(target).href}'`;

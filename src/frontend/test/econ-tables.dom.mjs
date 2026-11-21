@@ -128,7 +128,7 @@ function serviceNames() {
     for (const f of readdirSync(d)) {
       const p = join(d, f);
       if (statSync(p).isDirectory()) walk(p);
-      else if (/\.(js|svelte)$/.test(f)) {
+      else if (/\.(js|svelte)$/.test(f) && !p.includes('/generated/')) {
         const s = readFileSync(p, 'utf8');
         for (const m of s.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*services\.js'/g)) {
           m[1].split(',').forEach((x) => {
@@ -193,6 +193,13 @@ function build(rel) {
   if (rel === 'services.js') {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
     writeFileSync(join(dir, rel), servicesStub());
+    return;
+  }
+  // The build's generated panel sources are TEXT (their imports are data, not
+  // edges of this graph): copied as they are.
+  if (rel.includes('generated/')) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), src);
     return;
   }
   const imports = [];

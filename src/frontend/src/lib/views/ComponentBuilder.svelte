@@ -6,8 +6,12 @@
   // same frame every placed component sits in (ComponentFrame.svelte).
   //
   // Rules:
-  //   * a BUILT-IN loads read-only (Save disabled, the source readonly);
-  //     Duplicate saves a copy of its source as yours and opens it;
+  //   * a BUILT-IN is edited in place (owner ruling 43): its source is
+  //     editable, Save stores the edit as that builtin's override (wherever
+  //     it is mounted), and Restore to default deletes the override and
+  //     loads the shipped source. Its name is fixed. Duplicate is for yours;
+  //   * "Use as my view" writes one placement for a surface (match-view,
+  //     profile-view) that points at the open component; Reset removes it;
   //   * the live check is gateComponentSave (componentruntime/savegate.js),
   //     debounced. Save stays disabled until it passes, and the refusal
   //     shows with its line. services.js saveComponent runs the same gate
@@ -21,9 +25,23 @@
   //   * delete is for your components only, and the service refuses it
   //     while a placement references the component, naming the places.
   import * as S from '../strings/index.js';
-  import { listComponents, saveComponent, deleteComponent, listMatches, listPlayers, errText } from '../services.js';
+  import {
+    listComponents,
+    saveComponent,
+    deleteComponent,
+    listMatches,
+    listPlayers,
+    listBuiltinOverrides,
+    saveBuiltinOverride,
+    deleteBuiltinOverride,
+    listPlacements,
+    setPlacements,
+    resetPlacements,
+    errText,
+  } from '../services.js';
   import { gateComponentSave, refusalText } from '../componentruntime/savegate.js';
-  import { BUILTIN_COMPONENTS, builtinById } from '../componentbuiltins.js';
+  import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource } from '../componentbuiltins.js';
+  import { placedEntries } from '../componentruntime/placementrows.js';
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
@@ -72,6 +90,34 @@
 
   // --- The list ---------------------------------------------------------------
 
+  // Built-ins edited in place (builtin id → the edited source) and the two
+  // surfaces' placements (surface → its entries, empty = the default).
+  let overrides = $state({});
+  const VIEW_SURFACES = [
+    { surface: 'match-view', label: S.componentbuilder.surfaceMatch },
+    { surface: 'profile-view', label: S.componentbuilder.surfaceProfile },
+  ];
+  let placements = $state({ 'match-view': [], 'profile-view': [] });
+  let viewBusy = $state(false);
+
+  async function refreshOverrides() {
+    try {
+      const rows = (await listBuiltinOverrides()) || [];
+      overrides = Object.fromEntries(rows.map((o) => [o.id, o.source]));
+    } catch (e) {
+      listError = errText(e);
+    }
+  }
+  async function refreshPlacements() {
+    try {
+      const next = {};
+      for (const v of VIEW_SURFACES) next[v.surface] = placedEntries(await listPlacements(v.surface));
+      placements = next;
+    } catch (e) {
+      listError = errText(e);
+    }
+  }
+
   async function refreshList() {
     loading = true;
     try {
@@ -82,6 +128,8 @@
     } finally {
       loading = false;
     }
+    await refreshOverrides();
+    await refreshPlacements();
   }
   $effect(() => {
     refreshList();
@@ -108,9 +156,14 @@
     check = { status: 'idle', line: 0, message: '' };
   }
 
+  // A built-in opens at its edit when it has one, else at its shipped source.
   function editBuiltin(b) {
-    load({ original: '', builtinId: b.id, name: b.label, source: b.source });
+    const source = Object.hasOwn(overrides, b.id) ? overrides[b.id] : builtinShippedSource(b.id);
+    load({ original: '', builtinId: b.id, name: b.label, source });
   }
+
+  // The built-in has an edit stored (its override is in place).
+  const overridden = $derived(!!builtin && Object.hasOwn(overrides, builtin.id));
 
   function editComponent(c) {
     load({ original: c.name, builtinId: '', name: c.name, source: c.source });
@@ -158,32 +211,94 @@
     check.status !== 'error' ? '' : refusalText({ ok: false, line: check.line, message: check.message }),
   );
 
-  // Save needs a passing check, a name, and a change to a yours-component
-  // (a built-in is never saved in place).
+  // Save needs a passing check, a name, and a change. A built-in's change is
+  // its edit (an override); a yours-component's change is its new text.
   const saveDisabled = $derived(
-    saving || !!builtin || check.status !== 'ok' || form.name.trim() === '' || (!!form.original && !dirty),
+    saving ||
+      check.status !== 'ok' ||
+      form.name.trim() === '' ||
+      (builtin ? !dirty : !!form.original && !dirty),
   );
-  const saveTitle = $derived(
-    builtin
-      ? S.componentbuilder.builtinReadOnly
-      : check.status === 'error'
-        ? S.componentbuilder.saveBlockedTitle
-        : undefined,
-  );
+  const saveTitle = $derived(check.status === 'error' ? S.componentbuilder.saveBlockedTitle : undefined);
 
   async function save() {
     actionError = '';
     saving = true;
     try {
-      const saved = await saveComponent(form.original, form.name, form.source);
-      form.original = saved.name;
-      form.name = saved.name;
-      baseline = snapshot(form);
-      await refreshList();
+      if (builtin) {
+        // The save gate runs inside saveBuiltinOverride; a refused source
+        // never reaches the write.
+        await saveBuiltinOverride(builtin.id, form.source);
+        baseline = snapshot(form);
+        await refreshOverrides();
+      } else {
+        const saved = await saveComponent(form.original, form.name, form.source);
+        form.original = saved.name;
+        form.name = saved.name;
+        baseline = snapshot(form);
+        await refreshList();
+      }
     } catch (e) {
       actionError = errText(e);
     } finally {
       saving = false;
+    }
+  }
+
+  // Restore to default: the built-in's edit is deleted and the editor shows
+  // the shipped source again.
+  async function restoreDefault() {
+    if (!builtin) return;
+    actionError = '';
+    saving = true;
+    try {
+      await deleteBuiltinOverride(builtin.id);
+      await refreshOverrides();
+      editBuiltin(builtin);
+    } catch (e) {
+      actionError = errText(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  // --- Use as my view ----------------------------------------------------------
+  // The open component (a built-in, or a saved yours-component) is the target.
+  const viewTarget = $derived(builtin ? builtin.id : form.original || '');
+
+  function viewState(surface) {
+    const rows = placements[surface];
+    if (!rows.length) return S.componentbuilder.viewDefault;
+    return rows[0].component === viewTarget ? S.componentbuilder.viewUsingThis : S.componentbuilder.viewUsingOther;
+  }
+
+  // One placement per surface: the open component, replacing whatever the
+  // surface showed.
+  async function useAsView(surface) {
+    if (!viewTarget) return;
+    actionError = '';
+    viewBusy = true;
+    try {
+      await setPlacements(surface, [{ component: viewTarget, props: '{}', hidden: false }]);
+      await refreshPlacements();
+    } catch (e) {
+      actionError = errText(e);
+    } finally {
+      viewBusy = false;
+    }
+  }
+
+  // Reset removes the surface's placement, so it renders its default again.
+  async function resetView(surface) {
+    actionError = '';
+    viewBusy = true;
+    try {
+      await resetPlacements(surface);
+      await refreshPlacements();
+    } catch (e) {
+      actionError = errText(e);
+    } finally {
+      viewBusy = false;
     }
   }
 
@@ -324,12 +439,15 @@
           {@render row(
             b.label,
             form.builtinId === b.id,
-            b.placeholder
-              ? [
-                  { text: S.componentbuilder.builtinChip },
-                  { text: S.componentbuilder.placeholderChip, title: S.componentbuilder.placeholderTitle },
-                ]
-              : [{ text: S.componentbuilder.builtinChip }],
+            [
+              { text: S.componentbuilder.builtinChip },
+              ...(b.placeholder
+                ? [{ text: S.componentbuilder.placeholderChip, title: S.componentbuilder.placeholderTitle }]
+                : []),
+              ...(Object.hasOwn(overrides, b.id)
+                ? [{ text: S.componentbuilder.editedChip, title: S.componentbuilder.editedTitle }]
+                : []),
+            ],
             () => editBuiltin(b),
             null,
           )}
@@ -380,7 +498,6 @@
           rows="22"
           spellcheck="false"
           bind:value={form.source}
-          readonly={!!builtin}
         ></textarea>
       </div>
       <div class="cb-check">
@@ -416,15 +533,23 @@
         <span class="toolbar">
           {#if builtin}
             <span class="muted cb-note">{S.componentbuilder.builtinReadOnly}</span>
+            <button
+              class="btn cb-restore"
+              onclick={restoreDefault}
+              disabled={saving || !overridden}
+              title={S.componentbuilder.restoreTitle}
+              >{S.componentbuilder.restoreDefault}</button
+            >
+          {:else}
+            <button
+              class="btn cb-duplicate"
+              onclick={duplicate}
+              disabled={saving || check.status !== 'ok' || !form.original}
+              title={S.componentbuilder.duplicateTitle}
+              ><span class="codicon codicon-copy" aria-hidden="true"></span>
+              {S.componentbuilder.duplicate}</button
+            >
           {/if}
-          <button
-            class="btn cb-duplicate"
-            onclick={duplicate}
-            disabled={saving || check.status !== 'ok' || (!builtin && !form.original)}
-            title={S.componentbuilder.duplicateTitle}
-            ><span class="codicon codicon-copy" aria-hidden="true"></span>
-            {S.componentbuilder.duplicate}</button
-          >
           <button class="btn primary cb-save" onclick={save} disabled={saveDisabled} title={saveTitle}>
             <span class="codicon codicon-save" aria-hidden="true"></span>
             {saving
@@ -435,6 +560,35 @@
           </button>
         </span>
       </div>
+
+      <!-- Use as my view: one placement per surface, pointing at the open
+           component (dogfood/04 §2; owner ruling 43). -->
+      {#if viewTarget}
+        <div class="cb-views">
+          <span class="field-label">{S.componentbuilder.viewsHeading}</span>
+          {#each VIEW_SURFACES as v (v.surface)}
+            <div class="cb-view-row">
+              <span class="cb-view-name">{v.label}</span>
+              <span class="muted cb-view-state">{viewState(v.surface)}</span>
+              <span class="toolbar">
+                <button
+                  class="btn small cb-use-view"
+                  onclick={() => useAsView(v.surface)}
+                  disabled={viewBusy || viewState(v.surface) === S.componentbuilder.viewUsingThis}
+                  >{S.componentbuilder.useAsView}</button
+                >
+                {#if placements[v.surface].length}
+                  <button class="btn small cb-reset-view" onclick={() => resetView(v.surface)} disabled={viewBusy}
+                    >{S.componentbuilder.resetView}</button
+                  >
+                {/if}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="muted cb-views-note">{S.componentbuilder.viewsNeedSave}</p>
+      {/if}
     </section>
 
     <section class="panel cb-preview">
@@ -536,6 +690,25 @@
   .cb-actions {
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .cb-views {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .cb-view-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .cb-view-name {
+    font-weight: 600;
+  }
+  .cb-view-state {
+    flex: 1;
+    min-width: 0;
   }
   .cb-context {
     display: flex;

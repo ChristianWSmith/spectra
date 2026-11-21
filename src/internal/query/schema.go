@@ -51,6 +51,7 @@ var tableNotes = map[string]string{
 	"plugins":           "declarative plugin registry",
 	"components":        "user components: Svelte 5 source stored by name (builtin components are code, not rows)",
 	"layout_placements": "per-surface component placements (surface, position, component, props JSON, hidden); a surface with no rows renders its builtin",
+	"builtin_overrides": "in-place edits of builtin components (builtin id, source); a builtin with no row renders its shipped source",
 }
 
 // columnNotes maps table → column → note.

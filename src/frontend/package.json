@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build:dev": "vite build --minify false --mode development",
-    "build": "vite build --mode production",
+    "dev": "node scripts/gen-builtin-sources.mjs && vite",
+    "build:dev": "node scripts/gen-builtin-sources.mjs && vite build --minify false --mode development",
+    "build": "node scripts/gen-builtin-sources.mjs && vite build --mode production",
     "preview": "vite preview"
   },
   "dependencies": {
