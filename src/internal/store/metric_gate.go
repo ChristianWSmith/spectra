@@ -49,7 +49,6 @@ var metricReadable = map[string]bool{
 	"player_stats":          true,
 	"player_round_stats":    true,
 	"round_economy":         true,
-	"clutches":              true,
 	"utility_events":        true,
 	"chat":                  true,
 	"match_trade_opps":      true,

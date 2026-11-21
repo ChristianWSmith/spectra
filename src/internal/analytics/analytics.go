@@ -1,6 +1,6 @@
 // Package analytics is the M3 computation core: pure functions
 // that derive the stored analytics rows — round classifications, KAST
-// player-rounds, clutch v2 records, engagements, utility pairings and the
+// player-rounds, engagements, utility pairings and the
 // economy view — from extracted events/rounds plus the versioned rules
 // config. Every function is unit-testable with synthetic event sets;
 // Compute is the store orchestration (read → derive → replace → career
@@ -43,13 +43,6 @@
 //     are stored per match in match_trade_opps (tradeopps.go — AGENTS.md
 //     "Analysis-rule derived values"); the retired query-time gate lived
 //     in store.GetCombatStats (removed with the W2b conversion).
-//   - Clutch HPLeft is the game-sampled victim-health of the last
-//     player_hurt at/before the resolve tick (HP changes only through
-//     player_hurt; detail_json is stamped onto the typed copies by
-//     Compute via store.GetHurtHealthDetails), falling back to damage
-//     arithmetic for rows without that detail, with a dead solo reading
-//     0 — a reconstruction rather than an HP sample at the resolve
-//     event (no such event exists).
 //
 // Round eligibility: CountedRounds is the canonical filter and today an
 // identity — the extractor discards knife/warmup rounds at ingest, so
@@ -125,7 +118,6 @@ type (
 	Classification   = models.RoundClassification
 	RoundSideClass   = models.RoundSideClass
 	PlayerRound      = models.PlayerRoundStat
-	Clutch           = models.Clutch
 	Engagement       = models.Engagement
 	UtilityEvent     = models.UtilityEvent
 )

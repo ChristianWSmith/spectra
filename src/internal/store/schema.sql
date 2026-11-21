@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	-- Match header mirror: svc_EncryptedData count seen during the parse.
 	enc_messages INTEGER NOT NULL DEFAULT 0,
 	-- Analytics provenance: the analysis_config.rule_version the match's
-	-- derived rows (round_classifications / player_round_stats / clutches /
+	-- derived rows (round_classifications / player_round_stats /
 	-- engagements / utility_events + player_stats.trade_kills) were last
 	-- computed under. Written ONLY at the end of a successful
 	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
@@ -659,24 +659,6 @@ CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_
 -- §2.2). Same leading-column mirror of the match_id-first key as the
 -- other steam_id members.
 CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
-
-CREATE TABLE IF NOT EXISTS clutches (
-	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-	round INTEGER NOT NULL,
-	size INTEGER NOT NULL DEFAULT 0,
-	steam_id TEXT NOT NULL,
-	name TEXT NOT NULL DEFAULT '',
-	start_tick INTEGER NOT NULL DEFAULT 0,
-	end_tick INTEGER NOT NULL DEFAULT 0,
-	bomb_state TEXT NOT NULL DEFAULT '',
-	hp_left INTEGER NOT NULL DEFAULT 0,
-	equip INTEGER NOT NULL DEFAULT 0,
-	won INTEGER NOT NULL DEFAULT 0,
-	kill_ticks TEXT NOT NULL DEFAULT '',
-	replay_anchor INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (match_id, round, steam_id, start_tick)
-);
-CREATE INDEX IF NOT EXISTS idx_clutches_player ON clutches(steam_id);
 
 CREATE TABLE IF NOT EXISTS engagements (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
@@ -1555,27 +1537,27 @@ fold AS (
  'Formula: count(engagements rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutches', 'Clutches', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, COUNT(*) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'match', 'int',
  'Formula: count(clutches) — the 1vN attempts recorded for this player in the match, addressed per player — the count; the clutch list stays a match detail.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_win_rate', 'Clutch win %', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(won) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.won) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'match', 'percent',
  'Formula: avg(clutches.won) — the share of the player''s clutches won, shown as a percent, addressed per player — the match-scope twin of career Clutch win %.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_size', 'Avg clutch size', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(size) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.size) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'match', 'float1',
  'Formula: avg(clutches.size) — the mean size (the N of the 1vN) of the player''s clutches, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_hp', 'Avg clutch HP', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(hp_left) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.hp_left) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'match', 'float1',
  'Formula: avg(clutches.hp_left) — the mean hit points the player ended their clutches with (0 = died alone), addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch_avg_equip', 'Avg clutch equip', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(equip) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, AVG(c.equip) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
  'match', 'currency',
  'Formula: avg(clutches.equip) — the mean equipment value the player held in their clutches, in whole dollars, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
@@ -2690,10 +2672,10 @@ WHERE ro.match_id = :match_id AND ro.number = :round',
 
 -- Alive-count situation family and the clutch builtin (dogfood/PLAN.md item 19,
 -- rulings 22-24). Both are raw round-grain statements over player_ticks
--- (binds :match_id and :round). The clutch statement is the detector's
--- definition re-expressed as SQL; it reproduces the snapshot's clutches rows
--- on the snapshot's 183 rows across every field, checked against a player_ticks
--- proxy built from events (the snapshot itself has no player_ticks table).
+-- (binds :match_id and :round). The clutch statement reproduces the stored
+-- clutches rows of the retired detector (183 of 183, every field, on the
+-- snapshot via a player_ticks proxy). The six clutch metrics below compute the
+-- same logic over every round through the clutch CTE that clutch_sql.go splices in.
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, created_at) VALUES
 ('alive_count', 'Alive count (raw SQL)', '',
  'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'') SELECT sd.side AS subject_key, CAST(kt.tick AS TEXT) AS dim, (SELECT COUNT(*) FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.tick = kt.tick AND pt.side = sd.side AND pt.alive = 1) AS value FROM kt CROSS JOIN sd ORDER BY kt.tick, sd.side',
@@ -2883,7 +2865,7 @@ CREATE TABLE IF NOT EXISTS plugins (
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, created_at) VALUES
 ('match_won', 'Match won', '', 'SELECT ps.steam_id AS subject_key, '''' AS dim, ps.won AS value FROM player_stats ps WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'match', 'player', '', 'int', 'Formula: won — 1 when the player won this match, 0 otherwise, addressed per player (no partition) — the per-match input of Win % and Matches.', 'builtin', CURRENT_TIMESTAMP),
 ('match_trade_opps', 'Trade opportunities', '', 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(mto.opps, 0) AS value FROM player_stats ps LEFT JOIN match_trade_opps mto ON mto.match_id = ps.match_id AND mto.steam_id = ps.steam_id WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'match', 'player', '', 'int', 'Formula: match_trade_opps.opps — trade opportunities this player had in this match, addressed per player (no partition); a player with no row counts 0.', 'builtin', CURRENT_TIMESTAMP),
-('match_clutch_wins', 'Clutches won', '', 'SELECT c.steam_id AS subject_key, '''' AS dim, SUM(c.won) AS value FROM clutches c WHERE c.match_id = :match_id AND c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id', 'match', 'player', '', 'int', 'Formula: sum(clutches.won) — clutches this player won in this match, addressed per player (no partition) — the numerator of the career Clutch win %.', 'builtin', CURRENT_TIMESTAMP),
+('match_clutch_wins', 'Clutches won', '', '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, SUM(c.won) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id', 'match', 'player', '', 'int', 'Formula: sum(clutches.won) — clutches this player won in this match, addressed per player (no partition) — the numerator of the career Clutch win %.', 'builtin', CURRENT_TIMESTAMP),
 ('match_kast_flags', 'KAST flags', '', 'SELECT r.steam_id AS subject_key, '''' AS dim, SUM(r.kast) AS value FROM player_round_stats r WHERE r.match_id = :match_id AND r.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = r.match_id AND p.steam_id = r.steam_id AND p.is_bot = 1) GROUP BY r.steam_id', 'match', 'player', '', 'int', 'Formula: sum(player_round_stats.kast) — rounds with a K, A, T or S this player had in this match, addressed per player (no partition) — the numerator of career KAST%.', 'builtin', CURRENT_TIMESTAMP),
 ('match_rounds', 'Rounds recorded', '', 'SELECT r.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM player_round_stats r WHERE r.match_id = :match_id AND r.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = r.match_id AND p.steam_id = r.steam_id AND p.is_bot = 1) GROUP BY r.steam_id', 'match', 'player', '', 'int', 'Formula: count(player_round_stats) — rounds this player has a stored round row for in this match, addressed per player (no partition) — the denominator of career ADR and KAST%.', 'builtin', CURRENT_TIMESTAMP),
 ('match_map_won', 'Match won by map', '', 'SELECT ps.steam_id AS subject_key, ps.map AS dim, ps.won AS value FROM player_stats ps WHERE ps.match_id = :match_id AND ps.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ps.match_id AND p.steam_id = ps.steam_id AND p.is_bot = 1)', 'match', 'player', 'map', 'int', 'Formula: won, partitioned by map — 1 when the player won this match on that map, 0 otherwise, addressed per player, dim = the map name (player_stats.map). Input of the career map splits.', 'builtin', CURRENT_TIMESTAMP),

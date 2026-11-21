@@ -15,11 +15,11 @@ import (
 // cascade a dependency's change walks through metric_deps.
 
 // analysisTables are the analysis-owned tables: the rows analytics writes from
-// the rule values (round classes, engagements, trade opportunities, clutches,
-// utility, the trade-kill column of player_stats). player_stats counts as
+// the rule values (round classes, engagements, trade opportunities, utility,
+// the trade-kill column of player_stats). player_stats counts as
 // analysis even though extract writes its base columns (03 §4, conservative).
 var analysisTables = []string{
-	"clutches", "engagements", "match_trade_opps", "player_round_stats",
+	"engagements", "match_trade_opps", "player_round_stats",
 	"player_stats", "round_classifications", "round_side_classes", "utility_events",
 }
 

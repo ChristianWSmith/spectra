@@ -64,9 +64,6 @@ const (
 
 	playerRoundCols = `round, steam_id, name, traded, kast, money_start, equip, spent, rule_version, side`
 
-	clutchCols = `round, size, steam_id, name, start_tick, end_tick, bomb_state, hp_left,
-		equip, won, kill_ticks, replay_anchor`
-
 	engagementCols = `seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by`
 
 	utilityCols = `seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y,
@@ -227,22 +224,6 @@ func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat
 				matchID, r.Round, scrub(r.SteamID), scrub(r.Name),
 				b2i(r.Traded), b2i(r.KAST),
 				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion, scrub(r.Side),
-			); err != nil {
-				return fmt.Errorf("%s: %w", op, err)
-			}
-			return nil
-		})
-}
-
-// ReplaceClutches swaps a match's clutches rows in one transaction.
-func (s *Store) ReplaceClutches(matchID int64, rows []models.Clutch) error {
-	const op = "couldn't save the clutches"
-	return s.replaceMatchRows(op, "clutches", "match_id, "+clutchCols, matchID, len(rows),
-		func(stmt *sql.Stmt, i int) error {
-			r := rows[i]
-			if _, err := stmt.Exec(
-				matchID, r.Round, r.Size, scrub(r.SteamID), scrub(r.Name), r.StartTick, r.EndTick,
-				scrub(r.BombState), r.HPLeft, r.Equip, b2i(r.Won), scrub(r.KillTicks), r.ReplayAnchor,
 			); err != nil {
 				return fmt.Errorf("%s: %w", op, err)
 			}
@@ -465,34 +446,6 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 		f := folds[roundSteam{out[i].Round, out[i].SteamID}]
 		out[i].Kills, out[i].Assists, out[i].Deaths = f.Kills, f.Assists, f.Deaths
 		out[i].DMG, out[i].UtilDmg, out[i].Survived = f.DMG, f.UtilDmg, f.Survived
-	}
-	return out, nil
-}
-
-// GetClutches returns a match's clutch records by round, start_tick ASC.
-func (s *Store) GetClutches(matchID int64) ([]models.Clutch, error) {
-	rows, err := s.db.Query(
-		`SELECT `+clutchCols+`
-		 FROM clutches WHERE match_id = ? ORDER BY round ASC, start_tick ASC`, matchID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't load the clutches: %w", err)
-	}
-	defer rows.Close()
-	var out []models.Clutch
-	for rows.Next() {
-		var r models.Clutch
-		r.MatchID = matchID
-		if err := rows.Scan(
-			&r.Round, &r.Size, &r.SteamID, &r.Name, &r.StartTick, &r.EndTick,
-			&r.BombState, &r.HPLeft, &r.Equip, &r.Won, &r.KillTicks, &r.ReplayAnchor,
-		); err != nil {
-			return nil, fmt.Errorf("couldn't load the clutches: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("couldn't load the clutches: %w", err)
 	}
 	return out, nil
 }

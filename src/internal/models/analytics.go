@@ -146,8 +146,8 @@ type PlayerRoundStat struct {
 	// player_stats.won; 0 for an unknown side or undecided round).
 }
 
-// Clutch is one clutches row: a 1vN detected by alive-count analysis
-// (clutch v2). KillTicks is a JSON array of int ticks.
+// Clutch is one 1vN clutch as store.ClutchRows computes it from player_ticks
+// (alive-count situation; no stored table). KillTicks is a JSON array of int ticks.
 type Clutch struct {
 	MatchID      int64  `json:"matchId"`
 	Round        int    `json:"round"`

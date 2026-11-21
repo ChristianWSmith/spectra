@@ -322,14 +322,32 @@ func TestGolden(t *testing.T) {
 	}
 
 	start := time.Now()
+	// The clutch SQL reads player_ticks, so the golden parse streams the tick
+	// table into the store the analytics pass runs on.
+	gst, err := store.Open(filepath.Join(t.TempDir(), "golden.db"))
+	if err != nil {
+		t.Fatalf("open analytics store: %v", err)
+	}
+	defer func() { _ = gst.Close() }()
+	gid, err := gst.CreateMatchRow("golden-demo", "sha-golden-analytics", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	tw, err := gst.NewTickWriter(gid)
+	if err != nil {
+		t.Fatalf("NewTickWriter: %v", err)
+	}
 	voice := &countingVoiceSink{}
-	m, err := extract.Parse(context.Background(), reader, extract.ParseOptions{Voice: voice})
+	m, err := extract.Parse(context.Background(), reader, extract.ParseOptions{Voice: voice, Ticks: tw})
 	parseSeconds := time.Since(start).Seconds()
 	if err != nil {
 		t.Fatalf("extract.Parse: %v", err)
 	}
 	if m == nil {
 		t.Fatal("extract.Parse returned nil ExtractedMatch")
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("TickWriter.Close: %v", err)
 	}
 	t.Logf("parsed golden/de_cache.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
 
@@ -401,7 +419,7 @@ func TestGolden(t *testing.T) {
 
 	// M3 analytics pass over the same extract (always — its safety nets
 	// hold in both update and verify mode).
-	gotAnalytics := runGoldenAnalytics(t, m)
+	gotAnalytics := runGoldenAnalytics(t, m, gst, gid)
 
 	if *update {
 		if err := os.MkdirAll(filepath.Dir(fixturePath), 0o755); err != nil {
@@ -464,17 +482,8 @@ type analyticsFixture struct {
 // (CreateMatchRow → SaveExtracted → analytics.Compute with default rules),
 // logs the analytics wall-time and projects the stored rows onto the
 // fixture shape. Hard safety nets always run.
-func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture {
+func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch, st *store.Store, id int64) analyticsFixture {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "golden.db"))
-	if err != nil {
-		t.Fatalf("open analytics store: %v", err)
-	}
-	defer func() { _ = st.Close() }()
-	id, err := st.CreateMatchRow("golden-demo", "sha-golden-analytics", 0)
-	if err != nil {
-		t.Fatalf("CreateMatchRow: %v", err)
-	}
 	if err := st.SaveExtracted(id, m); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
@@ -492,9 +501,9 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 		t.Errorf("analytics pass %.2fs exceeds the 10s budget", analyticsSeconds)
 	}
 
-	clutches, err := st.GetClutches(id)
+	clutches, err := st.ClutchRows(id)
 	if err != nil {
-		t.Fatalf("GetClutches: %v", err)
+		t.Fatalf("ClutchRows: %v", err)
 	}
 	clutchWins := 0
 	for _, c := range clutches {
