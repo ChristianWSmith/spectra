@@ -33,7 +33,7 @@ import (
 // copy loop to drift. Two twins are deliberately kept below, each for a
 // shape the models type does not have.
 
-// ClutchRow is a detected 1vN (clutch v2 — alive-count analysis).
+// ClutchRow is one 1vN clutch (alive-count situation, computed in SQL).
 // ReplayAnchorTick = start_tick for deep
 // link. KEPT (not models.Clutch): the synthetic per-row ID the frontend
 // keys its list on (models.Clutch has no id — rows are stored, not
@@ -788,9 +788,10 @@ func (s *AnalyticsService) GetPlayerRounds(matchID int64, steamID string) ([]mod
 	return s.st.GetPlayerRounds(matchID, steamID)
 }
 
-// GetClutches returns clutch v2 records.
+// GetClutches returns a match's 1vN clutches, computed from player_ticks over
+// every counted round (store.ClutchRows; no stored table).
 func (s *AnalyticsService) GetClutches(matchID int64) ([]ClutchRow, error) {
-	rows, err := s.st.GetClutches(matchID)
+	rows, err := s.st.ClutchRows(matchID)
 	if err != nil {
 		return nil, err
 	}

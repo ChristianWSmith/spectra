@@ -306,7 +306,7 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	// derived values" forbids re-classifying at read time). Report and
 	// Economy tab therefore agree by construction, and a match analyzed
 	// under older rules shows the same honestly-stale classes in both.
-	clutches, err := st.GetClutches(matchID)
+	clutches, err := st.ClutchRows(matchID)
 	if err != nil {
 		return nil, err
 	}

@@ -408,31 +408,31 @@ var builtinSeed = []struct {
 		// Clutchless corpus (TestSyntheticCorpusCounts) — honest empty,
 		// never a fabricated 0 row: rows 0 for all five match-scope
 		// clutch seeds and the profile twin below.
-		name: "clutches", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, COUNT(*) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutches", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "1vN attempt count (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_win_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(won) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_win_rate", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.won) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "percent", shortName: "",
 		interpretation: "share of clutches won (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_size", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(size) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_size", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.size) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "float1", shortName: "",
 		interpretation: "mean clutch size (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_hp", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(hp_left) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_hp", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.hp_left) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "float1", shortName: "",
 		interpretation: "mean ending HP (clutchless corpus → no rows)",
 		rows:           0,
 	},
 	{
-		name: "clutch_avg_equip", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, AVG(equip) AS v FROM clutches WHERE clutches.match_id = :match_id AND (steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = clutches.match_id AND p.steam_id = clutches.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "clutch_avg_equip", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.equip) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "currency", shortName: "",
 		interpretation: "mean held equipment value (clutchless corpus → no rows)",
 		rows:           0,
@@ -1055,7 +1055,7 @@ var builtinSeed = []struct {
 		rows:           0,
 	},
 	{
-		name: "match_clutch_wins", expr: "SELECT c.steam_id AS subject_key, '' AS dim, SUM(c.won) AS value FROM clutches c WHERE c.match_id = :match_id AND c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
+		name: "match_clutch_wins", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, SUM(c.won) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", partition: "", format: "int", shortName: "",
 		interpretation: "Per player per match: clutches won. Numerator of the career Clutch win %.",
 		rows:           0,
