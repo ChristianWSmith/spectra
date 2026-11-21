@@ -1,5 +1,5 @@
 <script>
-  import * as S from '../strings/index.js';
+  import * as S from '../../strings/index.js';
   import {
     getMatch,
     getScoreboard,
@@ -7,29 +7,35 @@
     getHeatmap,
     errText,
     onEvent,
-  } from '../services.js';
+  } from '../../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
-  import { AnalyticsService } from '../../../bindings/github.com/ChristianWSmith/spectra';
-  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from '../heatkinds.js';
-  import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../heatramp.js';
-  import { loadMapPack } from '../components/mapxform.js';
-  import HeatmapLayer from '../components/HeatmapLayer.svelte';
-  import StatusChip from '../components/StatusChip.svelte';
-  import { fmt1, fmtInt } from '../fmt.js';
-  import { isCounted, roundScoreLabel } from '../rounds.js';
-  import { downloadCanvasPNG } from '../download.js';
-  import { replayHash } from '../nav.js';
-  import { listedPlayers } from '../players.js';
-  import { seed, remember, matchKey } from '../viewstate.svelte.js';
+  import { AnalyticsService } from '../../../../bindings/github.com/ChristianWSmith/spectra';
+  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from '../../heatkinds.js';
+  import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../../heatramp.js';
+  import { loadMapPack } from '../../components/mapxform.js';
+  import HeatmapLayer from '../../components/HeatmapLayer.svelte';
+  import StatusChip from '../../components/StatusChip.svelte';
+  import { fmt1, fmtInt } from '../../fmt.js';
+  import { isCounted, roundScoreLabel } from '../../rounds.js';
+  import { downloadCanvasPNG } from '../../download.js';
+  import { replayHash } from '../../nav.js';
+  import { listedPlayers } from '../../players.js';
+  import { seed, remember, matchKey } from '../../viewstate.svelte.js';
   // The ONE background-work wrapper (lib/workstate.svelte.js): generate
   // is heavy work the floating indicator shows — wrapping the call site
   // covers BOTH binding paths (GetHeatmap below and GetHeatmapKD) in one
   // spot, since services.getHeatmap is only ever this non-kd path.
-  import { runWork } from '../workstate.svelte.js';
+  import { runWork } from '../../workstate.svelte.js';
 
-  let { id = 0, nav = () => {} } = $props();
+  // The heatmap card (builtin panel, dogfood/04 §3, PLAN C5-Heat-Combat). It
+  // reads its match from the read-only `context` the Heatmaps builtin passes
+  // down (`matchId`), and navigates through the read API, so the panel mounts
+  // nothing else. Its data path is unchanged: getMatch / getScoreboard /
+  // getRounds and the heatmap binding, never a stored metric.
+  let { spectra, context } = $props();
+  const id = $derived(context.matchId);
 
   // View-local controls AND the generated raster restore per match
   // through the process-scoped registry (viewstate.svelte.js): the key
@@ -544,7 +550,7 @@
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
-      nav(target);
+      spectra.navigate(target);
     }, 400);
   }
 </script>

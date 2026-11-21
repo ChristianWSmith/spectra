@@ -174,23 +174,33 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
 // Combat.svelte → its ../ imports land in dir/ (services.js above, fmt,
 // nav, teams, definitions, replay/landmarks are copied there); only the
 // .svelte component imports need rewriting to their compiled .js.
-const combatSrc = readFileSync('src/lib/views/Combat.svelte', 'utf8')
-  .replace(
-    /from '\.\.\/components\/(\w+)\.svelte'/g,
-    "from '../components/$1.js'",
-  )
-  // plumbing (Strings Stage 3): the view imports the strings catalog —
-  // resolve it from the real tree, like every other ../ module here.
-  .replace(
-    "from '../strings/index.js'",
-    `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
-  );
-svelteCompile(combatSrc, 'Combat.svelte', join(dir, 'views', 'Combat.js'));
+// The Combat tab is two builtin panels (src/lib/builtins/match, PLAN
+// C5-Heat-Combat): they land under dir/builtins/match/, so their ../../
+// imports resolve to the copies above. Only the .svelte component imports
+// and the strings catalog are rewritten; combatdata.js is plain ESM.
+mkdirSync(join(dir, 'builtins', 'match'), { recursive: true });
+for (const rel of ['combatdata.js', 'combatmodel.js']) {
+  writeFileSync(join(dir, 'builtins', 'match', rel), readFileSync(join('src/lib/builtins/match', rel), 'utf8'));
+}
+const panelSrc = (name) =>
+  readFileSync(`src/lib/builtins/match/${name}.svelte`, 'utf8')
+    .replace(/from '\.\.\/\.\.\/components\/(\w+)\.svelte'/g, "from '../../components/$1.js'")
+    // plumbing (Strings Stage 3): the panels import the strings catalog —
+    // resolve it from the real tree, like every other ../ module here.
+    .replace("from '../../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
+for (const name of ['CombatEngagements', 'CombatClutches']) {
+  svelteCompile(panelSrc(name), `${name}.svelte`, join(dir, 'builtins', 'match', `${name}.js`));
+}
 
+// The harness mounts both panels with the match as their context and a stub
+// read API whose navigate records the routes (the Combat view's old nav).
 const harnessSrc = `<script>
-  import Combat from './views/Combat.js';
+  import Engagements from './builtins/match/CombatEngagements.js';
+  import Clutches from './builtins/match/CombatClutches.js';
+  const spectra = { navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)) };
 </script>
-<Combat id={3} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} />`;
+<Engagements {spectra} context={{ matchId: 3 }} />
+<Clutches {spectra} context={{ matchId: 3 }} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
@@ -943,19 +953,20 @@ console.log('L. failed load: the error is dismissible in place, the retired sect
   );
   const panelsBefore = rootL.querySelectorAll('section.panel').length;
   check('the two panels render around the failure', panelsBefore === 2, String(panelsBefore));
-  // A dead backend fails the ONE load read (the metric-slot read left
-  // with the panel), so a single alert surfaces, dismissible in place.
+  // A dead backend fails each panel's own load (PLAN C5-Heat-Combat: the
+  // Combat tab composes two panels, and a failure shows in its own panel's
+  // frame), so one alert surfaces per panel, each dismissible in place.
   const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
-    'the single failure surfaces as one dismissible alert',
-    alerts.length === 1 && alerts[0].textContent.includes('combat backend down'),
+    'the failure surfaces as one dismissible alert per panel',
+    alerts.length === 2 && alerts.every((a) => a.textContent.includes('combat backend down')),
     alerts.map((p) => p.textContent.trim().slice(0, 60)).join(' | '),
   );
   click(errP.querySelector('button.btn.small'));
   await sleep();
   check(
-    '✕ clears the alert in place — no alert left, panels still mounted, nothing navigated',
-    rootL.querySelectorAll('p.error[role="alert"]').length === 0 &&
+    '✕ clears only its own panel\'s alert — the other stays, panels still mounted, nothing navigated',
+    rootL.querySelectorAll('p.error[role="alert"]').length === 1 &&
       rootL.querySelectorAll('section.panel').length === panelsBefore,
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );

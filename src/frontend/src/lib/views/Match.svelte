@@ -11,8 +11,10 @@
   import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE, ROUNDS_SOURCE, DETAILS_SOURCE } from '../matchpanels.js';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
-  import Heatmaps from './Heatmaps.svelte';
-  import Combat from './Combat.svelte';
+  // The Heatmaps and Combat tabs are builtin components (PLAN C5-Heat-Combat):
+  // the tab mounts its component through a frame with the match as context.
+  import MatchHeatmaps from '../builtins/match/Heatmaps.svelte';
+  import MatchCombat from '../builtins/match/Combat.svelte';
   // Details / Reports tabs embed the standalone views (embedded=true
   // fixes them to THIS match — no picker, no newest-match default).
   import Explorer from './Explorer.svelte';
@@ -478,9 +480,9 @@
     {:else if tab === 'Utility'}
       <Utility {id} />
     {:else if tab === 'Heatmaps'}
-      <Heatmaps {id} {nav} />
+      <ComponentFrame component={MatchHeatmaps} context={panelContext} {nav} />
     {:else if tab === 'Combat'}
-      <Combat {id} {nav} />
+      <ComponentFrame component={MatchCombat} context={panelContext} {nav} />
     {:else if tab === 'Reports'}
       <Reports embedded routeId={id} {nav} />
     {:else if tab === 'Details'}
