@@ -13,13 +13,12 @@ import (
 // :steam_id career metric, through the scope-aware cascade (B4).
 
 // profileRewrittenNames are the library-wide profile metrics ruling 48
-// converted to per-player metrics. side_adr is not among them: its snapshot
-// values differ by the ratified damage-basis change (Q7), so it stays
-// library-wide until that is settled.
+// converted to per-player metrics. side_adr is included (ruling 49): it is per
+// player on the capped damage basis, fed by match_side_dmg.
 var profileRewrittenNames = []string{
 	"career_adr", "career_clutch_win_rate", "career_clutches", "career_kast", "career_matches",
 	"career_mvps", "career_opener_wins", "career_opening_rate", "career_openings", "career_trade_rate",
-	"map_adr", "map_kd", "map_matches", "map_win_pct", "map_wins", "side_kast", "side_kd",
+	"map_adr", "map_kd", "map_matches", "map_win_pct", "map_wins", "side_adr", "side_kast", "side_kd",
 	"side_rounds", "side_win_pct", "weapon_damage", "weapon_headshots", "weapon_kills", "win_pct",
 }
 
