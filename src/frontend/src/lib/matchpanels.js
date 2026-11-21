@@ -17,8 +17,8 @@
 // Facts, ruling 23). A metric that is not fresh shows its state word.
 //
 // Retired preferences (ruling 33) are not read here: the default ordering is
-// the only ordering. The scoreboard sorts on one key at a time (click a
-// header); the chained multi-key sort of the old view is not carried over.
+// the only ordering. The scoreboard keeps the old view's chained multi-key
+// sort (click a header to sort on it; earlier clicks break its ties).
 
 export const MATCH_PANEL_IDS = Object.freeze({
   overview: 'builtin-match-overview',
@@ -67,7 +67,7 @@ const HELPERS = `
     const m = await spectra.metric(name);
     const map = new Map();
     for (const r of m.rows) map.set(r.subject, r.value);
-    return { state: m.state, error: m.error || '', map };
+    return { state: m.state, error: m.error || '', doc: m.doc || '', map };
   }
 
   // What a stored cell shows: the value, a dash for no value, or the state.
@@ -98,20 +98,30 @@ const HELPERS = `
     return best ? 'team_' + best[1] : side.toUpperCase();
   }
 
-  // Stable sort on one key: a missing value sorts last in both directions,
-  // and ties keep the incoming order.
-  function sortRows(rows, valueOf, desc) {
-    const keyed = rows.map((p, i) => ({ p, i, v: valueOf(p) }));
-    keyed.sort((a, b) => {
-      if (a.v == null || b.v == null) {
-        if (a.v == null && b.v == null) return a.i - b.i;
-        return a.v == null ? 1 : -1;
-      }
-      let c = typeof a.v === 'string' ? a.v.localeCompare(b.v) : a.v - b.v;
-      if (desc) c = -c;
-      return c !== 0 ? c : a.i - b.i;
-    });
-    return keyed.map((x) => x.p);
+  // The chained sort (the old Match view's rule): each stack entry is applied
+  // to the sequence the earlier entries produced, so the newest key is the
+  // primary and the earlier keys break its ties. Every step breaks ties on
+  // the incoming index, so a key whose values are all tied moves nothing. A
+  // missing value sorts last in both directions; strings compare by locale,
+  // numbers by value.
+  function sortRows(rows, stack, valueOf) {
+    let out = rows;
+    for (const entry of stack) {
+      const keyed = out.map((p, i) => ({ p, i, v: valueOf(entry.key, p) }));
+      keyed.sort((a, b) => {
+        if (a.v == null || b.v == null) {
+          if (a.v == null && b.v == null) return a.i - b.i;
+          return a.v == null ? 1 : -1;
+        }
+        let c = typeof a.v === 'string' || typeof b.v === 'string'
+          ? String(a.v).localeCompare(String(b.v))
+          : a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
+        if (entry.desc) c = -c;
+        return c !== 0 ? c : a.i - b.i;
+      });
+      out = keyed.map((x) => x.p);
+    }
+    return out;
   }
 
   // The humans of this match in the default order (kills DESC, name ASC):
@@ -384,8 +394,10 @@ const SCOREBOARD_COLUMNS = [
 
 export const SCOREBOARD_SOURCE = `<script>
   // Match scoreboard: one row per human player, the default layout. Click a
-  // header to sort on it (a second click reverses it); the default is kills,
-  // highest first. A row opens the replay following that player.
+  // header to sort on it: a new header sorts on top of the chain built so far
+  // (the newest key is primary, earlier keys break its ties); a click on the
+  // newest header reverses it. The chain starts at kills, highest first. A row
+  // opens the replay following that player.
   let { spectra, context, back = '' } = $props();
   ${HELPERS}
   ${FOLLOW}
@@ -393,8 +405,9 @@ export const SCOREBOARD_SOURCE = `<script>
   const COLUMNS = ${JSON.stringify(SCOREBOARD_COLUMNS.map(([metric, label, format]) => ({ metric, label, format })))};
 
   let data = $state(null);
-  let sortKey = $state('kills');
-  let sortDesc = $state(true);
+  let sortStack = $state([{ key: 'kills', desc: true }]);
+  const sortKey = $derived(sortStack[sortStack.length - 1].key);
+  const sortDesc = $derived(sortStack[sortStack.length - 1].desc);
 
   async function load(matchId) {
     if (matchId == null) return null;
@@ -419,8 +432,7 @@ export const SCOREBOARD_SOURCE = `<script>
     const matchId = context.matchId;
     let live = true;
     data = null;
-    sortKey = 'kills';
-    sortDesc = true;
+    sortStack = [{ key: 'kills', desc: true }];
     load(matchId).then(
       (d) => {
         if (live) data = d;
@@ -434,22 +446,30 @@ export const SCOREBOARD_SOURCE = `<script>
     };
   });
 
-  // The value a row sorts on: the name, the team, the score, or a stored value.
-  function sortValueOf(p) {
-    if (sortKey === 'name') return p.name;
-    if (sortKey === 'side') return data.teams[p.side] || null;
-    if (sortKey === 'score') return Number.isFinite(Number(p.score)) ? Number(p.score) : null;
-    return cellValue(data.byMetric.get(sortKey), p.steam);
+  // The value a row sorts on for one key: the name, the side code, the score,
+  // or a stored value (the same keys the old view's chain sorted on).
+  function sortValueOf(key, p) {
+    if (key === 'name') return p.name;
+    if (key === 'side') return p.side;
+    if (key === 'score') return p.score;
+    return cellValue(data.byMetric.get(key), p.steam);
   }
 
-  const sorted = $derived(data ? sortRows(data.rows, sortValueOf, sortDesc) : []);
+  const sorted = $derived(data ? sortRows(data.rows, sortStack, sortValueOf) : []);
 
+  // A click on the newest key reverses it; a click on any other key pushes it
+  // on top of the chain, so the keys already sorted keep ordering its ties.
   function toggleSort(key) {
-    if (sortKey === key) sortDesc = !sortDesc;
-    else {
-      sortKey = key;
-      sortDesc = true;
-    }
+    const last = sortStack[sortStack.length - 1];
+    if (last.key === key) sortStack = [...sortStack.slice(0, -1), { key, desc: !last.desc }];
+    else sortStack = [...sortStack, { key, desc: true }];
+  }
+
+  // A metric header's tooltip: its formula, as the old view showed it (the
+  // catalog's doc, else the metric name), plus the engine's error when it failed.
+  function headerTitle(metric) {
+    const u = data.byMetric.get(metric);
+    return (u.doc || metric) + (u.error ? ' — couldn’t calculate: ' + u.error : '');
   }
 
   function follow(steam) {
@@ -471,7 +491,7 @@ export const SCOREBOARD_SOURCE = `<script>
           <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>Team</button></th>
           <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>Score</button></th>
           {#each COLUMNS as c (c.metric)}
-            <th scope="col" class="num" aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
+            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
           {/each}
         </tr>
       </thead>
