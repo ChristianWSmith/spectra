@@ -868,6 +868,14 @@ export function getMetricValuesForMatch(matchID, metricIDs) {
     MetricsService.GetMetricValuesForMatch(matchID, metricIDs || []),
   );
 }
+// getMetricValuesForRound is the ROUND-grain stored read (ruling 41): the
+// fresh rows of one round of one match for the round-bound metrics.
+// Absent rows are absent (no data is a dash, never a 0).
+export function getMetricValuesForRound(matchID, round, metricIDs) {
+  return cachedRead('GetMetricValuesForRound', [matchID, round, metricIDs || []], () =>
+    MetricsService.GetMetricValuesForRound(matchID, round, metricIDs || []),
+  );
+}
 export function getMetricValuesForPlayer(steamID, metricIDs) {
   return cachedRead('GetMetricValuesForPlayer', [steamID || '', metricIDs || []], () =>
     MetricsService.GetMetricValuesForPlayer(steamID || '', metricIDs || []),

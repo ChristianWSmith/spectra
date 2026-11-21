@@ -147,8 +147,8 @@ func TestBuiltinsDeriveTouchedAtOpen(t *testing.T) {
 			t.Errorf("builtin %s touched = %v, gate derives %v", m.Name, m.Touched, st.Touched)
 		}
 	}
-	if n != 127 {
-		t.Fatalf("builtins = %d, want 127 (150 minus the 23 raw_* twins retired by F3, ruling 30)", n)
+	if n != 128 {
+		t.Fatalf("builtins = %d, want 128 (127 + raw_player_round_deaths, ruling 41)", n)
 	}
 	tr, err := s.GetMetricByName("trade_rate")
 	if err != nil {

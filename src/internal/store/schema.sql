@@ -3025,6 +3025,35 @@ SELECT '''' AS subject_key, ''flash'' AS dim, CASE WHEN EXISTS (SELECT 1 FROM rd
 ORDER BY dim',
  'match', 'match', '', 'int',
  'Formula: per round, nades = count of utility_events, dmg = sum of damage, flash = sum of flash_ms, human throwers only. Dash when the round is absent.',
+ 'builtin', CURRENT_TIMESTAMP),
+-- Round-grain deaths for the Economy view (dogfood/PLAN.md ruling 41).
+-- Enumerates player_round_stats, the analyzer's own per-round record
+-- (one row per counted human × round, carrying that round's side sample),
+-- so a player with no death in the round is a real 0, never absent. The
+-- death rule is the analyzer's (analytics/rounds.go): every kill whose
+-- victim is set, except a disconnect-time World self-kill. dim is the side
+-- the player was sampled on that round ('' when the round has no sample).
+('raw_player_round_deaths', 'Deaths per round by side (raw SQL)', '',
+ 'WITH k AS (
+  SELECT e.victim, e.attacker, e.weapon, e.tick,
+         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake
+  FROM events e
+  LEFT JOIN (SELECT DISTINCT attacker, tick FROM events
+             WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
+    ON dc.attacker = e.victim AND dc.tick = e.tick
+  WHERE e.match_id = :match_id AND e.round = :round AND e.kind = ''kill'' AND e.post_match = 0
+),
+dk AS (
+  SELECT victim AS steam_id, COUNT(*) AS n FROM k WHERE victim <> '''' AND fake = 0 GROUP BY victim
+)
+SELECT prs.steam_id AS subject_key, prs.side AS dim, COALESCE(dk.n, 0) AS value
+FROM player_round_stats prs
+JOIN players p ON p.match_id = prs.match_id AND p.steam_id = prs.steam_id AND p.is_bot = 0
+LEFT JOIN dk ON dk.steam_id = prs.steam_id
+WHERE prs.match_id = :match_id AND prs.round = :round
+ORDER BY prs.steam_id',
+ 'match', 'player', '', 'int',
+ 'Formula: count(kill events whose victim is the player, in the round, not a disconnect self-kill) — deaths this player suffered in one round, addressed per player and keyed by the side they were sampled on (dim = ct or t; a round with no side sample is dim ''). A count; 0 is a real zero.',
  'builtin', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

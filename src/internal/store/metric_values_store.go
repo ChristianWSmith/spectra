@@ -565,7 +565,9 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 		return nil, fmt.Errorf("couldn't load the match metric values: %w", err)
 	}
 	idCond, idArgs := metricIDsCond(metricIDs)
-	q := metricValueFreshSQL + ` AND v.match_id = ?` + idCond + `
+	// scope_round = 0: round-grain rows (a :round run) are the round read's,
+	// never the match read's, so a match's scoreboard cannot see them.
+	q := metricValueFreshSQL + ` AND v.match_id = ? AND v.scope_round = 0` + idCond + `
 		ORDER BY ` + metricOrder + `, v.subject_key`
 	args := append([]any{cfg.RuleVersion, matchID}, idArgs...)
 	rows, err := s.db.Query(q, args...)
@@ -576,6 +578,39 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 	out, err := scanMetricValues(rows)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the match metric values: %w", err)
+	}
+	return out, nil
+}
+
+// GetMetricValuesForRound is THE round-grain value read (dogfood/03-QUERIES
+// §5, `:match_id` with `:round`): FRESH stored rows of one round of one
+// match, in canonical metric order then subject_key then dim. metricIDs
+// narrows the read (empty = every metric). Absent rows are absent: a
+// player or side the statement did not produce has no row, and a NULL
+// value is returned as nil (ruling 23), never as 0.
+func (s *Store) GetMetricValuesForRound(matchID, round int64, metricIDs []int64) ([]models.MetricValue, error) {
+	if matchID <= 0 {
+		return nil, errors.New("a match id is required")
+	}
+	if round <= 0 {
+		return nil, errors.New("a round number is required")
+	}
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the round metric values: %w", err)
+	}
+	idCond, idArgs := metricIDsCond(metricIDs)
+	q := metricValueFreshSQL + ` AND v.match_id = ? AND v.scope_round = ? AND v.scope_steam_id = ''` + idCond + `
+		ORDER BY ` + metricOrder + `, v.subject_key, v.dim`
+	args := append([]any{cfg.RuleVersion, matchID, round}, idArgs...)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the round metric values: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanMetricValues(rows)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the round metric values: %w", err)
 	}
 	return out, nil
 }

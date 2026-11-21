@@ -18,8 +18,8 @@ func TestRawFoldSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list raw fold seeds: %v", err)
 	}
-	if len(res.Rows) != 16 {
-		t.Fatalf("raw seeds = %d, want 16 (the 23 F2 twins of the builtins were retired by F3; 16 remain)", len(res.Rows))
+	if len(res.Rows) != 17 {
+		t.Fatalf("raw seeds = %d, want 17 (the 23 F2 twins of the builtins were retired by F3; 16 remain, plus raw_player_round_deaths, ruling 41)", len(res.Rows))
 	}
 	for _, r := range res.Rows {
 		name := r[0].(string)
