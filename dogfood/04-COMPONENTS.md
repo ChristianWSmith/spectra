@@ -161,6 +161,12 @@ version (5.57.3).
 
 Every error shown is dismissible in place (PRODUCT.md **Defaults**).
 
+**Helper surface (owner ruling 45, 2026-11-21).** The registry also exposes a
+small, curated set of app helpers (formatting, the string catalog, the bot
+filter and the shared panel helpers). Each helper is listed by name in the
+registry, documented, and reviewed when added. Anything not listed is refused at
+save, as before.
+
 ## 5. Runtime compilation (D-1, decided; spike passed 2026-11-20)
 
 **Decided approach:** user Svelte source is compiled in the webview, lazily, on

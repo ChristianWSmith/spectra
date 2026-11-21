@@ -211,6 +211,12 @@ Settled (owner, 2026-11-20 unless noted):
     its values behind and recomputes them, and restore recomputes the shipped
     statement. Builtin metric values stay the snapshot reference only while the
     shipped SQL is in place.
+45. **Helpers through the registry (owner ruling, 2026-11-21).** Builtin panels
+    may import app helpers, and the component registry is the only way they do.
+    The registry exposes a small, curated helper surface: each exported helper is
+    listed by name, documented, and reviewed when added. Anything not listed stays
+    refused at save. This keeps user components inside the read API and the
+    Svelte runtime, while letting the builtin panels stay editable. See 04 §5.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
