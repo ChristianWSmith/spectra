@@ -167,6 +167,11 @@ Settled (owner, 2026-11-20 unless noted):
     read-only `context` (`matchId`, `steamId`, `round`) from the surface that
     mounts it. `metric()` and `query()` default their binds from it. The context
     is never stored in a placement row. See 04 §3.
+35. **Component composability (owner note, 2026-11-20):** components are
+    composable, and the builtin views are built from smaller components. Open:
+    the mechanism. Option A is a nested mount API, where a component mounts
+    children and passes `context` down. Option B is composition only through
+    placements, where each child is its own placement row. Decide before C5.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned

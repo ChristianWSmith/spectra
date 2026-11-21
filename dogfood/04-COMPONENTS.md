@@ -98,6 +98,13 @@ live in the component that shows the value. The metric carries none. **Decided.*
 available as a helper. Components that display rosters should use it, and the
 builtins do.
 
+**Composability (owner note, 2026-11-20).** Components are composable, and the
+builtins use that: a builtin view is assembled from smaller components rather
+than written as one monolith. A child component receives the same read-only
+`context` from its parent, and a failure in a child shows in the child's own
+frame, not the parent's. The mechanism is not yet decided (see PLAN ruling 35):
+either a nested mount API, or composition expressed only through placements.
+
 ## 4. Error boundaries
 
 Each mounted component is wrapped in a Svelte 5 `<svelte:boundary>` with a
