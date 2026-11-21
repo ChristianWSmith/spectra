@@ -1,11 +1,11 @@
 <script>
   // Career headline cards (builtin profile panel). The profile-scope metrics
-  // of the default selection (DEFAULT_PINS.profile, in the default sequence),
+  // of the default selection (DEFAULT_CARDS.profile, in the default sequence),
   // one card each. Every value is one metric() read for the context's player.
   // Pinning is retired (owner ruling 33): this panel shows the default set and
   // reads no preference.
   import { listMetrics, getProfile, errText, subscribeMetricProgress, onMetricDone } from '../../services.js';
-  import { DEFAULT_PINS, composedSequence } from '../../metricorder.js';
+  import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
   import { metricProgressFrac, metricProgressStage } from '../../metricstate.js';
   import { fmtMetric } from '../../fmt.js';
   import StatCard from '../../components/StatCard.svelte';
@@ -28,8 +28,8 @@
 
   // The cards: the default profile selection, in the default sequence.
   const cardDefs = $derived(
-    composedSequence('profile', null, defs, [])
-      .filter((e) => e.kind === 'metric' && DEFAULT_PINS.profile.includes(e.name))
+    composedSequence('profile', defs)
+      .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
       .map((e) => e.def),
   );
 
@@ -45,8 +45,8 @@
         if (!live) return;
         defs = rows || [];
         wins = profile ? profile.wins : null;
-        const names = composedSequence('profile', null, defs, [])
-          .filter((e) => e.kind === 'metric' && DEFAULT_PINS.profile.includes(e.name))
+        const names = composedSequence('profile', defs)
+          .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
           .map((e) => e.name);
         const results = await Promise.all(names.map((n) => spectra.metric(n).catch((e) => failedRead(e, errText))));
         if (live) reads = new Map(names.map((n, i) => [n, results[i]]));

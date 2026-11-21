@@ -75,49 +75,8 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsFootstepsVolumeKey != "footsteps_volume" {
 		t.Errorf("footsteps volume key = %q, want %q", prefsFootstepsVolumeKey, "footsteps_volume")
 	}
-	// The metric ORDER pref pair (metricorder.js — the Builder's Order
-	// dialog writes them, the match/profile/report surfaces read them;
-	// Go never consumes them). One key rename silently detaches a
-	// stored arrangement back to the default sequence.
-	if prefsMetricOrderMatchKey != "metric_order_match" {
-		t.Errorf("metric order (match) key = %q, want %q", prefsMetricOrderMatchKey, "metric_order_match")
-	}
-	if prefsMetricOrderProfileKey != "metric_order_profile" {
-		t.Errorf("metric order (profile) key = %q, want %q", prefsMetricOrderProfileKey, "metric_order_profile")
-	}
-	// The overview table's pair (metricorder.js 'overview' scope — the
-	// match-overview cards' order + selection, owner item 5 2026-11-18).
-	// Same contract: one rename silently detaches a stored arrangement
-	// (or selection) back to the defaults.
-	if prefsMetricOrderOverviewKey != "metric_order_overview" {
-		t.Errorf("metric order (overview) key = %q, want %q", prefsMetricOrderOverviewKey, "metric_order_overview")
-	}
-	if prefsMetricPinsOverviewKey != "metric_pins_overview" {
-		t.Errorf("metric pins (overview) key = %q, want %q", prefsMetricPinsOverviewKey, "metric_pins_overview")
-	}
-	// The Economy tab's card-set placement toggle (metricorder.js
-	// ECONOMY_KEY): same contract — one rename silently detaches a
-	// stored selection back to the shipped default set.
-	if prefsMetricEconomyKey != "metric_economy" {
-		t.Errorf("metric economy key = %q, want %q", prefsMetricEconomyKey, "metric_economy")
-	}
-	// The metric VISIBILITY twin (metricorder.js HIDDEN_KEYS): which
-	// fixed stats are hidden per surface. Same contract as the order
-	// pair — one rename silently reverts every stored choice to
-	// "nothing hidden".
-	if prefsMetricHiddenMatchKey != "metric_hidden_match" {
-		t.Errorf("metric hidden (match) key = %q, want %q", prefsMetricHiddenMatchKey, "metric_hidden_match")
-	}
-	if prefsMetricHiddenProfileKey != "metric_hidden_profile" {
-		t.Errorf("metric hidden (profile) key = %q, want %q", prefsMetricHiddenProfileKey, "metric_hidden_profile")
-	}
-	// The dialog's THIRD pref (metricorder.js STARTS_TRANSPOSED_KEY): the
-	// scoreboard's opening SHAPE, a boolean read by the Match view. Same
-	// frontend-written / Go-never-consumes contract — one rename silently
-	// reverts every stored choice to the default (player rows).
-	if prefsScoreboardStartsTransposedKey != "scoreboard_starts_transposed" {
-		t.Errorf("scoreboard starts-transposed key = %q, want %q", prefsScoreboardStartsTransposedKey, "scoreboard_starts_transposed")
-	}
+	// Pinning, metric ordering and hiding are retired (ruling 33): their
+	// keys are not registered here, and no reader remains on the frontend.
 	// The replay loop-length pref (Settings' Replay panel writes it, the
 	// replay transport and every event-level replay link read it; Go never
 	// consumes it). One key rename silently reverts every stored choice

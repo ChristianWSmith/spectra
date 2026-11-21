@@ -31,11 +31,11 @@
 
   // The sequence is the default (no saved order: the retired ordering pref is
   // not read, ruling 33), so the items are the default order.
-  const matchMetrics = $derived(inSequence('match', null, m.metrics));
+  const matchMetrics = $derived(inSequence('match', m.metrics));
   const appendixItems = $derived.by(() => {
     const rawByLabel = new Map(rawOffer.map((r) => [r.label, r]));
     const out = [];
-    for (const e of composedSequence('match', null, m.metrics)) {
+    for (const e of composedSequence('match', m.metrics)) {
       if (e.kind === 'fixed') {
         const raw = rawByLabel.get(e.label);
         if (raw) out.push(raw);

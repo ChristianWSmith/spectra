@@ -295,14 +295,6 @@ compileSvelte(
   'SortTh.svelte',
   localURL('sortth.js'),
 );
-const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
-  .replace("from '../services.js'", `from '${libURL('services.js')}'`)
-  .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
-  .replace("from './Dialog.svelte'", `from '${localURL('dialog.js')}'`)
-  // plumbing (Strings Stage 3): the dialog imports the strings catalog —
-  // through the COPIED lib tree, like every other ../ module here.
-  .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
-compileSvelte(moSrc, 'MetricOrderDialog.svelte', localURL('metricorderdialog.js'));
 compileSvelte(
   readFileSync('src/lib/components/Popover.svelte', 'utf8'),
   'Popover.svelte',
@@ -341,7 +333,6 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/ProfileLink.svelte'", `from '${localURL('profilelink.js')}'`)
   .replace("from '../components/SortTh.svelte'", `from '${localURL('sortth.js')}'`)
   .replace("from '../components/StatusChip.svelte'", `from '${localURL('statuschip.js')}'`)
-  .replace("from '../components/MetricOrderDialog.svelte'", `from '${localURL('metricorderdialog.js')}'`)
   .replace("from '../components/RunningMetricsDialog.svelte'", `from '${localURL('runningmetricsdialog.js')}'`)
   .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)
   .replace("from '../components/HelpButton.svelte'", `from '${localURL('helpbutton.js')}'`)

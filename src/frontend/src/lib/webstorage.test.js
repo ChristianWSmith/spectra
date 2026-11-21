@@ -27,12 +27,8 @@ import { fileURLToPath } from 'node:url';
 const PREF_SITES = new Set([
   'lib/theme.js', // 'spectra:theme' — the only store the theme has
   'lib/fontsize.js', // 'spectra:font-size' — pre-paint cache; kvstore is truth
-  'lib/views/Builder.svelte', // BOTH pin keys — the one writer, scope-routed:
-  //   'spectra:pinned-metrics' (match scope → the scoreboard) and
-  //   'spectra:pinned-profile-metrics' (profile scope → PlayerProfile's
-  //   Career metrics panel; stored-metrics design §3's scope-routed pin)
-  // PlayerProfile.svelte left this list in C5d: the Profile panels show the
-  // default selection and read no pin key (owner ruling 33).
+  // Builder and the Profile panels left this list with pinning (ruling 33):
+  // no view reads or writes a localStorage pref any more.
 ]);
 
 const SRC_EXT = new Set(['.js', '.svelte', '.mjs']);

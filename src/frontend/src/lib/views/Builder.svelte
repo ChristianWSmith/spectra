@@ -19,7 +19,6 @@
     listPlugins,
     errText,
   } from '../services.js';
-  import { resolvePins, parseStoredPins } from '../metricorder.js';
   import {
     liveMetricState,
     metricStateTitle,
@@ -32,29 +31,12 @@
   import ProfileLink from '../components/ProfileLink.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
-  import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
   import RunningMetricsDialog from '../components/RunningMetricsDialog.svelte';
   import Popover from '../components/Popover.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {}, openDocs = () => {} } = $props();
-
-  // localStorage contract (M5 §2.1): TWO keys, one mechanism, routed by
-  // the metric's scope (stored-metrics design §3) —
-  //   'spectra:pinned-metrics'           match scope  → Match scoreboard
-  //   'spectra:pinned-profile-metrics'   profile scope → PlayerProfile's
-  //                                              Career metrics panel
-  // Builder owns every write (the pin toggles below); each key holds a
-  // JSON array of metric NAMES (w22, owner 2026-11-16 — the pin
-  // identity is the NAME, the same one metric_order_* already uses: a
-  // plugin metric's id changes on every disable→re-enable, its name
-  // does not). The views read their own key and resolve the names
-  // through listMetrics() (a deleted name drops out of the render
-  // there), and deleteMetric drops its name from BOTH keys so an array
-  // can never keep a ghost.
-  const PINS_KEY = 'spectra:pinned-metrics';
-  const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
 
   const PREVIEW_LIMIT = 200;
   // Placeholder shows the current grammar: a single source, or a comma
@@ -78,25 +60,9 @@
   // still empty).
   let loading = $state(true);
   let loadingMore = $state(false);
-  let pins = $state([]); // match-scope pin NAMES (PINS_KEY)
-  let profilePins = $state([]); // profile-scope pin NAMES (PROFILE_PINS_KEY)
   let disabledPlugins = $state(new Set());
   let listError = $state('');
-  // The library-wide catalog the ABSENT pins key resolves its
-  // DEFAULT_PINS through (design §1.6 — one cached listMetrics() read,
-  // shared with the Order dialog) and the in-flight promise for it, so
-  // a pin toggle in the first milliseconds after mount waits for the
-  // catalog instead of writing from an unresolved selection.
-  let catalog = [];
-  let catalogP = Promise.resolve([]);
-  // The Order dialog's open state — transient by the state-placement
-  // rule: never seeded, never remembered, never in the URL.
-  let orderOpen = $state(false);
   let runningOpen = $state(false);
-
-  function openOrder() {
-    orderOpen = true;
-  }
 
   // The filter multi-select's open state + its two anchors — transient
   // by the state-placement rule (a popover): never seeded, never
@@ -216,11 +182,6 @@
     formatPercent: true,
     formatCurrency: true,
     formatIdentity: true,
-    // Pinning group (the fifth, client-side — see pinFilter below): the
-    // owner's default both ON, so the first render is unfiltered here
-    // too.
-    showPinned: true,
-    showUnpinned: true,
   });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
@@ -240,8 +201,6 @@
   let formatPercent = $state(bldSeed.formatPercent);
   let formatCurrency = $state(bldSeed.formatCurrency);
   let formatIdentity = $state(bldSeed.formatIdentity);
-  let showPinned = $state(bldSeed.showPinned);
-  let showUnpinned = $state(bldSeed.showUnpinned);
   $effect(() =>
     remember('builder', {
       form,
@@ -262,8 +221,6 @@
       formatPercent,
       formatCurrency,
       formatIdentity,
-      showPinned,
-      showUnpinned,
     }),
   );
   let saveError = $state('');
@@ -398,66 +355,12 @@
     });
   }
 
-  // readPins: the RAW stored selection — null when the key is ABSENT.
-  // The parse AND the format drop live in metricorder.parseStoredPins
-  // (THE one pins read — its drop-never-migrate comment there: an old
-  // id-array drops to "no selection" through this SAME path, never a
-  // conversion pass); this site only performs the sanctioned
-  // localStorage call. The absent-vs-present rule lives in
-  // metricorder.resolvePins (design §1.6): absent ⇒ DEFAULT_PINS
-  // resolved by name through the catalog, present (even '[]') ⇒ the
-  // stored names verbatim.
-  function readPins(key) {
-    return parseStoredPins(localStorage.getItem(key));
-  }
-
-  // effectivePins — the selection this surface ACTUALLY shows (and the
-  // base every toggle writes FROM, so a first pin toggle can never
-  // silently drop the defaults): the stored NAMES when the key is
-  // present, DEFAULT_PINS (by name through the loaded catalog) when it
-  // is absent. A still-empty catalog resolves defaults to [] — the
-  // mount effect re-applies this once listMetrics lands.
-  function effectivePins(key, scope) {
-    return resolvePins(scope, readPins(key), catalog);
-  }
-
-  function writePins(key, names) {
-    try {
-      localStorage.setItem(key, JSON.stringify(names));
-    } catch {
-      /* storage unavailable — pins stay session-local */
-    }
-  }
-
-  // pinnedIn reports which key owns the NAME ("" = unpinned): a metric
-  // lives in exactly ONE key, so the icon/label never has to guess a
-  // surface. Call sites pass the metric's NAME — the pin identity (the
-  // id-based entry points — list rows, the editor card, the Order
-  // dialog — all convert inside togglePin).
-  function pinnedIn(name) {
-    if (pins.includes(name)) return 'match';
-    if (profilePins.includes(name)) return 'profile';
-    return '';
-  }
-
-  // The pin button's label: the scope names the SURFACE the metric
-  // reaches (design §3 — match → a scoreboard column, profile → the
-  // player's Career metrics panel). The four strings live in the
-  // strings catalog (strings/builder.js) — the Order dialog's metric
-  // row composes the same keys, so both pin sites stay in step.
-  function pinTitle(m) {
-    const on = pinnedIn(m.name) !== '';
-    if (m.scope === 'profile') return on ? S.builder.unpinFromProfile : S.builder.pinToProfile;
-    return on ? S.builder.unpinFromScoreboard : S.builder.pinToScoreboard;
-  }
-
   // The left list's group runs: the paged read is origin-contiguous
   // (store metricOrder — builtin → user → plugin, name ASC), so the
   // accumulated windows form one run per origin present. The markup
   // renders ONE header per run, so a window boundary inside a group
   // never repeats a header — the final look matches the unpaginated
-  // grouped list. Runs derive from the PIN-FILTERED rows (visibleMetrics
-  // below), so a group can vanish entirely under the Pinning filter.
+  // grouped list. Runs derive from the accumulated rows.
   // The list's origin run headers (2026-11-18, metrics Phase 7): the
   // strings catalog is THE home for the labels (one spelling per
   // concept) — the user group's header reads "Custom", the same word
@@ -470,18 +373,6 @@
   };
 
   const dirty = $derived(snapshot(form) !== baseline);
-  // The editor's pin button keys off the SAVED name — the identity the
-  // pin actually selects — never the live form field: a dirty rename is
-  // an unsaved identity, so it must not flip the button's state (and
-  // saving a rename severs the pin at the next read, by the name-keyed
-  // design — w22).
-  const savedName = $derived.by(() => {
-    try {
-      return JSON.parse(baseline).name || '';
-    } catch {
-      return '';
-    }
-  });
   // readOnly — a loaded definition the API never updates in place: a
   // PLUGIN row forks on save (payload id 0 → a new user copy), a
   // BUILT-IN row is not savable at all (saveDisabled below). Both wear
@@ -535,49 +426,9 @@
     return on.length ? on.join(',') : 'none';
   });
 
-  // pinFilter — the Pinning group's (the fifth) checked set → word:
-  // both checked = no filter, one = that word, neither = nothing passes
-  // (the same shape as the Scope pair). It NEVER reaches the server —
-  // see visibleMetrics for the sanctioned-exception contract.
-  const pinFilter = $derived.by(() => {
-    if (showPinned && showUnpinned) return '';
-    if (showPinned) return 'pinned';
-    if (showUnpinned) return 'unpinned';
-    return 'none';
-  });
-
-  // --- The SANCTIONED EXCEPTION (the one) — the Pinning group --------
-  // Every other narrowing in this view is SERVER-side: refreshList's
-  // contract below ("Every narrowing is SERVER-side … never a
-  // client-side slice of a window") and store.ListMetricsPage's ORIGIN
-  // FILTER note ("a client-side filter over a page window would drop
-  // rows at the window edges"). A filter over state the backend cannot
-  // know is a render-time filter over the accumulated windows: pins
-  // live in localStorage ('spectra:pinned-metrics' /
-  // 'spectra:pinned-profile-metrics') and Go cannot see them, so the
-  // Pinning group narrows HERE, at render — it rides no list-read arg,
-  // so flipping a Pinning box issues no ListMetricsPage call at all.
-  // Page tiling and the cursor stay SERVER-side: the windows keep
-  // coming from the store under the other four filters, so a
-  // pinned-only view may legitimately show fewer rows than were fetched
-  // while Load more stays live (it appends the next window, which the
-  // same render-time filter then narrows).
-  //
-  // visibleMetrics — the pin narrowing over the accumulated windows;
-  // "Pinned" = pinned in EITHER scope (pinnedIn reports '' only when
-  // the id is in neither pin key). The empty state and the Showing
-  // count below key off THIS count, so a fully pin-filtered list says
-  // so instead of rendering blank.
-  const visibleMetrics = $derived.by(() => {
-    if (pinFilter === '') return metrics;
-    if (pinFilter === 'none') return []; // both boxes off — nothing passes
-    const wantPinned = pinFilter === 'pinned';
-    return metrics.filter((m) => (pinnedIn(m.name) !== '') === wantPinned);
-  });
-
   const runs = $derived.by(() => {
     const out = [];
-    for (const m of visibleMetrics) {
+    for (const m of metrics) {
       const last = out[out.length - 1];
       if (last && last.origin === m.origin) last.rows.push(m);
       else out.push({ origin: m.origin, rows: [m] });
@@ -639,26 +490,9 @@
       .catch(() => {});
   }
 
-  // Mount (runs once — it reads no reactive value): pins from
-  // localStorage once per mount (a retry must not re-derive them over
-  // the session's toggles) plus the plugin states. The stored
-  // selection applies immediately; an ABSENT key resolves its
-  // DEFAULT_PINS (design §1.6) once the library-wide catalog lands —
-  // re-reading localStorage at that point is safe because every pin
-  // write goes through writePins first (localStorage is the session's
-  // truth).
+  // Mount (runs once — it reads no reactive value): the plugin states.
   $effect(() => {
-    pins = effectivePins(PINS_KEY, 'match');
-    profilePins = effectivePins(PROFILE_PINS_KEY, 'profile');
     loadPluginStates();
-    catalogP = listMetrics()
-      .then((rows) => {
-        catalog = rows || [];
-        pins = effectivePins(PINS_KEY, 'match');
-        profilePins = effectivePins(PROFILE_PINS_KEY, 'profile');
-        return catalog;
-      })
-      .catch(() => catalog);
   });
 
   // The list read (mount AND listError's Retry): the first run is
@@ -670,7 +504,7 @@
   // cursor 0 (a filter change never appends onto the previous filter's
   // windows). The fifth group (Pinning) is render-time and deliberately
   // absent from these deps — flipping it must issue NO list read (see
-  // the sanctioned-exception note at visibleMetrics).
+  // the sanctioned-exception note at metrics).
   let firstList = true;
   $effect(() => {
     const q = query;
@@ -703,7 +537,7 @@
   // narrowing here is SERVER-side (query LIKE + originFilter +
   // scopeFilter + formatFilter — store.ListMetricsPage),
   // never a client-side slice of a window. The ONE sanctioned exception
-  // is the Pinning group (visibleMetrics above): a filter over state
+  // is the Pinning group (metrics above): a filter over state
   // the backend cannot know — pins live in localStorage — is a
   // render-time filter over these accumulated windows, never a slice of
   // a window handed to it.
@@ -830,80 +664,10 @@
     saveError = '';
   }
 
-  // Id-based (not row-based) at the door: the edit card's Pin acts on
-  // form.id, which may sit beyond the windows fetched so far — a paged
-  // list must not make the toggle silently no-op — and the Order dialog
-  // hands in entry.def.id too. The STORAGE is NAME-keyed (w22, owner
-  // 2026-11-16: a plugin metric's id changes on every disable→
-  // re-enable, its name does not), so the id → NAME conversion happens
-  // HERE, once — no other site maps ids into a pin array. The name and
-  // the saved scope come from getMetric (the canonical read: never the
-  // paged window, never a stale mount catalog).
-  // Scope-routed (design §3): an already-pinned name toggles OFF
-  // wherever it lives; an unpinned one lands in the key its SCOPE owns —
-  // a list row passes its saved scope, the editor resolves the SAVED
-  // scope through getMetric (so a dirty scope select can never mis-file
-  // the pin), and a metric is always moved OUT of the other key (one
-  // mechanism, one home).
-  async function togglePin(id, scope, intent) {
-    // An absent key resolves its defaults through the catalog — wait
-    // for the mount read so a first toggle can never drop them.
-    await catalogP;
-    let def = null;
-    try {
-      def = await getMetric(id);
-    } catch {
-      def = null; // an id no live metric carries — a ghost never pins
-    }
-    if (!def?.name) return;
-    const name = def.name;
-    let s = pinnedIn(name) || scope;
-    if (!s) s = def.scope || 'match';
-    const key = s === 'profile' ? PROFILE_PINS_KEY : PINS_KEY;
-    const otherKey = key === PROFILE_PINS_KEY ? PINS_KEY : PROFILE_PINS_KEY;
-    const otherScope = s === 'profile' ? 'match' : 'profile';
-    const cur = effectivePins(key, s);
-    // intent (owner, 2026-11-18): the Order dialog's pin button is
-    // UNPIN-ONLY by design (every listed metric IS pinned), so it
-    // passes 'off' and the write is IDEMPOTENT — a repeat click while
-    // the first write is in flight applies "remove" again instead of
-    // toggling the metric back on (the reported "the row does not
-    // leave" defect). List rows keep the plain toggle (undefined).
-    const next =
-      intent === 'off'
-        ? cur.filter((x) => x !== name)
-        : cur.includes(name)
-          ? cur.filter((x) => x !== name)
-          : [...cur, name];
-    // The OTHER scope's effective selection minus this name — writing it
-    // materializes that key too (same rule as the order's first move:
-    // the write carries the selection the other surface already shows).
-    const other = effectivePins(otherKey, otherScope).filter((x) => x !== name);
-    writePins(key, next);
-    writePins(otherKey, other);
-    if (key === PROFILE_PINS_KEY) {
-      profilePins = next;
-      pins = other;
-    } else {
-      pins = next;
-      profilePins = other;
-    }
-  }
-
   async function removeMetric(m) {
     saveError = '';
     try {
       await deleteMetric(m.id);
-      if (pins.includes(m.name) || profilePins.includes(m.name)) {
-        // Both keys: the NAME must leave EVERY array (a scope-routed pin
-        // lives in exactly one, but a stale array must not keep a
-        // ghost either) — the delete-scrub, unchanged by the id → name
-        // keying (w22).
-        pins = pins.filter((x) => x !== m.name);
-        profilePins = profilePins.filter((x) => x !== m.name);
-        writePins(PINS_KEY, pins);
-        writePins(PROFILE_PINS_KEY, profilePins);
-      }
       if (form.id === m.id) newMetric();
       if (previewKey && previewKey.id === m.id) {
         preview = null;
@@ -1186,8 +950,8 @@
   <div class="bld-row" class:active={form.id === m.id}>
     <!-- Every stored row loads into the editor: a user row edits, a
          plugin row forks, a BUILT-IN loads read-only (Save disabled —
-         owner wave, so the user can read how it is written). Pin and
-         preview stay live on every row; delete stays user-only. -->
+         owner wave, so the user can read how it is written). Preview
+         stays live on every row; delete stays user-only. -->
     <button class="bld-row-main" onclick={() => editMetric(m)}>{@render rowMain(m)}</button>
     <span class="bld-row-acts">
       <button
@@ -1195,13 +959,6 @@
         title={S.builder.previewThisMetric}
         aria-label={S.fill(S.builder.previewAria, { name: m.name })}
         onclick={() => previewRow(m)}><span class="codicon codicon-play"></span></button
-      >
-      <button
-        class="btn small ghost"
-        class:bld-pin-on={pinnedIn(m.name) !== ''}
-        title={pinTitle(m)}
-        aria-label={S.fill(S.builder.togglePinAria, { name: m.name })}
-        onclick={() => togglePin(m.id, m.scope)}><span class="codicon codicon-pin"></span></button
       >
       <!-- Delete is the user-row control: built-ins are guarded
            server-side (SaveMetric/DeleteMetric) and plugins are the
@@ -1225,7 +982,7 @@
     <div>
       <h1>{S.builder.heading}</h1>
       <p class="muted bld-head-note">
-        {S.builder.headNotePinned}<span class="codicon codicon-pin"></span>{S.builder.headNoteScopes}
+        {S.builder.headNoteScopes}
       </p>
     </div>
     <!-- Metric-language help: the shared header `?` (HelpButton.svelte
@@ -1255,19 +1012,6 @@
       <div class="row-between">
         <h2>{S.builder.metricsHeading}</h2>
         <div class="toolbar">
-          <!-- The order is a property of the metric SET across both
-               surfaces (not of one metric's editor), so it sits beside
-               the other set-level action; the arrow pair is the repo's
-               move vocabulary (MatchPicker / PlayerPicker /
-               CommandPalette). -->
-          <button
-            class="btn small"
-            onclick={openOrder}
-            title={S.builder.orderDialogTitle}
-            ><span class="codicon codicon-arrow-up"></span><span
-              class="codicon codicon-arrow-down"></span
-            > {S.builder.orderLabel}</button
-          >
           <button
             class="btn small"
             onclick={() => (runningOpen = true)}
@@ -1295,7 +1039,7 @@
            Type / Pinning) over the SAME viewstate
            booleans and the SAME debounced list read below — the first
            four SERVER-side, the Pinning group render-time (the one
-           sanctioned exception — see visibleMetrics). The FilterBar
+           sanctioned exception — see metrics). The FilterBar
            vein — the control commits, the parent owns the filter state,
            the debounced refetch follows — without reusing FilterBar
            itself (that is the landmark feed's conditional-fields
@@ -1454,31 +1198,11 @@
                     onchange={(e) => (formatIdentity = e.currentTarget.checked)}
                   /> {S.builder.filterIdentity}</label>
               </div>
-              <!-- Pinning = the fifth group, RENDER-TIME (the one
-                   sanctioned exception — see visibleMetrics): pins live
-                   in localStorage, so the backend cannot narrow on
-                   them. Both boxes checked by default; like the Scope
-                   pair, one checked = that side, none = nothing passes. -->
-              <div class="bld-filter-group" role="group" aria-label={S.builder.pinningLabel}>
-                <span class="filt-lab">{S.builder.pinningLabel}</span>
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={showPinned}
-                    onchange={(e) => (showPinned = e.currentTarget.checked)}
-                  /> {S.builder.filterPinned}</label>
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={showUnpinned}
-                    onchange={(e) => (showUnpinned = e.currentTarget.checked)}
-                  /> {S.builder.filterUnpinned}</label>
-              </div>
             </div>
           </Popover>
         </span>
       </div>
-      {#if visibleMetrics.length === 0 && !listError}
+      {#if metrics.length === 0 && !listError}
         {#if loading && metrics.length === 0}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if metrics.length === 0 && appliedQuery}
@@ -1490,7 +1214,7 @@
                render-time
                Pinning group hid every fetched row — legal, and said so
                here instead of leaving a blank panel. The gate is the
-               FILTERED count (visibleMetrics), so a fully pin-filtered
+               FILTERED count (metrics), so a fully pin-filtered
                list shows this copy instead of rendering blank. -->
           <p class="muted" role="status">{S.builder.noMetricsToShow}</p>
         {/if}
@@ -1514,7 +1238,7 @@
           {/each}
           {#if hasNext}
             <div class="row-between">
-              <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: visibleMetrics.length })}</span>
+              <span class="muted" role="status">{S.fill(S.builder.showingMetrics, { n: metrics.length })}</span>
               <button class="btn" disabled={loadingMore} onclick={loadMore}>
                 {loadingMore ? S.builder.loadingMore : S.builder.loadMore}
               </button>
@@ -1677,7 +1401,7 @@
         </div>
 
         <!-- ONE actions line (N6): the expression validity indicator and
-             the hint + Pin + Save cluster share a single row — the left
+             the hint + Save cluster share a single row — the left
              slot ALWAYS renders (empty while the check is idle) so the
              right cluster sits flush right in every state, and there is
              exactly ONE validity indicator (the block below moved here
@@ -1686,7 +1410,7 @@
              save guards, so this slot is expression-only). The row's
              DESTRUCTIVE action leads it (w19 item 23): the editor delete
              sits at the line's left edge while the positive actions
-             (hint, Pin, Save) stay right — USER metrics only, the list
+             (hint, Save) stay right — USER metrics only, the list
              row's criterion (built-ins are guarded server-side, plugins
              are the loader's territory), and it routes through the SAME
              removeMetric path, so the delete-blocked-while-referenced
@@ -1727,15 +1451,6 @@
                 ? S.builder.builtinReadOnly
                 : S.builder.saveNoteDefault}
             </span>
-            <button
-              class="btn"
-              class:bld-pin-on={form.id > 0 && pinnedIn(savedName) !== ''}
-              disabled={form.id === 0}
-              onclick={() => togglePin(form.id)}
-            >
-              <span class="codicon codicon-pin"></span>
-              {form.id > 0 && pinnedIn(savedName) !== '' ? S.builder.pinned : S.builder.pin}
-            </button>
             <button
               class="btn primary"
               onclick={save}
@@ -1874,18 +1589,5 @@
     </div>
   </div>
 
-  <!-- ONE dialog, two stacked sections (design §2.2); its open state
-       is transient (openOrder above). Pins ride as props (name arrays —
-       the NAME-keyed selection, w22), and the
-       dialog's pin toggle (M6) routes back through the ONE pins
-       writer — togglePin writes both pin keys and never the order
-       pref, so this view stays the only place prefs are written. -->
   <RunningMetricsDialog open={runningOpen} onClose={() => (runningOpen = false)} />
-  <MetricOrderDialog
-    open={orderOpen}
-    pinnedMatch={pins}
-    pinnedProfile={profilePins}
-    onTogglePin={(id, scope, intent) => togglePin(id, scope, intent)}
-    onClose={() => (orderOpen = false)}
-  />
 </div>
