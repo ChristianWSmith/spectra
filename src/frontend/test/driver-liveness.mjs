@@ -287,7 +287,10 @@ const EXPECTED = {
   // builder 165 → 169 (2026-11-18, floor re-pin): measured by a full
   // probe run — the floor had lagged the sections the drivers gained
   // since the last re-pin.
-  'builder.dom.mjs': 169,
+  // builder 169 → 116 (2026-11-21, C5e ruling 33): the Order dialog section
+  // (J), the unpin and Economy placement section (L) and the Pinning filter
+  // section left with pinning; the measured run executes 116 checks.
+  'builder.dom.mjs': 116,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
