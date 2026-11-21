@@ -55,6 +55,7 @@ const FE = path.join(SRC, 'frontend/src');
 // (AGENTS.md criterion bullet, "Exempt power surfaces").
 const POWER_SURFACES = new Set([
   'frontend/src/lib/views/SqlConsole.svelte', // the SQL console (named product feature)
+  'frontend/src/lib/builtins/generated/sources.js', // the builtin panels' Svelte source, generated at build (code, not copy)
   'internal/metrics/doc.go', // the expression grammar reference
   'internal/mappack/devtool.go', // cs2find internals — a developer CLI
 ]);
@@ -807,6 +808,7 @@ for (const [file, lits] of svelteLits) {
 for (const f of jsFiles) {
   const file = rel(f);
   if (isContent(file)) continue; // class 3 — content report below
+  if (isPower(file)) continue; // class 4 — generated builtin Svelte source (code)
   for (const text of jsLiterals(f)) if (denyHits(text).length) add(file, text);
 }
 for (const f of goFiles) {

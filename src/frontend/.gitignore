@@ -25,3 +25,6 @@ bindings
 *.njsproj
 *.sln
 *.sw?
+
+# Generated builtin panel sources (scripts/gen-builtin-sources.mjs, run by the build)
+src/lib/builtins/generated/

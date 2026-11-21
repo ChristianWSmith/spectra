@@ -9,6 +9,7 @@
   import { MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
+  import SurfaceView from '../components/SurfaceView.svelte';
   // The tab bar and the tab set are one builtin component (PLAN C5c):
   // Match.svelte keeps the header, the warnings, the round strip and the
   // tab state; the tabs and their content are MatchTabs.
@@ -479,12 +480,18 @@
       {nav}
     />
 
-    <ComponentFrame
-      component={MatchTabs}
-      context={panelContext}
-      props={tabsProps}
-      {nav}
-    />
+    <!-- The Match view's area below the header: the placed component(s) when
+         the user has used one as their view, else the default tab set. -->
+    <SurfaceView surface="match-view" context={panelContext} {nav}>
+      {#snippet fallback()}
+        <ComponentFrame
+          component={MatchTabs}
+          context={panelContext}
+          props={tabsProps}
+          {nav}
+        />
+      {/snippet}
+    </SurfaceView>
   {:else if !error}
     <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
   {/if}

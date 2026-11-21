@@ -179,3 +179,61 @@ func (s *ComponentService) SetPlacements(surface string, rows []Placement) error
 func (s *ComponentService) ResetPlacements(surface string) error {
 	return s.st.ResetPlacements(strings.TrimSpace(surface))
 }
+
+// BuiltinOverride is one in-place edit of a builtin component (owner ruling
+// 43): the builtin's id and the source that replaces its shipped source.
+type BuiltinOverride struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+}
+
+// ListBuiltinOverrides returns every edited builtin. A builtin absent from
+// the list renders its shipped source.
+func (s *ComponentService) ListBuiltinOverrides() ([]BuiltinOverride, error) {
+	rows, err := s.st.ListBuiltinOverrides()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BuiltinOverride, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, BuiltinOverride{ID: r.ID, Source: r.Source})
+	}
+	return out, nil
+}
+
+// checkBuiltinID refuses an id outside the builtin namespace: an override
+// names a builtin, never a user component.
+func checkBuiltinID(id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if !strings.HasPrefix(id, BuiltinComponentPrefix) || len(id) == len(BuiltinComponentPrefix) {
+		return "", fmt.Errorf("only built-in components can be edited, and %q is not one", id)
+	}
+	return id, nil
+}
+
+// SaveBuiltinOverride stores the edited source of one builtin. The source
+// must have passed the frontend save gate (services.js saveBuiltinOverride
+// runs it first); this method refuses an empty source.
+func (s *ComponentService) SaveBuiltinOverride(id, source string) (BuiltinOverride, error) {
+	id, err := checkBuiltinID(id)
+	if err != nil {
+		return BuiltinOverride{}, err
+	}
+	if strings.TrimSpace(source) == "" {
+		return BuiltinOverride{}, fmt.Errorf("a built-in component needs source")
+	}
+	row, err := s.st.SaveBuiltinOverride(id, source)
+	if err != nil {
+		return BuiltinOverride{}, err
+	}
+	return BuiltinOverride{ID: row.ID, Source: row.Source}, nil
+}
+
+// DeleteBuiltinOverride restores one builtin to its shipped source.
+func (s *ComponentService) DeleteBuiltinOverride(id string) error {
+	id, err := checkBuiltinID(id)
+	if err != nil {
+		return err
+	}
+	return s.st.DeleteBuiltinOverride(id)
+}

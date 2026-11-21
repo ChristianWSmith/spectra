@@ -60,18 +60,21 @@ for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(
 const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
 for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'matchpanels.js', 'econpanels.js', 'utilpanels.js', 'builtinhelpers.js']) copy(rel);
-for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js', 'frameContext.js']) copy(join('componentruntime', rel));
+for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js']) copy(join('componentruntime', rel));
 // The service layer stays out: errText is the real one-liner, and the
 // frame's default reads are a recorder (the driver passes its own).
 writeFileSync(
   join(dir, 'services.js'),
-  `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\nexport async function listComponents() { return []; }\n`,
+  `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\nexport async function listComponents() { return []; }\nexport async function listBuiltinOverrides() { return []; }\n`,
 );
 writeFileSync(join(dir, 'componentruntime', 'reads.js'), 'export const serviceReads = {};\n');
 // ChildFrame resolves builtin panels through the panel registry. This driver
 // has no panels (it tests the source path), so the registry is an empty stub.
 mkdirSync(join(dir, 'builtins'), { recursive: true });
 writeFileSync(join(dir, 'builtins', 'panels.js'), 'export function builtinPanelById() { return null; }\n');
+// componentbuiltins.js reads the build's generated panel sources (text only).
+mkdirSync(join(dir, 'builtins', 'generated'), { recursive: true });
+copy(join('builtins', 'generated', 'sources.js'));
 
 const svelteCompile = (src, filename, out) =>
   // Runes-only, as the app compiles builtins (svelte.config.js) and user

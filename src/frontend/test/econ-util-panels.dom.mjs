@@ -19,6 +19,7 @@
 //
 // Run (from frontend/):  node test/econ-util-panels.dom.mjs
 // Then grep the log for FAIL and UNCAUGHT: the exit code is not the verdict.
+import { reachesSvelte } from './bundle-reach.mjs';
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
@@ -86,9 +87,12 @@ function bundle(absPath) {
     // The Profile panels are app Svelte the bundler compiles; this driver mounts
     // no Profile panel, so the registry is a stub (as component-frame.dom.mjs does).
     if (target.endsWith('builtins/panels.js')) return `from '${pathToFileURL(panelStub).href}'`;
+    // A .js that reaches the stubbed registry through its own imports (resolve.js) is
+    // bundled too, so its import of the registry is rewritten.
+    if (target.endsWith('.js') && reachesSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));

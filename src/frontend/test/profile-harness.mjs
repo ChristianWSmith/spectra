@@ -6,6 +6,7 @@
 // (test/stubs/bindings.mjs): a test scripts the backend through `bindings`.
 //
 // Run from frontend/ through a driver, e.g. test/profile-panels.dom.mjs.
+import { reachesSvelte } from './bundle-reach.mjs';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -63,7 +64,7 @@ export async function boot(cacheName = 'profile-panels') {
   mkdirSync(dir, { recursive: true });
   const bundled = new Map();
   let seq = 0;
-  const importsSvelte = (file) => /from '[^']*\.svelte'/.test(readFileSync(file, 'utf8'));
+  const importsSvelte = (file) => reachesSvelte(file);
   function bundle(absPath) {
     if (bundled.has(absPath)) return bundled.get(absPath);
     const out = join(dir, `${String(++seq).padStart(3, '0')}-${absPath.split('/').pop()}.js`);

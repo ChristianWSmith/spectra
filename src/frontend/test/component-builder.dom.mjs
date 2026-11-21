@@ -5,8 +5,10 @@
 //   A. mount shape: the header and its help target, the three panels;
 //   B. the list: the built-in first (chip, read-only), then yours; an empty
 //      "Yours" says so; a failed list read shows its error with Try again;
-//   C. a built-in loads read-only: fields readonly, Save disabled, no
-//      delete control; Duplicate saves a copy of it as yours and opens it;
+//   C. a built-in is edited in place (owner ruling 43): Save stores an
+//      override by its id, a refused edit keeps Save off, Restore to default
+//      deletes the override and loads the shipped source; no Duplicate;
+//   C3. use as my view: one placement per surface, Reset removes it;
 //   D. save gating: a refused source shows its line and keeps Save off;
 //      the save path refuses the same source before any write happens;
 //      a checked source saves, and the saved name is loaded;
@@ -25,6 +27,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
+import { reachesSvelte } from './bundle-reach.mjs';
 
 installEsmDirHook();
 
@@ -65,8 +68,10 @@ globalThis.document = dom.window.document;
 globalThis.navigator = dom.window.navigator;
 
 const escaped = [];
-process.on('uncaughtException', (e) => escaped.push('uncaught: ' + (e && e.message)));
-process.on('unhandledRejection', (e) => escaped.push('rejection: ' + (e && e.message)));
+// An escaped error is printed at once: the handler would otherwise end the run
+// silently with exit 0 (the driver-liveness guard's failure mode).
+process.on('uncaughtException', (e) => { escaped.push('uncaught: ' + (e && e.message)); console.log('  FAIL UNCAUGHT ' + String(e && (e.stack || e.message || e))); });
+process.on('unhandledRejection', (e) => { escaped.push('rejection: ' + (e && e.message)); console.log('  FAIL UNCAUGHT rejection ' + String(e && (e.stack || e.message || e))); });
 
 // --- bundling -----------------------------------------------------------------
 // Every .svelte the view reaches is compiled into the cache dir; every .js
@@ -85,7 +90,9 @@ function bundle(absPath) {
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
     // A .js module that imports a .svelte file (the builtin panel registry) is
     // bundled too; every other .js stays where it is.
-    if (target.endsWith('.js') && /from '[^']*\.svelte'/.test(readFileSync(target, 'utf8'))) {
+    // A .js that reaches a .svelte through its own imports (resolve.js → builtins/panels.js)
+    // is rewritten like its importer; every other .js stays where it is.
+    if (target.endsWith('.js') && reachesSvelte(target)) {
       return `from '${pathToFileURL(bundle(target)).href}'`;
     }
     return `from '${pathToFileURL(target).href}'`;
@@ -120,6 +127,41 @@ bindings.handlers.DeleteComponent = (name) => {
   return null;
 };
 
+// Edited builtins and the surfaces' placements (owner ruling 43, C5f).
+let OVERRIDES = [];
+let PLACEMENTS = {};
+const overrideCalls = [];
+const overrideDeleteCalls = [];
+const setCalls = [];
+const resetCalls = [];
+const PLACEHOLDER_ID = 'builtin-example';
+bindings.handlers.ListBuiltinOverrides = () => OVERRIDES.map((o) => ({ ...o }));
+bindings.handlers.SaveBuiltinOverride = (id, source) => {
+  overrideCalls.push({ id, source });
+  OVERRIDES = OVERRIDES.filter((o) => o.id !== id).concat({ id, source });
+  return { id, source };
+};
+bindings.handlers.DeleteBuiltinOverride = (id) => {
+  overrideDeleteCalls.push(id);
+  OVERRIDES = OVERRIDES.filter((o) => o.id !== id);
+  return null;
+};
+bindings.handlers.ListPlacements = (surface) => (PLACEMENTS[surface] || []).map((r) => ({ ...r }));
+bindings.handlers.SetPlacements = (surface, rows) => {
+  setCalls.push({ surface, rows });
+  PLACEMENTS[surface] = rows.map((r) => ({ ...r }));
+  return null;
+};
+bindings.handlers.ResetPlacements = (surface) => {
+  resetCalls.push(surface);
+  delete PLACEMENTS[surface];
+  return null;
+};
+
+const OK_EDIT_SOURCE = `<script>
+  let { spectra } = $props();
+</script>
+<p class="edit-ok">EDITED BUILTIN</p>`;
 const OK_SOURCE = `<script>
   let { spectra } = $props();
 </script>
@@ -215,34 +257,98 @@ check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.compo
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
 unmounted();
 
-// --- C. built-in read-only, duplicate ---------------------------------------
-console.log('C. built-in read-only; duplicate');
+// --- C. a built-in edited in place (owner ruling 43) ---------------------------
+console.log('C. built-in edited in place; restore to default');
 COMPONENTS = [];
+OVERRIDES = [];
 await mounted();
 click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
 await settle();
 check('the built-in name field is read-only', q('#cb-name')?.readOnly === true);
-check('the built-in source is read-only', q('#cb-source')?.readOnly === true);
-check('Save is disabled for a built-in', q('.cb-save')?.disabled === true);
+check('the built-in source is editable', q('#cb-source')?.readOnly === false);
+check('Save is disabled until the built-in is edited', q('.cb-save')?.disabled === true);
 check('a built-in shows no Delete control', !q('.cb-delete'));
+check('a built-in offers no Duplicate (edit in place instead)', !q('.cb-duplicate'));
+check('Restore to default is disabled with no edit', q('.cb-restore')?.disabled === true);
 check('the built-in source is in the editor', q('#cb-source')?.value.includes('spectra.query'));
+await setText(q('#cb-source'), OK_EDIT_SOURCE);
 await settle(10);
-check('Duplicate is enabled once the built-in passes the check', q('.cb-duplicate')?.disabled === false);
-const beforeDup = saveCalls.length;
-click(q('.cb-duplicate'));
+check('an edit that checks out enables Save', q('.cb-save')?.disabled === false, q('.cb-check')?.textContent);
+const beforeOv = overrideCalls.length;
+click(q('.cb-save'));
 await settle(10);
-check('Duplicate saves exactly one copy as yours', saveCalls.length === beforeDup + 1);
-const dupCall = saveCalls[saveCalls.length - 1];
+check('Save stores one override of the built-in, by its id', overrideCalls.length === beforeOv + 1);
+const ovCall = overrideCalls[overrideCalls.length - 1];
 check(
-  'the copy is named after the built-in and keeps its source',
-  dupCall &&
-    dupCall.original === '' &&
-    dupCall.name === S.fill(S.componentbuilder.copyName, { name: S.componentbuilder.placeholderName }) &&
-    dupCall.source.includes('spectra.query'),
-  JSON.stringify(dupCall && { o: dupCall.original, n: dupCall.name }),
+  'the override names the built-in and carries the edited source',
+  ovCall && ovCall.id === PLACEHOLDER_ID && ovCall.source === OK_EDIT_SOURCE,
+  JSON.stringify(ovCall),
 );
-check('the copy opens as an editable component', q('#cb-name')?.value === dupCall.name && q('#cb-name')?.readOnly === false);
-check('an open copy of yours offers Delete', !!q('.cb-delete'));
+check('the built-in row shows the edited chip', rowNamed(S.componentbuilder.placeholderName, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('Restore to default is enabled once edited', q('.cb-restore')?.disabled === false);
+check('no user component was written by an edit', saveCalls.length === 0);
+click(q('.cb-restore'));
+await settle(10);
+check('Restore to default deletes the override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === PLACEHOLDER_ID);
+check('Restore to default brings back the shipped source', q('#cb-source')?.value.includes('spectra.query') && !q('#cb-source')?.value.includes('EDITED BUILTIN'));
+check('after restore the built-in has no edit', !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+unmounted();
+
+// --- C2. a refused edit of a built-in ------------------------------------------
+console.log('C2. a refused edit of a built-in');
+COMPONENTS = [];
+OVERRIDES = [];
+overrideCalls.length = 0;
+await mounted();
+click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
+await settle();
+await setText(q('#cb-source'), BROKEN_SOURCE);
+check('a refused edit names its line', alertIn('.cb-check').startsWith('Line 2:'), alertIn('.cb-check'));
+check('Save stays disabled for a refused edit', q('.cb-save')?.disabled === true);
+check('no override is written for a refused edit', overrideCalls.length === 0);
+unmounted();
+
+// --- C3. use as my view -------------------------------------------------------
+console.log('C3. use as my view');
+COMPONENTS = [];
+OVERRIDES = [];
+PLACEMENTS = {};
+await mounted();
+click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
+await settle();
+const useBtn = (surfaceLabel) => {
+  const row = qa('.cb-view-row').find((r) => r.textContent.includes(surfaceLabel));
+  return row && row.querySelector('.cb-use-view');
+};
+const stateOf = (surfaceLabel) => qa('.cb-view-row').find((r) => r.textContent.includes(surfaceLabel))?.querySelector('.cb-view-state')?.textContent.trim();
+check('the open built-in offers Use as my view for each surface', !!useBtn(S.componentbuilder.surfaceMatch) && !!useBtn(S.componentbuilder.surfaceProfile));
+check('a surface with no placement says it shows the default', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewDefault);
+const beforeSet = setCalls.length;
+click(useBtn(S.componentbuilder.surfaceMatch));
+await settle(10);
+check('Use as my view writes exactly one placement for the surface', setCalls.length === beforeSet + 1);
+const setCall = setCalls[setCalls.length - 1];
+check(
+  'the placement points at the open component',
+  setCall && setCall.surface === 'match-view' && setCall.rows.length === 1 && setCall.rows[0].component === PLACEHOLDER_ID,
+  JSON.stringify(setCall),
+);
+check('the surface now shows this component', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewUsingThis, stateOf(S.componentbuilder.surfaceMatch));
+check('the profile surface is unchanged', stateOf(S.componentbuilder.surfaceProfile) === S.componentbuilder.viewDefault);
+const resetBtn = qa('.cb-view-row').find((r) => r.textContent.includes(S.componentbuilder.surfaceMatch))?.querySelector('.cb-reset-view');
+check('a placed surface offers Reset to default', !!resetBtn);
+click(resetBtn);
+await settle(10);
+check('Reset removes the placement', resetCalls.length === 1 && resetCalls[0] === 'match-view');
+check('the surface renders its default again', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewDefault);
+unmounted();
+
+// An unsaved user component has nothing to place yet.
+COMPONENTS = [];
+await mounted();
+click(buttonByText(S.componentbuilder.newLabel));
+await settle();
+check('an unsaved component offers no view placement', !!q('.cb-views-note') && !q('.cb-use-view'));
 unmounted();
 
 // --- D. save gating -------------------------------------------------------------

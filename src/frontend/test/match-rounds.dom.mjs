@@ -83,7 +83,7 @@ function bundle(absPath) {
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || target.endsWith('.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/'))) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
   writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);

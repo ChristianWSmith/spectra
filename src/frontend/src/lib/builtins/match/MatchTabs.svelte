@@ -20,9 +20,10 @@
   import { MATCH_TABS } from '../../router.js';
   import { fmtBytes } from '../../fmt.js';
   import ComponentFrame from '../../components/ComponentFrame.svelte';
-  import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE, ROUNDS_SOURCE, DETAILS_SOURCE } from '../../matchpanels.js';
-  import { ECONOMY_SOURCE } from '../../econpanels.js';
-  import { UTILITY_SOURCE } from '../../utilpanels.js';
+  import ChildFrame from '../../components/ChildFrame.svelte';
+  import { MATCH_PANEL_IDS } from '../../matchpanels.js';
+  import { ECON_PANEL_IDS } from '../../econpanels.js';
+  import { UTIL_PANEL_IDS } from '../../utilpanels.js';
   import MatchHeatmaps from './Heatmaps.svelte';
   import MatchCombat from './Combat.svelte';
   import ReportsView from '../reports/ReportsView.svelte';
@@ -57,16 +58,16 @@
 </nav>
 
 {#if tab === 'Overview'}
-  <ComponentFrame source={OVERVIEW_SOURCE} {context} props={panelProps} {nav} />
-  <ComponentFrame source={ROSTERS_SOURCE} {context} props={panelProps} {nav} />
+  <ChildFrame name={MATCH_PANEL_IDS.overview} props={panelProps} {nav} />
+  <ChildFrame name={MATCH_PANEL_IDS.rosters} props={panelProps} {nav} />
 {:else if tab === 'Scoreboard'}
-  <ComponentFrame source={SCOREBOARD_SOURCE} {context} props={panelProps} {nav} />
+  <ChildFrame name={MATCH_PANEL_IDS.scoreboard} props={panelProps} {nav} />
 {:else if tab === 'Rounds'}
-  <ComponentFrame source={ROUNDS_SOURCE} {context} props={roundsProps} {nav} />
+  <ChildFrame name={MATCH_PANEL_IDS.rounds} props={roundsProps} {nav} />
 {:else if tab === 'Economy'}
-  <ComponentFrame source={ECONOMY_SOURCE} {context} props={panelProps} {nav} />
+  <ChildFrame name={ECON_PANEL_IDS.economy} props={panelProps} {nav} />
 {:else if tab === 'Utility'}
-  <ComponentFrame source={UTILITY_SOURCE} {context} props={utilityProps} {nav} />
+  <ChildFrame name={UTIL_PANEL_IDS.utility} props={utilityProps} {nav} />
 {:else if tab === 'Heatmaps'}
   <ComponentFrame component={MatchHeatmaps} {context} {nav} />
 {:else if tab === 'Combat'}
@@ -86,7 +87,7 @@
        the demo copy stay here: voice presence is not a component read
        (the query allowlist denies it), and the copy state comes from the
        filesystem on this read. -->
-  <ComponentFrame source={DETAILS_SOURCE} {context} props={panelProps} {nav} />
+  <ChildFrame name={MATCH_PANEL_IDS.details} props={panelProps} {nav} />
   <section class="panel">
     <dl class="facts">
       <div>

@@ -48,6 +48,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"metricColumns", "metrics", metricColumns},
 		{"componentCols", "components", componentCols},
 		{"layoutPlacementCols", "layout_placements", layoutPlacementCols},
+		{"builtinOverrideCols", "builtin_overrides", builtinOverrideCols},
 	}
 	for _, l := range lists {
 		cols, err := s.schemaColumns(l.table)

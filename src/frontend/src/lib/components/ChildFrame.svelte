@@ -1,45 +1,35 @@
 <script>
-  // ChildFrame — what a component's `<spectra.Child name={…} props={…} />`
-  // mounts (dogfood/04-COMPONENTS.md §3.5, owner ruling 36). The child is a
-  // ComponentFrame of its own: its failures show in its own frame, and the
-  // parent keeps rendering. It inherits the parent frame's context (the
-  // same read-only object) and reads through the parent's read services.
+  // ChildFrame — a named component mounted in a frame (dogfood/04-COMPONENTS.md
+  // §3.5, owner ruling 36). Inside a component, `<spectra.Child>` mounts a
+  // child: its own frame, its failures in its own frame, the parent's context
+  // and read services inherited. At a surface (no parent frame, see
+  // SurfaceView) it takes the surface's `context` and `nav` directly.
   //
-  // `name` is a builtin id (builtin-…) or a user component's name. A name
-  // that resolves to nothing shows a refusal in this slot, dismissible.
+  // `name` is a builtin id (builtin-…) or a user component's name; the
+  // reference resolves through componentruntime/resolve.js, so an edited
+  // builtin mounts its edit wherever it is mounted. A name that resolves to
+  // nothing shows a refusal in this slot, dismissible.
   import { getContext } from 'svelte';
   import * as S from '../strings/index.js';
-  import { errText, listComponents } from '../services.js';
-  import { builtinById, isBuiltinId } from '../componentbuiltins.js';
-  import { builtinPanelById } from '../builtins/panels.js';
+  import { errText } from '../services.js';
+  import { resolveComponentRef } from '../componentruntime/resolve.js';
   import { FRAME_KEY, MAX_NEST_DEPTH } from '../componentruntime/frameContext.js';
   import ComponentFrame from './ComponentFrame.svelte';
 
-  let { name = '', props = {} } = $props();
+  let { name = '', props = {}, context = null, nav = undefined } = $props();
 
-  // The parent frame: a child is always mounted by a component's frame.
+  // The parent frame: null at a surface, set inside a component.
   const parent = getContext(FRAME_KEY) || null;
   const tooDeep = parent != null && parent.depth + 1 > MAX_NEST_DEPTH;
 
-  // What the frame mounts: a builtin panel (app Svelte, `component`), or a
-  // source to compile (`source`: a placeholder builtin or a user component).
+  // What the frame mounts: a compiled builtin panel (`component`), or a
+  // source to compile (`source`: an edited builtin, a text builtin or a user
+  // component).
   let source = $state(null);
   let component = $state(null);
   let resolved = $state(false);
   let failure = $state('');
   let dismissed = $state(false);
-
-  async function resolveSource(n) {
-    const panel = builtinPanelById(n);
-    if (panel) return { component: panel, source: null };
-    if (isBuiltinId(n)) {
-      const b = builtinById(n);
-      return b ? { component: null, source: b.source } : null;
-    }
-    const rows = (await listComponents()) || [];
-    const hit = rows.find((c) => c && c.name === n);
-    return hit ? { component: null, source: hit.source } : null;
-  }
 
   // A new name is a new mount: resolve it again.
   $effect(() => {
@@ -50,7 +40,7 @@
     resolved = false;
     failure = '';
     dismissed = false;
-    resolveSource(n).then(
+    resolveComponentRef(n).then(
       (hit) => {
         if (live) {
           source = hit ? hit.source : null;
@@ -102,9 +92,9 @@
     {component}
     {props}
     {name}
-    reads={parent.reads}
-    nav={parent.nav}
-    context={parent.context()}
+    reads={parent ? parent.reads : null}
+    nav={parent ? parent.nav : nav}
+    context={parent ? parent.context() : context}
   />
 {/if}
 

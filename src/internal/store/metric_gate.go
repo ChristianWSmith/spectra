@@ -76,6 +76,7 @@ var metricReadable = map[string]bool{
 	"player_ticks":       true,
 	"components":         false,
 	"layout_placements":  false,
+	"builtin_overrides":  false,
 	"warnings":           false,
 	"jobs":               false,
 	"query_history":      false,

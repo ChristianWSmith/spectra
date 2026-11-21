@@ -1107,7 +1107,14 @@ const EXPECTED = {
   'voice-engine.dom.mjs': 8,
   // Pinned at their observed executed-check counts (2026-11-21, the
   // kill-tags branch): these drivers were added without an EXPECTED entry.
-  'component-builder.dom.mjs': 48,
+  // C5f (owner ruling 43, 2026-11-21): the builder edits built-ins in place
+  // (save, restore, refusal) and places them as views (set, reset): 48 → 67.
+  'component-builder.dom.mjs': 67,
+  // C5f (owner ruling 43): NEW — an edited builtin renders wherever it is
+  // mounted (top, nested, placed), restore brings the shipped one back, a
+  // surface with no placement renders its default, Reset restores it, and a
+  // placement naming nothing shows its refusal.
+  'builtin-edits.dom.mjs': 14,
   'component-context.dom.mjs': 16,
   'component-frame.dom.mjs': 32,
   'econ-util-panels.dom.mjs': 42,

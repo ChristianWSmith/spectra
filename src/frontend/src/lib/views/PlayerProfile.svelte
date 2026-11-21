@@ -8,6 +8,7 @@
   import { profileBackTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import ComponentFrame from '../components/ComponentFrame.svelte';
+  import SurfaceView from '../components/SurfaceView.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import ProfileView from '../builtins/profile/ProfileView.svelte';
@@ -118,7 +119,13 @@
   {/if}
 
   {#if profile}
-    <ComponentFrame component={ProfileView} context={profileContext} {nav} />
+    <!-- The Profile view: the placed component(s) when the user has used one as
+         their profile view, else the default Profile component. -->
+    <SurfaceView surface="profile-view" context={profileContext} {nav}>
+      {#snippet fallback()}
+        <ComponentFrame component={ProfileView} context={profileContext} {nav} />
+      {/snippet}
+    </SurfaceView>
   {:else if !profileError}
     <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingDetail} /></p>
   {/if}

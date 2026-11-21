@@ -206,7 +206,7 @@ to reverse the order. A dash is a stat with no value for that player. A word suc
 *Calculating* or *Out of date* stands in for a value that is being worked out or is stale.
 A row click opens the replay following that player, and the name cell opens their profile.
 The scoreboard always opens in this one-row-per-player layout. To get a different layout,
-duplicate the scoreboard in the Component Builder and edit the copy.
+open the scoreboard in the Component builder and edit it. **Restore to default** there brings the shipped layout back.
 
 **Rounds** — one row per round: a ▶ that watches the round in the replay, the compare box, the
 number, winner, win reason, duration, bomb site, MVP, the first blood, and the kill count. The ▶
@@ -214,14 +214,14 @@ opens the replay at that round's own start with the round's span looped and a re
 clicking anywhere else in the row opens the round page. Tick the **Cmp** boxes on up to four
 rounds and a **Compare N rounds** button appears. A dash is a round fact the demo does not
 record, such as a round with no bomb site. The rounds table is a component like the scoreboard:
-to change its columns or its layout, duplicate it in the Component Builder and edit the copy.
+to change its columns or its layout, open it in the Component builder and edit it.
 
 **Details** — *Key facts* (server, tickrate, frame count, file size, import date, voice presence,
 warning count, the source file and whether a managed copy exists)
 followed by the demo's import diagnostics: import details (parse time, notes) and advanced
 diagnostics. The stored facts (server, tickrate, frame count, file size, import date, parser,
-warning count and source file) are a component, so you can duplicate them in the Component
-Builder and edit the copy. Voice presence and the managed-copy line stay as they are.
+warning count and source file) are a component, so you can edit them in the Component
+builder. Voice presence and the managed-copy line stay as they are.
 
 # Round detail
 
@@ -437,7 +437,7 @@ are not carried over), and statements like these run one at a time.
 
 A view shows what its component shows. The Match view's scoreboard, the profile cards and the
 Reports list each show their default columns and cards in their default order. Nothing in the app
-pins, reorders or hides them: to change a view, duplicate its component and edit the copy.
+pins, reorders or hides them: to change a view, edit its component in the Component builder, or use one of your components as the view (see *The Component builder*).
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,
@@ -554,13 +554,14 @@ of a view that shows figures from your matches: it reads the stored stats it ask
 the way it is written. This view writes and checks them; **Preview** shows one running as it would
 on a match or a player you choose.
 
-The **left panel** lists the components. **Built-in** comes first: the shipped example, which
-loads read-only. Below it, **Yours** lists the components you saved. Click a row to open it in the
-editor, and **New** starts an empty one.
+The **left panel** lists the components. **Built-in** comes first: the components the app's views are
+made of, and the example to copy from. Below it, **Yours** lists the components you saved. Click a row
+to open it in the editor, and **New** starts an empty one.
 
-**Built-in components can't be changed.** Open one and **Duplicate** saves a copy as yours and opens
-the copy, which you can then edit. A copy is yours alone: it does not follow later changes to the
-built-in it came from.
+**Built-in components are edited in place.** Open one, change its source, and **Save** keeps the edit: it
+replaces the shipped version wherever that component appears, and its row carries an *edited* chip.
+**Restore to default** discards the edit and brings the shipped version back. A built-in's name stays
+as it is, and it can't be deleted.
 
 The **editor** has the **Name** and the **Source** of the component. The source is the component's
 text: what it shows and how it responds. Under the source, the check reads **Ready to save.** when the
@@ -576,8 +577,9 @@ keeps the last version that checked out while you type, so a half-finished edit 
 When a component fails while it runs, its own box shows the error and the rest of the screen keeps
 working. **Try again** redraws a component whose display failed, and the box's ✕ dismisses the error.
 
-**Delete** removes one of yours. It is the red button in the editor, or the trash button on the row.
-Built-in components can't be deleted.`,
+**Duplicate** saves a copy of one of yours as a new component and opens it. **Delete** removes one of yours. It is the red button in the editor, or the trash button on the row. A component that a view uses can't be deleted or renamed until that view is reset; the message names the view.
+
+**Use as my view** sets the area of a view to one component. Under the editor, each of the **Match view** and the **Profile view** says what it shows now: *Shows the default*, *Shows this component*, or *Shows another component*. **Use as my view** on the **Match view** replaces the tabs below the match header with the component you have open, and on the **Profile view** it replaces the profile's panels. The header, the warnings and the round strip stay where they are. Pick a single panel, such as the scoreboard, to show only that panel there. **Reset to default** removes the choice, and the view shows its default again. A component must be saved before it can be a view.`,
   },
   {
     id: 'sql-console',
