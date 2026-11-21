@@ -300,29 +300,54 @@ func rawKeyText(v any) string {
 	return fmt.Sprint(v)
 }
 
-// runRawMetric is the sweep's unit for one raw metric: every scope it needs,
-// in order. The caller clears the metric's rows first (phase 1), so a failure
-// partway leaves none of its rows behind.
-func runRawMetric(ctx context.Context, st *store.Store, m models.MetricRow, ruleVersion int) error {
+// SweepUnits is the units one sweep recomputes for a raw metric: every unit
+// its binds select (RawScopes), minus the units that already hold a fresh run
+// record. A fresh unit keeps its rows and is not re-run (ruling 20: a run
+// replaces only its own unit's rows). A gate or scope-read error means the
+// metric cannot run at all, so the caller fails it as a whole.
+func SweepUnits(st *store.Store, m models.MetricRow, ruleVersion int) ([]store.RawScope, error) {
 	g, perr, err := GateSQL(m.Expr, rawExists(st), allRawBinds)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if perr != nil {
-		return errors.New(perr.Message)
+		return nil, errors.New(perr.Message)
 	}
 	// First gate pass for a raw row whose touched set is unknown (a plugin
-	// upsert clears it): store the gate's set before the scopes run.
+	// upsert clears it): store the gate's set before the units are read.
+	touched := store.StoredTouched(g.Touched, len(g.Refs) > 0)
 	if len(m.Touched) == 0 {
-		if err := st.SetMetricTouched(m.ID, store.StoredTouched(g.Touched, len(g.Refs) > 0)); err != nil {
-			return err
+		if err := st.SetMetricTouched(m.ID, touched); err != nil {
+			return nil, err
 		}
 	}
-	scopes, err := RawScopes(st, g.Binds)
+	all, err := RawScopes(st, g.Binds)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.RawScope, 0, len(all))
+	for _, sc := range all {
+		fresh, err := st.UnitFresh(m.ID, m.Version, touched, ruleVersion, sc)
+		if err != nil {
+			return nil, err
+		}
+		if !fresh {
+			out = append(out, sc)
+		}
+	}
+	return out, nil
+}
+
+// runRawMetric runs every stale unit of one raw metric in order (the
+// sweep's compute step without its phase 1). Each unit commits on its own,
+// so a failure partway keeps the units already committed and leaves the
+// failed unit absent.
+func runRawMetric(ctx context.Context, st *store.Store, m models.MetricRow, ruleVersion int) error {
+	units, err := SweepUnits(st, m, ruleVersion)
 	if err != nil {
 		return err
 	}
-	for _, sc := range scopes {
+	for _, sc := range units {
 		if err := RunRaw(ctx, st, m.ID, m.Version, ruleVersion, m.Expr, sc); err != nil {
 			return err
 		}
