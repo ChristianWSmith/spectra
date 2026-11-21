@@ -227,10 +227,10 @@ Settled (owner, 2026-11-20 unless noted):
     responsive. There is no time limit. Each compile appears in the same
     background-work floater that backend jobs use (the `runWork` path), and the
     user can cancel it there. Compile output is not stored (ruling in 04 §5 stands).
-    Amended (owner, 2026-11-21): compile entries in the floater get a Cancel
-    control, since the shared floater does not cancel today. Cancel terminates
-    the compile worker. The save or load reports cancelled, and nothing is
-    written.
+    Amended (owner, 2026-11-21, twice): the floater shows compile progress only,
+    through the existing progress indication. Cancel is a button in the component
+    editor, next to Save, shown while a compile runs. It terminates the compile
+    worker; the save or load reports cancelled, and nothing is written.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
