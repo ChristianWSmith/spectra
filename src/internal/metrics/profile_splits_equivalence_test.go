@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -59,7 +60,13 @@ func profileSeedRows(t *testing.T, st *store.Store, name, partition string) map[
 	t.Helper()
 	expr := seedByName(t, st, name)
 	raw := map[string]map[string]float64{}
-	for _, r := range rawPreviewRows(t, st, expr, "") {
+	var rows []store.RawMetricRow
+	if strings.Contains(expr, ":steam_id") {
+		rows = careerRows(t, st, expr)
+	} else {
+		rows = rawPreviewRows(t, st, expr, "")
+	}
+	for _, r := range rows {
 		if raw[r.SubjectKey] == nil {
 			raw[r.SubjectKey] = map[string]float64{}
 		}

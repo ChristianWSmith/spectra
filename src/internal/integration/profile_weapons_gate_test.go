@@ -137,6 +137,31 @@ type weaponRow struct {
 	Value float64
 }
 
+// storedWeaponRows reads one weapon seed's stored career rows (match 0), the
+// shape the surface serves after the sweep.
+func storedWeaponRows(t *testing.T, st *store.Store, name string) []weaponRow {
+	t.Helper()
+	res, err := st.RunReadOnly(
+		`SELECT v.subject_key, v.dim, v.value FROM metric_values v JOIN metrics m ON m.id = v.metric_id
+		 WHERE m.name = ? AND v.match_id = 0`,
+		[]any{name}, 100000, 5000)
+	if err != nil {
+		t.Fatalf("read stored %s: %v", name, err)
+	}
+	out := make([]weaponRow, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		row := weaponRow{Group: fmt.Sprint(r[0]), Dim: fmt.Sprint(r[1]), Value: math.NaN()}
+		switch v := r[2].(type) {
+		case int64:
+			row.Value = float64(v)
+		case float64:
+			row.Value = v
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 // runWeaponStatement runs one career statement (no binds) on the metric
 // connection and reads its reserved columns by name.
 func runWeaponStatement(t *testing.T, st *store.Store, expr string) []weaponRow {
@@ -221,15 +246,18 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 	// the report needs): every kill/damage row the fold EXCLUDED and
 	// why, plus the HP-cap question for damage.
 	census := runWeaponCensus(t, st, id)
+	// Ruling 48: the weapon seeds are per-player and read stored per-match values.
+	if _, err := metrics.Sweep(t.Context(), st, nil, nil); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
 
 	for _, cand := range weaponCandidates {
 		t.Run(cand.name, func(t *testing.T) {
 			// The shipped seed row's stored-shape values: the sweep's
 			// career statement (profile scope, weapon partition), expr
 			// loaded from the seeded row itself.
-			expr := seededWeaponExpr(t, st, cand.name)
 			candByPlayer := map[string]map[string]float64{}
-			for _, r := range runWeaponStatement(t, st, expr) {
+			for _, r := range storedWeaponRows(t, st, cand.name) {
 				if candByPlayer[r.Group] == nil {
 					candByPlayer[r.Group] = map[string]float64{}
 				}

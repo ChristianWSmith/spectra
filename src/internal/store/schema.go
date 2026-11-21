@@ -24,6 +24,10 @@ func (s *Store) applySchema() error {
 		_ = tx.Rollback()
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
+	if err := deriveBuiltinDeps(tx); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("couldn't initialize the database: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}

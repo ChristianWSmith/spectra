@@ -189,7 +189,7 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 		   AND NOT EXISTS (SELECT 1 FROM players p
 			WHERE p.match_id = c.match_id AND p.steam_id = c.steam_id AND p.is_bot = 1)
 		 GROUP BY c.steam_id`)
-	got := previewAt(t, st, seedDef(t, st, "career_clutches"), "")
+	got := careerPreview(t, st, seedDef(t, st, "career_clutches"))
 	for i := 1; i <= 8; i++ {
 		sid := fmt.Sprintf("7656119800000000%d", i)
 		// want[sid] is 0 for every subject with no clutch rows.
@@ -221,9 +221,9 @@ func TestCareerClutchesEquivalence(t *testing.T) {
 // is spelled here) — the number the conversion must not move.
 func TestCareerOpeningEquivalence(t *testing.T) {
 	st := seededStore(t)
-	openings := previewAt(t, st, seedDef(t, st, "career_openings"), "")
-	wins := previewAt(t, st, seedDef(t, st, "career_opener_wins"), "")
-	rate := previewAt(t, st, seedDef(t, st, "career_opening_rate"), "")
+	openings := careerPreview(t, st, seedDef(t, st, "career_openings"))
+	wins := careerPreview(t, st, seedDef(t, st, "career_opener_wins"))
+	rate := careerPreview(t, st, seedDef(t, st, "career_opening_rate"))
 	if len(openings) != 8 || len(wins) != 8 || len(rate) != 8 {
 		t.Fatalf("preview rows = %d/%d/%d, want 8 subjects each (%v/%v/%v)", len(openings), len(wins), len(rate), openings, wins, rate)
 	}
