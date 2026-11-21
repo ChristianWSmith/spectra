@@ -26,6 +26,7 @@ import HeatmapPanel from './match/HeatmapsPanel.svelte';
 import MatchCombat from './match/Combat.svelte';
 import CombatEngagements from './match/CombatEngagements.svelte';
 import CombatClutches from './match/CombatClutches.svelte';
+import MatchTabs from './match/MatchTabs.svelte';
 
 export const PROFILE_VIEW_ID = 'builtin-profile-view';
 export const REPORTS_VIEW_ID = 'builtin-reports';
@@ -33,6 +34,7 @@ export const EXPLORER_VIEW_ID = 'builtin-explorer';
 
 // The Match tabs' component ids (the Match view mounts the tab components
 // directly, with its context).
+export const MATCH_TABS_ID = 'builtin-match-tabs';
 export const MATCH_HEATMAPS_ID = 'builtin-match-heatmaps';
 export const MATCH_COMBAT_ID = 'builtin-match-combat';
 
@@ -53,6 +55,7 @@ export const BUILTIN_PANELS = Object.freeze({
   'builtin-explorer-provenance': ExplorerProvenance,
   'builtin-explorer-diagnostics': ExplorerDiagnostics,
   'builtin-explorer-reference': ExplorerReference,
+  [MATCH_TABS_ID]: MatchTabs,
   [MATCH_HEATMAPS_ID]: MatchHeatmaps,
   'builtin-match-heatmap': HeatmapPanel,
   [MATCH_COMBAT_ID]: MatchCombat,

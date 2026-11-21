@@ -69,10 +69,11 @@ test('the registry names the Heatmaps and Combat tabs and their panels, in the b
     'builtin-match-combat-engagements',
     'builtin-match-heatmap',
     'builtin-match-heatmaps',
+    'builtin-match-tabs',
   ]);
   for (const id of ids) assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} carries the builtin prefix`);
   const imports = [...registry.matchAll(/from '\.\/(match\/[A-Za-z]+\.svelte)'/g)].map((m) => m[1]);
-  assert.equal(imports.length, 5, 'the registry imports the two tabs and their three panels');
+  assert.equal(imports.length, 6, 'the registry imports the tab set, the two tabs and their three panels');
   for (const rel of imports) assert.ok(existsSync(path.join(LIB, 'builtins', rel)), `${rel} exists`);
 });
 
@@ -96,8 +97,10 @@ test('the tabs read one preference only, loop_secs (a plain pref, ruling 33)', (
 
 test('the Match surface mounts the tabs as components, and the old views are gone', () => {
   const match = stripComments(readFileSync(path.join(LIB, 'views', 'Match.svelte'), 'utf8'));
-  assert.ok(match.includes("from '../builtins/match/Heatmaps.svelte'"), 'Match imports the Heatmaps tab component');
-  assert.ok(match.includes("from '../builtins/match/Combat.svelte'"), 'Match imports the Combat tab component');
+  const tabs = stripComments(readFileSync(path.join(MATCH_DIR, 'MatchTabs.svelte'), 'utf8'));
+  assert.ok(match.includes("from '../builtins/match/MatchTabs.svelte'"), 'Match mounts the tab set builtin');
+  assert.ok(tabs.includes("from './Heatmaps.svelte'"), 'the tab set imports the Heatmaps tab component');
+  assert.ok(tabs.includes("from './Combat.svelte'"), 'the tab set imports the Combat tab component');
   assert.ok(!/from '\.\/(Heatmaps|Combat)\.svelte'/.test(match), 'Match no longer imports the old views');
   assert.ok(!existsSync(path.join(LIB, 'views', 'Heatmaps.svelte')), 'views/Heatmaps.svelte is removed');
   assert.ok(!existsSync(path.join(LIB, 'views', 'Combat.svelte')), 'views/Combat.svelte is removed');
