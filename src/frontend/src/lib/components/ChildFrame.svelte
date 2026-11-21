@@ -11,6 +11,7 @@
   import * as S from '../strings/index.js';
   import { errText, listComponents } from '../services.js';
   import { builtinById, isBuiltinId } from '../componentbuiltins.js';
+  import { builtinPanelById } from '../builtins/panels.js';
   import { FRAME_KEY, MAX_NEST_DEPTH } from '../componentruntime/frameContext.js';
   import ComponentFrame from './ComponentFrame.svelte';
 
@@ -20,19 +21,24 @@
   const parent = getContext(FRAME_KEY) || null;
   const tooDeep = parent != null && parent.depth + 1 > MAX_NEST_DEPTH;
 
+  // What the frame mounts: a builtin panel (app Svelte, `component`), or a
+  // source to compile (`source`: a placeholder builtin or a user component).
   let source = $state(null);
+  let component = $state(null);
   let resolved = $state(false);
   let failure = $state('');
   let dismissed = $state(false);
 
   async function resolveSource(n) {
+    const panel = builtinPanelById(n);
+    if (panel) return { component: panel, source: null };
     if (isBuiltinId(n)) {
       const b = builtinById(n);
-      return b ? b.source : null;
+      return b ? { component: null, source: b.source } : null;
     }
     const rows = (await listComponents()) || [];
     const hit = rows.find((c) => c && c.name === n);
-    return hit ? hit.source : null;
+    return hit ? { component: null, source: hit.source } : null;
   }
 
   // A new name is a new mount: resolve it again.
@@ -40,13 +46,15 @@
     const n = name;
     let live = true;
     source = null;
+    component = null;
     resolved = false;
     failure = '';
     dismissed = false;
     resolveSource(n).then(
-      (src) => {
+      (hit) => {
         if (live) {
-          source = src;
+          source = hit ? hit.source : null;
+          component = hit ? hit.component : null;
           resolved = true;
         }
       },
@@ -81,7 +89,7 @@
   </p>
 {:else if !resolved}
   <p class="cframe-loading">{S.components.frameLoading}</p>
-{:else if source == null}
+{:else if source == null && component == null}
   <p class="error" role="alert">
     {S.fill(S.components.childNotFound, { name })}
     <button class="btn small" aria-label={S.components.frameDismiss} onclick={() => (dismissed = true)}>
@@ -91,6 +99,7 @@
 {:else}
   <ComponentFrame
     {source}
+    {component}
     {props}
     {name}
     reads={parent.reads}

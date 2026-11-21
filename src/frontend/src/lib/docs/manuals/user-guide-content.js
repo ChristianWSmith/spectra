@@ -374,13 +374,11 @@ takes you back to the last player you had open.
 A player page opens with a back button (to wherever you came from), the player's name and Steam
 id, and a player search box to jump to someone else. Then:
 
-- **Headline and career cards** — one block of square name/value cards: every profile-scope
-  metric you have pinned (Matches with its wins sub-line, Win%, opening-duels win rate,
-  clutches, ADR, KAST%, …) with the usual honest states (a number, a dash when there is
-  no data for this player, or a state chip while a value is recomputing). The cards wrap
-  outward from the center; the defaults pin Matches and Win% ahead of the rest, and with
-  nothing pinned you get no cards — the pin buttons and the metric builder's **Order…**
-  dialog decide what shows and where it sits.
+- **Headline and career cards** — one block of square name/value cards, the same set in the
+  same order for every player: Matches (with its wins sub-line), Win %, ADR, ADR σ, K/D, HS %,
+  KAST %, opening duels, trade rate, clutches, clutch win %, average enemies flashed and average
+  utility damage. Each card shows a number, a dash when there is no data for this player, or a
+  state chip while a value is recomputing. The cards wrap outward from the center.
 - **Trend** — any match-scope metric you have (ADR, KAST%, K/D, HS%, …) across the player's
   matches: search the metric picker for the one you want, then click a point to open that match.
 - **Sides** — CT vs T rounds, win rate, ADR, KAST, K/D.

@@ -57,7 +57,7 @@
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerHooks } from 'node:module';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
@@ -117,6 +117,23 @@ process.on('unhandledRejection', (e) => {
 });
 
 const bindings = await import('./stubs/bindings.mjs');
+
+// The history row's stored cells (K/D/A, ADR, KAST) are one metric() read per
+// match (a match-bound read of the player's stored value). The sections below
+// script the player's match-grain values once, through GetMetricSeries; this
+// bridge serves the per-match read from the same script, so both reads agree.
+const HISTORY_STEAM = '76561198000000001';
+const matchValueReads = []; // [matchId, ids] — one entry per history match read
+bindings.MetricsService.GetMetricValuesForMatch = async (matchId, ids) => {
+  matchValueReads.push([matchId, ids]);
+  const rows = (await bindings.MetricsService.GetMetricSeries(HISTORY_STEAM, ids)) || [];
+  return rows
+    .filter((r) => r.matchId === matchId && ids.includes(r.metricId))
+    .map((r) => ({
+      metricId: r.metricId, matchId, subjectKey: HISTORY_STEAM, dim: '',
+      value: r.value, valueKey: '', n: r.n,
+    }));
+};
 
 // The one list read both views consume, in SERVICE order (last-seen
 // DESC, steam_id ASC — store.ListPlayers): amy, zoe, bob, dan, plus a
@@ -200,47 +217,35 @@ const svelteCompile = (src, filename, out) => {
   writeFileSync(out, compile(src, { filename, generate: 'client' }).js.code);
 };
 
-// Leaf components (no imports) → local bundles. The names match the
-// view's `../components/<Name>.svelte` specifiers after the rewrite
-// below, so the bundles keep their component names.
-for (const name of ['SortTh', 'Popover', 'StatCard', 'StatusChip']) {
-  svelteCompile(
-    // plumbing (Strings Stage 3): SortTh imports the strings catalog —
-    // resolve it from the real tree (no-op for the import-less leaves).
-    readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
-      "from '../strings/index.js'",
-      `from '${fileURL('src/lib/strings/index.js')}'`,
-    ),
-    `${name}.svelte`,
-    join(dir, `${name}.js`),
-  );
+// Every .svelte the view reaches (the view, its shell components and the
+// builtin Profile panels) is compiled into the cache dir, recursively: a
+// relative .svelte import becomes the bundle of that file; every .js import
+// resolves to its real module (the shared graph). Same scheme as
+// component-context.dom.mjs.
+const bundled = new Map();
+let bundleSeq = 0;
+// A .js module that imports a .svelte file (the builtin panel registry) is
+// bundled too: node cannot load a .svelte specifier itself. Every other .js
+// stays where it is, so the shared module graph keeps one instance.
+const importsSvelte = (file) => /from '[^']*\.svelte'/.test(readFileSync(file, 'utf8'));
+function bundleSvelte(absPath, outName = null) {
+  if (bundled.has(absPath)) return bundled.get(absPath);
+  const out = outName
+    ? join(dir, outName)
+    : join(dir, `${String(++bundleSeq).padStart(3, '0')}-${absPath.split('/').pop()}.js`);
+  bundled.set(absPath, out);
+  const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
+    const target = resolve(dirname(absPath), rel);
+    if (target.endsWith('.svelte')) return `from '${fileURL(bundleSvelte(target))}'`;
+    if (target.endsWith('.js') && importsSvelte(target)) return `from '${fileURL(bundleSvelte(target))}'`;
+    return `from '${fileURL(target)}'`;
+  });
+  if (absPath.endsWith('.svelte')) svelteCompile(src, absPath, out);
+  else writeFileSync(out, src);
+  return out;
 }
-
-// SuggestInput imports Popover, the plain-ESM fmt helper and services
-// (the career ADR metric read) → local bundle + absolute module URLs;
-// the strings catalog likewise (its compiled file sits in dir/, not in
-// src/lib/components/).
-const siSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
-  .replace("from './Popover.svelte'", "from './Popover.js'")
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
-  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
-  .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'SuggestInput.js'));
-
-// The views: plain-ESM imports resolve from their real module locations
-// (the shared graph — services → stubs, nav → router/landmarks, …), the
-// .svelte imports point at the local bundles.
-const bundleView = (name, out) => {
-  const src = readFileSync(`src/lib/views/${name}.svelte`, 'utf8')
-    // plumbing (Strings Stage 3): the strings catalog resolves from the
-    // real tree (the generic ../ rewrite below does not match its slash).
-    .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`)
-    .replace(/from '\.\.\/components\/(\w+)\.svelte'/g, "from './$1.js'")
-    .replace(/from '\.\.\/([\w.]+)'/g, (_m, p) => `from '${fileURL(`src/lib/${p}`)}'`);
-  svelteCompile(src, `${name}.svelte`, join(dir, out));
-};
-bundleView('Profiles', 'profiles-bundle.js');
-bundleView('PlayerProfile', 'playerprofile-bundle.js');
+bundleSvelte(resolve('src/lib/views/Profiles.svelte'), 'profiles-bundle.js');
+bundleSvelte(resolve('src/lib/views/PlayerProfile.svelte'), 'playerprofile-bundle.js');
 
 const { mount } = await import('svelte');
 const profilesMod = await import(pathToFileURL(join(dir, 'profiles-bundle.js')).href);
@@ -440,6 +445,7 @@ bindings.MetricsService.GetMetricSeries = () =>
   Promise.resolve([
     { metricId: 5, matchId: 1, value: 17, n: 24 },
     { metricId: 6, matchId: 1, value: 4, n: 24 },
+    { metricId: 7, matchId: 1, value: 2, n: 24 },
     { metricId: 5, matchId: 2, value: 3, n: 22 },
     { metricId: 6, matchId: 2, value: 9, n: 22 },
   ]);
@@ -712,9 +718,12 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   // took the fixed pair away: every card is a pinned metric tile, an
   // empty selection is an empty surface — never a guessed tile, never
   // a raw pair standing in) …
+  // C5d (owner ruling 33): pinning is retired and the panel reads no pin
+  // key, so the old bytes are ignored and the DEFAULT profile set shows. The
+  // one default metric in this catalog is K/D.
   check(
-    'w22: an old id-array under the profile pins key selects NOTHING — no cards render (no fixed pair stands in)',
-    !w22Grid && w22Cells.length === 0,
+    'w22: an old id-array under the retired pins key is ignored — the default card set renders',
+    w22Cells.length === 1 && w22Cells[0].textContent.includes('K/D'),
     `cells=${JSON.stringify(w22Cells.map((c) => c.textContent.trim()))}`,
   );
   // …and the stored bytes are left byte-for-byte untouched: no format
@@ -737,7 +746,7 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
         format: 'float1', doc: 'Formula: kills / deaths', origin: 'user',
       },
       {
-        id: 52, name: 'career_avg', title: 'Career avg', scope: 'profile',
+        id: 52, name: 'career_adr', title: 'ADR', scope: 'profile',
         format: '', doc: 'Formula: avg dmg', origin: 'user',
       },
       {
@@ -776,15 +785,15 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   const grid = iTarget.querySelector('.stat-grid.prof-stats');
   check('the merged headline block renders the profile pins', !!grid, 'no .stat-grid.prof-stats');
   const rows = grid ? [...grid.querySelectorAll('.stat-cell')] : [];
+  // The default profile set, in the default sequence (ADR before K/D): the two
+  // defaults this catalog carries. The match-scope metric never surfaces here.
   check(
-    'exactly the two profile-scope pins list (a match-scope metric never surfaces here)',
-    rows.length === 2 &&
-      rows[0].textContent.includes('Career K/D') &&
-      rows[1].textContent.includes('Career avg'),
+    'exactly the two default profile-scope cards (a match-scope metric never surfaces here)',
+    rows.length === 2 && rows[0].textContent.includes('ADR') && rows[1].textContent.includes('K/D'),
     JSON.stringify(rows.map((r) => r.textContent.trim())),
   );
   {
-    const tile = rows[0];
+    const tile = rows[1];
     const cell = tile?.children[1];
     check(
       'fresh renders the STORED value with its label as the tooltip (no sample size)',
@@ -794,7 +803,7 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
     );
   }
   {
-    const tile = rows[1];
+    const tile = rows[0];
     const cell = tile?.children[1];
     const chip = cell?.querySelector('.chip.status');
     check(
@@ -1162,9 +1171,11 @@ console.log(
     key === 'metric_order_profile' ? FULL_PROFILE_ORDER : undefined;
   invalidate();
   const j4 = await mountProfile();
+  // C5d (owner ruling 33): the order pref is retired and no panel reads it,
+  // so the stored order is ignored — the default sequence leads.
   check(
-    'N4: a stored order pref reorders the unified head pair too — Win % leads, Matches played second (the sequence owns both)',
-    j4.labels[0] === 'Win %' && j4.labels[1] === 'Matches played' && j4.labels.length === 13,
+    'N4 (C5d): a stored order pref is ignored — the default sequence leads (Matches played, Win %), thirteen cards',
+    j4.labels[0] === 'Matches played' && j4.labels[1] === 'Win %' && j4.labels.length === 13,
     JSON.stringify(j4.labels),
   );
   document.body.removeChild(j4.el);
@@ -1503,6 +1514,7 @@ console.log('M. the Profiles Matches column and the history K/D halves read thei
       { metricId: 7, state: 'fresh' },
     ]);
   seriesReads = [];
+  matchValueReads.length = 0;
   invalidate();
   const m2 = document.createElement('div');
   document.body.appendChild(m2);
@@ -1519,16 +1531,16 @@ console.log('M. the Profiles Matches column and the history K/D halves read thei
   };
   {
     const cells = histCells();
+    // C5d: each history row's stored cells are a match-bound metric() read
+    // (one per match, asking for the kills, deaths and assists seeds).
     check(
-      'the series read went out ONCE for the player with the requested seed ids (never one call per match)',
-      seriesReads.length === 1 &&
-        seriesReads[0][0] === '76561198000000001' &&
-        [5, 6, 7].every((id) => seriesReads[0][1].includes(id)),
-      JSON.stringify(seriesReads),
+      'each history match is read by its own match bind for the seed ids (kills, deaths, assists)',
+      [1, 2].every((m) => [5, 6, 7].every((x) => matchValueReads.some(([id, ids]) => id === m && ids.includes(x)))),
+      JSON.stringify(matchValueReads),
     );
     check(
-      'the history K/D halves render the stored series values (raw ps.kills/ps.deaths 10/5 never prints)',
-      cells[0]?.textContent.trim() === '17/4/2',
+      'the history K/D halves render the stored values (raw ps.kills/ps.deaths 10/5 never prints); no assists row is a dash',
+      cells[0]?.textContent.trim() === '17/4/—',
       cells[0]?.textContent.trim(),
     );
     check(
@@ -1547,7 +1559,8 @@ console.log('M. the Profiles Matches column and the history K/D halves read thei
   // A BEHIND K/D seed: the state word reaches the cell through the
   // title — the raw columns behind the DTO never surface.
   seriesReads = [];
-  bindings.MetricsService.GetMetricSeries = () => Promise.resolve([]);
+  // Only the assists row is stored; kills and deaths are behind.
+  bindings.MetricsService.GetMetricSeries = () => Promise.resolve([{ metricId: 7, matchId: 1, value: 2, n: 24 }]);
   bindings.MetricsService.GetMetricComputeState = () =>
     Promise.resolve([
       { metricId: 81, state: 'fresh' },
