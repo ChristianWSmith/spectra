@@ -159,8 +159,10 @@ Settled (owner, 2026-11-20 unless noted):
 33. **Pinning removed (owner ruling, 2026-11-20):** the whole pinning concept goes:
     pinned metrics, metric ordering, hiding and economy pins. Dogfooded view
     components replace it: a user changes a view by duplicating and editing its
-    component. Retired keys are not absorbed. `scoreboard_starts_transposed`
-    stays a plain pref. Ruling 28 (empty lists) no longer applies.
+    component. Retired keys are not absorbed, including
+    `scoreboard_starts_transposed`: the scoreboard becomes a dogfooded builtin
+    component that a user can duplicate and edit. Ruling 28 (empty lists) no
+    longer applies.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
@@ -375,9 +377,9 @@ action (`04 §6`). Guide section in the same wave.
 - **Deps:** C2.
 
 **C4 · Builtin placements and pinning removal.** Builtin default layouts render
-through placement rows. Pinning is removed (ruling 33): retire the pin, order
-and hide keys and the two localStorage pin keys, with no absorption. Keep
-`scoreboard_starts_transposed` as a plain pref. Reset deletes placement rows.
+through placement rows. Pinning is removed (ruling 33): retire the pin, order,
+hide and transposed keys and the two localStorage pin keys, with no absorption.
+The scoreboard becomes a dogfooded builtin component. Reset deletes placement rows.
 Guide note on the absent-default / present-verbatim caveat for placements.
 The empty-list question (ruling 28) no longer applies, because no list preference
 survives.

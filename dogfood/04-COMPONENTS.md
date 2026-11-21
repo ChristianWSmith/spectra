@@ -61,9 +61,10 @@ away entirely: pinned metrics, metric ordering, hiding, and the economy pins.
 A view shows what its component shows; a user changes a view by duplicating and
 editing its component. Those keys are retired, not absorbed: `metric_order_match`,
 `metric_order_profile`, `metric_order_overview`, `metric_pins_overview`,
-`metric_economy`, `metric_hidden_match`, `metric_hidden_profile`, and the two
-localStorage pin keys. `scoreboard_starts_transposed` is a display toggle, not
-pinning; it stays a plain pref. `loop_secs` stays a plain pref.
+`metric_economy`, `metric_hidden_match`, `metric_hidden_profile`, `scoreboard_starts_transposed`,
+and the two localStorage pin keys. The scoreboard becomes a dogfooded builtin
+component, so a user who wants it transposed duplicates it and edits it.
+`loop_secs` stays a plain pref.
 
 ## 3. What a component can read
 
