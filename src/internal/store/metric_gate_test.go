@@ -54,7 +54,6 @@ func TestUnclassifiedTablesFlagsANewTable(t *testing.T) {
 }
 
 // TestMetricReadableSettledList pins the classification itself
-// (dogfood/03-QUERIES.md §3.2).
 func TestMetricReadableSettledList(t *testing.T) {
 	readable := []string{"events", "engagements", "rounds", "player_stats", "player_round_stats",
 		"round_economy", "clutches", "utility_events", "chat", "match_trade_opps",

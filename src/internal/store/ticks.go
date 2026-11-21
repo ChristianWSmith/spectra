@@ -17,8 +17,7 @@ const playerTicksCols = `tick, steam_id, round, side, alive, hp, money, in_air, 
 // match streams ~1.3M rows; written in one transaction that holds the
 // single writer for well over busy_timeout (5 s), starving every other
 // writer (job progress, other jobs' SaveExtracted, sweeps). At this
-// bound one chunk holds the writer for under a second (measured —
-// dogfood/02-TICK-STATE.md §3.2).
+// bound one chunk holds the writer for under a second.
 const tickChunkRows = 50_000
 
 // streamedChildTables are the per-match tables written DURING the parse

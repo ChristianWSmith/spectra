@@ -12,7 +12,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// Metrics are raw SQL (dogfood/PLAN.md item 1 and B5, 03-QUERIES.md §2-§5).
+// Metrics are raw SQL.
 // Every expr is one SELECT or WITH statement. It is gated by GateSQL (the one
 // gate), run on the read-only metric connection with the reserved binds its
 // scope supplies, and must return the reserved columns subject_key, dim and

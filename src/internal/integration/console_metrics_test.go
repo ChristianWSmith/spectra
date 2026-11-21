@@ -84,7 +84,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 		"clutch_avg_hp": true, "clutch_avg_equip": true,
 		"career_clutches": true, "career_clutch_win_rate": true,
 		"match_clutch_wins": true,
-		// PLAN item 19: the fixture has no player_ticks or kill rounds to fold.
+		// The fixture has no player_ticks or kill rounds to fold.
 		"clutch": true, "alive_count": true,
 	}
 	for _, r := range res.Rows {

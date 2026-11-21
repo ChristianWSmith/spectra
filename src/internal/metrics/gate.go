@@ -22,7 +22,7 @@ func withTable(tables []string, table string) []string {
 }
 
 // The metric gate — THE one validation every metric statement passes
-// (dogfood/03-QUERIES.md §2–§3), serving the Builder's live check, save
+// serving the Builder's live check, save
 // and the sweep. Every expression is one raw SQL statement; the gate:
 //
 //  1. one statement, read-only (SELECT or WITH lead), no write verb, so
@@ -75,7 +75,7 @@ type RefLookup func(name string) (bool, error)
 // (*GateError, nil) for a refusal and (nil, err) for a lookup failure.
 //
 // Bind rule: a statement may carry only the reserved binds :match_id,
-// :steam_id and :round. Positional `?` and any other name are refused,
+// steam_id and :round. Positional `?` and any other name are refused,
 // and a reserved bind the engine does not supply is refused.
 func GateSQL(sql string, exists RefLookup, supplied map[string]bool) (Gate, *GateError, error) {
 	st, gerr := store.AnalyzeMetricSQL(sql, nil)

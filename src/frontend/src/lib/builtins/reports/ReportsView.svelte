@@ -1,5 +1,5 @@
 <script>
-  // The Reports builtin (dogfood/04-COMPONENTS.md §7, PLAN C5c): the match
+  // The Reports builtin: the match
   // report's surface, composed from its panels. It owns the report's loads
   // and selection, and mounts two panels that share that model: the template
   // and target panel, and the stats appendix with the save button. The match

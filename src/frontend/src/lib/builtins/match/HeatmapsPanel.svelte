@@ -29,7 +29,7 @@
   // spot, since services.getHeatmap is only ever this non-kd path.
   import { runWork } from '../../workstate.svelte.js';
 
-  // The heatmap card (builtin panel, dogfood/04 §3, PLAN C5-Heat-Combat). It
+  // The heatmap card. It
   // reads its match from the read-only `context` the Heatmaps builtin passes
   // down (`matchId`), and navigates through the read API, so the panel mounts
   // nothing else. Its data path is unchanged: getMatch / getScoreboard /

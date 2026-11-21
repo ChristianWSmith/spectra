@@ -1,6 +1,6 @@
 import '../../test/compile-worker-node.mjs';
 // builtinedits.test.js — editing builtins in place, restore to default and
-// "use as my view" (owner ruling 43; dogfood/PLAN C5f). The pure checks:
+// "use as my view". The pure checks:
 //   (a) the generated source of each builtin is checked by the save gate;
 //   (c) an edited builtin that fails the gate is refused with its line;
 //   (f) the user guide describes editing, restore and use as my view.

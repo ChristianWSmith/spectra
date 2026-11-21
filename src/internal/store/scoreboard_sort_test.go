@@ -14,7 +14,7 @@ import (
 // it; the scoreboard's KDA column is metric-backed now), so `kda` is an
 // UNKNOWN sort key and must fall back to the fixed default (kills DESC)
 // exactly like `kd` did when the report read-back retired it
-// (dogfooding W4) — never ordering by a ratio.
+// — never ordering by a ratio.
 //
 // The fixture stays RATIO-DIVERGENT so a reintroduced alias fails here:
 // kills DESC is alice(10), carl(8), bob(5), while the retired

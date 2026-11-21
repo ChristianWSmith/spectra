@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Match view's panels (dogfood/PLAN.md C5b,
-// dogfood/04-COMPONENTS.md §3, §3.5): each panel mounts through the real
+// jsdom driver for the Match view's panels: each panel mounts through the real
 // ComponentFrame, compiles from its source, and reads through the real read
 // API. The read services are a fixture (one match, seven players, one bot),
 // so every rendered value here is one this file can compute by hand:

@@ -1,5 +1,4 @@
-// The shipped Profile view as builtin components (dogfood/04-COMPONENTS.md
-// §1, §7; PLAN C5d). Each panel is app Svelte compiled by the bundler, so it
+// The shipped Profile view as builtin components. Each panel is app Svelte compiled by the bundler, so it
 // mounts through ComponentFrame's `component` prop (nested mounts from
 // ChildFrame, and the Profile component's own frame from the surface). The
 // ids live in the reserved builtin namespace (componentbuiltins.js
@@ -20,7 +19,7 @@ import ExplorerView from './explorer/ExplorerView.svelte';
 import ExplorerProvenance from './explorer/ExplorerProvenance.svelte';
 import ExplorerDiagnostics from './explorer/ExplorerDiagnostics.svelte';
 import ExplorerReference from './explorer/ExplorerReference.svelte';
-// The Match view's Heatmaps and Combat tabs (PLAN C5-Heat-Combat): each tab
+// The Match view's Heatmaps and Combat tabs: each tab
 // is a composition, and its panels are mounted by the tab through Child.
 import MatchHeatmaps from './match/Heatmaps.svelte';
 import HeatmapPanel from './match/HeatmapsPanel.svelte';

@@ -69,7 +69,7 @@ const (
 // unify): the store floors the denominator — `MAX(deaths, 1)` — so a
 // player with no deaths reports K/D 0 instead of NULL, because this is a
 // typed float with no "missing" state. The display surfaces read stored
-// metric rows (dogfooding W3/W4): the trend, history and report
+// metric rows: the trend, history and report
 // read-backs render the metric's generic `ratio()` spelling (a NULL
 // denominator is the honest "no rows to divide by", shown as value 0
 // with N or as "—"). Same intent, two spellings.

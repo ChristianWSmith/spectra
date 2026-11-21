@@ -72,9 +72,7 @@ type PlayerReport struct {
 }
 
 // MetricCells is one report subject's metric-backed display cells — the
-// Go read-back (dogfooding design §3.6, extended by the inferred
-// conversion's Q2 per-half rule, §3.1, and by the owner ruling of
-// 2026-11-17 that closed the count exemption): the builtin templates
+// Go read-back: the builtin templates
 // render ADR / HS% / KD / KDA, every converting compound half — the
 // match tables' A / Openings / Trades cells, the player report's K/D/A
 // A-half, both opening pairs, Trades, Best streak and Enemies flashed

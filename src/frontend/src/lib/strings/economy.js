@@ -41,7 +41,7 @@ export const economy = {
   noExplanation: 'no explanation recorded',
   rulesV: 'rules v',
   closeExplanation: 'Close explanation',
-  // Builtin panel copy (ruling 46, dogfood C5i): read by builtins/panels.
+  // Builtin panel copy: read by builtins/panels.
   equipDef: "Equipment value — freeze-time-end value of the gear a side actually holds — every weapon (picked up and carried over included), armor, grenades and the defuse kit. Never this round’s spend.",
   cardLostDoc: "Formula: sum(round_economy.equip_value) of the losing side over decided, team-known rounds — freeze-time money lost, addressed per match (no partition), over the joined sources — a total.",
   cardForceWonDoc: "Formula: count(round_side_classes rows joined to rounds WHERE class = force AND winner = side) — force rounds that team won, addressed per team (no partition), over the joined sources.",
@@ -99,7 +99,7 @@ export const economy = {
   cellBuySep: " / T ",
   colTBuy: "T buy",
 
-  // Builtin panel copy (ruling 46, dogfood C5i).
+  // Builtin panel copy.
   chipPistol: "pistol",
   tipEquip: "equip",
   titleDeaths: "Deaths suffered by that side's players in this round",

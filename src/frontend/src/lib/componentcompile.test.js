@@ -80,7 +80,7 @@ test('an import outside the runtime is refused at its own line', async () => {
   assert.match(res.message, /\.\/other\.js/);
 });
 
-// Components are runes-only (dogfood/04-COMPONENTS.md §5): legacy syntax is
+// Components are runes-only: legacy syntax is
 // refused at save with its own line, and runes syntax passes.
 test('legacy-mode syntax is refused at save with its line', async () => {
   const exportLet = await checkComponentSource('<script>\n  export let x = 1;\n</script>\n<p>{x}</p>');

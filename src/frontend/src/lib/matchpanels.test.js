@@ -1,6 +1,5 @@
 import '../../test/compile-worker-node.mjs';
-// matchpanels.test.js — the Match view's panels as builtins (dogfood/PLAN.md
-// C5b, dogfood/04-COMPONENTS.md §3, §3.5). The contract a panel keeps:
+// matchpanels.test.js — the Match view's panels as builtins. The contract a panel keeps:
 //   - it is registered as a builtin, under the builtin namespace;
 //   - it reads through `context` (the mount's match) and mounts nothing else;
 //   - no panel, and no Match view code, reads a retired preference (ruling 33:
@@ -18,7 +17,7 @@ import { gateComponentSave } from './componentruntime/savegate.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// The retired keys and their readers (dogfood/04 §2, ruling 33).
+// The retired keys and their readers.
 const RETIRED = [
   'scoreboard_starts_transposed',
   'metric_order_',

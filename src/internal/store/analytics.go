@@ -1110,7 +1110,7 @@ func careerSteamIDs(tx *sql.Tx) ([]string, error) {
 // records a rollup change reaches. whole clears every such value. Otherwise
 // only metrics whose touched set holds a match-data table (matchDataTables: the
 // tables a match write or delete changes) are reached. A metric bound to
-// :steam_id loses only the rows and runs of the changed players (its units are
+// steam_id loses only the rows and runs of the changed players (its units are
 // per player, so the others stay fresh), and any other career metric (a
 // library-wide raw metric, a profile sugar metric) loses its whole career
 // bucket. A metric that reads none of those tables (a matches-only metric)
@@ -1237,7 +1237,7 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 // and Library's player facet, so a bot is unselectable even on a database
 // whose player_career still carries pre-rule bot rows.
 //
-// This read selects raw counts only (dogfooding W4): the picker's ADR
+// This read selects raw counts only: the picker's ADR
 // cell reads the stored `career_adr` metric rows through the frontend's
 // canonical career read, and player_career carries no derived columns
 // at all (RebuildCareer's dual-write removal).
@@ -1293,9 +1293,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 // demo carries no played-at date; see CS2.md's played-at entry) — with
 // import time (m.extracted_at) as the tiebreaker inside a patch.
 //
-// metric IS the metric NAME (dogfooding design §3.5's D13 read, opened
-// up when the trend card stopped being a four-button set and became a
-// picker over the catalog): any match-scope definition resolves to its
+// metric IS the metric NAME: any match-scope definition resolves to its
 // stored rows, user and plugin metrics included. Two honest edges — a
 // name the catalog does not carry is still the unknown-metric ERROR (the
 // API contract the service layer and the tests pin), and a PROFILE-scope

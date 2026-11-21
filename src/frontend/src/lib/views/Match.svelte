@@ -9,7 +9,7 @@
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
   import SurfaceView from '../components/SurfaceView.svelte';
-  // The tab bar and the tab set are one builtin component (PLAN C5c):
+  // The tab bar and the tab set are one builtin component:
   // Match.svelte keeps the header, the warnings, the round strip and the
   // tab state; the tabs and their content are MatchTabs.
   import MatchTabs from '../builtins/match/MatchTabs.svelte';

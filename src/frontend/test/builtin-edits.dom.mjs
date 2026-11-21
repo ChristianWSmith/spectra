@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for editing builtins in place and "use as my view" (owner
-// ruling 43; dogfood/PLAN C5f). Renders the real components (ChildFrame,
+// jsdom driver for editing builtins in place and "use as my view". Renders the real components (ChildFrame,
 // ComponentFrame, SurfaceView, the real resolver and compile path) against
 // the shared service stubs (no Wails backend).
 //   B. an edited builtin renders its edit wherever it is mounted: at the top

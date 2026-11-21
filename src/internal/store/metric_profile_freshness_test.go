@@ -6,11 +6,10 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Import freshness for the per-player profile metrics (dogfood/PLAN.md ruling
-// 48). An import of one match marks behind only that match's players for the
+// Import freshness for the per-player profile metrics. An import of one match marks behind only that match's players for the
 // profile metrics it feeds, and leaves every other player's career values
 // fresh. The chain runs match-bound per-match metric -> metric_deps ->
-// :steam_id career metric, through the scope-aware cascade (B4).
+// steam_id career metric, through the scope-aware cascade (B4).
 
 // profileRewrittenNames are the library-wide profile metrics ruling 48
 // converted to per-player metrics. side_adr is included (ruling 49): it is per

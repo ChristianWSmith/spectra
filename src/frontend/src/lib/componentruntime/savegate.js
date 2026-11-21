@@ -1,4 +1,4 @@
-// The save gate for user components (dogfood/04-COMPONENTS.md §6). Every
+// The save gate for user components. Every
 // path that stores a component source runs through gateComponentSave:
 // the Component builder's live check (the Save button's enabled state)
 // and services.js saveComponent (the write itself) both call it, so no

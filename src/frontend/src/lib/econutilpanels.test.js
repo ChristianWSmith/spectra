@@ -1,6 +1,6 @@
 import '../../test/compile-worker-node.mjs';
 // econutilpanels.test.js — the Economy and Utility views as builtin components
-// (dogfood/PLAN.md C5c; dogfood/04-COMPONENTS.md §3, §3.5). The contract:
+// The contract:
 //   - each view is a composer plus the panels it mounts, every id in the
 //     reserved builtin namespace, registered in BUILTIN_COMPONENTS, and every
 //     child a composer names is registered;
@@ -26,7 +26,7 @@ import { gateComponentSave } from './componentruntime/savegate.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// The retired keys and readers (dogfood/04 §2, ruling 33).
+// The retired keys and readers.
 const RETIRED = [
   'scoreboard_starts_transposed',
   'metric_order_',

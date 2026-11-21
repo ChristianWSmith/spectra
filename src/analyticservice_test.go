@@ -476,8 +476,7 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 		}
 	}
 	// The library-wide trade-opportunity SUM the store's
-	// CountPlayerTradeOpportunities used to serve (removed in dogfooding
-	// W4 with its last consumer) — spelled inline here: one index seek
+	// CountPlayerTradeOpportunities used to serve — spelled inline here: one index seek
 	// over the rows analytics.Compute stores, never a threshold.
 	// QueryWrite (the write handle) because this fixture is :memory:
 	// and RunReadOnly needs a file-backed database.

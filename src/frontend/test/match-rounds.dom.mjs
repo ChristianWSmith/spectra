@@ -1,7 +1,6 @@
 import { warm, compileIdle } from './compile-worker-node.mjs';
 await warm();
-// jsdom driver for the Match view's rounds and details panels (dogfood/PLAN.md
-// C5c, dogfood/04-COMPONENTS.md §3, §3.5). Each panel mounts through the real
+// jsdom driver for the Match view's rounds and details panels. Each panel mounts through the real
 // ComponentFrame, compiles from its source and reads through the real read API.
 // The read services are a fixture, so every rendered value is one this file
 // computes by hand:

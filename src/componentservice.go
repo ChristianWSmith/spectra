@@ -9,7 +9,7 @@ import (
 )
 
 // ComponentService is the Component Builder's frontend-callable surface
-// (dogfood/04-COMPONENTS.md §6): list, save and delete USER components.
+// list, save and delete USER components.
 // Builtin components are frontend source and never pass through here.
 //
 // The save-time syntax check: Go has no Svelte compiler, so the compile
@@ -112,7 +112,7 @@ func (s *ComponentService) DeleteComponent(name string) error {
 }
 
 // surfaceLabel names a placement surface in the user's words. The
-// surfaces are the ones dogfood/04 §2 lists; an unknown surface is shown
+// surfaces are the ones the component registry lists; an unknown surface is shown
 // as stored rather than guessed.
 func surfaceLabel(surface string) string {
 	switch {

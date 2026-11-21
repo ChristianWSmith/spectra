@@ -196,7 +196,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	// Classification runs after the cursor closes: a raw metric's coverage
 	// is its own run-record predicate (rawBehind), never the sugar clauses
 	// above, and a metric whose touched set is unknown ('') reads behind,
-	// never fresh (dogfood/PLAN.md B4).
+	// never fresh.
 	_ = rows.Close()
 	out := make([]MetricCoverage, 0, len(list))
 	for _, p := range list {
@@ -222,12 +222,12 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	return out, nil
 }
 
-// rawBehind is the raw metric's behind predicate (dogfood/PLAN.md B4):
+// rawBehind is the raw metric's behind predicate:
 // behind iff some UNIT the metric's bind shape expects has no run record
 // at the current metric version and the current rule version. The units
 // are the sweep's own enumeration (metrics.RawScopes): library-wide (one
 // unit), :match_id (each ready match), :steam_id (each ready human) and
-// :match_id with :round (each ready round). A ready match with no rounds
+// match_id with :round (each ready round). A ready match with no rounds
 // contributes no round unit, so it is covered (no-data, not behind). A
 // statement whose binds cannot be classified is behind, never fresh.
 func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched, expr string) (bool, []int64, error) {
@@ -281,7 +281,7 @@ func (s *Store) rawBehind(metricID int64, version, liveRuleVersion int, touched,
 }
 
 // staleSteamUnits lists the human players of ready matches whose unit of a
-// :steam_id-only metric has no fresh run record: the per-unit spelling of
+// steam_id-only metric has no fresh run record: the per-unit spelling of
 // rawBehind's steam branch. Empty for any other bind shape.
 func (s *Store) staleSteamUnits(metricID int64, version, liveRuleVersion int, touched, expr string) ([]string, error) {
 	st, gerr := AnalyzeMetricSQL(expr, nil)
@@ -665,8 +665,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 // ONE read per value surface: GetMetricValuesForMatch (the match grain —
 // scoreboard pins, Reports appendix) and GetMetricValuesForPlayer (the
 // career grain — PlayerProfile's panel, Builder's saved preview), plus
-// GetPlayerMetricSeries (the match-grain SERIES — the profile's trend
-// and history cells, dogfooding design §3.5 W3g/D13). All three
+// GetPlayerMetricSeries. All three
 // serve FRESH rows only — the SAME metricValueFreshCond the sweep's
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
@@ -759,8 +758,7 @@ func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]mod
 	return out, nil
 }
 
-// GetMetricValuesForRound is THE round-grain value read (dogfood/03-QUERIES
-// §5, `:match_id` with `:round`): FRESH stored rows of one round of one
+// GetMetricValuesForRound is THE round-grain value read: FRESH stored rows of one round of one
 // match, in canonical metric order then subject_key then dim. metricIDs
 // narrows the read (empty = every metric). Absent rows are absent: a
 // player or side the statement did not produce has no row, and a NULL
@@ -835,7 +833,7 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 // it stands (scale 1). One spelling — seriesMetricFor (the trend and
 // history series read) and the report package's Go read-back both derive
 // from it, so a format tag can never mean two scales in two readers
-// (dogfooding design §3.6: "percent values ×100"). This is a unit
+// This is a unit
 // conversion on a fresh stored value, never a recomputation: a subject
 // with no fresh row never reaches it (the reads omit it).
 func MetricDisplayScale(format string) float64 {
@@ -874,7 +872,7 @@ func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {
 
 // GetPlayerMetricSeries is THE match-grain SERIES read — the one store
 // read behind the profile's trend sparkline and match-history cells
-// (dogfooding design §3.5's gated sub-wave W3g / D13): every FRESH
+// every FRESH
 // stored row of the requested metrics for ONE subject at match grain
 // (match_id > 0), carrying the match's patch and import time.
 //

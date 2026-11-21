@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS events (
 	-- player_death's `attackerinair`: the attacker was midair. Derived
 	-- from the paired raw payload at extract time (demoinfocs' typed Kill
 	-- has no MidAir field) — no migration: a stale dev DB lacks the
-	-- column and must be re-imported. A stored game fact (PLAN ruling 39);
+	-- column and must be re-imported. A stored game fact;
 	-- the tick-join in_air on player_ticks is a separate derived feature
 	-- and does not replace it.
 	attacker_inair INTEGER NOT NULL DEFAULT 0,
@@ -489,12 +489,12 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
 	subject_key     TEXT    NOT NULL DEFAULT '',  -- player SteamID64 | team key ('ct'/'t') | '' (match subject)
 	dim             TEXT    NOT NULL DEFAULT '',  -- partition key ('' = unpartitioned)
-	value           REAL,                         -- NULL = the statement had no data (raw SQL, dogfood/PLAN.md ruling 23); shown as a dash, never 0
+	value           REAL,                         -- NULL = the statement had no data; shown as a dash, never 0
 	value_key       TEXT    NOT NULL DEFAULT '',  -- identity value (identity metrics only; '' otherwise)
 	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
 	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
 	computed_at     DATETIME,
-	-- Raw-SQL scope tags (dogfood/03-QUERIES.md §5): the reserved binds a
+	-- Raw-SQL scope tags: the reserved binds a
 	-- run was supplied. '' and 0 for the unbound (library-wide) run and for
 	-- every sugar row. A run replaces the rows carrying its own tags.
 	scope_steam_id  TEXT    NOT NULL DEFAULT '',
@@ -506,7 +506,7 @@ CREATE TABLE IF NOT EXISTS metric_values (
 	CHECK (match_id >= 0)
 );
 
--- Raw-SQL run records (dogfood/PLAN.md B4): one row per (metric, scope) run
+-- Raw-SQL run records: one row per (metric, scope) run
 -- that completed, stamped with the versions it ran under. A run that returned
 -- zero rows leaves no metric_values row, so this table is what proves the
 -- scope was computed. Keyed like metric_values' raw scope tags; cleared with
@@ -617,8 +617,7 @@ CREATE TABLE IF NOT EXISTS player_ticks (
 -- idx_match_trade_opps_steam was the profile's stored trade-
 -- opportunity denominator: one `SUM(opps) WHERE steam_id = ?` seek per
 -- profile open. That reader (store.CountPlayerTradeOpportunities) left
--- with the profile Trade rate card's metric conversion (dogfooding W3/W4
--- — no production reader of the library-wide SUM remains), and the
+-- with the profile Trade rate card's metric conversion, and the
 -- metric expressions join match_trade_opps through its (match_id,
 -- steam_id) primary key instead. The index STAYS: dropping it is DDL,
 -- which the pre-release no-DDL rule forbids — it remains the
@@ -655,8 +654,7 @@ CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_
 -- tick table (one player's frames in one match, or across the library):
 -- the match_id-first primary key cannot seek on steam_id, and a scan of
 -- a ~1.3M-row-per-match table is the cost this block exists to avoid
--- (measured 2.6x on a golden-sized match — dogfood/02-TICK-STATE.md
--- §2.2). Same leading-column mirror of the match_id-first key as the
+-- Same leading-column mirror of the match_id-first key as the
 -- other steam_id members.
 CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
 
@@ -875,7 +873,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	-- The physical tables the metric's compiled statement reads, comma-
-	-- joined and sorted (dogfood/03-QUERIES.md §6.3), derived by the save
+	-- joined and sorted, derived by the save
 	-- gate. '' means not derived (builtins until their port; plugin rows
 	-- after an upsert until the next gate pass).
 	touched TEXT NOT NULL DEFAULT '',
@@ -1028,7 +1026,7 @@ CREATE TABLE IF NOT EXISTS builtin_overrides (
 -- Every short_name is at most SIX characters — the same cap
 -- SaveMetric enforces on user input (metricservice.go).
 -- version is omitted (DEFAULT 1) on every row.
--- Every builtin expr is RAW SQL (dogfood/PLAN.md B3, rulings 22-24): one
+-- Every builtin expr is RAW SQL: one
 -- read-only SELECT returning subject_key, dim and value. Match-scope rows
 -- bind :match_id (one run per ready match, so the stored rows are per
 -- match); profile rows run library-wide (match_id 0). The bot predicate
@@ -2318,7 +2316,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'Formula: count(round_side_classes rows WHERE class = force) — that team''s own force-buy rounds, addressed per team (no partition).',
  'builtin', CURRENT_TIMESTAMP);
 
--- Raw-SQL fold metrics (dogfood/PLAN.md F2, rulings 22-25): one raw
+-- Raw-SQL fold metrics: one raw
 -- statement per fold column that the snapshot stores. Each statement
 -- returns subject_key, dim and value; NULL is no data (ruling 23).
 -- Humans only (ruling Q10), match grain binds :match_id and round grain
@@ -2688,8 +2686,7 @@ WHERE ro.match_id = :match_id AND ro.number = :round',
  'Formula: (end tick - start tick) ÷ the match''s tick rate — round length in seconds, addressed per match per round — no value when the tick rate is unknown.',
  'builtin', CURRENT_TIMESTAMP);
 
--- Alive-count situation family and the clutch builtin (dogfood/PLAN.md item 19,
--- rulings 22-24). Both are raw round-grain statements over player_ticks
+-- Alive-count situation family and the clutch builtin. Both are raw round-grain statements over player_ticks
 -- (binds :match_id and :round). The clutch statement is the detector's
 -- definition re-expressed as SQL; it reproduces the snapshot's clutches rows
 -- on the snapshot's 183 rows across every field, checked against a player_ticks
@@ -2706,8 +2703,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'Formula: one row per 1vN clutch: the sole alive player on a side with an opponent alive, ending at their death, the last opponent''s death or round end — value = opponents alive at start (N).',
  'builtin', CURRENT_TIMESTAMP);
 
--- Round-grain statistics as metrics (dogfood/PLAN.md B7, D-3; 03-QUERIES.md
--- §5 and §10). Each statement binds :match_id and :round (ruling 20) and
+-- Round-grain statistics as metrics. Each statement binds :match_id and :round (ruling 20) and
 -- returns the reserved columns subject_key, dim and value (ruling 22). An
 -- absent value is NULL, shown as a dash, never a fabricated zero (ruling 23).
 -- They are the M19, M22, M30, M31, M36 and M37 round-grain series of the
@@ -2826,7 +2822,7 @@ ORDER BY dim',
  'match', 'match', '', 'int',
  'Formula: per round, nades = count of utility_events, dmg = sum of damage, flash = sum of flash_ms, human throwers only. Dash when the round is absent.',
  'builtin', CURRENT_TIMESTAMP),
--- Round-grain deaths for the Economy view (dogfood/PLAN.md ruling 41).
+-- Round-grain deaths for the Economy view.
 -- Enumerates player_round_stats, the analyzer's own per-round record
 -- (one row per counted human × round, carrying that round's side sample),
 -- so a player with no death in the round is a real 0, never absent. The
@@ -2875,8 +2871,7 @@ CREATE TABLE IF NOT EXISTS plugins (
 	installed_at DATETIME
 );
 
--- Per-match inputs of the per-player profile metrics (dogfood/PLAN.md
--- ruling 48). Match scope, one row per player per dim: the career metric
+-- Per-match inputs of the per-player profile metrics. Match scope, one row per player per dim: the career metric
 -- sums these through metric('...') (ratio of sums, never a mean of per-match
 -- values). dim convention: the raw split value as the career row carries it
 -- (ps.map = the map name, prs.side = ct/t/'', events.weapon = the weapon name).

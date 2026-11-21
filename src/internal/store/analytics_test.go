@@ -634,7 +634,7 @@ func TestCareerRebuildMath(t *testing.T) {
 	}
 
 	// ListPlayers + trend. The trend reads the STORED match-scope `adr`
-	// rows now (dogfooding design §3.5's D13 conversion), so seed the
+	// rows now, so seed the
 	// rows a completed sweep would have written — 60 for match 1, 90 for
 	// match 2.
 	seedFreshMetricValue(t, s, "adr", "100", id, 60)

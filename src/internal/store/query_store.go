@@ -166,7 +166,7 @@ func (s *Store) RunReadOnly(q string, args []any, limit, timeoutMS int) (ROResul
 // ReadUnbounded validates and executes one statement on the same
 // read-only connection as RunReadOnly (layers 1–2), with NO row cap and
 // NO timeout: the user-component read path (`query(sql)` in the component
-// read API — dogfood/04-COMPONENTS.md §3: "the same read-only connection
+// read API: "the same read-only connection
 // as the console, with no timeout, and no row cap"). Truncated is never
 // set. The table allowlist that limits component reads to the
 // metric-readable tables is not applied here yet; it lands with the

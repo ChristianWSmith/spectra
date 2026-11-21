@@ -249,10 +249,9 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   touching either side.
 - **Migration in progress (2026-11-20):** the metrics grammar, the
   Go-side expression compiler, and the layout pref model are being
-  replaced by raw-SQL metrics and database-stored raw components. Until
-  `dogfood/PLAN.md` completes, the code still implements the old
-  grammar; the rules in this file describe the target and say so where
-  the code lags. Do not extend the grammar or add pref keys for layouts.
+  replaced by raw-SQL metrics and database-stored raw components. Remaining migration work
+  is listed in `FOLLOWUP.md`; the rules in this file describe the target and
+  say so where the code lags. Do not extend the grammar or add pref keys for layouts.
 - **Metric pipeline (target):**
   - *Save gate.* One gate serves the Builder's live check, save, preview,
     and sweep: exactly one statement; it is read-only (the console's
@@ -262,8 +261,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
     save. Read-only means the `select|with` leading keyword set, as the
     metric path needs no more. The allowlist is one explicit list that
     classifies every schema table as readable or not, pinned by a test, so
-    a new table cannot become readable by accident. The list lives in
-    `dogfood/03-QUERIES.md` §2 until the code exists.
+    a new table cannot become readable by accident. The list is the
+    allowlist in `internal/store/metric_gate.go`.
   - *Touched tables.* The gate stores the set of physical tables a metric
     reads (`metrics` furniture, derived from the SQL at save, never
     versioned). That set drives freshness.
@@ -278,7 +277,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
     from fact tables (the players and rounds in a match). Each run replaces
     the stored rows for its own bound values, and a library-wide run replaces
     the whole result. The engine never reads an output column. The full
-    decision is `dogfood/03-QUERIES.md` §5.
+    scope code is `internal/store/metric_scope.go`.
   - *Freshness.* A metric is behind when a table it touches changes, or
     when an analysis rule it depends on changes (see **Analysis-rule
     derived values**). Freshness carries scope: a change at match M and
@@ -315,7 +314,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   4. Round-grain statistics are metrics keyed by round. Round records are
      shown as records.
   5. Every builtin is verified against the pre-migration snapshot in
-     `~/Programming/spectra-home` (see `dogfood/PLAN.md`). A value that
+     `~/Programming/spectra-home` (verification notes in
+     `FOLLOWUP.md`). A value that
      differs from the snapshot is a bug, not an accepted change. Copy the
      snapshot before opening it.
   6. A builtin's touched tables are stored at save like any metric, and
@@ -446,7 +446,7 @@ Canonical homes (extend these, don't fork them):
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
 | Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12). Editing a rule value fires that rule's builtin metric stub, which recalculates its dependents only; a code change to analysis bumps `analyzed_rule_version` → behind set → `RecomputeAll` (the broad path, reserved for code changes) |
-| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `expr` is raw SQL; result storage is by bound scope, `dogfood/03-QUERIES.md` §5; touched tables are derived at save — see **Metric pipeline** in the conventions) |
+| Stored metric values | value reads `store.GetMetricValuesForMatch`/`GetMetricValuesForPlayer` — THE reads (fresh rows only: a saved, unmodified definition reads stored; an unsaved/dirty draft calculates on demand) + behind predicate `store.MetricCoverage` — ONE spelling (sweep selection, read freshness and `GetMetricComputeState` all derive from it) + state vocabulary `frontend/src/lib/metricstate.js` `metricPresentation` + `GetMetricComputeState` — the five words (processing, failed, fresh, no-data, behind); stamps internal-only, no version ever reaches a render + save graph `store.SaveMetricWithDeps` — deps re-derived wholesale from the current expr, cycle rejection, rename splice, delete-blocked-while-referenced, cascade version bump. Definitions live in the `metrics` table (one baseline in `schema.sql`; `expr` is raw SQL; result storage is by bound scope (`internal/store/metric_scope.go`); touched tables are derived at save — see **Metric pipeline** in the conventions) |
 | Metric sequence (every metric list) | `frontend/src/lib/metricorder.js` — THE default sequence: `resolveOrder` over the scope's fixed entries (`@Name`, `@Team`, `@Score`) and the catalog's metric names, by `DEFAULT_RANKS` and `FIXED_RANKS`. `inSequence` (metric-only) and `composedSequence` (merged) are its views, `DEFAULT_CARDS.profile` is the shipped career card set, and `rawItems`/`isRawId` derive the recorded-value offers. There is no user-chosen order, pinning, hiding or economy placement (ruling 33): every list composes through this module, and a view shows what its component shows |
 | Metric save gate | `metricservice.go` — THE one validation (one read-only statement, no `CREATE VIEW`, every table on the metric-readable allowlist, touched tables derived), shared by the Builder's live check, save, preview and sweep; no call site re-validates |
 | Round-grain statistics | Round-grain statistics are metrics keyed by round (owner ruling 2026-11-18). Round records (`player_round_stats` read through the one `getPlayerRounds` fetch) are displayed as records; a side with no player rows in a round shows a dash, never a guessed 0 |

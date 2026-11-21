@@ -12,7 +12,7 @@ import (
 // saves them (CheckRawSave's touched set, RawScopeOf's scope) are fresh after
 // one sweep in every scope shape: library-wide (including a statement that
 // returns no rows), :steam_id, :match_id and :match_id with :round. A
-// library-wide metric is not behind after its own run (dogfood/PLAN.md B4),
+// library-wide metric is not behind after its own run,
 // and a version bump makes it behind again.
 func TestRawScopesReadFreshAfterOneSweep(t *testing.T) {
 	st, _ := characterizationFixture(t)

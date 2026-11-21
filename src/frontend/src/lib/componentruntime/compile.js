@@ -1,5 +1,5 @@
 // The user-component compiler: Svelte 5 source → a mountable component,
-// in the webview, lazily (dogfood/04-COMPONENTS.md §5).
+// in the webview, lazily.
 //
 // - The compile itself runs in a Web Worker (ruling 47): compileclient.js
 //   sends the source to compile.worker.js, which holds svelte/compiler and
@@ -51,7 +51,7 @@ const RUNTIME_MODULES = {
 
 export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 
-// --- built-in helpers (owner ruling 45; dogfood/04 §5) ----------------------
+// --- built-in helpers ----------------------
 // A BUILT-IN panel may import a small, curated set of app helpers. A USER
 // component may import none (the save gate refuses every import of a user
 // component, at its line). Each helper module is listed here by its path

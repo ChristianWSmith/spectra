@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Scope-aware freshness (dogfood/PLAN.md B4, 03-QUERIES.md §4-§6): the rule
+// Scope-aware freshness: the rule
 // axis gates on analysis-touching metrics, a rule-value edit recalculates
 // exactly the metrics that touch its analysis table (and their dependents),
 // and a dependency's change marks behind only the dependents bound to the

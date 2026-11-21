@@ -1,6 +1,5 @@
 <script>
-  // ChildFrame — a named component mounted in a frame (dogfood/04-COMPONENTS.md
-  // §3.5, owner ruling 36). Inside a component, `<spectra.Child>` mounts a
+  // ChildFrame — a named component mounted in a frame. Inside a component, `<spectra.Child>` mounts a
   // child: its own frame, its failures in its own frame, the parent's context
   // and read services inherited. At a surface (no parent frame, see
   // SurfaceView) it takes the surface's `context` and `nav` directly.

@@ -1,6 +1,5 @@
 <script>
-  // The Match view's tab bar and its tab set (builtin, dogfood/04 §7; PLAN
-  // C5c). Match.svelte keeps the hardcoded header, the warnings, the round
+  // The Match view's tab bar and its tab set. Match.svelte keeps the hardcoded header, the warnings, the round
   // strip and the URL, which owns the active tab (routeTab and selectTab live
   // there). Everything from the tab bar down is this component: the bar, and
   // the content of the active tab. Each tab's content is a composer: a panel

@@ -1,4 +1,4 @@
-// The metric sequence (dogfooding design §1), default order only.
+// The metric sequence, default order only.
 //
 // Every metric list shows its DEFAULT rank order: the fixed entries (the
 // scoreboard's Name, Team and Score) and the metrics, sequenced by
@@ -33,9 +33,7 @@
 // Match: the fourteen scoreboard columns that render as metrics keep
 // their exact relative order — the original 23-column scoreboard's
 // positions: A #5 < ADR #6 < KAST% #7 < HS% #8 < K/D #9 < 2K #13 <
-// 3K #14 < 4K #15 < 5K #16 < Open K #17 < Trade #18 < Streak #20 (the
-// W2a swap converted the eight SCORE_COLS entries that sat among the
-// fixed block; dogfood W2 had already converted the tail four). w13d
+// 3K #14 < 4K #15 < 5K #16 < Open K #17 < Trade #18 < Streak #20. w13d
 // (owner, 2026-11-16) added kda beside K/D (rank 6 — the scoreboard's
 // KDA column left the fixed block for the metric system) and
 // entry_deaths beside entry_kills (rank 12 — the halves of the retired
@@ -108,9 +106,7 @@ export const DEFAULT_RANKS = Object.freeze({
 // key keeps working with zero migration — identity never churns
 // (pre-release no-versioning policy).
 //
-// UNIFICATION (owner, 2026-11-18 — "fully dogfooded": kills in metric
-// ordering comes from the kills metric, kills on the scoreboard comes
-// from the kills metric — ONE entity): the count entries that had
+// UNIFICATION: the count entries that had
 // metric twins LEFT the block — @K/@D/@DMG/@Util/@MVPs (seeds kills /
 // deaths / total_damage / utility_damage / mvps, count addendum
 // 2026-11-17) and the profile pair @Matches/@Win% (career_matches /
