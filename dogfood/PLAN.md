@@ -252,6 +252,10 @@ Settled (owner, 2026-11-20 unless noted):
     binds (`RawScopeOf`); partitioning is `dim`. Remove the three from the metric
     editor, the save validation, the schema (`metrics` table; rides the wipe), and
     the readers. Plugin manifests stop declaring scope and migrate with the change.
+52. **Deferred (owner, 2026-11-21): component read cache and learned reads.** The
+    design (learned reads per panel, tag-based invalidation with generation
+    counters, speculative warms, compute states never cached) is recorded and
+    held. It is polish, not migration scope.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
