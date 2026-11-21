@@ -197,8 +197,8 @@ const HINT_KEYS = {
 const HINT_INLINE = [
   {
     file: 'frontend/src/lib/views/Builder.svelte',
-    prefix: 'from <table>',
-    why: 'the expression editor’s grammar hint under the expression field — a footnote over the expression grammar (tables and full rules live in the metric guide)',
+    prefix: 'One SELECT or WITH statement',
+    why: 'the expression editor’s hint under the expression field — a footnote naming the statement shape (tables and the save checks live in the metric guide)',
   },
 ];
 

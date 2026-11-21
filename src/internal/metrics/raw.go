@@ -12,14 +12,12 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// Raw SQL metrics (dogfood/PLAN.md item 1, 03-QUERIES.md §2-§5). An expr
-// whose first keyword is SELECT or WITH, after whitespace and comments, is
-// one raw statement; anything else stays on the sugar path until B5 retires
-// it. A raw statement is gated by GateSQL (the one gate), run on the
-// read-only metric connection with the reserved binds its scope supplies,
-// and must return the reserved columns subject_key, dim and value (ruling
-// 22). Every other column is stored as opaque JSON. A NULL value is stored
-// as NULL (ruling 23).
+// Metrics are raw SQL (dogfood/PLAN.md item 1 and B5, 03-QUERIES.md §2-§5).
+// Every expr is one SELECT or WITH statement. It is gated by GateSQL (the one
+// gate), run on the read-only metric connection with the reserved binds its
+// scope supplies, and must return the reserved columns subject_key, dim and
+// value (ruling 22). Every other column is stored as opaque JSON. A NULL
+// value is stored as NULL (ruling 23).
 
 // rawBindMatch, rawBindSteam, rawBindRound name the reserved binds.
 const (
@@ -27,10 +25,6 @@ const (
 	rawBindSteam = ":steam_id"
 	rawBindRound = ":round"
 )
-
-// IsRawSQL reports whether an expr is raw SQL (store.IsRawExpr: the first
-// keyword is SELECT or WITH). Kept as the metrics-package name for callers.
-func IsRawSQL(expr string) bool { return store.IsRawExpr(expr) }
 
 // allRawBinds is what a save gates against: every reserved bind is
 // nameable, and the shape rule below decides which combinations may run.
@@ -88,18 +82,36 @@ func rawExists(st *store.Store) RefLookup {
 // references (their rewrite into joins is not built yet, so a statement
 // that uses one is refused rather than stored half-working). It returns
 // the gate result (touched tables and binds) on success.
-func CheckRawSave(st *store.Store, expr string) (Gate, *ParseError, error) {
+func CheckRawSave(st *store.Store, expr string) (Gate, *GateError, error) {
 	g, perr, err := GateSQL(expr, rawExists(st), allRawBinds)
 	if err != nil || perr != nil {
 		return Gate{}, perr, err
 	}
 	if err := checkRawShape(g.Binds); err != nil {
-		return Gate{}, errf(0, "%s", err.Error()), nil
+		return Gate{}, gateErr(0, "%s", err.Error()), nil
 	}
 	if len(g.Refs) > 0 {
-		return Gate{}, errf(g.Refs[0].Pos, "metric() references aren't available in raw SQL yet; read the tables directly"), nil
+		return Gate{}, gateErr(g.Refs[0].Pos, "metric() references aren't available in raw SQL yet; read the tables directly"), nil
 	}
 	return g, nil, nil
+}
+
+// Validate gates an expression without a catalog (a plugin manifest is
+// checked at install, before any metric row exists): the statement rules
+// and the bind rule. A metric() reference is refused, as CheckRawSave
+// refuses it, so no catalog lookup is ever needed.
+func Validate(expr string) *GateError {
+	g, perr, err := GateSQL(expr, func(string) (bool, error) { return false, nil }, allRawBinds)
+	if err != nil {
+		return gateErr(0, "%s", err.Error())
+	}
+	if perr != nil {
+		return perr
+	}
+	if len(g.Refs) > 0 {
+		return gateErr(g.Refs[0].Pos, "metric() references aren't available in raw SQL yet; read the tables directly")
+	}
+	return nil
 }
 
 // RawScopeOf reports the scope a raw statement's binds select, which is the

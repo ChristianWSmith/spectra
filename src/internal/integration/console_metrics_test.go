@@ -58,7 +58,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// every preview is subject-addressed by the engine (one row per
 	// player the statement produced).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, partition, denominator, subject, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, scope, partition, subject, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 200, 5000,
 	)
 	if err != nil {
@@ -80,8 +80,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 		"career_clutches": true, "career_clutch_win_rate": true,
 	}
 	for _, r := range res.Rows {
-		name, expr, scope, subject := r[0].(string), r[1].(string), r[2].(string), r[5].(string)
-		id, version := r[6].(int64), r[7].(int64)
+		name, expr, scope, subject := r[0].(string), r[1].(string), r[2].(string), r[4].(string)
+		id, version := r[5].(int64), r[6].(int64)
 		scopes[scope]++
 		t.Run(name, func(t *testing.T) {
 			if scope != "match" && scope != "profile" {
@@ -93,9 +93,6 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			// Builtins are raw SQL (ruling 22). They run through the raw
 			// path: the save gate, then one RunRaw per scope the statement's
 			// binds select, then the stored rows.
-			if !metrics.IsRawSQL(expr) {
-				t.Fatalf("builtin is not raw SQL: %q", expr)
-			}
 			g, perr, err := metrics.CheckRawSave(st, expr)
 			if perr != nil || err != nil {
 				t.Fatalf("save gate: %v %v", perr, err)

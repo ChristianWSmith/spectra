@@ -40,6 +40,7 @@ func insertFreshMatchRow(t *testing.T, s *Store, m models.MetricRow, matchID int
 	}); err != nil {
 		t.Fatalf("InsertMetricValues(%s): %v", m.Name, err)
 	}
+	stampRun(t, s, m.ID, matchID, m.Version, rule)
 }
 
 // TestFactOnlyMetricStaysFreshAcrossAnalysisCodeBump (a): an analysis code
@@ -54,8 +55,8 @@ func TestFactOnlyMetricStaysFreshAcrossAnalysisCodeBump(t *testing.T) {
 	}
 	live := cfg.RuleVersion
 	matchID := seedReadyMatch(t, s, "scope-a")
-	facts := touchedMetric(t, s, "facts_only", "match", "from events: count()", []string{"events", "matches", "players"})
-	analysis := touchedMetric(t, s, "analysis_touch", "match", "from events: count()", []string{"player_stats", "players"})
+	facts := touchedMetric(t, s, "facts_only", "match", rawCountSQL("events", "match"), []string{"events", "matches", "players"})
+	analysis := touchedMetric(t, s, "analysis_touch", "match", rawCountSQL("events", "match"), []string{"player_stats", "players"})
 	insertFreshMatchRow(t, s, facts, matchID, live)
 	insertFreshMatchRow(t, s, analysis, matchID, live)
 	if c := coverageOf(t, s, facts.ID, live); c.Behind {
@@ -91,12 +92,12 @@ func TestRuleValueEditRecalculatesExactlyTheAffected(t *testing.T) {
 		}
 		f := fixture{s: s, live: cfg.RuleVersion}
 		f.matchID = seedReadyMatch(t, s, "scope-b")
-		f.trade = touchedMetric(t, s, "trade_kills_rate", "match", "from player_stats: count()", []string{"player_stats", "players"})
-		f.tradeDep = touchedMetric(t, s, "trade_dependent", "match", "from events: metric('trade_kills_rate')",
+		f.trade = touchedMetric(t, s, "trade_kills_rate", "match", rawCountSQL("player_stats", "match"), []string{"player_stats", "players"})
+		f.tradeDep = touchedMetric(t, s, "trade_dependent", "match", rawCountSQL("events", "match"),
 			[]string{"events"}, "trade_kills_rate")
-		f.eco = touchedMetric(t, s, "eco_class", "match", "from round_classifications: count()", []string{"round_classifications"})
-		f.facts = touchedMetric(t, s, "events_count", "match", "from events: count()", []string{"events"})
-		f.distOne = touchedMetric(t, s, "trade_opps", "match", "from match_trade_opps: count()", []string{"match_trade_opps"})
+		f.eco = touchedMetric(t, s, "eco_class", "match", rawCountSQL("round_classifications", "match"), []string{"round_classifications"})
+		f.facts = touchedMetric(t, s, "events_count", "match", rawCountSQL("events", "match"), []string{"events"})
+		f.distOne = touchedMetric(t, s, "trade_opps", "match", rawCountSQL("match_trade_opps", "match"), []string{"match_trade_opps"})
 		for _, m := range []models.MetricRow{f.trade, f.tradeDep, f.eco, f.facts, f.distOne} {
 			insertFreshMatchRow(t, s, m, f.matchID, f.live)
 		}

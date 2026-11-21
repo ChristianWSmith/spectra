@@ -23,7 +23,7 @@ func TestUnknownTouchedReadsBehind(t *testing.T) {
 	matchID := seedReadyMatch(t, s, "unknown-touched")
 	m, err := s.CreateMetric(models.MetricRow{
 		Name: "unknown_touched", Title: "unknown_touched",
-		Expr: "from events: count()", Scope: "match", Origin: "user",
+		Expr: rawCountSQL("events", "match"), Scope: "match", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)
@@ -33,6 +33,7 @@ func TestUnknownTouchedReadsBehind(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertMetricValues: %v", err)
 	}
+	stampRun(t, s, m.ID, matchID, m.Version, live)
 	if c := coverageOf(t, s, m.ID, live); !c.Behind || c.FreshRows != 1 {
 		t.Fatalf("unknown touched = %+v, want behind with its row counted", c)
 	}

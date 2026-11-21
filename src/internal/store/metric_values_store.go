@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
@@ -105,8 +104,7 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	// partitionBehind builds the dim-axis clause for one scope: every
 	// expected dim of every unit of that scope must have a fresh row.
-	// The carrier table is the partition's canonical input (whitelist.go
-	// partitionColumns): side → player_stats' side stamp, map → its map
+	// The carrier table is the partition's canonical input: side → player_stats' side stamp, map → its map
 	// stamp, weapon → events' weapon column; human-only guards mirror
 	// the statement's own population rule (§3.4 — a value row counts
 	// humans only, so a dim only humans carried is the expectation).
@@ -194,10 +192,10 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	out := make([]MetricCoverage, 0, len(list))
 	for _, p := range list {
 		c := p.cov
-		switch {
-		case p.touched == "":
+		switch p.touched {
+		case "":
 			c.Behind = true
-		case IsRawExpr(p.expr):
+		default:
 			behind, err := s.rawBehind(c.MetricID, p.version, liveRuleVersion, p.touched, p.expr)
 			if err != nil {
 				return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
@@ -207,37 +205,6 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		out = append(out, c)
 	}
 	return out, nil
-}
-
-// IsRawExpr reports whether a metric expression is raw SQL: its first
-// keyword, after whitespace and -- or /* */ comments, is SELECT or WITH.
-// Every raw/sugar split in the store and the metrics package asks this.
-func IsRawExpr(expr string) bool {
-	s := expr
-	for {
-		s = strings.TrimLeftFunc(s, unicode.IsSpace)
-		switch {
-		case strings.HasPrefix(s, "--"):
-			i := strings.IndexByte(s, '\n')
-			if i < 0 {
-				return false
-			}
-			s = s[i+1:]
-		case strings.HasPrefix(s, "/*"):
-			i := strings.Index(s[2:], "*/")
-			if i < 0 {
-				return false
-			}
-			s = s[2+i+2:]
-		default:
-			end := 0
-			for end < len(s) && (s[end] == '_' || unicode.IsLetter(rune(s[end]))) {
-				end++
-			}
-			word := strings.ToLower(s[:end])
-			return word == "select" || word == "with"
-		}
-	}
 }
 
 // rawBehind is the raw metric's behind predicate (dogfood/PLAN.md B4):
@@ -993,9 +960,6 @@ func (s *Store) backfillTouched() error {
 	}
 	rows.Close()
 	for _, t := range list {
-		if !IsRawExpr(t.expr) {
-			continue
-		}
 		st, gerr := AnalyzeMetricSQL(t.expr, nil)
 		if gerr != nil {
 			continue

@@ -44,46 +44,28 @@ import (
 //     like that spelling, so the zero-death subject agrees on both
 //     sides instead of diverging.
 
-// seedDef reads a schema-seeded builtin's DEFINITION (expression +
-// denominator) from the store — the SEED is what these tests prove,
-// never a test-local copy of it. The denominator is part of the proof:
-// the `rounds` seeds only produce their values when the row's own
-// denominator rides along.
-func seedDef(t *testing.T, st *store.Store, name string) Def {
+// seedDef reads a schema-seeded builtin's DEFINITION (its statement) from
+// the store — the SEED is what these tests prove, never a test-local copy.
+func seedDef(t *testing.T, st *store.Store, name string) string {
 	t.Helper()
-	res, err := st.RunReadOnly(`SELECT expr, denominator FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
+	res, err := st.RunReadOnly(`SELECT expr FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
 	if err != nil {
 		t.Fatalf("read seed %q: %v", name, err)
 	}
 	if len(res.Rows) != 1 {
 		t.Fatalf("seed %q: %d rows, want 1", name, len(res.Rows))
 	}
-	return Def{Expr: res.Rows[0][0].(string), Denominator: res.Rows[0][1].(string)}
+	return res.Rows[0][0].(string)
 }
 
-// previewAt runs one seeded definition at the given scope (the
-// scoreboard's grain) and keys the rows by subject.
-func previewAt(t *testing.T, st *store.Store, def Def, scope string) map[string]float64 {
+// previewAt runs one seeded statement at the given scope (the scoreboard's
+// grain) and keys the rows by subject.
+func previewAt(t *testing.T, st *store.Store, expr string, scope string) map[string]float64 {
 	t.Helper()
-	if IsRawSQL(def.Expr) {
-		// Raw seeds (ruling 22) run through the raw path; sugar has no
-		// preview for them. One row per subject (no dims in these seeds).
-		out := map[string]float64{}
-		for _, r := range rawPreviewRows(t, st, def.Expr, scope) {
-			out[r.SubjectKey] = rawValue(r)
-		}
-		return out
-	}
-	pv, perr, err := RunPreview(t.Context(), st, def, scope, 500)
-	if perr != nil {
-		t.Fatalf("parse %q: %v", def.Expr, perr)
-	}
-	if err != nil {
-		t.Fatalf("run %q (scope %q): %v (sql: %s)", def.Expr, scope, err, pv.SQL)
-	}
-	out := make(map[string]float64, len(pv.Rows))
-	for _, r := range pv.Rows {
-		out[r.Group] = r.Value
+	// One row per subject (no dims in these seeds).
+	out := map[string]float64{}
+	for _, r := range rawPreviewRows(t, st, expr, scope) {
+		out[r.SubjectKey] = rawValue(r)
 	}
 	return out
 }

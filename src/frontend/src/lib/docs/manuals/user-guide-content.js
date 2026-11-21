@@ -397,7 +397,7 @@ formula and sample-size honesty (a value is never invented; missing data shows a
 honest zero beside its \`N\`).
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
-and one **Filters** panel (origin, scope, subject, denominator, format and pinning — the last narrows
+and one **Filters** panel (origin, scope, subject, format and pinning — the last narrows
 the list to pinned or to unpinned metrics). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
 it, a pin to place it, and — for metrics you created — a delete. **New** starts a fresh metric;
@@ -412,10 +412,9 @@ itself) or *team* (one side's number). A new metric starts as *player*; which su
 with which scope is decided when you save (a match or team has no career, so those refuse *profile*).
 - **Scope** — *match* (this subject in this match) or *profile* (this player's career).
 - **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
-- **Denominator** — none, \`rounds\` or \`matches\` (what a total is divided by to become a rate).
 - **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
-- **Expression** — the formula itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
-- **Raw SQL** — an expression that starts with \`SELECT\` or \`WITH\` is one read-only SQL statement, not the formula grammar. It may read only the metric tables (for example \`players\`, \`rounds\` and \`events\`); a write, a second statement, an unlisted table or a \`metric()\` reference is refused at save, with the reason, and nothing is saved. The statement must return the columns \`subject_key\`, \`dim\` and \`value\`; any other column is kept as extra detail. A NULL \`value\` shows as a dash, never as zero. A statement that uses \`:match_id\` runs once per ready match, \`:steam_id\` once per player and \`:match_id\` with \`:round\` once per round; a statement with none of these runs once for the whole library. A statement that fails shows the failed state and its reason, and a raw expression can't be previewed yet, so save it to see its values.
+- **Expression** — the statement itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
+- **Raw SQL** — every expression is one read-only SQL statement, and the save gate checks it: a write, a second statement, a table the metric may not read, or a \`metric()\` reference is refused at save, with the reason, and nothing is saved. The statement must return the columns \`subject_key\`, \`dim\` and \`value\`; any other column is kept as extra detail. A NULL \`value\` shows as a dash, never as zero. The binds decide the scope: \`:match_id\` runs once per ready match, \`:steam_id\` once per player and \`:match_id\` with \`:round\` once per round. A statement that fails shows the failed state and its reason. The metric language chapter lists the tables and the checks.
 
 The editor heading carries the metric's state chip — *fresh*, *behind*, *failed* or *no-data* — to
 the left of the *built-in* / *read-only source* chip; while a sweep is running, the card shows the
@@ -431,11 +430,7 @@ metrics show none (neither here nor on their list row).
 metrics can't be edited*), but you can still preview, reference and pin them. Plugin metrics
 carry a *read-only source* chip; saving one stores a copy as your own metric.
 
-**Preview** runs the expression read-only against your library: one row per subject with the value
-and its **N** (per player for a player metric; per match or per team for a match- or team-subject
-one). A saved, unmodified metric previews the values already stored (the panel names
-which unit they came from); an unsaved or edited expression is calculated on the spot — which is
-why an ad-hoc preview notes that the denominator applies after save. State chips appear in place
+**Preview** is not available for a statement yet. Save the metric, and its values appear once the sweep has run it (see *Previewing* in the metric language chapter). State chips appear in place
 of numbers while a value is recomputing or has failed. Click a column header to sort the rows:
 they open with the highest **N** first, the numeric columns order by their value (never by how the
 number happens to be written), and a second click on the active header flips the direction.

@@ -13,9 +13,6 @@ import (
 // written against (the DDL in schema.sql is the other half of every drift
 // pair — a schema change renaming a column must fail here instead of at
 // import time).
-// The metrics whitelist keeps its own curated copy (a different concern —
-// internal/metrics/whitelist.go) and is checked against the same schema in
-// internal/metrics' schema-consistency test.
 func TestColumnListConstsMatchSchema(t *testing.T) {
 	s := openMem(t)
 

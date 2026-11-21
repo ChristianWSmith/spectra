@@ -45,13 +45,13 @@ package integration_test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
-	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -116,21 +116,57 @@ var weaponCandidates = []struct {
 // from the baseline seed (schema.sql's weapon addendum). A missing row
 // fails the gate: the table migration reads these rows, so an unshipped
 // seed is itself a gate failure.
-func seededWeaponExpr(t *testing.T, st *store.Store, name string) metrics.Def {
+func seededWeaponExpr(t *testing.T, st *store.Store, name string) string {
 	t.Helper()
 	res, err := st.RunReadOnly(
-		`SELECT expr, subject, partition, scope FROM metrics WHERE name = ? AND origin = 'builtin'`,
+		`SELECT expr FROM metrics WHERE name = ? AND origin = 'builtin'`,
 		[]any{name}, 10, 5000)
 	if err != nil || len(res.Rows) != 1 {
 		t.Fatalf("seeded row %s: err=%v rows=%d", name, err, len(res.Rows))
 	}
-	row := res.Rows[0]
-	return metrics.Def{
-		Expr:      row[0].(string),
-		Subject:   row[1].(string),
-		Partition: row[2].(string),
-		Profile:   row[3].(string) == "profile",
+	return res.Rows[0][0].(string)
+}
+
+// weaponRow is one row of a raw statement's result: the reserved columns
+// subject_key, dim and value (ruling 22). NULL reads as NaN.
+type weaponRow struct {
+	Group string
+	Dim   string
+	Value float64
+}
+
+// runWeaponStatement runs one career statement (no binds) on the metric
+// connection and reads its reserved columns by name.
+func runWeaponStatement(t *testing.T, st *store.Store, expr string) []weaponRow {
+	t.Helper()
+	res, err := st.QueryMetric(t.Context(), expr, nil)
+	if err != nil {
+		t.Fatalf("run: %v (sql %s)", err, expr)
 	}
+	idx := map[string]int{}
+	for i, c := range res.Columns {
+		idx[c] = i
+	}
+	out := make([]weaponRow, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		row := weaponRow{Group: fmt.Sprint(keyOrEmpty(r[idx["subject_key"]])), Dim: fmt.Sprint(keyOrEmpty(r[idx["dim"]])), Value: math.NaN()}
+		switch v := r[idx["value"]].(type) {
+		case int64:
+			row.Value = float64(v)
+		case float64:
+			row.Value = v
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// keyOrEmpty reads a key column: NULL is the empty key.
+func keyOrEmpty(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
 }
 
 // TestGoldenProfileWeaponsGate runs the M7 gate and reports the full
@@ -184,16 +220,9 @@ func TestGoldenProfileWeaponsGate(t *testing.T) {
 			// The shipped seed row's stored-shape values: the sweep's
 			// career statement (profile scope, weapon partition), expr
 			// loaded from the seeded row itself.
-			def := seededWeaponExpr(t, st, cand.name)
-			pv, perr, err := metrics.RunPreview(t.Context(), st, def, "", 2000)
-			if perr != nil {
-				t.Fatalf("parse: %v (%s)", perr, def.Expr)
-			}
-			if err != nil {
-				t.Fatalf("run: %v (sql %s)", err, pv.SQL)
-			}
+			expr := seededWeaponExpr(t, st, cand.name)
 			candByPlayer := map[string]map[string]float64{}
-			for _, r := range pv.Rows {
+			for _, r := range runWeaponStatement(t, st, expr) {
 				if candByPlayer[r.Group] == nil {
 					candByPlayer[r.Group] = map[string]float64{}
 				}

@@ -19,7 +19,7 @@ import (
 // metricColumns is the full metrics column list in scan order: the DDL's
 // 15 columns in schema order, pinned by metricColumnsContract.
 const metricColumns = `id, name, title, short_name, expr, scope, subject, partition, format, doc, origin,
-	plugin_id, denominator, touched, version, created_at`
+	plugin_id, touched, version, created_at`
 
 // touchedColumn encodes a touched set for metrics.touched: the sorted table
 // names, comma-joined (” = not derived). Table names never contain a comma.
@@ -45,7 +45,7 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 	)
 	err := row.Scan(
 		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.Scope, &m.Subject, &m.Partition,
-		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &m.Denominator, &touched, &m.Version, &createdAt,
+		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -120,13 +120,12 @@ var metricOriginTokens = []string{"builtin", "user", "plugin"}
 // originFilterPredicate renders ListMetricsPage's origin-subset
 // predicate for a word that is neither "" (all-on) nor "none" (all-off,
 // the caller's switch): one `origin IN (?, …)` — the canonical
-// comma-subset, every token a literal column value (the format and
-// denominator vocabularies each bind their ” value as its own
-// equality; origin has no such bucket). Every token must be known,
+// comma-subset, every token a literal column value (the format vocabulary
+// binds its ” value as its own equality; origin has no such bucket). Every token must be known,
 // DISTINCT and in metricOriginTokens order (a known-but-reordered word
 // is a non-canonical word, and an empty segment is an unknown token),
 // so anything else is the pre-SQL rejection `unknown origin filter %q`
-// (the scope/denominator/format copy) and NO SQL ever runs.
+// (the scope/format copy) and NO SQL ever runs.
 func originFilterPredicate(word string) (string, []any, error) {
 	var (
 		literals []string
@@ -171,7 +170,7 @@ var metricFormatTokens = []string{"auto", "int", "float1", "float2", "percent", 
 // metricFormatTokens order (a known-but-reordered word is a non-
 // canonical word, and an empty segment is an unknown token), so
 // anything else is the pre-SQL rejection `unknown format filter %q`
-// (the origin/scope/denominator copy) and NO SQL ever runs.
+// (the origin/scope copy) and NO SQL ever runs.
 func formatFilterPredicate(word string) (string, []any, error) {
 	var (
 		preds    []string
@@ -201,64 +200,13 @@ func formatFilterPredicate(word string) (string, []any, error) {
 	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
 }
 
-// metricDenomTokens is the CANONICAL denominator-bucket vocabulary in
-// canonical order — the tokens ListMetricsPage's denominator filter
-// accepts (store-side twin of the Builder Denominator group's three
-// boxes, Reading B 2026-11-16): "rounds"/"matches" name the
-// denominator column's literal values and "none" names its ” value
-// (the denominator-less rows). Like metricFormatTokens it is what makes
-// a subset word canonical instead of merely valid; the empty checked
-// set is the caller's separate "empty" word (see the DENOMINATOR FILTER
-// note above — "none" is taken by a bucket here).
-var metricDenomTokens = []string{"rounds", "matches", "none"}
-
-// denomFilterPredicate renders ListMetricsPage's denominator-subset
-// predicate for a word that is neither "" (all-on) nor "empty"
-// (all-off, the caller's switch): `(denominator = ? OR denominator IN
-// (?, …))` — the canonical comma-subset with the "none" bucket (the
-// column's ” value) bound as its own equality beside the literal
-// tokens' single IN, exactly formatFilterPredicate's shape. Every token
-// must be known, DISTINCT and in metricDenomTokens order (a
-// known-but-reordered word is a non-canonical word, and an empty
-// segment is an unknown token), so anything else is the pre-SQL
-// rejection `unknown denominator filter %q` (the origin/scope/format
-// copy) and NO SQL ever runs.
-func denomFilterPredicate(word string) (string, []any, error) {
-	var (
-		preds    []string
-		args     []any
-		literals []string
-		lastRank = -1
-	)
-	for _, tok := range strings.Split(word, ",") {
-		rank := slices.Index(metricDenomTokens, tok)
-		if rank < 0 || rank <= lastRank { // unknown, duplicate or reordered
-			return "", nil, fmt.Errorf("couldn't load the metrics: unknown denominator filter %q", word)
-		}
-		lastRank = rank
-		if tok == "none" {
-			preds = append(preds, `denominator = ?`)
-			args = append(args, "")
-			continue
-		}
-		literals = append(literals, tok)
-	}
-	if len(literals) > 0 {
-		preds = append(preds, `denominator IN (`+strings.TrimSuffix(strings.Repeat("?,", len(literals)), ",")+`)`)
-		for _, lit := range literals {
-			args = append(args, lit)
-		}
-	}
-	return `(` + strings.Join(preds, " OR ") + `)`, args, nil
-}
-
 // metricSubjectTokens is the CANONICAL metric-subject vocabulary in
 // axis order — the tokens ListMetricsPage's subject filter accepts
 // (store-side twin of the Builder Subject group's three boxes: Player /
 // Match / Team — the metrics subject axis, models.MetricRow.Subject).
 // The subject column is DDL-checked to exactly these three values, so
-// every token is a literal column value (no ” bucket, unlike format
-// and denominator); like metricOriginTokens it is what makes a subset
+// every token is a literal column value (no ” bucket, unlike format's);
+// like metricOriginTokens it is what makes a subset
 // word canonical instead of merely valid, and the empty checked set is
 // the caller's separate "none" word (see the SUBJECT FILTER note
 // below).
@@ -272,7 +220,7 @@ var metricSubjectTokens = []string{"player", "match", "team"}
 // and in metricSubjectTokens order (a known-but-reordered word is a
 // non-canonical word, and an empty segment is an unknown token), so
 // anything else is the pre-SQL rejection `unknown subject filter %q`
-// (the origin/scope/denominator/format copy) and NO SQL ever runs.
+// (the origin/scope/format copy) and NO SQL ever runs.
 func subjectFilterPredicate(word string) (string, []any, error) {
 	var (
 		literals []string
@@ -310,7 +258,7 @@ func subjectFilterPredicate(word string) (string, []any, error) {
 // ORIGIN FILTER: originFilter narrows the window SERVER-side to a
 // SUBSET of the origin column — the Builder Origin group's three
 // checkboxes (Built-in / Custom / Plugin). It is the same canonical
-// comma-subset shape as DENOMINATOR and FORMAT below, over
+// comma-subset shape as FORMAT below, over
 // metricOriginTokens (builtin, user, plugin — metricOriginRank's three
 // values): "" = every box checked (no predicate — the whole catalog),
 // "none" = no box checked (the empty set, the same spelling scope
@@ -339,24 +287,6 @@ func subjectFilterPredicate(word string) (string, []any, error) {
 // duplicate or a reorder is rejected before any SQL. Query-layer only —
 // no schema change: the column still holds exactly 'player', 'match',
 // 'team'.
-//
-// DENOMINATOR FILTER (Reading B — the owner-accepted OVERTURN of the
-// 2026-11-14 "denominator-less rows pass in EVERY state" ruling,
-// re-pinned 2026-11-16; pinned by TestListMetricsPageDenominatorFilter):
-// the group's boxes are exactly the column's three values and a row
-// passes iff its BUCKET is in the CHECKED set — so denomFilter is the
-// same canonical comma-subset shape as FORMAT below, over
-// metricDenomTokens (rounds, matches, none — the "none" bucket naming
-// the column's ” value, i.e. a metric with no denominator). "" = every
-// box checked (no predicate — equivalent to listing all three), "empty"
-// = no box checked (the empty set; the other three groups spell theirs
-// "none", but "none" is a DENOMINATOR TOKEN here, so the empty checked
-// set needs a word of its own), any other word is a CANONICAL
-// COMMA-SUBSET ("rounds,none"): every token known, distinct and in
-// metricDenomTokens order. An unknown token, an empty element, a
-// duplicate or a reorder is rejected before any SQL. Query-layer only —
-// no schema change: the column still holds exactly ”, 'rounds',
-// 'matches'.
 //
 // FORMAT FILTER: formatFilter narrows the window to a SUBSET of the
 // format column — the Builder Filters popover's fourth group (Type).
@@ -388,7 +318,7 @@ func subjectFilterPredicate(word string) (string, []any, error) {
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
 // view renders its Builtins/Custom/Plugins headers from those runs.
-func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize
 	}
@@ -401,7 +331,7 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 	)
 	// addWhere appends ONE ANDed predicate to the shared WHERE — every
 	// narrowing (origin filter, scope filter, subject filter,
-	// denominator filter, format filter, search, cursor) rides the same
+	// format filter, search, cursor) rides the same
 	// clause, so they compose in any order and none can silently bypass
 	// another.
 	addWhere := func(pred string, a ...any) {
@@ -453,22 +383,6 @@ func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter s
 		addWhere(`0 = 1`)
 	default:
 		pred, a, err := subjectFilterPredicate(subjectFilter)
-		if err != nil {
-			return nil, err
-		}
-		addWhere(pred, a...)
-	}
-	// The denominator subset (see the DENOMINATOR FILTER note above):
-	// "" is the all-on default, "empty" is the empty set like the
-	// other groups' "none", and every other non-empty word is the
-	// canonical comma-subset denomFilterPredicate renders — its
-	// rejection happens there, before any SQL.
-	switch denomFilter {
-	case "": // no predicate — every bucket, the denominator-less one included
-	case "empty":
-		addWhere(`0 = 1`)
-	default:
-		pred, a, err := denomFilterPredicate(denomFilter)
 		if err != nil {
 			return nil, err
 		}
@@ -612,12 +526,12 @@ func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 		m.Subject = "player"
 	}
 	res, err := q.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, plugin_id, denominator, touched, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, plugin_id, touched, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Subject), scrub(m.Partition),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
-		scrub(m.Denominator), touchedColumn(m.Touched), time.Now(),
+		touchedColumn(m.Touched), time.Now(),
 	)
 	if err != nil {
 		if isUniqueErr(err) {
@@ -654,10 +568,10 @@ func updateMetric(q metricsExec, m models.MetricRow) error {
 	}
 	if _, err := q.Exec(
 		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, subject = ?, partition = ?, format = ?,
-			doc = ?, plugin_id = ?, denominator = ?, touched = ? WHERE id = ?`,
+			doc = ?, plugin_id = ?, touched = ? WHERE id = ?`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Subject), scrub(m.Partition),
-		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), touchedColumn(m.Touched), m.ID,
+		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), touchedColumn(m.Touched), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {
 			return fmt.Errorf("a metric named %q already exists", scrub(m.Name))
@@ -684,7 +598,7 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // rows are immutable through this path — the plugin loader writes its own
 // rows via ReplacePluginMetrics, and builtins are schema-seeded. scope is
 // written from the row; version is deliberately NOT touched here — the
-// +1 bump on semantic edits (expr/scope/denominator, with the
+// +1 bump on semantic edits (expr/scope, with the
 // transitive-dependent cascade) lives in SaveMetricWithDeps' save
 // transaction (stored-metrics design §4), which is THE save path the
 // service routes through; this plain overwrite stays the raw store API
@@ -734,7 +648,7 @@ type DependentRewrite struct {
 // collision, a rewrite that cannot land) leaves every row untouched.
 //
 // semanticBump is design §4's version-axis marking: when the save
-// changed the metric's SEMANTICS (expr / scope / denominator — the
+// changed the metric's SEMANTICS (expr / scope — the
 // caller decides by comparing against the stored row, the
 // analyticservice.go SetConfig no-op pattern), the same transaction
 // bumps the metric's version AND every transitive dependent's

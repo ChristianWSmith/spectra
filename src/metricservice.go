@@ -17,17 +17,16 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// MetricsService is M5 §2.1: the custom-metric engine. Definitions live in
-// the `metrics` table (origin builtin|user|plugin). Expressions are parsed
-// into a validated AST (whitelisted tables/columns/ops — never interpolated
-// user SQL) and compiled to parameterized SQL. Preview runs against the
-// whole library (display-bounded rows); pinned metrics appear as scoreboard/profile
+// MetricsService is the custom-metric service. Definitions live in the
+// `metrics` table (origin builtin|user|plugin). An expression is one raw SQL
+// statement: the one save gate (internal/metrics CheckRawSave) validates it,
+// and the sweep runs it on the read-only connection (internal/metrics raw.go).
+// Pinned metrics appear as scoreboard/profile
 // columns.
 //
-// W2 (stored-metrics grammar wave) is DONE: the groupBy parameter is gone
-// from every signature (Compile/RunPreview/PreviewMetric/ValidateExpr and
-// the frontend wrappers), every statement is subject-addressed by the
-// engine, and SaveMetric validates + writes the real scope — the W1
+// The groupBy parameter is gone from every signature (PreviewMetric,
+// ValidateExpr and the frontend wrappers), and SaveMetric validates + writes
+// the real scope — the W1
 // ignored-arg shims and the forced scope 'match' are retired with the
 // frontend form change that ships in the same wave.
 //
@@ -74,16 +73,13 @@ type ExprError struct {
 	Pos     int    `json:"pos"`
 }
 
-// ---- metric expression grammar (widened — spec lives in ONE place) ----
+// ---- metric expressions (raw SQL) ----
 //
-// The full spec (source clause — single-source base form, comma-list
-// join extension — plus the aggregation list, the op table, condition
-// grammar, Subject/Denominator/Scope rules, join/population semantics,
-// percentile and preview semantics) lives in ONE place: the
-// internal/metrics package doc (doc.go). This service only forwards
-// expressions to metrics.Compile / metrics.RunPreview and maps their
-// ParseError onto the ExprError binding shape — no grammar knowledge of
-// its own, so the two can never drift.
+// A metric's expression is one SELECT or WITH statement. The one gate
+// (internal/metrics GateSQL, reached through CheckRawSave) validates it on
+// every path: the Builder's live check, save and the sweep. This service
+// forwards statements to that gate and maps its refusals onto the
+// ExprError binding shape.
 
 // MetricsService — see doc comment above. The W3 compute machinery
 // (scheduler, events, transient state) lives in metriccompute.go; the
@@ -123,13 +119,13 @@ type MetricsService struct {
 	runSeq uint64
 }
 
-// exprError converts a metrics.ParseError into the ExprError contract and
+// exprError converts a metrics.GateError into the ExprError contract and
 // a plain error for call paths that only return error.
-func exprError(perr *metrics.ParseError) ExprError {
+func exprError(perr *metrics.GateError) ExprError {
 	return ExprError{Message: perr.Message, Pos: perr.Pos}
 }
 
-func exprErrorErr(perr *metrics.ParseError) error {
+func exprErrorErr(perr *metrics.GateError) error {
 	return fmt.Errorf("invalid metric expression: %s", perr.Message)
 }
 
@@ -165,12 +161,7 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // subject (the Builder Subject group's checked set — the metrics
 // subject axis: "" = every box, "none" = no box, or the canonical
 // comma-subset of the three subject tokens player/match/team — see
-// store.ListMetricsPage's SUBJECT FILTER note), denominator (the
-// Denominator group's checked set as a canonical comma-subset of the
-// three bucket tokens rounds/matches/none where "none" names the
-// denominator-less rows: "" = every box, "empty" = no box — Reading B,
-// 2026-11-16; see store.ListMetricsPage's DENOMINATOR FILTER note) and
-// format (the Builder's Type group: "" = every format,
+// store.ListMetricsPage's SUBJECT FILTER note), // format (the Builder's Type group: "" = every format,
 // "none" = none, or the canonical comma-subset of format tokens where
 // "auto" names the ” format) — which are the Builder's five SERVER-side
 // filter groups (the sixth, Pinning, is a render-time filter over
@@ -181,8 +172,8 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, denomFilter, formatFilter, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit)
 }
 
 // GetMetric returns one by id (or name).
@@ -200,135 +191,6 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 	return r, nil
 }
 
-// resolveRefs resolves an expression's metric() references against the
-// SAVED catalog (design §2): metrics.name is UNIQUE across every origin,
-// so name→id resolution is total. Every referenced name must exist (the
-// missing-name failure is the positioned "unknown metric reference" —
-// the SAME copy CompileRefs spells, so a draft, a preview and a save can
-// never disagree) and each target carries the grain + live stamps the
-// ref join binds.
-//
-// dependentScope is the DEPENDENT definition's stored scope and drives
-// the cross-scope rule (key containment: a ref resolves iff the
-// dependent's row key contains every key column of the dependency's
-// grain). "" means the caller has no stored scope — ValidateExpr's
-// drafts and ad-hoc previews are authoring state, and a definition's
-// scope only exists once it is saved, so those paths resolve existence
-// only and leave the rule to the save (which always has a scope).
-//
-// `known` pre-resolves names the catalog does not carry YET: the rename
-// splice re-validates dependents against the metric's NEW name while its
-// row still carries the old one (the collision pre-check guarantees the
-// new name is otherwise free).
-//
-// Returns (*ParseError, nil) for parse/resolution failures (the ExprError
-// contract — positioned) and (nil, err) for store failures.
-func (s *MetricsService) resolveRefs(spec metrics.Spec, dependentScope, dependentSubject string, known map[string]metrics.RefTarget) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
-	found := metrics.MetricRefs(spec)
-	if len(found) == 0 {
-		return map[string]metrics.RefTarget{}, nil, nil
-	}
-	// Live rule stamp: one indexed read of the single-row config — the
-	// exact value W3's compute pass stamps fresh metric_values rows with,
-	// so a ref join only ever reads rows built under it.
-	cfg, err := s.st.GetConfig()
-	if err != nil {
-		return nil, nil, err
-	}
-	out := make(map[string]metrics.RefTarget, len(known)+len(found))
-	for name, t := range known {
-		t.RuleVersion = cfg.RuleVersion
-		out[name] = t
-	}
-	for _, r := range found {
-		t, resolved := out[r.Name]
-		if !resolved {
-			row, err := s.st.GetMetricByName(r.Name)
-			if errors.Is(err, store.ErrNotFound) {
-				return nil, &metrics.ParseError{
-					Message: fmt.Sprintf("unknown metric reference %q", r.Name),
-					Pos:     r.Pos,
-				}, nil
-			}
-			if err != nil {
-				return nil, nil, err
-			}
-			t = metrics.RefTarget{ID: row.ID, Scope: row.Scope, Subject: row.Subject, Version: row.Version}
-			out[r.Name] = t
-		}
-		// Cross-scope rule (design §2): a PROFILE metric may read a
-		// profile ref (and a match metric either grain — the row's player
-		// key carries the career scalar), but a career value cannot read
-		// a per-match value: the profile row key (subject_key at
-		// match_id = 0) contains no match_id to correlate on. Applied to
-		// EVERY resolved ref, `known` entries included — the rename
-		// splice re-validation runs through here with the same rule.
-		if dependentScope == "profile" && t.Scope == "match" {
-			return nil, nil, fmt.Errorf(
-				"metric '%s' is match-scoped and cannot be used inside a profile-scoped metric (a career value cannot read a per-match value)",
-				r.Name)
-		}
-		// Subject × subject rule (metrics expansion §3.1): the
-		// DEPENDENT's subject key must contain the referenced metric's
-		// — the SAME containment the compile's join refusal spells
-		// (metrics.RefSubjectContained), in the save's message style.
-		// An empty dependent subject is authoring state (a draft), same
-		// as the empty scope above — the save always has both.
-		refSubject := t.Subject
-		if refSubject == "" {
-			refSubject = "player"
-		}
-		if dependentSubject != "" && !metrics.RefSubjectContained(dependentSubject, refSubject) {
-			return nil, nil, fmt.Errorf(
-				"metric '%s' is %s-subject and cannot be used inside a %s-subject metric (a reference's subject must be contained by the reading metric's subject)",
-				r.Name, refSubject, dependentSubject)
-		}
-		t.RuleVersion = cfg.RuleVersion
-		out[r.Name] = t
-	}
-	return out, nil, nil
-}
-
-// resolveRefsExpr is resolveRefs over an expression string (parse first)
-// — the shape PreviewMetric and ValidateExpr need.
-func (s *MetricsService) resolveRefsExpr(expr, dependentScope, dependentSubject string) (map[string]metrics.RefTarget, *metrics.ParseError, error) {
-	spec, perr := metrics.Parse(expr)
-	if perr != nil {
-		return nil, perr, nil
-	}
-	return s.resolveRefs(spec, dependentScope, dependentSubject, nil)
-}
-
-// checkMetricCycle walks {existing metric_deps edges} ∪ {the saved
-// metric's new refs} from the metric being saved (design §2) and rejects
-// anything cyclic BEFORE any write — a self-reference is an immediate
-// cycle. The walk itself is pure (metrics.FindCycle, no DB); only the
-// edge loading happens here, and the graph it walks is the POST-save
-// one: a rename's dependents are spliced in the same transaction, so
-// their edges to the old name already count as edges to the new one.
-func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string) error {
-	edges, err := s.st.ListMetricEdges()
-	if err != nil {
-		return err
-	}
-	if oldName != "" && oldName != newName {
-		for node, deps := range edges {
-			for i, d := range deps {
-				if d == oldName {
-					deps[i] = newName // the splice rewrites these literals in the same tx
-				}
-			}
-			edges[node] = deps // same backing array — spelled out so the graph edit is visible
-		}
-		delete(edges, oldName)
-	}
-	edges[newName] = refs // {existing} with the saved metric's own out-edges replaced by {new}
-	if cycle := metrics.FindCycle(newName, edges); cycle != nil {
-		return fmt.Errorf("circular metric reference: %s", strings.Join(cycle, " → "))
-	}
-	return nil
-}
-
 // SaveMetric validates + upserts (origin forced to user for API saves;
 // plugin metrics are written by the plugin loader; an EXISTING built-in
 // row is rejected below — built-ins are immutable through this API).
@@ -336,15 +198,15 @@ func (s *MetricsService) checkMetricCycle(newName, oldName string, refs []string
 // The frontend echoes rows back as-is; CreatedAt is store-owned (stamped
 // on create, untouched on update).
 //
-// W2b: the validation block below runs in the design's order — guards,
-// grammar (Parse), reference resolution (existence → cross-scope), the
-// full Compile, the cycle check, the rename splice — and only THEN one
-// transaction writes the metric, its metric_deps edges (re-derived
-// wholesale from the CURRENT expression) and any dependents' splices.
-// Nothing is written until every check passes.
+// The validation block below runs in order — guards, the one gate
+// (metrics.CheckRawSave: one statement, read-only, allowlisted tables,
+// reserved binds), the scope rule, the touched set — and only THEN one
+// transaction writes the metric and its metric_deps edges (re-derived
+// wholesale from the CURRENT expression). Nothing is written until every
+// check passes.
 //
-// W3 (design §4): a SEMANTIC edit (expr / scope / denominator — the
-// three fields the bump answers, compared against the stored row like
+// W3 (design §4): a SEMANTIC edit (expr / scope — the
+// two fields the bump answers, compared against the stored row like
 // analyticservice.go's SetConfig no-op) bumps this metric's version AND
 // every transitive dependent's inside that same transaction, then
 // schedules the sweep. A display-only edit (title / shortName / format /
@@ -430,144 +292,37 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 			return models.MetricRow{}, errors.New("built-in metrics can't be edited")
 		}
 	}
-	// A raw SQL statement (dogfood/PLAN.md item 1) is gated by the one save
-	// gate; its scope is its binds (03-QUERIES.md §5), so the stored scope
-	// must agree with them. The sugar grammar keeps its own path below.
-	ownVersion := 1
-	if m.ID > 0 {
-		ownVersion = existing.Version
-	}
-	known := map[string]metrics.RefTarget{
-		m.Name: {ID: m.ID, Scope: m.Scope, Subject: m.Subject, Version: ownVersion},
-	}
-	var depNames []string
-	if metrics.IsRawSQL(m.Expr) {
-		gate, perr, err := metrics.CheckRawSave(s.st, m.Expr)
-		if err != nil {
-			return models.MetricRow{}, err
-		}
-		if perr != nil {
-			return models.MetricRow{}, exprErrorErr(perr)
-		}
-		if want := metrics.RawScopeOf(gate.Binds); m.Scope != want {
-			return models.MetricRow{}, fmt.Errorf("a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is %s-scoped)", want)
-		}
-		m.Touched = gate.Touched
-	} else {
-		// Grammar first (the compile's own first step — ref-free expressions
-		// report exactly what they did before W2b): the parse carries the
-		// metric() reference spans every later step works from.
-		spec, perr := metrics.Parse(m.Expr)
-		if perr != nil {
-			return models.MetricRow{}, exprErrorErr(perr)
-		}
-		// A rename onto a name that already exists must fail HERE, before the
-		// cycle graph is built: that graph describes the POST-save catalog,
-		// and a collision would merge two metrics' edges into one node.
-		if m.ID > 0 && m.Name != existing.Name {
-			_, err := s.st.GetMetricByName(m.Name)
-			if err == nil {
-				return models.MetricRow{}, fmt.Errorf("a metric named %q already exists", m.Name)
-			}
-			if !errors.Is(err, store.ErrNotFound) {
-				return models.MetricRow{}, err
-			}
-		}
-		// The metric resolves its OWN name: it IS the row being written (its
-		// grain and — on an edit — its id/version do not change with the
-		// name), so a self-reference reaches the CYCLE check below, where it
-		// belongs, instead of reporting itself as an unknown name. The
-		// create-path version is the INSERT default and is never bound: a
-		// self-reference is rejected before any write.
-		// Reference resolution: existence + the cross-scope and subject ×
-		// subject rules, and the targets Compile binds into the ref joins.
-		refs, perr, err := s.resolveRefs(spec, m.Scope, m.Subject, known)
-		if err != nil {
-			return models.MetricRow{}, err
-		}
-		if perr != nil {
-			return models.MetricRow{}, exprErrorErr(perr)
-		}
-		// Validate expression (+denominator + addressing) BEFORE any write.
-		// CompileRefs enforces the subject anchor (a primary without one is
-		// rejected), the subject × scope matrix (profile is player-only) and
-		// the partition column rule, so a definition that could never
-		// compute never lands.
-		addr := metrics.Address{Subject: m.Subject, Partition: m.Partition, Profile: m.Scope == "profile"}
-		plan, perr := metrics.CompileRefs(m.Expr, m.Denominator, "", addr, refs)
-		if perr != nil {
-			return models.MetricRow{}, exprErrorErr(perr)
-		}
-		// The save gate's touched set (the statements the sweep runs), stored
-		// beside the expression it was derived from.
-		m.Touched = plan.Touched
-		depNames = metrics.DistinctNames(metrics.MetricRefs(spec))
-	}
-	// Cycle rejection: pure walk over {existing edges} ∪ {new refs}.
-	if err := s.checkMetricCycle(m.Name, existing.Name, depNames); err != nil {
+	// The expression is one SELECT or WITH statement, gated by the one save
+	// gate (metrics.CheckRawSave). Its scope is its binds (03-QUERIES.md §5),
+	// so the stored scope must agree with them. A metric() reference is
+	// refused by the gate, so a saved statement has no dependency edges.
+	gate, perr, err := metrics.CheckRawSave(s.st, m.Expr)
+	if err != nil {
 		return models.MetricRow{}, err
 	}
-	// Rename splice (design §2): a changed name with dependents > 0
-	// rewrites each dependent's metric('old') literals with the parse's
-	// own spans, re-parses, re-resolves and re-Compile-validates the
-	// result, and hands the store a prepared rewrite for the SAME
-	// transaction. Any failure errors the save with nothing written.
-	// No bump, no recompute: a rename changes no semantics.
-	var rewrites []store.DependentRewrite
-	if m.ID > 0 && m.Name != existing.Name {
-		dependents, err := s.st.MetricDependents(existing.Name)
-		if err != nil {
-			return models.MetricRow{}, err
-		}
-		if len(dependents) > 0 {
-			// `known` already resolves the metric's NEW name (the row
-			// still carries the old one until the tx commits) with the
-			// post-save grain — dependents' re-validation reads through
-			// it with the same rule.
-			for _, dep := range dependents {
-				newExpr, perr := metrics.RenameRefs(dep.Expr, existing.Name, m.Name)
-				if perr != nil {
-					return models.MetricRow{}, exprErrorErr(perr)
-				}
-				depSpec, perr := metrics.Parse(newExpr)
-				if perr != nil {
-					return models.MetricRow{}, exprErrorErr(perr)
-				}
-				depRefs, perr, err := s.resolveRefs(depSpec, dep.Scope, dep.Subject, known)
-				if err != nil {
-					return models.MetricRow{}, err
-				}
-				if perr != nil {
-					return models.MetricRow{}, exprErrorErr(perr)
-				}
-				depAddr := metrics.Address{Subject: dep.Subject, Partition: dep.Partition, Profile: dep.Scope == "profile"}
-				if _, perr := metrics.CompileRefs(newExpr, dep.Denominator, "", depAddr, depRefs); perr != nil {
-					return models.MetricRow{}, exprErrorErr(perr)
-				}
-				rewrites = append(rewrites, store.DependentRewrite{
-					ID:   dep.ID,
-					Expr: newExpr,
-					Deps: metrics.DistinctNames(metrics.MetricRefs(depSpec)),
-				})
-			}
-		}
+	if perr != nil {
+		return models.MetricRow{}, exprErrorErr(perr)
 	}
+	if want := metrics.RawScopeOf(gate.Binds); m.Scope != want {
+		return models.MetricRow{}, fmt.Errorf("a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is %s-scoped)", want)
+	}
+	m.Touched = gate.Touched
+	var depNames []string // metric() references: refused by the gate, so none
 	if strings.TrimSpace(m.Doc) == "" {
 		m.Doc = "Formula: " + m.Expr // PRD §5.16: formula documentation on every metric
 	}
-	// Design §4's semantic test — exactly the three fields the version
-	// bump answers (expr, scope, denominator), read off the STORED row
+	// Design §4's semantic test — exactly the two fields the version
+	// bump answers (expr, scope), read off the STORED row
 	// before anything is written (the analyticservice.go SetConfig
 	// no-op pattern). A create never bumps (the INSERT default starts
 	// the counter at 1 and a new metric has no rows — absent → behind
 	// already) but DOES schedule the sweep: its rows must be computed.
-	semantic := m.ID > 0 && (m.Expr != existing.Expr ||
-		m.Scope != existing.Scope || m.Denominator != existing.Denominator)
+	semantic := m.ID > 0 && (m.Expr != existing.Expr || m.Scope != existing.Scope)
 	created := m.ID == 0
-	// ONE transaction: the metric row, its edges wholesale, the splices,
-	// and (semantic) the version bump for this metric + every transitive
-	// dependent — atomic, so nothing is partially behind after commit.
-	saved, err := s.st.SaveMetricWithDeps(m, depNames, rewrites, semantic)
+	// ONE transaction: the metric row, its edges wholesale, and (semantic)
+	// the version bump for this metric + every transitive dependent —
+	// atomic, so nothing is partially behind after commit.
+	saved, err := s.st.SaveMetricWithDeps(m, depNames, nil, semantic)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
@@ -628,108 +383,26 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 	return s.st.DeleteMetric(id)
 }
 
-// draftAddress is THE one spelling of a DRAFT's addressing rule (the
-// metrics subject axis): subject "" reads as "player" — the DDL default,
-// like SaveMetric — and scope contributes its profile half. The Builder's
-// live check (ValidateExpr) and the ad-hoc preview leg (PreviewMetric)
-// both build their address here, so a draft can never validate clean and
-// then false-refuse at preview (or the other way round).
-func draftAddress(subject, partition, scope string) metrics.Address {
-	if subject = strings.TrimSpace(subject); subject == "" {
-		subject = "player" // the DDL default — an omitted subject reads as player, like SaveMetric
-	}
-	return metrics.Address{Subject: subject, Partition: partition, Profile: scope == "profile"}
-}
-
-// PreviewMetric compiles expr (empty expr → use id) and runs it over the
-// whole library. The engine addresses every preview row by its subject —
-// there is no groupBy argument any more (retired with W2).
-//
-// Addressing (2026-11-18 — the deferral this leg carried is fulfilled):
-// subject, partition and scope are the DRAFT's own addressing — the same
-// triple ValidateExpr threads, normalized by draftAddress — instead of
-// the zero-value address, which normalized to subject "player" and made
-// a match/team-subject draft false-refuse at Preview whenever its lead
-// was legal only for its own subject (an argmax draft refused with
-// `argmax() needs subject "match"` although the same expression
-// validates and saves clean). A saved definition (expr "") reads its
-// addressing off its row instead; the three arguments then stay out —
-// the row IS the definition. The run itself is library-wide for both
-// legs (every caller passes "" as scope; the single-match run extent
-// was never used — CompileMetric still binds its "match:<id>" extent
-// for provenance).
-//
-// W2b: every metric() reference in the expression is resolved against
-// the saved catalog first (drafts are CALCULATED — a ref resolves
-// against saved metrics, never against other drafts), so a draft with
-// refs previews exactly like the save would validate it.
-//
-// The reported SQL is the DISPLAY copy (bound values written in as
-// literals — Preview.DisplaySQL); the run itself used the binds.
+// PreviewMetric refuses until a preview path exists for raw SQL: a
+// statement is previewed by saving it, and its values appear once the
+// sweep has run it. The one gate still runs first, so a bad statement
+// reports its positioned refusal.
 func (s *MetricsService) PreviewMetric(id int64, expr string, subject string, partition string, scope string, limit int) (MetricPreview, error) {
-	if strings.TrimSpace(expr) != "" && metrics.IsRawSQL(expr) {
-		return MetricPreview{}, errors.New("previewing raw SQL isn't available yet; save the metric and its values appear once it has run")
-	}
-	var (
-		def        metrics.Def
-		echo       models.MetricRow
-		depScope   string // the dependent's stored scope ("" for a draft)
-		depSubject string // the dependent's stored subject ("" for a draft)
-	)
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
 			return MetricPreview{}, err
 		}
-		def = metrics.Def{
-			Expr: full.Expr, Denominator: full.Denominator,
-			Subject: full.Subject, Partition: full.Partition,
-			Profile: full.Scope == "profile",
-		}
-		echo = full
-		depScope = full.Scope
-		depSubject = full.Subject
-	} else {
-		// Ad-hoc expression: no denominator (rates are a property of the
-		// saved definition); the addressing is the DRAFT's own — the
-		// same address the live check validates it under (draftAddress).
-		addr := draftAddress(subject, partition, scope)
-		def = metrics.Def{Expr: expr, Subject: addr.Subject, Partition: addr.Partition, Profile: addr.Profile}
-		echo = models.MetricRow{ID: id, Expr: expr}
+		expr = full.Expr
 	}
-	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope, depSubject)
+	_, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return MetricPreview{}, err
 	}
 	if perr != nil {
 		return MetricPreview{}, exprErrorErr(perr)
 	}
-	def.Refs = refs
-	// limit ≤0 is normalized inside metrics.RunPreview — the one canonical
-	// default (PreviewDefaultRow), never here. The run extent is the
-	// whole library: `scope` carries the DRAFT's definition scope above,
-	// not a run bound (see the doc comment).
-	// The run registers under the metric's id (0 for a draft), so
-	// CancelMetric stops it — there is no timeout on the metric path.
-	ctx, release := s.startRun(context.Background(), id)
-	defer release()
-	pv, perr, err := metrics.RunPreview(ctx, s.st, def, "", limit)
-	if err != nil && ctx.Err() != nil {
-		err = errors.New(metrics.CancelledReason)
-	}
-	if perr != nil {
-		return MetricPreview{}, exprErrorErr(perr)
-	}
-	if err != nil {
-		return MetricPreview{Metric: echo, MS: pv.MS, SQL: pv.DisplaySQL()}, err
-	}
-	rows := make([]MetricPreviewRow, len(pv.Rows))
-	for i, r := range pv.Rows {
-		rows[i] = MetricPreviewRow{MatchID: r.MatchID, Group: r.Group, Dim: r.Dim, Label: r.Label, Value: r.Value, ValueKey: r.ValueKey, N: r.N}
-	}
-	return MetricPreview{
-		Metric: echo, Rows: rows, MS: pv.MS, SQL: pv.DisplaySQL(), Truncated: pv.Truncated,
-	}, nil
+	return MetricPreview{}, errors.New("previewing raw SQL isn't available yet; save the metric and its values appear once it has run")
 }
 
 // ---- The canonical value reads (stored-metrics design §5) -----------------
@@ -773,117 +446,38 @@ func (s *MetricsService) GetMetricSeries(steamID string, metricIDs []int64) ([]m
 	return s.st.GetPlayerMetricSeries(steamID, metricIDs)
 }
 
-// CompileMetric compiles WITHOUT executing (design §5's no-execution
-// Compile): the provenance SQL a clean-saved Builder preview shows
-// beside its stored rows — provenance without calculating a value, so
-// a saved read never runs the plan. expr "" uses the SAVED definition
-// by id (denominator + resolved refs included — exactly what
-// PreviewMetric would have run); a non-empty expr is ad-hoc (no
-// denominator, refs against the saved catalog). scope binds the run
-// extent ("" = whole library; "match:<id>" = one match) — the run
-// bound, NOT a draft's definition scope like PreviewMetric's scope.
-// Returns the statement(s), never
-// a result set; parse/resolution failures come back as the shared
-// ExprError-shaped error.
-//
-// DISPLAY ONLY: the returned text has the plan's values written in as
-// literals (Plan.DisplaySQL) so what the user copies runs as-is — the
-// plan itself still carries binds and nothing here executes. The
-// companion statement (percentile mixes) keeps its `?`: its values are
-// not carried on the plan, so they are shown honestly uninlined rather
-// than inlined wrong.
+// CompileMetric returns the statement a metric runs, for the provenance
+// view. Nothing executes: a blank expr shows the SAVED statement by id, and
+// a non-blank expr is gated and shown as written. scope is the run extent
+// and no longer changes the text.
 func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (string, error) {
-	// A raw statement is its own display SQL: it runs as written. A blank
-	// draft shows the stored statement.
-	if strings.TrimSpace(expr) == "" {
-		if full, err := s.GetMetric(id); err == nil && metrics.IsRawSQL(full.Expr) {
-			return strings.TrimSpace(full.Expr), nil
-		}
-	} else if metrics.IsRawSQL(expr) {
-		return strings.TrimSpace(expr), nil
-	}
-	var (
-		def        metrics.Def
-		depScope   string // the dependent's stored scope ("" for a draft)
-		depSubject string // the dependent's stored subject ("" for a draft)
-	)
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
 			return "", err
 		}
-		def = metrics.Def{
-			Expr: full.Expr, Denominator: full.Denominator,
-			Subject: full.Subject, Partition: full.Partition,
-			Profile: full.Scope == "profile",
-		}
-		depScope = full.Scope
-		depSubject = full.Subject
-	} else {
-		def = metrics.Def{Expr: expr}
+		return strings.TrimSpace(full.Expr), nil
 	}
-	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope, depSubject)
+	_, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return "", err
 	}
 	if perr != nil {
 		return "", exprErrorErr(perr)
 	}
-	def.Refs = refs
-	plan, perr := metrics.CompileRefs(def.Expr, def.Denominator, scope,
-		metrics.Address{Subject: def.Subject, Partition: def.Partition, Profile: def.Profile}, def.Refs)
-	if perr != nil {
-		return "", exprErrorErr(perr)
-	}
-	return plan.DisplaySQL(), nil
+	return strings.TrimSpace(expr), nil
 }
 
-// ValidateExpr parses without executing (builder live-check). The
-// grammar check is Compile's — the player anchor included, so a
-// player-less draft reports the same positioned error a save would.
-// W2b: a draft carrying metric() references is resolved against the
-// SAVED catalog first (drafts are calculated; a ref to an unsaved name
-// reports the positioned unknown-reference error a save would report).
-//
-// Addressing (2026-11-18 — the subject axis reached the editor): the
-// check compiles the draft under ITS OWN addressing — subject,
-// partition and the profile half of scope (the loaded row's values, or
-// a new draft's authoring defaults) instead of the zero-value address,
-// which normalized to subject "player" and made every non-player draft
-// report a false refusal (the identity built-ins — top_fragger and its
-// four siblings — refused to open with `argmax() needs subject "match"`
-// although their stored rows compile fine). Subject/partition ARE
-// authoring state, exactly like the scope that stays out below, so they
-// belong on the live check; the address feeds CompileRefs' subject ×
-// scope matrix (profile is still player-only — a match-subject draft
-// on profile scope refuses here, as it would at save). draftAddress is
-// the one spelling this shares with PreviewMetric's ad-hoc leg, so the
-// live check and the preview can never disagree about a draft.
-//
-// The cross-scope RULE between references is still deliberately NOT
-// enforced here: ValidateExpr resolves refs against the saved catalog
-// as existence only (a draft's own grain is authoring state), so that
-// definition-level rule stays with the save.
+// ValidateExpr is the builder's live check: the one gate, the same one save
+// runs (metrics.CheckRawSave). subject, partition and scope are authoring
+// state the save validates against the statement's binds and the subject ×
+// scope rule; the gate itself needs only the statement.
 func (s *MetricsService) ValidateExpr(expr string, subject string, partition string, scope string) (bool, ExprError, error) {
-	if metrics.IsRawSQL(expr) {
-		_, perr, err := metrics.CheckRawSave(s.st, expr)
-		if err != nil {
-			return false, ExprError{}, err
-		}
-		if perr != nil {
-			return false, exprError(perr), nil
-		}
-		return true, ExprError{}, nil
-	}
-	refs, perr, err := s.resolveRefsExpr(expr, "", "")
+	_, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return false, ExprError{}, err
 	}
 	if perr != nil {
-		return false, exprError(perr), nil
-	}
-	addr := draftAddress(subject, partition, scope)
-	if _, perr := metrics.CompileRefs(expr, "", "", addr, refs); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil

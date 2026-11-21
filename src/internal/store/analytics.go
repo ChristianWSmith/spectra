@@ -1169,9 +1169,6 @@ func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
 // a raw statement bound to :steam_id and no match or round (the raw bind shapes
 // rawBehind accepts for a per-player unit).
 func perPlayer(expr string) bool {
-	if !IsRawExpr(expr) {
-		return false
-	}
 	st, gerr := AnalyzeMetricSQL(expr, nil)
 	if gerr != nil {
 		return false

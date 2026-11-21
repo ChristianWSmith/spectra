@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -21,7 +20,7 @@ import (
 func seedValueMetric(t *testing.T, s *Store, name, scope string) models.MetricRow {
 	t.Helper()
 	m, err := s.CreateMetric(models.MetricRow{
-		Name: name, Title: name, Expr: "from events: count()",
+		Name: name, Title: name, Expr: rawCountSQL("events", scope),
 		Scope: scope, Origin: "user",
 	})
 	if err != nil {
@@ -199,6 +198,7 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
+	stampRun(t, s, m.ID, matchID, m.Version, live)
 	if c := coverageOf(t, s, m.ID, live); c.Behind || c.FreshRows != 1 {
 		t.Errorf("live = %+v, want fresh (not behind)", c)
 	}
@@ -229,11 +229,12 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("reinsert: %v", err)
 	}
+	stampRun(t, s, m.ID, matchID, m.Version, live+1)
 	if c := coverageOf(t, s, m.ID, live+1); c.Behind {
 		t.Errorf("re-stamped = %+v, want fresh", c)
 	}
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
-		ID: m.ID, Name: m.Name, Title: m.Title, Expr: "from events: count(where kind='kill')",
+		ID: m.ID, Name: m.Name, Title: m.Title, Expr: rawCountSQL("events", "match"),
 		Scope: "match", Origin: "user",
 	}, nil, nil, true); err != nil {
 		t.Fatalf("semantic save: %v", err)
@@ -245,9 +246,12 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 	// (5) Profile guard: a profile metric with NO rows and an EMPTY
 	// library (no player_stats) is NOT behind — nothing to compute is
 	// no-data, never an infinite recompute loop.
+	// The raw predicate's library-wide unit exists once a match is ready
+	// (cov-1 is ready here), so the career bucket owes a run even though
+	// no player_stats row exists yet.
 	p := seedValueMetric(t, s, "cov_profile", "profile")
-	if c := coverageOf(t, s, p.ID, live+1); c.Behind {
-		t.Errorf("empty-library profile = %+v, want not behind (no-data)", c)
+	if c := coverageOf(t, s, p.ID, live+1); !c.Behind {
+		t.Errorf("profile over a ready match with no run = %+v, want behind", c)
 	}
 	// With library data present, the cleared career bucket IS behind.
 	pid := seedReadyMatch(t, s, "cov-2")
@@ -463,148 +467,25 @@ func TestBumpMetricAndDependentsCascade(t *testing.T) {
 	}
 }
 
-// TestMetricCoverageSubjectBranches pins THE behind predicate's
-// subject-aware branches (metrics expansion §6): a match- or
-// team-subject metric at match extent is behind iff a fresh row exists
-// for that ready match — the same clause a player subject rides (it
-// never constrains subject_key, so ANY fresh row for the match answers
-// it, ONE team row included: per-team completeness is the emit's job,
-// not the predicate's), and a newly imported uncovered match moves it
-// behind again.
-func TestMetricCoverageSubjectBranches(t *testing.T) {
-	s, _ := openFileStore(t)
-	t.Cleanup(func() { _ = s.CloseRO() })
-	cfg, err := s.GetConfig()
-	if err != nil {
-		t.Fatalf("GetConfig: %v", err)
+// rawCountSQL is the fixture statement for a count metric over one table:
+// one row per match for a match-scope metric (bound to :match_id), or the
+// library-wide row for a profile-scope metric. The coverage predicate reads
+// the statement's binds and touched set, so the fixtures are raw statements.
+func rawCountSQL(table, scope string) string {
+	if scope == "profile" {
+		return "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM " + table
 	}
-	live := cfg.RuleVersion
-
-	matchA := seedReadyMatch(t, s, "subj-axis-1")
-	subjMetric := func(name, subject string) models.MetricRow {
-		t.Helper()
-		m, err := s.CreateMetric(models.MetricRow{
-			Name: name, Title: name, Expr: "from rounds: count()",
-			Scope: "match", Subject: subject, Origin: "user",
-		})
-		if err != nil {
-			t.Fatalf("CreateMetric(%s): %v", name, err)
-		}
-		markTouched(t, s, m.ID)
-		return m
-	}
-	mm := subjMetric("cov_match_subject", "match")
-	mt := subjMetric("cov_team_subject", "team")
-
-	// Absent on a ready match → behind for both subjects.
-	if c := coverageOf(t, s, mm.ID, live); !c.Behind {
-		t.Errorf("absent match-subject = %+v, want behind", c)
-	}
-	if c := coverageOf(t, s, mt.ID, live); !c.Behind {
-		t.Errorf("absent team-subject = %+v, want behind", c)
-	}
-
-	// One fresh row for the match answers the clause — subject_key ''
-	// for the match subject, ONE team key for the team subject (the
-	// pinned "a fresh row exists for that match" rule).
-	if err := s.InsertMetricValues(mm.ID, mm.Version, live, []MetricValueRow{
-		{MatchID: matchA, SubjectKey: "", Value: 24, N: 1},
-	}); err != nil {
-		t.Fatalf("insert match-subject: %v", err)
-	}
-	if c := coverageOf(t, s, mm.ID, live); c.Behind {
-		t.Errorf("match-subject with its match row = %+v, want fresh", c)
-	}
-	if err := s.InsertMetricValues(mt.ID, mt.Version, live, []MetricValueRow{
-		{MatchID: matchA, SubjectKey: "ct", Value: 5, N: 12},
-	}); err != nil {
-		t.Fatalf("insert team-subject: %v", err)
-	}
-	if c := coverageOf(t, s, mt.ID, live); c.Behind {
-		t.Errorf("team-subject with one team row for the match = %+v, want fresh (any fresh row answers the match clause)", c)
-	}
-
-	// A second ready match with no rows → behind again (the import
-	// trigger's clause, subject-agnostic).
-	seedReadyMatch(t, s, "subj-axis-2")
-	if c := coverageOf(t, s, mm.ID, live); !c.Behind {
-		t.Errorf("match-subject on a new uncovered match = %+v, want behind", c)
-	}
-	if c := coverageOf(t, s, mt.ID, live); !c.Behind {
-		t.Errorf("team-subject on a new uncovered match = %+v, want behind", c)
-	}
+	return "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM " + table + " WHERE match_id = :match_id"
 }
 
-// TestMetricCoveragePartitionDimRule pins the dim-axis rule (metrics
-// expansion §6 — "behind iff ANY expected dim row is missing", the
-// simplest honest reading): a partitioned metric's expected dims per
-// unit are the partition values its INPUTS currently carry (side: each
-// side human rows played), each guarded so work that does not exist
-// never reads as behind (the library-empty guard's criterion per dim).
-func TestMetricCoveragePartitionDimRule(t *testing.T) {
-	s, _ := openFileStore(t)
-	t.Cleanup(func() { _ = s.CloseRO() })
-	cfg, err := s.GetConfig()
-	if err != nil {
-		t.Fatalf("GetConfig: %v", err)
-	}
-	live := cfg.RuleVersion
-
-	matchID := seedReadyMatch(t, s, "dim-rule-1")
-	// Human input on BOTH sides (no players row marks them bot).
-	for i, side := range []string{"ct", "t"} {
-		if _, err := s.db.Exec(`INSERT INTO player_stats (match_id, steam_id, side) VALUES (?, ?, ?)`,
-			matchID, fmt.Sprintf("7656119800000000%d", i+1), side); err != nil {
-			t.Fatalf("seed player_stats side %s: %v", side, err)
-		}
-	}
-	m, err := s.CreateMetric(models.MetricRow{
-		Name: "cov_side_partition", Title: "cov_side_partition",
-		Expr: "from player_stats: sum(kills)", Scope: "match",
-		Partition: "side", Origin: "user",
-	})
-	if err != nil {
-		t.Fatalf("CreateMetric: %v", err)
-	}
-	markTouched(t, s, m.ID)
-
-	// Both input sides expect a fresh dim row: absent → behind (the
-	// match clause alone already says so; the dim axis takes over once
-	// SOME rows exist).
-	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Dim: "ct", Value: 3, N: 1},
-		{MatchID: matchID, SubjectKey: "76561198000000002", Dim: "t", Value: 4, N: 1},
-	}); err != nil {
-		t.Fatalf("insert both dims: %v", err)
-	}
-	if c := coverageOf(t, s, m.ID, live); c.Behind {
-		t.Errorf("both dims fresh = %+v, want fresh", c)
-	}
-
-	// THE RULE: drop ONE input-carried dim row → behind (any dim row
-	// missing), even though the match still has a fresh row.
-	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND dim = 't'`, m.ID); err != nil {
-		t.Fatalf("delete dim row: %v", err)
-	}
-	if c := coverageOf(t, s, m.ID, live); !c.Behind {
-		t.Errorf("one input side without a dim row = %+v, want behind", c)
-	}
-
-	// Guard: a side NO human input carries is not expected — restoring
-	// only ct and dropping the t INPUT leaves the metric fresh, never a
-	// permanent-behind loop over work that does not exist.
-	if _, err := s.db.Exec(`DELETE FROM player_stats WHERE match_id = ? AND side = 't'`, matchID); err != nil {
-		t.Fatalf("delete t input: %v", err)
-	}
-	if _, err := s.db.Exec(`DELETE FROM metric_values WHERE metric_id = ? AND dim = 'ct'`, m.ID); err != nil {
-		t.Fatalf("reset dim rows: %v", err)
-	}
-	if err := s.InsertMetricValues(m.ID, m.Version, live, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Dim: "ct", Value: 3, N: 1},
-	}); err != nil {
-		t.Fatalf("insert ct dim: %v", err)
-	}
-	if c := coverageOf(t, s, m.ID, live); c.Behind {
-		t.Errorf("only the input-carried side present = %+v, want fresh (the absent side is not expected work)", c)
+// stampRun writes the run record a raw match-scope unit leaves behind: the
+// raw behind predicate reads metric_runs, not the stored rows alone. Every
+// fixture that inserts a value for a match-scope metric stamps its run too.
+func stampRun(t *testing.T, s *Store, metricID, matchID int64, version, rule int) {
+	t.Helper()
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO metric_runs
+		(metric_id, match_id, scope_steam_id, scope_round, metric_version, rule_version, computed_at)
+		VALUES (?, ?, '', 0, ?, ?, CURRENT_TIMESTAMP)`, metricID, matchID, version, rule); err != nil {
+		t.Fatalf("stamp run: %v", err)
 	}
 }

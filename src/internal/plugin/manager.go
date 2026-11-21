@@ -137,11 +137,9 @@ func (m *Manager) stateFor(row store.PluginRow) State {
 // provided, copies the manifest into the plugin directory as the installed
 // bundle, records the registry row, and upserts the plugin's metric rows
 // (enabled installs only). Reinstalling keeps the previous enabled state.
-// validateMetricExprs runs the real metrics-engine grammar on every bundled
-// metric so a plugin cannot persist expressions the engine would reject at
-// preview time (structural manifest checks live in manifest.go). Compile's
-// player-anchor rule applies too: a round-grain primary is refused at
-// install, exactly like a user save.
+// validateMetricExprs runs the metric gate on every bundled metric so a
+// plugin cannot persist a statement the engine would refuse at save (the
+// structural manifest checks live in manifest.go).
 func validateMetricExprs(man Manifest) error {
 	for _, d := range man.Metrics {
 		if pe := metrics.Validate(d.Expr); pe != nil {
@@ -287,7 +285,7 @@ func metricDefs(man Manifest) []store.PluginMetricDef {
 	for _, d := range man.Metrics {
 		defs = append(defs, store.PluginMetricDef{
 			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
-			Format: d.Format, Doc: d.Doc, Denominator: d.Denominator,
+			Format: d.Format, Doc: d.Doc,
 		})
 	}
 	return defs

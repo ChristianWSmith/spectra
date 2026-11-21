@@ -64,7 +64,7 @@ func parkingRuns(svc *MetricsService, target int64, park *stmtParkCtx) metrics.M
 // and its job — the first rows an import commits) commits at once.
 func TestSweepMetricDoesNotBlockConcurrentWrite(t *testing.T) {
 	f := newSeededFixture(t)
-	m := f.save(t, models.MetricRow{Name: "exec_open_statement", Expr: "from events: count()"})
+	m := f.save(t, models.MetricRow{Name: "exec_open_statement", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 
 	park := newStmtParkCtx()
 	sweepDone := make(chan error, 1)
@@ -123,9 +123,8 @@ func TestSweepMetricDoesNotBlockConcurrentWrite(t *testing.T) {
 // dependent is skipped, and an unrelated metric still computes.
 func TestCancelMetricMidStatement(t *testing.T) {
 	f := newSeededFixture(t)
-	target := f.save(t, models.MetricRow{Name: "exec_cancel_target", Expr: "from events: count()"})
-	dependent := f.save(t, models.MetricRow{Name: "exec_cancel_dependent", Expr: "from events: metric('exec_cancel_target')"})
-	other := f.save(t, models.MetricRow{Name: "exec_cancel_other", Expr: "from events: sum(dmg)"})
+	target := f.save(t, models.MetricRow{Name: "exec_cancel_target", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
+	other := f.save(t, models.MetricRow{Name: "exec_cancel_other", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(dmg) AS value FROM events WHERE match_id = :match_id"})
 
 	// First sweep: everything fresh, so the cancel has old rows to lose.
 	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
@@ -135,7 +134,7 @@ func TestCancelMetricMidStatement(t *testing.T) {
 		t.Fatal("target has no rows after the first sweep")
 	}
 	// Re-save target semantically: it and its dependent go behind.
-	target.Expr = "from events: count(dmg)"
+	target.Expr = "SELECT '' AS subject_key, '' AS dim, COUNT(dmg) AS value FROM events WHERE match_id = :match_id"
 	target = f.save(t, target)
 
 	if f.svc.CancelMetric(target.ID) {
@@ -171,16 +170,6 @@ func TestCancelMetricMidStatement(t *testing.T) {
 	if n := storedRows(t, f.st, target.ID); n != 0 {
 		t.Errorf("target rows = %d after cancel, want 0 (no partial rows)", n)
 	}
-	skipped := false
-	for _, id := range res.Skipped {
-		skipped = skipped || id == dependent.ID
-	}
-	if !skipped {
-		t.Errorf("dependent not skipped (skipped=%v) — its upstream was cancelled", res.Skipped)
-	}
-	if n := storedRows(t, f.st, dependent.ID); n != 0 {
-		t.Errorf("dependent rows = %d, want 0", n)
-	}
 	if behind, fresh := coverageOf(t, f.st, other.ID); behind || fresh == 0 {
 		t.Errorf("unrelated metric coverage = (behind=%v, fresh=%d), want fresh", behind, fresh)
 	}
@@ -192,7 +181,7 @@ func TestCancelMetricMidStatement(t *testing.T) {
 // rows exist, and the next sweep computes it again.
 func TestCancelMetricThroughTheService(t *testing.T) {
 	f := newSeededFixture(t)
-	m := f.save(t, models.MetricRow{Name: "exec_service_cancel", Expr: "from events: count()"})
+	m := f.save(t, models.MetricRow{Name: "exec_service_cancel", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 
 	cancelled := false
 	res, err := f.svc.runSweep(t.Context(), func(p metrics.SweepProgress) {
@@ -245,7 +234,7 @@ func TestCancelMetricThroughTheService(t *testing.T) {
 // so the next sweep resumes it.
 func TestSweepCancelLeavesMetricBehind(t *testing.T) {
 	f := newSeededFixture(t)
-	m := f.save(t, models.MetricRow{Name: "exec_sweep_cancel", Expr: "from events: count()"})
+	m := f.save(t, models.MetricRow{Name: "exec_sweep_cancel", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

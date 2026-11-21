@@ -86,14 +86,6 @@ export const builder = {
   subjectLabel: 'Subject',
   filterPlayer: 'Player',
   filterTeam: 'Team',
-  denominatorLabel: 'Denominator',
-  filterRounds: 'Rounds',
-  filterMatches: 'Matches',
-  // The Denominator group's third box (Reading B, 2026-11-16): the
-  // boxes are exactly the column's three values — this one is the
-  // denominator-less rows. Distinct from denomNone ('none'), the
-  // editor's Denominator SELECT option.
-  filterNone: 'None',
   typeLabel: 'Type',
   filterAuto: 'Auto',
   filterInt: 'Int',
@@ -157,9 +149,6 @@ export const builder = {
   subjectMatchOption: 'match — about the match',
   subjectTeamOption: 'team — about one team',
   fieldFormat: 'Format',
-  denomNone: 'none', // also the list row's denominator-less chip word (w19)
-  denomRounds: 'rounds',
-  denomMatches: 'matches',
   fieldDoc: 'Doc (formula, required)',
   docPlaceholder: 'Document the formula — what it counts, over what…',
   fieldExpression: 'Expression',
@@ -179,7 +168,6 @@ export const builder = {
   preview: 'Preview',
   running: 'Running…',
   previewTruncated: 'truncated',
-  adhocNote: 'Ad-hoc preview — the denominator ({denominator}) applies after save.',
   storedValuesLabel: 'Stored values ·',
   storedProfileScope: 'career (every player)',
   storedMatchScope: 'newest ready match #',

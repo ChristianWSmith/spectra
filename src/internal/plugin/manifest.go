@@ -57,16 +57,15 @@ var allowedCapabilities = map[string]bool{
 // and it is WRITTEN THROUGH since W2: validated here (an omitted scope
 // keeps the DDL DEFAULT 'match'), stored by ReplacePluginMetrics.
 type MetricDef struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	Expr        string `json:"expr"`
-	Scope       string `json:"scope"`
-	Format      string `json:"format"`
-	Doc         string `json:"doc"`
-	Origin      string `json:"origin"`
-	PluginID    string `json:"pluginId"`
-	Denominator string `json:"denominator,omitempty"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Title    string `json:"title"`
+	Expr     string `json:"expr"`
+	Scope    string `json:"scope"`
+	Format   string `json:"format"`
+	Doc      string `json:"doc"`
+	Origin   string `json:"origin"`
+	PluginID string `json:"pluginId"`
 }
 
 // ReportTemplate is one manifest report template (JSON shape matches the
