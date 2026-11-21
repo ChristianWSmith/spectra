@@ -40,7 +40,7 @@
 //   - deaths: every death of the player (no side gate),
 //   - damage: enemy damage ONLY — same-side damage (friendly fire) is
 //     skipped, gated with the same parity rule as the backend stamp
-//     (extract's sameSide / the events.same_side column): both sides
+//     (extract's sameSide, applied in SQL through the player_ticks join): both sides
 //     known AND equal → skip; an unknown side on either end never
 //     matches, so it counts as ENEMY (owner ruling 2026-11-17: damage
 //     stats differentiate enemy damage; FF stays an accounting quantity
@@ -133,8 +133,8 @@ function foldEvent(e, et, byNumber, sideAt, disc, acc) {
     const vic = String(e.victim || '');
     // Same-side gate — owner ruling 2026-11-17: damage stats
     // differentiate enemy damage, friendly fire is not damage dealt on
-    // any scoreboard. Parity with the backend stamp (events.same_side,
-    // extract.agg.hurt): skip only when BOTH sides are known and equal;
+    // any scoreboard. Parity with the backend rule (extract.agg.hurt, the
+    // player_ticks side join): skip only when BOTH sides are known and equal;
     // an unknown side on either end never matches (JS sameSide mirrors
     // Go's a != "" && a == b) and therefore counts as ENEMY — a strict
     // known-and-different gate would zero a side-less corpus and

@@ -133,7 +133,7 @@ test('attacker === victim never earns kill credit (unknown sides included)', () 
 test('damage folds ENEMY damage only — same-side (friendly fire) excluded', () => {
   // INVERTED (owner ruling 2026-11-17): friendly fire in damage stats "is
   // a problem" — the playhead fold now excludes same-side damage with the
-  // backend's parity rule (events.same_side / extract.agg.hurt): skip only
+  // backend's parity rule (extract.agg.hurt, applied in SQL via player_ticks): skip only
   // when BOTH sides are known and equal; an unknown side counts as ENEMY.
   const out = fold([
     dmg({ attacker: 'A', victim: 'X', dmg: 30 }), // enemy (ct → t) — counted
