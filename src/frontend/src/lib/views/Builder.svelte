@@ -977,6 +977,12 @@
         <span class="chip bld-disabled">{S.builder.pluginDisabled}</span>
       {/if}
     {/if}
+    <!-- An edited built-in wears the Edited chip in the list too (owner
+         ruling 50): the service sets Edited only on a builtin whose
+         override is in place, and the chip goes when it is restored. -->
+    {#if m.edited}
+      <span class="chip" title={S.builder.editedTitle}>{S.builder.editedChip}</span>
+    {/if}
   </span>
 {/snippet}
 

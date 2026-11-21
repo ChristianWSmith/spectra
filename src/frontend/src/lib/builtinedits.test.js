@@ -180,3 +180,28 @@ test('C5h (f): the guide describes editing a builtin report and metric, and rest
     }
   }
 });
+
+// (d) owner ruling 50: an edited builtin wears the Edited chip wherever the
+// Builder lists it. The copy lives in the strings catalog, and each view
+// renders it from there (no literal chip text in the view).
+test('(d) the Edited chip copy is in the catalog and each builder renders it from there', async () => {
+  const S = await import('./strings/index.js');
+  const dir = new URL('.', import.meta.url);
+  const views = [
+    ['componentbuilder', 'views/ComponentBuilder.svelte'],
+    ['reportbuilder', 'views/ReportsBuilder.svelte'],
+    ['builder', 'views/Builder.svelte'],
+  ];
+  for (const [ns, file] of views) {
+    assert.equal(typeof S[ns].editedChip, 'string', `${ns}.editedChip is in the catalog`);
+    assert.ok(S[ns].editedChip.trim().length > 0, `${ns}.editedChip is not empty`);
+    assert.equal(typeof S[ns].editedTitle, 'string', `${ns}.editedTitle is in the catalog`);
+    const text = readFileSync(new URL(file, dir), 'utf8');
+    assert.ok(text.includes(`S.${ns}.editedChip`), `${file} renders the chip from the catalog`);
+    assert.ok(!text.includes('>edited<'), `${file} carries no literal chip text`);
+  }
+  assert.ok(
+    readFileSync(new URL('views/Builder.svelte', dir), 'utf8').includes('{#if m.edited}'),
+    'the metric list row shows the chip for an edited metric',
+  );
+});

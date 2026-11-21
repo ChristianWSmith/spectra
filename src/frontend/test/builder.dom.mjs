@@ -911,16 +911,27 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
     if (refuseEdit) return Promise.reject(new Error(refuseEdit));
     const row = METRICS.find((x) => x.id === id);
     row.expr = expr;
+    row.edited = true;
     return { ...row, edited: true };
   };
   bindings.handlers.RestoreBuiltinMetric = (id) => {
     builtinCalls.push({ op: 'restore', id });
     const row = METRICS.find((x) => x.id === id);
     row.expr = SHIPPED_TRADE_EXPR;
+    row.edited = false;
     return { ...row, edited: false };
   };
 
   check('the builtin row renders', !!bRow, JSON.stringify(namesOf(r)));
+  // Owner ruling 50: an edited builtin wears the Edited chip in the list.
+  // The shipped builtin (no override) and the user rows show none.
+  const listEdited = (row) =>
+    !!row && [...row.querySelectorAll('.bld-row-sub .chip')].some((c) => c.textContent.trim() === 'edited');
+  check(
+    'a builtin with no override shows no Edited chip in the list, and neither does a user row',
+    !!bRow && !listEdited(bRow) && !!uRow && !listEdited(uRow),
+    bRow ? bRow.querySelector('.bld-row-sub')?.textContent : 'no row',
+  );
   check(
     'the builtin row main area is a button, like every other row',
     !!bRow && !!bRow.querySelector('button.bld-row-main'),
@@ -1147,6 +1158,13 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
     saveCall?.id === 1 && saveCall.expr === EDIT,
     JSON.stringify(saveCall),
   );
+  await sleep(60);
+  check(
+    'the list row of the edited built-in wears the Edited chip, and no other row does',
+    listEdited(rowNamed(r, 'trade_rate')) &&
+      rowsOf(r).filter((x) => listEdited(x)).length === 1,
+    `rows edited=${rowsOf(r).filter((x) => listEdited(x)).length}`,
+  );
   check(
     'after the save the built-in shows the edited chip, Save is clean again, and Restore to default appears',
     !!chip() && heading(r) === 'Edit metric' && [...r.querySelectorAll('.bld-readonly ~ .chip, .bld-actions .chip')].some((c) => c.textContent.trim() === 'edited') &&
@@ -1165,6 +1183,13 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
       (r.querySelector('#bld-expr')?.value || '') === SHIPPED_TRADE_EXPR &&
       ![...r.querySelectorAll('.chip')].some((c) => c.textContent.trim() === 'edited'),
     `${JSON.stringify(restoreCall)} expr=${r.querySelector('#bld-expr')?.value}`,
+  );
+  await sleep(60);
+  check(
+    'restore to default removes the Edited chip from the list row',
+    !!rowNamed(r, 'trade_rate') && !listEdited(rowNamed(r, 'trade_rate')) &&
+      rowsOf(r).every((x) => !listEdited(x)),
+    `row=${rowNamed(r, 'trade_rate')?.querySelector('.bld-row-sub')?.textContent}`,
   );
   check(
     'the restored built-in is unedited again: Save disabled, no restore control',
