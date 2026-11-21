@@ -173,9 +173,9 @@ func tradeFixture() *models.ExtractedMatch {
 			{SteamID: "X", Name: "Xim", Side: "t", FinalStatePresent: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "A", Side: "ct", Name: "Alice", Deaths: 1, RoundsPlayed: 1},
-			{SteamID: "B", Side: "ct", Name: "Bob", Kills: 1, TradeKills: 1, RoundsPlayed: 1},
-			{SteamID: "X", Side: "t", Name: "Xim", Kills: 1, Deaths: 1, RoundsPlayed: 1},
+			{SteamID: "A", Side: "ct", Name: "Alice"},
+			{SteamID: "B", Side: "ct", Name: "Bob", TradeKills: 1},
+			{SteamID: "X", Side: "t", Name: "Xim"},
 		},
 		Rounds: []models.Round{
 			{Number: 1, Winner: "ct", StartTick: 0, EndTick: 7200, FreezeEndTick: 64},

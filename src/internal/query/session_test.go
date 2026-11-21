@@ -262,7 +262,7 @@ func TestConsoleTypicalQuery(t *testing.T) {
 	s := query.New(st)
 	queries := []string{
 		"SELECT kind, COUNT(*) FROM events GROUP BY kind",
-		"SELECT p.name, SUM(ps.kills) AS k FROM player_stats ps JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id GROUP BY ps.steam_id ORDER BY k DESC",
+		"SELECT p.name, SUM(ps.entry_kills) AS k FROM player_stats ps JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id GROUP BY ps.steam_id ORDER BY k DESC",
 		"SELECT round, COUNT(*) FROM engagements WHERE kind = 'opening' GROUP BY round ORDER BY round",
 	}
 	for _, q := range queries {

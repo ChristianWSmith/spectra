@@ -64,7 +64,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 150 {
+	if len(res.Rows) != 127 {
 		t.Fatalf("builtins = %d, want 150 (109 sugar builtins + 33 raw-SQL fold seeds F2 + clutch and alive_count + 6 B7 round-grain seeds; trade_rate + the dogfooding set + the 42-row inferred set + the w13d kda row + the plan §7 M3 dmg_no_kill/kill_conversion pair + the owner Option A count addendum + the subject-axis addendum + the identity addendum + the side/map partition addendum + the M7 weapon addendum + the grammar addendum + the M7 weapon-damage flip + the view-aggregate relocation addendum — the 2026-11-17/18 re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6 rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit)", len(res.Rows))
 	}
 	scopes := map[string]int{}
@@ -128,8 +128,8 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// re-pins, plan §8 (M8/M4 rows), §8 (M1 identity row), §8 (M5/M6
 	// rows), §8 (M7 row), §8 (M8 rows) and the ME8 exception audit).
 	// + 33 raw fold seeds (F2), all match scope.
-	if scopes["match"] != 117 || scopes["profile"] != 33 {
-		t.Errorf("scope split = %d match / %d profile, want 117 / 33", scopes["match"], scopes["profile"])
+	if scopes["match"] != 94 || scopes["profile"] != 33 {
+		t.Errorf("scope split = %d match / %d profile, want 94 / 33", scopes["match"], scopes["profile"])
 	}
 }
 

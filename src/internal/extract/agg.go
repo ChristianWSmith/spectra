@@ -44,19 +44,18 @@ type teamFinal struct {
 // counters are deliberately absent — event-derived stats own K/D/A/MVP
 // (see applyFinal).
 type finalPlayer struct {
-	key             uint64
-	name            string
-	side            string
-	isBot           bool
-	clanTag         string
-	crosshairCode   string
-	rank            int
-	rankType        int
-	wins            int
-	ping            int
-	alive           bool
-	score           int
-	moneySpentTotal int
+	key           uint64
+	name          string
+	side          string
+	isBot         bool
+	clanTag       string
+	crosshairCode string
+	rank          int
+	rankType      int
+	wins          int
+	ping          int
+	alive         bool
+	score         int
 }
 
 // moneySample is one participant's freeze-time-end economy reading.
@@ -100,7 +99,6 @@ type roundInfo struct {
 	number          int
 	winner          string
 	reason          string
-	durationSec     float64
 	startTick       int
 	endTick         int
 	mvp             string
@@ -126,52 +124,29 @@ type tradeRec struct {
 // playerAgg is one participant's accumulator (models.Player + models.PlayerStats
 // at build time), keyed by SteamID64 (synthetic key for bots).
 type playerAgg struct {
-	name            string
-	isBot           bool
-	side            string
-	clanTag         string
-	crosshairCode   string
-	rank            int
-	rankType        int
-	wins            int
-	ping            int
-	finalAlive      bool
-	kills           int
-	deaths          int
-	assists         int
-	flashAssists    int
-	headshots       int
-	teamkills       int
-	suicides        int
-	mvps            int
-	score           int
-	totalDamage     int
-	damageTaken     int
-	shots           int
-	hits            int
-	moneySpentTotal int
-	entryKills      int
-	entryDeaths     int
-	tradeKills      int
-	killStreak      int
-	bestStreak      int
-	twoK            int
-	threeK          int
-	fourK           int
-	fiveK           int
-	utilityDamage   int
-	enemiesFlashed  int
-	flashedTimes    int
-	bombPlants      int
-	bombDefuses     int
-	weaponKills     map[string]int
+	name          string
+	isBot         bool
+	side          string
+	clanTag       string
+	crosshairCode string
+	rank          int
+	rankType      int
+	wins          int
+	ping          int
+	finalAlive    bool
+	mvps          int
+	score         int
+	entryKills    int
+	entryDeaths   int
+	tradeKills    int
+	killStreak    int
+	bestStreak    int
 }
 
 func newPlayerAgg(name string, bot bool) *playerAgg {
 	return &playerAgg{
-		name:        name,
-		isBot:       bot,
-		weaponKills: make(map[string]int),
+		name:  name,
+		isBot: bot,
 	}
 }
 
@@ -243,7 +218,6 @@ type agg struct {
 	// tradeWindow keys recent victims → who killed them and when (the
 	// strict trade-kill rule; reset every RoundStart).
 	tradeWindow map[uint64]tradeRec
-	roundKills  map[int]map[uint64]int
 
 	// lastMVP tracks each player's scoreboard MVP counter for per-round
 	// delta attribution at RoundEnd (RoundMVPAnnouncement is absent in
@@ -347,7 +321,6 @@ func newAgg() *agg {
 		participation:  make(map[uint64]map[int]bool),
 		victimHP:       make(map[uint64]int),
 		tradeWindow:    make(map[uint64]tradeRec),
-		roundKills:     make(map[int]map[uint64]int),
 		lastMVP:        make(map[uint64]int),
 		lastSpent:      make(map[uint64]int),
 		lastHeldUtil:   make(map[uint64]string),
@@ -442,7 +415,6 @@ func (a *agg) applyFinal(finals []finalPlayer) {
 		p.ping = f.ping
 		p.finalAlive = f.alive
 		p.score = f.score
-		p.moneySpentTotal = f.moneySpentTotal
 		a.finalPresent[f.key] = true
 	}
 }
@@ -481,7 +453,6 @@ func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objectiv
 			startTick: tick,
 		})
 	}
-	a.roundKills[a.currentRound] = make(map[uint64]int)
 	a.tradeWindow = make(map[uint64]tradeRec)
 	// Health resets with the round: every player spawns back at 100 HP.
 	a.victimHP = make(map[uint64]int)
@@ -526,13 +497,6 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 		r.winner = winner
 		r.reason = reason
 		r.endTick = tick
-		if r.startTick > 0 && tick > r.startTick {
-			tr := tickRate
-			if tr <= 0 {
-				tr = analytics.DefaultTickRate
-			}
-			r.durationSec = float64(tick-r.startTick) / tr
-		}
 	}
 	a.addEvent(models.Event{
 		Tick:       tick,
@@ -802,6 +766,7 @@ func (a *agg) kill(k killInfo) {
 	a.addEvent(models.Event{
 		Tick:          k.tick,
 		Kind:          models.EventKill,
+		PostMatch:     !k.real,
 		Attacker:      keyStr(k.killerKey),
 		Victim:        keyStr(k.victimKey),
 		Assister:      keyStr(k.assisterKey),
@@ -910,12 +875,7 @@ func (a *agg) kill(k killInfo) {
 	// Victim bookkeeping: every real death counts (incl. suicides and
 	// teamkills — the scoreboard's D column does too).
 	if k.victimKey != 0 {
-		vp := a.ensure(k.victimKey, k.victimName)
-		vp.deaths++
-		vp.killStreak = 0
-		if k.samePlayer {
-			vp.suicides++
-		}
+		a.ensure(k.victimKey, k.victimName).killStreak = 0
 	}
 
 	// Killer credit requires a real ENEMY kill: no credit for world/no
@@ -929,13 +889,7 @@ func (a *agg) kill(k killInfo) {
 		kp.side = k.killerSide
 	}
 	if sameSide(k.killerSide, k.victimSide) {
-		kp.teamkills++
 		return
-	}
-	kp.kills++
-	kp.weaponKills[k.weapon]++
-	if k.headshot {
-		kp.headshots++
 	}
 
 	// Strict trade: a kill answers a teammate's death when the victim is
@@ -964,9 +918,7 @@ func (a *agg) kill(k killInfo) {
 		}
 	}
 
-	// First blood of the round: entry attribution. (The opening_kills
-	// twin was incremented in this same branch until it was retired
-	// with its column on 2026-11-18 — identical stored columns.)
+	// First blood of the round: entry attribution (a detector, item 21).
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if r.firstKillSteam == "" {
@@ -975,15 +927,6 @@ func (a *agg) kill(k killInfo) {
 			kp.entryKills++
 		}
 	}
-
-	// Per-round multi-kills: only the running count is kept here — the
-	// exact 2K/3K/4K/5K tiers are decided in build() from the round's final
-	// total (external scoreboards count a round at exactly one tier: a
-	// 4-kill round is a 4K, not also a 3K).
-	if a.roundKills[a.currentRound] == nil {
-		a.roundKills[a.currentRound] = make(map[uint64]int)
-	}
-	a.roundKills[a.currentRound][k.killerKey]++
 
 	kp.killStreak++
 	if kp.killStreak > kp.bestStreak {
@@ -1009,19 +952,6 @@ func (a *agg) kill(k killInfo) {
 		}
 	}
 
-	// Assists: cross-team only (no suicide/teamkill assists), and flash
-	// assists are split into their own column — external scoreboards
-	// exclude them from the assist column (the game's m_iAssists
-	// includes them).
-	if k.assisterKey != 0 && k.assisterKey != k.victimKey &&
-		!sameSide(k.assisterSide, k.victimSide) {
-		ap := a.ensure(k.assisterKey, k.assisterName)
-		if k.assistedFlash {
-			ap.flashAssists++
-		} else {
-			ap.assists++
-		}
-	}
 }
 
 // flushWorldSelf decides the deferred World self-kills (kill's
@@ -1048,10 +978,7 @@ func (a *agg) flushWorldSelf() {
 		if p.victimKey == 0 {
 			continue
 		}
-		vp := a.ensure(p.victimKey, p.victimName)
-		vp.deaths++
-		vp.killStreak = 0
-		vp.suicides++
+		a.ensure(p.victimKey, p.victimName).killStreak = 0
 	}
 	a.pendingWorldSelf = a.pendingWorldSelf[:0]
 }
@@ -1114,6 +1041,7 @@ func (a *agg) hurt(h hurtInfo) {
 	a.addEvent(models.Event{
 		Tick:      h.tick,
 		Kind:      models.EventDamage,
+		PostMatch: !h.real,
 		Attacker:  keyStr(h.attackerKey),
 		Victim:    keyStr(h.victimKey),
 		Weapon:    h.weapon,
@@ -1132,26 +1060,6 @@ func (a *agg) hurt(h hurtInfo) {
 		}),
 	}, "player_hurt")
 
-	if !h.real {
-		return
-	}
-	dealt := capped
-	// Attacker stats count ENEMY damage only — friendly fire and self
-	// damage are not "damage dealt" on any scoreboard (awpy/HLTV/ProSettings).
-	// `same` (computed above for the event stamp) IS this gate's side
-	// predicate: unknown side ⇒ not same ⇒ enemy (permissive parity).
-	enemy := h.attackerKey != 0 && h.attackerKey != h.victimKey && !same
-	if enemy {
-		ap := a.ensure(h.attackerKey, h.attackerName)
-		ap.totalDamage += dealt
-		ap.hits++
-		if h.isUtility {
-			ap.utilityDamage += dealt
-		}
-	}
-	if h.victimKey != 0 {
-		a.ensure(h.victimKey, h.victimName).damageTaken += h.healthDamageTaken
-	}
 }
 
 // capDamage credits one hit at most the victim's remaining HP — external
@@ -1201,7 +1109,6 @@ func (a *agg) shot(tick int, key uint64, name, weapon string) {
 	if key == 0 || a.discarding {
 		return
 	}
-	a.ensure(key, name).shots++
 	a.addEvent(models.Event{
 		Tick:     tick,
 		Kind:     models.EventWeaponFire,
@@ -1230,31 +1137,17 @@ func (a *agg) blind(b blindInfo) {
 		return // discarded round: no blind row, no stat
 	}
 	a.addEvent(models.Event{
-		Tick:     b.tick,
-		Kind:     models.EventBlind,
-		Attacker: keyStr(b.attackerKey),
-		Victim:   keyStr(b.playerKey),
+		Tick:      b.tick,
+		Kind:      models.EventBlind,
+		PostMatch: !b.real,
+		Attacker:  keyStr(b.attackerKey),
+		Victim:    keyStr(b.playerKey),
 		DetailJSON: detailJSON(map[string]any{
 			"player":          b.playerName,
 			"attacker":        b.attackerName,
 			"flashDurationMs": b.flashMs,
 		}),
 	}, "player_blind")
-	if !b.real {
-		return
-	}
-	if b.playerKey != 0 {
-		a.ensure(b.playerKey, b.playerName).flashedTimes++
-	}
-	// Enemies flashed: credit the THROWER once per blinded enemy player
-	// (player_blind fires per player blinded by the flash — CS2.md
-	// "Enemies flashed"). Teammates and self-blinds credit nothing: same
-	// cross-team rule as assists/damage (sameSide — an unknown side never
-	// matches). Post-match blinds are gated by b.real.
-	if b.attackerKey != 0 && b.attackerKey != b.playerKey &&
-		!sameSide(b.attackerSide, b.playerSide) {
-		a.ensure(b.attackerKey, b.attackerName).enemiesFlashed++
-	}
 }
 
 // ---- utility & objective ----
@@ -1412,12 +1305,10 @@ func (a *agg) bombPlanted(tick int, site string, key uint64, name string, real b
 	if n := len(a.rounds); n > 0 {
 		a.rounds[n-1].bombSite = site
 	}
-	if key != 0 && real {
-		a.ensure(key, name).bombPlants++
-	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombPlant,
+		PostMatch:  !real,
 		Attacker:   keyStr(key),
 		Site:       site,
 		PosX:       px,
@@ -1431,12 +1322,10 @@ func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit
 	if a.discarding {
 		return // discarded round: no defuse row, no stat
 	}
-	if key != 0 && real {
-		a.ensure(key, name).bombDefuses++
-	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombDefuse,
+		PostMatch:  !real,
 		Attacker:   keyStr(key),
 		Site:       site,
 		PosX:       px,

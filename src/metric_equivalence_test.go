@@ -69,8 +69,8 @@ func seedEquivalenceBotMatch(t *testing.T, st *store.Store) {
 			{SteamID: eqBotSID, Name: "BOT Neil", IsBot: true, Side: "t"},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: eqHumanSID, Name: "dana", Side: "ct", RoundsPlayed: 1},
-			{SteamID: eqBotSID, Name: "BOT Neil", Side: "t", RoundsPlayed: 1},
+			{SteamID: eqHumanSID, Name: "dana", Side: "ct"},
+			{SteamID: eqBotSID, Name: "BOT Neil", Side: "t"},
 		},
 	}
 	for i := 0; i < 3; i++ {

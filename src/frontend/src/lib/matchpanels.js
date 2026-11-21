@@ -34,7 +34,11 @@ export const MATCH_PANEL_IDS = Object.freeze({
 const SQL_ROSTER =
   'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ' +
   'JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id ' +
-  'WHERE ps.match_id = :match_id AND p.is_bot = 0 ORDER BY ps.kills DESC, p.name ASC';
+  'WHERE ps.match_id = :match_id AND p.is_bot = 0 ' +
+  'ORDER BY (SELECT COUNT(*) FROM events e WHERE e.match_id = ps.match_id AND e.kind = \'kill\' ' +
+  'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ' +
+  'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ' +
+  'WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)) DESC, p.name ASC';
 const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
 const SQL_SWITCHES = 'SELECT side_switches FROM matches WHERE id = :match_id';
 

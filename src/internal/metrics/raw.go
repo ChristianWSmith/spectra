@@ -314,7 +314,7 @@ func runRawMetric(ctx context.Context, st *store.Store, m models.MetricRow, rule
 	// First gate pass for a raw row whose touched set is unknown (a plugin
 	// upsert clears it): store the gate's set before the scopes run.
 	if len(m.Touched) == 0 {
-		if err := st.SetMetricTouched(m.ID, g.Touched); err != nil {
+		if err := st.SetMetricTouched(m.ID, store.StoredTouched(g.Touched, len(g.Refs) > 0)); err != nil {
 			return err
 		}
 	}

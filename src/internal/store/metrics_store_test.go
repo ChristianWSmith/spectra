@@ -220,30 +220,7 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	// addendum — the raw-SQL fold seeds (33, match scope, subject=player
 	// or match) — dogfood/PLAN.md F2. Each row is pinned here like the
 	// sugar seeds; the statements run through the raw dispatch (raw_seed_test.go).
-	"raw_kills":                 {"match", "int", ""},
-	"raw_deaths":                {"match", "int", ""},
-	"raw_assists":               {"match", "int", ""},
-	"raw_flash_assists":         {"match", "int", ""},
-	"raw_headshots":             {"match", "int", ""},
-	"raw_teamkills":             {"match", "int", ""},
-	"raw_suicides":              {"match", "int", ""},
-	"raw_total_damage":          {"match", "int", ""},
-	"raw_damage_taken":          {"match", "int", ""},
-	"raw_shots":                 {"match", "int", ""},
-	"raw_hits":                  {"match", "int", ""},
-	"raw_adr":                   {"match", "float1", ""},
-	"raw_hs_pct":                {"match", "percent", ""},
 	"raw_rounds_played":         {"match", "int", ""},
-	"raw_two_k":                 {"match", "int", ""},
-	"raw_three_k":               {"match", "int", ""},
-	"raw_four_k":                {"match", "int", ""},
-	"raw_five_k":                {"match", "int", ""},
-	"raw_utility_damage":        {"match", "int", ""},
-	"raw_enemies_flashed":       {"match", "int", ""},
-	"raw_flashed_times":         {"match", "int", ""},
-	"raw_bomb_plants":           {"match", "int", ""},
-	"raw_bomb_defuses":          {"match", "int", ""},
-	"raw_money_spent_total":     {"match", "currency", ""},
 	"raw_kills_by_weapon":       {"match", "int", ""},
 	"raw_round_kills":           {"match", "int", ""},
 	"raw_round_assists":         {"match", "int", ""},
@@ -469,7 +446,7 @@ func TestMetricCRUD(t *testing.T) {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(all) != len(schemaSeededBuiltins)+1 {
-		t.Fatalf("list len = %d, want %d (150 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
+		t.Fatalf("list len = %d, want %d (127 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
 	}
 	for i, m := range all[:len(schemaSeededBuiltins)] {
 		if m.Origin != "builtin" {
@@ -676,12 +653,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 383 {
-		t.Fatalf("reference list = %d rows, want 383 (150 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 360 {
+		t.Fatalf("reference list = %d rows, want 360 (127 builtins + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
-	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 83 {
-		t.Errorf("window sizes = %v, want [100 100 100 83]", sizes)
+	if len(sizes) != 4 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 100 || sizes[3] != 60 {
+		t.Errorf("window sizes = %v, want [100 100 100 60]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -786,8 +763,8 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 300 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 300, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 277 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 277, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
 		t.Errorf("mid cursor rows = %v…, want the 259 ids after the cursor", metricIDs(page.Rows)[:3])
@@ -841,8 +818,8 @@ func TestListMetricsPageSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListMetricsPage(%q): %v", q, err)
 		}
-		if len(page.Rows) != 8 || page.HasNext {
-			t.Errorf("query %q → %d rows (HasNext=%v), want 8 (6 builtins + raw_adr + adr_per_round)",
+		if len(page.Rows) != 7 || page.HasNext {
+			t.Errorf("query %q → %d rows (HasNext=%v), want 7 (6 builtins + adr_per_round)",
 				q, len(page.Rows), page.HasNext)
 			continue
 		}
@@ -947,8 +924,8 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
 	ref := metricRowsRef(t, s) // 109 builtins + 5 user + 2 plugin
-	if len(ref) != 157 {
-		t.Fatalf("reference = %d rows, want 157 (150 builtins + 5 user + 2 plugin)", len(ref))
+	if len(ref) != 134 {
+		t.Fatalf("reference = %d rows, want 134 (127 builtins + 5 user + 2 plugin)", len(ref))
 	}
 
 	// Every filter value in ONE window: exactly its checked set, in the

@@ -87,7 +87,7 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 	for _, r := range real {
 		teamR := resolveRoundSides(sides, r.Number)
 		roundEvents := byRound[r.Number]
-		var kills, assists, deaths, dmg, utilDmg = map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
+		var kills, assists, deaths = map[string]int{}, map[string]int{}, map[string]int{}
 		deathTick := map[string]int{}   // victim → death tick
 		killerOf := map[string]string{} // victim → killer
 		for _, e := range roundEvents {
@@ -127,15 +127,6 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 				// same predicate as the events.same_side stamp,
 				// player_stats.total_damage and the replay
 				// playhead's fold in lib/replay/livestats.js).
-				// Gating the case body keeps dmg and util_dmg on the
-				// same rule (util_dmg then agrees with extract's
-				// enemy-gated player_stats.utility_damage).
-				if e.Attacker != "" && !sameSide(teamR[e.Attacker], teamR[e.Victim]) {
-					dmg[e.Attacker] += e.Dmg
-					if models.IsUtilityWeapon(e.Weapon) {
-						utilDmg[e.Attacker] += e.Dmg
-					}
-				}
 			}
 		}
 		// Trades: a death is traded when the victim's killer dies to one of
@@ -191,31 +182,19 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			rm := money[r.Number][p.SteamID]
 			// The row's side stamp: the SAME freeze-end sample the side
 			// splits join on (resolveRoundSides — exact, never a final-
-			// side guess); won is the round winner beside it (the
-			// per-round twin of player_stats.won — schema.sql).
+			// side guess).
 			side := teamR[p.SteamID]
-			won := 0
-			if side != "" && r.Winner != "" && r.Winner == side {
-				won = 1
-			}
 			out = append(out, PlayerRound{
 				Round:       r.Number,
 				SteamID:     p.SteamID,
 				Name:        p.Name,
-				Kills:       kills[p.SteamID],
-				Assists:     assists[p.SteamID],
-				Deaths:      deaths[p.SteamID],
 				Traded:      t,
-				Survived:    s,
 				KAST:        k || a || t || s,
-				DMG:         dmg[p.SteamID],
-				UtilDmg:     utilDmg[p.SteamID],
 				MoneyStart:  rm.MoneyStart,
 				Equip:       rm.Equip,
 				Spent:       rm.Spent,
 				RuleVersion: cfg.RuleVersion,
 				Side:        side,
-				Won:         won,
 			})
 		}
 	}

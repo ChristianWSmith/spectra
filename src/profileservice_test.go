@@ -88,10 +88,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{SteamID: "500", Name: "eve", Side: side},
 			},
 			PlayerStats: []models.PlayerStats{
-				{SteamID: "100", Side: side, Name: "alice",
-					Kills: kills, Deaths: deaths, Headshots: creditedHS,
-					ADR: 80, HSPct: 60, RoundsPlayed: 24,
-					KillsByWeapon: byWeapon},
+				{SteamID: "100", Side: side, Name: "alice"},
 			},
 			Rounds: []models.Round{
 				{Number: 1, Winner: "ct", StartTick: 100, EndTick: 5000},
@@ -115,11 +112,8 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		roundStats := models.PlayerRoundStat{
 			Round: 1, SteamID: "100", Name: "alice", KAST: n == 1, RuleVersion: 1,
 		}
-		if n == 1 {
-			roundStats.Kills, roundStats.Deaths, roundStats.DMG = 5, 2, 600
-		} else {
-			roundStats.Kills, roundStats.Deaths, roundStats.DMG = 4, 0, 300
-		}
+		// Kills, deaths and damage are event-derived folds now (not fields of the
+		// round row), so the fixture carries only the stored round fields.
 		if err := st.ReplacePlayerRounds(id, []models.PlayerRoundStat{roundStats}); err != nil {
 			t.Fatalf("ReplacePlayerRounds: %v", err)
 		}

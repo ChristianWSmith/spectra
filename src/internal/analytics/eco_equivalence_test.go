@@ -140,8 +140,8 @@ func ecoFixture() *models.ExtractedMatch {
 			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 6},
-			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 6},
+			{SteamID: "100", Side: "ct", Name: "alice"},
+			{SteamID: "200", Side: "t", Name: "bob"},
 		},
 		Rounds: []models.Round{},
 	}

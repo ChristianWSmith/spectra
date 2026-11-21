@@ -309,12 +309,12 @@ func decisionFixture(t *testing.T) (*store.Store, int64) {
 			{SteamID: botSteamID, Name: "bot", Side: "ct", IsBot: true},
 		},
 		PlayerStats: []models.PlayerStats{
-			{SteamID: "100", Name: "zoe", Side: "ct", RoundsPlayed: 2},
-			{SteamID: "200", Name: "amy", Side: "t", RoundsPlayed: 2},
-			{SteamID: "300", Name: "carl", Side: "ct", RoundsPlayed: 2},
-			{SteamID: "400", Name: "dave", Side: "", RoundsPlayed: 2},
-			{SteamID: "500", Name: "erin", Side: "", RoundsPlayed: 2},
-			{SteamID: botSteamID, Name: "bot", Side: "ct", RoundsPlayed: 2},
+			{SteamID: "100", Name: "zoe", Side: "ct"},
+			{SteamID: "200", Name: "amy", Side: "t"},
+			{SteamID: "300", Name: "carl", Side: "ct"},
+			{SteamID: "400", Name: "dave", Side: ""},
+			{SteamID: "500", Name: "erin", Side: ""},
+			{SteamID: botSteamID, Name: "bot", Side: "ct"},
 		},
 		Events: []models.Event{
 			// (1) dave's damage with both sides unknown — the stamp's

@@ -20,7 +20,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +67,6 @@ const (
 
 	// adrTolerance covers float rounding: fixture ADR/HS% values are stored
 	// rounded to 1 decimal; everything else compares exact.
-	adrTolerance = 0.05
 )
 
 // zstdMagic is the 4-byte frame magic 28 b5 2f fd; anything else is a raw .dem.
@@ -174,10 +172,8 @@ type goldenFixture struct {
 	// XUIDs / 0 casters; the pre-first-counted-round sanitization gate
 	// (owner ruling, 2026-11-12) dropped 1,607 pre-pistol chunks →
 	// 121,900; safety nets enforce it.
-	Voice           goldenVoice      `json:"voice"`
-	PlayersHeadline []headlinePlayer `json:"playersHeadline"`
-	TopPlayer       topPlayer        `json:"topPlayer"`
-	ParseSecondsMax int              `json:"parseSecondsMax"`
+	Voice           goldenVoice `json:"voice"`
+	ParseSecondsMax int         `json:"parseSecondsMax"`
 }
 
 // goldenVoice is the voice-sink projection of one golden parse.
@@ -185,28 +181,6 @@ type goldenVoice struct {
 	Chunks  int `json:"chunks"`
 	XUIDs   int `json:"xuids"`
 	Casters int `json:"casters"`
-}
-
-// headlinePlayer is one scoreboard row's headline stats, sorted by kills
-// descending; ADR/HS% are rounded to 1 decimal.
-type headlinePlayer struct {
-	SteamID string  `json:"steamId"`
-	Name    string  `json:"name"`
-	Side    string  `json:"side"`
-	Kills   int     `json:"kills"`
-	Deaths  int     `json:"deaths"`
-	Assists int     `json:"assists"`
-	ADR     float64 `json:"adr"`
-	HSPct   float64 `json:"hsPct"`
-}
-
-// topPlayer is the top fragger's headline line.
-type topPlayer struct {
-	SteamID string  `json:"steamId"`
-	Kills   int     `json:"kills"`
-	Deaths  int     `json:"deaths"`
-	Assists int     `json:"assists"`
-	ADR     float64 `json:"adr"`
 }
 
 // shouldSkip reports whether the golden demo at path is unusable (absent or
@@ -730,40 +704,6 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSin
 		}
 	}
 
-	headline := make([]headlinePlayer, 0, len(m.PlayerStats))
-	for _, ps := range m.PlayerStats {
-		headline = append(headline, headlinePlayer{
-			SteamID: ps.SteamID,
-			Name:    ps.Name,
-			Side:    ps.Side,
-			Kills:   ps.Kills,
-			Deaths:  ps.Deaths,
-			Assists: ps.Assists,
-			ADR:     round1(ps.ADR),
-			HSPct:   round1(ps.HSPct),
-		})
-	}
-	sort.Slice(headline, func(i, j int) bool {
-		if headline[i].Kills != headline[j].Kills {
-			return headline[i].Kills > headline[j].Kills
-		}
-		if headline[i].Deaths != headline[j].Deaths {
-			return headline[i].Deaths < headline[j].Deaths
-		}
-		return headline[i].SteamID < headline[j].SteamID
-	})
-
-	top := topPlayer{}
-	if len(headline) > 0 {
-		top = topPlayer{
-			SteamID: headline[0].SteamID,
-			Kills:   headline[0].Kills,
-			Deaths:  headline[0].Deaths,
-			Assists: headline[0].Assists,
-			ADR:     headline[0].ADR,
-		}
-	}
-
 	return goldenFixture{
 		ParserVersion:      m.Match.ParserVersion,
 		Map:                m.Match.Map,
@@ -788,8 +728,6 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSin
 		Players:            len(m.Players),
 		FinalStatePlayers:  finalState,
 		Voice:              voice.fixture(),
-		PlayersHeadline:    headline,
-		TopPlayer:          top,
 		ParseSecondsMax:    parseSecondsMax,
 	}
 }
@@ -821,9 +759,6 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	}
 	if got.Warnings != 0 {
 		t.Errorf("safety: warnings = %d, want 0", got.Warnings)
-	}
-	if got.TopPlayer.Kills != 25 {
-		t.Errorf("safety: topPlayer kills = %d, want 25", got.TopPlayer.Kills)
 	}
 	// M4 voice baseline: 123,507 chunks before the pre-first-counted-round
 	// sanitization gate (owner ruling, 2026-11-12) dropped the 1,607
@@ -880,29 +815,6 @@ func compareGolden(t *testing.T, got, want *goldenFixture) {
 	cmpInt(t, "voice.xuids", got.Voice.XUIDs, want.Voice.XUIDs)
 	cmpInt(t, "voice.casters", got.Voice.Casters, want.Voice.Casters)
 
-	cmpInt(t, "playersHeadline.len", len(got.PlayersHeadline), len(want.PlayersHeadline))
-	for i := range got.PlayersHeadline {
-		if i >= len(want.PlayersHeadline) {
-			break
-		}
-		g, w := got.PlayersHeadline[i], want.PlayersHeadline[i]
-		field := fmt.Sprintf("playersHeadline[%d]", i)
-		cmpStr(t, field+".steamId", g.SteamID, w.SteamID)
-		cmpStr(t, field+".name", g.Name, w.Name)
-		cmpStr(t, field+".side", g.Side, w.Side)
-		cmpInt(t, field+".kills", g.Kills, w.Kills)
-		cmpInt(t, field+".deaths", g.Deaths, w.Deaths)
-		cmpInt(t, field+".assists", g.Assists, w.Assists)
-		cmpFloat(t, field+".adr", g.ADR, w.ADR, adrTolerance)
-		cmpFloat(t, field+".hsPct", g.HSPct, w.HSPct, adrTolerance)
-	}
-
-	cmpStr(t, "topPlayer.steamId", got.TopPlayer.SteamID, want.TopPlayer.SteamID)
-	cmpInt(t, "topPlayer.kills", got.TopPlayer.Kills, want.TopPlayer.Kills)
-	cmpInt(t, "topPlayer.deaths", got.TopPlayer.Deaths, want.TopPlayer.Deaths)
-	cmpInt(t, "topPlayer.assists", got.TopPlayer.Assists, want.TopPlayer.Assists)
-	cmpFloat(t, "topPlayer.adr", got.TopPlayer.ADR, want.TopPlayer.ADR, adrTolerance)
-
 	// parseSecondsMax is the committed ceiling (never a measurement).
 	cmpInt(t, "parseSecondsMax", got.ParseSecondsMax, want.ParseSecondsMax)
 }
@@ -933,9 +845,4 @@ func cmpFloat(t *testing.T, field string, got, want, tol float64) {
 	if math.Abs(got-want) > tol {
 		t.Errorf("%s = %.4f, want %.4f (±%v)", field, got, want, tol)
 	}
-}
-
-// round1 rounds to 1 decimal for stable fixture storage.
-func round1(v float64) float64 {
-	return math.Round(v*10) / 10
 }

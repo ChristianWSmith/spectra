@@ -43,16 +43,30 @@ func TestGetPlayerSideSplits(t *testing.T) {
 		models.RoundPlayerSide{Round: 2, SteamID: "100", Side: "ct"}, // no rounds row
 		models.RoundPlayerSide{Round: 3, SteamID: "100", Side: "t"},
 		// round 4: deliberately no sample for 100.
+		models.RoundPlayerSide{Round: 3, SteamID: "200", Side: "ct"},
+	)
+	// The round folds (kills, deaths, damage) are event-derived now: round 1
+	// adds 100 (ct) killing 200 (t) four times (testExtracted supplies one kill
+	// and the death), dealing 300 capped
+	// damage; round 3 has 100 (t) killing 200 (ct) twice and dealing 100.
+	for i := 0; i < 4; i++ {
+		em.Events = append(em.Events, models.Event{Tick: 100 + i, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47"})
+	}
+	em.Events = append(em.Events,
+		models.Event{Tick: 120, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Weapon: "ak47", Dmg: 300, CappedDmg: 300},
+		models.Event{Tick: 300, Round: 3, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47"},
+		models.Event{Tick: 301, Round: 3, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47"},
+		models.Event{Tick: 302, Round: 3, Kind: models.EventDamage, Attacker: "100", Victim: "200", Weapon: "ak47", Dmg: 100, CappedDmg: 100},
 	)
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
-		{Round: 0, SteamID: "100", Name: "alice", Kills: 9, Deaths: 9, DMG: 999, KAST: true},
-		{Round: 1, SteamID: "100", Name: "alice", Kills: 5, Deaths: 1, DMG: 300, KAST: true},
-		{Round: 2, SteamID: "100", Name: "alice", Kills: 7, Deaths: 7, DMG: 777, KAST: true},
-		{Round: 3, SteamID: "100", Name: "alice", Kills: 2, Deaths: 0, DMG: 100, KAST: false},
-		{Round: 4, SteamID: "100", Name: "alice", Kills: 4, Deaths: 4, DMG: 444, KAST: true},
+		{Round: 0, SteamID: "100", Name: "alice", KAST: true},
+		{Round: 1, SteamID: "100", Name: "alice", KAST: true},
+		{Round: 2, SteamID: "100", Name: "alice", KAST: true},
+		{Round: 3, SteamID: "100", Name: "alice", KAST: false},
+		{Round: 4, SteamID: "100", Name: "alice", KAST: true},
 	}); err != nil {
 		t.Fatalf("ReplacePlayerRounds: %v", err)
 	}
