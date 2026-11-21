@@ -1,7 +1,6 @@
 package store
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -21,7 +20,7 @@ func seedValueMetric(t *testing.T, s *Store, name, scope string) models.MetricRo
 	t.Helper()
 	m, err := s.CreateMetric(models.MetricRow{
 		Name: name, Title: name, Expr: rawCountSQL("events", scope),
-		Scope: scope, Origin: "user",
+		Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric(%s): %v", name, err)
@@ -84,89 +83,6 @@ func storedCount(t *testing.T, s *Store, metricID int64) int {
 	}
 	n, _ := res.Rows[0][0].(int64)
 	return int(n)
-}
-
-// seedSubjectMetric inserts a definition carrying a subject the public
-// API does not expose yet (subject/partition arrive with their surfaces):
-// the write-chokepoint guard must hold for it regardless.
-func seedSubjectMetric(t *testing.T, s *Store, name, scope, subject string) int64 {
-	t.Helper()
-	res, err := s.db.Exec(
-		`INSERT INTO metrics (name, title, expr, scope, subject, origin)
-		 VALUES (?, ?, 'from events: count()', ?, ?, 'user')`,
-		name, name, scope, subject,
-	)
-	if err != nil {
-		t.Fatalf("insert %s subject metric: %v", subject, err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("subject metric id: %v", err)
-	}
-	markTouched(t, s, id)
-	return id
-}
-
-// TestMatchAndTeamValuesNeedAMatch pins metric_values' app-level
-// invariant (schema.sql — deliberately NO CHECK: the pre-release baseline
-// takes no schema churn for an invariant the writer can hold itself):
-// match_id = 0 is the career bucket alone, so a match- or team-subject
-// metric's rows always carry a real match id. The store is the ONE write
-// chokepoint both phase writers land in, so InsertMetricValues enforces
-// it; player-subject rows stay unconstrained — match grain at match_id > 0
-// and career grain at 0 are both legitimate spellings.
-func TestMatchAndTeamValuesNeedAMatch(t *testing.T) {
-	s, _ := openFileStore(t)
-	t.Cleanup(func() { _ = s.CloseRO() })
-	matchID := seedReadyMatch(t, s, "subject-match")
-
-	team := seedSubjectMetric(t, s, "team_addressed", "match", "team")
-	matchSubj := seedSubjectMetric(t, s, "match_addressed", "match", "match")
-	player := seedValueMetric(t, s, "player_addressed", "match")
-	career := seedValueMetric(t, s, "career_addressed", "profile")
-
-	// A match/team subject addressed to no match: rejected before the
-	// transaction opens, and nothing lands.
-	for _, id := range []int64{team, matchSubj} {
-		err := s.InsertMetricValues(id, 1, 1, []MetricValueRow{
-			{MatchID: 0, SubjectKey: "ct", Value: 1},
-		})
-		if err == nil || !strings.Contains(err.Error(), "must belong to a match") {
-			t.Errorf("career-bucket insert = %v, want the match-required error", err)
-		}
-		if n := storedCount(t, s, id); n != 0 {
-			t.Errorf("rows after the rejected insert = %d, want 0", n)
-		}
-	}
-
-	// The same subjects addressed to a real match land.
-	if err := s.InsertMetricValues(team, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "ct", Value: 1},
-	}); err != nil {
-		t.Errorf("team value at a match: %v", err)
-	}
-	if err := s.InsertMetricValues(matchSubj, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "", Value: 2},
-	}); err != nil {
-		t.Errorf("match-subject value at a match: %v", err)
-	}
-	// Player subject: match grain (> 0) and career bucket (= 0) both pass.
-	if err := s.InsertMetricValues(player.ID, 1, 1, []MetricValueRow{
-		{MatchID: matchID, SubjectKey: "76561198000000001", Value: 3},
-	}); err != nil {
-		t.Errorf("player match-grain value: %v", err)
-	}
-	if err := s.InsertMetricValues(career.ID, 1, 1, []MetricValueRow{
-		{MatchID: 0, SubjectKey: "76561198000000001", Value: 4},
-	}); err != nil {
-		t.Errorf("player career-bucket value: %v", err)
-	}
-	if n := storedCount(t, s, player.ID); n != 1 {
-		t.Errorf("player match-grain rows = %d, want 1", n)
-	}
-	if n := storedCount(t, s, career.ID); n != 1 {
-		t.Errorf("player career rows = %d, want 1", n)
-	}
 }
 
 // TestMetricCoverageBehindPredicate pins THE clause matrix (design §4's
@@ -235,7 +151,7 @@ func TestMetricCoverageBehindPredicate(t *testing.T) {
 	}
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: m.ID, Name: m.Name, Title: m.Title, Expr: rawCountSQL("events", "match"),
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, nil, nil, true); err != nil {
 		t.Fatalf("semantic save: %v", err)
 	}
@@ -392,7 +308,7 @@ func TestBumpMetricAndDependentsCascade(t *testing.T) {
 	} {
 		if _, err := s.SaveMetricWithDeps(models.MetricRow{
 			ID: e.m.ID, Name: e.m.Name, Title: e.m.Title, Expr: e.m.Expr,
-			Scope: "match", Origin: "user",
+			Origin: "user",
 		}, e.edges, nil, false); err != nil {
 			t.Fatalf("wire edges for %s: %v", e.m.Name, err)
 		}
@@ -431,13 +347,13 @@ func TestBumpMetricAndDependentsCascade(t *testing.T) {
 	// and no tx is left racing a watchdog rollback.
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: up.ID, Name: up.Name, Title: up.Title, Expr: up.Expr,
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"bump_other"}, nil, false); err != nil {
 		t.Fatalf("wire cycle edge: %v", err)
 	}
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: other.ID, Name: other.Name, Title: other.Title, Expr: other.Expr,
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"bump_up"}, nil, false); err != nil {
 		t.Fatalf("wire cycle edge 2: %v", err)
 	}

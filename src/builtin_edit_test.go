@@ -64,7 +64,7 @@ func TestBuiltinMetricEditPassesGateAndBadSQLIsRefused(t *testing.T) {
 	if saved.Expr != good || !saved.Edited {
 		t.Fatalf("saved expr/edited = %q/%v, want the edit and true", saved.Expr, saved.Edited)
 	}
-	if saved.Scope != b.Scope || saved.Format != b.Format || saved.Subject != b.Subject {
+	if saved.Scope != b.Scope || saved.Format != b.Format {
 		t.Fatalf("definition fields changed by an expr edit: %+v", saved)
 	}
 
@@ -214,7 +214,7 @@ func TestBuiltinMetricWithoutOverrideIsShipped(t *testing.T) {
 	if got.Expr != b.Expr || got.Edited {
 		t.Fatalf("unedited builtin = expr-same %v edited %v", got.Expr == b.Expr, got.Edited)
 	}
-	page, err := f.svc.ListMetricsPage("trade_rate", "builtin", "", "", "", 0, 10)
+	page, err := f.svc.ListMetricsPage("trade_rate", "builtin", "", 0, 10)
 	if err != nil {
 		t.Fatalf("ListMetricsPage: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestBuiltinMetricWithoutOverrideIsShipped(t *testing.T) {
 			t.Fatal("unedited builtin listed as edited")
 		}
 	}
-	if _, err := f.svc.SaveMetric(models.MetricRow{ID: b.ID, Name: b.Name, Expr: "SELECT 1", Scope: b.Scope, Format: b.Format, Doc: b.Doc}); err == nil {
+	if _, err := f.svc.SaveMetric(models.MetricRow{ID: b.ID, Name: b.Name, Expr: "SELECT 1", Format: b.Format, Doc: b.Doc}); err == nil {
 		t.Fatal("SaveMetric accepted a builtin without the override path")
 	}
 }

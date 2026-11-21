@@ -154,22 +154,11 @@
     // Origin group: the owner's STANDING default — Built-in OFF, the
     // two other origins ON — so the initial view lists every
     // non-builtin metric (user + plugin), the same rows the group
-    // showed before it gained its third box. The Scope group starts ALL
-    // its options ON, so it does not narrow the first render. Each group
-    // narrows SERVER-side only when an option goes off (originFilter /
-    // scopeFilter below),
-    // and all-off is legal in every group.
+    // showed before it gained its third box. It narrows SERVER-side only
+    // when an option goes off (originFilter below), and all-off is legal.
     builtin: false,
     custom: true,
     plugin: true,
-    scopeMatch: true,
-    scopeProfile: true,
-    // Subject group (the metrics subject axis): the owner's standing
-    // default — every option ON, so the first render carries subject ""
-    // (no predicate) exactly like the other groups.
-    subjectPlayer: true,
-    subjectMatch: true,
-    subjectTeam: true,
     // Type group: the owner's ruling ("all six checked — auto + int +
     // float1 + float2 + percent + currency") extended by the seventh
     // Identity box (metrics Phase 7, 2026-11-18 — the key-valued
@@ -191,11 +180,6 @@
   let builtin = $state(bldSeed.builtin);
   let custom = $state(bldSeed.custom);
   let plugin = $state(bldSeed.plugin);
-  let scopeMatch = $state(bldSeed.scopeMatch);
-  let scopeProfile = $state(bldSeed.scopeProfile);
-  let subjectPlayer = $state(bldSeed.subjectPlayer);
-  let subjectMatch = $state(bldSeed.subjectMatch);
-  let subjectTeam = $state(bldSeed.subjectTeam);
   let formatAuto = $state(bldSeed.formatAuto);
   let formatInt = $state(bldSeed.formatInt);
   let formatFloat1 = $state(bldSeed.formatFloat1);
@@ -211,11 +195,6 @@
       builtin,
       custom,
       plugin,
-      scopeMatch,
-      scopeProfile,
-      subjectPlayer,
-      subjectMatch,
-      subjectTeam,
       formatAuto,
       formatInt,
       formatFloat1,
@@ -326,16 +305,6 @@
       shortName: '',
       expr: '',
       scope: 'match',
-      // Subject is authoring state since the subject axis reached the
-      // editor (2026-11-18): a NEW metric starts on the authoring
-      // default the store's DDL and SaveMetric use ("player"). The
-      // server's subject × scope matrix is the guard — no option is
-      // disabled here, an illegal pair surfaces the save's refusal.
-      subject: 'player',
-      // Partition rides the form the same way (loaded, preserved on
-      // save, no select yet — the subject control landed ahead of the
-      // partition plumbing), so a saved copy never silently drops it.
-      partition: '',
       format: '',
       doc: '',
       origin: 'user',
@@ -351,8 +320,6 @@
       shortName: f.shortName,
       expr: f.expr,
       scope: f.scope,
-      subject: f.subject,
-      partition: f.partition,
       format: f.format,
       doc: f.doc,
     });
@@ -402,31 +369,6 @@
     originFilterWord({ builtin, user: custom, plugin }),
   );
 
-  // scopeFilter — the Match / Profile group (the pair shape: both
-  // checked = no predicate, one checked = that side, neither = 'none').
-  // The store owns what each word means.
-  const scopeFilter = $derived.by(() => {
-    if (scopeMatch && scopeProfile) return '';
-    if (scopeMatch) return 'match';
-    if (scopeProfile) return 'profile';
-    return 'none';
-  });
-  // subjectFilter — the SAME checked-set derivation over the subject
-  // axis (Player / Match / Team — models.MetricRow.Subject's three
-  // values): all three = '' (no predicate), none = 'none', otherwise
-  // the canonical comma-subset ("player,team") in metricSubjectTokens
-  // order — the store owns what each word means (store.ListMetricsPage's
-  // SUBJECT FILTER note), and it rides the list read's args exactly like
-  // the others (refreshList restarts the window on any flip).
-  const subjectFilter = $derived.by(() => {
-    if (subjectPlayer && subjectMatch && subjectTeam) return '';
-    const on = [];
-    if (subjectPlayer) on.push('player');
-    if (subjectMatch) on.push('match');
-    if (subjectTeam) on.push('team');
-    return on.length ? on.join(',') : 'none';
-  });
-
   const runs = $derived.by(() => {
     const out = [];
     for (const m of metrics) {
@@ -438,7 +380,7 @@
   });
 
   // formatFilter — the fourth group's (Type) checked-set → server word:
-  // unlike the pair-shaped groups (Origin / Scope) it is
+  // unlike the pair-shaped Origin group it is
   // seven checkboxes, so the derivation is the canonical one
   // in lib/metricformats.js (all seven = '' no
   // predicate, none = 'none', otherwise the canonical comma-subset —
@@ -472,8 +414,6 @@
   // $state because the template references them.
   let appliedQuery = $state('');
   let appliedFilter = $state('');
-  let appliedScope = $state('');
-  let appliedSubject = $state('');
   let appliedFormat = $state('');
   // listGen distinguishes the current window sequence from stale replies
   // (see refreshList/loadMore); non-reactive on purpose — it is not state.
@@ -500,7 +440,7 @@
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR filter change (the Library's debounce)
   // so typing doesn't hammer the store — and ANY checkbox flip in the
-  // multi-select's four groups (origin, scope, subject, type) are all
+  // multi-select's two groups (origin, type) are both
   // SERVER-side, so any checkbox flip lands on this SAME path, which
   // restarts the window at cursor 0 (a filter change never appends onto
   // the previous filter's windows).
@@ -508,15 +448,13 @@
   $effect(() => {
     const q = query;
     const f = originFilter;
-    const sc = scopeFilter;
-    const sj = subjectFilter;
     const fm = formatFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, f, sc, sj, fm);
+      refreshList(q, f, fm);
       return;
     }
-    const t = setTimeout(() => refreshList(q, f, sc, sj, fm), 250);
+    const t = setTimeout(() => refreshList(q, f, fm), 250);
     return () => clearTimeout(t);
   });
 
@@ -524,7 +462,7 @@
   // window for the query/filters currently in play.
   async function loadLists() {
     loadPluginStates();
-    await refreshList(query, originFilter, scopeFilter, subjectFilter, formatFilter);
+    await refreshList(query, originFilter, formatFilter);
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
@@ -534,19 +472,17 @@
   // Load-more reply landing after a restart is dropped instead of
   // appended (the Library's refreshList/loadMore shape). Every
   // narrowing here is SERVER-side (query LIKE + originFilter +
-  // scopeFilter + formatFilter — store.ListMetricsPage),
+  // formatFilter — store.ListMetricsPage),
   // never a client-side slice of a window: every filter group is
   // server-side (metrics above).
-  async function refreshList(q = '', f = '', sc = '', sj = '', fm = '') {
+  async function refreshList(q = '', f = '', fm = '') {
     appliedQuery = q;
     appliedFilter = f;
-    appliedScope = sc;
-    appliedSubject = sj;
     appliedFormat = fm;
     const gen = ++listGen;
     loading = true;
     try {
-      const page = await listMetricsPage(q, f, sc, sj, fm, 0, PAGE_SIZE);
+      const page = await listMetricsPage(q, f, fm, 0, PAGE_SIZE);
       if (gen !== listGen) return;
       metrics = (page && page.rows) || [];
       hasNext = !!(page && page.hasNext);
@@ -575,8 +511,6 @@
       const page = await listMetricsPage(
         appliedQuery,
         appliedFilter,
-        appliedScope,
-        appliedSubject,
         appliedFormat,
         last.id,
         PAGE_SIZE,
@@ -594,17 +528,10 @@
     }
   }
 
-  // The live check validates under the form's OWN addressing (subject,
-  // partition, scope — 2026-11-18): the server compiles a draft at the
-  // loaded row's address, so an identity built-in (argmax, subject
-  // "match") reads clean and a non-player draft is judged as its own
-  // subject. Any of the four is a reactive dep — flipping Subject
-  // re-checks the same expression at the new address.
+  // The live check validates the statement alone: its scope is derived
+  // from its binds, so there is no addressing to send.
   $effect(() => {
     const expr = form.expr;
-    const subject = form.subject;
-    const partition = form.partition;
-    const scope = form.scope;
     const seq = ++exprSeq;
     if (!expr.trim()) {
       exprCheck = { state: 'idle' };
@@ -612,7 +539,7 @@
     }
     exprCheck = { state: 'pending' };
     const t = setTimeout(() => {
-      validateExpr(expr, subject, partition, scope)
+      validateExpr(expr)
         .then(([ok, e]) => {
           if (seq !== exprSeq) return;
           exprCheck = ok
@@ -640,8 +567,6 @@
       shortName: m.shortName || '',
       expr: m.expr,
       scope: m.scope || 'match',
-      subject: m.subject || 'player',
-      partition: m.partition || '',
       format: m.format || '',
       doc: m.doc || '',
       origin: m.origin,
@@ -667,7 +592,7 @@
         preview = null;
         previewKey = null;
       }
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+      await refreshList(appliedQuery, appliedFilter, appliedFormat);
     } catch (e) {
       saveError = errText(e);
     }
@@ -688,7 +613,7 @@
       form.expr = edit.expr;
       form.edited = edit.edited;
       baseline = snapshot(form);
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+      await refreshList(appliedQuery, appliedFilter, appliedFormat);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -704,7 +629,7 @@
     try {
       const shipped = await restoreBuiltinMetric(form.id);
       editMetric(shipped);
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+      await refreshList(appliedQuery, appliedFilter, appliedFormat);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -756,9 +681,6 @@
         title: form.title.trim() || name,
         shortName: form.shortName.trim(),
         expr: form.expr,
-        scope: form.scope,
-        subject: form.subject,
-        partition: form.partition,
         format: form.format,
         doc: form.doc.trim(),
         origin: 'user',
@@ -771,7 +693,7 @@
       form.title = saved.title;
       form.shortName = saved.shortName;
       baseline = snapshot(form);
-      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedSubject);
+      await refreshList(appliedQuery, appliedFilter, appliedFormat);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -794,10 +716,7 @@
   // plain state indicator — no `ms`, because it timed nothing. A dirty
   // or unsaved draft is authoring state with NO rows: it stays an
   // on-demand calculation through PreviewMetric (timing included — it
-  // genuinely computed) under the draft's OWN addressing (subject,
-  // partition, scope — the same triple the live check validates it
-  // with), so a match-subject draft previews as its subject instead of
-  // refusing at the player default.
+  // genuinely computed) under the draft's own statement.
   async function runPreview(target) {
     previewError = '';
     const id = target ? target.id : form.id;
@@ -813,10 +732,6 @@
       id,
       expr: adhoc ? expr : '',
       adhoc,
-      // The draft's own addressing rides the ad-hoc leg only — the
-      // stored leg reads addressing off the saved row instead.
-      subject: adhoc ? form.subject : '',
-      partition: adhoc ? form.partition : '',
       scope: target ? target.scope || 'match' : form.scope,
       format: target ? target.format || '' : form.format,
     });
@@ -829,14 +744,7 @@
     previewAdhoc = spec.adhoc;
     try {
       if (spec.adhoc) {
-        const pv = await previewMetric(
-          spec.id,
-          spec.expr,
-          spec.subject || '',
-          spec.partition || '',
-          spec.scope || '',
-          PREVIEW_LIMIT,
-        );
+        const pv = await previewMetric(spec.id, spec.expr, PREVIEW_LIMIT);
         preview = {
           rows: (pv && pv.rows) || [],
           format: spec.format,
@@ -881,12 +789,12 @@
       const [values, names, sql] = await Promise.all([
         getMetricValuesForPlayer('', [id]),
         playerNameMap(),
-        compileMetric(id, '', ''),
+        compileMetric(id, ''),
       ]);
       return { rows: toPreviewRows(values, names), format, sql, scope };
     }
     const match = await newestReadyMatch();
-    const sql = await compileMetric(id, '', match ? `match:${match.id}` : '');
+    const sql = await compileMetric(id, '');
     if (!match) return { rows: [], format, sql, scope, match: null };
     const [values, names] = await Promise.all([
       getMetricValuesForMatch(match.id, [id]),
@@ -956,7 +864,6 @@
     {/if}
   </span>
   <span class="bld-row-sub">
-    <span class="chip">{m.scope || 'match'}</span>
     <span class="chip">{m.format || 'raw'}</span>
     <!-- The compute-state surface (design §4/§5): EVERY list item wears
          its state chip through StatusChip — processing quantifies with
@@ -1075,8 +982,7 @@
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
-           panel with four labelled groups (Origin / Scope / Subject /
-           Type) over the SAME viewstate booleans and the SAME debounced
+           panel with two labelled groups (Origin / Type) over the SAME viewstate booleans and the SAME debounced
            list read below — all four SERVER-side. The FilterBar
            vein — the control commits, the parent owns the filter state,
            the debounced refetch follows — without reusing FilterBar
@@ -1132,52 +1038,6 @@
                     checked={plugin}
                     onchange={(e) => (plugin = e.currentTarget.checked)}
                   /> {S.builder.filterPlugin}</label
-                >
-              </div>
-              <div class="bld-filter-group" role="group" aria-label={S.builder.scopeLabel}>
-                <span class="filt-lab">{S.builder.scopeLabel}</span>
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={scopeMatch}
-                    onchange={(e) => (scopeMatch = e.currentTarget.checked)}
-                  /> {S.builder.filterMatch}</label
-                >
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={scopeProfile}
-                    onchange={(e) => (scopeProfile = e.currentTarget.checked)}
-                  /> {S.builder.filterProfile}</label
-                >
-              </div>
-              <!-- Subject = the metrics subject axis (player / match /
-                   team — models.MetricRow.Subject's three values), the
-                   same checked-set shape as the other server-side
-                   groups: all three on = no predicate, one = that
-                   subject, none = nothing passes. -->
-              <div class="bld-filter-group" role="group" aria-label={S.builder.subjectLabel}>
-                <span class="filt-lab">{S.builder.subjectLabel}</span>
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={subjectPlayer}
-                    onchange={(e) => (subjectPlayer = e.currentTarget.checked)}
-                  /> {S.builder.filterPlayer}</label
-                >
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={subjectMatch}
-                    onchange={(e) => (subjectMatch = e.currentTarget.checked)}
-                  /> {S.builder.filterMatch}</label
-                >
-                <label class="filt-check"
-                  ><input
-                    type="checkbox"
-                    checked={subjectTeam}
-                    onchange={(e) => (subjectTeam = e.currentTarget.checked)}
-                  /> {S.builder.filterTeam}</label
                 >
               </div>
               <!-- Type = the metric's format (the canonical format
@@ -1336,7 +1196,7 @@
         {/if}
 
         <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
-             name, row 2 = Scope / Format — the grid below is a fixed
+             name, row 2 = Format — the grid below is a fixed
              three columns, so the DOM order IS the row order. Doc and
              Expression keep their full-width rows underneath. -->
         <div class="bld-fields">
@@ -1376,29 +1236,6 @@
               placeholder={S.builder.shortNamePlaceholder}
               readonly={builtinLoaded}
             />
-          </div>
-          <!-- Subject sits immediately LEFT of Scope (the owner's
-               placement), the two alone on their row with Format on the
-               row below (owner, 2026-11-18): the
-               metrics subject axis — what the number is
-               about — beside where it is addressed. The server's
-               subject × scope matrix guards the pair (an illegal
-               combination surfaces the save's own refusal), so every
-               option stays enabled here. -->
-          <div class="bld-field half">
-            <label class="field-label" for="bld-subject">{S.builder.fieldSubject}</label>
-            <select id="bld-subject" class="input" bind:value={form.subject} disabled={builtinLoaded}>
-              <option value="player">{S.builder.subjectPlayerOption}</option>
-              <option value="match">{S.builder.subjectMatchOption}</option>
-              <option value="team">{S.builder.subjectTeamOption}</option>
-            </select>
-          </div>
-          <div class="bld-field half">
-            <label class="field-label" for="bld-scope">{S.builder.scopeLabel}</label>
-            <select id="bld-scope" class="input" bind:value={form.scope} disabled={builtinLoaded}>
-              <option value="match">{S.builder.scopeMatchOption}</option>
-              <option value="profile">{S.builder.scopeProfileOption}</option>
-            </select>
           </div>
           <div class="bld-field half">
             <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>

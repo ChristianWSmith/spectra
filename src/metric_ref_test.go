@@ -43,7 +43,7 @@ func TestMetricRefMissingNameRefusedAtSave(t *testing.T) {
 	f := newSeededFixture(t)
 	_, err := f.svc.SaveMetric(models.MetricRow{
 		Name: "ref_missing_b", Expr: "SELECT subject_key, dim, value FROM metric('no_such_metric')",
-		Scope: "match", Format: "int",
+		Format: "int",
 	})
 	if err == nil || !strings.Contains(err.Error(), `"no_such_metric"`) || !strings.Contains(err.Error(), "no metric has that name") {
 		t.Fatalf("save error = %v, want a missing-metric refusal naming no_such_metric", err)
@@ -58,7 +58,7 @@ func TestMetricRefSelfAndLoopRefusedAsCycle(t *testing.T) {
 	f := newSeededFixture(t)
 	x := f.save(t, models.MetricRow{Name: "ref_self_c", Expr: refSource})
 	_, err := f.svc.SaveMetric(models.MetricRow{
-		ID: x.ID, Name: x.Name, Scope: "match", Format: "int",
+		ID: x.ID, Name: x.Name, Format: "int",
 		Expr: "SELECT subject_key, dim, value FROM metric('ref_self_c')",
 	})
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
@@ -68,7 +68,7 @@ func TestMetricRefSelfAndLoopRefusedAsCycle(t *testing.T) {
 		Name: "ref_loop_c_reader", Expr: "SELECT subject_key, dim, value FROM metric('ref_self_c')",
 	})
 	_, err = f.svc.SaveMetric(models.MetricRow{
-		ID: x.ID, Name: x.Name, Scope: "match", Format: "int",
+		ID: x.ID, Name: x.Name, Format: "int",
 		Expr: fmt.Sprintf("SELECT subject_key, dim, value FROM metric('%s')", y.Name),
 	})
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
@@ -145,7 +145,7 @@ func TestMetricRefAuthorCannotReadMetricValues(t *testing.T) {
 		"direct": "SELECT subject_key, dim, value FROM metric_values",
 		"join":   "SELECT v.subject_key AS subject_key, '' AS dim, v.value AS value FROM players p JOIN metric_values v ON v.match_id = p.match_id",
 	} {
-		if _, err := f.svc.SaveMetric(models.MetricRow{Name: "ref_author_" + name, Expr: expr, Scope: "match", Format: "int"}); err == nil {
+		if _, err := f.svc.SaveMetric(models.MetricRow{Name: "ref_author_" + name, Expr: expr, Format: "int"}); err == nil {
 			t.Errorf("%s: saved %q, want a refusal", name, expr)
 		}
 	}

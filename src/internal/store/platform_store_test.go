@@ -94,7 +94,7 @@ func TestMetricsTableDDLByteEqual(t *testing.T) {
 func TestPluginMetricsRows(t *testing.T) {
 	s := openMem(t)
 	defs := []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events", Scope: "profile"},
+		{Name: "plug_count", Title: "Plug count", Expr: "SELECT :steam_id AS subject_key, '' AS dim, COUNT(*) AS value FROM events"},
 		{Name: "plug_dmg", Title: "Plug dmg", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(dmg) AS value FROM events WHERE match_id = :match_id"},
 	}
 	if err := s.ReplacePluginMetrics("p1", defs); err != nil {
@@ -107,21 +107,21 @@ func TestPluginMetricsRows(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("metrics rows = %d, want 2", n)
 	}
-	// scope is WRITTEN THROUGH (W2): the declared profile scope lands,
-	// an omitted scope normalizes to the DDL DEFAULT 'match' (the store's
-	// omitted-field rule — same as CreateMetric), version stays DEFAULT 1.
-	var scope string
-	if err := s.db.QueryRow(`SELECT scope FROM metrics WHERE name = 'plug_count'`).Scan(&scope); err != nil {
-		t.Fatalf("select scope: %v", err)
+	// No scope column (ruling 51): the scope is derived from the binds, so
+	// the career-bound plug_count reads profile and the match-bound one match.
+	byName := map[string]string{}
+	all, err := s.ListMetrics()
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
 	}
-	if scope != "profile" {
-		t.Errorf("plug_count scope = %q, want profile (the manifest's scope written through)", scope)
+	for _, m := range all {
+		byName[m.Name] = m.Scope
 	}
-	if err := s.db.QueryRow(`SELECT scope FROM metrics WHERE name = 'plug_dmg'`).Scan(&scope); err != nil {
-		t.Fatalf("select scope: %v", err)
+	if byName["plug_count"] != "profile" {
+		t.Errorf("plug_count scope = %q, want profile (derived from :steam_id)", byName["plug_count"])
 	}
-	if scope != "match" {
-		t.Errorf("plug_dmg scope = %q, want match (omitted scope → the DDL default)", scope)
+	if byName["plug_dmg"] != "match" {
+		t.Errorf("plug_dmg scope = %q, want match (derived from :match_id)", byName["plug_dmg"])
 	}
 	var version int
 	if err := s.db.QueryRow(`SELECT version FROM metrics WHERE name = 'plug_count'`).Scan(&version); err != nil {

@@ -20,9 +20,6 @@ import (
 //		title TEXT NOT NULL DEFAULT '',
 //		short_name TEXT NOT NULL DEFAULT '',
 //		expr TEXT NOT NULL,
-//		scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
-//		subject TEXT NOT NULL DEFAULT 'player' CHECK (subject IN ('player', 'match', 'team')),
-//		partition TEXT NOT NULL DEFAULT '' CHECK (partition IN ('', 'side', 'map', 'weapon')),
 //		format TEXT NOT NULL DEFAULT '',
 //		doc TEXT NOT NULL DEFAULT '',
 //		origin TEXT NOT NULL DEFAULT 'user',
@@ -36,16 +33,15 @@ import (
 // safety net if this code ever runs against a database that predates it.
 // Full expression validation belongs to the metrics engine on preview/use
 // (plugin metric budget) — the plugin loader enforces structural sanity
-// (name + expr non-empty, scope ∈ match|profile) and runs the engine
-// grammar at install.
+// (name + expr non-empty) and runs the engine gate at install.
 //
 // short_name (optional user-entered short label — the width-constrained
 // column-header display criterion short_name || title || name) is NOT a
 // plugin-metric field: ReplacePluginMetrics omits it from its INSERT, so
-// plugin rows always carry the DEFAULT ''. scope IS written through since
-// W2 (the manifest's validated scope; an omitted one is normalized to
-// 'match' by the same omitted-field rule CreateMetric uses), and version
-// stays omitted — plugin rows start at the column DEFAULT 1.
+// plugin rows always carry the DEFAULT ''. There is no scope column: a
+// plugin metric's scope is derived from its binds like any other metric's
+// (ruling 51). version stays omitted — plugin rows start at the column
+// DEFAULT 1.
 
 // PluginRow is one plugins-registry row (M5 §2.7).
 type PluginRow struct {
@@ -60,14 +56,11 @@ type PluginRow struct {
 }
 
 // PluginMetricDef is one manifest metric ready to be written into the
-// metrics table (origin forced to 'plugin' by the writer). Scope is the
-// manifest's validated `scope` ("" = omitted → the store's omitted-field
-// rule normalizes it to 'match', see ReplacePluginMetrics).
+// metrics table (origin forced to 'plugin' by the writer).
 type PluginMetricDef struct {
 	Name   string
 	Title  string
 	Expr   string
-	Scope  string
 	Format string
 	Doc    string
 }
@@ -79,9 +72,6 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	title TEXT NOT NULL DEFAULT '',
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
-	scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
-	subject TEXT NOT NULL DEFAULT 'player' CHECK (subject IN ('player', 'match', 'team')),
-	partition TEXT NOT NULL DEFAULT '' CHECK (partition IN ('', 'side', 'map', 'weapon')),
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',
@@ -231,10 +221,7 @@ func (s *Store) CheckBuiltinMetricCollisions(defs []PluginMetricDef) error {
 // Pass nil/empty to just clear. Creates the metrics table when missing.
 // The INSERT deliberately omits short_name (DEFAULT empty string) —
 // plugin manifests carry no short label, so plugin metric rows never
-// have one. version is omitted likewise (DEFAULT 1). scope IS written:
-// an omitted ("" — direct callers that predate the field) scope is
-// normalized to 'match' here, the same omitted-field rule CreateMetric
-// and UpdateMetric apply, so the CHECK always sees a legal value.
+// have one. version is omitted likewise (DEFAULT 1).
 //
 // Before any write the builtin-collision check below runs: the upsert is
 // keyed by name, so a bundled metric naming a BUILT-IN would silently
@@ -261,10 +248,10 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, scope, format, doc, origin, plugin_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?)
+		`INSERT INTO metrics (name, title, expr, format, doc, origin, plugin_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, 'plugin', ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
-			title = excluded.title, expr = excluded.expr, scope = excluded.scope,
+			title = excluded.title, expr = excluded.expr,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
 			plugin_id = excluded.plugin_id,
 			touched = ''`,
@@ -274,12 +261,8 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	}
 	defer stmt.Close()
 	for _, d := range defs {
-		scope := d.Scope
-		if scope == "" {
-			scope = "match"
-		}
 		if _, err := stmt.Exec(
-			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(scope),
+			scrub(d.Name), scrub(d.Title), scrub(d.Expr),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), time.Now(),
 		); err != nil {
 			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)

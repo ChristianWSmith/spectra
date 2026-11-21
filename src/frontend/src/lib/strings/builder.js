@@ -49,16 +49,6 @@ export const builder = {
   filterBuiltIn: 'Built-in',
   filterCustom: 'Custom',
   filterPlugin: 'Plugin',
-  scopeLabel: 'Scope',
-  filterMatch: 'Match',
-  filterProfile: 'Profile',
-  // The Subject group (the list filter over the metrics subject axis —
-  // player / match / team, the same three words the editor's Subject
-  // select offers below). filterPlayer/filterTeam are this group's own
-  // box labels; filterMatch is the shared "Match" word (one spelling).
-  subjectLabel: 'Subject',
-  filterPlayer: 'Player',
-  filterTeam: 'Team',
   typeLabel: 'Type',
   filterAuto: 'Auto',
   filterInt: 'Int',
@@ -112,16 +102,6 @@ export const builder = {
   // The six-character cap (N3) — the save guard's report when a loaded
   // value is already over it (the input's maxlength stops new typing).
   shortNameTooLong: 'Short name must be 6 characters or fewer.',
-  scopeMatchOption: 'match — this subject in this match',
-  scopeProfileOption: "profile — this player's career",
-  // The editor's Subject select (the metrics subject axis): what the
-  // number is ABOUT, picked for the metric like its scope — the server's
-  // subject × scope matrix (profile is player-only) is the guard, so no
-  // option is disabled here.
-  fieldSubject: 'Subject',
-  subjectPlayerOption: 'player — about one player',
-  subjectMatchOption: 'match — about the match',
-  subjectTeamOption: 'team — about one team',
   fieldFormat: 'Format',
   fieldDoc: 'Doc (formula, required)',
   docPlaceholder: 'Document the formula — what it counts, over what…',

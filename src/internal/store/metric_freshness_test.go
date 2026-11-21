@@ -23,7 +23,7 @@ func TestUnknownTouchedReadsBehind(t *testing.T) {
 	matchID := seedReadyMatch(t, s, "unknown-touched")
 	m, err := s.CreateMetric(models.MetricRow{
 		Name: "unknown_touched", Title: "unknown_touched",
-		Expr: rawCountSQL("events", "match"), Scope: "match", Origin: "user",
+		Expr: rawCountSQL("events", "match"), Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)
@@ -54,7 +54,7 @@ func TestRawRunRecordsCoverTheirUnits(t *testing.T) {
 	}
 	live := cfg.RuleVersion
 	m, err := s.CreateMetric(models.MetricRow{
-		Name: "lib_raw", Title: "lib_raw", Scope: "match", Origin: "user",
+		Name: "lib_raw", Title: "lib_raw", Origin: "user",
 		Expr:    "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE 1 = 0",
 		Touched: []string{"events"},
 	})
@@ -95,7 +95,7 @@ func TestRawRoundScopeCoveredWhenMatchHasNoRounds(t *testing.T) {
 	live := cfg.RuleVersion
 	bare := seedReadyMatch(t, s, "no-rounds")
 	m, err := s.CreateMetric(models.MetricRow{
-		Name: "round_raw", Title: "round_raw", Scope: "match", Origin: "user",
+		Name: "round_raw", Title: "round_raw", Origin: "user",
 		Expr:    "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM rounds WHERE match_id = :match_id AND number = :round",
 		Touched: []string{"rounds"},
 	})

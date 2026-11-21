@@ -7,13 +7,14 @@ import (
 )
 
 // TestMetricRowJSONContract pins the MetricRow binding shape (stored
-// metrics W1): scope IS part of the frontend contract, while Version is
+// metrics W1): scope IS part of the frontend contract (derived from the
+// binds, never stored, ruling 51), while Version is
 // an INTERNAL-ONLY stamp — marshalling must never emit a "version" key
 // ANYWHERE (row or list envelope: the owner ruling is that no stamp ever
 // reaches an app surface), and the retired groupBy key must not come
 // back either (the column is gone).
 func TestMetricRowJSONContract(t *testing.T) {
-	row := MetricRow{ID: 7, Name: "m", Scope: "match", Version: 42}
+	row := MetricRow{ID: 7, Name: "m", Version: 42}
 	envelopes := map[string]any{
 		"row":  row,
 		"list": MetricListPage{Rows: []MetricRow{row}},
@@ -30,7 +31,7 @@ func TestMetricRowJSONContract(t *testing.T) {
 		if strings.Contains(s, `"groupBy"`) {
 			t.Errorf("MetricRow JSON (%s) carries the retired groupBy key: %s", name, s)
 		}
-		if !strings.Contains(s, `"scope":"match"`) {
+		if !strings.Contains(s, `"scope":`) {
 			t.Errorf("MetricRow JSON (%s) missing the scope key: %s", name, s)
 		}
 	}

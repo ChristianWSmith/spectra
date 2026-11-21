@@ -17,7 +17,7 @@ func TestSaveMetricStoresTouchedTables(t *testing.T) {
 	svc := f.svc
 
 	saved, err := svc.SaveMetric(models.MetricRow{
-		Name: "touched_kills", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id", Scope: "match",
+		Name: "touched_kills", Expr: "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id",
 	})
 	if err != nil {
 		t.Fatalf("SaveMetric: %v", err)
@@ -58,7 +58,7 @@ func TestSaveMetricStoresTouchedTables(t *testing.T) {
 func TestSaveMetricGateRefusalWritesNothing(t *testing.T) {
 	f := newDepsFixture(t)
 	if _, err := f.svc.SaveMetric(models.MetricRow{
-		Name: "refused", Expr: "from player_stats: sum(kills), metric('no_such_metric')", Scope: "match",
+		Name: "refused", Expr: "from player_stats: sum(kills), metric('no_such_metric')",
 	}); err == nil {
 		t.Fatal("a metric() to a missing metric saved")
 	}

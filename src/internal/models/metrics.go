@@ -22,13 +22,13 @@ type MetricRow struct {
 	Title     string `json:"title"`
 	ShortName string `json:"shortName"` // optional; read only at width-constrained metric column headers
 	Expr      string `json:"expr"`      // one SELECT or WITH statement (raw SQL; internal/metrics raw.go)
-	Scope     string `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
-	Subject   string `json:"subject"`   // player|match|team — who its values are keyed by (DDL CHECK)
-	Partition string `json:"partition"` // ''|side|map|weapon — how match/team rows split (DDL CHECK)
-	Format    string `json:"format"`    // ""|int|float1|float2|percent|currency|identity
-	Doc       string `json:"doc"`
-	Origin    string `json:"origin"` // builtin|user|plugin
-	PluginID  string `json:"pluginId"`
+	// Scope is DERIVED from the expr's binds (store.ScopeOfExpr), never
+	// stored: match|profile, profile when the statement reads :steam_id.
+	Scope    string `json:"scope"`
+	Format   string `json:"format"` // ""|int|float1|float2|percent|currency|identity
+	Doc      string `json:"doc"`
+	Origin   string `json:"origin"` // builtin|user|plugin
+	PluginID string `json:"pluginId"`
 	// Touched is the physical tables the metric's compiled statement reads
 	// (sorted), derived by the save gate and stored as metrics.touched.
 	// nil = not derived. Internal until freshness reads it.
@@ -55,7 +55,7 @@ type MetricRow struct {
 type MetricValue struct {
 	MetricID   int64    `json:"metricId"`
 	SubjectKey string   `json:"subjectKey"` // player SteamID64 | team key ('ct'/'t') | ''
-	Dim        string   `json:"dim"`        // partition value ('' = unpartitioned — §6.5)
+	Dim        string   `json:"dim"`        // the statement's dim column ('' = unpartitioned — §6.5)
 	Value      *float64 `json:"value"`      // nil = no data (raw SQL NULL, ruling 23): a dash, never 0
 	ValueKey   string   `json:"valueKey"`   // identity winner's key (identity rows only; '' otherwise)
 }

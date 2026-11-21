@@ -393,7 +393,7 @@ a player ("this player's trade rate"), a match or a team — and every metric ca
 formula (a value is never invented; missing data shows as a dash, never as a zero).
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
-and one **Filters** panel (origin, scope, subject and format). The list scrolls when it grows
+and one **Filters** panel (origin and format). The list scrolls when it grows
 past the window while those controls stay put. Each row has a ▶ to preview
 it and, for metrics you created, a delete. **New** starts a fresh metric;
 **Running metrics** lists the metrics being computed right now
@@ -403,10 +403,8 @@ their default order: there is no ordering dialog, no pinning and no hiding.
 The **editor** on the right has:
 
 - **Name** (the identifier other formulas reference), **Title** (display label) and an optional **Short name** for narrow columns.
-- **Subject** — what the number is *about*: *player* (one player's own number), *match* (the match
-itself) or *team* (one side's number). A new metric starts as *player*; which subjects may combine
-with which scope is decided when you save (a match or team has no career, so those refuse *profile*).
-- **Scope** — *match* (this subject in this match) or *profile* (this player's career).
+- **Scope** is not a field you set. A metric that reads \`:steam_id\` is a career (profile) metric, one value per
+player across their matches; any other metric is a match metric. The statement decides, and the editor shows the result.
 - **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
 - **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
 - **Expression** — the statement itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
@@ -421,8 +419,8 @@ created, that actions line opens with a **trash** button that deletes it; built-
 metrics show none (neither here nor on their list row).
 
 **Built-in metrics are edited in place.** A built-in loads with a \`built-in\` chip. Change its **Expression**
-and **Save** keeps the edit: the metric's numbers recompute with it. Its name, title, format, scope and
-subject stay as shipped, and an edited built-in shows an *edited* chip. **Restore to default** sits
+and **Save** keeps the edit: the metric's numbers recompute with it. Its name, title and
+format stay as shipped, and an edited built-in shows an *edited* chip. **Restore to default** sits
 beside Save while the edit is in place. It discards the edit, brings the shipped expression back and
 recomputes the numbers with it. You can still preview and reference built-ins. Plugin metrics carry a
 *read-only source* chip; saving one stores a copy as your own metric.

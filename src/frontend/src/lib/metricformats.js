@@ -18,9 +18,9 @@
 // the Type group offers it so the key-valued identity metrics are
 // selectable in the list, but the editor's Format select never OFFERS
 // it as a fresh choice — identity belongs to a definition whose
-// expression leads with argmax under subject=match — a combination the
-// editor's Subject select (2026-11-18) now makes authorable, so the
-// premise moved: what still withholds identity is that the format
+// expression leads with argmax (the statement alone decides it — there is
+// no subject control) — so the premise is the statement's shape, and what
+// still withholds identity is that the format
 // select has never been gated on the expression's SHAPE, so offering it
 // as a fresh choice would invite a value-less metric. `filterOnly` marks that split;
 // entries WITHOUT it are the selectable set (the editor renders

@@ -168,14 +168,11 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // same server-side filters — origin (the Builder Origin group's checked
 // set: "" = every box, "none" = no box, or the canonical comma-subset
 // of the three origin tokens builtin/user/plugin — the Custom box is
-// "user", the Plugin box "plugin"), scope ("match", "profile", "none"),
-// subject (the Builder Subject group's checked set — the metrics
-// subject axis: "" = every box, "none" = no box, or the canonical
-// comma-subset of the three subject tokens player/match/team — see
-// store.ListMetricsPage's SUBJECT FILTER note), // format (the Builder's Type group: "" = every format,
-// "none" = none, or the canonical comma-subset of format tokens where
-// "auto" names the ” format) — which are the Builder's five SERVER-side
-// filter groups (the sixth, Pinning, is a render-time filter over
+// "user", the Plugin box "plugin") and format (the Builder's Type group:
+// "" = every format, "none" = none, or the canonical comma-subset of
+// format tokens where "auto" names the ” format) — which are the
+// Builder's SERVER-side filter groups (the Pinning group is a render-time
+// filter over
 // localStorage the backend cannot see — see Builder.svelte); see
 // store.ListMetricsPage — at most limit rows (0 = the store's default
 // window), plus HasNext (another window follows) — see
@@ -183,8 +180,8 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, subjectFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	page, err := s.st.ListMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	page, err := s.st.ListMetricsPage(query, originFilter, formatFilter, afterID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -253,8 +250,8 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 
 // SaveBuiltinMetric stores an edit of one builtin metric's SQL (owner ruling
 // 44). The edit is the builtin's own row with a new expr: its name, title,
-// scope, subject, partition, format and doc are kept, so its value identity
-// is kept. It passes the same save gate and scope rule as a user metric, and
+// format and doc are kept, so its value identity is kept. It passes the
+// same save gate as a user metric, and
 // the same semantic bump and sweep, then records the override in the same
 // transaction. The shipped SQL is kept on the override for restore.
 func (s *MetricsService) SaveBuiltinMetric(id int64, expr string) (models.MetricRow, error) {
@@ -374,37 +371,6 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 	if !metricFormats[m.Format] {
 		return models.MetricRow{}, fmt.Errorf("unknown format %q (valid: int, float1, float2, percent, currency, identity)", m.Format)
 	}
-	// Scope is a REAL field since W2: the DDL CHECK admits exactly these
-	// two values, so anything else (including an omitted "") is rejected
-	// here with the same friendly shape as Format — the API always writes
-	// it (the store's '' → 'match' fallback stays for direct
-	// CreateMetric/UpdateMetric callers).
-	m.Scope = strings.TrimSpace(m.Scope)
-	if m.Scope != "match" && m.Scope != "profile" {
-		return models.MetricRow{}, fmt.Errorf("unknown scope %q (valid: match, profile)", m.Scope)
-	}
-	// Subject × partition (metrics expansion §3.1/§3.2): the addressing
-	// vocabulary validates beside Scope/Format with the same friendly
-	// shape, an omitted subject reads as the DDL default ("player" —
-	// rows that predate the field), and the matrix's INVALID
-	// combinations get their own message (plan §3.1: rejected at save
-	// time; the career case additionally refuses at compile time, so a
-	// swept row can never exist either way).
-	m.Subject = strings.TrimSpace(m.Subject)
-	if m.Subject == "" {
-		m.Subject = "player"
-	}
-	if m.Subject != "player" && m.Subject != "match" && m.Subject != "team" {
-		return models.MetricRow{}, fmt.Errorf("unknown subject %q (valid: player, match, team)", m.Subject)
-	}
-	m.Partition = strings.TrimSpace(m.Partition)
-	if m.Partition != "" && m.Partition != "side" && m.Partition != "map" && m.Partition != "weapon" {
-		return models.MetricRow{}, fmt.Errorf("unknown partition %q (valid: side, map, weapon, or none)", m.Partition)
-	}
-	if m.Scope == "profile" && m.Subject != "player" {
-		return models.MetricRow{}, fmt.Errorf(
-			"a %s-subject metric can't be profile-scoped (a match or team has no career — pick match scope)", m.Subject)
-	}
 	// API path: origin forced to user; plugin rows are the loader's
 	// territory (platform_store.ReplacePluginMetrics) and cannot be
 	// created or hijacked through here.
@@ -438,18 +404,16 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 		}
 	}
 	// The expression is one SELECT or WITH statement, gated by the one save
-	// gate (metrics.CheckRawSave). Its scope is its binds (03-QUERIES.md §5),
-	// so the stored scope must agree with them. Its metric() references must
-	// name existing metrics; they become its dependency edges.
+	// gate (metrics.CheckRawSave). Its scope is derived from its binds
+	// (03-QUERIES.md §5, ruling 51), so there is nothing to validate beside
+	// it. Its metric() references must name existing metrics; they become
+	// its dependency edges.
 	gate, perr, err := metrics.CheckRawSave(s.st, m.Expr)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
 	if perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
-	}
-	if want := metrics.RawScopeOf(gate.Binds); m.Scope != want {
-		return models.MetricRow{}, fmt.Errorf("a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is %s-scoped)", want)
 	}
 	m.Touched = gate.Touched
 	// metric() references are the statement's dependency edges. A reference
@@ -462,13 +426,13 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 	if strings.TrimSpace(m.Doc) == "" {
 		m.Doc = "Formula: " + m.Expr // PRD §5.16: formula documentation on every metric
 	}
-	// Design §4's semantic test — exactly the two fields the version
-	// bump answers (expr, scope), read off the STORED row
+	// Design §4's semantic test — the field the version bump answers
+	// (expr; scope is derived from it), read off the STORED row
 	// before anything is written (the analyticservice.go SetConfig
 	// no-op pattern). A create never bumps (the INSERT default starts
 	// the counter at 1 and a new metric has no rows — absent → behind
 	// already) but DOES schedule the sweep: its rows must be computed.
-	semantic := m.ID > 0 && (m.Expr != existing.Expr || m.Scope != existing.Scope)
+	semantic := m.ID > 0 && m.Expr != existing.Expr
 	created := m.ID == 0
 	// ONE transaction: the metric row, its edges wholesale, and (semantic)
 	// the version bump for this metric + every transitive dependent —
@@ -566,7 +530,7 @@ func (s *MetricsService) DeleteMetric(id int64) error {
 // statement is previewed by saving it, and its values appear once the
 // sweep has run it. The one gate still runs first, so a bad statement
 // reports its positioned refusal.
-func (s *MetricsService) PreviewMetric(id int64, expr string, subject string, partition string, scope string, limit int) (MetricPreview, error) {
+func (s *MetricsService) PreviewMetric(id int64, expr string, limit int) (MetricPreview, error) {
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
@@ -634,9 +598,8 @@ func (s *MetricsService) GetMetricSeries(steamID string, metricIDs []int64) ([]m
 
 // CompileMetric returns the statement a metric runs, for the provenance
 // view. Nothing executes: a blank expr shows the SAVED statement by id, and
-// a non-blank expr is gated and shown as written. scope is the run extent
-// and no longer changes the text.
-func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (string, error) {
+// a non-blank expr is gated and shown as written.
+func (s *MetricsService) CompileMetric(id int64, expr string) (string, error) {
 	if strings.TrimSpace(expr) == "" {
 		full, err := s.GetMetric(id)
 		if err != nil {
@@ -655,10 +618,8 @@ func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (str
 }
 
 // ValidateExpr is the builder's live check: the one gate, the same one save
-// runs (metrics.CheckRawSave). subject, partition and scope are authoring
-// state the save validates against the statement's binds and the subject ×
-// scope rule; the gate itself needs only the statement.
-func (s *MetricsService) ValidateExpr(expr string, subject string, partition string, scope string) (bool, ExprError, error) {
+// runs (metrics.CheckRawSave); the statement is the whole input.
+func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
 	_, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return false, ExprError{}, err

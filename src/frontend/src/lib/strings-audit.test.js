@@ -254,7 +254,7 @@ const HINT_KEYS = {
   'library.refVoiceData': 'a reference footnote under the Explorer’s message list — explains a count',
   'library.refSosSounds': 'a reference footnote under the Explorer’s message list — explains a count',
   'library.refBallistics': 'a reference footnote under the Explorer’s message list — explains a count',
-  'builder.headNoteScopes': 'in-form note under the scope picker — a footnote explaining scope granularity',
+  'builder.headNoteScopes': 'header note under the Builder title — where match- and profile-bound metrics show',
   'common.mapPackNotFoundIntro': 'asset-prompt explanatory copy — the paragraph guiding the no-radar decision',
   'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
   'common.mapPackFoundIntro': 'asset-prompt explanatory copy — the paragraph listing what extraction reads',

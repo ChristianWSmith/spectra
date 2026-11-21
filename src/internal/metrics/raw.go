@@ -141,12 +141,7 @@ func Validate(expr string) *GateError {
 // RawScopeOf reports the scope a raw statement's binds select, which is the
 // metric's stored scope: profile when it reads :steam_id, match otherwise.
 func RawScopeOf(binds []string) string {
-	for _, b := range binds {
-		if b == rawBindSteam {
-			return "profile"
-		}
-	}
-	return "match"
+	return store.ScopeOfBinds(binds)
 }
 
 // RawScopes enumerates the runs a raw statement needs for one sweep, from

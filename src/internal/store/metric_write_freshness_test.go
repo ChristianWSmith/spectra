@@ -30,7 +30,7 @@ func rawRunVersion(t *testing.T, s *Store, metricID, matchID int64) int {
 func createRaw(t *testing.T, s *Store, name, expr string, touched []string) models.MetricRow {
 	t.Helper()
 	m, err := s.CreateMetric(models.MetricRow{
-		Name: name, Title: name, Scope: "match", Origin: "user",
+		Name: name, Title: name, Origin: "user",
 		Expr: expr, Touched: touched,
 	})
 	if err != nil {

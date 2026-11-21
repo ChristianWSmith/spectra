@@ -34,7 +34,7 @@ func seedOrderMetric(t *testing.T, s *Store, name, origin string) models.MetricR
 	t.Helper()
 	m, err := s.CreateMetric(models.MetricRow{
 		Name: name, Title: name, Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Origin: origin,
+		Origin: origin,
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric(%s): %v", name, err)

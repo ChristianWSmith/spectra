@@ -211,6 +211,19 @@ func AnalyzeMetricSQL(q string, refAliases map[string]bool) (MetricStatement, *G
 	return out, nil
 }
 
+// StatementBinds returns the reserved bind markers a statement uses, in
+// textual order, from its tokens alone: no table, metric() or read-only
+// checks run, so a statement the gate would refuse still reports its
+// binds. It is nil for text the lexer cannot read.
+func StatementBinds(q string) []string {
+	toks, err := lexSQL(q)
+	if err != nil {
+		return nil
+	}
+	r := &tableResolver{toks: toks}
+	return r.binds()
+}
+
 // tableResolver walks one statement's tokens.
 type tableResolver struct {
 	toks       []sqlTok

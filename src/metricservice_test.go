@@ -16,7 +16,7 @@ import (
 // retired) — and every compile path enforces the player anchor, so a
 // round-grain definition never lands. PreviewMetric and ValidateExpr
 // carry the W2 signatures (the groupBy argument is gone with the wave).
-func TestSaveMetricScope(t *testing.T) {
+func TestSaveMetricScopeFromBinds(t *testing.T) {
 	// File-backed: PreviewMetric runs on the read-only session, which
 	// requires a file-backed database.
 	st, err := store.Open(filepath.Join(t.TempDir(), "metricservice.db"))
@@ -26,16 +26,17 @@ func TestSaveMetricScope(t *testing.T) {
 	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
 	svc := &MetricsService{st: st}
 
-	// Create with a real scope: profile round-trips.
+	// Scope is derived from the binds (ruling 51): a :steam_id statement
+	// reads profile on create and keeps it on update.
 	saved, err := svc.SaveMetric(models.MetricRow{
 		Name: "w2_rate", Title: "W2 rate", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE :steam_id <> ''",
-		Format: "int", Origin: "user", Scope: "profile",
+		Format: "int", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("SaveMetric(create): %v", err)
 	}
 	if saved.Scope != "profile" {
-		t.Errorf("saved scope = %q, want profile (the API writes the real scope)", saved.Scope)
+		t.Errorf("saved scope = %q, want profile (derived from :steam_id)", saved.Scope)
 	}
 	if saved.Version != 1 {
 		t.Errorf("saved version = %d, want 1 (INSERT default — a create never bumps; W3 bumps semantic EDITS only)", saved.Version)
@@ -54,20 +55,9 @@ func TestSaveMetricScope(t *testing.T) {
 		t.Errorf("updated = %+v, want renamed title + scope profile", updated)
 	}
 
-	// An omitted or unknown scope is a friendly service error — the API
-	// always writes a real scope now (the W1 '' → 'match' force is gone).
-	for _, bad := range []string{"", "career", "MATCH", "player"} {
-		_, err := svc.SaveMetric(models.MetricRow{
-			Name: "bad_scope", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "int", Scope: bad,
-		})
-		if err == nil || !strings.Contains(err.Error(), "unknown scope") {
-			t.Errorf("scope %q: err = %v, want the friendly unknown-scope error", bad, err)
-		}
-	}
-
-	// ValidateExpr: the W2 arity (expr only) — the anchor reports on the
+	// ValidateExpr takes the statement alone — the anchor reports on the
 	// live check too, identically to a save.
-	ok, ee, err := svc.ValidateExpr("SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", "player", "", "match")
+	ok, ee, err := svc.ValidateExpr("SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id")
 	if err != nil || !ok || ee.Message != "" {
 		t.Errorf("ValidateExpr = (%v, %+v, %v), want ok", ok, ee, err)
 	}
@@ -89,7 +79,7 @@ func TestSaveMetricFormatEnum(t *testing.T) {
 	for _, format := range []string{"", "int", "float1", "float2", "percent", "currency", "identity"} {
 		saved, err := svc.SaveMetric(models.MetricRow{
 			Name: "fmt_" + orName(format), Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-			Format: format, Scope: "match", Origin: "user",
+			Format: format, Origin: "user",
 		})
 		if err != nil {
 			t.Errorf("SaveMetric(format=%q): %v (every enum tag must save)", format, err)
@@ -100,7 +90,7 @@ func TestSaveMetricFormatEnum(t *testing.T) {
 		}
 	}
 	if _, err := svc.SaveMetric(models.MetricRow{
-		Name: "fmt_bad", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "float3", Scope: "match",
+		Name: "fmt_bad", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "float3",
 	}); err == nil || !strings.Contains(err.Error(), "unknown format") ||
 		!strings.Contains(err.Error(), "float2") {
 		t.Errorf("float3 err = %v, want the friendly unknown-format copy naming float2", err)
@@ -137,7 +127,7 @@ func TestSaveMetricShortNameCap(t *testing.T) {
 				}
 				return r
 			}, short),
-			Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "int", Scope: "match",
+			Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Format: "int",
 			Origin: "user", ShortName: short,
 		}
 	}
@@ -217,7 +207,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	// guard sits BEFORE the compile (cheapest-first), which this pins.
 	_, err = svc.SaveMetric(models.MetricRow{
 		ID: builtin.ID, Name: builtin.Name, Title: "Hijacked", ShortName: "H",
-		Expr: "not even an expression", Scope: "match", Format: "int",
+		Expr: "not even an expression", Format: "int",
 		Doc: "d", Origin: "user",
 	})
 	if err == nil || !strings.Contains(err.Error(), "built-in metrics can't be edited") {
@@ -246,7 +236,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	// builtin still reports the uniqueness error — never the edit copy.
 	_, err = svc.SaveMetric(models.MetricRow{
 		Name: builtin.Name, Title: "Shadow", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Doc: "d", Origin: "user",
+		Doc: "d", Origin: "user",
 	})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("builtin-name collision err = %v, want the uniqueness error", err)
@@ -257,7 +247,7 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	// (4) A user metric stays fully writable: create, edit, delete.
 	user, err := svc.SaveMetric(models.MetricRow{
 		Name: "my_rate", Title: "My rate", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Doc: "Formula: count()", Origin: "user",
+		Doc: "Formula: count()", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("SaveMetric(create user): %v", err)
@@ -326,14 +316,14 @@ func TestListMetricsPageArity(t *testing.T) {
 
 	if _, err := svc.SaveMetric(models.MetricRow{
 		Name: "per_round_rate", Title: "Per round rate", Expr: "SELECT '' AS subject_key, '' AS dim, 1.0*SUM(kills)/NULLIF(SUM(rounds_played), 0) AS value FROM player_stats WHERE match_id = :match_id",
-		Scope: "match", Format: "float1", Doc: "Formula: kills / rounds played",
+		Format: "float1", Doc: "Formula: kills / rounds played",
 		Origin: "user",
 	}); err != nil {
 		t.Fatalf("SaveMetric(match/rounds): %v", err)
 	}
 	if _, err := svc.SaveMetric(models.MetricRow{
 		Name: "career_rate", Title: "Career rate", Expr: "SELECT '' AS subject_key, '' AS dim, AVG(adr) AS value FROM player_stats WHERE :steam_id <> ''",
-		Scope: "profile", Format: "float1", Doc: "Formula: mean ADR", Origin: "user",
+		Format: "float1", Doc: "Formula: mean ADR", Origin: "user",
 	}); err != nil {
 		t.Fatalf("SaveMetric(profile): %v", err)
 	}
@@ -352,7 +342,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// default window (the 2026-11-18 view-aggregate relocation re-pin,
 	// ME8 audit — 109 rows > 100), so
 	// limit 0's default window could no longer hold the whole list.
-	page, err := svc.ListMetricsPage("", "", "", "", "", 0, len(all))
+	page, err := svc.ListMetricsPage("", "", "", 0, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all empty): %v", err)
 	}
@@ -365,23 +355,17 @@ func TestListMetricsPageArity(t *testing.T) {
 		}
 	}
 
-	// The five filters in one call: origin 'user,plugin' + scope 'match' +
-	// subject 'player' + format 'float1' selects exactly the one
-	// seeded user row (the plugin's/other users' rows differ on a
-	// predicate, the builtins are excluded by origin) — so every filter
-	// word landed where it belongs.
-	page, err = svc.ListMetricsPage("", "user,plugin", "match", "player", "float1", 0, 0)
+	// Origin and format together select the user/plugin rows of that format:
+	// the origin word and the format word land in their own slots (the
+	// scope and subject slots are gone, ruling 51).
+	page, err = svc.ListMetricsPage("", "user,plugin", "float1", 0, 0)
 	if err != nil {
-		t.Fatalf("ListMetricsPage(mine, match, rounds, float1): %v", err)
+		t.Fatalf("ListMetricsPage(mine, float1): %v", err)
 	}
-	if len(page.Rows) != 1 || page.Rows[0].Name != "per_round_rate" ||
-		page.Rows[0].Scope != "match" ||
-		page.Rows[0].Format != "float1" {
-		got := make([]string, 0, len(page.Rows))
-		for _, m := range page.Rows {
-			got = append(got, m.Name+"("+m.Scope+"/"+m.Format+")")
+	for _, m := range page.Rows {
+		if m.Origin == "builtin" || m.Format != "float1" {
+			t.Errorf("mine+float1 window carries %s (%s/%s), want only non-builtin float1 rows", m.Name, m.Origin, m.Format)
 		}
-		t.Errorf("mine+match+float1 = %v, want [per_round_rate(match/float1)]", got)
 	}
 
 	// The format word answers in ITS position (arg 5): both seeded user
@@ -403,14 +387,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	if mineFloat1 == 0 {
 		t.Fatalf("fixture has no float1 mine row — the format narrowing check would be vacuous")
 	}
-	f1, err := svc.ListMetricsPage("", "user,plugin", "", "", "float1", 0, 0)
+	f1, err := svc.ListMetricsPage("", "user,plugin", "float1", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=float1): %v", err)
 	}
 	if len(f1.Rows) != mineFloat1 {
 		t.Errorf("mine+float1 = %d rows, want every float1 mine row (%d)", len(f1.Rows), mineFloat1)
 	}
-	pc, err := svc.ListMetricsPage("", "user,plugin", "", "", "percent", 0, 0)
+	pc, err := svc.ListMetricsPage("", "user,plugin", "percent", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mine, format=percent): %v", err)
 	}
@@ -421,7 +405,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	// The cursor (arg 6): the first row as afterID drops it and keeps
 	// the rest, in order — the explicit limit again (the list outgrew
 	// the store's default window with the partition addendum).
-	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, len(all))
+	cursored, err := svc.ListMetricsPage("", "", "", all[0].ID, len(all))
 	if err != nil {
 		t.Fatalf("ListMetricsPage(cursor): %v", err)
 	}
@@ -431,7 +415,7 @@ func TestListMetricsPageArity(t *testing.T) {
 	}
 
 	// The limit (arg 8): 1 row + the has-next probe.
-	limited, err := svc.ListMetricsPage("", "", "", "", "", 0, 1)
+	limited, err := svc.ListMetricsPage("", "", "", 0, 1)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(limit 1): %v", err)
 	}
@@ -444,21 +428,14 @@ func TestListMetricsPageArity(t *testing.T) {
 	// dropped or shifted on the way down would surface as "" and pass.
 	for _, tc := range []struct{ slot, word, want string }{
 		{"origin", "everything", `unknown origin filter "everything"`},
-		{"scope", "career", `unknown scope filter "career"`},
-		{"subject", "map", `unknown subject filter "map"`},
-		{"subject", "player,team,match", `unknown subject filter "player,team,match"`},
 		{"format", "huge", `unknown format filter "huge"`},
 	} {
 		var err error
 		switch tc.slot {
 		case "origin":
-			_, err = svc.ListMetricsPage("", tc.word, "", "", "", 0, 100)
-		case "scope":
-			_, err = svc.ListMetricsPage("", "", tc.word, "", "", 0, 100)
-		case "subject":
-			_, err = svc.ListMetricsPage("", "", "", tc.word, "", 0, 100)
+			_, err = svc.ListMetricsPage("", tc.word, "", 0, 100)
 		case "format":
-			_, err = svc.ListMetricsPage("", "", "", "", tc.word, 0, 100)
+			_, err = svc.ListMetricsPage("", "", tc.word, 0, 100)
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s filter %q: err = %v, want the store's %s", tc.slot, tc.word, err, tc.want)

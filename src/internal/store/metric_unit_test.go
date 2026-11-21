@@ -101,7 +101,7 @@ func TestClearMetricUnitsDeletesOnlyItsUnits(t *testing.T) {
 func TestLibraryWideRunReplacesWholeResult(t *testing.T) {
 	s, _ := openFileStore(t)
 	m, err := s.CreateMetric(models.MetricRow{
-		Name: "lib_whole", Title: "lib_whole", Scope: "match", Origin: "user",
+		Name: "lib_whole", Title: "lib_whole", Origin: "user",
 		Expr: "SELECT 'x' AS subject_key, '' AS dim, 1 AS value",
 	})
 	if err != nil {

@@ -31,11 +31,11 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	t.Cleanup(func() { _ = s.CloseRO() })
 
 	mustSaveMetricDeps(t, s, models.MetricRow{
-		Name: "deps_up", Title: "up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match", Origin: "user",
+		Name: "deps_up", Title: "up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Origin: "user",
 	}, nil)
 	dep := mustSaveMetricDeps(t, s, models.MetricRow{
 		Name: "deps_dep", Title: "dep", Expr: "from events: metric('deps_up')",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"deps_up", "deps_up", "other_up"})
 	got, err := s.MetricDeps(dep.ID)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	// Wholesale rewrite: the previous edge set is replaced, not merged.
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: dep.ID, Name: dep.Name, Title: dep.Title, Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, nil, nil, false); err != nil {
 		t.Fatalf("SaveMetricWithDeps(update): %v", err)
 	}
@@ -60,7 +60,7 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	// derivation itself is the service's (design §2).
 	if _, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: dep.ID, Name: dep.Name, Title: dep.Title, Expr: "from events: metric('deps_up')",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"deps_up"}, nil, false); err != nil {
 		t.Fatalf("SaveMetricWithDeps(restore edges): %v", err)
 	}
@@ -69,7 +69,7 @@ func TestSaveMetricDepsRoundTrip(t *testing.T) {
 	// has no rows keyed to a metric id that no longer exists).
 	mustSaveMetricDeps(t, s, models.MetricRow{
 		Name: "deps_dep2", Title: "dep2", Expr: "from events: metric('deps_up')",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"deps_up"})
 	if err := s.DeleteMetric(mustMetricID(t, s, "deps_dep2")); err != nil {
 		t.Fatalf("DeleteMetric: %v", err)
@@ -115,14 +115,14 @@ func TestSaveMetricWithDepsRollsBackAtomically(t *testing.T) {
 	t.Cleanup(func() { _ = s.CloseRO() })
 
 	mustSaveMetricDeps(t, s, models.MetricRow{
-		Name: "atomic_up", Title: "up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match", Origin: "user",
+		Name: "atomic_up", Title: "up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Origin: "user",
 	}, nil)
 	dep := mustSaveMetricDeps(t, s, models.MetricRow{
 		Name: "atomic_dep", Title: "dep", Expr: "from events: metric('atomic_up')",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"atomic_up"})
 	other := mustSaveMetricDeps(t, s, models.MetricRow{
-		Name: "atomic_other", Title: "other", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match", Origin: "user",
+		Name: "atomic_other", Title: "other", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Origin: "user",
 	}, nil)
 
 	// (1) The dependent's rewrite targets a metric that does not exist:
@@ -130,7 +130,7 @@ func TestSaveMetricWithDepsRollsBackAtomically(t *testing.T) {
 	// it fails.
 	_, err := s.SaveMetricWithDeps(models.MetricRow{
 		ID: dep.ID, Name: dep.Name, Title: "rewritten", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, nil, []DependentRewrite{
 		{ID: other.ID, Expr: "SELECT '' AS subject_key, '' AS dim, SUM(dmg) AS value FROM events WHERE match_id = :match_id", Deps: nil},
 		{ID: 999999, Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Deps: nil},
@@ -156,7 +156,7 @@ func TestSaveMetricWithDepsRollsBackAtomically(t *testing.T) {
 	// fails leaves no row and no edges behind.
 	_, err = s.SaveMetricWithDeps(models.MetricRow{
 		Name: "atomic_new", Title: "new", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	}, []string{"atomic_up"}, []DependentRewrite{
 		{ID: 999999, Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Deps: nil},
 	}, false)

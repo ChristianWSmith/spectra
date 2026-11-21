@@ -159,7 +159,7 @@ func TestImportWhenIdleStartsSweepAtOnce(t *testing.T) {
 // follow-up finishes.
 func TestBatchOfThreeImportsLeavesAllValuesCurrent(t *testing.T) {
 	f, p := newCoalesceFixture(t, false)
-	m := f.save(t, models.MetricRow{Name: "batch_count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match"})
+	m := f.save(t, models.MetricRow{Name: "batch_count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 	waitForSweepIdle(t, f)
 
 	for _, sha := range []string{"batch-1", "batch-2", "batch-3"} {
@@ -192,7 +192,7 @@ func TestSaveDuringImportSweepJoinsRunningSweep(t *testing.T) {
 	f.svc.sweepForJob(t.Context())
 	waitFor(t, "the import's sweep to enter the pass", func() bool { return p.entries.Load() == 1 })
 
-	saved := f.save(t, models.MetricRow{Name: "save_mid_import", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match"})
+	saved := f.save(t, models.MetricRow{Name: "save_mid_import", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 	if n := p.entries.Load(); n != 1 {
 		t.Fatalf("the save started a second sweep: %d entries", n)
 	}
@@ -242,7 +242,7 @@ func TestNoConcurrentSweepsUnderManyTriggers(t *testing.T) {
 // and the failure is carried by the metric's own compute state.
 func TestMetricFailureDoesNotFailImport(t *testing.T) {
 	f, _ := newCoalesceFixture(t, false)
-	bad := f.save(t, models.MetricRow{Name: "always_fails", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE no_such_column = 1 AND match_id = :match_id", Scope: "match"})
+	bad := f.save(t, models.MetricRow{Name: "always_fails", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE no_such_column = 1 AND match_id = :match_id"})
 
 	if err := f.svc.sweepForJob(t.Context()); err != nil {
 		t.Fatalf("sweepForJob returned %v; a metric failure must not fail the import", err)

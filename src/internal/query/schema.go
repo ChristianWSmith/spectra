@@ -100,9 +100,6 @@ var columnNotes = map[string]map[string]string{
 		"origin":     "builtin|user|plugin — the builtin origin ships seeded with the app (exactly one row: trade_rate)",
 		"short_name": "optional user-entered short label — read ONLY at width-constrained metric column headers (short_name || title || name; title || name everywhere else)",
 		"expr":       "one SELECT or WITH statement over the metric-readable tables; returns subject_key, dim and value",
-		"scope":      "'match'|'profile' — where the metric is addressed: this player in one match, or this player's career",
-		"subject":    "'player'|'match'|'team' — who the metric's values are keyed by (subject_key in metric_values)",
-		"partition":  "''|side|map|weapon — how a match/team subject's values split",
 	},
 	"metric_values": {
 		"subject_key": "the row's subject: a player's SteamID64, a team key ('ct'/'t' — the side the team finished on), or '' (match subject / career bucket)",
