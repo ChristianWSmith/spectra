@@ -24,6 +24,10 @@
 //   heatmap   — runWork-wrapped at Heatmaps' generate call site (it has
 //               TWO binding paths — GetHeatmap and GetHeatmapKD — so the
 //               one call site wraps both).
+//   compile   — every user-component compile (the save-time check, the
+//               live check, a preview's load), wrapped through the compile
+//               client's tracker (ruling 47): the same indicator, no
+//               determinate figure, no time limit. Cancel ends it.
 // spectra:asset-progress / scan-progress / heatmap-progress are
 // progress-ONLY channels (no begin signal) — they are NOT begin sources
 // here; the wrapped call's start is the begin.
@@ -59,6 +63,7 @@
 // determinate stores, or any other active source, shows indeterminate —
 // no invented cross-source math.
 import { subscribeJobProgress, subscribeMetricProgress, onEvent, errText } from './services.js';
+import { setCompileTracker } from './componentruntime/compileclient.js';
 
 // The settle window: hide only after the aggregate stays empty this long.
 // Test seam: the unit test and the app-dock driver wait it out with a
@@ -227,6 +232,11 @@ function endWork(source) {
   if (prev - 1 === 0) wrappedLive--;
   evaluate();
 }
+
+// Component compiles (ruling 47) run through the compile client, which knows
+// nothing of this module (it must load in plain node). This registers the
+// tracker once: each compile is runWork('compile', …) for its whole life.
+setCompileTracker((promise) => runWork('compile', promise));
 
 // reportWorkError — the held failure line (Q2): replaces any previous
 // message and re-shows a dismissed pill (a failure is never hidden).

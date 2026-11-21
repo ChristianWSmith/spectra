@@ -1,3 +1,5 @@
+import './compile-worker-node.mjs';
+import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js';
 // jsdom driver for ComponentFrame + the component runtime
 // (lib/componentruntime/): a broken component shows its own dismissible
 // frame while the rest of the surface keeps rendering; render, $effect,
@@ -60,7 +62,15 @@ for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(
 const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
 for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'matchpanels.js', 'econpanels.js', 'utilpanels.js', 'builtinhelpers.js']) copy(rel);
-for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js']) copy(join('componentruntime', rel));
+for (const rel of ['readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js']) copy(join('componentruntime', rel));
+// compile.js is copied, but the compile client it reaches stays the real
+// module: the node compile worker seam (test/compile-worker-node.mjs) is
+// installed on that instance, so the copy imports it by absolute URL.
+const compileClientUrl = pathToFileURL(join(process.cwd(), 'src/lib/componentruntime/compileclient.js')).href;
+writeFileSync(
+  join(dir, 'componentruntime', 'compile.js'),
+  readFileSync('src/lib/componentruntime/compile.js', 'utf8').replace("from './compileclient.js'", `from '${compileClientUrl}'`),
+);
 // The service layer stays out: errText is the real one-liner, and the
 // frame's default reads are a recorder (the driver passes its own).
 writeFileSync(
@@ -164,8 +174,22 @@ function check(name, cond, detail = '') {
   }
 }
 const sleep = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+// A user component compiles in the worker (ruling 47): settle waits until no
+// compile is pending, then lets the mounted component render.
+let compilePending = false;
+subscribeCompiles((on) => {
+  compilePending = on;
+});
 const settle = async () => {
   for (let i = 0; i < 6; i++) {
+    await sleep(30);
+    flushSync();
+  }
+  for (let i = 0; i < 3000 && compilePending; i++) {
+    await sleep(10);
+    flushSync();
+  }
+  for (let i = 0; i < 3; i++) {
     await sleep(30);
     flushSync();
   }

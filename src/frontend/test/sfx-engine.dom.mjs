@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the replay SOUND-EFFECT ENGINE (replay/sfx.js) —
 // pins the audio-liveness contract the FIRST replay load depends on:
 //   • a context born SUSPENDED (the first load's normal case: the

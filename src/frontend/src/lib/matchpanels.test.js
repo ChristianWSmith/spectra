@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // matchpanels.test.js — the Match view's panels as builtins (dogfood/PLAN.md
 // C5b, dogfood/04-COMPONENTS.md §3, §3.5). The contract a panel keeps:
 //   - it is registered as a builtin, under the builtin namespace;

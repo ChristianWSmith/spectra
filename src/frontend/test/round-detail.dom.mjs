@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for RoundDetail: the round SUMMARY view's header (owner
 // rulings C5: the <h1> round label STAYS as the view title; the muted
 // meta line — duration · site · MVP + reason — moved into the renamed

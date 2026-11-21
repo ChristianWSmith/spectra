@@ -10,4 +10,7 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [svelte(), wails("./bindings")],
+  // The compile worker (src/lib/componentruntime/compile.worker.js) loads
+  // svelte/compiler by dynamic import, which needs an ES-module worker.
+  worker: { format: "es" },
 });

@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // The user-component compiler (lib/componentruntime/compile.js): the lazy
 // compiler boundary, the save-time source check, the runtime-import
 // rewrite and the source-keyed cache.
@@ -18,6 +19,8 @@ import {
   sourceHash,
   RUNTIME_SPECIFIERS,
 } from './componentruntime/compile.js';
+import { cancelCompiles } from './componentruntime/compileclient.js';
+import { created } from '../../test/compile-worker-node.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -46,8 +49,12 @@ test('no app module imports the compiler statically', () => {
   };
   walk(SRC);
   assert.deepEqual(offenders, [], 'svelte/compiler must only be reached by dynamic import (compile.js)');
+  // The compile runs in the worker (ruling 47): the compile core holds the
+  // one dynamic import, and compile.js reaches the compiler only through it.
+  const core = readFileSync(path.join(SRC, 'lib/componentruntime/compilecore.js'), 'utf8');
+  assert.match(core, /import\('svelte\/compiler'\)/);
   const own = readFileSync(path.join(SRC, 'lib/componentruntime/compile.js'), 'utf8');
-  assert.match(own, /import\('svelte\/compiler'\)/);
+  assert.doesNotMatch(own, /import\(?\s*['"]svelte\/compiler['"]/);
 });
 
 test('a syntax error is refused with its line', async () => {
@@ -167,4 +174,45 @@ test('a refused source rejects with its line and stays refused', async () => {
   const bad = '<script>\n\n  let = 1;\n</script>';
   await assert.rejects(loadComponent(bad), (e) => e.name === 'ComponentSourceError' && e.line === 3);
   await assert.rejects(loadComponent(bad), (e) => e.line === 3);
+});
+
+// --- the compile worker (owner ruling 47) -------------------------------------
+
+// A large generated component: enough markup that a compile takes long
+// enough to observe from the main thread.
+function bigComponent(n) {
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push(`<p class="r${i % 7}">{n + ${i}}</p>`);
+  return `<script>\n  let n = $state(0);\n</script>\n${rows.join('\n')}`;
+}
+
+test('the main thread keeps running while a large compile is in the worker', async () => {
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 1);
+  let res;
+  try {
+    res = await checkComponentSource(bigComponent(4000));
+  } finally {
+    clearInterval(timer);
+  }
+  assert.deepEqual(res, { ok: true });
+  assert.ok(ticks >= 3, `the event loop ticked ${ticks} times during the compile`);
+});
+
+test('cancel stops the compile, reports it cancelled, and the next compile starts a fresh worker', async () => {
+  const pending = checkComponentSource(bigComponent(4000));
+  const before = created.count;
+  cancelCompiles();
+  await assert.rejects(pending, (e) => e.name === 'CompileCancelledError');
+  assert.deepEqual(await checkComponentSource('<p>after a cancel</p>'), { ok: true });
+  assert.equal(created.count, before + 1, 'the cancel terminated the worker; the next compile started one');
+});
+
+test('a cancelled load is not cached: the next mount compiles again', async () => {
+  const src = bigComponent(4000) + '\n';
+  const first = loadComponent(src);
+  cancelCompiles();
+  await assert.rejects(first, (e) => e.name === 'CompileCancelledError');
+  const C = await loadComponent(src);
+  assert.equal(typeof C, 'function');
 });

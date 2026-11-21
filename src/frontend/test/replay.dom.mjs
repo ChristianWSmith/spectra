@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
 // (.replay-topbar, first child of .replay-main: the Close · Minimize ·

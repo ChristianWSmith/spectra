@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Reports metrics appendix (stored-metrics design
 // §5's Reports surface — the appendix SELECTOR: ONE type-to-search
 // token field whose picks land as chips with their own ✕, and the save

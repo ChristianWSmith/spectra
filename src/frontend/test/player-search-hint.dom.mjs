@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // Source pins for the standard player-search hint (owner ruling): every
 // PLAYER-search input says exactly "Search players..." — three ASCII
 // periods, NOT the … glyph the old per-view hints used ("Search

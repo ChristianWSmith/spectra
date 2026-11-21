@@ -23,6 +23,9 @@ export const components = {
   importRefused: 'Components cannot import {name}',
   // A built-in's import of a helper name the registry does not list (ruling 45).
   helperNameRefused: 'Built-in components cannot import {name} from {module}',
+  // A compile the author stopped (the Cancel button, ruling 47): the save or
+  // the load reports it, and nothing was written.
+  compileCancelled: 'Cancelled. Nothing was written.',
   // Read API refusals (readapi.js).
   metricUnknown: 'No metric named {name}',
   metricLibraryUnavailable: 'Library-wide metric values are not available yet',

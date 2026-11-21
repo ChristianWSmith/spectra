@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for HeatmapLayer: the floor-mismatch overlay gate, the
 // region drill (bare click + rubber-band drag) and its selection overlay.
 //

@@ -579,6 +579,11 @@ or **A player**, picked from the lists beside it. Nothing is chosen for you, so 
 a match shows its prompt until you pick one. The preview appears once the source checks out, and it
 keeps the last version that checked out while you type, so a half-finished edit never blanks it.
 
+Checking and saving a large component can take a while. While the check or a save runs, the progress shows in the
+background-work indicator at the bottom right, and **Cancel** appears beside **Save**. **Cancel** stops it: nothing
+is saved, and the editor says it was cancelled. There is no time limit, and the rest of the screen keeps
+working while it runs.
+
 When a component fails while it runs, its own box shows the error and the rest of the screen keeps
 working. **Try again** redraws a component whose display failed, and the box's ✕ dismisses the error.
 

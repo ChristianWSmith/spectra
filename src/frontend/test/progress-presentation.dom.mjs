@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // Source pins for the progress-presentation ruling, covering the views
 // with NO DOM harness (precedent: heatmap-layer.dom.mjs pins the
 // Heatmaps view the same way — mounting Builder/SqlConsole/Reports/

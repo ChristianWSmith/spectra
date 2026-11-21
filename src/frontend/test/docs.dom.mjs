@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the documentation popup (the dismissable help
 // sheet): App mounted with the app-dock machinery but Builder kept
 // REAL, so ONE mount pins both entry points and the popup end-to-end.

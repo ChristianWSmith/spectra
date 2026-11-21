@@ -1,3 +1,5 @@
+import { warm, compileIdle } from './compile-worker-node.mjs';
+await warm();
 // jsdom driver for editing builtins in place and "use as my view" (owner
 // ruling 43; dogfood/PLAN C5f). Renders the real components (ChildFrame,
 // ComponentFrame, SurfaceView, the real resolver and compile path) against
@@ -125,7 +127,10 @@ const EDIT_SOURCE = `<script>
 <p class="edit-marker">EDITED OVERVIEW</p>`;
 
 // --- helpers -------------------------------------------------------------------
-const sleep = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms = 30) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await compileIdle();
+};
 const settle = async (rounds = 8) => {
   for (let i = 0; i < rounds; i++) {
     await sleep(30);
