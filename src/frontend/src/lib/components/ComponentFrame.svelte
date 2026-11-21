@@ -20,14 +20,47 @@
   // compiled) or `source` (a user component: compiled lazily here, the
   // compiler loaded on first use) is given. `props` are the component's
   // own; the read API rides beside them as the reserved `spectra` prop.
+  //
+  // `context` (04 §3, ruling 34) is the surface's read-only context
+  // { matchId, steamId, round }. It reaches the component as the `context`
+  // prop, frozen, and the read API's binds default from it. A component
+  // that does not read it ignores it.
+  //
+  // Nested mount (04 §3.5, ruling 36): `spectra.Child` mounts a child
+  // component inside this frame (components/ChildFrame.svelte), which gets
+  // this frame's context and its own frame for its own failures.
+  import { getContext, setContext } from 'svelte';
   import * as S from '../strings/index.js';
   import { errText } from '../services.js';
   import { loadComponent } from '../componentruntime/compile.js';
   import { createReadApi } from '../componentruntime/readapi.js';
   import { serviceReads } from '../componentruntime/reads.js';
   import { attachFrame } from '../componentruntime/eventerrors.js';
+  import { FRAME_KEY, frozenContext } from '../componentruntime/frameContext.js';
+  import ChildFrame from './ChildFrame.svelte';
 
-  let { component = null, source = null, name = '', props = {}, reads = null, nav = undefined } = $props();
+  let {
+    component = null,
+    source = null,
+    name = '',
+    props = {},
+    reads = null,
+    nav = undefined,
+    context = null,
+  } = $props();
+
+  const ctx = $derived(frozenContext(context));
+  // The frames above this one (null at the top of a surface).
+  const parent = getContext(FRAME_KEY) || null;
+  const depth = parent ? parent.depth + 1 : 0;
+  // What the nested frames below this one inherit (see ChildFrame).
+  // svelte-ignore state_referenced_locally
+  setContext(FRAME_KEY, {
+    reads: reads || serviceReads,
+    nav,
+    depth,
+    context: () => ctx,
+  });
 
   let el = $state(null);
   let routed = $state(''); // banner: handler / async / read failures
@@ -40,7 +73,10 @@
   };
   // One read API per mounted frame (its failures belong to this frame).
   // svelte-ignore state_referenced_locally
-  const api = createReadApi({ reads: reads || serviceReads, report, nav });
+  const api = createReadApi({ reads: reads || serviceReads, report, nav, context: () => ctx });
+  // The `spectra` value a component receives: the read API plus the
+  // nested mount component.
+  const spectra = Object.freeze({ ...api, Child: ChildFrame });
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 
@@ -100,7 +136,7 @@
     <p class="cframe-loading">{S.components.frameLoading}</p>
   {:else}
     <svelte:boundary>
-      <Comp {...props} spectra={api} />
+      <Comp {...props} {spectra} context={ctx} />
       {#snippet failed(error, reset)}
         <p class="error" role="alert">
           {S.fill(S.components.frameFailed, { err: errText(error) })}

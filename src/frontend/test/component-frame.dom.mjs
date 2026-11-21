@@ -43,21 +43,29 @@ for (const k of [
 
 // Anything that escapes a frame is a failure of the frame.
 const escaped = [];
-process.on('uncaughtException', (e) => escaped.push('uncaught: ' + (e && e.message)));
-process.on('unhandledRejection', (e) => escaped.push('rejection: ' + (e && e.message)));
+// Printed as they happen: a module that fails to load reaches this handler
+// (not the test), and a silent handler would end the run with exit 0.
+process.on('uncaughtException', (e) => {
+  escaped.push('uncaught: ' + (e && e.message));
+  console.log('UNCAUGHT ' + (e && e.stack));
+});
+process.on('unhandledRejection', (e) => {
+  escaped.push('rejection: ' + (e && e.message));
+  console.log('UNCAUGHT rejection ' + (e && e.message));
+});
 dom.virtualConsole?.on?.('jsdomError', (e) => escaped.push('jsdom: ' + e.message));
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'component-frame');
 for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(dir, sub), { recursive: true });
 const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
-for (const rel of ['router.js', 'players.js', 'metricstate.js']) copy(rel);
-for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js']) copy(join('componentruntime', rel));
+for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js']) copy(rel);
+for (const rel of ['compile.js', 'readapi.js', 'eventerrors.js', 'frameContext.js']) copy(join('componentruntime', rel));
 // The service layer stays out: errText is the real one-liner, and the
 // frame's default reads are a recorder (the driver passes its own).
 writeFileSync(
   join(dir, 'services.js'),
-  `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\n`,
+  `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\nexport async function listComponents() { return []; }\n`,
 );
 writeFileSync(join(dir, 'componentruntime', 'reads.js'), 'export const serviceReads = {};\n');
 
@@ -65,7 +73,18 @@ const svelteCompile = (src, filename, out) =>
   // Runes-only, as the app compiles builtins (svelte.config.js) and user
   // components (componentruntime/compile.js).
   writeFileSync(out, compile(src, { filename, generate: 'client', css: 'injected', runes: true }).js.code);
-svelteCompile(readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8'), 'ComponentFrame.svelte', join(dir, 'components', 'ComponentFrame.js'));
+// The frame and its child frame import each other: each .svelte's import of
+// the other is pointed at its compiled output in the cache dir.
+svelteCompile(
+  readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8').replace("from './ChildFrame.svelte'", "from './ChildFrame.js'"),
+  'ComponentFrame.svelte',
+  join(dir, 'components', 'ComponentFrame.js'),
+);
+svelteCompile(
+  readFileSync('src/lib/components/ChildFrame.svelte', 'utf8').replace("from './ComponentFrame.svelte'", "from './ComponentFrame.js'"),
+  'ChildFrame.svelte',
+  join(dir, 'components', 'ChildFrame.js'),
+);
 svelteCompile(readFileSync('test/component-frame.harness.svelte', 'utf8'), 'harness.svelte', join(dir, 'harness.js'));
 // A builtin: app source the bundler compiles (here: the driver), reading
 // a metric through the read API it receives.

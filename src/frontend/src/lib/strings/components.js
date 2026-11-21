@@ -25,4 +25,13 @@ export const components = {
   metricUnknown: 'No metric named {name}',
   metricRoundUnavailable: 'Per-round metric values are not available yet',
   metricLibraryUnavailable: 'Library-wide metric values are not available yet',
+  // Binds (readapi.js resolveBinds, bindQuery): one bind given twice, a
+  // query bind the surface has no value for, and a value of the wrong shape.
+  bindConflict: 'Give the bind {name} once, not twice',
+  bindUnset: 'The query uses :{name}, and this view has no value for it',
+  bindInvalid: 'The query bind :{name} has a value that cannot be used',
+  // Nested mount (components/ChildFrame.svelte): a child that names no
+  // component, and a chain of components nested too deep.
+  childNotFound: 'No component named {name} to mount',
+  childDepth: 'Components can nest at most {depth} deep',
 };

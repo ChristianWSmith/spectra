@@ -23,21 +23,25 @@ import * as S from './strings/index.js';
 export const BUILTIN_PREFIX = 'builtin-';
 
 // The placeholder's source: Svelte 5, reading only through the read API
-// it receives (`spectra`) and its context props (`match_id`, `steam_id`,
-// the reserved bind names, so a read can pass them straight through).
+// it receives (`spectra`) and its read-only `context` prop (04 §3): the
+// query's :match_id bind defaults from the context, so no value is written
+// into the SQL here.
 const PLACEHOLDER_SOURCE = `<script>
   // A small example: the rounds of the chosen match, or the chosen player.
-  let { spectra, match_id = null, steam_id = null } = $props();
+  let { spectra, context } = $props();
+
+  const matchId = $derived(context.matchId);
+  const steamId = $derived(context.steamId);
 
   const rounds = $derived(
-    match_id == null
+    matchId == null
       ? null
-      : spectra.query('SELECT number, winner FROM rounds WHERE match_id = ' + Number(match_id) + ' ORDER BY number'),
+      : spectra.query('SELECT number, winner FROM rounds WHERE match_id = :match_id ORDER BY number'),
   );
 </script>
 
 <section class="example">
-  {#if match_id != null}
+  {#if matchId != null}
     {#await rounds then r}
       <p>Rounds: {r.rows.length}</p>
       <ol>
@@ -48,8 +52,8 @@ const PLACEHOLDER_SOURCE = `<script>
     {:catch}
       <p>-</p>
     {/await}
-  {:else if steam_id}
-    <p>Player {steam_id}</p>
+  {:else if steamId}
+    <p>Player {steamId}</p>
   {:else}
     <p>Choose a match or a player to preview with.</p>
   {/if}

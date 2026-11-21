@@ -15,8 +15,9 @@
   //   * the preview mounts the last source that passed the gate, so a
   //     half-typed edit never replaces a working preview (the editor shows
   //     the refusal). Runtime failures show in the preview's own frame;
-  //   * the preview context is chosen, never defaulted: a match passes
-  //     `match_id`, a player `steam_id`; nothing chosen passes neither;
+  //   * the preview context is chosen, never defaulted (04 §6): a chosen
+  //     match sets `context.matchId`, a chosen player `context.steamId`;
+  //     nothing chosen leaves both null;
   //   * delete is for your components only, and the service refuses it
   //     while a placement references the component, naming the places.
   import * as S from '../strings/index.js';
@@ -250,10 +251,11 @@
       });
   });
 
-  const previewProps = $derived.by(() => {
-    if (contextKind === 'match' && matchId > 0) return { match_id: matchId };
-    if (contextKind === 'player' && steamId) return { steam_id: steamId };
-    return {};
+  // The preview's read-only context (04 §3, ruling 34): only what is chosen.
+  const previewContext = $derived.by(() => {
+    if (contextKind === 'match' && matchId > 0) return { matchId, steamId: null, round: null };
+    if (contextKind === 'player' && steamId) return { matchId: null, steamId, round: null };
+    return { matchId: null, steamId: null, round: null };
   });
 </script>
 
@@ -463,7 +465,7 @@
         {#if previewSource == null}
           <p class="muted" role="status">{S.componentbuilder.noPreviewYet}</p>
         {:else}
-          <ComponentFrame source={previewSource} props={previewProps} {nav} />
+          <ComponentFrame source={previewSource} context={previewContext} {nav} />
         {/if}
       </div>
     </section>
