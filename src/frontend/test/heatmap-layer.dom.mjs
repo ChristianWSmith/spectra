@@ -313,7 +313,7 @@ console.log('H. Heatmaps view: the round-range <option> labels use roundScoreLab
 // components/HeatmapLayer.js), so this is a source pin over the view —
 // mounting it would drag in the whole service surface for two <option>
 // strings.
-const heatSrc = readFileSync('src/lib/views/Heatmaps.svelte', 'utf8');
+const heatSrc = readFileSync('src/lib/builtins/match/HeatmapsPanel.svelte', 'utf8');
 const scoreLabelCalls = (heatSrc.match(/roundScoreLabel\(rounds, r\.number\)/g) || []).length;
 check(
   'both round-range options render roundScoreLabel(rounds, r.number)',
@@ -327,7 +327,7 @@ check(
 );
 check(
   'roundScoreLabel is imported from the canonical lib/rounds.js home',
-  /import \{ isCounted, roundScoreLabel \} from '\.\.\/rounds\.js'/.test(heatSrc),
+  /import \{ isCounted, roundScoreLabel \} from '\.\.\/\.\.\/rounds\.js'/.test(heatSrc),
   '',
 );
 
@@ -1111,7 +1111,7 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, floating G
   );
   check(
     'Save path: downloadCanvasPNG (THE canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
-    /import \{ downloadCanvasPNG \} from '\.\.\/download\.js'/.test(heatSrc) &&
+    /import \{ downloadCanvasPNG \} from '\.\.\/\.\.\/download\.js'/.test(heatSrc) &&
       /await downloadCanvasPNG\(heatCanvas, heatRasterName\(\)\)/.test(heatSrc) &&
       /`heatmap-\$\{map \|\| 'map'\}-\$\{stamp\}\.png`/.test(heatSrc),
     '',

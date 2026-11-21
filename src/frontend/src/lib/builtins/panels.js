@@ -12,8 +12,20 @@ import SidesPanel from './profile/SidesPanel.svelte';
 import MapsPanel from './profile/MapsPanel.svelte';
 import WeaponsPanel from './profile/WeaponsPanel.svelte';
 import HistoryPanel from './profile/HistoryPanel.svelte';
+// The Match view's Heatmaps and Combat tabs (PLAN C5-Heat-Combat): each tab
+// is a composition, and its panels are mounted by the tab through Child.
+import MatchHeatmaps from './match/Heatmaps.svelte';
+import HeatmapPanel from './match/HeatmapsPanel.svelte';
+import MatchCombat from './match/Combat.svelte';
+import CombatEngagements from './match/CombatEngagements.svelte';
+import CombatClutches from './match/CombatClutches.svelte';
 
 export const PROFILE_VIEW_ID = 'builtin-profile-view';
+
+// The Match tabs' component ids (the Match view mounts the tab components
+// directly, with its context).
+export const MATCH_HEATMAPS_ID = 'builtin-match-heatmaps';
+export const MATCH_COMBAT_ID = 'builtin-match-combat';
 
 export const BUILTIN_PANELS = Object.freeze({
   [PROFILE_VIEW_ID]: ProfileView,
@@ -23,6 +35,11 @@ export const BUILTIN_PANELS = Object.freeze({
   'builtin-profile-maps': MapsPanel,
   'builtin-profile-weapons': WeaponsPanel,
   'builtin-profile-history': HistoryPanel,
+  [MATCH_HEATMAPS_ID]: MatchHeatmaps,
+  'builtin-match-heatmap': HeatmapPanel,
+  [MATCH_COMBAT_ID]: MatchCombat,
+  'builtin-match-combat-engagements': CombatEngagements,
+  'builtin-match-combat-clutches': CombatClutches,
 });
 
 // builtinPanelById is the compiled component of a panel id, or null.

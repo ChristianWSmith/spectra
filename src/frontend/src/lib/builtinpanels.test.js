@@ -59,11 +59,16 @@ function stripComments(src) {
 const panelFiles = readdirSync(PANEL_DIR).filter((f) => f.endsWith('.svelte') || f.endsWith('.js'));
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
-test('the registry names the Profile component and six panels, all in the builtin namespace', () => {
+test('the registry names the Profile component and six panels, and the Match tabs (PLAN C5-Heat-Combat), all in the builtin namespace', () => {
   const ids = [...registry.matchAll(/'(builtin-[a-z-]+)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(ids)].sort(),
     [
+      'builtin-match-combat',
+      'builtin-match-combat-clutches',
+      'builtin-match-combat-engagements',
+      'builtin-match-heatmap',
+      'builtin-match-heatmaps',
       'builtin-profile-career',
       'builtin-profile-history',
       'builtin-profile-maps',
