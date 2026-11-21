@@ -97,12 +97,12 @@
   // Filter-aware empty state: names what the toggles asked for.
   const clutchEmptyText = $derived(
     !clutchWon && !clutchLost
-      ? 'No clutch outcome selected — toggle won or lost above.'
+      ? S.combat.clutchNoneSelected
       : clutchWon && !clutchLost
-        ? 'No won clutches in this match.'
+        ? S.combat.clutchNoneWon
         : !clutchWon && clutchLost
-          ? 'No lost clutches in this match.'
-          : 'No clutches in this match.',
+          ? S.combat.clutchNoneLost
+          : S.combat.clutchNoneAny,
   );
 
   // The clutch row's ?loop=: the loop length before the FIRST kill of the
@@ -182,17 +182,17 @@
                     <EventPlay
                       tick={c.replayAnchorTick}
                       title={c.steamId
-                        ? `Watch this clutch — follow ${c.name || c.steamId}`
+                        ? S.fill(S.combat.watchClutchFollow, { name: c.name || c.steamId })
                         : S.combat.watchClutch}
                       label={c.steamId
-                        ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
-                        : `Watch the clutch in round ${c.round} in the replay`}
+                        ? S.fill(S.combat.watchClutchRoundFollow, { round: c.round, name: c.name || c.steamId })
+                        : S.fill(S.combat.watchClutchRoundReplay, { round: c.round })}
                       onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
                     />
                   {/if}
                 </td>
                 <td class="num">{c.round}</td>
-                <td><strong>1v{c.size}</strong></td>
+                <td><strong>{S.combat.clutchSize}{c.size}</strong></td>
                 <td>
                   <ProfileLink
                     steam={c.steamId}
@@ -203,7 +203,7 @@
                   />
                 </td>
                 <td>
-                  <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? 'won' : 'lost'}</span>
+                  <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? S.combat.clutchWon : S.combat.clutchLost}</span>
                 </td>
                 <td>
                   {#if c.bombState && c.bombState !== 'none'}

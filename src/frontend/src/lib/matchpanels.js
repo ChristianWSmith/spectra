@@ -68,7 +68,7 @@ const HELPERS = `
     return Number.isInteger(v) ? Math.round(v).toLocaleString() : (Math.round(v * 100) / 100).toFixed(2);
   }
 
-  const STATE_WORD = { processing: 'Calculating', failed: 'Failed', behind: 'Out of date' };
+  const STATE_WORD = { processing: '${S.builtins.stateCalculating}', failed: '${S.builtins.stateFailed}', behind: '${S.builtins.stateOutOfDate}' };
 
   // A metric read for this match: its state and each player's value.
   async function unit(name) {
@@ -166,11 +166,11 @@ export const OVERVIEW_SOURCE = `<script>
   ${FOLLOW}
 
   const CARDS = [
-    { metric: 'top_fragger', label: 'Top fragger' },
-    { metric: 'best_adr', label: 'Best ADR' },
-    { metric: 'most_util', label: 'Most util' },
-    { metric: 'entry_opens', label: 'Entry opens' },
-    { metric: 'most_mvps', label: 'Most MVPs' },
+    { metric: 'top_fragger', label: '${S.match.cardTopFragger}' },
+    { metric: 'best_adr', label: '${S.match.cardBestAdr}' },
+    { metric: 'most_util', label: '${S.match.cardMostUtil}' },
+    { metric: 'entry_opens', label: '${S.match.cardEntryOpens}' },
+    { metric: 'most_mvps', label: '${S.match.cardMostMvps}' },
   ];
 
   let cards = $state([]);
@@ -333,13 +333,13 @@ export const ROSTERS_SOURCE = `<script>
   <div class="roster-grid">
     {#each [data.ct, data.t] as team, ti (ti)}
       <section class="panel">
-        <h2 class={startClass(ti === 0 ? 'ct' : 't', data.switches)}>{team.name} roster</h2>
+        <h2 class={startClass(ti === 0 ? 'ct' : 't', data.switches)}>{team.name} ${S.match.rosterSuffix}</h2>
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Player</th>
-              <th scope="col" class="num">K/D/A</th>
-              <th scope="col" class="num">ADR</th>
+              <th scope="col">${S.match.colPlayer}</th>
+              <th scope="col" class="num">${S.match.rosterKdaHead}</th>
+              <th scope="col" class="num">${S.match.colAdr}</th>
             </tr>
           </thead>
           <tbody>
@@ -362,7 +362,7 @@ export const ROSTERS_SOURCE = `<script>
     {/each}
     {#if data.other.length > 0}
       <section class="panel">
-        <h2>Other</h2>
+        <h2>${S.match.rosterOther}</h2>
         <table class="data-table">
           <tbody>
             {#each data.other as p (p.steam)}
@@ -384,25 +384,25 @@ export const ROSTERS_SOURCE = `<script>
 // The default layout: Name, Team and Score, then the stored columns in their
 // default order. Each column: the metric it reads, its header, its format.
 const SCOREBOARD_COLUMNS = [
-  ['kills', 'K', 'int'],
-  ['deaths', 'D', 'int'],
-  ['total_damage', 'DMG', 'int'],
-  ['utility_damage', 'Util', 'int'],
-  ['mvps', 'MVPs', 'int'],
-  ['assists', 'A', 'int'],
-  ['adr', 'ADR', 'float1'],
-  ['kast', 'KAST%', 'percent'],
-  ['hs_pct', 'HS%', 'percent'],
-  ['kd', 'K/D', 'float2'],
-  ['kda', 'KDA', 'float2'],
-  ['two_k', '2K', 'int'],
-  ['three_k', '3K', 'int'],
-  ['four_k', '4K', 'int'],
-  ['five_k', '5K', 'int'],
-  ['entry_kills', 'Open K', 'int'],
-  ['entry_deaths', 'Open D', 'int'],
-  ['trade_kills', 'Trade', 'int'],
-  ['best_streak', 'Streak', 'int'],
+  ['kills', S.match.scoreK, 'int'],
+  ['deaths', S.match.scoreD, 'int'],
+  ['total_damage', S.match.scoreDmg, 'int'],
+  ['utility_damage', S.match.scoreUtil, 'int'],
+  ['mvps', S.match.scoreMvps, 'int'],
+  ['assists', S.match.scoreA, 'int'],
+  ['adr', S.match.colAdr, 'float1'],
+  ['kast', S.match.scoreKast, 'percent'],
+  ['hs_pct', S.match.scoreHs, 'percent'],
+  ['kd', S.match.scoreKd, 'float2'],
+  ['kda', S.match.scoreKda, 'float2'],
+  ['two_k', S.match.score2k, 'int'],
+  ['three_k', S.match.score3k, 'int'],
+  ['four_k', S.match.score4k, 'int'],
+  ['five_k', S.match.score5k, 'int'],
+  ['entry_kills', S.match.scoreOpenK, 'int'],
+  ['entry_deaths', S.match.scoreOpenD, 'int'],
+  ['trade_kills', S.match.scoreTrade, 'int'],
+  ['best_streak', S.match.scoreStreak, 'int'],
 ];
 
 export const SCOREBOARD_SOURCE = `<script>
@@ -482,7 +482,7 @@ export const SCOREBOARD_SOURCE = `<script>
   // catalog's doc, else the metric name), plus the engine's error when it failed.
   function headerTitle(metric) {
     const u = data.byMetric.get(metric);
-    return (u.doc || metric) + (u.error ? ' — couldn’t calculate: ' + u.error : '');
+    return (u.doc || metric) + (u.error ? '${S.builtins.couldntCalculate}' + u.error : '');
   }
 
   function follow(steam) {
@@ -500,9 +500,9 @@ export const SCOREBOARD_SOURCE = `<script>
     <table class="data-table scoreboard">
       <thead>
         <tr>
-          <th scope="col" class="num" aria-sort={ariaSort('name')}><button class="th-sort" onclick={() => toggleSort('name')}>Name</button></th>
-          <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>Team</button></th>
-          <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>Score</button></th>
+          <th scope="col" class="num" aria-sort={ariaSort('name')}><button class="th-sort" onclick={() => toggleSort('name')}>${S.match.colName}</button></th>
+          <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>${S.match.colTeam}</button></th>
+          <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>${S.match.colScore}</button></th>
           {#each COLUMNS as c (c.metric)}
             <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
           {/each}
@@ -598,7 +598,7 @@ const ROUND_HELPERS = `
 
   function roundLabel(n) {
     if (n >= 1) return String(n);
-    return n === -2 ? 'K' : 'W';
+    return n === -2 ? '${S.builtins.roundLabelKnife}' : '${S.builtins.roundLabelWarmup}';
   }
 
   function fmtDuration(seconds) {
@@ -787,7 +787,7 @@ export const ROUNDS_SOURCE = `<script>
         <tr>
           <th scope="col"><span class="sr-only">{COPY.colWatch}</span></th>
           <th scope="col" class="num cmp-cmp-col" title={COPY.compareSelectTitle}>{COPY.colCmp}</th>
-          <th scope="col" class="num">RD</th>
+          <th scope="col" class="num">${S.match.colRd}</th>
           <th scope="col">{COPY.colWinner}</th>
           <th scope="col">{COPY.colReason}</th>
           <th scope="col" class="num">{COPY.colDuration}</th>
@@ -886,9 +886,9 @@ const DETAIL_HELPERS = `
   function fmtBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes < 0) return DASH;
     const mb = bytes / (1024 * 1024);
-    if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
-    if (mb >= 1) return mb.toFixed(1) + ' MB';
-    return (bytes / 1024).toFixed(1) + ' KB';
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + '${S.builtins.unitGb}';
+    if (mb >= 1) return mb.toFixed(1) + '${S.builtins.unitMb}';
+    return (bytes / 1024).toFixed(1) + '${S.builtins.unitKb}';
   }
 
   function fmtInt(x) {
@@ -974,7 +974,7 @@ export const DETAILS_SOURCE = `<script>
     <h2>{COPY.keyFacts}</h2>
     <dl class="facts">
       <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
-      <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + ' Hz' : DASH}</dd></div>
+      <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + '${S.match.unitHz}' : DASH}</dd></div>
       <div><dt>{COPY.factFrames}</dt><dd class="num">{fmtInt(facts.frames)}</dd></div>
       <div><dt>{COPY.factSize}</dt><dd>{fmtBytes(facts.size)}</dd></div>
       <div><dt>{COPY.factImported}</dt><dd>{fmtDate(facts.extractedAt)}</dd></div>
@@ -988,9 +988,9 @@ export const DETAILS_SOURCE = `<script>
 
 // The builtin panels, in the order the Match view mounts them.
 export const MATCH_PANELS = Object.freeze([
-  Object.freeze({ id: MATCH_PANEL_IDS.overview, label: 'Match overview cards', source: OVERVIEW_SOURCE }),
-  Object.freeze({ id: MATCH_PANEL_IDS.rosters, label: 'Match rosters', source: ROSTERS_SOURCE }),
-  Object.freeze({ id: MATCH_PANEL_IDS.scoreboard, label: 'Match scoreboard', source: SCOREBOARD_SOURCE }),
-  Object.freeze({ id: MATCH_PANEL_IDS.rounds, label: 'Match rounds', source: ROUNDS_SOURCE }),
-  Object.freeze({ id: MATCH_PANEL_IDS.details, label: 'Match details', source: DETAILS_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.overview, label: S.match.panelOverviewLabel, source: OVERVIEW_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.rosters, label: S.match.panelRostersLabel, source: ROSTERS_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.scoreboard, label: S.match.panelScoreboardLabel, source: SCOREBOARD_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.rounds, label: S.match.panelRoundsLabel, source: ROUNDS_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.details, label: S.match.panelDetailsLabel, source: DETAILS_SOURCE }),
 ]);

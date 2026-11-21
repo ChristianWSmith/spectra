@@ -57,7 +57,7 @@
         <th scope="col" class="num" title={defs.get('side_win_pct')?.doc}>{S.profiles.thWinPct}</th>
         <th scope="col" class="num" title={defs.get('side_adr')?.doc}>{S.profiles.thAdr}</th>
         <th scope="col" class="num" title={defs.get('side_kast')?.doc}>{S.profiles.thKast}</th>
-        <th scope="col" class="num" title={defs.get('side_kd')?.doc}>K/D</th>
+        <th scope="col" class="num" title={defs.get('side_kd')?.doc}>{S.profiles.colKdHead}</th>
       </tr>
     </thead>
     <tbody>

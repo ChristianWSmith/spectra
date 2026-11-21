@@ -18,6 +18,8 @@
 
 // FMT: number and clock formatting (lib/fmt.js, lib/econ.js). DASH is the one
 // dash every missing cell shows.
+import * as S from './strings/index.js';
+
 export const FMT_HELPERS = `
   const DASH = '\\u2014';
   function round1(x) {
@@ -129,7 +131,7 @@ export const TICK_HELPERS = `
     const n = Number(r);
     if (!Number.isFinite(n)) return '';
     if (n >= 1) return String(n);
-    return n === -2 ? 'K' : 'W';
+    return n === -2 ? '${S.builtins.roundLabelKnife}' : '${S.builtins.roundLabelWarmup}';
   }
   function scoreThrough(rounds, roundNumber) {
     const n = Number(roundNumber);
@@ -146,7 +148,7 @@ export const TICK_HELPERS = `
   function roundScoreLabel(rounds, number) {
     const n = number && typeof number === 'object' ? number.number : number;
     const s = scoreThrough(rounds, n);
-    return 'RD' + roundIndexLabel(n) + ' | ' + s.ct + '-' + s.t;
+    return '${S.builtins.roundScorePrefix}' + roundIndexLabel(n) + ' | ' + s.ct + '-' + s.t;
   }
   function roundStartTick(rounds, number) {
     const n = Number(number);
@@ -248,8 +250,8 @@ export const TEAM_HELPERS = `
   // The team display names: the demo's clan name, else team_<player>, else CT / T.
   function teamNames(ctName, tName, players) {
     return {
-      ct: ctName || synthTeamName(players, 'ct') || 'CT',
-      t: tName || synthTeamName(players, 't') || 'T',
+      ct: ctName || synthTeamName(players, 'ct') || '${S.match.sideCt}',
+      t: tName || synthTeamName(players, 't') || '${S.match.sideT}',
     };
   }
   function resolveSide(players, steamId, name) {

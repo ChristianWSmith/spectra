@@ -40,9 +40,9 @@
     if (!n) return '';
     const notes = (prov.notes || []).join(' · ');
     return (
-      `${fmtInt(n)} encrypted network message(s) present in this demo — ` +
-      'Spectra records presence, not content' +
-      (notes ? ` · key/provenance notes: ${notes}` : ' · no decrypt-key status recorded')
+      S.fill(S.library.encryptedNote, { n: fmtInt(n) }) +
+      S.library.provPresenceNote +
+      (notes ? `${S.library.provNotesPrefix}${notes}` : S.library.provNoDecrypt)
     );
   });
 </script>
@@ -55,7 +55,7 @@
       <button class="btn small" onclick={() => loadProv(context.matchId)}>{S.library.retry}</button>
     </p>
   {:else if !prov}
-    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+    <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
   {:else}
     <dl class="facts">
       <div>
@@ -68,11 +68,11 @@
       </div>
       <div>
         <dt>{S.library.dtParseTime}</dt>
-        <dd class="num">{fmtInt(prov.parseMs)} ms</dd>
+        <dd class="num">{fmtInt(prov.parseMs)}{S.library.msSuffix}</dd>
       </div>
       <div>
         <dt>{S.library.dtVoiceSampleRate}</dt>
-        <dd class="num">{prov.sampleRate ? `${prov.sampleRate} Hz` : '—'}</dd>
+        <dd class="num">{prov.sampleRate ? `${prov.sampleRate}${S.match.unitHz}` : '—'}</dd>
       </div>
       <div>
         <dt>{S.library.dtVoiceChunks}</dt>

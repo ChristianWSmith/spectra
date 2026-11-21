@@ -106,4 +106,17 @@ export const library = {
   importRowTitle: 'Import this demo into your library',
   deleteDemoFileTitle: 'Delete this demo file from disk',
   deleteFromDisk: 'Delete from disk',
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  msSuffix: " ms",
+  provPresenceNote: "Spectra records presence, not content",
+  provNotesPrefix: " · key/provenance notes: ",
+  provNoDecrypt: " · no decrypt-key status recorded",
+  refUserCommands: "UserCommands dominate: 1,367,690 of 1,965,413 total messages (POV input history).",
+  refVoiceData: "CSVCMsg_VoiceData fires 123,507 times — the Opus chunks voice playback decodes.",
+  refSosSounds: "CMsgSosStartSoundEvent 25,266 / legacy game events 21,029 — sound + pre-S2 event layers.",
+  refBallistics: "Ballistics-adjacent: CMsgTEFireBullets 3,302 + CMsgPlaceDecalEvent 1,514.",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  encryptedNote: "{n} encrypted network message(s) present in this demo — ",
+
 };
