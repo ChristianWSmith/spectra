@@ -84,12 +84,6 @@ const (
 	progressParseEnd   = 0.90
 	progressStore      = 0.90 // store:    coarse step
 	progressAnalyze    = 0.95 // analyze:  coarse step
-	// metrics: the post-import metric compute pass (design §4) — its own
-	// slice below analyze's coarse point, so a job's points stay monotone
-	// (progressReporter clamps anyway; the range just gives the pass a
-	// real denominator to map its k/N onto).
-	progressMetricsStart = 0.95
-	progressMetricsEnd   = 0.99
 )
 
 // errShuttingDown is the refusal Reprocess surfaces once Shutdown has
@@ -257,18 +251,18 @@ type LibraryChangedEvent struct{}
 // constructs; production wires ONE shared budget from main).
 //
 // AfterAnalyze, when set, runs AFTER a job's analyze pass succeeds and
-// BEFORE the job is marked done — the metric compute pass
-// (stored-metrics design §4: the pass runs in the job body, rides the
-// job's ALREADY-HELD work token — never a second one — and re-acquires
-// the compute lock after analyze released it). progress reports the
-// pass's position as a 0..1 fraction inside the metrics stage range
-// (the caller's own progress mechanism — an import-body run funnels its
-// numbers into THIS job's job-progress, one mechanism per invocation;
-// the pass's own spectra:metric-progress events are suppressed on this
-// path). The returned error is deliberately SWALLOWED: a metric failure
-// never fails the job (the extracted data is already saved and ready;
-// the pass's own spectra:metric-done carries the failure to the UI).
-// nil ⇒ no pass (every construction site without wiring, incl. tests).
+// BEFORE the job is marked done. It REQUESTS the metric compute pass
+// (stored-metrics design §4) and must not block: the job holds its
+// work token for its whole body, and the pass needs a token of its
+// own, so the hook returns once the sweep is scheduled. The pass runs
+// in the background and is coalesced across all triggers (one running
+// sweep, at most one follow-up). Its progress and running state reach
+// the UI through the pass's own spectra:metric-progress and the
+// running-metrics list. The returned error is deliberately SWALLOWED: a
+// metric failure never fails the job (the extracted data is already
+// saved and ready; the pass's own spectra:metric-done carries the
+// failure to the UI). nil ⇒ no pass (every construction site without
+// wiring, incl. tests).
 type Options struct {
 	Store         *store.Store
 	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
@@ -280,7 +274,7 @@ type Options struct {
 	Concurrency   func() int
 	ComputeLock   *sync.Mutex
 	Budget        *budget.Budget
-	AfterAnalyze  func(ctx context.Context, progress func(frac float64)) error
+	AfterAnalyze  func(ctx context.Context) error
 }
 
 // queueItem is one unit of work for the worker.
@@ -325,11 +319,11 @@ type Importer struct {
 	parserVersion string
 	sidecarDir    string
 	copyDir       string
-	copyEnabled   func() bool                                                  // nil ⇒ copy (the default)
-	concurrency   func() int                                                   // nil ⇒ 1 (sequential; see Options.Concurrency)
-	computeLock   *sync.Mutex                                                  // nil ⇒ a private lock (see im.analyze)
-	budget        *budget.Budget                                               // nil ⇒ unbudgeted (see Options.Budget)
-	afterAnalyze  func(ctx context.Context, progress func(frac float64)) error // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	copyEnabled   func() bool                     // nil ⇒ copy (the default)
+	concurrency   func() int                      // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock   *sync.Mutex                     // nil ⇒ a private lock (see im.analyze)
+	budget        *budget.Budget                  // nil ⇒ unbudgeted (see Options.Budget)
+	afterAnalyze  func(ctx context.Context) error // nil ⇒ no metrics pass (see Options.AfterAnalyze)
 
 	mu        sync.Mutex
 	cond      *sync.Cond // workers wait for work AND a free slot
@@ -1169,24 +1163,17 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 
-	// M5 stored-metrics compute pass (stored-metrics design §4): runs in
-	// the job body AFTER analyze — the profile inputs (career) just
-	// regenerated in there, and childTables already cleared this match's
-	// rows at save — rides the job's ALREADY-HELD work token (never a
-	// second one) and re-acquires the shared compute lock through the
-	// hook (analyze released it above). Progress funnels into THIS job's
-	// job-progress: one progress mechanism per invocation, always
-	// through StatusChip. The error is dropped BY CONTRACT (see
-	// Options.AfterAnalyze): a metric failure never fails the job — the
-	// extracted data is already saved and ready, and the pass's own
-	// spectra:metric-done carries the failure to the UI. A cancelled
-	// job's ctx aborts the pass mid-sweep; the behind set is exactly the
-	// remaining work, so the next sweep resumes it.
+	// M5 stored-metrics compute pass (stored-metrics design §4): AFTER
+	// analyze — the profile inputs (career) just regenerated in there,
+	// and childTables already cleared this match's rows at save. The hook
+	// only REQUESTS the pass and returns (Options.AfterAnalyze): the job
+	// never waits on a sweep that needs a token this job still holds. The
+	// error is dropped BY CONTRACT: a metric failure never fails the job.
+	// The pass runs in the background, and the behind set keeps any value
+	// it has not yet recomputed out of the current state, so the job's
+	// done event never shows a stale number as fresh.
 	if im.afterAnalyze != nil {
-		rep.emit(models.StageMetrics, progressMetricsStart)
-		_ = im.afterAnalyze(ctx, func(frac float64) {
-			rep.tick(models.StageMetrics, inRange(progressMetricsStart, progressMetricsEnd, frac))
-		})
+		_ = im.afterAnalyze(ctx)
 	}
 
 	_ = im.st.UpdateJob(jobID, models.JobDone, models.StageDone, 1, "")

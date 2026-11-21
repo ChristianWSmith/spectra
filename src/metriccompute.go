@@ -116,6 +116,9 @@ func (s *MetricsService) useSweeps(b *budget.Budget, lock *sync.Mutex) {
 	if lock != nil && s.computeLock == nil {
 		s.computeLock = lock
 	}
+	if s.sweepIdle == nil {
+		s.sweepIdle = sync.NewCond(&s.mu)
+	}
 	s.sweepsOn = true
 }
 
@@ -131,12 +134,19 @@ func (s *MetricsService) gate() *sync.Mutex {
 	return s.computeLock
 }
 
-// scheduleSweep spawns (or coalesces onto) a background sweep. A save,
-// an import and RecomputeAll completion can all fire while one is
-// running: the wanted flag makes exactly ONE follow-up run happen after
-// it drains, so a bump that lands mid-sweep is never lost (the behind
-// set is re-resolved inside the next run — nothing persisted).
-// No-op unless useSweeps wired the scheduler (package tests).
+// scheduleSweep is the ONE entry for every sweep trigger: an import's
+// analyze pass (sweepForJob), a save, a plugin operation, a RecomputeAll
+// completion and the startup sweep. It never blocks and never starts a
+// second concurrent sweep (owner ruling, 2026-11-21):
+//   - no sweep running → start one now (eager);
+//   - a sweep running → set the single "run again" flag. When that sweep
+//     ends and the flag is set, sweepLoop clears it and runs exactly ONE
+//     follow-up. Triggers during the follow-up only set the flag again.
+//
+// A running sweep is never cancelled. Each sweep re-resolves the behind
+// set when it starts (metrics.Sweep), so a follow-up sees everything
+// marked behind before it started. No-op unless useSweeps wired the
+// scheduler (package tests drive runSweep directly).
 func (s *MetricsService) scheduleSweep() {
 	s.mu.Lock()
 	if !s.sweepsOn {
@@ -157,7 +167,11 @@ func (s *MetricsService) scheduleSweep() {
 // whole run (Acquire BEFORE the compute lock — token → lock, never
 // reversed; the lock holder always owns its own token, so lock waiters
 // can never starve it), then runSweep, then either drain the coalesced
-// want or stop.
+// want or stop. It is the only caller of runSweep outside tests, and
+// sweepRunning is true for its whole life, so at most one sweep is ever
+// inside the pass. Its token wait happens while the job or trigger that
+// requested it has already returned, so no caller holds a token while
+// it waits on this sweep.
 func (s *MetricsService) sweepLoop() {
 	for {
 		s.mu.Lock()
@@ -170,11 +184,24 @@ func (s *MetricsService) sweepLoop() {
 		s.mu.Lock()
 		if !s.sweepWanted {
 			s.sweepRunning = false
+			s.sweepIdle.Broadcast()
 			s.mu.Unlock()
 			return
 		}
 		s.sweepWanted = false
 		s.mu.Unlock()
+	}
+}
+
+// waitSweepsIdle blocks until no sweep is running or pending. Only the
+// headless import calls it, before exiting: the import job returns as
+// soon as its sweep is requested, so the process must outlive the sweep.
+// Returns at once when the scheduler was never wired.
+func (s *MetricsService) waitSweepsIdle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for s.sweepRunning && s.sweepIdle != nil {
+		s.sweepIdle.Wait()
 	}
 }
 
@@ -191,6 +218,10 @@ func (s *MetricsService) runSweep(ctx context.Context, progress func(metrics.Swe
 	lock := s.gate()
 	lock.Lock()
 	defer lock.Unlock()
+	if hook := s.sweepHook; hook != nil {
+		hook(true)
+		defer hook(false) // runs before the unlock above (LIFO)
+	}
 
 	wrapped := func(p metrics.SweepProgress) {
 		s.mu.Lock()
@@ -378,23 +409,19 @@ func (s *MetricsService) emitMetricDone(res metrics.SweepResult, sweepErr error)
 	s.app.Event.Emit(eventMetricDone, ev)
 }
 
-// sweepForJob is the import-body entry (library.Options.AfterAnalyze —
-// design §4's "the pass runs in the job body"): the job ALREADY holds
-// its work token for the whole body, so this takes only the compute
-// lock (still token → lock: the job's token came first). Progress
-// funnels into the JOB's mechanism (frac → the job's job-progress
-// range): this path deliberately does NOT emit spectra:metric-progress —
-// one progress mechanism per invocation, always through StatusChip.
-// The error rides back to the hook, which drops it by contract (a
-// metric failure never fails the job).
-func (s *MetricsService) sweepForJob(ctx context.Context, progress func(frac float64)) error {
-	_, err := s.runSweep(ctx, func(p metrics.SweepProgress) {
-		if progress == nil || p.Total <= 0 {
-			return
-		}
-		progress(float64(p.Done) / float64(p.Total))
-	})
-	return err
+// sweepForJob is the import-body entry (library.Options.AfterAnalyze).
+// It only REQUESTS the sweep through scheduleSweep and returns: the job
+// holds its work token for its whole body, and the sweep needs a token of
+// its own, so waiting here would deadlock a pool of one. The job never
+// queues on the compute lock, and a batch of N imports coalesces into one
+// running sweep plus at most one follow-up. The sweep reports through
+// spectra:metric-progress (the floater's metrics source) and the running-
+// metrics list, exactly like a save-triggered sweep. It always returns
+// nil: a metric failure is carried by spectra:metric-done and the compute
+// state, and never fails the import job.
+func (s *MetricsService) sweepForJob(_ context.Context) error {
+	s.scheduleSweep()
+	return nil
 }
 
 // GetMetricComputeState returns EVERY metric's state (the mount-time

@@ -103,13 +103,25 @@ type MetricsService struct {
 	budget *budget.Budget
 	// sweepsOn gates scheduleSweep (main wires useSweeps; package tests
 	// construct the service bare and drive runSweep synchronously).
+	// Coalescing (ruling, 2026-11-21): at most ONE sweep runs
+	// (sweepRunning, owned by sweepLoop) and at most ONE follow-up is
+	// pending (sweepWanted). Every trigger — import, save, plugin op,
+	// recompute, startup — goes through scheduleSweep and nowhere else.
 	sweepsOn     bool
 	sweepRunning bool
 	sweepWanted  bool
-	inflight     map[int64]bool   // metrics a live sweep is computing
-	errs         map[int64]string // last failure per metric (cleared on success)
-	progMu       sync.Mutex       // guards the 100 ms progress throttle
-	progLast     time.Time
+	// sweepIdle is signalled when sweepRunning drops (waitSweepsIdle — the
+	// headless import waits on it before exit). Built by useSweeps on mu.
+	sweepIdle *sync.Cond
+	// sweepHook, when set, is called inside runSweep right after the
+	// compute lock is taken (true) and again before it is released
+	// (false). Test-only observation of how many sweeps are inside the
+	// pass at once; nil in production.
+	sweepHook func(entering bool)
+	inflight  map[int64]bool   // metrics a live sweep is computing
+	errs      map[int64]string // last failure per metric (cleared on success)
+	progMu    sync.Mutex       // guards the 100 ms progress throttle
+	progLast  time.Time
 	// runs is every metric statement running right now (sweep and
 	// preview), by metric id — what CancelMetric cancels. Guarded by
 	// runsMu (its own lock: never held across a statement).

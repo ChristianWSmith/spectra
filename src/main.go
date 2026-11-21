@@ -203,9 +203,10 @@ func main() {
 		Concurrency:   b.Size,
 		ComputeLock:   computeLock,
 		Budget:        b,
-		// The post-import sweep rides the job's held token (see
-		// Options.AfterAnalyze); progress funnels into the job's own
-		// job-progress; a metric failure never fails the job.
+		// The post-import sweep is REQUESTED here, never awaited (see
+		// Options.AfterAnalyze and scheduleSweep): imports coalesce into
+		// one running sweep plus one follow-up. A metric failure never
+		// fails the job.
 		AfterAnalyze: metricsSvc.sweepForJob,
 	})
 	defer imp.Shutdown()
@@ -372,6 +373,9 @@ func runImport(path string) {
 		}
 		switch job.Status {
 		case models.JobDone:
+			// The import job returns once its metric sweep is requested;
+			// the process must outlive that sweep or it is lost.
+			metricsSvc.waitSweepsIdle()
 			fmt.Printf("import ok: match %d (%s)\n", job.MatchID, path)
 			return
 		case models.JobFailed, models.JobCancelled:
