@@ -3,8 +3,9 @@
 // mounts through ComponentFrame's `component` prop (nested mounts from
 // ChildFrame, and the Profile component's own frame from the surface). The
 // ids live in the reserved builtin namespace (componentbuiltins.js
-// BUILTIN_PREFIX). Panels are not in BUILTIN_COMPONENTS: that list is the
-// Component builder's duplicable set, and these have no source text yet.
+// BUILTIN_PREFIX). BUILTIN_COMPONENTS (componentbuiltins.js) lists every
+// key of BUILTIN_PANELS, labelled from the string catalog, so the Component
+// builder shows, edits and restores each one.
 import ProfileView from './profile/ProfileView.svelte';
 import CareerPanel from './profile/CareerPanel.svelte';
 import TrendPanel from './profile/TrendPanel.svelte';
