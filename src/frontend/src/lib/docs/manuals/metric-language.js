@@ -55,7 +55,7 @@ The reserved binds are \`:match_id\`, \`:steam_id\` and \`:round\`. The engine s
     blocks: `A statement may read these tables. Every table a statement reads must be on this list. A name that is not a table of the library is refused, and so is a table the list leaves out.
 
 - **Match and roster:** \`matches\`, \`teams\`, \`players\` (the humans-only roster lookup).
-- **Match facts:** \`rounds\`, \`events\`, \`engagements\`, \`utility_events\`, \`chat\`, \`sound_events\`, \`player_ticks\`.
+- **Match facts:** \`rounds\`, \`events\`, \`engagements\` (the kill tags),\`utility_events\`, \`chat\`, \`sound_events\`, \`player_ticks\`.
 - **Per-player and per-round statistics:** \`player_stats\`, \`player_round_stats\`, \`round_economy\`, \`round_player_money\`, \`round_player_sides\`, \`round_classifications\`, \`round_side_classes\`, \`clutches\`, \`match_trade_opps\`.
 - **The raw event payload:** \`generic_events\`. Its \`payload_json\` keys come from the game's own event schema, so a statement that reads one key can break after a parser change.
 

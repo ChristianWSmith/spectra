@@ -44,7 +44,7 @@ export const GLOSSARY = [
   },
   {
     term: 'Damage conversion',
-    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), from the demo’s events.',
+    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same kill tag), from the demo’s events.',
   },
 ];
 
@@ -130,7 +130,7 @@ export const UNTRADED_DEF =
 // and is exactly 39.37 at the median — the 39.37 world units per metre
 // conversion (CS2.md "World units ↔ meters, and player movement speeds").
 export const ENG_DIST_DEF =
-  'Engagement distance — how far the killer stood from the victim when the kill happened, in metres (the game’s own player_death distance field; 1 m ≈ 39.37 world units).';
+  'Kill distance — how far the killer stood from the victim when the kill happened, in metres (the game’s own player_death distance field; 1 m ≈ 39.37 world units).';
 
 // Engagement-kind chips (Combat's engagement deep-dive). Only the kinds
 // analytics/engagements.go produces live here — "entry" is deferred
@@ -143,7 +143,7 @@ export const ENG_DIST_DEF =
 // (answered / not answered within the trade window): every kill yields
 // exactly one of them.
 export const ENG_KIND_TITLES = {
-  opening: 'opening duel — first kill of the round (killer side)',
+  opening: 'opening kill tag — first kill of the round (killer side)',
   trade: 'This kill answered a teammate’s death within the trade window (killer side)',
   traded: 'This death was answered by a teammate within the trade window (victim side)',
   untraded: 'Nobody answered this death within the trade window (victim side)',

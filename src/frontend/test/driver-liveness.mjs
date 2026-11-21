@@ -549,7 +549,10 @@ const EXPECTED = {
   // hand-computed round-1 and round-13 death cells and their shared
   // header hover) and +2 the new section S (no per-round player rows →
   // both death cells dash, never 0).
-  'econ-tables.dom.mjs': 198,
+  // econ-tables 198 → 106 (2026-11-21, C5c follow-up): the C5c rewrite
+  // deleted the Economy view these sections drove (its panels now run in
+  // econ-util-panels.dom.mjs); the measured count is the pin.
+  'econ-tables.dom.mjs': 106,
   // heatmap-layer 49 → 71 (2026-11-15, heatmap drag area-select): +22 in
   // the new section O — the rubber-band gesture's two shapes: the overlay
   // while held (presence + CSS-px geometry) with nothing emitted until the
@@ -1099,6 +1102,17 @@ const EXPECTED = {
   // never an error). The retry mechanics moved from audio.js into the
   // shared audioresume.js helper; this pins the disable path through it.
   'voice-engine.dom.mjs': 8,
+  // Pinned at their observed executed-check counts (2026-11-21, the
+  // kill-tags branch): these drivers were added without an EXPECTED entry.
+  'component-builder.dom.mjs': 48,
+  'component-context.dom.mjs': 16,
+  'component-frame.dom.mjs': 32,
+  'econ-util-panels.dom.mjs': 42,
+  'match-heatmaps.dom.mjs': 16,
+  'match-panels.dom.mjs': 40,
+  'match-rounds.dom.mjs': 36,
+  'profile-panels.dom.mjs': 21,
+  'reports-explorer-panels.dom.mjs': 15,
 };
 
 const driverFiles = () =>
