@@ -172,6 +172,13 @@ Settled (owner, 2026-11-20 unless noted):
 36. **Nested mount API (owner ruling, 2026-11-20):** a component mounts child
     components itself and passes `context` down. Placements stay per surface and
     name only the top-level component. See 04 §3.5.
+37. **Alive-count family name (owner ruling, 2026-11-20):** "XvY" (for example
+    1v1, 1v3). The rename of `engagements` to "kill tags" is folded into C5.
+38. **attacker_inair note (2026-11-20, not a ruling on the change):** the stored
+    payload flag and the tick sample disagree on two kills in seven golden demos.
+    Both come from the demo. The cause is probably timing: the kill event is set
+    when damage applies, and replicated player state can lag. We trust the tick
+    sample for consistency. The mismatch is a known data limit, not a parser bug.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
