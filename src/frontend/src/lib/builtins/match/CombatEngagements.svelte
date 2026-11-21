@@ -267,10 +267,10 @@
                 <EventPlay
                   tick={g.tick}
                   title={g.aSteam
-                    ? `Watch this kill — follow ${g.aName || g.aSteam} (killer)`
+                    ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam }) + S.combat.killerSuffix
                     : S.combat.watchEngagement}
                   label={g.aSteam
-                    ? `Watch this kill — follow ${g.aName || g.aSteam}`
+                    ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam })
                     : S.combat.watchEngagement}
                   onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
                 />
@@ -293,7 +293,7 @@
                   title={S.fill(S.combat.openProfileName, { name: g.aName })}
                 />
               </td>
-              <td class="muted">vs</td>
+              <td class="muted">{S.combat.versus}</td>
               <td>
                 <ProfileLink
                   steam={g.bSteam}

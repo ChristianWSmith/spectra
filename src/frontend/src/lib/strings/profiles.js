@@ -72,4 +72,14 @@ export const profiles = {
   startSideTitle: 'Side the player started the match on',
   noHistory: 'No matches yet.',
   loadingDetail: 'Loading…',
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  colKdaHead: "K/D/A",
+  colKdHead: "K/D",
+  colHsHead: "HS",
+  winLetter: "W",
+  lossLetter: "L",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  trendImportedTitle: "{patch} · Imported {date} · {value}",
+
 };

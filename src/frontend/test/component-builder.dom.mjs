@@ -108,6 +108,7 @@ const { mount, unmount, flushSync } = await import('svelte');
 const bindings = await import('./stubs/bindings.mjs');
 const services = await import(pathToFileURL(resolve('src/lib/services.js')).href);
 const S = await import(pathToFileURL(resolve('src/lib/strings/index.js')).href);
+const { builtinShippedSource } = await import(pathToFileURL(resolve('src/lib/componentbuiltins.js')).href);
 const View = (await import(pathToFileURL(viewBundle).href)).default;
 
 // --- the scripted backend -----------------------------------------------------
@@ -263,6 +264,20 @@ check(
 );
 check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.componentbuilder.noUserComponents));
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
+// The Profile view and its six panels are listed (the registry, builtins/panels.js).
+const PROFILE_BUILTINS = [
+  'builtin-profile-view',
+  'builtin-profile-career',
+  'builtin-profile-trend',
+  'builtin-profile-sides',
+  'builtin-profile-maps',
+  'builtin-profile-weapons',
+  'builtin-profile-history',
+];
+for (const id of PROFILE_BUILTINS) {
+  const label = S.componentbuilder.builtinNames[id];
+  check(`the Profile list shows ${label} in the Built-in group`, !!rowNamed(label, '.cb-builtins'));
+}
 unmounted();
 
 // --- C. a built-in edited in place (owner ruling 43) ---------------------------
@@ -309,6 +324,38 @@ check(
   !!rowNamed(S.componentbuilder.placeholderName, '.cb-builtins') &&
     !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
 );
+unmounted();
+
+// --- C1. a Profile panel edited in place, then restored (owner ruling 43) ------
+console.log('C1. a profile panel edited in place; restore to default');
+COMPONENTS = [];
+OVERRIDES = [];
+overrideCalls.length = 0;
+overrideDeleteCalls.length = 0;
+const CAREER_ID = 'builtin-profile-career';
+const careerLabel = S.componentbuilder.builtinNames[CAREER_ID];
+await mounted();
+click(rowNamed(careerLabel, '.cb-builtins'));
+await settle();
+const careerShipped = builtinShippedSource(CAREER_ID);
+check('the Career panel opens at its shipped source', q('#cb-source')?.value === careerShipped);
+await setText(q('#cb-source'), OK_EDIT_SOURCE);
+await settle(10);
+check('an edit of the Career panel that checks out enables Save', q('.cb-save')?.disabled === false, q('.cb-check')?.textContent);
+click(q('.cb-save'));
+await settle(10);
+const careerOv = overrideCalls[overrideCalls.length - 1];
+check(
+  'Save stores an override of the Career panel by its id',
+  overrideCalls.length === 1 && careerOv && careerOv.id === CAREER_ID && careerOv.source === OK_EDIT_SOURCE,
+  JSON.stringify(careerOv),
+);
+check('the Career row shows the edited chip', rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+click(q('.cb-restore'));
+await settle(10);
+check('Restore to default deletes the Career override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === CAREER_ID);
+check('Restore to default brings the Career shipped source back', q('#cb-source')?.value === careerShipped);
+check('the Career row carries no edited chip after restore', !rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
 unmounted();
 
 // --- C2. a refused edit of a built-in ------------------------------------------

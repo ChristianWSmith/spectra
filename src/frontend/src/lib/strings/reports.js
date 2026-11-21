@@ -34,4 +34,16 @@ export const reports = {
   recordedValue: 'Recorded value',
   noMatchScopedStats: 'No match-scoped stats yet — profile-scoped ones live on profiles.',
   noCustomStats: 'No custom stats yet — build one in the Builder.',
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  rawRecorded: "recorded value · per player · {n} players",
+  unitPerMatch: "per match",
+  unitPerTeam: "per team",
+  unitPerPlayer: "per player",
+  rendering: "Generating…",
+
+  // Builtin panel copy (ruling 46, dogfood C5i).
+  matchNumber: "match #{id}",
+  rowsMatch: "{unit} · {n} rows · match #{id}",
+  valueNotComputed: "value not computed — {word}",
+
 };

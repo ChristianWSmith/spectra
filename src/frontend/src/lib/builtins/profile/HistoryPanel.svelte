@@ -97,7 +97,7 @@
           <th scope="col">{S.profiles.thResult}</th>
           <th scope="col" class="num">{S.profiles.thScore}</th>
           <th scope="col">{S.profiles.thStartingSide}</th>
-          <th scope="col" class="num">K/D/A</th>
+          <th scope="col" class="num">{S.profiles.colKdaHead}</th>
           <th scope="col" class="num">{S.profiles.thAdr}</th>
           <th scope="col" class="num">{S.profiles.thKastPct}</th>
         </tr>
@@ -118,7 +118,7 @@
             <td>{h.map || '—'}</td>
             <td>
               <span class="chip status {h.win ? 'ok' : 'bad'}">
-                {h.win ? 'W' : 'L'}
+                {h.win ? S.profiles.winLetter : S.profiles.lossLetter}
               </span>
             </td>
             <td class="num">{h.scoreCT}–{h.scoreT}</td>

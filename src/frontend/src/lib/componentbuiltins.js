@@ -1,7 +1,8 @@
 // The builtin component registry: every component shipped with the app,
-// as Svelte source the user can duplicate (dogfood/04-COMPONENTS.md §1).
-// Builtins are not editable in place; the Component builder loads them
-// read-only and "Duplicate" saves a user copy of `source`.
+// as Svelte source (dogfood/04-COMPONENTS.md §1). A builtin is edited in place
+// (ruling 43): the Component builder loads it, and Save stores an override of
+// that builtin. Duplicate-to-edit is cancelled for builtins, so the builder
+// offers no Duplicate for one; Duplicate is for the user's own components.
 //
 // Ids live in a reserved namespace: every id starts with BUILTIN_PREFIX
 // (the Go twin is componentservice.go BuiltinComponentPrefix, which
@@ -10,17 +11,22 @@
 // componentbuiltins.test.js pins the prefix and that every source passes
 // the save-time check.
 //
-// The registry holds the Match view's panels (matchpanels.js) and one
-// placeholder builtin (`placeholder: true`, shown with a placeholder chip).
-// The Profile view's panels are not yet builtins (C5d). Every builtin is
-// mounted from its source like a user component (ComponentFrame's `source`),
-// so its source text here is the one a duplicate starts from.
+// The registry holds the placeholder (`placeholder: true`, shown with a
+// placeholder chip), the Match, Economy and Utility views' text panels
+// (matchpanels.js, econpanels.js, utilpanels.js), and every compiled builtin
+// the registry declares (builtins/panels.js: the Profile, Reports, Explorer
+// and Match-tab components). The compiled ones are listed from the generated
+// module's id list (builtins/generated/sources.js, written by
+// scripts/gen-builtin-sources.mjs from panels.js), so no id is kept here by
+// hand. Every builtin is mounted from its source like a user component
+// (ComponentFrame's `source`), so its source text here is the default that
+// Restore to default returns to.
 
 import * as S from './strings/index.js';
 import { MATCH_PANELS } from './matchpanels.js';
 import { ECON_PANELS } from './econpanels.js';
 import { UTIL_PANELS } from './utilpanels.js';
-import { PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
+import { PANEL_IDS, PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -69,7 +75,26 @@ const PLACEHOLDER_SOURCE = `<script>
 </style>
 `;
 
-export const BUILTIN_COMPONENTS = Object.freeze([
+// The compiled registry entries: each listed by its id, labelled from the
+// string catalog, with the source the build embedded for it.
+const COMPILED_COMPONENTS = PANEL_IDS.map((id) =>
+  Object.freeze({
+    id,
+    label: S.componentbuilder.builtinNames[id] ?? id,
+    source: PANEL_SOURCES[id],
+  }),
+);
+
+function registryList(entries) {
+  const seen = new Set();
+  for (const e of entries) {
+    if (seen.has(e.id)) throw new Error(`componentbuiltins: builtin ${e.id} is registered twice`);
+    seen.add(e.id);
+  }
+  return Object.freeze(entries);
+}
+
+export const BUILTIN_COMPONENTS = registryList([
   Object.freeze({
     id: BUILTIN_PREFIX + 'example',
     label: S.componentbuilder.placeholderName,
@@ -83,6 +108,9 @@ export const BUILTIN_COMPONENTS = Object.freeze([
   // each view's composer and the panels it mounts.
   ...ECON_PANELS,
   ...UTIL_PANELS,
+  // The compiled registry: the Profile, Reports, Explorer and Match-tab
+  // components and their panels (builtins/panels.js).
+  ...COMPILED_COMPONENTS,
 ]);
 
 // isBuiltinId reports whether a placement's component reference names a

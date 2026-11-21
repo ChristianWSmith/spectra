@@ -69,7 +69,7 @@
         <th scope="col">{S.profiles.thWeapon}</th>
         <th scope="col" class="num" title={defs.get('weapon_kills')?.doc}>{S.profiles.thKills}</th>
         <th scope="col" class="num" title={defs.get('weapon_damage')?.doc}>{S.profiles.thDamage}</th>
-        <th scope="col" class="num" title={defs.get('weapon_headshots')?.doc}>HS</th>
+        <th scope="col" class="num" title={defs.get('weapon_headshots')?.doc}>{S.profiles.colHsHead}</th>
       </tr>
     </thead>
     <tbody>

@@ -239,6 +239,23 @@ const PREFIX_EXEMPT = {
 const HINT_KEYS = {
   'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (matchpanels.js, read through a panel source)',
   'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (matchpanels.js, read through a panel source)',
+  // builtin panel copy (ruling 46, C5i): the Economy definitions and card
+  // formulas are tooltips (a title or a card's hover text), and the Explorer
+  // reference notes and the heatmap's no-rows note are footnotes — hints, not
+  // labels, so they keep the longer tier.
+  'economy.equipDef': 'a tooltip — the equipment-value definition the curve toggle shows on hover',
+  'economy.netWorthDef': 'a tooltip — the net-worth definition the curve toggle shows on hover',
+  'economy.cardPistolDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'economy.cardForceWonDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'economy.cardForceDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'economy.cardGapDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'economy.cardLostDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'economy.cardTeamLostDoc': 'a card formula tooltip — the economy card’s definition on hover',
+  'heatmaps.noEventRows': 'an in-panel footnote explaining why a click opened no replay',
+  'library.refUserCommands': 'a reference footnote under the Explorer’s message list — explains a count',
+  'library.refVoiceData': 'a reference footnote under the Explorer’s message list — explains a count',
+  'library.refSosSounds': 'a reference footnote under the Explorer’s message list — explains a count',
+  'library.refBallistics': 'a reference footnote under the Explorer’s message list — explains a count',
   'builder.headNoteScopes': 'in-form note under the scope picker — a footnote explaining scope granularity',
   'common.mapPackNotFoundIntro': 'asset-prompt explanatory copy — the paragraph guiding the no-radar decision',
   'common.mapPackNotFoundFine': 'asset-prompt explanatory copy — the offline/local-storage assurance',
@@ -1391,4 +1408,280 @@ test('Check E — input hints are verb-like: every placeholder’s first word is
       'lib/strings/<area>.js (or inline), or declare the verb / exempt class in VERB_ALLOWLIST / ' +
       'HINT_NONVERB / HINT_EXEMPT / HINT_PASSTHROUGH with its why:\n  ' + bad.join('\n  '),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Check F — builtin panel copy (ruling 46, dogfood C5i): a builtin panel's
+// user-facing text is read through the catalog (S.<module>.<key>), never an
+// English literal in the panel source. Scope: every compiled builtin Svelte
+// file under lib/builtins/ (generated/ excluded) and the four JS modules that
+// hold the Match, Economy, Utility and shared builtin code (their Svelte
+// sources are template literals). Three media, one copy test:
+//   - Svelte markup: text nodes, attribute values, markup expressions;
+//   - Svelte script blocks and the Svelte sources held in JS template
+//     literals (each `${…}` interpolation is blanked, then the source is
+//     parsed as Svelte, a bare script fragment wrapped in <script>);
+//   - plain string literals in the JS modules themselves.
+// Copy shape (builtinCopy): the literal has a letter, is not read-only SQL,
+// and is not a lowercase code token (a CSS class, an id, a route, a data key,
+// a metric or format name). A hit is a violation unless BUILTIN_NONCOPY names
+// it with its why; a stale BUILTIN_NONCOPY entry fails too (liveness).
+// Known gap: a lowercase one-word copy (a unit or a verb such as "killed")
+// reads as a code token, so this shape cannot see it; such words are routed
+// through the catalog by review when a panel is written.
+// Check F(b) pins the reference side: every S.<area>.<key> a builtin panel
+// names resolves to a catalog string.
+// ---------------------------------------------------------------------------
+const BUILTIN_JS_MODULES = [
+  'frontend/src/lib/matchpanels.js',
+  'frontend/src/lib/econpanels.js',
+  'frontend/src/lib/utilpanels.js',
+  'frontend/src/lib/builtinhelpers.js',
+];
+const isBuiltinSvelte = (file) => file.startsWith('frontend/src/lib/builtins/') && !file.includes('/generated/');
+
+// BUILTIN_NONCOPY — panel literals the copy shape reads as copy but that are
+// not user-facing text. Keyed file → exact literal, mandatory `why`, liveness
+// pinned in Check F. Empty until a real non-copy hit needs one.
+const BUILTIN_NONCOPY = {
+  'frontend/src/lib/econpanels.js': [
+    { text: 'M', why: 'the SVG path command (move-to) of the curve line — drawing syntax, not copy' },
+    { text: 'L', why: 'the SVG path command (line-to) of the curve line — drawing syntax, not copy' },
+  ],
+  'frontend/src/lib/matchpanels.js': [
+    { text: 'Z', why: 'the ISO 8601 UTC designator of the stored import time (date parsing), not copy' },
+    { text: 'T', why: 'the ISO 8601 date-time separator of the stored import time (date parsing), not copy' },
+  ],
+  'frontend/src/lib/utilpanels.js': [
+    { text: 'rotate(45)', why: 'the SVG pattern transform of the hatched bar fill — drawing syntax, not copy' },
+  ],
+};
+
+// The copy shape. Not copy: read-only SQL (SQL_LIKE, and any literal under a
+// `const SQL_…` declaration — see panelJsHits); a code token with no inner
+// space — a lowercase class, id, route, data key, metric or format name
+// (CODE_TOKEN); a camelCase identifier (IDENT); a module or component path
+// (CODE_PATH); a string with no letter, or only \uXXXX escapes (a dash, a
+// sign). Everything else with a letter is copy.
+const SQL_LIKE = /^\s*(SELECT|WITH)\b/;
+const CODE_TOKEN = /^[a-z0-9_\-/.:&?=%#]+$/;
+const IDENT = /^[a-z][A-Za-z0-9_]*$/;
+const CODE_PATH = /^[\w.\-@]*\/[\w.\-@/]*$/;
+const builtinCopy = (s) => {
+  const t = s.replace(/\\u[0-9a-fA-F]{4}/g, '').trim();
+  if (!/[A-Za-z]/.test(t) || SQL_LIKE.test(t)) return false;
+  if (CODE_TOKEN.test(t) || IDENT.test(t)) return false;
+  if (t.length >= 5 && !/\s/.test(t) && CODE_PATH.test(t)) return false;
+  return true;
+};
+
+// jsTokens — the string literals and template literals of a JS module, with
+// comments skipped (a quote inside a comment is not a literal). Template
+// bodies are returned raw; `${…}` nesting is tracked so a closing backtick
+// inside an interpolation does not end the template.
+function jsTokens(src) {
+  const out = [];
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const n = src[i + 1];
+    if (c === '/' && n === '/') {
+      const e = src.indexOf('\n', i);
+      i = e < 0 ? src.length : e;
+    } else if (c === '/' && n === '*') {
+      const e = src.indexOf('*/', i + 2);
+      i = e < 0 ? src.length : e + 2;
+    } else if (c === "'" || c === '"') {
+      let j = i + 1;
+      let v = '';
+      while (j < src.length && src[j] !== c && src[j] !== '\n') {
+        if (src[j] === '\\') {
+          v += src[j + 1];
+          j += 2;
+        } else v += src[j++];
+      }
+      out.push({ kind: 'q', value: v, at: i });
+      i = j + 1;
+    } else if (c === '`') {
+      let j = i + 1;
+      let depth = 0;
+      while (j < src.length) {
+        if (src[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (depth === 0 && src[j] === '`') break;
+        if (src[j] === '$' && src[j + 1] === '{') {
+          depth++;
+          j += 2;
+          continue;
+        }
+        if (depth > 0 && src[j] === '}') depth--;
+        j++;
+      }
+      out.push({ kind: 't', value: src.slice(i + 1, j), at: i });
+      i = j + 1;
+    } else i++;
+  }
+  return out;
+}
+
+// Attributes that carry wiring or styling, never copy (the SKIP_ATTRS idea,
+// for the panel scan).
+const NON_COPY_ATTRS = new Set([
+  'class', 'style', 'id', 'for', 'name', 'role', 'scope', 'type', 'value', 'kind', 'align', 'fill', 'stroke',
+  'wrapClass', 'href', 'src', 'width', 'height', 'viewBox', 'd', 'tabindex', 'target', 'rel', 'transform', 'key',
+  'ref', 'min', 'max', 'step', 'datetime', 'bind:this',
+]);
+
+// panelSvelteHits — the copy hits of one Svelte source (a file or a template
+// literal's Svelte text). Returns [where, text] pairs.
+function panelSvelteHits(src) {
+  const ast = parse(src, { modern: true }); // the modern AST: `fragment`, `instance`, `module`
+  const hits = [];
+  const js = (node, where) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach((c) => js(c, where));
+    if (node.type === 'Literal' && typeof node.value === 'string' && builtinCopy(node.value)) hits.push([where, node.value]);
+    if (node.type === 'TemplateElement' && builtinCopy(node.value.cooked ?? '')) hits.push([where, node.value.cooked]);
+    for (const k of Object.keys(node)) if (!['parent', 'start', 'end', 'loc', 'metadata'].includes(k) && node[k] && typeof node[k] === 'object') js(node[k], where);
+  };
+  const visit = (n) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) return n.forEach(visit);
+    if (n.type === 'Script') return js(n.content, 'script');
+    if (n.type === 'Style') return;
+    if (n.type === 'Text') {
+      if (/[A-Za-z]/.test(n.data)) hits.push(['text', n.data]);
+      return;
+    }
+    if (n.type === 'Attribute') {
+      // Event handlers and wiring/styling attributes carry no copy; every
+      // other attribute value is read by the copy shape (a `role`, a
+      // `scope`, an id are code tokens and pass it).
+      if (/^on/.test(n.name) || NON_COPY_ATTRS.has(n.name)) return;
+      const vals = Array.isArray(n.value) ? n.value : n.value && typeof n.value === 'object' ? [n.value] : [];
+      for (const v of vals) {
+        if (v.type === 'Text' && builtinCopy(v.data)) hits.push([`attr ${n.name}`, v.data]);
+        if (v.type === 'ExpressionTag') js(v.expression, `expr@${n.name}`);
+      }
+      return;
+    }
+    if (n.type === 'ExpressionTag') return js(n.expression, 'expr');
+    for (const k of Object.keys(n)) if (!['parent', 'start', 'end', 'loc', 'metadata'].includes(k) && n[k] && typeof n[k] === 'object') visit(n[k]);
+  };
+  visit(ast.fragment);
+  if (ast.instance) js(ast.instance.content, 'script');
+  if (ast.module) js(ast.module.content, 'script');
+  return hits;
+}
+
+// blankInterpolations — each `${…}` of a template body becomes `0`, a token
+// that is valid in an expression, a text node, an attribute and a string
+// alike; its braces are counted so a nested object or call does not end early.
+function blankInterpolations(raw) {
+  let out = '';
+  let i = 0;
+  while (i < raw.length) {
+    if (raw[i] === '$' && raw[i + 1] === '{') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < raw.length && depth > 0) {
+        if (raw[j] === '{') depth++;
+        else if (raw[j] === '}') depth--;
+        j++;
+      }
+      out += '0';
+      i = j;
+    } else out += raw[i++];
+  }
+  return out;
+}
+
+// templateSvelte — the Svelte text of one JS template literal, or null when
+// it is not Svelte (read-only SQL, a plain text). Interpolations are blanked.
+function templateSvelte(raw) {
+  const text = blankInterpolations(raw);
+  if (SQL_LIKE.test(text)) return null;
+  if (text.trimStart().startsWith('<')) return text; // a Svelte source (<script>, then markup)
+  if (/\b(function|const|let|return|if)\b|[;={]/.test(text)) return `<script>${text}</script>`; // a code fragment
+  return null;
+}
+
+// builtinPanelSources — every builtin panel's text, with its file name:
+// { file, kind: 'svelte' | 'js', text }. JS modules contribute their template
+// literals (Svelte or code), and their raw text is read for the S chains.
+const builtinPanelFiles = [
+  ...svelteFiles.filter((f) => isBuiltinSvelte(rel(f))).map((f) => rel(f)),
+  ...BUILTIN_JS_MODULES,
+];
+const panelCopyHits = [];
+const panelParseErrors = [];
+const panelChainText = [];
+for (const file of builtinPanelFiles) {
+  const abs = path.join(SRC, file);
+  const raw = readFileSync(abs, 'utf8');
+  panelChainText.push(raw);
+  if (file.endsWith('.svelte')) {
+    for (const [where, text] of panelSvelteHits(raw)) panelCopyHits.push([file, where, text]);
+    continue;
+  }
+  // The declaration a token sits under: the last `const NAME =` before it.
+  // A literal under a `const SQL_…` declaration is read-only SQL (the panel's
+  // component query), never copy.
+  const decls = [...raw.matchAll(/\bconst\s+(\w+)\s*=/g)].map((m) => [m.index, m[1]]);
+  const declAt = (at) => {
+    let name = '';
+    for (const [idx, n] of decls) if (idx < at) name = n;
+    return name;
+  };
+  for (const tok of jsTokens(raw)) {
+    if (declAt(tok.at).startsWith('SQL_')) continue;
+    if (tok.kind === 'q') {
+      if (builtinCopy(tok.value)) panelCopyHits.push([file, 'literal', tok.value]);
+      continue;
+    }
+    const svelte = templateSvelte(tok.value);
+    if (svelte == null) continue;
+    try {
+      for (const [where, text] of panelSvelteHits(svelte)) panelCopyHits.push([file, `template ${where}`, text]);
+    } catch (err) {
+      panelParseErrors.push(`${file} :: ${err.message.split('\n')[0]} :: ${JSON.stringify(tok.value.slice(0, 80))}`);
+    }
+  }
+}
+const panelNonCopy = new Set(
+  Object.entries(BUILTIN_NONCOPY).flatMap(([file, items]) => items.map((i) => `${file}\u0000${i.text}`)),
+);
+const panelHitKeys = new Set(panelCopyHits.map(([file, , text]) => `${file}\u0000${text}`));
+const panelViolations = panelCopyHits.filter(([file, , text]) => !panelNonCopy.has(`${file}\u0000${text}`));
+const panelStaleNonCopy = [...panelNonCopy].filter((k) => !panelHitKeys.has(k)).map((k) => k.split('\u0000'));
+
+test('Check F — no English literal in a builtin panel’s user-facing text (ruling 46, C5i)', () => {
+  assert.ok(builtinPanelFiles.length >= 24, `walked only ${builtinPanelFiles.length} builtin panel files — the scan is broken`);
+  assert.deepEqual(panelParseErrors, [], 'a builtin panel template literal does not parse as Svelte — the copy scan cannot read it');
+  assert.deepEqual(
+    panelStaleNonCopy.map(([f, t]) => `${f} :: ${JSON.stringify(t)}`),
+    [],
+    'stale BUILTIN_NONCOPY entries — these literals no longer hit; remove them',
+  );
+  assert.deepEqual(
+    panelViolations.map(([f, w, t]) => `${f} [${w}] ${JSON.stringify(t)}`),
+    [],
+    'English copy in a builtin panel — read it through the catalog (S.<area>.<key>, lib/strings/) instead:\n  ' +
+      panelViolations.map(([f, w, t]) => `${f} [${w}] ${JSON.stringify(t.slice(0, 120))}`).join('\n  '),
+  );
+});
+
+test('Check F(b) — every catalog key a builtin panel names exists', async () => {
+  const S = await import('./strings/index.js');
+  const refs = new Set();
+  for (const text of panelChainText) for (const m of text.matchAll(/\bS\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b/g)) refs.add(`${m[1]}.${m[2]}`);
+  const bad = [];
+  for (const ref of refs) {
+    const [area, key] = ref.split('.');
+    if (!S[area] || typeof S[area] !== 'object' || typeof S[area][key] !== 'string') bad.push(`S.${ref}`);
+  }
+  console.log(`check F(b) scope: ${refs.size} distinct S.<area>.<key> references in ${builtinPanelFiles.length} builtin panel files`);
+  assert.deepEqual(bad, [], `builtin panels name catalog keys that do not exist: ${bad.join(', ')}`);
 });

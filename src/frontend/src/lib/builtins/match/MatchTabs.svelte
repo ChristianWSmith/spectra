@@ -33,9 +33,9 @@
     context = null,
     // The active tab is the URL's (#/match/:id/<slug>), and the view registry
     // never holds it (viewstate.svelte.js), so the host passes it with its
-    // select. Defaults to Overview: with no host, the tab bar and the
+    // select. Defaults to the first tab: with no host, the tab bar and the
     // Overview panels still render from the context alone.
-    tab = 'Overview',
+    tab = MATCH_TABS[0],
     ontab = () => {},
     nav = () => {},
   } = $props();
@@ -47,7 +47,8 @@
   const matchId = $derived(context ? context.matchId : null);
   // The origin path the drill-downs return to (?back=…): the replay, the round
   // and compare pages resolve it to this tab (plain match/:id for Overview).
-  const backPath = $derived(tab === 'Overview' ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`);
+  // The first tab of the route table is the Overview, the one plain match/:id route.
+  const backPath = $derived(tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`);
   const panelProps = $derived({ back: backPath });
   const roundsProps = $derived({ back: backPath });
 

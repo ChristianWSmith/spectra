@@ -501,8 +501,8 @@ check(
 );
 check(
   'regionNote states the APPLIED rect — never the raw cell',
-  /regionNote = `bbox \(\$\{Math\.round\(applied\.minX\)\}/.test(onRegionSrc) &&
-    !/regionNote = `bbox \(\$\{Math\.round\(bbox\.minX\)\}/.test(onRegionSrc),
+  /regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{ x0: Math\.round\(applied\.minX\)/.test(onRegionSrc) &&
+    !/regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{ x0: Math\.round\(bbox\.minX\)/.test(onRegionSrc),
 );
 
 console.log('K. stale raster: the arrival reads the generating settings (source pin)');
@@ -638,7 +638,7 @@ check(
 // "Generating…" label — no spinner or ring is ever rendered INSIDE it.
 check(
   'Generate button keeps its plain busy label (busy-button exemption)',
-  /\{loading \? 'Generating\…' : grid \? 'Regenerate' : 'Generate'\}/.test(heatSrc) &&
+  /\{loading \? S\.heatmaps\.generating : grid \? S\.heatmaps\.regenerate : S\.heatmaps\.generate\}/.test(heatSrc) &&
     !/<button[^>]*>[\s\S]{0,120}?chip-(spin|ring)/.test(heatSrc),
   '',
 );
