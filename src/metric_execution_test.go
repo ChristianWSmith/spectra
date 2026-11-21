@@ -25,6 +25,7 @@ import (
 type stmtParkCtx struct {
 	context.Context
 	once    sync.Once
+	started chan struct{} // closed when the target's run starts, before any SQL
 	parked  chan struct{}
 	release chan struct{}
 }
@@ -32,7 +33,7 @@ type stmtParkCtx struct {
 // newStmtParkCtx returns an unparented park context: parkingRuns sets
 // its parent (the run's registered context) when the metric starts.
 func newStmtParkCtx() *stmtParkCtx {
-	return &stmtParkCtx{parked: make(chan struct{}), release: make(chan struct{})}
+	return &stmtParkCtx{started: make(chan struct{}), parked: make(chan struct{}), release: make(chan struct{})}
 }
 
 func (c *stmtParkCtx) Err() error {
@@ -55,6 +56,7 @@ func parkingRuns(svc *MetricsService, target int64, park *stmtParkCtx) metrics.M
 			return ctx, release
 		}
 		park.Context = ctx
+		close(park.started)
 		return park, release
 	}
 }
@@ -74,6 +76,15 @@ func TestSweepMetricDoesNotBlockConcurrentWrite(t *testing.T) {
 		res, err = metrics.Sweep(t.Context(), f.st, nil, parkingRuns(f.svc, m.ID, park))
 		sweepDone <- err
 	}()
+	// The sweep runs every seeded metric before this one (built-ins cannot
+	// be deleted), so the wait for this metric to START has no deadline:
+	// a sweep that ends first fails below. Only the time from its start to
+	// its statement opening is budgeted.
+	select {
+	case <-park.started:
+	case err := <-sweepDone:
+		t.Fatalf("sweep finished without running the metric (err %v)", err)
+	}
 	select {
 	case <-park.parked:
 	case err := <-sweepDone:
