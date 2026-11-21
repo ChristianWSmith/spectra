@@ -776,33 +776,26 @@ export function listMetrics() {
 // set: '' = every box, 'none' = no box, or the canonical comma-subset of
 // builtin/user/plugin where 'user' is the Custom box and 'plugin' the
 // Plugin box — store.ListMetricsPage's vocabulary),
-// `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none'),
-// `subjectFilter` (Subject: '' = every box, 'none' = no box, or the
-// canonical comma-subset of the three subject tokens player/match/team
-// — store.ListMetricsPage's SUBJECT FILTER vocabulary),
 // `formatFilter`
 // (Type: '' = every format, 'none' = none, or the canonical comma-subset
 // of format tokens where 'auto' names the '' format — the store's
 // vocabulary, store.ListMetricsPage), returned as {rows, hasNext}. The
 // sixth group (Pinning) is render-time in the view — pins live in
 // localStorage and never reach this call.
-// Read-cached keyed (query, originFilter, scopeFilter, subjectFilter,
-// formatFilter, afterID, limit) — every filter rides the args, so they
+// Read-cached keyed (query, originFilter, formatFilter, afterID, limit) — every filter rides the args, so they
 // join the ONE existing cache key and need no second cache — like
 // listMatchesPage, and the WHOLE cache (this entry included) flushes on
 // every spectra:* event and inside the mutating wrappers below:
 // invalidate() is readCache.clear(), so one save/delete refetches both
 // the paged window and listMetrics.
-export function listMetricsPage(query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit) {
+export function listMetricsPage(query, originFilter, formatFilter, afterID, limit) {
   return cachedRead(
     'ListMetricsPage',
-    [query, originFilter, scopeFilter, subjectFilter, formatFilter, afterID, limit],
+    [query, originFilter, formatFilter, afterID, limit],
     () =>
       MetricsService.ListMetricsPage(
         query,
         originFilter,
-        scopeFilter,
-        subjectFilter,
         formatFilter,
         afterID,
         limit,
@@ -844,27 +837,19 @@ export function restoreBuiltinMetric(id) {
 }
 // previewMetric runs a compiled expression: id rides an empty expr (the
 // SAVED definition, addressing read off its row),
-// a non-empty expr is ad-hoc. subject/partition/scope are the DRAFT's own
-// addressing (2026-11-18 — the same triple validateExpr threads): the
-// server compiles the draft under them, so a match/team-subject draft
-// previews as its subject instead of false-refusing at the player
-// default. The run itself is library-wide (no groupBy argument — retired
-// with the W2 grammar wave) — the engine addresses every preview row by
-// its subject.
+// a non-empty expr is ad-hoc. The scope is derived from the statement's
+// binds (ruling 51), so the draft carries no addressing of its own.
 // DESIGN §5 PREVIEW CRITERION: this is the ON-DEMAND CALCULATOR for
 // unsaved/dirty drafts (authoring state has no stored rows). A saved +
 // unmodified definition must instead read its stored rows through
 // getMetricValuesForMatch/getMetricValuesForPlayer below — never this.
-export function previewMetric(id, expr, subject, partition, scope, limit) {
-  return MetricsService.PreviewMetric(id, expr || '', subject || '', partition || '', scope || '', limit || 200);
+export function previewMetric(id, expr, limit) {
+  return MetricsService.PreviewMetric(id, expr || '', limit || 200);
 }
-// validateExpr is the Builder's live check; subject/partition/scope are
-// the DRAFT's own addressing (2026-11-18) — the server compiles the
-// expression under them, so a non-player draft is judged as its subject
-// (the identity built-ins' argmax reads clean) instead of being refused
-// as a player formula.
-export function validateExpr(expr, subject, partition, scope) {
-  return MetricsService.ValidateExpr(expr, subject || '', partition || '', scope || '');
+// validateExpr is the Builder's live check: the one save gate over the
+// statement alone.
+export function validateExpr(expr) {
+  return MetricsService.ValidateExpr(expr);
 }
 
 // --- Stored metric values + compute state (design §5) ----------------------
@@ -992,8 +977,8 @@ export function cancelMetric(id) {
 // compileMetric is the no-execution Compile (design §5): the
 // provenance SQL a clean-saved preview shows beside its stored rows,
 // without calculating a value. expr "" uses the saved definition by id.
-export function compileMetric(id, expr, scope) {
-  return MetricsService.CompileMetric(id, expr || '', scope || '');
+export function compileMetric(id, expr) {
+  return MetricsService.CompileMetric(id, expr || '');
 }
 
 // --- Metric compute progress store -----------------------------------------

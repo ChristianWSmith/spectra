@@ -24,10 +24,10 @@ import (
 func TestCompileMetricIsNoExecution(t *testing.T) {
 	f := newSeededFixture(t)
 	m := f.save(t, models.MetricRow{
-		Name: "compile_me", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match",
+		Name: "compile_me", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
 	})
 
-	sql, err := f.svc.CompileMetric(m.ID, "", "")
+	sql, err := f.svc.CompileMetric(m.ID, "")
 	if err != nil {
 		t.Fatalf("CompileMetric: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 	// The SAME statement PreviewMetric would have run (identical
 	// provenance), and the compile wrote NOTHING: no metric_values row,
 	// no coverage movement — the sweep is still the only writer.
-	shown, err := f.svc.CompileMetric(m.ID, "", "")
+	shown, err := f.svc.CompileMetric(m.ID, "")
 	if err != nil {
 		t.Fatalf("CompileMetric: %v", err)
 	}
@@ -84,11 +84,11 @@ func TestCompileMetricIsNoExecution(t *testing.T) {
 
 	// Ad-hoc expression: same no-execution contract (a draft's
 	// provenance compiles without calculating).
-	if _, err := f.svc.CompileMetric(0, "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id", ""); err != nil {
+	if _, err := f.svc.CompileMetric(0, "SELECT '' AS subject_key, '' AS dim, SUM(kills) AS value FROM player_stats WHERE match_id = :match_id"); err != nil {
 		t.Fatalf("CompileMetric ad-hoc: %v", err)
 	}
 	// A bad expression errors exactly like the preview path.
-	if _, err := f.svc.CompileMetric(m.ID, "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM nope WHERE match_id = :match_id", ""); err == nil {
+	if _, err := f.svc.CompileMetric(m.ID, "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM nope WHERE match_id = :match_id"); err == nil {
 		t.Error("CompileMetric accepted an unknown source, want the positioned error")
 	}
 }

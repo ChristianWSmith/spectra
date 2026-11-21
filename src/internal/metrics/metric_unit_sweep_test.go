@@ -45,7 +45,7 @@ func TestImportingMatchLeavesOtherMatchesFresh(t *testing.T) {
 	}
 	m, err := st.CreateMetric(models.MetricRow{
 		Name: "unit_players", Title: "unit_players", Expr: expr,
-		Scope: RawScopeOf(g.Binds), Origin: "user", Touched: g.Touched,
+		Origin: "user", Touched: g.Touched,
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)

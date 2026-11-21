@@ -98,7 +98,7 @@ func TestRawMetricRefusalWritesNothing(t *testing.T) {
 		"two stmts":  "SELECT 1 AS subject_key, '' AS dim, 1 AS value; SELECT 2",
 	}
 	for name, expr := range refused {
-		row := models.MetricRow{Name: "refuse_" + name, Expr: expr, Scope: "match", Format: "int"}
+		row := models.MetricRow{Name: "refuse_" + name, Expr: expr, Format: "int"}
 		if _, err := f.svc.SaveMetric(row); err == nil {
 			t.Errorf("%s: saved %q, want a refusal", name, expr)
 		}

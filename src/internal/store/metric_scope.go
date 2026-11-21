@@ -131,17 +131,16 @@ func invalidateDependents(tx *sql.Tx, rootID int64, sc changeScope) error {
 
 // dependentRow is one metric that references a name in metric_deps.
 type dependentRow struct {
-	ID    int64
-	Name  string
-	Expr  string
-	Scope string
+	ID   int64
+	Name string
+	Expr string
 }
 
 // dependentsOfName reads the metrics that reference name. It closes the cursor
 // before returning, so the caller may write in the same transaction.
 func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	rows, err := tx.Query(
-		`SELECT DISTINCT m.id, m.name, m.expr, m.scope FROM metric_deps d
+		`SELECT DISTINCT m.id, m.name, m.expr FROM metric_deps d
 		 JOIN metrics m ON m.id = d.metric_id WHERE d.dep_name = ?`, name)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -150,7 +149,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	var out []dependentRow
 	for rows.Next() {
 		var d dependentRow
-		if err := rows.Scan(&d.ID, &d.Name, &d.Expr, &d.Scope); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Expr); err != nil {
 			return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
 		}
 		out = append(out, d)
@@ -164,7 +163,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 // invalidateDependent applies the scoped rule to one dependent and reports
 // whether the change reached it (so its own dependents are walked).
 func invalidateDependent(tx *sql.Tx, d dependentRow, sc changeScope) (bool, error) {
-	bindsMatch, bindsSteam := bindsOf(d.Expr, d.Scope)
+	bindsMatch, bindsSteam := bindsOf(d.Expr)
 	if sc.Whole || (!bindsMatch && !bindsSteam) {
 		if _, err := tx.Exec(`UPDATE metrics SET version = version + 1 WHERE id = ?`, d.ID); err != nil {
 			return false, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -240,11 +239,33 @@ func bumpRuleAffectedMetrics(tx *sql.Tx, tables []string) error {
 	return nil
 }
 
+// ScopeOfBinds is a metric's scope, derived from the reserved binds its
+// statement uses (03-QUERIES.md §5, ruling 51): profile (career)
+// when it reads :steam_id, match otherwise. It is the one definition;
+// metrics.RawScopeOf delegates here. Nothing stores a scope.
+func ScopeOfBinds(binds []string) string {
+	for _, b := range binds {
+		if b == ":steam_id" {
+			return "profile"
+		}
+	}
+	return "match"
+}
+
+// ScopeOfExpr is ScopeOfBinds over a stored expr. It reads the binds
+// lexically (StatementBinds), not through the full gate: a statement that
+// reads other metrics through metric() is refused by the table gate when
+// it is analyzed without the resolver's aliases, and its scope must still
+// read profile when it binds :steam_id.
+func ScopeOfExpr(expr string) string {
+	return ScopeOfBinds(StatementBinds(expr))
+}
+
 // bindsOf reports which unit keys a metric's stored rows are keyed by:
 // byMatch for a match (or round) unit, bySteam for a player unit. Raw SQL
 // reads its reserved binds. A statement the gate refuses keeps neither key,
 // so it reads as library-wide (the conservative whole change).
-func bindsOf(expr, scope string) (byMatch, bySteam bool) {
+func bindsOf(expr string) (byMatch, bySteam bool) {
 	st, gerr := AnalyzeMetricSQL(expr, nil)
 	if gerr != nil {
 		return false, false
@@ -298,10 +319,10 @@ func touchesAnyOf(touched string, tables []string) bool {
 func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players []string) error {
 	touchesAny := func(touched string) bool { return touchesAnyOf(touched, tables) }
 	type root struct {
-		id                int64
-		name, expr, scope string
+		id         int64
+		name, expr string
 	}
-	rows, err := tx.Query(`SELECT id, name, expr, scope, touched FROM metrics`)
+	rows, err := tx.Query(`SELECT id, name, expr, touched FROM metrics`)
 	if err != nil {
 		return fmt.Errorf("couldn't update the metric versions: %w", err)
 	}
@@ -309,7 +330,7 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 	for rows.Next() {
 		var r root
 		var touched string
-		if err := rows.Scan(&r.id, &r.name, &r.expr, &r.scope, &touched); err != nil {
+		if err := rows.Scan(&r.id, &r.name, &r.expr, &touched); err != nil {
 			rows.Close()
 			return fmt.Errorf("couldn't update the metric versions: %w", err)
 		}
@@ -323,8 +344,8 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 	}
 	rows.Close()
 	for _, r := range roots {
-		d := dependentRow{ID: r.id, Name: r.name, Expr: r.expr, Scope: r.scope}
-		byMatch, bySteam := bindsOf(r.expr, r.scope)
+		d := dependentRow{ID: r.id, Name: r.name, Expr: r.expr}
+		byMatch, bySteam := bindsOf(r.expr)
 		scopes := []changeScope{{Whole: true}}
 		if byMatch || bySteam {
 			// Every bound root fans out to the match's players, not only a

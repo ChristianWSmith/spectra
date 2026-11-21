@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -68,30 +69,14 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 //	         OR ∃ match-scope unit (a ready match) with NO fresh row — source axis
 //	         OR (profile) the career bucket has no fresh row WHILE the
 //	            library has player data to compute it over
-//	         OR (partitioned) an input-carried dim value has NO fresh
-//	            row for its unit                                — dim axis
 //
-// SUBJECT-AWARE branches (metrics expansion §6): the match-scope clause
-// IS the subject rule for every subject at match extent — a match or
-// team subject is "behind iff a fresh row exists for that match" exactly
-// as a player subject is (the clause never constrains subject_key, so
-// ANY fresh row for the match answers it), and the career clause is
-// reachable only by player subjects (the compile-time refusal keeps
-// match/team out of profile scope). PINNED by
-// TestMetricCoverageSubjectBranches.
+// There is no subject column (ruling 51): the match-scope
+// clause answers every metric at match extent, and the career clause every
+// profile-scoped one (scope is derived from the binds, see ScopeOfExpr).
 //
-// DIM AXIS — the pinned rule: behind iff ANY expected dim row is
-// missing (the simplest honest reading — plan §6): a unit's expected
-// dims are the partition values its INPUTS currently carry (side: each
-// side a human played; map: the stamped maps; weapon: the weapons
-// human-actor events recorded), each guarded so work that does not
-// exist never reports permanent behindness (the library-empty guard's
-// criterion, applied per dim — a dim no human input carries is not
-// expected, and a metric that cannot produce it was refused at compile
-// time by §6.5's column validation). New inputs that ADD a dim value
-// (a new map, a newly seen weapon) mark the metric behind without
-// invalidating the rows that are already fresh — the case the version
-// axis cannot see. PINNED by TestMetricCoveragePartitionDimRule.
+// Partitioning is the statement's dim column (ruling 51): the coverage
+// predicate does not read dims, so a new dim value does not by itself mark
+// a metric behind.
 //
 // The unit clauses are what make the work list resumable and honest: a
 // newly imported match has no rows yet (nothing to stamp), and the
@@ -110,39 +95,40 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 // additionally takes the forward closure of this set (metrics.Sweep) —
 // an upstream behind forces its dependents into the work list even when
 // their own stamps still look live.
+// profileMetricIDsJSON is the JSON array of the ids of every metric whose
+// scope derives to profile (its expr reads :steam_id). The coverage query
+// tests membership through json_each, so the scope is never a column.
+func (s *Store) profileMetricIDsJSON() (string, error) {
+	rows, err := s.db.Query(`SELECT id, expr FROM metrics`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		var expr string
+		if err := rows.Scan(&id, &expr); err != nil {
+			return "", err
+		}
+		if ScopeOfExpr(expr) == "profile" {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
-	// partitionBehind builds the dim-axis clause for one scope: every
-	// expected dim of every unit of that scope must have a fresh row.
-	// The carrier table is the partition's canonical input: side → player_stats' side stamp, map → its map
-	// stamp, weapon → events' weapon column; human-only guards mirror
-	// the statement's own population rule (§3.4 — a value row counts
-	// humans only, so a dim only humans carried is the expectation).
-	partitionBehind := func(matchScoped bool) string {
-		carrierMatch, eventMatch, metricMatch := "", "", " AND v.match_id = 0"
-		if matchScoped {
-			carrierMatch, eventMatch, metricMatch = " AND ps.match_id = mt.id", " AND e.match_id = mt.id", " AND v.match_id = mt.id"
-		}
-		missingDim := func(dimExpr string) string {
-			return "NOT EXISTS (SELECT 1 FROM metric_values v WHERE v.metric_id = m.id" +
-				metricMatch + " AND v.dim = " + dimExpr + " AND " + metricValueFreshCond + ")"
-		}
-		humanSide := func(side string) string {
-			return "EXISTS (SELECT 1 FROM player_stats ps WHERE ps.side = '" + side + "'" + carrierMatch +
-				" AND " + HumanOnlyBySteamID("ps.steam_id", "ps.match_id") + ") AND " + missingDim("'"+side+"'")
-		}
-		side := "(" + humanSide("ct") + ") OR (" + humanSide("t") + ")"
-		mapDim := "EXISTS (SELECT 1 FROM player_stats ps WHERE ps.map <> ''" + carrierMatch +
-			" AND " + HumanOnlyBySteamID("ps.steam_id", "ps.match_id") +
-			" AND " + missingDim("ps.map") + ")"
-		weaponDim := "EXISTS (SELECT 1 FROM events e WHERE e.weapon <> ''" + eventMatch +
-			" AND " + HumanOnlyBySteamID("e.attacker", "e.match_id") +
-			" AND " + missingDim("e.weapon") + ")"
-		inner := "((" + "m.partition = 'side' AND (" + side + ")) OR (m.partition = 'map' AND " + mapDim +
-			") OR (m.partition = 'weapon' AND " + weaponDim + "))"
-		if matchScoped {
-			return "m.partition <> '' AND m.scope = 'match' AND EXISTS (SELECT 1 FROM matches mt WHERE mt.status = 'ready' AND " + inner + ")"
-		}
-		return "m.partition <> '' AND m.scope = 'profile' AND EXISTS (SELECT 1 FROM player_stats) AND " + inner
+	profileJSON, err := s.profileMetricIDsJSON()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
 	rows, err := s.db.Query(
 		`SELECT m.id, m.expr, m.touched, m.version,
@@ -150,25 +136,21 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 				EXISTS (SELECT 1 FROM metric_values v
 					WHERE v.metric_id = m.id
 					  AND (v.metric_version < m.version OR (v.rule_version < ? AND `+analysisTouchedExpr+`)))
-				OR (m.scope = 'match' AND EXISTS (
+				OR (m.id NOT IN (SELECT value FROM json_each(?)) AND EXISTS (
 					SELECT 1 FROM matches mt WHERE mt.status = 'ready'
 					  AND NOT EXISTS (SELECT 1 FROM metric_values v
 						WHERE v.metric_id = m.id AND v.match_id = mt.id
 						  AND `+metricValueFreshCond+`)))
-				OR (m.scope = 'profile' AND EXISTS (SELECT 1 FROM player_stats)
+				OR (m.id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM player_stats)
 					AND NOT EXISTS (SELECT 1 FROM metric_values v
 						WHERE v.metric_id = m.id AND v.match_id = 0
 						  AND `+metricValueFreshCond+`))
-				OR (`+partitionBehind(true)+`)
-				OR (`+partitionBehind(false)+`)
 			) THEN 1 ELSE 0 END AS behind,
 			(SELECT COUNT(*) FROM metric_values v
 				WHERE v.metric_id = m.id AND `+metricValueFreshCond+`) AS fresh
 		FROM metrics m
 		ORDER BY `+metricOrder,
-		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
-		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
-		liveRuleVersion, liveRuleVersion, liveRuleVersion, liveRuleVersion,
+		liveRuleVersion, profileJSON, liveRuleVersion, profileJSON, liveRuleVersion, liveRuleVersion,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
@@ -526,27 +508,12 @@ func (s *Store) ClearMetricUnits(metricID int64, scopes []RawScope) error {
 // metric; absent → behind → the next sweep re-runs it), so the table is
 // strictly fresh-or-nothing at rest.
 //
-// APP-LEVEL INVARIANT (schema.sql metric_values): match_id = 0 is the
-// career bucket alone — a match- or team-subject metric always stores
-// per-match rows (match_id > 0). The store is the ONE write chokepoint
-// (both phase writers land here), so the subject check is enforced HERE
-// instead of as a schema CHECK — the pre-release baseline takes no CHECK
-// churn for an invariant the writer can hold itself. Player-subject rows
-// are unconstrained: match grain at match_id > 0, career at 0.
+// The store is the ONE write chokepoint for both phase writers. There is no
+// subject column to check a match-grain rule against (ruling 51),
+// so the writer stores whatever rows the statement returns.
 func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion int, rows []MetricValueRow) error {
 	if len(rows) == 0 {
 		return nil // nothing to commit — the metric simply has no rows (absent → behind)
-	}
-	var subject string
-	if err := s.db.QueryRow(`SELECT subject FROM metrics WHERE id = ?`, metricID).Scan(&subject); err != nil {
-		return fmt.Errorf("couldn't save the metric values: %w", err)
-	}
-	if subject == "match" || subject == "team" {
-		for _, r := range rows {
-			if r.MatchID <= 0 {
-				return fmt.Errorf("a %s subject's value must belong to a match", subject)
-			}
-		}
 	}
 	tx, err := s.db.Begin()
 	if err != nil {

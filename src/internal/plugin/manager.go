@@ -276,15 +276,12 @@ func (m *Manager) Remove(id string) error {
 }
 
 // metricDefs converts validated manifest metrics into store rows (the
-// structural name/expr/scope checks already ran in ValidateManifest).
-// Scope passes through: the store normalizes an omitted ("") scope to the
-// DDL DEFAULT 'match' (its omitted-field rule, same as CreateMetric), so
-// the INSERT always writes a CHECK-legal value.
+// structural name/expr checks already ran in ValidateManifest).
 func metricDefs(man Manifest) []store.PluginMetricDef {
 	defs := make([]store.PluginMetricDef, 0, len(man.Metrics))
 	for _, d := range man.Metrics {
 		defs = append(defs, store.PluginMetricDef{
-			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
+			Name: d.Name, Title: d.Title, Expr: d.Expr,
 			Format: d.Format, Doc: d.Doc,
 		})
 	}

@@ -201,7 +201,7 @@ func TestGetMetricComputeStateVocabulary(t *testing.T) {
 	// 4. failed — a statement that errors when it runs (an unknown column)
 	// fails its recompute; no rows are kept, so failed + error.
 	up := f.save(t, models.MetricRow{Name: "vocab_up", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
-	dep := f.save(t, models.MetricRow{Name: "vocab_dep", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE no_such_column = 1 AND match_id = :match_id", Scope: "match"})
+	dep := f.save(t, models.MetricRow{Name: "vocab_dep", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE no_such_column = 1 AND match_id = :match_id"})
 	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -219,14 +219,14 @@ func TestGetMetricComputeStateVocabulary(t *testing.T) {
 	// (not behind — the unit-absence guards read an empty library as
 	// no-data, never an infinite recompute loop).
 	empty := newDepsFixture(t)
-	emptyM := empty.save(t, models.MetricRow{Name: "vocab_empty", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id", Scope: "match"})
+	emptyM := empty.save(t, models.MetricRow{Name: "vocab_empty", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
 	if _, err := empty.svc.runSweep(t.Context(), nil); err != nil {
 		t.Fatalf("empty sweep: %v", err)
 	}
 	if s := stateOf(t, empty.svc, emptyM.ID); s.State != MetricStateNoData {
 		t.Errorf("empty-library state = %q, want %q", s.State, MetricStateNoData)
 	}
-	emptyProfile := empty.save(t, models.MetricRow{Name: "vocab_empty_profile", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE :steam_id <> ''", Scope: "profile"})
+	emptyProfile := empty.save(t, models.MetricRow{Name: "vocab_empty_profile", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE :steam_id <> ''"})
 	if s := stateOf(t, empty.svc, emptyProfile.ID); s.State != MetricStateNoData {
 		t.Errorf("empty-library profile state = %q, want %q", s.State, MetricStateNoData)
 	}

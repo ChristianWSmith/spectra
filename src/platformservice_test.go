@@ -692,7 +692,7 @@ func TestBuildPluginBundle(t *testing.T) {
 	// so the stored row carries the shape a real save writes).
 	m, err := st.CreateMetric(models.MetricRow{
 		Name: "my_count", Title: "My count", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id",
-		Scope: "match", Origin: "user",
+		Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)
@@ -727,7 +727,7 @@ func TestBuildPluginBundle(t *testing.T) {
 		t.Errorf("composed JSON missing the inlined sections:\n%s", out)
 	}
 	if len(man.Metrics) != 1 || man.Metrics[0].Name != "my_count" ||
-		man.Metrics[0].Expr != "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id" || man.Metrics[0].Scope != "match" {
+		man.Metrics[0].Expr != "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id" {
 		t.Errorf("inlined metrics = %+v, want the one stored user metric", man.Metrics)
 	}
 	if len(man.ReportTpls) != 1 || man.ReportTpls[0].ID != tpl.ID ||
@@ -783,7 +783,7 @@ func TestBuildPluginBundle(t *testing.T) {
 	// the metric (the stored row carries it — nothing validates exprs at
 	// the raw store write).
 	badRow, err := st.CreateMetric(models.MetricRow{
-		Name: "bad_expr", Title: "Bad", Expr: "nonsense", Scope: "match", Origin: "user",
+		Name: "bad_expr", Title: "Bad", Expr: "nonsense", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric(bad expr): %v", err)

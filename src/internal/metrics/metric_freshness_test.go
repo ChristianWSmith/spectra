@@ -30,7 +30,7 @@ func TestRawScopesReadFreshAfterOneSweep(t *testing.T) {
 			t.Fatalf("CheckRawSave(%s): perr=%v err=%v", name, perr, err)
 		}
 		m, err := st.CreateMetric(models.MetricRow{
-			Name: name, Title: name, Expr: expr, Scope: RawScopeOf(g.Binds),
+			Name: name, Title: name, Expr: expr,
 			Origin: "user", Touched: g.Touched,
 		})
 		if err != nil {

@@ -25,8 +25,8 @@ func TestNoteFallbacks(t *testing.T) {
 }
 
 // TestStoredMetricsNotes pins the stored-metrics note set: both new
-// tables and the metrics.scope column carry a purpose note, and the
-// INTERNAL-ONLY stamp columns carry none — the console is a user surface,
+// tables carry a purpose note, and the INTERNAL-ONLY stamp columns carry
+// none — the console is a user surface,
 // so no version/stamp language may reach it (owner ruling; a stamp column
 // must not gain a note without that ruling changing).
 func TestStoredMetricsNotes(t *testing.T) {
@@ -35,8 +35,10 @@ func TestStoredMetricsNotes(t *testing.T) {
 			t.Errorf("table %s has no note", table)
 		}
 	}
-	if got := columnNote("metrics", "scope"); got == "" {
-		t.Error("metrics.scope has no note")
+	// metrics has no scope column (dogfood/PLAN.md ruling 51), so there is
+	// nothing to annotate: a note here would describe a column that is gone.
+	if got := columnNote("metrics", "scope"); got != "" {
+		t.Errorf("metrics.scope has a note but the column is gone: %q", got)
 	}
 	// Stamps are internal-only: NO column note on any of them.
 	for _, c := range []struct{ table, col string }{

@@ -73,7 +73,7 @@ A metric's statement sees the players in the library as they are, bots included,
 2. **A read.** The statement starts with \`SELECT\` or \`WITH\`. Writes (\`INSERT\`, \`UPDATE\`, \`DELETE\`, \`DROP\`, \`CREATE\`, and \`CREATE VIEW\` with them) are refused wherever they appear.
 3. **Tables.** Every table the statement reads is on the list in [Tables you can read](#sources). Tables inside subqueries and CTEs count too.
 4. **Binds.** Only \`:match_id\`, \`:steam_id\` and \`:round\` are used. \`:round\` needs \`:match_id\`.
-5. **Scope.** The binds decide the scope, and the stored scope must agree with them (see [Scope](#scope)).
+5. **Scope.** The binds decide the scope (see [Scope](#scope)).
 6. **Metric references.** Each \`metric('name')\` must name a saved metric, and the references must not loop back to the metric being saved.
 
 The gate does not check whether the numbers are right. It checks what the statement may read and how it runs. A statement that is valid but returns the wrong number saves without complaint.
@@ -92,7 +92,7 @@ When the gate accepts a statement, it stores the set of tables the statement rea
 | \`:steam_id\` | profile (career) | once for each human player, across all their matches |
 | \`:match_id\` and \`:round\` | match, per round | once for each round of each ready match |
 
-A statement that binds \`:steam_id\` cannot also bind \`:match_id\` or \`:round\`. A profile metric is one value per player, so it reads \`:steam_id\` and keeps the career total itself. The save refuses a metric whose stored scope does not match its binds, with the message in [Common errors](#common-errors).
+A statement that binds \`:steam_id\` cannot also bind \`:match_id\` or \`:round\`. A profile metric is one value per player, so it reads \`:steam_id\` and keeps the career total itself. Nothing else sets the scope: the statement's binds are the whole answer.
 
 Career values are built from the statement, not from other metrics: a career statement sums or counts the rows it needs in one query.`,
   },
@@ -204,7 +204,6 @@ Scope: match. One row for the match, with an empty subject because the value bel
 | \`bind :x isn't available in a metric (the bind names are :match_id, :steam_id and :round)\` | Only the three reserved binds are accepted. |
 | \`a metric that reads :steam_id is career-scoped and can't also bind :match_id or :round\` | A career statement selects the player by \`:steam_id\` alone. Drop the match or round bind. |
 | \`:round needs :match_id (a round is one round of one match)\` | A round statement binds the match as well. |
-| \`a metric that reads :steam_id is profile-scoped and one that doesn't is match-scoped (this one is …-scoped)\` | Set the scope to match the binds the statement uses (see [Scope](#scope)). |
 | \`unknown metric reference "x": no metric has that name; save that metric first\` | Save the metric the reference reads, or fix the name (see [Other metrics](#metric-references)). |
 | \`metric "x" would reference itself through a cycle (…); remove one of the references\` | Remove the reference that loops back (see [Other metrics](#metric-references)). |
 | \`the statement must return the columns subject_key, dim and value (missing: …)\` | Name the three columns as the statement's result (see [Writing a statement](#writing-an-expression)). |

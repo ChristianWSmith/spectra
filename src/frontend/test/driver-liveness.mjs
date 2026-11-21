@@ -295,7 +295,11 @@ const EXPECTED = {
   // 122 → 125 (2026-11-21, ruling 50): an edited metric wears the Edited chip
   // in the list; section D pins the chip on save, its absence on the shipped
   // and user rows, and its removal on restore.
-  'builder.dom.mjs': 125,
+  // 125 → 113 (2026-11-21, ruling 51): scope and subject leave the
+  // metrics. The Scope and Subject filter groups, the Subject and Scope
+  // selects, and the Subject round trip (section D2) are gone; the origin and
+  // type groups and the rest of the Builder are pinned as before.
+  'builder.dom.mjs': 113,
   // combat 75 → 86: +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),

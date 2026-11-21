@@ -1227,19 +1227,20 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 	// the two phrasings).
 	res, err := st.RunReadOnly(
 		// The F2 raw fold seeds (raw_*) are locked by TestRawFoldSeeds, not this table;
-		// the clutch and alive_count raw seeds are not sugar rows either.
-		`SELECT name, expr, scope, subject, partition, doc, format, short_name FROM metrics WHERE origin = 'builtin' AND name NOT LIKE 'raw\_%' ESCAPE '\' AND name NOT IN ('clutch', 'alive_count') ORDER BY name`,
+		// the clutch and alive_count raw seeds (PLAN item 19) are not sugar rows either.
+		`SELECT name, expr, doc, format, short_name FROM metrics WHERE origin = 'builtin' AND name NOT LIKE 'raw\_%' ESCAPE '\' AND name NOT IN ('clutch', 'alive_count') ORDER BY name`,
 		nil, 200, 5000,
 	)
 	if err != nil {
 		t.Fatalf("read builtins: %v", err)
 	}
-	type seedRow struct{ expr, scope, subject, partition, doc, format, shortName string }
+	// There is no scope, subject or partition column (dogfood/PLAN.md ruling
+	// 51): the scope is derived from each statement's binds and checked here.
+	type seedRow struct{ expr, doc, format, shortName string }
 	got := map[string]seedRow{}
 	for _, r := range res.Rows {
 		got[r[0].(string)] = seedRow{
-			expr: r[1].(string), scope: r[2].(string), subject: r[3].(string), partition: r[4].(string),
-			doc: r[5].(string), format: r[6].(string), shortName: r[7].(string),
+			expr: r[1].(string), doc: r[2].(string), format: r[3].(string), shortName: r[4].(string),
 		}
 	}
 	if len(got) != len(builtinSeed) {
@@ -1255,10 +1256,11 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 		if wantSubject == "" {
 			wantSubject = "player" // the DDL default every player row relies on
 		}
-		if row.expr != f.expr || row.scope != f.scope || row.subject != wantSubject ||
-			row.partition != f.partition {
-			t.Errorf("builtin %q seeded row = expr %q scope %q subject %q partition %q, want expr %q scope %q subject %q partition %q",
-				f.name, row.expr, row.scope, row.subject, row.partition, f.expr, f.scope, wantSubject, f.partition)
+		if row.expr != f.expr {
+			t.Errorf("builtin %q seeded expr = %q, want %q", f.name, row.expr, f.expr)
+		}
+		if got := store.ScopeOfExpr(row.expr); got != f.scope {
+			t.Errorf("builtin %q derives scope %q from its binds, want %q", f.name, got, f.scope)
 		}
 		if row.format != f.format {
 			t.Errorf("builtin %q format = %q, want %q", f.name, row.format, f.format)

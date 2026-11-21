@@ -352,7 +352,7 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 	}
 	for _, d := range m.Metrics {
 		out.Metrics = append(out.Metrics, models.MetricRow{
-			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
+			Name: d.Name, Title: d.Title, Expr: d.Expr,
 			Format: d.Format, Doc: d.Doc, Origin: "plugin", PluginID: m.ID,
 		})
 	}
@@ -878,7 +878,7 @@ func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []in
 			return "", fmt.Errorf("only your own metrics can go into a plugin (built-in and plugin metrics stay with their source)")
 		}
 		man.Metrics = append(man.Metrics, plugin.MetricDef{
-			Name: row.Name, Title: row.Title, Expr: row.Expr, Scope: row.Scope,
+			Name: row.Name, Title: row.Title, Expr: row.Expr,
 			Format: row.Format, Doc: row.Doc,
 		})
 	}

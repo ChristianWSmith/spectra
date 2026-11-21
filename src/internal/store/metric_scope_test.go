@@ -23,7 +23,7 @@ const (
 func touchedMetric(t *testing.T, s *Store, name, scope, expr string, touched []string, deps ...string) models.MetricRow {
 	t.Helper()
 	m := mustSaveMetricDeps(t, s, models.MetricRow{
-		Name: name, Title: name, Expr: expr, Scope: scope, Origin: "user",
+		Name: name, Title: name, Expr: expr, Origin: "user",
 	}, deps)
 	if err := s.SetMetricTouched(m.ID, touched); err != nil {
 		t.Fatalf("SetMetricTouched(%s): %v", name, err)
