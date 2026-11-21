@@ -73,6 +73,7 @@ test('the registry names the Profile, Reports, Explorer and Match-tab components
       'builtin-match-combat-engagements',
       'builtin-match-heatmap',
       'builtin-match-heatmaps',
+      'builtin-match-tabs',
       'builtin-profile-career',
       'builtin-profile-history',
       'builtin-profile-maps',

@@ -4,22 +4,15 @@
   import { onMount } from 'svelte';
   import { listedPlayers } from '../players.js';
   import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getEngagements, getPref, getVoicePresence, getMatchSummary, evictDemoCopy, subscribeJobProgress, errText } from '../services.js';
-  import { fmtDuration, fmtBytes, fmtInt, fmtPatch } from '../fmt.js';
+  import { fmtDuration, fmtInt, fmtPatch } from '../fmt.js';
   import { teamNames, teamStartClass } from '../teams.js';
-  import { MATCH_TABS, MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
+  import { MATCH_TAB_SECTIONS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import ComponentFrame from '../components/ComponentFrame.svelte';
-  import { OVERVIEW_SOURCE, ROSTERS_SOURCE, SCOREBOARD_SOURCE, ROUNDS_SOURCE, DETAILS_SOURCE } from '../matchpanels.js';
-  import { ECONOMY_SOURCE } from '../econpanels.js';
-  import { UTILITY_SOURCE } from '../utilpanels.js';
-  // The Heatmaps and Combat tabs are builtin components (PLAN C5-Heat-Combat):
-  // the tab mounts its component through a frame with the match as context.
-  import MatchHeatmaps from '../builtins/match/Heatmaps.svelte';
-  import MatchCombat from '../builtins/match/Combat.svelte';
-  // The Reports and Details (Explorer) tabs mount their builtin components
-  // with this match as the context (no picker, no newest-match default).
-  import ReportsView from '../builtins/reports/ReportsView.svelte';
-  import ExplorerView from '../builtins/explorer/ExplorerView.svelte';
+  // The tab bar and the tab set are one builtin component (PLAN C5c):
+  // Match.svelte keeps the header, the warnings, the round strip and the
+  // tab state; the tabs and their content are MatchTabs.
+  import MatchTabs from '../builtins/match/MatchTabs.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
@@ -41,10 +34,6 @@
   // minting a fresh entry hash. Null while no instance is alive → the
   // fresh-entry replayHash below, exactly as before.
   let { id = 0, nav = () => {}, routeTab = '', expandReplay = null, openDocs = () => {} } = $props();
-
-  // The tab bar is the canonical list from the route table, so a deep
-  // link can never point at a tab that does not exist.
-  const TABS = MATCH_TABS;
 
   // The panels (matchpanels.js) read through this context (ruling 34): the
   // match, and nothing else. `back` is the tab the replay returns to. The
@@ -70,6 +59,20 @@
     onfilters: (f) => remember(matchKey('utility', id), f),
   });
   const roundsProps = $derived({ back: backPath(), picks: compareSel, onPick: toggleCompare, onCompare: goCompare });
+  // The tab set's props (MatchTabs.svelte): the active tab, its select, and
+  // the Details facts that are not panel reads (voice, the demo copy).
+  const tabsProps = $derived({
+    tab,
+    ontab: selectTab,
+    nav,
+    panelProps,
+    roundsProps,
+    utilityProps,
+    match,
+    voice,
+    copyBusy,
+    onfreecopy: onFreeCopy,
+  });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
   // per-tab help button (Part 8's per-tab ruling): one button in the
@@ -476,97 +479,12 @@
       {nav}
     />
 
-    <nav class="tabs" aria-label={S.match.matchSectionsAria}>
-      {#each TABS as t (t)}
-        <button class="tab" class:active={tab === t} onclick={() => selectTab(t)}>
-          {t}
-        </button>
-      {/each}
-    </nav>
-
-    {#if tab === 'Overview'}
-      <ComponentFrame source={OVERVIEW_SOURCE} context={panelContext} props={panelProps} {nav} />
-      <ComponentFrame source={ROSTERS_SOURCE} context={panelContext} props={panelProps} {nav} />
-    {:else if tab === 'Scoreboard'}
-      <ComponentFrame source={SCOREBOARD_SOURCE} context={panelContext} props={panelProps} {nav} />
-    {:else if tab === 'Rounds'}
-      <ComponentFrame source={ROUNDS_SOURCE} context={panelContext} props={roundsProps} {nav} />
-    {:else if tab === 'Economy'}
-      <ComponentFrame source={ECONOMY_SOURCE} context={panelContext} props={panelProps} {nav} />
-    {:else if tab === 'Utility'}
-      <ComponentFrame source={UTILITY_SOURCE} context={panelContext} props={utilityProps} {nav} />
-    {:else if tab === 'Heatmaps'}
-      <ComponentFrame component={MatchHeatmaps} context={panelContext} {nav} />
-    {:else if tab === 'Combat'}
-      <ComponentFrame component={MatchCombat} context={panelContext} {nav} />
-    {:else if tab === 'Reports'}
-      <ComponentFrame component={ReportsView} context={panelContext} props={{ embedded: true }} {nav} />
-    {:else if tab === 'Details'}
-      <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
-           facts panel (server, tickrate, frames, size, import, parser,
-           voice, warnings, source, demo copy) + Explorer's diagnostics
-           (import details, advanced diagnostics), embedded and fixed to
-           THIS match — the standalone Explorer's network-message census
-           is Library copy, not this match's data, so it stays out of the
-           tab. Gameplay-derived facts (the first blood) live on the
-           Rounds tab. Map/Duration live in the match header. -->
-      <!-- The stored facts are the details panel (matchpanels.js). Voice and
-           the demo copy stay here: voice presence is not a component read
-           (the query allowlist denies it), and the copy state comes from the
-           filesystem on this read. -->
-      <ComponentFrame source={DETAILS_SOURCE} context={panelContext} props={panelProps} {nav} />
-      <section class="panel">
-        <dl class="facts">
-          <div>
-            <dt>{S.match.factVoice}</dt>
-            <dd>
-              {#if !voice}
-                <span class="muted">—</span>
-              {:else if voice.hasVoice}
-                <span
-                  class="chip voice-badge busy"
-                  title={S.fill(S.match.voiceRecordedTitle, { n: voice.playerCount })}
-                  ><span class="codicon codicon-unmute"></span>
-                  {S.fill(S.match.voiceRecordedBadge, { n: voice.playerCount })}</span
-                >
-              {:else}
-                <span
-                  class="chip voice-badge idle"
-                  title={S.match.voiceNoneTitle}
-                  >{S.match.voiceNoneBadge}</span
-                >
-              {/if}
-            </dd>
-          </div>
-          <!-- State line under Source: which demo file Re-parse would read
-               right now (copyState is fs-derived by Go on this read —
-               store never fills it). -->
-          <div class="fact-wide">
-            <dt>{S.match.factDemoCopy}</dt>
-            <dd>
-              {#if match.copyState === 'copied'}
-                <span>{S.match.copyPrefix} {fmtBytes(match.size)}</span>
-                <button
-                  class="btn small"
-                  disabled={copyBusy}
-                  title={S.match.freeCopyTitle}
-                  onclick={onFreeCopy}>{copyBusy ? S.match.freeing : S.match.freeCopy}</button
-                >
-              {:else if match.copyState === 'external'}
-                <span class="muted">{S.match.copyExternal}</span>
-              {:else if match.copyState === 'missing'}
-                <span class="muted">{S.match.copyMissing}</span>
-              {:else}
-                <!-- Unstamped (never in production — Go always derives one
-                     of the three states): a placeholder, never a claim. -->
-                <span class="muted">—</span>
-              {/if}
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <ComponentFrame component={ExplorerView} context={panelContext} props={{ embedded: true }} {nav} />
-    {/if}
+    <ComponentFrame
+      component={MatchTabs}
+      context={panelContext}
+      props={tabsProps}
+      {nav}
+    />
   {:else if !error}
     <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
   {/if}
