@@ -9,7 +9,7 @@
 //   builtin-economy-rounds  the per-round table (buy classes, deaths, loss pips)
 //
 // Retired preferences (ruling 33) are not read: the card set is the shipped
-// default, and the metric_economy pin is gone with the pinning concept. The
+// default, and the economy placement is not stored. The
 // per-round deaths are the stored round-grain metric raw_round_side_deaths,
 // read through metric() with the round bind; they replace the per-round
 // player_round_stats.deaths read that F3 removes.

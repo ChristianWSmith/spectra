@@ -3,7 +3,7 @@
 // Every metric list shows its DEFAULT rank order: the fixed entries (the
 // scoreboard's Name, Team and Score) and the metrics, sequenced by
 // DEFAULT_RANKS (negative fixed ranks lead; a metric with no rank appends in
-// catalog order). Ruling 33 retired pinning, the user metric order, hiding,
+// catalog order). Ruling 33 retired the user metric order, hiding,
 // the economy placement and the transposed toggle: none of them is stored or
 // read, and no list takes a saved order. A view shows what its component shows.
 //

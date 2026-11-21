@@ -25,7 +25,7 @@
 //      half (raw K/D, metric-backed assists, null → the honest dash);
 //   I. PlayerProfile's headline block (stored-metrics design §1a/§5,
 //      the Career-metrics panel dissolved into it by P1): the
-//      profile-scope pins (spectra:pinned-profile-metrics) read the
+//      profile-scope tile set (the default set; no retired key) reads the
 //      STORED career rows through the canonical read — fresh renders the
 //      value with its n, a non-fresh state renders the chip and never a
 //      number, a match-scope metric never surfaces here, and no
@@ -696,7 +696,6 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   // id-array under the profile key reads through the SAME path as
   // current names — the numeric entry drops at read (an id can never be
   // a metric name), so the block selects NOTHING …
-  localStorage.setItem('spectra:pinned-profile-metrics', '[51]');
   bindings.MetricsService.ListMetrics = () =>
     Promise.resolve([
       {
@@ -707,11 +706,41 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
   invalidate();
   const w22Target = document.createElement('div');
   document.body.appendChild(w22Target);
-  mount(profileMod.default, {
-    target: w22Target,
-    props: { steamId: '76561198000000001', nav: () => {} },
-  });
-  await sleep(120);
+  // C5d (owner ruling 33): pinning is retired, so the panel must not read or
+  // write any pin key. Spy on the Storage methods for the mount only; a
+  // positive control proves the spy sees a pin-key access before the check
+  // is trusted, and nothing is seeded, so the default set is what renders.
+  const pinTouches = [];
+  const storageProto = Object.getPrototypeOf(localStorage);
+  const realGet = storageProto.getItem;
+  const realSet = storageProto.setItem;
+  const realRemove = storageProto.removeItem;
+  const noteKey = (k) => {
+    if (String(k).startsWith('spectra:pinned')) pinTouches.push(String(k));
+  };
+  storageProto.getItem = function (k) { noteKey(k); return realGet.call(this, k); };
+  storageProto.setItem = function (k, v) { noteKey(k); return realSet.call(this, k, v); };
+  storageProto.removeItem = function (k) { noteKey(k); return realRemove.call(this, k); };
+  let w22Control;
+  try {
+    localStorage.getItem('spectra:pinned-control');
+    w22Control = pinTouches.length;
+    pinTouches.length = 0;
+    mount(profileMod.default, {
+      target: w22Target,
+      props: { steamId: '76561198000000001', nav: () => {} },
+    });
+    await sleep(120);
+  } finally {
+    storageProto.getItem = realGet;
+    storageProto.setItem = realSet;
+    storageProto.removeItem = realRemove;
+  }
+  check(
+    'w22: the spy sees a pin-key read (positive control)',
+    w22Control === 1,
+    `control=${w22Control}`,
+  );
   const w22Grid = w22Target.querySelector('.stat-grid.prof-stats');
   const w22Cells = w22Grid ? [...w22Grid.querySelectorAll('.stat-cell')] : [];
   // …the block renders NO cards at all (the unification of 2026-11-18
@@ -726,13 +755,11 @@ console.log('I. PlayerProfile headline block: profile pins read STORED career ro
     w22Cells.length === 1 && w22Cells[0].textContent.includes('K/D'),
     `cells=${JSON.stringify(w22Cells.map((c) => c.textContent.trim()))}`,
   );
-  // …and the stored bytes are left byte-for-byte untouched: no format
-  // flag, no version, no conversion pass — the next real pin toggle
-  // writes names over them.
+  // …and the panel touches no retired pin key at all (no read, no write).
   check(
-    'w22: the old-format bytes survive the read untouched (drop, never migrate)',
-    localStorage.getItem('spectra:pinned-profile-metrics') === '[51]',
-    String(localStorage.getItem('spectra:pinned-profile-metrics')),
+    'w22: the panel reads and writes no retired pin key',
+    pinTouches.length === 0,
+    pinTouches.join(' | '),
   );
   document.body.removeChild(w22Target);
   localStorage.removeItem('spectra:pinned-profile-metrics');
