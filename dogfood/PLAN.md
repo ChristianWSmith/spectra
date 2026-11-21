@@ -242,6 +242,11 @@ Settled (owner, 2026-11-20 unless noted):
     utility damage. Its snapshot reference changes accordingly: 110 of 116 cells
     differ by this ratified change. It becomes per player (a ratio of sums over
     per-match side values, bound to `:steam_id`), like the other side splits.
+50. **Edited builtins carry an "Edited" chip (owner ruling, 2026-11-21).** Any
+    builtin that has an override (ruling 43 and 44) shows a specific "Edited"
+    chip wherever the builtin is listed or shown in the Builder, so the user can
+    see it differs from the shipped version. The chip is removed when the edit is
+    restored to default.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
