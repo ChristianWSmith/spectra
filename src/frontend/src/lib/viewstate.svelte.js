@@ -107,6 +107,18 @@ export function matchKey(view, id) {
   return `match:${id}:${view}`;
 }
 
+// The Rounds tab's compare picks (round numbers, at most four) of one match.
+// They ride this registry under the match's key, so a tab switch keeps them
+// and another match never sees them. The Rounds panel reads and writes them
+// through these two, which own the key and the defaults.
+export function comparePicks(matchId) {
+  return seed(matchKey('selection', matchId), { compareSel: [] }).compareSel;
+}
+
+export function setComparePicks(matchId, picks) {
+  remember(matchKey('selection', matchId), { compareSel: picks });
+}
+
 // --- Navigation arbitration (pure — no registry, no globals) ----------
 
 // scrollKey — the pure route → scroll-key derivation arbitrate() stands

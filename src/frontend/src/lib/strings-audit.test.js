@@ -237,6 +237,8 @@ const PREFIX_EXEMPT = {
 // stale, the PENDING_DENYLIST liveness contract). Every entry renders as a
 // tooltip, footnote or in-place explanatory note, never as a label.
 const HINT_KEYS = {
+  'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (matchpanels.js, read through a panel source)',
+  'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (matchpanels.js, read through a panel source)',
   // builtin panel copy (ruling 46, C5i): the Economy definitions and card
   // formulas are tooltips (a title or a card's hover text), and the Explorer
   // reference notes and the heatmap's no-rows note are footnotes — hints, not

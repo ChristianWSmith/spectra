@@ -128,6 +128,7 @@ export const match = {
   panelScoreboardLabel: 'Match scoreboard',
   panelRoundsLabel: 'Match rounds',
   panelDetailsLabel: 'Match details',
+  panelFactsLabel: 'Match voice and demo copy',
   cardTopFragger: 'Top fragger',
   cardBestAdr: 'Best ADR',
   cardMostUtil: 'Most util',

@@ -1137,6 +1137,7 @@ const EXPECTED = {
   'match-heatmaps.dom.mjs': 16,
   'match-panels.dom.mjs': 40,
   'match-rounds.dom.mjs': 36,
+  'match-tabs.dom.mjs': 17,
   'profile-panels.dom.mjs': 21,
   'reports-explorer-panels.dom.mjs': 15,
 };
