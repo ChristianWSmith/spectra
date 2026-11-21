@@ -2595,6 +2595,105 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, pa
  'Formula: one row per 1vN clutch: the sole alive player on a side with an opponent alive, ending at their death, the last opponent''s death or round end — value = opponents alive at start (N).',
  'builtin', CURRENT_TIMESTAMP);
 
+-- Round-grain statistics as metrics (dogfood/PLAN.md B7, D-3; 03-QUERIES.md
+-- §5 and §10). Each statement binds :match_id and :round (ruling 20) and
+-- returns the reserved columns subject_key, dim and value (ruling 22). An
+-- absent value is NULL, shown as a dash, never a fabricated zero (ruling 23).
+-- They are the M19, M22, M30, M31, M36 and M37 round-grain series of the
+-- Economy, Utility, RoundDetail and CompareRounds views.
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, subject, partition, format, doc, origin, created_at) VALUES
+('raw_round_econ_series', 'Round economy series (raw SQL)', '',
+ 'WITH sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'')
+SELECT sd.side AS subject_key, ''equip'' AS dim, re.equip_value AS value
+FROM sd LEFT JOIN round_economy re ON re.match_id = :match_id AND re.round = :round AND re.side = sd.side
+UNION ALL
+SELECT sd.side AS subject_key, ''networth'' AS dim, re.equip_value + re.money_sampled_sum AS value
+FROM sd LEFT JOIN round_economy re ON re.match_id = :match_id AND re.round = :round AND re.side = sd.side
+ORDER BY subject_key, dim',
+ 'match', 'team', '', 'currency',
+ 'Formula: per side per round, equip = round_economy.equip_value; networth = equip_value + money_sampled_sum. Dash when the side has no round_economy row.',
+ 'builtin', CURRENT_TIMESTAMP),
+('raw_round_side_deaths', 'Round deaths by side (raw SQL)', '',
+ 'WITH sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t''),
+pr AS (
+  SELECT rps.side AS side, prs.deaths AS deaths
+  FROM player_round_stats prs
+  JOIN round_player_sides rps ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
+  JOIN players p ON p.match_id = prs.match_id AND p.steam_id = prs.steam_id AND p.is_bot = 0
+  WHERE prs.match_id = :match_id AND prs.round = :round
+)
+SELECT sd.side AS subject_key, '''' AS dim, (SELECT SUM(pr.deaths) FROM pr WHERE pr.side = sd.side) AS value
+FROM sd ORDER BY sd.side',
+ 'match', 'team', '', 'int',
+ 'Formula: sum(player_round_stats.deaths) over human players sampled on the side in the round. Dash when no human of that side is sampled; 0 is a real zero.',
+ 'builtin', CURRENT_TIMESTAMP),
+('raw_round_side_util_dmg', 'Round utility damage by side (raw SQL)', '',
+ 'WITH sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t''),
+rp AS (
+  SELECT rps.side AS side, rps.steam_id AS steam_id
+  FROM round_player_sides rps
+  JOIN players p ON p.match_id = rps.match_id AND p.steam_id = rps.steam_id AND p.is_bot = 0
+  WHERE rps.match_id = :match_id AND rps.round = :round
+),
+ud AS (
+  SELECT rp.side AS side, SUM(ue.damage) AS v
+  FROM utility_events ue JOIN rp ON rp.steam_id = ue.thrower
+  WHERE ue.match_id = :match_id AND ue.round = :round
+  GROUP BY rp.side
+)
+SELECT sd.side AS subject_key, '''' AS dim,
+  CASE WHEN EXISTS (SELECT 1 FROM rp WHERE rp.side = sd.side) THEN COALESCE((SELECT ud.v FROM ud WHERE ud.side = sd.side), 0) END AS value
+FROM sd ORDER BY sd.side',
+ 'match', 'team', '', 'int',
+ 'Formula: sum(utility_events.damage) by the thrower''s round side, human throwers only. Dash when no human of that side is sampled; 0 when it threw nothing.',
+ 'builtin', CURRENT_TIMESTAMP),
+('raw_round_side_blind_ms', 'Round blind time by side (raw SQL)', '',
+ 'WITH sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t''),
+rp AS (
+  SELECT rps.side AS side, rps.steam_id AS steam_id
+  FROM round_player_sides rps
+  JOIN players p ON p.match_id = rps.match_id AND p.steam_id = rps.steam_id AND p.is_bot = 0
+  WHERE rps.match_id = :match_id AND rps.round = :round
+),
+ud AS (
+  SELECT rp.side AS side, SUM(ue.flash_ms) AS v
+  FROM utility_events ue JOIN rp ON rp.steam_id = ue.thrower
+  WHERE ue.match_id = :match_id AND ue.round = :round
+  GROUP BY rp.side
+)
+SELECT sd.side AS subject_key, '''' AS dim,
+  CASE WHEN EXISTS (SELECT 1 FROM rp WHERE rp.side = sd.side) THEN COALESCE((SELECT ud.v FROM ud WHERE ud.side = sd.side), 0) END AS value
+FROM sd ORDER BY sd.side',
+ 'match', 'team', '', 'int',
+ 'Formula: sum(utility_events.flash_ms) by the thrower''s round side, human throwers, whole ms. Not enemy-gated. Dash when no human of that side is sampled.',
+ 'builtin', CURRENT_TIMESTAMP),
+('raw_round_side_money_mean', 'Round money mean by side (raw SQL)', '',
+ 'WITH sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'')
+SELECT sd.side AS subject_key, '''' AS dim,
+  CASE WHEN re.money_samples > 0 THEN CAST(re.money_sampled_sum AS REAL) / re.money_samples END AS value
+FROM sd LEFT JOIN round_economy re ON re.match_id = :match_id AND re.round = :round AND re.side = sd.side
+ORDER BY sd.side',
+ 'match', 'team', '', 'currency',
+ 'Formula: money_sampled_sum / money_samples per side per round, the mean sampled money per player. Dash when the side has no money samples.',
+ 'builtin', CURRENT_TIMESTAMP),
+('raw_round_util_summary', 'Round utility summary (raw SQL)', '',
+ 'WITH rd AS (SELECT 1 AS present FROM rounds WHERE match_id = :match_id AND number = :round),
+u AS (
+  SELECT COUNT(*) AS nades, COALESCE(SUM(ue.damage), 0) AS dmg, COALESCE(SUM(ue.flash_ms), 0) AS flash
+  FROM utility_events ue
+  WHERE ue.match_id = :match_id AND ue.round = :round AND ue.thrower <> ''''
+    AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = ue.match_id AND p.steam_id = ue.thrower AND p.is_bot = 1)
+)
+SELECT '''' AS subject_key, ''nades'' AS dim, CASE WHEN EXISTS (SELECT 1 FROM rd) THEN u.nades END AS value FROM u
+UNION ALL
+SELECT '''' AS subject_key, ''dmg'' AS dim, CASE WHEN EXISTS (SELECT 1 FROM rd) THEN u.dmg END AS value FROM u
+UNION ALL
+SELECT '''' AS subject_key, ''flash'' AS dim, CASE WHEN EXISTS (SELECT 1 FROM rd) THEN u.flash END AS value FROM u
+ORDER BY dim',
+ 'match', 'match', '', 'int',
+ 'Formula: per round, nades = count of utility_events, dmg = sum of damage, flash = sum of flash_ms, human throwers only. Dash when the round is absent.',
+ 'builtin', CURRENT_TIMESTAMP);
+
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One
 -- row per installed plugin; invalid/missing bundles keep their row with
 -- error set (ListPlugins never silently drops).
