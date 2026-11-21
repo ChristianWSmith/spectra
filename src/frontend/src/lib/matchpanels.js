@@ -20,10 +20,14 @@
 // the only ordering. The scoreboard sorts on one key at a time (click a
 // header); the chained multi-key sort of the old view is not carried over.
 
+import * as S from './strings/index.js';
+
 export const MATCH_PANEL_IDS = Object.freeze({
   overview: 'builtin-match-overview',
   rosters: 'builtin-match-rosters',
   scoreboard: 'builtin-match-scoreboard',
+  rounds: 'builtin-match-rounds',
+  details: 'builtin-match-details',
 });
 
 // The copy every panel shares, written once here and spliced into each
@@ -120,6 +124,11 @@ const HELPERS = `
   const ROSTER_SQL = ${JSON.stringify(SQL_ROSTER)};
   const TEAMS_SQL = ${JSON.stringify(SQL_TEAMS)};
   const SWITCHES_SQL = ${JSON.stringify(SQL_SWITCHES)};
+
+  // {placeholder} fill for catalog copy the panel carries (lib/strings).
+  function fill(template, args) {
+    return String(template).replace(/\\{(\\w+)\\}/g, (whole, key) => (key in args ? String(args[key]) : whole));
+  }
 `;
 
 // The replay route a row opens, following that player. `back` is the tab
@@ -503,9 +512,461 @@ export const SCOREBOARD_SOURCE = `<script>
 {/if}
 `;
 
+// --- the rounds ----------------------------------------------------------------
+// One row per round, in round order: the watch ▶, the compare box, the round
+// number, the winner, the reason, the duration, the bomb site, the MVP, the
+// first blood and the kill count. The rows come from the stored `rounds`
+// table through query(); a NULL stored value shows a dash. The compare picks
+// and the compare button belong to the surface (the Match view keeps them per
+// match), so they arrive as props (`picks`, `onPick`, `onCompare`).
+const SQL_ROUNDS =
+  "SELECT r.number, r.winner, r.reason, r.duration_s, r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
+  "r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''), " +
+  "(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'), " +
+  "r.start_tick, r.end_tick FROM rounds r " +
+  "LEFT JOIN players mp ON mp.match_id = r.match_id AND r.mvp <> '' AND mp.steam_id = r.mvp " +
+  "LEFT JOIN players fp ON fp.match_id = r.match_id AND r.first_kill_steam <> '' AND fp.steam_id = r.first_kill_steam " +
+  "LEFT JOIN players dp ON dp.match_id = r.match_id AND r.first_death_steam <> '' AND dp.steam_id = r.first_death_steam " +
+  "WHERE r.match_id = :match_id ORDER BY r.number ASC";
+
+// The copy the rounds panel shows, spliced into its source (lib/strings).
+const ROUNDS_COPY = Object.freeze({
+  colWatch: S.match.colWatch,
+  colCmp: S.match.colCmp,
+  compareSelectTitle: S.match.compareSelectTitle,
+  colWinner: S.match.colWinner,
+  colReason: S.match.colReason,
+  colDuration: S.match.colDuration,
+  colSite: S.match.colSite,
+  colMvp: S.match.colMvp,
+  firstBloodLabel: S.match.firstBloodLabel,
+  colKills: S.match.colKills,
+  watchRoundTitle: S.match.watchRoundTitle,
+  watchRoundAria: S.match.watchRoundAria,
+  compareRoundAria: S.match.compareRoundAria,
+  roundsSelected: S.match.roundsSelected,
+  compareBtn: S.match.compareBtn,
+  openProfile: S.match.openProfile,
+  killedVerb: S.match.killedVerb,
+});
+
+// The round helpers the rounds panel carries: the counted-round rule, the
+// round-group separator (lib/rounds.js separatorFlags), the side each team had
+// in a round (lib/sideparity.js sideAtRound, winnerTeamKey) and the round's
+// duration and label rules. They copy the app's own rules, so a duplicate
+// carries them.
+const ROUND_HELPERS = `
+  const isCounted = (r) => !!r && r.number >= 1;
+
+  // The cadence: after 12, after 24, then every 3 counted rounds (lib/rounds.js).
+  function separatorAfter(n) {
+    if (!Number.isFinite(n)) return false;
+    if (n === 12) return true;
+    return n >= 24 && (n - 24) % 3 === 0;
+  }
+
+  // A separator follows a counted row, except the last counted row.
+  function separatorFlags(rows) {
+    const counted = rows.filter(isCounted).length;
+    let seen = 0;
+    return rows.map((r) => (isCounted(r) ? ++seen < counted && separatorAfter(seen) : false));
+  }
+
+  function roundLabel(n) {
+    if (n >= 1) return String(n);
+    return n === -2 ? 'K' : 'W';
+  }
+
+  function fmtDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return DASH;
+    const s = Math.round(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return h + 'h' + String(m).padStart(2, '0') + 'm' + String(sec).padStart(2, '0') + 's';
+    if (m > 0) return m + 'm' + String(sec).padStart(2, '0') + 's';
+    return sec + 's';
+  }
+
+  function flipIndexes(counted, switches) {
+    if (counted <= 0 || switches <= 0) return [];
+    const flips = [];
+    for (let k = 1; k <= switches; k++) {
+      const idx = k === 1 ? 12 : 27 + 3 * (k - 2);
+      if (idx > 0 && idx < counted) flips.push(idx);
+    }
+    return flips;
+  }
+
+  function sideInEra(finalSide, switches, era) {
+    if (finalSide !== 'ct' && finalSide !== 't') return null;
+    const eras = Math.max(1, switches + 1);
+    const flipped = Math.abs(eras - 1 - era) % 2;
+    if (flipped === 0) return finalSide;
+    return finalSide === 'ct' ? 't' : 'ct';
+  }
+
+  // The side a team (by its final side) played in a round.
+  function sideAtRound(rounds, switches, number, finalSide) {
+    if (finalSide !== 'ct' && finalSide !== 't') return null;
+    if (!rounds.some((r) => r.number === number)) return null;
+    const counted = rounds.filter(isCounted);
+    const idx = counted.findIndex((r) => r.number === number);
+    const flips = flipIndexes(counted.length, switches);
+    const eras = Math.max(1, switches + 1);
+    let era = 0;
+    if (idx >= 0) {
+      for (const f of flips) if (f <= idx) era++;
+      era = Math.min(eras - 1, era);
+    }
+    return sideInEra(finalSide, switches, era);
+  }
+
+  // The team ('ct' or 't', by final side) that won a round, or null.
+  function winnerTeamKey(rounds, switches, number, winnerSide) {
+    if (winnerSide !== 'ct' && winnerSide !== 't') return null;
+    const ctSide = sideAtRound(rounds, switches, number, 'ct');
+    if (ctSide === null) return null;
+    return ctSide === winnerSide ? 'ct' : 't';
+  }
+
+  // A player's final side: by SteamID first, then by exact name.
+  function resolveSide(roster, steam, name) {
+    let side = '';
+    if (steam) {
+      const hit = roster.find((r) => r[0] === steam);
+      if (hit) side = hit[2] || '';
+    }
+    if (!side && name) {
+      const hit = roster.find((r) => r[1] === name);
+      if (hit) side = hit[2] || '';
+    }
+    return side;
+  }
+
+  // A player's colour in one round: the side they had in that round, else the
+  // match's start-side colour for the player (never a guess).
+  function playerRoundCls(d, number, steam, name) {
+    const final = resolveSide(d.roster, steam, name);
+    const at = sideAtRound(d.rounds, d.switches, number, final) || '';
+    if (at === 'ct') return 'side-ct';
+    if (at === 't') return 'side-t';
+    return startClass(final, d.switches);
+  }
+
+  function roundOf(r) {
+    return {
+      number: Number(r[0]),
+      winner: r[1] || '',
+      reason: r[2] || '',
+      durationS: r[3] == null ? NaN : Number(r[3]),
+      bombSite: r[4] || '',
+      mvp: r[5] || '',
+      mvpName: r[6] || '',
+      firstKillSteam: r[7] || '',
+      firstKillName: r[8] || '',
+      firstDeathSteam: r[9] || '',
+      firstDeathName: r[10] || '',
+      kills: Number(r[11]) || 0,
+      startTick: r[12] == null ? NaN : Number(r[12]),
+      endTick: r[13] == null ? NaN : Number(r[13]),
+    };
+  }
+`;
+
+export const ROUNDS_SOURCE = `<script>
+  // Match rounds: one row per round, in round order. The ▶ watches the round
+  // in the replay from its own start, its span looped, back to this tab. The
+  // compare box picks up to four rounds (the surface keeps the picks); the
+  // button under the table compares them. A click on the rest of the row
+  // opens the round's page.
+  let { spectra, context, back = '', picks = [], onPick, onCompare } = $props();
+  ${HELPERS}
+  ${ROUND_HELPERS}
+  const COPY = ${JSON.stringify(ROUNDS_COPY)};
+  const ROUNDS_SQL = ${JSON.stringify(SQL_ROUNDS)};
+  const pick = (n) => (onPick ? onPick(n) : undefined);
+  const compare = () => (onCompare ? onCompare() : undefined);
+
+  let data = $state(null);
+
+  async function load(matchId) {
+    if (matchId == null) return null;
+    const [rounds, roster, teamRows, switchRows] = await Promise.all([
+      spectra.query(ROUNDS_SQL),
+      spectra.query(ROSTER_SQL),
+      spectra.query(TEAMS_SQL),
+      spectra.query(SWITCHES_SQL),
+    ]);
+    const list = rounds.rows.map(roundOf);
+    return {
+      id: matchId,
+      rounds: list,
+      seps: separatorFlags(list),
+      roster: roster.rows,
+      switches: Number((switchRows.rows[0] || [0])[0]) || 0,
+      teams: { ct: teamName('ct', teamRows.rows, roster.rows), t: teamName('t', teamRows.rows, roster.rows) },
+    };
+  }
+
+  $effect(() => {
+    const matchId = context.matchId;
+    let live = true;
+    data = null;
+    load(matchId).then(
+      (d) => {
+        if (live) data = d;
+      },
+      // A failed read is reported into this frame (guard routes the error to it).
+      (e) => spectra.guard(() => {
+        throw e;
+      })(),
+    );
+    return () => {
+      live = false;
+    };
+  });
+
+  const backTo = () => back || 'match/' + (data ? data.id : context.matchId);
+
+  function winnerName(d, r) {
+    const key = winnerTeamKey(d.rounds, d.switches, r.number, r.winner);
+    return key ? d.teams[key] : '';
+  }
+
+  function openRound(n) {
+    spectra.navigate({ path: '/match/' + data.id + '/round/' + n, query: { back: backTo() } });
+  }
+
+  // The replay at the round's start, its span looped, back to this tab.
+  function watchRound(n) {
+    const r = data.rounds.find((x) => x.number === n);
+    const start = r && Number.isFinite(r.startTick) ? r.startTick : null;
+    const end = r && Number.isFinite(r.endTick) ? r.endTick : null;
+    const loop = start != null && end != null && start >= 0 && start <= end ? start + ',' + end : undefined;
+    spectra.navigate({ path: '/replay/' + data.id, query: { tick: start, loop, back: backTo() } });
+  }
+</script>
+
+{#snippet playerLink(steam, name, cls)}
+  {#if isSteam(steam)}
+    <button class="comb-name-btn {cls}" title={fill(COPY.openProfile, { name })} onclick={() => spectra.navigate('/player/' + steam)}>{name || DASH}</button>
+  {:else}
+    <span class={cls}>{name || DASH}</span>
+  {/if}
+{/snippet}
+
+{#if data}
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr-only">{COPY.colWatch}</span></th>
+          <th scope="col" class="num cmp-cmp-col" title={COPY.compareSelectTitle}>{COPY.colCmp}</th>
+          <th scope="col" class="num">RD</th>
+          <th scope="col">{COPY.colWinner}</th>
+          <th scope="col">{COPY.colReason}</th>
+          <th scope="col" class="num">{COPY.colDuration}</th>
+          <th scope="col">{COPY.colSite}</th>
+          <th scope="col">{COPY.colMvp}</th>
+          <th scope="col">{COPY.firstBloodLabel}</th>
+          <th scope="col" class="num">{COPY.colKills}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each data.rounds as r, ri (r.number)}
+          <tr class="clickable" class:split-before={ri > 0 && data.seps[ri - 1]} tabindex="0"
+            onclick={(e) => { if (e.target instanceof Element && e.target.closest('input, button, a')) return; openRound(r.number); }}
+            onkeydown={(e) => { if (e.key === 'Enter') openRound(r.number); }}
+          >
+            <td>
+              <button class="btn small ghost" title={fill(COPY.watchRoundTitle, { round: r.number })} aria-label={fill(COPY.watchRoundAria, { round: r.number })} onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button>
+            </td>
+            <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                class="cmp-cb"
+                checked={picks.includes(r.number)}
+                disabled={picks.length >= 4 && !picks.includes(r.number)}
+                aria-label={fill(COPY.compareRoundAria, { round: roundLabel(r.number) })}
+                onchange={() => pick(r.number)}
+              />
+            </td>
+            <td class="num">{roundLabel(r.number)}</td>
+            <td><span class="chip side {r.winner || 'none'}">{winnerName(data, r) || (r.winner ? r.winner.toUpperCase() : DASH)}</span></td>
+            <td>{r.reason || DASH}</td>
+            <td class="num">{fmtDuration(r.durationS)}</td>
+            <td>{r.bombSite || DASH}</td>
+            <td>
+              {#if r.mvpName}
+                {@render playerLink(r.mvp, r.mvpName, playerRoundCls(data, r.number, r.mvp, r.mvpName))}
+              {:else}
+                {DASH}
+              {/if}
+            </td>
+            <td>
+              {#if r.firstKillName && r.firstDeathName}
+                {@render playerLink(r.firstKillSteam, r.firstKillName, playerRoundCls(data, r.number, r.firstKillSteam, r.firstKillName))}
+                {COPY.killedVerb}
+                {@render playerLink(r.firstDeathSteam, r.firstDeathName, playerRoundCls(data, r.number, r.firstDeathSteam, r.firstDeathName))}
+              {:else}
+                {DASH}
+              {/if}
+            </td>
+            <td class="num">{r.kills}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+  {#if picks.length > 0}
+    <p class="cmp-hint">{fill(COPY.roundsSelected, { n: picks.length })}</p>
+  {/if}
+  {#if picks.length >= 2}
+    <button class="btn primary cmp-float" onclick={() => compare()}>
+      {fill(COPY.compareBtn, { n: picks.length })} <span class="codicon codicon-chevron-right"></span>
+    </button>
+  {/if}
+{/if}
+`;
+
+// --- the details: key facts -------------------------------------------------------
+// The stored facts of the match. Voice presence and the demo-copy state are NOT
+// here: voice is kept out of the component reads (the query allowlist denies
+// it) and the copy state is read from the filesystem, so the Match view keeps
+// both beside this panel.
+const SQL_FACTS =
+  'SELECT server_name, tick_rate, frames, size, extracted_at, parser_version, path, warnings_count ' +
+  'FROM matches WHERE id = :match_id';
+
+const DETAILS_COPY = Object.freeze({
+  keyFacts: S.match.keyFacts,
+  factServer: S.match.factServer,
+  factTickrate: S.match.factTickrate,
+  factFrames: S.match.factFrames,
+  factSize: S.match.factSize,
+  factImported: S.match.factImported,
+  factParser: S.match.factParser,
+  factWarnings: S.match.factWarnings,
+  factSource: S.match.factSource,
+});
+
+// The detail helpers: the app's formatting rules for these facts (lib/fmt.js),
+// and the reader for the stored import time, which SQLite keeps as Go wrote it
+// ("2026-11-18 21:00:15.014 +0000 UTC"), not as ISO text.
+const DETAIL_HELPERS = `
+  function numOf(v) {
+    return v == null || v === '' ? NaN : Number(v);
+  }
+
+  function fmtBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return DASH;
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+    if (mb >= 1) return mb.toFixed(1) + ' MB';
+    return (bytes / 1024).toFixed(1) + ' KB';
+  }
+
+  function fmtInt(x) {
+    if (!Number.isFinite(x)) return DASH;
+    return Math.round(x).toLocaleString();
+  }
+
+  function fmt1(x) {
+    if (!Number.isFinite(x)) return DASH;
+    return (Math.round(x * 10) / 10).toFixed(1);
+  }
+
+  function parseStamp(s) {
+    const t = String(s || '').trim();
+    if (!t) return null;
+    const m = /^(\\d{4}-\\d{2}-\\d{2})[ T](\\d{2}:\\d{2}:\\d{2})(\\.\\d+)?(?: ([+-]\\d{2})(\\d{2})(?: UTC)?)?$/.exec(t);
+    if (!m) {
+      const d = new Date(t);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const ms = m[3] ? '.' + m[3].slice(1, 4).padEnd(3, '0') : '';
+    const off = m[4] ? m[4] + ':' + m[5] : 'Z';
+    const d = new Date(m[1] + 'T' + m[2] + ms + off);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function fmtDate(d) {
+    if (!d || d.getUTCFullYear() <= 1) return DASH;
+    return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+`;
+
+export const DETAILS_SOURCE = `<script>
+  // Match details: the key facts of the match (server, tickrate, frames, size,
+  // import time, parser, warnings, source file). A NULL or missing stored value
+  // shows a dash.
+  let { spectra, context } = $props();
+  ${HELPERS}
+  ${DETAIL_HELPERS}
+  const COPY = ${JSON.stringify(DETAILS_COPY)};
+  const FACTS_SQL = ${JSON.stringify(SQL_FACTS)};
+
+  let facts = $state(null);
+
+  async function load(matchId) {
+    if (matchId == null) return null;
+    const res = await spectra.query(FACTS_SQL);
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+      server: r[0] || '',
+      tickRate: numOf(r[1]),
+      frames: numOf(r[2]),
+      size: numOf(r[3]),
+      extractedAt: parseStamp(r[4]),
+      parser: r[5] || '',
+      path: r[6] || '',
+      warnings: numOf(r[7]),
+    };
+  }
+
+  $effect(() => {
+    const matchId = context.matchId;
+    let live = true;
+    facts = null;
+    load(matchId).then(
+      (f) => {
+        if (live) facts = f;
+      },
+      // A failed read is reported into this frame (guard routes the error to it).
+      (e) => spectra.guard(() => {
+        throw e;
+      })(),
+    );
+    return () => {
+      live = false;
+    };
+  });
+</script>
+
+{#if facts}
+  <section class="panel">
+    <h2>{COPY.keyFacts}</h2>
+    <dl class="facts">
+      <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
+      <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + ' Hz' : DASH}</dd></div>
+      <div><dt>{COPY.factFrames}</dt><dd class="num">{fmtInt(facts.frames)}</dd></div>
+      <div><dt>{COPY.factSize}</dt><dd>{fmtBytes(facts.size)}</dd></div>
+      <div><dt>{COPY.factImported}</dt><dd>{fmtDate(facts.extractedAt)}</dd></div>
+      <div><dt>{COPY.factParser}</dt><dd class="mono">{facts.parser || DASH}</dd></div>
+      <div><dt>{COPY.factWarnings}</dt><dd>{Number.isFinite(facts.warnings) ? facts.warnings : DASH}</dd></div>
+      <div class="fact-wide"><dt>{COPY.factSource}</dt><dd class="mono">{facts.path || DASH}</dd></div>
+    </dl>
+  </section>
+{/if}
+`;
+
 // The builtin panels, in the order the Match view mounts them.
 export const MATCH_PANELS = Object.freeze([
   Object.freeze({ id: MATCH_PANEL_IDS.overview, label: 'Match overview cards', source: OVERVIEW_SOURCE }),
   Object.freeze({ id: MATCH_PANEL_IDS.rosters, label: 'Match rosters', source: ROSTERS_SOURCE }),
   Object.freeze({ id: MATCH_PANEL_IDS.scoreboard, label: 'Match scoreboard', source: SCOREBOARD_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.rounds, label: 'Match rounds', source: ROUNDS_SOURCE }),
+  Object.freeze({ id: MATCH_PANEL_IDS.details, label: 'Match details', source: DETAILS_SOURCE }),
 ]);

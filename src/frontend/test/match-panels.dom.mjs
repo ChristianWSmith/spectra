@@ -74,16 +74,18 @@ const cacheDir = join('node_modules', '.cache', 'spectra-dom-tests', 'match-pane
 mkdirSync(cacheDir, { recursive: true });
 const compiled = new Map();
 let seq = 0;
+// Svelte files compile; .js files are rewritten so that any .svelte or .js they
+// import (builtins/panels.js imports the profile panels) is bundled too.
 function bundle(absPath) {
   if (compiled.has(absPath)) return compiled.get(absPath);
   const out = join(cacheDir, `${String(++seq).padStart(2, '0')}-${absPath.split('/').pop()}.js`);
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
@@ -337,7 +339,7 @@ check('a card whose number is still calculating names no number for that part',
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the three panels are registered as builtins', panels.MATCH_PANELS.length === 3 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
+check('the five panels are registered as builtins', panels.MATCH_PANELS.length === 5 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 unmountAll();
