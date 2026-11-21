@@ -737,7 +737,7 @@ func (s *AnalyticsService) RecomputeAll() (RecomputeAllResult, error) {
 	// releases them.
 	hook := s.afterRecompute
 	rebuild := func() error {
-		err := st.RebuildCareer()
+		err := st.RebuildCareerForMatches(ids)
 		if hook != nil {
 			hook()
 		}

@@ -115,12 +115,11 @@ func TestBehindPredicateCycle(t *testing.T) {
 	}
 	rowsBefore := storedRows(t, f.st, m.ID)
 
-	// Rules bump: rule_version + 1 (the store writes the version it is
-	// given — AnalyticsService.SetConfig owns the bump-on-change logic;
-	// here a direct config write is the rules axis) — the metric's rows
-	// fail rule_version < live immediately, with NO write of their own
-	// (the crash matrix's "outdated rows present but invisible" window:
-	// the physical rows are still here, the fresh count is 0).
+	// Rules edit: a trade-window change (the rule's analysis table is
+	// player_stats, which this fact-only metric does not touch) plus the
+	// rule_version bump. The metric reads only events, so no rule value
+	// reaches it: its rows stay fresh, and SetConfig writes nothing physical
+	// (ruling 26: only the metrics an edit reaches are recalculated).
 	cfg, err := f.st.GetConfig()
 	if err != nil {
 		t.Fatalf("GetConfig: %v", err)
@@ -134,17 +133,17 @@ func TestBehindPredicateCycle(t *testing.T) {
 	if bumped.RuleVersion != cfg.RuleVersion {
 		t.Fatalf("rule_version = %d, want %d", bumped.RuleVersion, cfg.RuleVersion)
 	}
-	if behind, fresh := coverageOf(t, f.st, m.ID); !behind || fresh != 0 {
-		t.Errorf("rules-bumped coverage = (behind=%v, fresh=%d), want (true, 0)", behind, fresh)
+	if behind, fresh := coverageOf(t, f.st, m.ID); behind || fresh == 0 {
+		t.Errorf("rules-edited coverage = (behind=%v, fresh=%d), want (false, >0) for a fact-only metric", behind, fresh)
 	}
 	if n := storedRows(t, f.st, m.ID); n != rowsBefore {
-		t.Errorf("physical rows after rules bump = %d, want %d (SetConfig writes nothing)", n, rowsBefore)
+		t.Errorf("physical rows after rules edit = %d, want %d (SetConfig writes nothing)", n, rowsBefore)
 	}
-	if s := stateOf(t, f.svc, m.ID); s.State != MetricStateBehind {
-		t.Errorf("state after rules bump = %q, want %q", s.State, MetricStateBehind)
+	if s := stateOf(t, f.svc, m.ID); s.State != MetricStateFresh {
+		t.Errorf("state after rules edit = %q, want %q", s.State, MetricStateFresh)
 	}
 
-	// Recompute → fresh again, stamped under the new rule version.
+	// Recompute (a no-op for a fresh metric's rows) keeps the state fresh.
 	if _, err := f.svc.runSweep(t.Context(), nil); err != nil {
 		t.Fatalf("second sweep: %v", err)
 	}

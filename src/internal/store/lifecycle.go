@@ -595,6 +595,11 @@ func (s *Store) DeleteMatchData(id int64) error {
 		}
 		return fmt.Errorf("couldn't delete the match data: %w", err)
 	}
+	// The players whose career this delete changes (read before their rows go).
+	steamIDs, err := playerIDsOf(tx, []int64{id})
+	if err != nil {
+		return err
+	}
 	for _, table := range append(append([]string(nil), childTables...), streamedChildTables...) {
 		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, id); err != nil {
 			return fmt.Errorf("couldn't delete the match data: %w", err)
@@ -608,7 +613,7 @@ func (s *Store) DeleteMatchData(id int64) error {
 	}
 	// The deleted match's rows no longer exist — refresh the career rollup
 	// so profiles stay correct (M3: LibraryService.DeleteMatch → rebuild).
-	if err := s.RebuildCareer(); err != nil {
+	if err := s.RebuildCareerFor(steamIDs); err != nil {
 		return err
 	}
 	return nil
