@@ -78,8 +78,8 @@ fixture tests — they check values, not grammar.
   and a `childTables` delete loop. Sidecars (`matches/<id>/positions.bin`,
   `state.bin`, `voice/`) are written by streaming sinks during parse.
 - **Stamps on `events`:** `same_side`, `capped_dmg`, `attacker_inair`. The
-  tick migration drops `same_side` and `attacker_inair` and keeps
-  `capped_dmg`.
+  tick migration drops `same_side` and keeps `attacker_inair` (PLAN ruling
+  39) and `capped_dmg`.
 - **Already committed drops, effective at the wipe:** `player_stats.opening_kills`,
   `opening_deaths`, `damage_by_weapon`; `rounds.warmup`, `rounds.pregame`,
   `matches.warmup_rounds`.

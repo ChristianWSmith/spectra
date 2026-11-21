@@ -197,9 +197,11 @@ their rows; counts and aggregates over them are metrics.
 | `player_stats.score` | `agg.applyFinal` (`pl.Score()`) | The engine's scoreboard point formula; read as a final-state counter. |
 | `events.capped_dmg` | `agg.hurt` / `agg.capDamage` | Per-victim HP cap replayed in event order (round 5 of the golden demo: 206 raw damage on one victim, credit at most 100); row-local and order-dependent, so not derivable by a query over events. Not a column of the audited tables; listed because `total_damage` and `utility_damage` metrics depend on it. |
 
-Dropped for contrast (ruling 3, not stamps any more): `events.same_side`,
-`events.attacker_inair`. The metric replacements above compute side from
-`round_player_sides` (F2), not from `same_side`. Stamps that are
+Dropped for contrast (ruling 3, not stamps any more): `events.same_side`.
+The metric replacements above compute side from `round_player_sides` (F2),
+not from `same_side`. `events.attacker_inair` is kept as a stored game fact
+(PLAN ruling 39, which supersedes ruling 27); the tick-join `in_air` on
+`player_ticks` is a separate derived feature. Stamps that are
 denormalizations of facts, not emulations, and so are NOT under item 18:
 `player_stats.team/won/map`, `round_economy.team`, `round_player_sides.team`
 (see Q6).

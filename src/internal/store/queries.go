@@ -250,18 +250,13 @@ const eventRowCols = `e.id, e.seq, e.tick, e.round, e.kind,
 	e.attacker, COALESCE(ap.name, ''), e.victim, COALESCE(vp.name, ''),
 	e.assister, COALESCE(asp.name, ''),
 	e.weapon, e.headshot, e.wallbang, e.noscope, e.through_smoke,
-	e.attacker_blind, COALESCE(ati.in_air, 0), e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
+	e.attacker_blind, e.attacker_inair, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
 	e.pos_x, e.pos_y, e.pos_z, e.apos_x, e.apos_y, e.apos_z`
 
-// eventRowFrom's attacker tick join: attacker_inair is no longer a stored
-// stamp (A3). It reads the attacker's player_ticks row at the event tick,
-// the same LEFT JOIN the seeds use. No row (or a dead frame, in_air NULL)
-// reads as 0, the old stamp's DEFAULT.
 var eventRowFrom = ` FROM events e
 	` + playersJoin(joinLeft, "ap", "e.match_id", "e.attacker", true) + `
 	` + playersJoin(joinLeft, "vp", "e.match_id", "e.victim", true) + `
-	` + playersJoin(joinLeft, "asp", "e.match_id", "e.assister", true) + `
-	LEFT JOIN player_ticks ati ON ati.match_id = e.match_id AND ati.tick = e.tick AND ati.steam_id = e.attacker`
+	` + playersJoin(joinLeft, "asp", "e.match_id", "e.assister", true)
 
 // roundRowSelect joins display names for MVP/first-kill/first-death
 // ("" when the SteamID is absent or unknown). Every stored round is

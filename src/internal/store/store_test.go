@@ -398,12 +398,6 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if err := s.SaveExtracted(id, testExtracted(sha, at)); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
-	// attacker_inair is read from the attacker's tick row at the kill tick
-	// (A2): the kill at tick 100 by steam 100 is airborne in that frame.
-	if _, err := s.db.Exec(`INSERT INTO player_ticks (match_id, tick, steam_id, round, side, alive, hp, money, in_air)
-		VALUES (?, 100, '100', 1, 'ct', 1, 100, 0, 1)`, id); err != nil {
-		t.Fatalf("insert attacker tick row: %v", err)
-	}
 
 	m, err = s.GetMatch(id)
 	if err != nil {
