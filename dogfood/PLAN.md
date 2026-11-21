@@ -421,30 +421,36 @@ its own commit with the guide updated in the same change.
   reads `context` from its parent; a failing child shows its own frame and the
   parent keeps rendering; `metric()` with no explicit binds reads the context's
   match.
-- **C5b · Match view tab bar and content as builtins.** Split the Match view into
-  builtin components for the tab bar and each tab's content, mounted by the
-  hardcoded shell. **Deps:** C5a. **Check:** on the snapshot, each stored value shown
-  by the Match view appears unchanged (display check, not GUI smoke).
-- **C5c · Scoreboard as a builtin (ruling 33).** The scoreboard is a builtin
-  component mounted by C5b's content. Its transposed layout is not a preference:
-  a user who wants it transposed duplicates it and edits it. **Deps:** C5a, C5b.
-  **Check:** scoreboard values match the snapshot; no read of
-  `scoreboard_starts_transposed` remains (grep).
-- **C5d · Individual Profile view as a builtin.** **Deps:** C5a. **Check:** profile
-  values match the snapshot; the profile header and profiles list stay hardcoded.
+- **C5b · Match view panels as components.** Every panel of the Match view is a
+  builtin component. A panel is the unit of composition: it reads metrics through
+  `context` and mounts nothing else. The scoreboard is one of these panels.
+  **Deps:** C5a. **Check:** each panel's stored values appear unchanged on screen
+  (display check, not GUI smoke). The scoreboard's transposed layout is not a
+  setting: a user who wants it transposed duplicates the panel and edits it
+  (ruling 33). No read of `scoreboard_starts_transposed` remains (grep).
+- **C5c · Match view tabs as components, and the Match view as tabs.** Each tab's
+  content is a component that composes that tab's panels from C5b. The Match view
+  composes those tab components into a set of tabs, with the tab bar and the
+  hardcoded header, warnings, round strip and profiles list around it. **Deps:**
+  C5b. **Check:** each tab renders the same panels as before; the tab bar is
+  unchanged; the snapshot values shown by each tab are unchanged (display check).
+- **C5d · Profile view panels as components, and the Profile view as their
+  composition.** The Profile view is already a set of panels. Each panel is a
+  builtin component, and the Profile component composes them. **Deps:** C5a.
+  **Check:** each panel's snapshot values are unchanged; the profile header and
+  profiles list stay hardcoded.
 - **C5e · Pinning removal (ruling 33).** Remove the pin, order and hide controls and
   their keys (`metric_order_*`, `metric_pins_overview`, `metric_economy`,
   `metric_hidden_*`, `scoreboard_starts_transposed`, the two localStorage pin keys),
-  and the metric ordering dialog. Update the guide. **Deps:** C5b, C5c, C5d (the
-  views must have their components before their controls go). **Check:** grep finds
+  and the metric ordering dialog. Update the guide. **Deps:** C5c, C5d (the views
+  must have their components before their controls go). **Check:** grep finds
   no reader of a retired key; the guide has no pinning section.
 - **C5f · Duplicate to edit and use as my view (`04 §7`).** Wire the actions to the
-  placement store (C4 writers, merged). **Deps:** C5b, C5d, C4. **Check:** a
+  placement store (C4 writers, merged). **Deps:** C5c, C5d, C4. **Check:** a
   duplicated builtin renders its copy; "use as my view" writes one placement that
   Reset removes.
 - **C5g · Rename engagements to "kill tags" (ruling 32).** Schema, API and UI names,
-  and the guide. Run after C5b so the Match view's names change once. **Deps:**
-  C5b. **Check:** grep finds no `engagements` label in user-facing text; the
+  and the guide. Run after C5b so the panels' names change once. **Deps:** C5b. **Check:** grep finds no `engagements` label in user-facing text; the
   stored data is unchanged.
 
 Open for the owner: whether the Economy view (it reads `metric_economy` pins,
