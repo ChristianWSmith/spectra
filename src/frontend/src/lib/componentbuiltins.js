@@ -10,15 +10,14 @@
 // componentbuiltins.test.js pins the prefix and that every source passes
 // the save-time check.
 //
-// PLACEHOLDER: the shipped Match and Profile views are rebuilt as builtin
-// components in a later change. Until then the registry holds one
-// placeholder builtin (`placeholder: true`, shown with a placeholder chip)
-// so duplication has something to start from. It is mounted from its
-// source like a user component; the rebuilt builtins will be app source
-// compiled by the bundler, with their source text kept here for
-// duplication.
+// The registry holds the Match view's panels (matchpanels.js) and one
+// placeholder builtin (`placeholder: true`, shown with a placeholder chip).
+// The Profile view's panels are not yet builtins (C5d). Every builtin is
+// mounted from its source like a user component (ComponentFrame's `source`),
+// so its source text here is the one a duplicate starts from.
 
 import * as S from './strings/index.js';
+import { MATCH_PANELS } from './matchpanels.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -74,6 +73,9 @@ export const BUILTIN_COMPONENTS = Object.freeze([
     placeholder: true,
     source: PLACEHOLDER_SOURCE,
   }),
+  // The Match view's panels (matchpanels.js, dogfood C5b). Each is mounted
+  // by the Match view with its context; duplicating one gives a user copy.
+  ...MATCH_PANELS,
 ]);
 
 // isBuiltinId reports whether a placement's component reference names a

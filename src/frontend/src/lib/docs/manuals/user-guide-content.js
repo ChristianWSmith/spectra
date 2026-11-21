@@ -191,27 +191,22 @@ open that round.
 The tab you are on travels with you: open a round, a comparison, the replay or a player's
 profile from a tab, go back, and you land on that same tab again.
 
-**Overview** — the headline cards (the defaults are **Top fragger**, **Best ADR**, **Most
-util**, **Entry opens** and **Most MVPs**; the metric Builder's **Order…** dialog picks which
-cards show and in what order — each card names that metric's leading player beside that
-player's stored value) and both rosters with K/D/A and ADR. Clicking a card or a roster row
-opens the replay with the camera on that player; clicking a player's name opens their profile.
+**Overview** — the headline cards (**Top fragger**, **Best ADR**, **Most util**, **Entry
+opens** and **Most MVPs**; each card names that stat's leading player beside that player's
+stored value, and a card with no one to name shows no player) and both rosters with K/D/A and
+ADR: the Counter-Terrorist roster, then the Terrorist roster, then any player with no side on
+record. Clicking a card or a roster row opens the replay with the camera on that player;
+clicking a player's name opens their profile.
 
-**Scoreboard** — the sortable per-player table: the fixed columns (name, team, score), then
-**one column per metric you have pinned** (the defaults pin kills, deaths, damage, utility
-damage and MVPs as well as A, ADR, KAST%, HS%, K/D, KDA, the multi-kill counts (2K–5K),
-opening kills and opening deaths, trades and best streak), each with an ⓘ carrying its
-formula, and sortable. Sorting
-builds on the order you already see: sort a second stat and the first one's order still holds
-inside it, so nothing you sorted by is lost. The transpose button in the top-left cell flips the
-table to one row per stat and one column per player, keeping the players in the order they were
-in and clearing the sort marks until you sort again; in that shape the stat column is the one
-frozen at the left edge as you scroll across the players. The player column stays put while you
-scroll across the metrics, so you never lose the statline you are reading. Bots never appear
-here — the scoreboard lists human players only. In the player-row layout a row click opens the
-replay following that player, and the name cell opens their profile; transposed, the profile
-link travels with the name into the player column headers, with the team chip on its own line
-beneath it.
+**Scoreboard** — one row per human player (bots never appear here). The columns are name, team
+and score, then kills, deaths, damage, utility damage, MVPs, assists, ADR, KAST%, HS%, K/D, KDA,
+the multi-kill counts (2K to 5K), opening kills and opening deaths, trade kills and best streak.
+It opens sorted by kills, highest first. Click a header to sort by that column; click it again
+to reverse the order. A dash is a stat with no value for that player. A word such as
+*Calculating* or *Out of date* stands in for a value that is being worked out or is stale.
+A row click opens the replay following that player, and the name cell opens their profile.
+The scoreboard always opens in this one-row-per-player layout. To get a different layout,
+duplicate the scoreboard in the Component Builder and edit the copy.
 
 **Rounds** — one row per round: a ▶ that watches the round in the replay, the compare box, the
 number, winner, win reason, duration, bomb site, MVP, the first blood, and the kill count. The ▶
@@ -420,8 +415,7 @@ the left of the *built-in* / *read-only source* chip; while a sweep is running, 
 progress block underneath instead.
 
 **Save metric** stores it; the button reads *Saved* while nothing has changed. **Pin** places the
-metric: a match-scoped metric becomes a column on the scoreboard, a profile-scoped one a row on
-the player's profile. Saved metrics are appended to match reports in Reports. For a metric you
+metric: a profile-scoped one becomes a row on the player's profile. Saved metrics are appended to match reports in Reports. For a metric you
 created, that actions line opens with a **trash** button that deletes it; built-in and plugin
 metrics show none (neither here nor on their list row).
 
@@ -440,29 +434,10 @@ in the SQL console or any SQLite tool. A formula that mixes a percentile with ot
 shows a second statement beside the first; that one still reads \`?\` where its values belong (they
 are not carried over), and statements like these run one at a time.
 
-**Order…** arranges what the scoreboard, the profile cards and the match overview show — three
-lists in one dialog. The fixed stats (Name, Team,
-Score) lead the scoreboard list by default; every row — fixed or metric — reorders with the ↑↓
-buttons (or the
-↑/↓ arrow keys), so a pinned metric can sit anywhere among them. The eye button on a fixed stat
-hides it from its view without taking it off this list (the scoreboard's **Name** column is the
-one that cannot be hidden), and a pinned metric's pin button unpins it: the row leaves this list
-at once and the metric stops showing on its surface, while its slot in the order is kept, so
-pinning it again restores its place. (On the profile list there are no fixed rows — its rows are
-all pinned metrics, so each row's pin unpins it.) Every scoreboard-list metric row also carries
-an **Economy** toggle: on, the metric's stat shows on the match's **Economy** tab — an identity
-metric's card leaves the match overview while toggled; off, it returns. The toggle moves placement
-only — the metric stays pinned
-and its row stays in this list — and **Reset order** restores the shipped Economy set. The
-**Match overview** list picks the cards on
-top of a match: its pin adds or removes a card (only metrics that name a leading player are
-offered, and never one toggled to the Economy tab — a card always shows the leader beside that
-player's stored value) and the arrows set
-the cards' order. Each row's buttons sit together at the row's
-right edge, and
-**Reset order** restores every default, hidden ones included. Under the scoreboard list, the
-**Scoreboard starts transposed** checkbox sets the shape a match opens in; a match you flip during
-this session keeps the shape you left it in until you restart Spectra.
+**Order…** arranges the profile cards, and the **Economy** toggle on a row chooses which stats
+the Economy tab shows. The Match view's scoreboard and overview cards show their default columns
+and cards whatever this dialog holds: its order, hidden and pinned settings do not change them.
+**Reset order** restores the shipped defaults.
 
 For the formula language itself — sources, operators, scopes, references, worked examples and
 every error message — see the next section.`,

@@ -27,7 +27,6 @@ import { fileURLToPath } from 'node:url';
 const PREF_SITES = new Set([
   'lib/theme.js', // 'spectra:theme' — the only store the theme has
   'lib/fontsize.js', // 'spectra:font-size' — pre-paint cache; kvstore is truth
-  'lib/views/Match.svelte', // 'spectra:pinned-metrics' (match-scope pins, read side)
   'lib/views/Builder.svelte', // BOTH pin keys — the one writer, scope-routed:
   //   'spectra:pinned-metrics' (match scope → the scoreboard) and
   //   'spectra:pinned-profile-metrics' (profile scope → PlayerProfile's

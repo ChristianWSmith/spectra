@@ -93,6 +93,12 @@ const PENDING_DENYLIST = {};
 // belong in the ledger. Same `file` → literal keying as PENDING_DENYLIST and
 // the same liveness contract (Check A-ledger); `why` is mandatory.
 const DENYLIST_EXEMPT = {
+  'frontend/src/lib/matchpanels.js': [
+    {
+      text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
+      why: 'the Match scoreboard panel’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
+    },
+  ],
   'internal/store/query_store.go': [
     {
       text: 'commit',
