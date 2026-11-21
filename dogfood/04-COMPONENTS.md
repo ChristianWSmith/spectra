@@ -56,12 +56,14 @@ CREATE TABLE IF NOT EXISTS layout_placements (
 - A placement that references a missing component renders an error frame in its
   slot. It does not crash the surface.
 
-**Prefs absorbed.** `metric_order_match`, `metric_order_profile`,
-`metric_order_overview`, `metric_pins_overview`, `metric_economy`,
-`metric_hidden_match`, `metric_hidden_profile` and
-`scoreboard_starts_transposed` become placement rows and their `props`/`hidden`
-fields. The two localStorage pin keys are retired. `loop_secs` stays a plain
-pref. The exact per-key mapping is written in the wave that does it.
+**Pinning is removed (owner ruling 33, 2026-11-20).** The pinning concept goes
+away entirely: pinned metrics, metric ordering, hiding, and the economy pins.
+A view shows what its component shows; a user changes a view by duplicating and
+editing its component. Those keys are retired, not absorbed: `metric_order_match`,
+`metric_order_profile`, `metric_order_overview`, `metric_pins_overview`,
+`metric_economy`, `metric_hidden_match`, `metric_hidden_profile`, and the two
+localStorage pin keys. `scoreboard_starts_transposed` is a display toggle, not
+pinning; it stays a plain pref. `loop_secs` stays a plain pref.
 
 ## 3. What a component can read
 
