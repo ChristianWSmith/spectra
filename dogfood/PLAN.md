@@ -231,6 +231,12 @@ Settled (owner, 2026-11-20 unless noted):
     through the existing progress indication. Cancel is a button in the component
     editor, next to Save, shown while a compile runs. It terminates the compile
     worker; the save or load reports cancelled, and nothing is written.
+48. **Profile metrics are per player (owner ruling, 2026-11-21).** The library-wide
+    profile and career metrics become per-player: each is a ratio of sums over
+    stored per-match values, bound to `:steam_id`, reading `metric()`. Map and
+    side splits and weapon splits read per-match values keyed by `dim`. An import
+    then marks only that match's players behind, and the sweep recomputes only
+    them. Snapshot values must still match after the rewrite.
 21. **Fold versus detector (decided 2026-11-20):** a fold is an aggregate
     over facts with no interpretation. A detector interprets a sequence, a
     window, a state machine or a rule threshold. Detectors stay analysis-owned
