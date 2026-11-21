@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for CompareRounds: the event-sequence ▶ is an icon-only
 // play that seeks WITH the loop-length loop (the `loop_secs` pref —
 // default 5 s) and follows the ROW'S ACTOR when

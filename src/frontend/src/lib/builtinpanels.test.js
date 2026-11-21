@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // builtinpanels.test.js — the Profile view's panels as builtin components
 // (dogfood/PLAN C5d; dogfood/04-COMPONENTS.md §1, §7). Three pins:
 //   1. the registry (builtins/panels.js) names the Profile component and its

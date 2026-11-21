@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Library view's search controls: the deep-link
 // preset (#/library?map=&player=) seeds the facet inputs AND the first
 // list fetch, typing re-arms the debounced fetch with the two facets

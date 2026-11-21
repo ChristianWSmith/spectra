@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Settings view — the analysis-rules card's save
 // flow (save = recompute, the metrics-save precedent), the surfaces
 // this wave removed, and (w20) the icon-button wave + the plugin row

@@ -1113,7 +1113,12 @@ const EXPECTED = {
   // kill-tags branch): these drivers were added without an EXPECTED entry.
   // C5f (owner ruling 43, 2026-11-21): the builder edits built-ins in place
   // (save, restore, refusal) and places them as views (set, reset): 48 → 67.
-  'component-builder.dom.mjs': 67,
+  // Ruling 47 (the compile worker): section K — a valid component mounts
+  // through the worker, a syntax error reports its line and writes nothing,
+  // a large check shows Cancel and the floater while it runs and keeps the
+  // event loop ticking, Cancel during a save reports the cancel and leaves
+  // the store unchanged, and the next save starts a fresh worker: 67 → 83.
+  'component-builder.dom.mjs': 83,
   // C5f (owner ruling 43): NEW — an edited builtin renders wherever it is
   // mounted (top, nested, placed), restore brings the shipped one back, a
   // surface with no placement renders its default, Reset restores it, and a

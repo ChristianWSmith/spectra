@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for MatchPicker: open/close, filtering, keyboard nav,
 // selection, click-outside — and section H's render cap (a 250-match
 // library renders the first 200 rows plus the "type more to narrow" hint;

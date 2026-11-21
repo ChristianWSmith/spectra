@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for LandmarkRow: profile links inside the primary text
 // (event / chat / generic sources), the row's select guard around them,
 // and the plain-text fallbacks (no steam id, no resolver).

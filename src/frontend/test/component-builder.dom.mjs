@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Component builder (views/ComponentBuilder.svelte) —
 // the component AUTHORING surface, run against the real view, the real
 // save gate (componentruntime/savegate.js → compile.js), the real
@@ -188,6 +189,13 @@ const setText = async (el, value) => {
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   flushSync();
   await sleep(320); // the live check's debounce (CHECK_DEBOUNCE_MS = 250)
+  // The check compiles in the worker, which loads the compiler on its first
+  // use: wait for the check to leave its pending state.
+  for (let i = 0; i < 1000; i++) {
+    flushSync();
+    if (!q('.cb-check')?.textContent.includes(S.componentbuilder.checking)) break;
+    await sleep(10);
+  }
   flushSync();
 };
 
@@ -472,5 +480,96 @@ check('a chosen match is the preview context (context.matchId)', q('.cb-stage .c
 unmounted();
 
 check('nothing escaped the view', escaped.length === 0, escaped.join(' | '));
+// --- K. the compile worker, the floater and Cancel (owner ruling 47) ------------
+console.log('K. compile worker, floater, Cancel');
+const workstate = await import(pathToFileURL(resolve('src/lib/workstate.svelte.js')).href);
+const seam = await import(pathToFileURL(resolve('test/compile-worker-node.mjs')).href);
+// A large generated component: the compile must take long enough to observe.
+const bigSource = (n) => {
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push(`<p class="r${i % 7}">{n + ${i}}</p>`);
+  return `<script>\n  let n = $state(0);\n</script>\n${rows.join('\n')}`;
+};
+// Poll (flushing Svelte) until cond holds or ms elapses.
+const until = async (cond, ms = 15000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    flushSync();
+    if (cond()) return true;
+    await sleep(10);
+  }
+  flushSync();
+  return cond();
+};
+const cancelBtn = () => buttonByText(S.componentbuilder.cancelCompile);
+const works = [];
+const unwork = workstate.subscribeWork((s) => works.push(s));
+const lastWork = () => works[works.length - 1];
+const actionErrorText = () => alertIn('.cb-action-error');
+
+COMPONENTS = [];
+await mounted();
+click(buttonByText(S.componentbuilder.newLabel));
+await settle();
+await setText(q('#cb-name'), 'Big');
+check('(c) no Cancel while nothing compiles', !cancelBtn());
+
+// (a) a valid component compiles through the worker and mounts in the preview.
+await setText(q('#cb-source'), OK_SOURCE);
+check('(a) a valid component passes the check through the worker', q('.cb-check')?.textContent.includes(S.componentbuilder.checkOk), alertIn('.cb-check'));
+check('(a) the valid component mounts in the preview', await until(() => !!q('.cb-stage .mine-ok')));
+
+// (b) a syntax error comes back from the worker with its line; nothing is written.
+const writesBeforeBroken = saveCalls.length;
+await setText(q('#cb-source'), BROKEN_SOURCE);
+check('(b) a syntax error is reported with its line from the worker', alertIn('.cb-check').startsWith('Line 2:'), alertIn('.cb-check'));
+let brokenSave = null;
+try {
+  await services.saveComponent('', 'Big', BROKEN_SOURCE);
+} catch (e) {
+  brokenSave = e;
+}
+check('(b) the save path refuses it at its line and writes nothing', !!brokenSave && brokenSave.message.startsWith('Line 2:') && saveCalls.length === writesBeforeBroken);
+
+// (c) + (f): a large check compiles in the worker. While it runs, Cancel shows
+// and the floater carries it; the main thread keeps ticking throughout.
+const ticks = { n: 0 };
+const ticker = setInterval(() => ticks.n++, 5);
+const bigEl = q('#cb-source');
+bigEl.value = bigSource(4000);
+bigEl.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+flushSync();
+const cancelShown = await until(() => !!cancelBtn(), 5000);
+check('(c) Cancel shows while the check compiles', cancelShown);
+check('(c) the compile shows in the floater through runWork', !!lastWork() && lastWork().visible === true && lastWork().status === 'running', JSON.stringify(lastWork()));
+const bigDone = await until(() => !cancelBtn(), 60000);
+clearInterval(ticker);
+check('(c) Cancel is gone once the compile finishes', bigDone);
+check('(c) the big source passes the check', q('.cb-check')?.textContent.includes(S.componentbuilder.checkOk), alertIn('.cb-check'));
+check('(f) the event loop kept ticking during the 4000-block compile', ticks.n >= 5, `ticks=${ticks.n}`);
+
+// (d) Cancel during a save: the worker is terminated, the save reports the
+// cancel through the error path, and nothing is written.
+check('(d) Save is enabled for the checked big source', q('.cb-save')?.disabled === false);
+const writesBeforeCancel = saveCalls.length;
+const componentsBeforeCancel = JSON.stringify(COMPONENTS);
+click(q('.cb-save'));
+const midSave = await until(() => !!cancelBtn(), 5000);
+check('(d) Cancel shows while the save compiles', midSave);
+click(cancelBtn());
+const reported = await until(() => actionErrorText() === S.components.compileCancelled, 5000);
+check('(d) the save reports the cancel through the error path', reported, actionErrorText());
+check('(d) the database is unchanged: no write reached the service', saveCalls.length === writesBeforeCancel && JSON.stringify(COMPONENTS) === componentsBeforeCancel);
+check('(d) Cancel is gone once the cancel lands', !cancelBtn());
+
+// (e) the compile after a cancel starts a fresh worker and succeeds.
+const createdBeforeNext = seam.created.count;
+click(q('.cb-save'));
+const saved = await until(() => saveCalls.length === writesBeforeCancel + 1, 60000);
+check('(e) the next save starts a fresh worker and succeeds', saved && seam.created.count === createdBeforeNext + 1, `created +${seam.created.count - createdBeforeNext}`);
+
+unwork();
+unmounted();
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures ? 1 : 0);

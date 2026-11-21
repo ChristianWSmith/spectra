@@ -47,6 +47,8 @@ export const componentbuilder = {
   resetView: 'Reset to default',
   viewBusy: 'Working…',
   saveComponent: 'Save',
+  cancelCompile: 'Cancel',
+  cancelCompileTitle: 'Stop the check. Nothing is saved.',
   saving: 'Saving…',
   saved: 'Saved',
   duplicate: 'Duplicate',

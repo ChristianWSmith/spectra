@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for StatCard: the clickable cell still drills to its own
 // onclick while the sub line's ProfileLink keeps its own destination
 // (click AND keyboard), including the nested-button markup.

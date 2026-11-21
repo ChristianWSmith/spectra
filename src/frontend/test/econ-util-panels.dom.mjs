@@ -1,3 +1,5 @@
+import { warm, compileIdle } from './compile-worker-node.mjs';
+await warm();
 // jsdom driver for the Economy and Utility builtins (dogfood/PLAN.md C5c,
 // dogfood/04-COMPONENTS.md §3, §3.5). Each view mounts through the real
 // ComponentFrame (its composer, then the panels the composer mounts with
@@ -228,7 +230,10 @@ const reads = {
 };
 
 // --- helpers ------------------------------------------------------------------
-const sleep = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms = 30) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await compileIdle();
+};
 const settle = async (rounds = 12) => {
   for (let i = 0; i < rounds; i++) {
     await sleep(25);

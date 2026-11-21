@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Heatmaps tab's card (src/lib/builtins/match/
 // HeatmapsPanel.svelte; PLAN C5-Heat-Combat), mounted with a FIXED context
 // { matchId: 7 } the way the Heatmaps builtin mounts it. The services are
@@ -98,7 +99,9 @@ for (const rel of [
   const out = join(dir, rel);
   if (rel === 'workstate.svelte.js') {
     // workstate is a runes module (lib/workstate.svelte.js): compile it as one.
-    writeFileSync(out, compileModule(src, { filename: rel, generate: 'client' }).js.code);
+    // Its compile client stays the real module (the shared worker seam).
+    const clientUrl = pathToFileURL(join('src', 'lib', 'componentruntime', 'compileclient.js')).href;
+    writeFileSync(out, compileModule(src.replace("from './componentruntime/compileclient.js'", `from '${clientUrl}'`), { filename: rel, generate: 'client' }).js.code);
   } else {
     writeFileSync(out, src.replace(/from '(\.\.\/)*strings\/index\.js'/g, `from '${STRINGS}'`));
   }

@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // econutilpanels.test.js — the Economy and Utility views as builtin components
 // (dogfood/PLAN.md C5c; dogfood/04-COMPONENTS.md §3, §3.5). The contract:
 //   - each view is a composer plus the panels it mounts, every id in the

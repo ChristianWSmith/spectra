@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Profile panels as builtin components (dogfood/PLAN
 // C5d; dogfood/04-COMPONENTS.md §3, §7). Each panel mounts in a real
 // ComponentFrame with a FIXED context ({ matchId: null, steamId, round: null })

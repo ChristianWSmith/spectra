@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for MapPackPrompt: the presence-driven launch prompt —
 // gate logic (any asset family missing → open, all present → closed),
 // the not-found variant, "Not now" persisting NOTHING across remounts,

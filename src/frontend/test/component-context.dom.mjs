@@ -1,3 +1,5 @@
+import './compile-worker-node.mjs';
+import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js';
 // jsdom driver for the component context and the nested mount
 // (dogfood/04-COMPONENTS.md §3, §3.5; owner rulings 34 and 36), run against
 // the real ComponentFrame, ChildFrame, read API and component compiler, with
@@ -142,8 +144,22 @@ bindings.handlers.ListComponents = () => KIDS.map((c) => ({ ...c }));
 
 // --- helpers -------------------------------------------------------------------
 const sleep = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+// A user component compiles in the worker (ruling 47): settle waits until no
+// compile is pending, then lets the mounted component render.
+let compilePending = false;
+subscribeCompiles((on) => {
+  compilePending = on;
+});
 const settle = async (rounds = 8) => {
   for (let i = 0; i < rounds; i++) {
+    await sleep(30);
+    flushSync();
+  }
+  for (let i = 0; i < 3000 && compilePending; i++) {
+    await sleep(10);
+    flushSync();
+  }
+  for (let i = 0; i < 3; i++) {
     await sleep(30);
     flushSync();
   }

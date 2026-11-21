@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver: mount the PayloadTree harness and assert the rendering
 // contract (flat render, lazy branches, toggling, filtering, errors,
 // scale). This is a component-level regression test for the payload

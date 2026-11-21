@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for PlayerCard + TeamColumn: the icon → text-fallback
 // contract (icon present renders <img>, a miss renders the readable
 // canonical label — except on the WEAPON row, which is icon-only by

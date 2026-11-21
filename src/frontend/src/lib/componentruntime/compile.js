@@ -1,9 +1,12 @@
 // The user-component compiler: Svelte 5 source → a mountable component,
 // in the webview, lazily (dogfood/04-COMPONENTS.md §5).
 //
-// - `svelte/compiler` is loaded by DYNAMIC import on the first compile —
-//   never at launch. Nothing else in src/ may import it statically
-//   (compile.test.js pins that), so the bundler keeps it in its own chunk.
+// - The compile itself runs in a Web Worker (ruling 47): compileclient.js
+//   sends the source to compile.worker.js, which holds svelte/compiler and
+//   loads it on the first compile, never at launch. This module does the
+//   rest on the calling thread: the import rewrite, the refusal wording and
+//   the cache. Nothing else in src/ may import svelte/compiler statically
+//   (componentcompile.test.js pins that).
 // - The compiler's output imports Svelte's runtime by bare specifier,
 //   which a module evaluated from a string cannot resolve. rewriteModule
 //   turns every import into a lookup in ONE registry (RUNTIME_MODULES)
@@ -24,6 +27,7 @@
 // pass through here.
 
 import * as S from '../strings/index.js';
+import { compileWork, compileRequested } from './compileclient.js';
 
 // The registry: every specifier a compiled user module may import. The
 // runes-only compile emits client and disclose-version (flags/async only
@@ -328,29 +332,23 @@ async function loadRuntimeModule(key) {
   return out;
 }
 
-// --- lazy compiler ----------------------------------------------------------
-
-let compilerPromise = null;
-
-function loadCompiler() {
-  if (!compilerPromise) {
-    compilerPromise = import('svelte/compiler');
-    // A failed load must not poison every later attempt.
-    compilerPromise.catch(() => {
-      compilerPromise = null;
-    });
-  }
-  return compilerPromise;
-}
-
-// compilerRequested reports whether the compiler module has been asked
-// for in this process — false until the first user-component compile
-// (the "not loaded at launch" pin reads it).
+// compilerRequested reports whether a compile has been asked for in this
+// process — false until the first user-component compile (the "not loaded
+// at launch" pin reads it).
 export function compilerRequested() {
-  return compilerPromise !== null;
+  return compileRequested();
 }
 
 // --- errors -----------------------------------------------------------------
+
+// CompileCancelledError: the author stopped the compile (the Cancel button,
+// ruling 47). Nothing was written; the message is the catalog's sentence.
+export class CompileCancelledError extends Error {
+  constructor() {
+    super(S.components.compileCancelled);
+    this.name = 'CompileCancelledError';
+  }
+}
 
 // ComponentSourceError is a refusal of the SOURCE (a compile error or an
 // import the registry cannot provide), positioned by 1-based line/column
@@ -505,48 +503,23 @@ function importBinding(clause, ref) {
 
 // --- compile + check ---------------------------------------------------------
 
-// User components are runes-only (owner, 2026-11-20): every compile runs
-// with `runes: true`, so legacy syntax (`export let`, `$:`, `$$props`, …)
-// is a compile error at its own line. Builtins get the same mode from
-// svelte.config.js (compilerOptions.runes).
-const COMPILE_OPTIONS = { generate: 'client', css: 'injected', dev: false, runes: true };
-
-// Legacy forms the runes-mode compiler only WARNS about (it still
-// compiles them): refused like the legacy_* errors, so runes-only holds
-// for every legacy form, not just the ones that fail to compile.
-const LEGACY_WARNINGS = new Set([
-  'event_directive_deprecated', // on:click
-  'slot_element_deprecated', // <slot>
-  'script_context_deprecated', // <script context="module">
-  'svelte_component_deprecated', // <svelte:component>
-  'svelte_self_deprecated', // <svelte:self>
-]);
-
-// legacyRefusal words a legacy-syntax refusal through the catalog.
-function legacyRefusal(e) {
-  return new ComponentSourceError(
-    S.fill(S.components.legacyRefused, { err: compilerMessage(e) }),
-    (e.start && e.start.line) || 0,
-    (e.start && e.start.column) || 0,
-  );
+// legacyRefusal words a legacy-syntax refusal (a compile reply, compileclient
+// → compilecore.js) through the catalog.
+function legacyRefusal(reply) {
+  return new ComponentSourceError(S.fill(S.components.legacyRefused, { err: reply.message }), reply.line, reply.column);
 }
 
-// compileSource compiles and rewrites; throws ComponentSourceError for
-// anything the author must fix.
+// compileSource compiles in the worker, then rewrites on this thread; throws
+// ComponentSourceError for anything the author must fix, and
+// CompileCancelledError when the author stopped the compile.
 async function compileSource(source, filename, builtinDir = null) {
-  const { compile } = await loadCompiler();
-  let js;
-  try {
-    const out = compile(String(source), { ...COMPILE_OPTIONS, filename });
-    const legacy = (out.warnings || []).find((w) => LEGACY_WARNINGS.has(w.code));
-    if (legacy) throw legacyRefusal(legacy);
-    js = out.js.code;
-  } catch (e) {
-    if (e instanceof ComponentSourceError) throw e;
-    if (e && typeof e.code === 'string' && e.code.startsWith('legacy_')) throw legacyRefusal(e);
-    const start = (e && e.start) || {};
-    throw new ComponentSourceError(compilerMessage(e), start.line || 0, start.column || 0);
+  const reply = await compileWork(String(source), filename);
+  if (reply.cancelled) throw new CompileCancelledError();
+  if (!reply.ok) {
+    if (reply.legacy) throw legacyRefusal(reply);
+    throw new ComponentSourceError(reply.message, reply.line, reply.column);
   }
+  const js = reply.js;
   try {
     return rewriteModule(js, RUNTIME_SPECIFIERS, builtinDir);
   } catch (e) {

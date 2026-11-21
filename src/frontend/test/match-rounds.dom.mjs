@@ -1,3 +1,5 @@
+import { warm, compileIdle } from './compile-worker-node.mjs';
+await warm();
 // jsdom driver for the Match view's rounds and details panels (dogfood/PLAN.md
 // C5c, dogfood/04-COMPONENTS.md §3, §3.5). Each panel mounts through the real
 // ComponentFrame, compiles from its source and reads through the real read API.
@@ -190,7 +192,10 @@ const reads = {
 };
 
 // --- helpers --------------------------------------------------------------------------
-const sleep = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms = 30) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await compileIdle();
+};
 const settle = async (rounds = 10) => {
   for (let i = 0; i < rounds; i++) {
     await sleep(25);

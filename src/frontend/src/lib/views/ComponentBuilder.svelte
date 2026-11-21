@@ -16,6 +16,10 @@
   //     debounced. Save stays disabled until it passes, and the refusal
   //     shows with its line. services.js saveComponent runs the same gate
   //     before the write, so no caller can store a refused source;
+  //   * every compile runs in a Web Worker (ruling 47), so a large source
+  //     never blocks the screen. While one runs, its progress shows in the
+  //     background-work indicator and Cancel sits beside Save; Cancel stops
+  //     it and nothing is written;
   //   * the preview mounts the last source that passed the gate, so a
   //     half-typed edit never replaces a working preview (the editor shows
   //     the refusal). Runtime failures show in the preview's own frame;
@@ -40,6 +44,7 @@
     errText,
   } from '../services.js';
   import { gateComponentSave, refusalText } from '../componentruntime/savegate.js';
+  import { subscribeCompiles, cancelCompiles } from '../componentruntime/compileclient.js';
   import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource, builtinSourceDir } from '../componentbuiltins.js';
   import { placedEntries } from '../componentruntime/placementrows.js';
   import { listedPlayers } from '../players.js';
@@ -87,6 +92,14 @@
   let listError = $state('');
   let actionError = $state('');
   let saving = $state(false);
+  // True while any compile runs (the live check, a save, a preview's load):
+  // the Cancel button beside Save shows exactly then (ruling 47).
+  let compiling = $state(false);
+  $effect(() =>
+    subscribeCompiles((on) => {
+      compiling = on;
+    }),
+  );
 
   // --- The list ---------------------------------------------------------------
 
@@ -548,6 +561,13 @@
               title={S.componentbuilder.duplicateTitle}
               ><span class="codicon codicon-copy" aria-hidden="true"></span>
               {S.componentbuilder.duplicate}</button
+            >
+          {/if}
+          {#if compiling}
+            <button
+              class="btn cb-cancel"
+              onclick={() => cancelCompiles()}
+              title={S.componentbuilder.cancelCompileTitle}>{S.componentbuilder.cancelCompile}</button
             >
           {/if}
           <button class="btn primary cb-save" onclick={save} disabled={saveDisabled} title={saveTitle}>

@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // matchbuiltins.test.js — the Match view's Heatmaps and Combat tabs as builtin
 // components (PLAN C5-Heat-Combat; dogfood/04-COMPONENTS.md §3, §7). Pins:
 //   1. the registry (builtins/panels.js) names the two tab components and their

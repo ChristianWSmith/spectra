@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the M4 voice ENGINE (replay/audio.js) — pins the
 // behaviors the replay UI builds on:
 //   • default-on enable (line 11): setEnabled(true) at load flips

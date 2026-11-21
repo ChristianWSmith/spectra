@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the SQL console (help-buttons wave, 2026-11-15, then
 // the sql-history wave = changes.txt C2 + C3, 2026-11-15, then the
 // sql-settings wave = S1–S3, 2026-11-16). Sections A/B are the shared

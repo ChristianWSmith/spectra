@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for App's replay keep-alive dock (the mini-player panel —
 // src/App.svelte's .rp-keepalive wrapper): the wrapper's ONE expand path
 // (click + Enter/Space on the collapsed panel), the close (X) button's

@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Reports builder (views/ReportsBuilder.svelte) —
 // the template AUTHORING surface: the list with its origin surfacing,
 // the editor's read-only/fork/delete rules, the create flow, the

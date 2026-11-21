@@ -1,3 +1,5 @@
+import { warm, compileIdle } from './compile-worker-node.mjs';
+await warm();
 // jsdom driver for Utility: the damage bars' design-language channels
 // (COLOR = the side each team held IN THAT round via sideparity.sideAtRound,
 // with the era flip visible across the halftime switch; PATTERN = team
@@ -182,7 +184,10 @@ function buildDb() {
 }
 
 
-const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms = 40) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await compileIdle();
+};
 
 let failures = 0;
 function check(name, cond, detail = '') {

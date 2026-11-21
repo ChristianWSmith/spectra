@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // The component read API (lib/componentruntime/readapi.js): metric reads
 // with the five states over the stored-value reads, the live query read,
 // navigation, and the error routing into the component's frame.

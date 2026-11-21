@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for RoundStrip — the POST-PREF reality (knife/warmup
 // discard, Phase 3): the show_knife_warmup_rounds setting is retired,
 // RoundStrip reads no kvstore key, and EVERY stored row renders — this

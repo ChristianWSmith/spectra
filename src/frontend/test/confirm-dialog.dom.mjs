@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for ConfirmDialog: the window.confirm() replacement —
 // promise resolution for confirm / cancel / dismissal, supersession by a
 // second prompt, and the rendered title/message/buttons.

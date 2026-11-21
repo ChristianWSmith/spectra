@@ -1,3 +1,4 @@
+import '../../test/compile-worker-node.mjs';
 // componentbuiltins.test.js — the built-in component registry
 // (componentbuiltins.js): every id sits in the reserved builtin namespace
 // (the Go twin refuses that prefix on a user name), and every shipped source

@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the Profiles view (Part 1: every column sortable,
 // default = matches DESC) and for the honest date labels (Part 2: the
 // demo-date ruling — a CS2 demo carries no played-at timestamp, so every

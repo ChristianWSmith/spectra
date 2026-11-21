@@ -1,3 +1,5 @@
+import { warm, compileIdle } from './compile-worker-node.mjs';
+await warm();
 // jsdom driver for the match-details table consistency pass: the Rounds
 // tab table and the Economy buy-types table (the far-left watch columns
 // and their round-level ▶ stamping, side-colored TEAM names in the
@@ -234,7 +236,10 @@ svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(harnessOut).href);
 
-const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+const sleep = async (ms = 40) => {
+  await new Promise((r) => setTimeout(r, ms));
+  await compileIdle();
+};
 
 let failures = 0;
 function check(name, cond, detail = '') {

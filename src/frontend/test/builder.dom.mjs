@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for the metrics Builder's list UX (owner wave A: the
 // built-in editor load + the scope/denominator filter pairs + the
 // denominator chip; the filter UI is now ONE multi-select; the Type

@@ -1,3 +1,4 @@
+import './compile-worker-node.mjs';
 // jsdom driver for Combat: the Engagements card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
