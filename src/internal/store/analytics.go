@@ -1347,7 +1347,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			(SELECT rps.side FROM round_player_sides rps
 			 JOIN rounds r ON r.match_id = rps.match_id AND r.number = rps.round
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
-			   AND NOT is_bot_key(rps.steam_id) AND rps.side IN ('ct','t')
+			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
 			0, 0
 		 `+playerHistoryFrom, scrub(steamID),
@@ -1676,7 +1676,7 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 		 JOIN round_player_sides rps
 		   ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
 		 JOIN rounds rd ON rd.match_id = prs.match_id AND rd.number = prs.round
-		 WHERE prs.steam_id = ? AND NOT is_bot_key(rps.steam_id) AND rps.side IN ('ct','t')
+		 WHERE prs.steam_id = ? AND rps.side IN ('ct','t')
 		 GROUP BY rps.side
 		 ORDER BY rps.side ASC`, scrub(steamID),
 	)

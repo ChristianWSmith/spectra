@@ -1128,6 +1128,11 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
+	if err := im.st.SettleMatchRows(matchID); err != nil {
+		cleanupPartial()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
+		return
+	}
 	// The match row has landed: from here on the copy belongs to the
 	// saved match, not to this job (the deferred delete-on-fail above
 	// stops applying — including to the store/analyze failures below).

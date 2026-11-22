@@ -69,3 +69,14 @@ with the rule applied (S03 harness, not yet built) to list the changed cells.
 Open question: rows between rounds (after `end_tick`, before the next freeze)
 are labeled with the round that just ended. Keep them or discard them? The
 rule above discards them.
+
+## Ruling (2026-11-22): keep post-round ticks, drop post-match ticks
+
+Owner: post-round rows stay. Post-match rows (after the final counted round's
+`end_tick`, when the match is decided) are dropped.
+
+Implemented: `store.SettleMatchRows` (`src/internal/store/settle.go`), called
+from the import path right after `SaveExtracted`. Covered by
+`TestSettleMatchRows` (post-round kept, post-match dropped, idempotent).
+Snapshot effect: 17,101 tick rows removed (the final-round tail). Sidecar
+positions and state are not changed by this rule.

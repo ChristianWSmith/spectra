@@ -46,3 +46,21 @@ needs a Source 2 vmap reader plus the embedded-physics decode.
 Recorded in `CS2.md`. S18 (encounter build) is blocked on that reader, not on
 the tracer's speed. The tracer benchmark and the coverage fraction are still
 unmeasured.
+
+## Options for CS2 geometry (2026-11-22)
+
+Owner asked for a web search. Options, with verification status:
+
+1. **ValveResourceFormat (C#, MIT, updated 2026-11-21).** Decodes `vmap_c` and
+   `vphys`. Usable by shelling out from Go (or porting the physics decode).
+   Strongest candidate. Pros: mature, maintained, covers CS2. Cons: a C#
+   dependency or a port; tracing would be a separate tool step.
+2. **Port a DMX/KV3 reader to Go.** Pros: pure Go. Cons: large, and the
+   half-edge mesh decode is extra work. Only if (1) is ruled out.
+3. **atomicbool/cs2-map-parser (C++, no license).** Reference only.
+4. **awpy / cs2-nav.** Navmesh, not collision. Not for tracing LOS.
+5. **galaco/bsp, bsp-tracer.** CS:GO only. Not applicable.
+
+Not verified here: the exact VRF API and output fidelity on a CS2 map. The
+next step, if the owner wants S18 explored, is a spike: export `de_cache`
+collision with VRF, count triangles, and time one ray-cast batch.

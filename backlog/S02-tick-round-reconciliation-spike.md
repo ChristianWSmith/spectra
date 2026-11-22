@@ -126,3 +126,10 @@ knife rows. That changes stored tick rows, so it needs a ruling (see S17).
 Fix options (a value change, so a ruling first): set `money_start` to the
 reset value (10000) for the first overtime round, or derive `money_start`
 from the tick sample at round start. Affects 20 cells on the snapshot.
+
+## Ruling (2026-11-22): OT money_start from the first tick (option B)
+
+Implemented in `SettleMatchRows`: `round_player_money.money_start` takes the
+player's first tick of the round. Changes 20 cells on the snapshot (the OT
+first sub-half). Every other round already matched, so no other value moves.
+Covered by `TestSettleMatchRows`.

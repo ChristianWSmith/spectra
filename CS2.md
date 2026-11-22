@@ -1807,3 +1807,29 @@ at the end of the section.
   `grep` of directory strings, not a decode); bsp-tracer README and
   `pkg/bsptracer` imports (`github.com/saiko-tech/bsp-tracer`, MIT, last
   updated 2024-03-22; retrieved 2026-11-21).
+
+- **Reading CS2 map geometry and collision (options, 2026-11-22)** — how to
+  get triangles from a CS2 map without a BSP reader.
+  - **ValveResourceFormat (VRF), C#, MIT.** The mature reference. It decodes
+    `vmap_c` and `vphys` (physics collision) and exports glTF. The
+    `MapExtract` class has `LoadWorldPhysics()`. Per its format-support
+    guide, `vphys` geometry goes into vmdl/vmap exports. Older community forks
+    list vphys as unsupported, so their tables are outdated.
+  - **atomicbool/cs2-map-parser, C++, no license.** Extracts a `vphys` from a
+    VPK and converts it to triangles for visibility checks. Not a Go option,
+    and unlicensed, so it is reference-only.
+  - **awpy / cs2-nav (Python, Rust).** Parse CS2 `.nav` navigation meshes.
+    These are walkable areas, not collision geometry. Useful for a different
+    question.
+  - **galaco/bsp (Go).** Source 1 BSP only (versions 20 and 21). Does not
+    read Source 2 vmaps.
+  - **No Go library found** that reads CS2 `vmap` or `vphys`. A Go route needs
+    a DMX/KV3 reader (vmap is a DMX file, binary encoding v4, with half-edge
+    mesh data). Or shell out to VRF.
+  **Source** — web search 2026-11-22; https://github.com/ValveResourceFormat/ValveResourceFormat;
+  https://s2v.app/ValveResourceFormat/guides/format-support.html;
+  https://s2v.app/ValveResourceFormat/api/ValveResourceFormat.IO.MapExtract.html;
+  https://github.com/AtomicBool/cs2-map-parser; https://awpy.readthedocs.io/en/latest/nav.html;
+  https://github.com/Galaco/bsp; https://developer.valvesoftware.com/wiki/VMAP.
+  The VRF `MapExtract` method names come from the search snippet; check them
+  against the repo before relying on them.

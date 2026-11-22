@@ -273,3 +273,22 @@ Not done this pass: S03 (harness), S06 (analysis inputs audit).
 
 Still dirty, not pruned (owner call): 7 worktrees with uncommitted work,
 listed in the chat summary.
+
+## 8. Rulings applied, third pass (2026-11-22)
+
+- **Post-round ticks:** kept. **Post-match ticks:** dropped (17,101 rows on the
+  snapshot). Implemented in `store.SettleMatchRows` (S17).
+- **OT `money_start`:** taken from the first tick of the round (S02, option B).
+  20 cells change.
+- **Bot filter:** the per-player reads that did nothing are removed.
+  `is_bot_key` stays as a tested function. No current read needs it.
+- **Worktrees:** the seven dirty ones are archived to
+  `~/Programming/spectra-archive/worktrees/` (diffs and untracked files), then
+  removed. Only the main checkout remains.
+- **Wipe:** owner will wipe when launching the app (kill tags rename needs it).
+- **Stale integration test:** `TestBuiltinMetricsPreview` updated to the
+  current schema. Scope is derived from the binds. The 147 / 114 / 33 contract
+  still holds.
+- **CS2 geometry options (S07, CS2.md):** ValveResourceFormat (C#, MIT) is the
+  candidate. Shelling out is cheaper than a Go DMX port. Spike: export
+  `de_cache` collision with VRF, count triangles, time a ray batch.
