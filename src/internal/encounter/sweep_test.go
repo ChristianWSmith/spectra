@@ -3,6 +3,7 @@ package encounter_test
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -170,6 +171,9 @@ func TestBoxSweep(t *testing.T) {
 	}
 	fmt.Printf("SWEEP kills %d (unexplained %d, clear under production box %d), control pairs %d\n",
 		len(kills), len(unexplained), len(clearBase), len(control))
+	if os.Getenv("SPECTRA_GRAZE") != "" {
+		grazeReport(kills, unexplained, occs)
+	}
 
 	type setting struct {
 		box encounter.Box
@@ -306,4 +310,63 @@ func shooterEye(p *sidecar.FramePlayer) [3]float64 {
 		z = 46
 	}
 	return [3]float64{p.X, p.Y, p.Z + z}
+}
+
+// grazeReport finds, for each unexplained kill, the smallest move of the shooter's
+// eye (in units, 26 directions per radius) that makes a corner of the production
+// box clear in any frame. A small move means the blocker only grazes the line.
+func grazeReport(kills []sweepKill, unexplained []int, occs map[string]encounter.Occluder) {
+	var dirs [][3]float64
+	for x := -1.0; x <= 1; x++ {
+		for y := -1.0; y <= 1; y++ {
+			for z := -1.0; z <= 1; z++ {
+				if x == 0 && y == 0 && z == 0 {
+					continue
+				}
+				n := math.Sqrt(x*x + y*y + z*z)
+				dirs = append(dirs, [3]float64{x / n, y / n, z / n})
+			}
+		}
+	}
+	radii := []float64{1, 2, 4, 8, 16, 32}
+	bucket := map[float64]int{}
+	var lines []string
+	for _, i := range unexplained {
+		k := kills[i]
+		best := math.Inf(1)
+		for _, f := range k.frames {
+			for _, r := range radii {
+				if r >= best {
+					break
+				}
+				found := false
+				for _, d := range dirs {
+					o := [3]float64{f.eye[0] + r*d[0], f.eye[1] + r*d[1], f.eye[2] + r*d[2]}
+					if encounter.AnyClearBox(o, f.enemy, encounter.DefaultBox, occs[k.mp]) {
+						found = true
+						break
+					}
+				}
+				if found {
+					best = r
+					break
+				}
+			}
+		}
+		for _, r := range radii {
+			if best <= r {
+				bucket[r]++
+				break
+			}
+		}
+		if math.IsInf(best, 1) {
+			bucket[math.Inf(1)]++
+		}
+		lines = append(lines, fmt.Sprintf("GRAZE %s: min eye move %.0f units", k.label, best))
+	}
+	for _, l := range lines {
+		fmt.Println(l)
+	}
+	fmt.Printf("GRAZE minimum eye move to clear a corner (unexplained kills): <=1: %d, <=2: %d, <=4: %d, <=8: %d, <=16: %d, <=32: %d, none within 32: %d\n",
+		bucket[1], bucket[2], bucket[4], bucket[8], bucket[16], bucket[32], bucket[math.Inf(1)])
 }

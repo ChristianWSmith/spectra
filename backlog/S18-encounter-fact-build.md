@@ -172,3 +172,15 @@ grid at four heights. 270 settings. Full table: `~/Programming/spectra-overlays/
 Conclusion: no box setting in this family captures the 36. Widening captures a few
 at the cost of more false positives, and the widest setting (32) is a box 64 units
 wide, twice a player's real width. The 36 are not explained by box tightness.
+
+## Position and grazing checks (2026-11-22)
+
+- **Position agreement** (`TestPositionAgreement`, opt-in): damage-event victim
+  positions vs the sidecar at the same tick, 3,019 events. Mean offset ~0; SD 1.4
+  units horizontal, 1.1 vertical. Compares two outputs of the same parse, so it
+  rules out sidecar storage error, not parser error. Eye height is not tested.
+- **Grazing** (`TestBoxSweep` with `SPECTRA_GRAZE=1`): minimum shooter-eye move (26
+  directions per radius) that clears a corner of the production box, for the 36.
+  2 kills clear at 1 unit, 2 at 2 units, 4 at 4 units, 4 at 8, 9 at 16, 3 at 32,
+  and 12 never clear within 32 units. Only about 4 are plausibly grazing a
+  position-error-sized margin. The rest need a move that crosses real geometry.
