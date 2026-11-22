@@ -142,3 +142,10 @@ merging. The 41k figure needs its basis checked.
 
 Decision needed before S18 builds: which seed rule (shot, kill, or both), and
 which window length.
+
+## Props (2026-11-22): status
+
+Entity models carry physics (hulls and meshes), and placements come from the
+entity lump. The first placed-prop check failed: kill clear-lines drop to 0.4%
+with props in the occluder. Hulls validate in local space, so the defect is in
+placement or the world transform. Not resolved. Props are off by default.

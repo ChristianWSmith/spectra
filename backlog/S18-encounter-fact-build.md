@@ -61,3 +61,21 @@ Validation of the visibility test (`internal/encounter/kill_validation_test.go`)
 
 Open for the owner: the 1.2% figure depends on the strict line-of-sight rule. A
 looser rule (any enemy audible, or any enemy within range) would cover more.
+
+## Update (2026-11-22, later): bounding-box sample
+
+Owner refinement: the top of the enemy box is eye height + 8 (64 standing, 46
+crouching); width is 32, centred on the origin. Samples are four corners at mid
+height and four at the top: 8 points per enemy. A line is clear if it reaches any.
+
+Results (7 matches): seeds 2,407 (was 1,971 with the centre sample). Covered tick
+rows 1.8% (was 1.2%). Killer line clear at the last frame before a kill: 90.3%
+(was 80.2%). Unflagged blocked kills 81 (was 181).
+
+## Props (2026-11-22): experimental, off by default
+
+Entity lump: `maps/<map>/entities/*.vents_c`, DATA `m_entityKeyValues` (363 entities
+on anubis, 72 with a model). Hull planes use `n.x <= d` (verified: all 77 anubis
+hulls clip). With props added to the occluder, kill clear-lines collapse to 0.4%,
+so placements or the transform are still wrong for many props. Props stay off
+until that is resolved.
