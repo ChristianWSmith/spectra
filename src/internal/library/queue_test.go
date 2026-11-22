@@ -459,13 +459,11 @@ func jobByID(t *testing.T, st *store.Store, id int64) models.Job {
 	return models.Job{}
 }
 
-// TestJobProgressMonotoneAcrossStages pins the job-wide progress
-// mapping: every spectra:job-progress point is in 0..1, never regresses,
-// and each stage lands inside ITS range — hash ≤0.10, copy ≤0.20,
-// decompress/parse start at 0.20, parse ≤0.90, store 0.90 (the old
-// progress-1-then-0.95 regression), analyze 0.95. Byte stages must
-// report determinate points (>0), not just the stage entry.
-func TestJobProgressMonotoneAcrossStages(t *testing.T) {
+// TestJobProgressPerPhase pins per-phase progress: every spectra:job-progress
+// point is in 0..1; within a phase points never regress; each phase starts at 0
+// and ends at 1 (the next phase restarts at 0); byte phases report determinate
+// points inside themselves; the finished job reads progress 1 / done.
+func TestJobProgressPerPhase(t *testing.T) {
 	var mu sync.Mutex
 	var seen []JobProgressEvent
 	im, st := newTestImporterEmit(t, fakeParse, func(name string, data any) {
@@ -478,9 +476,6 @@ func TestJobProgressMonotoneAcrossStages(t *testing.T) {
 			mu.Unlock()
 		}
 	})
-	// A demo large enough that the hash/copy/parse passes each read real
-	// bytes (still one Read per pass — the FIRST tick of a stage is
-	// forced, so determinate points are not throttled away).
 	path := writeDemo(t, "progress.dem", strings.Repeat("demo-bytes ", 4096))
 	ids := im.Enqueue([]string{path})
 	if len(ids) != 1 {
@@ -490,63 +485,80 @@ func TestJobProgressMonotoneAcrossStages(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	checkPerPhase(t, seen, []string{models.StageHash, models.StageCopy, models.StageParse, models.StageStore, models.StageAnalyze})
+	for _, stage := range []string{models.StageHash, models.StageCopy, models.StageParse} {
+		if !hasDeterminate(seen, stage) {
+			t.Errorf("stage %q never reported a determinate point inside (0,1)", stage)
+		}
+	}
+	if job.Progress != 1 || job.Stage != models.StageDone {
+		t.Errorf("finished job = progress %v stage %q, want 1/done", job.Progress, job.Stage)
+	}
+}
+
+// checkPerPhase verifies the per-phase contract on a sequence of progress
+// events. Only stages in want are checked; queued is allowed.
+func checkPerPhase(t *testing.T, seen []JobProgressEvent, want []string) {
+	t.Helper()
+	known := map[string]bool{}
+	for _, w := range want {
+		known[w] = true
+	}
 	if len(seen) == 0 {
 		t.Fatal("no spectra:job-progress events")
 	}
-	ranges := map[string][2]float64{
-		models.StageHash:       {0, progressHashEnd},
-		models.StageCopy:       {progressCopyStart, progressCopyEnd},
-		models.StageDecompress: {progressParseStart, progressParseStart},
-		models.StageParse:      {progressParseStart, progressParseEnd},
-		models.StageStore:      {progressStore, progressStore},
-		models.StageAnalyze:    {progressAnalyze, progressAnalyze},
-	}
+	stage := ""
 	var last float64
-	present := map[string]bool{}
-	determinate := map[string]bool{}
+	starts := map[string]float64{}
+	ends := map[string]float64{}
 	for _, ev := range seen {
 		if ev.Progress < 0 || ev.Progress > 1 {
 			t.Errorf("stage %q progress %v outside 0..1", ev.Stage, ev.Progress)
 		}
-		if ev.Progress < last {
-			t.Errorf("progress regressed: %v → %v at stage %q", last, ev.Progress, ev.Stage)
-		}
-		last = ev.Progress
-		rng, ok := ranges[ev.Stage]
-		if !ok {
-			if ev.Stage != models.StageQueued {
-				t.Errorf("unexpected stage %q", ev.Stage)
-			}
+		if ev.Stage == models.StageQueued || ev.Stage == models.StageDecompress {
+			// queued has no bar; decompress is the sniff that opens the
+			// parse run (its points are not part of a bar of their own).
 			continue
 		}
-		if ev.Progress < rng[0] || ev.Progress > rng[1] {
-			t.Errorf("stage %q progress %v outside [%v, %v]", ev.Stage, ev.Progress, rng[0], rng[1])
+		if !known[ev.Stage] {
+			t.Errorf("unexpected stage %q", ev.Stage)
+			continue
 		}
-		present[ev.Stage] = true
-		// The byte-driven stages must move INSIDE their range (a stage
-		// entry alone would be progress 0 in disguise); store/analyze are
-		// point ranges — being present at their point is the pin.
-		if rng[1] > rng[0] && ev.Progress > rng[0] {
-			determinate[ev.Stage] = true
+		if ev.Stage != stage {
+			stage = ev.Stage
+			last = 0
+			if _, seenBefore := starts[stage]; !seenBefore {
+				starts[stage] = ev.Progress
+			}
+		}
+		if ev.Progress < last {
+			t.Errorf("stage %q regressed within itself: %v → %v", ev.Stage, last, ev.Progress)
+		}
+		last = ev.Progress
+		ends[ev.Stage] = ev.Progress
+	}
+	for _, w := range want {
+		if _, ok := ends[w]; !ok {
+			t.Errorf("no progress event for stage %q", w)
+			continue
+		}
+		if starts[w] != 0 {
+			t.Errorf("stage %q started at %v, want 0 (its own bar)", w, starts[w])
+		}
+		if ends[w] != 1 {
+			t.Errorf("stage %q ended at %v, want 1", w, ends[w])
 		}
 	}
-	for stage := range ranges {
-		if !present[stage] {
-			t.Errorf("no progress event for stage %q", stage)
+}
+
+// hasDeterminate reports whether stage emitted a point strictly inside (0, 1).
+func hasDeterminate(seen []JobProgressEvent, stage string) bool {
+	for _, ev := range seen {
+		if ev.Stage == stage && ev.Progress > 0 && ev.Progress < 1 {
+			return true
 		}
 	}
-	for _, stage := range []string{models.StageHash, models.StageCopy, models.StageParse} {
-		if !determinate[stage] {
-			t.Errorf("stage %q never reported a determinate point above its range start", stage)
-		}
-	}
-	if last != progressAnalyze {
-		t.Errorf("last progress point = %v, want the analyze step %v", last, progressAnalyze)
-	}
-	// The jobs row agrees at the end (job-wide progress, done = 1).
-	if job.Progress != 1 || job.Stage != models.StageDone {
-		t.Errorf("finished job = progress %v stage %q, want 1/done", job.Progress, job.Stage)
-	}
+	return false
 }
 
 // TestEnqueueAfterShutdownFailsImmediately: once Shutdown has begun no

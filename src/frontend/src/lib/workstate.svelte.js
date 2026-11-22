@@ -58,7 +58,7 @@
 //
 // Aggregation for the chip (Q1): determinate progress only when exactly
 // ONE source is active and it is jobs/metrics with a single entry in its
-// store — its job-wide 0..1 (or done/total) and its stage ride StatusChip
+// store — its own phase 0..1 (or done/total) and its stage ride StatusChip
 // (progress 0 = the indeterminate bar per StatusChip's contract). Two
 // determinate stores, or any other active source, shows indeterminate —
 // no invented cross-source math.
@@ -111,7 +111,7 @@ function snapshot() {
 }
 
 // Determinate read: exactly one active source AND it is jobs/metrics with
-// a single entry → that entry's job-wide point + stage; anything else is
+// a single entry → that entry's phase point + stage; anything else is
 // 0 (StatusChip's indeterminate bar — never a fabricated aggregate).
 function determinate() {
   const activeSources =

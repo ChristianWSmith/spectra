@@ -30,15 +30,15 @@ const (
 // job-WIDE position (see Job), so a stage's value range is fixed:
 //
 //	queued  0.00        claimed, nothing read yet (indeterminate)
-//	hash    0.00 → 0.10 sha256 bytes read ÷ file size
-//	copy    0.10 → 0.20 copy-on-import bytes written ÷ file size
-//	decompress 0.20     zstd sniff — the byte counter starts over here
-//	parse   0.20 → 0.90 stream bytes consumed ÷ file size (demoinfocs
+//	hash    0 → 1       sha256 bytes read ÷ file size
+//	copy    0 → 1       copy-on-import bytes written ÷ file size
+//	decompress 0       zstd sniff (opens the parse run)
+//	parse   0 → 1       stream bytes consumed ÷ file size (demoinfocs
 //	                    pulls as it parses; frame totals are unknowable
 //	                    mid-parse for CS2, frames only signal the end)
-//	store   0.90        persisting the extract
-//	analyze 0.95        post-import analytics pass
-//	metrics 0.95 → 0.99 post-import metric compute pass (stored-metrics
+//	store   0 → 1       persisting the extract
+//	analyze 0 → 1       post-import analytics pass
+//	metrics 0 → 1       post-import metric compute pass (stored-metrics
 //	                    design §4; only emitted when the importer has an
 //	                    AfterAnalyze hook — a metric failure never fails
 //	                    the job)
@@ -500,12 +500,11 @@ type SoundEventPresence struct {
 	ByKind  map[string]int `json:"byKind"`
 }
 
-// Job is one import/reprocess unit (jobs table). Progress is 0..1 over
-// the WHOLE job — job-wide, monotone, NOT per-stage (the Library's
-// StatusChip renders it as one bar from 0 to 100%): 0 means "no determinate
-// point yet" and the UI draws an indeterminate bar for it, never 0%.
-// The per-stage value ranges live with the stage constants above; the
-// emitter that writes them is internal/library's progress reporter.
+// Job is one import/reprocess unit (jobs table). Progress is 0..1 for the
+// CURRENT stage: each stage fills its own bar from 0 to 100%, and the next
+// stage starts over at 0. 0 at a stage's start is a real point (the bar is
+// empty); the UI draws the indeterminate bar only for a job with no point yet
+// (queued). The emitter is internal/library's progress reporter.
 type Job struct {
 	ID         int64      `json:"id"`
 	Kind       string     `json:"kind"` // "import" | "reprocess"
