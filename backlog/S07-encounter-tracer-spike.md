@@ -91,9 +91,10 @@ and checked it against a brute-force reference (`src/internal/mappack/source2_ra
 - Validation: 150 random segments × 11 world meshes = 1,650 mesh queries.
   Disagreements with brute force: **0**. Blocked mesh hits found: 217.
 - Timing: 20,000 random segments against all 11 meshes, first hit ends a segment.
-  **≈330,000 segments/s** (about 3 µs each). Caveat: 68% of these random segments
-  are blocked, and blocked segments exit early. Unblocked sight lines are slower.
-  A timing on unblocked-only rays is still to do.
+  **≈330,000 segments/s** (about 3 µs each), mixed.
+  Unblocked-only segments (6,419 of them, every mesh walked): **≈516,000/s**.
+  The mixed figure is the conservative one. (An earlier note said unblocked
+  rays would be slower. Measured: they are not.)
 
 Scope limits: world geometry only (no prop hulls, no entity colliders), a
 single segment-vs-any-mesh query, no BVH build time (it is in the file).

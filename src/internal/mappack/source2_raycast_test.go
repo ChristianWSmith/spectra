@@ -101,6 +101,28 @@ func TestSource2SpikeRaycast(t *testing.T) {
 		}
 	}
 	elapsed := time.Since(start)
+	var open []source2.Segment
+	for _, s := range segs {
+		hit := false
+		for _, m := range meshes {
+			if m.Blocked(s) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			open = append(open, s)
+		}
+	}
+	start = time.Now()
+	for _, s := range open {
+		for _, m := range meshes {
+			_ = m.Blocked(s)
+		}
+	}
+	oe := time.Since(start)
+	fmt.Printf("raycast unblocked timing: %d unblocked segments in %s (%.0f per second, all meshes walked)\n",
+		len(open), oe, float64(len(open))/oe.Seconds())
 	fmt.Printf("raycast timing: %d segments in %s (%.0f per second, world-wide), %d blocked\n",
 		trials, elapsed, float64(trials)/elapsed.Seconds(), blocked)
 }
