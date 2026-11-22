@@ -2,25 +2,28 @@ package encounter
 
 import "math"
 
-// Box parameterizes the enemy sample box. The production rule is DefaultBox.
-// HalfWidth is the half-width of the box (units). TopAdd is the top of the box
-// above the eye (units). Lat and Fwd shift the box centre, in units, along the
-// enemy's right and forward directions (from their yaw), so a lean is expressed
-// relative to where they face.
+// Box parameterizes the enemy sample box. The production rule is ProductionBox.
+// Heights are absolute, above the enemy's origin (feet). Lat and Fwd shift the
+// centre along the enemy's right and forward directions (from their yaw).
 type Box struct {
 	HalfWidth float64
-	TopAdd    float64
+	TopStand  float64 // top sample height when standing
+	TopCrouch float64 // top sample height when crouching
+	Frac      float64 // mid-height samples at Frac * top
 	Lat, Fwd  float64
-	Grid      bool // sample a dense 5x5 grid across the box at 4 heights, not the 8 corners
+	Grid      bool // dense 5x5 grid at four heights, not the 8 corners
 }
 
-// DefaultBox is the production sample: 16 half-width, top at eye + 8, no shift.
-var DefaultBox = Box{HalfWidth: 16, TopAdd: 8}
+// ProductionBox is the rule in production: 16 half-width, top at eye + 8 (72
+// standing, 54 crouching), mid at half the top, no shift, corners.
+var ProductionBox = Box{HalfWidth: 16, TopStand: 72, TopCrouch: 54, Frac: 0.5}
 
-// TargetsBox returns the enemy's sample points for a box: four corners at mid
-// height and four at the top, 8 points, shifted by Lat and Fwd.
+// TargetsBox returns the enemy's sample points for a box.
 func TargetsBox(p Pos, b Box) [][3]float64 {
-	top := eyeZ(p) + b.TopAdd
+	top := b.TopStand
+	if p.Duck {
+		top = b.TopCrouch
+	}
 	yaw := p.Yaw * math.Pi / 180
 	fx, fy := math.Cos(yaw), math.Sin(yaw)
 	rx, ry := math.Sin(yaw), -math.Cos(yaw) // right of facing
@@ -38,7 +41,7 @@ func TargetsBox(p Pos, b Box) [][3]float64 {
 		return out
 	}
 	out := make([][3]float64, 0, 8)
-	for _, hz := range []float64{top * 0.5, top} {
+	for _, hz := range []float64{top * b.Frac, top} {
 		for _, dx := range []float64{-b.HalfWidth, b.HalfWidth} {
 			for _, dy := range []float64{-b.HalfWidth, b.HalfWidth} {
 				out = append(out, [3]float64{cx + dx, cy + dy, p.Z + hz})

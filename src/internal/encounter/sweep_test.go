@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -17,41 +18,41 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 )
 
-// sweepKill is one bullet kill with frames in its window: the shooter's eye and
-// the victim's position at each frame, and the map's occluder.
-type sweepKill struct {
-	mp     string
-	frames []sweepFrame
-	label  string
-}
-
+// sweepFrame is one frame in a kill's window: the shooter's eye at production
+// height, and the enemy's sampled position.
 type sweepFrame struct {
 	eye   [3]float64
 	enemy encounter.Pos
 }
 
-// TestBoxSweep sweeps the enemy box (half-width, top, lateral and forward lean)
-// and reports, for each setting: how many unexplained kills it makes clear
-// ("captured"), how many kills that are clear under the production box it loses
-// ("lost"), and a control: the share of random opposing pairs it calls clear.
-// Writes sweep.md to SPECTRA_OVERLAY_OUT. Dev tool, opt-in:
-//
-//	SPECTRA_ENC, SPECTRA_DATA, SPECTRA_OVERLAY_OUT
-func TestBoxSweep(t *testing.T) {
-	root, data, out := os.Getenv("SPECTRA_ENC"), os.Getenv("SPECTRA_DATA"), os.Getenv("SPECTRA_OVERLAY_OUT")
-	if root == "" || data == "" || out == "" {
-		t.Skip("set SPECTRA_ENC, SPECTRA_DATA, SPECTRA_OVERLAY_OUT")
-	}
+// sweepKill is a kill with frames in its window (the ground truth: the server
+// recorded it, so the shooter had a line to the victim at some point).
+type sweepKill struct {
+	mp     string
+	label  string
+	frames []sweepFrame
+}
+
+type sweepData struct {
+	kills   []sweepKill
+	control []sweepKill // random opposing pairs; not known blocked or clear
+	occs    map[string]encounter.Occluder
+}
+
+// loadSweep reads every kill (excluding wallbang, smoke, HE and molotov, which
+// need no line of sight) with the frames in [tick-64, tick+4], and a sample of
+// random opposing pairs 5 to 32 m apart as a permissiveness reference.
+func loadSweep(t *testing.T, root, data string) sweepData {
 	db, err := sql.Open("sqlite", filepath.Join(root, "spectra.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	mrows, _ := db.Query(`SELECT id, map FROM matches ORDER BY id`)
 	type mi struct {
 		id int64
 		mp string
 	}
+	mrows, _ := db.Query(`SELECT id, map FROM matches ORDER BY id`)
 	var ms []mi
 	for mrows.Next() {
 		var m mi
@@ -60,17 +61,15 @@ func TestBoxSweep(t *testing.T) {
 	}
 	mrows.Close()
 
-	occs := map[string]encounter.Occluder{}
-	var kills []sweepKill
-	var control []sweepKill // random opposing pairs, one frame each
+	d := sweepData{occs: map[string]encounter.Occluder{}}
 	rng := rand.New(rand.NewSource(11))
 	for _, m := range ms {
-		if _, ok := occs[m.mp]; !ok {
+		if _, ok := d.occs[m.mp]; !ok {
 			occ, err := occFromCache(data, m.mp)
 			if err != nil {
 				t.Fatal(err)
 			}
-			occs[m.mp] = occ
+			d.occs[m.mp] = occ
 		}
 		st, err := sidecar.Load(filepath.Join(root, "matches", strconv.FormatInt(m.id, 10)), 0, 0)
 		if err != nil {
@@ -105,128 +104,141 @@ func TestBoxSweep(t *testing.T) {
 					continue
 				}
 				k.frames = append(k.frames, sweepFrame{
-					eye:   shooterEye(fa),
+					eye:   eyeOf(fa, 64, 46),
 					enemy: encounter.Pos{X: fv.X, Y: fv.Y, Z: fv.Z, Duck: fv.Duck, Side: fv.Side, Yaw: fv.Yaw},
 				})
 			}
 			if len(k.frames) > 0 {
-				kills = append(kills, k)
+				d.kills = append(d.kills, k)
 			}
 		}
 		krows.Close()
-		// Control: random opposing pairs in frames, 8 to 50 m apart.
-		var opp []struct {
-			eye   [3]float64
-			enemy encounter.Pos
-		}
+		var opp []sweepFrame
 		for _, f := range st.Frames {
 			for _, a := range f.Players {
 				for _, b := range f.Players {
 					if a.SteamID == b.SteamID || a.Side == "" || b.Side == "" || a.Side == b.Side {
 						continue
 					}
-					d := (a.X-b.X)*(a.X-b.X) + (a.Y-b.Y)*(a.Y-b.Y)
-					if d < 200*200 || d > 1250*1250 {
+					dd := (a.X-b.X)*(a.X-b.X) + (a.Y-b.Y)*(a.Y-b.Y)
+					if dd < 200*200 || dd > 1250*1250 {
 						continue
 					}
-					opp = append(opp, struct {
-						eye   [3]float64
-						enemy encounter.Pos
-					}{shooterEye(&a), encounter.Pos{X: b.X, Y: b.Y, Z: b.Z, Duck: b.Duck, Side: b.Side, Yaw: b.Yaw}})
+					opp = append(opp, sweepFrame{eye: eyeOf(&a, 64, 46),
+						enemy: encounter.Pos{X: b.X, Y: b.Y, Z: b.Z, Duck: b.Duck, Side: b.Side, Yaw: b.Yaw}})
 				}
 			}
 		}
 		for i := 0; i < 400 && len(opp) > 0; i++ {
 			p := opp[rng.Intn(len(opp))]
-			control = append(control, sweepKill{mp: m.mp, frames: []sweepFrame{{eye: p.eye, enemy: p.enemy}}})
+			d.control = append(d.control, sweepKill{mp: m.mp, frames: []sweepFrame{p}})
 		}
 	}
+	return d
+}
 
-	// Unexplained: no clear frame under the production box, dense grid (the set
-	// the overlays show). Explained-clear: clear under the production box, 8 points.
-	dense := func(k sweepKill) bool {
-		for _, f := range k.frames {
-			if denseFrom(f.eye, f.enemy, occs[k.mp]) {
-				return true
-			}
-		}
-		return false
+// eyeOf is the eye of a player: origin plus the standing or crouching height.
+func eyeOf(p *sidecar.FramePlayer, stand, crouch float64) [3]float64 {
+	z := stand
+	if p.Duck {
+		z = crouch
 	}
-	base := func(k sweepKill) bool {
-		for _, f := range k.frames {
-			if encounter.AnyClearBox(f.eye, f.enemy, encounter.DefaultBox, occs[k.mp]) {
-				return true
-			}
-		}
-		return false
-	}
-	var unexplained, clearBase []int
-	for i, k := range kills {
-		if !dense(k) {
-			unexplained = append(unexplained, i)
-		}
-		if base(k) {
-			clearBase = append(clearBase, i)
-		}
-	}
-	fmt.Printf("SWEEP kills %d (unexplained %d, clear under production box %d), control pairs %d\n",
-		len(kills), len(unexplained), len(clearBase), len(control))
-	if os.Getenv("SPECTRA_GRAZE") != "" {
-		grazeReport(kills, unexplained, occs)
-	}
+	return [3]float64{p.X, p.Y, p.Z + z}
+}
 
-	type setting struct {
-		box encounter.Box
+// setting is one point in the search: a box and a shift of the shooter's eye.
+type setting struct {
+	box      encounter.Box
+	eyeShift float64
+}
+
+// clearKill reports whether any frame of k is clear under s.
+func clearKill(k sweepKill, s setting, occ encounter.Occluder) bool {
+	for _, f := range k.frames {
+		eye := [3]float64{f.eye[0], f.eye[1], f.eye[2] + s.eyeShift}
+		if encounter.AnyClearBox(eye, f.enemy, s.box, occ) {
+			return true
+		}
 	}
-	var settings []setting
-	for _, hw := range []float64{16, 20, 24, 28, 32} {
-		for _, top := range []float64{8, 12, 16} {
-			for _, lat := range []float64{-6, 0, 6} {
-				for _, fwd := range []float64{-6, 0, 6} {
-					settings = append(settings, setting{encounter.Box{HalfWidth: hw, TopAdd: top, Lat: lat, Fwd: fwd}})
-					settings = append(settings, setting{encounter.Box{HalfWidth: hw, TopAdd: top, Lat: lat, Fwd: fwd, Grid: true}})
+	return false
+}
+
+// settingGrid is the full search space. A random sample is taken instead when
+// SPECTRA_WIDE_N is set. The production setting is always included.
+func settingGrid() []setting {
+	var all []setting
+	for _, hw := range []float64{16, 20, 24, 28, 32, 36} {
+		for _, shift := range []float64{-8, 0, 8, 16} {
+			for _, frac := range []float64{0.25, 0.5, 0.75} {
+				for _, lat := range []float64{-8, -4, 0, 4, 8} {
+					for _, fwd := range []float64{-8, -4, 0, 4, 8} {
+						for _, grid := range []bool{false, true} {
+							for _, eyeShift := range []float64{-8, -4, 0, 4, 8} {
+								all = append(all, setting{encounter.Box{
+									HalfWidth: hw, TopStand: 72 + shift, TopCrouch: 54 + shift,
+									Frac: frac, Lat: lat, Fwd: fwd, Grid: grid,
+								}, eyeShift})
+							}
+						}
+					}
 				}
 			}
 		}
 	}
-	type result struct {
-		box                      encounter.Box
-		captured, lost, controlN int
-		clearAll                 int
+	if n, err := strconv.Atoi(os.Getenv("SPECTRA_WIDE_N")); err == nil && n > 0 && n < len(all) {
+		rng := rand.New(rand.NewSource(5))
+		rng.Shuffle(len(all), func(i, j int) { all[i], all[j] = all[j], all[i] })
+		all = all[:n]
 	}
-	results := make([]result, len(settings))
-	workers := runtime.NumCPU()
+	prod := setting{encounter.ProductionBox, 0}
+	for _, s := range all {
+		if s == prod {
+			return all
+		}
+	}
+	return append(all, prod)
+}
+
+// TestWideSweep searches the full parameter space for the setting that clears the
+// most kills. Every kill is a true line of sight (the server recorded it), so
+// recall on kills is the objective. Random opposing pairs are reported only as a
+// permissiveness reference: they are not known to be blocked.
+// Writes sweep_wide.csv and sweep_wide.md to SPECTRA_OVERLAY_OUT. Opt-in:
+//
+//	SPECTRA_ENC, SPECTRA_DATA, SPECTRA_OVERLAY_OUT, optional SPECTRA_WIDE_N
+func TestWideSweep(t *testing.T) {
+	root, data, out := os.Getenv("SPECTRA_ENC"), os.Getenv("SPECTRA_DATA"), os.Getenv("SPECTRA_OVERLAY_OUT")
+	if root == "" || data == "" || out == "" {
+		t.Skip("set SPECTRA_ENC, SPECTRA_DATA, SPECTRA_OVERLAY_OUT")
+	}
+	d := loadSweep(t, root, data)
+	settings := settingGrid()
+	fmt.Printf("WIDE kills %d, control pairs %d, settings %d\n", len(d.kills), len(d.control), len(settings))
+
+	type res struct {
+		clear   []bool
+		recall  int
+		control int
+	}
+	results := make([]res, len(settings))
 	var wg sync.WaitGroup
 	idx := make(chan int)
-	for w := 0; w < workers; w++ {
+	for w := 0; w < runtime.NumCPU(); w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for si := range idx {
-				b := settings[si].box
-				r := result{box: b}
-				for _, i := range unexplained {
-					if clearWith(kills[i], b, occs[kills[i].mp]) {
-						r.captured++
+				s := settings[si]
+				r := res{clear: make([]bool, len(d.kills))}
+				for i, k := range d.kills {
+					if clearKill(k, s, d.occs[k.mp]) {
+						r.clear[i] = true
+						r.recall++
 					}
 				}
-				isBase := map[int]bool{}
-				for _, i := range clearBase {
-					isBase[i] = true
-				}
-				for _, i := range clearBase {
-					if !clearWith(kills[i], b, occs[kills[i].mp]) {
-						r.lost++
-					}
-				}
-				for i := range kills {
-					if !isBase[i] && clearWith(kills[i], b, occs[kills[i].mp]) {
-						r.clearAll++
-					}
-				}
-				for _, c := range control {
-					if clearWith(c, b, occs[c.mp]) {
-						r.controlN++
+				for _, c := range d.control {
+					if clearKill(c, s, d.occs[c.mp]) {
+						r.control++
 					}
 				}
 				results[si] = r
@@ -239,83 +251,108 @@ func TestBoxSweep(t *testing.T) {
 	close(idx)
 	wg.Wait()
 
-	sort.SliceStable(results, func(i, j int) bool {
-		if results[i].captured != results[j].captured {
-			return results[i].captured > results[j].captured
-		}
-		return results[i].lost < results[j].lost
-	})
-	md := fmt.Sprintf("# Box sweep\n\nKills with frames: %d. Unexplained (no clear frame under the production box, dense grid): %d. Kills clear under the production box: %d. Control: %d random opposing pairs 5 to 32 m apart (clear share is a false-positive check).\n\n",
-		len(kills), len(unexplained), len(clearBase), len(control))
-	md += "| sampler | half-width | top above eye | lateral | forward | unexplained captured (of " + strconv.Itoa(len(unexplained)) + ") | production-clear lost (of " + strconv.Itoa(len(clearBase)) + ") | newly clear (not production-clear) | control clear |\n"
-	md += "|---|---|---|---|---|---|---|---|---|\n"
-	for _, r := range results {
-		sampler := "corners"
-		if r.box.Grid {
-			sampler = "grid"
-		}
-		md += fmt.Sprintf("| %s | %.0f | %.0f | %+.0f | %+.0f | %d | %d | %d | %.1f%% |\n",
-			sampler, r.box.HalfWidth, r.box.TopAdd, r.box.Lat, r.box.Fwd, r.captured, r.lost, r.clearAll, 100*float64(r.controlN)/float64(max(len(control), 1)))
-	}
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(out, "sweep.md"), []byte(md), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	fmt.Println("SWEEP written:", filepath.Join(out, "sweep.md"), "settings", len(settings))
-	for i := 0; i < len(results) && i < 8; i++ {
-		r := results[i]
-		fmt.Printf("SWEEP top: grid %v hw %.0f top %.0f lat %+.0f fwd %+.0f: captured %d, lost %d, newly clear %d, control %d\n",
-			r.box.Grid, r.box.HalfWidth, r.box.TopAdd, r.box.Lat, r.box.Fwd, r.captured, r.lost, r.clearAll, r.controlN)
-	}
-}
-
-// clearWith reports whether any frame of k is clear under box b.
-func clearWith(k sweepKill, b encounter.Box, occ encounter.Occluder) bool {
-	for _, f := range k.frames {
-		if encounter.AnyClearBox(f.eye, f.enemy, b, occ) {
-			return true
+	prodIdx := len(settings) - 1
+	best := 0
+	for i := range results {
+		if results[i].recall > results[best].recall {
+			best = i
 		}
 	}
-	return false
-}
-
-// denseFrom: the dense 3x3x5 grid from the eye, as in denseClearFrame.
-func denseFrom(eye [3]float64, p encounter.Pos, occ encounter.Occluder) bool {
-	top := eyeZ2(p) + 8
-	for _, dx := range []float64{-16, 0, 16} {
-		for _, dy := range []float64{-16, 0, 16} {
-			for k := 0; k <= 4; k++ {
-				if !occ(eye, [3]float64{p.X + dx, p.Y + dy, p.Z + top*float64(k)/4}) {
-					return true
-				}
+	// Kills no setting clears.
+	never := make([]bool, len(d.kills))
+	for i := range never {
+		never[i] = true
+		for _, r := range results {
+			if r.clear[i] {
+				never[i] = false
+				break
 			}
 		}
 	}
-	return false
-}
-
-func eyeZ2(p encounter.Pos) float64 {
-	if p.Duck {
-		return 46
+	nNever := 0
+	for _, n := range never {
+		if n {
+			nNever++
+		}
 	}
-	return 64
-}
-
-// shooterEye is the shooter's eye (64 standing, 46 crouching above the origin).
-func shooterEye(p *sidecar.FramePlayer) [3]float64 {
-	z := 64.0
-	if p.Duck {
-		z = 46
+	nBest := 0
+	for _, r := range results {
+		if r.recall == results[best].recall {
+			nBest++
+		}
 	}
-	return [3]float64{p.X, p.Y, p.Z + z}
+
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var csv strings.Builder
+	csv.WriteString("sampler,half_width,top_stand,top_crouch,frac,lat,fwd,eye_shift,kills_clear,kills_total,control_clear,control_total\n")
+	order := make([]int, len(settings))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		ra, rb := results[order[a]], results[order[b]]
+		if ra.recall != rb.recall {
+			return ra.recall > rb.recall
+		}
+		return ra.control < rb.control
+	})
+	for _, i := range order {
+		s, r := settings[i], results[i]
+		sampler := "corners"
+		if s.box.Grid {
+			sampler = "grid"
+		}
+		fmt.Fprintf(&csv, "%s,%.0f,%.0f,%.0f,%.2f,%+.0f,%+.0f,%+.0f,%d,%d,%d,%d\n", sampler, s.box.HalfWidth,
+			s.box.TopStand, s.box.TopCrouch, s.box.Frac, s.box.Lat, s.box.Fwd, s.eyeShift,
+			r.recall, len(d.kills), r.control, len(d.control))
+	}
+	if err := os.WriteFile(filepath.Join(out, "sweep_wide.csv"), []byte(csv.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var md strings.Builder
+	fmt.Fprintf(&md, "# Wide sweep\n\nKills (ground truth, the server recorded each): %d. Settings searched: %d.\n\n", len(d.kills), len(settings))
+	fmt.Fprintf(&md, "Production box (%s): clears %d of %d.\n\n", "16 half-width, top 72/54, mid 0.5, corners, eye 64/46", results[prodIdx].recall, len(d.kills))
+	fmt.Fprintf(&md, "Best: %d of %d (%d settings tie). Kills that no setting clears: %d.\n\n", results[best].recall, len(d.kills), nBest, nNever)
+	md.WriteString("Top 25 settings (sorted by kills clear, then random-pair clears):\n\n")
+	md.WriteString("| sampler | half-width | top stand/crouch | mid frac | lateral | forward | eye shift | kills clear | random-pair clears |\n|---|---|---|---|---|---|---|---|---|\n")
+	for n, i := range order {
+		if n >= 25 {
+			break
+		}
+		s, r := settings[i], results[i]
+		sampler := "corners"
+		if s.box.Grid {
+			sampler = "grid"
+		}
+		fmt.Fprintf(&md, "| %s | %.0f | %.0f/%.0f | %.2f | %+.0f | %+.0f | %+.0f | %d | %d of %d |\n", sampler, s.box.HalfWidth,
+			s.box.TopStand, s.box.TopCrouch, s.box.Frac, s.box.Lat, s.box.Fwd, s.eyeShift, r.recall, r.control, len(d.control))
+	}
+	md.WriteString("\nKills no setting clears:\n\n")
+	for i, n := range never {
+		if n {
+			fmt.Fprintf(&md, "- %s\n", d.kills[i].label)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(out, "sweep_wide.md"), []byte(md.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("WIDE production clears %d of %d; best %d (%d ties); never clear under any setting: %d\n",
+		results[prodIdx].recall, len(d.kills), results[best].recall, nBest, nNever)
+	fmt.Println("WIDE written:", filepath.Join(out, "sweep_wide.md"))
 }
 
-// grazeReport finds, for each unexplained kill, the smallest move of the shooter's
-// eye (in units, 26 directions per radius) that makes a corner of the production
-// box clear in any frame. A small move means the blocker only grazes the line.
-func grazeReport(kills []sweepKill, unexplained []int, occs map[string]encounter.Occluder) {
+// TestGrazeNeverClear finds, for each kill no setting clears, the smallest move of
+// the shooter's eye (26 directions per radius) that clears a corner of the
+// production box. Opt-in with the same environment as TestWideSweep.
+func TestGrazeNeverClear(t *testing.T) {
+	root, data := os.Getenv("SPECTRA_ENC"), os.Getenv("SPECTRA_DATA")
+	if root == "" || data == "" {
+		t.Skip("set SPECTRA_ENC, SPECTRA_DATA")
+	}
+	d := loadSweep(t, root, data)
 	var dirs [][3]float64
 	for x := -1.0; x <= 1; x++ {
 		for y := -1.0; y <= 1; y++ {
@@ -329,10 +366,7 @@ func grazeReport(kills []sweepKill, unexplained []int, occs map[string]encounter
 		}
 	}
 	radii := []float64{1, 2, 4, 8, 16, 32}
-	bucket := map[float64]int{}
-	var lines []string
-	for _, i := range unexplained {
-		k := kills[i]
+	for _, k := range d.kills {
 		best := math.Inf(1)
 		for _, f := range k.frames {
 			for _, r := range radii {
@@ -340,9 +374,9 @@ func grazeReport(kills []sweepKill, unexplained []int, occs map[string]encounter
 					break
 				}
 				found := false
-				for _, d := range dirs {
-					o := [3]float64{f.eye[0] + r*d[0], f.eye[1] + r*d[1], f.eye[2] + r*d[2]}
-					if encounter.AnyClearBox(o, f.enemy, encounter.DefaultBox, occs[k.mp]) {
+				for _, dd := range dirs {
+					o := [3]float64{f.eye[0] + r*dd[0], f.eye[1] + r*dd[1], f.eye[2] + r*dd[2]}
+					if encounter.AnyClearBox(o, f.enemy, encounter.ProductionBox, d.occs[k.mp]) {
 						found = true
 						break
 					}
@@ -353,20 +387,6 @@ func grazeReport(kills []sweepKill, unexplained []int, occs map[string]encounter
 				}
 			}
 		}
-		for _, r := range radii {
-			if best <= r {
-				bucket[r]++
-				break
-			}
-		}
-		if math.IsInf(best, 1) {
-			bucket[math.Inf(1)]++
-		}
-		lines = append(lines, fmt.Sprintf("GRAZE %s: min eye move %.0f units", k.label, best))
+		fmt.Printf("GRAZE %s: min eye move %.0f units (Inf = none within 32)\n", k.label, best)
 	}
-	for _, l := range lines {
-		fmt.Println(l)
-	}
-	fmt.Printf("GRAZE minimum eye move to clear a corner (unexplained kills): <=1: %d, <=2: %d, <=4: %d, <=8: %d, <=16: %d, <=32: %d, none within 32: %d\n",
-		bucket[1], bucket[2], bucket[4], bucket[8], bucket[16], bucket[32], bucket[math.Inf(1)])
 }

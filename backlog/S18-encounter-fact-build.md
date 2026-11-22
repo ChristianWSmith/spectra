@@ -184,3 +184,23 @@ wide, twice a player's real width. The 36 are not explained by box tightness.
   2 kills clear at 1 unit, 2 at 2 units, 4 at 4 units, 4 at 8, 9 at 16, 3 at 32,
   and 12 never clear within 32 units. Only about 4 are plausibly grazing a
   position-error-sized margin. The rest need a move that crosses real geometry.
+
+## Wide sweep (2026-11-22): full parameter search, recall on kills
+
+Tool: `TestWideSweep` (`src/internal/encounter/sweep_test.go`). Objective: kills
+cleared, since every kill is a true line of sight. Parameters: half-width 16 to 36,
+top height shift -8 to +16 (standing 72+, crouching 54+), mid fraction 0.25 to 0.75,
+lateral and forward lean -8 to +8, corner or grid sampler, shooter eye shift -8 to +8.
+Full space 18,000 settings; a random sample of 2,000 was run (about 35 minutes).
+Full table: `~/Programming/spectra-overlays/sweep_wide.csv`, summary `sweep_wide.md`.
+
+- Production box: 910 of 946.
+- Best: 920 of 946 (grid sampler, half-width 36, top 88/70, mid 0.25, lateral -4,
+  forward +8, eye shift +4). It also accepts 195 of 2,800 random opposing pairs,
+  against 130 for production.
+- 26 kills are cleared by no setting in the sample. They are listed in `sweep_wide.md`.
+  Most are on de_ancient, de_inferno and de_mirage.
+- The random-pair column is not a false-positive rate. Random pairs are not known to
+  be blocked, so it only shows how permissive a setting is.
+- The best settings raise the top sample height to 88, 16 above standing eye
+  height. The parameter family can gain a few kills, but it does not reach all 946.
