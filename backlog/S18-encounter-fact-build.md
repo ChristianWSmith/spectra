@@ -150,3 +150,25 @@ the main structures on those maps (collision thicker or more continuous than the
 visible gaps and windows). Position error or server desync would not cluster by
 map and mesh like this. Confirmation needs a GUI overlay of the blocking mesh along
 these sight lines.
+
+## Box sweep (2026-11-22): can the box size or offset capture the 36?
+
+Tool: `TestBoxSweep` (`src/internal/encounter/sweep_test.go`), parameters in `box.go`.
+Kills with frames: 946. Unexplained (no clear dense line in the window): 36.
+Production box clears 910 kills. Control: 2,800 random opposing pairs, 5 to 32 m apart.
+
+Swept: half-width 16 to 32, top 8 to 16 above the eye, lateral and forward lean
+of -6 to +6 relative to the enemy's yaw, and a corner sampler versus a dense 5x5
+grid at four heights. 270 settings. Full table: `~/Programming/spectra-overlays/sweep.md`.
+
+- Best with the corner sampler: 5 of 36 captured, 6 production-clear kills lost,
+  control false positives 5.7% (production 4.6%).
+- Best with the grid sampler: 6 of 36 captured, 0 lost, control 6.2% (production 4.8%).
+- Half-width is the only lever that matters. At top 8 and no lean, width 16 captures
+  0, 20 and 24 capture 1, and 28 and 32 capture 3. Lean shifts change at most one kill.
+- The corner sampler is not monotone in size: a larger box does not contain the
+  smaller box's corners, which is why it loses kills as it widens.
+
+Conclusion: no box setting in this family captures the 36. Widening captures a few
+at the cost of more false positives, and the widest setting (32) is a box 64 units
+wide, twice a player's real width. The 36 are not explained by box tightness.

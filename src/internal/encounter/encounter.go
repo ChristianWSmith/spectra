@@ -13,7 +13,8 @@ import "sort"
 type Pos struct {
 	X, Y, Z float64
 	Duck    bool
-	Side    string // "ct", "t" or ""
+	Side    string  // "ct", "t" or ""
+	Yaw     float64 // degrees; used only by the parameterized box (TargetsBox)
 }
 
 // Frame is one sidecar frame: the participants alive at Tick.
