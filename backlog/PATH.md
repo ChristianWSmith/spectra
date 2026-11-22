@@ -308,3 +308,10 @@ listed in the chat summary.
   the radar and sound extractors, writing a binary cache to the data directory.
   Not built yet. Open design points are in S07.
 - **License:** the owner will add VRF's MIT notice when the reader ships.
+
+## 10. Coverage pass (2026-11-22, later)
+
+- World collision extracts for all 26 install maps (sweep). The three competitive
+  maps (anubis, inferno, vertigo) use the conventional path. KV3 v4 is supported.
+- Extractor validates triangle indices before writing.
+- Geometry correctness beyond de_cache is unverified (see S07).

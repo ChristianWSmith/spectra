@@ -50,7 +50,14 @@ func ExtractWorldCollision(cs2Dir, mapName, outDir string) (string, int, error) 
 		}
 	}
 	if worldModel == "" {
-		return "", 0, fmt.Errorf("worldcol: %s lists no world_physics.vmdl", mapName)
+		// Some maps (de_anubis, de_inferno, de_vertigo) ship the model in the
+		// VPK but do not list it in the top manifest. The conventional path
+		// is then the only source.
+		if fileExistsInVPK(v, "maps/"+mapName+"/world_physics.vmdl_c") {
+			worldModel = "maps/" + mapName + "/world_physics.vmdl"
+		} else {
+			return "", 0, fmt.Errorf("worldcol: %s has no world_physics.vmdl", mapName)
+		}
 	}
 
 	modelData, found, err := v.read(worldModel + "_c")
@@ -74,6 +81,13 @@ func ExtractWorldCollision(cs2Dir, mapName, outDir string) (string, int, error) 
 		return "", 0, fmt.Errorf("worldcol: %w", err)
 	}
 
+	// Refuse output whose triangles point outside their mesh: that means a
+	// decode error, not a map.
+	for i, m := range meshes {
+		if at := m.Validate(); at >= 0 {
+			return "", 0, fmt.Errorf("worldcol: %s mesh %d triangle %d indexes outside its vertices", mapName, i, at)
+		}
+	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", 0, err
 	}
@@ -94,4 +108,10 @@ func ExtractWorldCollision(cs2Dir, mapName, outDir string) (string, int, error) 
 		return "", 0, err
 	}
 	return out, len(meshes), nil
+}
+
+// fileExistsInVPK reports whether the VPK holds the named file (case-insensitive).
+func fileExistsInVPK(v *vpk, name string) bool {
+	_, ok := v.entries[strings.ToLower(name)]
+	return ok
 }

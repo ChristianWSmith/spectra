@@ -134,7 +134,7 @@ func (r *reader) bytes(n int) ([]byte, error) {
 	return out, nil
 }
 
-func readHeaderV5(r *reader) (header, error) {
+func readHeader(r *reader, version int) (header, error) {
 	var h header
 	if _, err := r.bytes(16); err != nil { // format GUID (not needed to decode)
 		return h, err
@@ -170,8 +170,26 @@ func readHeaderV5(r *reader) (header, error) {
 	if _, err := r.u16(); err != nil { // countArrays (allocation hint)
 		return h, err
 	}
-	ints = []*int{&h.sizeUncompTotal, &h.sizeCompTotal, &h.countBlocks, &h.sizeBinaryBlobs, &h.countBytes2, &h.sizeBlockCompSizes,
-		&h.sizeUncompBuf1, &h.sizeCompBuf1, &h.sizeUncompBuf2, &h.sizeCompBuf2,
+	ints = []*int{&h.sizeUncompTotal, &h.sizeCompTotal, &h.countBlocks, &h.sizeBinaryBlobs}
+	for _, p := range ints {
+		if *p, err = r.i32(); err != nil {
+			return h, err
+		}
+	}
+	// v4 adds the byte-2 lane count and the blob frame-size table length.
+	if h.countBytes2, err = r.i32(); err != nil {
+		return h, err
+	}
+	if h.sizeBlockCompSizes, err = r.i32(); err != nil {
+		return h, err
+	}
+	if version == 4 {
+		// One buffer holds everything; the v5 buffer fields are absent.
+		h.sizeUncompBuf1 = h.sizeUncompTotal
+		h.sizeCompBuf1 = h.sizeCompTotal
+		return h, nil
+	}
+	ints = []*int{&h.sizeUncompBuf1, &h.sizeCompBuf1, &h.sizeUncompBuf2, &h.sizeCompBuf2,
 		&h.countBytes1Buf2, &h.countBytes2Buf2, &h.countBytes4Buf2, &h.countBytes8Buf2,
 		new(int), &h.countObjectsBuf2, new(int), new(int)} // countNodes, countArrays, countArrayElements are hints
 	for _, p := range ints {
@@ -183,6 +201,100 @@ func readHeaderV5(r *reader) (header, error) {
 		return h, fmt.Errorf("kv3: uncompressed total %d != buffers %d+%d", h.sizeUncompTotal, h.sizeUncompBuf1, h.sizeUncompBuf2)
 	}
 	return h, nil
+}
+
+// parseBufferV4 splits the single pre-v5 buffer: lanes, then the string table,
+// then the type table, then (when there are blobs) the blob length table, a
+// trailer and the frame sizes. The blob table starts after the types.
+func parseBufferV4(raw []byte, h header) (*buffers, []string, []byte, []int, []byte, error) {
+	b := &buffers{}
+	off := 0
+	take := func(n int) ([]byte, error) {
+		if off+n > len(raw) {
+			return nil, fmt.Errorf("kv3: v4 buffer underrun")
+		}
+		out := raw[off : off+n]
+		off += n
+		return out, nil
+	}
+	alignTo := func(a int) { off = (off + a - 1) / a * a }
+	var err error
+	if h.countBytes1 > 0 {
+		if b.b1.b, err = take(h.countBytes1); err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+	if h.countBytes2 > 0 {
+		alignTo(2)
+		if b.b2.b, err = take(h.countBytes2 * 2); err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+	if h.countBytes4 > 0 {
+		alignTo(4)
+		if b.b4.b, err = take(h.countBytes4 * 4); err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	}
+	// Pre-v5 empty 8-byte lanes are still aligned.
+	if h.countBytes8 > 0 {
+		alignTo(8)
+		if b.b8.b, err = take(h.countBytes8 * 8); err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	} else {
+		alignTo(8)
+	}
+	if h.countBytes4 == 0 {
+		return nil, nil, nil, nil, nil, fmt.Errorf("kv3: v4 buffer has no string count lane")
+	}
+	cs, err := b.b4.take(4)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	n := int(int32(binary.LittleEndian.Uint32(cs)))
+	strs := make([]string, 0, n)
+	strStart := off
+	for i := 0; i < n; i++ {
+		end := off
+		for end < len(raw) && raw[end] != 0 {
+			end++
+		}
+		if end >= len(raw) {
+			return nil, nil, nil, nil, nil, fmt.Errorf("kv3: v4 string table overruns buffer")
+		}
+		strs = append(strs, string(raw[off:end]))
+		off = end + 1
+	}
+	strLen := off - strStart
+	typesLen := h.countTypes - strLen
+	types, err := take(typesLen)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	if h.countBlocks == 0 {
+		t, err := take(4)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if binary.LittleEndian.Uint32(t) != kv3Trailer {
+			return nil, nil, nil, nil, nil, fmt.Errorf("kv3: v4 trailer missing")
+		}
+		return b, strs, types, nil, nil, nil
+	}
+	rest := raw[off:]
+	if len(rest) < h.countBlocks*4+4 {
+		return nil, nil, nil, nil, nil, fmt.Errorf("kv3: v4 blob table truncated")
+	}
+	lens := make([]int, h.countBlocks)
+	for i := range lens {
+		lens[i] = int(int32(binary.LittleEndian.Uint32(rest[i*4:])))
+	}
+	rest = rest[h.countBlocks*4:]
+	if binary.LittleEndian.Uint32(rest) != kv3Trailer {
+		return nil, nil, nil, nil, nil, fmt.Errorf("kv3: v4 blob table trailer missing")
+	}
+	return b, strs, types, lens, rest[4:], nil
 }
 
 // readBuffer reads one buffer: raw when uncompressed, one LZ4 block (1), or
@@ -436,6 +548,7 @@ func (d *decoder) readBlobs(r *reader, h header, lens []int, frames []byte, comp
 }
 
 type decoder struct {
+	v4       bool // pre-v5: object lengths come from the main lanes
 	strings  []string
 	buf      *buffers // main lanes (buffer 2)
 	aux      *buffers // auxiliary lanes (buffer 1)
@@ -456,13 +569,16 @@ func Decode(data []byte) (*KV3, error) {
 		return nil, fmt.Errorf("kv3: magic %#x is not binary KV3", magic)
 	}
 	version := int(magic & 0xFF)
-	if version != 5 {
-		return nil, fmt.Errorf("kv3: version %d unsupported by this spike (want 5)", version)
+	if version != 4 && version != 5 {
+		return nil, fmt.Errorf("kv3: version %d unsupported (want 4 or 5)", version)
 	}
 	r := &reader{b: data, pos: 4}
-	h, err := readHeaderV5(r)
+	h, err := readHeader(r, version)
 	if err != nil {
 		return nil, err
+	}
+	if version == 4 {
+		return decodeV4(r, h, version)
 	}
 	if h.compression > 2 {
 		return nil, fmt.Errorf("kv3: compression %d unsupported (z3)", h.compression)
@@ -649,11 +765,20 @@ func (d *decoder) value(t byte, l *buffers) (any, error) {
 		}
 		return arr, nil
 	case nObject:
-		b, err := d.objLens.take(4)
-		if err != nil {
-			return nil, err
+		var n int
+		if d.v4 {
+			v, err := d.u32Main()
+			if err != nil {
+				return nil, err
+			}
+			n = int(int32(v))
+		} else {
+			b, err := d.objLens.take(4)
+			if err != nil {
+				return nil, err
+			}
+			n = int(int32(binary.LittleEndian.Uint32(b)))
 		}
-		n := int(int32(binary.LittleEndian.Uint32(b)))
 		obj := make(map[string]any, n)
 		for i := 0; i < n; i++ {
 			if err := d.member(nil, obj); err != nil {
@@ -690,4 +815,57 @@ func (d *decoder) member(arr *[]any, obj map[string]any) error {
 	}
 	obj[d.str(int32(id))] = v
 	return nil
+}
+
+// decodeV4 reads a version-4 document: one buffer (lanes, strings, types), then
+// the blobs. Zstd compresses the buffer and the blobs as one frame, so the blobs
+// sit after the buffer's uncompressed bytes. LZ4 and uncompressed blobs use the
+// same stream layout as version 5.
+func decodeV4(r *reader, h header, version int) (*KV3, error) {
+	size := h.sizeUncompBuf1
+	if h.compression == 2 {
+		size += h.sizeBinaryBlobs
+	}
+	raw, err := readBuffer(r, h.compression, size, h.sizeCompBuf1)
+	if err != nil {
+		return nil, fmt.Errorf("kv3: v4 buffer: %w", err)
+	}
+	b, strs, types, lens, frames, err := parseBufferV4(raw[:h.sizeUncompBuf1], h)
+	if err != nil {
+		return nil, err
+	}
+	d := &decoder{v4: true, strings: strs, buf: b, aux: b, types: types}
+	if h.countBlocks > 0 {
+		if h.compression == 2 {
+			total := 0
+			for _, n := range lens {
+				total += n
+			}
+			if total != h.sizeBinaryBlobs {
+				return nil, fmt.Errorf("kv3: v4 blob lengths total %d, want %d", total, h.sizeBinaryBlobs)
+			}
+			region := raw[h.sizeUncompBuf1:]
+			d.blobs = make([][]byte, len(lens))
+			pos := 0
+			for i, n := range lens {
+				d.blobs[i] = region[pos : pos+n]
+				pos += n
+			}
+			t, err := r.u32()
+			if err != nil || t != kv3Trailer {
+				return nil, fmt.Errorf("kv3: v4 blob trailer")
+			}
+		} else if err := d.readBlobs(r, h, lens, frames, h.compression); err != nil {
+			return nil, err
+		}
+	}
+	t, err := d.readType()
+	if err != nil {
+		return nil, err
+	}
+	root, err := d.value(t.t, b)
+	if err != nil {
+		return nil, err
+	}
+	return &KV3{Version: version, Root: root}, nil
 }

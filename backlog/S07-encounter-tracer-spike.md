@@ -102,3 +102,22 @@ single segment-vs-any-mesh query, no BVH build time (it is in the file).
 Gate reading for G7 (tracer speed): the tracer is fast enough to be useful for
 per-event visibility. The coverage fraction is still unmeasured. The format
 question (S07 BSP) is answered: the reader works and no CS:GO BSP is needed.
+
+## Coverage update (2026-11-22, later)
+
+- **Anubis, Inferno, Vertigo now extract.** The manifest omits
+  `world_physics.vmdl`, but the VPK holds `maps/<map>/world_physics.vmdl_c`. The
+  extractor falls back to that conventional path. Meshes: anubis 9, inferno 9,
+  vertigo 11.
+- **KV3 version 4 added** (single-buffer pre-v5 layout, from VRF's version-4
+  branch). The four version-4 maps extract: ar_pool_day (12 meshes), cs_italy (8),
+  lobby_mapveto (3), workshop_preview_ancient / _dust2 / _inferno.
+- **Index validation.** The extractor rejects output whose triangles point outside
+  their vertices. All extracted maps pass.
+- **Sweep:** all 26 install maps (ex. vanity/retake variants) extract, and
+  `graphics_settings` is correctly refused (not a map).
+
+Still unverified: whether geometry is right on maps other than de_cache. Index
+validity and mesh counts are consistent, but the only visibility check is
+de_cache's brute-force comparison. A radar-overlay check per map would be the
+next validation.
