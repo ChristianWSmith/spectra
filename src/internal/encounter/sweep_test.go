@@ -21,6 +21,7 @@ import (
 // sweepFrame is one frame in a kill's window: the shooter's eye at production
 // height, and the enemy's sampled position.
 type sweepFrame struct {
+	tick  int
 	eye   [3]float64
 	enemy encounter.Pos
 }
@@ -34,9 +35,10 @@ type sweepKill struct {
 }
 
 type sweepData struct {
-	kills   []sweepKill
-	control []sweepKill // random opposing pairs; not known blocked or clear
-	occs    map[string]encounter.Occluder
+	noFrames int // kills dropped because no sidecar frame in their window
+	kills    []sweepKill
+	control  []sweepKill // random opposing pairs; not known blocked or clear
+	occs     map[string]encounter.Occluder
 }
 
 // loadSweep reads every kill (excluding wallbang, smoke, HE and molotov, which
@@ -104,12 +106,15 @@ func loadSweep(t *testing.T, root, data string) sweepData {
 					continue
 				}
 				k.frames = append(k.frames, sweepFrame{
+					tick:  f.Tick,
 					eye:   eyeOf(fa, 64, 46),
 					enemy: encounter.Pos{X: fv.X, Y: fv.Y, Z: fv.Z, Duck: fv.Duck, Side: fv.Side, Yaw: fv.Yaw},
 				})
 			}
 			if len(k.frames) > 0 {
 				d.kills = append(d.kills, k)
+			} else {
+				d.noFrames++
 			}
 		}
 		krows.Close()
@@ -167,7 +172,7 @@ func clearKill(k sweepKill, s setting, occ encounter.Occluder) bool {
 // SPECTRA_WIDE_N is set. The production setting is always included.
 func settingGrid() []setting {
 	var all []setting
-	for _, hw := range []float64{16, 20, 24, 28, 32, 36} {
+	for _, hw := range []float64{0, 8, 12, 16, 20, 24, 28, 32, 36} {
 		for _, shift := range []float64{-8, 0, 8, 16} {
 			for _, frac := range []float64{0.25, 0.5, 0.75} {
 				for _, lat := range []float64{-8, -4, 0, 4, 8} {

@@ -204,3 +204,16 @@ Full table: `~/Programming/spectra-overlays/sweep_wide.csv`, summary `sweep_wide
   be blocked, so it only shows how permissive a setting is.
 - The best settings raise the top sample height to 88, 16 above standing eye
   height. The parameter family can gain a few kills, but it does not reach all 946.
+
+## Fail-fast search (2026-11-22)
+
+`TestFailFast`: 27,000 settings (half-width 0 to 36, top shift, mid fraction, lean,
+sampler, eye shift), each rejected at the first kill it fails to clear. Hard kills
+first. Result: every setting fails on `de_ancient` tick 8013. No kills were dropped
+for missing frames (946 of 946 have frames).
+
+`TestOneKillEyeCube` on that kill: no shooter eye within ±8 units in x, y or z clears
+it, in any of its 64 frames. Sidecar positions match the recorded events (attacker
+eye = recorded position + 64; victim matches the kill event's position at tick 8012).
+So the sampled positions are not the cause. The occluder is the remaining suspect:
+removing mesh 0 of de_ancient clears it (ablation).
