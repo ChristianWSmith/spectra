@@ -315,3 +315,22 @@ listed in the chat summary.
   maps (anubis, inferno, vertigo) use the conventional path. KV3 v4 is supported.
 - Extractor validates triangle indices before writing.
 - Geometry correctness beyond de_cache is unverified (see S07).
+
+## 11. Decisions and results (2026-11-22, autonomous pass)
+
+- **Speed:** the owner's working assumption is that speed moves into encounters,
+  not the tick table. Proceeding on that basis. S04 tolerance is therefore a
+  question for the encounter build, not a tick-table dedup.
+- **Radar and spawn checks (item 6):** spawns sit on walkable floor on all 23 maps
+  with overviews (30 of 30). Radar-mask agreement is weak (58% floor vs 32%
+  random). A scale sweep does not peak at the stated transform. Inconclusive as a
+  geometry check.
+- **Props and entities (item 7):** feasible but larger. Entity physics is mostly
+  convex hulls (77 across 72 Anubis models, plus one mesh). Placing instances
+  needs the map's entity data, not yet investigated.
+- **Encounter coverage (item 8):** measured. Shot seeds cover 47% of tick rows at
+  2 s. Kill seeds cover 12%. See S07.
+- **Competitive pool cut (item 5):** blocked on your list. Search results are
+  not authoritative enough to decide "never in the pool" per map.
+- **Branch:** `backlog/sprint-2026-11` holds all backlog work. Archived worktrees
+  are deleted.

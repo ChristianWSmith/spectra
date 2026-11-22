@@ -121,3 +121,24 @@ Still unverified: whether geometry is right on maps other than de_cache. Index
 validity and mesh counts are consistent, but the only visibility check is
 de_cache's brute-force comparison. A radar-overlay check per map would be the
 next validation.
+
+## Gate measurement: encounter coverage (2026-11-22)
+
+Snapshot (7 matches, 9,817,283 tick rows). Share of tick rows whose (round, tick)
+falls inside a merged window per round (merge = overlap within a round).
+
+| Seed rule | Window | Covered rows | Merged windows |
+|---|---|---|---|
+| shots (`weapon_fire`) | 2 s after | **46.8%** | 1,274 |
+| shots | 1 s after | 35.8% | 2,438 |
+| shots | 0.5 s after | 26.2% | 3,699 |
+| kills (`kill`, victim set) | 2 s before | **12.4%** | 798 |
+
+Reading: the owner's expectation ("much smaller than tick rows") holds only for
+kill-seeded windows. Shot-seeded windows cover close to half the table at 2 s.
+The manifesto's "41k rows for one window per kill" does not match this either:
+1,117 kill windows of 128 ticks across ~10 players is about 1.4 M rows before
+merging. The 41k figure needs its basis checked.
+
+Decision needed before S18 builds: which seed rule (shot, kill, or both), and
+which window length.
