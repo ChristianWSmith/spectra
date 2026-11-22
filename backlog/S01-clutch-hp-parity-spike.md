@@ -39,3 +39,40 @@ is off the table (`source/PRUNE.md` option 8).
 ## Not covered
 Tested on the 7-match snapshot only. Whether the fallback branch is ever hit
 at scale is unknown.
+
+## Result (2026-11-21, scratch snapshot)
+
+Snapshot: the 7 golden demos in `golden/`, imported with the current code into
+a scratch instance (`match_id` 1..7 in import order: ancient, anubis, cache,
+dust2, inferno, mirage, nuke). Queries used the production `clutchCTE` text
+(`src/internal/store/clutch_sql.go`) with `:match_id` substituted, plus a
+per-clutch join to `player_ticks` and to damage events.
+
+| Measure | Count |
+|---|---|
+| Clutches (matches 1–7) | 183 (matches the FOLLOWUP "183 of 183" parity) |
+| Lost clutches (HP branch not used, `hp_left` = 0) | 138 |
+| Not lost, with a health-carrying damage event at or before end tick | 33 |
+| …of which tick HP equals that event's `health` | **33 of 33** |
+| Not lost, no health event (fallback `100 - summed damage`) | 12 |
+| …of which fallback equals tick HP | 11 of 12 |
+
+**Mismatch and cause.** One fallback case: match 7, round 23, victim
+`76561198067705522`. The round's `end_tick` is 151868. A damage event at tick
+151902 (34 ticks after the end; `attacker` empty, `damageTaken` 48, `health`
+52) is summed by the fallback because the fallback's bound is
+`(e.how = 'round' OR dh.tick <= e.end_tick)`: a `round` outcome has no upper
+bound. The fallback gives 52, tick HP at the end tick is 100.
+
+**Recommendation.**
+- Health branch: an event-derived HP path matches tick HP exactly on this
+  snapshot. It is usable as a performance option. `hp` stays in the tick tier
+  (owner decision).
+- Fallback: the post-round damage inclusion is a real defect. Fixing it changes
+  one stored `hp_left` value on the snapshot, so it needs a recorded ruling
+  before the change (migration rule). Not changed here.
+- Gate G1: positive for the health branch, with the fallback fix as a
+  prerequisite for any event-derived path that uses the fallback.
+
+**Not covered.** Seven matches only. Healing and the health-field semantics
+were not tested beyond this snapshot.

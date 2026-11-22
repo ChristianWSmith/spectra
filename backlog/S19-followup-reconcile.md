@@ -81,3 +81,16 @@ still open, based on the code as it is now.
 ## Not covered
 Items in the "not checked" list above. Each needs its own check before it can
 be marked done or stale.
+
+## Result (2026-11-21)
+- Applied to `source/FOLLOWUP.md`: removed the Go clutch detector item (stale:
+  no `Clutches`/`ReplaceClutches` call under `src/internal`, and no `clutches`
+  CREATE TABLE in `src/internal/store/schema.sql`); moved the economy view to a
+  "Decided (recorded)" section; narrowed the r51 item to the plugin side only
+  (`src/internal/plugin/manifest.go` `Scope`); added file paths to the open
+  `duplicate()`, `metricorder.js` and `alive_count` items.
+- Still open and unchanged: the rest of the "still open" list above.
+- Not checked in this pass (unchanged from the list above): delete
+  over-invalidation (r31), save-gate reserved binds, the WebKitGTK/CSP check,
+  the teamkill gate tests, and the retired-key absence checks.
+- Cannot verify here: `~/Programming/spectra-verify/` (absent on this machine).

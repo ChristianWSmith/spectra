@@ -205,3 +205,30 @@ it.
 useful on its own. The contingent wave depends on several gates that may not
 resolve, so the realistic outcome is that the early wave ships and the
 schema-changing work waits for data and decisions.
+
+## 6. Status log
+
+**2026-11-21, autonomous pass (Wave 1).** Uncommitted, on `main`.
+
+| Story | Result |
+|---|---|
+| S19 | Done. FOLLOWUP reconciled: stale clutch item removed, economy view recorded as decided, open items given paths. Not-checked items remain listed in S19. |
+| S11 | Implemented in `extract.go`. Sample once per frame. `player_ticks` fingerprint and sidecar bytes identical to baseline on `de_cache`. `TestGoldenPlayerTicks` passes. Import saving not measured (machine busy; S08 blocked). |
+| S01 | Result: health branch 33 of 33 exact; fallback 11 of 12, one case counts post-round damage (tick 151902 > end 151868). Gate G1 positive, with the fallback bound as a prerequisite (value change needs a ruling). |
+| S02 | Result: 9,244 unmatched rows = 3 mid-round bot joins (no side samples). 20 money mismatches = OT round 25 in two matches (cause probable, not proven). The "match 4 round 23 gap" is a 100-tick tail after round end, not a mid-round gap. |
+| S04 | Result: saved share 58.1% exact, 68.2% at 0.01, 71.2% at 0.1, 78.3% at 1.0. Start/stop check not run; G4 not decided. |
+
+**Scratch snapshot.** The 7 golden demos were imported into a scratch XDG
+instance (outside the repo) and used for S01, S02, S04 and S11. Their `match_id`s
+are import order, not the owner's numbering.
+
+**Not started this pass.** S03 (harness), S05 (equipment and spend), S06
+(analysis inputs audit), S07 (encounter tracer and BSP format).
+
+**Needs the owner.**
+- S13 needs a human GUI acceptance step. No GUI is used here, per AGENTS.md.
+- S08 needs a 50+ match library. It does not exist in this environment.
+- S21 and S16 are owner rulings. S02 raised the presence question, and S01 raised
+  the fallback post-round bound, which needs a ruling before any value change.
+- The FOLLOWUP "match 4 round 23" presence case should be checked against the
+  original snapshot (its numbering is not this one).

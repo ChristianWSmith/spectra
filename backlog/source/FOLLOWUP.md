@@ -16,9 +16,12 @@ and so on are the sub-docs of that directory.
 - **Engagements table identifier.** The `engagements` table (`schema.sql`)
   keeps its name; only user-facing text was renamed. Decide whether the table
   is renamed, and if so, ride it on the next wipe. Source: PLAN §5 C5g, r32.
-- **Economy view as a builtin.** PLAN lists this as not decided, but
-  `src/frontend/src/lib/econpanels.js` already ships it. Record the decision
-  as made, or revert it. Source: PLAN §5 C5 "Open for the owner".
+
+## Decided (recorded)
+
+- **Economy view as a builtin.** Shipped as a builtin in
+  `src/frontend/src/lib/econpanels.js`. Recorded as decided (S19, 2026-11-21).
+  Source: PLAN §5 C5 "Open for the owner".
 
 ## Deferred
 
@@ -74,35 +77,30 @@ and so on are the sub-docs of that directory.
 
 ## Cleanup owed
 
-- **Retired `metrics` furniture (r51).** `schema.sql` `metrics` still has
-  `scope`, `subject` and `partition`. `ValidateExpr` takes them as parameters
-  (`src/metricservice.go`), and plugin manifests still declare scope
-  (`src/internal/plugin/manifest.go`). Remove them with the wipe.
-  Source: PLAN §2 r51; 03 §1.
+- **Retired `metrics` furniture (r51), plugin side only.** The `metrics` table
+  in `src/internal/store/schema.sql` no longer has `scope`, `subject` or
+  `partition` (checked 2026-11-21). Still open: plugin manifests declare scope
+  (`src/internal/plugin/manifest.go`, the `Scope` field and the
+  `reportTpls` scope check). Remove with the wipe. Source: PLAN §2 r51; 03 §1.
 - **Expr-named leftovers.** `ValidateExpr` and `ExprError` (`src/metricservice.go`)
   keep the grammar's name. The `expr` column itself stays by design.
   Source: PLAN §5 B3.
-- **Go clutch detector still runs (r53).** `analytics/compute.go` calls
-  `Clutches` and `ReplaceClutches`. The `clutches` table (`schema.sql`) and the
-  `clutches` and `match_clutch_wins` seeds still read it. Compute clutches inline
-  from `player_ticks`, then drop the table with the wipe. The parity result
-  (183 of 183) is already recorded. Source: PLAN §2 r53.
 - **Duplicate fold metric (r30).** `raw_rounds_played` duplicates the
   `rounds_played` builtin. Retire one. This is the only duplicate pair found.
   Source: PLAN §2 r30.
-- **Builtin duplicate action (r43, 04 §7).** `ComponentBuilder.svelte` still has
-  `duplicate()`, which copies built-ins. Ruling 43 cancelled duplicate-to-edit
+- **Builtin duplicate action (r43, 04 §7).** `src/frontend/src/lib/views/ComponentBuilder.svelte`
+  still has `duplicate()` (line ~330, button `.cb-duplicate` ~558), which copies built-ins. Ruling 43 cancelled duplicate-to-edit
   for builtins. Remove that path, or keep it for user components only.
   Source: PLAN §2 r43; 04 §7.
 - **Alive-count family name (r37).** The owner chose "XvY". The code still uses
-  `alive_count` and the label "Alive count (raw SQL)" (`schema.sql`). Rename.
+  `alive_count` and the label "Alive count (raw SQL)" (`src/internal/store/schema.sql`). Rename.
   Source: PLAN §2 r37.
 - **Retired-key names in test absence checks.** `metric_order_*`,
   `metric_pins_overview`, `metric_economy`, `metric_hidden_*`,
   `scoreboard_starts_transposed` and the `spectra:pinned-metrics` key appear in
   `src/frontend/src/lib/*.test.js` and `src/frontend/test/*.mjs`. Keep them only
   as absence checks, and check the wording reads that way. Source: PLAN §5 C5e.
-- **`metricorder.js` naming.** The module still provides the metric sequence to
+- **`metricorder.js` naming.** `src/frontend/src/lib/metricorder.js`. The module still provides the metric sequence to
   the builtin panels (`composedSequence`, `inSequence`, `rawItems`, `isRawId`).
   Ruling 33 removed ordering, so trim it to the default sequence and drop the
   unused names. Source: PLAN §2 r33; PLAN §5 C5e.
