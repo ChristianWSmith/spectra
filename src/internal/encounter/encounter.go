@@ -1,0 +1,181 @@
+// Package encounter builds shot-seeded visibility windows (tier-2 encounters).
+//
+// Rule (owner, 2026-11-22): a shot is a seed only when the shooter has a line of
+// sight to an enemy at that tick. The window for the (shooter, enemy) pair
+// extends backward and forward as far as the pair stays visible and alive,
+// within its round. A shot whose tick falls inside an existing window of the
+// same shooter is skipped as a seed.
+package encounter
+
+import "sort"
+
+// Pos is one participant's sampled position at a frame.
+type Pos struct {
+	X, Y, Z float64
+	Duck    bool
+	Side    string // "ct", "t" or ""
+}
+
+// Frame is one sidecar frame: the participants alive at Tick.
+type Frame struct {
+	Tick    int
+	Players map[uint64]Pos
+}
+
+// Shot is one weapon_fire event with a known shooter and round.
+type Shot struct {
+	Round   int
+	Tick    int
+	Shooter uint64
+}
+
+// Range is a round's tick span (inclusive).
+type Range struct{ Start, End int }
+
+// Occluder reports whether the segment between two points is blocked.
+type Occluder func(a, b [3]float64) bool
+
+// Encounter is one visibility window for a shooter and an enemy.
+type Encounter struct {
+	Round      int
+	Shooter    uint64
+	Enemy      uint64
+	Start, End int
+	Seed       int // tick of the seeding shot
+}
+
+// Stats summarizes one build.
+type Stats struct {
+	Shots, Seeds, SkippedCovered, NoLineOfSight int
+}
+
+// eyeZ is the eye height above the sampled origin (crouching or standing).
+func eyeZ(p Pos) float64 {
+	if p.Duck {
+		return 46
+	}
+	return 64
+}
+
+func eye(p Pos) [3]float64 { return [3]float64{p.X, p.Y, p.Z + eyeZ(p)} }
+
+// frameAt returns the index of the frame at tick, or the nearest one, or -1.
+func frameAt(frames []Frame, tick int) int {
+	i := sort.Search(len(frames), func(k int) bool { return frames[k].Tick >= tick })
+	if i < len(frames) && frames[i].Tick == tick {
+		return i
+	}
+	if i > 0 && (i == len(frames) || tick-frames[i-1].Tick <= frames[i].Tick-tick) {
+		return i - 1
+	}
+	if i < len(frames) {
+		return i
+	}
+	return -1
+}
+
+// visibleEnemy returns the first enemy of the shooter visible at frame f, or
+// ok=false when none is.
+func visibleEnemy(f Frame, shooter uint64, occ Occluder) (enemy uint64, ok bool) {
+	s, present := f.Players[shooter]
+	if !present || s.Side == "" {
+		return 0, false
+	}
+	se := eye(s)
+	// Deterministic order: lowest steam id first.
+	ids := make([]uint64, 0, len(f.Players))
+	for id := range f.Players {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		p := f.Players[id]
+		if id == shooter || p.Side == "" || p.Side == s.Side {
+			continue
+		}
+		if !occ(se, eye(p)) {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// pairVisibleAt reports whether the shooter and enemy are both present and
+// the segment between them is clear at frame f.
+func pairVisibleAt(f Frame, shooter, enemy uint64, occ Occluder) bool {
+	s, ok1 := f.Players[shooter]
+	e, ok2 := f.Players[enemy]
+	if !ok1 || !ok2 || s.Side == "" || e.Side == "" || s.Side == e.Side {
+		return false
+	}
+	return !occ(eye(s), eye(e))
+}
+
+// Build returns the encounters for the shots, in shot order. frames must be
+// sorted by Tick. maxHalf bounds how far a window may extend from its seed
+// (ticks, each direction); 0 means no bound beyond the round.
+func Build(frames []Frame, shots []Shot, rounds map[int]Range, occ Occluder, maxHalf int) ([]Encounter, Stats) {
+	sort.Slice(shots, func(i, j int) bool { return shots[i].Tick < shots[j].Tick })
+	var st Stats
+	var out []Encounter
+	byShooter := map[uint64][]Encounter{}
+	covered := func(shooter uint64, tick int) bool {
+		for _, e := range byShooter[shooter] {
+			if tick >= e.Start && tick <= e.End {
+				return true
+			}
+		}
+		return false
+	}
+	for _, sh := range shots {
+		st.Shots++
+		if covered(sh.Shooter, sh.Tick) {
+			st.SkippedCovered++
+			continue
+		}
+		rng, ok := rounds[sh.Round]
+		if !ok {
+			continue
+		}
+		i := frameAt(frames, sh.Tick)
+		if i < 0 {
+			st.NoLineOfSight++
+			continue
+		}
+		enemy, ok := visibleEnemy(frames[i], sh.Shooter, occ)
+		if !ok {
+			st.NoLineOfSight++
+			continue
+		}
+		st.Seeds++
+		lo := rng.Start
+		hi := rng.End
+		if maxHalf > 0 {
+			if sh.Tick-maxHalf > lo {
+				lo = sh.Tick - maxHalf
+			}
+			if sh.Tick+maxHalf < hi {
+				hi = sh.Tick + maxHalf
+			}
+		}
+		// Backward from the seed frame while the pair stays visible.
+		start := frames[i].Tick
+		for k := i - 1; k >= 0 && frames[k].Tick >= lo; k-- {
+			if !pairVisibleAt(frames[k], sh.Shooter, enemy, occ) {
+				break
+			}
+			start = frames[k].Tick
+		}
+		end := frames[i].Tick
+		for k := i + 1; k < len(frames) && frames[k].Tick <= hi; k++ {
+			if !pairVisibleAt(frames[k], sh.Shooter, enemy, occ) {
+				break
+			}
+			end = frames[k].Tick
+		}
+		enc := Encounter{Round: sh.Round, Shooter: sh.Shooter, Enemy: enemy, Start: start, End: end, Seed: sh.Tick}
+		out = append(out, enc)
+		byShooter[sh.Shooter] = append(byShooter[sh.Shooter], enc)
+	}
+	return out, st
+}

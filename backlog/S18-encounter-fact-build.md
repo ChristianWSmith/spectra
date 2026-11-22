@@ -35,3 +35,29 @@ tier 1 by decision.
 - Map format for CS2 (manifesto §7.2).
 - Whether gaps outside encounter windows are acceptable for each moved column.
   Any metric reading tier 2 must label coverage as partial.
+
+## Status update (2026-11-22): owner go, seed rule chosen
+
+Owner rule: a shot seeds an encounter only when the shooter has a line of sight
+to an enemy at that tick. The window extends backward and forward as far as the
+(shooter, enemy) pair stays visible and alive, within the round. A shot that falls
+inside an existing window of the same shooter is skipped as a seed.
+
+Implemented: `internal/encounter` (builder). Spike driver: `internal/encounter/encounter_spike_test.go`.
+
+Snapshot result (7 matches, 9,817,283 tick rows):
+- Shots 23,334. Skipped (covered by an encounter): 3,963. Seeds: 1,971.
+  No visible enemy at the shot tick: the remaining 17,400 (about 75%).
+- Covered tick rows (participants in windows): **1.2%** (116,028 rows).
+
+Validation of the visibility test (`internal/encounter/kill_validation_test.go`):
+- At the frame closest to each kill (1,094 kills), the killer's line to the victim
+  is clear in 80% of kills. Of the 20% blocked, 36 are flagged wallbang. 181 are
+  unexplained: occluder or sampling error, not measured further.
+- Eye offset sweep: clear-line rate rises from 20% (feet) to 80% at 64 and 81% at
+  72. Standing eye height 64 is the default. Sampled Z is the feet.
+- About 95% of shots have a living enemy in the frame. The low seed rate comes
+  from the line-of-sight test, not from a missing enemy lookup.
+
+Open for the owner: the 1.2% figure depends on the strict line-of-sight rule. A
+looser rule (any enemy audible, or any enemy within range) would cover more.

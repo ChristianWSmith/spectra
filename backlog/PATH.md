@@ -334,3 +334,19 @@ listed in the chat summary.
   not authoritative enough to decide "never in the pool" per map.
 - **Branch:** `backlog/sprint-2026-11` holds all backlog work. Archived worktrees
   are deleted.
+
+## 12. Pass of 2026-11-22 (owner answers applied)
+
+- **S21 (absence rule):** safe option. Absence is absence; no inference.
+- **Support scope:** world collision is restricted to the competitive-pool keep
+  list (ancient, anubis, cache, dust2, inferno, mirage, nuke, overpass, train,
+  vertigo). All ten decode as KV3 v5, so the v4 path is removed.
+- **Encounter seeds (S18):** shot-with-visibility, window extended while the pair
+  stays visible and alive, shots covered by an existing window skipped. Result on
+  the snapshot: 1,971 encounters, 1.2% of tick rows covered. The line-of-sight
+  validity is 80% on kills (see S18).
+- **Props and entities (item 4):** not found. Entity physics is convex hulls. The
+  scene objects in world nodes reference no entity models (0 of 1,330). The
+  placement data for entity props is not located, so this stopped.
+- **Radar and GUI checks (items 3 and 6):** deferred to GUI testing.
+- **Branch:** all of this is on `backlog/sprint-2026-11`. Not merged to main.

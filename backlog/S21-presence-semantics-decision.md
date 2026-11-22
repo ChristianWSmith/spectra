@@ -58,3 +58,10 @@ would leave mid-round absence as the only case, and no mid-round gap was
 found on the snapshot. Of the 11 player-rounds that stop more than 1 s early,
 3 are bot keys. The 8 human-key ones (gaps 0.3 to 34 s) are NOT yet checked
 against the event log; only the de_cache case above is.
+
+## Ruling (2026-11-22): safe option
+
+Owner: the safe option for now. Absence is absence. A player with no row at a
+tick is not present there, and no value is inferred from the last row. Pruning
+that relies on "no row means no change" is not done. Other pruning strategies
+may come later.
