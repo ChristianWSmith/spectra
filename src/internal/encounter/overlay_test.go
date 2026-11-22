@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -226,89 +225,69 @@ func renderKill(db *sql.DB, root, data, out string, mid int64, tk int, killer, v
 		}
 	}
 
-	// Plan view over the radar.
-	raw2, err := os.ReadFile(filepath.Join(data, "maps", ex.Map, "meta.json"))
-	if err != nil {
-		return ex, err
+	// Six orthographic views, centred on the midpoint of the two eyes: the four
+	// sides (looking along +x, -x, +y, -y), above (looking down) and below
+	// (looking up). Each view draws the world triangles in the window, the eight
+	// target rays (green clear, red blocked, the first blocking triangle red), the
+	// killer (yellow) and the victim (magenta).
+	cx := (ea[0] + float64(pv.X)) / 2
+	cy := (ea[1] + float64(pv.Y)) / 2
+	cz := (ea[2] + float64(pv.Z)) / 2
+	const half = 1000.0
+	views := []struct {
+		name string
+		proj func(p [3]float64) (h, v float64)
+	}{
+		{"east", func(p [3]float64) (float64, float64) { return p[1] - cy, p[2] - cz }},  // looking +x: horizontal y
+		{"west", func(p [3]float64) (float64, float64) { return cy - p[1], p[2] - cz }},  // looking -x
+		{"north", func(p [3]float64) (float64, float64) { return cx - p[0], p[2] - cz }}, // looking +y: horizontal -x
+		{"south", func(p [3]float64) (float64, float64) { return p[0] - cx, p[2] - cz }}, // looking -y
+		{"above", func(p [3]float64) (float64, float64) { return p[0] - cx, p[1] - cy }}, // looking down
+		{"below", func(p [3]float64) (float64, float64) { return p[0] - cx, cy - p[1] }}, // looking up
 	}
-	var meta struct {
-		Transform struct{ PosX, PosY, Scale float64 } `json:"transform"`
-	}
-	if err := json.Unmarshal(raw2, &meta); err != nil {
-		return ex, err
-	}
-	tf := meta.Transform
-	rf, err := os.Open(filepath.Join(data, "maps", ex.Map, "radar.png"))
-	if err != nil {
-		return ex, err
-	}
-	radar, err := png.Decode(rf)
-	rf.Close()
-	if err != nil {
-		return ex, err
-	}
-	plan := image.NewRGBA(radar.Bounds())
-	draw.Draw(plan, plan.Bounds(), radar, image.Point{}, draw.Src)
-	toPix := func(x, y float64) (int, int) {
-		return int((x - tf.PosX) / tf.Scale), int((tf.PosY - y) / tf.Scale)
-	}
-	for _, m := range meshes {
-		for _, tr := range m.Triangles {
-			a, b, c := m.Vertices[tr[0]], m.Vertices[tr[1]], m.Vertices[tr[2]]
-			edgePlan(plan, toPix, a, b, color.RGBA{90, 90, 255, 40})
-			edgePlan(plan, toPix, b, c, color.RGBA{90, 90, 255, 40})
-			edgePlan(plan, toPix, c, a, color.RGBA{90, 90, 255, 40})
+	const size = 800
+	for _, vw := range views {
+		img := image.NewRGBA(image.Rect(0, 0, size, size))
+		pix := func(p [3]float64) (int, int) {
+			h, v := vw.proj(p)
+			return int((h + half) / (2 * half) * size), int((half - v) / (2 * half) * size)
 		}
-	}
-	for _, sg := range segs {
-		col := color.RGBA{0, 220, 0, 255}
-		if sg.blocked {
-			col = color.RGBA{255, 40, 40, 255}
-			tr := meshes[sg.hitMesh].Triangles[sg.hitTri]
-			for _, v := range []source2.Vec3{meshes[sg.hitMesh].Vertices[tr[0]], meshes[sg.hitMesh].Vertices[tr[1]], meshes[sg.hitMesh].Vertices[tr[2]]} {
-				x, y := toPix(float64(v[0]), float64(v[1]))
-				dot(plan, x, y, 3, color.RGBA{255, 0, 0, 255})
+		inWindow := func(p [3]float64) bool {
+			h, v := vw.proj(p)
+			return h > -half-200 && h < half+200 && v > -half-200 && v < half+200
+		}
+		for _, m := range meshes {
+			for _, tr := range m.Triangles {
+				a, b, c := tri3(m, tr)
+				if !inWindow(a) && !inWindow(b) && !inWindow(c) {
+					continue
+				}
+				edgeProj(img, pix, a, b, color.RGBA{90, 90, 255, 60})
+				edgeProj(img, pix, b, c, color.RGBA{90, 90, 255, 60})
+				edgeProj(img, pix, c, a, color.RGBA{90, 90, 255, 60})
 			}
 		}
-		lineOn(plan, toPix, ea, sg.to, col)
-	}
-	kx, ky := toPix(ea[0], ea[1])
-	dot(plan, kx, ky, 5, color.RGBA{255, 255, 0, 255})
-	vx, vy := toPix(pv.X, pv.Y)
-	dot(plan, vx, vy, 5, color.RGBA{255, 0, 255, 255})
-	base := fmt.Sprintf("kill-%d-%d", mid, tk)
-	if err := writePNG(filepath.Join(out, base+"-plan.png"), plan); err != nil {
-		return ex, err
-	}
-
-	// Side view: x horizontal, z vertical.
-	side := image.NewRGBA(image.Rect(0, 0, 1000, 600))
-	xmin, xmax := pv.X-1500, pv.X+1500
-	zmin, zmax := -200.0, 1200.0
-	sx := func(x float64) int { return int((x - xmin) / (xmax - xmin) * 1000) }
-	sz := func(z float64) int { return int((zmax - z) / (zmax - zmin) * 600) }
-	for _, m := range meshes {
-		for _, tr := range m.Triangles {
-			a, b, c := m.Vertices[tr[0]], m.Vertices[tr[1]], m.Vertices[tr[2]]
-			if float64(maxf(a[0], b[0], c[0])) < xmin || float64(minf(a[0], b[0], c[0])) > xmax {
-				continue
+		for _, sg := range segs {
+			col := color.RGBA{0, 220, 0, 255}
+			if sg.blocked {
+				col = color.RGBA{255, 40, 40, 255}
+				a, b, c := tri3(meshes[sg.hitMesh], meshes[sg.hitMesh].Triangles[sg.hitTri])
+				for _, v := range [][3]float64{a, b, c} {
+					x, y := pix(v)
+					dot(img, x, y, 3, color.RGBA{255, 0, 0, 255})
+				}
 			}
-			edgeSide(side, sx, sz, a, b, color.RGBA{90, 90, 255, 60})
-			edgeSide(side, sx, sz, b, c, color.RGBA{90, 90, 255, 60})
-			edgeSide(side, sx, sz, c, a, color.RGBA{90, 90, 255, 60})
+			x0, y0 := pix(ea)
+			x1, y1 := pix(sg.to)
+			line(img, x0, y0, x1, y1, col)
 		}
-	}
-	for _, sg := range segs {
-		col := color.RGBA{0, 220, 0, 255}
-		if sg.blocked {
-			col = color.RGBA{255, 40, 40, 255}
+		kx, ky := pix(ea)
+		dot(img, kx, ky, 5, color.RGBA{255, 255, 0, 255})
+		vx, vy := pix([3]float64{float64(pv.X), float64(pv.Y), float64(pv.Z)})
+		dot(img, vx, vy, 5, color.RGBA{255, 0, 255, 255})
+		if err := writePNG(filepath.Join(out, fmt.Sprintf("kill-%d-%d-%s.png", mid, tk, vw.name)), img); err != nil {
+			return ex, err
 		}
-		lineSide(side, sx, sz, ea, sg.to, col)
-	}
-	dot(side, sx(ea[0]), sz(ea[2]), 5, color.RGBA{255, 255, 0, 255})
-	dot(side, sx(pv.X), sz(pv.Z), 5, color.RGBA{255, 0, 255, 255})
-	if err := writePNG(filepath.Join(out, base+"-side.png"), side); err != nil {
-		return ex, err
 	}
 	return ex, nil
 }
@@ -449,4 +428,20 @@ func minf(a ...float32) float32 {
 		}
 	}
 	return m
+}
+
+// tri3 returns a triangle's three vertices in world space.
+func tri3(m source2.Mesh, tr source2.Triangle) ([3]float64, [3]float64, [3]float64) {
+	v := func(i int32) [3]float64 {
+		p := m.Vertices[i]
+		return [3]float64{float64(p[0]), float64(p[1]), float64(p[2])}
+	}
+	return v(tr[0]), v(tr[1]), v(tr[2])
+}
+
+// edgeProj draws the projected edge between two world points.
+func edgeProj(img *image.RGBA, pix func([3]float64) (int, int), a, b [3]float64, c color.RGBA) {
+	x0, y0 := pix(a)
+	x1, y1 := pix(b)
+	line(img, x0, y0, x1, y1, c)
 }

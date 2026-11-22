@@ -97,7 +97,7 @@ func TestKillOverlayBatch(t *testing.T) {
 	}
 	var md strings.Builder
 	md.WriteString("# Unexplained kills: overlays and explanations\n\n")
-	md.WriteString("Each entry: the two PNGs (plan over the radar, and side view x-z). Green = clear line,\n")
+	md.WriteString("Each entry: six orthographic views centred on the two players (east, west, north, south = the four sides; above, below). Green = clear ray, red = blocked, red triangles = the first blocking triangle per blocked target. Yellow = killer, magenta = victim.\n")
 	md.WriteString("red = blocked, red triangles = the first blocking triangle per blocked target.\n\n")
 	n := 0
 	for _, k := range kills {
@@ -108,7 +108,7 @@ func TestKillOverlayBatch(t *testing.T) {
 		}
 		n++
 		fmt.Fprintf(&md, "## %d. %s, match %d, tick %d\n\n", n, ex.Map, k.mid, k.tk)
-		fmt.Fprintf(&md, "- Files: `kill-%d-%d-plan.png`, `kill-%d-%d-side.png`\n", k.mid, k.tk, k.mid, k.tk)
+		fmt.Fprintf(&md, "- Files: `kill-%d-%d-{east,west,north,south,above,below}.png`\n", k.mid, k.tk)
 		fmt.Fprintf(&md, "- Kill: %s killed %s with %s at %.1f m (headshot %v). Wallbang %d, smoke %d, penetrated %d.\n",
 			ex.Killer, ex.Victim, ex.Weapon, ex.DistanceM, ex.Headshot, ex.Wallbang, ex.Smoke, ex.Penetrated)
 		fmt.Fprintf(&md, "- Sight line at the last sampled frame (%d): any of the 8 target points clear = %v.\n", ex.Frame, ex.AnyClear)
