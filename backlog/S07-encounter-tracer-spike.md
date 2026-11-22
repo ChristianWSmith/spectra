@@ -64,3 +64,21 @@ Owner asked for a web search. Options, with verification status:
 Not verified here: the exact VRF API and output fidelity on a CS2 map. The
 next step, if the owner wants S18 explored, is a spike: export `de_cache`
 collision with VRF, count triangles, and time one ray-cast batch.
+
+## Result: pure-Go DMX/KV3 reader works on CS2 (2026-11-22)
+
+Owner ruled out shelling out to VRF. Built a pure-Go reader in
+`src/internal/source2/` (container, binary KV3 v5, uncompressed/LZ4/zstd,
+physics mesh extraction). End-to-end test on the local install
+(`src/internal/mappack/source2_spike_test.go`):
+
+- `maps/de_cache.vmap_c`: manifest in RED2 lists 803 children, including
+  `maps/de_cache/world_physics.vmdl`.
+- `world_physics.vmdl_c` PHYS block (22.7 MB, zstd): 11 triangle meshes,
+  853,728 vertices, 1,543,751 triangles. All indices in range, all vertices
+  inside their bounds.
+
+Not done: the tracer benchmark (traces per second) and coverage fraction.
+Next step if the owner wants S18 explored: build a kd traversal over
+`m_Nodes` (32-byte nodes) and time a ray batch on the 1.5 M triangles.
+Scope of the spike: only v5 KV3, no z3, no embedded tooling.

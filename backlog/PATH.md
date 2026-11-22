@@ -292,3 +292,13 @@ listed in the chat summary.
 - **CS2 geometry options (S07, CS2.md):** ValveResourceFormat (C#, MIT) is the
   candidate. Shelling out is cheaper than a Go DMX port. Spike: export
   `de_cache` collision with VRF, count triangles, time a ray batch.
+
+## 9. Map geometry spike (2026-11-22)
+
+- Owner: no shelling out from Go; spike a DMX/KV3 reader. Done in pure Go
+  (`src/internal/source2/`). Reads the CS2 resource container, binary KV3 v5
+  (LZ4 and zstd), and the physics meshes.
+- de_cache world collision: 11 meshes, 1,543,751 triangles, all indices valid.
+- Not done: tracer benchmark and coverage fraction (S07, S18). Next step, if
+  wanted: a kd traversal over `m_Nodes` to time ray batches.
+- Owner: sidecars keep the post-match tail.

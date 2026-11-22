@@ -1833,3 +1833,23 @@ at the end of the section.
   https://github.com/Galaco/bsp; https://developer.valvesoftware.com/wiki/VMAP.
   The VRF `MapExtract` method names come from the search snippet; check them
   against the repo before relying on them.
+
+- **Binary KV3 v5 and the physics layout in CS2 map resources (2026-11-22, spike)**
+  - Resource container: 16-byte header (file size, header version 12, version,
+    block offset, block count). Directory entries are 12 bytes: FourCC, offset
+    relative to the offset field, size. The directory starts at `8 + blockOffset`.
+  - `maps/de_cache.vmap_c` has blocks RERL, RED2 and an empty DATA. The KV3
+    manifest is in **RED2** (it lists 803 child resources, including
+    `maps/de_cache/world_physics.vmdl`).
+  - `world_physics.vmdl_c`: block **PHYS** (22.7 MB KV3 v5, **zstd**
+    compression = 2). `m_parts[0].m_rnShape.m_meshes` holds 11 triangle meshes:
+    `m_Vertices` (float32 x3, 12 bytes each) and `m_Triangles` (three int32
+    indices, 12 bytes each). Also `m_Nodes` (32-byte kd nodes) and
+    `m_Materials` (one entry per triangle). Also `m_hulls` (4608 convex hulls).
+  - Measured: 853,728 vertices, 1,543,751 triangles across the 11 meshes, all
+    indices in range, all vertices inside their mesh bounds.
+  **Source** — VRF (`ValveResourceFormat/Resource/Resource.cs`,
+  `Resource/ResourceTypes/BinaryKV3*.cs`, `Resource/ResourceTypes/RubikonPhysics/Shapes/Mesh.cs`,
+  `.../Shapes/Hull.cs`; MIT, fetched 2026-11-22 via gh api); the decode
+  itself is the spike in `src/internal/source2/` and its end-to-end test
+  `src/internal/mappack/source2_spike_test.go` (run against the local install).
