@@ -122,3 +122,31 @@ are extracted (radar, world collision). Frontend bundled packs are already a sub
 
 Code removed. Props gave a 0.4% kill clear-line rate when included, so placements or
 the transform are wrong and nothing in the visibility path uses them.
+
+## Unexplained kills, characterized (2026-11-22)
+
+Criteria: bullet kill, no wallbang flag, not through smoke, not HE or Molotov, and
+blocked in every sampled frame of [-64, +4] ticks under a dense 3x3x5 target grid.
+36 kills (of 1,043 kills with frames). This replaces the earlier "47" count, which
+included smoke and used a shorter window and centre-only sampling.
+
+- Range: the event `distance` field is metres (checked: 39.3 units per metre
+  against sampled positions). Median about 21 m (about 800 units), range 6 to 64 m.
+  The earlier "under 600 units" reading was wrong; these are long-range fights.
+- Map: ancient 10, inferno 10, mirage 7, other maps 1 to 4 each (27 of 36 on three maps).
+- Weapon: AK-47 16, M4A1 7, others 1 to 3 each.
+- Headshot: 20 of 36. Penetrated flag: 0 for all 36 (not penetration).
+- Doors: 1 of 58 unexplained blocks lies within 150 units of a door-like entity,
+  against 34 of 888 clear kills (about 4%). Doors do not explain them. Caveat: only
+  the first entity lump per map is read.
+- Time: 8 of 36 have a clear line 1 to 3 seconds before the kill; 28 stay blocked.
+  Nothing after the kill: the victim's frames stop at death.
+- Geometry: the blocking triangles belong to the largest structural meshes (ancient
+  mesh 0, 6,985 triangles spanning most of the map; inferno mesh 4, 16,122 triangles),
+  not to small props.
+
+Most likely explanation: the world collision over-blocks long sight lines through
+the main structures on those maps (collision thicker or more continuous than the
+visible gaps and windows). Position error or server desync would not cluster by
+map and mesh like this. Confirmation needs a GUI overlay of the blocking mesh along
+these sight lines.

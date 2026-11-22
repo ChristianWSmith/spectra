@@ -84,3 +84,14 @@ so nothing in the visibility path uses them. No GUI check.
 - S05 (equipment and spend derivation), S16 (round table decision): deferred.
 - Cutting radar and frontend support for non-keep maps: owner has not decided.
 - Merge to main: not this session.
+
+## 7. Unexplained kills overlay (new)
+
+Change: 36 bullet kills (no wallbang, no smoke, no penetration) are blocked by the
+main structural meshes on ancient, inferno and mirage (see S18, "Unexplained kills,
+characterized").
+
+Check: in a debug overlay, draw the killer-to-victim sight line and the blocking
+mesh for each of the 36. Pass: the blocking geometry is a real solid the kill could
+not have passed. Fail: the blocking is thin or gapped geometry the shot passed
+through, which means the world collision over-blocks.
