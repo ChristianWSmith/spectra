@@ -17,6 +17,18 @@ type Mesh struct {
 	Min, Max  Vec3
 	Vertices  []Vec3
 	Triangles []Triangle
+	Nodes     []Node
+}
+
+// Node is one kd-tree node of a mesh (RnNode_t, 32 bytes). Type 0..2 is a
+// split on X/Y/Z whose second child is at index+ChildOffset (the first child is
+// the next node, depth-first layout). Type 3 is a leaf: ChildOffset is the triangle count and
+// TriangleOffset the index of its first triangle.
+type Node struct {
+	Min, Max       Vec3
+	Type           uint8
+	ChildOffset    uint32
+	TriangleOffset uint32
 }
 
 // PhysicsMeshes returns the triangle meshes in the first part of a PHYS block's
@@ -71,6 +83,22 @@ func parseMesh(m map[string]any) (Mesh, error) {
 	for i := range out.Triangles {
 		for k := 0; k < 3; k++ {
 			out.Triangles[i][k] = int32(binary.LittleEndian.Uint32(tb[i*12+k*4:]))
+		}
+	}
+	nb, ok := m["m_Nodes"].([]byte)
+	if !ok || len(nb)%32 != 0 {
+		return out, fmt.Errorf("physics: m_Nodes is not a 32-byte node blob")
+	}
+	out.Nodes = make([]Node, len(nb)/32)
+	for i := range out.Nodes {
+		b := nb[i*32:]
+		packed := binary.LittleEndian.Uint32(b[12:])
+		out.Nodes[i] = Node{
+			Min:            vec3Bytes(b[0:]),
+			Max:            vec3Bytes(b[16:]),
+			Type:           uint8(packed >> 30),
+			ChildOffset:    packed & 0x3FFFFFFF,
+			TriangleOffset: binary.LittleEndian.Uint32(b[28:]),
 		}
 	}
 	return out, nil

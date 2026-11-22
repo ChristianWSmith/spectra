@@ -1853,3 +1853,12 @@ at the end of the section.
   `.../Shapes/Hull.cs`; MIT, fetched 2026-11-22 via gh api); the decode
   itself is the spike in `src/internal/source2/` and its end-to-end test
   `src/internal/mappack/source2_spike_test.go` (run against the local install).
+
+- **Physics mesh BVH addressing (2026-11-22, measured)** — kd nodes are 32 bytes
+  (min, packed type/offset, max, triangle offset). Split nodes (type 0..2) are
+  depth-first: the first child is the next node, and the second child is at
+  `index + ChildOffset` (relative, not absolute). Leaves (type 3) hold
+  `ChildOffset` triangles from `TriangleOffset`. Verified on de_cache mesh 0: all
+  311,281 inner nodes satisfy the invariant under this reading.
+  **Source** — the layout in VRF `Resource/ResourceTypes/RubikonPhysics/Shapes/Mesh.cs`
+  (fetched 2026-11-22), plus the measurement in `src/internal/mappack/source2_raycast_test.go`.

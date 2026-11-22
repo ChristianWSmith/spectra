@@ -82,3 +82,22 @@ Not done: the tracer benchmark (traces per second) and coverage fraction.
 Next step if the owner wants S18 explored: build a kd traversal over
 `m_Nodes` (32-byte nodes) and time a ray batch on the 1.5 M triangles.
 Scope of the spike: only v5 KV3, no z3, no embedded tooling.
+
+## Result: visibility raycasts (2026-11-22)
+
+Implemented the segment query over the PHYS kd-tree (`src/internal/source2/raycast.go`)
+and checked it against a brute-force reference (`src/internal/mappack/source2_raycast_test.go`):
+
+- Validation: 150 random segments × 11 world meshes = 1,650 mesh queries.
+  Disagreements with brute force: **0**. Blocked mesh hits found: 217.
+- Timing: 20,000 random segments against all 11 meshes, first hit ends a segment.
+  **≈330,000 segments/s** (about 3 µs each). Caveat: 68% of these random segments
+  are blocked, and blocked segments exit early. Unblocked sight lines are slower.
+  A timing on unblocked-only rays is still to do.
+
+Scope limits: world geometry only (no prop hulls, no entity colliders), a
+single segment-vs-any-mesh query, no BVH build time (it is in the file).
+
+Gate reading for G7 (tracer speed): the tracer is fast enough to be useful for
+per-event visibility. The coverage fraction is still unmeasured. The format
+question (S07 BSP) is answered: the reader works and no CS:GO BSP is needed.

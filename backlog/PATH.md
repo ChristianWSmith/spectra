@@ -302,3 +302,10 @@ listed in the chat summary.
 - Not done: tracer benchmark and coverage fraction (S07, S18). Next step, if
   wanted: a kd traversal over `m_Nodes` to time ray batches.
 - Owner: sidecars keep the post-match tail.
+- **Visibility raycasts (spike):** the kd-tree query matches brute force on all
+  1,650 checked mesh queries. About 330k random segments per second world-wide.
+  Unblocked-ray timing is still open.
+- **Next (proposed):** a world-collision extractor in `internal/mappack`, beside
+  the radar and sound extractors, writing a binary cache to the data directory.
+  Not built yet. Open design points are in S07.
+- **License:** the owner will add VRF's MIT notice when the reader ships.
