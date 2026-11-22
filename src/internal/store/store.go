@@ -45,7 +45,7 @@ var childTables = []string{
 	"round_player_sides", "round_player_money", "player_stats", "players", "teams", "warnings",
 	"round_classifications", "round_side_classes", "player_round_stats",
 	"kill_tags", "utility_events", "match_trade_opps",
-	"encounter_samples", "encounters",
+	"encounter_window_samples", "encounters", "encounter_windows",
 	"voice_presence", "metric_values", "metric_runs",
 }
 

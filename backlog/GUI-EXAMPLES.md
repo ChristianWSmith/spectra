@@ -42,9 +42,9 @@ forward to the seed tick. Check that the two players are visible to each other.
 | 284 | de_cache.dem.zst | 19 | 111373-111616 | 111396 | Magnojezzz | llorente | 244 |
 | 72 | de_cache.dem.zst | 5 | 30571-30794 | 30706 | forever2kELO | adamS | 224 |
 
-Design point to decide: mutual fights produce two windows (A shoots B, then B
-shoots A, same stretch of time). Ids 175 and 176 are one example. Merge them, or
-keep both per-shooter windows?
+Mutual fights are one window with two encounters (decided). The table above
+predates that change: the ids are old encounter ids. Regenerate the table from the
+new schema before using it.
 
 ## 7. Unexplained kills (replay)
 

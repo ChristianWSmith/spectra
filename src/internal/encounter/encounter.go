@@ -35,14 +35,24 @@ type Range struct{ Start, End int }
 // Occluder reports whether the segment between two points is blocked.
 type Occluder func(a, b [3]float64) bool
 
-// Viewpoint is one tick's eye positions for the pair: the shooter's and the
-// enemy's. The enemy's eye is the canonical aim point for crosshair metrics:
-// the opponent's head, the point a player is trying to put the crosshair on.
-type Viewpoint struct {
-	Tick       int
-	Shooter    [3]float64 // shooter's eye
-	Enemy      [3]float64 // enemy's eye (the canonical aim point)
-	EnemyWorld [3]float64 // enemy's world (origin) position, for box reconstruction
+// WindowSample is one tick of a window: both participants' eye and world
+// positions. The enemy's eye is the canonical aim point for crosshair metrics
+// (the opponent's head); the body midpoint is the midpoint of eye and world.
+// A sample belongs to its window, not to any one encounter.
+type WindowSample struct {
+	Tick           int
+	P1Eye, P1World [3]float64
+	P2Eye, P2World [3]float64
+}
+
+// Window is the high-fidelity span for one pair of players in one round: the
+// union of the overlapping encounters between them (both directions). Its
+// samples are the data every encounter over it reads.
+type Window struct {
+	Round      int
+	P1, P2     uint64 // P1 < P2
+	Start, End int
+	Samples    []WindowSample
 }
 
 // Encounter is one visibility window for a shooter and an enemy.
@@ -52,9 +62,9 @@ type Encounter struct {
 	Enemy      uint64
 	Start, End int
 	Seed       int // tick of the seeding shot
-	// Viewpoints holds one sample per frame in [Start, End] where both
-	// participants are present.
-	Viewpoints []Viewpoint
+	// Window indexes the Window this encounter reads its samples from (set by
+	// BuildWindows; -1 before that).
+	Window int
 }
 
 // Stats summarizes one build.
@@ -228,21 +238,7 @@ func Build(frames []Frame, shots []Shot, rounds map[int]Range, occ Occluder, max
 		}
 		enc := Encounter{Round: sh.Round, Shooter: sh.Shooter, Enemy: enemy,
 			Start: frames[first].Tick, End: frames[last].Tick, Seed: sh.Tick}
-		for k := first; k <= last; k++ {
-			// The sidecar can repeat a tick (two frames at one tick): keep one
-			// viewpoint per tick.
-			if n := len(enc.Viewpoints); n > 0 && enc.Viewpoints[n-1].Tick == frames[k].Tick {
-				continue
-			}
-			s, ok1 := frames[k].Players[sh.Shooter]
-			e, ok2 := frames[k].Players[enemy]
-			if ok1 && ok2 {
-				enc.Viewpoints = append(enc.Viewpoints, Viewpoint{
-					Tick: frames[k].Tick, Shooter: eye(s), Enemy: eye(e),
-					EnemyWorld: [3]float64{e.X, e.Y, e.Z},
-				})
-			}
-		}
+		enc.Window = -1
 		out = append(out, enc)
 		byShooter[sh.Shooter] = append(byShooter[sh.Shooter], enc)
 	}

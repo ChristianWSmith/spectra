@@ -6,96 +6,119 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// SaveEncounters replaces a match's encounters and their samples in one
-// transaction. Encounters are derived data: a re-run replaces them entirely.
-func (s *Store) SaveEncounters(matchID int64, rows []models.EncounterRow) error {
+// SaveEncounterWindows replaces a match's encounter windows, their samples and
+// their encounters in one transaction. Derived data: a re-run replaces it all.
+func (s *Store) SaveEncounterWindows(matchID int64, wins []models.EncounterWindow) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("saving encounters: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM encounter_samples WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("saving encounters: %w", err)
+	for _, t := range []string{"encounter_window_samples", "encounters", "encounter_windows"} {
+		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE match_id = ?`, matchID); err != nil {
+			return fmt.Errorf("saving encounters: %w", err)
+		}
 	}
-	if _, err := tx.Exec(`DELETE FROM encounters WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("saving encounters: %w", err)
-	}
-	encStmt, err := tx.Prepare(`INSERT INTO encounters (match_id, round, shooter, enemy, start_tick, end_tick, seed_tick)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	winStmt, err := tx.Prepare(`INSERT INTO encounter_windows (match_id, round, p1, p2, start_tick, end_tick)
+		VALUES (?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("saving encounters: %w", err)
 	}
-	defer encStmt.Close()
-	smpStmt, err := tx.Prepare(`INSERT INTO encounter_samples (encounter_id, match_id, tick,
-		shooter_eye_x, shooter_eye_y, shooter_eye_z, enemy_eye_x, enemy_eye_y, enemy_eye_z,
-		enemy_world_x, enemy_world_y, enemy_world_z) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	defer winStmt.Close()
+	smpStmt, err := tx.Prepare(`INSERT INTO encounter_window_samples (window_id, match_id, tick,
+		p1_eye_x, p1_eye_y, p1_eye_z, p1_world_x, p1_world_y, p1_world_z,
+		p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("saving encounters: %w", err)
 	}
 	defer smpStmt.Close()
-	for _, r := range rows {
-		res, err := encStmt.Exec(matchID, r.Round, r.Shooter, r.Enemy, r.StartTick, r.EndTick, r.SeedTick)
+	encStmt, err := tx.Prepare(`INSERT INTO encounters (match_id, window_id, round, shooter, enemy, start_tick, end_tick, seed_tick)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("saving encounters: %w", err)
+	}
+	defer encStmt.Close()
+	for _, w := range wins {
+		res, err := winStmt.Exec(matchID, w.Round, w.P1, w.P2, w.StartTick, w.EndTick)
 		if err != nil {
 			return fmt.Errorf("saving encounters: %w", err)
 		}
-		id, err := res.LastInsertId()
+		wid, err := res.LastInsertId()
 		if err != nil {
 			return fmt.Errorf("saving encounters: %w", err)
 		}
-		for _, sm := range r.Samples {
-			if _, err := smpStmt.Exec(id, matchID, sm.Tick,
-				sm.ShooterEye[0], sm.ShooterEye[1], sm.ShooterEye[2],
-				sm.EnemyEye[0], sm.EnemyEye[1], sm.EnemyEye[2],
-				sm.EnemyWorld[0], sm.EnemyWorld[1], sm.EnemyWorld[2]); err != nil {
+		for _, sm := range w.Samples {
+			if _, err := smpStmt.Exec(wid, matchID, sm.Tick,
+				sm.P1Eye[0], sm.P1Eye[1], sm.P1Eye[2], sm.P1World[0], sm.P1World[1], sm.P1World[2],
+				sm.P2Eye[0], sm.P2Eye[1], sm.P2Eye[2], sm.P2World[0], sm.P2World[1], sm.P2World[2]); err != nil {
 				return fmt.Errorf("saving encounter samples: %w", err)
+			}
+		}
+		for _, e := range w.Encounters {
+			if _, err := encStmt.Exec(matchID, wid, w.Round, e.Shooter, e.Enemy, e.StartTick, e.EndTick, e.SeedTick); err != nil {
+				return fmt.Errorf("saving encounters: %w", err)
 			}
 		}
 	}
 	return tx.Commit()
 }
 
-// GetEncounters returns a match's encounters with their samples, in
-// start-tick order.
-func (s *Store) GetEncounters(matchID int64) ([]models.EncounterRow, error) {
-	rows, err := s.db.Query(`SELECT id, round, shooter, enemy, start_tick, end_tick, seed_tick
-		FROM encounters WHERE match_id = ? ORDER BY start_tick, id`, matchID)
+// GetEncounterWindows returns a match's windows with their samples and encounters,
+// in start-tick order.
+func (s *Store) GetEncounterWindows(matchID int64) ([]models.EncounterWindow, error) {
+	rows, err := s.db.Query(`SELECT id, round, p1, p2, start_tick, end_tick FROM encounter_windows
+		WHERE match_id = ? ORDER BY start_tick, id`, matchID)
 	if err != nil {
-		return nil, fmt.Errorf("reading encounters: %w", err)
+		return nil, fmt.Errorf("reading encounter windows: %w", err)
 	}
 	type head struct {
-		id  int64
-		row models.EncounterRow
+		id int64
+		w  models.EncounterWindow
 	}
 	var heads []head
 	for rows.Next() {
 		var h head
-		if err := rows.Scan(&h.id, &h.row.Round, &h.row.Shooter, &h.row.Enemy, &h.row.StartTick, &h.row.EndTick, &h.row.SeedTick); err != nil {
+		if err := rows.Scan(&h.id, &h.w.Round, &h.w.P1, &h.w.P2, &h.w.StartTick, &h.w.EndTick); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		heads = append(heads, h)
 	}
 	rows.Close()
-	out := make([]models.EncounterRow, 0, len(heads))
+	out := make([]models.EncounterWindow, 0, len(heads))
 	for _, h := range heads {
-		smp, err := s.db.Query(`SELECT tick, shooter_eye_x, shooter_eye_y, shooter_eye_z,
-			enemy_eye_x, enemy_eye_y, enemy_eye_z, enemy_world_x, enemy_world_y, enemy_world_z
-			FROM encounter_samples WHERE encounter_id = ? ORDER BY tick`, h.id)
+		smp, err := s.db.Query(`SELECT tick, p1_eye_x, p1_eye_y, p1_eye_z, p1_world_x, p1_world_y, p1_world_z,
+			p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z
+			FROM encounter_window_samples WHERE window_id = ? ORDER BY tick`, h.id)
 		if err != nil {
-			return nil, fmt.Errorf("reading encounter samples: %w", err)
+			return nil, fmt.Errorf("reading window samples: %w", err)
 		}
 		for smp.Next() {
-			var sm models.EncounterSample
-			if err := smp.Scan(&sm.Tick, &sm.ShooterEye[0], &sm.ShooterEye[1], &sm.ShooterEye[2],
-				&sm.EnemyEye[0], &sm.EnemyEye[1], &sm.EnemyEye[2],
-				&sm.EnemyWorld[0], &sm.EnemyWorld[1], &sm.EnemyWorld[2]); err != nil {
+			var sm models.WindowSample
+			if err := smp.Scan(&sm.Tick, &sm.P1Eye[0], &sm.P1Eye[1], &sm.P1Eye[2], &sm.P1World[0], &sm.P1World[1], &sm.P1World[2],
+				&sm.P2Eye[0], &sm.P2Eye[1], &sm.P2Eye[2], &sm.P2World[0], &sm.P2World[1], &sm.P2World[2]); err != nil {
 				smp.Close()
 				return nil, err
 			}
-			h.row.Samples = append(h.row.Samples, sm)
+			h.w.Samples = append(h.w.Samples, sm)
 		}
 		smp.Close()
-		out = append(out, h.row)
+		enc, err := s.db.Query(`SELECT shooter, enemy, start_tick, end_tick, seed_tick FROM encounters
+			WHERE window_id = ? ORDER BY start_tick, id`, h.id)
+		if err != nil {
+			return nil, fmt.Errorf("reading encounters: %w", err)
+		}
+		for enc.Next() {
+			var e models.Encounter
+			if err := enc.Scan(&e.Shooter, &e.Enemy, &e.StartTick, &e.EndTick, &e.SeedTick); err != nil {
+				enc.Close()
+				return nil, err
+			}
+			h.w.Encounters = append(h.w.Encounters, e)
+		}
+		enc.Close()
+		out = append(out, h.w)
 	}
 	return out, nil
 }

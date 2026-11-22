@@ -205,6 +205,14 @@
   $effect(() => {
     if (viewRoute && viewRoute.name === 'match' && viewRoute.id != null) keptMatch = viewRoute.id;
   });
+  // The player profile kept mounted the same way: its steam id and query are
+  // remembered from the last player route, so the hidden instance keeps its props.
+  let keptPlayer = $state(null);
+  $effect(() => {
+    if (viewRoute && viewRoute.name === 'player') {
+      keptPlayer = { steamId: viewRoute.steamId, query: viewRoute.query || {} };
+    }
+  });
   $effect(() => {
     const r = viewRoute;
     const content = contentEl;
@@ -572,6 +580,12 @@
           <Match id={keptMatch} routeTab={onMatch ? viewRoute.tab || '' : ''} {nav} {openDocs} expandReplay={matchExpand} />
         </div>
       {/if}
+      {#if keptPlayer != null}
+        {@const onPlayer = viewRoute && viewRoute.name === 'player'}
+        <div class="kept-player" style:display={onPlayer ? 'contents' : 'none'}>
+          <PlayerProfile steamId={keptPlayer.steamId} query={keptPlayer.query} origin={originHash} {nav} />
+        </div>
+      {/if}
       {#if viewRoute}
         {#if viewRoute.name === 'library'}
           <Library {nav} {openDocs} query={viewRoute.query || {}} />
@@ -580,7 +594,7 @@
         {:else if viewRoute.name === 'round'}
           <RoundDetail id={viewRoute.id} round={viewRoute.round} query={viewRoute.query || {}} {nav} />
         {:else if viewRoute.name === 'player'}
-          <PlayerProfile steamId={viewRoute.steamId} query={viewRoute.query || {}} origin={originHash} {nav} />
+          <!-- Rendered by the kept-player block above. -->
         {:else if viewRoute.name === 'compare'}
           <CompareRounds id={viewRoute.id} query={viewRoute.query || {}} {nav} />
         {:else if viewRoute.name === 'replay'}

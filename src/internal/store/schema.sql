@@ -2874,14 +2874,40 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
 ('match_weapon_damage', 'Damage by weapon', '', 'SELECT events.attacker AS subject_key, events.weapon AS dim, SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (events.attacker != events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.capped_dmg END) AS value FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY events.attacker, events.weapon', 'int', 'Formula: sum(events.capped_dmg) over enemy damage partitioned by weapon — this match''s HP-capped damage with that weapon, addressed per player, dim = the weapon name; NULL if none.', 'builtin', CURRENT_TIMESTAMP);
 
 
--- Encounters: shot-seeded visibility windows (internal/encounter). One row per
--- (shooter, enemy) window; encounter_samples holds one row per tick in the
--- window with both participants present. enemy_eye is the canonical aim point
--- (the opponent's head); enemy_world is their origin, so a body midpoint is the
--- midpoint of enemy_eye and enemy_world.
+-- Encounter windows: the high-fidelity span for one pair of players in one round
+-- (internal/encounter.BuildWindows). encounter_window_samples holds one row per tick
+-- in the window with both players present; the samples belong to the window, not to
+-- an encounter. enemy_eye is the canonical aim point (the opponent's head); the
+-- body midpoint is the midpoint of the enemy's eye and world position.
+CREATE TABLE IF NOT EXISTS encounter_windows (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	p1 TEXT NOT NULL,
+	p2 TEXT NOT NULL,
+	start_tick INTEGER NOT NULL,
+	end_tick INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_windows_match ON encounter_windows(match_id);
+
+CREATE TABLE IF NOT EXISTS encounter_window_samples (
+	window_id INTEGER NOT NULL REFERENCES encounter_windows(id) ON DELETE CASCADE,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	tick INTEGER NOT NULL,
+	p1_eye_x REAL NOT NULL, p1_eye_y REAL NOT NULL, p1_eye_z REAL NOT NULL,
+	p1_world_x REAL NOT NULL, p1_world_y REAL NOT NULL, p1_world_z REAL NOT NULL,
+	p2_eye_x REAL NOT NULL, p2_eye_y REAL NOT NULL, p2_eye_z REAL NOT NULL,
+	p2_world_x REAL NOT NULL, p2_world_y REAL NOT NULL, p2_world_z REAL NOT NULL,
+	PRIMARY KEY (window_id, tick)
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_window_samples_match ON encounter_window_samples(match_id);
+
+-- One row per encounter (one side of a window). window_id is the window whose
+-- samples this encounter reads.
 CREATE TABLE IF NOT EXISTS encounters (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	window_id INTEGER NOT NULL REFERENCES encounter_windows(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,
 	shooter TEXT NOT NULL,
 	enemy TEXT NOT NULL,
@@ -2890,14 +2916,3 @@ CREATE TABLE IF NOT EXISTS encounters (
 	seed_tick INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_encounters_match ON encounters(match_id);
-
-CREATE TABLE IF NOT EXISTS encounter_samples (
-	encounter_id INTEGER NOT NULL REFERENCES encounters(id) ON DELETE CASCADE,
-	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-	tick INTEGER NOT NULL,
-	shooter_eye_x REAL NOT NULL, shooter_eye_y REAL NOT NULL, shooter_eye_z REAL NOT NULL,
-	enemy_eye_x REAL NOT NULL, enemy_eye_y REAL NOT NULL, enemy_eye_z REAL NOT NULL,
-	enemy_world_x REAL NOT NULL, enemy_world_y REAL NOT NULL, enemy_world_z REAL NOT NULL,
-	PRIMARY KEY (encounter_id, tick)
-);
-CREATE INDEX IF NOT EXISTS idx_encounter_samples_match ON encounter_samples(match_id);

@@ -125,7 +125,9 @@ Check:
 Examples and the overlay procedure are in \`GUI-EXAMPLES.md\`: encounter windows
 (section 4) and the 36 unexplained kills (section 7).
 
-## 11. Open design point: mutual encounters
+## 11. Mutual encounters (decided)
 
-Each shot seeds its own window, so a mutual fight yields two encounters (A shoots B,
-and B shoots A, over the same stretch). Decide whether to merge them or keep both.
+Decided: one window per pair per round holds the high-fidelity samples. Each side
+of a mutual fight is its own encounter, and both encounters reference the window.
+Samples are per window, not per encounter, so nothing is stored twice. GUI check:
+a mutual fight shows as two encounters that point at the same window.

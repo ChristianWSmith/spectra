@@ -40,7 +40,7 @@ func buildEncounters(ctx context.Context, st *store.Store, matchID int64) error 
 	idStr := strconv.FormatInt(matchID, 10)
 	stream, err := sidecar.Load(filepath.Join(data.MatchesDir(), idStr), 0, 0)
 	if err != nil {
-		return fmt.Errorf("sidecar: %w", err)
+		return fmt.Errorf("couldn't read the match's recorded positions: %w", err)
 	}
 	frames := make([]encounter.Frame, 0, len(stream.Frames))
 	for _, f := range stream.Frames {
@@ -70,20 +70,29 @@ func buildEncounters(ctx context.Context, st *store.Store, matchID int64) error 
 		return ctx.Err()
 	}
 	encs, _ := encounter.Build(frames, shots, rounds, occ, 0)
-	out := make([]models.EncounterRow, 0, len(encs))
-	for _, e := range encs {
-		row := models.EncounterRow{
-			Round: e.Round, Shooter: strconv.FormatUint(e.Shooter, 10), Enemy: strconv.FormatUint(e.Enemy, 10),
-			StartTick: e.Start, EndTick: e.End, SeedTick: e.Seed,
+	wins, encs := encounter.BuildWindows(frames, encs)
+	rows := make([]models.EncounterWindow, len(wins))
+	for i, w := range wins {
+		rows[i] = models.EncounterWindow{
+			Round: w.Round, P1: strconv.FormatUint(w.P1, 10), P2: strconv.FormatUint(w.P2, 10),
+			StartTick: w.Start, EndTick: w.End,
 		}
-		for _, v := range e.Viewpoints {
-			row.Samples = append(row.Samples, models.EncounterSample{
-				Tick: v.Tick, ShooterEye: v.Shooter, EnemyEye: v.Enemy, EnemyWorld: v.EnemyWorld,
+		for _, sm := range w.Samples {
+			rows[i].Samples = append(rows[i].Samples, models.WindowSample{
+				Tick: sm.Tick, P1Eye: sm.P1Eye, P1World: sm.P1World, P2Eye: sm.P2Eye, P2World: sm.P2World,
 			})
 		}
-		out = append(out, row)
 	}
-	return st.SaveEncounters(matchID, out)
+	for _, e := range encs {
+		if e.Window < 0 || e.Window >= len(rows) {
+			continue
+		}
+		rows[e.Window].Encounters = append(rows[e.Window].Encounters, models.Encounter{
+			Shooter: strconv.FormatUint(e.Shooter, 10), Enemy: strconv.FormatUint(e.Enemy, 10),
+			StartTick: e.Start, EndTick: e.End, SeedTick: e.Seed,
+		})
+	}
+	return st.SaveEncounterWindows(matchID, rows)
 }
 
 // worldOccluder loads the map's world collision cache (written by the asset
