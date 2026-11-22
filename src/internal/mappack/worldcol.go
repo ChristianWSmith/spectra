@@ -10,9 +10,9 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/source2"
 )
 
-// worldCollisionMaps is the supported set: the maps that have been in the
+// supportedMaps is the supported set: the maps that have been in the
 // competitive pool. Other install maps are not extracted.
-var worldCollisionMaps = map[string]bool{
+var supportedMaps = map[string]bool{
 	"de_ancient": true, "de_anubis": true, "de_cache": true, "de_dust2": true,
 	"de_inferno": true, "de_mirage": true, "de_nuke": true, "de_overpass": true,
 	"de_train": true, "de_vertigo": true,
@@ -20,8 +20,8 @@ var worldCollisionMaps = map[string]bool{
 
 // SupportedWorldCollisionMaps returns the supported map names, sorted.
 func SupportedWorldCollisionMaps() []string {
-	out := make([]string, 0, len(worldCollisionMaps))
-	for m := range worldCollisionMaps {
+	out := make([]string, 0, len(supportedMaps))
+	for m := range supportedMaps {
 		out = append(out, m)
 	}
 	sort.Strings(out)
@@ -35,7 +35,7 @@ func SupportedWorldCollisionMaps() []string {
 // manifest (the RED2 block of maps/<map>.vmap_c), not a hard-coded name.
 // Returns the output path and the number of meshes written.
 func ExtractWorldCollision(cs2Dir, mapName, outDir string) (string, int, error) {
-	if !worldCollisionMaps[mapName] {
+	if !supportedMaps[mapName] {
 		return "", 0, fmt.Errorf("worldcol: %s is not a supported map", mapName)
 	}
 	vpkPath := filepath.Join(cs2Dir, "maps", mapName+".vpk")

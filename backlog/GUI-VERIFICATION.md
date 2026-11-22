@@ -48,6 +48,12 @@ walkable floor to sit on the drawn map. Automated proxies were inconclusive:
 
 Only a visual check settles this.
 
+## 4a. CLI flows (no GUI, but a new user path)
+
+- `spectra -extract [-cs2 <dir>]` and `spectra -import <demo>` (extracts first when
+  assets are missing). Tested headless. A GUI check should confirm the import gate
+  error text and the first-run extraction prompt.
+
 ## 4. Encounter visibility (no GUI yet, but review needed)
 
 Change: `internal/encounter` builds shot-seeded windows with a bounding-box
@@ -61,11 +67,10 @@ Results on the 7-match snapshot:
 Owner review: is the 1.8% coverage acceptable, and is the 81 unexplained blocks
 acceptable? No GUI needed to decide, but it needs your judgment.
 
-## 5. Props and entities (experimental, off by default)
+## 5. Props and entities: dropped
 
-Change: entity placements and prop physics load, but the prop occluder is off.
-With props, kill clear-lines fall to 0.4%, so placement or the transform is
-wrong for many props. Not usable until fixed. No GUI check until then.
+Removed from the code. Placements were wrong (0.4% kill clear-lines with props),
+so nothing in the visibility path uses them. No GUI check.
 
 ## 6. Previously deferred GUI items (unchanged)
 

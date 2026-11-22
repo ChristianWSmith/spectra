@@ -35,6 +35,15 @@ type Range struct{ Start, End int }
 // Occluder reports whether the segment between two points is blocked.
 type Occluder func(a, b [3]float64) bool
 
+// Viewpoint is one tick's eye positions for the pair: the shooter's and the
+// enemy's. The enemy's eye is the canonical aim point for crosshair metrics:
+// the opponent's head, the point a player is trying to put the crosshair on.
+type Viewpoint struct {
+	Tick    int
+	Shooter [3]float64
+	Enemy   [3]float64
+}
+
 // Encounter is one visibility window for a shooter and an enemy.
 type Encounter struct {
 	Round      int
@@ -42,6 +51,9 @@ type Encounter struct {
 	Enemy      uint64
 	Start, End int
 	Seed       int // tick of the seeding shot
+	// Viewpoints holds one sample per frame in [Start, End] where both
+	// participants are present.
+	Viewpoints []Viewpoint
 }
 
 // Stats summarizes one build.
@@ -199,21 +211,31 @@ func Build(frames []Frame, shots []Shot, rounds map[int]Range, occ Occluder, max
 			}
 		}
 		// Backward from the seed frame while the pair stays visible.
-		start := frames[i].Tick
+		first := i
 		for k := i - 1; k >= 0 && frames[k].Tick >= lo; k-- {
 			if !pairVisibleAt(frames[k], sh.Shooter, enemy, occ) {
 				break
 			}
-			start = frames[k].Tick
+			first = k
 		}
-		end := frames[i].Tick
+		last := i
 		for k := i + 1; k < len(frames) && frames[k].Tick <= hi; k++ {
 			if !pairVisibleAt(frames[k], sh.Shooter, enemy, occ) {
 				break
 			}
-			end = frames[k].Tick
+			last = k
 		}
-		enc := Encounter{Round: sh.Round, Shooter: sh.Shooter, Enemy: enemy, Start: start, End: end, Seed: sh.Tick}
+		enc := Encounter{Round: sh.Round, Shooter: sh.Shooter, Enemy: enemy,
+			Start: frames[first].Tick, End: frames[last].Tick, Seed: sh.Tick}
+		for k := first; k <= last; k++ {
+			s, ok1 := frames[k].Players[sh.Shooter]
+			e, ok2 := frames[k].Players[enemy]
+			if ok1 && ok2 {
+				enc.Viewpoints = append(enc.Viewpoints, Viewpoint{
+					Tick: frames[k].Tick, Shooter: eye(s), Enemy: eye(e),
+				})
+			}
+		}
 		out = append(out, enc)
 		byShooter[sh.Shooter] = append(byShooter[sh.Shooter], enc)
 	}

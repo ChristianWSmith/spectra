@@ -282,7 +282,8 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 	var jobs []packJob
 	for _, radarPath := range v.names(radarPrefix, radarSuffix) {
 		base := radarBase(radarPath)
-		if base == "" {
+		if base == "" || !supportedMaps[base] {
+			// Only the competitive-pool maps are supported (keep list).
 			continue
 		}
 		// Section radars (<map>_<section>_radar) are LAYERS of another

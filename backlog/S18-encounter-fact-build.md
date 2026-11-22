@@ -79,3 +79,46 @@ on anubis, 72 with a model). Hull planes use `n.x <= d` (verified: all 77 anubis
 hulls clip). With props added to the occluder, kill clear-lines collapse to 0.4%,
 so placements or the transform are still wrong for many props. Props stay off
 until that is resolved.
+
+## Blocked kills, explained (2026-11-22)
+
+Of 1,094 kills with both players sampled in the 16 ticks before, the frame closest
+to the kill blocked 106. Classification of those 106:
+
+| Explanation | Count |
+|---|---|
+| Wallbang flag on the kill | 25 |
+| HE grenade kill | 4 |
+| Molotov kill | 2 |
+| Bullet kill, unflagged, clear in an earlier frame of the window (peek timing) | 26 |
+| Bullet kill, unflagged, still blocked, but clear under a dense 3x3x5 target grid | 2 (overlap) |
+| Bullet kill, unflagged, still blocked under every sampling tried | about 47 |
+
+Unflagged bullet blocks: 75. Clear in an earlier frame: 26. Dense grid clears 28 of
+the 75 (overlaps the earlier-frame set). The remaining 47 are about 5% of kills.
+They are either world-mesh over-blocking (thin or non-solid geometry) or position
+sampling error. Not resolved.
+
+## Viewpoints (2026-11-22)
+
+Each encounter stores one viewpoint per frame in its window where both players
+are present: the shooter's eye and the enemy's eye. The enemy's eye is the canonical
+aim point (their head), per the owner. This is the encounter table's viewpoint
+data for the crosshair-placement metrics.
+
+## CLI (2026-11-22)
+
+- `spectra -extract [-cs2 <dir>]`: runs radar packs (keep list), icons, sounds and
+  world collision. Exits non-zero if anything is missing.
+- `spectra -import <demo> [-cs2 <dir>]`: runs the extraction first when assets are
+  missing, then imports. Tested from an empty data dir on de_cache.
+
+## Keep list (2026-11-22)
+
+Only ancient, anubis, cache, dust2, inferno, mirage, nuke, overpass, train, vertigo
+are extracted (radar, world collision). Frontend bundled packs are already a subset.
+
+## Props (2026-11-22): dropped
+
+Code removed. Props gave a 0.4% kill clear-line rate when included, so placements or
+the transform are wrong and nothing in the visibility path uses them.

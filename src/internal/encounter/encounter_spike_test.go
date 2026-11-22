@@ -208,12 +208,5 @@ func occluderFor(cs2, mapName, tmp string) (encounter.Occluder, error) {
 		}
 		return false
 	}
-	if os.Getenv("SPECTRA_PROPS") == "" {
-		return world, nil
-	}
-	combined, n, err := mappack.PropOccluder(mappack.FindCS2(""), mapName, world)
-	if err == nil {
-		fmt.Printf("PROPS %s: %d placed props\n", mapName, n)
-	}
-	return combined, err
+	return world, nil
 }
