@@ -59,6 +59,46 @@ func eyeZ(p Pos) float64 {
 
 func eye(p Pos) [3]float64 { return [3]float64{p.X, p.Y, p.Z + eyeZ(p)} }
 
+// Bounding box (CS:GO/CS2 mapping, sources in S18): 32 units wide, centered on
+// the world origin, standing 72 high and crouching 54. The top of the box is the
+// eye height plus 8 (eye 64 standing, 46 crouching, owner's rule). Width does not
+// follow the eye, which is offset laterally. Targets are the four corners at the
+// top of the box and the four corners at mid height: 8 points per enemy.
+const hullHalfWidth = 16.0
+
+// Targets returns the enemy's bounding-box sample points. A line counts as clear
+// when it reaches any of them.
+func Targets(p Pos) [][3]float64 {
+	top := eyeZ(p) + 8
+	heights := []float64{top * 0.5, top}
+	out := make([][3]float64, 0, 8)
+	for _, hz := range heights {
+		for _, dx := range []float64{-hullHalfWidth, hullHalfWidth} {
+			for _, dy := range []float64{-hullHalfWidth, hullHalfWidth} {
+				out = append(out, [3]float64{p.X + dx, p.Y + dy, p.Z + hz})
+			}
+		}
+	}
+	return out
+}
+
+// anyClear reports whether the shooter's eye reaches any of the enemy's sample
+// points without being blocked.
+func anyClear(from [3]float64, enemy Pos, occ Occluder) bool {
+	for _, t := range Targets(enemy) {
+		if !occ(from, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// AnyClear is the exported form of anyClear for validation tools.
+func AnyClear(from [3]float64, enemy Pos, occ Occluder) bool { return anyClear(from, enemy, occ) }
+
+// EyeOf returns a participant's eye point (for validation tools).
+func EyeOf(p Pos) [3]float64 { return eye(p) }
+
 // frameAt returns the index of the frame at tick, or the nearest one, or -1.
 func frameAt(frames []Frame, tick int) int {
 	i := sort.Search(len(frames), func(k int) bool { return frames[k].Tick >= tick })
@@ -93,7 +133,7 @@ func visibleEnemy(f Frame, shooter uint64, occ Occluder) (enemy uint64, ok bool)
 		if id == shooter || p.Side == "" || p.Side == s.Side {
 			continue
 		}
-		if !occ(se, eye(p)) {
+		if anyClear(se, p, occ) {
 			return id, true
 		}
 	}
@@ -108,7 +148,7 @@ func pairVisibleAt(f Frame, shooter, enemy uint64, occ Occluder) bool {
 	if !ok1 || !ok2 || s.Side == "" || e.Side == "" || s.Side == e.Side {
 		return false
 	}
-	return !occ(eye(s), eye(e))
+	return anyClear(eye(s), e, occ)
 }
 
 // Build returns the encounters for the shots, in shot order. frames must be

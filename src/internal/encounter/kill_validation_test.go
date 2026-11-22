@@ -91,7 +91,7 @@ func TestKillLineOfSight(t *testing.T) {
 					eyeV[2] = pv.Z + 46
 				}
 				lastOK = true
-				lastClear = !occ(eyeA, eyeV)
+				lastClear = encounter.AnyClear(eyeA, encounter.Pos{X: pv.X, Y: pv.Y, Z: pv.Z, Duck: pv.Duck, Side: pv.Side}, occ)
 				if wb == 0 {
 					for oi, off := range offsets {
 						ea := [3]float64{pa.X, pa.Y, pa.Z + off}
