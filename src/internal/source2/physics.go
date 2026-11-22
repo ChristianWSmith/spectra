@@ -1,5 +1,9 @@
 package source2
 
+// Portions of this package follow ValveResourceFormat (MIT License, Copyright
+// (c) 2015 ValveResourceFormat Contributors). The license text is in
+// LICENSE-VRF.txt in this directory.
+
 import (
 	"encoding/binary"
 	"fmt"
