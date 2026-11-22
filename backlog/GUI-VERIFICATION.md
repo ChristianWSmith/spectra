@@ -96,9 +96,36 @@ mesh for each of the 36. Pass: the blocking geometry is a real solid the kill co
 not have passed. Fail: the blocking is thin or gapped geometry the shot passed
 through, which means the world collision over-blocks.
 
-## 8. Encounter build at import (decided, not wired)
+## 8. Encounter build at import (wired)
 
-Decision: the encounter build runs at import. Status: `SaveEncounters` and
-`GetEncounters` exist with a round-trip test, but the import pipeline does not call
-the builder yet. Wiring it in is the next code step. GUI check after that: an import
-produces encounters, and the import stays responsive on a full match.
+The encounter build runs at import, after analyze and before the metrics hook. A
+failure is logged and does not fail the import. Verified headless: a de_cache import
+into a fresh library produced 370 encounters and 21,783 samples.
+
+GUI check: an import completes and the match's encounters exist. The import stays
+responsive on a full match. Examples are in `GUI-EXAMPLES.md`, section 4.
+
+## 9. Match view: tabs and scroll (frontend change, GUI check)
+
+Changes: visited match tabs stay mounted (hidden, not destroyed), and the last viewed
+match stays mounted across top-level navigation.
+
+Check:
+- Switch between Overview, Scoreboard, Rounds and back. The panels should not reload
+  (no loading state on return).
+- Scroll down on a match, switch to Library and back. The scroll position should
+  return. Before this change it reset to the top.
+- Open a second match, then return to the first. Its tab and scroll should be
+  where you left them. Only one match is kept mounted at a time, so the older
+  match reloads.
+- Watch for a flicker or a stale layout when a hidden tab is shown.
+
+## 10. Kill overlay and examples (GUI replay)
+
+Examples and the overlay procedure are in \`GUI-EXAMPLES.md\`: encounter windows
+(section 4) and the 36 unexplained kills (section 7).
+
+## 11. Open design point: mutual encounters
+
+Each shot seeds its own window, so a mutual fight yields two encounters (A shoots B,
+and B shoots A, over the same stretch). Decide whether to merge them or keep both.
