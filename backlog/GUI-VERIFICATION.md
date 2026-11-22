@@ -95,3 +95,10 @@ Check: in a debug overlay, draw the killer-to-victim sight line and the blocking
 mesh for each of the 36. Pass: the blocking geometry is a real solid the kill could
 not have passed. Fail: the blocking is thin or gapped geometry the shot passed
 through, which means the world collision over-blocks.
+
+## 8. Encounter build at import (decided, not wired)
+
+Decision: the encounter build runs at import. Status: `SaveEncounters` and
+`GetEncounters` exist with a round-trip test, but the import pipeline does not call
+the builder yet. Wiring it in is the next code step. GUI check after that: an import
+produces encounters, and the import stays responsive on a full match.
