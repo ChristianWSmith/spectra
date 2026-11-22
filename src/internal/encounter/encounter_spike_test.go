@@ -196,7 +196,7 @@ func occluderFor(cs2, mapName, tmp string) (encounter.Occluder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return func(a, b [3]float64) bool {
+	world := func(a, b [3]float64) bool {
 		seg := source2.Segment{
 			A: source2.Vec3{float32(a[0]), float32(a[1]), float32(a[2])},
 			B: source2.Vec3{float32(b[0]), float32(b[1]), float32(b[2])},
@@ -207,5 +207,13 @@ func occluderFor(cs2, mapName, tmp string) (encounter.Occluder, error) {
 			}
 		}
 		return false
-	}, nil
+	}
+	if os.Getenv("SPECTRA_PROPS") == "" {
+		return world, nil
+	}
+	combined, n, err := mappack.PropOccluder(mappack.FindCS2(""), mapName, world)
+	if err == nil {
+		fmt.Printf("PROPS %s: %d placed props\n", mapName, n)
+	}
+	return combined, err
 }

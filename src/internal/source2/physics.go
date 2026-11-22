@@ -145,3 +145,110 @@ func (m Mesh) Validate() int {
 	}
 	return -1
 }
+
+// Hull is one convex physics hull: its face planes as (nx, ny, nz, d), with a
+// point x inside the hull when n.x - d <= 0 for every plane (the plane is
+// n.x = d; verified on de_anubis: the hull centroid satisfies all planes).
+type Hull struct {
+	Planes   [][4]float32
+	Centroid Vec3 // mean of the hull's vertices, an interior point
+	Min, Max Vec3 // vertex bounds in local space
+}
+
+// PhysicsShapes returns the convex hulls and triangle meshes of every part of a
+// PHYS block's root (a prop, or any single physics model).
+func PhysicsShapes(kv *KV3) ([]Hull, []Mesh, error) {
+	root, ok := kv.Root.(map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("physics: root is not an object")
+	}
+	parts, _ := root["m_parts"].([]any)
+	var hulls []Hull
+	var meshes []Mesh
+	for _, p := range parts {
+		part, _ := p.(map[string]any)
+		shape, _ := part["m_rnShape"].(map[string]any)
+		hs, _ := shape["m_hulls"].([]any)
+		for _, h := range hs {
+			holder, _ := h.(map[string]any)
+			hull, _ := holder["m_Hull"].(map[string]any)
+			pb, ok := hull["m_Planes"].([]byte)
+			if !ok || len(pb)%16 != 0 {
+				return nil, nil, fmt.Errorf("physics: hull m_Planes is not a plane blob")
+			}
+			hh := Hull{Planes: make([][4]float32, len(pb)/16)}
+			if vb, ok := hull["m_VertexPositions"].([]byte); ok && len(vb) >= 12 {
+				hh.Centroid, hh.Min, hh.Max = vertexStats(vb)
+			} else if vb, ok := hull["m_Vertices"].([]byte); ok && len(vb) >= 12 {
+				hh.Centroid, hh.Min, hh.Max = vertexStats(vb)
+			}
+			for i := range hh.Planes {
+				for k := 0; k < 4; k++ {
+					hh.Planes[i][k] = math.Float32frombits(binary.LittleEndian.Uint32(pb[i*16+k*4:]))
+				}
+			}
+			hulls = append(hulls, hh)
+		}
+		ms, _ := shape["m_meshes"].([]any)
+		for _, m := range ms {
+			holder, _ := m.(map[string]any)
+			mesh, _ := holder["m_Mesh"].(map[string]any)
+			mm, err := parseMesh(mesh)
+			if err != nil {
+				return nil, nil, err
+			}
+			meshes = append(meshes, mm)
+		}
+	}
+	return hulls, meshes, nil
+}
+
+// SegmentHitsHull reports whether the segment a-b enters the convex hull with
+// its interior strictly between the endpoints (clipping against each plane).
+func SegmentHitsHull(h Hull, a, b Vec3) bool {
+	t0, t1 := 0.0, 1.0
+	for _, pl := range h.Planes {
+		fa := float64(pl[0])*float64(a[0]) + float64(pl[1])*float64(a[1]) + float64(pl[2])*float64(a[2]) - float64(pl[3])
+		fb := float64(pl[0])*float64(b[0]) + float64(pl[1])*float64(b[1]) + float64(pl[2])*float64(b[2]) - float64(pl[3])
+		if fa > 0 && fb > 0 {
+			return false
+		}
+		if fa <= 0 && fb <= 0 {
+			continue
+		}
+		t := fa / (fa - fb)
+		if fa > 0 {
+			if t > t0 {
+				t0 = t
+			}
+		} else if t < t1 {
+			t1 = t
+		}
+		if t0 >= t1 {
+			return false
+		}
+	}
+	return t1-t0 > 1e-9 && t1 > 1e-6 && t0 < 1-1e-6
+}
+
+// vertexStats returns the mean, min and max of a float3 vertex blob.
+func vertexStats(vb []byte) (mean, lo, hi Vec3) {
+	n := len(vb) / 12
+	var sum [3]float64
+	for i := 0; i < n; i++ {
+		v := vec3Bytes(vb[i*12:])
+		for k := 0; k < 3; k++ {
+			sum[k] += float64(v[k])
+			if i == 0 || v[k] < lo[k] {
+				lo[k] = v[k]
+			}
+			if i == 0 || v[k] > hi[k] {
+				hi[k] = v[k]
+			}
+		}
+	}
+	for k := 0; k < 3; k++ {
+		mean[k] = float32(sum[k] / float64(n))
+	}
+	return mean, lo, hi
+}

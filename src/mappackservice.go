@@ -188,6 +188,13 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
+	// World collision for the supported maps: the encounter and visibility
+	// work reads these caches, so the map-pack extraction produces them too.
+	for _, m := range mappack.SupportedWorldCollisionMaps() {
+		if _, _, err := mappack.ExtractWorldCollision(cs2Dir, m, data.WorldColDir()); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 	var names []string
 	for _, m := range maps {
 		names = append(names, m.Map)

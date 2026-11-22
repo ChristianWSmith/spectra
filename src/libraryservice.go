@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
@@ -54,8 +55,11 @@ func (s *LibraryService) ImportDialog() []string {
 // argument order (invalid paths become immediately-failed jobs). A path
 // that already has a non-terminal job is MERGED into it — the existing
 // id comes back, no duplicate job (see library.Importer.Enqueue).
-func (s *LibraryService) ImportPaths(paths []string) []int64 {
-	return s.imp.Enqueue(paths)
+func (s *LibraryService) ImportPaths(paths []string) ([]int64, error) {
+	if ok, missing := assetsReady(); !ok {
+		return nil, fmt.Errorf("extract the CS2 assets before importing (missing: %s)", strings.Join(missing, ", "))
+	}
+	return s.imp.Enqueue(paths), nil
 }
 
 // --- Import dirs (Settings → "Import dirs") ----------------------------------
