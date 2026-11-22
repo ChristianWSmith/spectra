@@ -200,6 +200,11 @@
   // `route = next`, so the effect below re-runs on every navigation
   // anyway (same one-flush discipline as the keep-alive record above).
   let scrollRec = null;
+  // The match kept mounted across navigation (see the app-views block below).
+  let keptMatch = $state(null);
+  $effect(() => {
+    if (viewRoute && viewRoute.name === 'match' && viewRoute.id != null) keptMatch = viewRoute.id;
+  });
   $effect(() => {
     const r = viewRoute;
     const content = contentEl;
@@ -557,11 +562,21 @@
          this host, hence interactive by design). inert flips with
          replayActive: the overlay is up ⟺ nothing beneath is reachable. -->
     <div class="app-views" inert={replayActive}>
+      <!-- The last match viewed stays mounted (hidden while another route is
+           shown), so leaving and returning keeps its loaded panels and the
+           scroll position the scroll record restores. Only one match is kept:
+           a different match id replaces it. -->
+      {#if keptMatch != null}
+        {@const onMatch = viewRoute && viewRoute.name === 'match' && viewRoute.id === keptMatch}
+        <div class="kept-match" style:display={onMatch ? 'contents' : 'none'}>
+          <Match id={keptMatch} routeTab={onMatch ? viewRoute.tab || '' : ''} {nav} {openDocs} expandReplay={matchExpand} />
+        </div>
+      {/if}
       {#if viewRoute}
         {#if viewRoute.name === 'library'}
           <Library {nav} {openDocs} query={viewRoute.query || {}} />
         {:else if viewRoute.name === 'match'}
-          <Match id={viewRoute.id} routeTab={viewRoute.tab || ''} {nav} {openDocs} expandReplay={matchExpand} />
+          <!-- Rendered by the kept-match block above. -->
         {:else if viewRoute.name === 'round'}
           <RoundDetail id={viewRoute.id} round={viewRoute.round} query={viewRoute.query || {}} {nav} />
         {:else if viewRoute.name === 'player'}

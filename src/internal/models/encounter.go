@@ -20,3 +20,17 @@ type EncounterRow struct {
 	SeedTick  int
 	Samples   []EncounterSample
 }
+
+// EncounterShot is one weapon_fire event with a known shooter, the input the
+// encounter build seeds from.
+type EncounterShot struct {
+	Round   int
+	Tick    int
+	Shooter string // steam id (accumulator key)
+}
+
+// RoundSpan is one counted round's tick span (inclusive).
+type RoundSpan struct {
+	Number     int
+	Start, End int
+}

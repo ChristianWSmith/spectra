@@ -229,6 +229,11 @@ func Build(frames []Frame, shots []Shot, rounds map[int]Range, occ Occluder, max
 		enc := Encounter{Round: sh.Round, Shooter: sh.Shooter, Enemy: enemy,
 			Start: frames[first].Tick, End: frames[last].Tick, Seed: sh.Tick}
 		for k := first; k <= last; k++ {
+			// The sidecar can repeat a tick (two frames at one tick): keep one
+			// viewpoint per tick.
+			if n := len(enc.Viewpoints); n > 0 && enc.Viewpoints[n-1].Tick == frames[k].Tick {
+				continue
+			}
 			s, ok1 := frames[k].Players[sh.Shooter]
 			e, ok2 := frames[k].Players[enemy]
 			if ok1 && ok2 {

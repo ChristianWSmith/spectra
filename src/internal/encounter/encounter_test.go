@@ -26,3 +26,21 @@ func TestViewpointsCarryTheEnemyEye(t *testing.T) {
 		t.Errorf("ducked enemy eye = %v, want [500 0 46]", got)
 	}
 }
+
+// TestViewpointsOnePerTick: a repeated tick in the sidecar yields one viewpoint.
+func TestViewpointsOnePerTick(t *testing.T) {
+	frames := []Frame{
+		{Tick: 100, Players: map[uint64]Pos{1: {X: 0, Side: "ct"}, 2: {X: 500, Side: "t"}}},
+		{Tick: 101, Players: map[uint64]Pos{1: {X: 0, Side: "ct"}, 2: {X: 500, Side: "t"}}},
+		{Tick: 101, Players: map[uint64]Pos{1: {X: 0, Side: "ct"}, 2: {X: 500, Side: "t"}}},
+		{Tick: 102, Players: map[uint64]Pos{1: {X: 0, Side: "ct"}, 2: {X: 500, Side: "t"}}},
+	}
+	open := func(a, b [3]float64) bool { return false }
+	encs, _ := Build(frames, []Shot{{Round: 1, Tick: 101, Shooter: 1}}, map[int]Range{1: {Start: 0, End: 200}}, open, 0)
+	if len(encs) != 1 {
+		t.Fatalf("encounters = %d, want 1", len(encs))
+	}
+	if n := len(encs[0].Viewpoints); n != 3 {
+		t.Fatalf("viewpoints = %d, want 3 (one per tick 100, 101, 102)", n)
+	}
+}

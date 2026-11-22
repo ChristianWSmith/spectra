@@ -272,6 +272,11 @@ type Options struct {
 	ComputeLock   *sync.Mutex
 	Budget        *budget.Budget
 	AfterAnalyze  func(ctx context.Context) error
+	// BuildEncounters, when set, runs after the analyze pass succeeds (before
+	// AfterAnalyze). It derives the match's encounters from the sidecar and the
+	// world collision. Its error is logged and never fails the job: the match
+	// is ready without encounters, and a re-import rebuilds them.
+	BuildEncounters func(ctx context.Context, matchID int64) error
 }
 
 // queueItem is one unit of work for the worker.
@@ -310,17 +315,18 @@ var workerCount = budget.MachineTokens()
 // per-job cancellation contexts. Create with New; call Shutdown before
 // closing the store.
 type Importer struct {
-	st            *store.Store
-	parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
-	emit          func(event string, data any)
-	parserVersion string
-	sidecarDir    string
-	copyDir       string
-	copyEnabled   func() bool                     // nil ⇒ copy (the default)
-	concurrency   func() int                      // nil ⇒ 1 (sequential; see Options.Concurrency)
-	computeLock   *sync.Mutex                     // nil ⇒ a private lock (see im.analyze)
-	budget        *budget.Budget                  // nil ⇒ unbudgeted (see Options.Budget)
-	afterAnalyze  func(ctx context.Context) error // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	st              *store.Store
+	parse           func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
+	emit            func(event string, data any)
+	parserVersion   string
+	sidecarDir      string
+	copyDir         string
+	copyEnabled     func() bool                                    // nil ⇒ copy (the default)
+	concurrency     func() int                                     // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock     *sync.Mutex                                    // nil ⇒ a private lock (see im.analyze)
+	budget          *budget.Budget                                 // nil ⇒ unbudgeted (see Options.Budget)
+	afterAnalyze    func(ctx context.Context) error                // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	buildEncounters func(ctx context.Context, matchID int64) error // nil ⇒ no encounter build
 
 	mu        sync.Mutex
 	cond      *sync.Cond // workers wait for work AND a free slot
@@ -349,22 +355,23 @@ func New(o Options) *Importer {
 		copyDir = data.DemosDir()
 	}
 	im := &Importer{
-		st:            o.Store,
-		parse:         o.Parse,
-		emit:          o.Emit,
-		parserVersion: o.ParserVersion,
-		sidecarDir:    sidecarDir,
-		copyDir:       copyDir,
-		copyEnabled:   o.CopyEnabled,
-		concurrency:   o.Concurrency,
-		computeLock:   o.ComputeLock,
-		budget:        o.Budget,
-		afterAnalyze:  o.AfterAnalyze,
-		queued:        map[int64]queueItem{},
-		cancels:       map[int64]context.CancelFunc{},
-		cancelled:     map[int64]bool{},
-		pending:       map[int64]matchLifecycle{},
-		sha:           newSHAGate(),
+		st:              o.Store,
+		parse:           o.Parse,
+		emit:            o.Emit,
+		parserVersion:   o.ParserVersion,
+		sidecarDir:      sidecarDir,
+		copyDir:         copyDir,
+		copyEnabled:     o.CopyEnabled,
+		concurrency:     o.Concurrency,
+		computeLock:     o.ComputeLock,
+		budget:          o.Budget,
+		afterAnalyze:    o.AfterAnalyze,
+		buildEncounters: o.BuildEncounters,
+		queued:          map[int64]queueItem{},
+		cancels:         map[int64]context.CancelFunc{},
+		cancelled:       map[int64]bool{},
+		pending:         map[int64]matchLifecycle{},
+		sha:             newSHAGate(),
 	}
 	if im.computeLock == nil {
 		im.computeLock = &sync.Mutex{}
@@ -1177,6 +1184,13 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// The pass runs in the background, and the behind set keeps any value
 	// it has not yet recomputed out of the current state, so the job's
 	// done event never shows a stale number as fresh.
+	// Encounters (shot-seeded visibility windows): derived data, built after
+	// analyze. A failure is logged and never fails the job.
+	if im.buildEncounters != nil {
+		if err := im.buildEncounters(ctx, matchID); err != nil {
+			slog.Error("library: encounters", "match", matchID, "error", err)
+		}
+	}
 	if im.afterAnalyze != nil {
 		_ = im.afterAnalyze(ctx)
 	}

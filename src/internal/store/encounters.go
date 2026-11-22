@@ -99,3 +99,39 @@ func (s *Store) GetEncounters(matchID int64) ([]models.EncounterRow, error) {
 	}
 	return out, nil
 }
+
+// EncounterInputs returns a match's shots (weapon fire with a shooter, in a
+// counted round) and its counted rounds' tick spans: what the encounter build
+// reads besides the sidecar.
+func (s *Store) EncounterInputs(matchID int64) ([]models.EncounterShot, []models.RoundSpan, error) {
+	rr, err := s.db.Query(`SELECT number, start_tick, end_tick FROM rounds WHERE match_id = ? ORDER BY number`, matchID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading rounds: %w", err)
+	}
+	var rounds []models.RoundSpan
+	for rr.Next() {
+		var r models.RoundSpan
+		if err := rr.Scan(&r.Number, &r.Start, &r.End); err != nil {
+			rr.Close()
+			return nil, nil, err
+		}
+		rounds = append(rounds, r)
+	}
+	rr.Close()
+	sr, err := s.db.Query(`SELECT round, tick, attacker FROM events
+		WHERE match_id = ? AND kind = 'weapon_fire' AND round > 0 AND attacker <> '' ORDER BY tick`, matchID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading shots: %w", err)
+	}
+	var shots []models.EncounterShot
+	for sr.Next() {
+		var sh models.EncounterShot
+		if err := sr.Scan(&sh.Round, &sh.Tick, &sh.Shooter); err != nil {
+			sr.Close()
+			return nil, nil, err
+		}
+		shots = append(shots, sh)
+	}
+	sr.Close()
+	return shots, rounds, nil
+}

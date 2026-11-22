@@ -121,3 +121,14 @@ func segHitsTri(seg Segment, v0, v1, v2 Vec3) bool {
 	t := (e2x*qx + e2y*qy + e2z*qz) * inv
 	return t > segEps && t < 1-segEps
 }
+
+// FirstHit returns the index of a triangle the segment passes through, or
+// ok=false. Brute force over the mesh: for diagnostics (overlays), not queries.
+func (m *Mesh) FirstHit(seg Segment) (tri int, ok bool) {
+	for i, t := range m.Triangles {
+		if segHitsTri(seg, m.Vertices[t[0]], m.Vertices[t[1]], m.Vertices[t[2]]) {
+			return i, true
+		}
+	}
+	return -1, false
+}

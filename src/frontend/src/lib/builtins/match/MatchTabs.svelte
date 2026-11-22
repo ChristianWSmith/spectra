@@ -62,6 +62,22 @@
         /* keep the default */
       });
   });
+  // The tab names, by key, from the canonical list (router MATCH_TABS), so the
+  // markup never compares against a bare string.
+  const TAB = Object.freeze({
+    overview: MATCH_TABS[0], scoreboard: MATCH_TABS[1], rounds: MATCH_TABS[2],
+    economy: MATCH_TABS[3], utility: MATCH_TABS[4], combat: MATCH_TABS[5],
+    heatmaps: MATCH_TABS[6], reports: MATCH_TABS[7], details: MATCH_TABS[8],
+  });
+  // A pane is laid out (display: contents) only while its tab is active.
+  const paneDisplay = (t) => (t === tab ? 'contents' : 'none');
+  // Tabs that have been shown at least once stay mounted (see the panes below).
+  let seen = $state({});
+  $effect(() => {
+    if (!seen[tab]) seen = { ...seen, [tab]: true };
+  });
+  // The active tab mounts at once; the others mount on their first showing.
+  const isShown = (t) => t === tab || !!seen[t];
   const utilityProps = $derived({
     ...panelProps,
     loopSecs,
@@ -78,33 +94,60 @@
   {/each}
 </nav>
 
-{#if tab === 'Overview'}
-  <spectra.Child name={MATCH_PANEL_IDS.overview} props={panelProps} />
-  <spectra.Child name={MATCH_PANEL_IDS.rosters} props={panelProps} />
-{:else if tab === 'Scoreboard'}
-  <spectra.Child name={MATCH_PANEL_IDS.scoreboard} props={panelProps} />
-{:else if tab === 'Rounds'}
-  <spectra.Child name={MATCH_PANEL_IDS.rounds} props={roundsProps} />
-{:else if tab === 'Economy'}
-  <spectra.Child name={ECON_PANEL_IDS.economy} props={panelProps} />
-{:else if tab === 'Utility'}
-  <spectra.Child name={UTIL_PANEL_IDS.utility} props={utilityProps} />
-{:else if tab === 'Heatmaps'}
-  <spectra.Child name="builtin-match-heatmaps" />
-{:else if tab === 'Combat'}
-  <spectra.Child name="builtin-match-combat" />
-{:else if tab === 'Reports'}
-  <spectra.Child name="builtin-reports" props={{ embedded: true }} />
-{:else if tab === 'Details'}
+<!-- Each tab's panes mount the first time the tab is shown, then stay mounted
+     (hidden while another tab is active), so switching tabs does not
+     reload their data or lose their state. -->
+{#if isShown(TAB.overview)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.overview)}>
+    <spectra.Child name={MATCH_PANEL_IDS.overview} props={panelProps} />
+    <spectra.Child name={MATCH_PANEL_IDS.rosters} props={panelProps} />
+  </div>
+{/if}
+{#if isShown(TAB.scoreboard)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.scoreboard)}>
+    <spectra.Child name={MATCH_PANEL_IDS.scoreboard} props={panelProps} />
+  </div>
+{/if}
+{#if isShown(TAB.rounds)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.rounds)}>
+    <spectra.Child name={MATCH_PANEL_IDS.rounds} props={roundsProps} />
+  </div>
+{/if}
+{#if isShown(TAB.economy)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.economy)}>
+    <spectra.Child name={ECON_PANEL_IDS.economy} props={panelProps} />
+  </div>
+{/if}
+{#if isShown(TAB.utility)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.utility)}>
+    <spectra.Child name={UTIL_PANEL_IDS.utility} props={utilityProps} />
+  </div>
+{/if}
+{#if isShown(TAB.heatmaps)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.heatmaps)}>
+    <spectra.Child name="builtin-match-heatmaps" />
+  </div>
+{/if}
+{#if isShown(TAB.combat)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.combat)}>
+    <spectra.Child name="builtin-match-combat" />
+  </div>
+{/if}
+{#if isShown(TAB.reports)}
+  <div class="tab-pane" style:display={paneDisplay(TAB.reports)}>
+    <spectra.Child name="builtin-reports" props={{ embedded: true }} />
+  </div>
+{/if}
+{#if isShown(TAB.details)}
   <!-- Details = technicals ONLY (owner ruling, 2026-11-15): the Key
        facts panel (server, tickrate, frames, size, import, parser,
        warnings, source), the voice and demo-copy facts, and Explorer's
        diagnostics (import details, advanced diagnostics), embedded and fixed
-       to THIS match — the standalone Explorer's network-message census is
-       Library copy, not this match's data, so it stays out of the tab.
-       Gameplay-derived facts (the first blood) live on the Rounds tab.
-       Map/Duration live in the match header. -->
-  <spectra.Child name={MATCH_PANEL_IDS.details} />
-  <spectra.Child name={MATCH_PANEL_IDS.facts} />
-  <spectra.Child name="builtin-explorer" props={{ embedded: true }} />
+       to THIS match. Gameplay-derived facts (the first blood) live on the
+       Rounds tab. Map/Duration live in the match header. -->
+  <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
+    <spectra.Child name={MATCH_PANEL_IDS.details} />
+    <spectra.Child name={MATCH_PANEL_IDS.facts} />
+    <spectra.Child name="builtin-explorer" props={{ embedded: true }} />
+  </div>
 {/if}
