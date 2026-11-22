@@ -55,7 +55,7 @@ func TestUnclassifiedTablesFlagsANewTable(t *testing.T) {
 
 // TestMetricReadableSettledList pins the classification itself
 func TestMetricReadableSettledList(t *testing.T) {
-	readable := []string{"events", "engagements", "rounds", "player_stats", "player_round_stats",
+	readable := []string{"events", "kill_tags", "rounds", "player_stats", "player_round_stats",
 		"round_economy", "utility_events", "chat", "match_trade_opps",
 		"round_classifications", "round_side_classes", "round_player_sides", "matches", "players",
 		"PLAYER_STATS", "generic_events", "teams", "round_player_money", "sound_events", "player_ticks"}
@@ -176,7 +176,7 @@ func TestMetricGateResolution(t *testing.T) {
 		{"distinct from", "SELECT * FROM players WHERE name IS NOT DISTINCT FROM steam_id", []string{"players"}},
 		{"string mentions", "SELECT 'FROM jobs' AS x FROM players -- FROM jobs", []string{"players"}},
 		{"window", "SELECT ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY kills) FROM player_stats", []string{"player_stats"}},
-		{"engagements alias", "SELECT * FROM engagements e JOIN round_player_sides s ON 1", []string{"engagements", "round_player_sides"}},
+		{"kill_tags alias", "SELECT * FROM kill_tags e JOIN round_player_sides s ON 1", []string{"kill_tags", "round_player_sides"}},
 	}
 	for _, c := range resolved {
 		t.Run("resolved/"+c.name, func(t *testing.T) {

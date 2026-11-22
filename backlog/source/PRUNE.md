@@ -112,7 +112,7 @@ engine state, not event folds. That classification is deliberate.
 - Metrics touching the round tables or `player_ticks` directly: 66 of 147.
 - Including the analysis tables built on them (`player_stats`,
   `player_round_stats`, `round_classifications`, `round_side_classes`,
-  `engagements`, `match_trade_opps`): 105 of 147.
+  `kill_tags`, `match_trade_opps`): 105 of 147.
 - Touching only events, players, rounds and matches: 42.
 
 The 105 figure is an upper bound. The analysis tables' inputs were not checked
@@ -134,7 +134,7 @@ Row counts and metric readers, for reference:
 | `round_side_classes` | 8 | Analysis-derived |
 | `round_classifications` | 6 | Analysis-derived |
 | `utility_events` | 6 | Unaffected |
-| `engagements` | 5 | Analysis-derived |
+| `kill_tags` | 5 | Analysis-derived |
 | `round_economy` | 4 | Sampled fact |
 | `match_trade_opps` | 3 | Analysis-derived |
 | `round_player_money` | 1 | Sampled fact |
@@ -293,7 +293,7 @@ These are ordered by what they would unblock.
    changed-row figure in option 5 depends entirely on this.
 8. **Analysis-table inputs.** Check, one table at a time, which tables
    `player_stats`, `player_round_stats`, `round_classifications`,
-   `round_side_classes`, `engagements` and `match_trade_opps` read. The 105
+   `round_side_classes`, `kill_tags` and `match_trade_opps` read. The 105
    figure depends on it.
 9. **Library scale.** Repeat the row-level and alive-count checks on a library
    with 50 or more matches. Seven matches is not enough to confirm rules like

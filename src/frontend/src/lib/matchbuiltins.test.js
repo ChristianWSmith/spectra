@@ -19,7 +19,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILTIN_PREFIX } from './componentbuiltins.js';
-import { clutchKillTicks, groupEngagements } from './builtins/match/combatmodel.js';
+import { clutchKillTicks, groupKillTags } from './builtins/match/combatmodel.js';
 
 const LIB = fileURLToPath(new URL('.', import.meta.url));
 const MATCH_DIR = path.join(LIB, 'builtins', 'match');
@@ -59,7 +59,7 @@ function stripComments(src) {
     .join('\n');
 }
 
-const TAB_FILES = ['Heatmaps.svelte', 'HeatmapsPanel.svelte', 'Combat.svelte', 'CombatEngagements.svelte', 'CombatClutches.svelte', 'combatdata.js', 'combatmodel.js'];
+const TAB_FILES = ['Heatmaps.svelte', 'HeatmapsPanel.svelte', 'Combat.svelte', 'CombatKillTags.svelte', 'CombatClutches.svelte', 'combatdata.js', 'combatmodel.js'];
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
 test('the registry names the Heatmaps and Combat tabs and their panels, in the builtin namespace', () => {
@@ -67,7 +67,7 @@ test('the registry names the Heatmaps and Combat tabs and their panels, in the b
   assert.deepEqual(ids, [
     'builtin-match-combat',
     'builtin-match-combat-clutches',
-    'builtin-match-combat-engagements',
+    'builtin-match-combat-kill-tags',
     'builtin-match-heatmap',
     'builtin-match-heatmaps',
     'builtin-match-tabs',
@@ -113,8 +113,8 @@ test('the Match surface mounts the tabs as components, and the old views are gon
   assert.ok(readdirSync(MATCH_DIR).length >= 7, 'the tab directory holds the tabs and their panels');
 });
 
-test('groupEngagements: one row per kill, kinds kept in fetch order, first position kept', () => {
-  const rows = groupEngagements([
+test('groupKillTags: one row per kill, kinds kept in fetch order, first position kept', () => {
+  const rows = groupKillTags([
     { round: 1, tick: 100, aSteam: 'A', aName: 'a', bSteam: 'B', bName: 'b', distance: 500, kind: 'opening' },
     { round: 1, tick: 90, aSteam: 'C', aName: 'c', bSteam: 'D', bName: 'd', distance: 200, kind: 'trade' },
     { round: 1, tick: 100, aSteam: 'A', aName: 'a', bSteam: 'B', bName: 'b', distance: 500, kind: 'trade' },

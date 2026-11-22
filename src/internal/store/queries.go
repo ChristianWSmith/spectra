@@ -149,7 +149,7 @@ func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
 // GetTrend (the one profile read reachable without GetCareer's guard),
 // and — through the exported form — the metrics layer's `player` group
 // (internal/metrics/compile.go). Event-shaped reads (round MVP/
-// first-blood names, kill-feed attacker/victim cells, chat, engagements)
+// first-blood names, kill-feed attacker/victim cells, chat, kill tags)
 // deliberately do NOT use it — they record what happened. GetPlayerRefs
 // keeps bots WITH the flag (the replay roster needs them).
 //

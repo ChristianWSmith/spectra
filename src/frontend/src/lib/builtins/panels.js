@@ -24,7 +24,7 @@ import ExplorerReference from './explorer/ExplorerReference.svelte';
 import MatchHeatmaps from './match/Heatmaps.svelte';
 import HeatmapPanel from './match/HeatmapsPanel.svelte';
 import MatchCombat from './match/Combat.svelte';
-import CombatEngagements from './match/CombatEngagements.svelte';
+import CombatKillTags from './match/CombatKillTags.svelte';
 import CombatClutches from './match/CombatClutches.svelte';
 import MatchTabs from './match/MatchTabs.svelte';
 
@@ -59,7 +59,7 @@ export const BUILTIN_PANELS = Object.freeze({
   [MATCH_HEATMAPS_ID]: MatchHeatmaps,
   'builtin-match-heatmap': HeatmapPanel,
   [MATCH_COMBAT_ID]: MatchCombat,
-  'builtin-match-combat-engagements': CombatEngagements,
+  'builtin-match-combat-kill-tags': CombatKillTags,
   'builtin-match-combat-clutches': CombatClutches,
 });
 

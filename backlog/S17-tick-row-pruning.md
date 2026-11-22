@@ -46,3 +46,26 @@ owner rules otherwise.
 ## Not covered
 Future metrics that need continuous state (speed, in-air, position) would
 need a grid. This story does not provide one; encounters or a new fact would.
+
+## Proposal: discard post-round rows (2026-11-21, needs a ruling)
+
+Owner: discard post-win/loss rows, as warmup and knife rows already are.
+
+Measured on the 7-match snapshot:
+- Tick rows after their round's `end_tick`: 678,930 of 9,817,283 (6.9%).
+- Of those, 17,101 are in each match's final round (the post-match tail).
+- Each round has about 450 ticks (7 s) of rows after its end, for all players.
+
+Proposed rule: the tick sink writes a round's rows only up to that round's
+`end_tick` (the sink gate that already skips discarded rounds). This removes
+the post-round tail from `player_ticks`, and it is what makes the presence
+case (S21) look like a leave rather than a gap.
+
+Why it needs a ruling: it changes stored tick rows, so metric values can change
+(any read that counts rows after the round end). The migration rule requires
+the ratified diff first. Before ruling, the sweep should run on the snapshot
+with the rule applied (S03 harness, not yet built) to list the changed cells.
+
+Open question: rows between rounds (after `end_tick`, before the next freeze)
+are labeled with the round that just ended. Keep them or discard them? The
+rule above discards them.

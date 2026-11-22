@@ -898,11 +898,11 @@ func (a *agg) kill(k killInfo) {
 	//
 	// This is the IMPORT-TIME DEFAULT only: the extractor has no access
 	// to analysis_config, so analytics.Compute rewrites
-	// player_stats.trade_kills from the cfg-aware engagements pass right
+	// player_stats.trade_kills from the cfg-aware kill tags pass right
 	// after import (and on every rule recompute). The two rules must stay
 	// equivalent at 5 s — pinned by the golden trade-rule test — and the
 	// gates here (enemy kills only: no teamkills, no suicides, no
-	// post-match kills) are mirrored in analytics.Engagements.
+	// post-match kills) are mirrored in analytics.Kill tags.
 	if k.victimKey != 0 && k.killerSide != "" {
 		tr := k.tickRate
 		if tr <= 0 {

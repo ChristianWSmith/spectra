@@ -1,5 +1,5 @@
 <script>
-  // Combat · Engagements. The duels of
+  // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
   // in its Kind cell). The kind filter is a MULTI-SELECT DROPDOWN whose
@@ -8,7 +8,7 @@
   // on offer). It reads the match from `context` and nothing else but the
   // loop-length pref, which stays a plain pref (ruling 33).
   import * as S from '../../strings/index.js';
-  import { getEngagements, getPref, errText } from '../../services.js';
+  import { getKillTags, getPref, errText } from '../../services.js';
   import { onMount } from 'svelte';
   import { roundClock } from '../../fmt.js';
   import { replayHash, entryLoopAround, LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
@@ -16,18 +16,18 @@
   import { roundsByNumber } from '../../replay/landmarks.js';
   import { playerSideClassAt } from '../../teams.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
-  import { ENG_DIST_DEF, ENG_KIND_TITLES } from '../../definitions.js';
+  import { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../definitions.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import Popover from '../../components/Popover.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
   import { loadCombatSide } from './combatdata.js';
-  import { ENG_KINDS, groupEngagements } from './combatmodel.js';
+  import { KILL_TAG_KINDS, groupKillTags } from './combatmodel.js';
 
   let { spectra, context } = $props();
   const id = $derived(context.matchId);
 
-  let engagements = $state([]);
+  let killTags = $state([]);
   let error = $state('');
   // Rung 3 of the loading ladder: without it the table renders empty while the
   // reads are in flight, a false "no data" state. Transient, never seeded.
@@ -95,10 +95,10 @@
   $effect(() => {
     const matchId = id;
     let live = true;
-    Promise.all([getEngagements(matchId, ''), loadCombatSide(matchId)])
+    Promise.all([getKillTags(matchId, ''), loadCombatSide(matchId)])
       .then(([en, side]) => {
         if (!live) return;
-        engagements = en || [];
+        killTags = en || [];
         players = side.players;
         sideSwitches = side.sideSwitches;
         rounds = side.rounds;
@@ -115,13 +115,13 @@
     return () => (live = false);
   });
 
-  // One row per kill (see combatdata.js groupEngagements).
-  const engagementRows = $derived(groupEngagements(engagements));
+  // One row per kill (see combatdata.js groupKillTags).
+  const killTagRows = $derived(groupKillTags(killTags));
 
   // The round <select> shows the recorded choice while it still exists in the
   // option list, else the first round with a kill, else "All rounds".
   const engRoundOptions = $derived(
-    [...new Set(engagementRows.map((g) => g.round))].sort((a, b) => a - b),
+    [...new Set(killTagRows.map((g) => g.round))].sort((a, b) => a - b),
   );
   const engRoundValue = $derived(
     engRound === 'all'
@@ -132,8 +132,8 @@
           ? String(engRoundOptions[0])
           : 'all',
   );
-  const visibleEngagements = $derived(
-    engagementRows.filter(
+  const visibleKillTags = $derived(
+    killTagRows.filter(
       (g) =>
         (engKinds.length === 0 || g.kinds.some((k) => engKinds.includes(k))) &&
         (engRoundValue === 'all' || String(g.round) === engRoundValue),
@@ -159,9 +159,9 @@
   // The closed state's wording: the EFFECTIVE filter. No checked kind and all
   // four checked both read "All kinds".
   const kindSummary = $derived(
-    engKinds.length === 0 || engKinds.length === ENG_KINDS.length
+    engKinds.length === 0 || engKinds.length === KILL_TAG_KINDS.length
       ? S.combat.allKinds
-      : ENG_KINDS.filter((k) => engKinds.includes(k)).join(', '),
+      : KILL_TAG_KINDS.filter((k) => engKinds.includes(k)).join(', '),
   );
 
   // Deep link into the replay at a tick, with an optional entry-only loop.
@@ -184,8 +184,8 @@
   <p class="muted" role="status"><StatusChip block detail={S.combat.loadingDetail} /></p>
 {:else}
   <section class="panel comb-sec">
-    <h2>{S.combat.engagementsHeading}</h2>
-    <div class="comb-kinds" role="group" aria-label={S.combat.filterEngagementsLabel}>
+    <h2>{S.combat.killTagsHeading}</h2>
+    <div class="comb-kinds" role="group" aria-label={S.combat.filterKillTagsLabel}>
       <span class="comb-kind-host" bind:this={kindAnchor}>
         <span class="comb-field">
           <span class="field-label">{S.combat.kindFilterLabel}</span>
@@ -215,7 +215,7 @@
             role="group"
             aria-label={S.combat.kindFilterLabel}
           >
-            {#each ENG_KINDS as k (k)}
+            {#each KILL_TAG_KINDS as k (k)}
               <label class="filt-check">
                 <input
                   type="checkbox"
@@ -256,22 +256,22 @@
             <th scope="col">{S.combat.thKiller}</th>
             <th scope="col"><span class="sr-only">{S.combat.thVersus}</span></th>
             <th scope="col">{S.combat.thVictim}</th>
-            <th scope="col" class="num def" title={ENG_DIST_DEF}>{S.combat.thDist}</th>
+            <th scope="col" class="num def" title={KILL_TAG_DIST_DEF}>{S.combat.thDist}</th>
           </tr>
         </thead>
         <tbody>
-          {#each visibleEngagements as g (g.key)}
+          {#each visibleKillTags as g (g.key)}
             <tr>
               <td>
-                <!-- Row ▶ follows the ENGAGEMENT's KILLER. -->
+                <!-- Row ▶ follows the KILL TAG's KILLER. -->
                 <EventPlay
                   tick={g.tick}
                   title={g.aSteam
                     ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam }) + S.combat.killerSuffix
-                    : S.combat.watchEngagement}
+                    : S.combat.watchKillTag}
                   label={g.aSteam
                     ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam })
-                    : S.combat.watchEngagement}
+                    : S.combat.watchKillTag}
                   onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
                 />
               </td>
@@ -282,7 +282,7 @@
               <td>
                 <!-- ONE kill, up to FOUR kind facts; each chip keeps its own
                      perspective title, plus an sr-only combined line. -->
-                {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">{S.combat.oneKillPrefix}{g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
+                {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={KILL_TAG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">{S.combat.oneKillPrefix}{g.kinds.map((k) => KILL_TAG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
               </td>
               <td>
                 <ProfileLink
@@ -303,12 +303,12 @@
                   title={S.fill(S.combat.openProfileName, { name: g.bName })}
                 />
               </td>
-              <td class="num" title={ENG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
+              <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
             </tr>
           {:else}
             <tr>
               <td colspan="8" class="muted">
-                {error ? S.combat.engagementsUnavailable : S.combat.noEngagements}
+                {error ? S.combat.killTagsUnavailable : S.combat.noKillTags}
               </td>
             </tr>
           {/each}

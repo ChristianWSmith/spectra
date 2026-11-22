@@ -9,16 +9,15 @@ and so on are the sub-docs of that directory.
 
 ## Owner decisions open
 
-- **Kill tags or kill class.** Ruling 32 renames the engagements family to
-  "kill tags"; PLAN's open note suggests "kill class". The UI already says
-  "kill tags" (`src/frontend/src/lib/strings/combat.js`). Decide the final name.
-  Source: PLAN §2 r19, r32; PLAN "Open decisions".
-- **Engagements table identifier.** The `engagements` table (`schema.sql`)
-  keeps its name; only user-facing text was renamed. Decide whether the table
-  is renamed, and if so, ride it on the next wipe. Source: PLAN §5 C5g, r32.
+(none)
 
 ## Decided (recorded)
 
+- **Kill tags, not kill class, all the way through.** The `engagements` family
+  is renamed to kill tags everywhere: the table is `kill_tags`, Go is
+  `KillTag`/`KillTags`, JS is `killTags`, kebab ids are `kill-tags`. "Encounters"
+  stays the name for the planned tier-2 windows. Existing dev libraries need a
+  wipe and re-import (no versioning before the first release).
 - **Economy view as a builtin.** Shipped as a builtin in
   `src/frontend/src/lib/econpanels.js`. Recorded as decided (S19, 2026-11-21).
   Source: PLAN §5 C5 "Open for the owner".

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	enc_messages INTEGER NOT NULL DEFAULT 0,
 	-- Analytics provenance: the analysis_config.rule_version the match's
 	-- derived rows (round_classifications / player_round_stats /
-	-- engagements / utility_events + player_stats.trade_kills) were last
+	-- kill_tags / utility_events + player_stats.trade_kills) were last
 	-- computed under. Written ONLY at the end of a successful
 	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
 	-- 0 = never analyzed / unknown (rule_version starts at 1 — 2 since
@@ -439,7 +439,7 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(m
 --          detail_json.nearDist (extract-measured, config-independent)
 --          falls in [0, analysis_config.trade_opp_distance] — the
 --          profile Trade-rate denominator, SUMmed library-wide.
---   missed per player: this player's 'untraded' engagements whose paired
+--   missed per player: this player's 'untraded' kill_tags whose paired
 --          kill event's nearDist falls in the same range — Combat's
 --          "trade opportunities missed" badge (the distance-gated subset
 --          of the ungated untraded count, the `untraded_deaths` metric).
@@ -658,7 +658,7 @@ CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_
 -- other steam_id members.
 CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
 
-CREATE TABLE IF NOT EXISTS engagements (
+CREATE TABLE IF NOT EXISTS kill_tags (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	seq INTEGER NOT NULL,
 	tick INTEGER NOT NULL DEFAULT 0,
@@ -672,8 +672,8 @@ CREATE TABLE IF NOT EXISTS engagements (
 	won_by TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, seq)
 );
-CREATE INDEX IF NOT EXISTS idx_engagements_match_kind ON engagements(match_id, kind);
-CREATE INDEX IF NOT EXISTS idx_engagements_player ON engagements(match_id, a_steam);
+CREATE INDEX IF NOT EXISTS idx_kill_tags_match_kind ON kill_tags(match_id, kind);
+CREATE INDEX IF NOT EXISTS idx_kill_tags_player ON kill_tags(match_id, a_steam);
 
 -- Utility rows: one row per grenade DETONATION paired with its throw.
 -- Throw-side facts are throw-based (throw_tick + throw_x/throw_y — 0/NULL
@@ -1509,25 +1509,25 @@ fold AS (
  'int',
  'Formula: sum(match_trade_opps.missed) — teammate deaths nobody answered inside the window, addressed per player over the joined sources — zero opportunities still shows 0.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_opening', 'Opening kill tags', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''opening'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_opening', 'Opening kill tags', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''opening'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''opening'') — round-opening kill tags with this player as killer, addressed per player — from the kill tag list; unknown-side rounds read lower than Entry.',
+ 'Formula: count(kill_tags rows WHERE kind = ''opening'') — round-opening kill tags with this player as killer, addressed per player — from the kill tag list; unknown-side rounds read lower than Entry.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_trade', 'Trade kill tags', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''trade'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_trade', 'Trade kill tags', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''trade'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''trade'') — strict-window trade kills with this player as killer, addressed per player — the same number as Trade kills, from the kill tag list.',
+ 'Formula: count(kill_tags rows WHERE kind = ''trade'') — strict-window trade kills with this player as killer, addressed per player — the same number as Trade kills, from the kill tag list.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_traded', 'Kills traded (A-side)', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''traded'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_traded', 'Kills traded (A-side)', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''traded'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''traded'') — this player''s kills the enemy answered inside the window (killer-side), addressed per player — own unanswered deaths are Untraded deaths.',
+ 'Formula: count(kill_tags rows WHERE kind = ''traded'') — this player''s kills the enemy answered inside the window (killer-side), addressed per player — own unanswered deaths are Untraded deaths.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_untraded', 'Kills untraded (A-side)', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_untraded', 'Kills untraded (A-side)', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
+ 'Formula: count(kill_tags rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutches', 'Clutches', '',
  '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
@@ -1629,13 +1629,13 @@ fold AS (
  'int',
  'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''pistol'') — rounds played on a pistol side, addressed per player over the joined sources.',
  'builtin', CURRENT_TIMESTAMP),
--- ---- addendum: the victim-side duel count (1 row) — the engagements
+-- ---- addendum: the victim-side duel count (1 row) — the kill_tags
 -- table read through its curated victim-side source (whitelist.go
--- engagements_victim).
+-- kill_tags_victim).
 ('untraded_deaths', 'Untraded deaths', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM engagements AS engagements_victim WHERE engagements_victim.match_id = :match_id AND (b_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements_victim.match_id AND p.steam_id = engagements_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM kill_tags AS kill_tags_victim WHERE kill_tags_victim.match_id = :match_id AND (b_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags_victim.match_id AND p.steam_id = kill_tags_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''untraded'') — deaths of this player nobody answered inside the window, addressed per player — the Combat tab''s Untraded deaths column.',
+ 'Formula: count(kill_tags rows WHERE kind = ''untraded'') — deaths of this player nobody answered inside the window, addressed per player — the Combat tab''s Untraded deaths column.',
  'builtin', CURRENT_TIMESTAMP),
 -- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
 -- additive sum(a + b) chain is what the duel total needs.

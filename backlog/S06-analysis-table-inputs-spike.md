@@ -9,7 +9,7 @@ dependency map. For each analysis table, list its real inputs.
 
 ## Tables
 `player_stats`, `player_round_stats`, `round_classifications`,
-`round_side_classes`, `engagements`, `match_trade_opps`.
+`round_side_classes`, `kill_tags`, `match_trade_opps`.
 
 ## Work
 - For each table, trace the Go writer (`analytics.Compute`, `store/analytics.go`)

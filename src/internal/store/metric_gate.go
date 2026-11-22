@@ -43,7 +43,7 @@ import (
 var metricReadable = map[string]bool{
 	// Source tables.
 	"events":                true,
-	"engagements":           true,
+	"kill_tags":             true,
 	"rounds":                true,
 	"player_stats":          true,
 	"player_round_stats":    true,

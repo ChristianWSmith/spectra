@@ -202,7 +202,7 @@ func TestCareerOpeningEquivalence(t *testing.T) {
 // oracle (design addendum I20): the seed equals, subject for subject,
 // the SQL the Combat tab's Untraded deaths column read before it
 // converted (GetCombatStats' GROUP BY b_steam over the untraded
-// engagements) at every fixture match — a victim-side subject with no
+// kill tags) at every fixture match — a victim-side subject with no
 // untraded duel reads 0 from its own rows (never a missing row, never a
 // fabricated one).
 func TestUntradedDeathsEquivalence(t *testing.T) {
@@ -213,7 +213,7 @@ func TestUntradedDeathsEquivalence(t *testing.T) {
 		t.Run(scope, func(t *testing.T) {
 			got := previewAt(t, st, seed, scope)
 			want := oracle(t, st,
-				`SELECT b_steam, COUNT(*) FROM engagements
+				`SELECT b_steam, COUNT(*) FROM kill_tags
 				 WHERE match_id = ? AND kind = 'untraded' GROUP BY b_steam`,
 				matchID)
 			if len(want) != 4 {

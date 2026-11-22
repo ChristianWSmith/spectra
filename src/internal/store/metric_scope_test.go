@@ -119,7 +119,7 @@ func TestRuleValueEditRecalculatesExactlyTheAffected(t *testing.T) {
 		}
 	}
 
-	t.Run("trade window reaches player_stats, engagements and their dependents", func(t *testing.T) {
+	t.Run("trade window reaches player_stats, kill_tags and their dependents", func(t *testing.T) {
 		f := build(t)
 		edit(t, f, func(c *models.AnalysisConfig) { c.TradeWindowS += 1 })
 		next := f.live + 1

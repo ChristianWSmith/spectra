@@ -84,3 +84,45 @@ uses it.
 human players. Bots that join mid-round have no side row, so S09 and S10 must
 treat a missing row as "bot / mid-round join" and must not read a missing side
 as a human.
+
+## Corrections and new findings (2026-11-21)
+
+**Correction: the bot-side claim does not hold in general.** Above I said the
+bot filter would be a no-op. That holds only for this snapshot, where the
+bots joined mid-round. Bots present at freeze end do get
+`round_player_sides` rows (the sampler does not filter bots). Enemy bots
+matter to trade opportunities. Filtering bots out of
+`GetRoundPlayerSides` broke `TestTradeOppStoredMatchesLegacyQuery`
+(stored 7 vs oracle 8). That filter is reverted. The bot filter
+(`is_bot_key`, see `src/internal/store/botkey.go`) is used only where a
+single human's rows are read (profile history and side split).
+
+**Presence case (the "match 4, round 23" gap), resolved.** Numbering in the
+pre-dogfood snapshot (`~/Programming/spectra-home`): round 23 of de_cache is
+the **final** round (23 rounds total). The "leavers" are the match-end
+tail. Player `76561198386265483` kills themself at tick 136598 and
+disconnects, 101 ticks after the round ends at 136497. Other players leave at
+136661, 136689, 136710, 136815 and 136885. Each game has a post-round tail
+of about 450 ticks (7 s) in every round, not only the last.
+
+- Tick rows beyond their round's `end_tick`: 678,930 of 9,817,283 (6.9%).
+- Of those, 17,101 are in each match's final round (the post-match tail).
+- The rest sit between rounds and are labeled with the round that just ended.
+
+The owner proposed discarding post-win/loss rows as well as warmup and
+knife rows. That changes stored tick rows, so it needs a ruling (see S17).
+
+**OT money, cause found (round 25 of match 1 and match 7).**
+- `round_player_money.money_start` = the player's final money at the end
+  of round 24 (20 of 20 cells, the same value).
+- The first tick of round 25 is 10000 (20 of 20 cells). This is the
+  overtime reset.
+- Freeze-end tick money = 10000 − `spent` (checked on the sampled cells in
+  match 1). So the tick sample is the correct pre-buy account, and
+  `money_start` is stale.
+- The owner's reading (6150 is the post-buy amount) does not match the
+  data: at freeze end that player has 5200.
+
+Fix options (a value change, so a ruling first): set `money_start` to the
+reset value (10000) for the first overtime round, or derive `money_start`
+from the tick sample at round start. Affects 20 cells on the snapshot.

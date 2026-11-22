@@ -76,3 +76,15 @@ bound. The fallback gives 52, tick HP at the end tick is 100.
 
 **Not covered.** Seven matches only. Healing and the health-field semantics
 were not tested beyond this snapshot.
+
+## Ruling and fix (2026-11-21)
+
+Owner accepted the fallback fix. `src/internal/store/clutch_sql.go`: the
+fallback's damage sum is now bounded by the clutch end for every outcome
+(`dh.tick > e.start_tick AND dh.tick <= e.end_tick`). Before: a `round`
+outcome had no upper bound and summed post-round damage.
+
+Re-run on the snapshot: fallback cases 12 of 12 equal tick HP (was 11 of 12).
+Health branch still 33 of 33. The stored value that changes is one clutch's
+`hp_left` (match 7, round 23: 52 → 100), so `clutch_avg_hp` changes for that
+one subject. Tests: `go test ./internal/store/ -run Clutch` passes.

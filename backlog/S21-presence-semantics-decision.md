@@ -44,3 +44,17 @@ S10 (rule for the alive-count rewrite), S17 (as-of reads on pruned rows).
 ## Not covered
 Gap frequency beyond the snapshot is unknown (S08). The ruling may need to be
 revisited at library scale.
+
+## Update (2026-11-21): the presence case is a post-round leave
+
+The motivating case (the "match 4, round 23" gap) is the match-end tail of
+de_cache in the pre-dogfood snapshot (its round 23 is the final round). Players
+leave after the round ends. The gap is not a mid-round presence gap. See
+`S02-tick-round-reconciliation-spike.md`, "Presence case, resolved."
+
+Consequence: the presence rule for pruned rows (S21) may be settled by the
+post-round discard in S17 instead, if the owner rules that discard. That
+would leave mid-round absence as the only case, and no mid-round gap was
+found on the snapshot. Of the 11 player-rounds that stop more than 1 s early,
+3 are bot keys. The 8 human-key ones (gaps 0.3 to 34 s) are NOT yet checked
+against the event log; only the de_cache case above is.

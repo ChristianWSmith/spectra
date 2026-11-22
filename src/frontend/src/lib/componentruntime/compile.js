@@ -84,7 +84,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       getScoreboard: 'a match scoreboard (read)',
       getRounds: 'a match’s rounds (read)',
       getHeatmap: 'heatmap points for a match (read)',
-      getEngagements: 'a match’s engagements (read)',
+      getKillTags: 'a match’s kill tags (read)',
       getClutches: 'a match’s clutches (read)',
       getEntitySummary: 'a diagnostics summary for one entity (read)',
       getProvenance: 'a match’s provenance (read)',
@@ -208,8 +208,8 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/definitions.js': {
     load: () => import('../definitions.js'),
     names: {
-      ENG_DIST_DEF: 'the default engagement distance',
-      ENG_KIND_TITLES: 'the titles of engagement kinds',
+      KILL_TAG_DIST_DEF: 'the default kill tag distance',
+      KILL_TAG_KIND_TITLES: 'the titles of kill tag kinds',
     },
   },
   'src/lib/replay/landmarks.js': {
@@ -246,8 +246,8 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/builtins/match/combatmodel.js': {
     load: () => import('../builtins/match/combatmodel.js'),
     names: {
-      ENG_KINDS: 'the engagement kinds',
-      groupEngagements: 'group engagements into duels',
+      KILL_TAG_KINDS: 'the kill tag kinds',
+      groupKillTags: 'group kill tags into duels',
       clutchKillTicks: 'the kill ticks of a clutch',
     },
   },

@@ -161,7 +161,7 @@ export const AnalyticsService = {
   GetEconomy: rec('GetEconomy'),
   GetRoundClasses: rec('GetRoundClasses'),
   GetClutches: rec('GetClutches'),
-  GetEngagements: rec('GetEngagements'),
+  GetKillTags: rec('GetKillTags'),
   GetUtility: rec('GetUtility'),
 };
 export const ProfileService = {

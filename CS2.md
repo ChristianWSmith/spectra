@@ -1792,3 +1792,18 @@ at the end of the section.
   demoinfocs-golang v6.0.0-rc.2 `pkg/demoinfocs/common/player.go`
   (`EquipmentValueRoundStart` / `MoneySpentThisRound` doc comments);
   local characterization on golden/de_cache.dem.zst (2026-11-18).
+
+- **Map geometry format in a CS2 install (BSP or not)** — whether CS2 maps
+  can be read as Source 1 `.bsp` (the format `saiko-tech/bsp-tracer` parses).
+  Answer: **no.** CS2 ships compiled Source 2 maps: `game/csgo/maps/<map>.vpk`
+  holds `maps/<map>.vmap_c` (a compiled vmap). Physics for collision is
+  embedded in that resource (`embedded_physics` / `phys_data_block` strings
+  in `de_cache.vpk`). There are no `.bsp` files in the install. bsp-tracer is
+  a CS:GO (Source 1) BSP reader built on `galaco/bsp`, so it does not apply
+  to CS2 maps. A tracer on CS2 needs a Source 2 vmap reader and the embedded
+  physics decode. The map VPKs are separate from `pak01_dir.vpk`, which the
+  repo's cs2find index does not cover.
+  **Source** — local listing of `game/csgo/maps/de_cache.vpk` (2026-11-21;
+  `grep` of directory strings, not a decode); bsp-tracer README and
+  `pkg/bsptracer` imports (`github.com/saiko-tech/bsp-tracer`, MIT, last
+  updated 2024-03-22; retrieved 2026-11-21).

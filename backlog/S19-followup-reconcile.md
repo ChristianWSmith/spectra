@@ -41,9 +41,9 @@ still open, based on the code as it is now.
 - **`attacker_inair` and `same_side` stamps.** Still in the schema. The planned
   drops are in the migration plan, not yet applied.
 - **`Library.svelte` audit.** Not done. The file exists.
-- **Kill tags versus kill class.** The UI says "kill tags"; the table is still
-  `engagements`. Owner decision still open.
-- **Engagements table identifier.** Still `engagements`. Owner decision.
+- **Kill tags versus kill class.** Decided: kill tags. Renamed everywhere on
+  2026-11-21 (table `kill_tags`, Go `KillTag`, JS `killTags`, kebab `kill-tags`).
+  Existing dev libraries need a wipe and re-import.
 - **Component read cache with generation counters (r52).** Not built on the
   backend. The frontend has a `cachedRead` for lists and values, which is a
   different design. Linked to S13.

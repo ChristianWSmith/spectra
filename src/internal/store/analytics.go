@@ -14,7 +14,7 @@ import (
 
 // This file is the M3 persistence surface: analysis_config, the per-match
 // derived-row replace/getters (round_classifications, player_round_stats,
-// clutches, engagements, utility_events), the economy view with loss-bonus
+// clutches, kill tags, utility_events), the economy view with loss-bonus
 // reconstruction, combat stats computed from stored rows, saved-filter
 // presets and the player_career rollup. Every string write passes scrub.
 
@@ -64,7 +64,7 @@ const (
 
 	playerRoundCols = `round, steam_id, name, traded, kast, money_start, equip, spent, rule_version, side`
 
-	engagementCols = `seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by`
+	killTagCols = `seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by`
 
 	utilityCols = `seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y,
 		damage, flash_ms, affected, site, trajectory_ref`
@@ -231,11 +231,11 @@ func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat
 		})
 }
 
-// ReplaceEngagements swaps a match's engagements rows in one transaction
+// ReplaceKillTags swaps a match's kill tags rows in one transaction
 // (seq is rewritten 0..n-1 in slice order so the PK stays dense).
-func (s *Store) ReplaceEngagements(matchID int64, rows []models.Engagement) error {
+func (s *Store) ReplaceKillTags(matchID int64, rows []models.KillTag) error {
 	const op = "couldn't save the kill tags"
-	return s.replaceMatchRows(op, "engagements", "match_id, "+engagementCols, matchID, len(rows),
+	return s.replaceMatchRows(op, "kill_tags", "match_id, "+killTagCols, matchID, len(rows),
 		func(stmt *sql.Stmt, i int) error {
 			r := rows[i]
 			if _, err := stmt.Exec(
@@ -268,7 +268,7 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 
 // ReplaceTradeKills rewrites one match's player_stats.trade_kills from the
 // cfg-aware analytics pass — the ONE trade-window rule (analytics.
-// Engagements KindTrade rows counted per killer). Every player row resets
+// Kill tags KindTrade rows counted per killer). Every player row resets
 // to 0 first so a recompute under a smaller window leaves no stale counts;
 // steam IDs without a player_stats row are ignored. The extractor's
 // import-time value (hardcoded 5 s) is the seed this overwrites on every
@@ -450,11 +450,11 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 	return out, nil
 }
 
-// GetEngagements returns a match's engagements (kind "" = all kinds),
+// GetKillTags returns a match's kill tags (kind "" = all kinds),
 // ordered by seq.
-func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement, error) {
-	q := `SELECT ` + engagementCols + `
-		FROM engagements WHERE match_id = ?`
+func (s *Store) GetKillTags(matchID int64, kind string) ([]models.KillTag, error) {
+	q := `SELECT ` + killTagCols + `
+		FROM kill_tags WHERE match_id = ?`
 	args := []any{matchID}
 	if k := scrub(kind); k != "" {
 		q += ` AND kind = ?`
@@ -466,9 +466,9 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 		return nil, fmt.Errorf("couldn't load the kill tags: %w", err)
 	}
 	defer rows.Close()
-	var out []models.Engagement
+	var out []models.KillTag
 	for rows.Next() {
-		var r models.Engagement
+		var r models.KillTag
 		r.MatchID = matchID
 		if err := rows.Scan(&r.Seq, &r.Tick, &r.Round, &r.Kind, &r.ASteam, &r.AName, &r.BSteam, &r.BName, &r.Distance, &r.WonBy); err != nil {
 			return nil, fmt.Errorf("couldn't load the kill tags: %w", err)
@@ -1347,7 +1347,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			(SELECT rps.side FROM round_player_sides rps
 			 JOIN rounds r ON r.match_id = rps.match_id AND r.number = rps.round
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
-			   AND rps.side IN ('ct','t')
+			   AND NOT is_bot_key(rps.steam_id) AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
 			0, 0
 		 `+playerHistoryFrom, scrub(steamID),
@@ -1676,7 +1676,7 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 		 JOIN round_player_sides rps
 		   ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
 		 JOIN rounds rd ON rd.match_id = prs.match_id AND rd.number = prs.round
-		 WHERE prs.steam_id = ? AND rps.side IN ('ct','t')
+		 WHERE prs.steam_id = ? AND NOT is_bot_key(rps.steam_id) AND rps.side IN ('ct','t')
 		 GROUP BY rps.side
 		 ORDER BY rps.side ASC`, scrub(steamID),
 	)

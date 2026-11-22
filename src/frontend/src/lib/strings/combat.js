@@ -1,4 +1,4 @@
-// strings/combat.js — Combat view chrome (engagements, clutches)
+// strings/combat.js — Combat view chrome (kill tags, clutches)
 // Extracted from views/Combat.svelte (Strings Stage 3, Sweep-B); values
 // are plain strings with {arg} placeholders — compose at the call site
 // with S.fill(S.combat.slot, { arg }).
@@ -15,8 +15,8 @@ export const combat = {
   kastCellTitle: '{def} — click for the per-round K/A/T/S grid',
   noCombatStats: 'No combat stats.',
   noteLead: 'Dotted headers and ',
-  engagementsHeading: 'Kill tags',
-  filterEngagementsLabel: 'Filter kill tags by kind or round',
+  killTagsHeading: 'Kill tags',
+  filterKillTagsLabel: 'Filter kill tags by kind or round',
   kindFilterLabel: 'Kind',
   allKinds: 'All kinds',
   roundFilterLabel: 'Round',
@@ -30,12 +30,12 @@ export const combat = {
   thVersus: 'versus',
   thVictim: 'Victim',
   thDist: 'Dist (m)',
-  watchEngagement: 'Watch this kill in the replay',
+  watchKillTag: 'Watch this kill in the replay',
   tickTitle: 'tick {tick}',
   oneKillPrefix: 'One kill — ',
   openProfileName: 'Open profile — {name}',
-  engagementsUnavailable: 'Kill tags unavailable.',
-  noEngagements: 'No kill tags match this filter.',
+  killTagsUnavailable: 'Kill tags unavailable.',
+  noKillTags: 'No kill tags match this filter.',
   clutchesHeading: 'Clutches',
   filterClutchesLabel: 'Filter clutches by outcome',
   wonToggle: 'won',

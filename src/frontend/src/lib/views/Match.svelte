@@ -2,7 +2,7 @@
   import * as S from '../strings/index.js';
   import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
-  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getEngagements, getVoicePresence, getMatchSummary, subscribeJobProgress, errText } from '../services.js';
+  import { getMatch, getScoreboard, getRounds, getWarnings, getRoundClasses, getClutches, getKillTags, getVoicePresence, getMatchSummary, subscribeJobProgress, errText } from '../services.js';
   import { fmtDuration, fmtInt, fmtPatch } from '../fmt.js';
   import { teamNames, teamStartClass } from '../teams.js';
   import { MATCH_TAB_SECTIONS, matchTabSlug } from '../router.js';
@@ -152,7 +152,7 @@
     void Promise.allSettled([
       getRoundClasses(mid),
       getClutches(mid),
-      getEngagements(mid, ''),
+      getKillTags(mid, ''),
     ]);
     return off;
   });

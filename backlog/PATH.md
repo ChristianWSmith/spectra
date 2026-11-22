@@ -232,3 +232,44 @@ are import order, not the owner's numbering.
   the fallback post-round bound, which needs a ruling before any value change.
 - The FOLLOWUP "match 4 round 23" presence case should be checked against the
   original snapshot (its numbering is not this one).
+
+## 7. Status, second pass (2026-11-21)
+
+Owner rulings applied:
+- **S01 fallback bound:** accepted and fixed (`clutch_sql.go`). Fallback 12 of 12.
+- **Bot filter (S02):** `is_bot_key(steam_id)` SQL function added
+  (`src/internal/store/botkey.go`, rule in `models.IsBotKey`). Applied only to
+  single-human reads. **Not** applied to `GetRoundPlayerSides`: enemy bots
+  matter to trade opportunities, and filtering them broke the trade-opp
+  equivalence test. Bots present at freeze end do have side rows.
+- **Engagements rename:** done. "Kill tags" everywhere: table `kill_tags`,
+  Go `KillTag`/`KillTags`, JS `killTags`, kebab `kill-tags`, UI "Kill tags".
+  Existing dev libraries need a wipe and re-import.
+- **Worktrees:** pruned. 64 clean worktrees and their merged branches removed.
+  Seven worktrees with uncommitted work were kept (see below).
+- **Speed (item 7):** the pain point. Priority is the start/stop check for S04
+  tolerance. `WITHOUT ROWID` (S15/S20) is deprioritized.
+- **Exact-tick joins (item 5):** the side join can use round sides (identical
+  on the snapshot). Alive state can use as-of if pruning allows. Speed has no
+  current exact-tick reader. See S04.
+- **Deferred by owner:** S05 (until derivation is attempted), S08 (no matches
+  available), S13 (TTY, no GUI). S16 stays sampled.
+
+Findings:
+- **Presence case resolved:** post-round leave in the final round of de_cache.
+  Every round has a ~7 s post-round tail (678,930 rows, 6.9%).
+- **OT money:** `money_start` in OT round 25 is the round-24 final money (stale).
+  The tick sample (10000) is right. Needs a ruling for the 20 cells.
+- **BSP:** `bsp-tracer` reads CS:GO BSP. CS2 maps are Source 2 vmaps with
+  embedded physics. Not applicable as it stands (S07, CS2.md).
+
+Needs a ruling:
+1. **Discard post-round tick rows** (S17). Changes stored rows, 6.9%.
+2. **OT `money_start`** (S02). Set to the reset value, or derive from the tick sample.
+3. **Bot-side filter scope.** Confirm that bots stay in side reads (as now),
+   and that only human-profile reads filter them.
+
+Not done this pass: S03 (harness), S06 (analysis inputs audit).
+
+Still dirty, not pruned (owner call): 7 worktrees with uncommitted work,
+listed in the chat summary.

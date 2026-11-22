@@ -22,13 +22,13 @@ import (
 
 // AnalyticsService is the M3 control plane: analysis config/rules, the
 // per-match derived views (economy, classifications, KAST rounds, clutches,
-// engagements, utility, heatmaps), and saved filter presets. Heavy rows are
+// kill tags, utility, heatmaps), and saved filter presets. Heavy rows are
 // computed by internal/analytics after import (worker stage "analyze") and
 // read back through here.
 //
 // Row vocabulary: every derived view is served AS a models type
 // (models.AnalysisConfig, EconomyRow, RoundClassification, PlayerRoundStat,
-// Engagement, SavedFilterRow) — their JSON tags are the
+// Kill tag, SavedFilterRow) — their JSON tags are the
 // frontend contract and the store returns them directly, so there is no
 // copy loop to drift. Two twins are deliberately kept below, each for a
 // shape the models type does not have.
@@ -806,9 +806,9 @@ func (s *AnalyticsService) GetClutches(matchID int64) ([]ClutchRow, error) {
 	return out, nil
 }
 
-// GetEngagements returns detected engagements; kind "" = all.
-func (s *AnalyticsService) GetEngagements(matchID int64, kind string) ([]models.Engagement, error) {
-	return s.st.GetEngagements(matchID, kind)
+// GetKillTags returns detected kill tags; kind "" = all.
+func (s *AnalyticsService) GetKillTags(matchID int64, kind string) ([]models.KillTag, error) {
+	return s.st.GetKillTags(matchID, kind)
 }
 
 // GetUtility returns per-grenade rows.

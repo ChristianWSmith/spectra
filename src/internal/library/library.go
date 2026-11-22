@@ -1150,7 +1150,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 
-	// M3 analytics pass: classification/KAST/clutch/engagement/
+	// M3 analytics pass: classification/KAST/clutch/kill tag/
 	// utility rows + career rebuild over the stored events. Failure
 	// here must NOT lose the extracted data: the match stays ready and only
 	// the job is marked failed (with the analytics error prefixed).

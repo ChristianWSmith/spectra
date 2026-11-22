@@ -25,7 +25,7 @@ package analytics
 //     side sample (victim or candidate);
 //   - a player already dead at/before the kill tick (round-scoped — a
 //     death in an earlier round does not count against this one);
-//   - untraded vs traded vs opening engagement rows (only 'untraded'
+//   - untraded vs traded vs opening kill tag rows (only 'untraded'
 //     feeds missed) and the LIMIT-1 paired-kill join (duplicate kill
 //     rows at one tick keep the FIRST row's nearDist);
 //   - a kill whose rounds row does not exist — which is also how a
@@ -73,7 +73,7 @@ const legacyOppsSQL = `SELECT COUNT(*)
 // "trade opportunities missed" per victim (was the scalar subquery in
 // store.GetCombatStats — legacy query-time derivation, retired
 // 2026-11-12). Verbatim reference oracle; params are matchID, distance.
-const legacyMissedSQL = `SELECT e.b_steam, COUNT(*) FROM engagements e
+const legacyMissedSQL = `SELECT e.b_steam, COUNT(*) FROM kill_tags e
 	 WHERE e.match_id = ? AND e.kind = 'untraded' AND e.b_steam <> ''
 	   AND (SELECT CASE WHEN json_valid(k.detail_json)
 	                    THEN json_extract(k.detail_json, '$.nearDist') END

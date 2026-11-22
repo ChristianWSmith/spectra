@@ -44,11 +44,11 @@ import (
 //
 //   - missed (the retired store.GetCombatStats TradeOppMissed subquery
 //     — gone since W2b; its oracle is legacyMissedSQL below): for each
-//     engagement of the match with kind = 'untraded' and b_steam <> '',
+//     kill tag of the match with kind = 'untraded' and b_steam <> '',
 //     find the paired kill event — same tick, attacker = a_steam,
 //     victim = b_steam, the FIRST such row in events.id order (the SQL's
 //     LIMIT 1) — and count 1 for b_steam when that kill's nearDist is
-//     within [0, distance]. Engagements are shared input (the pass that
+//     within [0, distance]. Kill tags are shared input (the pass that
 //     wrote match_trade_opps' neighbors wrote them): a traded/opening
 //     death never reaches this count.
 //
@@ -69,12 +69,12 @@ import (
 // comment for the exact predicates and their retired-SQL provenance.
 // Input: the match's kills with their nearDist payloads (events.id
 // order), its rounds, the freeze-end side samples, the just-computed
-// engagements pass, and the roster.
+// kill tags pass, and the roster.
 func tradeOppCounts(
 	kills []store.KillNearDist,
 	rounds []models.RoundInfo,
 	sides map[int]map[string]string,
-	engs []models.Engagement,
+	engs []models.KillTag,
 	players []models.PlayerRef,
 	distance int,
 ) (opps, missed map[string]int) {
@@ -146,7 +146,7 @@ func tradeOppCounts(
 		}
 	}
 
-	// The paired kill for an untraded engagement: first row in events.id
+	// The paired kill for an untraded kill tag: first row in events.id
 	// order per (tick, attacker, victim) — the retired subquery's LIMIT 1.
 	type killKey struct {
 		tick     int

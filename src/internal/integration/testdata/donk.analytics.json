@@ -9,7 +9,7 @@
     "pistol": 2,
     "save": 2
   },
-  "engagementsByKind": {
+  "killTagsByKind": {
     "opening": 23,
     "trade": 32,
     "traded": 35,

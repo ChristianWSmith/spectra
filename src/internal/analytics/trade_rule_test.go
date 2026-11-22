@@ -36,14 +36,14 @@ func tradeScenario() ([]models.Event, []RoundInfo, []PlayerRef) {
 	return events, rounds, players
 }
 
-// TestEngagementsTeamkillsNeverTrade pins the extractor's enemy-kill gate
+// TestKillTagsTeamkillsNeverTrade pins the extractor's enemy-kill gate
 // on the ONE trade rule: neither the teamkill death (anchor) nor the
 // revenge teamkill (answer) may pair, while the enemy control still does.
-func TestEngagementsTeamkillsNeverTrade(t *testing.T) {
+func TestKillTagsTeamkillsNeverTrade(t *testing.T) {
 	events, rounds, players := tradeScenario()
-	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
+	got := KillTags(events, rounds, testCfg, players, exactSides(rounds, players))
 
-	var trades []Engagement
+	var trades []KillTag
 	for _, e := range got {
 		if e.Kind == KindTrade {
 			trades = append(trades, e)

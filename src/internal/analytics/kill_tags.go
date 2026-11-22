@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Engagement kinds produced by v1. The entry kind is
+// Kill tag kinds produced by v1. The entry kind is
 // DEFERRED: extractor player_stats.entry_kills already carries per-player
 // entry attribution, and a position-based "committed onto site" rule needs
 // map packs the pure pass does not own (documented re-scope).
@@ -17,7 +17,7 @@ const (
 	KindUntraded = "untraded"
 )
 
-// Engagements detects per-round engagement events:
+// Kill tags detects per-round kill tag events:
 //
 //	opening   the round's first kill (a = killer, b = victim; suicides
 //	          excluded)
@@ -53,8 +53,8 @@ const (
 // never reach this pass (the extractor does not store knife/warmup round
 // rows); kills with an unknown-side killer or victim are skipped (team
 // attribution uses the per-round sides — sides carries the extractor's
-// exact samples; a round without them yields no engagement rows).
-func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef, sides map[int]map[string]string) []Engagement {
+// exact samples; a round without them yields no kill tag rows).
+func KillTags(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef, sides map[int]map[string]string) []KillTag {
 	real := CountedRounds(rounds)
 	if len(real) == 0 {
 		return nil
@@ -78,9 +78,9 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 		killerKey string // who killed them (the trade target)
 	}
 
-	var out []Engagement
+	var out []KillTag
 	emit := func(e models.Event, kind, aSteam, bSteam, wonBy string) {
-		out = append(out, Engagement{
+		out = append(out, KillTag{
 			Tick:     e.Tick,
 			Round:    e.Round,
 			Kind:     kind,
@@ -99,7 +99,7 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 		var deaths []deathRec
 		firstKillDone := false
 		for _, e := range roundEvents {
-			// Suicides (attacker == victim) are not engagements.
+			// Suicides (attacker == victim) are not kill tags.
 			if e.Kind != models.EventKill || e.Victim == "" || e.Attacker == "" || e.Attacker == e.Victim {
 				continue
 			}

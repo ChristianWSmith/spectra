@@ -14,7 +14,7 @@ import (
 // the player_career rollup (orchestration; the career rebuild
 // is the cheap full-aggregate path — see store.RebuildCareer).
 //
-// player_stats.trade_kills is rewritten here from the same engagements
+// player_stats.trade_kills is rewritten here from the same kill tags
 // pass (KindTrade per killer), so the frozen extractor column (import-time
 // 5 s default) becomes cfg-aware for every consumer — the scoreboard
 // Trade column, profile trade rate and the trade_rate builtin metric —
@@ -142,7 +142,7 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		sideClasses[i].Team = rules.TeamKeyAt(sideClasses[i].Side, idx, len(rounds), m.SideSwitches)
 	}
 	prs := PlayerRounds(evs, rounds, players, cfg, sides, money)
-	engs := Engagements(evs, rounds, cfg, players, sides)
+	engs := KillTags(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg, sides, blindDetails)
 
 	// Replace* take matchID as their own argument (rows stay unstamped —
@@ -160,10 +160,10 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	if err := st.ReplacePlayerRounds(matchID, prs); err != nil {
 		return err
 	}
-	if err := st.ReplaceEngagements(matchID, engs); err != nil {
+	if err := st.ReplaceKillTags(matchID, engs); err != nil {
 		return err
 	}
-	// The ONE trade-window rule's output: count the same engagements pass
+	// The ONE trade-window rule's output: count the same kill tags pass
 	// (KindTrade per killer) into player_stats.trade_kills — read by the
 	// scoreboard Trade column, the profile Trade rate and the trade_rate
 	// metric rows. The extractor's import-time 5 s default is the seed

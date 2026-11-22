@@ -467,7 +467,7 @@ func TestQueryHistoryDeleteOne(t *testing.T) {
 // the update path (UpdateQuery: round-trip, colliding rename, unknown id).
 func TestSavedQueries(t *testing.T) {
 	s := openMem(t)
-	q, err := s.SaveQuery("openings", "SELECT * FROM engagements WHERE kind = 'opening'", "opening kills by player")
+	q, err := s.SaveQuery("openings", "SELECT * FROM kill_tags WHERE kind = 'opening'", "opening kills by player")
 	if err != nil {
 		t.Fatalf("SaveQuery: %v", err)
 	}

@@ -375,30 +375,30 @@ var builtinSeed = []struct {
 		wantLabels: eightLabels,
 	},
 	{
-		// engagements: 1 opening + 1 trade + 1 untraded per round over
+		// kill tags: 1 opening + 1 trade + 1 untraded per round over
 		// 8 players; the subject's N is its own a_steam rows (36/18
 		// alternating), so N is deliberately not asserted.
-		name: "eng_opening", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'opening') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kill_tag_opening", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'opening') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "opening duels with the subject as A-side (corpus: 18/0 alternating)",
 		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
 		wantLabels: eightLabels,
 	},
 	{
-		name: "eng_trade", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'trade') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kill_tag_trade", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'trade') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "strict-window trades, A-side (corpus: the opening pattern's complement)",
 		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
 		wantLabels: eightLabels,
 	},
 	{
-		name: "eng_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'traded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kill_tag_traded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'traded') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "A-side kills that got answered — the corpus records NO traded rows (the traded FLAG lives on player_round_stats)",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
 	},
 	{
-		name: "eng_untraded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "kill_tag_untraded", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "A-side kills nobody answered (corpus: 18/0 alternating)",
 		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
@@ -575,12 +575,12 @@ var builtinSeed = []struct {
 	},
 	{
 		// addendum: the victim-side count — the SAME untraded rows read
-		// through engagements_victim (subject b_steam). Every corpus
+		// through kill_tags_victim (subject b_steam). Every corpus
 		// player appears as a victim (so 8 rows; 4 of them with value
 		// 18, the other 4 with 0 — rows with no untraded duel, never a
 		// missing row), and the per-subject N is that victim's own
-		// engagement rows (18/36 alternating) → not asserted.
-		name: "untraded_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM engagements AS engagements_victim WHERE engagements_victim.match_id = :match_id AND (b_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements_victim.match_id AND p.steam_id = engagements_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		// kill tag rows (18/36 alternating) → not asserted.
+		name: "untraded_deaths", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = 'untraded') THEN 1 ELSE 0 END) AS v FROM kill_tags AS kill_tags_victim WHERE kill_tags_victim.match_id = :match_id AND (b_steam <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags_victim.match_id AND p.steam_id = kill_tags_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
 		scope: "match", format: "int", shortName: "",
 		interpretation: "unanswered deaths (b_steam side; corpus: 0,18,0,18,18,0,18,0)",
 		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
@@ -1350,7 +1350,7 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 	for table, want := range map[string]int{
 		"matches": 3, "players": 24, "player_stats": 24, "rounds": 72,
 		"events": 1944, "player_round_stats": 576, "round_economy": 144,
-		"engagements": 216, "utility_events": 216,
+		"kill_tags": 216, "utility_events": 216,
 		"chat": 12,
 		// Subject-axis seed inputs: force class rows for matches 2-3
 		// only (match 1 belongs to join_test's classification rig).

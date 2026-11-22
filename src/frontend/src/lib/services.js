@@ -662,9 +662,9 @@ export function getPlayerRounds(matchId, steamId) { return AnalyticsService.GetP
 export function getClutches(matchId) {
   return cachedRead('GetClutches', [matchId], () => AnalyticsService.GetClutches(matchId));
 }
-export function getEngagements(matchId, kind) {
+export function getKillTags(matchId, kind) {
   const k = kind || '';
-  return cachedRead('GetEngagements', [matchId, k], () => AnalyticsService.GetEngagements(matchId, k));
+  return cachedRead('GetKillTags', [matchId, k], () => AnalyticsService.GetKillTags(matchId, k));
 }
 export function getUtility(matchId) {
   return cachedRead('GetUtility', [matchId], () => AnalyticsService.GetUtility(matchId));

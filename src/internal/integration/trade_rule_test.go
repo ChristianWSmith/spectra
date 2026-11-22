@@ -1,7 +1,7 @@
 package integration_test
 
 // Trade-rule unification acceptance: analytics.Compute must rewrite
-// player_stats.trade_kills from the cfg-aware engagements pass so the
+// player_stats.trade_kills from the cfg-aware kill tags pass so the
 // frozen extractor column (import-time hardcoded 5 s) becomes
 // analysis_config-aware — WITHOUT changing it at the default window.
 

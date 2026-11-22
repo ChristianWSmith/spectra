@@ -236,7 +236,7 @@ consecutive samples, so no column is stored.
 
 ### Naming
 
-The new fact tables are `encounters*`. The existing `engagements` table is
+The new fact tables are `encounters*`. The existing `kill_tags` table is
 a per-kill classification (opening / trade / traded / untraded) — a
 misnomer slated for a "kill class" rename. With this fact named `encounters`
 there is no collision: that rename is cleanup, not a prerequisite.

@@ -310,7 +310,7 @@ const EXPECTED = {
   // W2b slots — Untraded deaths / Missed trades — render their metric
   // values, a stored 0 and the honest dash); the behind check widened in
   // place to all five slots (no count change).
-  // combat 87 → 88 (2026-11-15, C11 engagement kind toggles): +1 section
+  // combat 87 → 88 (2026-11-15, C11 kill tag kind toggles): +1 section
   // A (fresh mount = all four kind toggles off — aria-pressed="false",
   // no .active — with every row shown: all-off = no filter, the lead
   // ruling made mechanical); sections D/E/I re-pinned in place for the
@@ -319,18 +319,18 @@ const EXPECTED = {
   // opening-only empties; untraded ADDED keeps the traded row) — those
   // kept their check counts.
   // combat 88 → 95 (2026-11-16, matchview V7 — round scope + RD cells):
-  // +6 the NEW section N (the Engagements round selector exists, its
+  // +6 the NEW section N (the Kill tags round selector exists, its
   // options are "All rounds" + the canonical `RD<n> | <ct>-<t>` labels,
   // the default is All rounds with every row showing, picking round 6
   // narrows to its kill and reads back, All rounds restores, and the
   // Clutches card carries no selector — owner answer Q2), +1 section J
   // (the KAST dialog carries no round filter: its grid has no select and
-  // the view's only selector is the Engagements one). Sections A/B/D
+  // the view's only selector is the Kill tags one). Sections A/B/D
   // re-pinned IN PLACE for the bare round numbers under the new 'RD'
   // heading ('RD7' → '7', same check counts); the KAST `RD{n}` labels
   // KEEP (V7 does not touch the grid) and the kind-toggle row shape
   // survives untouched.
-  // combat 95 → 96 (2026-11-16, W17 G5-20 — the Engagements round
+  // combat 95 → 96 (2026-11-16, W17 G5-20 — the Kill tags round
   // scope becomes the sanctioned TokenSelect MULTI-select): section N
   // re-pinned to SET semantics, 6 → 7 checks — the token field carries
   // aria-label 'Round' with no visible label left behind, its

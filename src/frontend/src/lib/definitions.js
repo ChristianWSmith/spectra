@@ -16,7 +16,7 @@
 //   - internal/store/analytics.go   — RebuildCareer SQL,
 //     plus the profile queries (GetPlayerSideSplits, GetPlayerHistory)
 //   - internal/extract/agg.go       — entry/opening/trade attribution
-//   - internal/analytics/engagements.go — opening|trade|traded|untraded kinds
+//   - internal/analytics/kill tags.go — opening|trade|traded|untraded kinds
 // (The profile's Trade rate and per-match averages are metric rows now —
 // career_trade_rate / career_avg_* — and W3a finished the job: the
 // profile's Opening-duels rate and Clutches count are metric rows too
@@ -94,7 +94,7 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // Entry% (Combat scoreboard column) — the `entry_rate` metric's tooltip
 // the stored entry_kills is the extractor's first-blood
 // attribution (internal/extract/agg.go: at most one first blood exists
-// per round, so the percent stays within 0..100), NOT the engagement
+// per round, so the percent stays within 0..100), NOT the kill tag
 // detector (internal/analytics/analytics.go defers the entry kind).
 // Percent scale: 0..100 — the metric stores a 0..1 fraction and the
 // column renders it ×100 (fmtPercent).
@@ -114,24 +114,24 @@ export const ENTRY_DEF =
 export const TRADE_DEF =
   'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the deaths are this player’s own, so it’s a ratio, not a share — it can top 100%.';
 
-// Untraded deaths (Combat): engagement rows of kind=untraded with the
+// Untraded deaths (Combat): kill tag rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer
-// inside the trade window (internal/analytics/engagements.go).
+// inside the trade window (internal/analytics/kill tags.go).
 export const UNTRADED_DEF =
   'Untraded deaths — deaths with no teammate kill inside the trade window afterwards.';
 
-// Engagement distance (Combat's engagement deep-dive "Dist (m)" column).
+// Kill tag distance (Combat's kill tag deep-dive "Dist (m)" column).
 // The value is the game's own player_death `distance` field (demoinfocs
-// events.Kill.Distance → stored events.distance → engagements.distance),
+// events.Kill.Distance → stored events.distance → kill tags.distance),
 // which measures the killer↔victim distance in METRES, not world units:
 // on the golden demo |attackerPos − victimPos| ÷ distance averages 39.45
 // and is exactly 39.37 at the median — the 39.37 world units per metre
 // conversion (CS2.md "World units ↔ meters, and player movement speeds").
-export const ENG_DIST_DEF =
+export const KILL_TAG_DIST_DEF =
   'Kill distance — how far the killer stood from the victim when the kill happened, in metres (the game’s own player_death distance field; 1 m ≈ 39.37 world units).';
 
-// Engagement-kind chips (Combat's engagement deep-dive). Only the kinds
-// analytics/engagements.go produces live here — "entry" is deferred
+// Kill-tag-kind chips (Combat's kill tag deep-dive). Only the kinds
+// analytics/kill tags.go produces live here — "entry" is deferred
 // (models.go), so it is deliberately absent. Wording is PERSPECTIVE-
 // explicit (killer side / victim side): one kill can carry several of
 // these facts at once (Combat merges a kill's rows into ONE row), so
@@ -140,7 +140,7 @@ export const ENG_DIST_DEF =
 // title says whose fact it is. traded/untraded are the victim-side pair
 // (answered / not answered within the trade window): every kill yields
 // exactly one of them.
-export const ENG_KIND_TITLES = {
+export const KILL_TAG_KIND_TITLES = {
   opening: 'opening kill tag — first kill of the round (killer side)',
   trade: 'This kill answered a teammate’s death within the trade window (killer side)',
   traded: 'This death was answered by a teammate within the trade window (victim side)',

@@ -33,3 +33,16 @@ G7: S18.
 ## Not covered
 The owner expects the map files to be available but this is unverified. The
 format question may be a no-go, which would end S18 as written.
+
+## BSP format verdict (2026-11-21): no-go for `bsp-tracer`
+
+`saiko-tech/bsp-tracer` (MIT, last updated 2024-03-22) reads Source 1 `.bsp`
+files (CS:GO), via `galaco/bsp`. CS2 maps are Source 2 compiled vmaps
+(`maps/<map>.vmap_c`) inside `game/csgo/maps/<map>.vpk`, with embedded physics
+(`embedded_physics`, `phys_data_block`). There are no `.bsp` files in the
+install. So `bsp-tracer` does not apply to CS2 maps as it stands. A tracer
+needs a Source 2 vmap reader plus the embedded-physics decode.
+
+Recorded in `CS2.md`. S18 (encounter build) is blocked on that reader, not on
+the tracer's speed. The tracer benchmark and the coverage fraction are still
+unmeasured.

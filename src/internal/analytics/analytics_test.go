@@ -234,7 +234,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 	}
 }
 
-func TestEngagementsKinds(t *testing.T) {
+func TestKillTagsKinds(t *testing.T) {
 	players := []PlayerRef{
 		{SteamID: "A", Side: "ct"}, {SteamID: "B", Side: "ct"}, {SteamID: "C", Side: "ct"},
 		{SteamID: "X", Side: "t"}, {SteamID: "Y", Side: "t"}, {SteamID: "Z", Side: "t"},
@@ -246,7 +246,7 @@ func TestEngagementsKinds(t *testing.T) {
 		ev(2, 200, 1, models.EventKill, "Y", "B"), // NOT a trade (B never killed a T teammate) — but answered → traded row
 		ev(3, 250, 1, models.EventKill, "C", "Y"), // trade: C traded teammate A; Y's death untraded
 	}
-	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
+	got := KillTags(events, rounds, testCfg, players, exactSides(rounds, players))
 	counts := map[string]int{}
 	for _, e := range got {
 		counts[e.Kind]++
@@ -256,7 +256,7 @@ func TestEngagementsKinds(t *testing.T) {
 	// Coverage rule: Y→B still gets its victim-side row with kind
 	// `traded` (it was answered by C→Y at tick 250).
 	if counts[KindOpening] != 1 || counts[KindTrade] != 2 || counts[KindTraded] != 3 || counts[KindUntraded] != 1 {
-		t.Errorf("engagement counts = %v, want opening=1 trade=2 traded=3 untraded=1 (rows: %+v)", counts, got)
+		t.Errorf("kill tag counts = %v, want opening=1 trade=2 traded=3 untraded=1 (rows: %+v)", counts, got)
 	}
 	// Opening row: A killed X.
 	tradedB := false
@@ -284,7 +284,7 @@ func TestEngagementsKinds(t *testing.T) {
 	}
 }
 
-// TestEngagementsEveryKillHasARow pins the COVERAGE invariant: every
+// TestKillTagsEveryKillHasARow pins the COVERAGE invariant: every
 // counted kill with known sides appears in ≥1 output row — exactly one
 // victim-side row (traded when a teammate of the victim answered inside
 // the window, untraded otherwise) plus optional opening/trade
@@ -295,7 +295,7 @@ func TestEngagementsKinds(t *testing.T) {
 // killer A never dies). Before the KindTraded fix the answered Y→Z kill
 // emitted ZERO rows — the gap the Combat card's "one row per kill"
 // contract exposed.
-func TestEngagementsEveryKillHasARow(t *testing.T) {
+func TestKillTagsEveryKillHasARow(t *testing.T) {
 	players := []PlayerRef{
 		{SteamID: "A", Side: "ct"}, {SteamID: "B", Side: "ct"}, {SteamID: "Z", Side: "ct"},
 		{SteamID: "X", Side: "t"}, {SteamID: "Y", Side: "t"},
@@ -306,7 +306,7 @@ func TestEngagementsEveryKillHasARow(t *testing.T) {
 		ev(1, 200, 1, models.EventKill, "Y", "Z"), // answered by A→Y → traded (was: no row)
 		ev(2, 300, 1, models.EventKill, "A", "Y"), // trade + untraded (A never dies)
 	}
-	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
+	got := KillTags(events, rounds, testCfg, players, exactSides(rounds, players))
 
 	// (a) Every kill event (round, tick, killer, victim) is present in ≥1 row.
 	kills := 0
@@ -323,7 +323,7 @@ func TestEngagementsEveryKillHasARow(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("kill %s→%s at tick %d (round %d) has no engagement row (rows: %+v)",
+			t.Errorf("kill %s→%s at tick %d (round %d) has no kill tag row (rows: %+v)",
 				e.Attacker, e.Victim, e.Tick, e.Round, got)
 		}
 	}
@@ -333,7 +333,7 @@ func TestEngagementsEveryKillHasARow(t *testing.T) {
 
 	// (b)+(c) Exact output: the traded row for the answered kill exists,
 	// and the four rows that existed before the fix are byte-identical.
-	want := []Engagement{
+	want := []KillTag{
 		{Tick: 100, Round: 1, Kind: KindOpening, ASteam: "A", BSteam: "X", WonBy: "ct"},
 		{Tick: 100, Round: 1, Kind: KindUntraded, ASteam: "A", BSteam: "X", WonBy: "ct"},
 		{Tick: 200, Round: 1, Kind: KindTraded, ASteam: "Y", BSteam: "Z", WonBy: "t"},
@@ -341,28 +341,28 @@ func TestEngagementsEveryKillHasARow(t *testing.T) {
 		{Tick: 300, Round: 1, Kind: KindUntraded, ASteam: "A", BSteam: "Y", WonBy: "ct"},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("engagements =\n %+v\nwant\n %+v", got, want)
+		t.Errorf("kill tags =\n %+v\nwant\n %+v", got, want)
 	}
 }
 
-// TestEngagementsSkipsRoundlessKills: a kill stamped to a round with NO
-// stored round row produces no engagement rows. The knife/warmup discard
+// TestKillTagsSkipsRoundlessKills: a kill stamped to a round with NO
+// stored round row produces no kill tag rows. The knife/warmup discard
 // means such kills never reach events at all (extract.agg.roundStart
 // discards the round); this pins the pass's own round guard, which is
 // what used to express the warmup filter (the retired
-// TestEngagementsSkipsWarmup — its subject died with the discard).
-func TestEngagementsSkipsRoundlessKills(t *testing.T) {
+// TestKillTagsSkipsWarmup — its subject died with the discard).
+func TestKillTagsSkipsRoundlessKills(t *testing.T) {
 	players := []PlayerRef{{SteamID: "A", Side: "ct"}, {SteamID: "X", Side: "t"}}
 	rounds := []RoundInfo{{Number: 1}}
 	events := []models.Event{
 		ev(0, 10, 0, models.EventKill, "A", "X"), // round 0 has no round row
 		ev(1, 100, 1, models.EventKill, "A", "X"),
 	}
-	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
+	got := KillTags(events, rounds, testCfg, players, exactSides(rounds, players))
 	// The round-less kill produces no rows; the round-1 kill yields
 	// opening + untraded (X's death has no teammate revenge).
 	if len(got) != 2 {
-		t.Fatalf("engagements = %+v, want 2 rows from the round-1 kill", got)
+		t.Fatalf("kill tags = %+v, want 2 rows from the round-1 kill", got)
 	}
 	kinds := map[string]bool{}
 	for _, e := range got {
