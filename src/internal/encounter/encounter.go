@@ -39,9 +39,10 @@ type Occluder func(a, b [3]float64) bool
 // enemy's. The enemy's eye is the canonical aim point for crosshair metrics:
 // the opponent's head, the point a player is trying to put the crosshair on.
 type Viewpoint struct {
-	Tick    int
-	Shooter [3]float64
-	Enemy   [3]float64
+	Tick       int
+	Shooter    [3]float64 // shooter's eye
+	Enemy      [3]float64 // enemy's eye (the canonical aim point)
+	EnemyWorld [3]float64 // enemy's world (origin) position, for box reconstruction
 }
 
 // Encounter is one visibility window for a shooter and an enemy.
@@ -233,6 +234,7 @@ func Build(frames []Frame, shots []Shot, rounds map[int]Range, occ Occluder, max
 			if ok1 && ok2 {
 				enc.Viewpoints = append(enc.Viewpoints, Viewpoint{
 					Tick: frames[k].Tick, Shooter: eye(s), Enemy: eye(e),
+					EnemyWorld: [3]float64{e.X, e.Y, e.Z},
 				})
 			}
 		}

@@ -44,6 +44,8 @@ var metricReadable = map[string]bool{
 	// Source tables.
 	"events":                true,
 	"kill_tags":             true,
+	"encounters":            true,
+	"encounter_samples":     true,
 	"rounds":                true,
 	"player_stats":          true,
 	"player_round_stats":    true,
