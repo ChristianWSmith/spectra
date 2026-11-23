@@ -63,7 +63,7 @@
   }
 </script>
 
-<section class="panel">
+<div>
   {#if match}
       <dl class="facts">
         <div>
@@ -95,4 +95,4 @@
         </div>
       </dl>
   {/if}
-</section>
+</div>

@@ -46,7 +46,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   <h2>{S.library.importDetails}</h2>
   {#if provError}
     <p class="error" role="alert">
@@ -97,4 +97,4 @@
       <p class="note-amber" role="note">{encNote}</p>
     {/if}
   {/if}
-</section>
+</div>

@@ -239,7 +239,7 @@ async function render(data) {
 }
 
 const sections = (root, heading) =>
-  [...root.querySelectorAll('section.panel')].filter((s) =>
+  [...root.querySelectorAll('.comb-sec')].filter((s) =>
     s.querySelector('h2')?.textContent.includes(heading),
   );
 const headerTexts = (table) => [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
@@ -879,11 +879,11 @@ const rootJ = await render(base);
 check(
   'no Combat stats section renders and no KAST trigger exists anywhere',
   sections(rootJ, 'Combat stats').length === 0 &&
-    rootJ.querySelectorAll('section.panel').length === 2 &&
+    rootJ.querySelectorAll('.comb-sec').length === 2 &&
     !rootJ.querySelector('.comb-kast-btn') &&
     !rootJ.querySelector('.comb-kast-grid') &&
     !rootJ.textContent.includes('Combat stats'),
-  `panels=${rootJ.querySelectorAll('section.panel').length} kastBtn=${!!rootJ.querySelector('.comb-kast-btn')}`,
+  `panels=${rootJ.querySelectorAll('.comb-sec').length} kastBtn=${!!rootJ.querySelector('.comb-kast-btn')}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -945,7 +945,7 @@ console.log('L. failed load: the error is dismissible in place, the retired sect
       !rootL.textContent.includes('Combat stats'),
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 160),
   );
-  const panelsBefore = rootL.querySelectorAll('section.panel').length;
+  const panelsBefore = rootL.querySelectorAll('.comb-sec').length;
   check('the two panels render around the failure', panelsBefore === 2, String(panelsBefore));
   // A dead backend fails each panel's own load, so one alert surfaces per panel, each dismissible in place.
   const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
@@ -959,7 +959,7 @@ console.log('L. failed load: the error is dismissible in place, the retired sect
   check(
     '✕ clears only its own panel\'s alert — the other stays, panels still mounted, nothing navigated',
     rootL.querySelectorAll('p.error[role="alert"]').length === 1 &&
-      rootL.querySelectorAll('section.panel').length === panelsBefore,
+      rootL.querySelectorAll('.comb-sec').length === panelsBefore,
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
   globalThis.__combatError = 0;

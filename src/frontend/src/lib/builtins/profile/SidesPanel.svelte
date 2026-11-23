@@ -51,7 +51,7 @@
   const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
 </script>
 
-<section class="panel prof-sides">
+<div class="prof-sides">
   <h2>{S.profiles.sidesHeading}</h2>
   <table class="data-table">
     <thead>
@@ -95,4 +95,4 @@
       {/each}
     </tbody>
   </table>
-</section>
+</div>

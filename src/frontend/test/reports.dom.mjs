@@ -799,7 +799,7 @@ console.log('H. the player picker statline composes per half — every half is a
 // `<section class="panel">` (both section headings stay inside it). The
 // mount shape is the pin; a second panel would mean a split regressed.
 {
-  const panels = root.querySelectorAll('section.panel');
+  const panels = root.querySelectorAll('.panel:not(.frame-composer)');
   check(
     'three section.panel cards: the match picker (standalone), the templates and targets, the stats appendix',
     panels.length === 3,

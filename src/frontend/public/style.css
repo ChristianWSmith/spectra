@@ -955,8 +955,16 @@ mark {
   visibility: visible;
 }
 
-.builtin-busy .panel::after,
-.panel.builtin-busy::after {
+/* A pure composer's frame panel is only the frame: no card of its own (its nested
+   panels are the cards). */
+.frame-panel.frame-composer {
+  background: none;
+  border-color: transparent;
+  padding: 0;
+}
+
+.builtin-busy .panel:not(:has(.panel))::after,
+.panel.builtin-busy:not(:has(.panel))::after {
   content: "";
   position: absolute;
   top: 50%;

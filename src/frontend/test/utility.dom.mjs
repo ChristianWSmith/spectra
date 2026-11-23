@@ -383,7 +383,7 @@ const setSel = async (el, value) => {
   el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await sleep();
 };
-const panels = $$('section.panel');
+const panels = $$('.frame-panel:not(.frame-composer)');
 check(
   'exactly three panels: the throw log + two summary charts',
   panels.length === 3,
@@ -391,9 +391,9 @@ check(
 );
 check(
   'the consolidated throw log is the FIRST card of the view (W17 — the owner moved it)',
-  panels[0]?.classList.contains('util-throwlog') &&
-    panels[1]?.classList.contains('util-card-damage') &&
-    panels[2]?.classList.contains('util-card-blind'),
+  panels[0]?.querySelector('.util-throwlog') &&
+    panels[1]?.querySelector('.util-card-damage') &&
+    panels[2]?.querySelector('.util-card-blind'),
   panels.map((p) => p.className).join(' | ') || 'no panels',
 );
 check(

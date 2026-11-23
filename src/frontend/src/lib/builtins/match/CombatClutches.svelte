@@ -119,7 +119,6 @@
     spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 </script>
-<div class="builtin-root">
 
 {#if error}
   <p class="error" role="alert">
@@ -130,7 +129,7 @@
   </p>
 {/if}
 
-  <section class="panel comb-sec">
+  <div class="comb-sec">
     <h2>{S.combat.clutchesHeading}</h2>
     <!-- Outcome TOGGLES: each flips its own boolean. Local state only, never
          route-query state. -->
@@ -214,5 +213,4 @@
         </table>
       </div>
     {/if}
-  </section>
-</div>
+  </div>

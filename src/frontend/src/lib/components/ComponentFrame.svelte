@@ -134,14 +134,12 @@
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 
-  // The component's root: the first element the component renders (an error
-  // line the frame shows above it is skipped). The frame owns the busy state on
-  // it: the .builtin-busy class and aria-busy while reads are in flight, and the
-  // height held at the last remembered render (componentruntime/sizememory.js).
-  const frameRoot = () => {
-    if (!el || !Comp) return null;
-    return [...el.children].find((e) => !e.matches('p.error')) ?? null;
-  };
+  // Every component is mounted into the frame's panel (the shell below). The
+  // panel is the frame's root: the frame owns the busy state on it (the
+  // .builtin-busy class and aria-busy while reads are in flight) and the height
+  // held at the last remembered render (componentruntime/sizememory.js).
+  let panelEl = $state(null);
+  const frameRoot = () => (Comp ? panelEl : null);
   $effect(() => {
     void Comp;
     const root = frameRoot();
@@ -223,18 +221,20 @@
   {:else if !Comp}
     <p class="muted" role="status"><StatusChip block /></p>
   {:else}
-    <svelte:boundary>
-      <Comp {...props} {spectra} context={ctx} />
-      {#snippet failed(error, reset)}
-        <p class="error" role="alert">
-          {S.fill(S.components.frameFailed, { err: errText(error) })}
-          <button class="btn small" onclick={reset}>{S.components.frameRetry}</button>
-          <button class="btn small" aria-label={S.components.frameDismiss} onclick={() => (dismissed = true)}>
-            <span class="codicon codicon-close"></span>
-          </button>
-        </p>
-      {/snippet}
-    </svelte:boundary>
+    <section class="panel frame-panel" class:frame-composer={childCount > 0} bind:this={panelEl}>
+      <svelte:boundary>
+        <Comp {...props} {spectra} context={ctx} />
+        {#snippet failed(error, reset)}
+          <p class="error" role="alert">
+            {S.fill(S.components.frameFailed, { err: errText(error) })}
+            <button class="btn small" onclick={reset}>{S.components.frameRetry}</button>
+            <button class="btn small" aria-label={S.components.frameDismiss} onclick={() => (dismissed = true)}>
+              <span class="codicon codicon-close"></span>
+            </button>
+          </p>
+        {/snippet}
+      </svelte:boundary>
+    </section>
   {/if}
 </div>
 

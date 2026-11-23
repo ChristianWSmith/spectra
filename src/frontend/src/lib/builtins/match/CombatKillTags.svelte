@@ -164,7 +164,6 @@
     spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 </script>
-<div class="builtin-root">
 
 {#if error}
   <p class="error" role="alert">
@@ -175,7 +174,7 @@
   </p>
 {/if}
 
-  <section class="panel comb-sec">
+  <div class="comb-sec">
     <h2>{S.combat.killTagsHeading}</h2>
     <div class="comb-kinds" role="group" aria-label={S.combat.filterKillTagsLabel}>
       <span class="comb-kind-host" bind:this={kindAnchor}>
@@ -307,5 +306,4 @@
         </tbody>
       </table>
     </div>
-  </section>
-</div>
+  </div>

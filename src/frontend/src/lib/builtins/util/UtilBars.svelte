@@ -89,7 +89,7 @@
 </script>
 
 {#if bars.any}
-  <section class="panel {COPY.panelClass}">
+  <div class="{COPY.panelClass}">
     <h2>{COPY.heading}</h2>
     <svg class="util-bars" viewBox="0 0 {barW} {barH}" preserveAspectRatio="none" aria-label={COPY.aria}>
       <defs>
@@ -124,5 +124,5 @@
       <span><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span>{names.t}</span>
       <span class="muted" title={COPY.maxTitle}>{S.utility.axisMax}{maxText}{COPY.maxSuffix}</span>
     </div>
-  </section>
+  </div>
 {/if}

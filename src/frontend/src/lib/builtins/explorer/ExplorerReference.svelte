@@ -35,7 +35,7 @@
   });
 </script>
 
-<section class="panel expl-ref">
+<div class="expl-ref">
   <h2>{S.library.networkMessages}</h2>
   <p class="muted">
     <strong>639</strong>{S.library.protobufTypes}
@@ -56,4 +56,4 @@
       <p class="muted" role="status">{S.library.encNone}</p>
     {/if}
   {/if}
-</section>
+</div>

@@ -378,21 +378,24 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `builtins/placeholder/Example.svelte`, which the generator exports as
   `PLACEHOLDER_SOURCE`; `componentbuiltins.js` lists it with the compiled
   registry.
-- **A builtin shows its loading state (rule).** The frame owns the busy
-  state, for builtins and user components alike. While the component reads,
-  the frame's root element (its first rendered element) gets the
-  `builtin-busy` class and `aria-busy`, and keeps its last rendered height
-  (`componentruntime/sizememory.js`, by name, for the process). A component
-  writes no busy markup. Its root keeps its size and position, its panels stay
-  as empty shells (`.panel`), its content is hidden in place (`visibility`),
-  and a throbber is drawn in CSS (`public/style.css`) centered on each busy
-  panel, or on a busy root that has no panels. A pure composer (nested frames,
-  no reads of its own) is never busy: its children show their own state.
-  Reads are counted: `spectra.metric`, `spectra.query` and
-  `spectra.metricsByMatch` count automatically, and a load run through a
-  component's own services is wrapped in `spectra.track(promise)`. Every
-  root renders at all times and keeps its last data while the next load runs
-  (no clearing at the start of a load).
+- **Every mounted component is a panel (contract).** The frame mounts each
+  component into its own panel (`ComponentFrame` renders a `section.panel`
+  around it), for builtins and user components alike. A component does not
+  draw its own outer card: its root is its content, and the frame's panel is
+  the card. Inner cards (several panels in one component) are still panels.
+  A component that mounts nested frames (a composer) gets a transparent frame
+  panel (`.frame-composer`): its children are the cards.
+- **The frame owns the loading state (rule).** While a component reads, the
+  frame's panel gets the `builtin-busy` class and `aria-busy`, keeps its last
+  rendered height (`componentruntime/sizememory.js`, by name, for the process),
+  and fades its content in place (`visibility`). A throbber is drawn in CSS
+  (`public/style.css`) on each busy leaf panel, centered on it. The frame
+  counts reads: `spectra.metric`, `spectra.query` and `spectra.metricsByMatch`
+  count automatically, and a load run through a component's own services is
+  wrapped in `spectra.track(promise)`. A pure composer (nested frames, no
+  reads of its own) is never busy. Every component renders at all times and
+  keeps its last data while the next load runs (no clearing at the start of a
+  load).
 - **A builtin's UI is written in its `.svelte` file (rule).** Markup,
   classes, styles and layout fixes for a builtin go in its `.svelte`
   source, never in a JS module that holds Svelte as a template string.

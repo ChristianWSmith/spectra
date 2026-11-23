@@ -31,7 +31,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   <h2>{S.library.advancedDiagnostics}</h2>
   {#if entError}
     <p class="error" role="alert">
@@ -63,4 +63,4 @@
       <p class="muted expl-ent-note">{entities.notes}</p>
     {/if}
   {/if}
-</section>
+</div>

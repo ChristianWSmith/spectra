@@ -76,7 +76,7 @@
   }
 </script>
 
-<section class="panel util-throwlog">
+<div class="util-throwlog">
   <h2>{S.utility.throwLogHead}</h2>
   <div class="util-filters toolbar">
     <label class="util-field" for="util-kind">
@@ -137,4 +137,4 @@
       {/each}
     </div>
   {/if}
-</section>
+</div>

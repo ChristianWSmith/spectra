@@ -60,7 +60,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   <h2>{S.reports.templateAndTarget}</h2>
   {#if m.docError}
     <!-- The one error slot for render + save (cancel stays silent). -->
@@ -125,4 +125,4 @@
       {/if}
     </div>
   {/if}
-</section>
+</div>

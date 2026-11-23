@@ -94,7 +94,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   <h2>{S.economy.colRounds}</h2>
   {#if rows.length === 0}
     <p class="muted" role="status">{S.economy.noRounds}</p>
@@ -165,4 +165,4 @@
       </table>
     </div>
   {/if}
-</section>
+</div>

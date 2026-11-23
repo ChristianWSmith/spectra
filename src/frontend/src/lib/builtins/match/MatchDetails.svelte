@@ -57,7 +57,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   {#if facts}
       <h2>{COPY.keyFacts}</h2>
       <dl class="facts">
@@ -71,4 +71,4 @@
         <div class="fact-wide"><dt>{COPY.factSource}</dt><dd class="mono">{facts.path || DASH}</dd></div>
       </dl>
   {/if}
-</section>
+</div>

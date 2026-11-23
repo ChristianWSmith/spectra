@@ -71,12 +71,11 @@
 
   const halfText = (p) => (p.kind === 'value' ? fmtInt(p.value) : '—');
 </script>
-<div class="builtin-root">
 
 {#if loadError}
   <p class="error" role="alert">{loadError}</p>
 {/if}
-<section class="panel">
+<div>
   <h2>{S.profiles.matchHistoryPrefix}<span class="muted">{S.profiles.mostRecentFirst}</span></h2>
   <div class="table-scroll">
     <table class="data-table">
@@ -136,5 +135,4 @@
       </tbody>
     </table>
   </div>
-</section>
 </div>

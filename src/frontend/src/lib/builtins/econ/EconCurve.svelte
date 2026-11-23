@@ -142,7 +142,7 @@
   }
 </script>
 
-<section class="panel econ-curve-panel">
+<div class="econ-curve-panel">
   <div class="row-between econ-curve-head">
     <h2>{metric === 'equip' ? S.economy.curveHeadEquip : S.economy.curveHeadNetWorth}</h2>
     <div class="econ-curve-meta">
@@ -244,4 +244,4 @@
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span> {S.economy.stripPistol} <span class="codicon codicon-check"></span> {S.economy.stripFavorite} <span class="codicon codicon-error"></span> {S.economy.stripUpset} <span class="codicon codicon-grabber"></span> {S.economy.stripEven} <span class="codicon codicon-circle-small"></span> {S.economy.stripNoVerdict}
     </p>
   {/if}
-</section>
+</div>

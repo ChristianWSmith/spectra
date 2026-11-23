@@ -434,7 +434,7 @@ console.log('H. loading state');
 const held = [];
 const pendingReads = { ...reads, componentQuery: () => new Promise((r) => held.push(r)) };
 root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props: BACK, reads: pendingReads });
-const busyRoot = root.querySelector('.match-overview');
+const busyRoot = root.querySelector('.frame-panel');
 check('while the read is in flight, the root is busy (its throbber is drawn in CSS)',
   !!busyRoot && busyRoot.classList.contains('builtin-busy') && busyRoot.getAttribute('aria-busy') === 'true');
 held.forEach((r) => r({ columns: [], rows: [] }));
@@ -452,8 +452,8 @@ const heldReads = [];
 const busyComposerReads = { ...reads, componentQuery: () => new Promise((r) => heldReads.push(r)) };
 root = await mountPanel({ source: composerSrc, context: MATCH, props: {}, reads: busyComposerReads });
 await settle();
-const compRoot = root.querySelector('.comp-root');
-const childRoot = root.querySelector('.match-overview');
+const compRoot = root.querySelector('.frame-panel');
+const childRoot = root.querySelector('.match-overview').closest('.frame-panel');
 check('a pure composer is not busy (no busy class, aria-busy not true) while its child reads',
   !!compRoot && !compRoot.classList.contains('builtin-busy') && compRoot.getAttribute('aria-busy') !== 'true');
 check('the child that reads is busy', !!childRoot && childRoot.classList.contains('builtin-busy'));

@@ -133,8 +133,6 @@
   });
 
 </script>
-<div class="builtin-root">
 
 <spectra.Child name="builtin-reports-templates" props={{ m, embedded }} />
 <spectra.Child name="builtin-reports-appendix" props={{ m }} />
-</div>

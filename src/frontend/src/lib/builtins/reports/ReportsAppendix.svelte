@@ -224,7 +224,6 @@
 
   const canSave = $derived(targetReady(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }));
 </script>
-<div class="builtin-root">
 
 {#if m.metricsError}
   <p class="error" role="alert">
@@ -233,7 +232,7 @@
   </p>
 {/if}
 
-<section class="panel">
+<div>
 {#if tpl}
   <h2>{S.reports.statsAppendix}</h2>
   <p class="muted">{S.reports.appendixHint}</p>
@@ -286,7 +285,6 @@
     </div>
   {/each}
 {/if}
-</section>
 </div>
 
 <style>

@@ -119,7 +119,6 @@
   {/if}
 {/snippet}
 
-<div class="builtin-root">
 {#if data}
   <div class="table-scroll">
     <table class="data-table">
@@ -192,4 +191,3 @@
     </button>
   {/if}
 {/if}
-</div>

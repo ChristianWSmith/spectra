@@ -64,7 +64,7 @@
   }
 </script>
 
-<section class="panel">
+<div>
   <h2>{S.profiles.mapsHeading}</h2>
   <table class="data-table">
     <thead>
@@ -111,4 +111,4 @@
       {/each}
     </tbody>
   </table>
-</section>
+</div>

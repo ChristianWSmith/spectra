@@ -127,7 +127,7 @@
   });
 </script>
 
-<section class="panel">
+<div>
   <div class="row-between">
     <h2>{S.profiles.trendHeading}</h2>
     <!-- The trend's metric picker: ANY match-scope metric the catalog carries,
@@ -187,4 +187,4 @@
   {:else}
     <p class="muted" role="status">{S.profiles.noTrendData}</p>
   {/if}
-</section>
+</div>
