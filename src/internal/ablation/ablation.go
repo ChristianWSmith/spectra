@@ -55,7 +55,7 @@ func Dump(db *sql.DB) ([]Row, error) {
 		ORDER BY m.name, v.match_id, v.subject_key, v.dim, v.scope_steam_id,
 		         v.scope_round, v.value_key, v.row_json`)
 	if err != nil {
-		return nil, fmt.Errorf("read metric_values: %w", err)
+		return nil, fmt.Errorf("read the stored values: %w", err)
 	}
 	defer rows.Close()
 	var out []Row
@@ -64,7 +64,7 @@ func Dump(db *sql.DB) ([]Row, error) {
 		var v sql.NullFloat64
 		if err := rows.Scan(&r.Metric, &r.MatchID, &r.SubjectKey, &r.Dim, &r.ScopeSteam,
 			&r.ScopeRound, &r.ValueKey, &r.RowJSON, &v); err != nil {
-			return nil, fmt.Errorf("scan metric_values: %w", err)
+			return nil, fmt.Errorf("scan the stored values: %w", err)
 		}
 		if v.Valid {
 			f := v.Float64

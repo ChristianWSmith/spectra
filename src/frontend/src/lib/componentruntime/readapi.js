@@ -59,6 +59,7 @@ import * as S from '../strings/index.js';
  *
  * @typedef {{
  *   metric: (name: string, binds?: MetricBinds) => Promise<MetricRead>,
+ *   metricsByMatch: (steamId: string, names: string[], matchIds: number[]) => Promise<object>,
  *   query: (sql: string, binds?: MetricBinds) => Promise<QueryRead>,
  *   navigate: (route: string | {path: string, query?: object}) => void,
  *   guard: <F extends (...args: any[]) => any>(fn: F) => F,
@@ -363,5 +364,9 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
     );
   }
 
-  return Object.freeze({ metric, query, navigate, guard, isHuman, listedPlayers });
+  // One player's values and states across many matches in one batched read
+  // (the History read). Same rule as metric(): see metricsByMatch above.
+  const byMatch = (steamId, names, matchIds) => metricsByMatch(reads, steamId, names, matchIds);
+
+  return Object.freeze({ metric, metricsByMatch: byMatch, query, navigate, guard, isHuman, listedPlayers });
 }

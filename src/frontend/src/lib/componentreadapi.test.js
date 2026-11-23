@@ -242,7 +242,7 @@ test('navigate takes a hash or a path with a query', () => {
 
 test('the API surface is exactly the documented set', () => {
   const { api } = harness();
-  assert.deepEqual(Object.keys(api).sort(), ['guard', 'isHuman', 'listedPlayers', 'metric', 'navigate', 'query']);
+  assert.deepEqual(Object.keys(api).sort(), ['guard', 'isHuman', 'listedPlayers', 'metric', 'metricsByMatch', 'navigate', 'query']);
   assert.ok(Object.isFrozen(api));
 });
 
