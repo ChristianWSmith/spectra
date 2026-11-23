@@ -27,6 +27,8 @@ func seedClutchFixture(t *testing.T, s *Store, id int64) {
 		  VALUES (?, 1, 'ct', 0, 1000, 4000, 3000)`, id)
 	exec(`INSERT INTO players (match_id, steam_id, name, side) VALUES
 		  (?, 'A', 'Alice', 'ct'), (?, 'D', 'Dan', 'ct'), (?, 'B', 'Bob', 't'), (?, 'C', 'Cy', 't')`, id, id, id, id)
+	exec(`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES
+		  (?, 1, 'A', 'ct'), (?, 1, 'D', 'ct'), (?, 1, 'B', 't'), (?, 1, 'C', 't')`, id, id, id, id)
 	alive := map[int][4]int{ // tick → alive flags for A, D, B, C
 		100: {1, 1, 1, 1},
 		200: {1, 0, 1, 1},
@@ -156,6 +158,106 @@ func TestClutchRowsFixture(t *testing.T) {
 				t.Errorf("%s[%s] = %v (present %v), want %v", name, subj, g, ok, w)
 			}
 		}
+	}
+}
+
+// seedAliveRosterFixture pins the roster rule (backlog S10) on two rounds.
+//
+//	round 1 (start 100, end 2000), roster CT A D E, T B C
+//	  tick 50    A disconnects before the round starts: does not count
+//	  tick 995   E disconnects 5 ticks before the kill: counts (window)
+//	  tick 1000  B kills D: D counts at the kill tick (inclusive)
+//	  expect alive at tick 1000: CT 1 (A), T 2
+//	round 2 (start 2100, end 3000), roster CT X Y, T Z
+//	  tick 2400  X disconnects
+//	  tick 2500  Z kills X: X is killed AND disconnected, counts once
+//	  expect alive at tick 2500: CT 1 (Y), T 1 (a naive double count gives CT 0)
+func seedAliveRosterFixture(t *testing.T, s *Store, id int64) {
+	t.Helper()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := s.db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO rounds (match_id, number, winner, start_tick, end_tick, equip_ct, equip_t) VALUES
+		  (?, 1, 'ct', 100, 2000, 4000, 3000), (?, 2, 't', 2100, 3000, 4000, 3000)`, id, id)
+	exec(`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES
+		  (?, 1, 'A', 'ct'), (?, 1, 'D', 'ct'), (?, 1, 'E', 'ct'), (?, 1, 'B', 't'), (?, 1, 'C', 't'),
+		  (?, 2, 'X', 'ct'), (?, 2, 'Y', 'ct'), (?, 2, 'Z', 't')`, id, id, id, id, id, id, id, id)
+	exec(`INSERT INTO events (match_id, seq, tick, round, kind, attacker, victim) VALUES
+		  (?, 1, 50, 1, 'player_disconnect', 'A', ''),
+		  (?, 2, 995, 1, 'player_disconnect', 'E', ''),
+		  (?, 3, 1000, 1, 'kill', 'B', 'D'),
+		  (?, 4, 2400, 2, 'player_disconnect', 'X', ''),
+		  (?, 5, 2500, 2, 'kill', 'Z', 'X')`, id, id, id, id, id)
+}
+
+// TestAliveCountRosterRule pins the inclusive kill-tick rule and the
+// disconnect-within-round rule of the alive_count metric and of the clutch
+// CTE's alive count (both read the roster, not player_ticks).
+func TestAliveCountRosterRule(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	id, err := s.CreateMatchRow("alive-roster-fixture", "sha-alive-roster-fixture", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	seedAliveRosterFixture(t, s, id)
+
+	var expr string
+	if err := s.db.QueryRow(`SELECT expr FROM metrics WHERE name = 'alive_count'`).Scan(&expr); err != nil {
+		t.Fatalf("alive_count: %v", err)
+	}
+	want := map[int]map[string]int{
+		1: {"ct@1000": 1, "t@1000": 2},
+		2: {"ct@2500": 1, "t@2500": 1},
+	}
+	for round, w := range want {
+		rows, err := s.db.Query(expr, sql.Named("match_id", id), sql.Named("round", round))
+		if err != nil {
+			t.Fatalf("run alive_count round %d: %v", round, err)
+		}
+		got := map[string]int{}
+		for rows.Next() {
+			var subj, dim string
+			var v int
+			if err := rows.Scan(&subj, &dim, &v); err != nil {
+				t.Fatalf("scan alive_count: %v", err)
+			}
+			got[subj+"@"+dim] = v
+		}
+		_ = rows.Close()
+		if len(got) != len(w) {
+			t.Errorf("round %d alive_count = %v, want %v", round, got, w)
+		}
+		for k, v := range w {
+			if got[k] != v {
+				t.Errorf("round %d alive_count[%s] = %d, want %d (all %v)", round, k, got[k], v, got)
+			}
+		}
+	}
+
+	// The clutch CTE's alive count is the same rule: round 1 at tick 1000 has
+	// CT 1 alive (A) against T 2, so A is the 1v2 that starts at the kill tick.
+	clutches, err := s.ClutchRows(id)
+	if err != nil {
+		t.Fatalf("ClutchRows: %v", err)
+	}
+	found := false
+	for _, c := range clutches {
+		if c.Round == 1 && c.SteamID == "A" {
+			found = true
+			if c.Size != 2 || c.StartTick != 1000 {
+				t.Errorf("A round 1 clutch = size %d start %d, want size 2 start 1000", c.Size, c.StartTick)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no round 1 clutch for A in %+v", clutches)
 	}
 }
 

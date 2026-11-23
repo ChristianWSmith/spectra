@@ -21,10 +21,16 @@ import (
 // so the seed rows never drift apart), and ClutchRows, which the Combat panel
 // and the match report read. The table `clutches` is gone; nothing stores
 // these rows.
+//
+// The alive count and the survivor come from the roster rule (backlog S10):
+// round_player_sides for the side, minus the players killed in the round at or
+// before the kill tick, or with a player_disconnect from the round start
+// through that tick (inclusive). The survivor's HP read stays tick state.
 const clutchCTE = `WITH kt AS (SELECT DISTINCT round, tick FROM events WHERE match_id = :match_id AND kind = 'kill' AND victim <> ''),
 sd AS (SELECT 'ct' AS side UNION ALL SELECT 't'),
-cnt AS (SELECT kt.round AS round, kt.tick AS tick, sd.side AS side, (SELECT COUNT(*) FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = kt.round AND pt.tick = kt.tick AND pt.side = sd.side AND pt.alive = 1) AS n FROM kt CROSS JOIN sd),
-cand AS (SELECT a.round AS round, a.tick AS tick, a.side AS side, b.n AS opp, (SELECT pt.steam_id FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = a.round AND pt.tick = a.tick AND pt.side = a.side AND pt.alive = 1) AS solo FROM cnt a JOIN cnt b ON b.round = a.round AND b.tick = a.tick AND b.side <> a.side WHERE a.n = 1 AND b.n >= 1),
+alv AS (SELECT kt.round AS round, kt.tick AS tick, rs.side AS side, rs.steam_id AS steam_id FROM kt JOIN round_player_sides rs ON rs.match_id = :match_id AND rs.round = kt.round LEFT JOIN rounds ro ON ro.match_id = :match_id AND ro.number = kt.round WHERE NOT EXISTS (SELECT 1 FROM events k WHERE k.match_id = :match_id AND k.round = kt.round AND k.kind = 'kill' AND k.victim = rs.steam_id AND k.tick <= kt.tick) AND NOT EXISTS (SELECT 1 FROM events dc WHERE dc.match_id = :match_id AND dc.kind = 'player_disconnect' AND dc.attacker = rs.steam_id AND dc.tick >= ro.start_tick AND dc.tick <= kt.tick)),
+cnt AS (SELECT kt.round AS round, kt.tick AS tick, sd.side AS side, (SELECT COUNT(*) FROM alv WHERE alv.round = kt.round AND alv.tick = kt.tick AND alv.side = sd.side) AS n FROM kt CROSS JOIN sd),
+cand AS (SELECT a.round AS round, a.tick AS tick, a.side AS side, b.n AS opp, (SELECT al.steam_id FROM alv al WHERE al.round = a.round AND al.tick = a.tick AND al.side = a.side) AS solo FROM cnt a JOIN cnt b ON b.round = a.round AND b.tick = a.tick AND b.side <> a.side WHERE a.n = 1 AND b.n >= 1),
 starts AS (SELECT round, solo, side, MIN(tick) AS start_tick, opp AS size FROM cand GROUP BY round, solo, side),
 deaths AS (SELECT round, victim AS solo, MIN(tick) AS dtick FROM events WHERE match_id = :match_id AND kind = 'kill' AND victim <> '' GROUP BY round, victim),
 wont AS (SELECT s.round AS round, s.solo AS solo, MIN(z.tick) AS wtick FROM starts s JOIN cnt z ON z.round = s.round AND z.side <> s.side AND z.n = 0 AND z.tick > s.start_tick GROUP BY s.round, s.solo),

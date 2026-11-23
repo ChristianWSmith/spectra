@@ -235,13 +235,14 @@ var builtinSeed = []struct {
 		rows:           8, wantValues: []float64{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, wantLabels: eightLabels,
 	},
 	{
-		// D10: the corpus records NO clutches (see TestSyntheticCorpus-
-		// Counts), so a subject-grouped statement produces no groups →
-		// zero rows. Honest empty, never a fabricated 0 row.
+		// D10 (re-pinned, backlog S10): the clutch alive count reads the
+		// roster (round_player_sides) and the kill events, not player_ticks.
+		// The corpus has 72 clutches under that rule, all lost, so the
+		// share is 0 over two subjects.
 		name: "career_clutch_win_rate", expr: "SELECT :steam_id AS subject_key, '' AS dim, 1.0 * (SELECT CASE WHEN COUNT(*) = COUNT(value) THEN SUM(value) END FROM metric('match_clutch_wins')) / NULLIF((SELECT CASE WHEN COUNT(*) = COUNT(value) THEN SUM(value) END FROM metric('clutches')), 0) AS value WHERE EXISTS (SELECT 1 FROM metric('clutches'))",
 		scope: "profile", format: "percent", shortName: "CW%",
-		interpretation: "share of the player's clutches won (clutchless corpus → no rows)",
-		rows:           0,
+		interpretation: "share of the player's clutches won (corpus: 72 clutches, none won → 0)",
+		rows:           2, wantAll: 0,
 	},
 	{
 		// D4p: same pooled shape as hs_pct at profile scope (the corpus
@@ -405,36 +406,36 @@ var builtinSeed = []struct {
 		wantLabels: eightLabels,
 	},
 	{
-		// Clutchless corpus (TestSyntheticCorpusCounts) — honest empty,
-		// never a fabricated 0 row: rows 0 for all five match-scope
-		// clutch seeds and the profile twin below.
+		// The clutch family reads the roster rule (backlog S10). The corpus
+		// has 72 clutches under it (none won); the match-scope seeds below are
+		// run per match and not row-pinned here.
 		name: "clutches", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "int", shortName: "",
-		interpretation: "1vN attempt count (clutchless corpus → no rows)",
+		interpretation: "1vN attempt count (corpus: 72 clutches under the roster rule)",
 		rows:           0,
 	},
 	{
 		name: "clutch_win_rate", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.won) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "percent", shortName: "",
-		interpretation: "share of clutches won (clutchless corpus → no rows)",
+		interpretation: "share of clutches won (corpus: 72 clutches under the roster rule)",
 		rows:           0,
 	},
 	{
 		name: "clutch_avg_size", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.size) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "float1", shortName: "",
-		interpretation: "mean clutch size (clutchless corpus → no rows)",
+		interpretation: "mean clutch size (corpus: 72 clutches under the roster rule)",
 		rows:           0,
 	},
 	{
 		name: "clutch_avg_hp", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.hp_left) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "float1", shortName: "",
-		interpretation: "mean ending HP (clutchless corpus → no rows)",
+		interpretation: "mean ending HP (corpus: 72 clutches under the roster rule)",
 		rows:           0,
 	},
 	{
 		name: "clutch_avg_equip", expr: store.ClutchCTE() + " SELECT c.steam_id AS subject_key, '' AS dim, AVG(c.equip) AS value FROM clutch c WHERE c.steam_id <> '' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id",
 		scope: "match", format: "currency", shortName: "",
-		interpretation: "mean held equipment value (clutchless corpus → no rows)",
+		interpretation: "mean held equipment value (corpus: 72 clutches under the roster rule)",
 		rows:           0,
 	},
 	{
@@ -543,8 +544,8 @@ var builtinSeed = []struct {
 	{
 		name: "career_clutches", expr: "SELECT :steam_id AS subject_key, '' AS dim, (SELECT CASE WHEN COUNT(*) = COUNT(value) THEN SUM(value) END FROM metric('clutches')) AS value WHERE EXISTS (SELECT 1 FROM metric('clutches'))",
 		scope: "profile", format: "int", shortName: "",
-		interpretation: "career 1vN count (clutchless corpus → no rows)",
-		rows:           0,
+		interpretation: "career 1vN count (corpus: 36 clutches per player under the roster rule)",
+		rows:           2, wantAll: 36,
 	},
 	// ---- addendum: the opening-duel trio (profile) + the victim-side
 	// duel count (match).
