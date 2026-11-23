@@ -43,3 +43,16 @@ Not met:
   real data.
 
 Next: profile `dmg_no_kill`, then rerun acceptance 1 and 2.
+
+## Result update (2026-11-23): acceptance met on the user's re-imported library (7 goldens)
+
+Run on a read-only copy of the library, with the WAL copied alongside. The original was not touched.
+- Baseline sweep: 147 of 147 metrics, 32,431 stored values, 2 min 23 s (the 10-minute bound is met).
+- Unmodified copy: IDENTICAL, 32,431 rows, zero differences.
+- Control variant: `UPDATE events SET weapon = 'ControlWeapon' WHERE match_id = 1 AND kind = 'kill' AND weapon = 'Galil AR'`.
+  The diff flags `weapon_kills` and `weapon_headshots` for the renamed weapon. Detected.
+- A first control, `UPDATE round_player_money SET equip = equip + 1000` on match 1, was reported identical. Its
+  value reaches no stored metric (the clutch equip reads round economy). That is the wrong control, not a harness
+  fault; the variant itself was confirmed applied (equip total moved by 230,000).
+
+Still not done: the library-scale run (the larger library, S08).
