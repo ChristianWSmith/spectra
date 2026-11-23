@@ -227,3 +227,12 @@ lines cross the same two triangles, both in the interior of the triangle:
 The two crossings are about 35 units apart along the line, so the line passes
 through a solid about 35 units thick, roughly 100 units from the shooter. The
 blockers are large faces, not a thin pipe or slivers, and the hits are not at edges.
+
+## Zoomed render, de_ancient tick 8013 (2026-11-22)
+
+`TestZoomRender` writes `zoom-de_ancient-8012-{east,...}.png`. Plan view: the two
+blocking triangles form the corner of a wall. All eight rays from the shooter pass
+within a few units of that corner. East view: the blockers appear edge-on as one
+sloped face. The few-units margin conflicts with the grazing test, which found no
+clear line within 8 units of eye movement. Unresolved: the eye move that would
+clear it may lie outside the 26 directions tested.
