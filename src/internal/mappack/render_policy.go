@@ -13,7 +13,7 @@ import "strings"
 //
 // See-through materials are left out: particle cards, steam and light shafts,
 // puddle planes, and glass. They do not stop a player seeing through them.
-// Borderline materials stay in and are listed in backlog/S18-encounter-fact-build.md.
+// Borderline materials stay in; they are listed in FOLLOWUP.md.
 var renderExcludedClasses = map[string]bool{
 	"prop_door_rotating":       true,
 	"func_door":                true,
