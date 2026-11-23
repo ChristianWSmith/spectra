@@ -994,14 +994,22 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// lifecycle exactly: the writer wipes a previous parse's rows at
 	// creation (reprocess), and cleanupPartial deletes the half-written
 	// rows together with the half-written sidecar on every failure path
-	// below, so a failed match never serves partial ticks. A cleanup
-	// error is dropped like the sidecar's RemoveAll error: the job is
-	// already failing, and the next reprocess wipes the rows anyway.
+	// below, so a failed match never serves partial ticks. Abort stops the
+	// tick writer goroutine and waits for it before deleting the rows, so
+	// no tick write can land after the cleanup. A cleanup error is dropped
+	// like the sidecar's RemoveAll error: the job is already failing, and
+	// the next reprocess wipes the rows anyway.
+	var tw *store.TickWriter
 	cleanupPartial := func() {
 		_ = os.RemoveAll(sidecarPath)
-		_ = im.st.DeletePlayerTicks(matchID)
+		if tw != nil {
+			_ = tw.Abort()
+		} else {
+			_ = im.st.DeletePlayerTicks(matchID)
+		}
 	}
-	tw, terr := im.st.NewTickWriter(matchID)
+	var terr error
+	tw, terr = im.st.NewTickWriter(matchID)
 	if terr != nil {
 		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageParse, terr.Error(), false)

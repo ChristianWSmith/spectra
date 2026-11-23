@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"math"
 	"testing"
@@ -182,13 +183,13 @@ func TestTickWriterChunksTransactions(t *testing.T) {
 		if err := w.AddTicks(int32(f), 1, 64, players); err != nil {
 			t.Fatalf("AddTicks: %v", err)
 		}
-		if w.Rows() > tickChunkRows || len(w.buf) > tickChunkRows {
-			t.Fatalf("frame %d: committed %d / buffered %d rows — a chunk exceeded %d", f, w.Rows(), len(w.buf), tickChunkRows)
+		if len(w.buf) > tickChunkRows {
+			t.Fatalf("frame %d: buffered %d rows — a chunk exceeded %d", f, len(w.buf), tickChunkRows)
 		}
 	}
-	if w.Rows() != tickChunkRows {
-		t.Errorf("committed before Close = %d, want one full chunk of %d", w.Rows(), tickChunkRows)
-	}
+	// The writer commits asynchronously: the full chunk lands while the
+	// parse keeps running, well before Close.
+	waitRows(t, w, tickChunkRows)
 	n, err := s.PlayerTickCount(id)
 	if err != nil {
 		t.Fatalf("PlayerTickCount: %v", err)
@@ -302,5 +303,189 @@ func TestTickWriterRepeatedTickFirstWins(t *testing.T) {
 		if !r.speed.Valid || math.Abs(r.speed.Float64-64) > 1e-9 {
 			t.Errorf("row %d (tick %d): speed = %+v, want 64 (the first observation of tick 11 kept)", i+1, r.tick, r.speed)
 		}
+	}
+}
+
+// waitRows polls until the writer has committed want rows (the writer is
+// asynchronous), failing the test after a generous bound.
+func waitRows(t *testing.T, w *TickWriter, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second) // generous: SQLite commits are fsync-bound on slow disks
+	for w.Rows() < want {
+		if time.Now().After(deadline) {
+			t.Fatalf("writer committed %d rows, want %d", w.Rows(), want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// streamFrames feeds up to n frames of two alive players, one tick per
+// frame, stopping early when stop returns true (checked before each
+// frame). It returns the first AddTicks error.
+func streamFrames(w *TickWriter, n int, stop func(frame int) bool) error {
+	players := []models.TickSample{alivePos("a", 0, 0, false), alivePos("b", 1, 1, false)}
+	for f := 0; f < n; f++ {
+		if stop != nil && stop(f) {
+			return nil
+		}
+		if err := w.AddTicks(int32(f), 1, 64, players); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TestTickWriterAbortLeavesNoPartialTicks pins the importer's failure
+// paths: a parse error and a context cancellation both stop the feed with
+// chunks already committed, and Abort must leave the match with no tick
+// rows while another match's rows are untouched. (TickWriter has no context
+// of its own; cancellation reaches it as the importer calling Abort.)
+func TestTickWriterAbortLeavesNoPartialTicks(t *testing.T) {
+	const frames = tickChunkRows/2 + 1000 // several chunks; the first is committed
+	cases := map[string]func(w *TickWriter){
+		"parse error": func(w *TickWriter) {
+			// The parse fails mid-stream: the feed just stops.
+			_ = streamFrames(w, frames/2, nil)
+		},
+		"cancelled": func(w *TickWriter) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			_ = streamFrames(w, frames, func(f int) bool {
+				if f == frames/2 {
+					cancel()
+				}
+				return ctx.Err() != nil
+			})
+		},
+	}
+	for name, feed := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := openMem(t)
+			now := time.Now()
+			id := saveTestMatch(t, s, "/d/abort-"+name+".dem", "sha-abort-"+name, now)
+			other := saveTestMatch(t, s, "/d/keep-"+name+".dem", "sha-keep-"+name, now)
+			ow, err := s.NewTickWriter(other)
+			if err != nil {
+				t.Fatalf("NewTickWriter: %v", err)
+			}
+			if err := streamFrames(ow, 4, nil); err != nil {
+				t.Fatalf("AddTicks: %v", err)
+			}
+			if err := ow.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+
+			w, err := s.NewTickWriter(id)
+			if err != nil {
+				t.Fatalf("NewTickWriter: %v", err)
+			}
+			feed(w)
+			if err := w.Abort(); err != nil {
+				t.Fatalf("Abort: %v", err)
+			}
+			if n, _ := s.PlayerTickCount(id); n != 0 {
+				t.Errorf("after abort: %d partial rows, want 0", n)
+			}
+			if n, _ := s.PlayerTickCount(other); n != 8 {
+				t.Errorf("other match rows = %d, want 8 (abort is match-scoped)", n)
+			}
+			if err := w.Abort(); err != nil {
+				t.Errorf("second Abort: %v, want nil (idempotent)", err)
+			}
+			if err := w.AddTicks(1<<20, 1, 64, nil); err == nil {
+				t.Errorf("AddTicks after Abort = nil, want an error")
+			}
+		})
+	}
+}
+
+// TestTickWriterWriteErrorReachesCaller: a failing chunk write (injected by
+// a trigger that rejects one tick) must surface to the parse, from
+// AddTicks on a later frame or at the latest from Close. The importer's
+// Abort then leaves no rows from the stream.
+func TestTickWriterWriteErrorReachesCaller(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/write-err.dem", "sha-write-err", time.Now())
+	if _, err := s.db.Exec(`CREATE TRIGGER fail_tick BEFORE INSERT ON player_ticks
+		WHEN NEW.tick = 2000 BEGIN SELECT RAISE(ABORT, 'injected write failure'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	w, err := s.NewTickWriter(id)
+	if err != nil {
+		t.Fatalf("NewTickWriter: %v", err)
+	}
+	feedErr := streamFrames(w, tickChunkRows, nil) // many chunks; the first one fails
+	closeErr := w.Close()
+	if feedErr == nil && closeErr == nil {
+		t.Fatal("write error did not reach the caller (neither AddTicks nor Close returned it)")
+	}
+	if closeErr == nil {
+		t.Errorf("Close = nil after a failed write, want the write error (it is sticky)")
+	}
+	if err := w.Abort(); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if n, _ := s.PlayerTickCount(id); n != 0 {
+		t.Errorf("after write error and abort: %d rows, want 0", n)
+	}
+}
+
+// TestTickWriterNoDeadlockUnderProgressWrites interleaves the job's
+// progress writes (autocommit statements on the same single connection)
+// with the tick stream. The stream must finish within the timeout and
+// commit every row.
+func TestTickWriterNoDeadlockUnderProgressWrites(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/progress.dem", "sha-progress", time.Now())
+	job, err := s.CreateJob("import", "/d/progress.dem")
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	w, err := s.NewTickWriter(id)
+	if err != nil {
+		t.Fatalf("NewTickWriter: %v", err)
+	}
+
+	const frames = 3 * tickChunkRows / 2 // three-plus chunks of two players
+	stop := make(chan struct{})
+	progressErr := make(chan error, 1)
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				progressErr <- nil
+				return
+			default:
+			}
+			if err := s.UpdateJobProgress(job, "parse", float64(i%100)/100); err != nil {
+				progressErr <- err
+				return
+			}
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		if err := streamFrames(w, frames, nil); err != nil {
+			done <- err
+			return
+		}
+		done <- w.Close()
+	}()
+
+	select {
+	case err := <-done:
+		close(stop)
+		if err != nil {
+			t.Fatalf("stream with progress writes: %v", err)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("tick stream deadlocked under concurrent progress writes")
+	}
+	if err := <-progressErr; err != nil {
+		t.Fatalf("progress write: %v", err)
+	}
+	if n, _ := s.PlayerTickCount(id); n != frames*2 {
+		t.Errorf("rows = %d, want %d", n, frames*2)
 	}
 }
