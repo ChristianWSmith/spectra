@@ -1,4 +1,5 @@
 <script>
+  import StatusChip from './StatusChip.svelte';
   // ComponentFrame — the frame every mounted component sits in
   // one failing component shows a
   // dismissible error inside its own frame and the rest of the surface
@@ -134,7 +135,7 @@
       </button>
     </p>
   {:else if !Comp}
-    <p class="cframe-loading">{S.components.frameLoading}</p>
+    <p class="muted" role="status"><StatusChip block /></p>
   {:else}
     <svelte:boundary>
       <Comp {...props} {spectra} context={ctx} />
@@ -154,8 +155,5 @@
 <style>
   .cframe {
     display: contents;
-  }
-  .cframe-loading {
-    color: var(--muted);
   }
 </style>
