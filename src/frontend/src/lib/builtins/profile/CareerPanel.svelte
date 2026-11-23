@@ -66,7 +66,7 @@
 {#if loadError}
   <p class="error" role="alert">{S.profiles.careerErrorLead}{loadError}</p>
 {/if}
-{#if cardDefs.length > 0}
+<section class="panel prof-career">
   <div class="stat-grid prof-stats">
     {#each cardDefs as def (def.id)}
       {@const read = reads.get(def.name)}
@@ -96,5 +96,5 @@
       </StatCard>
     {/each}
   </div>
-{/if}
+</section>
 </div>
