@@ -25,7 +25,9 @@ func tickParse(frames *atomic.Int32, fail *atomic.Bool, rounds int) func(context
 			return nil, errors.New("tick sink not wired")
 		}
 		for i := int32(0); i < frames.Load(); i++ {
-			sample := []models.TickSample{{SteamID: "100", Side: "ct", Alive: true, HP: 100, HasPosition: true, X: float64(i)}}
+			// HP alternates so every frame is a state change: the row count then
+			// follows the frame count (the state-change rule would keep one row otherwise).
+			sample := []models.TickSample{{SteamID: "100", Side: "ct", Alive: true, HP: 100 - int(i%2), HasPosition: true, X: float64(i)}}
 			if err := opts.Ticks.AddTicks(i, 1, 64, sample); err != nil {
 				return nil, err
 			}

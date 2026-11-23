@@ -41,6 +41,18 @@ var errTickWriterClosed = errors.New("tick writer is closed")
 // DeletePlayerTicks; DeleteMatchData clears them with the childTables.
 var streamedChildTables = []string{"player_ticks"}
 
+// tickState is the retained state of one player at their last written row.
+// A row is written only when round, side, alive or hp differs from it (S17
+// state-change rule, owner ruling: HP is retained). Frames that repeat the
+// state are not written; no reader treats a missing row as "no change"
+// (see the S10 roster rule for the alive-count and clutch consumers).
+type tickState struct {
+	round int
+	side  string
+	alive bool
+	hp    int
+}
+
 // tickPrev is the last positioned frame the writer saw for one player —
 // the only state speed derivation needs.
 type tickPrev struct {
@@ -79,6 +91,7 @@ type TickWriter struct {
 	matchID  int64
 	buf      []tickRow
 	prev     map[string]tickPrev
+	last     map[string]tickState
 	lastTick int32
 	haveLast bool
 	rows     atomic.Int64 // committed rows, written by the writer goroutine
@@ -122,6 +135,7 @@ func (s *Store) NewTickWriter(matchID int64) (*TickWriter, error) {
 		matchID: matchID,
 		buf:     make([]tickRow, 0, 1024),
 		prev:    make(map[string]tickPrev, 16),
+		last:    make(map[string]tickState, 16),
 		queue:   make(chan []tickRow, tickQueueDepth),
 		recycle: make(chan []tickRow, tickQueueDepth+1),
 		stop:    make(chan struct{}),
@@ -195,6 +209,11 @@ func (w *TickWriter) AddTicks(tick int32, round int, tickRate float64, players [
 		if p.Alive {
 			row.weapon = sql.NullString{String: scrub(p.Weapon), Valid: true}
 		}
+		// Speed is derived from every positioned frame, before the pruning
+		// decision: a pruned frame still advances the previous position.
+		state := tickState{round: round, side: row.side, alive: p.Alive, hp: p.HP}
+		prevState, seen := w.last[p.SteamID]
+		changed := !seen || prevState != state
 		if p.HasPosition {
 			row.inAir = sql.NullBool{Bool: p.InAir, Valid: true}
 			if prev, ok := w.prev[p.SteamID]; ok && w.haveLast && prev.tick == w.lastTick {
@@ -206,7 +225,10 @@ func (w *TickWriter) AddTicks(tick int32, round int, tickRate float64, players [
 		} else {
 			delete(w.prev, p.SteamID)
 		}
-		w.buf = append(w.buf, row)
+		if changed {
+			w.last[p.SteamID] = state
+			w.buf = append(w.buf, row)
+		}
 	}
 	w.lastTick, w.haveLast = tick, true
 	return nil

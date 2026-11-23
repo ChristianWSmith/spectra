@@ -47,6 +47,19 @@ func readTicks(t *testing.T, s *Store, matchID int64, steamID string) []tickRowO
 	return out
 }
 
+// varyHP gives each player an HP that changes with the tick, so every frame
+// is a state change and the state-change rule writes its row. Tests that are
+// about the writer's mechanics (chunks, abort, errors) use it; the pruning
+// rule has its own tests.
+func varyHP(players []models.TickSample, tick int32) []models.TickSample {
+	out := make([]models.TickSample, len(players))
+	for i, p := range players {
+		p.HP = 1 + int(tick)%97 + i
+		out[i] = p
+	}
+	return out
+}
+
 func alivePos(id string, x, y float64, air bool) models.TickSample {
 	return models.TickSample{SteamID: id, Side: "ct", Alive: true, HP: 100, Money: 800, Weapon: "ak47",
 		HasPosition: true, X: x, Y: y, Z: 7, InAir: air}
@@ -80,7 +93,7 @@ func TestTickWriterRowsAndSpeed(t *testing.T) {
 		{108, 2, rate, []models.TickSample{alivePos("A", 9, 7, false)}}, // 1 u in 1 tick → 64 u/s
 	}
 	for _, f := range frames {
-		if err := w.AddTicks(f.tick, f.round, f.rate, f.p); err != nil {
+		if err := w.AddTicks(f.tick, f.round, f.rate, varyHP(f.p, f.tick)); err != nil {
 			t.Fatalf("AddTicks(%d): %v", f.tick, err)
 		}
 	}
@@ -116,7 +129,7 @@ func TestTickWriterRowsAndSpeed(t *testing.T) {
 		if !g.inAir.Valid || (g.inAir.Int64 != 0) != w.air {
 			t.Errorf("tick %d: in_air = %+v, want %v", g.tick, g.inAir, w.air)
 		}
-		if g.side != "ct" || !g.alive || g.hp != 100 || g.weapon.String != "ak47" {
+		if g.side != "ct" || !g.alive || g.hp != 1+int(g.tick)%97 || g.weapon.String != "ak47" {
 			t.Errorf("tick %d: row = %+v", g.tick, g)
 		}
 	}
@@ -180,7 +193,7 @@ func TestTickWriterChunksTransactions(t *testing.T) {
 	}
 	const frames = tickChunkRows/10 + 5 // just over one chunk
 	for f := 0; f < frames; f++ {
-		if err := w.AddTicks(int32(f), 1, 64, players); err != nil {
+		if err := w.AddTicks(int32(f), 1, 64, varyHP(players, int32(f))); err != nil {
 			t.Fatalf("AddTicks: %v", err)
 		}
 		if len(w.buf) > tickChunkRows {
@@ -223,7 +236,7 @@ func TestPlayerTicksLifecycle(t *testing.T) {
 			t.Fatalf("NewTickWriter: %v", err)
 		}
 		for i := 0; i < n; i++ {
-			if err := w.AddTicks(int32(i), 1, 64, []models.TickSample{alivePos("P", 0, 0, false)}); err != nil {
+			if err := w.AddTicks(int32(i), 1, 64, varyHP([]models.TickSample{alivePos("P", 0, 0, false)}, int32(i))); err != nil {
 				t.Fatalf("AddTicks: %v", err)
 			}
 		}
@@ -288,7 +301,7 @@ func TestTickWriterRepeatedTickFirstWins(t *testing.T) {
 		tick int32
 		x    float64
 	}{{10, 0}, {11, 1}, {11, 99}, {12, 2}} {
-		if err := w.AddTicks(f.tick, 1, 64, []models.TickSample{alivePos("R", f.x, 0, false)}); err != nil {
+		if err := w.AddTicks(f.tick, 1, 64, varyHP([]models.TickSample{alivePos("R", f.x, 0, false)}, f.tick)); err != nil {
 			t.Fatalf("AddTicks(%d): %v", f.tick, err)
 		}
 	}
@@ -328,7 +341,7 @@ func streamFrames(w *TickWriter, n int, stop func(frame int) bool) error {
 		if stop != nil && stop(f) {
 			return nil
 		}
-		if err := w.AddTicks(int32(f), 1, 64, players); err != nil {
+		if err := w.AddTicks(int32(f), 1, 64, varyHP(players, int32(f))); err != nil {
 			return err
 		}
 	}
@@ -487,5 +500,57 @@ func TestTickWriterNoDeadlockUnderProgressWrites(t *testing.T) {
 	}
 	if n, _ := s.PlayerTickCount(id); n != frames*2 {
 		t.Errorf("rows = %d, want %d", n, frames*2)
+	}
+}
+
+// TestTickWriterStateChangeRule pins the state-change rule (S17): a player's
+// row is written when round, side, alive or hp differs from their last written
+// row, and not otherwise. A position change alone writes no row.
+func TestTickWriterStateChangeRule(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/ticks.dem", "sha-ticks-rule", time.Now())
+	w, err := s.NewTickWriter(id)
+	if err != nil {
+		t.Fatalf("NewTickWriter: %v", err)
+	}
+	a := func(x float64, hp int, alive bool) models.TickSample {
+		p := alivePos("A", x, 0, false)
+		p.HP = hp
+		p.Alive = alive
+		return p
+	}
+	b := alivePos("B", 0, 0, false)
+	frames := []struct {
+		tick int32
+		p    []models.TickSample
+	}{
+		{100, []models.TickSample{a(0, 100, true), b}},
+		{101, []models.TickSample{a(1, 100, true), b}}, // A moves: no row
+		{102, []models.TickSample{a(2, 100, true), b}}, // still no row
+		{103, []models.TickSample{a(2, 50, true), b}},  // A hp changes: row
+		{104, []models.TickSample{a(3, 50, true), b}},  // A moves: no row
+		{105, []models.TickSample{a(3, 0, false), b}},  // A dies: row
+	}
+	for _, f := range frames {
+		if err := w.AddTicks(f.tick, 1, 64, f.p); err != nil {
+			t.Fatalf("AddTicks(%d): %v", f.tick, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	wantA := []int32{100, 103, 105}
+	gotA := readTicks(t, s, id, "A")
+	if len(gotA) != len(wantA) {
+		t.Fatalf("A rows = %d, want %d (%v)", len(gotA), len(wantA), gotA)
+	}
+	for i, tk := range wantA {
+		if gotA[i].tick != tk {
+			t.Errorf("A row %d at tick %d, want %d", i, gotA[i].tick, tk)
+		}
+	}
+	gotB := readTicks(t, s, id, "B")
+	if len(gotB) != 1 || gotB[0].tick != 100 {
+		t.Errorf("B rows = %v, want only the first (tick 100)", gotB)
 	}
 }
