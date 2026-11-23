@@ -196,8 +196,12 @@
   // $state initializer). When the tab bar clears the segment (selectTab →
   // plain #/match/:id for Overview) routeTab becomes '' and the local tab
   // state is left alone.
+  // A new match (id change) opens on Overview unless the route names a tab, so
+  // the previous match's tab never carries over. Tab clicks rewrite the route,
+  // so this effect only runs on an id or route change.
   $effect(() => {
-    if (routeTab) tab = routeTab;
+    void id;
+    tab = routeTab || 'Overview';
   });
 
   // Scoreboard fetch — ID-KEYED: ONE GetScoreboard call per match, in the

@@ -22,12 +22,16 @@
   $effect(() => subscribeMetricProgress((snap) => (progress = snap)));
   $effect(() => onMetricDone(() => (reload += 1)));
 
+  // The player the shown values belong to (plain: it only gates the reset).
+  let loadedFor = null;
   $effect(() => {
     reload;
     const sid = steamId;
+    const newPlayer = sid !== loadedFor;
+    loadedFor = sid;
     let live = true;
-    defs = new Map();
-    reads = new Map();
+    if (newPlayer) defs = new Map();
+    if (newPlayer) reads = new Map();
     if (!sid) return;
     listMetrics()
       .then((rows) => loadSeeds(spectra, SEEDS, rows || [], errText))
