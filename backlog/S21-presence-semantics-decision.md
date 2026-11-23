@@ -84,3 +84,11 @@ may come later.
 The alive-count and clutch consumers can use the roster rule in S10 (roster minus kills and disconnects within
 the round). It reproduces all 2,222 stored alive-count cells on the snapshot. Presence in tick rows is not needed
 for those consumers once S10 is built.
+
+## Owner amendment (2026-11-23)
+
+- Target: "no row means no change in state" for player_ticks. Pruning on state change is the intended design, not a workaround.
+- Presence (who is alive, who is in the round) comes from the roster (round_player_sides), kills and disconnect events, never from row absence.
+- Frames that were never delivered are data gaps. They are not state changes. The 13 post-round kill ticks with no frames are one such gap class (World self-kills after round end).
+- Post-round ticks follow the same state-change rule as every other tick.
+- Dense per-tick facts (speed, weapon, in-air) live on encounter_window_samples, not on player_ticks.

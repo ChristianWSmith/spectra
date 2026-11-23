@@ -80,3 +80,11 @@ from the import path right after `SaveExtracted`. Covered by
 `TestSettleMatchRows` (post-round kept, post-match dropped, idempotent).
 Snapshot effect: 17,101 tick rows removed (the final-round tail). Sidecar
 positions and state are not changed by this rule.
+
+## Status (2026-11-23)
+
+- Rule built: a player_ticks row is written on the first observation of a participant and on any change of round, side, alive or hp (store.TickWriter).
+- Columns no longer on player_ticks: in_air, speed, weapon (moved to encounter_window_samples, phase 2).
+- Acceptance on the 7-match snapshot and the re-imported library: established earlier (exact tick-row equality on the library comparison; kill join test passes on the golden, compared=159, missing=0).
+- Owner rulings applied: S21 amendment (see S21), post-round rows follow the same rule, no buy-window ticks kept.
+- Remaining before merge: wipe required on existing libraries (schema change); S03 pruning variant only if asked.
