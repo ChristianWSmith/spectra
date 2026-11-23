@@ -650,8 +650,13 @@ CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, me
 CREATE INDEX IF NOT EXISTS idx_metric_values_subject ON metric_values(subject_key, match_id, metric_id, dim);
 CREATE INDEX IF NOT EXISTS idx_metric_deps_dep ON metric_deps(dep_name);
 CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
--- idx_player_ticks_steam was dropped (S15, speed-first): no reader of player_ticks
--- is keyed by steam_id alone, and the index cost about 41 MB and 0.5 to 1 s of ingest per match.
+-- idx_player_ticks_steam serves the library-wide per-player reads of the
+-- tick table (one player's frames in one match, or across the library):
+-- the match_id-first primary key cannot seek on steam_id, and a scan of
+-- a ~1.3M-row-per-match table is the cost this block exists to avoid
+-- Same leading-column mirror of the match_id-first key as the
+-- other steam_id members.
+CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
 
 CREATE TABLE IF NOT EXISTS kill_tags (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
