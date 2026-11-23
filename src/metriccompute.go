@@ -451,7 +451,7 @@ func (s *MetricsService) GetMetricComputeState() ([]MetricComputeState, error) {
 	defer s.mu.Unlock()
 	out := make([]MetricComputeState, 0, len(coverage))
 	for _, c := range coverage {
-		out = append(out, s.computeStateLocked(c.MetricID, c.Behind, c.FreshRows, held[c.MetricID]))
+		out = append(out, s.computeStateLocked(c.MetricID, s.inflight[c.MetricID], c.Behind, c.FreshRows, held[c.MetricID]))
 	}
 	return out, nil
 }
@@ -513,23 +513,29 @@ func (s *MetricsService) GetMetricStates(scope, id string) ([]MetricComputeState
 	defer s.mu.Unlock()
 	out := make([]MetricComputeState, 0, len(coverage))
 	for _, c := range coverage {
-		out = append(out, s.computeStateLocked(c.MetricID, behindOf(c), fresh[c.MetricID], held[c.MetricID]))
+		// A unit is processing only while the sweep recomputes it: a metric
+		// in flight for another unit (another match or player) does not make
+		// this unit's current values read as processing.
+		behind := behindOf(c)
+		running := s.inflight[c.MetricID] && behind
+		out = append(out, s.computeStateLocked(c.MetricID, running, behind, fresh[c.MetricID], held[c.MetricID]))
 	}
 	return out, nil
 }
 
 // computeStateLocked is the precedence both reads share: processing in lieu of
 // everything, then failed (an error or a cancel hold with no fresh row), then
-// behind, then fresh or no-data by the fresh-row count. behind and fresh are the
-// read's own scope. The caller holds s.mu.
-func (s *MetricsService) computeStateLocked(metricID int64, behind bool, fresh int, held bool) MetricComputeState {
+// behind, then fresh or no-data by the fresh-row count. running (the sweep is
+// recomputing this unit), behind and fresh are the read's own scope. The
+// caller holds s.mu.
+func (s *MetricsService) computeStateLocked(metricID int64, running, behind bool, fresh int, held bool) MetricComputeState {
 	state := MetricComputeState{MetricID: metricID}
 	errMsg := ""
 	if s.errs != nil {
 		errMsg = s.errs[metricID]
 	}
 	switch {
-	case s.inflight[metricID]:
+	case running:
 		// In lieu of everything (design §5): never a stale number,
 		// never bare no-data mid-flight.
 		state.State = MetricStateProcessing
