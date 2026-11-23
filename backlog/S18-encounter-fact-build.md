@@ -236,3 +236,20 @@ within a few units of that corner. East view: the blockers appear edge-on as one
 sloped face. The few-units margin conflicts with the grazing test, which found no
 clear line within 8 units of eye movement. Unresolved: the eye move that would
 clear it may lie outside the 26 directions tested.
+
+## Player and NPC clip meshes (2026-11-22)
+
+The PHYS block has per-mesh collision attributes (`m_nCollisionAttributeIndex`), and
+the worldcol extraction drops them. Exported for seven maps to
+`~/Programming/spectra-overlays/attrs/<map>.attrs.json` (`TestDumpPhysAttributes`,
+`SPECTRA_DUMP_OUT`). Every mesh that cleared a kill in the ablation, except
+de_inferno mesh 0, has `interactAs` of `playerclip` and/or `npcclip`.
+
+Production box, eye 64/46, kills 946:
+- With all meshes: clears 910.
+- Without the meshes whose `interactAs` is `playerclip` or `npcclip`: clears 944.
+  Still blocked: de_nuke tick 58698 and de_nuke tick 91374.
+
+This is an untested hypothesis that bullets pass player and NPC clip meshes. It is
+supported by the data, not confirmed in game. The random-pair control has not been
+rerun with the filter.

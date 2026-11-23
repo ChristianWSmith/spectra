@@ -67,7 +67,7 @@ func loadSweep(t *testing.T, root, data string) sweepData {
 	rng := rand.New(rand.NewSource(11))
 	for _, m := range ms {
 		if _, ok := d.occs[m.mp]; !ok {
-			occ, err := occFromCache(data, m.mp)
+			occ, err := occFromCacheFiltered(data, m.mp, os.Getenv("SPECTRA_NO_CLIP") != "")
 			if err != nil {
 				t.Fatal(err)
 			}

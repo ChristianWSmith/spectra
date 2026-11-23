@@ -2,6 +2,7 @@ package encounter_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,4 +151,49 @@ func occFromCache(data, mapName string) (encounter.Occluder, error) {
 		return nil, err
 	}
 	return occFor(meshes), nil
+}
+
+// occFromCacheFiltered is occFromCache, optionally without the meshes that
+// interact with player or NPC clips only (their attributes are exported to
+// <map>.attrs.json by the mappack dump test). Those meshes bound player movement;
+// whether bullets are stopped by them is the hypothesis under test.
+func occFromCacheFiltered(data, mapName string, noClip bool) (encounter.Occluder, error) {
+	f, err := os.Open(filepath.Join(data, "worldcol", mapName+".worldcol"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	meshes, err := source2.ReadMeshes(f)
+	if err != nil {
+		return nil, err
+	}
+	if !noClip {
+		return occFor(meshes), nil
+	}
+	ab, err := os.ReadFile(filepath.Join(os.Getenv("SPECTRA_OVERLAY_OUT"), "attrs", mapName+".attrs.json"))
+	if err != nil {
+		return nil, err
+	}
+	var attrs []struct {
+		Mesh       int      `json:"mesh"`
+		InteractAs []string `json:"interactAs"`
+	}
+	if err := json.Unmarshal(ab, &attrs); err != nil {
+		return nil, err
+	}
+	clipOnly := map[int]bool{}
+	for _, a := range attrs {
+		for _, s := range a.InteractAs {
+			if s == "playerclip" || s == "npcclip" {
+				clipOnly[a.Mesh] = true
+			}
+		}
+	}
+	var kept []source2.Mesh
+	for i, m := range meshes {
+		if !clipOnly[i] {
+			kept = append(kept, m)
+		}
+	}
+	return occFor(kept), nil
 }
