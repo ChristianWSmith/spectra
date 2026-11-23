@@ -514,10 +514,12 @@ check(
 console.log('F. displaced-view overlay: the preserved view stays mounted + inert; minimize never remounts');
 const host = viewHost();
 check('the chain host exists (a persistent wrapper — never remounted)', !!host, host ? '' : 'no .app-views');
+// The kept match and profile stay mounted in .app-views (inert while the
+// overlay is up, never under .rp-keepalive): the overlay covers no view.
 check(
-  'back-absent entry: NOTHING beneath the overlay (today\'s behavior)',
-  !document.querySelector('.stub-view'),
-  document.querySelector('.stub-view') ? 'a view stub is mounted' : '',
+  'back-absent entry: NO view is mounted under the overlay (kept views sit inert in .app-views)',
+  !document.querySelector('.rp-keepalive .stub-view'),
+  document.querySelector('.rp-keepalive .stub-view') ? 'a view stub is under the overlay' : '',
 );
 check(
   'back-absent entry: the empty host is still inert while the overlay is up',
@@ -525,14 +527,14 @@ check(
   `host.inert=${host?.inert}`,
 );
 
-// back-absent minimize falls back to goBack's /match/:id — FRESH (the
-// pre-overlay behavior for palette jumps / hand-edited deep links).
-const mFresh = viewMounts('Match');
+// back-absent minimize falls back to goBack's /match/:id. The match view is
+// kept mounted, so the same match is reused — never remounted.
+const mSameMatch = viewMounts('Match');
 await go('#/match/1');
 check(
-  "back-absent minimize mounts the match view FRESH (today's behavior)",
-  viewMounts('Match') === mFresh + 1,
-  `Match mounts ${mFresh} → ${viewMounts('Match')}`,
+  'back-absent minimize reuses the kept match view (no remount)',
+  viewMounts('Match') === mSameMatch,
+  `Match mounts ${mSameMatch} → ${viewMounts('Match')}`,
 );
 check('inert is gone once the overlay is down', viewHost()?.inert !== true, `host.inert=${viewHost()?.inert}`);
 check('the route landed on the match view', location.hash === '#/match/1', location.hash);
