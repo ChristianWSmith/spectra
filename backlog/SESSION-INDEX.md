@@ -66,7 +66,9 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 ## Open items (not decided)
 
 - Whether to chase the roughly 33 unexplained long-range blocks further (GUI overlay first).
-- Dynamic entities: excluded (see the rulings table). Static world props are in the render geometry, placed by their scene transforms. Confirm the policy.
+- Static world props are in the render geometry (owner confirmed). Dynamic entities are excluded (owner: doors probably belong back in; follow-up work, not this sprint).
+- Follow-up: re-admit doors (prop_door_rotating, func_door, func_door_rotating) to the render geometry. Needs the door state at kill time, or a per-door decision. Record before changing the policy.
+- Deferred until a larger library: test whether dropping the see-through seeds (smoke, steam, lightshaft, puddle, glass) adds seeds, and whether it condemns any of those materials on the library's other demos.
 - S18 and the 36 unexplained kills: superseded. Render geometry clears all 946 kills on the seven maps with kills; the 36 were blocked by incomplete collision and dynamic props.
 - De_overpass, de_train and de_vertigo have no kills in the corpus; their render geometry is checked against stored bounds and by eye only.
 - Competitive-pool list confirmed by owner; no further cuts pending.
