@@ -24,7 +24,12 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 | 2026-11-22 | S21 presence ruling: safe option, absence is absence | S21 |
 | 2026-11-23 | Backlog pushed forward by subagents on isolated worktrees (S03, S05, S06, S09, S12, S13); results are reviewed before merge | this file |
 | 2026-11-23 | S09 landed: damage-family seeds read sides from round_player_sides. Existing libraries keep the old seed text (seeds are INSERT OR IGNORE): a wipe is needed to pick it up | S09 |
-| 2026-11-23 | S12 decisions: tick queue depth 2; write errors at StageParse accepted | S12 |
+| 2026-11-23 | S12 decisions: tick queue depth 2; write errors at StageParse accepted. Owner: landed, nothing pending | S12 |
+| 2026-11-23 | S15 (owner, speed-first): drop the steam index (done, df50dd8). WITHOUT ROWID rejected (slows reads). Space is secondary | S15 |
+| 2026-11-23 | S16 (owner): the four equipment and spend fields stay sampled facts, pending the S05 number checks | S16, S05 |
+| 2026-11-23 | S20 (owner, un-parked): money leaves player_ticks (its one use, money_start, moves to the extractor). in_air, speed and weapon move to the encounter data | S20 |
+| 2026-11-23 | metricsByMatch is on the component read surface (owner) | S13 |
+| 2026-11-23 | sqlite3 access on the snapshot granted to the S05 survey (owner) | S05 |
 | 2026-11-22 | VRF is MIT-licensed. Its license is in `src/internal/source2/LICENSE-VRF.txt`, and the reader carries attribution | source2 headers |
 | 2026-11-22 | The CS2 install is now required for the app (the "no install required" wording must change) | GUI-VERIFICATION |
 | 2026-11-22 | GUI verification is deferred to a later batch, documented in GUI-VERIFICATION.md | GUI-VERIFICATION |
@@ -67,8 +72,8 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 
 - Whether to chase the roughly 33 unexplained long-range blocks further (GUI overlay first).
 - Static world props are in the render geometry (owner confirmed). Dynamic entities are excluded (owner: doors probably belong back in; follow-up work, not this sprint).
-- Follow-up: re-admit doors (prop_door_rotating, func_door, func_door_rotating) to the render geometry. Needs the door state at kill time, or a per-door decision. Record before changing the policy.
-- Deferred until a larger library: test whether dropping the see-through seeds (smoke, steam, lightshaft, puddle, glass) adds seeds, and whether it condemns any of those materials on the library's other demos.
+- Follow-up (owner): re-admit doors (prop_door_rotating, func_door, func_door_rotating) to the render geometry. Needs the door state at kill time, or a per-door decision. Record before changing the policy.
+- Deferred until the larger library arrives (owner):  test whether dropping the see-through seeds (smoke, steam, lightshaft, puddle, glass) adds seeds, and whether it condemns any of those materials on the library's other demos.
 - S18 and the 36 unexplained kills: superseded. Render geometry clears all 946 kills on the seven maps with kills; the 36 were blocked by incomplete collision and dynamic props.
 - De_overpass, de_train and de_vertigo have no kills in the corpus; their render geometry is checked against stored bounds and by eye only.
 - Competitive-pool list confirmed by owner; no further cuts pending.
