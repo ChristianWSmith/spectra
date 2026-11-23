@@ -94,8 +94,15 @@ func (b *BVH) build(start, end int, cent []Vec3) int32 {
 
 // Blocked reports whether any triangle of the mesh is hit by the segment.
 func (b *BVH) Blocked(seg Segment) bool {
+	_, ok := b.BlockedBy(seg)
+	return ok
+}
+
+// BlockedBy returns the index (into Triangles) of a triangle the segment hits, if
+// any. Which hit is returned when there are several is unspecified.
+func (b *BVH) BlockedBy(seg Segment) (int, bool) {
 	if len(b.nodes) == 0 {
-		return false
+		return -1, false
 	}
 	var stack [128]int32
 	sp := 0
@@ -112,7 +119,7 @@ func (b *BVH) Blocked(seg Segment) bool {
 			for _, ti := range b.order[n.first : n.first+n.count] {
 				t := b.mesh.Triangles[ti]
 				if segHitsTri(seg, b.mesh.Vertices[t[0]], b.mesh.Vertices[t[1]], b.mesh.Vertices[t[2]]) {
-					return true
+					return int(ti), true
 				}
 			}
 			continue
@@ -123,5 +130,5 @@ func (b *BVH) Blocked(seg Segment) bool {
 		stack[sp] = i + 1
 		sp++
 	}
-	return false
+	return -1, false
 }

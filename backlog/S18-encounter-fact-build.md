@@ -296,3 +296,12 @@ a finer rule, per mesh or per geometry, checked against the control.
 - de_ancient kills, production box, 183 kills: render geometry clears 160; collision
   geometry clears 173. Render geometry blocks more kills (23 blocked versus 10). Not
   yet attributed: foliage, glass and other see-through materials are candidates.
+
+### Correction: base vertices (2026-11-22)
+
+The first render extraction ignored each draw call's base vertex. 1,460 of 4,776
+draw calls on de_ancient have a non-zero base, so many triangles pointed at the
+wrong vertices. The 160-of-183 figure above is void. With base vertices applied,
+the production box on the render geometry clears 183 of 183 de_ancient kills.
+Against collision geometry: both clear 173; render-only clears 10 (the kills the
+playerclip mesh blocks); collision-only clears 0.
