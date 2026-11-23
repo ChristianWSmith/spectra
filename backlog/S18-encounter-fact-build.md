@@ -217,3 +217,13 @@ it, in any of its 64 frames. Sidecar positions match the recorded events (attack
 eye = recorded position + 64; victim matches the kill event's position at tick 8012).
 So the sampled positions are not the cause. The occluder is the remaining suspect:
 removing mesh 0 of de_ancient clears it (ablation).
+
+## Triangle check, de_ancient tick 8013 (2026-11-22)
+
+`TestTriangleCheck`, frame at tick 8012, mesh 0 (6,985 triangles). All eight target
+lines cross the same two triangles, both in the interior of the triangle:
+- triangle 6877 at 10% of the line, area 24,288 units², normal cos to line -0.83
+- triangle 4721 at 15% of the line, area 76,176 units², normal cos to line +0.56
+The two crossings are about 35 units apart along the line, so the line passes
+through a solid about 35 units thick, roughly 100 units from the shooter. The
+blockers are large faces, not a thin pipe or slivers, and the hits are not at edges.
