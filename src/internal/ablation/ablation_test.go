@@ -9,6 +9,7 @@ package ablation
 //	ABLATION_SQL       file of SQL run on the copy before the sweep (a variant)
 //	ABLATION_BASELINE  baseline dump (<name>.dump.json of an earlier run) to diff against
 //	ABLATION_EXPECT    "identical" or "differs": fail the test unless the diff matches
+//	ABLATION_WORKERS   unit parallelism for the sweep (S14); 1 is sequential
 //
 // Each run: copy the snapshot, open it through store.Open, apply the variant,
 // clear every metric's stored rows and run records and unhold every metric
@@ -21,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +103,15 @@ func TestAblation(t *testing.T) {
 	}
 
 	sweepStart := time.Now()
+	// ABLATION_WORKERS sets the per-metric unit parallelism (S14); unset keeps
+	// the default. The sequential baseline is ABLATION_WORKERS=1.
+	if w := os.Getenv("ABLATION_WORKERS"); w != "" {
+		n, err := strconv.Atoi(w)
+		if err != nil || n < 1 {
+			t.Fatalf("ABLATION_WORKERS=%q: want a positive integer", w)
+		}
+		metrics.SetUnitWorkers(n)
+	}
 	res, err := metrics.Sweep(t.Context(), st, nil, nil)
 	sweepDur := time.Since(sweepStart)
 	if err != nil {

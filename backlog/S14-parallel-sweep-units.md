@@ -28,3 +28,11 @@ Round-scoped units are 74% of raw time. A Python thread test went from 2.2 s
 ## Not covered
 The driver is modernc (about 2.7× slower than C SQLite). A cgo driver is a
 separate, large dependency decision and is not part of this story.
+
+## Result (2026-11-23)
+
+- Built: each metric's stale units run on a bounded worker pool (unitWorkers, default GOMAXPROCS). Each unit's SQL reads through the read-only pool, and its write stays one transaction on the writer. Metrics still run one at a time in dependency order. The first unit error stops new launches. The cancellation checks keep their original order.
+- Acceptance, values: the parallel sweep on the live library matches the sequential baseline on all 32,431 metric_values rows, zero differences (ablation harness, ABLATION_WORKERS=1 vs default).
+- Acceptance, cancellation: internal/metrics and internal/ablation tests pass.
+- Speedup measurement: cancelled at the owner's direction. Observed as noticeably faster; not measured.
+- Known nondeterminism: when two units fail at once, the recorded failure message may come from either. The metric still fails.
