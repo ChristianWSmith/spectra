@@ -69,3 +69,8 @@ Behaviour under a real concurrent import queue is not tested by the prototype.
 ### Open questions
 1. **Memory.** The peak is now about four chunks: one filling, two queued, one being written. At ~50k rows per chunk that is roughly 200k buffered rows, up from one chunk before. Lowering `tickQueueDepth` to 1 gives three chunks at the cost of more parse-thread stalls. Which trade-off is wanted?
 2. **Error stage.** A write error now surfaces from `AddTicks`, so the parse fails and the importer reports it at `StageParse`. `Close` errors still report at `StageStore`. Is that the intended stage?
+
+### Decisions (2026-11-23, lead)
+- Queue depth stays at 2. Peak buffering is about 200k rows, roughly 20 MB, which is negligible. Revisit only if S08 shows memory pressure.
+- Write errors reported at StageParse are accepted: they surface while the parse is still producing rows.
+- Still open: timing against the S08 baseline, importer-level failure tests, and abort on the panic path.
