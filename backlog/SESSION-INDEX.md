@@ -80,3 +80,9 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 - S08 needs a library of 50 or more matches. Not available here (the local library has 4 matches). Blocks the library-scale acceptance of S09, S10 and S17, and the baseline for S14.
 - Wipe and re-import needed for the kill-tags rename, the post-match tick discard, the money fix and the new collision caches.
 - S08 (library of 50+ matches), S05 and S16: blocked or deferred.
+
+## Follow-up work (recorded 2026-11-23, owner)
+
+- Re-admit doors (prop_door_rotating, func_door, func_door_rotating) to the render geometry. Needs each door's state at kill time, or a per-door decision.
+- Check the see-through seed count (smoke, steam, lightshaft, puddle, glass) on the larger library. Could condemn one of those materials.
+- Human GUI timing for S13: cold and warm Overview, Scoreboard and History at 100 rows, before and after.
