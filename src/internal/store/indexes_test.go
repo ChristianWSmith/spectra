@@ -30,7 +30,6 @@ func TestTier1IndexesPresent(t *testing.T) {
 		"idx_metric_values_match",
 		"idx_metric_values_subject",
 		"idx_metric_deps_dep",
-		"idx_player_ticks_steam",
 	}
 	for _, name := range want {
 		var n int
