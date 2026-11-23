@@ -374,8 +374,23 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
   `npm run dev`) writes `builtins/generated/sources.js`, which holds each
   builtin's source text and id list. That file is gitignored, so never
-  hand-maintain a builtin id list. `componentbuiltins.js` adds the
-  placeholder and the Match, Economy and Utility text panels.
+  hand-maintain a builtin id list. The placeholder example is
+  `builtins/placeholder/Example.svelte`, which the generator exports as
+  `PLACEHOLDER_SOURCE`; `componentbuiltins.js` lists it with the compiled
+  registry.
+- **A builtin's UI is written in its `.svelte` file (rule).** Markup,
+  classes, styles and layout fixes for a builtin go in its `.svelte`
+  source, never in a JS module that holds Svelte as a template string.
+  Fix the component, not a wrapper or a parent: a builtin that needs a
+  change in JS to render correctly is in the wrong form and gets moved to
+  `.svelte` first. Every builtin is a `.svelte` file: the Match panels
+  (`builtins/match/Match*.svelte`), the Economy and Utility views
+  (`builtins/econ/`, `builtins/util/`), and the placeholder. Shared
+  helpers are real modules that a builtin imports by relative path: the
+  Economy and Utility helpers in `builtinhelpers.js`, the Match panels'
+  in `builtins/match/panelhelpers.js`. Each module is registered in
+  `BUILTIN_HELPERS` (`componentruntime/compile.js`) with the names a
+  builtin may take.
 - **Builtin edits are in place, with restore.** A builtin component,
   metric or report is edited in place. Save stores one row per edited
   builtin in `builtin_overrides` (keys `builtin-…`, `metric:<name>`,

@@ -21,7 +21,7 @@ await warm();
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
@@ -98,7 +98,18 @@ function bundle(absPath) {
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
 
 const { mount, unmount, flushSync } = await import('svelte');
-const panels = await import(pathToFileURL(resolve('src/lib/matchpanels.js')).href);
+// The Match panels are Svelte builtins: their sources are the .svelte files, and
+// their helper imports resolve from the panels' own directory.
+const MATCH_DIR = 'src/lib/builtins/match';
+const readPanel = (f) => readFileSync(resolve(MATCH_DIR, f), 'utf8');
+const panels = {
+  OVERVIEW_SOURCE: readPanel('MatchOverview.svelte'),
+  ROSTERS_SOURCE: readPanel('MatchRosters.svelte'),
+  SCOREBOARD_SOURCE: readPanel('MatchScoreboard.svelte'),
+  ROUNDS_SOURCE: readPanel('MatchRounds.svelte'),
+  DETAILS_SOURCE: readPanel('MatchDetails.svelte'),
+  FACTS_SOURCE: readPanel('MatchFacts.svelte'),
+};
 const nav = await import(pathToFileURL(resolve('src/lib/nav.js')).href);
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
@@ -235,7 +246,7 @@ const mountPanel = async ({ source, context, props = {} }) => {
   document.body.appendChild(target);
   instance = mount(Harness, {
     target,
-    props: { source, context, props, reads, nav: (h) => navCalls.push(h), builtinDir: 'src/lib' },
+    props: { source, context, props, reads, nav: (h) => navCalls.push(h), builtinDir: MATCH_DIR },
   });
   await settle();
   return target;
@@ -388,9 +399,8 @@ check('a match with no stored rounds shows no rows (match 8)', rowsOf(root).leng
 
 // --- G. the registry ------------------------------------------------------------------------------------------
 console.log('G. registry');
-check('the rounds and details panels are registered as builtins',
-  panels.MATCH_PANELS.some((p) => p.id === panels.MATCH_PANEL_IDS.rounds) &&
-    panels.MATCH_PANELS.some((p) => p.id === panels.MATCH_PANEL_IDS.details));
+check('the rounds and details panels are Svelte builtins in builtins/match',
+  existsSync(resolve(MATCH_DIR, 'MatchRounds.svelte')) && existsSync(resolve(MATCH_DIR, 'MatchDetails.svelte')));
 
 unmountAll();
 console.log(failures === 0 && escaped.length === 0 ? 'ALL PASS' : `FAILURES: ${failures}, escaped: ${escaped.length}`);

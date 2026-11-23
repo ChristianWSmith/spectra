@@ -46,11 +46,11 @@ test('every built-in source passes the save gate under its built-in rules', asyn
 
 // (a) every id the registry (builtins/panels.js) declares is listed exactly
 // once, and the list holds no id the registry does not declare beyond the
-// placeholder and the text panels (matchpanels, econpanels, utilpanels).
+// placeholder.
 test('every registry id is listed in BUILTIN_COMPONENTS exactly once', () => {
   const listed = BUILTIN_COMPONENTS.map((b) => b.id);
   assert.equal(new Set(listed).size, listed.length, 'no id is listed twice');
-  assert.equal(REGISTRY.length, 20, 'the registry declares 20 compiled builtins');
+  assert.equal(REGISTRY.length, 34, 'the registry declares 34 compiled builtins');
   for (const id of REGISTRY) {
     assert.equal(listed.filter((x) => x === id).length, 1, `${id} is listed exactly once`);
   }

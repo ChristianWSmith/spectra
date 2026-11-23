@@ -62,19 +62,25 @@ function stripComments(src) {
 const TAB_FILES = ['Heatmaps.svelte', 'HeatmapsPanel.svelte', 'Combat.svelte', 'CombatKillTags.svelte', 'CombatClutches.svelte', 'combatdata.js', 'combatmodel.js'];
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
-test('the registry names the Heatmaps and Combat tabs and their panels, in the builtin namespace', () => {
+test('the registry names the Match tabs and every Match panel, in the builtin namespace', () => {
   const ids = [...new Set([...registry.matchAll(/'(builtin-match-[a-z-]+)'/g)].map((m) => m[1]))].sort();
   assert.deepEqual(ids, [
     'builtin-match-combat',
     'builtin-match-combat-clutches',
     'builtin-match-combat-kill-tags',
+    'builtin-match-details',
+    'builtin-match-facts',
     'builtin-match-heatmap',
     'builtin-match-heatmaps',
+    'builtin-match-overview',
+    'builtin-match-rosters',
+    'builtin-match-rounds',
+    'builtin-match-scoreboard',
     'builtin-match-tabs',
   ]);
   for (const id of ids) assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} carries the builtin prefix`);
   const imports = [...registry.matchAll(/from '\.\/(match\/[A-Za-z]+\.svelte)'/g)].map((m) => m[1]);
-  assert.equal(imports.length, 6, 'the registry imports the tab set, the two tabs and their three panels');
+  assert.equal(imports.length, 12, 'the registry imports the tab set, the two tabs, their three panels and the six Match panels');
   for (const rel of imports) assert.ok(existsSync(path.join(LIB, 'builtins', rel)), `${rel} exists`);
 });
 

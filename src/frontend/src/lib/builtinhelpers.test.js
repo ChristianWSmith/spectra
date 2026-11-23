@@ -1,13 +1,12 @@
-// builtinhelpers.test.js — the copies the Economy and Utility builtins carry
-// (builtinhelpers.js) give the same answers as the app's own modules. A builtin
-// cannot import app code, so each helper is copied as text; this test evaluates
-// the copied text and compares it with the original on a grid of inputs, so a
-// copy cannot drift silently.
+// builtinhelpers.test.js — the helpers the Economy and Utility builtins import
+// (builtinhelpers.js) give the same answers as the app's own modules they copy
+// the arithmetic of, on a grid of inputs. The helpers are the module's exports;
+// this file names them `copies` to keep the comparisons below readable.
 //
 // Run: node --test src/lib/builtinhelpers.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FMT_HELPERS, TICK_HELPERS, TEAM_HELPERS, ECON_HELPERS, NAV_HELPERS } from './builtinhelpers.js';
+import * as copies from './builtinhelpers.js';
 import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';
@@ -15,16 +14,6 @@ import { sideAtRound, winnerTeamKey, teamKeyAt, flipIndexes } from './sideparity
 import { econValue, lossPips } from './econ.js';
 import { entryLoopAround, entryLoopSpan } from './nav.js';
 import { roundsByNumber } from './replay/landmarks.js';
-
-// The copies, evaluated once: every block in one scope.
-const copies = new Function(
-  [FMT_HELPERS, TICK_HELPERS, TEAM_HELPERS, ECON_HELPERS, NAV_HELPERS].join('\n') +
-    `
-  return { fmtMs, fmtClock, fmtMoney, fmtInt, fmtStoredValue, roundClock, roundIndexLabel, roundScoreLabel,
-    separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, teamNames, playerSideClassAt,
-    teamStartClass, sideAtRound, winnerTeamKey, teamKeyAt, flipIndexes, econValue, lossPips,
-    entryLoopAround, entryLoopSpan, fmtZeroDash, roundsByNumber, applyLossBonuses, sideFlips };`,
-)();
 
 // A match of 30 counted rounds with a winner pattern and two side switches
 // (the 12 and 27 flips), plus a knife round at -2 that carries no count.

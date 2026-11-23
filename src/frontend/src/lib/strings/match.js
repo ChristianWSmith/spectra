@@ -120,7 +120,7 @@ export const match = {
   prevRoundLabel: 'Previous round',
   nextRoundLabel: 'Next round',
 
-  // Builtin Match panels (matchpanels.js, ruling 46): the panel names the
+  // Builtin Match panels (builtins/match/Match*.svelte, ruling 46): the panel names the
   // builtin list shows, the overview's identity cards, the rosters, the
   // scoreboard's column heads and the rounds table's round column.
   panelOverviewLabel: 'Match overview cards',

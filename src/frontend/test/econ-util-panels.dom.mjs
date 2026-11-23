@@ -99,8 +99,11 @@ function bundle(absPath) {
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
 
 const { mount, unmount, flushSync } = await import('svelte');
-const panels = await import(pathToFileURL(resolve('src/lib/econpanels.js')).href);
-const upanels = await import(pathToFileURL(resolve('src/lib/utilpanels.js')).href);
+// The Economy and Utility composers are Svelte builtins: their source is the .svelte file.
+const ECON_DIR = 'src/lib/builtins/econ';
+const UTIL_DIR = 'src/lib/builtins/util';
+const panels = { ECONOMY_SOURCE: readFileSync(resolve(ECON_DIR, 'Economy.svelte'), 'utf8') };
+const upanels = { UTILITY_SOURCE: readFileSync(resolve(UTIL_DIR, 'Utility.svelte'), 'utf8') };
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
 // --- the fixture: match 9 -------------------------------------------------------
@@ -127,7 +130,7 @@ const ROUNDS = [
   [4, 't', 4000, 4900],
 ];
 
-// The economy rows the economy query returns (17 columns, see econpanels.js
+// The economy rows the economy query returns (17 columns, see builtins/econ/Economy.svelte
 // SQL_ECON): number, winner, equip ct/t, money ct/t, spent ct/t, free pistol
 // ct/t, label, explanation, rule version, class ct/why, class t/why.
 const ECON = [
@@ -137,7 +140,7 @@ const ECON = [
   [4, 't', 2000, 4500, 0, 0, 0, 0, 0, 0, '', '', 3, 'full', '', 'full', ''],
 ];
 
-// The utility rows (16 columns, see utilpanels.js SQL_UTIL): seq, tick, throw
+// The utility rows (16 columns, see builtins/util/Utility.svelte SQL_UTIL): seq, tick, throw
 // tick, round, thrower, thrower name, kind, throw x/y, det x/y, damage, flash
 // ms, affected (JSON), site, trajectory ref.
 const UTIL = [
@@ -264,12 +267,12 @@ const unmountAll = () => {
   if (target) target.remove();
   target = null;
 };
-const mountPanel = async ({ source, context, props = {}, reads: readsOverride = reads }) => {
+const mountPanel = async ({ source, context, props = {}, reads: readsOverride = reads, builtinDir = ECON_DIR }) => {
   unmountAll();
   navCalls.length = 0;
   target = document.createElement('div');
   document.body.appendChild(target);
-  instance = mount(Harness, { target, props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h) } });
+  instance = mount(Harness, { target, props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h), builtinDir } });
   await settle();
   return target;
 };
@@ -351,7 +354,7 @@ check('a buy chip opens its reason row', root.querySelectorAll('.econ-why-row').
 
 // --- D. the Utility throw log -----------------------------------------------------------------
 console.log('D. utility throw log (match 9)');
-root = await mountPanel({ source: upanels.UTILITY_SOURCE, context: CTX, props: { ...UTIL_BACK, loopSecs: 5 } });
+root = await mountPanel({ source: upanels.UTILITY_SOURCE, context: CTX, props: { ...UTIL_BACK, loopSecs: 5 }, builtinDir: UTIL_DIR });
 const count = text(root.querySelector('.util-filters .muted'));
 check('the count reads five of five grenades', count === '5 of 5 grenades', count);
 check('the round scope preselects round 1, the first round with throws', root.querySelectorAll('.util-nade').length === 2, String(root.querySelectorAll('.util-nade').length));
@@ -410,7 +413,7 @@ await settle(6);
 
 // --- F. a throw's ▶ watches it with its thrower followed -----------------------------------------
 console.log('F. watch a throw');
-root = await mountPanel({ source: upanels.UTILITY_SOURCE, context: CTX, props: { ...UTIL_BACK, loopSecs: 5 } });
+root = await mountPanel({ source: upanels.UTILITY_SOURCE, context: CTX, props: { ...UTIL_BACK, loopSecs: 5 }, builtinDir: UTIL_DIR });
 click(root.querySelector('.util-nade button.btn'));
 check('a throw’s ▶ opens the replay at the throw, its loop, the thrower followed, back to the tab',
   navCalls.at(-1) === `/replay/9?tick=1640&loop=1320,1960&follow=${ALPHA}&back=match/9/utility`, navCalls.at(-1));

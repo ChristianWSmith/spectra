@@ -20,9 +20,6 @@
   import { onMount } from 'svelte';
   import * as S from '../../strings/index.js';
   import { MATCH_TABS, matchTabSlug } from '../../router.js';
-  import { MATCH_PANEL_IDS } from '../../matchpanels.js';
-  import { ECON_PANEL_IDS } from '../../econpanels.js';
-  import { UTIL_PANEL_IDS } from '../../utilpanels.js';
   import { getPref } from '../../services.js';
   import { LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
@@ -99,28 +96,28 @@
      reload their data or lose their state. -->
 {#if isShown(TAB.overview)}
   <div class="tab-pane" style:display={paneDisplay(TAB.overview)}>
-    <spectra.Child name={MATCH_PANEL_IDS.overview} props={panelProps} />
-    <spectra.Child name={MATCH_PANEL_IDS.rosters} props={panelProps} />
+    <spectra.Child name="builtin-match-overview" props={panelProps} />
+    <spectra.Child name="builtin-match-rosters" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.scoreboard)}
   <div class="tab-pane" style:display={paneDisplay(TAB.scoreboard)}>
-    <spectra.Child name={MATCH_PANEL_IDS.scoreboard} props={panelProps} />
+    <spectra.Child name="builtin-match-scoreboard" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.rounds)}
   <div class="tab-pane" style:display={paneDisplay(TAB.rounds)}>
-    <spectra.Child name={MATCH_PANEL_IDS.rounds} props={roundsProps} />
+    <spectra.Child name="builtin-match-rounds" props={roundsProps} />
   </div>
 {/if}
 {#if isShown(TAB.economy)}
   <div class="tab-pane" style:display={paneDisplay(TAB.economy)}>
-    <spectra.Child name={ECON_PANEL_IDS.economy} props={panelProps} />
+    <spectra.Child name="builtin-economy" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.utility)}
   <div class="tab-pane" style:display={paneDisplay(TAB.utility)}>
-    <spectra.Child name={UTIL_PANEL_IDS.utility} props={utilityProps} />
+    <spectra.Child name="builtin-utility" props={utilityProps} />
   </div>
 {/if}
 {#if isShown(TAB.heatmaps)}
@@ -146,8 +143,8 @@
        to THIS match. Gameplay-derived facts (the first blood) live on the
        Rounds tab. Map/Duration live in the match header. -->
   <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
-    <spectra.Child name={MATCH_PANEL_IDS.details} />
-    <spectra.Child name={MATCH_PANEL_IDS.facts} />
+    <spectra.Child name="builtin-match-details" />
+    <spectra.Child name="builtin-match-facts" />
     <spectra.Child name="builtin-explorer" props={{ embedded: true }} />
   </div>
 {/if}

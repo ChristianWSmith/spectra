@@ -224,7 +224,7 @@ PLACEMENTS = {};
 // --- F. an edit that imports a curated helper (ruling 45) --------------------
 console.log('F. an edit that imports a helper');
 const HELPER_EDIT = `<script>
-  import { fmt1 } from './fmt.js';
+  import { fmt1 } from '../../fmt.js';
   let { spectra } = $props();
 </script>
 <p class="helper-marker">{fmt1(2.5)}</p>`;

@@ -1,7 +1,10 @@
 import '../../test/compile-worker-node.mjs';
-// matchpanels.test.js — the Match view's panels as builtins. The contract a panel keeps:
+// matchpanels.test.js — the Match view's six panels as builtin components
+// (builtins/match/Match*.svelte). The contract a panel keeps:
 //   - it is registered as a builtin, under the builtin namespace;
 //   - it reads through `context` (the mount's match) and mounts nothing else;
+//   - it imports only the curated helper surface: the strings catalog, and the
+//     names BUILTIN_HELPERS lists for its module;
 //   - no panel, and no Match view code, reads a retired preference (ruling 33:
 //     order, hidden, the economy placement, the transposed shape, and the
 //     retired localStorage keys).
@@ -11,8 +14,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { MATCH_PANELS, MATCH_PANEL_IDS } from './matchpanels.js';
-import { BUILTIN_COMPONENTS, BUILTIN_PREFIX } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinShippedSource, builtinSourceDir } from './componentbuiltins.js';
+import { BUILTIN_HELPERS } from './componentruntime/compile.js';
 import { gateComponentSave } from './componentruntime/savegate.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -34,59 +37,89 @@ const RETIRED = [
   'localStorage',
 ];
 
+const PANELS = {
+  'builtin-match-overview': 'MatchOverview.svelte',
+  'builtin-match-rosters': 'MatchRosters.svelte',
+  'builtin-match-scoreboard': 'MatchScoreboard.svelte',
+  'builtin-match-rounds': 'MatchRounds.svelte',
+  'builtin-match-details': 'MatchDetails.svelte',
+  'builtin-match-facts': 'MatchFacts.svelte',
+};
+
 test('the Match view has its six panels, each a builtin under the builtin namespace', () => {
-  assert.equal(MATCH_PANELS.length, 6);
-  const ids = MATCH_PANELS.map((p) => p.id);
-  assert.deepEqual(ids, [
-    MATCH_PANEL_IDS.overview,
-    MATCH_PANEL_IDS.rosters,
-    MATCH_PANEL_IDS.scoreboard,
-    MATCH_PANEL_IDS.rounds,
-    MATCH_PANEL_IDS.details,
-    MATCH_PANEL_IDS.facts,
-  ]);
-  for (const p of MATCH_PANELS) {
-    assert.ok(p.id.startsWith(BUILTIN_PREFIX), `${p.id} is in the builtin namespace`);
-    assert.ok(BUILTIN_COMPONENTS.some((b) => b.id === p.id), `${p.id} is in the builtin registry`);
+  assert.equal(Object.keys(PANELS).length, 6);
+  for (const id of Object.keys(PANELS)) {
+    assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} is in the builtin namespace`);
+    assert.ok(
+      BUILTIN_COMPONENTS.some((b) => b.id === id),
+      `${id} is in the builtin registry`,
+    );
+    assert.ok(builtinShippedSource(id), `${id} ships its source`);
+  }
+});
+
+test('every panel is a .svelte file in builtins/match', () => {
+  for (const [id, file] of Object.entries(PANELS)) {
+    assert.equal(builtinSourceDir(id), 'src/lib/builtins/match', `${id} lives in builtins/match`);
+    const src = readFileSync(path.join(HERE, 'builtins', 'match', file), 'utf8');
+    assert.equal(builtinShippedSource(id), src, `${id} ships its file's text`);
   }
 });
 
 test('every panel passes the save-time check (runes, valid syntax)', async () => {
-  for (const p of MATCH_PANELS) {
-    const gate = await gateComponentSave(p.source, 'src/lib');
-    assert.equal(gate.ok, true, `${p.id}: ${gate.message}`);
+  for (const id of Object.keys(PANELS)) {
+    const gate = await gateComponentSave(builtinShippedSource(id), builtinSourceDir(id));
+    assert.equal(gate.ok, true, `${id}: ${gate.message}`);
   }
 });
 
-// The registry helpers a panel may import (ruling 45): the only imports a
-// built-in carries, each name listed in compile.js BUILTIN_HELPERS.
-const HELPER_IMPORTS = {
-  [MATCH_PANEL_IDS.rounds]: ['./viewstate.svelte.js'],
-  [MATCH_PANEL_IDS.facts]: ['./services.js'],
-};
-
 test('every panel reads through context and mounts nothing else', () => {
-  for (const p of MATCH_PANELS) {
-    assert.match(p.source, /let \{[^}]*\bcontext\b[^}]*\} = \$props\(\);/, `${p.id} takes context as a prop`);
+  for (const id of Object.keys(PANELS)) {
+    const src = builtinShippedSource(id);
+    assert.match(src, /let \{[\s\S]*?\bcontext\b[\s\S]*?\} = \$props\(\);/, `${id} takes context as a prop`);
     // The facts panel reads the match services (voice, the demo copy), not a query.
-    if (p.id !== MATCH_PANEL_IDS.facts) {
-      assert.match(p.source, /spectra\.metric\(|spectra\.query\(/, `${p.id} reads metrics or facts`);
+    if (id !== 'builtin-match-facts') {
+      assert.match(src, /spectra\.metric\(|spectra\.query\(|readUnit\(spectra/, `${id} reads metrics or facts`);
     }
-    assert.doesNotMatch(p.source, /spectra\.Child/, `${p.id} mounts no child`);
-    const imports = [...p.source.matchAll(/^\s*import\s.*?from\s*'([^']+)'/gm)].map((m) => m[1]);
-    assert.deepEqual(imports, HELPER_IMPORTS[p.id] || [], `${p.id} imports only its registry helpers`);
+    assert.doesNotMatch(src, /spectra\.Child/, `${id} mounts no child`);
+  }
+});
+
+test('every import is on the curated surface (strings catalog, or a name BUILTIN_HELPERS lists)', () => {
+  const helperKey = 'src/lib/builtins/match/panelhelpers.js';
+  const helperNames = Object.keys(BUILTIN_HELPERS[helperKey].names);
+  const surfaces = {
+    '../../strings/index.js': null,
+    './panelhelpers.js': helperNames,
+    '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy'],
+    '../../viewstate.svelte.js': ['comparePicks', 'setComparePicks'],
+  };
+  for (const id of Object.keys(PANELS)) {
+    const src = builtinShippedSource(id);
+    for (const m of src.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\}|\w+)\s+from\s+'([^']+)';/gm)) {
+      const [, clause, spec] = m;
+      assert.ok(spec in surfaces, `${id} imports ${spec}, which is not on the builtin surface`);
+      if (surfaces[spec] === null) {
+        assert.equal(clause, '* as S', `${id} takes the strings catalog whole, as S`);
+        continue;
+      }
+      for (const name of clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean)) {
+        assert.ok(surfaces[spec].includes(name), `${id} imports ${name} from ${spec}, which is not listed`);
+      }
+    }
   }
 });
 
 test('no panel reads a retired preference (ruling 33)', () => {
-  for (const p of MATCH_PANELS) {
+  for (const id of [...Object.keys(PANELS), 'builtin-match-tabs']) {
+    const src = builtinShippedSource(id);
     for (const key of RETIRED) {
-      assert.ok(!p.source.includes(key), `${p.id} reads the retired key or helper ${key}`);
+      assert.ok(!src.includes(key), `${id} reads the retired key or helper ${key}`);
     }
   }
-  const matchpanels = readFileSync(path.join(HERE, 'matchpanels.js'), 'utf8');
+  const helpers = readFileSync(path.join(HERE, 'builtins', 'match', 'panelhelpers.js'), 'utf8');
   for (const key of RETIRED) {
-    assert.ok(!matchpanels.includes(key), `matchpanels.js holds the retired key or helper ${key}`);
+    assert.ok(!helpers.includes(key), `panelhelpers.js holds the retired key or helper ${key}`);
   }
 });
 

@@ -23,7 +23,8 @@ await warm();
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { reachesSvelte } from './bundle-reach.mjs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
@@ -97,7 +98,7 @@ function bundle(absPath) {
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/'))) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/') && reachesSvelte(target))) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
   writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
@@ -107,7 +108,18 @@ const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
 
 const { mount, unmount, flushSync } = await import('svelte');
 const S = await import(pathToFileURL(resolve('src/lib/strings/index.js')).href);
-const panels = await import(pathToFileURL(resolve('src/lib/matchpanels.js')).href);
+// The Match panels are Svelte builtins: their sources are the .svelte files, and
+// their helper imports resolve from the panels' own directory.
+const MATCH_DIR = 'src/lib/builtins/match';
+const readPanel = (f) => readFileSync(resolve(MATCH_DIR, f), 'utf8');
+const panels = {
+  OVERVIEW_SOURCE: readPanel('MatchOverview.svelte'),
+  ROSTERS_SOURCE: readPanel('MatchRosters.svelte'),
+  SCOREBOARD_SOURCE: readPanel('MatchScoreboard.svelte'),
+  ROUNDS_SOURCE: readPanel('MatchRounds.svelte'),
+  DETAILS_SOURCE: readPanel('MatchDetails.svelte'),
+  FACTS_SOURCE: readPanel('MatchFacts.svelte'),
+};
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
 // --- the fixture: match 7 ------------------------------------------------------
@@ -238,7 +250,7 @@ const mountPanel = async ({ source, context, props = {}, reads: readsOverride = 
   document.body.appendChild(target);
   instance = mount(Harness, {
     target,
-    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h), builtinDir: 'src/lib' },
+    props: { source, context, props, reads: readsOverride, nav: (h) => navCalls.push(h), builtinDir: MATCH_DIR },
   });
   await settle();
   return target;
@@ -414,7 +426,7 @@ check('the library-wide behind word does not reach this match: its stored values
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the six panels are registered as builtins', panels.MATCH_PANELS.length === 6 && panels.MATCH_PANELS.every((p) => p.id.startsWith('builtin-match-')));
+check('the six panels are Svelte builtins in builtins/match', Object.keys(panels).length === 6 && ['MatchOverview', 'MatchRosters', 'MatchScoreboard', 'MatchRounds', 'MatchDetails', 'MatchFacts'].every((n) => existsSync(resolve(MATCH_DIR, n + '.svelte'))));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 unmountAll();

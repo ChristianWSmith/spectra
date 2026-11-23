@@ -94,73 +94,7 @@ const PENDING_DENYLIST = {};
 // belong in the ledger. Same `file` → literal keying as PENDING_DENYLIST and
 // the same liveness contract (Check A-ledger); `why` is mandatory.
 const DENYLIST_EXEMPT = {
-  'frontend/src/lib/econpanels.js': [
-    {
-      text: 'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ',
-      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
-    },
-    {
-      text: 'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ',
-      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_economy ct ON ct.match_id = r.match_id AND ct.round = r.number AND ct.side = 'ct' ",
-      why: 'the Economy builtin’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_economy t ON t.match_id = r.match_id AND t.round = r.number AND t.side = 't' ",
-      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
-    },
-    {
-      text: 'LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number ',
-      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_side_classes rsct ON rsct.match_id = r.match_id AND rsct.round = r.number AND rsct.side = 'ct' ",
-      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
-    },
-    {
-      text: "LEFT JOIN round_side_classes rst ON rst.match_id = r.match_id AND rst.round = r.number AND rst.side = 't' ",
-      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
-    },
-    {
-      text: 'SELECT round, steam_id, side FROM round_player_sides WHERE match_id = :match_id ORDER BY round ASC, steam_id ASC',
-      why: 'the Economy builtin’s component query (read-only SQL) — not user copy',
-    },
-    {
-      text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
-      why: 'the Economy builtin’s roster query (read-only SQL) — not user copy',
-    },
-  ],
-  'frontend/src/lib/utilpanels.js': [
-    {
-      text: 'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ',
-      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
-    },
-    {
-      text: 'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ',
-      why: 'the panel’s roster ordering (read-only SQL, bound from its context) — not user copy',
-    },
-    {
-      text: 'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC',
-      why: 'the Utility builtin’s component query (read-only SQL the panels run, bound from its context) — not user copy',
-    },
-    {
-      text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
-      why: 'the Utility builtin’s roster query (read-only SQL) — not user copy',
-    },
-  ],
-  'frontend/src/lib/componentruntime/compile.js': [
-    {
-      text: 'load the profile’s seed values (read)',
-      why: 'a developer description of a curated helper name in the built-in registry (BUILTIN_HELPERS, ruling 45) — never rendered',
-    },
-    {
-      text: 'bindings/github.com/ChristianWSmith/spectra',
-      why: 'the registry key of the analytics binding (a module path, not copy)',
-    },
-  ],
-  'frontend/src/lib/matchpanels.js': [
+  'frontend/src/lib/builtins/match/panelhelpers.js': [
     {
       text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
       why: 'the Match scoreboard panel’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
@@ -172,6 +106,16 @@ const DENYLIST_EXEMPT = {
     {
       text: "JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ",
       why: 'the Match scoreboard panel’s component query (read-only SQL, the roster order by the kill count from the event rows) — not user copy',
+    },
+  ],
+  'frontend/src/lib/componentruntime/compile.js': [
+    {
+      text: 'load the profile’s seed values (read)',
+      why: 'a developer description of a curated helper name in the built-in registry (BUILTIN_HELPERS, ruling 45) — never rendered',
+    },
+    {
+      text: 'bindings/github.com/ChristianWSmith/spectra',
+      why: 'the registry key of the analytics binding (a module path, not copy)',
     },
   ],
   'internal/store/query_store.go': [
@@ -237,8 +181,8 @@ const PREFIX_EXEMPT = {
 // stale, the PENDING_DENYLIST liveness contract). Every entry renders as a
 // tooltip, footnote or in-place explanatory note, never as a label.
 const HINT_KEYS = {
-  'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (matchpanels.js, read through a panel source)',
-  'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (matchpanels.js, read through a panel source)',
+  'match.voiceNoneTitle': 'tooltip (title=) on the no-voice badge in the Details facts panel (MatchFacts.svelte, read through a panel source)',
+  'match.freeCopyTitle': 'tooltip (title=) on the Free copy button in the Details facts panel (MatchFacts.svelte, read through a panel source)',
   // builtin panel copy (ruling 46, C5i): the Economy definitions and card
   // formulas are tooltips (a title or a card's hover text), and the Explorer
   // reference notes and the heatmap's no-rows note are footnotes — hints, not
@@ -1433,9 +1377,7 @@ test('Check E — input hints are verb-like: every placeholder’s first word is
 // names resolves to a catalog string.
 // ---------------------------------------------------------------------------
 const BUILTIN_JS_MODULES = [
-  'frontend/src/lib/matchpanels.js',
-  'frontend/src/lib/econpanels.js',
-  'frontend/src/lib/utilpanels.js',
+  'frontend/src/lib/builtins/match/panelhelpers.js',
   'frontend/src/lib/builtinhelpers.js',
 ];
 const isBuiltinSvelte = (file) => file.startsWith('frontend/src/lib/builtins/') && !file.includes('/generated/');
@@ -1444,15 +1386,18 @@ const isBuiltinSvelte = (file) => file.startsWith('frontend/src/lib/builtins/') 
 // not user-facing text. Keyed file → exact literal, mandatory `why`, liveness
 // pinned in Check F. Empty until a real non-copy hit needs one.
 const BUILTIN_NONCOPY = {
-  'frontend/src/lib/econpanels.js': [
+  'frontend/src/lib/builtins/econ/EconCurve.svelte': [
     { text: 'M', why: 'the SVG path command (move-to) of the curve line — drawing syntax, not copy' },
     { text: 'L', why: 'the SVG path command (line-to) of the curve line — drawing syntax, not copy' },
   ],
-  'frontend/src/lib/matchpanels.js': [
+  'frontend/src/lib/builtinhelpers.js': [
+    { text: 'u2212$', why: 'the minus sign of a money value (the \\u2212 escape and the currency mark) — a sign, not copy' },
+  ],
+  'frontend/src/lib/builtins/match/panelhelpers.js': [
     { text: 'Z', why: 'the ISO 8601 UTC designator of the stored import time (date parsing), not copy' },
     { text: 'T', why: 'the ISO 8601 date-time separator of the stored import time (date parsing), not copy' },
   ],
-  'frontend/src/lib/utilpanels.js': [
+  'frontend/src/lib/builtins/util/UtilBars.svelte': [
     { text: 'rotate(45)', why: 'the SVG pattern transform of the hatched bar fill — drawing syntax, not copy' },
   ],
 };
@@ -1542,6 +1487,8 @@ function panelSvelteHits(src) {
   const js = (node, where) => {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) return node.forEach((c) => js(c, where));
+    // read-only SQL: any literal under a `const SQL_…` declaration (the rule panelJsHits applies to JS sources).
+    if (node.type === 'VariableDeclarator' && /^SQL_/.test(node.id?.name ?? '')) return;
     if (node.type === 'Literal' && typeof node.value === 'string' && builtinCopy(node.value)) hits.push([where, node.value]);
     if (node.type === 'TemplateElement' && builtinCopy(node.value.cooked ?? '')) hits.push([where, node.value.cooked]);
     for (const k of Object.keys(node)) if (!['parent', 'start', 'end', 'loc', 'metadata'].includes(k) && node[k] && typeof node[k] === 'object') js(node[k], where);

@@ -119,7 +119,8 @@ function bundle(absPath) {
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
 const { mount, unmount, flushSync } = await import('svelte');
-const utilpanels = await import(pathToFileURL(resolve('src/lib/utilpanels.js')).href);
+// The Utility composer is a Svelte builtin: its source is the .svelte file.
+const utilpanels = { UTILITY_SOURCE: readFileSync(resolve('src/lib/builtins/util/Utility.svelte'), 'utf8') };
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
 
@@ -265,6 +266,7 @@ async function show() {
     target,
     props: {
       source: utilpanels.UTILITY_SOURCE,
+      builtinDir: 'src/lib/builtins/util',
       context: { matchId: match.id, steamId: null, round: null },
       props: { back: 'match/3/utility', loopSecs: 5 },
       reads,
