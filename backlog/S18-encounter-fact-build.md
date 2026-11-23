@@ -268,3 +268,16 @@ The 944 of 946 kills does not show the filter is right. On de_anubis it removes 
 the map's blocking geometry. The attribute says players and NPCs are clipped by those
 meshes, not that bullets pass through them. Production is unchanged. The filter needs
 a finer rule, per mesh or per geometry, checked against the control.
+
+## Render geometry versus PHYS (2026-11-22)
+
+- The map manifest lists render geometry separately from physics: `worldnodes/*.vmdl`
+  (aggregated render meshes, e.g. `n0_lr0_agg_merge_*.vmdl`, about 40 of them on
+  de_ancient), plus `world.vwrld`, `world.vrman` and `world_visibility.vvis`.
+  `world_physics.vmdl` is the PHYS-only model that the worldcol extraction reads.
+- PHYS per-triangle materials are empty on de_ancient mesh 0 (`m_Materials` has
+  length 0), so PHYS carries no surface data for that map.
+- Reading the render geometry needs a vertex and index buffer parser for `vmdl_c`
+  (not in the repo). That is the next step if the render route is taken.
+- Open point: the kills are bullet hits, so the engine's bullet trace is the target.
+  Visibility from the render mesh tests a different question from bullet collision.

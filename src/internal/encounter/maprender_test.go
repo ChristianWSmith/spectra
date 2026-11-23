@@ -85,7 +85,8 @@ func TestMapRenderClip(t *testing.T) {
 		{"below", func(p [3]float64) (float64, float64) { return p[0] - cx, cy - p[1] }},
 	}
 	const size = 700
-	dir := filepath.Join(out, mp)
+	steep := os.Getenv("SPECTRA_CLIP_MODE") == "steep"
+	dir := filepath.Join(out, mp+os.Getenv("SPECTRA_RENDER_SUFFIX"))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,19 @@ func TestMapRenderClip(t *testing.T) {
 			}
 			for i, m := range meshes {
 				isClip := clip[i]
-				if side == 1 && isClip {
+				if side == 1 && isClip && !steep {
+					continue
+				}
+				if side == 1 && isClip && steep {
+					// Right side, steep mode: only the walkable triangles of clip meshes, in green.
+					wm := walkableOnly(m)
+					for _, tr := range wm.Triangles {
+						a, b, cc := vtx(m, tr[0]), vtx(m, tr[1]), vtx(m, tr[2])
+						col := color.RGBA{0, 160, 0, 200}
+						edge(img, pix, a, b, col)
+						edge(img, pix, b, cc, col)
+						edge(img, pix, cc, a, col)
+					}
 					continue
 				}
 				col := color.RGBA{90, 90, 255, 90}
@@ -123,5 +136,5 @@ func TestMapRenderClip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fmt.Printf("MAPRENDER wrote six side-by-side views to %s (left: all meshes, orange = clip-only; right: without them)\n", dir)
+	fmt.Printf("MAPRENDER wrote six side-by-side views to %s (steep=%v)\n", dir, steep)
 }

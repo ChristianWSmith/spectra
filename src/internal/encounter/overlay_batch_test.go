@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -153,10 +154,11 @@ func occFromCache(data, mapName string) (encounter.Occluder, error) {
 	return occFor(meshes), nil
 }
 
-// occFromCacheFiltered is occFromCache, optionally without the meshes that
-// interact with player or NPC clips only (their attributes are exported to
-// <map>.attrs.json by the mappack dump test). Those meshes bound player movement;
-// whether bullets are stopped by them is the hypothesis under test.
+// occFromCacheFiltered is occFromCache with a clip rule. SPECTRA_CLIP_MODE:
+// "" or "none" keeps every mesh; "all" drops every playerclip/npcclip mesh (the
+// rule that removed the ground); "steep" drops only the triangles of those meshes
+// steeper than the walkable limit (normal within 45.57 degrees of vertical, so
+// |n.z|/|n| < 0.7). SPECTRA_NO_CLIP=1 is the older spelling of "all".
 func occFromCacheFiltered(data, mapName string, noClip bool) (encounter.Occluder, error) {
 	f, err := os.Open(filepath.Join(data, "worldcol", mapName+".worldcol"))
 	if err != nil {
@@ -167,7 +169,11 @@ func occFromCacheFiltered(data, mapName string, noClip bool) (encounter.Occluder
 	if err != nil {
 		return nil, err
 	}
-	if !noClip {
+	mode := os.Getenv("SPECTRA_CLIP_MODE")
+	if mode == "" && noClip {
+		mode = "all"
+	}
+	if mode == "" || mode == "none" {
 		return occFor(meshes), nil
 	}
 	ab, err := os.ReadFile(filepath.Join(os.Getenv("SPECTRA_OVERLAY_OUT"), "attrs", mapName+".attrs.json"))
@@ -193,7 +199,32 @@ func occFromCacheFiltered(data, mapName string, noClip bool) (encounter.Occluder
 	for i, m := range meshes {
 		if !clipOnly[i] {
 			kept = append(kept, m)
+			continue
+		}
+		switch mode {
+		case "all":
+			// dropped
+		case "steep":
+			kept = append(kept, walkableOnly(m))
+		default:
+			return nil, fmt.Errorf("SPECTRA_CLIP_MODE %q: want none, all or steep", mode)
 		}
 	}
 	return occFor(kept), nil
+}
+
+// walkableOnly keeps the triangles of m whose normal is within the walkable limit
+// of vertical. The kd tree is dropped: the mesh is then tested by scanning its
+// triangles, which Blocked does when there are no nodes.
+func walkableOnly(m source2.Mesh) source2.Mesh {
+	out := source2.Mesh{Min: m.Min, Max: m.Max, Vertices: m.Vertices}
+	for _, tr := range m.Triangles {
+		a, b, c := vtx(m, tr[0]), vtx(m, tr[1]), vtx(m, tr[2])
+		n := cross(sub3(b, a), sub3(c, a))
+		l := math.Sqrt(vdot(n, n))
+		if l > 0 && math.Abs(n[2])/l >= 0.7 {
+			out.Triangles = append(out.Triangles, tr)
+		}
+	}
+	return out
 }
