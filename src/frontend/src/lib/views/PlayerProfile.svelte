@@ -49,10 +49,16 @@
 
   // The profile read (mount AND profileError's Retry): the body goes back to
   // "Loading…" for the flight, so a retry never leaves a stale failure on screen.
+  // The steam id the shown profile belongs to (plain: it only gates the clear).
+  let profileFor = null;
   function loadProfile() {
     const sid = steamId;
     const my = ++profileGen;
-    profile = null;
+    // Clearing the profile unmounts the whole profile subtree (its panels and
+    // their values), so it is cleared only when the player changes. A re-read
+    // of the same player keeps the shown profile until the new one lands.
+    if (sid !== profileFor) profile = null;
+    profileFor = sid;
     profileError = '';
     if (!sid) return;
     getProfile(sid)
