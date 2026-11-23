@@ -327,3 +327,67 @@ from the render geometry (they are see-through particle cards):
   de_cache 18 vs 16, de_dust2 26 vs 25, de_mirage 20 vs 17, de_nuke 14 vs 15.
 - de_anubis and de_inferno have no `worldnodes` models. Their render models are under
   `entities/` and need entity placement transforms. Not done.
+
+## Production: render geometry replaces collision (2026-11-22)
+
+What changed in production:
+- `mappack.ExtractRenderGeometry` replaces `ExtractWorldCollision` for the ten
+  supported maps. Output: `<data>/render/<map>.render` (+ `.mats` sidecar). The
+  encounter occluder (`encounterjob.go` `worldOccluder`) reads it and builds a
+  hierarchy per mesh. Asset gate, `-extract`, and map-pack extraction use it.
+- Re-extract (`-extract`) and re-import the matches: encounters are derived at import.
+  Disk: about 1.2 GB of `.render` files for the ten maps, plus about 0.1 GB of `.mats`.
+- Scratch end-to-end (fresh data dir): all ten maps extract; de_cache import gives 350
+  windows, 502 encounters, 20,259 samples (collision version: 252, 370, 15,337).
+
+How the world is assembled (validated, see below):
+- World nodes from the world resource (`m_worldNodes` prefixes). Scene objects placed by
+  `m_vTransform`; aggregate objects cut into fragments (highest LOD, fragment transform
+  when `m_bHasTransform`). Fragments without a transform use the identity axes.
+- Entity models (`maps/<map>/entities`): placed by origin, angles and scales. Models in
+  the map archive, else in the shared archive (`pak01_dir.vpk`).
+- Model formats: MDAT/CTRL (current), MBUF/VBIB (classic), KV3 version 4 (shared props),
+  meshoptimizer vertex and index codecs. Several LODs: the highest detail is kept.
+- Draw-call base vertices are applied. Skybox models are excluded (8 aggregate objects on
+  de_ancient).
+
+Validation (each map):
+- Render extent lies inside the world resource's stored bounds on all ten maps.
+  de_cache: render x and y match exactly; z 1524..3072 against stored 1504..3331.
+- Collision (`worldcol`) is incomplete on several maps: its bounds are narrower than the
+  world resource's, e.g. de_nuke ends at z 708 against 1760, de_dust2 z 1174 against 1409,
+  de_mirage x 2048 against 3114, de_ancient x 2616 against 3224. Render is the complete one.
+- Kills (seven maps with kills, 946 total), production policy: render clears all 946;
+  collision-only clears 0 on every map; render-only clears 25 (collision missed them).
+- Random-pair control (400 pairs per map): render vs collision: ancient 26 vs 24, anubis 17
+  vs 16, cache 23 vs 16, dust2 26 vs 25, inferno 20 vs 17, mirage 20 vs 17, nuke 14 vs 15.
+- de_overpass, de_train, de_vertigo: no kills in the corpus, so bounds and visuals only.
+  Bounds are inside. Visual check: `~/Programming/spectra-overlays/de_train-prod/`
+  (and `de_overpass-prod`, `de_vertigo-prod`).
+
+Policy (`internal/mappack/render_policy.go`):
+- Dynamic entities excluded: door, breakable, moving or rotating brush, physics and dynamic
+  props. Reason: de_nuke's 41 blocked kills came from them (doors 3, brushes 22, props 16);
+  with them excluded, every kill clears. Conservative: more permissive. Per-class
+  narrowing on the other maps not done.
+- See-through excluded: `effects/smoke`, `effects/steam`, light shafts, puddles, glass.
+  Removing glass changes no kill; it raises de_cache's control from 16 to 23 of 400.
+
+Borderline materials, kept in (triangles, production sidecars):
+- Foliage (cards, plants, leaves, bushes, palms, grass): ancient 1.57M, inferno 0.77M,
+  nuke 18k, anubis 322k, cache 550k, dust2 181k, mirage 172k. Removing it changes no kill and
+  no control count on ancient, inferno, cache or dust2, so it stays in.
+- Decals: dust2 273k, nuke 25k, anubis 78k. Thin planes on walls; untested.
+- Cloth, curtains, rugs: inferno 140k, dust2 42k, nuke 28k.
+- Wire and rope: dust2 504k, nuke 545k, anubis 162k.
+- Grates, fences, mesh: nuke 199k, dust2 100k, mirage 99k.
+- Tools (blocklight, solid blocklight): mirage 115, cache 4.8k, inferno 3.7k.
+- Fire props: nuke 82k, inferno 11k.
+- Opaque and frosted glass are inside the glass exclusion; decide separately.
+- `effects/black`, `effects/metalrail` and `effects/urban_puddle` are not in the
+  exclusion list (the puddle rule matches the puddle planes).
+
+Known gaps and tests:
+- `TestDumpPhysAttributes` and the other dump tests are dev tools (opt-in).
+- The mappack map-pack tests (`TestExtractMapPacks`, etc.) fail on the last committed
+  state as well; not caused by this work.

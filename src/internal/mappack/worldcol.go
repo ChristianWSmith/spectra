@@ -18,6 +18,9 @@ var supportedMaps = map[string]bool{
 	"de_train": true, "de_vertigo": true,
 }
 
+// SupportedRenderMaps returns the maps whose render geometry is extracted, sorted.
+func SupportedRenderMaps() []string { return SupportedWorldCollisionMaps() }
+
 // SupportedWorldCollisionMaps returns the supported map names, sorted.
 func SupportedWorldCollisionMaps() []string {
 	out := make([]string, 0, len(supportedMaps))

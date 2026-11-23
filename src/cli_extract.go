@@ -54,11 +54,11 @@ func runExtract(cs2Dir string) {
 		fmt.Fprintf(os.Stderr, "extract: sounds: %s\n", e)
 	}
 
-	for _, m := range mappack.SupportedWorldCollisionMaps() {
-		if _, n, err := mappack.ExtractWorldCollision(cs2Dir, m, data.WorldColDir()); err != nil {
-			fmt.Fprintf(os.Stderr, "extract: world collision %s: %v\n", m, err)
+	for _, m := range mappack.SupportedRenderMaps() {
+		if _, n, err := mappack.ExtractRenderGeometry(cs2Dir, m, data.RenderGeometryDir()); err != nil {
+			fmt.Fprintf(os.Stderr, "extract: render geometry %s: %v\n", m, err)
 		} else {
-			fmt.Printf("extract: world collision %s (%d meshes)\n", m, n)
+			fmt.Printf("extract: render geometry %s (%d models)\n", m, n)
 		}
 	}
 

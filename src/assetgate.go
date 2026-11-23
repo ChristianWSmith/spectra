@@ -25,10 +25,10 @@ func assetsReady() (ok bool, missing []string) {
 			missing = append(missing, d.name)
 		}
 	}
-	for _, m := range mappack.SupportedWorldCollisionMaps() {
-		p := filepath.Join(data.WorldColDir(), m+".worldcol")
+	for _, m := range mappack.SupportedRenderMaps() {
+		p := filepath.Join(data.RenderGeometryDir(), m+".render")
 		if _, err := os.Stat(p); err != nil {
-			missing = append(missing, fmt.Sprintf("world collision (%s)", m))
+			missing = append(missing, fmt.Sprintf("render geometry (%s)", m))
 		}
 	}
 	return len(missing) == 0, missing

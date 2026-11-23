@@ -34,16 +34,15 @@ func TestMapRenderClip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ab, err := os.ReadFile(filepath.Join(out, "attrs", mp+".attrs.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var attrs []struct {
 		Mesh       int      `json:"mesh"`
 		InteractAs []string `json:"interactAs"`
 	}
-	if err := json.Unmarshal(ab, &attrs); err != nil {
-		t.Fatal(err)
+	// Without an attribute file (render geometry has none), nothing is clip-only.
+	if ab, err := os.ReadFile(filepath.Join(out, "attrs", mp+".attrs.json")); err == nil {
+		if err := json.Unmarshal(ab, &attrs); err != nil {
+			t.Fatal(err)
+		}
 	}
 	clip := map[int]bool{}
 	for _, a := range attrs {

@@ -95,26 +95,32 @@ func buildEncounters(ctx context.Context, st *store.Store, matchID int64) error 
 	return st.SaveEncounterWindows(matchID, rows)
 }
 
-// worldOccluder loads the map's world collision cache (written by the asset
-// extraction) and returns the segment-blocked query over it.
+// worldOccluder loads the map's render geometry (written by the asset extraction,
+// with its materials already filtered) and returns the segment-blocked query over
+// it. Each mesh gets a bounding-volume hierarchy so a ray visits only the boxes
+// it crosses.
 func worldOccluder(mapName string) (encounter.Occluder, error) {
-	path := filepath.Join(data.WorldColDir(), mapName+".worldcol")
+	path := filepath.Join(data.RenderGeometryDir(), mapName+".render")
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("world collision for %s: %w (extract the CS2 assets)", mapName, err)
+		return nil, fmt.Errorf("render geometry for %s: %w (extract the CS2 assets)", mapName, err)
 	}
 	defer f.Close()
 	meshes, err := source2.ReadMeshes(f)
 	if err != nil {
-		return nil, fmt.Errorf("world collision for %s: %w", mapName, err)
+		return nil, fmt.Errorf("render geometry for %s: %w", mapName, err)
+	}
+	trees := make([]*source2.BVH, len(meshes))
+	for i := range meshes {
+		trees[i] = source2.BuildBVH(&meshes[i])
 	}
 	return func(a, b [3]float64) bool {
 		seg := source2.Segment{
 			A: source2.Vec3{float32(a[0]), float32(a[1]), float32(a[2])},
 			B: source2.Vec3{float32(b[0]), float32(b[1]), float32(b[2])},
 		}
-		for i := range meshes {
-			if meshes[i].Blocked(seg) {
+		for _, t := range trees {
+			if t.Blocked(seg) {
 				return true
 			}
 		}
