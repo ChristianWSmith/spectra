@@ -91,3 +91,10 @@ Not verified:
 - Cross-check against phase 1 is weak: only one window tick coincides with a stored player_ticks row (state-change rows are sparse). That tick agrees on speed, in-air and weapon for both players. The rule itself is pinned by tests (TestWindowCollectorSpeedRule, TestTickSpeedRule).
 - Golden: TestGoldenPlayerTicks passes; it now builds windows with a pass-through occluder and checks window speed plausibility (986,952 samples, max 506.1 u/s, under the 1000 u/s bound). The 250 u/s comment in that test is about normal running, not a hard limit.
 - Wipe required: schema change on player_ticks and encounter_window_samples. Existing libraries must be re-imported.
+
+## Cross-check (2026-11-23): independent window-speed verification
+
+- The earlier one-tick comparison against player_ticks was too weak to count. It is replaced by TestGoldenWindowSpeedMatchesPositionStream (internal/integration/window_speed_test.go).
+- The reference takes positions from the parser's position stream directly, with no tick samples and no window collector. It computes speed from the previous delivered frame, nil across a gap or a round change.
+- Result on the golden demo: 1,973,904 window-sample speed values checked (both players per sample), 496 nil agreements, 0 mismatches.
+- Definition note: a frame belongs to the last counted round that has started, as the parser's round counter assigns it. Post-round frames stay in that round.
