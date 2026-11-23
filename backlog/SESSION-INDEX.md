@@ -22,7 +22,9 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 | 2026-11-22 | Dynamic entities (doors, breakables, moving brushes, physics and dynamic props) are excluded from sight-line geometry, a conservative choice. This reverses the earlier "props dropped" ruling for static world props, which are now in. Owner to confirm | S18 |
 | 2026-11-22 | See-through materials excluded: smoke and steam effects, light shafts, puddles, glass. Borderline materials (foliage, decals, cloth, wire, grates, tools) stay in | S18 |
 | 2026-11-22 | S21 presence ruling: safe option, absence is absence | S21 |
-| 2026-11-23 | Backlog pushed forward by subagents on isolated worktrees (S03, S05, S06, S12, S13); results are reviewed before merge | this file |
+| 2026-11-23 | Backlog pushed forward by subagents on isolated worktrees (S03, S05, S06, S09, S12, S13); results are reviewed before merge | this file |
+| 2026-11-23 | S09 landed: damage-family seeds read sides from round_player_sides. Existing libraries keep the old seed text (seeds are INSERT OR IGNORE): a wipe is needed to pick it up | S09 |
+| 2026-11-23 | S12 decisions: tick queue depth 2; write errors at StageParse accepted | S12 |
 | 2026-11-22 | VRF is MIT-licensed. Its license is in `src/internal/source2/LICENSE-VRF.txt`, and the reader carries attribution | source2 headers |
 | 2026-11-22 | The CS2 install is now required for the app (the "no install required" wording must change) | GUI-VERIFICATION |
 | 2026-11-22 | GUI verification is deferred to a later batch, documented in GUI-VERIFICATION.md | GUI-VERIFICATION |
@@ -48,6 +50,7 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 | Radar agreement (superseded by the render-geometry check on the same question) | weak (58% floor vs 32% random); scale sweep does not peak at the stated transform: inconclusive | S07, PATH |
 | Spawn on walkable floor | 30 of 30 on the 23 maps with overviews | S07, PATH |
 | World collision | 1,543,751 triangles, 11 meshes on de_cache; all 10 keep maps extract | S07, GUI-VERIFICATION |
+| dmg_no_kill, snapshot, 7 matches | old query 493 s; new query 1.5 s; values identical to stored metric_values | S09 |
 | Raycast against brute force | 0 disagreements on 1,650 mesh queries; about 330k segments/s mixed, 516k/s unblocked | S07 |
 
 ## Format facts (CS2)
