@@ -98,3 +98,13 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 - Library-scale (S08) requirement dropped. The 7-match library is the acceptance set. S14's speedup is measured on the snapshot.
 - Steam index kept. WITHOUT ROWID rejected.
 - Follow-up work: re-admit doors; check the see-through seed count on a larger library; human GUI timing for S13.
+
+## Sprint close-out status (2026-11-23)
+
+- Pushed to origin backlog/sprint-2026-11 (not merged to main, per owner).
+- Closed: S01–S07 (S04 tolerance check and S07 tracer benchmark closed by owner skip), S09–S14, S17 (rule built; wipe needed on existing libraries), S18, S19, S20, S21.
+- S12: importer panic path and cancellation tests done (see S12 follow-up).
+- S14: parallel units committed; value identity verified (32,431 rows, zero differences); speedup not measured by owner direction.
+- Map-pack tests: fixed (active-duty names; they predated the sprint).
+- Owner rulings: window value changes from the full-precision re-import ratified. Item 4 (GUI checks) accepted as done. Items 5 (peak memory) and 7 (S07/S04 leftovers) skipped.
+- Recorded follow-up (not sprint work): doors, see-through seed check, GUI timing.

@@ -1009,6 +1009,15 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 			_ = im.st.DeletePlayerTicks(matchID)
 		}
 	}
+	// A panic anywhere below (the parser runs in this goroutine) must not leave
+	// the tick writer running or the half-written rows in place: clean up, then
+	// re-raise so the crash is still a crash. The normal paths never reach it.
+	defer func() {
+		if r := recover(); r != nil {
+			cleanupPartial()
+			panic(r)
+		}
+	}()
 	var terr error
 	tw, terr = im.st.NewTickWriter(matchID)
 	if terr != nil {

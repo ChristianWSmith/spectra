@@ -74,3 +74,10 @@ Behaviour under a real concurrent import queue is not tested by the prototype.
 - Queue depth stays at 2. Peak buffering is about 200k rows, roughly 20 MB, which is negligible. Revisit only if S08 shows memory pressure.
 - Write errors reported at StageParse are accepted: they surface while the parse is still producing rows.
 - Still open: timing against the S08 baseline, importer-level failure tests, and abort on the panic path.
+
+## Follow-up (2026-11-23): importer tests and panic path
+
+- Panic path: process (internal/library/library.go) now recovers a parser panic, aborts the tick writer and deletes the match's streamed rows, then re-raises so the crash stays a crash. Verified: with the cleanup disabled, the new test finds 100,000 leaked rows; with it, 0.
+- Importer tests added (internal/library/ticks_test.go): TestImportPanicDeletesStreamedTicks, TestImportCancelledDeletesStreamedTicks (a cancelled import is recorded as cancelled, not failed, and leaves no rows).
+- Importer-level write-error test: not added. The write-error path is covered at the store level (TestTickWriterWriteErrorReachesCaller).
+- Timing against S08: dropped with the library-scale requirement (owner ruling, 2026-11-23).
