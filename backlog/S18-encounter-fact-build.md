@@ -253,3 +253,18 @@ Production box, eye 64/46, kills 946:
 This is an untested hypothesis that bullets pass player and NPC clip meshes. It is
 supported by the data, not confirmed in game. The random-pair control has not been
 rerun with the filter.
+
+## Control for the clip-mesh filter (2026-11-22): the filter is too broad
+
+Random opposing pairs that look clear under the production box, 2,800 pairs:
+- All meshes: 130 (4.6%). Without playerclip/npcclip meshes: 408 (14.6%).
+- Per map, 400 pairs each. de_anubis: 16 with all meshes, 243 without (61%).
+  de_dust2: 25 to 52. de_ancient: 24 to 34. Other maps change by 1 to 6.
+
+Triangles removed by the filter: de_anubis 41.6% (meshes 1 and 7), de_cache 22.2%,
+de_mirage 8.8%, de_dust2 5.9%, de_ancient and de_inferno 0.7%, de_nuke 0.0%.
+
+The 944 of 946 kills does not show the filter is right. On de_anubis it removes most of
+the map's blocking geometry. The attribute says players and NPCs are clipped by those
+meshes, not that bullets pass through them. Production is unchanged. The filter needs
+a finer rule, per mesh or per geometry, checked against the control.
