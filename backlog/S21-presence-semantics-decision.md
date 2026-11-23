@@ -78,3 +78,9 @@ may come later.
 - Consequence for the roster rule (S10): it counts a disconnected player as alive until a kill
   removes them. That is wrong. The roster rule has to remove a player at their disconnect as well.
 - No mid-round internal gaps longer than one second exist in the snapshot's player_ticks.
+
+## Follow-up (2026-11-23): the roster rule resolves the alive-count consumers
+
+The alive-count and clutch consumers can use the roster rule in S10 (roster minus kills and disconnects within
+the round). It reproduces all 2,222 stored alive-count cells on the snapshot. Presence in tick rows is not needed
+for those consumers once S10 is built.
