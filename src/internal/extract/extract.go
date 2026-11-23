@@ -21,6 +21,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/option"
 
+	"github.com/ChristianWSmith/spectra/internal/encounter"
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
@@ -180,6 +181,10 @@ type ParseOptions struct {
 	Voice     VoiceSink
 	Ticks     TickSink
 	NetKey    []byte
+	// WindowOccluder, when set, supplies the sight-line geometry for the map
+	// named in the match; the encounter windows are then built during the
+	// parse. Nil means no windows.
+	WindowOccluder func(mapName string) (encounter.Occluder, error)
 }
 
 // Parse reads one raw .dem stream, aggregating a normalized ExtractedMatch.
@@ -210,6 +215,10 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	// sinkErr carries a failing Position/Voice sink's error out of the
 	// handlers below; cancel aborts the parse so demoinfocs stops.
 	var sinkErr error
+	var wc *windowCollector // encounter windows, collected as frames arrive (nil: none)
+	if opts.WindowOccluder != nil {
+		wc = &windowCollector{}
+	}
 
 	// Voice chunks (M4): net-message handlers run on the parse goroutine
 	// (MsgQueueBufferSize(0) is sequential), so sinkErr/cancel mirror the
@@ -422,6 +431,15 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 				}
 			}
 		}
+		if wc != nil && gateOpen {
+			frameBuf = frameBuf[:0]
+			for i, row := range posBuf {
+				if posOKBuf[i] {
+					frameBuf = append(frameBuf, row)
+				}
+			}
+			wc.add(ingame, frameBuf)
+		}
 		if sink := opts.Positions; gateOpen && sink != nil && sinkErr == nil {
 			// Runs first so the shared slot table locks on position
 			// samples before the state sink (and the tick sink) use it.
@@ -570,7 +588,19 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 
 	pt.finish(frames, frameTotal(p))
 
-	return a.build(), nil
+	m := a.build()
+	if wc != nil && len(wc.frames) > 0 {
+		// The map name is final only now. A missing geometry cache is a
+		// warning: the match still imports, without windows.
+		occ, err := opts.WindowOccluder(m.Match.Map)
+		if err != nil {
+			m.Warnings = append(m.Warnings, "encounter windows skipped: "+err.Error())
+		} else {
+			wc.occ = occ
+			wc.build(m)
+		}
+	}
+	return m, nil
 }
 
 // frameTotal reports the demo's recorded frame count, or 0 when unknown

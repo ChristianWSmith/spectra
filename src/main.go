@@ -217,8 +217,8 @@ func main() {
 		// Options.AfterAnalyze and scheduleSweep): imports coalesce into
 		// one running sweep plus one follow-up. A metric failure never
 		// fails the job.
-		AfterAnalyze:    metricsSvc.sweepForJob,
-		BuildEncounters: buildEncountersFor(st),
+		AfterAnalyze:   metricsSvc.sweepForJob,
+		WindowOccluder: windowOccluderFor(),
 	})
 	defer imp.Shutdown()
 
@@ -352,14 +352,14 @@ func runImport(path string) {
 	metricsSvc := &MetricsService{st: st}
 	metricsSvc.useSweeps(b, nil)
 	imp := library.New(library.Options{
-		Store:           st,
-		Parse:           extract.Parse,
-		ParserVersion:   extract.ParserVersion,
-		CopyEnabled:     copyOnImportPref(kvs),
-		Concurrency:     b.Size,
-		Budget:          b,
-		AfterAnalyze:    metricsSvc.sweepForJob,
-		BuildEncounters: buildEncountersFor(st),
+		Store:          st,
+		Parse:          extract.Parse,
+		ParserVersion:  extract.ParserVersion,
+		CopyEnabled:    copyOnImportPref(kvs),
+		Concurrency:    b.Size,
+		Budget:         b,
+		AfterAnalyze:   metricsSvc.sweepForJob,
+		WindowOccluder: windowOccluderFor(),
 	})
 	defer imp.Shutdown()
 

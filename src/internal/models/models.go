@@ -572,5 +572,8 @@ type ExtractedMatch struct {
 	// damage) read from CMsgSosStartSoundEvent — persisted to the
 	// sound_events table by SaveExtracted like every other child.
 	SoundEvents []SoundEvent `json:"soundEvents"`
-	Warnings    []string     `json:"warnings"`
+	// Windows are the encounter windows, built during the parse (see
+	// extract.windowCollector). Empty when no occluder was supplied.
+	Windows  []EncounterWindow `json:"windows"`
+	Warnings []string          `json:"warnings"`
 }

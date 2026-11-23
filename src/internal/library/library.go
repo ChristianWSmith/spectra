@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/ChristianWSmith/spectra/internal/encounter"
 	"io"
 	"log/slog"
 	"os"
@@ -276,7 +277,7 @@ type Options struct {
 	// AfterAnalyze). It derives the match's encounters from the sidecar and the
 	// world collision. Its error is logged and never fails the job: the match
 	// is ready without encounters, and a re-import rebuilds them.
-	BuildEncounters func(ctx context.Context, matchID int64) error
+	WindowOccluder func(mapName string) (encounter.Occluder, error)
 }
 
 // queueItem is one unit of work for the worker.
@@ -315,18 +316,18 @@ var workerCount = budget.MachineTokens()
 // per-job cancellation contexts. Create with New; call Shutdown before
 // closing the store.
 type Importer struct {
-	st              *store.Store
-	parse           func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
-	emit            func(event string, data any)
-	parserVersion   string
-	sidecarDir      string
-	copyDir         string
-	copyEnabled     func() bool                                    // nil ⇒ copy (the default)
-	concurrency     func() int                                     // nil ⇒ 1 (sequential; see Options.Concurrency)
-	computeLock     *sync.Mutex                                    // nil ⇒ a private lock (see im.analyze)
-	budget          *budget.Budget                                 // nil ⇒ unbudgeted (see Options.Budget)
-	afterAnalyze    func(ctx context.Context) error                // nil ⇒ no metrics pass (see Options.AfterAnalyze)
-	buildEncounters func(ctx context.Context, matchID int64) error // nil ⇒ no encounter build
+	st             *store.Store
+	parse          func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
+	emit           func(event string, data any)
+	parserVersion  string
+	sidecarDir     string
+	copyDir        string
+	copyEnabled    func() bool                                      // nil ⇒ copy (the default)
+	concurrency    func() int                                       // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock    *sync.Mutex                                      // nil ⇒ a private lock (see im.analyze)
+	budget         *budget.Budget                                   // nil ⇒ unbudgeted (see Options.Budget)
+	afterAnalyze   func(ctx context.Context) error                  // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	windowOccluder func(mapName string) (encounter.Occluder, error) // nil ⇒ no encounter windows
 
 	mu        sync.Mutex
 	cond      *sync.Cond // workers wait for work AND a free slot
@@ -355,23 +356,23 @@ func New(o Options) *Importer {
 		copyDir = data.DemosDir()
 	}
 	im := &Importer{
-		st:              o.Store,
-		parse:           o.Parse,
-		emit:            o.Emit,
-		parserVersion:   o.ParserVersion,
-		sidecarDir:      sidecarDir,
-		copyDir:         copyDir,
-		copyEnabled:     o.CopyEnabled,
-		concurrency:     o.Concurrency,
-		computeLock:     o.ComputeLock,
-		budget:          o.Budget,
-		afterAnalyze:    o.AfterAnalyze,
-		buildEncounters: o.BuildEncounters,
-		queued:          map[int64]queueItem{},
-		cancels:         map[int64]context.CancelFunc{},
-		cancelled:       map[int64]bool{},
-		pending:         map[int64]matchLifecycle{},
-		sha:             newSHAGate(),
+		st:             o.Store,
+		parse:          o.Parse,
+		emit:           o.Emit,
+		parserVersion:  o.ParserVersion,
+		sidecarDir:     sidecarDir,
+		copyDir:        copyDir,
+		copyEnabled:    o.CopyEnabled,
+		concurrency:    o.Concurrency,
+		computeLock:    o.ComputeLock,
+		budget:         o.Budget,
+		afterAnalyze:   o.AfterAnalyze,
+		windowOccluder: o.WindowOccluder,
+		queued:         map[int64]queueItem{},
+		cancels:        map[int64]context.CancelFunc{},
+		cancelled:      map[int64]bool{},
+		pending:        map[int64]matchLifecycle{},
+		sha:            newSHAGate(),
 	}
 	if im.computeLock == nil {
 		im.computeLock = &sync.Mutex{}
@@ -1038,6 +1039,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	netKey := netKeyFromInfoFile(item.path)
 
 	em, err := im.parse(ctx, reader, extract.ParseOptions{
+		WindowOccluder: im.windowOccluder,
 		// Frames carry no determinate point mid-parse: a Source 2 demo
 		// only reveals its frame total at the very end (see
 		// extract.ParseOptions.Progress), so bytes read drive the bar.
@@ -1142,6 +1144,13 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
+	// Encounter windows were built during the parse. Derived data: a failure
+	// is logged and never fails the import.
+	if len(em.Windows) > 0 {
+		if err := im.st.SaveEncounterWindows(matchID, em.Windows); err != nil {
+			slog.Error("library: encounter windows", "match", matchID, "error", err)
+		}
+	}
 	if err := im.st.SettleMatchRows(matchID); err != nil {
 		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
@@ -1192,13 +1201,6 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// The pass runs in the background, and the behind set keeps any value
 	// it has not yet recomputed out of the current state, so the job's
 	// done event never shows a stale number as fresh.
-	// Encounters (shot-seeded visibility windows): derived data, built after
-	// analyze. A failure is logged and never fails the job.
-	if im.buildEncounters != nil {
-		if err := im.buildEncounters(ctx, matchID); err != nil {
-			slog.Error("library: encounters", "match", matchID, "error", err)
-		}
-	}
 	if im.afterAnalyze != nil {
 		_ = im.afterAnalyze(ctx)
 	}
