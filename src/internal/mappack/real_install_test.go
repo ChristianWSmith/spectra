@@ -67,11 +67,9 @@ func TestExtractRealCS2Install(t *testing.T) {
 			img.Bounds(), 1024*radarUpscale, 1024*radarUpscale, radarUpscale)
 	}
 
-	// DXT5-format maps (ar_shoots, cs_italy) must decode too — they take
-	// the block-compression path the BGRA maps never touch.
-	if _, err := os.Stat(filepath.Join(out, "ar_shoots", "radar.png")); err != nil {
-		t.Errorf("ar_shoots (DXT5) pack missing: %v", err)
-	}
+	// No active-duty map uses the DXT5 radar format (every pool radar is
+	// BGRA), so the block-compression path is covered by TestDecodeVTexDXT5,
+	// not here.
 }
 
 // TestExtractRealCS2Icons extracts the icon set from a real local CS2

@@ -307,7 +307,7 @@ func TestParseKV(t *testing.T) {
 }
 
 func TestParseOverview(t *testing.T) {
-	data := []byte(`"de_fixture"
+	data := []byte(`"de_dust2"
 {
 	"pos_x"		"-2476"
 	"pos_y"		"3239"
@@ -348,7 +348,7 @@ func TestParseOverviewMissingTransform(t *testing.T) {
 // each section is an object with AltitudeMax/AltitudeMin leaves).
 func overviewWithSections(sections map[string][2]float64) []byte {
 	var b []byte
-	b = append(b, `"de_fixture"
+	b = append(b, `"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -392,7 +392,7 @@ func TestParseOverviewSections(t *testing.T) {
 		}
 	})
 	t.Run("absent block", func(t *testing.T) {
-		ov, err := parseOverview([]byte(`"de_fixture"
+		ov, err := parseOverview([]byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -409,7 +409,7 @@ func TestParseOverviewSections(t *testing.T) {
 	t.Run("malformed entries skipped", func(t *testing.T) {
 		// One section with a missing AltitudeMin, one that is a leaf
 		// instead of an object, one non-numeric — the valid one survives.
-		data := []byte(`"de_fixture"
+		data := []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -547,9 +547,9 @@ func TestDecodeVTexDXT5(t *testing.T) {
 func TestVPKRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c":       []byte("radar-bytes"),
-		"resource/overviews/de_fixture.txt":                              []byte("overview-text"),
-		"panorama/images/overheadmaps/de_fixture_lower_radar_psd.vtex_c": []byte("lower"),
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c":       []byte("radar-bytes"),
+		"resource/overviews/de_dust2.txt":                              []byte("overview-text"),
+		"panorama/images/overheadmaps/de_dust2_lower_radar_psd.vtex_c": []byte("lower"),
 	}
 	dirPath := buildVPK(t, dir, files)
 	v, err := openVPK(dirPath)
@@ -602,7 +602,7 @@ func TestRadarBase(t *testing.T) {
 func TestSectionRadar(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string][]byte{
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -636,9 +636,9 @@ func TestSectionRadar(t *testing.T) {
 		section string
 		ok      bool
 	}{
-		{"de_fixture_lower", "de_fixture", "lower", true}, // declared section
-		{"de_fixture", "", "", false},                     // the default radar itself
-		{"de_fixture_night", "", "", false},               // undeclared suffix → own map
+		{"de_dust2_lower", "de_dust2", "lower", true}, // declared section
+		{"de_dust2", "", "", false},                     // the default radar itself
+		{"de_dust2_night", "", "", false},               // undeclared suffix → own map
 		{"de_other_lower", "", "", false},                 // no overview → not a section
 	}
 	for _, c := range cases {
@@ -660,8 +660,8 @@ func TestExtractMapPacks(t *testing.T) {
 	const w, h = 8, 8
 	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
 	buildVPK(t, csgo, map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c": radar,
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c": radar,
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -686,14 +686,14 @@ func TestExtractMapPacks(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if len(maps) != 1 || maps[0].Map != "de_fixture" {
+	if len(maps) != 1 || maps[0].Map != "de_dust2" {
 		t.Fatalf("maps = %+v", maps)
 	}
 
 	// PNG decodes at radarUpscale × the logical size (the source vtex
 	// has no larger mip, so the writer resamples for zoom quality).
 	// meta.json below keeps the LOGICAL size on purpose.
-	f, err := os.Open(filepath.Join(out, "de_fixture", "radar.png"))
+	f, err := os.Open(filepath.Join(out, "de_dust2", "radar.png"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,7 +793,7 @@ func TestExtractMapPacks(t *testing.T) {
 	}
 
 	// meta.json has transform + markers.
-	metaRaw, err := os.ReadFile(filepath.Join(out, "de_fixture", "meta.json"))
+	metaRaw, err := os.ReadFile(filepath.Join(out, "de_dust2", "meta.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,9 +847,9 @@ func TestExtractMapPacksLayers(t *testing.T) {
 	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
 	lower := buildVTex(t, lw, lh, vtexFormatBGRA8888, bgraPix(lw, lh), true)
 	buildVPK(t, csgo, map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c":       radar,
-		"panorama/images/overheadmaps/de_fixture_lower_radar_psd.vtex_c": lower,
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c":       radar,
+		"panorama/images/overheadmaps/de_dust2_lower_radar_psd.vtex_c": lower,
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -879,9 +879,9 @@ func TestExtractMapPacksLayers(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	// The lower radar is a LAYER of de_fixture, never its own pack.
-	if len(maps) != 1 || maps[0].Map != "de_fixture" {
-		t.Fatalf("maps = %+v, want only de_fixture", maps)
+	// The lower radar is a LAYER of de_dust2, never its own pack.
+	if len(maps) != 1 || maps[0].Map != "de_dust2" {
+		t.Fatalf("maps = %+v, want only de_dust2", maps)
 	}
 
 	// Both layer images exist, each at radarUpscale × its logical size
@@ -894,7 +894,7 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		{"radar.png", w, h},
 		{"radar_lower.png", lw, lh},
 	} {
-		f, err := os.Open(filepath.Join(out, "de_fixture", tc.file))
+		f, err := os.Open(filepath.Join(out, "de_dust2", tc.file))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.file, err)
 		}
@@ -908,7 +908,7 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		}
 	}
 
-	metaRaw, err := os.ReadFile(filepath.Join(out, "de_fixture", "meta.json"))
+	metaRaw, err := os.ReadFile(filepath.Join(out, "de_dust2", "meta.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -955,8 +955,8 @@ func TestPreserveElevation(t *testing.T) {
 	const w, h = 8, 8
 	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
 	buildVPK(t, csgo, map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c": radar,
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c": radar,
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -981,7 +981,7 @@ func TestPreserveElevation(t *testing.T) {
 	if _, errs, err := ExtractMapPacks(install, out); err != nil || len(errs) > 0 {
 		t.Fatalf("first extract: err=%v errs=%v", err, errs)
 	}
-	metaPath := filepath.Join(out, "de_fixture", "meta.json")
+	metaPath := filepath.Join(out, "de_dust2", "meta.json")
 
 	// The user authors regions in meta.json — plus stale per-floor
 	// `elevation` keys (a hand-edited pack carrying keys nothing reads),
@@ -1060,8 +1060,8 @@ func TestExtractBundledElevation(t *testing.T) {
 	const w, h = 8, 8
 	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
 	buildVPK(t, csgo, map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c": radar,
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c": radar,
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -1084,7 +1084,7 @@ func TestExtractBundledElevation(t *testing.T) {
 	// map extracted but never bundled).
 	reader := func(b []byte) func(string) []byte {
 		return func(mapName string) []byte {
-			if mapName == "de_fixture" {
+			if mapName == "de_dust2" {
 				return b
 			}
 			return nil
@@ -1097,7 +1097,7 @@ func TestExtractBundledElevation(t *testing.T) {
 		if _, errs, err := ExtractMapPacks(install, out, WithBundledMeta(reader(b))); err != nil || len(errs) > 0 {
 			t.Fatalf("extract: err=%v errs=%v", err, errs)
 		}
-		raw, err := os.ReadFile(filepath.Join(out, "de_fixture", "meta.json"))
+		raw, err := os.ReadFile(filepath.Join(out, "de_dust2", "meta.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1112,7 +1112,7 @@ func TestExtractBundledElevation(t *testing.T) {
 	// locally (or extracted before the bundled copy carried any).
 	seedDataDirRegions := func(t *testing.T, out string) {
 		t.Helper()
-		metaPath := filepath.Join(out, "de_fixture", "meta.json")
+		metaPath := filepath.Join(out, "de_dust2", "meta.json")
 		raw, err := os.ReadFile(metaPath)
 		if err != nil {
 			t.Fatal(err)
