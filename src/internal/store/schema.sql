@@ -568,8 +568,7 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 -- frame the player was absent or unpositioned, and when the tick rate is
 -- unknown. weapon is the canonical weapon name (the events.weapon
 -- vocabulary), NULL when dead (not sampled); hp is forced to 0 when dead
--- (a sample, not an inference); money is the controller's account as
--- read (it survives death).
+-- (a sample, not an inference).
 --
 -- Lifecycle: the rows STREAM in during the parse (store.TickWriter, in
 -- chunked transactions of at most tickChunkRows rows so no single
@@ -587,7 +586,6 @@ CREATE TABLE IF NOT EXISTS player_ticks (
 	side     TEXT    NOT NULL DEFAULT '',
 	alive    INTEGER NOT NULL DEFAULT 1,
 	hp       INTEGER NOT NULL DEFAULT 100,
-	money    INTEGER NOT NULL DEFAULT 0,
 	in_air   INTEGER,
 	speed    REAL,
 	weapon   TEXT,

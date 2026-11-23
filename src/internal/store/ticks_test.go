@@ -13,18 +13,18 @@ import (
 // tickRowOut is one player_ticks row as stored (nullable columns kept
 // nullable so the NULL-not-0 contract is observable).
 type tickRowOut struct {
-	tick             int32
-	steamID, side    string
-	round, hp, money int
-	alive            bool
-	inAir            sql.NullInt64
-	speed            sql.NullFloat64
-	weapon           sql.NullString
+	tick          int32
+	steamID, side string
+	round, hp     int
+	alive         bool
+	inAir         sql.NullInt64
+	speed         sql.NullFloat64
+	weapon        sql.NullString
 }
 
 func readTicks(t *testing.T, s *Store, matchID int64, steamID string) []tickRowOut {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT tick, steam_id, side, round, hp, money, alive, in_air, speed, weapon
+	rows, err := s.db.Query(`SELECT tick, steam_id, side, round, hp, alive, in_air, speed, weapon
 		FROM player_ticks WHERE match_id = ? AND steam_id = ? ORDER BY tick`, matchID, steamID)
 	if err != nil {
 		t.Fatalf("query player_ticks: %v", err)
@@ -34,7 +34,7 @@ func readTicks(t *testing.T, s *Store, matchID int64, steamID string) []tickRowO
 	for rows.Next() {
 		var r tickRowOut
 		var alive int64
-		if err := rows.Scan(&r.tick, &r.steamID, &r.side, &r.round, &r.hp, &r.money, &alive,
+		if err := rows.Scan(&r.tick, &r.steamID, &r.side, &r.round, &r.hp, &alive,
 			&r.inAir, &r.speed, &r.weapon); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
@@ -116,7 +116,7 @@ func TestTickWriterRowsAndSpeed(t *testing.T) {
 		if !g.inAir.Valid || (g.inAir.Int64 != 0) != w.air {
 			t.Errorf("tick %d: in_air = %+v, want %v", g.tick, g.inAir, w.air)
 		}
-		if g.side != "ct" || !g.alive || g.hp != 100 || g.money != 800 || g.weapon.String != "ak47" {
+		if g.side != "ct" || !g.alive || g.hp != 100 || g.weapon.String != "ak47" {
 			t.Errorf("tick %d: row = %+v", g.tick, g)
 		}
 	}
@@ -124,7 +124,7 @@ func TestTickWriterRowsAndSpeed(t *testing.T) {
 
 // TestTickWriterDeadFramesAreNull pins NULL-not-0 honesty: a dead frame
 // (no position sample, no weapon sample) stores NULL in_air/speed/weapon,
-// hp as the sampled 0 and money as read — never a fabricated observation —
+// hp as the sampled 0 — never a fabricated observation —
 // and the first positioned frame after it has no previous sample (NULL
 // speed), so a respawn/teleport never produces a speed.
 func TestTickWriterDeadFramesAreNull(t *testing.T) {
@@ -153,8 +153,8 @@ func TestTickWriterDeadFramesAreNull(t *testing.T) {
 		t.Fatalf("rows = %d, want 3", len(got))
 	}
 	d := got[1]
-	if d.alive || d.hp != 0 || d.money != 3150 || d.side != "t" {
-		t.Errorf("dead row = %+v, want alive=0 hp=0 money=3150 side=t", d)
+	if d.alive || d.hp != 0 || d.side != "t" {
+		t.Errorf("dead row = %+v, want alive=0 hp=0 side=t", d)
 	}
 	if d.inAir.Valid || d.speed.Valid || d.weapon.Valid {
 		t.Errorf("dead row in_air/speed/weapon = %+v/%+v/%+v, want NULL (never 0)", d.inAir, d.speed, d.weapon)

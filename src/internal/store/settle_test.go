@@ -7,9 +7,10 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestSettleMatchRows pins the two import-time rules: ticks after the final
-// round's end are dropped (post-round ticks in earlier rounds are kept), and
-// money_start takes the first tick of its round. A second run changes nothing.
+// TestSettleMatchRows pins the import-time tick rule: ticks after the final
+// round's end are dropped (post-round ticks in earlier rounds are kept). It
+// does not touch round_player_money.money_start, which the extractor sets
+// (extract.applyFirstTickMoney). A second run changes nothing.
 func TestSettleMatchRows(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/settle.dem", "sha-settle", time.Now())
@@ -28,15 +29,13 @@ func TestSettleMatchRows(t *testing.T) {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 	// Round 1 post-round tick (250, after its end, before the final end),
-	// round 2 first tick (201, the reset value 10000), a round 2 mid tick,
-	// and a post-match tick (350, after the final round's end 300).
+	// round 2 ticks, and a post-match tick (350, after the final round's end 300).
 	for _, r := range []struct {
 		tick  int
 		round int
-		money int
-	}{{150, 1, 900}, {250, 1, 900}, {201, 2, 10000}, {260, 2, 5200}, {350, 2, 5200}} {
-		if _, err := s.db.Exec(`INSERT INTO player_ticks (match_id, tick, steam_id, round, side, alive, hp, money)
-			VALUES (?, ?, '100', ?, 'ct', 1, 100, ?)`, id, r.tick, r.round, r.money); err != nil {
+	}{{150, 1}, {250, 1}, {201, 2}, {260, 2}, {350, 2}} {
+		if _, err := s.db.Exec(`INSERT INTO player_ticks (match_id, tick, steam_id, round, side, alive, hp)
+			VALUES (?, ?, '100', ?, 'ct', 1, 100)`, id, r.tick, r.round); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,8 +59,8 @@ func TestSettleMatchRows(t *testing.T) {
 		if got := count(`SELECT COUNT(*) FROM player_ticks WHERE match_id = ? AND tick = 250`, id); got != 1 {
 			t.Errorf("run %d: post-round tick 250 was dropped", run)
 		}
-		if got := count(`SELECT money_start FROM round_player_money WHERE match_id = ? AND round = 2`, id); got != 10000 {
-			t.Errorf("run %d: money_start = %d, want 10000 (first tick)", run, got)
+		if got := count(`SELECT money_start FROM round_player_money WHERE match_id = ? AND round = 2`, id); got != 6150 {
+			t.Errorf("run %d: money_start = %d, want 6150 (settle leaves the extractor's value)", run, got)
 		}
 	}
 }

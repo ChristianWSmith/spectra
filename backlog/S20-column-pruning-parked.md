@@ -33,3 +33,42 @@ On match 4 (golden):
 
 ## When to revisit
 When the owner un-parks it, after S03 shows zero diff with the columns nulled.
+
+## Result (2026-11-23): money part done; in_air, speed, weapon not touched
+
+Owner un-parked the money column on 2026-11-23 (`SESSION-INDEX.md`). This
+branch removes `money` from `player_ticks`. Its one use, `round_player_money.money_start`,
+now comes from the extractor, which takes each player's first tick sample of
+each counted round (`extract.noteTickMoney` / `applyFirstTickMoney`). That
+is the rule `SettleMatchRows` used to apply. The post-match tick delete in
+settle is unchanged. `in_air`, `speed` and `weapon` stay as they are, pending
+S18.
+
+Verification:
+- `go vet ./...`: passes. The root package needed the gitignored
+  `src/frontend/dist` copied from the main checkout to compile (`go:embed`).
+- `go test -count=1` for `./internal/store` (pass), `./internal/extract`
+  (pass; includes new `TestFirstTickMoney`) and `./internal/library` (pass).
+  The extract golden tests (`TestParseGolden` and the `TestDiag*` set) skip
+  without `SPECTRA_TEST_DEMO` / `SPECTRA_DIAG`, so they did not run here.
+- `TestGoldenPlayerTicks` (internal/integration): passes. The golden demos
+  are present (LFS smudged). `TestGolden` (pistol-round money_start = 800)
+  also passes.
+- Equivalence on the snapshot (copied, read only). Match 1 (de_ancient) and
+  match 7 (de_nuke) each ran through the real extractor on their raw demos.
+  The extractor's `money_start` equals the settle first-tick rule on all 290
+  and all 279 round-money rows. The snapshot holds 1,522 rows, all with tick
+  rows, so the fallback to m_iStartAccount was not exercised on real data
+  (the unit test covers it). The 20 cells that differ from the snapshot's
+  stored values are round 25 (the first OT round) in matches 1 and 7, which
+  is the S02 fix; the snapshot predates the settle rule. The extractor
+  produces 10000 in those cells.
+
+Not verified:
+- Whether the extractor and the old settle agree for every demo. Only matches
+  1 and 7 were run.
+- The existing library. A schema change needs a wipe and re-import. Until
+  then the old `money` column stays in place with DEFAULT 0, and new inserts
+  leave it at 0. Nothing reads it.
+- Only the `money` part of S20 is done. The other three columns and the
+  in_air/speed derivation are unchanged.

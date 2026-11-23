@@ -13,6 +13,7 @@ func (a *agg) build() *models.ExtractedMatch {
 	// Ingest round numbering first: rows stamped during the parse carry the
 	// chronological index and are remapped together with the rounds.
 	a.renumber()
+	applyFirstTickMoney(a.roundMoney, a.firstMoney)
 	out := &models.ExtractedMatch{}
 
 	playbackTimeS := 0.0

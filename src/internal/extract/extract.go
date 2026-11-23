@@ -455,6 +455,7 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			for i, st := range stateBuf {
 				tickBuf = append(tickBuf, tickSample(st, posBuf[i], posOKBuf[i]))
 			}
+			a.noteTickMoney(ingame, len(a.rounds), tickBuf)
 			if err := sink.AddTicks(ingame, len(a.rounds), p.TickRate(), tickBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: tick sink: %w", err)
 				cancel()

@@ -9,7 +9,8 @@ package models
 //
 // Every field is a parser read; nothing is inferred. HP is forced to 0
 // when !Alive (death is evidence, as in the sidecar's state stream),
-// Money is the controller's account as read (it survives death), Weapon
+// Money is the controller's account as read (it survives death; the
+// extractor takes each round's first sample as money_start), Weapon
 // is the canonical weapon name and only sampled while alive, Side is the
 // identity's team at that frame ("ct"/"t", "" when unassigned — never
 // guessed). X/Y/Z are the RAW float world positions (the sidecar

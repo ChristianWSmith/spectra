@@ -14,7 +14,7 @@ import (
 // playerTicksCols is the player_ticks row WITHOUT match_id — the
 // TickWriter's INSERT list, pinned to the DDL by
 // TestColumnListConstsMatchSchema.
-const playerTicksCols = `tick, steam_id, round, side, alive, hp, money, in_air, speed, weapon`
+const playerTicksCols = `tick, steam_id, round, side, alive, hp, in_air, speed, weapon`
 
 // tickChunkRows bounds one player_ticks write transaction. A golden-sized
 // match streams ~1.3M rows; written in one transaction that holds the
@@ -102,7 +102,6 @@ type tickRow struct {
 	side    string
 	alive   bool
 	hp      int
-	money   int
 	inAir   sql.NullBool
 	speed   sql.NullFloat64
 	weapon  sql.NullString
@@ -192,7 +191,6 @@ func (w *TickWriter) AddTicks(tick int32, round int, tickRate float64, players [
 			side:    scrub(p.Side),
 			alive:   p.Alive,
 			hp:      p.HP,
-			money:   p.Money,
 		}
 		if p.Alive {
 			row.weapon = sql.NullString{String: scrub(p.Weapon), Valid: true}
@@ -333,14 +331,14 @@ func (w *TickWriter) flush(buf []tickRow) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(`INSERT INTO player_ticks (match_id, ` + playerTicksCols + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("saving the match's tick data: %w", err)
 	}
 	defer stmt.Close()
 	for _, r := range buf {
 		if _, err := stmt.Exec(w.matchID, r.tick, r.steamID, r.round, r.side, b2i(r.alive),
-			r.hp, r.money, r.inAir, r.speed, r.weapon); err != nil {
+			r.hp, r.inAir, r.speed, r.weapon); err != nil {
 			return fmt.Errorf("saving the match's tick data: %w", err)
 		}
 	}
