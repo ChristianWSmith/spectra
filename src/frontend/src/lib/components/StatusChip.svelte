@@ -74,6 +74,8 @@ const LABELS = {
   fresh: 'fresh',
   'no-data': 'no-data',
   behind: 'behind',
+  // A ready match whose metric values are still being computed.
+  calculating: 'calculating',
 };
 
 // Lifecycle state → the shared .chip palette modifier (style.css). An
@@ -92,6 +94,7 @@ const PALETTE = {
   fresh: 'ok',
   'no-data': 'idle',
   behind: 'idle',
+  calculating: 'busy',
 };
 
 let pct = $derived(progress != null ? Math.round(progress * 100) : null);

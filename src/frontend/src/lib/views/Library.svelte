@@ -1199,6 +1199,10 @@
                   />
                 {:else if m.status === 'failed'}
                   <StatusChip status="failed" title={m.error || S.library.importFailed} />
+                {:else if m.metricsPending}
+                  <!-- Imported and ready, but its metric values are still being
+                       computed (the sweep is behind for this match). -->
+                  <StatusChip status="calculating" title={S.library.calculatingMetrics} />
                 {:else}
                   <StatusChip status="ready" />
                 {/if}

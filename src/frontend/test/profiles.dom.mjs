@@ -1563,12 +1563,12 @@ console.log('M. the Profiles Matches column and the history K/D halves read thei
   };
   {
     const cells = histCells();
-    // C5d: each history row's stored cells are a match-bound metric() read
-    // (one per match, asking for the kills, deaths and assists seeds).
+    // S13: the history's stored cells are ONE batched series read for all its
+    // matches (metricsByMatch), asking for the kills, deaths and assists seeds.
     check(
-      'each history match is read by its own match bind for the seed ids (kills, deaths, assists)',
-      [1, 2].every((m) => [5, 6, 7].every((x) => matchValueReads.some(([id, ids]) => id === m && ids.includes(x)))),
-      JSON.stringify(matchValueReads),
+      'the history reads the seed ids for all its matches in one batched series read (kills, deaths, assists)',
+      seriesReads.some(([, ids]) => [5, 6, 7].every((x) => ids.includes(x))),
+      JSON.stringify(seriesReads),
     );
     check(
       'the history K/D halves render the stored values (raw ps.kills/ps.deaths 10/5 never prints); no assists row is a dash',

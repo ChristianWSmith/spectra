@@ -898,6 +898,10 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 			im.failJob(jobID, matchID, models.StageStore, err.Error(), false) // frame: see the StageStore note above
 			return
 		}
+		// The import's row exists now and its job points at it: announce it, so
+		// the list hands the import from its pending row to its match row in
+		// one refresh instead of showing it twice or not at all until parse.
+		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 	} else if copyOn && im.ManagedDemoPath(sha) == "" {
 		// Reprocess RE-COPY: the match has no managed copy (a skip-copied
 		// import whose source now points elsewhere, or an evicted one the

@@ -24,7 +24,7 @@ var tableNotes = map[string]string{
 	"player_ticks":             "player state changes in counted rounds (side, alive, hp) — one row when a player's round, side, alive or hp changes; no row means no change; bots included",
 	"encounter_window_samples": "dense per-tick samples of encounter windows: both players' eye and world positions, in-air, horizontal speed u/s and weapon (NULL speed when not derivable)",
 	"encounter_windows":        "encounter windows: one row per round and player pair with overlapping shot encounters (the span both players share, P1 the lower steam id)",
-	"encounters":               "shot-seeded encounters: who shot at whom, over which tick span, inside a window (seed tick = the shot that opened it)",
+	"encounters":               "encounters: who shot at whom, over which tick span, inside a window; the opening shot is recorded as its tick",
 	"warnings":                 "parser warnings captured during extraction, per match, ordered",
 	"jobs":                     "import job queue state (queued/running/done/failed + progress)",
 
