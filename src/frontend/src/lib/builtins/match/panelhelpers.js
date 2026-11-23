@@ -4,8 +4,8 @@
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
 import * as S from '../../strings/index.js';
+import { sideAtRound, resolveSide, DASH } from '../../builtinhelpers.js';
 
-export const DASH = '—';
 
 // The read-only SQL the panels run (bound from the context). Plain literals,
 // so the audit exempts them by text: SQL the panel runs is not user copy.
@@ -75,10 +75,6 @@ export function cellValue(u, key) {
   return u.state === 'fresh' && u.map.has(key) ? u.map.get(key) : null;
 }
 
-export function isSteam(s) {
-  return /^\d{17}$/.test(s || '');
-}
-
 // The team display name of a side: the demo's clan name, else the
 // synthesized team_<player> name (lowest SteamID on the side), else CT / T.
 export function teamName(side, teamRows, roster) {
@@ -127,29 +123,6 @@ export function fill(template, args) {
   return String(template).replace(/\{(\w+)\}/g, (whole, key) => (key in args ? String(args[key]) : whole));
 }
 
-// FOLLOW
-export function followRoute(matchId, back, steam) {
-  const to = back || 'match/' + matchId;
-  return '/replay/' + matchId + '?back=' + encodeURIComponent(to).replace(/%2F/g, '/') + '&follow=' + steam;
-}
-
-// ROUND_HELPERS
-export const isCounted = (r) => !!r && r.number >= 1;
-
-// The cadence: after 12, after 24, then every 3 counted rounds (lib/rounds.js).
-export function separatorAfter(n) {
-  if (!Number.isFinite(n)) return false;
-  if (n === 12) return true;
-  return n >= 24 && (n - 24) % 3 === 0;
-}
-
-// A separator follows a counted row, except the last counted row.
-export function separatorFlags(rows) {
-  const counted = rows.filter(isCounted).length;
-  let seen = 0;
-  return rows.map((r) => (isCounted(r) ? ++seen < counted && separatorAfter(seen) : false));
-}
-
 export function roundLabel(n) {
   if (n >= 1) return String(n);
   return n === -2 ? S.builtins.roundLabelKnife : S.builtins.roundLabelWarmup;
@@ -166,66 +139,10 @@ export function fmtDuration(seconds) {
   return sec + 's';
 }
 
-export function flipIndexes(counted, switches) {
-  if (counted <= 0 || switches <= 0) return [];
-  const flips = [];
-  for (let k = 1; k <= switches; k++) {
-    const idx = k === 1 ? 12 : 27 + 3 * (k - 2);
-    if (idx > 0 && idx < counted) flips.push(idx);
-  }
-  return flips;
-}
-
-export function sideInEra(finalSide, switches, era) {
-  if (finalSide !== 'ct' && finalSide !== 't') return null;
-  const eras = Math.max(1, switches + 1);
-  const flipped = Math.abs(eras - 1 - era) % 2;
-  if (flipped === 0) return finalSide;
-  return finalSide === 'ct' ? 't' : 'ct';
-}
-
-// The side a team (by its final side) played in a round.
-export function sideAtRound(rounds, switches, number, finalSide) {
-  if (finalSide !== 'ct' && finalSide !== 't') return null;
-  if (!rounds.some((r) => r.number === number)) return null;
-  const counted = rounds.filter(isCounted);
-  const idx = counted.findIndex((r) => r.number === number);
-  const flips = flipIndexes(counted.length, switches);
-  const eras = Math.max(1, switches + 1);
-  let era = 0;
-  if (idx >= 0) {
-    for (const f of flips) if (f <= idx) era++;
-    era = Math.min(eras - 1, era);
-  }
-  return sideInEra(finalSide, switches, era);
-}
-
-// The team ('ct' or 't', by final side) that won a round, or null.
-export function winnerTeamKey(rounds, switches, number, winnerSide) {
-  if (winnerSide !== 'ct' && winnerSide !== 't') return null;
-  const ctSide = sideAtRound(rounds, switches, number, 'ct');
-  if (ctSide === null) return null;
-  return ctSide === winnerSide ? 'ct' : 't';
-}
-
-// A player's final side: by SteamID first, then by exact name.
-export function resolveSide(roster, steam, name) {
-  let side = '';
-  if (steam) {
-    const hit = roster.find((r) => r[0] === steam);
-    if (hit) side = hit[2] || '';
-  }
-  if (!side && name) {
-    const hit = roster.find((r) => r[1] === name);
-    if (hit) side = hit[2] || '';
-  }
-  return side;
-}
-
 // A player's colour in one round: the side they had in that round, else the
 // match's start-side colour for the player (never a guess).
 export function playerRoundCls(d, number, steam, name) {
-  const final = resolveSide(d.roster, steam, name);
+  const final = resolveSide(d.roster.map((r) => ({ steamId: r[0], name: r[1], side: r[2] })), steam, name);
   const at = sideAtRound(d.rounds, d.switches, number, final) || '';
   if (at === 'ct') return 'side-ct';
   if (at === 't') return 'side-t';
@@ -262,16 +179,6 @@ export function fmtBytes(bytes) {
   if (mb >= 1024) return (mb / 1024).toFixed(1) + S.builtins.unitGb;
   if (mb >= 1) return mb.toFixed(1) + S.builtins.unitMb;
   return (bytes / 1024).toFixed(1) + S.builtins.unitKb;
-}
-
-export function fmtInt(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return Math.round(x).toLocaleString();
-}
-
-export function fmt1(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return (Math.round(x * 10) / 10).toFixed(1);
 }
 
 export function parseStamp(s) {

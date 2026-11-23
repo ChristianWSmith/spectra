@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, cellValue, isSteam, teamName, sortRows, followRoute } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, cellValue, teamName, sortRows } from './panelhelpers.js';
+  import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
     ['deaths', S.match.scoreD, 'int'],
@@ -100,9 +101,7 @@
     return (u.doc || metric) + (u.error ? S.builtins.couldntCalculate + u.error : '');
   }
 
-  function follow(steam) {
-    spectra.navigate(followRoute(context.matchId, back, steam));
-  }
+  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 
   function ariaSort(key) {
     if (sortKey !== key) return 'none';
@@ -132,7 +131,7 @@
           >
             <td class="num name-cell {cls}">
               {#if isSteam(p.steam)}
-                <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); spectra.navigate('/player/' + p.steam); }}>{p.name}</button>
+                <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
               {:else}
                 {p.name}
               {/if}

@@ -399,3 +399,30 @@ export function entryLoopAround(tick, tickRate, loopSecs) {
 export function replayRoute(matchId, extras) {
   return hashOf('/replay/' + matchId, extras);
 }
+
+// The SteamID64 of a player: 17 digits. A value that is not one is not a link.
+export function isSteam(s) {
+  return /^\d{17}$/.test(s || '');
+}
+
+// The route to a player's profile.
+export function playerRoute(steam) {
+  return '/player/' + steam;
+}
+
+// Open a player's profile (the name link on every builtin that lists players).
+export function openPlayer(spectra, steam) {
+  spectra.navigate(playerRoute(steam));
+}
+
+// The replay route a row opens, following that player. `back` is the tab the
+// panel sits on; the replay returns there.
+export function followRoute(matchId, back, steam) {
+  const to = back || 'match/' + matchId;
+  return '/replay/' + matchId + '?back=' + encodeURIComponent(to).replace(/%2F/g, '/') + '&follow=' + steam;
+}
+
+// Open the replay following a player.
+export function followPlayer(spectra, matchId, back, steam) {
+  spectra.navigate(followRoute(matchId, back, steam));
+}

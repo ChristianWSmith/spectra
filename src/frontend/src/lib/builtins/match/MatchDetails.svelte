@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, SQL_FACTS, numOf, fmtBytes, fmtInt, fmt1, parseStamp, fmtDate } from './panelhelpers.js';
+  import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate } from './panelhelpers.js';
+  import { DASH, fmtInt, fmt1 } from '../../builtinhelpers.js';
   const DETAILS_COPY = Object.freeze({
     keyFacts: S.match.keyFacts,
     factServer: S.match.factServer,

@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, isSteam, teamName, fill, separatorFlags, roundLabel, fmtDuration, winnerTeamKey, playerRoundCls, roundOf } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, teamName, fill, roundLabel, fmtDuration, playerRoundCls, roundOf } from './panelhelpers.js';
+  import { DASH, isSteam, separatorFlags, winnerTeamKey, openPlayer } from '../../builtinhelpers.js';
   const ROUNDS_COPY = Object.freeze({
     colWatch: S.match.colWatch,
     colCmp: S.match.colCmp,
@@ -113,7 +114,7 @@
 
 {#snippet playerLink(steam, name, cls)}
   {#if isSteam(steam)}
-    <button class="comb-name-btn {cls}" title={fill(COPY.openProfile, { name })} onclick={() => spectra.navigate('/player/' + steam)}>{name || DASH}</button>
+    <button class="comb-name-btn {cls}" title={fill(COPY.openProfile, { name })} onclick={() => openPlayer(spectra, steam)}>{name || DASH}</button>
   {:else}
     <span class={cls}>{name || DASH}</span>
   {/if}

@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, isSteam, teamName, followRoute } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, teamName } from './panelhelpers.js';
+  import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
   // default order (kills, then name). The "Other" table appears only when a
@@ -53,9 +54,7 @@
     };
   });
 
-  function follow(steam) {
-    spectra.navigate(followRoute(context.matchId, back, steam));
-  }
+  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
 
 {#if data}
@@ -76,7 +75,7 @@
               <tr class="clickable" onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; follow(p.steam); }}>
                 <td class={startClass(p.side, data.switches)}>
                   {#if isSteam(p.steam)}
-                    <button class="btn ghost small name-link {startClass(p.side, data.switches)}" onclick={(e) => { e.stopPropagation(); spectra.navigate('/player/' + p.steam); }}>{p.name}</button>
+                    <button class="btn ghost small name-link {startClass(p.side, data.switches)}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
                   {:else}
                     {p.name}
                   {/if}

@@ -1,6 +1,6 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, fmtMs, fmtZeroDash, roundClock, roundIndexLabel, roundScoreLabel, roundsByNumber, playerSideClassAt, hashOf, entryLoopAround } from '../../builtinhelpers.js';
+  import { DASH, fmtMs, fmtZeroDash, roundClock, roundIndexLabel, roundScoreLabel, roundsByNumber, playerSideClassAt, hashOf, entryLoopAround, isSteam, openPlayer } from '../../builtinhelpers.js';
 
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).
@@ -72,7 +72,7 @@
   }
 
   function openProfile(steam) {
-    if (/^\d{17}$/.test(steam || '')) spectra.navigate('/player/' + steam);
+    if (isSteam(steam)) openPlayer(spectra, steam);
   }
 </script>
 

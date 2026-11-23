@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, fill, fmtBytes } from './panelhelpers.js';
+  import { fill, fmtBytes } from './panelhelpers.js';
+  import { DASH } from '../../builtinhelpers.js';
   const FACTS_COPY = Object.freeze({
     factVoice: S.match.factVoice,
     factDemoCopy: S.match.factDemoCopy,

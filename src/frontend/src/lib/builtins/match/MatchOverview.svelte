@@ -1,6 +1,7 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, isSteam, followRoute } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText } from './panelhelpers.js';
+  import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
 
   // Match overview cards: the five identity metrics of the match, one card
   // each, in their default order (top fragger, best ADR, most util, entry
@@ -82,9 +83,7 @@
     };
   });
 
-  function follow(steam) {
-    spectra.navigate(followRoute(context.matchId, back, steam));
-  }
+  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
 
 <section class="match-overview">
@@ -99,7 +98,7 @@
           <span class="stat-value">{c.value}</span>
           <span class="stat-sub">
             {#if c.steam && isSteam(c.steam)}
-              <button class="btn ghost small name-link" onclick={(e) => { e.stopPropagation(); spectra.navigate('/player/' + c.steam); }}>{c.name}</button>
+              <button class="btn ghost small name-link" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, c.steam); }}>{c.name}</button>
             {:else}
               {c.name}
             {/if}

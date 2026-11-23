@@ -91,6 +91,7 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
   const surfaces = {
     '../../strings/index.js': null,
     './panelhelpers.js': helperNames,
+    '../../builtinhelpers.js': Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names),
     '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy'],
     '../../viewstate.svelte.js': ['comparePicks', 'setComparePicks'],
   };
