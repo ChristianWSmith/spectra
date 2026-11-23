@@ -20,7 +20,6 @@
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import Popover from '../../components/Popover.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
   import { loadCombatSide } from './combatdata.js';
   import { KILL_TAG_KINDS, groupKillTags } from './combatmodel.js';
 
@@ -29,9 +28,6 @@
 
   let killTags = $state([]);
   let error = $state('');
-  // Rung 3 of the loading ladder: without it the table renders empty while the
-  // reads are in flight, a false "no data" state. Transient, never seeded.
-  let loading = $state(true);
   // Final side per player and the side-switch count: the inputs for the
   // team-identity colours on names. Round list: the per-round side colours
   // and the row clock (roundClock: time INTO the round).
@@ -95,7 +91,7 @@
   $effect(() => {
     const matchId = id;
     let live = true;
-    Promise.all([getKillTags(matchId, ''), loadCombatSide(matchId)])
+    spectra.track(Promise.all([getKillTags(matchId, ''), loadCombatSide(matchId)]))
       .then(([en, side]) => {
         if (!live) return;
         killTags = en || [];
@@ -104,12 +100,10 @@
         rounds = side.rounds;
         tickRate = side.tickRate;
         error = '';
-        loading = false;
       })
       .catch((e) => {
         if (live) {
           error = errText(e);
-          loading = false;
         }
       });
     return () => (live = false);
@@ -170,6 +164,8 @@
     spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if error}
   <p class="error" role="alert">
@@ -180,9 +176,6 @@
   </p>
 {/if}
 
-{#if loading}
-  <p class="muted" role="status"><StatusChip block detail={S.combat.loadingDetail} /></p>
-{:else}
   <section class="panel comb-sec">
     <h2>{S.combat.killTagsHeading}</h2>
     <div class="comb-kinds" role="group" aria-label={S.combat.filterKillTagsLabel}>
@@ -316,4 +309,4 @@
       </table>
     </div>
   </section>
-{/if}
+</div>

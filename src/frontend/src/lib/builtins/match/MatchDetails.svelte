@@ -42,7 +42,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    facts = null;
     load(matchId).then(
       (f) => {
         if (live) facts = f;
@@ -58,18 +57,19 @@
   });
 </script>
 
-{#if facts}
-  <section class="panel">
-    <h2>{COPY.keyFacts}</h2>
-    <dl class="facts">
-      <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
-      <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + S.match.unitHz : DASH}</dd></div>
-      <div><dt>{COPY.factFrames}</dt><dd class="num">{fmtInt(facts.frames)}</dd></div>
-      <div><dt>{COPY.factSize}</dt><dd>{fmtBytes(facts.size)}</dd></div>
-      <div><dt>{COPY.factImported}</dt><dd>{fmtDate(facts.extractedAt)}</dd></div>
-      <div><dt>{COPY.factParser}</dt><dd class="mono">{facts.parser || DASH}</dd></div>
-      <div><dt>{COPY.factWarnings}</dt><dd>{Number.isFinite(facts.warnings) ? facts.warnings : DASH}</dd></div>
-      <div class="fact-wide"><dt>{COPY.factSource}</dt><dd class="mono">{facts.path || DASH}</dd></div>
-    </dl>
-  </section>
-{/if}
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
+  {#if facts}
+      <h2>{COPY.keyFacts}</h2>
+      <dl class="facts">
+        <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
+        <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + S.match.unitHz : DASH}</dd></div>
+        <div><dt>{COPY.factFrames}</dt><dd class="num">{fmtInt(facts.frames)}</dd></div>
+        <div><dt>{COPY.factSize}</dt><dd>{fmtBytes(facts.size)}</dd></div>
+        <div><dt>{COPY.factImported}</dt><dd>{fmtDate(facts.extractedAt)}</dd></div>
+        <div><dt>{COPY.factParser}</dt><dd class="mono">{facts.parser || DASH}</dd></div>
+        <div><dt>{COPY.factWarnings}</dt><dd>{Number.isFinite(facts.warnings) ? facts.warnings : DASH}</dd></div>
+        <div class="fact-wide"><dt>{COPY.factSource}</dt><dd class="mono">{facts.path || DASH}</dd></div>
+      </dl>
+  {/if}
+</section>

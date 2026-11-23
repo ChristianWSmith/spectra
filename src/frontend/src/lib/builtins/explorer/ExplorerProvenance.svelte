@@ -7,7 +7,7 @@
   import { fmtDate, fmtInt } from '../../fmt.js';
   import StatusChip from '../../components/StatusChip.svelte';
 
-  let { context } = $props();
+  let { spectra, context } = $props();
 
   let prov = $state(null);
   let provError = $state('');
@@ -16,9 +16,8 @@
 
   function loadProv(id) {
     const my = ++provGen;
-    prov = null;
     provError = '';
-    getProvenance(id)
+    spectra.track(getProvenance(id))
       .then((p) => {
         if (my === provGen) prov = p;
       })
@@ -47,7 +46,8 @@
   });
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.importDetails}</h2>
   {#if provError}
     <p class="error" role="alert">

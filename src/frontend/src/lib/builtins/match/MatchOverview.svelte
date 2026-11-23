@@ -67,7 +67,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    ready = false;
     load(matchId).then(
       (res) => {
         if (!live) return;
@@ -86,7 +85,8 @@
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
 
-<section class="match-overview">
+<section class="match-overview" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if ready}
     <div class="stat-grid">
       {#each cards as c (c.key)}

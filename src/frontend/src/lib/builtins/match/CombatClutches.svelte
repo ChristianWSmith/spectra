@@ -12,7 +12,6 @@
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
   import { loadCombatSide } from './combatdata.js';
   import { clutchKillTicks } from './combatmodel.js';
 
@@ -21,8 +20,6 @@
 
   let clutches = $state([]);
   let error = $state('');
-  // Rung 3 of the loading ladder: transient, never seeded.
-  let loading = $state(true);
   let players = $state([]);
   let sideSwitches = $state(0);
   let rounds = $state([]);
@@ -70,7 +67,7 @@
   $effect(() => {
     const matchId = id;
     let live = true;
-    Promise.all([getClutches(matchId), loadCombatSide(matchId)])
+    spectra.track(Promise.all([getClutches(matchId), loadCombatSide(matchId)]))
       .then(([cl, side]) => {
         if (!live) return;
         clutches = cl || [];
@@ -79,12 +76,10 @@
         rounds = side.rounds;
         tickRate = side.tickRate;
         error = '';
-        loading = false;
       })
       .catch((e) => {
         if (live) {
           error = errText(e);
-          loading = false;
         }
       });
     return () => (live = false);
@@ -124,6 +119,8 @@
     spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if error}
   <p class="error" role="alert">
@@ -134,9 +131,6 @@
   </p>
 {/if}
 
-{#if loading}
-  <p class="muted" role="status"><StatusChip block detail={S.combat.loadingDetail} /></p>
-{:else}
   <section class="panel comb-sec">
     <h2>{S.combat.clutchesHeading}</h2>
     <!-- Outcome TOGGLES: each flips its own boolean. Local state only, never
@@ -222,4 +216,4 @@
       </div>
     {/if}
   </section>
-{/if}
+</div>

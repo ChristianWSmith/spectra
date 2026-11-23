@@ -33,7 +33,7 @@
     if (newPlayer) defs = new Map();
     if (newPlayer) reads = new Map();
     if (!sid) return;
-    listMetrics()
+    spectra.track(listMetrics())
       .then((rows) => loadSeeds(spectra, SEEDS, rows || [], errText))
       .then((loaded) => {
         if (live) {
@@ -64,7 +64,8 @@
   }
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.profiles.mapsHeading}</h2>
   <table class="data-table">
     <thead>

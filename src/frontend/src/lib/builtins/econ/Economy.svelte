@@ -68,7 +68,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    state = null;
     load(matchId).then(
       (d) => {
         if (live) state = d;
@@ -85,21 +84,23 @@
   });
 </script>
 
-{#if state}
-  <div class="view econ-view">
-    <div class="econ-head">
-      <span class="muted">{state.rows.length}{state.rows.length === 1 ? ' round' : ' rounds'}</span>
-      <span class="spacer"></span>
-      <span class="muted econ-head-note">{S.economy.headNote}</span>
-    </div>
+<div class="view econ-view" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
+  {#if state}
+      <div class="econ-head">
+        <span class="muted">{state.rows.length}{state.rows.length === 1 ? ' round' : ' rounds'}</span>
+        <span class="spacer"></span>
+        <span class="muted econ-head-note">{S.economy.headNote}</span>
+      </div>
 
-    <spectra.Child name="builtin-economy-curve" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
-    <spectra.Child name="builtin-economy-cards" props={{ rows: state.rows, rounds: state.rounds, names: state.names, back }} />
-    <spectra.Child name="builtin-economy-rounds" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
-  </div>
-{:else}
-  <p class="muted" role="status">{S.economy.loading}</p>
-{/if}
+      <spectra.Child name="builtin-economy-curve" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
+      <spectra.Child name="builtin-economy-cards" props={{ rows: state.rows, rounds: state.rounds, names: state.names, back }} />
+      <spectra.Child name="builtin-economy-rounds" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
+
+  {:else}
+    <p class="muted" role="status">{S.economy.loading}</p>
+  {/if}
+</div>
 
 <style>
   /* A tab root sits in a display: contents frame, so it is a flex item of the

@@ -94,7 +94,8 @@
   });
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.economy.colRounds}</h2>
   {#if rows.length === 0}
     <p class="muted" role="status">{S.economy.noRounds}</p>

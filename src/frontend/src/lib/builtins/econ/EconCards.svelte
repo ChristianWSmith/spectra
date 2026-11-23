@@ -77,7 +77,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    reads = {};
     if (matchId == null) return;
     Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
       if (!live) return;
@@ -178,7 +177,8 @@
   }
 </script>
 
-<div class="econ-summary stat-grid">
+<div class="econ-summary stat-grid" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   {#each cards as c (c.key)}
     {#if c.drill}
       <button class="stat-cell" title={c.title} onclick={() => drill(c.drill)}>

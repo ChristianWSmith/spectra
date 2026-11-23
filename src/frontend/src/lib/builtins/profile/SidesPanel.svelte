@@ -33,7 +33,7 @@
     if (newPlayer) defs = new Map();
     if (newPlayer) reads = new Map();
     if (!sid) return;
-    listMetrics()
+    spectra.track(listMetrics())
       .then((rows) => loadSeeds(spectra, SEEDS, rows || [], errText))
       .then((loaded) => {
         if (live) {
@@ -51,7 +51,8 @@
   const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
 </script>
 
-<section class="panel prof-sides">
+<section class="panel prof-sides" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.profiles.sidesHeading}</h2>
   <table class="data-table">
     <thead>

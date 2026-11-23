@@ -27,7 +27,7 @@
 
   $effect(() => {
     let live = true;
-    listMetrics()
+    spectra.track(listMetrics())
       .then((defs) => {
         if (live) trendDefs = defs || [];
       })
@@ -63,7 +63,6 @@
     const sid = steamId;
     const m = metric;
     const my = ++trendGen;
-    trend = [];
     trendError = '';
     if (!sid) return;
     getCareerTrend(sid, m)
@@ -128,7 +127,8 @@
   });
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <div class="row-between">
     <h2>{S.profiles.trendHeading}</h2>
     <!-- The trend's metric picker: ANY match-scope metric the catalog carries,

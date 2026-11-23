@@ -43,7 +43,7 @@
     let live = true;
     if (newPlayer) reads = new Map();
     if (!sid) return;
-    Promise.all([listMetrics(), getProfile(sid)])
+    spectra.track(Promise.all([listMetrics(), getProfile(sid)]))
       .then(async ([rows, profile]) => {
         if (!live) return;
         loadError = '';
@@ -61,6 +61,8 @@
     return () => (live = false);
   });
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if loadError}
   <p class="error" role="alert">{S.profiles.careerErrorLead}{loadError}</p>
@@ -96,3 +98,4 @@
     {/each}
   </div>
 {/if}
+</div>

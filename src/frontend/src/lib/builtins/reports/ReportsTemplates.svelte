@@ -10,7 +10,7 @@
   import * as S from '../../strings/index.js';
   import { findTemplate } from './shared.js';
 
-  let { context, m, embedded = false } = $props();
+  let { spectra, context, m, embedded = false } = $props();
 
   const matchId = $derived(context.matchId || 0);
   const tpl = $derived(findTemplate(m.templates, m.tplId));
@@ -33,10 +33,10 @@
     const catalog = new Map((m.metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
     const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter((d) => d && (d.scope || 'match') === 'match');
     const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
-    Promise.all([
+    spectra.track(Promise.all([
       getScoreboard(id, '', false),
       matchDefs.length ? getMetricValuesForMatch(id, matchDefs.map((d) => d.id)) : Promise.resolve([]),
-    ])
+    ]))
       .then(([rows, values]) => {
         if (!live) return;
         const sb = {};
@@ -60,7 +60,8 @@
   });
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.reports.templateAndTarget}</h2>
   {#if m.docError}
     <!-- The one error slot for render + save (cancel stays silent). -->

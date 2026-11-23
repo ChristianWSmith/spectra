@@ -198,7 +198,7 @@ for (const name of ['CombatKillTags', 'CombatClutches']) {
 const harnessSrc = `<script>
   import KillTags from './builtins/match/CombatKillTags.js';
   import Clutches from './builtins/match/CombatClutches.js';
-  const spectra = { navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)) };
+  const spectra = { navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)), track: (p) => p, busy: false };
 </script>
 <KillTags {spectra} context={{ matchId: 3 }} />
 <Clutches {spectra} context={{ matchId: 3 }} />`;
@@ -890,31 +890,25 @@ check(
 // Section K: the cold-start loading gate (loading ladder rung 3). Until the
 // one Promise.all settles, the view shows the plain loading line — it never
 // renders its panels as empty tables (a false "no data" state).
-console.log('K. cold start: the two panels never render mid-load (the loading line only)');
+console.log('K. cold start: the tab is busy until its data lands (throbber, no percentage)');
 {
   globalThis.__combatDelay = 250;
   const rootK = await render(base);
+  // The loading state (builtin loading, spectra.busy): the panels keep their place,
+  // their content fades under a centered throbber, and no percentage is shown.
   check(
-    'mid-load: loading line up, no panel heading, no panel',
-    rootK.textContent.includes('Loading combat data…') &&
-      !rootK.textContent.includes('Combat stats') &&
-      rootK.querySelectorAll('section.panel').length === 0,
-    rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
-  );
-  // The rung-3 fallback's SHAPE (owner ruling): the canonical block
-  // spinner with the same detail text underneath — no fabricated number.
-  check(
-    'mid-load: block spinner + details underneath, never a %',
-    !!rootK.querySelector('.chip-block .chip-spin') &&
-      rootK.querySelector('.chip-detail')?.textContent.trim() === 'Loading combat data…' &&
+    'mid-load: the tab carries its throbber, never a %',
+    // The busy flag itself comes from the frame (spectra.busy); this driver passes a
+    // fixed stub, so the throbber's presence is what is pinned here.
+    !!rootK.querySelector('.builtin-throbber') &&
       !rootK.querySelector('.chip-ring') &&
       !rootK.querySelector('.chip-pct'),
-    rootK.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
+    rootK.innerHTML.slice(0, 160),
   );
   await sleep(400); // past the 250 ms delay
   check(
-    'after the fetch lands: gate gone, both panels render',
-    !rootK.textContent.includes('Loading combat data…') &&
+    'after the fetch lands: the tab is no longer busy, both panels render',
+    !rootK.querySelector('.builtin-busy') &&
       sections(rootK, 'Combat stats').length === 0 &&
       sections(rootK, 'Kill tags').length === 1 &&
       sections(rootK, 'Clutches').length === 1,

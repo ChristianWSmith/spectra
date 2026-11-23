@@ -429,6 +429,19 @@ console.log('G. panel registry');
 check('the six panels are Svelte builtins in builtins/match', Object.keys(panels).length === 6 && ['MatchOverview', 'MatchRosters', 'MatchScoreboard', 'MatchRounds', 'MatchDetails', 'MatchFacts'].every((n) => existsSync(resolve(MATCH_DIR, n + '.svelte'))));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
+// --- H. loading: a panel whose read is in flight keeps its root and shows the throbber -----
+console.log('H. loading state');
+const held = [];
+const pendingReads = { ...reads, componentQuery: () => new Promise((r) => held.push(r)) };
+root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props: BACK, reads: pendingReads });
+const busyRoot = root.querySelector('.match-overview');
+check('while the read is in flight, the root is busy and shows the throbber',
+  !!busyRoot && busyRoot.classList.contains('builtin-busy') && busyRoot.getAttribute('aria-busy') === 'true' && !!busyRoot.querySelector(':scope > .builtin-throbber'));
+held.forEach((r) => r({ columns: [], rows: [] }));
+await settle();
+check('once the read settles, the root is no longer busy',
+  !root.querySelector('.match-overview').classList.contains('builtin-busy'));
+
 unmountAll();
 console.log(failures === 0 && escaped.length === 0 ? 'ALL PASS' : `FAILURES: ${failures}, escaped: ${escaped.length}`);
 process.exit(failures === 0 && escaped.length === 0 ? 0 : 1);

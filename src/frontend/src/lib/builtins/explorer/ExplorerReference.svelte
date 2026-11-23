@@ -7,7 +7,7 @@
   import { getProvenance } from '../../services.js';
   import { fmtInt } from '../../fmt.js';
 
-  let { context } = $props();
+  let { spectra, context } = $props();
 
   const REF_BULLETS = [
     S.library.refUserCommands,
@@ -23,8 +23,7 @@
     const id = context.matchId;
     if (!id) return;
     const my = ++provGen;
-    prov = null;
-    getProvenance(id)
+    spectra.track(getProvenance(id))
       .then((p) => {
         if (my === provGen) prov = p;
       })
@@ -36,7 +35,8 @@
   });
 </script>
 
-<section class="panel expl-ref">
+<section class="panel expl-ref" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.networkMessages}</h2>
   <p class="muted">
     <strong>639</strong>{S.library.protobufTypes}

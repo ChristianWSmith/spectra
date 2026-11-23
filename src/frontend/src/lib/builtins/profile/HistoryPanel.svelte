@@ -34,11 +34,10 @@
     reload;
     const sid = steamId;
     let live = true;
-    history = [];
     matchReads = new Map();
     loadError = '';
     if (!sid) return;
-    Promise.all([listMetrics(), getProfile(sid)])
+    spectra.track(Promise.all([listMetrics(), getProfile(sid)]))
       .then(async ([rows, profile]) => {
         if (!live) return;
         const catalog = new Map((rows || []).map((d) => [d.name, d]));
@@ -72,6 +71,8 @@
 
   const halfText = (p) => (p.kind === 'value' ? fmtInt(p.value) : '—');
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if loadError}
   <p class="error" role="alert">{loadError}</p>
@@ -137,3 +138,4 @@
     </table>
   </div>
 </section>
+</div>

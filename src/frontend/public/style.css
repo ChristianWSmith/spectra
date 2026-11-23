@@ -935,6 +935,40 @@ mark {
   }
 }
 
+/* Builtin loading: while a builtin reads (spectra.busy), its root keeps its
+   size and position, its content fades out in place, and a centered throbber
+   shows over it. A root is the element with .builtin-busy; the throbber is its
+   direct child .builtin-throbber. Every descendant fades, not just the direct
+   children: a nested frame is display: contents, and opacity does nothing on a
+   box-less element. Opacity, not visibility, so a nested builtin's throbber
+   inside a hidden region stays hidden with its parent. */
+.builtin-busy {
+  position: relative;
+}
+
+.builtin-busy :not(.builtin-throbber) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.builtin-throbber {
+  display: none;
+}
+
+.builtin-busy > .builtin-throbber {
+  display: block;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--divider);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: chip-spin 0.9s linear infinite;
+}
+
 /* --- Tables ---------------------------------------------------------------- */
 
 .table-scroll {

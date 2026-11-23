@@ -69,7 +69,7 @@
   // The template list (mount AND tplError's Retry).
   async function loadTemplates() {
     try {
-      const t = (await listReportTemplates()) || [];
+      const t = (await spectra.track(listReportTemplates())) || [];
       m.templates = t;
       if (t.length && !t.some((x) => x.id === m.tplId)) m.tplId = t[0].id;
       m.tplError = '';
@@ -83,7 +83,7 @@
   // from one attempt.
   async function loadMetricsList() {
     try {
-      const [rows, states] = await Promise.all([listMetrics(), getMetricComputeState()]);
+      const [rows, states] = await spectra.track(Promise.all([listMetrics(), getMetricComputeState()]));
       m.metrics = rows || [];
       m.metricStates = new Map((states || []).map((s) => [s.metricId, s]));
       m.metricsError = '';
@@ -133,6 +133,9 @@
   });
 
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 <spectra.Child name="builtin-reports-templates" props={{ m, embedded }} />
 <spectra.Child name="builtin-reports-appendix" props={{ m }} />
+</div>

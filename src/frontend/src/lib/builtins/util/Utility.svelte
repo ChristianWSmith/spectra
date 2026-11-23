@@ -77,7 +77,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    data = null;
     load(matchId).then(
       (d) => {
         if (live) data = d;
@@ -101,17 +100,19 @@
   );
 </script>
 
-{#if data}
-  <div class="view util-view">
-    <spectra.Child name="builtin-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
-    <div class="util-summary">
-      <spectra.Child name="builtin-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
-      <spectra.Child name="builtin-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
-    </div>
-  </div>
-{:else}
-  <p class="muted" role="status">{S.utility.loading}</p>
-{/if}
+<div class="view util-view" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
+  {#if data}
+      <spectra.Child name="builtin-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
+      <div class="util-summary">
+        <spectra.Child name="builtin-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
+        <spectra.Child name="builtin-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
+      </div>
+
+  {:else}
+    <p class="muted" role="status">{S.utility.loading}</p>
+  {/if}
+</div>
 
 <style>
   /* A tab root sits in a display: contents frame, so it is a flex item of the

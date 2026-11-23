@@ -30,7 +30,7 @@
   // Nested mount (04 §3.5, ruling 36): `spectra.Child` mounts a child
   // component inside this frame (components/ChildFrame.svelte), which gets
   // this frame's context and its own frame for its own failures.
-  import { getContext, setContext } from 'svelte';
+  import { getContext, setContext, untrack } from 'svelte';
   import * as S from '../strings/index.js';
   import { errText } from '../services.js';
   import { loadComponent } from '../componentruntime/compile.js';
@@ -76,9 +76,33 @@
   // One read API per mounted frame (its failures belong to this frame).
   // svelte-ignore state_referenced_locally
   const api = createReadApi({ reads: reads || serviceReads, report, nav, context: () => ctx });
+  // Reads in flight for this frame. A builtin shows its throbber over its
+  // content while they run (spectra.busy), so a swap of data keeps the space
+  // and hides the old values until the new ones arrive.
+  let pending = $state(0);
+  // untrack: a read started inside an effect must not make that effect depend on
+  // the counter it moves.
+  const tracked = (read) => (...args) => {
+    untrack(() => pending++);
+    return read(...args).finally(() => {
+      untrack(() => pending--);
+    });
+  };
   // The `spectra` value a component receives: the read API plus the
-  // nested mount component.
-  const spectra = Object.freeze({ ...api, Child: ChildFrame });
+  // nested mount component, and whether a read is in flight.
+  const spectra = Object.freeze({
+    ...api,
+    metric: tracked(api.metric),
+    query: tracked(api.query),
+    metricsByMatch: tracked(api.metricsByMatch),
+    // track(promise): a load the component runs through its own services counts
+    // as a read in flight, the same as spectra.metric/query.
+    track: tracked((p) => p),
+    get busy() {
+      return pending > 0;
+    },
+    Child: ChildFrame,
+  });
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 

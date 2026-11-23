@@ -31,8 +31,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    match = null;
-    voice = null;
     Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
       ([m, v]) => {
         if (live) {
@@ -65,36 +63,37 @@
   }
 </script>
 
-{#if match}
-  <section class="panel">
-    <dl class="facts">
-      <div>
-        <dt>{COPY.factVoice}</dt>
-        <dd>
-          {#if !voice}
-            <span class="muted">{DASH}</span>
-          {:else if voice.hasVoice}
-            <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}><span class="codicon codicon-unmute"></span> {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span>
-          {:else}
-            <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
-          {/if}
-        </dd>
-      </div>
-      <div class="fact-wide">
-        <dt>{COPY.factDemoCopy}</dt>
-        <dd>
-          {#if match.copyState === 'copied'}
-            <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
-            <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}>{copyBusy ? COPY.freeing : COPY.freeCopy}</button>
-          {:else if match.copyState === 'external'}
-            <span class="muted">{COPY.copyExternal}</span>
-          {:else if match.copyState === 'missing'}
-            <span class="muted">{COPY.copyMissing}</span>
-          {:else}
-            <span class="muted">{DASH}</span>
-          {/if}
-        </dd>
-      </div>
-    </dl>
-  </section>
-{/if}
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
+  {#if match}
+      <dl class="facts">
+        <div>
+          <dt>{COPY.factVoice}</dt>
+          <dd>
+            {#if !voice}
+              <span class="muted">{DASH}</span>
+            {:else if voice.hasVoice}
+              <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}><span class="codicon codicon-unmute"></span> {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span>
+            {:else}
+              <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
+            {/if}
+          </dd>
+        </div>
+        <div class="fact-wide">
+          <dt>{COPY.factDemoCopy}</dt>
+          <dd>
+            {#if match.copyState === 'copied'}
+              <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
+              <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}>{copyBusy ? COPY.freeing : COPY.freeCopy}</button>
+            {:else if match.copyState === 'external'}
+              <span class="muted">{COPY.copyExternal}</span>
+            {:else if match.copyState === 'missing'}
+              <span class="muted">{COPY.copyMissing}</span>
+            {:else}
+              <span class="muted">{DASH}</span>
+            {/if}
+          </dd>
+        </div>
+      </dl>
+  {/if}
+</section>

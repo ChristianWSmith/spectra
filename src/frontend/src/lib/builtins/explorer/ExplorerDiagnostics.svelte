@@ -6,7 +6,7 @@
   import { fmtInt } from '../../fmt.js';
   import StatusChip from '../../components/StatusChip.svelte';
 
-  let { context } = $props();
+  let { spectra, context } = $props();
 
   let entities = $state(null);
   let entError = $state('');
@@ -14,9 +14,8 @@
 
   function loadEnt(id) {
     const my = ++entGen;
-    entities = null;
     entError = '';
-    getEntitySummary(id)
+    spectra.track(getEntitySummary(id))
       .then((s) => {
         if (my === entGen) entities = s;
       })
@@ -32,7 +31,8 @@
   });
 </script>
 
-<section class="panel">
+<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.advancedDiagnostics}</h2>
   {#if entError}
     <p class="error" role="alert">

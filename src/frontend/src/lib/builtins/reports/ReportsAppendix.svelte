@@ -20,7 +20,7 @@
   import * as S from '../../strings/index.js';
   import { findTemplate, reportFilename, targetReady, compositeText } from './shared.js';
 
-  let { context, m } = $props();
+  let { spectra, context, m } = $props();
 
   const matchId = $derived(context.matchId || 0);
   const tpl = $derived(findTemplate(m.templates, m.tplId));
@@ -82,11 +82,11 @@
     for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
     for (const r of rawSel) pending[r.id] = { loading: true, raw: r };
     appendix = pending;
-    Promise.all([
+    spectra.track(Promise.all([
       sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
       getPlayerRefs(mid),
       rawSel.length ? getScoreboard(mid, '', false) : Promise.resolve(null),
-    ])
+    ]))
       .then(([values, refs, board]) => {
         if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
@@ -224,6 +224,8 @@
 
   const canSave = $derived(targetReady(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }));
 </script>
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if m.metricsError}
   <p class="error" role="alert">
@@ -286,6 +288,7 @@
   {/each}
 {/if}
 </section>
+</div>
 
 <style>
   .rep-metric {

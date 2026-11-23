@@ -76,7 +76,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    data = null;
     load(matchId).then(
       (d) => {
         if (live) data = d;
@@ -120,6 +119,8 @@
   {/if}
 {/snippet}
 
+<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
 {#if data}
   <div class="table-scroll">
     <table class="data-table">
@@ -192,3 +193,4 @@
     </button>
   {/if}
 {/if}
+</div>

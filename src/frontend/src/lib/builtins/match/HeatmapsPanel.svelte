@@ -555,7 +555,8 @@
   }
 </script>
 
-<div class="view heat-view" style="--heat-aspect: {heatAspect}">
+<div class="view heat-view" style="--heat-aspect: {heatAspect}" class:builtin-busy={spectra.busy || loading} aria-busy={spectra.busy || loading}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if error}
     <p class="error" role="alert">
       {error}

@@ -60,7 +60,6 @@
   $effect(() => {
     const matchId = context.matchId;
     let live = true;
-    data = null;
     sortStack = [{ key: 'kills', desc: true }];
     load(matchId).then(
       (d) => {
@@ -109,42 +108,43 @@
   }
 </script>
 
-{#if data}
-  <div class="table-scroll">
-    <table class="data-table scoreboard">
-      <thead>
-        <tr>
-          <th scope="col" class="num" aria-sort={ariaSort('name')}><button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button></th>
-          <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button></th>
-          <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button></th>
-          {#each COLUMNS as c (c.metric)}
-            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
-          {/each}
-        </tr>
-      </thead>
-      <tbody>
-        {#each sorted as p (p.steam)}
-          {@const cls = startClass(p.side, data.switches)}
-          <tr class="clickable" tabindex="0"
-            onclick={(e) => { if (e.target instanceof Element && e.target.closest('button, a')) return; follow(p.steam); }}
-            onkeydown={(e) => { if (e.key === 'Enter') follow(p.steam); }}
-          >
-            <td class="num name-cell {cls}">
-              {#if isSteam(p.steam)}
-                <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
-              {:else}
-                {p.name}
-              {/if}
-            </td>
-            <td class="num"><span class="chip {cls}">{p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}</span></td>
-            <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td>
+<div class="table-scroll" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+  <span class="builtin-throbber" aria-hidden="true"></span>
+  {#if data}
+      <table class="data-table scoreboard">
+        <thead>
+          <tr>
+            <th scope="col" class="num" aria-sort={ariaSort('name')}><button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button></th>
+            <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button></th>
+            <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button></th>
             {#each COLUMNS as c (c.metric)}
-              {@const u = data.byMetric.get(c.metric)}
-              <td class="num" title={u.error || undefined}>{cellText(u, p.steam, c.format)}</td>
+              <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
             {/each}
           </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
-{/if}
+        </thead>
+        <tbody>
+          {#each sorted as p (p.steam)}
+            {@const cls = startClass(p.side, data.switches)}
+            <tr class="clickable" tabindex="0"
+              onclick={(e) => { if (e.target instanceof Element && e.target.closest('button, a')) return; follow(p.steam); }}
+              onkeydown={(e) => { if (e.key === 'Enter') follow(p.steam); }}
+            >
+              <td class="num name-cell {cls}">
+                {#if isSteam(p.steam)}
+                  <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
+                {:else}
+                  {p.name}
+                {/if}
+              </td>
+              <td class="num"><span class="chip {cls}">{p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}</span></td>
+              <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td>
+              {#each COLUMNS as c (c.metric)}
+                {@const u = data.byMetric.get(c.metric)}
+                <td class="num" title={u.error || undefined}>{cellText(u, p.steam, c.format)}</td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+  {/if}
+</div>
