@@ -11,14 +11,18 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 | 2026-11-22 | OT `money_start` takes the player's first tick of the round (option B) | S02 |
 | 2026-11-22 | Presence rule: safe option. Absence is absence; no inference from the last row | S21, PATH |
 | 2026-11-22 | Speed is absorbed into encounters, not the tick table | PATH |
-| 2026-11-22 | Keep list only: ancient, anubis, cache, dust2, inferno, mirage, nuke, overpass, train, vertigo. Radar, world collision and bundled frontend packs are limited to it; all keep-list maps decode as KV3 v5 | PATH, GUI-VERIFICATION |
+| 2026-11-22 | Keep list only: ancient, anubis, cache, dust2, inferno, mirage, nuke, overpass, train, vertigo. Radar, render geometry and bundled frontend packs are limited to it. Binary KV3 versions 4 and 5 are both read (version 4 for shared props) | PATH, GUI-VERIFICATION |
 | 2026-11-22 | Seed rule: a shot seeds an encounter only with line of sight to an enemy at that tick. The window extends while the pair stays visible and alive, within the round. Shots already inside an existing window of the same shooter are skipped | S18 |
 | 2026-11-22 | Enemy sample is a bounding box: 32 wide, centred on the origin, top at eye height + 8 (64 standing, 46 crouching) | S18 |
 | 2026-11-22 | Canonical aim point is the opponent's eye (their head). Encounter samples store shooter eye, enemy eye and enemy world position per tick; the body midpoint is derivable from eye and world | S18, PATH |
-| 2026-11-22 | Props and entities are dropped from the code | S18, S07 |
 | 2026-11-22 | `spectra -extract [-cs2 <dir>]` runs every extractor. `spectra -import <demo>` extracts first when assets are missing | S18, GUI-VERIFICATION |
-| 2026-11-22 | Import is refused until the map packs, icons, sounds and keep-list world-collision caches exist (`ImportPaths`) | GUI-VERIFICATION |
-| 2026-11-22 | The encounter build runs at import (decided; not yet wired). `SaveEncounters` / `GetEncounters` exist | this file, GUI-VERIFICATION item 8 |
+| 2026-11-22 | Import is refused until the map packs, icons, sounds and keep-list render-geometry caches exist (`ImportPaths`) | GUI-VERIFICATION |
+| 2026-11-22 | The encounter build runs at import (wired). Encounter tables are windows with their samples; encounters reference their window (S18) | S18, GUI-VERIFICATION item 8 |
+| 2026-11-22 | Sight-line geometry is the map's render geometry, not the collision mesh. Collision is incomplete on several maps (its bounds fall short of the world resource's). Render geometry clears all 946 kills on the seven maps with kills | S18 |
+| 2026-11-22 | Dynamic entities (doors, breakables, moving brushes, physics and dynamic props) are excluded from sight-line geometry, a conservative choice. This reverses the earlier "props dropped" ruling for static world props, which are now in. Owner to confirm | S18 |
+| 2026-11-22 | See-through materials excluded: smoke and steam effects, light shafts, puddles, glass. Borderline materials (foliage, decals, cloth, wire, grates, tools) stay in | S18 |
+| 2026-11-22 | S21 presence ruling: safe option, absence is absence | S21 |
+| 2026-11-23 | Backlog pushed forward by subagents on isolated worktrees (S03, S05, S06, S12, S13); results are reviewed before merge | this file |
 | 2026-11-22 | VRF is MIT-licensed. Its license is in `src/internal/source2/LICENSE-VRF.txt`, and the reader carries attribution | source2 headers |
 | 2026-11-22 | The CS2 install is now required for the app (the "no install required" wording must change) | GUI-VERIFICATION |
 | 2026-11-22 | GUI verification is deferred to a later batch, documented in GUI-VERIFICATION.md | GUI-VERIFICATION |
@@ -35,11 +39,13 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 | Encounters with the visibility rule (bounding box) | 2,407 seeds from 23,334 shots; 1.8% of tick rows covered | S18 |
 | Kill clear line, last frame before kill: centre sample / bounding box | 80.2% / 90.3% | S18 |
 | Blocked kills explained by a flag | 25 wallbang, 4 HE grenade, 2 Molotov | S18 |
+| Render geometry, production policy, seven maps with kills (946 kills) | both clear 946 minus render-only; collision-only 0 on every map; render clears all 946 | S18 |
+| de_cache encounters on the render geometry (scratch import) | 350 windows, 502 encounters, 20,259 samples (collision version: 252, 370, 15,337) | S18 |
 | Unexplained kills (36 of 1,043) | long range (median about 21 m), 27 on ancient, inferno, mirage; AK-47 16; none penetrated; doors do not explain them; blocking in the largest structural meshes | S18, GUI-VERIFICATION item 7 |
 | Event `distance` field | metres (39.3 units per metre) | S18 |
 | Unexplained kills after 3 s look-back | 33 of 36 still blocked | S18 |
 | Viewpoint storage | about 3 MB per 7-match snapshot (9 floats per tick) | S18 |
-| Radar agreement | weak (58% floor vs 32% random); scale sweep does not peak at the stated transform: inconclusive | S07, PATH |
+| Radar agreement (superseded by the render-geometry check on the same question) | weak (58% floor vs 32% random); scale sweep does not peak at the stated transform: inconclusive | S07, PATH |
 | Spawn on walkable floor | 30 of 30 on the 23 maps with overviews | S07, PATH |
 | World collision | 1,543,751 triangles, 11 meshes on de_cache; all 10 keep maps extract | S07, GUI-VERIFICATION |
 | Raycast against brute force | 0 disagreements on 1,650 mesh queries; about 330k segments/s mixed, 516k/s unblocked | S07 |
@@ -57,7 +63,10 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 ## Open items (not decided)
 
 - Whether to chase the roughly 33 unexplained long-range blocks further (GUI overlay first).
-- Props and entities: placements are wrong (0.4% kill clear-lines with props on). Dropped.
+- Dynamic entities: excluded (see the rulings table). Static world props are in the render geometry, placed by their scene transforms. Confirm the policy.
+- S18 and the 36 unexplained kills: superseded. Render geometry clears all 946 kills on the seven maps with kills; the 36 were blocked by incomplete collision and dynamic props.
+- De_overpass, de_train and de_vertigo have no kills in the corpus; their render geometry is checked against stored bounds and by eye only.
 - Competitive-pool list confirmed by owner; no further cuts pending.
+- S08 needs a library of 50 or more matches. Not available here (the local library has 4 matches). Blocks the library-scale acceptance of S09, S10 and S17, and the baseline for S14.
 - Wipe and re-import needed for the kill-tags rename, the post-match tick discard, the money fix and the new collision caches.
 - S08 (library of 50+ matches), S05 and S16: blocked or deferred.

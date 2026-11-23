@@ -34,19 +34,15 @@ Check:
   behaviour and decide whether to migrate.
 - Re-import (wipe) required for existing libraries (no migration before v1).
 
-## 3. Visual check of the keep-list world collision (GUI or debug tool)
+## 3. Visual check of the keep-list render geometry (GUI or debug tool)
 
-Change: `mappack.ExtractWorldCollision` writes `<map>.worldcol` for the ten keep
-maps (ancient, anubis, cache, dust2, inferno, mirage, nuke, overpass, train,
-vertigo).
+Change: `mappack.ExtractRenderGeometry` writes `<map>.render` (and `.mats`) for the ten keep
+maps. The encounter sight lines use this geometry. Collision (`.worldcol`) is no longer used.
 
-Check: overlay the collision triangles on the radar for each keep map. Expect
-walkable floor to sit on the drawn map. Automated proxies were inconclusive:
-- Spawns lie under up-facing triangles on all 23 maps with overviews (30 of 30).
-- Radar-mask agreement is weak (58% floor vs 32% random). A scale sweep does not
-  peak at the stated transform.
-
-Only a visual check settles this.
+Check: `spectra-overlays` side-by-side renders (`de_train-prod`, `de_overpass-prod`,
+`de_vertigo-prod`, `anubis-steep`) and a live replay of one encounter. Pass: the walls, floors and
+props line up with the game. Fail: a solid wall the game lets you see through, or a gap the
+game does not have.
 
 ## 4a. CLI flows (no GUI, but a new user path)
 
@@ -54,23 +50,20 @@ Only a visual check settles this.
   assets are missing). Tested headless. A GUI check should confirm the import gate
   error text and the first-run extraction prompt.
 
-## 4. Encounter visibility (no GUI yet, but review needed)
+## 4. Encounter visibility (review needed)
 
-Change: `internal/encounter` builds shot-seeded windows with a bounding-box
-sample (top at eye height + 8, width 32 centred on the origin).
+Change: encounters are built from the render geometry, with the smoke, glass and dynamic-entity
+exclusions (see S18). Numbers on the scratch de_cache import: 350 windows, 502 encounters,
+20,259 samples.
 
-Results on the 7-match snapshot:
-- Seeds 2,407 of 23,334 shots. Covered tick rows 1.8%.
-- Killer line clear at the last frame before a kill: 90.3% (from 80% with the
-  centre sample). 81 kills remain blocked without a wallbang flag. Unexplained.
+Owner review: is the exclusion policy (dynamic entities out, glass out, borderline materials in)
+acceptable? Borderline materials and their triangle counts are listed in S18.
 
-Owner review: is the 1.8% coverage acceptable, and is the 81 unexplained blocks
-acceptable? No GUI needed to decide, but it needs your judgment.
+## 5. Props and entities: partly reinstated
 
-## 5. Props and entities: dropped
-
-Removed from the code. Placements were wrong (0.4% kill clear-lines with props),
-so nothing in the visibility path uses them. No GUI check.
+Change: static world props and placed entity models are in the render geometry. Dynamic entities
+(doors, breakables, moving brushes, physics props) are out. This reverses the earlier "props dropped"
+ruling. Owner to confirm.
 
 ## 6. Previously deferred GUI items (unchanged)
 
@@ -85,25 +78,21 @@ so nothing in the visibility path uses them. No GUI check.
 - Cutting radar and frontend support for non-keep maps: owner has not decided.
 - Merge to main: not this session.
 
-## 7. Unexplained kills overlay (new)
+## 7. Unexplained kills (superseded)
 
-Change: 36 bullet kills (no wallbang, no smoke, no penetration) are blocked by the
-main structural meshes on ancient, inferno and mirage (see S18, "Unexplained kills,
-characterized").
+The 36 kills that collision blocked are cleared by the render geometry (see S18). No overlay check is
+needed for them. The overlay tool still works on any kill.
 
-Check: in a debug overlay, draw the killer-to-victim sight line and the blocking
-mesh for each of the 36. Pass: the blocking geometry is a real solid the kill could
-not have passed. Fail: the blocking is thin or gapped geometry the shot passed
-through, which means the world collision over-blocks.
+## 8. Encounter build at import (wired; re-run needed)
 
-## 8. Encounter build at import (wired)
+Required before this check: run `-extract` (writes the render caches, about 1.2 GB for ten maps), then
+re-import every match. Encounters are derived at import, so old encounter rows are stale.
 
-The encounter build runs at import, after analyze and before the metrics hook. A
-failure is logged and does not fail the import. Verified headless: a de_cache import
-into a fresh library produced 370 encounters and 21,783 samples.
+Scratch check on a fresh data directory: all ten maps extract; a de_cache import gives 350 windows,
+502 encounters and 20,259 samples.
 
-GUI check: an import completes and the match's encounters exist. The import stays
-responsive on a full match. Examples are in `GUI-EXAMPLES.md`, section 4.
+GUI check: an import completes, the match's encounters exist, and the import stays responsive on a full
+match. Examples are in `GUI-EXAMPLES.md`, section 4.
 
 ## 9. Match view: tabs and scroll (frontend change, GUI check)
 

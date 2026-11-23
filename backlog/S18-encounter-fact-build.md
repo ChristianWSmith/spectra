@@ -1,7 +1,7 @@
 # S18 — Encounter fact (build) — NOT IN THIS SPRINT
 
-**Type:** build (deferred)
-**Status:** DEFERRED. Owner has not enqueued it (`source/ENCOUNTER-MANIFESTO.md` header).
+**Type:** build
+**Status:** BUILT on this branch (see the sections below for the design, the render-geometry switch and the validation). Owner enqueued it on 2026-11-22. Its GUI checks are in GUI-VERIFICATION items 4, 8, 10 and 11. Items 3 and 7 there are superseded.
 **Depends on:** S07 (G7), owner enqueue, map geometry extraction (manifesto §7.1)
 **Source:** `source/ENCOUNTER-MANIFESTO.md`
 
