@@ -675,13 +675,15 @@ console.log('H. rung-3 loading lines render the canonical block spinner (never a
     props: { steamId: '76561198000000001', nav: () => {} },
   });
   await sleep(80);
+  // The profile panels mount with the player: while the read is held, they show
+  // their own loading state (the busy frame state, a throbber on each panel), and
+  // no percentage.
   check(
-    'PlayerProfile mid-load: block spinner + "Loading…" underneath',
-    !!h2.querySelector('.chip-block .chip-spin') &&
-      h2.querySelector('.chip-detail')?.textContent.trim() === 'Loading…' &&
+    'PlayerProfile mid-load: the panels are mounted and busy, never a %',
+    h2.querySelectorAll('.builtin-busy').length > 0 &&
       !h2.querySelector('.chip-ring') &&
       !h2.querySelector('.chip-pct'),
-    h2.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
+    h2.innerHTML.slice(0, 160),
   );
   document.body.removeChild(h2);
   bindings.ProfileService.GetProfile = prevGetProfile;

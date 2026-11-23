@@ -49,16 +49,12 @@
 
   // The profile read (mount AND profileError's Retry): the body goes back to
   // "Loading…" for the flight, so a retry never leaves a stale failure on screen.
-  // The steam id the shown profile belongs to (plain: it only gates the clear).
-  let profileFor = null;
+  // The profile is never cleared on a switch: the profile subtree (its panels)
+  // stays mounted, and each panel shows its own loading state while the new
+  // player's data arrives. The header shows only the profile of this player.
   function loadProfile() {
     const sid = steamId;
     const my = ++profileGen;
-    // Clearing the profile unmounts the whole profile subtree (its panels and
-    // their values), so it is cleared only when the player changes. A re-read
-    // of the same player keeps the shown profile until the new one lands.
-    if (sid !== profileFor) profile = null;
-    profileFor = sid;
     profileError = '';
     if (!sid) return;
     getProfile(sid)
@@ -83,6 +79,8 @@
 
   // The Profile component's context: the player, no match or round.
   const profileContext = $derived({ matchId: null, steamId, round: null });
+  // The profile the header names: this player's, once it has loaded.
+  const shownProfile = $derived(profile && profile.steamId === steamId ? profile : null);
 
   // Return trip: where the button points, and how to name it (the default
   // target is the Profiles list, so the label names it; anything else is
@@ -97,9 +95,9 @@
       <span class="codicon codicon-arrow-left"></span>
       {backLabel}
     </button>
-    {#if profile}
-      <h1 class="prof-name">{profile.name || '—'}</h1>
-      <span class="mono muted">{profile.steamId}</span>
+    {#if shownProfile}
+      <h1 class="prof-name">{shownProfile.name || '—'}</h1>
+      <span class="mono muted">{shownProfile.steamId}</span>
     {:else}
       <h1>{S.profiles.h1Player}</h1>
     {/if}
@@ -124,9 +122,11 @@
     </p>
   {/if}
 
-  {#if profile}
+  {#if steamId && !profileError}
     <!-- The Profile view: the placed component(s) when the user has used one as
-         their profile view, else the default Profile component. -->
+         their profile view, else the default Profile component. It mounts with
+         the player, so the panels hold their place while the profile loads, and
+         it leaves with a failed profile read (the error line stands instead). -->
     <SurfaceView surface="profile-view" context={profileContext} {nav}>
       {#snippet fallback()}
         <ComponentFrame component={ProfileView} context={profileContext} {nav} />
