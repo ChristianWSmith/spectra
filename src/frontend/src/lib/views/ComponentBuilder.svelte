@@ -1,4 +1,5 @@
 <script>
+  import { notifyPlacementsChanged } from '../warm.js';
   // The Component builder: the component
   // AUTHORING surface, beside the metric Builder and the Reports builder
   // and in their visual language. A list of components (the built-ins,
@@ -294,6 +295,7 @@
     try {
       await setPlacements(surface, [{ component: viewTarget, props: '{}', hidden: false }]);
       await refreshPlacements();
+      notifyPlacementsChanged(); // re-warm the match and profile views (lib/warm.js)
     } catch (e) {
       actionError = errText(e);
     } finally {
@@ -308,6 +310,7 @@
     try {
       await resetPlacements(surface);
       await refreshPlacements();
+      notifyPlacementsChanged(); // re-warm the match and profile views (lib/warm.js)
     } catch (e) {
       actionError = errText(e);
     } finally {
