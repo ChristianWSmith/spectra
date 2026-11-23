@@ -65,3 +65,16 @@ Owner: the safe option for now. Absence is absence. A player with no row at a
 tick is not present there, and no value is inferred from the last row. Pruning
 that relies on "no row means no change" is not done. Other pruning strategies
 may come later.
+
+## Investigation (2026-11-23): what the "gap" actually is
+
+- Match 4 is `golden/de_dust2.dem.zst` (sha256 matches). It has 17 counted rounds and no round 23.
+- The round 23 case is in match 3, and S02 already says it is a tail difference after round end
+  (last row 100 ticks after end_tick), not a mid-round gap.
+- Across the snapshot, the rows that stop early before round end: 11 player-rounds. 3 are bots
+  (mid-round join or leave). 8 are humans, stopping 167 to 2,178 ticks (about 2.6 to 34 s) before
+  round end. Each of the 8 has a `player_disconnect` event for that player within 640 ticks of the
+  last row, and none has a death near the last row. The 8 are disconnects, not presence gaps.
+- Consequence for the roster rule (S10): it counts a disconnected player as alive until a kill
+  removes them. That is wrong. The roster rule has to remove a player at their disconnect as well.
+- No mid-round internal gaps longer than one second exist in the snapshot's player_ticks.
