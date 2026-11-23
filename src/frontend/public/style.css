@@ -935,20 +935,24 @@ mark {
   }
 }
 
-/* Builtin loading: while a builtin reads (spectra.busy), its root keeps its
-   size and position, its content fades out in place, and a centered throbber
-   shows over it. A root is the element with .builtin-busy; the throbber is its
-   direct child .builtin-throbber. Every descendant fades, not just the direct
-   children: a nested frame is display: contents, and opacity does nothing on a
-   box-less element. Opacity, not visibility, so a nested builtin's throbber
-   inside a hidden region stays hidden with its parent. */
+/* Builtin loading (spectra.busy): while a builtin reads, its root keeps its size
+   and position, its panels stay as empty shells (.panel), their contents are
+   hidden in place, and one centered throbber shows over the outermost busy root.
+   A nested busy root's throbber is hidden under its ancestor's, so spinners
+   never stack. Visibility, not opacity: opacity compounds through the wrappers
+   (frames are display: contents) and would fade the shells with the content. */
 .builtin-busy {
   position: relative;
 }
 
 .builtin-busy :not(.builtin-throbber) {
-  opacity: 0;
-  pointer-events: none;
+  visibility: hidden;
+}
+
+/* The panel cards stay, as empty shells: visibility is inherited, but a
+   descendant can set it back, so a shell shows through its hidden wrappers. */
+.builtin-busy .panel {
+  visibility: visible;
 }
 
 .builtin-throbber {
@@ -958,6 +962,7 @@ mark {
 .builtin-busy > .builtin-throbber {
   display: block;
   position: absolute;
+  z-index: 1;
   inset: 0;
   margin: auto;
   box-sizing: border-box;
@@ -967,6 +972,10 @@ mark {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: chip-spin 0.9s linear infinite;
+}
+
+.builtin-busy .builtin-busy > .builtin-throbber {
+  display: none;
 }
 
 /* --- Tables ---------------------------------------------------------------- */
