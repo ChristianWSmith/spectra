@@ -26,3 +26,20 @@ G3: any column drop (S15, S20) and validation of the rewrites S09, S10, S17.
 
 ## Not covered
 Scale is limited to the snapshot until S08 provides a larger library.
+
+## Result (2026-11-23): PARTIAL, acceptance not met
+
+Built: `src/internal/ablation` (dump, diff per metric/subject/dim, JSON dump files) and an opt-in
+test `TestAblation` (set `ABLATION_SNAPSHOT`, `ABLATION_OUT`, `ABLATION_NAME`; variants via
+`ABLATION_SQL`; `ABLATION_BASELINE` and `ABLATION_EXPECT` for the diff). `go vet` passes; the
+default test run skips it. The snapshot schema matches `schema.sql`.
+
+Not met:
+- Full baseline sweep did not finish after about 970 s. It was stuck in `dmg_no_kill` (id 59), a
+  correlated subquery over `events` and `player_ticks` on the 9.8M-row tick table. This is a
+  performance problem in that metric, not in the harness. The "about 14 s sweep" figure does not hold
+  for this metric on this snapshot. S09 rewrites this metric; its query plan needs looking at first.
+- No zero-diff baseline reproduction and no control-variant run, so the diff tool is unverified against
+  real data.
+
+Next: profile `dmg_no_kill`, then rerun acceptance 1 and 2.
