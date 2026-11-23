@@ -81,3 +81,13 @@ Not verified:
 - Route: the encounter windows are built inside the extraction pass, from values the extractor already holds, not from the sidecar. Speed, weapon and in-air never go through player_ticks or a second file.
 - Consequence: the encounter build moves from the import stage after analysis to the end of the parse, and it needs the render geometry available at extraction time. Failures stay non-fatal, as they are now.
 - Wipe: the same wipe as the money and seed changes.
+
+## Result: in_air, speed, weapon moved (phase 2)
+
+- player_ticks is now state-only: round, side, alive, hp. The columns in_air, speed and weapon are removed from the schema and the writer.
+- encounter_window_samples carries p1/p2 in_air, speed (NULL when not derivable) and weapon (NULL when not sampled) on every tick of a window. Dense; no state-change pruning.
+- Speed is computed by the extractor's window collector from the tick samples of counted frames, with the same rule the writer used, now shared as models.TickSpeed.
+- Scratch de_cache import: 352 windows / 503 encounters / 20,349 samples, unchanged from phase 1. Window speed max 292.5 u/s; in-air on 606 samples.
+- Cross-check against phase 1 is weak: only one window tick coincides with a stored player_ticks row (state-change rows are sparse). That tick agrees on speed, in-air and weapon for both players. The rule itself is pinned by tests (TestWindowCollectorSpeedRule, TestTickSpeedRule).
+- Golden: TestGoldenPlayerTicks passes; it now builds windows with a pass-through occluder and checks window speed plausibility (986,952 samples, max 506.1 u/s, under the 1000 u/s bound). The 250 u/s comment in that test is about normal running, not a hard limit.
+- Wipe required: schema change on player_ticks and encounter_window_samples. Existing libraries must be re-imported.

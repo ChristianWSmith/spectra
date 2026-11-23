@@ -95,6 +95,9 @@ func samplesFor(frames []Frame, p1, p2 uint64, start, end int) []WindowSample {
 			Tick:  frames[k].Tick,
 			P1Eye: eye(a), P1World: [3]float64{a.X, a.Y, a.Z},
 			P2Eye: eye(b), P2World: [3]float64{b.X, b.Y, b.Z},
+			P1Air: a.Air, P2Air: b.Air,
+			P1Speed: a.Speed, P2Speed: b.Speed,
+			P1Weapon: a.Weapon, P2Weapon: b.Weapon,
 		})
 	}
 	return out

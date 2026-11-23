@@ -1,10 +1,8 @@
 package store
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"sync/atomic"
 
@@ -14,7 +12,7 @@ import (
 // playerTicksCols is the player_ticks row WITHOUT match_id — the
 // TickWriter's INSERT list, pinned to the DDL by
 // TestColumnListConstsMatchSchema.
-const playerTicksCols = `tick, steam_id, round, side, alive, hp, in_air, speed, weapon`
+const playerTicksCols = `tick, steam_id, round, side, alive, hp`
 
 // tickChunkRows bounds one player_ticks write transaction. A golden-sized
 // match streams ~1.3M rows; written in one transaction that holds the
@@ -53,14 +51,6 @@ type tickState struct {
 	hp    int
 }
 
-// tickPrev is the last positioned frame the writer saw for one player —
-// the only state speed derivation needs.
-type tickPrev struct {
-	tick  int32
-	round int
-	x, y  float64
-}
-
 // TickWriter streams one match's player_ticks rows during the parse; it
 // implements extract.TickSink. Rows are buffered on the parse thread and
 // handed in chunks of at most tickChunkRows rows to a single writer
@@ -78,19 +68,10 @@ type tickPrev struct {
 // other goroutine that touches the database for this stream. A write error
 // is sticky: it is returned from the next AddTicks (aborting the parse) and
 // from Close, so the importer's failure path sees it.
-//
-// speed is derived here, from consecutive positioned frames of the same
-// player: the horizontal (x/y) distance divided by the elapsed time
-// (Δtick / tickRate), in world units per second. It is NULL — never a
-// guessed 0 — when the frame has no position, when the player had no
-// positioned sample on the immediately preceding delivered frame (first
-// appearance, a dead/absent gap), across a round change, when Δtick <= 0,
-// or when the tick rate is unknown (<= 0).
 type TickWriter struct {
 	s        *Store
 	matchID  int64
 	buf      []tickRow
-	prev     map[string]tickPrev
 	last     map[string]tickState
 	lastTick int32
 	haveLast bool
@@ -115,9 +96,6 @@ type tickRow struct {
 	side    string
 	alive   bool
 	hp      int
-	inAir   sql.NullBool
-	speed   sql.NullFloat64
-	weapon  sql.NullString
 }
 
 // NewTickWriter opens the tick stream for one match, first deleting any
@@ -134,7 +112,6 @@ func (s *Store) NewTickWriter(matchID int64) (*TickWriter, error) {
 		s:       s,
 		matchID: matchID,
 		buf:     make([]tickRow, 0, 1024),
-		prev:    make(map[string]tickPrev, 16),
 		last:    make(map[string]tickState, 16),
 		queue:   make(chan []tickRow, tickQueueDepth),
 		recycle: make(chan []tickRow, tickQueueDepth+1),
@@ -206,43 +183,14 @@ func (w *TickWriter) AddTicks(tick int32, round int, tickRate float64, players [
 			alive:   p.Alive,
 			hp:      p.HP,
 		}
-		if p.Alive {
-			row.weapon = sql.NullString{String: scrub(p.Weapon), Valid: true}
-		}
-		// Speed is derived from every positioned frame, before the pruning
-		// decision: a pruned frame still advances the previous position.
 		state := tickState{round: round, side: row.side, alive: p.Alive, hp: p.HP}
-		prevState, seen := w.last[p.SteamID]
-		changed := !seen || prevState != state
-		if p.HasPosition {
-			row.inAir = sql.NullBool{Bool: p.InAir, Valid: true}
-			if prev, ok := w.prev[p.SteamID]; ok && w.haveLast && prev.tick == w.lastTick {
-				if v, ok := tickSpeed(prev, tick, round, p.X, p.Y, tickRate); ok {
-					row.speed = sql.NullFloat64{Float64: v, Valid: true}
-				}
-			}
-			w.prev[p.SteamID] = tickPrev{tick: tick, round: round, x: p.X, y: p.Y}
-		} else {
-			delete(w.prev, p.SteamID)
-		}
-		if changed {
+		if prevState, seen := w.last[p.SteamID]; !seen || prevState != state {
 			w.last[p.SteamID] = state
 			w.buf = append(w.buf, row)
 		}
 	}
 	w.lastTick, w.haveLast = tick, true
 	return nil
-}
-
-// tickSpeed is the pure speed rule: horizontal distance from prev to
-// (x, y) over the elapsed time, units/s; ok=false on a round change, a
-// non-positive Δtick or an unknown tick rate.
-func tickSpeed(prev tickPrev, tick int32, round int, x, y, tickRate float64) (float64, bool) {
-	dt := tick - prev.tick
-	if prev.round != round || dt <= 0 || tickRate <= 0 {
-		return 0, false
-	}
-	return math.Hypot(x-prev.x, y-prev.y) * tickRate / float64(dt), true
 }
 
 // Close hands over the remaining buffered rows, waits until the writer has
@@ -353,14 +301,14 @@ func (w *TickWriter) flush(buf []tickRow) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(`INSERT INTO player_ticks (match_id, ` + playerTicksCols + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("saving the match's tick data: %w", err)
 	}
 	defer stmt.Close()
 	for _, r := range buf {
 		if _, err := stmt.Exec(w.matchID, r.tick, r.steamID, r.round, r.side, b2i(r.alive),
-			r.hp, r.inAir, r.speed, r.weapon); err != nil {
+			r.hp); err != nil {
 			return fmt.Errorf("saving the match's tick data: %w", err)
 		}
 	}

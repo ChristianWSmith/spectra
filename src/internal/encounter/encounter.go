@@ -15,6 +15,10 @@ type Pos struct {
 	Duck    bool
 	Side    string  // "ct", "t" or ""
 	Yaw     float64 // degrees; used only by the parameterized box (TargetsBox)
+	// Movement and state at this tick, carried into the window samples.
+	Air    bool
+	Speed  *float64 // horizontal units/s; nil when not derivable (first frame, round change)
+	Weapon string   // canonical weapon name; "" when not sampled
 }
 
 // Frame is one sidecar frame: the participants alive at Tick.
@@ -44,6 +48,11 @@ type WindowSample struct {
 	Tick           int
 	P1Eye, P1World [3]float64
 	P2Eye, P2World [3]float64
+	P1Air, P2Air   bool
+	P1Speed        *float64 // nil = not derivable at this tick
+	P2Speed        *float64
+	P1Weapon       string // "" = not sampled
+	P2Weapon       string
 }
 
 // Window is the high-fidelity span for one pair of players in one round: the

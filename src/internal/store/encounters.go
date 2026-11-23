@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -27,8 +28,9 @@ func (s *Store) SaveEncounterWindows(matchID int64, wins []models.EncounterWindo
 	defer winStmt.Close()
 	smpStmt, err := tx.Prepare(`INSERT INTO encounter_window_samples (window_id, match_id, tick,
 		p1_eye_x, p1_eye_y, p1_eye_z, p1_world_x, p1_world_y, p1_world_z,
-		p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z,
+		p1_in_air, p1_speed, p1_weapon, p2_in_air, p2_speed, p2_weapon)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("saving encounters: %w", err)
 	}
@@ -51,7 +53,9 @@ func (s *Store) SaveEncounterWindows(matchID int64, wins []models.EncounterWindo
 		for _, sm := range w.Samples {
 			if _, err := smpStmt.Exec(wid, matchID, sm.Tick,
 				sm.P1Eye[0], sm.P1Eye[1], sm.P1Eye[2], sm.P1World[0], sm.P1World[1], sm.P1World[2],
-				sm.P2Eye[0], sm.P2Eye[1], sm.P2Eye[2], sm.P2World[0], sm.P2World[1], sm.P2World[2]); err != nil {
+				sm.P2Eye[0], sm.P2Eye[1], sm.P2Eye[2], sm.P2World[0], sm.P2World[1], sm.P2World[2],
+				b2i(sm.P1Air), nullSpeed(sm.P1Speed), nullWeapon(sm.P1Weapon),
+				b2i(sm.P2Air), nullSpeed(sm.P2Speed), nullWeapon(sm.P2Weapon)); err != nil {
 				return fmt.Errorf("saving encounter samples: %w", err)
 			}
 		}
@@ -89,18 +93,33 @@ func (s *Store) GetEncounterWindows(matchID int64) ([]models.EncounterWindow, er
 	out := make([]models.EncounterWindow, 0, len(heads))
 	for _, h := range heads {
 		smp, err := s.db.Query(`SELECT tick, p1_eye_x, p1_eye_y, p1_eye_z, p1_world_x, p1_world_y, p1_world_z,
-			p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z
+			p2_eye_x, p2_eye_y, p2_eye_z, p2_world_x, p2_world_y, p2_world_z,
+			p1_in_air, p1_speed, p1_weapon, p2_in_air, p2_speed, p2_weapon
 			FROM encounter_window_samples WHERE window_id = ? ORDER BY tick`, h.id)
 		if err != nil {
 			return nil, fmt.Errorf("reading window samples: %w", err)
 		}
 		for smp.Next() {
 			var sm models.WindowSample
+			var p1Air, p2Air int
+			var p1Speed, p2Speed sql.NullFloat64
+			var p1Weapon, p2Weapon sql.NullString
 			if err := smp.Scan(&sm.Tick, &sm.P1Eye[0], &sm.P1Eye[1], &sm.P1Eye[2], &sm.P1World[0], &sm.P1World[1], &sm.P1World[2],
-				&sm.P2Eye[0], &sm.P2Eye[1], &sm.P2Eye[2], &sm.P2World[0], &sm.P2World[1], &sm.P2World[2]); err != nil {
+				&sm.P2Eye[0], &sm.P2Eye[1], &sm.P2Eye[2], &sm.P2World[0], &sm.P2World[1], &sm.P2World[2],
+				&p1Air, &p1Speed, &p1Weapon, &p2Air, &p2Speed, &p2Weapon); err != nil {
 				smp.Close()
 				return nil, err
 			}
+			sm.P1Air, sm.P2Air = p1Air != 0, p2Air != 0
+			if p1Speed.Valid {
+				v := p1Speed.Float64
+				sm.P1Speed = &v
+			}
+			if p2Speed.Valid {
+				v := p2Speed.Float64
+				sm.P2Speed = &v
+			}
+			sm.P1Weapon, sm.P2Weapon = p1Weapon.String, p2Weapon.String
 			h.w.Samples = append(h.w.Samples, sm)
 		}
 		smp.Close()
@@ -157,4 +176,20 @@ func (s *Store) EncounterInputs(matchID int64) ([]models.EncounterShot, []models
 	}
 	sr.Close()
 	return shots, rounds, nil
+}
+
+// nullSpeed and nullWeapon store the not-sampled cases as NULL: a speed that
+// could not be derived, and a weapon that was not sampled ("").
+func nullSpeed(v *float64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func nullWeapon(w string) any {
+	if w == "" {
+		return nil
+	}
+	return w
 }

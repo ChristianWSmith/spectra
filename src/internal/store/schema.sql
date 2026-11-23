@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS events (
 	-- from the paired raw payload at extract time (demoinfocs' typed Kill
 	-- has no MidAir field) — no migration: a stale dev DB lacks the
 	-- column and must be re-imported. A stored game fact;
-	-- the tick-join in_air on player_ticks is a separate derived feature
+	-- the in-air flag on encounter_window_samples is a separate derived feature
 	-- and does not replace it.
 	attacker_inair INTEGER NOT NULL DEFAULT 0,
 	assisted_flash INTEGER NOT NULL DEFAULT 0,
@@ -539,36 +539,24 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 	PRIMARY KEY (metric_id, dep_name)
 );
 
--- Per-tick player state: one row per (match, tick, present participant)
--- at the demo's full frame rate, carrying DERIVED features only — the
--- joinable projections a metric needs at an event's tick (speed and
--- in-air at a shot or kill). Raw positions, view angles and the full
--- sparse state stream stay in the per-match sidecar (internal/sidecar);
--- this table never duplicates them. Every row is a direct parser sample
--- except speed, which is derived at write time.
+-- Per-tick player state: one row per (match, tick, present participant) at
+-- the state-change grain. A row is written only when a participant's round,
+-- side, alive or hp changes (the first observation of a participant is
+-- always written). "No row" therefore means "no change in these fields",
+-- never "absent": the alive count and the clutch survivor read the roster
+-- (round_player_sides, kills, disconnects), not row presence.
 --
--- Population: the per-frame sidecar population (every playing
--- participant, dead included, through the takeover routing — extract's
--- appendTargets), restricted to COUNTED rounds: frames before the first
--- counted round's start tick and frames while a discarded (knife/warmup/
--- post-match) round is current are never written, exactly like every
--- other row of a discarded round. steam_id is the accumulator key (a
--- bot keeps its synthetic 0xFF key: this is an event-shaped record —
--- humans-only readers route through HumanOnly). round is the stored
--- (counted, 1..N) round number at that frame.
+-- Position, movement and weapon are NOT here. They are dense per-tick facts
+-- and live on encounter_window_samples (see below). Raw positions and the
+-- full sparse state stream stay in the per-match sidecar (internal/sidecar).
 --
--- Honest gaps: in_air and speed are NULL when the frame carries no
--- position sample (the position stream is alive-only), never 0 — a dead
--- player's speed was not observed. speed is the HORIZONTAL (x/y)
--- movement speed in world units per second between this frame and the
--- player's previous frame (the quantity the game's movement-inaccuracy
--- rule reads — CS2.md "Player movement speed for accuracy"), computed
--- from the raw float positions; it is also NULL on the first positioned
--- frame of a stretch (no previous frame), across a round change, after a
--- frame the player was absent or unpositioned, and when the tick rate is
--- unknown. weapon is the canonical weapon name (the events.weapon
--- vocabulary), NULL when dead (not sampled); hp is forced to 0 when dead
--- (a sample, not an inference).
+-- Population: the per-frame state population (every playing participant,
+-- dead included, through the takeover routing), restricted to COUNTED rounds:
+-- frames before the first counted round's start tick and frames while a
+-- discarded (knife/warmup/post-match) round is current are never written.
+-- steam_id is the accumulator key (a bot keeps its synthetic 0xFF key).
+-- round is the stored (counted, 1..N) round number at that frame. hp is 0
+-- when dead (a sample, not an inference).
 --
 -- Lifecycle: the rows STREAM in during the parse (store.TickWriter, in
 -- chunked transactions of at most tickChunkRows rows so no single
@@ -586,9 +574,6 @@ CREATE TABLE IF NOT EXISTS player_ticks (
 	side     TEXT    NOT NULL DEFAULT '',
 	alive    INTEGER NOT NULL DEFAULT 1,
 	hp       INTEGER NOT NULL DEFAULT 100,
-	in_air   INTEGER,
-	speed    REAL,
-	weapon   TEXT,
 	PRIMARY KEY (match_id, tick, steam_id)
 );
 
@@ -2897,6 +2882,8 @@ CREATE TABLE IF NOT EXISTS encounter_window_samples (
 	p1_world_x REAL NOT NULL, p1_world_y REAL NOT NULL, p1_world_z REAL NOT NULL,
 	p2_eye_x REAL NOT NULL, p2_eye_y REAL NOT NULL, p2_eye_z REAL NOT NULL,
 	p2_world_x REAL NOT NULL, p2_world_y REAL NOT NULL, p2_world_z REAL NOT NULL,
+	p1_in_air INTEGER NOT NULL DEFAULT 0, p1_speed REAL, p1_weapon TEXT,
+	p2_in_air INTEGER NOT NULL DEFAULT 0, p2_speed REAL, p2_weapon TEXT,
 	PRIMARY KEY (window_id, tick)
 );
 CREATE INDEX IF NOT EXISTS idx_encounter_window_samples_match ON encounter_window_samples(match_id);

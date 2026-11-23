@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"math"
 	"testing"
 	"time"
 
@@ -17,14 +15,11 @@ type tickRowOut struct {
 	steamID, side string
 	round, hp     int
 	alive         bool
-	inAir         sql.NullInt64
-	speed         sql.NullFloat64
-	weapon        sql.NullString
 }
 
 func readTicks(t *testing.T, s *Store, matchID int64, steamID string) []tickRowOut {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT tick, steam_id, side, round, hp, alive, in_air, speed, weapon
+	rows, err := s.db.Query(`SELECT tick, steam_id, side, round, hp, alive
 		FROM player_ticks WHERE match_id = ? AND steam_id = ? ORDER BY tick`, matchID, steamID)
 	if err != nil {
 		t.Fatalf("query player_ticks: %v", err)
@@ -34,8 +29,7 @@ func readTicks(t *testing.T, s *Store, matchID int64, steamID string) []tickRowO
 	for rows.Next() {
 		var r tickRowOut
 		var alive int64
-		if err := rows.Scan(&r.tick, &r.steamID, &r.side, &r.round, &r.hp, &alive,
-			&r.inAir, &r.speed, &r.weapon); err != nil {
+		if err := rows.Scan(&r.tick, &r.steamID, &r.side, &r.round, &r.hp, &alive); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		r.alive = alive != 0
@@ -65,35 +59,33 @@ func alivePos(id string, x, y float64, air bool) models.TickSample {
 		HasPosition: true, X: x, Y: y, Z: 7, InAir: air}
 }
 
-// TestTickWriterRowsAndSpeed pins the row shaping and the speed rule:
-// speed is the HORIZONTAL distance between consecutive positioned frames
-// over Δtick/tickRate (z ignored), NULL on the first frame of a stretch,
-// across a round change, after a gap frame and with an unknown tick rate.
-func TestTickWriterRowsAndSpeed(t *testing.T) {
+// TestTickWriterRowShape pins the row shaping on the state-change grain: a
+// row is kept when a participant's round, side, alive or hp changes, and an
+// absent frame writes nothing. Speed, in-air and weapon are not written here:
+// the encounter windows carry them (see extract's windowCollector tests).
+func TestTickWriterRowShape(t *testing.T) {
 	s := openMem(t)
-	id := saveTestMatch(t, s, "/d/ticks.dem", "sha-ticks-speed", time.Now())
+	id := saveTestMatch(t, s, "/d/ticks.dem", "sha-ticks-shape", time.Now())
 	w, err := s.NewTickWriter(id)
 	if err != nil {
 		t.Fatalf("NewTickWriter: %v", err)
 	}
-	const rate = 64.0
 	frames := []struct {
 		tick  int32
 		round int
-		rate  float64
 		p     []models.TickSample
 	}{
-		{100, 1, rate, []models.TickSample{alivePos("A", 0, 0, false)}}, // first: NULL
-		{101, 1, rate, []models.TickSample{alivePos("A", 3, 4, true)}},  // 5 u in 1 tick → 320 u/s
-		{103, 1, rate, []models.TickSample{alivePos("A", 3, 4, false)}}, // consecutive frame, Δtick 2, still → 0
-		{104, 1, rate, nil}, // A absent this frame
-		{105, 1, rate, []models.TickSample{alivePos("A", 9, 4, false)}}, // gap → NULL
-		{106, 2, rate, []models.TickSample{alivePos("A", 9, 5, false)}}, // round change → NULL
-		{107, 2, 0, []models.TickSample{alivePos("A", 9, 6, false)}},    // unknown tick rate → NULL
-		{108, 2, rate, []models.TickSample{alivePos("A", 9, 7, false)}}, // 1 u in 1 tick → 64 u/s
+		{100, 1, []models.TickSample{alivePos("A", 0, 0, false)}},
+		{101, 1, []models.TickSample{alivePos("A", 3, 4, true)}},
+		{103, 1, []models.TickSample{alivePos("A", 3, 4, false)}},
+		{104, 1, nil}, // A absent this frame: no row
+		{105, 1, []models.TickSample{alivePos("A", 9, 4, false)}},
+		{106, 2, []models.TickSample{alivePos("A", 9, 5, false)}}, // round change
+		{107, 2, []models.TickSample{alivePos("A", 9, 6, false)}},
+		{108, 2, []models.TickSample{alivePos("A", 9, 7, false)}},
 	}
 	for _, f := range frames {
-		if err := w.AddTicks(f.tick, f.round, f.rate, varyHP(f.p, f.tick)); err != nil {
+		if err := w.AddTicks(f.tick, f.round, 64, varyHP(f.p, f.tick)); err != nil {
 			t.Fatalf("AddTicks(%d): %v", f.tick, err)
 		}
 	}
@@ -101,35 +93,16 @@ func TestTickWriterRowsAndSpeed(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 	got := readTicks(t, s, id, "A")
-	want := []struct {
-		tick  int32
-		round int
-		speed float64 // NaN = NULL
-		air   bool
-	}{
-		{100, 1, math.NaN(), false}, {101, 1, 320, true}, {103, 1, 0, false},
-		{105, 1, math.NaN(), false}, {106, 2, math.NaN(), false}, {107, 2, math.NaN(), false},
-		{108, 2, 64, false},
+	wantTicks := []int32{100, 101, 103, 105, 106, 107, 108}
+	wantRounds := []int{1, 1, 1, 1, 2, 2, 2}
+	if len(got) != len(wantTicks) {
+		t.Fatalf("rows = %d, want %d: %+v", len(got), len(wantTicks), got)
 	}
-	if len(got) != len(want) {
-		t.Fatalf("rows = %d, want %d: %+v", len(got), len(want), got)
-	}
-	for i, w := range want {
-		g := got[i]
-		if g.tick != w.tick || g.round != w.round {
-			t.Errorf("row %d: tick/round = %d/%d, want %d/%d", i, g.tick, g.round, w.tick, w.round)
+	for i, g := range got {
+		if g.tick != wantTicks[i] || g.round != wantRounds[i] {
+			t.Errorf("row %d: tick/round = %d/%d, want %d/%d", i, g.tick, g.round, wantTicks[i], wantRounds[i])
 		}
-		if math.IsNaN(w.speed) {
-			if g.speed.Valid {
-				t.Errorf("tick %d: speed = %v, want NULL", g.tick, g.speed.Float64)
-			}
-		} else if !g.speed.Valid || math.Abs(g.speed.Float64-w.speed) > 1e-9 {
-			t.Errorf("tick %d: speed = %+v, want %v", g.tick, g.speed, w.speed)
-		}
-		if !g.inAir.Valid || (g.inAir.Int64 != 0) != w.air {
-			t.Errorf("tick %d: in_air = %+v, want %v", g.tick, g.inAir, w.air)
-		}
-		if g.side != "ct" || !g.alive || g.hp != 1+int(g.tick)%97 || g.weapon.String != "ak47" {
+		if g.side != "ct" || !g.alive || g.hp != 1+int(g.tick)%97 {
 			t.Errorf("tick %d: row = %+v", g.tick, g)
 		}
 	}
@@ -168,12 +141,6 @@ func TestTickWriterDeadFramesAreNull(t *testing.T) {
 	d := got[1]
 	if d.alive || d.hp != 0 || d.side != "t" {
 		t.Errorf("dead row = %+v, want alive=0 hp=0 side=t", d)
-	}
-	if d.inAir.Valid || d.speed.Valid || d.weapon.Valid {
-		t.Errorf("dead row in_air/speed/weapon = %+v/%+v/%+v, want NULL (never 0)", d.inAir, d.speed, d.weapon)
-	}
-	if got[2].speed.Valid {
-		t.Errorf("first positioned frame after death: speed = %v, want NULL", got[2].speed.Float64)
 	}
 }
 
@@ -289,7 +256,7 @@ func TestPlayerTicksLifecycle(t *testing.T) {
 // TestTickWriterRepeatedTickFirstWins: a frame delivered at the same tick
 // as the previous frame (the periodic full-packet frame) re-observes a
 // tick already written — the first observation wins, the repeat writes
-// nothing (one row per match, tick, player) and does not disturb speed.
+// nothing (one row per match, tick, player).
 func TestTickWriterRepeatedTickFirstWins(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/repeat.dem", "sha-ticks-repeat", time.Now())
@@ -312,10 +279,8 @@ func TestTickWriterRepeatedTickFirstWins(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("rows = %d, want 3 (the repeated tick writes once)", len(got))
 	}
-	for i, r := range got[1:] {
-		if !r.speed.Valid || math.Abs(r.speed.Float64-64) > 1e-9 {
-			t.Errorf("row %d (tick %d): speed = %+v, want 64 (the first observation of tick 11 kept)", i+1, r.tick, r.speed)
-		}
+	if got[1].tick != 11 || got[2].tick != 12 {
+		t.Errorf("ticks = %d, %d, want 11 then 12", got[1].tick, got[2].tick)
 	}
 }
 

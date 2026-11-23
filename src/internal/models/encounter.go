@@ -8,6 +8,11 @@ type WindowSample struct {
 	Tick           int
 	P1Eye, P1World [3]float64
 	P2Eye, P2World [3]float64
+	P1Air, P2Air   bool
+	P1Speed        *float64 // nil = not derivable at this tick
+	P2Speed        *float64
+	P1Weapon       string // "" = not sampled
+	P2Weapon       string
 }
 
 // EncounterWindow is the high-fidelity span for one pair of players in one round:

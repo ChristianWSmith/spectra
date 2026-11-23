@@ -387,8 +387,9 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 		// current round is the LAST of a.rounds, whose stored number
 		// (build.renumber's dense 1..N) is len(a.rounds).
 		countedTicks := gateOpen && !a.discarding && opts.Ticks != nil
-		wantPos := gateOpen && (opts.Positions != nil || countedTicks)
-		wantState := gateOpen && (opts.State != nil || countedTicks)
+		// The encounter windows need both samples on every gated frame.
+		wantPos := gateOpen && (opts.Positions != nil || countedTicks || wc != nil)
+		wantState := gateOpen && (opts.State != nil || countedTicks || wc != nil)
 		// Sample once per frame (S11): one target walk, one position read
 		// and one state read per participant, shared by every sink that
 		// consumes them below. The reads are pure (nothing a sink does
@@ -468,15 +469,24 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 				cancel()
 			}
 		}
-		if sink := opts.Ticks; countedTicks && sinkErr == nil {
+		// Counted frames build the tick samples once: the tick sink takes
+		// them for player_ticks, and the encounter windows take their weapon,
+		// in-air and speed values from the same samples.
+		countedFrame := gateOpen && !a.discarding
+		if (countedTicks || wc != nil && countedFrame) && sinkErr == nil {
 			tickBuf = tickBuf[:0]
 			for i, st := range stateBuf {
 				tickBuf = append(tickBuf, tickSample(st, posBuf[i], posOKBuf[i]))
 			}
-			a.noteTickMoney(ingame, len(a.rounds), tickBuf)
-			if err := sink.AddTicks(ingame, len(a.rounds), p.TickRate(), tickBuf); err != nil {
-				sinkErr = fmt.Errorf("extract: tick sink: %w", err)
-				cancel()
+			if wc != nil && countedFrame {
+				wc.addTicks(ingame, len(a.rounds), p.TickRate(), tickBuf)
+			}
+			if countedTicks {
+				a.noteTickMoney(ingame, len(a.rounds), tickBuf)
+				if err := opts.Ticks.AddTicks(ingame, len(a.rounds), p.TickRate(), tickBuf); err != nil {
+					sinkErr = fmt.Errorf("extract: tick sink: %w", err)
+					cancel()
+				}
 			}
 		}
 		// Voice: deliver (or discard) this frame's buffered chunks now —

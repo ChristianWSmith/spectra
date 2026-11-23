@@ -395,3 +395,10 @@ Known gaps and tests:
 ## Decision (2026-11-23, owner): build inside the extraction pass
 
 Encounter windows are built during extraction, from the extractor's in-memory data, not from sidecar frames. The build runs once events and rounds are complete, at the end of the parse and before the match is saved. Windows stay dense: no state-change pruning applies to encounter data.
+
+## Result: windows built in the extraction pass (phase 1 and 2)
+
+- Phase 1 (ea58b97): windows built at the end of Parse from collected full-precision frames. The import-time encounter job is removed; LoadRenderOccluder is in internal/encounter, cached per map in the importer. A missing geometry cache adds a warning and imports without windows. Scratch de_cache: 352 / 503 / 20,349 (was 350 / 502 / 20,259; the increase is from full-precision positions, to ratify).
+- Phase 2: window samples carry in_air, speed and weapon for both players (see S20 result).
+- Peak memory during the parse is not yet measured; the owner chose to build without measuring first.
+- GUI checks for S18 remain open (items 4, 8, 10, 11 of the GUI list).
