@@ -1,4 +1,4 @@
-// The Combat tab's shared reads (builtins/match: the Engagements and Clutches
+// The Combat tab's shared reads (builtins/match: the Kill tags and Clutches
 // panels both use them). The reads are the ones the Combat view always made:
 // a roster from the scoreboard, the match's side switches and tick rate, and
 // the round list. Nothing here reads a stored metric or a preference. The pure

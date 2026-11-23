@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/golang/geo/r3"
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
@@ -317,7 +318,7 @@ func playerKey(pl *common.Player) uint64 {
 
 // isBotKey reports whether an accumulator key is the synthetic bot key.
 func isBotKey(key uint64) bool {
-	return key>>56 == 0xFF
+	return models.IsBotKey(key)
 }
 
 // keyStr is the string form of an accumulator key ("" for none) — the

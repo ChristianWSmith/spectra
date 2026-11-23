@@ -268,6 +268,10 @@ type agg struct {
 	// money columns — one row per connected participant per counted round.
 	roundMoney []models.RoundPlayerMoney
 
+	// firstMoney is each player's earliest tick sample per counted round
+	// (noteTickMoney): the source of money_start (applyFirstTickMoney).
+	firstMoney map[firstTickKey]firstTickMoney
+
 	economy  []models.RoundEconomy
 	events   []models.Event
 	generic  []models.GenericEvent
@@ -531,6 +535,54 @@ func (a *agg) moneyEnd(samples []moneyEndSample) {
 			Equip:      s.equipStart,
 			Spent:      s.spent,
 		})
+	}
+}
+
+// firstTickKey addresses one player's tick samples of one counted round.
+// round is the dense counted-round index the tick sink receives
+// (len(a.rounds)) — build.renumber maps round_player_money.round onto the
+// same numbering, so the two join on it.
+type firstTickKey struct {
+	round int
+	key   string
+}
+
+// firstTickMoney is the account a player carried at their earliest tick
+// sample of a round.
+type firstTickMoney struct {
+	tick  int32
+	money int
+}
+
+// noteTickMoney records the first tick sample of each player in the round
+// the tick sink was just handed (the same samples, in the same order, that
+// feed TickSink.AddTicks). The sink's tick is non-decreasing, so the first
+// sample seen for a player is their earliest tick: the first row by tick
+// that the player_ticks table holds for that round.
+func (a *agg) noteTickMoney(tick int32, round int, samples []models.TickSample) {
+	if a.firstMoney == nil {
+		a.firstMoney = make(map[firstTickKey]firstTickMoney)
+	}
+	for _, s := range samples {
+		k := firstTickKey{round: round, key: s.SteamID}
+		if _, ok := a.firstMoney[k]; ok {
+			continue
+		}
+		a.firstMoney[k] = firstTickMoney{tick: tick, money: s.Money}
+	}
+}
+
+// applyFirstTickMoney sets each round-money row's MoneyStart to the
+// player's first tick sample of that round, when one exists. A row whose
+// player has no tick sample in the round keeps its m_iStartAccount value.
+// Run after renumber, so rows carry the same round numbering as the
+// samples' keys. It runs at build time, not at RoundEnd: the RoundEnd
+// frame's own tick sample is delivered after the RoundEnd event.
+func applyFirstTickMoney(rows []models.RoundPlayerMoney, first map[firstTickKey]firstTickMoney) {
+	for i := range rows {
+		if f, ok := first[firstTickKey{round: rows[i].Round, key: rows[i].SteamID}]; ok {
+			rows[i].MoneyStart = f.money
+		}
 	}
 }
 
@@ -898,11 +950,11 @@ func (a *agg) kill(k killInfo) {
 	//
 	// This is the IMPORT-TIME DEFAULT only: the extractor has no access
 	// to analysis_config, so analytics.Compute rewrites
-	// player_stats.trade_kills from the cfg-aware engagements pass right
+	// player_stats.trade_kills from the cfg-aware kill tags pass right
 	// after import (and on every rule recompute). The two rules must stay
 	// equivalent at 5 s — pinned by the golden trade-rule test — and the
 	// gates here (enemy kills only: no teamkills, no suicides, no
-	// post-match kills) are mirrored in analytics.Engagements.
+	// post-match kills) are mirrored in analytics.Kill tags.
 	if k.victimKey != 0 && k.killerSide != "" {
 		tr := k.tickRate
 		if tr <= 0 {

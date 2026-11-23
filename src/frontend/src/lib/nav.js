@@ -100,7 +100,7 @@ export function expandReplayHash(replayHashValue, backPath) {
 //                   RoundDetail's "Watch round", CompareRounds' "Replay
 //                   start", Economy's stat-card drill.
 //   long event    — first-occurrence −loop → last-occurrence +loop (a
-//                   clutch, an engagement sequence): entryLoopSpanAround
+//                   clutch, an kill tag sequence): entryLoopSpanAround
 //                   below.
 //   singular event — the event tick ±loop (a kill, a nade throw, a bomb
 //                   event, a damage event): entryLoopAround below.
@@ -180,7 +180,7 @@ export function entryLoopAround(tick, tickRate, seconds = LOOP_SECS_DEFAULT) {
 // entryLoopSpanAround stamps the ?loop= extra for a LONG event — the
 // owner's rule shape: `seconds` before the first [occurrence] … to
 // `seconds` after the last [occurrence] of the sequence (a clutch, an
-// engagement sequence), the seconds coming from the same loop_secs pref
+// kill tag sequence), the seconds coming from the same loop_secs pref
 // as entryLoopAround (default LOOP_SECS_DEFAULT): ±half padded onto BOTH
 // ends of the occurrence span [firstTick, lastTick] — first − half →
 // last + half — at the match tick rate, floored at 0 like entryLoopAround.
@@ -236,7 +236,7 @@ export function entryLoopSpanAround(firstTick, lastTick, tickRate, seconds = LOO
 //               filter, a deep link) lands at that default while its
 //               filter still applies. Watch links from OUTSIDE the
 //               replay (RoundDetail's "Watch round", Combat's
-//               engagement/clutch ▶, Utility's ▶, Economy's stat-card
+//               kill tag/clutch ▶, Utility's ▶, Economy's stat-card
 //               drill) stamp
 //               ?tick= EXPLICITLY and never carry a landmark filter —
 //               outside the replay, buttons seek, never filter; a

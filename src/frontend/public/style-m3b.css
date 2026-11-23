@@ -145,7 +145,7 @@ label.filt-lab {
   align-items: center;
 }
 
-/* The Engagements round scope (owner, 2026-11-18): the ONE round
+/* The Kill tags round scope (owner, 2026-11-18): the ONE round
    <select> mirroring the Utility tab's round dropdown (visible "Round"
    field label, "All rounds" + canonical RD | score options, default
    round 1) sitting in the kind-filter row, never a second filter row.
@@ -163,7 +163,7 @@ label.filt-lab {
   gap: 3px;
 }
 
-/* The Engagements KIND multi-select (owner, 2026-11-18): the toggle
+/* The Kill tags KIND multi-select (owner, 2026-11-18): the toggle
    buttons became ONE dropdown — the host is the canonical Popover's
    anchor (position: relative so the panel attaches — the
    .bld-filter-host / .rp-pop-host spelling) and the panel is the
@@ -199,7 +199,7 @@ label.filt-lab {
   color: var(--accent);
 }
 
-/* Engagement kind chips: opening = gold, trade = green, traded = violet
+/* Kill tag kind chips: opening = gold, trade = green, traded = violet
    (--info; victim-side answered, the natural pair of untraded's red),
    untraded = red. */
 .comb-kind-chip.opening {

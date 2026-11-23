@@ -21,6 +21,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/option"
 
+	"github.com/ChristianWSmith/spectra/internal/encounter"
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
@@ -180,6 +181,10 @@ type ParseOptions struct {
 	Voice     VoiceSink
 	Ticks     TickSink
 	NetKey    []byte
+	// WindowOccluder, when set, supplies the sight-line geometry for the map
+	// named in the match; the encounter windows are then built during the
+	// parse. Nil means no windows.
+	WindowOccluder func(mapName string) (encounter.Occluder, error)
 }
 
 // Parse reads one raw .dem stream, aggregating a normalized ExtractedMatch.
@@ -210,6 +215,10 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	// sinkErr carries a failing Position/Voice sink's error out of the
 	// handlers below; cancel aborts the parse so demoinfocs stops.
 	var sinkErr error
+	var wc *windowCollector // encounter windows, collected as frames arrive (nil: none)
+	if opts.WindowOccluder != nil {
+		wc = &windowCollector{}
+	}
 
 	// Voice chunks (M4): net-message handlers run on the parse goroutine
 	// (MsgQueueBufferSize(0) is sequential), so sinkErr/cancel mirror the
@@ -333,10 +342,15 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	pt := &progressTracker{cb: opts.Progress}
 	frames := 0
 	// Reused across frames: the sinks consume their slices synchronously.
+	// The per-frame reads (targets, position rows, state samples) are taken
+	// ONCE per frame and shared by the three sinks (S11, sample once per
+	// frame): posBuf and stateBuf are aligned with targetBuf.
 	frameBuf := make([]PositionPlayer, 0, 10)
 	stateBuf := make([]StatePlayer, 0, 10)
 	tickBuf := make([]models.TickSample, 0, 10)
 	targetBuf := make([]identityTarget, 0, 10)
+	posBuf := make([]PositionPlayer, 0, 10)
+	posOKBuf := make([]bool, 0, 10)
 	// Round-start seeds for the state stream: the first frame after each
 	// round-counter change carries seed=true (see StateSink).
 	seeds := roundSeeds{}
@@ -366,7 +380,23 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 		// EVERY byte is pre-pistol. Deliberate, not a bug; no fallback is
 		// guessed (pre-release policy: never invent data).
 		gateOpen := len(a.rounds) > 0
-		if sink := opts.Positions; gateOpen && sink != nil && sinkErr == nil {
+		// Tick stream (see TickSink): the same population as the state
+		// stream, restricted to counted rounds — a.discarding marks a
+		// knife/warmup/post-match round whose rows are never stored, and
+		// while the gate is open and no discarded round is current the
+		// current round is the LAST of a.rounds, whose stored number
+		// (build.renumber's dense 1..N) is len(a.rounds).
+		countedTicks := gateOpen && !a.discarding && opts.Ticks != nil
+		// The encounter windows need both samples on every gated frame.
+		wantPos := gateOpen && (opts.Positions != nil || countedTicks || wc != nil)
+		wantState := gateOpen && (opts.State != nil || countedTicks || wc != nil)
+		// Sample once per frame (S11): one target walk, one position read
+		// and one state read per participant, shared by every sink that
+		// consumes them below. The reads are pure (nothing a sink does
+		// feeds back into them), so taking them before the first AddFrame
+		// yields the same samples the per-sink reads used to take.
+		var ingame int32
+		if (wantPos || wantState) && sinkErr == nil {
 			gs := p.GameState()
 			// Takeover routing (takeover.go appendTargets): during a
 			// reconnect takeover the human's own pawn is the stale
@@ -379,61 +409,84 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			// ITS connect, not from the takeover, owner report
 			// 2026-11-17).
 			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
-			frameBuf = frameBuf[:0]
-			for _, t := range targetBuf {
-				row, ok := positionRow(t)
-				if !ok {
-					continue
+			ingame = int32(gs.IngameTick())
+			posBuf = posBuf[:0]
+			posOKBuf = posOKBuf[:0]
+			if wantPos {
+				for _, t := range targetBuf {
+					row, ok := positionRow(t)
+					posBuf = append(posBuf, row)
+					posOKBuf = append(posOKBuf, ok)
 				}
-				frameBuf = append(frameBuf, row)
 			}
-			if err := sink.AddFrame(int32(gs.IngameTick()), frameBuf); err != nil {
+			stateBuf = stateBuf[:0]
+			if wantState {
+				// State stream (see StateSink): every playing participant,
+				// dead included (hp 0 is a sample, not an inference) —
+				// through the same takeover routing as the position sink
+				// (the human's row is sampled through the controlled bot's
+				// LIVE pawn, keyed with the human's SteamID; the covered
+				// bot emits no second row).
+				for _, t := range targetBuf {
+					stateBuf = append(stateBuf, sampleStatePlayer(t.identity, t.pawn))
+				}
+			}
+		}
+		if wc != nil && gateOpen {
+			frameBuf = frameBuf[:0]
+			for i, row := range posBuf {
+				if posOKBuf[i] {
+					frameBuf = append(frameBuf, row)
+				}
+			}
+			wc.add(ingame, frameBuf)
+		}
+		if sink := opts.Positions; gateOpen && sink != nil && sinkErr == nil {
+			// Runs first so the shared slot table locks on position
+			// samples before the state sink (and the tick sink) use it.
+			frameBuf = frameBuf[:0]
+			for i, row := range posBuf {
+				if posOKBuf[i] {
+					frameBuf = append(frameBuf, row)
+				}
+			}
+			if err := sink.AddFrame(ingame, frameBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: position sink: %w", err)
 				cancel()
 			}
 		}
-		// State stream (see StateSink): every playing participant, dead
-		// included (hp 0 is a sample, not an inference) — through the
-		// same takeover routing as the position sink (the human's row is
-		// sampled through the controlled bot's LIVE pawn, keyed with the
-		// human's SteamID; the covered bot emits no second row). Runs
-		// AFTER the position sink so the shared slot table locks on
-		// position samples first. Gated together with the position sink:
-		// both sinks must advance in lockstep (sidecar's frames counter),
-		// and seeds.take is NOT called while the gate is closed — the
-		// zero value stays armed, so the boundary frame's round-counter
-		// change makes the first written record a seed (plus the state
-		// writer's !prev.valid forces full records on the first record
-		// anyway).
+		// State stream: runs AFTER the position sink so the shared slot
+		// table locks on position samples first. Gated together with the
+		// position sink: both sinks must advance in lockstep (sidecar's
+		// frames counter), and seeds.take is NOT called while the gate is
+		// closed — the zero value stays armed, so the boundary frame's
+		// round-counter change makes the first written record a seed (plus
+		// the state writer's !prev.valid forces full records on the first
+		// record anyway).
 		if sink := opts.State; gateOpen && sink != nil && sinkErr == nil {
-			gs := p.GameState()
-			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
-			stateBuf = stateBuf[:0]
-			for _, t := range targetBuf {
-				stateBuf = append(stateBuf, sampleStatePlayer(t.identity, t.pawn))
-			}
 			if err := sink.AddState(seeds.take(a.currentRound), stateBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: state sink: %w", err)
 				cancel()
 			}
 		}
-		// Tick stream (see TickSink): the same population as the state
-		// stream, restricted to counted rounds — a.discarding marks a
-		// knife/warmup/post-match round whose rows are never stored, and
-		// while the gate is open and no discarded round is current the
-		// current round is the LAST of a.rounds, whose stored number
-		// (build.renumber's dense 1..N) is len(a.rounds).
-		if sink := opts.Ticks; gateOpen && !a.discarding && sink != nil && sinkErr == nil {
-			gs := p.GameState()
-			targetBuf = appendTargets(targetBuf[:0], gs.Participants().Playing(), demoinfocsControls)
+		// Counted frames build the tick samples once: the tick sink takes
+		// them for player_ticks, and the encounter windows take their weapon,
+		// in-air and speed values from the same samples.
+		countedFrame := gateOpen && !a.discarding
+		if (countedTicks || wc != nil && countedFrame) && sinkErr == nil {
 			tickBuf = tickBuf[:0]
-			for _, t := range targetBuf {
-				pos, hasPos := positionRow(t)
-				tickBuf = append(tickBuf, tickSample(sampleStatePlayer(t.identity, t.pawn), pos, hasPos))
+			for i, st := range stateBuf {
+				tickBuf = append(tickBuf, tickSample(st, posBuf[i], posOKBuf[i]))
 			}
-			if err := sink.AddTicks(int32(gs.IngameTick()), len(a.rounds), p.TickRate(), tickBuf); err != nil {
-				sinkErr = fmt.Errorf("extract: tick sink: %w", err)
-				cancel()
+			if wc != nil && countedFrame {
+				wc.addTicks(ingame, len(a.rounds), p.TickRate(), tickBuf)
+			}
+			if countedTicks {
+				a.noteTickMoney(ingame, len(a.rounds), tickBuf)
+				if err := opts.Ticks.AddTicks(ingame, len(a.rounds), p.TickRate(), tickBuf); err != nil {
+					sinkErr = fmt.Errorf("extract: tick sink: %w", err)
+					cancel()
+				}
 			}
 		}
 		// Voice: deliver (or discard) this frame's buffered chunks now —
@@ -545,7 +598,19 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 
 	pt.finish(frames, frameTotal(p))
 
-	return a.build(), nil
+	m := a.build()
+	if wc != nil && len(wc.frames) > 0 {
+		// The map name is final only now. A missing geometry cache is a
+		// warning: the match still imports, without windows.
+		occ, err := opts.WindowOccluder(m.Match.Map)
+		if err != nil {
+			m.Warnings = append(m.Warnings, "encounter windows skipped: "+err.Error())
+		} else {
+			wc.occ = occ
+			wc.build(m)
+		}
+	}
+	return m, nil
 }
 
 // frameTotal reports the demo's recorded frame count, or 0 when unknown

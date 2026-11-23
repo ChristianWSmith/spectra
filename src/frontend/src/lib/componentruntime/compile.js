@@ -68,9 +68,32 @@ export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 //
 // `names` maps each allowed export to its purpose. `'*'` allows the whole
 // namespace (`import * as S`); `'default'` allows a component's default export.
+// Two helpers are modules the app loads at startup anyway (services.js and
+// workstate.svelte.js). Their helper entries read the module App hands in
+// (provideHelperModule) instead of a dynamic import: a dynamic import of a
+// module that is also static splits nothing and makes Vite warn, and a static
+// import here would drag services.js (and the bindings it links) into every
+// node-side import of this file.
+const providedHelpers = new Map();
+export function provideHelperModule(key, namespace) {
+  providedHelpers.set(key, namespace);
+}
+// Where a helper lives, relative to this file, for callers that never provide
+// it (the node and jsdom drivers mount built-ins without App). The app always
+// provides both at startup, so this import never runs in the app; the specifier
+// is a variable, so the bundler does not try to resolve it.
+const HELPER_PATHS = {
+  'src/lib/services.js': '../services.js',
+  'src/lib/workstate.svelte.js': '../workstate.svelte.js',
+};
+function providedHelper(key) {
+  if (providedHelpers.has(key)) return Promise.resolve(providedHelpers.get(key));
+  return import(/* @vite-ignore */ new URL(HELPER_PATHS[key], import.meta.url).href);
+}
+
 export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/services.js': {
-    load: () => import('../services.js'),
+    load: () => providedHelper('src/lib/services.js'),
     names: {
       errText: 'the one error-text normalizer (a rejection to a sentence)',
       listMetrics: 'the metric definitions (read)',
@@ -84,7 +107,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       getScoreboard: 'a match scoreboard (read)',
       getRounds: 'a match’s rounds (read)',
       getHeatmap: 'heatmap points for a match (read)',
-      getEngagements: 'a match’s engagements (read)',
+      getKillTags: 'a match’s kill tags (read)',
       getClutches: 'a match’s clutches (read)',
       getEntitySummary: 'a diagnostics summary for one entity (read)',
       getProvenance: 'a match’s provenance (read)',
@@ -96,6 +119,12 @@ export const BUILTIN_HELPERS = Object.freeze({
       subscribeMetricProgress: 'subscribe to metric progress (event)',
       onMetricDone: 'listen for a metric finishing (event)',
       onEvent: 'listen for a backend event (event)',
+    },
+  },
+  'src/lib/componentruntime/reads.js': {
+    load: () => import('./reads.js'),
+    names: {
+      metricsByMatch: 'one player’s stored values and states across many matches (read, History)',
     },
   },
   'src/lib/strings/index.js': {
@@ -208,8 +237,8 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/definitions.js': {
     load: () => import('../definitions.js'),
     names: {
-      ENG_DIST_DEF: 'the default engagement distance',
-      ENG_KIND_TITLES: 'the titles of engagement kinds',
+      KILL_TAG_DIST_DEF: 'the default kill tag distance',
+      KILL_TAG_KIND_TITLES: 'the titles of kill tag kinds',
     },
   },
   'src/lib/replay/landmarks.js': {
@@ -224,7 +253,7 @@ export const BUILTIN_HELPERS = Object.freeze({
     },
   },
   'src/lib/workstate.svelte.js': {
-    load: () => import('../workstate.svelte.js'),
+    load: () => providedHelper('src/lib/workstate.svelte.js'),
     names: { runWork: 'run a piece of background work, shown in the work indicator' },
   },
   'src/lib/matchpanels.js': {
@@ -246,8 +275,8 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/builtins/match/combatmodel.js': {
     load: () => import('../builtins/match/combatmodel.js'),
     names: {
-      ENG_KINDS: 'the engagement kinds',
-      groupEngagements: 'group engagements into duels',
+      KILL_TAG_KINDS: 'the kill tag kinds',
+      groupKillTags: 'group kill tags into duels',
       clutchKillTicks: 'the kill ticks of a clutch',
     },
   },

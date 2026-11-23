@@ -1,14 +1,16 @@
 <script>
   // Match history (builtin profile panel), most recent first. The match rows
   // (import date, map, result, score, starting side) are the player's recorded
-  // history. The K/D/A, ADR and KAST cells are stored match-scope metrics: one
-  // metric() read per match and metric, for the context's player.
+  // history. The K/D/A, ADR and KAST cells are stored match-scope metrics read
+  // for the context's player in ONE read: metricsByMatch takes the series of
+  // every metric (one call) and each match's compute state (one call per row).
   import { listMetrics, getProfile, errText, subscribeMetricProgress, onMetricDone } from '../../services.js';
+  import { metricsByMatch } from '../../componentruntime/reads.js';
   import { metricProgressFrac, metricProgressStage } from '../../metricstate.js';
   import { fmt1, fmtDate, fmtInt, fmtMetric } from '../../fmt.js';
   import { teamStartClass } from '../../teams.js';
   import StatusChip from '../../components/StatusChip.svelte';
-  import { cell, failedRead } from './shared.js';
+  import { cell } from './shared.js';
   import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -44,20 +46,8 @@
         const rowsOut = profile ? profile.history || [] : [];
         history = rowsOut;
         const names = METRICS.filter((n) => catalog.has(n));
-        const entries = await Promise.all(
-          rowsOut.map(async (h) => {
-            const reads = await Promise.all(
-              names.map((n) =>
-                spectra
-                  .metric(n, { matchId: h.matchId, steamId: sid })
-                  .catch((e) => failedRead(e, errText))
-                  .then((r) => [n, r]),
-              ),
-            );
-            return [h.matchId, new Map(reads)];
-          }),
-        );
-        if (live) matchReads = new Map(entries);
+        const byMatch = await metricsByMatch(sid, names, rowsOut.map((h) => h.matchId));
+        if (live) matchReads = byMatch;
       })
       .catch((e) => {
         if (live) loadError = errText(e);

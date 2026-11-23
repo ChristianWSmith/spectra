@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
@@ -54,8 +55,11 @@ func (s *LibraryService) ImportDialog() []string {
 // argument order (invalid paths become immediately-failed jobs). A path
 // that already has a non-terminal job is MERGED into it — the existing
 // id comes back, no duplicate job (see library.Importer.Enqueue).
-func (s *LibraryService) ImportPaths(paths []string) []int64 {
-	return s.imp.Enqueue(paths)
+func (s *LibraryService) ImportPaths(paths []string) ([]int64, error) {
+	if ok, missing := assetsReady(); !ok {
+		return nil, fmt.Errorf("extract the CS2 assets before importing (missing: %s)", strings.Join(missing, ", "))
+	}
+	return s.imp.Enqueue(paths), nil
 }
 
 // --- Import dirs (Settings → "Import dirs") ----------------------------------
@@ -219,7 +223,36 @@ func (s *LibraryService) ListMatchesPage(query, sortKey string, desc bool, after
 	for i := range page.Rows {
 		page.Rows[i].CopyState = s.imp.CopyState(page.Rows[i].SHA256, page.Rows[i].Path)
 	}
+	pending, err := s.metricsPendingMatches()
+	if err != nil {
+		return nil, err
+	}
+	for i := range page.Rows {
+		page.Rows[i].MetricsPending = page.Rows[i].Status == models.StatusReady && pending[page.Rows[i].ID]
+	}
 	return page, nil
+}
+
+// metricsPendingMatches returns the ids of the matches some match-scope metric
+// is still behind for: the rows whose metric values are being computed. It is
+// the same coverage the per-match metric states read, so the list and the
+// Match view agree.
+func (s *LibraryService) metricsPendingMatches() (map[int64]bool, error) {
+	cfg, err := s.st.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	coverage, err := s.st.MetricCoverage(cfg.RuleVersion)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, c := range coverage {
+		for _, id := range c.BehindMatches {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 // ListMapNames returns the distinct, non-empty map names in the library

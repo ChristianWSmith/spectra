@@ -7,7 +7,7 @@
 // a disconnected human: lib/replay/playercard.js presentAt, which is the
 // only reader that looks a bot up on purpose). Event-shaped rows (round
 // MVP / first-blood names, kill-feed attacker-victim cells, chat,
-// engagements) keep bot names: they record what happened.
+// kill tags) keep bot names: they record what happened.
 //
 // The Go twin is store.HumanOnly / store.HumanOnlyBySteamID
 // (internal/store/queries.go), which filters every server-side read;

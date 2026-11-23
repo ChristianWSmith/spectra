@@ -420,7 +420,7 @@ test('analytics family is read-cached (item: warm per-match analytics)', async (
     ['GetEconomy', services.getEconomy(7), services.getEconomy(7)],
     ['GetRoundClasses', services.getRoundClasses(7), services.getRoundClasses(7)],
     ['GetClutches', services.getClutches(7), services.getClutches(7)],
-    ['GetEngagements', services.getEngagements(7, ''), services.getEngagements(7)],
+    ['GetKillTags', services.getKillTags(7, ''), services.getKillTags(7)],
     ['GetUtility', services.getUtility(7), services.getUtility(7)],
   ];
   for (const [method, a, b] of pairs) {

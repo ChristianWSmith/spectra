@@ -68,6 +68,7 @@ export const library = {
   thStatus: 'Status',
   thActions: 'Actions',
   importFailed: 'import failed',
+  calculatingMetrics: 'imported; metric values are still being calculated',
   availableAfterParse: 'Available once parsing finishes',
   reparseTitle: 'Re-parse the demo — from Spectra\'s copy when one exists',
   reparseLabel: 'Re-parse',

@@ -63,7 +63,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// every preview is subject-addressed by the engine (one row per
 	// player the statement produced).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, partition, subject, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 200, 5000,
 	)
 	if err != nil {
@@ -88,16 +88,9 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 		"clutch": true, "alive_count": true,
 	}
 	for _, r := range res.Rows {
-		name, expr, scope, subject := r[0].(string), r[1].(string), r[2].(string), r[4].(string)
-		id, version := r[5].(int64), r[6].(int64)
-		scopes[scope]++
+		name, expr := r[0].(string), r[1].(string)
+		id, version := r[2].(int64), r[3].(int64)
 		t.Run(name, func(t *testing.T) {
-			if scope != "match" && scope != "profile" {
-				t.Fatalf("builtin scope = %q, want match|profile", scope)
-			}
-			if subject != "player" && subject != "match" && subject != "team" {
-				t.Fatalf("builtin subject = %q, want player|match|team", subject)
-			}
 			// Builtins are raw SQL (ruling 22). They run through the raw
 			// path: the save gate, then one RunRaw per scope the statement's
 			// binds select, then the stored rows.
@@ -105,6 +98,15 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 			if perr != nil || err != nil {
 				t.Fatalf("save gate: %v %v", perr, err)
 			}
+			// Scope is derived from the binds now (no scope column): a
+			// statement that binds the steam id is a profile metric.
+			scope := "match"
+			for _, b := range g.Binds {
+				if strings.TrimPrefix(b, ":") == "steam_id" {
+					scope = "profile"
+				}
+			}
+			scopes[scope]++
 			scopesToRun, err := metrics.RawScopes(st, g.Binds)
 			if err != nil {
 				t.Fatalf("scopes: %v", err)

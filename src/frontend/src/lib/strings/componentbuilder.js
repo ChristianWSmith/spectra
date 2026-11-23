@@ -89,7 +89,7 @@ export const componentbuilder = {
     'builtin-match-heatmaps': 'Match heatmaps',
     'builtin-match-heatmap': 'Heatmap',
     'builtin-match-combat': 'Match combat',
-    'builtin-match-combat-engagements': 'Kill tags',
+    'builtin-match-combat-kill-tags': 'Kill tags',
     'builtin-match-combat-clutches': 'Clutches',
   },
 };

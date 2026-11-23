@@ -92,13 +92,23 @@ const svelteCompile = (src, filename, out) =>
   writeFileSync(out, compile(src, { filename, generate: 'client', css: 'injected', runes: true }).js.code);
 // The frame and its child frame import each other: each .svelte's import of
 // the other is pointed at its compiled output in the cache dir.
+// The frames show their loading state with StatusChip (the centered spinner).
 svelteCompile(
-  readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8').replace("from './ChildFrame.svelte'", "from './ChildFrame.js'"),
+  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
+  'StatusChip.svelte',
+  join(dir, 'components', 'StatusChip.js'),
+);
+svelteCompile(
+  readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8')
+    .replace("from './ChildFrame.svelte'", "from './ChildFrame.js'")
+    .replace("from './StatusChip.svelte'", "from './StatusChip.js'"),
   'ComponentFrame.svelte',
   join(dir, 'components', 'ComponentFrame.js'),
 );
 svelteCompile(
-  readFileSync('src/lib/components/ChildFrame.svelte', 'utf8').replace("from './ComponentFrame.svelte'", "from './ComponentFrame.js'"),
+  readFileSync('src/lib/components/ChildFrame.svelte', 'utf8')
+    .replace("from './ComponentFrame.svelte'", "from './ComponentFrame.js'")
+    .replace("from './StatusChip.svelte'", "from './StatusChip.js'"),
   'ChildFrame.svelte',
   join(dir, 'components', 'ChildFrame.js'),
 );

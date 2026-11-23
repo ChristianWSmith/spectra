@@ -1,4 +1,5 @@
 <script>
+  import StatusChip from './StatusChip.svelte';
   // ChildFrame — a named component mounted in a frame. Inside a component, `<spectra.Child>` mounts a
   // child: its own frame, its failures in its own frame, the parent's context
   // and read services inherited. At a surface (no parent frame, see
@@ -79,7 +80,7 @@
     </button>
   </p>
 {:else if !resolved}
-  <p class="cframe-loading">{S.components.frameLoading}</p>
+  <p class="muted" role="status"><StatusChip block /></p>
 {:else if source == null && component == null}
   <p class="error" role="alert">
     {S.fill(S.components.childNotFound, { name })}
@@ -101,7 +102,4 @@
 {/if}
 
 <style>
-  .cframe-loading {
-    color: var(--muted);
-  }
 </style>

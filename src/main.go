@@ -78,9 +78,19 @@ func main() {
 	// CLI smoke import: `spectra -import path.dem[.zst]`
 	// runs the full pipeline headlessly, prints the result, and exits —
 	// used by dev smoke tests and useful for batch import scripting.
-	importPath := flag.String("import", "", "import a demo, print the result, exit")
+	importPath := flag.String("import", "", "import a demo, print the result, exit (extracts the CS2 assets first if they are missing)")
+	doExtract := flag.Bool("extract", false, "extract the CS2 assets (radar packs, icons, sounds, world collision), print the result, exit")
+	cs2Dir := flag.String("cs2", "", "CS2 install folder for -extract and -import (default: auto-detect)")
 	flag.Parse()
+	if *doExtract {
+		runExtract(*cs2Dir)
+		return
+	}
 	if *importPath != "" {
+		if ok, _ := assetsReady(); !ok {
+			fmt.Println("import: CS2 assets missing, extracting first")
+			runExtract(*cs2Dir)
+		}
 		runImport(*importPath)
 		return
 	}
@@ -207,7 +217,8 @@ func main() {
 		// Options.AfterAnalyze and scheduleSweep): imports coalesce into
 		// one running sweep plus one follow-up. A metric failure never
 		// fails the job.
-		AfterAnalyze: metricsSvc.sweepForJob,
+		AfterAnalyze:   metricsSvc.sweepForJob,
+		WindowOccluder: windowOccluderFor(),
 	})
 	defer imp.Shutdown()
 
@@ -341,13 +352,14 @@ func runImport(path string) {
 	metricsSvc := &MetricsService{st: st}
 	metricsSvc.useSweeps(b, nil)
 	imp := library.New(library.Options{
-		Store:         st,
-		Parse:         extract.Parse,
-		ParserVersion: extract.ParserVersion,
-		CopyEnabled:   copyOnImportPref(kvs),
-		Concurrency:   b.Size,
-		Budget:        b,
-		AfterAnalyze:  metricsSvc.sweepForJob,
+		Store:          st,
+		Parse:          extract.Parse,
+		ParserVersion:  extract.ParserVersion,
+		CopyEnabled:    copyOnImportPref(kvs),
+		Concurrency:    b.Size,
+		Budget:         b,
+		AfterAnalyze:   metricsSvc.sweepForJob,
+		WindowOccluder: windowOccluderFor(),
 	})
 	defer imp.Shutdown()
 

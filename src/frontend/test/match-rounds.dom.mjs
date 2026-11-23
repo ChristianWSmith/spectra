@@ -394,4 +394,4 @@ check('the rounds and details panels are registered as builtins',
 
 unmountAll();
 console.log(failures === 0 && escaped.length === 0 ? 'ALL PASS' : `FAILURES: ${failures}, escaped: ${escaped.length}`);
-process.exit(0);
+process.exit(failures === 0 && escaped.length === 0 ? 0 : 1);

@@ -33,16 +33,20 @@
       .map((e) => e.def),
   );
 
+  // The player the shown values belong to (plain: it only gates the reset).
+  let loadedFor = null;
   $effect(() => {
     reload;
     const sid = steamId;
+    const newPlayer = sid !== loadedFor;
+    loadedFor = sid;
     let live = true;
-    reads = new Map();
-    loadError = '';
+    if (newPlayer) reads = new Map();
     if (!sid) return;
     Promise.all([listMetrics(), getProfile(sid)])
       .then(async ([rows, profile]) => {
         if (!live) return;
+        loadError = '';
         defs = rows || [];
         wins = profile ? profile.wins : null;
         const names = composedSequence('profile', defs)

@@ -12,13 +12,13 @@ package integration_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/ChristianWSmith/spectra/internal/encounter"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -68,7 +68,12 @@ func TestGoldenPlayerTicks(t *testing.T) {
 	sink := &timedTickSink{w: w}
 
 	parseStart := time.Now()
-	m, err := extract.Parse(context.Background(), openGoldenDemo(t), extract.ParseOptions{Ticks: sink})
+	// No geometry is needed to exercise the window samples' speed: a
+	// pass-through occluder builds the windows with nothing blocked.
+	noGeometry := func(string) (encounter.Occluder, error) {
+		return func(a, b [3]float64) bool { return false }, nil
+	}
+	m, err := extract.Parse(context.Background(), openGoldenDemo(t), extract.ParseOptions{Ticks: sink, WindowOccluder: noGeometry})
 	if err != nil {
 		t.Fatalf("extract.Parse: %v", err)
 	}
@@ -123,58 +128,67 @@ func TestGoldenPlayerTicks(t *testing.T) {
 		t.Errorf("%d rows outside a stored round (or before its start tick)", n)
 	}
 
-	// NULL-not-0: a dead frame carries no position sample, so in_air,
-	// speed and weapon are NULL and hp is the sampled 0.
-	if n := one(`SELECT COUNT(*) FROM player_ticks WHERE match_id = ? AND alive = 0
-		AND (in_air IS NOT NULL OR speed IS NOT NULL OR weapon IS NOT NULL OR hp <> 0)`, id); n != 0 {
-		t.Errorf("%d dead rows carry an in_air/speed/weapon value or nonzero hp", n)
+	// NULL-not-0 on the state rows: a dead row carries hp 0, never a stale
+	// nonzero value.
+	if n := one(`SELECT COUNT(*) FROM player_ticks WHERE match_id = ? AND alive = 0 AND hp <> 0`, id); n != 0 {
+		t.Errorf("%d dead rows carry nonzero hp", n)
 	}
 	if n := one(`SELECT COUNT(*) FROM player_ticks WHERE match_id = ? AND alive = 0`, id); n == 0 {
 		t.Error("no dead rows at all — the dead-frame contract is untested on the golden demo")
 	}
-	// Speed stays physically plausible (CS2.md movement entry: run speeds
-	// top out near 250 u/s; bhop/knockback can exceed it briefly, a
-	// teleport would show as thousands). Logged, plus a coarse bound.
-	var maxSpeed sql.NullFloat64
-	if err := db.QueryRow(`SELECT MAX(speed) FROM player_ticks WHERE match_id = ?`, id).Scan(&maxSpeed); err != nil {
-		t.Fatalf("max speed: %v", err)
+	// Speed lives on the encounter window samples now (dense, not state-pruned).
+	// It stays physically plausible (CS2.md movement entry: run speeds top out
+	// near 250 u/s; bhop/knockback can exceed it briefly, a teleport would show
+	// as thousands). Logged, plus a coarse bound.
+	var maxSpeed float64
+	windowSamples := 0
+	for _, w := range m.Windows {
+		for _, sm := range w.Samples {
+			windowSamples++
+			for _, v := range []*float64{sm.P1Speed, sm.P2Speed} {
+				if v != nil && *v > maxSpeed {
+					maxSpeed = *v
+				}
+			}
+		}
 	}
-	t.Logf("max horizontal speed = %.1f u/s", maxSpeed.Float64)
+	if windowSamples == 0 {
+		t.Error("no encounter window samples on the golden demo — the speed check is untested")
+	}
+	t.Logf("max horizontal speed in windows = %.1f u/s over %d samples", maxSpeed, windowSamples)
+	if maxSpeed > 1000 {
+		t.Errorf("window speed %.1f u/s is not physically plausible (teleport?)", maxSpeed)
+	}
 
-	// Event-tick join + same-frame in-air re-proof: every kill with a
-	// player attacker has that attacker's row at the kill's tick, and the
-	// row's in_air equals the payload's attackerinair.
-	missing, compared, mismatched := 0, 0, 0
+	// Event-tick check (state-change rule): every kill by another player has
+	// the VICTIM's row at the kill's tick, and that row shows them dead. A
+	// death always changes alive, so the rule keeps it. The attacker's row is
+	// not checked: the attacker's state does not change on a kill, so the rule
+	// need not keep it. Self-kills and kills with no attacker (C4, world) are
+	// skipped: there is no other player to join.
+	missing, compared, notDead := 0, 0, 0
 	for _, e := range m.Events {
-		if e.Kind != models.EventKill || e.Attacker == "" || e.Attacker == e.Victim {
+		if e.Kind != models.EventKill || e.Attacker == "" || e.Attacker == e.Victim || e.Victim == "" {
 			continue
 		}
-		var raw map[string]any
-		if err := json.Unmarshal([]byte(e.RawJSON), &raw); err != nil {
-			continue
-		}
-		want, ok := raw["attackerinair"].(bool)
-		if !ok {
-			continue
-		}
-		var inAir sql.NullInt64
-		err := db.QueryRow(`SELECT in_air FROM player_ticks WHERE match_id = ? AND tick = ? AND steam_id = ?`,
-			id, e.Tick, e.Attacker).Scan(&inAir)
+		var alive sql.NullInt64
+		err := db.QueryRow(`SELECT alive FROM player_ticks WHERE match_id = ? AND tick = ? AND steam_id = ?`,
+			id, e.Tick, e.Victim).Scan(&alive)
 		if err == sql.ErrNoRows {
 			missing++
-			t.Errorf("kill tick=%d attacker=%s: no player_ticks row at the kill's tick", e.Tick, e.Attacker)
+			t.Errorf("kill tick=%d victim=%s: no player_ticks row at the kill's tick", e.Tick, e.Victim)
 			continue
 		}
 		if err != nil {
 			t.Fatalf("join probe: %v", err)
 		}
 		compared++
-		if !inAir.Valid || (inAir.Int64 != 0) != want {
-			mismatched++
-			t.Errorf("kill tick=%d attacker=%s: in_air = %+v, payload attackerinair = %v", e.Tick, e.Attacker, inAir, want)
+		if alive.Int64 != 0 {
+			notDead++
+			t.Errorf("kill tick=%d victim=%s: row shows alive=%d, want 0", e.Tick, e.Victim, alive.Int64)
 		}
 	}
-	t.Logf("kill join: compared=%d missing=%d in_air mismatches=%d", compared, missing, mismatched)
+	t.Logf("kill join: compared=%d missing=%d not-dead=%d", compared, missing, notDead)
 	if compared == 0 {
 		t.Error("no kill joined a tick row — the join contract is untested")
 	}

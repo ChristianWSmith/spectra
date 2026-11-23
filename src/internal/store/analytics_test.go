@@ -19,7 +19,7 @@ import (
 func TestAnalyticsTablesFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
 	analyticsTables := []string{
-		"round_classifications", "round_side_classes", "player_round_stats", "engagements",
+		"round_classifications", "round_side_classes", "player_round_stats", "kill_tags",
 		"utility_events", "match_trade_opps", "player_career", "saved_filters",
 		"analysis_config",
 	}

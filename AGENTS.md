@@ -538,7 +538,7 @@ Canonical homes (extend these, don't fork them):
   User metric SQL is not filtered (accepted footgun). Every
   roster/aggregate/selection read routes through it. Event-shaped reads
   (round MVP/first-blood rows, kill-feed attacker/victim cells, chat,
-  engagements) deliberately keep bot names — they record what happened
+  kill tags) deliberately keep bot names — they record what happened
   (stance: PRODUCT.md **Event surfaces record what happened**).
   The ONE exception is the replay view: `lib/replay/playercard.js`
   `presentAt` lists a bot only while it is covering a disconnected

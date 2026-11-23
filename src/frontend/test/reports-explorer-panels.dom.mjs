@@ -176,4 +176,4 @@ console.log('F. Explorer reference card: standalone only');
 }
 
 console.log(failures ? `FAILED: ${failures}` : 'ALL PASSED');
-process.exit(0);
+process.exit(failures ? 1 : 0);

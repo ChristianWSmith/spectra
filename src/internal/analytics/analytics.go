@@ -1,6 +1,6 @@
 // Package analytics is the M3 computation core: pure functions
 // that derive the stored analytics rows — round classifications, KAST
-// player-rounds, engagements, utility pairings and the
+// player-rounds, kill tags, utility pairings and the
 // economy view — from extracted events/rounds plus the versioned rules
 // config. Every function is unit-testable with synthetic event sets;
 // Compute is the store orchestration (read → derive → replace → career
@@ -31,7 +31,7 @@
 //     v1 always-0 placeholder). A player-round without a sample keeps
 //     the columns' absence-as-zero default (disconnected before round
 //     end, or the demo carried no start-account prop).
-//   - Engagement kinds are opening|trade|traded|untraded; the entry kind
+//   - Kill tag kinds are opening|trade|traded|untraded; the entry kind
 //     is deferred (player_stats.entry_kills from the extractor already
 //     covers per-player entry attribution).
 //   - missed (match_trade_opps.missed, read as the `missed_trades`
@@ -118,7 +118,7 @@ type (
 	Classification   = models.RoundClassification
 	RoundSideClass   = models.RoundSideClass
 	PlayerRound      = models.PlayerRoundStat
-	Engagement       = models.Engagement
+	KillTag          = models.KillTag
 	UtilityEvent     = models.UtilityEvent
 )
 

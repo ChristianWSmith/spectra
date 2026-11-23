@@ -119,7 +119,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	// unchanged — the two counts are re-pinned here as direct stored
 	// reads over the same rows the seeds read: missed =
 	// match_trade_opps.missed (analytics.Compute's analyze-time gate),
-	// untraded = COUNT(*) of kind='untraded' engagement rows grouped by
+	// untraded = COUNT(*) of kind='untraded' kill tag rows grouped by
 	// the victim (b_steam — the untraded_deaths seed's source). The
 	// roster the per-player assertions walk is the scoreboard's
 	// humans-only rows (names for the messages).
@@ -138,13 +138,13 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 		t.Fatalf("read match_trade_opps: %v", err)
 	}
 	untradedRes, err := st.RunReadOnly(
-		`SELECT b_steam, COUNT(*) FROM engagements
+		`SELECT b_steam, COUNT(*) FROM kill_tags
 		 WHERE match_id = ? AND kind = 'untraded' AND b_steam <> ''
 		 GROUP BY b_steam`,
 		[]any{id}, 500, 5000,
 	)
 	if err != nil {
-		t.Fatalf("read untraded engagements: %v", err)
+		t.Fatalf("read untraded kill tags: %v", err)
 	}
 	// Enemy headshot kills by attacker, from the event rows (the stored
 	// headshots column is retired): the same-side gate of the fold.
@@ -191,7 +191,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 		return out
 	}
 	missedBy := countBySteam(missedRes, "match_trade_opps")
-	untradedBy := countBySteam(untradedRes, "untraded engagements")
+	untradedBy := countBySteam(untradedRes, "untraded kill tags")
 	headshotsBy := countBySteam(headshotsRes, "enemy headshot kills")
 
 	var oppTotal, untradedTotal int

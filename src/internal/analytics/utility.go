@@ -85,7 +85,7 @@ func utilKind(weapon string) string {
 // side channel; they are parsed ONCE here, not per attribution-loop hit.
 //
 // sides is the extractor's exact per-round freeze-end side samples (the
-// same map PlayerRounds/Engagements take — resolveRoundSides
+// same map PlayerRounds/Kill tags take — resolveRoundSides
 // per round): the damage sum's enemy gate reads it. A round without a
 // stored sample leaves every side unknown → the permissive rule counts.
 func Utility(events []models.Event, players []PlayerRef, cfg Config, sides map[int]map[string]string, blindDetails map[int]string) []UtilityEvent {

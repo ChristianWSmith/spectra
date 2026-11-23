@@ -38,6 +38,14 @@
   // services.js store pattern; see the module header for the rules).
   import { subscribeWork, dismissWork } from './lib/workstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
+  import { WARM_VIEWS, WARM_STEP_MS, loadWarmTargets, onPlacementsChanged } from './lib/warm.js';
+  import * as servicesModule from './lib/services.js';
+  import * as workstateModule from './lib/workstate.svelte.js';
+  import { provideHelperModule } from './lib/componentruntime/compile.js';
+  // Built-in components import these two helpers by name; App already loads
+  // both modules, so it hands them to the helper table once.
+  provideHelperModule('src/lib/services.js', servicesModule);
+  provideHelperModule('src/lib/workstate.svelte.js', workstateModule);
   import * as S from './lib/strings/index.js'; // chrome copy (strings-audit Check B)
   // The ?probe=1 operator readout (frameprobe.js — its entry comment is
   // THE 60-second collection procedure). Same module instance the
@@ -200,6 +208,37 @@
   // `route = next`, so the effect below re-runs on every navigation
   // anyway (same one-flush discipline as the keep-alive record above).
   let scrollRec = null;
+  // The match kept mounted across navigation (see the app-views block below).
+  let keptMatch = $state(null);
+  $effect(() => {
+    if (viewRoute && viewRoute.name === 'match' && viewRoute.id != null) keptMatch = viewRoute.id;
+  });
+  // The player profile kept mounted the same way: its steam id and query are
+  // remembered from the last player route, so the hidden instance keeps its props.
+  let keptPlayer = $state(null);
+  $effect(() => {
+    if (viewRoute && viewRoute.name === 'player') {
+      keptPlayer = { steamId: viewRoute.steamId, query: viewRoute.query || {} };
+    }
+  });
+  // Pre-warming (lib/warm.js): the match and profile panes start from the
+  // backend's newest records, or the dummies (match 0, no steam id) before any
+  // exist. A route that already chose one keeps its choice.
+  let warmStep = $state(0); // how many WARM_VIEWS panes have mounted
+  let warmPlacements = $state(0); // bumped on every "use as my view" change
+  let warmTargets = $state({ matchId: 0, steamId: '' });
+  loadWarmTargets().then((t) => {
+    warmTargets = t;
+    if (keptMatch == null) keptMatch = t.matchId;
+    if (keptPlayer == null) keptPlayer = { steamId: t.steamId, query: {} };
+  });
+  $effect(() => onPlacementsChanged(() => (warmPlacements += 1)));
+  // One warm view mounts per WARM_STEP_MS, until every pane is mounted.
+  $effect(() => {
+    if (warmStep >= WARM_VIEWS.length) return;
+    const t = setTimeout(() => (warmStep += 1), WARM_STEP_MS);
+    return () => clearTimeout(t);
+  });
   $effect(() => {
     const r = viewRoute;
     const content = contentEl;
@@ -557,17 +596,61 @@
          this host, hence interactive by design). inert flips with
          replayActive: the overlay is up ⟺ nothing beneath is reachable. -->
     <div class="app-views" inert={replayActive}>
+      <!-- The last match viewed stays mounted (hidden while another route is
+           shown), so leaving and returning keeps its loaded panels and the
+           scroll position the scroll record restores. Only one match is kept:
+           a different match id replaces it. -->
+      {#key warmPlacements}
+      {#if keptMatch != null}
+        {@const onMatch = viewRoute && viewRoute.name === 'match' && viewRoute.id === keptMatch}
+        <div class="kept-match" style:display={onMatch ? 'contents' : 'none'}>
+          <Match id={keptMatch} routeTab={onMatch ? viewRoute.tab || '' : ''} {nav} {openDocs} expandReplay={matchExpand} />
+        </div>
+      {/if}
+      {#if keptPlayer != null}
+        {@const onPlayer = viewRoute && viewRoute.name === 'player'}
+        <div class="kept-player" style:display={onPlayer ? 'contents' : 'none'}>
+          <PlayerProfile steamId={keptPlayer.steamId} query={keptPlayer.query} origin={originHash} {nav} />
+        </div>
+      {/if}
+      {/key}
+      <!-- Warm panes (lib/warm.js): every view in WARM_VIEWS is mounted
+           hidden once its step comes, and the current route's pane is shown. -->
+      {#each WARM_VIEWS as name, i (name)}
+        {#if i < warmStep || (viewRoute && viewRoute.name === name)}
+          {@const current = !!viewRoute && viewRoute.name === name}
+          <div class="warm-pane" style:display={current ? 'contents' : 'none'}>
+            {#if name === 'library'}
+              <Library {nav} {openDocs} query={current ? viewRoute.query || {} : {}} />
+            {:else if name === 'profiles'}
+              <Profiles {nav} />
+            {:else if name === 'settings'}
+              <Settings {openDocs} />
+            {:else if name === 'sql'}
+              <SqlConsole {nav} {openDocs} />
+            {:else if name === 'builder'}
+              <Builder {nav} {openDocs} />
+            {:else if name === 'reportbuilder'}
+              <ReportsBuilder {openDocs} />
+            {:else if name === 'componentbuilder'}
+              <ComponentBuilder {nav} {openDocs} />
+            {:else if name === 'explorer'}
+              <Explorer {nav} routeId={current ? viewRoute.id || 0 : 0} />
+            {:else if name === 'reports'}
+              <Reports {nav} {openDocs} routeId={current ? viewRoute.id || 0 : 0} />
+            {:else if name === 'round'}
+              <RoundDetail id={current ? viewRoute.id : warmTargets.matchId} round={current ? viewRoute.round : 1} query={current ? viewRoute.query || {} : {}} {nav} />
+            {:else if name === 'compare'}
+              <CompareRounds id={current ? viewRoute.id : warmTargets.matchId} query={current ? viewRoute.query || {} : {}} {nav} />
+            {/if}
+          </div>
+        {/if}
+      {/each}
       {#if viewRoute}
-        {#if viewRoute.name === 'library'}
-          <Library {nav} {openDocs} query={viewRoute.query || {}} />
-        {:else if viewRoute.name === 'match'}
-          <Match id={viewRoute.id} routeTab={viewRoute.tab || ''} {nav} {openDocs} expandReplay={matchExpand} />
-        {:else if viewRoute.name === 'round'}
-          <RoundDetail id={viewRoute.id} round={viewRoute.round} query={viewRoute.query || {}} {nav} />
+        {#if viewRoute.name === 'match'}
+          <!-- Rendered by the kept-match block above. -->
         {:else if viewRoute.name === 'player'}
-          <PlayerProfile steamId={viewRoute.steamId} query={viewRoute.query || {}} origin={originHash} {nav} />
-        {:else if viewRoute.name === 'compare'}
-          <CompareRounds id={viewRoute.id} query={viewRoute.query || {}} {nav} />
+          <!-- Rendered by the kept-player block above. -->
         {:else if viewRoute.name === 'replay'}
           <!-- Replay renders ABOVE (the keep-alive block), outside this
                chain: it must survive into same-id match routes as the
@@ -579,22 +662,6 @@
                back=replay/… (viewRoute = the parsed back → replay): renders
                nothing beneath the overlay, exactly like a replay route with
                no back. -->
-        {:else if viewRoute.name === 'builder'}
-          <Builder {nav} {openDocs} />
-        {:else if viewRoute.name === 'reportbuilder'}
-          <ReportsBuilder {openDocs} />
-        {:else if viewRoute.name === 'componentbuilder'}
-          <ComponentBuilder {nav} {openDocs} />
-        {:else if viewRoute.name === 'sql'}
-          <SqlConsole {nav} {openDocs} />
-        {:else if viewRoute.name === 'profiles'}
-          <Profiles {nav} />
-        {:else if viewRoute.name === 'explorer'}
-          <Explorer {nav} routeId={viewRoute.id || 0} />
-        {:else if viewRoute.name === 'reports'}
-          <Reports {nav} {openDocs} routeId={viewRoute.id || 0} />
-        {:else if viewRoute.name === 'settings'}
-          <Settings {openDocs} />
         {/if}
       {/if}
     </div>

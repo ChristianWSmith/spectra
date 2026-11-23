@@ -132,7 +132,7 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 		// Trades: a death is traded when the victim's killer dies to one of
 		// the victim's teammates within the trade window after the death.
 		// Enemy deaths only (a teamkill death is never tradeable — the
-		// extractor writes no trade record for it and Engagements anchors
+		// extractor writes no trade record for it and Kill tags anchors
 		// enemy kills only, so KAST "T" stays bijective with trade kills);
 		// an unknown killer side cannot be classified either.
 		traded := map[string]bool{}

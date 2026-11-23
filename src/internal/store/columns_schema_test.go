@@ -30,7 +30,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"roundClassCols", "round_classifications", roundClassCols},
 		{"roundSideClassCols", "round_side_classes", roundSideClassCols},
 		{"playerRoundCols", "player_round_stats", playerRoundCols},
-		{"engagementCols", "engagements", engagementCols},
+		{"killTagCols", "kill_tags", killTagCols},
 		{"utilityCols", "utility_events", utilityCols},
 		{"matchTradeOppsCols", "match_trade_opps", matchTradeOppsCols},
 		{"playerCareerCols", "player_career", playerCareerCols},
@@ -179,8 +179,8 @@ func TestReplaceMatchRowsPlaceholderCount(t *testing.T) {
 				{Round: 1, SteamID: "100", Name: "p"},
 			})
 		}},
-		{"engagements", func() error {
-			return s.ReplaceEngagements(id, []models.Engagement{{Round: 1, Kind: "opening", ASteam: "100"}})
+		{"kill_tags", func() error {
+			return s.ReplaceKillTags(id, []models.KillTag{{Round: 1, Kind: "opening", ASteam: "100"}})
 		}},
 		{"utility_events", func() error {
 			return s.ReplaceUtility(id, []models.UtilityEvent{{Round: 1, Kind: "he", Thrower: "100"}})

@@ -15,11 +15,11 @@ import (
 // cascade a dependency's change walks through metric_deps.
 
 // analysisTables are the analysis-owned tables: the rows analytics writes from
-// the rule values (round classes, engagements, trade opportunities, utility,
+// the rule values (round classes, kill tags, trade opportunities, utility,
 // the trade-kill column of player_stats). player_stats counts as
 // analysis even though extract writes its base columns (03 §4, conservative).
 var analysisTables = []string{
-	"engagements", "match_trade_opps", "player_round_stats",
+	"kill_tags", "match_trade_opps", "player_round_stats",
 	"player_stats", "round_classifications", "round_side_classes", "utility_events",
 }
 
@@ -51,12 +51,12 @@ func touchesAnalysis(touched string) bool {
 // affectedRuleTables names the analysis tables an analysis-rule edit reaches
 // (ruling 26: the rule's analysis table, nothing else). Each rule's stored
 // outputs are listed on AnalysisConfig: the trade window reaches the trade
-// kills in player_stats and the engagements, the trade-opportunity distance
+// kills in player_stats and the kill tags, the trade-opportunity distance
 // reaches match_trade_opps, and the eco thresholds reach the round classes.
 func affectedRuleTables(old, cur models.AnalysisConfig) []string {
 	var out []string
 	if old.TradeWindowS != cur.TradeWindowS {
-		out = append(out, "engagements", "player_stats")
+		out = append(out, "kill_tags", "player_stats")
 	}
 	if old.TradeOppDistance != cur.TradeOppDistance {
 		out = append(out, "match_trade_opps")

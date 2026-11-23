@@ -37,8 +37,8 @@ func TestConcurrentExtractions(t *testing.T) {
 	const akSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>` + "\n"
 	const hsSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M2 2"/></svg>` + "\n"
 	buildVPK(t, csgo, map[string][]byte{
-		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c": radar,
-		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+		"panorama/images/overheadmaps/de_dust2_radar_psd.vtex_c": radar,
+		"resource/overviews/de_dust2.txt": []byte(`"de_dust2"
 {
 	"pos_x"		"-100"
 	"pos_y"		"200"
@@ -88,7 +88,7 @@ func TestConcurrentExtractions(t *testing.T) {
 			results <- fmt.Errorf("pack run %d: %w", i, err)
 		case len(errs) > 0:
 			results <- fmt.Errorf("pack run %d: unexpected errors %v", i, errs)
-		case len(maps) != 1 || maps[0].Map != "de_fixture":
+		case len(maps) != 1 || maps[0].Map != "de_dust2":
 			results <- fmt.Errorf("pack run %d: maps = %v, want the fixture pack", i, maps)
 		default:
 			results <- nil
@@ -131,7 +131,7 @@ func TestConcurrentExtractions(t *testing.T) {
 	// Outputs are intact after the interleaving: the pack decodes at the
 	// expected size, meta.json parses with its transform, and both icon
 	// files round-trip their exact payloads.
-	f, err := os.Open(filepath.Join(packOut, "de_fixture", "radar.png"))
+	f, err := os.Open(filepath.Join(packOut, "de_dust2", "radar.png"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestConcurrentExtractions(t *testing.T) {
 	if img.Bounds().Dx() != radarUpscale*w || img.Bounds().Dy() != radarUpscale*h {
 		t.Errorf("png bounds = %v, want %dx%d", img.Bounds(), radarUpscale*w, radarUpscale*h)
 	}
-	metaRaw, err := os.ReadFile(filepath.Join(packOut, "de_fixture", "meta.json"))
+	metaRaw, err := os.ReadFile(filepath.Join(packOut, "de_dust2", "meta.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

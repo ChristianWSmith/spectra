@@ -1792,3 +1792,73 @@ at the end of the section.
   demoinfocs-golang v6.0.0-rc.2 `pkg/demoinfocs/common/player.go`
   (`EquipmentValueRoundStart` / `MoneySpentThisRound` doc comments);
   local characterization on golden/de_cache.dem.zst (2026-11-18).
+
+- **Map geometry format in a CS2 install (BSP or not)** — whether CS2 maps
+  can be read as Source 1 `.bsp` (the format `saiko-tech/bsp-tracer` parses).
+  Answer: **no.** CS2 ships compiled Source 2 maps: `game/csgo/maps/<map>.vpk`
+  holds `maps/<map>.vmap_c` (a compiled vmap). Physics for collision is
+  embedded in that resource (`embedded_physics` / `phys_data_block` strings
+  in `de_cache.vpk`). There are no `.bsp` files in the install. bsp-tracer is
+  a CS:GO (Source 1) BSP reader built on `galaco/bsp`, so it does not apply
+  to CS2 maps. A tracer on CS2 needs a Source 2 vmap reader and the embedded
+  physics decode. The map VPKs are separate from `pak01_dir.vpk`, which the
+  repo's cs2find index does not cover.
+  **Source** — local listing of `game/csgo/maps/de_cache.vpk` (2026-11-21;
+  `grep` of directory strings, not a decode); bsp-tracer README and
+  `pkg/bsptracer` imports (`github.com/saiko-tech/bsp-tracer`, MIT, last
+  updated 2024-03-22; retrieved 2026-11-21).
+
+- **Reading CS2 map geometry and collision (options, 2026-11-22)** — how to
+  get triangles from a CS2 map without a BSP reader.
+  - **ValveResourceFormat (VRF), C#, MIT.** The mature reference. It decodes
+    `vmap_c` and `vphys` (physics collision) and exports glTF. The
+    `MapExtract` class has `LoadWorldPhysics()`. Per its format-support
+    guide, `vphys` geometry goes into vmdl/vmap exports. Older community forks
+    list vphys as unsupported, so their tables are outdated.
+  - **atomicbool/cs2-map-parser, C++, no license.** Extracts a `vphys` from a
+    VPK and converts it to triangles for visibility checks. Not a Go option,
+    and unlicensed, so it is reference-only.
+  - **awpy / cs2-nav (Python, Rust).** Parse CS2 `.nav` navigation meshes.
+    These are walkable areas, not collision geometry. Useful for a different
+    question.
+  - **galaco/bsp (Go).** Source 1 BSP only (versions 20 and 21). Does not
+    read Source 2 vmaps.
+  - **No Go library found** that reads CS2 `vmap` or `vphys`. A Go route needs
+    a DMX/KV3 reader (vmap is a DMX file, binary encoding v4, with half-edge
+    mesh data). Or shell out to VRF.
+  **Source** — web search 2026-11-22; https://github.com/ValveResourceFormat/ValveResourceFormat;
+  https://s2v.app/ValveResourceFormat/guides/format-support.html;
+  https://s2v.app/ValveResourceFormat/api/ValveResourceFormat.IO.MapExtract.html;
+  https://github.com/AtomicBool/cs2-map-parser; https://awpy.readthedocs.io/en/latest/nav.html;
+  https://github.com/Galaco/bsp; https://developer.valvesoftware.com/wiki/VMAP.
+  The VRF `MapExtract` method names come from the search snippet; check them
+  against the repo before relying on them.
+
+- **Binary KV3 v5 and the physics layout in CS2 map resources (2026-11-22, spike)**
+  - Resource container: 16-byte header (file size, header version 12, version,
+    block offset, block count). Directory entries are 12 bytes: FourCC, offset
+    relative to the offset field, size. The directory starts at `8 + blockOffset`.
+  - `maps/de_cache.vmap_c` has blocks RERL, RED2 and an empty DATA. The KV3
+    manifest is in **RED2** (it lists 803 child resources, including
+    `maps/de_cache/world_physics.vmdl`).
+  - `world_physics.vmdl_c`: block **PHYS** (22.7 MB KV3 v5, **zstd**
+    compression = 2). `m_parts[0].m_rnShape.m_meshes` holds 11 triangle meshes:
+    `m_Vertices` (float32 x3, 12 bytes each) and `m_Triangles` (three int32
+    indices, 12 bytes each). Also `m_Nodes` (32-byte kd nodes) and
+    `m_Materials` (one entry per triangle). Also `m_hulls` (4608 convex hulls).
+  - Measured: 853,728 vertices, 1,543,751 triangles across the 11 meshes, all
+    indices in range, all vertices inside their mesh bounds.
+  **Source** — VRF (`ValveResourceFormat/Resource/Resource.cs`,
+  `Resource/ResourceTypes/BinaryKV3*.cs`, `Resource/ResourceTypes/RubikonPhysics/Shapes/Mesh.cs`,
+  `.../Shapes/Hull.cs`; MIT, fetched 2026-11-22 via gh api); the decode
+  itself is the spike in `src/internal/source2/` and its end-to-end test
+  `src/internal/mappack/source2_spike_test.go` (run against the local install).
+
+- **Physics mesh BVH addressing (2026-11-22, measured)** — kd nodes are 32 bytes
+  (min, packed type/offset, max, triangle offset). Split nodes (type 0..2) are
+  depth-first: the first child is the next node, and the second child is at
+  `index + ChildOffset` (relative, not absolute). Leaves (type 3) hold
+  `ChildOffset` triangles from `TriangleOffset`. Verified on de_cache mesh 0: all
+  311,281 inner nodes satisfy the invariant under this reading.
+  **Source** — the layout in VRF `Resource/ResourceTypes/RubikonPhysics/Shapes/Mesh.cs`
+  (fetched 2026-11-22), plus the measurement in `src/internal/mappack/source2_raycast_test.go`.

@@ -359,7 +359,7 @@ export function scoreThrough(rounds, roundNumber) {
 
 // roundScoreLabel — THE round-option label for a round <select>: the
 // canonical ``RD<n> | <ct>-<t>`` spelling every round picker renders
-// (Utility's throw log, Combat's engagements filter, Heatmaps' round
+// (Utility's throw log, Combat's kill tags filter, Heatmaps' round
 // ranges). Composed ONLY from roundIndexLabel (the display label —
 // counted numbers, W/K for a legacy negative row) and scoreThrough (the
 // scoreline through that round); neither may be re-spelled at a call

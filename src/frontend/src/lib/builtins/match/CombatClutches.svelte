@@ -42,7 +42,7 @@
   }
 
   // The outcome toggles restore per match through the same registry record
-  // as the Engagements panel (remember merges, so each writes its own fields).
+  // as the Kill tags panel (remember merges, so each writes its own fields).
   const combDefaults = () => ({
     clutchWon: true,
     clutchLost: false,

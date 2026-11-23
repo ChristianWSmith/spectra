@@ -25,7 +25,9 @@ func tickParse(frames *atomic.Int32, fail *atomic.Bool, rounds int) func(context
 			return nil, errors.New("tick sink not wired")
 		}
 		for i := int32(0); i < frames.Load(); i++ {
-			sample := []models.TickSample{{SteamID: "100", Side: "ct", Alive: true, HP: 100, HasPosition: true, X: float64(i)}}
+			// HP alternates so every frame is a state change: the row count then
+			// follows the frame count (the state-change rule would keep one row otherwise).
+			sample := []models.TickSample{{SteamID: "100", Side: "ct", Alive: true, HP: 100 - int(i%2), HasPosition: true, X: float64(i)}}
 			if err := opts.Ticks.AddTicks(i, 1, 64, sample); err != nil {
 				return nil, err
 			}
@@ -117,5 +119,68 @@ func TestImportFailureDeletesPlayerTicks(t *testing.T) {
 				t.Errorf("after failed import: %d tick rows, want 0", n)
 			}
 		})
+	}
+}
+
+// TestImportPanicDeletesStreamedTicks: a parser panic after tick rows reached
+// the store (two full chunks were committed by the writer goroutine) leaves no
+// rows and no running writer. process runs in this goroutine so the test can
+// recover the re-raised panic.
+func TestImportPanicDeletesStreamedTicks(t *testing.T) {
+	var frames atomic.Int32
+	var fail atomic.Bool
+	frames.Store(120000) // > two full tickChunkRows chunks
+	base := tickParse(&frames, &fail, 1)
+	panicking := func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
+		if _, err := base(ctx, r, opts); err != nil {
+			return nil, err
+		}
+		panic("parser panic")
+	}
+	im, st := newTestImporter(t, panicking)
+	path := writeDemo(t, "panic.dem", "panic")
+	jobID, err := st.CreateJob(jobKindImport, path)
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("process did not re-raise the parser panic")
+			}
+		}()
+		im.process(queueItem{jobID: jobID, kind: jobKindImport, path: path}, ctx, cancel)
+	}()
+	matchID := waitJobMatch(t, st, jobID)
+	if n := tickCount(t, st, matchID); n != 0 {
+		t.Errorf("after parser panic: %d tick rows, want 0", n)
+	}
+}
+
+// TestImportCancelledDeletesStreamedTicks: a cancelled import whose parse fails
+// is recorded as cancelled (not failed) and leaves no tick rows.
+func TestImportCancelledDeletesStreamedTicks(t *testing.T) {
+	var frames atomic.Int32
+	var fail atomic.Bool
+	frames.Store(120000)
+	fail.Store(true)
+	im, st := newTestImporter(t, tickParse(&frames, &fail, 1))
+	path := writeDemo(t, "cancel.dem", "cancel")
+	jobID, err := st.CreateJob(jobKindImport, path)
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before the parse fails
+	im.process(queueItem{jobID: jobID, kind: jobKindImport, path: path}, ctx, cancel)
+	job := waitStatus(t, st, jobID, models.JobCancelled)
+	if job.Error != "cancelled" {
+		t.Errorf("job error = %q, want \"cancelled\"", job.Error)
+	}
+	matchID := waitJobMatch(t, st, jobID)
+	if n := tickCount(t, st, matchID); n != 0 {
+		t.Errorf("after cancel: %d tick rows, want 0", n)
 	}
 }

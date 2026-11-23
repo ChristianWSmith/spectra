@@ -431,4 +431,4 @@ check('a match with no economy rows shows no rounds and no curve', root.querySel
 
 unmountAll();
 console.log(failures === 0 && escaped.length === 0 ? 'ALL PASS' : `FAILURES: ${failures}, escaped: ${escaped.length}`);
-process.exit(0);
+process.exit(failures === 0 && escaped.length === 0 ? 0 : 1);

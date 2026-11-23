@@ -42,6 +42,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/encounter"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
@@ -73,18 +74,11 @@ const (
 // emitted separately and never throttled.
 const progressMinInterval = 100 * time.Millisecond
 
-// The job-wide progress mapping (see models.Job and the stage table next
-// to the stage constants): every stage owns a fixed slice of 0..1, so the
-// points one job emits are monotone no matter which stage reports them.
-const (
-	progressHashEnd    = 0.10 // hash:     bytes read ÷ file size
-	progressCopyStart  = 0.10 // copy:     bytes written ÷ file size
-	progressCopyEnd    = 0.20
-	progressParseStart = 0.20 // parse:    stream bytes consumed ÷ file size
-	progressParseEnd   = 0.90
-	progressStore      = 0.90 // store:    coarse step
-	progressAnalyze    = 0.95 // analyze:  coarse step
-)
+// Per-phase progress: every phase fills its own 0..1 bar. A phase starts at 0
+// and reports 1 when it completes; the next phase starts over at 0. Within a
+// phase the points are monotone (a late byte tick cannot walk the bar back).
+// Store and analyze have no byte counter, so they report 0 when they start
+// and 1 when they finish.
 
 // errShuttingDown is the refusal Reprocess surfaces once Shutdown has
 // begun: no worker will ever claim anything new, so a job created now
@@ -113,9 +107,6 @@ func byteFrac(consumed, total int64) (float64, bool) {
 	return f, true
 }
 
-// inRange maps a 0..1 fraction onto [lo, hi].
-func inRange(lo, hi, frac float64) float64 { return lo + (hi-lo)*frac }
-
 // countingReader reports the running byte total to onRead after every
 // Read — the ONE byte-progress source for hash, copy and parse. It wraps
 // the FILE reader (before zstd), so for a compressed demo the count is
@@ -140,13 +131,12 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// progressReporter serializes one job's progress points: stage
-// transitions (emit) go straight through, byte ticks (tick) are throttled
-// to progressMinInterval with the FIRST tick of each stage forced. Every
-// point is written to the jobs row — store.UpdateJobProgress only ever
-// touches a running job, so a point racing a Cancel cannot resurrect it —
-// and announced as spectra:job-progress. Writes are clamped monotone per
-// job: a late byte tick can never walk the bar backwards.
+// progressReporter serializes one job's progress points. Each point is the
+// current phase's own 0..1 fraction. When the phase changes, the clamp resets
+// to 0, so the bar restarts. Points are written to the jobs row
+// (store.UpdateJobProgress only touches a running job, so a point racing a
+// Cancel cannot resurrect it) and announced as spectra:job-progress. Within a
+// phase, writes are clamped monotone.
 type progressReporter struct {
 	mu        sync.Mutex
 	im        *Importer
@@ -154,17 +144,28 @@ type progressReporter struct {
 	matchID   int64
 	lastNano  int64
 	lastPct   float64
+	stage     string // phase the last point was emitted for
 	tickStage string // stage a byte tick was last emitted for
 }
 
-// emit records a stage transition (or a forced point) at pct.
-func (r *progressReporter) emit(stage string, pct float64) {
-	r.mu.Lock()
-	r.lastNano = time.Now().UnixNano()
+// phaseClamp returns the clamped value for a point in stage, resetting the
+// monotone floor when the stage changes. Callers hold r.mu.
+func (r *progressReporter) phaseClamp(stage string, pct float64) float64 {
+	if stage != r.stage {
+		r.stage = stage
+		r.lastPct = 0
+	}
 	if pct > r.lastPct {
 		r.lastPct = pct
 	}
-	pct = r.lastPct
+	return r.lastPct
+}
+
+// emit records a phase transition (or a forced point) at pct.
+func (r *progressReporter) emit(stage string, pct float64) {
+	r.mu.Lock()
+	r.lastNano = time.Now().UnixNano()
+	pct = r.phaseClamp(stage, pct)
 	r.mu.Unlock()
 	r.im.writeProgress(r.jobID, r.matchID, stage, pct)
 }
@@ -180,10 +181,7 @@ func (r *progressReporter) tick(stage string, pct float64) {
 	}
 	r.tickStage = stage
 	r.lastNano = now
-	if pct > r.lastPct {
-		r.lastPct = pct
-	}
-	pct = r.lastPct
+	pct = r.phaseClamp(stage, pct)
 	r.mu.Unlock()
 	r.im.writeProgress(r.jobID, r.matchID, stage, pct)
 }
@@ -275,6 +273,11 @@ type Options struct {
 	ComputeLock   *sync.Mutex
 	Budget        *budget.Budget
 	AfterAnalyze  func(ctx context.Context) error
+	// BuildEncounters, when set, runs after the analyze pass succeeds (before
+	// AfterAnalyze). It derives the match's encounters from the sidecar and the
+	// world collision. Its error is logged and never fails the job: the match
+	// is ready without encounters, and a re-import rebuilds them.
+	WindowOccluder func(mapName string) (encounter.Occluder, error)
 }
 
 // queueItem is one unit of work for the worker.
@@ -313,17 +316,18 @@ var workerCount = budget.MachineTokens()
 // per-job cancellation contexts. Create with New; call Shutdown before
 // closing the store.
 type Importer struct {
-	st            *store.Store
-	parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
-	emit          func(event string, data any)
-	parserVersion string
-	sidecarDir    string
-	copyDir       string
-	copyEnabled   func() bool                     // nil ⇒ copy (the default)
-	concurrency   func() int                      // nil ⇒ 1 (sequential; see Options.Concurrency)
-	computeLock   *sync.Mutex                     // nil ⇒ a private lock (see im.analyze)
-	budget        *budget.Budget                  // nil ⇒ unbudgeted (see Options.Budget)
-	afterAnalyze  func(ctx context.Context) error // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	st             *store.Store
+	parse          func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
+	emit           func(event string, data any)
+	parserVersion  string
+	sidecarDir     string
+	copyDir        string
+	copyEnabled    func() bool                                      // nil ⇒ copy (the default)
+	concurrency    func() int                                       // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock    *sync.Mutex                                      // nil ⇒ a private lock (see im.analyze)
+	budget         *budget.Budget                                   // nil ⇒ unbudgeted (see Options.Budget)
+	afterAnalyze   func(ctx context.Context) error                  // nil ⇒ no metrics pass (see Options.AfterAnalyze)
+	windowOccluder func(mapName string) (encounter.Occluder, error) // nil ⇒ no encounter windows
 
 	mu        sync.Mutex
 	cond      *sync.Cond // workers wait for work AND a free slot
@@ -352,22 +356,23 @@ func New(o Options) *Importer {
 		copyDir = data.DemosDir()
 	}
 	im := &Importer{
-		st:            o.Store,
-		parse:         o.Parse,
-		emit:          o.Emit,
-		parserVersion: o.ParserVersion,
-		sidecarDir:    sidecarDir,
-		copyDir:       copyDir,
-		copyEnabled:   o.CopyEnabled,
-		concurrency:   o.Concurrency,
-		computeLock:   o.ComputeLock,
-		budget:        o.Budget,
-		afterAnalyze:  o.AfterAnalyze,
-		queued:        map[int64]queueItem{},
-		cancels:       map[int64]context.CancelFunc{},
-		cancelled:     map[int64]bool{},
-		pending:       map[int64]matchLifecycle{},
-		sha:           newSHAGate(),
+		st:             o.Store,
+		parse:          o.Parse,
+		emit:           o.Emit,
+		parserVersion:  o.ParserVersion,
+		sidecarDir:     sidecarDir,
+		copyDir:        copyDir,
+		copyEnabled:    o.CopyEnabled,
+		concurrency:    o.Concurrency,
+		computeLock:    o.ComputeLock,
+		budget:         o.Budget,
+		afterAnalyze:   o.AfterAnalyze,
+		windowOccluder: o.WindowOccluder,
+		queued:         map[int64]queueItem{},
+		cancels:        map[int64]context.CancelFunc{},
+		cancelled:      map[int64]bool{},
+		pending:        map[int64]matchLifecycle{},
+		sha:            newSHAGate(),
 	}
 	if im.computeLock == nil {
 		im.computeLock = &sync.Mutex{}
@@ -743,9 +748,8 @@ func (im *Importer) push(item queueItem) bool {
 // concurrency slot for the whole call. Stage machine: queued (emitted at
 // entry) → hash → (import only) copy → decompress sniff → parse → store
 // → analyze → done, with any error or cancellation collapsing to
-// failed/cancelled. Progress is the job-wide mapping documented with
-// progressHashEnd — per job: a job's own points are monotone no matter
-// which stages of OTHER jobs interleave with them.
+// failed/cancelled. Progress is per phase (see progressReporter): each phase
+// fills its own 0..1 bar and the next phase restarts at 0.
 //
 // ctx/cancel come from the worker's claim (im.cancels holds cancel until
 // this returns); the deferred cleanup below releases both on every exit.
@@ -782,13 +786,14 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	hasher := sha256.New()
 	size, err := io.Copy(hasher, &countingReader{r: f, onRead: func(consumed int64) {
 		if frac, ok := byteFrac(consumed, total); ok {
-			rep.tick(models.StageHash, inRange(0, progressHashEnd, frac))
+			rep.tick(models.StageHash, frac)
 		}
 	}})
 	if err != nil {
 		im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
 		return
 	}
+	rep.emit(models.StageHash, 1)
 	sha := hex.EncodeToString(hasher.Sum(nil))
 
 	// Per-sha admission (shagate.go): with concurrent workers two jobs
@@ -866,16 +871,17 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		// monotone without the stage in between.
 		if copyOn {
 			hadCopy := im.ManagedDemoPath(sha) != ""
-			rep.emit(models.StageCopy, progressCopyStart)
+			rep.emit(models.StageCopy, 0)
 			if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
 				if frac, ok := byteFrac(consumed, total); ok {
-					rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+					rep.tick(models.StageCopy, frac)
 				}
 			}); cerr != nil {
 				im.failJob(jobID, 0, models.StageQueued, cerr.Error(), false)
 				return
 			}
 			createdCopy = !hadCopy
+			rep.emit(models.StageCopy, 1)
 		}
 		// With copy_on_import off: no copyDemo call ran above, no .info
 		// companion is copied either — chat was already decrypted at
@@ -892,6 +898,10 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 			im.failJob(jobID, matchID, models.StageStore, err.Error(), false) // frame: see the StageStore note above
 			return
 		}
+		// The import's row exists now and its job points at it: announce it, so
+		// the list hands the import from its pending row to its match row in
+		// one refresh instead of showing it twice or not at all until parse.
+		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 	} else if copyOn && im.ManagedDemoPath(sha) == "" {
 		// Reprocess RE-COPY: the match has no managed copy (a skip-copied
 		// import whose source now points elsewhere, or an evicted one the
@@ -900,16 +910,17 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		// createdCopy honest: a reprocess reading a pre-existing backup
 		// never enters here, so its failure can't delete the copy that
 		// kept the match alive.
-		rep.emit(models.StageCopy, progressCopyStart)
+		rep.emit(models.StageCopy, 0)
 		if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
 			if frac, ok := byteFrac(consumed, total); ok {
-				rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+				rep.tick(models.StageCopy, frac)
 			}
 		}); cerr != nil {
 			im.failJob(jobID, matchID, models.StageQueued, cerr.Error(), false)
 			return
 		}
 		createdCopy = true
+		rep.emit(models.StageCopy, 1)
 	}
 
 	// Row create / re-copy done: this job either owns its match row or
@@ -929,7 +940,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// The stage entry carries the parse range's START (0.20): the byte
 	// counter below runs over the FILE stream (compressed bytes for a
 	// .zst), so decompress+parse are one continuum up to 0.90.
-	rep.emit(models.StageDecompress, progressParseStart)
+	rep.emit(models.StageDecompress, 0)
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		im.failJob(jobID, matchID, models.StageDecompress, err.Error(), ctx.Err() != nil)
 		return
@@ -946,7 +957,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// way consumed ÷ total tracks how far the parse has read.
 	var reader io.Reader = &countingReader{r: f, onRead: func(consumed int64) {
 		if frac, ok := byteFrac(consumed, total); ok {
-			rep.tick(models.StageParse, inRange(progressParseStart, progressParseEnd, frac))
+			rep.tick(models.StageParse, frac)
 		}
 	}}
 	if isZstd {
@@ -959,7 +970,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		reader = dec
 	}
 
-	rep.emit(models.StageParse, progressParseStart)
+	rep.emit(models.StageParse, 0)
 
 	// Position sidecar: sampled frames stream into a per-match
 	// directory while the parse runs. Tick rate is unknown until the parse
@@ -988,14 +999,31 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// lifecycle exactly: the writer wipes a previous parse's rows at
 	// creation (reprocess), and cleanupPartial deletes the half-written
 	// rows together with the half-written sidecar on every failure path
-	// below, so a failed match never serves partial ticks. A cleanup
-	// error is dropped like the sidecar's RemoveAll error: the job is
-	// already failing, and the next reprocess wipes the rows anyway.
+	// below, so a failed match never serves partial ticks. Abort stops the
+	// tick writer goroutine and waits for it before deleting the rows, so
+	// no tick write can land after the cleanup. A cleanup error is dropped
+	// like the sidecar's RemoveAll error: the job is already failing, and
+	// the next reprocess wipes the rows anyway.
+	var tw *store.TickWriter
 	cleanupPartial := func() {
 		_ = os.RemoveAll(sidecarPath)
-		_ = im.st.DeletePlayerTicks(matchID)
+		if tw != nil {
+			_ = tw.Abort()
+		} else {
+			_ = im.st.DeletePlayerTicks(matchID)
+		}
 	}
-	tw, terr := im.st.NewTickWriter(matchID)
+	// A panic anywhere below (the parser runs in this goroutine) must not leave
+	// the tick writer running or the half-written rows in place: clean up, then
+	// re-raise so the crash is still a crash. The normal paths never reach it.
+	defer func() {
+		if r := recover(); r != nil {
+			cleanupPartial()
+			panic(r)
+		}
+	}()
+	var terr error
+	tw, terr = im.st.NewTickWriter(matchID)
 	if terr != nil {
 		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageParse, terr.Error(), false)
@@ -1024,6 +1052,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	netKey := netKeyFromInfoFile(item.path)
 
 	em, err := im.parse(ctx, reader, extract.ParseOptions{
+		WindowOccluder: im.windowOccluder,
 		// Frames carry no determinate point mid-parse: a Source 2 demo
 		// only reveals its frame total at the very end (see
 		// extract.ParseOptions.Progress), so bytes read drive the bar.
@@ -1031,7 +1060,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		// top of the parse range — that is all frames are used for.
 		Progress: func(framesDone, framesTotal int) {
 			if framesTotal > 0 {
-				rep.emit(models.StageParse, progressParseEnd)
+				rep.emit(models.StageParse, 1)
 			}
 		},
 		Positions: sw,
@@ -1115,7 +1144,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	}
 
 	em.Match.ParserVersion = im.parserVersion
-	rep.emit(models.StageStore, progressStore)
+	rep.emit(models.StageStore, 0)
 	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
 	// forces match status ready itself — don't double-set.
 	if err := im.st.SetPositionMeta(matchID, meta.SampleRate, meta.Frames); err != nil {
@@ -1124,6 +1153,18 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 	if err := im.st.SaveExtracted(matchID, em); err != nil {
+		cleanupPartial()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
+		return
+	}
+	// Encounter windows were built during the parse. Derived data: a failure
+	// is logged and never fails the import.
+	if len(em.Windows) > 0 {
+		if err := im.st.SaveEncounterWindows(matchID, em.Windows); err != nil {
+			slog.Error("library: encounter windows", "match", matchID, "error", err)
+		}
+	}
+	if err := im.st.SettleMatchRows(matchID); err != nil {
 		cleanupPartial()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
@@ -1150,14 +1191,15 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		return
 	}
 
-	// M3 analytics pass: classification/KAST/clutch/engagement/
+	// M3 analytics pass: classification/KAST/clutch/kill tag/
 	// utility rows + career rebuild over the stored events. Failure
 	// here must NOT lose the extracted data: the match stays ready and only
 	// the job is marked failed (with the analytics error prefixed).
-	rep.emit(models.StageAnalyze, progressAnalyze)
+	rep.emit(models.StageStore, 1)
+	rep.emit(models.StageAnalyze, 0)
 	if aerr := im.analyze(matchID); aerr != nil {
 		msg := playerJobError(models.StageAnalyze, aerr.Error())
-		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, progressAnalyze, msg)
+		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, 0, msg)
 		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
 		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 		return
@@ -1176,6 +1218,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 		_ = im.afterAnalyze(ctx)
 	}
 
+	rep.emit(models.StageAnalyze, 1)
 	_ = im.st.UpdateJob(jobID, models.JobDone, models.StageDone, 1, "")
 	im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobDone})
 	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})

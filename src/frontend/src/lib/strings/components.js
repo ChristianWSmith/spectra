@@ -11,7 +11,6 @@ export const components = {
   frameDismiss: 'Dismiss component error',
   // Render failures only: re-render the component in place.
   frameRetry: 'Try again',
-  frameLoading: 'Loading component…',
   // A placement that names a component which no longer exists.
   frameMissing: 'This component is missing: {name}',
   // The source check (compile.js checkComponentSource): a compile error

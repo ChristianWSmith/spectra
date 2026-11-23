@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	enc_messages INTEGER NOT NULL DEFAULT 0,
 	-- Analytics provenance: the analysis_config.rule_version the match's
 	-- derived rows (round_classifications / player_round_stats /
-	-- engagements / utility_events + player_stats.trade_kills) were last
+	-- kill_tags / utility_events + player_stats.trade_kills) were last
 	-- computed under. Written ONLY at the end of a successful
 	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
 	-- 0 = never analyzed / unknown (rule_version starts at 1 — 2 since
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS events (
 	-- from the paired raw payload at extract time (demoinfocs' typed Kill
 	-- has no MidAir field) — no migration: a stale dev DB lacks the
 	-- column and must be re-imported. A stored game fact;
-	-- the tick-join in_air on player_ticks is a separate derived feature
+	-- the in-air flag on encounter_window_samples is a separate derived feature
 	-- and does not replace it.
 	attacker_inair INTEGER NOT NULL DEFAULT 0,
 	assisted_flash INTEGER NOT NULL DEFAULT 0,
@@ -439,7 +439,7 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(m
 --          detail_json.nearDist (extract-measured, config-independent)
 --          falls in [0, analysis_config.trade_opp_distance] — the
 --          profile Trade-rate denominator, SUMmed library-wide.
---   missed per player: this player's 'untraded' engagements whose paired
+--   missed per player: this player's 'untraded' kill_tags whose paired
 --          kill event's nearDist falls in the same range — Combat's
 --          "trade opportunities missed" badge (the distance-gated subset
 --          of the ungated untraded count, the `untraded_deaths` metric).
@@ -539,37 +539,24 @@ CREATE TABLE IF NOT EXISTS metric_deps (
 	PRIMARY KEY (metric_id, dep_name)
 );
 
--- Per-tick player state: one row per (match, tick, present participant)
--- at the demo's full frame rate, carrying DERIVED features only — the
--- joinable projections a metric needs at an event's tick (speed and
--- in-air at a shot or kill). Raw positions, view angles and the full
--- sparse state stream stay in the per-match sidecar (internal/sidecar);
--- this table never duplicates them. Every row is a direct parser sample
--- except speed, which is derived at write time.
+-- Per-tick player state: one row per (match, tick, present participant) at
+-- the state-change grain. A row is written only when a participant's round,
+-- side, alive or hp changes (the first observation of a participant is
+-- always written). "No row" therefore means "no change in these fields",
+-- never "absent": the alive count and the clutch survivor read the roster
+-- (round_player_sides, kills, disconnects), not row presence.
 --
--- Population: the per-frame sidecar population (every playing
--- participant, dead included, through the takeover routing — extract's
--- appendTargets), restricted to COUNTED rounds: frames before the first
--- counted round's start tick and frames while a discarded (knife/warmup/
--- post-match) round is current are never written, exactly like every
--- other row of a discarded round. steam_id is the accumulator key (a
--- bot keeps its synthetic 0xFF key: this is an event-shaped record —
--- humans-only readers route through HumanOnly). round is the stored
--- (counted, 1..N) round number at that frame.
+-- Position, movement and weapon are NOT here. They are dense per-tick facts
+-- and live on encounter_window_samples (see below). Raw positions and the
+-- full sparse state stream stay in the per-match sidecar (internal/sidecar).
 --
--- Honest gaps: in_air and speed are NULL when the frame carries no
--- position sample (the position stream is alive-only), never 0 — a dead
--- player's speed was not observed. speed is the HORIZONTAL (x/y)
--- movement speed in world units per second between this frame and the
--- player's previous frame (the quantity the game's movement-inaccuracy
--- rule reads — CS2.md "Player movement speed for accuracy"), computed
--- from the raw float positions; it is also NULL on the first positioned
--- frame of a stretch (no previous frame), across a round change, after a
--- frame the player was absent or unpositioned, and when the tick rate is
--- unknown. weapon is the canonical weapon name (the events.weapon
--- vocabulary), NULL when dead (not sampled); hp is forced to 0 when dead
--- (a sample, not an inference); money is the controller's account as
--- read (it survives death).
+-- Population: the per-frame state population (every playing participant,
+-- dead included, through the takeover routing), restricted to COUNTED rounds:
+-- frames before the first counted round's start tick and frames while a
+-- discarded (knife/warmup/post-match) round is current are never written.
+-- steam_id is the accumulator key (a bot keeps its synthetic 0xFF key).
+-- round is the stored (counted, 1..N) round number at that frame. hp is 0
+-- when dead (a sample, not an inference).
 --
 -- Lifecycle: the rows STREAM in during the parse (store.TickWriter, in
 -- chunked transactions of at most tickChunkRows rows so no single
@@ -587,10 +574,6 @@ CREATE TABLE IF NOT EXISTS player_ticks (
 	side     TEXT    NOT NULL DEFAULT '',
 	alive    INTEGER NOT NULL DEFAULT 1,
 	hp       INTEGER NOT NULL DEFAULT 100,
-	money    INTEGER NOT NULL DEFAULT 0,
-	in_air   INTEGER,
-	speed    REAL,
-	weapon   TEXT,
 	PRIMARY KEY (match_id, tick, steam_id)
 );
 
@@ -658,7 +641,7 @@ CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_
 -- other steam_id members.
 CREATE INDEX IF NOT EXISTS idx_player_ticks_steam ON player_ticks(steam_id, match_id);
 
-CREATE TABLE IF NOT EXISTS engagements (
+CREATE TABLE IF NOT EXISTS kill_tags (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	seq INTEGER NOT NULL,
 	tick INTEGER NOT NULL DEFAULT 0,
@@ -672,8 +655,8 @@ CREATE TABLE IF NOT EXISTS engagements (
 	won_by TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (match_id, seq)
 );
-CREATE INDEX IF NOT EXISTS idx_engagements_match_kind ON engagements(match_id, kind);
-CREATE INDEX IF NOT EXISTS idx_engagements_player ON engagements(match_id, a_steam);
+CREATE INDEX IF NOT EXISTS idx_kill_tags_match_kind ON kill_tags(match_id, kind);
+CREATE INDEX IF NOT EXISTS idx_kill_tags_player ON kill_tags(match_id, a_steam);
 
 -- Utility rows: one row per grenade DETONATION paired with its throw.
 -- Throw-side facts are throw-based (throw_tick + throw_x/throw_y — 0/NULL
@@ -1008,9 +991,10 @@ CREATE TABLE IF NOT EXISTS builtin_overrides (
 -- bind :match_id (one run per ready match, so the stored rows are per
 -- match); profile rows run library-wide (match_id 0). The bot predicate
 -- (store.HumanOnlyBySteamID's SQL form) is in every statement. A NULL value
--- means no data and shows as a dash (ruling 23). weapon_damage, dmg_no_kill
--- and kill_conversion read player_ticks, and shots is checked the same way:
--- all four are checked at the owner's wipe gate, not before it (ruling 24).
+-- means no data and shows as a dash (ruling 23). dmg_no_kill, kill_conversion
+-- and match_weapon_damage read round_player_sides (S09), and shots reads
+-- player_ticks and is checked the same way: it is checked at the owner's
+-- wipe gate, not before it (ruling 24).
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origin, created_at) VALUES
 ('trade_rate', 'Trade rate', '',
  'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, 1.0*(SUM(player_stats.trade_kills)) / NULLIF((SUM(match_trade_opps.opps)), 0) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.match_id = :match_id AND (player_stats.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
@@ -1509,25 +1493,25 @@ fold AS (
  'int',
  'Formula: sum(match_trade_opps.missed) — teammate deaths nobody answered inside the window, addressed per player over the joined sources — zero opportunities still shows 0.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_opening', 'Opening kill tags', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''opening'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_opening', 'Opening kill tags', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''opening'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''opening'') — round-opening kill tags with this player as killer, addressed per player — from the kill tag list; unknown-side rounds read lower than Entry.',
+ 'Formula: count(kill_tags rows WHERE kind = ''opening'') — round-opening kill tags with this player as killer, addressed per player — from the kill tag list; unknown-side rounds read lower than Entry.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_trade', 'Trade kill tags', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''trade'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_trade', 'Trade kill tags', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''trade'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''trade'') — strict-window trade kills with this player as killer, addressed per player — the same number as Trade kills, from the kill tag list.',
+ 'Formula: count(kill_tags rows WHERE kind = ''trade'') — strict-window trade kills with this player as killer, addressed per player — the same number as Trade kills, from the kill tag list.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_traded', 'Kills traded (A-side)', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''traded'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_traded', 'Kills traded (A-side)', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''traded'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''traded'') — this player''s kills the enemy answered inside the window (killer-side), addressed per player — own unanswered deaths are Untraded deaths.',
+ 'Formula: count(kill_tags rows WHERE kind = ''traded'') — this player''s kills the enemy answered inside the window (killer-side), addressed per player — own unanswered deaths are Untraded deaths.',
  'builtin', CURRENT_TIMESTAMP),
-('eng_untraded', 'Kills untraded (A-side)', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM engagements WHERE engagements.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements.match_id AND p.steam_id = engagements.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+('kill_tag_untraded', 'Kills untraded (A-side)', '',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, a_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM kill_tags WHERE kill_tags.match_id = :match_id AND (a_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags.match_id AND p.steam_id = kill_tags.a_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
+ 'Formula: count(kill_tags rows WHERE kind = ''untraded'') — this player''s kills the enemy did not answer inside the window (killer-side), addressed per player — Untraded deaths counts the victim side.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutches', 'Clutches', '',
  '{{CLUTCH_CTE}} SELECT c.steam_id AS subject_key, '''' AS dim, COUNT(*) AS value FROM clutch c WHERE c.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id AND p.is_bot = 1) GROUP BY c.steam_id',
@@ -1629,13 +1613,13 @@ fold AS (
  'int',
  'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''pistol'') — rounds played on a pistol side, addressed per player over the joined sources.',
  'builtin', CURRENT_TIMESTAMP),
--- ---- addendum: the victim-side duel count (1 row) — the engagements
+-- ---- addendum: the victim-side duel count (1 row) — the kill_tags
 -- table read through its curated victim-side source (whitelist.go
--- engagements_victim).
+-- kill_tags_victim).
 ('untraded_deaths', 'Untraded deaths', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM engagements AS engagements_victim WHERE engagements_victim.match_id = :match_id AND (b_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = engagements_victim.match_id AND p.steam_id = engagements_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, b_steam AS grp, SUM(CASE WHEN (kind = ''untraded'') THEN 1 ELSE 0 END) AS v FROM kill_tags AS kill_tags_victim WHERE kill_tags_victim.match_id = :match_id AND (b_steam <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = kill_tags_victim.match_id AND p.steam_id = kill_tags_victim.b_steam AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
- 'Formula: count(engagements rows WHERE kind = ''untraded'') — deaths of this player nobody answered inside the window, addressed per player — the Combat tab''s Untraded deaths column.',
+ 'Formula: count(kill_tags rows WHERE kind = ''untraded'') — deaths of this player nobody answered inside the window, addressed per player — the Combat tab''s Untraded deaths column.',
  'builtin', CURRENT_TIMESTAMP),
 -- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
 -- additive sum(a + b) chain is what the duel total needs.
@@ -1657,12 +1641,12 @@ fold AS (
 -- BOTH halves of kill_conversion (numerator and denominator); an
 -- unknown side stamps 0 and still counts, in parity.
 ('dmg_no_kill', 'Damage no kill', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (NOT EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = ''kill'' AND x0.post_match = 0 AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim)) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (NOT EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = ''kill'' AND x0.post_match = 0 AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim)) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END) AS v FROM events LEFT JOIN round_player_sides AS pa ON pa.match_id = events.match_id AND pa.round = events.round AND pa.steam_id = events.attacker LEFT JOIN round_player_sides AS pv ON pv.match_id = events.match_id AND pv.round = events.round AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'int',
  'Formula: sum(events.dmg over enemy damage events WHERE no same-tick, same-actor kill exists) — damage that did not convert into a kill, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('kill_conversion', 'Kill conversion %', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, 1.0*(SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = ''kill'' AND x0.post_match = 0 AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END)) / NULLIF((SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END)), 0) AS v FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT events.match_id AS mid, events.attacker AS grp, 1.0*(SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND EXISTS (SELECT 1 FROM events AS x0 WHERE x0.match_id = events.match_id AND x0.kind = ''kill'' AND x0.post_match = 0 AND x0.tick = events.tick AND x0.attacker = events.attacker AND x0.victim = events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END)) / NULLIF((SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.dmg END)), 0) AS v FROM events LEFT JOIN round_player_sides AS pa ON pa.match_id = events.match_id AND pa.round = events.round AND pa.steam_id = events.attacker LEFT JOIN round_player_sides AS pv ON pv.match_id = events.match_id AND pv.round = events.round AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND (events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
  'percent',
  'Formula: sum(events.dmg with a same-tick, same-actor kill) / sum(events.dmg), both over enemy damage — the share of this player''s damage that converts into kills, addressed per player — a percent.',
  'builtin', CURRENT_TIMESTAMP),
@@ -2670,12 +2654,12 @@ WHERE ro.match_id = :match_id AND ro.number = :round',
 -- below compute the same logic over every round through the clutch CTE that clutch_sql.go splices in.
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origin, created_at) VALUES
 ('alive_count', 'Alive count (raw SQL)', '',
- 'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'') SELECT sd.side AS subject_key, CAST(kt.tick AS TEXT) AS dim, (SELECT COUNT(*) FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.tick = kt.tick AND pt.side = sd.side AND pt.alive = 1) AS value FROM kt CROSS JOIN sd ORDER BY kt.tick, sd.side',
+ 'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t'') SELECT sd.side AS subject_key, CAST(kt.tick AS TEXT) AS dim, (SELECT COUNT(*) FROM round_player_sides rs WHERE rs.match_id = :match_id AND rs.round = :round AND rs.side = sd.side AND NOT EXISTS (SELECT 1 FROM events k WHERE k.match_id = :match_id AND k.round = :round AND k.kind = ''kill'' AND k.victim = rs.steam_id AND k.tick <= kt.tick) AND NOT EXISTS (SELECT 1 FROM events dc JOIN rounds ro ON ro.match_id = :match_id AND ro.number = :round WHERE dc.match_id = :match_id AND dc.kind = ''player_disconnect'' AND dc.attacker = rs.steam_id AND dc.tick >= ro.start_tick AND dc.tick <= kt.tick)) AS value FROM kt CROSS JOIN sd ORDER BY kt.tick, sd.side',
  'int',
- 'Formula: count(player_ticks.alive = 1) per side at each kill tick of the round — the alive-count situation the clutch family reads, addressed per side and kill tick.',
+ 'Formula: roster (round_player_sides) players per side at each kill tick, minus those killed in the round by that tick or disconnected since round start. Per side and kill tick.',
  'builtin', CURRENT_TIMESTAMP),
 ('clutch', 'Clutch (raw SQL)', '',
- 'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t''), cnt AS (SELECT kt.tick AS tick, sd.side AS side, (SELECT COUNT(*) FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.tick = kt.tick AND pt.side = sd.side AND pt.alive = 1) AS n FROM kt CROSS JOIN sd), cand AS (SELECT a.tick AS tick, a.side AS side, b.n AS opp, (SELECT pt.steam_id FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.tick = a.tick AND pt.side = a.side AND pt.alive = 1) AS solo FROM cnt a JOIN cnt b ON b.tick = a.tick AND b.side <> a.side WHERE a.n = 1 AND b.n >= 1), starts AS (SELECT solo, side, MIN(tick) AS start_tick, opp AS size FROM cand GROUP BY solo, side), deaths AS (SELECT victim AS solo, MIN(tick) AS dtick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> '''' GROUP BY victim), wont AS (SELECT s.solo AS solo, MIN(z.tick) AS wtick FROM starts s JOIN cnt z ON z.side <> s.side AND z.n = 0 AND z.tick > s.start_tick GROUP BY s.solo), ended AS (SELECT s.solo AS solo, s.side AS side, s.start_tick AS start_tick, s.size AS size, CASE WHEN d.dtick IS NOT NULL AND (w.wtick IS NULL OR d.dtick <= w.wtick) THEN ''lost'' WHEN w.wtick IS NOT NULL THEN ''won'' ELSE ''round'' END AS how, CASE WHEN d.dtick IS NOT NULL AND (w.wtick IS NULL OR d.dtick <= w.wtick) THEN d.dtick WHEN w.wtick IS NOT NULL THEN w.wtick ELSE r.end_tick END AS end_tick, r.winner AS winner, r.equip_ct AS equip_ct, r.equip_t AS equip_t FROM starts s LEFT JOIN deaths d ON d.solo = s.solo LEFT JOIN wont w ON w.solo = s.solo JOIN rounds r ON r.match_id = :match_id AND r.number = :round), clutch AS (SELECT e.solo AS steam_id, e.side AS side, e.start_tick AS start_tick, e.end_tick AS end_tick, e.size AS size, e.how AS how, CASE WHEN e.how = ''won'' THEN 1 WHEN e.how = ''lost'' THEN 0 WHEN e.winner = e.side THEN 1 ELSE 0 END AS won, CASE WHEN e.side = ''ct'' THEN e.equip_ct ELSE e.equip_t END AS equip FROM ended e) SELECT c.steam_id AS subject_key, '''' AS dim, c.size AS value, :round AS round, c.size AS size, c.start_tick AS start_tick, c.end_tick AS end_tick, c.won AS won, CASE WHEN c.how = ''lost'' THEN 0 WHEN EXISTS (SELECT 1 FROM events hv WHERE hv.match_id = :match_id AND hv.round = :round AND hv.kind = ''damage'' AND hv.victim = c.steam_id AND hv.tick <= c.end_tick AND json_extract(hv.detail_json, ''$.health'') IS NOT NULL) THEN MIN(100, MAX(1, (SELECT pt.hp FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.steam_id = c.steam_id AND pt.tick <= c.end_tick ORDER BY pt.tick DESC LIMIT 1))) ELSE MIN(100, MAX(1, 100 - COALESCE((SELECT SUM(dh.dmg) FROM events dh WHERE dh.match_id = :match_id AND dh.round = :round AND dh.kind = ''damage'' AND dh.victim = c.steam_id AND dh.tick > c.start_tick AND (c.how = ''round'' OR dh.tick <= c.end_tick)), 0))) END AS hp_left, (SELECT CASE WHEN bs.p >= 0 THEN CASE WHEN bs.en < 0 THEN ''planted'' ELSE ''none'' END WHEN bs.dr >= 0 AND bs.dr > bs.pu THEN ''dropped'' ELSE ''carried'' END FROM (SELECT COALESCE(MAX(CASE WHEN kind = ''bomb_plant'' THEN tick END), -1) AS p, COALESCE(MAX(CASE WHEN kind IN (''bomb_explode'', ''bomb_defuse'') THEN tick END), -1) AS en, COALESCE(MAX(CASE WHEN kind = ''bomb_drop'' THEN tick END), -1) AS dr, COALESCE(MAX(CASE WHEN kind = ''bomb_pickup'' THEN tick END), -1) AS pu FROM events WHERE match_id = :match_id AND round = :round AND kind IN (''bomb_plant'', ''bomb_explode'', ''bomb_defuse'', ''bomb_drop'', ''bomb_pickup'') AND tick <= c.start_tick) bs) AS bomb_state, c.equip AS equip, (SELECT CASE WHEN COUNT(*) = 0 THEN ''null'' ELSE ''['' || group_concat(k.tick, '','') || '']'' END FROM (SELECT ev.tick AS tick FROM events ev WHERE ev.match_id = :match_id AND ev.round = :round AND ev.kind = ''kill'' AND ev.attacker = c.steam_id AND ev.victim <> '''' AND ev.tick > c.start_tick AND (ev.tick < c.end_tick OR (c.how <> ''lost'' AND ev.tick <= c.end_tick)) ORDER BY ev.tick) k) AS kill_ticks, (SELECT p.name FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id LIMIT 1) AS name, c.start_tick AS replay_anchor FROM clutch c ORDER BY c.start_tick',
+ 'WITH kt AS (SELECT DISTINCT tick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> ''''), sd AS (SELECT ''ct'' AS side UNION ALL SELECT ''t''), alv AS (SELECT kt.tick AS tick, rs.side AS side, rs.steam_id AS steam_id FROM kt CROSS JOIN round_player_sides rs LEFT JOIN rounds ro ON ro.match_id = :match_id AND ro.number = :round WHERE rs.match_id = :match_id AND rs.round = :round AND NOT EXISTS (SELECT 1 FROM events k WHERE k.match_id = :match_id AND k.round = :round AND k.kind = ''kill'' AND k.victim = rs.steam_id AND k.tick <= kt.tick) AND NOT EXISTS (SELECT 1 FROM events dc WHERE dc.match_id = :match_id AND dc.kind = ''player_disconnect'' AND dc.attacker = rs.steam_id AND dc.tick >= ro.start_tick AND dc.tick <= kt.tick)), cnt AS (SELECT kt.tick AS tick, sd.side AS side, (SELECT COUNT(*) FROM alv WHERE alv.tick = kt.tick AND alv.side = sd.side) AS n FROM kt CROSS JOIN sd), cand AS (SELECT a.tick AS tick, a.side AS side, b.n AS opp, (SELECT al.steam_id FROM alv al WHERE al.tick = a.tick AND al.side = a.side) AS solo FROM cnt a JOIN cnt b ON b.tick = a.tick AND b.side <> a.side WHERE a.n = 1 AND b.n >= 1), starts AS (SELECT solo, side, MIN(tick) AS start_tick, opp AS size FROM cand GROUP BY solo, side), deaths AS (SELECT victim AS solo, MIN(tick) AS dtick FROM events WHERE match_id = :match_id AND round = :round AND kind = ''kill'' AND victim <> '''' GROUP BY victim), wont AS (SELECT s.solo AS solo, MIN(z.tick) AS wtick FROM starts s JOIN cnt z ON z.side <> s.side AND z.n = 0 AND z.tick > s.start_tick GROUP BY s.solo), ended AS (SELECT s.solo AS solo, s.side AS side, s.start_tick AS start_tick, s.size AS size, CASE WHEN d.dtick IS NOT NULL AND (w.wtick IS NULL OR d.dtick <= w.wtick) THEN ''lost'' WHEN w.wtick IS NOT NULL THEN ''won'' ELSE ''round'' END AS how, CASE WHEN d.dtick IS NOT NULL AND (w.wtick IS NULL OR d.dtick <= w.wtick) THEN d.dtick WHEN w.wtick IS NOT NULL THEN w.wtick ELSE r.end_tick END AS end_tick, r.winner AS winner, r.equip_ct AS equip_ct, r.equip_t AS equip_t FROM starts s LEFT JOIN deaths d ON d.solo = s.solo LEFT JOIN wont w ON w.solo = s.solo JOIN rounds r ON r.match_id = :match_id AND r.number = :round), clutch AS (SELECT e.solo AS steam_id, e.side AS side, e.start_tick AS start_tick, e.end_tick AS end_tick, e.size AS size, e.how AS how, CASE WHEN e.how = ''won'' THEN 1 WHEN e.how = ''lost'' THEN 0 WHEN e.winner = e.side THEN 1 ELSE 0 END AS won, CASE WHEN e.side = ''ct'' THEN e.equip_ct ELSE e.equip_t END AS equip FROM ended e) SELECT c.steam_id AS subject_key, '''' AS dim, c.size AS value, :round AS round, c.size AS size, c.start_tick AS start_tick, c.end_tick AS end_tick, c.won AS won, CASE WHEN c.how = ''lost'' THEN 0 WHEN EXISTS (SELECT 1 FROM events hv WHERE hv.match_id = :match_id AND hv.round = :round AND hv.kind = ''damage'' AND hv.victim = c.steam_id AND hv.tick <= c.end_tick AND json_extract(hv.detail_json, ''$.health'') IS NOT NULL) THEN MIN(100, MAX(1, (SELECT pt.hp FROM player_ticks pt WHERE pt.match_id = :match_id AND pt.round = :round AND pt.steam_id = c.steam_id AND pt.tick <= c.end_tick ORDER BY pt.tick DESC LIMIT 1))) ELSE MIN(100, MAX(1, 100 - COALESCE((SELECT SUM(dh.dmg) FROM events dh WHERE dh.match_id = :match_id AND dh.round = :round AND dh.kind = ''damage'' AND dh.victim = c.steam_id AND dh.tick > c.start_tick AND (c.how = ''round'' OR dh.tick <= c.end_tick)), 0))) END AS hp_left, (SELECT CASE WHEN bs.p >= 0 THEN CASE WHEN bs.en < 0 THEN ''planted'' ELSE ''none'' END WHEN bs.dr >= 0 AND bs.dr > bs.pu THEN ''dropped'' ELSE ''carried'' END FROM (SELECT COALESCE(MAX(CASE WHEN kind = ''bomb_plant'' THEN tick END), -1) AS p, COALESCE(MAX(CASE WHEN kind IN (''bomb_explode'', ''bomb_defuse'') THEN tick END), -1) AS en, COALESCE(MAX(CASE WHEN kind = ''bomb_drop'' THEN tick END), -1) AS dr, COALESCE(MAX(CASE WHEN kind = ''bomb_pickup'' THEN tick END), -1) AS pu FROM events WHERE match_id = :match_id AND round = :round AND kind IN (''bomb_plant'', ''bomb_explode'', ''bomb_defuse'', ''bomb_drop'', ''bomb_pickup'') AND tick <= c.start_tick) bs) AS bomb_state, c.equip AS equip, (SELECT CASE WHEN COUNT(*) = 0 THEN ''null'' ELSE ''['' || group_concat(k.tick, '','') || '']'' END FROM (SELECT ev.tick AS tick FROM events ev WHERE ev.match_id = :match_id AND ev.round = :round AND ev.kind = ''kill'' AND ev.attacker = c.steam_id AND ev.victim <> '''' AND ev.tick > c.start_tick AND (ev.tick < c.end_tick OR (c.how <> ''lost'' AND ev.tick <= c.end_tick)) ORDER BY ev.tick) k) AS kill_ticks, (SELECT p.name FROM players p WHERE p.match_id = :match_id AND p.steam_id = c.steam_id LIMIT 1) AS name, c.start_tick AS replay_anchor FROM clutch c ORDER BY c.start_tick',
  'int',
  'Formula: one row per 1vN clutch: the sole alive player on a side with an opponent alive, ending at their death, the last opponent''s death or round end — value = opponents alive at start (N).',
  'builtin', CURRENT_TIMESTAMP);
@@ -2871,4 +2855,50 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
 ('match_side_dmg', 'Capped damage by side', '', 'WITH edmg AS (SELECT e.round, e.attacker, e.capped_dmg, sa.side AS a_side, sv.side AS v_side FROM events e LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim WHERE e.match_id = :match_id AND e.kind = ''damage'' AND e.post_match = 0 AND e.attacker <> '''' AND e.attacker <> e.victim AND NOT (COALESCE(sa.side, '''') <> '''' AND sa.side = sv.side)), f AS (SELECT round, attacker AS steam_id, SUM(capped_dmg) AS n FROM edmg GROUP BY round, attacker) SELECT r.steam_id AS subject_key, r.side AS dim, SUM(COALESCE(f.n, 0)) AS value FROM player_round_stats r LEFT JOIN f ON f.round = r.round AND f.steam_id = r.steam_id WHERE r.match_id = :match_id AND r.steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = r.match_id AND p.steam_id = r.steam_id AND p.is_bot = 1) GROUP BY r.steam_id, r.side', 'int', 'Formula: sum(events.capped_dmg) partitioned by side — HP-capped enemy damage this player dealt on that side in this match, addressed per player, dim = the side.', 'builtin', CURRENT_TIMESTAMP),
 ('match_weapon_kills', 'Kills by weapon', '', 'SELECT events.attacker AS subject_key, events.weapon AS dim, SUM(CASE WHEN ((events.kind = ''kill'' AND events.post_match = 0) AND (events.attacker != events.victim)) THEN 1 ELSE 0 END) AS value FROM events WHERE events.match_id = :match_id AND events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY events.attacker, events.weapon', 'int', 'Formula: count(events) of enemy kills partitioned by weapon — this match''s kills with that weapon, addressed per player, dim = the weapon name.', 'builtin', CURRENT_TIMESTAMP),
 ('match_weapon_headshots', 'Headshot kills by weapon', '', 'SELECT events.attacker AS subject_key, events.weapon AS dim, SUM(CASE WHEN (((events.kind = ''kill'' AND events.post_match = 0) AND (events.attacker != events.victim)) AND (events.headshot = 1)) THEN 1 ELSE 0 END) AS value FROM events WHERE events.match_id = :match_id AND events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY events.attacker, events.weapon', 'int', 'Formula: count(events) of enemy headshot kills partitioned by weapon — this match''s headshot kills with that weapon, addressed per player, dim = the weapon name.', 'builtin', CURRENT_TIMESTAMP),
-('match_weapon_damage', 'Damage by weapon', '', 'SELECT events.attacker AS subject_key, events.weapon AS dim, SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (events.attacker != events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.capped_dmg END) AS value FROM events LEFT JOIN player_ticks AS pa ON pa.match_id = events.match_id AND pa.tick = events.tick AND pa.steam_id = events.attacker LEFT JOIN player_ticks AS pv ON pv.match_id = events.match_id AND pv.tick = events.tick AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY events.attacker, events.weapon', 'int', 'Formula: sum(events.capped_dmg) over enemy damage partitioned by weapon — this match''s HP-capped damage with that weapon, addressed per player, dim = the weapon name; NULL if none.', 'builtin', CURRENT_TIMESTAMP);
+('match_weapon_damage', 'Damage by weapon', '', 'SELECT events.attacker AS subject_key, events.weapon AS dim, SUM(CASE WHEN ((events.kind = ''damage'' AND events.post_match = 0) AND (events.attacker != events.victim) AND (NOT (COALESCE(pa.side, '''') <> '''' AND COALESCE(pa.side, '''') = COALESCE(pv.side, '''')))) THEN events.capped_dmg END) AS value FROM events LEFT JOIN round_player_sides AS pa ON pa.match_id = events.match_id AND pa.round = events.round AND pa.steam_id = events.attacker LEFT JOIN round_player_sides AS pv ON pv.match_id = events.match_id AND pv.round = events.round AND pv.steam_id = events.victim WHERE events.match_id = :match_id AND events.attacker <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = events.match_id AND p.steam_id = events.attacker AND p.is_bot = 1) GROUP BY events.attacker, events.weapon', 'int', 'Formula: sum(events.capped_dmg) over enemy damage partitioned by weapon — this match''s HP-capped damage with that weapon, addressed per player, dim = the weapon name; NULL if none.', 'builtin', CURRENT_TIMESTAMP);
+
+
+-- Encounter windows: the high-fidelity span for one pair of players in one round
+-- (internal/encounter.BuildWindows). encounter_window_samples holds one row per tick
+-- in the window with both players present; the samples belong to the window, not to
+-- an encounter. enemy_eye is the canonical aim point (the opponent's head); the
+-- body midpoint is the midpoint of the enemy's eye and world position.
+CREATE TABLE IF NOT EXISTS encounter_windows (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	p1 TEXT NOT NULL,
+	p2 TEXT NOT NULL,
+	start_tick INTEGER NOT NULL,
+	end_tick INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_windows_match ON encounter_windows(match_id);
+
+CREATE TABLE IF NOT EXISTS encounter_window_samples (
+	window_id INTEGER NOT NULL REFERENCES encounter_windows(id) ON DELETE CASCADE,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	tick INTEGER NOT NULL,
+	p1_eye_x REAL NOT NULL, p1_eye_y REAL NOT NULL, p1_eye_z REAL NOT NULL,
+	p1_world_x REAL NOT NULL, p1_world_y REAL NOT NULL, p1_world_z REAL NOT NULL,
+	p2_eye_x REAL NOT NULL, p2_eye_y REAL NOT NULL, p2_eye_z REAL NOT NULL,
+	p2_world_x REAL NOT NULL, p2_world_y REAL NOT NULL, p2_world_z REAL NOT NULL,
+	p1_in_air INTEGER NOT NULL DEFAULT 0, p1_speed REAL, p1_weapon TEXT,
+	p2_in_air INTEGER NOT NULL DEFAULT 0, p2_speed REAL, p2_weapon TEXT,
+	PRIMARY KEY (window_id, tick)
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_window_samples_match ON encounter_window_samples(match_id);
+
+-- One row per encounter (one side of a window). window_id is the window whose
+-- samples this encounter reads.
+CREATE TABLE IF NOT EXISTS encounters (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	window_id INTEGER NOT NULL REFERENCES encounter_windows(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	shooter TEXT NOT NULL,
+	enemy TEXT NOT NULL,
+	start_tick INTEGER NOT NULL,
+	end_tick INTEGER NOT NULL,
+	seed_tick INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_encounters_match ON encounters(match_id);

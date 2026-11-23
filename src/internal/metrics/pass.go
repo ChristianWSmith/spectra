@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"context"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -357,19 +359,17 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 		// transaction), so a stop never leaves a unit half-written: a unit
 		// that did not commit stays absent (behind), and the units that did
 		// commit stay fresh.
-		for _, sc := range units {
-			err = RunRaw(mctx, st, m.ID, m.Version, cfg.RuleVersion, m.Expr, sc)
-			if ctx.Err() != nil {
-				return // sweep cancelled: absent → behind, resumed next sweep
-			}
-			if mctx.Err() != nil {
-				cancelled()
-				return
-			}
-			if err != nil {
-				fail(err.Error())
-				return
-			}
+		err = runUnits(mctx, st, m, units, cfg.RuleVersion)
+		if ctx.Err() != nil {
+			return // sweep cancelled: absent → behind, resumed next sweep
+		}
+		if mctx.Err() != nil {
+			cancelled()
+			return
+		}
+		if err != nil {
+			fail(err.Error())
+			return
 		}
 		res.Succeeded = append(res.Succeeded, m.ID)
 		finishAttempt()
@@ -483,4 +483,71 @@ func containsID(ids []int64, id int64) bool {
 		}
 	}
 	return false
+}
+
+// unitWorkers bounds how many of one metric's stale units run at once. A unit's
+// SQL reads through the read-only pool, and its write is one transaction on the
+// writer connection (WAL: readers never block the writer), so reads overlap and
+// writes serialize. Metrics themselves still run one at a time in dependency
+// order.
+var unitWorkers = runtime.GOMAXPROCS(0)
+
+// SetUnitWorkers sets how many of one metric's units run at once, returning the
+// previous value. 1 is the sequential sweep; the default is GOMAXPROCS.
+func SetUnitWorkers(n int) int {
+	prev := unitWorkers
+	unitWorkers = n
+	return prev
+}
+
+// runUnits runs one metric's stale units with up to unitWorkers in flight. The
+// first unit error stops the launch of further units; units already running
+// finish, so each unit is still one atomic run. It returns that first error.
+// Cancellation is classified by the caller (sweep ctx, then the metric's ctx).
+func runUnits(mctx context.Context, st *store.Store, m models.MetricRow, units []store.RawScope, ruleVersion int) error {
+	workers := unitWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(units) {
+		workers = len(units)
+	}
+	if workers == 0 {
+		return nil
+	}
+	stop := make(chan struct{})
+	var once sync.Once
+	var firstErr error
+	fail := func(err error) {
+		once.Do(func() {
+			firstErr = err
+			close(stop)
+		})
+	}
+	next := make(chan store.RawScope)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for sc := range next {
+				if err := RunRaw(mctx, st, m.ID, m.Version, ruleVersion, m.Expr, sc); err != nil {
+					fail(err)
+				}
+			}
+		}()
+	}
+feed:
+	for _, sc := range units {
+		select {
+		case <-stop:
+			break feed
+		case <-mctx.Done():
+			break feed
+		case next <- sc:
+		}
+	}
+	close(next)
+	wg.Wait()
+	return firstErr
 }

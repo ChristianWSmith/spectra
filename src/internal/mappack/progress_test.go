@@ -42,7 +42,7 @@ func TestExtractProgress(t *testing.T) {
 		const w, h = 8, 8
 		radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
 		files := map[string][]byte{}
-		for _, m := range []string{"de_alpha", "de_bravo", "de_charlie"} {
+		for _, m := range []string{"de_ancient", "de_anubis", "de_cache"} {
 			files["panorama/images/overheadmaps/"+m+"_radar_psd.vtex_c"] = radar
 		}
 		buildVPK(t, csgo, files)

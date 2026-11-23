@@ -188,6 +188,13 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
+	// Render geometry for the supported maps: the encounter work reads these
+	// caches, so the map-pack extraction produces them too.
+	for _, m := range mappack.SupportedRenderMaps() {
+		if _, _, err := mappack.ExtractRenderGeometry(cs2Dir, m, data.RenderGeometryDir()); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 	var names []string
 	for _, m := range maps {
 		names = append(names, m.Map)

@@ -34,6 +34,11 @@ type MatchSummary struct {
 	// stays "" on every other projection (ListMatches and its
 	// whole-library readers).
 	CopyState string `json:"copyState"`
+	// MetricsPending is true for a ready match whose metric values are still
+	// being computed: some match-scope metric is behind for this match. It is
+	// service-owned like CopyState (LibraryService.ListMatchesPage stamps it;
+	// the store's ListMatchesPage leaves it false).
+	MetricsPending bool `json:"metricsPending"`
 }
 
 // MatchListPage is one keyset window of the library list (the "Load more"

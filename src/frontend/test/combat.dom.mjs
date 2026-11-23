@@ -1,5 +1,5 @@
 import './compile-worker-node.mjs';
-// jsdom driver for Combat: the Engagements card's column order (round →
+// jsdom driver for Combat: the Kill tags card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
 // traded/untraded facts share one row with its chips — section D — plus
@@ -11,10 +11,10 @@ import './compile-worker-node.mjs';
 // the Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and
 // its long-event replay loop (H: solo's kill span at the loop length,
 // padded-span fallback, unstatable → no ?loop=), the bare round numbers
-// under the RD heading (A/B/D) and the Engagements ROUND scope — the
+// under the RD heading (A/B/D) and the Kill tags ROUND scope — the
 // round <select> dropdown mirroring Utility's (visible "Round" field
 // label, "All rounds" + canonical RD | score options, DEFAULT ROUND 1,
-// Engagements only; N). The clutches title carries no chip (B). The
+// Kill tags only; N). The clutches title carries no chip (B). The
 // retired Combat stats panel and its
 // KAST drill-down dialog are GONE (J — no section heading and no KAST
 // trigger anywhere), the cold-start gate and the failed-load alert hold
@@ -134,7 +134,7 @@ const hit = (name) => {
 };
 export const getCombatStats = () => { hit('getCombatStats'); return wait(d().stats || []); };
 export const getClutches = () => wait(d().clutches || []);
-export const getEngagements = () => wait(d().engagements || []);
+export const getKillTags = () => wait(d().killTags || []);
 export const getPlayerRounds = () => { hit('getPlayerRounds'); return wait(d().playerRounds || []); };
 export const getRounds = () => wait(d().rounds || []);
 export const getScoreboard = () => wait(d().scoreboard || []);
@@ -166,7 +166,7 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
   );
 }
 
-// TokenSelect is no longer mounted here (the Engagements round scope is
+// TokenSelect is no longer mounted here (the Kill tags round scope is
 // a plain <select> — section N, so nothing compiles the chip input
 // anymore); Popover IS — the kind filter's multi-select dropdown anchors
 // on it (section A), so this driver compiles it beside the view's other
@@ -189,18 +189,18 @@ const panelSrc = (name) =>
     // plumbing (Strings Stage 3): the panels import the strings catalog —
     // resolve it from the real tree, like every other ../ module here.
     .replace("from '../../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
-for (const name of ['CombatEngagements', 'CombatClutches']) {
+for (const name of ['CombatKillTags', 'CombatClutches']) {
   svelteCompile(panelSrc(name), `${name}.svelte`, join(dir, 'builtins', 'match', `${name}.js`));
 }
 
 // The harness mounts both panels with the match as their context and a stub
 // read API whose navigate records the routes (the Combat view's old nav).
 const harnessSrc = `<script>
-  import Engagements from './builtins/match/CombatEngagements.js';
+  import KillTags from './builtins/match/CombatKillTags.js';
   import Clutches from './builtins/match/CombatClutches.js';
   const spectra = { navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)) };
 </script>
-<Engagements {spectra} context={{ matchId: 3 }} />
+<KillTags {spectra} context={{ matchId: 3 }} />
 <Clutches {spectra} context={{ matchId: 3 }} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
@@ -245,7 +245,7 @@ const sections = (root, heading) =>
 const headerTexts = (table) => [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
 const rows = (table) => [...table.querySelectorAll('tbody tr')];
 
-// The Engagements kind filter's DROPDOWN (one per mounted section): the
+// The Kill tags kind filter's DROPDOWN (one per mounted section): the
 // trigger button under its "Kind" field label, and the panel only while
 // open — openKinds() clicks the trigger and hands back the panel (null
 // when the control is not the dropdown yet), kindCheck() the box for one
@@ -263,7 +263,7 @@ const kindCheck = (sec, label) =>
     ?.querySelector('input');
 const ALL_KINDS = ['opening', 'trade', 'traded', 'untraded'];
 
-// Round 7 starts at tick 10000 at 64 tick — the engagement at 10640 is
+// Round 7 starts at tick 10000 at 64 tick — the kill tag at 10640 is
 // 640/64 = 10 s INTO that round ("0:10"), never the match clock.
 const base = {
   match: { tickRate: 64, sideSwitches: 0 },
@@ -275,7 +275,7 @@ const base = {
     { steamId: 'A', name: 'alice', side: 'ct' },
     { steamId: 'B', name: 'bob', side: 't' },
   ],
-  engagements: [
+  killTags: [
     { tick: 10640, round: 7, kind: 'opening', aSteam: 'A', aName: 'alice', bSteam: 'B', bName: 'bob', distance: 19.4, wonBy: 'ct' },
     { tick: 10704, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
   ],
@@ -291,11 +291,11 @@ const base = {
   ],
 };
 
-console.log('A. engagement columns: round → time into round → killer vs victim → dist (m)');
+console.log('A. kill tag columns: round → time into round → killer vs victim → dist (m)');
 const root = await render(base);
 const eng = sections(root, 'Kill tags')[0];
 const engTable = eng?.querySelector('table');
-check('engagements table rendered', !!engTable);
+check('kill tags table rendered', !!engTable);
 check(
   'header order',
   JSON.stringify(headerTexts(engTable)) ===
@@ -303,7 +303,7 @@ check(
   JSON.stringify(headerTexts(engTable)),
 );
 const engRows = rows(engTable);
-check('two engagement rows', engRows.length === 2, String(engRows.length));
+check('two kill tag rows', engRows.length === 2, String(engRows.length));
 const first = engRows[0]?.querySelectorAll('td') || [];
 // The Round cell is TEXT again (owner ruling: "no round play button
 // there" — the round-watch ▶ was removed): the bare round number under
@@ -370,10 +370,10 @@ check(
     : 'no #comb-kind-pop',
 );
 // The all-off verdict made mechanical: a FRESH mount applies NO kind
-// filter — every engagement row renders (none-checked = all rows, never
+// filter — every kill tag row renders (none-checked = all rows, never
 // an empty default card).
 check(
-  'fresh mount: none checked → NO filter — every engagement row shows',
+  'fresh mount: none checked → NO filter — every kill tag row shows',
   rows(engTable).length === 2,
   String(rows(engTable).length),
 );
@@ -388,12 +388,12 @@ check(
   `pop=${!!eng.querySelector('#comb-kind-pop')} focus=${document.activeElement?.tagName}`,
 );
 
-// (B) the engagement ▶ keeps its seek tick, stamps the loop-length entry
+// (B) the kill tag ▶ keeps its seek tick, stamps the loop-length entry
 // loop (nav.entryLoopAround — the default 5 s × 64 tick = 320 either
 // side) AND the
 // KILLER as the camera follow (the owner's rule for kill rows).
 check(
-  'engagement ▶ is icon-only play with a follow-aware title',
+  'kill tag ▶ is icon-only play with a follow-aware title',
   !!engPlayBtn && engPlayBtn.textContent.trim() === '' && !!engPlayBtn.querySelector('.codicon-play') &&
     engPlayBtn.getAttribute('title') === 'Watch this kill — follow alice (killer)',
   engPlayBtn?.getAttribute('title'),
@@ -402,7 +402,7 @@ click(engPlayBtn);
 await sleep();
 const navEng = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'engagement ▶ links tick + the loop-length loop + follow=the killer, no filter',
+  'kill tag ▶ links tick + the loop-length loop + follow=the killer, no filter',
   !!navEng &&
     navEng.includes('tick=10640') &&
     navEng.includes('loop=10320,10960') &&
@@ -486,7 +486,7 @@ check(
   clutchSec2?.textContent.slice(0, 120),
 );
 
-// The kind filter's checkboxes live in the Engagements section's
+// The kind filter's checkboxes live in the Kill tags section's
 // dropdown panel (each scenario mounts its own root, so the helper is
 // scoped per section); openKinds() above opens the panel first — a
 // scenario keeps it open while it works the boxes.
@@ -509,14 +509,14 @@ const pairKill = {
 };
 const rootD = await render({
   ...base,
-  engagements: [
+  killTags: [
     { ...pairKill, kind: 'trade' },
     { ...pairKill, kind: 'untraded' },
   ],
 });
 const engD = sections(rootD, 'Kill tags')[0];
 const tableD = engD?.querySelector('table');
-check('engagements table rendered', !!tableD);
+check('kill tags table rendered', !!tableD);
 const dRows = rows(tableD);
 check('TWO fetched rows render as ONE', dRows.length === 1, String(dRows.length));
 const dCells = dRows[0]?.querySelectorAll('td') || [];
@@ -631,7 +631,7 @@ const pairKill2 = {
 };
 const rootE = await render({
   ...base,
-  engagements: [
+  killTags: [
     { ...pairKill2, kind: 'opening' },
     { ...pairKill2, kind: 'untraded' },
   ],
@@ -675,7 +675,7 @@ console.log('F. grouping precision: same tick, DIFFERENT pair stays its own row;
 document.body.removeChild(rootE);
 const rootF = await render({
   ...base,
-  engagements: [
+  killTags: [
     // an EARLIER single-kill row…
     { tick: 10500, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
     // …the merged pair (its two rows share round+tick+killer+victim)…
@@ -819,7 +819,7 @@ const tradedKill = {
 };
 const rootI = await render({
   ...base,
-  engagements: [
+  killTags: [
     // ONE kill answered on the killer side (trade) AND on the victim
     // side (traded) — the merged row wears both chips.
     { ...tradedKill, kind: 'trade' },
@@ -1001,14 +1001,14 @@ console.log('M. the view never reads the retired combat-stats / metric-slot data
 }
 
 // ---------------------------------------------------------------------------
-// Section N: the Engagements ROUND scope (owner, 2026-11-18): the chip
+// Section N: the Kill tags ROUND scope (owner, 2026-11-18): the chip
 // input became a dropdown mirroring the Utility tab's round selector —
 // a visible "Round" field label over ONE <select>, options "All rounds"
 // + the canonical `RD<n> | <ct>-<t>` labels (roundScoreLabel), DEFAULT
 // ROUND 1 (the pre-dropdown default was the empty multi-select set = no
 // filter — the owner narrowed the default), and the Clutches card
 // carries none.
-console.log('N. engagements round scope: round dropdown, default round 1, Engagements only');
+console.log('N. kill tags round scope: round dropdown, default round 1, kill tags only');
 {
   const rootN = await render({
     ...base,
@@ -1016,11 +1016,11 @@ console.log('N. engagements round scope: round dropdown, default round 1, Engage
       { number: 1, startTick: 1040, endTick: 2000 },
       ...base.rounds, // rounds 6 and 7
     ],
-    engagements: [
+    killTags: [
       // One kill in round 1 — the DEFAULT selection has its own row to
       // show, so "starts on round 1" is a value pin, not a fallback.
       { tick: 1500, round: 1, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 2, wonBy: 't' },
-      ...base.engagements, // round 7's opening + untraded pair (two kills)
+      ...base.killTags, // round 7's opening + untraded pair (two kills)
       // …plus ONE kill in round 6, so the scope has something to drop.
       { tick: 9500, round: 6, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 3, wonBy: 't' },
     ],
@@ -1038,11 +1038,11 @@ console.log('N. engagements round scope: round dropdown, default round 1, Engage
     return true;
   };
   check(
-    'the engagement filter row carries the round DROPDOWN with its visible "Round" field label',
+    'the kill tag filter row carries the round DROPDOWN with its visible "Round" field label',
     !!selN &&
       selN.tagName === 'SELECT' &&
       engN?.querySelector('label[for="comb-round-filter"] .field-label')?.textContent.trim() === 'Round',
-    selN ? `tag=${selN.tagName}` : engN ? 'no #comb-round-filter' : 'no Engagements section',
+    selN ? `tag=${selN.tagName}` : engN ? 'no #comb-round-filter' : 'no kill tags section',
   );
   check(
     'its options are "All rounds" + one canonical RD | score label per round with a kill',

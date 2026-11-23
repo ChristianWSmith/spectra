@@ -114,11 +114,11 @@ func TestImportsDuringSweepCauseOneFollowUp(t *testing.T) {
 	f, p := newCoalesceFixture(t, true)
 	defer p.openGate()
 
-	f.svc.sweepForJob(t.Context()) // import 1: starts the sweep, which parks
+	mustNoErr(t, f.svc.sweepForJob(t.Context())) // import 1: starts the sweep, which parks
 	waitFor(t, "the first sweep to enter the pass", func() bool { return p.entries.Load() == 1 })
 
-	f.svc.sweepForJob(t.Context()) // import 2 finishes while the sweep runs
-	f.svc.sweepForJob(t.Context()) // import 3 finishes while the sweep runs
+	mustNoErr(t, f.svc.sweepForJob(t.Context())) // import 2 finishes while the sweep runs
+	mustNoErr(t, f.svc.sweepForJob(t.Context())) // import 3 finishes while the sweep runs
 	if n := p.entries.Load(); n != 1 {
 		t.Fatalf("a second sweep started while the first was running: %d entries", n)
 	}
@@ -142,7 +142,7 @@ func TestImportWhenIdleStartsSweepAtOnce(t *testing.T) {
 	f, p := newCoalesceFixture(t, true)
 	defer p.openGate()
 
-	f.svc.sweepForJob(t.Context())
+	mustNoErr(t, f.svc.sweepForJob(t.Context()))
 	if running, _ := schedulerState(f); !running {
 		t.Fatal("an import on an idle scheduler did not start a sweep at once")
 	}
@@ -164,7 +164,7 @@ func TestBatchOfThreeImportsLeavesAllValuesCurrent(t *testing.T) {
 
 	for _, sha := range []string{"batch-1", "batch-2", "batch-3"} {
 		seedBatchMatch(t, f.st, sha) // the import's rows: the match is behind
-		f.svc.sweepForJob(t.Context())
+		mustNoErr(t, f.svc.sweepForJob(t.Context()))
 	}
 	waitForSweepIdle(t, f)
 
@@ -189,7 +189,7 @@ func TestSaveDuringImportSweepJoinsRunningSweep(t *testing.T) {
 	f, p := newCoalesceFixture(t, true)
 	defer p.openGate()
 
-	f.svc.sweepForJob(t.Context())
+	mustNoErr(t, f.svc.sweepForJob(t.Context()))
 	waitFor(t, "the import's sweep to enter the pass", func() bool { return p.entries.Load() == 1 })
 
 	saved := f.save(t, models.MetricRow{Name: "save_mid_import", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"})
@@ -250,5 +250,14 @@ func TestMetricFailureDoesNotFailImport(t *testing.T) {
 	waitForSweepIdle(t, f)
 	if s := stateOf(t, f.svc, bad.ID); s.State != MetricStateFailed || s.Error == "" {
 		t.Fatalf("failing metric state = %+v, want failed with error text", s)
+	}
+}
+
+// mustNoErr fails the test on an error from a call whose result the test needs
+// to be nil (the sweep entry point always returns nil by contract).
+func mustNoErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -438,38 +438,17 @@ func TestImportSkipsCopyWhenDisabled(t *testing.T) {
 
 	// StageCopy never emitted; every point is monotone, hash ≤ 0.10 and
 	// the first post-hash point is the parse range's start (0.20).
-	var last float64
+	evs := log.snapshot()
 	sawCopy := false
-	afterHash := false
-	for _, ev := range log.snapshot() {
+	for _, ev := range evs {
 		if ev.Stage == models.StageCopy {
 			sawCopy = true
-		}
-		if ev.Progress < last {
-			t.Errorf("progress regressed: %v → %v at stage %q", last, ev.Progress, ev.Stage)
-		}
-		last = ev.Progress
-		switch ev.Stage {
-		case models.StageHash:
-			if ev.Progress > progressHashEnd {
-				t.Errorf("hash progress %v > %v", ev.Progress, progressHashEnd)
-			}
-		case models.StageDecompress, models.StageParse:
-			if ev.Progress < progressParseStart {
-				t.Errorf("stage %q progress %v < %v without a copy stage in between", ev.Stage, ev.Progress, progressParseStart)
-			}
-			afterHash = true
 		}
 	}
 	if sawCopy {
 		t.Error("StageCopy announced despite copy_on_import off")
 	}
-	if !afterHash {
-		t.Error("no parse-range progress points recorded")
-	}
-	if last != progressAnalyze {
-		t.Errorf("last progress point = %v, want the analyze step %v", last, progressAnalyze)
-	}
+	checkPerPhase(t, evs, []string{models.StageHash, models.StageParse, models.StageStore, models.StageAnalyze})
 
 	// Reprocess reads the SOURCE (there is nothing else to read).
 	reID, err := im.Reprocess(job.MatchID)

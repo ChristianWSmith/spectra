@@ -103,10 +103,10 @@ func TestDevToolFind(t *testing.T) {
 		"sounds/weapons/c4/c4_beep3.vsnd_c":           {2},
 		"sounds/weapons/ak47/ak47_01.vsnd_c":          {3},
 		"panorama/images/icons/equipment/ak47.vsvg_c": {4},
-		"resource/overviews/de_fixture.txt":           []byte(`"de_fixture" {}`),
+		"resource/overviews/de_dust2.txt":             []byte(`"de_dust2" {}`),
 	})
 	all := "panorama/images/icons/equipment/ak47.vsvg_c\n" +
-		"resource/overviews/de_fixture.txt\n" +
+		"resource/overviews/de_dust2.txt\n" +
 		"sounds/weapons/ak47/ak47_01.vsnd_c\n" +
 		"sounds/weapons/c4/c4_beep2.vsnd_c\n" +
 		"sounds/weapons/c4/c4_beep3.vsnd_c\n"
@@ -208,7 +208,7 @@ func TestDevToolGetVTex(t *testing.T) {
 	}
 
 	// Not a texture: the decode error surfaces, nothing is written.
-	code, _, stderr = runDevToolForTest(t, pak, "get", "resource/overviews/de_fixture.txt")
+	code, _, stderr = runDevToolForTest(t, pak, "get", "resource/overviews/de_dust2.txt")
 	if code == 0 {
 		t.Errorf("non-vtex: exit 0 (stderr=%q)", stderr)
 	}
@@ -291,7 +291,7 @@ func TestDevToolSound(t *testing.T) {
 // --- overview ---------------------------------------------------------------
 
 func TestDevToolOverview(t *testing.T) {
-	fixture := `"de_fixture"
+	fixture := `"de_dust2"
 {
 	"pos_x"		"-2476"
 	"pos_y"		"3239"
@@ -321,9 +321,9 @@ func TestDevToolOverview(t *testing.T) {
 }
 `
 	pak := devToolPK(t, map[string][]byte{
-		"resource/overviews/de_fixture.txt": []byte(fixture),
+		"resource/overviews/de_dust2.txt": []byte(fixture),
 	})
-	code, stdout, stderr := runDevToolForTest(t, pak, "overview", "de_fixture")
+	code, stdout, stderr := runDevToolForTest(t, pak, "overview", "de_dust2")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}

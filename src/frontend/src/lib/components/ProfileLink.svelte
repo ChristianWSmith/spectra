@@ -2,7 +2,7 @@
   // The one comb-name-btn profile link: name → #/player/:steamid for a
   // well-formed Steam id, plain text otherwise (the openProfile guard is
   // structural — bots and malformed ids are not linkable). Used by Combat's
-  // stats/engagements/clutches tables, the match/round name cells and
+  // stats/kill tags/clutches tables, the match/round name cells and
   // Replay's event detail pane.
   //
   // `cls` is an optional pass-through for the caller's own classes — the
