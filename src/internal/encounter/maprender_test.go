@@ -21,7 +21,11 @@ func TestMapRenderClip(t *testing.T) {
 	if data == "" || out == "" || mp == "" {
 		t.Skip("set SPECTRA_DATA, SPECTRA_OVERLAY_OUT, SPECTRA_MAP")
 	}
-	f, err := os.Open(filepath.Join(data, "worldcol", mp+".worldcol"))
+	src := filepath.Join(data, "worldcol", mp+".worldcol")
+	if alt := os.Getenv("SPECTRA_MESH_FILE"); alt != "" {
+		src = alt
+	}
+	f, err := os.Open(src)
 	if err != nil {
 		t.Fatal(err)
 	}

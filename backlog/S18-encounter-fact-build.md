@@ -281,3 +281,18 @@ a finer rule, per mesh or per geometry, checked against the control.
   (not in the repo). That is the next step if the render route is taken.
 - Open point: the kills are bullet hits, so the engine's bullet trace is the target.
   Visibility from the render mesh tests a different question from bullet collision.
+
+## Render geometry (2026-11-22)
+
+- `internal/source2/meshopt.go`: Go port of meshoptimizer's vertex and index decoders
+  (scalar paths of VRF's MIT-licensed decoders). Checked on one embedded mesh:
+  14,991 vertices (stride 28), index maximum 14,990.
+- `internal/mappack/render.go`: `ExtractRenderGeometry` reads the `worldnodes` render
+  models (skybox excluded) from the map's manifest. de_ancient: 357 models, 9.16
+  million triangles.
+- `internal/source2/bvh.go`: median-split hierarchy, checked against brute force on
+  random segments (4,000 segments, no mismatches). The render geometry was too slow to
+  test without it.
+- de_ancient kills, production box, 183 kills: render geometry clears 160; collision
+  geometry clears 173. Render geometry blocks more kills (23 blocked versus 10). Not
+  yet attributed: foliage, glass and other see-through materials are candidates.
