@@ -64,7 +64,7 @@
   }
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   <h2>{S.profiles.mapsHeading}</h2>
   <table class="data-table">
     <thead>

@@ -60,7 +60,7 @@
   });
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   <h2>{S.reports.templateAndTarget}</h2>
   {#if m.docError}
     <!-- The one error slot for render + save (cancel stays silent). -->

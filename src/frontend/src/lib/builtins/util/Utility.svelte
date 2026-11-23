@@ -100,7 +100,7 @@
   );
 </script>
 
-<div class="view util-view" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="view util-view">
   {#if data}
       <spectra.Child name="builtin-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
       <div class="util-summary">

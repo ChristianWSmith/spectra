@@ -84,7 +84,7 @@
   });
 </script>
 
-<div class="view econ-view" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="view econ-view">
   {#if state}
       <div class="econ-head">
         <span class="muted">{state.rows.length}{state.rows.length === 1 ? ' round' : ' rounds'}</span>

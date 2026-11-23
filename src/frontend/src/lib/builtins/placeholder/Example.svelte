@@ -13,7 +13,7 @@
   );
 </script>
 
-<section class="example" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="example">
   {#if matchId != null}
     {#await rounds then r}
       <p>{S.componentbuilder.exampleRounds}{r.rows.length}</p>

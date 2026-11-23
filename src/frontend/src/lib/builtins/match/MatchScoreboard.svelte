@@ -108,7 +108,7 @@
   }
 </script>
 
-<div class="table-scroll" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="table-scroll">
   {#if data}
       <table class="data-table scoreboard">
         <thead>

@@ -342,7 +342,12 @@
 
   // The heavy GetHeatmap call fires only on Generate — never on control
   // changes (heatmap generate is the expensive op).
-  async function generate() {
+  // The generate run is a load the frame counts (spectra.track): the busy state is the frame's.
+  function generate() {
+    return spectra.track(runGenerate());
+  }
+
+  async function runGenerate() {
     if (roundFrom >= 0 && roundTo >= 0 && roundFrom > roundTo) {
       error = S.heatmaps.roundRangeError;
       return;
@@ -555,7 +560,7 @@
   }
 </script>
 
-<div class="view heat-view" style="--heat-aspect: {heatAspect}" class:builtin-busy={spectra.busy || loading} aria-busy={spectra.busy || loading}>
+<div class="view heat-view" style="--heat-aspect: {heatAspect}">
   {#if error}
     <p class="error" role="alert">
       {error}

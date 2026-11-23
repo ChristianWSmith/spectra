@@ -119,7 +119,7 @@
   {/if}
 {/snippet}
 
-<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="builtin-root">
 {#if data}
   <div class="table-scroll">
     <table class="data-table">

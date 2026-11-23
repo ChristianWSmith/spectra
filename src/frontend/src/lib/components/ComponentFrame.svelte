@@ -63,6 +63,8 @@
     nav,
     depth,
     context: () => ctx,
+    // A nested frame registers here on mount and leaves on unmount.
+    adopt: (delta) => untrack(() => (childCount += delta)),
   });
 
   let el = $state(null);
@@ -81,11 +83,36 @@
   // content while they run (spectra.busy), so a swap of data keeps the space
   // and hides the old values until the new ones arrive.
   let pending = $state(0);
+  // Reads this frame has started, and nested frames mounted in it. A pure composer
+  // (nested frames, no reads of its own) never shows the busy state: its children
+  // show their own.
+  let readCount = $state(0);
+  let childCount = $state(0);
+  const isComposer = $derived(childCount > 0 && readCount === 0);
+  const busy = $derived(pending > 0 && !isComposer);
+
+  $effect(() => {
+    if (!parent) return;
+    parent.adopt(1);
+    return () => parent.adopt(-1);
+  });
   // untrack: a read started inside an effect must not make that effect depend on
   // the counter it moves.
   const tracked = (read) => (...args) => {
-    untrack(() => pending++);
+    untrack(() => {
+      pending++;
+      readCount++;
+    });
     return read(...args).finally(() => {
+      untrack(() => pending--);
+    });
+  };
+  const trackedLoad = (promise) => {
+    untrack(() => {
+      pending++;
+      readCount++;
+    });
+    return promise.finally(() => {
       untrack(() => pending--);
     });
   };
@@ -98,7 +125,7 @@
     metricsByMatch: tracked(api.metricsByMatch),
     // track(promise): a load the component runs through its own services counts
     // as a read in flight, the same as spectra.metric/query.
-    track: tracked((p) => p),
+    track: trackedLoad,
     get busy() {
       return pending > 0;
     },
@@ -107,26 +134,38 @@
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 
-  // The builtin root (the element with .builtin-busy) is this frame's first box.
-  // Its height is remembered by name while it is idle, and held at that height
-  // while it loads, so a remount reserves the space of the last render.
-  const busyRoot = () => el?.querySelector(':scope > .builtin-busy') ?? null;
+  // The component's root: the first element the component renders (an error
+  // line the frame shows above it is skipped). The frame owns the busy state on
+  // it: the .builtin-busy class and aria-busy while reads are in flight, and the
+  // height held at the last remembered render (componentruntime/sizememory.js).
+  const frameRoot = () => {
+    if (!el || !Comp) return null;
+    return [...el.children].find((e) => !e.matches('p.error')) ?? null;
+  };
   $effect(() => {
     void Comp;
-    const root = busyRoot();
-    if (!root || !name || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      if (pending === 0) rememberHeight(name, root.offsetHeight);
-    });
-    ro.observe(root);
-    return () => ro.disconnect();
+    const root = frameRoot();
+    if (!root) return;
+    const on = busy;
+    root.classList.toggle('builtin-busy', on);
+    root.setAttribute('aria-busy', String(on));
+    const h = on ? recalledHeight(name) : null;
+    root.style.minHeight = h ? h + 'px' : '';
+    return () => {
+      root.classList.remove('builtin-busy');
+      root.removeAttribute('aria-busy');
+      root.style.minHeight = '';
+    };
   });
   $effect(() => {
     void Comp;
-    const root = busyRoot();
-    if (!root) return;
-    const h = pending > 0 ? recalledHeight(name) : null;
-    root.style.minHeight = h ? h + 'px' : '';
+    const root = frameRoot();
+    if (!root || !name || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (!busy) rememberHeight(name, root.offsetHeight);
+    });
+    ro.observe(root);
+    return () => ro.disconnect();
   });
 
   // A new source (or component) is a new mount: earlier failures go.

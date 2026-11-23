@@ -65,7 +65,7 @@
   const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   <h2>{S.profiles.weaponsPrefix}<span class="muted">{S.profiles.topPrefix}{weapons.length})</span></h2>
   <table class="data-table">
     <thead>

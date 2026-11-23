@@ -56,7 +56,7 @@
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
 
-<div class="roster-grid" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="roster-grid">
   {#if data}
       {#each [data.ct, data.t] as team, ti (ti)}
         <section class="panel">

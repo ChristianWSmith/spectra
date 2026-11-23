@@ -61,7 +61,7 @@
     return () => (live = false);
   });
 </script>
-<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="builtin-root">
 
 {#if loadError}
   <p class="error" role="alert">{S.profiles.careerErrorLead}{loadError}</p>

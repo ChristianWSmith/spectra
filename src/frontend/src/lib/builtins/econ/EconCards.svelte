@@ -177,7 +177,7 @@
   }
 </script>
 
-<div class="econ-summary stat-grid" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="econ-summary stat-grid">
   {#each cards as c (c.key)}
     {#if c.drill}
       <button class="stat-cell" title={c.title} onclick={() => drill(c.drill)}>

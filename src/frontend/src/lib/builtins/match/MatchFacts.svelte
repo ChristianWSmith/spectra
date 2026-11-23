@@ -63,7 +63,7 @@
   }
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   {#if match}
       <dl class="facts">
         <div>

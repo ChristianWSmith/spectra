@@ -31,7 +31,7 @@
   });
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   <h2>{S.library.advancedDiagnostics}</h2>
   {#if entError}
     <p class="error" role="alert">

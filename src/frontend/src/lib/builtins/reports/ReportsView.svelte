@@ -133,7 +133,7 @@
   });
 
 </script>
-<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="builtin-root">
 
 <spectra.Child name="builtin-reports-templates" props={{ m, embedded }} />
 <spectra.Child name="builtin-reports-appendix" props={{ m }} />

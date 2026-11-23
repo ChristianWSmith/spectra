@@ -119,7 +119,7 @@
     spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 </script>
-<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="builtin-root">
 
 {#if error}
   <p class="error" role="alert">

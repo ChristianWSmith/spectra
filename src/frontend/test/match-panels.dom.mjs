@@ -442,6 +442,23 @@ await settle();
 check('once the read settles, the root is no longer busy',
   !root.querySelector('.match-overview').classList.contains('builtin-busy'));
 
+// --- I. a pure composer never shows the busy state; its child does ----------------------
+console.log('I. composer');
+const composerSrc = `<script>
+  let { spectra, context } = $props();
+</script>
+<div class="comp-root"><spectra.Child name="builtin-match-overview" props={{ back: '' }} /></div>`;
+const heldReads = [];
+const busyComposerReads = { ...reads, componentQuery: () => new Promise((r) => heldReads.push(r)) };
+root = await mountPanel({ source: composerSrc, context: MATCH, props: {}, reads: busyComposerReads });
+await settle();
+const compRoot = root.querySelector('.comp-root');
+const childRoot = root.querySelector('.match-overview');
+check('a pure composer is not busy (no busy class, aria-busy not true) while its child reads',
+  !!compRoot && !compRoot.classList.contains('builtin-busy') && compRoot.getAttribute('aria-busy') !== 'true');
+check('the child that reads is busy', !!childRoot && childRoot.classList.contains('builtin-busy'));
+heldReads.forEach((r) => r({ columns: [], rows: [] }));
+
 unmountAll();
 console.log(failures === 0 && escaped.length === 0 ? 'ALL PASS' : `FAILURES: ${failures}, escaped: ${escaped.length}`);
 process.exit(failures === 0 && escaped.length === 0 ? 0 : 1);

@@ -51,7 +51,7 @@
   const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
 </script>
 
-<section class="panel prof-sides" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel prof-sides">
   <h2>{S.profiles.sidesHeading}</h2>
   <table class="data-table">
     <thead>

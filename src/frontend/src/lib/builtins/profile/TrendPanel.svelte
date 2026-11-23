@@ -127,7 +127,7 @@
   });
 </script>
 
-<section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<section class="panel">
   <div class="row-between">
     <h2>{S.profiles.trendHeading}</h2>
     <!-- The trend's metric picker: ANY match-scope metric the catalog carries,

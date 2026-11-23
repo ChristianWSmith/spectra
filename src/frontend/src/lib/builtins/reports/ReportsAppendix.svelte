@@ -224,7 +224,7 @@
 
   const canSave = $derived(targetReady(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }));
 </script>
-<div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
+<div class="builtin-root">
 
 {#if m.metricsError}
   <p class="error" role="alert">
