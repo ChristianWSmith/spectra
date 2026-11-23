@@ -8,7 +8,7 @@ import '../../test/compile-worker-node.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createReadApi } from './componentruntime/readapi.js';
+import { createReadApi, metricsByMatch } from './componentruntime/readapi.js';
 import * as S from './strings/index.js';
 
 const DEFS = [
@@ -244,4 +244,165 @@ test('the API surface is exactly the documented set', () => {
   const { api } = harness();
   assert.deepEqual(Object.keys(api).sort(), ['guard', 'isHuman', 'listedPlayers', 'metric', 'navigate', 'query']);
   assert.ok(Object.isFrozen(api));
+});
+
+// ---- in-flight dedupe and the series read (S13) -----------------------------
+// A stub that counts backend calls the way the app's services do: the stored
+// reads are read-cached (a repeat of the same key is a cache hit, not a call);
+// the compute-state reads are never cached. A test can hold a read open with a
+// deferred so it controls when concurrent reads settle.
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function countingReads({ values = [], series = [], statesOf = () => [] } = {}) {
+  const calls = {};
+  const cache = new Map();
+  const count = (name) => (calls[name] = (calls[name] || 0) + 1);
+  const cached = (name, key, make) => {
+    const k = name + JSON.stringify(key);
+    if (!cache.has(k)) {
+      count(name);
+      cache.set(k, make());
+    }
+    return cache.get(k);
+  };
+  const reads = {
+    listMetrics: async () => DEFS,
+    getMetricValuesForMatch: (m, ids) => cached('getMetricValuesForMatch', [m, ids], async () => values),
+    getMetricValuesForRound: async () => [],
+    getMetricValuesForPlayer: async () => [],
+    getMetricComputeState: async () => [],
+    getMetricStates: (scope, id) => {
+      count('getMetricStates');
+      return Promise.resolve(statesOf(scope, id));
+    },
+    getMetricSeries: (sid, ids) => cached('getMetricSeries', [sid, ids], async () => series),
+    componentQuery: async () => ({ columns: [], rows: [] }),
+  };
+  return { reads, calls };
+}
+
+test('two concurrent identical state reads share one backend call', async () => {
+  const gate = deferred();
+  const { reads, calls } = countingReads();
+  reads.getMetricStates = () => {
+    calls.getMetricStates = (calls.getMetricStates || 0) + 1;
+    return gate.promise;
+  };
+  const api = createReadApi({ reads, report: () => {} });
+  const a = api.metric('adr', { match_id: 5 });
+  const b = api.metric('adr', { match_id: 5 });
+  gate.resolve([{ metricId: 1, state: 'fresh' }]);
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(calls.getMetricStates, 1);
+  assert.equal(ra.state, 'no-data');
+  assert.equal(rb.state, 'no-data');
+});
+
+test('state reads for different units do not dedupe', async () => {
+  const { reads, calls } = countingReads();
+  const api = createReadApi({ reads, report: () => {} });
+  await Promise.all([api.metric('adr', { match_id: 5 }), api.metric('adr', { match_id: 6 })]);
+  assert.equal(calls.getMetricStates, 2);
+});
+
+test('a state read is not remembered once it has settled (no TTL)', async () => {
+  const { reads, calls } = countingReads();
+  const api = createReadApi({ reads, report: () => {} });
+  await api.metric('adr', { match_id: 5 });
+  await api.metric('adr', { match_id: 5 });
+  assert.equal(calls.getMetricStates, 2);
+});
+
+test('a rejected state read is not cached: the next read asks the backend again', async () => {
+  let attempts = 0;
+  const { reads } = countingReads();
+  reads.getMetricStates = async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('boom');
+    return [{ metricId: 1, state: 'fresh' }];
+  };
+  const reported = [];
+  const api = createReadApi({ reads, report: (e) => reported.push(e.message) });
+  await assert.rejects(api.metric('adr', { match_id: 5 }), { message: 'boom' });
+  const r = await api.metric('adr', { match_id: 5 });
+  assert.equal(attempts, 2);
+  assert.equal(r.state, 'no-data');
+  assert.deepEqual(reported, ['boom']);
+});
+
+test('concurrent callers of a rejected read all see the rejection, then the entry clears', async () => {
+  const gate = deferred();
+  const { reads, calls } = countingReads();
+  reads.getMetricStates = () => {
+    calls.getMetricStates = (calls.getMetricStates || 0) + 1;
+    return gate.promise;
+  };
+  const api = createReadApi({ reads, report: () => {} });
+  const a = api.metric('adr', { match_id: 5 });
+  const b = api.metric('adr', { match_id: 5 });
+  gate.reject(new Error('down'));
+  await assert.rejects(a, { message: 'down' });
+  await assert.rejects(b, { message: 'down' });
+  assert.equal(calls.getMetricStates, 1);
+});
+
+test('metricsByMatch: one series read, one state read per match, no per-metric value reads', async () => {
+  const series = [
+    { metricId: 1, matchId: 5, value: 81.5 },
+    { metricId: 1, matchId: 6, value: 60 },
+  ];
+  const states = { 5: [{ metricId: 1, state: 'fresh' }], 6: [{ metricId: 1, state: 'fresh' }] };
+  const { reads, calls } = countingReads({ series, statesOf: (scope, id) => states[id] || [] });
+  const out = await metricsByMatch(reads, '7656', ['adr'], [5, 6]);
+  assert.equal(calls.getMetricSeries, 1);
+  assert.equal(calls.getMetricStates, 2);
+  assert.equal(calls.getMetricValuesForMatch, undefined);
+  assert.equal(out.get(5).get('adr').value, 81.5);
+  assert.equal(out.get(6).get('adr').value, 60);
+  assert.equal(out.get(5).get('adr').state, 'fresh');
+  assert.deepEqual(out.get(5).get('adr').rows, [{ subject: '7656', dim: '', value: 81.5, valueKey: '' }]);
+});
+
+test('metricsByMatch states match metric(): processing, failed, behind and no-data', async () => {
+  const series = [{ metricId: 1, matchId: 5, value: 1 }];
+  const table = {
+    5: [{ metricId: 1, state: 'processing' }, { metricId: 2, state: 'fresh' }],
+    6: [{ metricId: 1, state: 'failed', error: 'bad' }],
+    7: [{ metricId: 1, state: 'behind' }],
+    8: [{ metricId: 1, state: 'no-data' }],
+  };
+  const { reads } = countingReads({ series, statesOf: (scope, id) => table[id] || [] });
+  const out = await metricsByMatch(reads, '7656', ['adr'], [5, 6, 7, 8]);
+  assert.equal(out.get(5).get('adr').state, 'processing');
+  assert.equal(out.get(6).get('adr').state, 'failed');
+  assert.equal(out.get(6).get('adr').error, 'bad');
+  assert.equal(out.get(7).get('adr').state, 'behind');
+  assert.equal(out.get(8).get('adr').state, 'no-data');
+  assert.equal(out.get(8).get('adr').value, null);
+});
+
+test('metricsByMatch with no metrics or no matches never calls the backend', async () => {
+  const { reads, calls } = countingReads();
+  const a = await metricsByMatch(reads, '7656', [], [5]);
+  const b = await metricsByMatch(reads, '7656', ['adr'], []);
+  assert.equal(calls.getMetricSeries, undefined);
+  assert.equal(calls.getMetricStates, undefined);
+  assert.deepEqual([...a.get(5)], []);
+  assert.equal(b.size, 0);
+});
+
+test('metricsByMatch refuses an unknown metric name', async () => {
+  const { reads } = countingReads();
+  await assert.rejects(metricsByMatch(reads, '7656', ['nope'], [5]), {
+    message: S.fill(S.components.metricUnknown, { name: 'nope' }),
+  });
 });

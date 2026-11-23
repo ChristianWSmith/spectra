@@ -53,6 +53,7 @@ import * as S from '../strings/index.js';
  *   getMetricValuesForPlayer: (steamId: string, ids: number[]) => Promise<any[]>,
  *   getMetricComputeState: () => Promise<any[]>,
  *   getMetricStates: (scope: 'match'|'player', id: number|string) => Promise<any[]>,
+ *   getMetricSeries: (steamId: string, ids: number[]) => Promise<any[]>,
  *   componentQuery: (sql: string) => Promise<{columns?: string[], rows?: any[][], err?: string}>,
  * }} ReadServices
  *
@@ -132,6 +133,42 @@ function toError(e) {
   return new Error(typeof e === 'string' ? e : (e && e.message) || String(e));
 }
 
+// inflightOf holds, per reads object, the reads now in flight keyed by method
+// and arguments. Concurrent identical reads share ONE promise. An entry leaves
+// the map when its read settles, success or failure, so nothing is remembered
+// past the moment it is in flight: there is no TTL, and a rejected read is
+// retried by the next caller instead of being replayed.
+const inflightOf = new WeakMap();
+
+function sharedRead(reads, method, args, fn) {
+  let pending = inflightOf.get(reads);
+  if (!pending) {
+    pending = new Map();
+    inflightOf.set(reads, pending);
+  }
+  const key = method + ':' + JSON.stringify(args);
+  const hit = pending.get(key);
+  if (hit) return hit;
+  let p;
+  try {
+    p = Promise.resolve(fn());
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  pending.set(key, p);
+  const settle = () => {
+    if (pending.get(key) === p) pending.delete(key);
+  };
+  p.then(settle, settle);
+  return p;
+}
+
+// unitStateRead is one unit's compute states (every metric), coalesced per
+// (scope, id) while in flight.
+function unitStateRead(reads, scope, id) {
+  return sharedRead(reads, 'getMetricStates', [scope, String(id)], () => reads.getMetricStates(scope, id));
+}
+
 // storedRead is the ONE mapping from reserved binds to today's stored-value
 // reads: match_id → the match read; match_id with round → the round read (the
 // stored rows of that round only); steam_id alone → the career bucket (the
@@ -147,6 +184,72 @@ function storedRead(reads, def, binds) {
   if (binds.match_id != null) return reads.getMetricValuesForMatch(Number(binds.match_id), [def.id]);
   if (binds.steam_id != null && binds.steam_id !== '') return reads.getMetricValuesForPlayer('', [def.id]);
   throw new Error(S.components.metricLibraryUnavailable);
+}
+
+/**
+ * One player's stored values across many matches (the History panel's
+ * read): ONE series read for the whole set of metrics, plus one compute
+ * state read per match (the states are scoped per match and carry every
+ * metric, so a match costs one read, not one per metric). Each cell gets
+ * the same five-state word metric() gives for that match and player.
+ *
+ * Difference from metric(): a match's "has rows" is taken as this player's
+ * row or the match-grain state being fresh, since the series carries only
+ * this player's rows. An absent row under a fresh state reads no-data;
+ * under behind, the chip.
+ *
+ * @param {ReadServices} reads
+ * @returns {Promise<Map<number, Map<string, MetricRead>>>}
+ */
+export async function metricsByMatch(reads, steamId, names, matchIds) {
+  const sid = String(steamId == null ? '' : steamId);
+  const matches = [...new Set((matchIds || []).map(Number))];
+  const wanted = [...new Set(names || [])];
+  // An empty metric set must never reach the series read: the backend
+  // reads EVERY metric for an empty id list.
+  if (sid === '' || wanted.length === 0 || matches.length === 0) {
+    return new Map(matches.map((m) => [m, new Map()]));
+  }
+  const defs = (await reads.listMetrics()) || [];
+  const defOf = wanted.map((name) => {
+    const def = defs.find((d) => d && d.name === name);
+    if (!def) throw new Error(S.fill(S.components.metricUnknown, { name }));
+    return def;
+  });
+  const ids = defOf.map((d) => d.id);
+  const [points, states] = await Promise.all([
+    sharedRead(reads, 'getMetricSeries', [sid, ids], () => reads.getMetricSeries(sid, ids)),
+    Promise.all(matches.map((m) => unitStateRead(reads, 'match', m))),
+  ]);
+  const pointAt = new Map((points || []).map((p) => [p.matchId + ':' + p.metricId, p]));
+  return new Map(
+    matches.map((matchId, i) => {
+      const entryOf = new Map((states[i] || []).map((s) => [s.metricId, s]));
+      const byName = new Map(
+        defOf.map((def) => {
+          const p = pointAt.get(matchId + ':' + def.id);
+          const entry = entryOf.get(def.id) || null;
+          const computeState = (entry && entry.state) || '';
+          const row = p ? { value: p.value, valueKey: '' } : null;
+          const state = stateWord(metricPresentation(computeState, row, row != null || computeState === 'fresh'));
+          const fresh = state === 'fresh';
+          return [
+            def.name,
+            {
+              name: def.name,
+              doc: def.doc || '',
+              state,
+              error: state === 'failed' ? (entry && entry.error) || '' : '',
+              value: fresh ? row.value : null,
+              valueKey: '',
+              rows: fresh ? [{ subject: sid, dim: '', value: row.value, valueKey: '' }] : [],
+            },
+          ];
+        }),
+      );
+      return [matchId, byName];
+    }),
+  );
 }
 
 /**
@@ -169,6 +272,7 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
   };
   const go = nav || ((hash) => (location.hash = hash));
 
+
   /** @type {ReadApi['metric']} */
   async function metric(name, binds) {
     try {
@@ -182,9 +286,9 @@ export function createReadApi({ reads, report, nav, context = () => ({}) }) {
       // the Builder list's alone.
       const steamBind = resolved.steam_id != null && resolved.steam_id !== '' ? String(resolved.steam_id) : null;
       const stateRead = resolved.match_id != null
-        ? reads.getMetricStates('match', Number(resolved.match_id))
+        ? unitStateRead(reads, 'match', Number(resolved.match_id))
         : steamBind != null
-          ? reads.getMetricStates('player', steamBind)
+          ? unitStateRead(reads, 'player', steamBind)
           : reads.getMetricComputeState();
       const [values, states] = await Promise.all([storedRead(reads, def, resolved), stateRead]);
       const unit = (values || []).filter((v) => v.metricId === def.id);

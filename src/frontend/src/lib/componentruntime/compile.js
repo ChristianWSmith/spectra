@@ -98,6 +98,12 @@ export const BUILTIN_HELPERS = Object.freeze({
       onEvent: 'listen for a backend event (event)',
     },
   },
+  'src/lib/componentruntime/reads.js': {
+    load: () => import('./reads.js'),
+    names: {
+      metricsByMatch: 'one player’s stored values and states across many matches (read, History)',
+    },
+  },
   'src/lib/strings/index.js': {
     load: () => import('../strings/index.js'),
     names: { '*': 'the app copy catalog (S.*)' },
