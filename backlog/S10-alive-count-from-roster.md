@@ -35,3 +35,15 @@ Not done here:
   The roster rule and the tick rule differ on the match 4, round 23 presence gap. This
   build implements the roster rule as the task specified, so that gap is now decided by
   the roster rule, not by S21.
+
+## Migration finding (2026-11-23): old alive_count returned 0 where there were no frames
+
+- Comparing the re-imported library with the snapshot, 11 stored alive_count cells changed (0 before, 1 to 4 now).
+- Cause: those kill ticks have no player_ticks frame at all. They are World self-kills 100 to 300 ticks after
+  the round's end. The old tick-based count reads zero because there are no rows, not because nobody was alive.
+- Across the library, 13 of 1,111 kill ticks have no frame, all World self-kills after round end, in matches 1, 2, 4, 5 and 7.
+  C4 kills all have frames and are not affected.
+- The stored convention is NULL = no data, never 0. The old 0 broke it. The roster value is derived from the roster
+  and the kill events, so it is evidence, not fabrication.
+- Decision (owner recommendation, 2026-11-23): keep the roster values. Record the old zeros as a bug fixed by the rule.
+  The three clutch metrics move with these cells.
