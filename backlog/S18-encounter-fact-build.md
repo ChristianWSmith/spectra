@@ -305,3 +305,25 @@ wrong vertices. The 160-of-183 figure above is void. With base vertices applied,
 the production box on the render geometry clears 183 of 183 de_ancient kills.
 Against collision geometry: both clear 173; render-only clears 10 (the kills the
 playerclip mesh blocks); collision-only clears 0.
+
+## Render versus collision, all maps with worldnodes (2026-11-22)
+
+Production box, kills per map, with `effects/smoke` and `effects/` materials removed
+from the render geometry (they are see-through particle cards):
+
+| Map | Kills | Both clear | Render only | Collision only |
+|---|---|---|---|---|
+| de_ancient | 183 | 173 | 10 | 0 |
+| de_cache | 134 | 130 | 4 | 0 |
+| de_dust2 | 108 | 106 | 2 | 0 |
+| de_mirage | 113 | 106 | 7 | 0 |
+| de_nuke | 163 | 161 | 2 | 0 |
+
+- Render-only clears: the 10 de_ancient kills the playerclip mesh blocks, plus the two
+  de_nuke kills (ticks 58698 and 91374) that were the last unexplained kills.
+- Collision-only clears: none once the smoke cards are removed. Before that, de_dust2
+  had 3 collision-only clears, blocked in the render geometry by `effects/smoke/dust_001b`.
+- Random-pair control, render versus collision (400 pairs per map): de_ancient 26 vs 24,
+  de_cache 18 vs 16, de_dust2 26 vs 25, de_mirage 20 vs 17, de_nuke 14 vs 15.
+- de_anubis and de_inferno have no `worldnodes` models. Their render models are under
+  `entities/` and need entity placement transforms. Not done.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/encounter"
@@ -83,6 +84,32 @@ func TestRenderVsCollision(t *testing.T) {
 	if len(mats) != len(rmeshes) {
 		t.Fatalf("material sidecar has %d meshes, render file %d", len(mats), len(rmeshes))
 	}
+	// SPECTRA_RENDER_SKIP: comma-separated substrings; triangles whose material
+	// contains one of them are dropped (for see-through materials such as smoke).
+	if skip := os.Getenv("SPECTRA_RENDER_SKIP"); skip != "" {
+		subs := strings.Split(skip, ",")
+		for i := range rmeshes {
+			var keep []source2.Triangle
+			var keepMats []uint16
+			for ti, tr := range rmeshes[i].Triangles {
+				name := table[mats[i][ti]]
+				drop := false
+				for _, sub := range subs {
+					if strings.Contains(name, sub) {
+						drop = true
+						break
+					}
+				}
+				if !drop {
+					keep = append(keep, tr)
+					keepMats = append(keepMats, mats[i][ti])
+				}
+			}
+			rmeshes[i].Triangles = keep
+			mats[i] = keepMats
+		}
+		fmt.Printf("CMP skipping materials containing %v\n", subs)
+	}
 	bvhs := make([]*source2.BVH, len(rmeshes))
 	for i := range rmeshes {
 		bvhs[i] = source2.BuildBVH(&rmeshes[i])
@@ -144,6 +171,20 @@ func TestRenderVsCollision(t *testing.T) {
 		}
 	}
 	fmt.Printf("CMP %s: both clear %d, render-only clear %d, collision-only clear %d, neither %d\n", mp, both, ronly, conly, neither)
+	// Permissiveness: random opposing pairs that look clear under each geometry.
+	rc, cc := 0, 0
+	for _, p := range d.control {
+		if p.mp != mp {
+			continue
+		}
+		if clearKill(p, setting{encounter.ProductionBox, 0}, renderOcc) {
+			rc++
+		}
+		if clearKill(p, setting{encounter.ProductionBox, 0}, collOcc) {
+			cc++
+		}
+	}
+	fmt.Printf("CMPCTRL %s: random opposing pairs that look clear: render %d, collision %d\n", mp, rc, cc)
 	for _, l := range conlyKills {
 		fmt.Printf("CMP collision-only clear: %s\n", l)
 	}
