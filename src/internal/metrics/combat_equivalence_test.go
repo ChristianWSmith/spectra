@@ -201,10 +201,17 @@ func characterizationFixture(t *testing.T) (*store.Store, int64) {
 			{Seq: 3, Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10, SameSide: true},
 		},
 	}
+	// The same-side gate is a per-round side join over
+	// round_player_sides (S09). carl (ct) shares alice's side in
+	// round 1, so his damage is gated out exactly as the SameSide
+	// stamp gated it. The player_ticks frames stay: the retired-SQL
+	// oracle below still reads sides from them.
+	em.RoundSides = []models.RoundPlayerSide{
+		{Round: 1, SteamID: "100", Side: "ct"},
+		{Round: 1, SteamID: "200", Side: "t"},
+		{Round: 1, SteamID: "300", Side: "ct"},
+	}
 	id := saveCombatMatch(t, st, "combat-equiv-a", em)
-	// The same-side gate is a side join over player_ticks now: every event tick
-	// needs each participant's side. carl (ct) shares alice's side, so
-	// his damage is gated out exactly as the SameSide stamp gated it.
 	addCombatSides(t, st, id, []models.TickSample{
 		{SteamID: "100", Side: "ct", Alive: true, HP: 100},
 		{SteamID: "200", Side: "t", Alive: true, HP: 100},
