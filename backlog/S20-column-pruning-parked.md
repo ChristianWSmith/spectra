@@ -72,3 +72,12 @@ Not verified:
   leave it at 0. Nothing reads it.
 - Only the `money` part of S20 is done. The other three columns and the
   in_air/speed derivation are unchanged.
+
+## Decisions (2026-11-23, owner)
+
+- Money: done (see the money result above).
+- in_air, speed and weapon move to encounter data. They are not state-change pruned: encounter data is dense and high fidelity.
+- Accuracy metrics are computed only inside encounter windows, not at every shot tick.
+- Route: the encounter windows are built inside the extraction pass, from values the extractor already holds, not from the sidecar. Speed, weapon and in-air never go through player_ticks or a second file.
+- Consequence: the encounter build moves from the import stage after analysis to the end of the parse, and it needs the render geometry available at extraction time. Failures stay non-fatal, as they are now.
+- Wipe: the same wipe as the money and seed changes.

@@ -391,3 +391,7 @@ Known gaps and tests:
 - `TestDumpPhysAttributes` and the other dump tests are dev tools (opt-in).
 - The mappack map-pack tests (`TestExtractMapPacks`, etc.) fail on the last committed
   state as well; not caused by this work.
+
+## Decision (2026-11-23, owner): build inside the extraction pass
+
+Encounter windows are built during extraction, from the extractor's in-memory data, not from sidecar frames. The build runs once events and rounds are complete, at the end of the parse and before the match is saved. Windows stay dense: no state-change pruning applies to encounter data.
