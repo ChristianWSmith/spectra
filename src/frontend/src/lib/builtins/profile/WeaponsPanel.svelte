@@ -66,7 +66,6 @@
 </script>
 
 <section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.profiles.weaponsPrefix}<span class="muted">{S.profiles.topPrefix}{weapons.length})</span></h2>
   <table class="data-table">
     <thead>

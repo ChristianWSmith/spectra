@@ -435,8 +435,8 @@ const held = [];
 const pendingReads = { ...reads, componentQuery: () => new Promise((r) => held.push(r)) };
 root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props: BACK, reads: pendingReads });
 const busyRoot = root.querySelector('.match-overview');
-check('while the read is in flight, the root is busy and shows the throbber',
-  !!busyRoot && busyRoot.classList.contains('builtin-busy') && busyRoot.getAttribute('aria-busy') === 'true' && !!busyRoot.querySelector(':scope > .builtin-throbber'));
+check('while the read is in flight, the root is busy (its throbber is drawn in CSS)',
+  !!busyRoot && busyRoot.classList.contains('builtin-busy') && busyRoot.getAttribute('aria-busy') === 'true');
 held.forEach((r) => r({ columns: [], rows: [] }));
 await settle();
 check('once the read settles, the root is no longer busy',

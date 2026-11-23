@@ -109,7 +109,6 @@
 </script>
 
 <div class="table-scroll" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if data}
       <table class="data-table scoreboard">
         <thead>

@@ -32,7 +32,6 @@
 </script>
 
 <section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.advancedDiagnostics}</h2>
   {#if entError}
     <p class="error" role="alert">

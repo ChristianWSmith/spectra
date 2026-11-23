@@ -378,17 +378,20 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `builtins/placeholder/Example.svelte`, which the generator exports as
   `PLACEHOLDER_SOURCE`; `componentbuiltins.js` lists it with the compiled
   registry.
-- **A builtin shows its loading state (rule).** While a builtin is reading,
-  its root keeps its size and position, its content fades in place
-  (`.builtin-busy`), and a centered throbber shows over it
-  (`.builtin-throbber`, styled in `public/style.css`). The frame counts the
-  reads in flight: `spectra.busy` is true while any `spectra.metric`,
-  `spectra.query` or `spectra.metricsByMatch` call, or a `spectra.track(promise)`
-  the builtin wraps around its own services, is pending. Every builtin root
-  renders at all times and keeps its last data while the next load runs (no
-  clearing at the start of a load), so the space holds. A builtin with no
-  reads of its own (a composer, or a panel that only takes props) is covered
-  by the busy state of the builtin that loads for it.
+- **A builtin shows its loading state (rule).** While a builtin reads, its
+  root keeps its size and position (`.builtin-busy`), its panels stay as empty
+  shells (`.panel`), and the content inside them is hidden in place
+  (`visibility`). A throbber is centered on each busy panel, or on a busy
+  root that has no panels, drawn in CSS (`public/style.css`). The frame counts
+  the reads in flight: `spectra.busy` is true while any `spectra.metric`,
+  `spectra.query` or `spectra.metricsByMatch` call, or a
+  `spectra.track(promise)` the builtin wraps around its own services, is
+  pending. A frame remembers its root's last rendered height by name
+  (`componentruntime/sizememory.js`) and holds it while the builtin loads, so a
+  remount keeps the space. Every builtin root renders at all times and keeps
+  its last data while the next load runs (no clearing at the start of a load).
+  A builtin with no reads of its own (a composer, or a panel that only takes
+  props) is covered by the busy state of the builtin that loads for it.
 - **A builtin's UI is written in its `.svelte` file (rule).** Markup,
   classes, styles and layout fixes for a builtin go in its `.svelte`
   source, never in a JS module that holds Svelte as a template string.

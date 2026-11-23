@@ -120,7 +120,6 @@
 {/snippet}
 
 <div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
 {#if data}
   <div class="table-scroll">
     <table class="data-table">

@@ -47,7 +47,6 @@
 </script>
 
 <section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.importDetails}</h2>
   {#if provError}
     <p class="error" role="alert">

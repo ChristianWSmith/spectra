@@ -62,7 +62,7 @@ for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(
 const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
 for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'builtinhelpers.js']) copy(rel);
-for (const rel of ['readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js']) copy(join('componentruntime', rel));
+for (const rel of ['readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js', 'sizememory.js']) copy(join('componentruntime', rel));
 // compile.js is copied, but the compile client it reaches stays the real
 // module: the node compile worker seam (test/compile-worker-node.mjs) is
 // installed on that instance, so the copy imports it by absolute URL.

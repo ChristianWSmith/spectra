@@ -165,7 +165,6 @@
   }
 </script>
 <div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if error}
   <p class="error" role="alert">

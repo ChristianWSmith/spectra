@@ -61,7 +61,6 @@
 </script>
 
 <section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.reports.templateAndTarget}</h2>
   {#if m.docError}
     <!-- The one error slot for render + save (cancel stays silent). -->

@@ -14,7 +14,6 @@
 </script>
 
 <section class="example" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if matchId != null}
     {#await rounds then r}
       <p>{S.componentbuilder.exampleRounds}{r.rows.length}</p>

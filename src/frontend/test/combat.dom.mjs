@@ -897,11 +897,10 @@ console.log('K. cold start: the tab is busy until its data lands (throbber, no p
   // The loading state (builtin loading, spectra.busy): the panels keep their place,
   // their content fades under a centered throbber, and no percentage is shown.
   check(
-    'mid-load: the tab carries its throbber, never a %',
-    // The busy flag itself comes from the frame (spectra.busy); this driver passes a
-    // fixed stub, so the throbber's presence is what is pinned here.
-    !!rootK.querySelector('.builtin-throbber') &&
-      !rootK.querySelector('.chip-ring') &&
+    'mid-load: no percentage ring (the throbber is drawn in CSS)',
+    // The busy flag comes from the frame (spectra.busy); this driver passes a fixed
+    // stub, so only the absence of the old percentage ring is pinned here.
+    !rootK.querySelector('.chip-ring') &&
       !rootK.querySelector('.chip-pct'),
     rootK.innerHTML.slice(0, 160),
   );

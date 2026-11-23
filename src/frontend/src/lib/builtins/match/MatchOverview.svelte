@@ -86,7 +86,6 @@
 </script>
 
 <section class="match-overview" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if ready}
     <div class="stat-grid">
       {#each cards as c (c.key)}

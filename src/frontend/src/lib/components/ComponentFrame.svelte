@@ -35,6 +35,7 @@
   import { errText } from '../services.js';
   import { loadComponent } from '../componentruntime/compile.js';
   import { createReadApi } from '../componentruntime/readapi.js';
+  import { rememberHeight, recalledHeight } from '../componentruntime/sizememory.js';
   import { serviceReads } from '../componentruntime/reads.js';
   import { attachFrame } from '../componentruntime/eventerrors.js';
   import { FRAME_KEY, frozenContext } from '../componentruntime/frameContext.js';
@@ -105,6 +106,28 @@
   });
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
+
+  // The builtin root (the element with .builtin-busy) is this frame's first box.
+  // Its height is remembered by name while it is idle, and held at that height
+  // while it loads, so a remount reserves the space of the last render.
+  const busyRoot = () => el?.querySelector(':scope > .builtin-busy') ?? null;
+  $effect(() => {
+    void Comp;
+    const root = busyRoot();
+    if (!root || !name || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (pending === 0) rememberHeight(name, root.offsetHeight);
+    });
+    ro.observe(root);
+    return () => ro.disconnect();
+  });
+  $effect(() => {
+    void Comp;
+    const root = busyRoot();
+    if (!root) return;
+    const h = pending > 0 ? recalledHeight(name) : null;
+    root.style.minHeight = h ? h + 'px' : '';
+  });
 
   // A new source (or component) is a new mount: earlier failures go.
   $effect(() => {

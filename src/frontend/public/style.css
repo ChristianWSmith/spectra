@@ -936,47 +936,43 @@ mark {
 }
 
 /* Builtin loading (spectra.busy): while a builtin reads, its root keeps its size
-   and position, its panels stay as empty shells (.panel), their contents are
-   hidden in place, and one centered throbber shows over the outermost busy root.
-   A nested busy root's throbber is hidden under its ancestor's, so spinners
-   never stack. Visibility, not opacity: opacity compounds through the wrappers
-   (frames are display: contents) and would fade the shells with the content. */
-.builtin-busy {
+   and position. Its panels stay as empty shells, and the content inside them is
+   hidden in place (visibility, which a shell can override; opacity would compound
+   through the frames' display: contents wrappers and fade the shells too). A
+   throbber is centered on each busy panel, or on a busy root that has no panels
+   of its own, so a composer's spinners sit on its panels, one each. Every
+   spinner is a pseudo-element of the element it sits on, so none stack. */
+.builtin-busy,
+.builtin-busy .panel {
   position: relative;
 }
 
-.builtin-busy :not(.builtin-throbber) {
+.builtin-busy :not(.panel) {
   visibility: hidden;
 }
 
-/* The panel cards stay, as empty shells: visibility is inherited, but a
-   descendant can set it back, so a shell shows through its hidden wrappers. */
 .builtin-busy .panel {
   visibility: visible;
 }
 
-.builtin-throbber {
-  display: none;
-}
-
-.builtin-busy > .builtin-throbber {
-  display: block;
+.builtin-busy:not(:has(.panel))::after,
+.builtin-busy .panel::after {
+  content: "";
   position: absolute;
-  z-index: 1;
-  inset: 0;
-  margin: auto;
+  top: 50%;
+  left: 50%;
   box-sizing: border-box;
   width: 28px;
   height: 28px;
+  margin: -14px 0 0 -14px;
   border: 3px solid var(--divider);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: chip-spin 0.9s linear infinite;
+  pointer-events: none;
+  z-index: 1;
 }
 
-.builtin-busy .builtin-busy > .builtin-throbber {
-  display: none;
-}
 
 /* --- Tables ---------------------------------------------------------------- */
 

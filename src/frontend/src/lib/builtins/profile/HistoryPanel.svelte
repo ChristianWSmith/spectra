@@ -72,7 +72,6 @@
   const halfText = (p) => (p.kind === 'value' ? fmtInt(p.value) : '—');
 </script>
 <div class="builtin-root" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
 
 {#if loadError}
   <p class="error" role="alert">{loadError}</p>

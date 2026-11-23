@@ -36,7 +36,6 @@
 </script>
 
 <section class="panel expl-ref" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   <h2>{S.library.networkMessages}</h2>
   <p class="muted">
     <strong>639</strong>{S.library.protobufTypes}

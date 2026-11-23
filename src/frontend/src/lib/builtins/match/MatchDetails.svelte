@@ -58,7 +58,6 @@
 </script>
 
 <section class="panel" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if facts}
       <h2>{COPY.keyFacts}</h2>
       <dl class="facts">

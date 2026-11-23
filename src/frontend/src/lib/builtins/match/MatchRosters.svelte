@@ -57,7 +57,6 @@
 </script>
 
 <div class="roster-grid" class:builtin-busy={spectra.busy} aria-busy={spectra.busy}>
-  <span class="builtin-throbber" aria-hidden="true"></span>
   {#if data}
       {#each [data.ct, data.t] as team, ti (ti)}
         <section class="panel">
