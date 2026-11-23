@@ -12,7 +12,6 @@ package integration_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -141,40 +140,35 @@ func TestGoldenPlayerTicks(t *testing.T) {
 	}
 	t.Logf("max horizontal speed = %.1f u/s", maxSpeed.Float64)
 
-	// Event-tick join + same-frame in-air re-proof: every kill with a
-	// player attacker has that attacker's row at the kill's tick, and the
-	// row's in_air equals the payload's attackerinair.
-	missing, compared, mismatched := 0, 0, 0
+	// Event-tick check (state-change rule): every kill by another player has
+	// the VICTIM's row at the kill's tick, and that row shows them dead. A
+	// death always changes alive, so the rule keeps it. The attacker's row is
+	// not checked: the attacker's state does not change on a kill, so the rule
+	// need not keep it. Self-kills and kills with no attacker (C4, world) are
+	// skipped: there is no other player to join.
+	missing, compared, notDead := 0, 0, 0
 	for _, e := range m.Events {
-		if e.Kind != models.EventKill || e.Attacker == "" || e.Attacker == e.Victim {
+		if e.Kind != models.EventKill || e.Attacker == "" || e.Attacker == e.Victim || e.Victim == "" {
 			continue
 		}
-		var raw map[string]any
-		if err := json.Unmarshal([]byte(e.RawJSON), &raw); err != nil {
-			continue
-		}
-		want, ok := raw["attackerinair"].(bool)
-		if !ok {
-			continue
-		}
-		var inAir sql.NullInt64
-		err := db.QueryRow(`SELECT in_air FROM player_ticks WHERE match_id = ? AND tick = ? AND steam_id = ?`,
-			id, e.Tick, e.Attacker).Scan(&inAir)
+		var alive sql.NullInt64
+		err := db.QueryRow(`SELECT alive FROM player_ticks WHERE match_id = ? AND tick = ? AND steam_id = ?`,
+			id, e.Tick, e.Victim).Scan(&alive)
 		if err == sql.ErrNoRows {
 			missing++
-			t.Errorf("kill tick=%d attacker=%s: no player_ticks row at the kill's tick", e.Tick, e.Attacker)
+			t.Errorf("kill tick=%d victim=%s: no player_ticks row at the kill's tick", e.Tick, e.Victim)
 			continue
 		}
 		if err != nil {
 			t.Fatalf("join probe: %v", err)
 		}
 		compared++
-		if !inAir.Valid || (inAir.Int64 != 0) != want {
-			mismatched++
-			t.Errorf("kill tick=%d attacker=%s: in_air = %+v, payload attackerinair = %v", e.Tick, e.Attacker, inAir, want)
+		if alive.Int64 != 0 {
+			notDead++
+			t.Errorf("kill tick=%d victim=%s: row shows alive=%d, want 0", e.Tick, e.Victim, alive.Int64)
 		}
 	}
-	t.Logf("kill join: compared=%d missing=%d in_air mismatches=%d", compared, missing, mismatched)
+	t.Logf("kill join: compared=%d missing=%d not-dead=%d", compared, missing, notDead)
 	if compared == 0 {
 		t.Error("no kill joined a tick row — the join contract is untested")
 	}
