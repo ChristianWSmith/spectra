@@ -955,9 +955,12 @@ mark {
   visibility: visible;
 }
 
-/* A pure composer's frame panel is only the frame: no card of its own (its nested
-   panels are the cards). */
-.frame-panel.frame-composer {
+/* A frame panel draws its card for a leaf component only. A composer (nested frames)
+   and a component that holds cards of its own (inner panels, stat cells) get a
+   transparent frame panel: the inner cards are the boxes, not panels in a panel. */
+.frame-panel.frame-composer,
+.frame-panel:has(.panel:not(.frame-panel)),
+.frame-panel:has(.stat-cell) {
   background: none;
   border-color: transparent;
   padding: 0;

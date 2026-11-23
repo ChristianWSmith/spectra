@@ -15,10 +15,9 @@
   import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
 
-  // query is the route's own (?back= origin for the return trip);
-  // origin is the hash the app navigated from — App records it on
-  // hashchange. profileBackTarget (lib/nav.js) resolves both.
-  let { steamId = null, query = {}, origin = '', nav = () => {} } = $props();
+  // query is the route's own (?back= origin for the return trip).
+  // profileBackTarget (lib/nav.js) resolves it.
+  let { steamId = null, query = {}, nav = () => {} } = $props();
 
   let profile = $state(null);
   let profileError = $state('');
@@ -85,7 +84,7 @@
   // Return trip: where the button points, and how to name it (the default
   // target is the Profiles list, so the label names it; anything else is
   // simply "Back").
-  const backHash = $derived(profileBackTarget(query, origin));
+  const backHash = $derived(profileBackTarget(query));
   const backLabel = $derived(backHash === '/profiles' ? 'Profiles' : 'Back');
 </script>
 

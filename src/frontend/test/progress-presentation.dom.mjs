@@ -97,7 +97,7 @@ console.log('B. Replay’s four loading sites (harness exists but never holds a 
 console.log('C. busy-button labels stay plain text (owner ruling: the exemption)');
 {
   // The save button moved into the Reports builtin's appendix panel (C5c).
-  const reports = src('builtins/reports/ReportsAppendix.svelte');
+  const reports = src('builtins/reports/ReportsView.svelte');
   check(
     'Reports: "Generating…" still rides the Generate button as plain text',
     /\{#if m\.rendering\}\{S\.reports\.rendering\}\{:else\}/.test(reports) && !reports.includes('chip-spin'),

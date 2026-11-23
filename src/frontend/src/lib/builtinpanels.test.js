@@ -92,8 +92,6 @@ test('the registry names the Profile, Reports, Explorer, Match-tab, Economy and 
       'builtin-profile-view',
       'builtin-profile-weapons',
       'builtin-reports',
-      'builtin-reports-appendix',
-      'builtin-reports-templates',
       'builtin-utility',
       'builtin-utility-blind',
       'builtin-utility-damage',

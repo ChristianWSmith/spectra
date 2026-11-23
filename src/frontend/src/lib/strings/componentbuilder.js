@@ -83,8 +83,6 @@ export const componentbuilder = {
     'builtin-profile-weapons': 'Weapons',
     'builtin-profile-history': 'History',
     'builtin-reports': 'Reports view',
-    'builtin-reports-templates': 'Report templates',
-    'builtin-reports-appendix': 'Stats appendix',
     'builtin-explorer': 'Explorer view',
     'builtin-explorer-provenance': 'Explorer provenance',
     'builtin-explorer-diagnostics': 'Explorer diagnostics',

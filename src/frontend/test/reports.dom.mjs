@@ -801,8 +801,8 @@ console.log('H. the player picker statline composes per half — every half is a
 {
   const panels = root.querySelectorAll('.panel:not(.frame-composer)');
   check(
-    'three section.panel cards: the match picker (standalone), the templates and targets, the stats appendix',
-    panels.length === 3,
+    'two cards: the match picker (standalone) and the one Reports card (templates, targets and appendix together)',
+    panels.length === 2,
     `${panels.length} panels`,
   );
 }

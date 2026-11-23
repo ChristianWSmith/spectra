@@ -13,8 +13,6 @@ import MapsPanel from './profile/MapsPanel.svelte';
 import WeaponsPanel from './profile/WeaponsPanel.svelte';
 import HistoryPanel from './profile/HistoryPanel.svelte';
 import ReportsView from './reports/ReportsView.svelte';
-import ReportsTemplates from './reports/ReportsTemplates.svelte';
-import ReportsAppendix from './reports/ReportsAppendix.svelte';
 import ExplorerView from './explorer/ExplorerView.svelte';
 import ExplorerProvenance from './explorer/ExplorerProvenance.svelte';
 import ExplorerDiagnostics from './explorer/ExplorerDiagnostics.svelte';
@@ -84,8 +82,6 @@ export const BUILTIN_PANELS = Object.freeze({
   'builtin-profile-history': HistoryPanel,
   // The Match view's Reports tab (the composed report and its panels).
   [REPORTS_VIEW_ID]: ReportsView,
-  'builtin-reports-templates': ReportsTemplates,
-  'builtin-reports-appendix': ReportsAppendix,
   // The Match view's Details tab and the standalone Explorer route.
   [EXPLORER_VIEW_ID]: ExplorerView,
   'builtin-explorer-provenance': ExplorerProvenance,

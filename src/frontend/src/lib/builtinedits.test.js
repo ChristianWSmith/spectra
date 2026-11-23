@@ -29,7 +29,7 @@ test('(a) each listed builtin source compiles through the save gate', async () =
 // (a) every generated panel source compiles through the save gate under the
 // built-in rules (ruling 45): its relative imports are curated helpers.
 test('(a) each generated panel source compiles under the built-in rules', async () => {
-  assert.equal(Object.keys(PANEL_SOURCES).length, 34, 'every compiled panel is embedded');
+  assert.equal(Object.keys(PANEL_SOURCES).length, 32, 'every compiled panel is embedded');
   for (const [id, src] of Object.entries(PANEL_SOURCES)) {
     const r = await checkComponentSource(src, 'Component.svelte', PANEL_DIRS[id]);
     assert.equal(r.ok, true, `${id}: ${r.message} (line ${r.line})`);
@@ -99,7 +99,7 @@ test('(a) the builtin shipped source is the text the build embedded', () => {
 test('the generated module is the generator output', () => {
   assert.equal(readFileSync(OUT_FILE, 'utf8'), generate(), 'run npm run build (regenerates sources.js)');
   const reg = panelRegistry(readFileSync(new URL('./builtins/panels.js', import.meta.url), 'utf8'));
-  assert.equal(reg.length, 34);
+  assert.equal(reg.length, 32);
   for (const { id, file } of reg) assert.ok(file.endsWith('.svelte') && id.startsWith('builtin-'), id);
 });
 

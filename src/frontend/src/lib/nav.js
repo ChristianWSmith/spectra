@@ -370,26 +370,13 @@ export function entrySeedPlan(prev, next) {
   return { applySeek: distinct && n.seek != null, applyLoop: distinct && n.loop != null };
 }
 
-// profileBackTarget resolves the player profile's top-left back button —
-// the same return trip every other detail view takes (RoundDetail,
-// CompareRounds and Replay all read ?back= and fall back to their own
-// default). Priority:
-//   1. the route's ?back= origin — durable and deep-linkable (the view
-//      that linked in can stamp its own path),
-//   2. else the hash the app navigated from (App records it on
-//      hashchange), unless that origin is another profile: profile →
-//      profile is a sibling jump, not a way back,
-//   3. else the Profiles directory — a profile opened directly (deep
-//      link, refresh, first launch) returns to the list it lives in.
-export function profileBackTarget(query, originHash) {
+// profileBackTarget resolves the player profile's top-left back button: the
+// players list it lives in, unless a drill-down named where to return (the
+// route's ?back= origin, durable and deep-linkable). The page the user came
+// from is not the target: the back button always goes to the list.
+export function profileBackTarget(query) {
   const explicit = query && query.back;
   if (explicit) return '/' + explicit;
-  if (originHash) {
-    const origin = String(originHash).replace(/^#/, '');
-    // A player origin is rejected; every other hash is handed back to the
-    // router as-is (legacy shapes such as /match/:id/chat redirect there).
-    if (origin && parseHash(originHash).name !== 'player') return origin;
-  }
   return '/profiles';
 }
 

@@ -50,10 +50,9 @@ test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
   );
 });
 
-test('without ?back= the in-app origin (the hash before this one) wins', () => {
-  assert.equal(profileBackTarget({}, '#/profiles'), '/profiles');
-  assert.equal(profileBackTarget({}, '#/match/5/scoreboard'), '/match/5/scoreboard');
-  assert.equal(profileBackTarget({}, '#/replay/5?cat=chat'), '/replay/5?cat=chat');
+test('without ?back= the back button goes to the players list, not the page it came from', () => {
+  assert.equal(profileBackTarget({}), '/profiles');
+  assert.equal(profileBackTarget({ back: undefined }), '/profiles');
 });
 
 test('another profile is never an origin; no origin → the Profiles list', () => {
