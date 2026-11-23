@@ -114,7 +114,14 @@ function script() {
   bindings.MetricsService.GetMetricComputeState = () => Promise.resolve(STATES);
   // The scoped read answers from the same states (every player reads them).
   bindings.MetricsService.GetMetricStates = (scope, id) => bindings.MetricsService.GetMetricComputeState(scope, id);
-  bindings.MetricsService.GetMetricSeries = () => Promise.resolve([]);
+  // History reads every match's stored values in ONE series read (S13); it is
+  // scripted from the same match rows, so both reads agree.
+  bindings.MetricsService.GetMetricSeries = (steam, ids) =>
+    Promise.resolve(
+      Object.entries(MATCH_ROWS).flatMap(([mid, rows]) =>
+        rows.filter((r) => ids.includes(r.metricId)).map((r) => ({ metricId: r.metricId, matchId: Number(mid), value: r.value, n: r.n })),
+      ),
+    );
   bindings.ProfileService.GetProfile = (sid) =>
     Promise.resolve({
       steamId: sid,
@@ -234,4 +241,4 @@ if (h.escaped.length) {
 }
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 dom.window.close();
-process.exit(0);
+process.exit(failures || h.escaped.length ? 1 : 0);

@@ -68,9 +68,7 @@ func placedMeshes(v resourceReader, mapName string, manifestChildren []any, rm *
 					ms, mt, err = modelMeshesAt(v, model, rm)
 					if err != nil {
 						ms, mt = nil, nil
-					} else {
 					}
-				} else if kind != "skip" {
 				}
 				cache[model], cacheMats[model] = ms, mt
 			}

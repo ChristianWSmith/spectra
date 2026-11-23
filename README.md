@@ -32,7 +32,7 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
   trades, openings, streaks, multi-kills, utility, MVPs…), round browser with
   economy + kill feed, player chat
 - Comprehensive match, player, round, economy, and utility statistics —
-  economy curves, combat and killTag analysis, round-by-round comparison,
+  economy curves, combat and kill tag analysis, round-by-round comparison,
   cross-match player profiles with career trends
 - 15 heatmap kinds (presence, kills, deaths, damage, K/D, and every grenade
   type thrown and detonated), filtered by round, player, team, and map floor

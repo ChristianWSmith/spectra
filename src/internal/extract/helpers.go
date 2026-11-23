@@ -3,10 +3,10 @@ package extract
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ChristianWSmith/spectra/internal/models"
 	"math"
 	"strconv"
 
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/golang/geo/r3"
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"

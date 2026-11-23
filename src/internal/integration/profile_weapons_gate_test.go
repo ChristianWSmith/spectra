@@ -114,21 +114,6 @@ var weaponCandidates = []struct {
 	{"weapon_headshots", func(r weaponFoldRow) int { return r.headshots }},
 }
 
-// seededWeaponExpr loads a weapon seed's shipped expression + addressing
-// from the baseline seed (schema.sql's weapon addendum). A missing row
-// fails the gate: the table migration reads these rows, so an unshipped
-// seed is itself a gate failure.
-func seededWeaponExpr(t *testing.T, st *store.Store, name string) string {
-	t.Helper()
-	res, err := st.RunReadOnly(
-		`SELECT expr FROM metrics WHERE name = ? AND origin = 'builtin'`,
-		[]any{name}, 10, 5000)
-	if err != nil || len(res.Rows) != 1 {
-		t.Fatalf("seeded row %s: err=%v rows=%d", name, err, len(res.Rows))
-	}
-	return res.Rows[0][0].(string)
-}
-
 // weaponRow is one row of a raw statement's result: the reserved columns
 // subject_key, dim and value (ruling 22). NULL reads as NaN.
 type weaponRow struct {
@@ -160,40 +145,6 @@ func storedWeaponRows(t *testing.T, st *store.Store, name string) []weaponRow {
 		out = append(out, row)
 	}
 	return out
-}
-
-// runWeaponStatement runs one career statement (no binds) on the metric
-// connection and reads its reserved columns by name.
-func runWeaponStatement(t *testing.T, st *store.Store, expr string) []weaponRow {
-	t.Helper()
-	res, err := st.QueryMetric(t.Context(), expr, nil)
-	if err != nil {
-		t.Fatalf("run: %v (sql %s)", err, expr)
-	}
-	idx := map[string]int{}
-	for i, c := range res.Columns {
-		idx[c] = i
-	}
-	out := make([]weaponRow, 0, len(res.Rows))
-	for _, r := range res.Rows {
-		row := weaponRow{Group: fmt.Sprint(keyOrEmpty(r[idx["subject_key"]])), Dim: fmt.Sprint(keyOrEmpty(r[idx["dim"]])), Value: math.NaN()}
-		switch v := r[idx["value"]].(type) {
-		case int64:
-			row.Value = float64(v)
-		case float64:
-			row.Value = v
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
-// keyOrEmpty reads a key column: NULL is the empty key.
-func keyOrEmpty(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
 }
 
 // TestGoldenProfileWeaponsGate runs the M7 gate and reports the full

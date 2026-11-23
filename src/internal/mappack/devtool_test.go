@@ -103,7 +103,7 @@ func TestDevToolFind(t *testing.T) {
 		"sounds/weapons/c4/c4_beep3.vsnd_c":           {2},
 		"sounds/weapons/ak47/ak47_01.vsnd_c":          {3},
 		"panorama/images/icons/equipment/ak47.vsvg_c": {4},
-		"resource/overviews/de_dust2.txt":           []byte(`"de_dust2" {}`),
+		"resource/overviews/de_dust2.txt":             []byte(`"de_dust2" {}`),
 	})
 	all := "panorama/images/icons/equipment/ak47.vsvg_c\n" +
 		"resource/overviews/de_dust2.txt\n" +

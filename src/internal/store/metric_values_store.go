@@ -274,7 +274,7 @@ func (s *Store) staleSteamUnits(metricID int64, version, liveRuleVersion int, to
 	for _, b := range st.Binds {
 		used[b] = true
 	}
-	if !(used[":steam_id"] && !used[":match_id"] && !used[":round"]) {
+	if !used[":steam_id"] || used[":match_id"] || used[":round"] {
 		return nil, nil
 	}
 	if !touchesAnalysis(touched) {

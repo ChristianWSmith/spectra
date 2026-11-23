@@ -83,7 +83,6 @@ type header struct {
 	compression                           uint32
 	countBytes1, countBytes4, countBytes8 int
 	countTypes                            int
-	countObjects                          int
 	sizeUncompTotal, sizeCompTotal        int
 	countBlocks, sizeBinaryBlobs          int
 	countBytes2, sizeBlockCompSizes       int
@@ -379,7 +378,8 @@ func (d *decoder) readBlobs(r *reader, h header, lens []int, frames []byte, comp
 	chain := make([]byte, total)
 	d.blobs = make([][]byte, len(lens))
 	pos := 0
-	if compression == 2 {
+	switch compression {
+	case 2:
 		// One zstd stream covers every blob: its size is the total compressed
 		// size minus the two buffers. Blobs are filled in order.
 		size := h.sizeCompTotal - h.sizeCompBuf1 - h.sizeCompBuf2
@@ -399,7 +399,7 @@ func (d *decoder) readBlobs(r *reader, h header, lens []int, frames []byte, comp
 			d.blobs[i] = chain[pos : pos+n]
 			pos += n
 		}
-	} else if compression == 0 {
+	case 0:
 		for i, n := range lens {
 			src, err := r.bytes(n)
 			if err != nil {
@@ -409,7 +409,7 @@ func (d *decoder) readBlobs(r *reader, h header, lens []int, frames []byte, comp
 			d.blobs[i] = chain[pos : pos+n]
 			pos += n
 		}
-	} else {
+	default:
 		// LZ4 frames of up to kv3FrameSize, chained: each frame may refer to
 		// up to kv3ChainWindow bytes of output before it, across blobs.
 		for i, n := range lens {

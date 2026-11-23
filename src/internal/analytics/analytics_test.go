@@ -3,7 +3,6 @@ package analytics
 import (
 	"encoding/json"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -43,15 +42,6 @@ func withWeapon(w string) func(*models.Event) {
 
 func withDmg(d int) func(*models.Event) {
 	return func(e *models.Event) { e.Dmg = d }
-}
-
-// withHurt is a player_hurt carrying both the damage dealt and the
-// game-sampled victim health the extractor stores in detail_json.health.
-func withHurt(dmg, health int) func(*models.Event) {
-	return func(e *models.Event) {
-		e.Dmg = dmg
-		e.DetailJSON = `{"health":` + strconv.Itoa(health) + `}`
-	}
 }
 
 func withAssister(a string) func(*models.Event) {

@@ -326,14 +326,14 @@ func decodeVertexBlock(data, vertexData []byte, vertexCount, vertexSize int, las
 		for j := 0; j < 4; j++ {
 			ctrl := (ctrlByte >> (j * 2)) & 3
 			seg := buffer[j*vertexCount : j*vertexCount+vertexCount]
-			switch {
-			case ctrl == 3:
+			switch ctrl {
+			case 3:
 				if len(data) < vertexCount {
 					return nil, errors.New("meshopt: literal data too small")
 				}
 				copy(seg, data[:vertexCount])
 				data = data[vertexCount:]
-			case ctrl == 2:
+			case 2:
 				clear(seg)
 			default:
 				bitsSel := meshoptBitsV0

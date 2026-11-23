@@ -86,11 +86,11 @@ func ExtractRenderGeometry(cs2Dir, mapName, outDir string) (string, int, error) 
 	}
 	if err := source2.WriteMeshes(f, all); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		_ = os.Remove(tmp) // best-effort cleanup; the original error is returned
 		return "", 0, err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp) // best-effort cleanup; the original error is returned
 		return "", 0, err
 	}
 	if err := os.Rename(tmp, out); err != nil {
@@ -255,47 +255,6 @@ func drawCallsOf(om map[string]any) []drawCall {
 		})
 	}
 	return list
-}
-
-// modelDrawCalls reads each scene object's draw calls from the MDAT block.
-func modelDrawCalls(blocks []source2.Block) ([][]drawCall, error) {
-	mdat, ok := source2.FindBlock(blocks, "MDAT")
-	if !ok {
-		return nil, errors.New("no MDAT block")
-	}
-	kv, err := source2.Decode(mdat)
-	if err != nil {
-		return nil, err
-	}
-	root, _ := kv.Root.(map[string]any)
-	objs, _ := root["m_sceneObjects"].([]any)
-	var out [][]drawCall
-	for _, o := range objs {
-		om, _ := o.(map[string]any)
-		dcs, _ := om["m_drawCalls"].([]any)
-		var list []drawCall
-		for _, d := range dcs {
-			dm, _ := d.(map[string]any)
-			vbuf, ibuf := 0, 0
-			if vbs, ok := dm["m_vertexBuffers"].([]any); ok && len(vbs) > 0 {
-				vb, _ := vbs[0].(map[string]any)
-				vbuf = kvInt(vb["m_hBuffer"])
-			}
-			if ib, ok := dm["m_indexBuffer"].(map[string]any); ok {
-				ibuf = kvInt(ib["m_hBuffer"])
-			}
-			list = append(list, drawCall{
-				start:    kvInt(dm["m_nStartIndex"]),
-				count:    kvInt(dm["m_nIndexCount"]),
-				base:     kvInt(dm["m_nBaseVertex"]),
-				material: fmt.Sprint(dm["m_material"]),
-				vbuf:     vbuf,
-				ibuf:     ibuf,
-			})
-		}
-		out = append(out, list)
-	}
-	return out, nil
 }
 
 func embeddedMesh(blocks []source2.Block, em map[string]any, draws []drawCall, rm *renderMaterials) (source2.Mesh, []uint16, error) {
@@ -530,7 +489,7 @@ func writeMaterials(path string, table []string, mats [][]uint16) error {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp) // best-effort cleanup; the original error is returned
 		return err
 	}
 	return os.Rename(tmp, path)

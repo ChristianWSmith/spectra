@@ -68,9 +68,32 @@ export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 //
 // `names` maps each allowed export to its purpose. `'*'` allows the whole
 // namespace (`import * as S`); `'default'` allows a component's default export.
+// Two helpers are modules the app loads at startup anyway (services.js and
+// workstate.svelte.js). Their helper entries read the module App hands in
+// (provideHelperModule) instead of a dynamic import: a dynamic import of a
+// module that is also static splits nothing and makes Vite warn, and a static
+// import here would drag services.js (and the bindings it links) into every
+// node-side import of this file.
+const providedHelpers = new Map();
+export function provideHelperModule(key, namespace) {
+  providedHelpers.set(key, namespace);
+}
+// Where a helper lives, relative to this file, for callers that never provide
+// it (the node and jsdom drivers mount built-ins without App). The app always
+// provides both at startup, so this import never runs in the app; the specifier
+// is a variable, so the bundler does not try to resolve it.
+const HELPER_PATHS = {
+  'src/lib/services.js': '../services.js',
+  'src/lib/workstate.svelte.js': '../workstate.svelte.js',
+};
+function providedHelper(key) {
+  if (providedHelpers.has(key)) return Promise.resolve(providedHelpers.get(key));
+  return import(/* @vite-ignore */ new URL(HELPER_PATHS[key], import.meta.url).href);
+}
+
 export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/services.js': {
-    load: () => import('../services.js'),
+    load: () => providedHelper('src/lib/services.js'),
     names: {
       errText: 'the one error-text normalizer (a rejection to a sentence)',
       listMetrics: 'the metric definitions (read)',
@@ -230,7 +253,7 @@ export const BUILTIN_HELPERS = Object.freeze({
     },
   },
   'src/lib/workstate.svelte.js': {
-    load: () => import('../workstate.svelte.js'),
+    load: () => providedHelper('src/lib/workstate.svelte.js'),
     names: { runWork: 'run a piece of background work, shown in the work indicator' },
   },
   'src/lib/matchpanels.js': {

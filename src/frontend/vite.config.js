@@ -13,4 +13,9 @@ export default defineConfig({
   // The compile worker (src/lib/componentruntime/compile.worker.js) loads
   // svelte/compiler by dynamic import, which needs an ES-module worker.
   worker: { format: "es" },
+  // The main bundle (~540 kB, ~175 kB gzipped) is loaded eagerly on purpose:
+  // pre-warming mounts every view at startup (lib/warm.js), so splitting views
+  // into lazy chunks would not reduce what loads. The Svelte compiler (~880 kB)
+  // is already its own chunk, loaded only when a user component compiles.
+  build: { chunkSizeWarningLimit: 900 },
 });

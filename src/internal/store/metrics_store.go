@@ -455,7 +455,7 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 	if err != nil {
 		return err
 	}
-	if existing.Origin != "user" && !(builtinEdit && existing.Origin == "builtin") {
+	if existing.Origin != "user" && (!builtinEdit || existing.Origin != "builtin") {
 		return fmt.Errorf("the %s metric %q cannot be modified", existing.Origin, existing.Name)
 	}
 	if _, err := q.Exec(

@@ -637,9 +637,9 @@ func TestSectionRadar(t *testing.T) {
 		ok      bool
 	}{
 		{"de_dust2_lower", "de_dust2", "lower", true}, // declared section
-		{"de_dust2", "", "", false},                     // the default radar itself
-		{"de_dust2_night", "", "", false},               // undeclared suffix → own map
-		{"de_other_lower", "", "", false},                 // no overview → not a section
+		{"de_dust2", "", "", false},                   // the default radar itself
+		{"de_dust2_night", "", "", false},             // undeclared suffix → own map
+		{"de_other_lower", "", "", false},             // no overview → not a section
 	}
 	for _, c := range cases {
 		m, s, ok := sectionRadar(v, c.base)

@@ -93,6 +93,10 @@ const router = await import(pathToFileURL(bundle(resolve('src/lib/router.js'))).
 const vs = await import(pathToFileURL(bundle(resolve('src/lib/viewstate.svelte.js'))).href);
 const S = await import(pathToFileURL(bundle(resolve('src/lib/strings/index.js'))).href);
 const bindings = await import(stub('bindings.mjs'));
+// The app hands its startup modules to the helper table (App.svelte); this driver
+// bundles them, so it provides the bundled copies the same way.
+const runtime = await import(pathToFileURL(bundle(resolve('src/lib/componentruntime/compile.js'))).href);
+runtime.provideHelperModule('src/lib/services.js', await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href));
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
 // --- the fixture ----------------------------------------------------------------------

@@ -45,7 +45,7 @@ func TestSource2SpikeRaycast(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var lo, hi source2.Vec3 = meshes[0].Min, meshes[0].Max
+	var lo, hi = meshes[0].Min, meshes[0].Max
 	for _, m := range meshes {
 		for k := 0; k < 3; k++ {
 			lo[k] = min32(lo[k], m.Min[k])

@@ -31,7 +31,7 @@ func dropRun(t *testing.T, path string, metricID int64, where string, arg any) {
 	if err != nil {
 		t.Fatalf("open conn: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	q := `DELETE FROM metric_runs WHERE metric_id = ? AND ` + where
 	if _, err := db.Exec(q, metricID, arg); err != nil {
 		t.Fatalf("delete run record: %v", err)

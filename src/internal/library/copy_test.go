@@ -438,10 +438,7 @@ func TestImportSkipsCopyWhenDisabled(t *testing.T) {
 
 	// StageCopy never emitted; every point is monotone, hash ≤ 0.10 and
 	// the first post-hash point is the parse range's start (0.20).
-	var evs []JobProgressEvent
-	for _, ev := range log.snapshot() {
-		evs = append(evs, ev)
-	}
+	evs := log.snapshot()
 	sawCopy := false
 	for _, ev := range evs {
 		if ev.Stage == models.StageCopy {
