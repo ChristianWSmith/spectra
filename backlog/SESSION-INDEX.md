@@ -86,3 +86,15 @@ GUI work is listed in `GUI-VERIFICATION.md`.
 - Re-admit doors (prop_door_rotating, func_door, func_door_rotating) to the render geometry. Needs each door's state at kill time, or a per-door decision.
 - Check the see-through seed count (smoke, steam, lightshaft, puddle, glass) on the larger library. Could condemn one of those materials.
 - Human GUI timing for S13: cold and warm Overview, Scoreboard and History at 100 rows, before and after.
+
+## Owner rulings closing the 14-point list (2026-11-23)
+
+- S21 (amended): "no row means no change in state" is the target for player_ticks. Presence comes from the roster and from kill and disconnect events, never from row absence. Frames that were never delivered are gaps in the data, not state changes.
+- Post-round ticks follow the same state-change rule as every other tick. No special treatment.
+- Economy: the stored round-grain values are authoritative. Buy-window ticks are not kept.
+- Alive count: the old tick-based value was wrong where no frames existed (World self-kills after round end). The roster rule is verified against the snapshot (2,222 of 2,222 cells) and is the stored definition.
+- in_air, speed and weapon move to encounter data, dense, not state-change pruned. Accuracy metrics are computed inside encounter windows only.
+- Encounter windows are built inside the extraction pass, from the extractor's in-memory data.
+- Library-scale (S08) requirement dropped. The 7-match library is the acceptance set. S14's speedup is measured on the snapshot.
+- Steam index kept. WITHOUT ROWID rejected.
+- Follow-up work: re-admit doors; check the see-through seed count on a larger library; human GUI timing for S13.
