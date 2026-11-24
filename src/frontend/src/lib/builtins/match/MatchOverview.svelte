@@ -2,6 +2,7 @@
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
+  import LoadBox from '../../components/LoadBox.svelte';
 
   // Match overview cards: the five identity metrics of the match, one card
   // each, in their default order (top fragger, best ADR, most util, entry
@@ -86,9 +87,10 @@
 </script>
 
 <section class="match-overview">
-  {#if ready}
-    <div class="stat-grid">
+  <div class="stat-grid">
+    {#if ready}
       {#each cards as c (c.key)}
+        <LoadBox tag="div" class="stat-box" busy={spectra.busy} name="match-overview-card" key={c.key}>
         <div class="stat-cell" role="button" tabindex="0" title={c.title || undefined}
           onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; if (c.steam) follow(c.steam); }}
           onkeydown={(e) => { if (e.key === 'Enter' && c.steam) follow(c.steam); }}
@@ -103,7 +105,13 @@
             {/if}
           </span>
         </div>
+        </LoadBox>
       {/each}
-    </div>
-  {/if}
+    {:else}
+      <!-- Before the data: one held, spinning card per identity metric, so the grid already has its space. -->
+      {#each CARDS as card (card.metric)}
+        <LoadBox tag="div" class="stat-box" busy name="match-overview-card" key=""></LoadBox>
+      {/each}
+    {/if}
+  </div>
 </section>

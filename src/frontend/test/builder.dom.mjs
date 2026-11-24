@@ -421,7 +421,13 @@ svelteCompile(
   'RunningMetricsDialog.svelte',
   join(dir, 'runningmetricsdialog.js'),
 );
+// The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
+const { compileModule: compileRunes } = await import('svelte/compiler');
+writeFileSync(join(dir, 'loadstate.svelte.js'), compileRunes(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
+svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
+  .replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`)
+  .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../metricformats.js'", `from '${fileURL('src/lib/metricformats.js')}'`)

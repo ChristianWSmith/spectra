@@ -391,6 +391,26 @@ textarea.mono {
   padding: 16px 20px;
 }
 
+/* The views' container: a positioned box at the real view width, so a warm pane laid out in it measures
+   at the width the user will see. */
+.app-views {
+  position: relative;
+}
+
+/* A warm pane (lib/warm.js): mounted and laid out at the real width, but invisible, out of the flow, and
+   clipped to no height, so it never shows or scrolls and never takes space. Its panels load and their
+   heights are measured while it sits here. */
+.warm-hidden {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .view {
   max-width: 1400px;
   margin: 0 auto;
@@ -1005,23 +1025,25 @@ mark {
    throbber is centered on each busy panel, so a composer's spinners sit on its
    panels, one each. A busy root with no panels of its own fades without one. Every
    spinner is a pseudo-element of the element it sits on, so none stack. */
-.builtin-busy,
-.builtin-busy .panel {
+/* The loading standard (components/LoadBox.svelte). A busy box holds its height and blanks its
+   content: every direct child is hidden (visibility keeps the space, and the hidden subtree goes with
+   it), so no stale value shows while the new one loads. The spinner sits on the innermost busy box
+   only, centred on it; a composer's spinners therefore sit on its panels, one each. The spinner
+   opts back into visibility, so it shows inside the hidden content. */
+.load-box {
   position: relative;
 }
 
-.builtin-busy :not(.panel) {
+.load-box.load-busy > * {
   visibility: hidden;
-}
-
-.builtin-busy .panel {
-  visibility: visible;
 }
 
 /* A frame panel draws its card for a leaf component only. A composer (nested frames)
    and a component that holds cards of its own (inner panels, stat cells) get a
    transparent frame panel: the inner cards are the boxes, not panels in a panel. */
+/* A frame that holds other frames (a composer, loading or loaded) is a container, not a card: no panel in a panel. */
 .frame-panel.frame-composer,
+.frame-panel:has(.frame-panel),
 .frame-panel:has(.panel:not(.frame-panel)),
 .frame-panel:has(.stat-cell) {
   background: none;
@@ -1029,8 +1051,7 @@ mark {
   padding: 0;
 }
 
-.builtin-busy .panel:not(:has(.panel))::after,
-.panel.builtin-busy:not(:has(.panel))::after {
+.load-box.load-busy:not(:has(.load-busy))::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -1044,7 +1065,8 @@ mark {
   border-radius: 50%;
   animation: chip-spin 0.9s linear infinite;
   pointer-events: none;
-  z-index: 1;
+  z-index: 2;
+  visibility: visible;
 }
 
 
@@ -3072,8 +3094,7 @@ mark {
 /* Corner occupied → raise (the block comment above: the keep-alive
    block or the Compare float holds right 26 / bottom 26; one rule for
    either or both, so there is no order to get wrong). */
-.shell:has(.rp-keepalive) .wk-pill,
-.shell:has(.cmp-float) .wk-pill {
+.shell:has(.rp-keepalive) .wk-pill {
   bottom: 264px;
 }
 

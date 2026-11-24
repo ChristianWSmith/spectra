@@ -1,4 +1,5 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
   import StatusChip from './StatusChip.svelte';
   // ComponentFrame — the frame every mounted component sits in
   // one failing component shows a
@@ -35,7 +36,7 @@
   import { errText } from '../services.js';
   import { loadComponent } from '../componentruntime/compile.js';
   import { createReadApi } from '../componentruntime/readapi.js';
-  import { rememberHeight, recalledHeight, onSizesLoaded } from '../componentruntime/sizememory.js';
+  import LoadBox from './LoadBox.svelte';
   import { serviceReads } from '../componentruntime/reads.js';
   import { attachFrame } from '../componentruntime/eventerrors.js';
   import { FRAME_KEY, frozenContext } from '../componentruntime/frameContext.js';
@@ -56,7 +57,7 @@
   // The frames above this one (null at the top of a surface).
   const parent = getContext(FRAME_KEY) || null;
   const depth = parent ? parent.depth + 1 : 0;
-  // A nested frame inside a loading frame is loading too (see busy below).
+  // A child panel follows its parent's data: while the parent loads, it holds its space and spins too.
   const parentLoading = () => (parent ? parent.loading() : false);
   // What the nested frames below this one inherit (see ChildFrame).
   // svelte-ignore state_referenced_locally
@@ -67,8 +68,8 @@
     context: () => ctx,
     // A nested frame registers here on mount and leaves on unmount.
     adopt: (delta) => untrack(() => (childCount += delta)),
-    // Whether this frame has reads in flight: its nested frames then load with it.
-    loading: () => pending > 0,
+    // This frame's own reads, and its parent's: what the nested panels show is loading with it.
+    loading: () => load.busy || parentLoading(),
   });
 
   let el = $state(null);
@@ -86,17 +87,17 @@
   // Reads in flight for this frame. A builtin shows its throbber over its
   // content while they run (spectra.busy), so a swap of data keeps the space
   // and hides the old values until the new ones arrive.
-  let pending = $state(0);
-  // Reads this frame has started, and nested frames mounted in it. A pure composer
-  // (nested frames, no reads of its own) never shows the busy state: its children
-  // show their own.
+  const load = createLoadState();
+  // Reads this frame has started, and nested frames mounted in it (the layout class reads childCount).
   let readCount = $state(0);
   let childCount = $state(0);
-  const isComposer = $derived(childCount > 0 && readCount === 0);
-  // A frame is busy while its own reads run (a composer’s children show their own), and while a
-  // parent frame is loading: then it reserves its block and shows its spinner, so the panels of a
-  // composer each take their space before their data arrives.
-  const busy = $derived((pending > 0 && !isComposer) || parentLoading());
+  // The frame is busy while its own reads run, or its parent's do. Only a box that holds no boxes
+  // shows it (LoadBox): a container of panels leaves the hider and spinner to the panels inside.
+  const busy = $derived(load.busy || parentLoading());
+  // What the panel shows, by identity: a new match or player is new content (its own held height).
+  const contentKey = $derived(
+    [ctx.matchId, ctx.steamId, ctx.round].map((v) => (v == null ? '' : String(v))).join('|'),
+  );
 
   $effect(() => {
     if (!parent) return;
@@ -105,23 +106,15 @@
   });
   // untrack: a read started inside an effect must not make that effect depend on
   // the counter it moves.
+  // A read belongs to the content it asks for (this frame’s context): a refresh of that content is
+  // not busy, a new context is.
   const tracked = (read) => (...args) => {
-    untrack(() => {
-      pending++;
-      readCount++;
-    });
-    return read(...args).finally(() => {
-      untrack(() => pending--);
-    });
+    untrack(() => readCount++);
+    return load.track(read(...args), contentKey);
   };
   const trackedLoad = (promise) => {
-    untrack(() => {
-      pending++;
-      readCount++;
-    });
-    return promise.finally(() => {
-      untrack(() => pending--);
-    });
+    untrack(() => readCount++);
+    return load.track(promise, contentKey);
   };
   // The `spectra` value a component receives: the read API plus the
   // nested mount component, and whether a read is in flight.
@@ -134,51 +127,12 @@
     // as a read in flight, the same as spectra.metric/query.
     track: trackedLoad,
     get busy() {
-      return pending > 0;
+      return load.busy;
     },
     Child: ChildFrame,
   });
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
-
-  // Every component is mounted into the frame's panel (the shell below). The
-  // panel is the frame's root: the frame owns the busy state on it (the
-  // .builtin-busy class and aria-busy while reads are in flight) and the height
-  // held at the last remembered render (componentruntime/sizememory.js).
-  let panelEl = $state(null);
-  const frameRoot = () => (Comp ? panelEl : null);
-  // The persisted sizes land after startup: a hold that ran before then re-runs.
-  let sizesLoaded = $state(0);
-  $effect(() => onSizesLoaded(() => sizesLoaded++));
-  $effect(() => {
-    void Comp;
-    void sizesLoaded;
-    const root = frameRoot();
-    if (!root) return;
-    const on = busy;
-    root.classList.toggle('builtin-busy', on);
-    root.setAttribute('aria-busy', String(on));
-    // A run in flight holds the panel's last rendered height; a first load has none, so it
-    // reserves a default block: the spinner then centres in its own space, and sibling panels
-    // (the economy cards, curve and rounds) never stack their spinners in one spot.
-    const h = on ? recalledHeight(name) : null;
-    root.style.minHeight = on ? (h ? h + 'px' : '12em') : '';
-    return () => {
-      root.classList.remove('builtin-busy');
-      root.removeAttribute('aria-busy');
-      root.style.minHeight = '';
-    };
-  });
-  $effect(() => {
-    void Comp;
-    const root = frameRoot();
-    if (!root || !name || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      if (!busy) rememberHeight(name, root.offsetHeight);
-    });
-    ro.observe(root);
-    return () => ro.disconnect();
-  });
 
   // A new source (or component) is a new mount: earlier failures go.
   $effect(() => {
@@ -233,9 +187,11 @@
       </button>
     </p>
   {:else if !Comp}
-    <p class="muted" role="status"><StatusChip block /></p>
+    <!-- Compiling: the placeholder holds the component's remembered height (its whole block, a composer's
+         panels included), with the spinner over it, so the real content replaces it in the same space. -->
+    <LoadBox tag="section" class="panel frame-panel" busy name={name} key=""></LoadBox>
   {:else}
-    <section class="panel frame-panel" class:frame-composer={childCount > 0} bind:this={panelEl}>
+    <LoadBox tag="section" class={'panel frame-panel' + (childCount > 0 ? ' frame-composer' : '')} busy={busy} name={name} key={contentKey}>
       <svelte:boundary>
         <Comp {...props} {spectra} context={ctx} />
         {#snippet failed(error, reset)}
@@ -248,7 +204,7 @@
           </p>
         {/snippet}
       </svelte:boundary>
-    </section>
+    </LoadBox>
   {/if}
 </div>
 

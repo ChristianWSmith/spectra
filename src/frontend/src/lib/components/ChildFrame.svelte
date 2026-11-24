@@ -15,6 +15,7 @@
   import { resolveComponentRef } from '../componentruntime/resolve.js';
   import { FRAME_KEY, MAX_NEST_DEPTH } from '../componentruntime/frameContext.js';
   import ComponentFrame from './ComponentFrame.svelte';
+  import LoadBox from './LoadBox.svelte';
 
   let { name = '', props = {}, context = null, nav = undefined } = $props();
 
@@ -80,7 +81,9 @@
     </button>
   </p>
 {:else if !resolved}
-  <p class="muted" role="status"><StatusChip block /></p>
+  <!-- Resolving: this slot is a panel-sized shell that holds the child's remembered height and spins on
+       its own, so a composer's panels each take their space before their component arrives. -->
+  <LoadBox tag="section" class="panel frame-panel" busy {name} key=""></LoadBox>
 {:else if source == null && component == null}
   <p class="error" role="alert">
     {S.fill(S.components.childNotFound, { name })}

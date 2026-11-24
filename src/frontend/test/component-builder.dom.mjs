@@ -23,7 +23,7 @@ import './compile-worker-node.mjs';
 // jsdom is a declared devDependency (a plain `npm ci` provides it).
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -88,6 +88,7 @@ function bundle(absPath) {
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
+    if (target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
     // A .js module that imports a .svelte file (the builtin panel registry) is
     // bundled too; every other .js stays where it is.
@@ -99,6 +100,7 @@ function bundle(absPath) {
     return `from '${pathToFileURL(target).href}'`;
   });
   if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  else if (/\.svelte\.js$/.test(absPath)) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
   else writeFileSync(out, src);
   return out;
 }
@@ -536,7 +538,7 @@ unmounted();
 check('nothing escaped the view', escaped.length === 0, escaped.join(' | '));
 // --- K. the compile worker, the floater and Cancel (owner ruling 47) ------------
 console.log('K. compile worker, floater, Cancel');
-const workstate = await import(pathToFileURL(resolve('src/lib/workstate.svelte.js')).href);
+const workstate = await import(pathToFileURL(bundle(resolve('src/lib/workstate.svelte.js'))).href); // the view's copy: one instance, so one compile tracker
 const seam = await import(pathToFileURL(resolve('test/compile-worker-node.mjs')).href);
 // A large generated component: the compile must take long enough to observe.
 const bigSource = (n) => {

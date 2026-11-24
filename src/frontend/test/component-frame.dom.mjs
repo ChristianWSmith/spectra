@@ -10,7 +10,7 @@ import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js'
 // Run (from frontend/):  node test/component-frame.dom.mjs
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -98,17 +98,26 @@ svelteCompile(
   'StatusChip.svelte',
   join(dir, 'components', 'StatusChip.js'),
 );
+// The shared load state is a runes module: compiled as a module, beside the frame's copy.
+writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
+svelteCompile(
+  readFileSync('src/lib/components/LoadBox.svelte', 'utf8'),
+  'LoadBox.svelte',
+  join(dir, 'components', 'LoadBox.js'),
+);
 svelteCompile(
   readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8')
     .replace("from './ChildFrame.svelte'", "from './ChildFrame.js'")
-    .replace("from './StatusChip.svelte'", "from './StatusChip.js'"),
+    .replace("from './StatusChip.svelte'", "from './StatusChip.js'")
+    .replace("from './LoadBox.svelte'", "from './LoadBox.js'"),
   'ComponentFrame.svelte',
   join(dir, 'components', 'ComponentFrame.js'),
 );
 svelteCompile(
   readFileSync('src/lib/components/ChildFrame.svelte', 'utf8')
     .replace("from './ComponentFrame.svelte'", "from './ComponentFrame.js'")
-    .replace("from './StatusChip.svelte'", "from './StatusChip.js'"),
+    .replace("from './StatusChip.svelte'", "from './StatusChip.js'")
+    .replace("from './LoadBox.svelte'", "from './LoadBox.js'"),
   'ChildFrame.svelte',
   join(dir, 'components', 'ChildFrame.js'),
 );

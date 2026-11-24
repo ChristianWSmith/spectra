@@ -89,7 +89,7 @@ bindings.DialogService.WriteFile = (path, b64) => {
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(h.bundle(resolve('src/lib/views/Reports.svelte'))).href);
-const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
+const viewstate = await import(pathToFileURL(h.bundle(resolve('src/lib/viewstate.svelte.js'))).href); // the panels' copy: one instance
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 

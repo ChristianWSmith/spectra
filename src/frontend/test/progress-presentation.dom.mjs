@@ -39,8 +39,8 @@ console.log('A. harness-less loading lines render the canonical block widget');
 {
   const builder = src('views/Builder.svelte');
   check(
-    'Builder: the metrics-loading line is the block spinner',
-    builder.includes('<StatusChip block detail="Loading…" />') &&
+    'Builder: the metric list is a LoadBox (the shared shell draws its spinner)',
+    /<LoadBox [^>]*name="view:builder"/.test(builder) &&
       !/role="status">Loading…<\/p>/.test(builder),
     '',
   );
@@ -108,19 +108,17 @@ console.log('C. busy-button labels stay plain text (owner ruling: the exemption)
 console.log('D. Settings + Explorer: the follow-up sites (block mode, copy preserved)');
 {
   const sett = src('views/Settings.svelte');
-  // Four bare loading lines (Data, CS2 assets, Plugins, Analysis rules)
-  // → block chips, each keeping its exact existing words as the details
-  // text ("Loading…" ×3, "Loading plugins…").
+  // The plugin list and the analysis rules are LoadBoxes (the shell draws their spinner); the data and
+  // CS2-asset lines remain block chips with their words as the details text.
   check(
-    'Settings: the three bare "Loading…" lines are block chips, none left as raw <p>',
-    (sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 3 &&
+    'Settings: the two remaining bare "Loading…" lines are block chips, none left as raw <p>',
+    (sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&
       !/role="status">Loading…<\/p>/.test(sett),
     String((sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
   );
   check(
-    'Settings: "Loading plugins…" keeps its copy as the details text',
-    sett.includes('<StatusChip block detail="Loading plugins…" />') &&
-      !/role="status">Loading plugins…<\/p>/.test(sett),
+    'Settings: the plugin list is a LoadBox over its own load state',
+    /<LoadBox [^>]*name="view:settings-plugins"/.test(sett) && !sett.includes('Loading plugins…'),
     '',
   );
   // The asset-extraction line: block mode, the honest counts still drive

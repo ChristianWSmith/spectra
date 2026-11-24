@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import { notifyPlacementsChanged } from '../warm.js';
   // The Component builder: the component
   // AUTHORING surface, beside the metric Builder and the Reports builder
@@ -91,7 +93,8 @@
   $effect(() => remember('componentbuilder', { form, baseline, contextKind, matchId, steamId }));
 
   let components = $state([]);
-  let loading = $state(true);
+  // The list's first read is busy; a refresh replaces the rows in place (no spinner over them).
+  const listState = createLoadState();
   let listError = $state('');
   // The list filter: a case-insensitive match on the name a view references.
   let listQuery = $state('');
@@ -170,14 +173,13 @@
   }
 
   async function refreshList() {
-    loading = true;
     try {
-      components = (await listComponents()) || [];
+      await listState.track(listComponents(), 'list', (v) => {
+        components = v || [];
+      });
       listError = '';
     } catch (e) {
       listError = errText(e);
-    } finally {
-      loading = false;
     }
     await refreshOverrides();
     await refreshPlacements();
@@ -190,7 +192,7 @@
   // exists falls back to a fresh editor. Gated on a successful read.
   $effect(() => {
     const original = form.original;
-    if (!original || loading || listError) return;
+    if (!original || listState.pending > 0 || listError) return;
     if (!components.some((c) => c.name === original)) newComponent();
   });
 
@@ -528,8 +530,9 @@
         {/each}
       </div>
       <span class="field-label">{S.componentbuilder.yoursGroup}</span>
+      <LoadBox tag="div" class="cb-yours-body" busy={listState.busy} key={listState.key} name="view:componentbuilder">
       {#if components.length === 0}
-        {#if loading}
+        {#if listState.pending > 0}
           <p class="muted" role="status">{S.componentbuilder.loadingList}</p>
         {:else}
           <p class="muted" role="status">{S.componentbuilder.noUserComponents}</p>
@@ -541,6 +544,7 @@
           {/each}
         </div>
       {/if}
+      </LoadBox>
       </div>
     </section>
 

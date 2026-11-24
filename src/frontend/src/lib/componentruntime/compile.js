@@ -365,6 +365,10 @@ export const BUILTIN_HELPERS = Object.freeze({
     load: () => import('../components/StatusChip.svelte'),
     names: { default: 'the state chip (a component)' },
   },
+  'src/lib/components/LoadBox.svelte': {
+    load: () => import('../components/LoadBox.svelte'),
+    names: { default: 'the loading shell (a component)' },
+  },
   'src/lib/components/StatCard.svelte': {
     load: () => import('../components/StatCard.svelte'),
     names: { default: 'a stat card (a component)' },

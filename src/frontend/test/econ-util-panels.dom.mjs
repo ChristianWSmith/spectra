@@ -23,7 +23,7 @@ await warm();
 import { reachesSvelte } from './bundle-reach.mjs';
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -85,6 +85,7 @@ function bundle(absPath) {
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     // The Profile panels are app Svelte the bundler compiles; this driver mounts
     // no Profile panel, so the registry is a stub (as component-frame.dom.mjs does).
     if (target.endsWith('builtins/panels.js')) return `from '${pathToFileURL(panelStub).href}'`;
@@ -93,7 +94,8 @@ function bundle(absPath) {
     if (target.endsWith('.js') && reachesSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code
+    : /\.svelte\.js$/.test(absPath) ? compileModule(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));

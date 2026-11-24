@@ -369,83 +369,27 @@ label.filt-lab {
 
 /* --- Compare rounds (cmp-) ----------------------------------------------- */
 
-.cmp-grid {
-  display: grid;
-  gap: 12px;
-  align-items: start;
-}
 
-.cmp-col {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
 
-.cmp-col h3 {
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+
+
+
 
 /* Spacing only — the typography comes from .section-title (style.css). */
-.cmp-sec-t {
-  margin-bottom: 4px;
-}
 
-.cmp-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 0.88em;
-}
 
-.cmp-list li {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--divider);
-  padding-bottom: 2px;
-}
 
-.cmp-note {
-  font-size: 0.85em;
-}
 
-.cmp-events {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.82em;
-  max-height: 260px;
-  overflow-y: auto;
-  background: var(--inset);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 6px 8px;
-}
 
-.cmp-events li {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  padding: 1px 0;
-  border-bottom: 1px solid var(--divider);
-}
+
+
+
+
+
+
 
 /* Local delta: tighter gap than .toolbar. */
-.cmp-actions {
-  gap: 6px;
-}
+
 
 /* Round-classification chip (Match Rounds tab, RoundDetail, Compare).
    LAYOUT + the no-class-key fallback only: the per-class COLOR lives in
@@ -457,31 +401,14 @@ label.filt-lab {
   border-color: var(--accent-40);
 }
 
-.cmp-hint {
-  font-size: 0.85em;
-  color: var(--muted);
-}
+
 
 /* Floating "Compare N" button (Match → Rounds). */
-.cmp-float {
-  position: fixed;
-  right: 26px;
-  bottom: 26px;
-  z-index: 30;
-  box-shadow: 0 8px 28px var(--overlay-55);
-  font-weight: 600;
-}
 
-.cmp-cmp-col {
-  width: 36px;
-}
 
-.cmp-cb {
-  accent-color: var(--accent);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-}
+
+
+
 
 /* Scoreboard player-name profile link (Match.svelte). Same rule as
    .comb-name-btn: color: inherit — an unresolved name wears the row's

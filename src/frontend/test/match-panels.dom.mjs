@@ -22,7 +22,7 @@ await warm();
 // Then grep the log for FAIL and UNCAUGHT: the exit code is not the verdict.
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { reachesSvelte } from './bundle-reach.mjs';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -98,10 +98,11 @@ function bundle(absPath) {
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/') && reachesSvelte(target))) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.svelte.js') || (target.endsWith('.js') && !target.includes('/generated/') && reachesSvelte(target))) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code
+    : /\.svelte\.js$/.test(absPath) ? compileModule(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
@@ -433,13 +434,15 @@ console.log('H. loading state');
 const held = [];
 const pendingReads = { ...reads, componentQuery: () => new Promise((r) => held.push(r)) };
 root = await mountPanel({ source: panels.OVERVIEW_SOURCE, context: MATCH, props: BACK, reads: pendingReads });
-const busyRoot = root.querySelector('.frame-panel');
-check('while the read is in flight, the root is busy (its throbber is drawn in CSS)',
-  !!busyRoot && busyRoot.classList.contains('builtin-busy') && busyRoot.getAttribute('aria-busy') === 'true');
+// The panel holds its cards (each a loading shell): the cards are the containers that show the spinner,
+// the frame around them does not.
+const busyCard = root.querySelector('.stat-box');
+check('while the read is in flight, a card is busy (its throbber is drawn in CSS)',
+  !!busyCard && busyCard.classList.contains('load-busy') && busyCard.getAttribute('aria-busy') === 'true');
 held.forEach((r) => r({ columns: [], rows: [] }));
 await settle();
 check('once the read settles, the root is no longer busy',
-  !root.querySelector('.match-overview').classList.contains('builtin-busy'));
+  !root.querySelector('.match-overview').classList.contains('load-busy'));
 
 // --- I. a pure composer never shows the busy state; its child does ----------------------
 console.log('I. composer');
@@ -454,8 +457,8 @@ await settle();
 const compRoot = root.querySelector('.frame-panel');
 const childRoot = root.querySelector('.match-overview').closest('.frame-panel');
 check('a pure composer is not busy (no busy class, aria-busy not true) while its child reads',
-  !!compRoot && !compRoot.classList.contains('builtin-busy') && compRoot.getAttribute('aria-busy') !== 'true');
-check('the child that reads is busy', !!childRoot && childRoot.classList.contains('builtin-busy'));
+  !!compRoot && !compRoot.classList.contains('load-busy') && compRoot.getAttribute('aria-busy') !== 'true');
+check('the child that reads is busy (its cards show the spinner)', !!childRoot && !!childRoot.querySelector('.stat-box.load-busy'));
 heldReads.forEach((r) => r({ columns: [], rows: [] }));
 
 unmountAll();

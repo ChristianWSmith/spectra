@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import {
     importDialog,
     importPaths,
@@ -88,8 +90,10 @@
   // simply has not arrived, so the dropzone shows "Loading…" until then.
   // Cleared once and never re-armed: a later refresh keeps the rows already
   // on screen instead of flashing back to a spinner.
-  let listLoading = $state(true);
-  let jobsLoading = $state(true);
+  // The list and the jobs load together: the first load and a sort or facet change are busy (the table is
+  // held and dimmed under a spinner); a refresh of the same list is not, so the rows stay put.
+  const load = createLoadState();
+  const libKey = (sk = sortKey, d = desc, mf = mapFilter, pf = playerFilter) => [sk, d, mf, pf].join('|');
   // Structured list facets (ANDed with each other — store.MatchListFilter,
   // forwarded by services.js listMatches): a map substring and "has player
   // X" (exact 17-digit SteamID or name substring — one input covers both).
@@ -222,17 +226,16 @@
     // that lands after a restart is dropped instead of appended.
     const gen = ++listGen;
     try {
-      const page = await listMatchesPage('', sk, d, 0, PAGE_SIZE, { map: mf, player: pf });
-      if (gen !== listGen) return;
-      matches = (page && page.rows) || [];
-      hasNext = !!(page && page.hasNext);
-      applyRosters(page && page.rosters);
-      error = '';
-      listLoading = false; // gen-guarded: only a CURRENT reply ends the wait
+      await load.track(listMatchesPage('', sk, d, 0, PAGE_SIZE, { map: mf, player: pf }), libKey(sk, d, mf, pf), (page) => {
+        if (gen !== listGen) return;
+        matches = (page && page.rows) || [];
+        hasNext = !!(page && page.hasNext);
+        applyRosters(page && page.rosters);
+        error = '';
+      });
     } catch (e) {
       if (gen === listGen) {
         error = errText(e);
-        listLoading = false; // a failed first read shows the error, not a hang
       }
     }
   }
@@ -293,38 +296,36 @@
   function refreshLibrary() {
     const jGen = ++jobsGen;
     const lGen = ++listGen;
-    return Promise.all([
-      listJobs(),
-      listMatchesPage('', sortKey, desc, 0, PAGE_SIZE, { map: mapFilter, player: playerFilter }),
-    ])
-      .then(([nextJobs, page]) => {
-        if (jGen === jobsGen) jobs = nextJobs;
-        if (lGen !== listGen) return;
-        matches = (page && page.rows) || [];
-        hasNext = !!(page && page.hasNext);
-        applyRosters(page && page.rosters);
-        error = '';
-        listLoading = false;
-      })
+    return load
+      .track(
+        Promise.all([
+          listJobs(),
+          listMatchesPage('', sortKey, desc, 0, PAGE_SIZE, { map: mapFilter, player: playerFilter }),
+        ]),
+        libKey(),
+        ([nextJobs, page]) => {
+          if (jGen === jobsGen) jobs = nextJobs;
+          if (lGen !== listGen) return;
+          matches = (page && page.rows) || [];
+          hasNext = !!(page && page.hasNext);
+          applyRosters(page && page.rosters);
+          error = '';
+        },
+      )
       .catch((e) => {
         if (jGen === jobsGen) error = errText(e);
       })
-      .finally(() => {
-        if (jGen === jobsGen) jobsLoading = false;
-      });
+      ;
   }
 
   async function refreshJobs() {
     const gen = ++jobsGen;
     try {
-      const next = await listJobs();
-      if (gen === jobsGen) jobs = next;
+      await load.track(listJobs(), libKey(), (next) => {
+        if (gen === jobsGen) jobs = next;
+      });
     } catch (e) {
       if (gen === jobsGen) error = errText(e);
-    } finally {
-      // Only the CURRENT reply ends the wait (a stale one landing later
-      // must not drop the loading display out from under the live read).
-      if (gen === jobsGen) jobsLoading = false;
     }
   }
 
@@ -1064,15 +1065,9 @@
   {/if}
 
   <div class="dropzone">
-    {#if listLoading || jobsLoading}
-      <!-- Rung 3 of the loading ladder: until BOTH first reads have
-           answered, an empty table would claim "No matches yet" while the
-           library is still on its way. The bare fallback's shape — a
-           centered spinner with its details text underneath, no numbers
-           (there is no denominator) — transient (see listLoading/
-           jobsLoading), never restored. -->
-      <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
-    {:else if matches.length === 0 && jobs.length === 0 && !searching && !error}
+    <LoadBox tag="div" class="lib-body" busy={load.busy} key={load.key} name="view:library">
+    {#if !(load.busy && matches.length === 0 && jobs.length === 0)}
+    {#if matches.length === 0 && jobs.length === 0 && !searching && !error}
       <!-- Honesty gate: a FAILED list load must not also claim the
            library is empty (error above is the truth about why nothing
            is here); the claim returns when a retry clears it. -->
@@ -1348,6 +1343,8 @@
         </div>
       {/if}
     {/if}
+    {/if}
+    </LoadBox>
   </div>
 
   <!-- Import dirs: .dem / .dem.zst files under the dirs configured in

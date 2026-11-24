@@ -13,7 +13,7 @@ await warm();
 // Then grep the log for FAIL and UNCAUGHT: the exit code is not the verdict.
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -82,7 +82,8 @@ function bundle(absPath) {
     if (target.endsWith('.svelte') || (target.endsWith('.js') && !target.includes('/generated/'))) return `${lead}'${pathToFileURL(bundle(target)).href}'`;
     return `${lead}'${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code
+    : /\.svelte\.js$/.test(absPath) ? compileModule(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-tabs.harness.svelte'));

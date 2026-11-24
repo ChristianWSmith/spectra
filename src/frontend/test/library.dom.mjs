@@ -334,7 +334,17 @@ svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'suggestinput.js'));
 // viewstate.svelte.js is rewritten to the SAME absolute URL the pins
 // below import, so the view and the test share one registry instance
 // (the jsdom cross-talk rule in that module's header).
+// The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
+const { compileModule } = await import('svelte/compiler');
+writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
+const loadBoxSrc = readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace(
+  "from '../componentruntime/sizememory.js'",
+  `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`,
+);
+svelteCompile(loadBoxSrc, 'LoadBox.svelte', join(dir, 'LoadBox.js'));
 const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
+  .replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`)
+  .replace("from '../components/LoadBox.svelte'", `from '${fileURL(join(dir, 'LoadBox.js'))}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../teams.js'", `from '${fileURL('src/lib/teams.js')}'`)
@@ -2571,7 +2581,7 @@ const coldDrop = () =>
   coldTarget.querySelector('.dropzone')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
 check(
   'mid-load: loading indicator, no empty claim, no table',
-  coldTarget.textContent.includes('Loading…') &&
+  !!coldTarget.querySelector('.lib-body.load-busy.load-first') &&
     !coldTarget.textContent.includes('No matches yet') &&
     !coldTarget.querySelector('.dropzone .data-table'),
   coldDrop().slice(0, 140),
@@ -2581,8 +2591,7 @@ check(
 // number (there is no denominator for a first read).
 check(
   'mid-load: block spinner + "Loading…" details underneath',
-  !!coldTarget.querySelector('.dropzone .chip-block .chip-spin') &&
-    coldTarget.querySelector('.dropzone .chip-detail')?.textContent.trim() === 'Loading…' &&
+  !!coldTarget.querySelector('.lib-body.load-busy:not(:has(.load-busy))') &&
     !coldTarget.querySelector('.chip-bar'),
   coldTarget.querySelector('.dropzone .chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
 );

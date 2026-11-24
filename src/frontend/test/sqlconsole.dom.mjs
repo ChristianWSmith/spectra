@@ -25,7 +25,7 @@ import './compile-worker-node.mjs';
 //   node --test test/sqlconsole.dom.mjs
 // (must be run with frontend/ as the working directory)
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -202,6 +202,10 @@ for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js'
 sqlSrc = sqlSrc.split("from '../components/StatusChip.svelte'").join("from './statuschip.js'");
 sqlSrc = sqlSrc.split("from '../components/HelpButton.svelte'").join("from './helpbutton.js'");
 sqlSrc = sqlSrc.split("from '../components/Popover.svelte'").join("from './popover.js'");
+// The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
+writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
+svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
+sqlSrc = sqlSrc.replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`).replace("from '../components/LoadBox.svelte'", "from './loadbox.js'");
 svelteCompile(sqlSrc, 'SqlConsole.svelte', join(dir, 'sqlconsole-bundle.js'));
 
 const { mount, unmount } = await import('svelte');

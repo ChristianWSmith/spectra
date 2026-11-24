@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
   import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
@@ -33,13 +35,13 @@
   // minting a fresh entry hash. Null while no instance is alive → the
   // fresh-entry replayHash below, exactly as before.
   // routeRound: the round the URL asks open on the Rounds tab (?round=N, from the economy and compare links).
-  let { id = 0, nav = () => {}, routeTab = '', routeRound = null, expandReplay = null, openDocs = () => {} } = $props();
+  let { id = 0, nav = () => {}, routeTab = '', routeRound = null, expandReplay = null, openDocs = () => {}, warm = false } = $props();
 
   // The tab set and its panels read through this context (ruling 34): the
   // match, and nothing else. The tab set reads its own data from it, so the
   // view passes nothing else but the active tab and its select.
   const panelContext = $derived({ matchId: id });
-  const tabsProps = $derived({ tab, ontab: selectTab, expandRound: routeRound });
+  const tabsProps = $derived({ tab, ontab: selectTab, expandRound: routeRound, warm });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
   // per-tab help button (Part 8's per-tab ruling): one button in the
@@ -50,6 +52,7 @@
 
 
   let match = $state(null);
+  const loadState = createLoadState();
   let summary = $state(null); // MatchSummary row (team names)
   let rounds = $state([]);
   let scoreboard = $state([]);
@@ -84,20 +87,26 @@
   // element) — never the whole library list for a single header lookup.
   $effect(() => {
     let live = true;
-    Promise.all([
-      getMatch(id),
-      getRounds(id),
-      getMatchSummary(id),
-      getVoicePresence(id).catch(() => null),
-    ])
-      .then(([m, r, s, v]) => {
-        if (!live) return;
-        match = m;
-        rounds = r || [];
-        summary = s || null;
-        voice = v;
-        error = m ? '' : 'Match not found.';
-      })
+    // The match is one load keyed by its id: the first read is busy (the body shows the shell's spinner); a
+    // refresh of the same match keeps the content on screen.
+    loadState
+      .track(
+        Promise.all([
+          getMatch(id),
+          getRounds(id),
+          getMatchSummary(id),
+          getVoicePresence(id).catch(() => null),
+        ]),
+        String(id),
+        ([m, r, s, v]) => {
+          if (!live) return;
+          match = m;
+          rounds = r || [];
+          summary = s || null;
+          voice = v;
+          error = m ? '' : 'Match not found.';
+        },
+      )
       .catch((e) => {
         if (live) error = errText(e);
       });
@@ -284,7 +293,7 @@
 
 </script>
 
-<div class="view">
+<LoadBox tag="div" class="view" busy={loadState.busy} key={loadState.key} name="view:match">
   {#if error}
     <!-- In-place dismissal: the ✕ clears the state variable itself (the
          id-keyed effect below re-arms it on the next match load). -->
@@ -394,10 +403,8 @@
         />
       {/snippet}
     </SurfaceView>
-  {:else if !error}
-    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
   {/if}
-</div>
+</LoadBox>
 
 <style>
   /* Watch replay sits at the FAR LEFT of the .match-sub meta row (its

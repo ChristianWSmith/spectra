@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
   import {
     listMetricsPage,
@@ -60,7 +62,9 @@
   // State-placement rule: never seeded, never remembered, never in the
   // URL (it re-arms on every refresh, but only shows while the list is
   // still empty).
-  let loading = $state(true);
+  // The list’s load: a new query or filter is busy (the list is held and dimmed under a spinner); a refresh
+  // of the same query is not.
+  const load = createLoadState();
   let loadingMore = $state(false);
   let disabledPlugins = $state(new Set());
   let listError = $state('');
@@ -487,18 +491,16 @@
     appliedFilter = f;
     appliedFormat = fm;
     const gen = ++listGen;
-    loading = true;
     try {
-      const page = await listMetricsPage(q, f, fm, 0, PAGE_SIZE);
-      if (gen !== listGen) return;
-      metrics = (page && page.rows) || [];
-      hasNext = !!(page && page.hasNext);
-      listError = '';
-      loading = false; // gen-guarded: only a CURRENT reply ends the wait
+      await load.track(listMetricsPage(q, f, fm, 0, PAGE_SIZE), [q, JSON.stringify(f), fm].join('|'), (page) => {
+        if (gen !== listGen) return;
+        metrics = (page && page.rows) || [];
+        hasNext = !!(page && page.hasNext);
+        listError = '';
+      });
     } catch (e) {
       if (gen === listGen) {
         listError = errText(e);
-        loading = false; // a failed first read shows the error, not a hang
       }
     }
   }
@@ -1106,10 +1108,9 @@
           </Popover>
         </span>
       </div>
+      <LoadBox tag="div" class="bld-list-body" busy={load.busy} key={load.key} name="view:builder">
       {#if metrics.length === 0 && !listError}
-        {#if loading && metrics.length === 0}
-          <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
-        {:else if metrics.length === 0 && appliedQuery}
+        {#if metrics.length === 0 && appliedQuery}
           <p class="muted" role="status">{S.fill(S.builder.noMetricsMatch, { q: appliedQuery })}</p>
         {:else}
           <!-- Empty: either a server-side filter group narrowed the
@@ -1149,6 +1150,7 @@
           {/if}
         </div>
       {/if}
+      </LoadBox>
     </section>
 
     <div class="bld-right">

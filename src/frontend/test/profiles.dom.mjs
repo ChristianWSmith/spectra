@@ -57,7 +57,7 @@ import './compile-worker-node.mjs';
 // also runs under `node --conditions browser test/profiles.dom.mjs`)
 import { reachesSvelte } from './bundle-reach.mjs';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -241,11 +241,12 @@ function bundleSvelte(absPath, outName = null) {
   bundled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte')) return `from '${fileURL(bundleSvelte(target))}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${fileURL(bundleSvelte(target))}'`;
     if (target.endsWith('.js') && importsSvelte(target)) return `from '${fileURL(bundleSvelte(target))}'`;
     return `from '${fileURL(target)}'`;
   });
   if (absPath.endsWith('.svelte')) svelteCompile(src, absPath, out);
+  else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
   else writeFileSync(out, src);
   return out;
 }
@@ -652,9 +653,8 @@ console.log('H. rung-3 loading lines render the canonical block spinner (never a
   mount(profilesMod.default, { target: hTarget, props: { nav: () => {} } });
   await sleep(80);
   check(
-    'Profiles mid-load: block spinner + "Loading players…" underneath',
-    !!hTarget.querySelector('.chip-block .chip-spin') &&
-      hTarget.querySelector('.chip-detail')?.textContent.trim() === 'Loading players…' &&
+    'Profiles mid-load: the shell is busy on its first load, with no ring or percent',
+    !!hTarget.querySelector('.load-box.load-busy.load-first') &&
       !hTarget.querySelector('.chip-ring') &&
       !hTarget.querySelector('.chip-pct'),
     hTarget.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
@@ -680,7 +680,7 @@ console.log('H. rung-3 loading lines render the canonical block spinner (never a
   // no percentage.
   check(
     'PlayerProfile mid-load: the panels are mounted and busy, never a %',
-    h2.querySelectorAll('.builtin-busy').length > 0 &&
+    h2.querySelectorAll('.load-busy').length > 0 &&
       !h2.querySelector('.chip-ring') &&
       !h2.querySelector('.chip-pct'),
     h2.innerHTML.slice(0, 160),

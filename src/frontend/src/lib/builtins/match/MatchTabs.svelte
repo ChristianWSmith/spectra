@@ -36,6 +36,9 @@
     nav = () => {},
     // The round the URL asks open on the Rounds tab (?round=N).
     expandRound = null,
+    // A warm mount (lib/warm.js): every tab mounts at once, its inactive panes laid out hidden at the real
+    // width, so each panel loads and measures before the user opens its tab.
+    warm = false,
   } = $props();
 
   // The tab bar is the canonical list from the route table, so a deep
@@ -71,6 +74,10 @@
   const paneDisplay = (t) => (t === tab ? 'contents' : 'none');
   // Tabs that have been shown at least once stay mounted (see the panes below).
   let seen = $state({});
+  // A warm mount has every tab seen from the start.
+  $effect(() => {
+    if (warm) seen = Object.fromEntries(MATCH_TABS.map((t) => [t, true]));
+  });
   $effect(() => {
     if (!seen[tab]) seen = { ...seen, [tab]: true };
   });
@@ -97,43 +104,43 @@
      (hidden while another tab is active), so switching tabs does not
      reload their data or lose their state. -->
 {#if isShown(TAB.overview)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.overview)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.overview} style:display={warm && tab !== TAB.overview ? null : paneDisplay(TAB.overview)}>
     <spectra.Child name="match-overview" props={panelProps} />
     <spectra.Child name="match-rosters" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.scoreboard)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.scoreboard)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.scoreboard} style:display={warm && tab !== TAB.scoreboard ? null : paneDisplay(TAB.scoreboard)}>
     <spectra.Child name="match-scoreboard" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.rounds)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.rounds)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.rounds} style:display={warm && tab !== TAB.rounds ? null : paneDisplay(TAB.rounds)}>
     <spectra.Child name="match-rounds" props={roundsProps} />
   </div>
 {/if}
 {#if isShown(TAB.economy)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.economy)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.economy} style:display={warm && tab !== TAB.economy ? null : paneDisplay(TAB.economy)}>
     <spectra.Child name="match-economy" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.utility)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.utility)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.utility} style:display={warm && tab !== TAB.utility ? null : paneDisplay(TAB.utility)}>
     <spectra.Child name="match-utility" props={utilityProps} />
   </div>
 {/if}
 {#if isShown(TAB.heatmaps)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.heatmaps)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.heatmaps} style:display={warm && tab !== TAB.heatmaps ? null : paneDisplay(TAB.heatmaps)}>
     <spectra.Child name="match-heatmaps" />
   </div>
 {/if}
 {#if isShown(TAB.combat)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.combat)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.combat} style:display={warm && tab !== TAB.combat ? null : paneDisplay(TAB.combat)}>
     <spectra.Child name="match-combat" />
   </div>
 {/if}
 {#if isShown(TAB.reports)}
-  <div class="tab-pane" style:display={paneDisplay(TAB.reports)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.reports} style:display={warm && tab !== TAB.reports ? null : paneDisplay(TAB.reports)}>
     <spectra.Child name="match-reports" props={{ embedded: true }} />
   </div>
 {/if}
@@ -144,7 +151,7 @@
        diagnostics (import details, advanced diagnostics), embedded and fixed
        to THIS match. Gameplay-derived facts (the first blood) live on the
        Rounds tab. Map/Duration live in the match header. -->
-  <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
+  <div class="tab-pane" class:warm-hidden={warm && tab !== TAB.details} style:display={warm && tab !== TAB.details ? null : paneDisplay(TAB.details)}>
     <spectra.Child name="match-details" />
   </div>
 {/if}

@@ -87,7 +87,7 @@ import './compile-worker-node.mjs';
 // there provides it. From frontend/ run:
 //   node --test test/settings.dom.mjs
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -358,6 +358,10 @@ settSrc = rewrite(settSrc, '../components/StatusChip.svelte', './statuschip.js')
 settSrc = rewrite(settSrc, '../components/ConfirmDialog.svelte', './confirmdialog.js');
 settSrc = rewrite(settSrc, '../components/HelpButton.svelte', './helpbutton.js');
 settSrc = rewrite(settSrc, '../components/PluginBuildDialog.svelte', './plugindialog.js');
+// The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
+writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
+svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
+settSrc = settSrc.replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`).replace("from '../components/LoadBox.svelte'", "from './loadbox.js'");
 svelteCompile(settSrc, 'Settings.svelte', join(dir, 'settings-bundle.js'));
 
 const { mount, unmount } = await import('svelte');

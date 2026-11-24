@@ -40,7 +40,7 @@ registerHooks({
 });
 
 const { JSDOM } = await import('jsdom');
-const { compile } = await import('svelte/compiler');
+const { compile, compileModule } = await import('svelte/compiler');
 const { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, realpathSync } = await import('node:fs');
 const { dirname, join, normalize, relative } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
@@ -211,6 +211,10 @@ function build(rel) {
     mkdirSync(dirname(join(dir, outRel)), { recursive: true });
     const code = compile(src, { filename: rel, generate: 'client' }).js.code;
     writeFileSync(join(dir, outRel), rebase(code, outRel));
+  } else if (rel.endsWith('.svelte.js')) {
+    // a runes module (the load state): compiled as a module, so its $state runs
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), compileModule(src, { filename: rel, generate: 'client' }).js.code);
   } else {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
     writeFileSync(join(dir, rel), rebase(src, rel));
@@ -1421,14 +1425,16 @@ check(
   !matchSrc.includes('halfScore') && !matchSrc.includes('displayHalfScore'),
   '',
 );
-// The rung-3 loading lines in Match (owner ruling — a bare "Loading…"
-// becomes the canonical centered spinner + details underneath). Match's
+// The loading lines in Match: the body is a LoadBox (the shared shell
+// draws the spinner); the warnings panel keeps its own centered spinner
+// with details underneath. Match's
 // DOM harness never HOLDS a loading window (its reads resolve at once),
 // so these are source pins over the view; the widget itself is pinned
 // mounted in library.dom.mjs Section G.
 check(
-  'Match’s two loading lines render the block spinner (warnings + body)',
-  (matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&
+  'Match’s body is a LoadBox; its one inline spinner is the warnings panel',
+  (matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 1 &&
+    /<LoadBox [^>]*name="view:match"/.test(matchSrc) &&
     !/role="status">Loading…<\/p>/.test(matchSrc),
   String((matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
 );

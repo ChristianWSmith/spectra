@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nested frames</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <section id="parent" class="panel frame-panel"><section id="child" class="panel frame-panel" style="height: 80px"></section></section>
+    <section id="leaf" class="panel frame-panel" style="height: 80px"></section>
+    <pre id="out"></pre>
+    <script type="module">
+      const bg = (el) => getComputedStyle(el).backgroundColor;
+      const border = (el) => getComputedStyle(el).borderTopColor;
+      const out = {
+        parentBg: bg(document.getElementById('parent')),
+        parentBorder: border(document.getElementById('parent')),
+        leafBg: bg(document.getElementById('leaf')),
+      };
+      document.getElementById('out').textContent = JSON.stringify(out);
+    </script>
+  </body>
+</html>

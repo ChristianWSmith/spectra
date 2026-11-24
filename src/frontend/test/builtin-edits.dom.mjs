@@ -17,7 +17,7 @@ await warm();
 // Run (from frontend/):  node test/builtin-edits.dom.mjs
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -81,7 +81,7 @@ function bundle(absPath) {
   compiled.set(absPath, out);
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
-    if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     // A .js that reaches a .svelte through its own imports (resolve.js → builtins/panels.js)
     // is rewritten like its importer; every other .js stays where it is.
     if (target.endsWith('.js') && reachesSvelte(target)) {
@@ -90,6 +90,7 @@ function bundle(absPath) {
     return `from '${pathToFileURL(target).href}'`;
   });
   if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
   else writeFileSync(out, src);
   return out;
 }

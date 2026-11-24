@@ -907,7 +907,7 @@ console.log('K. cold start: the tab is busy until its data lands (throbber, no p
   await sleep(400); // past the 250 ms delay
   check(
     'after the fetch lands: the tab is no longer busy, both panels render',
-    !rootK.querySelector('.builtin-busy') &&
+    !rootK.querySelector('.load-busy') &&
       sections(rootK, 'Combat stats').length === 0 &&
       sections(rootK, 'Kill tags').length === 1 &&
       sections(rootK, 'Clutches').length === 1,

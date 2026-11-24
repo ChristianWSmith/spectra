@@ -29,7 +29,7 @@ const OTHER = 8;
 
 const h = await boot('reports-explorer-panels');
 const { bindings, services, panels, mountComponent, sleep } = h;
-const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
+const viewstate = await import(pathToFileURL(h.bundle(resolve('src/lib/viewstate.svelte.js'))).href); // the panels' copy: one instance
 
 // --- the scripted backend -----------------------------------------------------
 const DEFS = [

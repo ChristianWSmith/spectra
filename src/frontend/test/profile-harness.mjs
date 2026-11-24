@@ -8,7 +8,7 @@
 // Run from frontend/ through a driver, e.g. test/profile-panels.dom.mjs.
 import { reachesSvelte } from './bundle-reach.mjs';
 import { JSDOM } from 'jsdom';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -71,11 +71,12 @@ export async function boot(cacheName = 'profile-panels') {
     bundled.set(absPath, out);
     const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
       const target = resolve(dirname(absPath), rel);
-      if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+      if (target.endsWith('.svelte') || target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
       if (target.endsWith('.js') && importsSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
       return `from '${pathToFileURL(target).href}'`;
     });
     if (absPath.endsWith('.svelte')) writeFileSync(out, compile(src, { filename: absPath, generate: 'client' }).js.code);
+  else if (absPath.endsWith('.svelte.js')) writeFileSync(out, compileModule(src, { filename: absPath, generate: 'client' }).js.code);
     else writeFileSync(out, src);
     return out;
   }

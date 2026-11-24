@@ -95,7 +95,7 @@ import './compile-worker-node.mjs';
 import { registerHooks } from 'node:module';
 
 const { JSDOM } = await import('jsdom');
-const { compile } = await import('svelte/compiler');
+const { compile, compileModule } = await import('svelte/compiler');
 const { readFileSync, writeFileSync, mkdirSync, readdirSync } = await import('node:fs');
 const { join } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
@@ -187,6 +187,9 @@ function copyJs(srcDir, destDir) {
   }
 }
 copyJs('src/lib', join(dir, 'lib'));
+// The load state is a runes module: the copied tree gets it compiled (the raw copy would not run),
+// and the shell is a local bundle beside Builder.
+writeFileSync(join(dir, 'lib', 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 
 const fileURL = (p) => pathToFileURL(p).href;
 const libURL = (rel) => fileURL(join(dir, 'lib', rel)); // the copied tree
@@ -337,7 +340,10 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/RunningMetricsDialog.svelte'", `from '${localURL('runningmetricsdialog.js')}'`)
   .replace("from '../components/Popover.svelte'", `from '${localURL('popover.js')}'`)
   .replace("from '../components/HelpButton.svelte'", `from '${localURL('helpbutton.js')}'`)
+  .replace("from '../loadstate.svelte.js'", `from '${libURL('loadstate.svelte.js')}'`)
+  .replace("from '../components/LoadBox.svelte'", `from '${localURL('loadbox.js')}'`)
   .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
+compileSvelte(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${libURL('componentruntime/sizememory.js')}'`), 'LoadBox.svelte', localURL('loadbox.js'));
 compileSvelte(bldSrc, 'Builder.svelte', localURL('builder-bundle.js'));
 
 // App.svelte: the blanket stub rewrite, then point the two REAL

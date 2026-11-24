@@ -621,7 +621,7 @@
       {#each WARM_VIEWS as name, i (name)}
         {#if i < warmStep || (viewRoute && viewRoute.name === name)}
           {@const current = !!viewRoute && viewRoute.name === name}
-          <div class="warm-pane" style:display={current ? 'contents' : 'none'}>
+          <div class="warm-pane" class:warm-hidden={!current} style:display={current ? 'contents' : null}>
             {#if name === 'library'}
               <Library {nav} {openDocs} query={current ? viewRoute.query || {} : {}} />
             {:else if name === 'profiles'}
@@ -642,6 +642,19 @@
           </div>
         {/if}
       {/each}
+      <!-- The match and the profile warm too (lib/warm.js): mounted once the view panes are, at the newest
+           match and the first player, laid out hidden at the real width. Their panels — Overview, and every
+           match tab with its panels (Economy, Utility, …) — load and measure before the user gets there. -->
+      {#if warmStep >= WARM_VIEWS.length && warmTargets.matchId > 0 && warmTargets.matchId !== keptMatch}
+        <div class="warm-pane warm-hidden">
+          <Match id={warmTargets.matchId} warm {nav} {openDocs} />
+        </div>
+      {/if}
+      {#if warmStep >= WARM_VIEWS.length && warmTargets.steamId && warmTargets.steamId !== keptPlayer?.steamId}
+        <div class="warm-pane warm-hidden">
+          <PlayerProfile steamId={warmTargets.steamId} {nav} />
+        </div>
+      {/if}
       {#if viewRoute}
         {#if viewRoute.name === 'match'}
           <!-- Rendered by the kept-match block above. -->

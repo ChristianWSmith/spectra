@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import {
     runQuery,
     getSchema,
@@ -88,9 +90,14 @@
   // The schema read (mount AND schemaError's Retry): the error clears
   // only when the read lands, so the sidebar never claims "Loading
   // schema…" while the previous failure still stands.
+  // The schema is one load: the first read is busy (the table list shows under the shell's spinner); a Retry
+  // or a refresh replaces the list in place.
+  const schemaState = createLoadState();
   async function refreshSchema() {
     try {
-      schema = (await getSchema()) || [];
+      await schemaState.track(getSchema(), 'schema', (v) => {
+        schema = v || [];
+      });
       schemaError = '';
     } catch (e) {
       schemaError = errText(e);
@@ -437,7 +444,7 @@
           <button class="btn small" onclick={refreshSchema}>Retry</button>
         </p>
       {/if}
-      <div class="sql-tables">
+      <LoadBox tag="div" class="sql-tables" busy={schemaState.busy} key={schemaState.key} name="view:sql-schema">
         {#each schema as t (t.name)}
           <div class="sql-table" class:open={openTables[t.name]}>
             <button
@@ -472,11 +479,11 @@
             {/if}
           </div>
         {:else}
-          {#if !schemaError}
+          {#if !schemaError && schemaState.pending > 0}
             <p class="muted" role="status"><StatusChip block detail="Loading schema…" /></p>
           {/if}
         {/each}
-      </div>
+      </LoadBox>
     </aside>
 
     <div class="sql-main">

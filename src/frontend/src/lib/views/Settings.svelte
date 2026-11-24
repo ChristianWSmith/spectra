@@ -1,4 +1,6 @@
 <script>
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
   import { onMount } from 'svelte';
   import {
@@ -292,7 +294,7 @@
   // Plugins: declarative bundles installed by
   // path; enable/disable/remove reflected on the next list — no restart.
   let plugins = $state([]);  let pluginsError = $state('');
-  let pluginsLoading = $state(true);
+  const pluginsState = createLoadState();
   let installPath = $state('');
   let installBusy = $state(false);
   let pluginMsg = $state('');
@@ -457,14 +459,13 @@
   }
 
   async function refreshPlugins() {
-    pluginsLoading = true;
     try {
-      plugins = (await listPlugins()) || [];
+      await pluginsState.track(listPlugins(), 'plugins', (v) => {
+        plugins = v || [];
+      });
       pluginsError = '';
     } catch (e) {
       pluginsError = errText(e);
-    } finally {
-      pluginsLoading = false;
     }
   }
 
@@ -548,7 +549,7 @@
   });
   let cfgError = $state('');
   let cfgMsg = $state('');
-  let cfgLoading = $state(true);
+  const cfgState = createLoadState();
 
   // Pristine tracking (save-UX honesty): cfgPristine snapshots the four
   // editable fields as a save would submit them (Number(...) || 0 — the
@@ -649,17 +650,15 @@
     refreshMapPacks();
     refreshIcons();
     refreshSounds();
-    getAnalysisConfig()
-      .then((c) => {
+    cfgState
+      .track(getAnalysisConfig(), 'cfg', (c) => {
         // Merge (not replace) so a missing key falls back to the default
         // above instead of binding an empty input that would save 0.
         if (c) cfg = { ...cfg, ...c };
         snapCfg(); // pristine = the loaded rules — Save starts disabled
-        cfgLoading = false;
       })
       .catch((e) => {
         cfgError = errText(e);
-        cfgLoading = false;
       });
     refreshPlugins();
     // Prefs: the font size re-reconciles against the durable kvstore (the
@@ -1103,9 +1102,8 @@
     {#if pluginMsg}
       <p class="sett-msg" role="status">{pluginMsg}</p>
     {/if}
-    {#if pluginsLoading}
-      <p class="muted" role="status"><StatusChip block detail="Loading plugins…" /></p>
-    {:else if plugins.length === 0}
+    <LoadBox tag="div" class="sett-plugins-body" busy={pluginsState.busy} key={pluginsState.key} name="view:settings-plugins">
+    {#if plugins.length === 0}
       {#if !pluginsError}
         <!-- Gated on the list error: a failed read is UNKNOWN, not
              "none installed" — the alert above carries the failure. -->
@@ -1156,6 +1154,7 @@
         {/each}
       </div>
     {/if}
+    </LoadBox>
     <p class="muted">
       {S.settings.trustModelNote}
     </p>
@@ -1302,9 +1301,7 @@
     {#if cfgError}
       <p class="error" role="alert">{cfgError}</p>
     {/if}
-    {#if cfgLoading && !cfgError}
-      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
-    {/if}
+    <LoadBox tag="div" class="sett-rules-body" busy={cfgState.busy} key={cfgState.key} name="view:settings-rules">
     <div class="sett-rules">
       <div class="sett-field">
         <label class="field-label" for="sett-trade">{S.settings.tradeWindowLabel}</label>
@@ -1360,6 +1357,7 @@
         <span class="muted sett-hint">{S.settings.forceHint}</span>
       </div>
     </div>
+    </LoadBox>
     <!-- Save is honest about dirtiness: pristine (loaded/saved values)
          → disabled, its status slot reading "No changes", never a
          nudge. A save that bumped the rules kicks the background
@@ -1370,12 +1368,12 @@
     <div class="row-between">
       {#if cfgMsg}
         <p class="sett-msg" role="status">{cfgMsg}</p>
-      {:else if !cfgLoading && !cfgError && !cfgDirty}
+      {:else if !cfgState.busy && !cfgError && !cfgDirty}
         <p class="muted" role="status">{S.settings.noChanges}</p>
       {:else}
         <span></span>
       {/if}
-      <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}>
+      <button class="btn primary" disabled={cfgState.pending > 0 || !cfgDirty} onclick={saveCfg}>
         <span class="codicon codicon-save" aria-hidden="true"></span>
         {S.settings.saveRules}
       </button>

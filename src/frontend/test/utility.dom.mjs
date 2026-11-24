@@ -51,7 +51,7 @@ registerHooks({
 });
 
 const { JSDOM } = await import('jsdom');
-const { compile } = await import('svelte/compiler');
+const { compile, compileModule } = await import('svelte/compiler');
 const { readFileSync, writeFileSync, mkdirSync, realpathSync } = await import('node:fs');
 const { dirname, join, resolve } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
@@ -108,13 +108,15 @@ function bundle(absPath) {
   const src = readFileSync(absPath, 'utf8').replace(/from '(\.{1,2}\/[^']+)'/g, (whole, rel) => {
     const target = resolve(dirname(absPath), rel);
     if (target.endsWith('.svelte')) return `from '${pathToFileURL(bundle(target)).href}'`;
+    if (target.endsWith('.svelte.js')) return `from '${pathToFileURL(bundle(target)).href}'`;
     if (target.endsWith('builtins/panels.js')) return `from '${pathToFileURL(panelStub).href}'`;
     // A .js that reaches the stubbed registry through its own imports (resolve.js) is
     // bundled too, so its import of the registry is rewritten.
     if (target.endsWith('.js') && reachesSvelte(target)) return `from '${pathToFileURL(bundle(target)).href}'`;
     return `from '${pathToFileURL(target).href}'`;
   });
-  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code : src);
+  writeFileSync(out, absPath.endsWith('.svelte') ? compile(src, { filename: absPath, generate: 'client' }).js.code
+    : /\.svelte\.js$/.test(absPath) ? compileModule(src, { filename: absPath, generate: 'client' }).js.code : src);
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
@@ -122,7 +124,7 @@ const { mount, unmount, flushSync } = await import('svelte');
 // The Utility composer is a Svelte builtin: its source is the .svelte file.
 const utilpanels = { UTILITY_SOURCE: readFileSync(resolve('src/lib/builtins/util/Utility.svelte'), 'utf8') };
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
-const viewstate = await import(pathToFileURL(resolve('src/lib/viewstate.svelte.js')).href);
+const viewstate = await import(pathToFileURL(bundle(resolve('src/lib/viewstate.svelte.js'))).href); // the panels' copy: one instance
 
 // --- the data: an in-memory database built from the store's own DDL ----------
 // The view reads through componentQuery (the same SQL the Go store runs), so the

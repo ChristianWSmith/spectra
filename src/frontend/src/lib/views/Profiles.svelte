@@ -39,11 +39,14 @@
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
+  import { createLoadState } from '../loadstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
 
   let { nav = () => {} } = $props();
 
   let players = $state([]);
-  let loading = $state(true);
+  // The list’s load: the first load shows the spinner; a refresh keeps the list on screen.
+  const load = createLoadState();
   let error = $state('');
   // The search box is view-local state: it restores across navigation
   // through the process-scoped registry (viewstate.svelte.js — flat key;
@@ -59,19 +62,16 @@
   let playersGen = 0;
   function loadPlayers() {
     const my = ++playersGen;
-    loading = true;
     error = '';
-    listPlayers('')
+    load.track(listPlayers(''))
       .then((rows) => {
         if (my !== playersGen) return;
         players = listedPlayers(rows) || [];
-        loading = false;
         error = '';
       })
       .catch((e) => {
         if (my !== playersGen) return;
         error = errText(e);
-        loading = false;
       });
   }
 
@@ -343,10 +343,8 @@
     </p>
   {/if}
 
-  <section class="panel">
-    {#if loading}
-      <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingPlayersDetail} /></p>
-    {:else if players.length === 0}
+  <LoadBox tag="section" class="panel" busy={load.busy} key={load.key} name="view:profiles">
+    {#if players.length === 0}
       {#if !error}
         <!-- Gated on error: a failed list read is UNKNOWN, never "no
              players yet" — the alert above carries the failure. -->
@@ -437,5 +435,5 @@
         </table>
       </div>
     {/if}
-  </section>
+  </LoadBox>
 </div>

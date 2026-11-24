@@ -761,13 +761,13 @@ check('the ✕ dismisses the held failure', !pill());
 // Positioning + the z ladder — the RULES are the pin (jsdom has no
 // layout): fixed at the window's bottom-right corner (right 26 /
 // bottom 26) with the CONDITIONAL raise to bottom 264 while an
-// occupant (.rp-keepalive / .cmp-float) holds that corner — w30,
+// occupant (.rp-keepalive) holds that corner — w30,
 // 2026-11-17 — and 45 between the keep-alive cover (40) and the probe
 // HUD (50).
 check(
-  'style.css: the pill sits at the window corner (fixed right 26px / bottom 26px / z-index 45) and raises to bottom 264px while .rp-keepalive or .cmp-float holds the corner',
+  'style.css: the pill sits at the window corner (fixed right 26px / bottom 26px / z-index 45) and raises to bottom 264px while .rp-keepalive holds the corner',
   /\.wk-pill\s*\{[^}]*position:\s*fixed[^}]*right:\s*26px[^}]*bottom:\s*26px[^}]*z-index:\s*45/s.test(cssI) &&
-    /\.shell:has\(\.rp-keepalive\)\s+\.wk-pill,\s*\.shell:has\(\.cmp-float\)\s+\.wk-pill\s*\{\s*bottom:\s*264px;\s*\}/s.test(
+    /\.shell:has\(\.rp-keepalive\)\s+\.wk-pill\s*\{\s*bottom:\s*264px;\s*\}/s.test(
       cssI,
     ),
   'no corner-default .wk-pill rule or conditional 264px raise rule',

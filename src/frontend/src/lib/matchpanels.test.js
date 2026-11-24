@@ -91,6 +91,8 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
     '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy', 'getProvenance', 'getEntitySummary', 'errText'],
     // The shared status chip (a component, not copy): a panel shows a read's status with it.
     '../../components/StatusChip.svelte': 'default',
+    // The loading shell (a component too): a card holds its space and shows its own spinner.
+    '../../components/LoadBox.svelte': 'default',
   };
   for (const id of Object.keys(PANELS)) {
     const src = builtinShippedSource(id);
@@ -98,7 +100,7 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
       const [, clause, spec] = m;
       assert.ok(spec in surfaces, `${id} imports ${spec}, which is not on the builtin surface`);
       if (surfaces[spec] === 'default') {
-        assert.equal(clause, 'StatusChip', `${id} takes the shared status chip as StatusChip`);
+        assert.equal(clause, spec.split('/').pop().replace('.svelte', ''), `${id} takes ${spec} under its own name`);
         continue;
       }
       if (surfaces[spec] === null) {
