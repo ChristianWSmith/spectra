@@ -31,13 +31,34 @@ func expandSideJoinMacros(seed string) string {
 	})
 }
 
-// Macros for the per-subject statements that differ only in one value.
+// The parameterised macros, by the pass that expands them (see seedMacroPasses).
+// Each is documented where it is defined; this is the catalogue.
 //
-//	{{DIM_SUM:name}}        the per-dim sum of a stored metric, as a career-grain row
-//	{{DIM_RATIO:num:den}}   the per-dim ratio of two such sums (NULL when den is zero)
-//	{{ROUND_LABEL_COUNT:x}} the per-player count of counted rounds labelled x
-//	{{SIDE_CLASS_COUNT:x}}  the per-player count of side rounds classed x
-//	{{HUMAN:col}}           the humans-only guard of a steam id column
+//	expandRatioMacros (career_sql.go)
+//	  {{RATIO_STORED:num:den}}     career ratio of two stored metrics' guarded sums
+//	expandSideJoinMacros (this file)
+//	  {{SIDE_JOIN:alias:src:col}}  the round_player_sides join for src.col
+//	  {{EXISTS_STORED:name}}       career guard: the stored metric has a row
+//	expandRowMacros (this file)
+//	  {{DIM_SUM:name}}             per-dim sum of a stored metric (career grain)
+//	  {{DIM_RATIO:num:den}}        per-dim ratio of two such sums (NULL on zero)
+//	  {{ROUND_LABEL_COUNT:x}}      per-player count of counted rounds labelled x
+//	  {{SIDE_CLASS_COUNT:x}}       per-player count of side rounds classed x
+//	  {{FAKE_KILL}}                the fake-kill flag of a kill row
+//	  {{TOP_PER_MATCH:col}}        head of a match's top subject ranked by col
+//	  {{TOP_PER_MATCH_CLOSE}}      tail of that top-per-match statement
+//	  {{LIVE_EVENT:alias:kind}}    a live (non-post-match) event of one kind
+//	  {{FOLD_PIVOT:x}}             per-player pivot of one fold column
+//	  {{ROUND_FOLD_PIVOT:x}}       per-round pivot of one fold column
+//	  {{SUBJECT_RATIO:num:den}}    per-subject ratio of two stored metrics
+//	  {{MATCH_ROUNDS:alias}}       the rounds count of a match alias
+//	  {{CLUTCH_STAT:agg}}          a clutch aggregate, humans only
+//	  {{ROLLUP_HUMAN_CLOSE:col}}   rollup close with a humans-only guard on col
+//	  {{HUMAN:col[:key]}}          humans-only guard of a steam id column
+//	expandStoredSumMacros (this file)
+//	  {{SUM_STORED:name}}          career guarded sum of one stored metric
+//	strings.ReplaceAll (expandRowMacros)
+//	  {{TEAM_FREE}}                the not-a-team-kill rule
 var (
 	dimSumMacro       = regexp.MustCompile(`\{\{DIM_SUM:(\w+)\}\}`)
 	dimRatioMacro     = regexp.MustCompile(`\{\{DIM_RATIO:(\w+):(\w+)\}\}`)

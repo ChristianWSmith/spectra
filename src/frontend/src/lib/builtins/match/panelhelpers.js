@@ -4,7 +4,7 @@
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
 import * as S from '../../strings/index.js';
-import { sideAtRound, resolveSide, DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf } from '../../builtinhelpers.js';
+import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf } from '../../builtinhelpers.js';
 import { teamStartClass } from '../../teams.js';
 import { fmtMetric, fmtBytes, fmtDate, fmtDuration } from '../../fmt.js';
 import { readMetrics } from '../../metricreads.js';

@@ -137,7 +137,10 @@ import { DASH } from '../builtinhelpers.js';
     // readMetrics for several reads, metricPresentation for a cell's value, dash
     // or state, fmtMetric for a stored value's text, activateOnKey for a clickable
     // row's keyboard, whileCurrent for a load that must not apply late.
-    readMetrics,
+    // readMetrics(names): several stored reads at once, a failed one its own
+    // state. Bound here to this frame's read API and error text, so a component
+    // never passes them.
+    readMetrics: (names) => readMetrics(spectra, names, errText),
     metricPresentation,
     fmtMetric,
     activateOnKey,

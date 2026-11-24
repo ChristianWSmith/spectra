@@ -359,8 +359,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   freshness), `context` (the mounting surface's match, steam id and round;
   binds default from it), `navigate`, `guard(fn)` for event and async work,
   `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
-  reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics`,
-  `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
+  reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics(names)`
+  (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
   modules the builtins import), `dash` (the one missing-value dash) and `ui` (the shared
   display components: `ui.ErrorBanner`, `ui.EmptyNote`, `ui.MetricCell`, `ui.WinnerCell`,
   `ui.StatCard`, `ui.StatusChip`), and `<spectra.Child>` to mount a named

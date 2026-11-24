@@ -17,8 +17,8 @@ const careerHeadPlaceholder = "{{CAREER_HEAD}}"
 // sum guarded as storedSumText defines it.
 var ratioStoredMacro = regexp.MustCompile(`\{\{RATIO_STORED:(\w+):(\w+)\}\}`)
 
-// expandRatioMacros applies the ratio macro to a schema.sql text, after the
-// sum macro is no longer needed by it: the ratio writes its own sums.
+// expandRatioMacros applies the ratio macro to a schema.sql text. It runs first
+// in seedMacroPasses, and writes its own guarded sums, so it needs no other pass.
 func expandRatioMacros(seed string) string {
 	return expandMacro(seed, ratioStoredMacro, func(g []string) string {
 		return ratioExpr(storedSumText(g[1]), storedSumText(g[2]))

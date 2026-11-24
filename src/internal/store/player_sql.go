@@ -17,11 +17,6 @@ const playerStatsHumansSQL = "WHERE ps.match_id = :match_id) player_stats WHERE 
 // playerStatsHumansPlaceholder marks the humans-only tail inside a schema.sql expr.
 const playerStatsHumansPlaceholder = "{{PLAYER_STATS_HUMANS}}"
 
-// storedSumMacro expands `{{SUM_STORED:name}}` at seed time: a career sum of
-// one stored metric that is NULL when any matched row is NULL (the career
-// rule: a missing per-match value makes the career total no-data, never a
-// partial sum). It is the expansion behind the career metrics' guarded sums.
-
 // storedSumText is the guarded career sum of one stored metric, as a seed literal.
 func storedSumText(name string) string {
 	return "(SELECT " + guardedSumSQL + " FROM " + metricSeedRef(name) + ")"
