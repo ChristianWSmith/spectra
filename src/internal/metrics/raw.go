@@ -239,6 +239,13 @@ func rawResultRows(res store.ROResult) ([]store.RawMetricRow, error) {
 			missing = append(missing, c)
 		}
 	}
+	// The identity column: idkey (the metric definitions' name) or value_key. Optional.
+	keyCol := ""
+	for _, c := range []string{"value_key", "idkey"} {
+		if _, ok := idx[c]; ok && keyCol == "" {
+			keyCol = c
+		}
+	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("the statement must return the columns subject_key, dim and value (missing: %s)", strings.Join(missing, ", "))
 	}
@@ -258,6 +265,9 @@ func rawResultRows(res store.ROResult) ([]store.RawMetricRow, error) {
 			row.Value = &v
 		default:
 			return nil, fmt.Errorf("row %d: value must be a number or NULL, not %T", n+1, v)
+		}
+		if keyCol != "" {
+			row.ValueKey = rawKeyText(r[idx[keyCol]])
 		}
 		key := [2]string{row.SubjectKey, row.Dim}
 		if seen[key] {

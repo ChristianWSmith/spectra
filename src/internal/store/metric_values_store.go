@@ -556,7 +556,9 @@ type RawMetricRow struct {
 	SubjectKey string
 	Dim        string
 	Value      *float64
-	RowJSON    string
+	// ValueKey is the identity slot: the winner's key on an identity row, '' otherwise.
+	ValueKey string
+	RowJSON  string
 }
 
 // ReplaceRawMetricValues stores one raw run's result. It replaces the rows
@@ -594,7 +596,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 	}
 	stmt, err := tx.Prepare(
 		`INSERT INTO metric_values (metric_id, match_id, subject_key, dim, value, value_key, metric_version, rule_version, computed_at, scope_steam_id, scope_round, row_json)
-		 VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("couldn't save the metric values: %w", err)
@@ -606,7 +608,7 @@ func (s *Store) ReplaceRawMetricValues(metricID int64, metricVersion, ruleVersio
 		if r.Value != nil {
 			value = *r.Value
 		}
-		if _, err := stmt.Exec(metricID, scope.MatchID, scrub(r.SubjectKey), scrub(r.Dim), value,
+		if _, err := stmt.Exec(metricID, scope.MatchID, scrub(r.SubjectKey), scrub(r.Dim), value, scrub(r.ValueKey),
 			metricVersion, ruleVersion, now, scrub(scope.SteamID), scope.Round, scrub(r.RowJSON)); err != nil {
 			return fmt.Errorf("couldn't save the metric values: %w", err)
 		}
