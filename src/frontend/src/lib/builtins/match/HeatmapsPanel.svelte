@@ -678,6 +678,9 @@
         <span class="muted"
           >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
         >
+      {:else}
+        <!-- Before the first run the reserved row says what to do, so the panel is not blank. -->
+        <span class="muted">{S.heatmaps.generatePrompt}</span>
       {/if}
     </div>
 

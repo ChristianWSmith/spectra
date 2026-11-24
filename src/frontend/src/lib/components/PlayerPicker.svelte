@@ -248,7 +248,7 @@
 <div class="pp" bind:this={root}>
   <button
     type="button"
-    class="pp-trigger"
+    class="pp-trigger multi-trigger"
     id={id || null}
     bind:this={triggerEl}
     aria-haspopup="listbox"
@@ -362,18 +362,8 @@
   }
 
   .pp-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
     max-width: 460px;
     min-width: 0;
-    padding: 4px 10px;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
   }
 
   .pp-trigger:hover {

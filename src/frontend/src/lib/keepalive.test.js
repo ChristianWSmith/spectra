@@ -51,7 +51,6 @@ test('any other route destroys the instance (unmount cleanup runs as before)', (
   // Non-match destinations: library, compare (even SAME id), player,
   // settings and friends — none of them stay in scope.
   assert.equal(nextReplayAlive(prev, { name: 'library' }, '#/library'), null);
-  assert.equal(nextReplayAlive(prev, { name: 'compare', id: 5 }, '#/compare/5'), null);
   assert.equal(nextReplayAlive(prev, { name: 'settings' }, '#/settings'), null);
   assert.equal(nextReplayAlive(prev, { name: 'player', steamId: '76561198012345678' }, '#/player/76561198012345678'), null);
 

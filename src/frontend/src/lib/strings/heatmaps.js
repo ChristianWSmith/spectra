@@ -36,6 +36,7 @@ export const heatmaps = {
   generating: "Generating…",
   regenerate: "Regenerate",
   generate: "Generate",
+  generatePrompt: "Pick a kind and rounds, then hit Generate to draw the heatmap.",
 
   // Builtin panel copy.
   mapNotFound: "map not found for {map} — plain grid, no radar art",

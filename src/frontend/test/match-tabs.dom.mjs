@@ -6,7 +6,6 @@ await warm();
 // facts panel reads the match services through the bindings stub.
 //   (a) the tab bar renders every Match tab from the context alone;
 //   (b) the Rounds and Details tabs render their panels from the context;
-//   (c) the compare picks survive a tab switch, and are kept per match;
 //   (d) the Details facts (stored facts, voice, demo copy and Free copy) read
 //       the same as before, for a copied, an external and an unvoiced match.
 //
@@ -218,32 +217,6 @@ console.log('B. the Rounds and Details tabs render their panels from the context
 root = await mountTabs({ context: M7, props: { tab: 'Rounds' } });
 check('the Rounds tab shows the rounds of its match (14 rows)', rowsOf(root).length === 14, String(rowsOf(root).length));
 check('the active tab is Rounds', text(root.querySelector('nav.tabs button.tab.active')) === 'Rounds');
-
-// --- (c) the compare picks survive a tab switch, and are kept per match -------------------------
-console.log('C. compare picks survive a tab switch and are keyed by match');
-const ticks = (r, idxs) => {
-  for (const i of idxs) {
-    const box = r.querySelectorAll('input.cmp-cb')[i];
-    box.checked = true;
-    change(box);
-  }
-};
-root = await mountTabs({ context: M7, props: { tab: 'Rounds' } });
-ticks(root, [0, 1]);
-await settle(4);
-check('two ticks in match 7 are kept for match 7', JSON.stringify(vs.seed(vs.matchKey('selection', 7), { compareSel: [] }).compareSel) === '[1,2]');
-// A tab switch: the Rounds panel leaves and comes back.
-root = await mountTabs({ context: M7, props: { tab: 'Overview' } });
-root = await mountTabs({ context: M7, props: { tab: 'Rounds' } });
-let boxes = [...root.querySelectorAll('input.cmp-cb')];
-check('after a tab switch, the picks still show as checked', boxes[0].checked === true && boxes[1].checked === true && boxes[2].checked === false);
-check('the compare button still offers the two picks', text(root.querySelector('.cmp-float')) === 'Compare 2 rounds', text(root.querySelector('.cmp-float')));
-// Another match on the same tab set reads its own picks, not match 7's.
-root = await mountTabs({ context: { matchId: 9, steamId: null, round: null }, props: { tab: 'Rounds' } });
-boxes = [...root.querySelectorAll('input.cmp-cb')];
-check('match 9 shows no picks from match 7', boxes.length === 15 && boxes.every((b) => !b.checked), String(boxes.filter((b) => b.checked).length));
-check('match 7 keeps its own picks after match 9 is seen',
-  JSON.stringify(vs.seed(vs.matchKey('selection', 7), { compareSel: [] }).compareSel) === '[1,2]');
 
 // --- (d) the Details facts ----------------------------------------------------------------------------
 console.log('D. details: stored facts, voice and demo copy (matches 7 and 8)');

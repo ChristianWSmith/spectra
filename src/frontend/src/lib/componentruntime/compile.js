@@ -189,8 +189,6 @@ export const BUILTIN_HELPERS = Object.freeze({
       seed: 'a view’s remembered state when it opens (view-local)',
       remember: 'store a view’s state for its next open (view-local)',
       matchKey: 'the key a match’s view state is kept under',
-      comparePicks: 'the Rounds compare picks of a match (read)',
-      setComparePicks: 'the Rounds compare picks of a match (write)',
     },
   },
   'src/lib/nav.js': {

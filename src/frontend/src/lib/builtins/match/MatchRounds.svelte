@@ -2,10 +2,9 @@
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, SQL_MATCH_TICK_RATE, SQL_ROUND_MVP_REASON, SQL_ROUND_KILLS, SQL_ROUND_BOMBS, SQL_ROUND_ECONOMY, SQL_ROUND_SIDE_CLASSES, SQL_ROUND_CHAT, teamName, fill, roundLabel, fmtDuration, playerRoundCls, roundOf } from './panelhelpers.js';
   import { DASH, isSteam, separatorFlags, winnerTeamKey, openPlayer, roundClock, entryLoopAround, hashOf, roundsByNumber, scoreThrough, sideAtRound, chatClock, chatTag, fmtInt } from '../../builtinhelpers.js';
-  const ROUNDS_COPY = Object.freeze({
+
+  const COPY = Object.freeze({
     colWatch: S.match.colWatch,
-    colCmp: S.match.colCmp,
-    compareSelectTitle: S.match.compareSelectTitle,
     colWinner: S.match.colWinner,
     colReason: S.match.colReason,
     colDuration: S.match.colDuration,
@@ -15,28 +14,22 @@
     colKills: S.match.colKills,
     watchRoundTitle: S.match.watchRoundTitle,
     watchRoundAria: S.match.watchRoundAria,
-    compareRoundAria: S.match.compareRoundAria,
-    roundsSelected: S.match.roundsSelected,
-    compareBtn: S.match.compareBtn,
     openProfile: S.match.openProfile,
     killedVerb: S.match.killedVerb,
-    roundDetailShow: S.match.roundDetailShow,
-    roundDetailHide: S.match.roundDetailHide,
     roundDetailLoading: S.match.roundDetailLoading,
     roundDetailFailed: S.match.roundDetailFailed,
+    roundDetailShow: S.match.roundDetailShow,
+    roundDetailHide: S.match.roundDetailHide,
   });
 
-  // Match rounds: one row per round, in round order. The ▶ watches the round in the
-  // replay from its own start, its span looped, back to this tab. The chevron (or a
-  // click on the row) expands it in place to the round's details: the kill feed, the
-  // bomb timeline, the economy by side and the round's chat. The compare box picks up
-  // to four rounds, kept for this match in view state; the button under the table
-  // compares them.
-  import { comparePicks, setComparePicks } from '../../viewstate.svelte.js';
-  // expandRound: the round the URL asks open (?round=N), from the economy and compare links.
+  // Match rounds: one row per round, in round order. The ▶ watches the round in the replay
+  // from its own start, its span looped, back to this tab. A click on the row (or Enter or
+  // Space on it) expands it in place to the round's details: the kill feed, the bomb
+  // timeline, the economy by side and the round's chat. The details of every round are read
+  // in the background once the rounds are, so an expansion opens without a loading flash.
+  // expandRound: the round the URL asks open (?round=N), from the economy links.
   // loopSecs: the loop length a replay entry stamps (Settings → Replay, read by the tabs).
   let { spectra, context, back = '', expandRound = null, loopSecs = 5 } = $props();
-  const COPY = ROUNDS_COPY;
   // Kill-event flags: the event column, its chip code and its tooltip.
   const FLAGS = [
     ['headshot', S.match.flagHS, S.match.flagHSTitle],
@@ -46,27 +39,13 @@
     ['attacker_blind', S.match.flagBLD, S.match.flagBLDTitle],
     ['assisted_flash', S.match.flagAFL, S.match.flagAFLTitle],
   ];
-
-  // The picks are read when the match changes and written on every change.
-  let picks = $state([]);
-  let pickedFor = null;
-  $effect(() => {
-    const id = context.matchId;
-    const cur = picks;
-    if (id !== pickedFor) {
-      pickedFor = id;
-      picks = comparePicks(id);
-      return;
-    }
-    setComparePicks(id, cur);
+  const BOMB_LABEL = Object.freeze({
+    bomb_plant: S.match.bombPlanted,
+    bomb_defuse: S.match.bombDefused,
+    bomb_explode: S.match.bombExploded,
+    bomb_drop: S.match.bombDropped,
+    bomb_pickup: S.match.bombPickedUp,
   });
-  function pick(n) {
-    if (picks.includes(n)) picks = picks.filter((x) => x !== n);
-    else if (picks.length < 4) picks = [...picks, n];
-  }
-  function compare() {
-    spectra.navigate({ path: '/compare/' + context.matchId, query: { rounds: picks.join(','), back } });
-  }
 
   let data = $state(null);
   // Per-round details, keyed by round number: 'loading', {failed: true}, or the loaded detail.
@@ -102,12 +81,15 @@
     seededFor = null;
     load(matchId).then(
       (d) => {
-        if (live) data = d;
+        if (!live) return;
+        data = d;
+        prewarm(d);
       },
       // A failed read is reported into this frame (guard routes the error to it).
-      (e) => spectra.guard(() => {
-        throw e;
-      })(),
+      (e) =>
+        spectra.guard(() => {
+          throw e;
+        })(),
     );
     return () => {
       live = false;
@@ -121,7 +103,6 @@
     seededFor = want;
     if (want != null && data.rounds.some((x) => x.number === want)) {
       open = [want];
-      ensureDetail(want);
     }
   });
 
@@ -172,11 +153,12 @@
     };
   }
 
+  // Read one round's details (once); resolves when it has landed or failed.
   function ensureDetail(n) {
-    if (!data || details[n]) return;
+    if (!data || details[n]) return Promise.resolve();
     const matchId = data.id;
     details = { ...details, [n]: 'loading' };
-    loadDetail(matchId, n).then(
+    return loadDetail(matchId, n).then(
       (d) => {
         if (data && data.id === matchId) details = { ...details, [n]: d };
       },
@@ -187,6 +169,14 @@
         })();
       },
     );
+  }
+
+  // Warm every round's details, one read at a time, so an expansion is already there.
+  async function prewarm(d) {
+    for (const r of d.rounds) {
+      if (!data || data.id !== d.id) return;
+      await ensureDetail(r.number);
+    }
   }
 
   const backTo = () => back || 'match/' + (data ? data.id : context.matchId);
@@ -205,8 +195,8 @@
     spectra.navigate({ path: '/replay/' + data.id, query: { tick: start, loop, back: backTo() } });
   }
 
-  // Round-detail helpers: a name's side colour in this round, the team behind a
-  // side of this round, the clock of an event, and the replay entry an event links to.
+  // Round-detail helpers: a name's side colour in this round, the team behind a side of this
+  // round, the clock of an event, and the replay entry an event links to.
   function playerCls(n, steam, name) {
     return playerRoundCls(data, n, steam, name);
   }
@@ -219,8 +209,6 @@
   function watchEvent(tickRate, tick, follow) {
     spectra.navigate(hashOf('/replay/' + data.id, { tick, loop: entryLoopAround(tick, tickRate, loopSecs), follow: follow || undefined, back }));
   }
-  const COPY_BOMB = Object.freeze({ planted: S.match.bombPlanted, defused: S.match.bombDefused, exploded: S.match.bombExploded });
-  const bombLabel = (kind) => (kind === 'bomb_plant' ? COPY_BOMB.planted : kind === 'bomb_defuse' ? COPY_BOMB.defused : COPY_BOMB.exploded);
   // The side a chat speaker held this round (team chat tags it); '' when unknown.
   function sideOfSpeaker(n, c) {
     const k = playerCls(n, c.steamId, c.name);
@@ -264,120 +252,124 @@
         </span>
       </p>
       <div class="round-detail-grid">
-        <div class="comb-sec">
-          <h3>{S.match.colKills} <span class="muted">({d.kills.length})</span></h3>
-          {#if d.kills.length === 0}
-            <p class="muted" role="status">{S.match.noKills}</p>
-          {:else}
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{S.match.colTime}</th>
-                    <th scope="col">{S.match.colKiller}</th>
-                    <th scope="col">{S.match.colVictim}</th>
-                    <th scope="col">{S.match.colWeapon}</th>
-                    <th scope="col">{S.match.colFlags}</th>
-                    <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each d.kills as k (k.id)}
+        <div class="round-detail-col">
+          <section>
+            <h3>{S.match.colKills} <span class="muted">({d.kills.length})</span></h3>
+            {#if d.kills.length === 0}
+              <p class="muted" role="status">{S.match.noKills}</p>
+            {:else}
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
                     <tr>
-                      <td class="mono" title={fill(S.match.tickTitle, { n: k.tick })}>{clock(k.tick)}</td>
-                      <td>{@render playerLink(k.attacker, k.attackerName || k.attacker, playerCls(n, k.attacker, k.attackerName))}</td>
-                      <td>{@render playerLink(k.victim, k.victimName || k.victim, playerCls(n, k.victim, k.victimName))}</td>
-                      <td class="mono">{k.weapon || DASH}</td>
-                      <td>
-                        {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span class="chip flag" {title}>{code}</span>{/if}{/each}
-                      </td>
-                      <td>
-                        <button class="btn small ghost" title={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} aria-label={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, k.tick, k.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
-                      </td>
+                      <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
+                      <th scope="col">{S.match.colTime}</th>
+                      <th scope="col">{S.match.colKiller}</th>
+                      <th scope="col">{S.match.colVictim}</th>
+                      <th scope="col">{S.match.colWeapon}</th>
+                      <th scope="col">{S.match.colFlags}</th>
                     </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
+                  </thead>
+                  <tbody>
+                    {#each d.kills as k (k.id)}
+                      <tr>
+                        <td>
+                          <button class="btn small ghost" title={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} aria-label={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, k.tick, k.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
+                        </td>
+                        <td class="mono" title={fill(S.match.tickTitle, { n: k.tick })}>{clock(k.tick)}</td>
+                        <td>{@render playerLink(k.attacker, k.attackerName || k.attacker, playerCls(n, k.attacker, k.attackerName))}</td>
+                        <td>{@render playerLink(k.victim, k.victimName || k.victim, playerCls(n, k.victim, k.victimName))}</td>
+                        <td class="mono">{k.weapon || DASH}</td>
+                        <td>
+                          {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span class="chip flag" {title}>{code}</span>{/if}{/each}
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          </section>
+
+          <section>
+            <h3>{S.match.bombHeading}</h3>
+            {#if d.bombs.length === 0}
+              <p class="muted" role="status">{S.match.noBombEvents}</p>
+            {:else}
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
+                      <th scope="col">{S.match.colTime}</th>
+                      <th scope="col">{S.match.colEvent}</th>
+                      <th scope="col">{S.match.colPlayer}</th>
+                      <th scope="col">{S.match.colSite}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each d.bombs as b (b.id)}
+                      <tr>
+                        <td>
+                          <button class="btn small ghost" title={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} aria-label={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, b.tick, b.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
+                        </td>
+                        <td class="mono" title={fill(S.match.tickTitle, { n: b.tick })}>{clock(b.tick)}</td>
+                        <td>{BOMB_LABEL[b.kind] || b.kind}</td>
+                        <td>{@render playerLink(b.attacker, b.attackerName || b.attacker, playerCls(n, b.attacker, b.attackerName))}</td>
+                        <td>{b.site || DASH}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          </section>
         </div>
 
-        <div class="comb-sec">
-          <h3>{S.match.bombHeading}</h3>
-          {#if d.bombs.length === 0}
-            <p class="muted" role="status">{S.match.noBombEvents}</p>
-          {:else}
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{S.match.colTime}</th>
-                    <th scope="col">{S.match.colEvent}</th>
-                    <th scope="col">{S.match.colPlayer}</th>
-                    <th scope="col">{S.match.colSite}</th>
-                    <th scope="col"><span class="sr-only">{S.match.colWatch}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each d.bombs as b (b.id)}
-                    <tr>
-                      <td class="mono" title={fill(S.match.tickTitle, { n: b.tick })}>{clock(b.tick)}</td>
-                      <td>{bombLabel(b.kind)}</td>
-                      <td>{@render playerLink(b.attacker, b.attackerName || b.attacker, playerCls(n, b.attacker, b.attackerName))}</td>
-                      <td>{b.site || DASH}</td>
-                      <td>
-                        <button class="btn small ghost" title={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} aria-label={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, b.tick, b.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        </div>
-
-        <div class="comb-sec">
-          <h3>{S.match.economyHeading}</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th scope="col">{S.match.colSide}</th>
-                <th scope="col" title={S.match.buyClassTitle}>{S.match.colClass}</th>
-                <th scope="col" class="num">{S.match.colEquip}</th>
-                <th scope="col" class="num">{S.match.colMoney}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each d.economy as e (e.side)}
+        <div class="round-detail-col">
+          <section>
+            <h3>{S.match.economyHeading}</h3>
+            <table class="data-table">
+              <thead>
                 <tr>
-                  <td><span class="chip side {e.side}">{teamForSide(n, e.side)}</span></td>
-                  <td><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}>{e.cls || 'unknown'}</span></td>
-                  <td class="num">{fmtInt(e.equip)}</td>
-                  <td class="num">{e.moneyAvg != null ? fmtInt(e.moneyAvg) : DASH}</td>
+                  <th scope="col">{S.match.colSide}</th>
+                  <th scope="col" title={S.match.buyClassTitle}>{S.match.colClass}</th>
+                  <th scope="col" class="num">{S.match.colEquip}</th>
+                  <th scope="col" class="num">{S.match.colMoney}</th>
                 </tr>
-              {:else}
-                <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {#each d.economy as e (e.side)}
+                  <tr>
+                    <td><span class="chip side {e.side}">{teamForSide(n, e.side)}</span></td>
+                    <td><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}>{e.cls || 'unknown'}</span></td>
+                    <td class="num">{fmtInt(e.equip)}</td>
+                    <td class="num">{e.moneyAvg != null ? fmtInt(e.moneyAvg) : DASH}</td>
+                  </tr>
+                {:else}
+                  <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </section>
 
-        <div class="comb-sec">
-          <h3>{S.match.roundChatHeading}</h3>
-          {#if d.chat.length === 0}
-            <p class="muted" role="status">{S.match.noChat}</p>
-          {:else}
-            <ul class="chat-list">
-              {#each d.chat as c (c.id)}
-                {@const side = sideOfSpeaker(n, c)}
-                <li>
-                  <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}>{chatClock(c, rbn, d.tickRate)}</span>
-                  <strong>{@render playerLink(c.steamId, c.name, playerCls(n, c.steamId, c.name))}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}</strong>
-                  <span>: {c.text}</span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
+          <section>
+            <h3>{S.match.roundChatHeading}</h3>
+            {#if d.chat.length === 0}
+              <p class="muted" role="status">{S.match.noChat}</p>
+            {:else}
+              <ul class="chat-list">
+                {#each d.chat as c (c.id)}
+                  {@const side = sideOfSpeaker(n, c)}
+                  <li>
+                    <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}>{chatClock(c, rbn, d.tickRate)}</span>
+                    <strong>{@render playerLink(c.steamId, c.name, playerCls(n, c.steamId, c.name))}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}</strong>
+                    <span>: {c.text}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </section>
         </div>
       </div>
     </div>
@@ -390,7 +382,6 @@
       <thead>
         <tr>
           <th scope="col"><span class="sr-only">{COPY.colWatch}</span></th>
-          <th scope="col" class="num cmp-cmp-col" title={COPY.compareSelectTitle}>{COPY.colCmp}</th>
           <th scope="col" class="num">{S.match.colRd}</th>
           <th scope="col">{COPY.colWinner}</th>
           <th scope="col">{COPY.colReason}</th>
@@ -410,17 +401,6 @@
           >
             <td>
               <button class="btn small ghost" title={fill(COPY.watchRoundTitle, { round: r.number })} aria-label={fill(COPY.watchRoundAria, { round: r.number })} onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button>
-              <button class="btn small ghost" aria-expanded={open.includes(r.number)} title={open.includes(r.number) ? COPY.roundDetailHide : COPY.roundDetailShow} aria-label={open.includes(r.number) ? COPY.roundDetailHide : COPY.roundDetailShow} onclick={() => toggleRound(r.number)}><span class="codicon {open.includes(r.number) ? 'codicon-chevron-down' : 'codicon-chevron-right'}" aria-hidden="true"></span></button>
-            </td>
-            <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                class="cmp-cb"
-                checked={picks.includes(r.number)}
-                disabled={picks.length >= 4 && !picks.includes(r.number)}
-                aria-label={fill(COPY.compareRoundAria, { round: roundLabel(r.number) })}
-                onchange={() => pick(r.number)}
-              />
             </td>
             <td class="num">{roundLabel(r.number)}</td>
             <td><span class="chip side {r.winner || 'none'}">{winnerName(data, r) || (r.winner ? r.winner.toUpperCase() : DASH)}</span></td>
@@ -447,19 +427,11 @@
           </tr>
           {#if open.includes(r.number)}
             <tr class="round-expand">
-              <td colspan="10">{@render roundDetail(r.number)}</td>
+              <td colspan="9">{@render roundDetail(r.number)}</td>
             </tr>
           {/if}
         {/each}
       </tbody>
     </table>
   </div>
-  {#if picks.length > 0}
-    <p class="cmp-hint">{fill(COPY.roundsSelected, { n: picks.length })}</p>
-  {/if}
-  {#if picks.length >= 2}
-    <button class="btn primary cmp-float" onclick={() => compare()}>
-      {fill(COPY.compareBtn, { n: picks.length })} <span class="codicon codicon-chevron-right"></span>
-    </button>
-  {/if}
 {/if}

@@ -151,8 +151,11 @@
     const on = busy;
     root.classList.toggle('builtin-busy', on);
     root.setAttribute('aria-busy', String(on));
+    // A run in flight holds the panel's last rendered height; a first load has none, so it
+    // reserves a default block: the spinner then centres in its own space, and sibling panels
+    // (the economy cards, curve and rounds) never stack their spinners in one spot.
     const h = on ? recalledHeight(name) : null;
-    root.style.minHeight = h ? h + 'px' : '';
+    root.style.minHeight = on ? (h ? h + 'px' : '12em') : '';
     return () => {
       root.classList.remove('builtin-busy');
       root.removeAttribute('aria-busy');

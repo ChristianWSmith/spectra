@@ -618,7 +618,9 @@ select.input:hover {
 /* A popover multi-select's trigger is an input's box with a select's chevron, so it sits
    level with the selects beside it (the same height, text size and border). */
 button.multi-trigger {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 9em;
   max-width: 100%;
   text-align: left;

@@ -21,7 +21,9 @@ export const match = {
   flagAFL: 'AFL', flagAFLTitle: 'assisted flash',
   bombPlanted: 'Planted',
   bombDefused: 'Defused',
-  bombExploded: 'Exploded',
+  bombExploded: 'Detonated',
+  bombDropped: 'Dropped',
+  bombPickedUp: 'Picked up',
   watchKillFollow: 'Watch this kill — follow {name}',
   watchBombFollow: 'Watch this bomb event — follow {name}',
   // header + meta line (watch action, patch/status, chat-key badge)
@@ -56,8 +58,6 @@ export const match = {
   colKills: 'Kills',
 
   // Rounds tab
-  compareSelectTitle: 'Select rounds to compare (up to 4)',
-  colCmp: 'Cmp',
   colWinner: 'Winner',
   buyClassTitle:
     'Buy type per side (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip',
@@ -67,7 +67,6 @@ export const match = {
   colSite: 'Site',
   colMvp: 'MVP',
   firstBloodLabel: 'First blood',
-  compareRoundAria: 'Compare round {round}',
   // Per-side buy-class chip (RoundDetail's Economy card — the Rounds
   // tab's Class column left with the watch column, W3a): the why text +
   // rules version only — round-level confidence never rides a side chip,
@@ -77,8 +76,6 @@ export const match = {
   sideCt: 'CT',
   sideT: 'T',
   killedVerb: 'killed',
-  roundsSelected: '{n} of 4 rounds selected.',
-  compareBtn: 'Compare {n} rounds',
 
   // Details tab — key facts
   keyFacts: 'Key facts',

@@ -34,7 +34,7 @@ export const SQL_ROUND_BOMBS =
   'SELECT e.id, e.tick, e.kind, e.attacker, COALESCE(ap.name, \'\'), e.site FROM events e ' +
   'LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker ' +
   'WHERE e.match_id = :match_id AND e.round = :round ' +
-  "AND e.kind IN ('bomb_plant', 'bomb_defuse', 'bomb_explode') ORDER BY e.seq";
+  "AND e.kind IN ('bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup') ORDER BY e.seq";
 export const SQL_ROUND_ECONOMY =
   'SELECT side, equip_value, money_sampled_sum, money_samples FROM round_economy ' +
   'WHERE match_id = :match_id AND round = :round ORDER BY side';

@@ -43,9 +43,6 @@ test('#/match/:id/round/:n — a round opens on the Rounds tab, expanded (negati
   // The redirected link keeps ?back= (the origin path for the return trip).
   const rd = parseHash('#/match/5/round/7?back=match/5/rounds');
   assert.deepEqual(rd, { name: 'match', id: 5, tab: 'Rounds', query: { round: 7, back: 'match/5/rounds' } });
-  // Compare route carries ?rounds= + ?back=.
-  const cmp = parseHash('#/compare/5?rounds=3,5,7&back=match/5/rounds');
-  assert.deepEqual(cmp.query, { rounds: '3,5,7', back: 'match/5/rounds' });
   // An empty query string is not a query.
   assert.equal('query' in parseHash('#/replay/5?'), false);
 });
@@ -112,7 +109,6 @@ test('#/timeline/:id (removed deep-link shape) falls through to the library', ()
     '#/match/42',
     '#/match/42/round/7',
     '#/player/76561198012345678',
-    '#/compare/9',
     '#/timeline/42',
     '#/replay/42',
     '#/reports/42',
@@ -160,9 +156,6 @@ test('#/player/:steamid carries ?back= (the profile return trip)', () => {
   );
 });
 
-test('#/compare/:id', () => {
-  assert.deepEqual(parseHash('#/compare/9'), { name: 'compare', id: 9 });
-});
 
 test('prefix routes match with startsWith (extra path stays on the route)', () => {
   assert.deepEqual(parseHash('#/settings'), { name: 'settings' });

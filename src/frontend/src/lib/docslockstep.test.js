@@ -103,7 +103,6 @@ const SIDEBAR_SECTIONS = {
 // rendering is covered by its host section, see the header).
 const VIEW_SECTIONS = {
   'Builder.svelte': 'metric-builder',
-  'CompareRounds.svelte': 'understanding-a-match',
   'Library.svelte': 'library',
   'Match.svelte': 'understanding-a-match', // per-tab coverage is TAB_SECTIONS
   'PlayerProfile.svelte': 'profiles',

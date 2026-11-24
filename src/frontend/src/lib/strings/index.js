@@ -32,7 +32,6 @@ export { economy } from './economy.js';
 export { combat } from './combat.js';
 export { utility } from './utility.js';
 export { heatmaps } from './heatmaps.js';
-export { compare } from './compare.js';
 export { components } from './components.js';
 export { componentbuilder } from './componentbuilder.js';
 export { builtins } from './builtins.js';

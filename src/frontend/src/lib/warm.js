@@ -31,7 +31,6 @@ export const WARM_VIEWS = [
   'componentbuilder',
   'explorer',
   'reports',
-  'compare',
 ];
 
 // loadWarmTargets reads the two targets from the backend's own lists. A failed

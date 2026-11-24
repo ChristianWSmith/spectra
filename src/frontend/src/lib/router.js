@@ -14,7 +14,6 @@
 //                            segment allows "-?"; ?back=<path> remembers the
 //                            originating view for the return trip
 //   #/player/:steamid        17-digit Steam id
-//   #/compare/:id            ?rounds=3,5,7 selects the compared rounds,
 //                            ?back=<path> the origin
 //   #/replay/:id             the Replay landmark feed — its durable
 //                            event-navigation context rides the query
@@ -183,8 +182,6 @@ export function parseHash(hash) {
   if (m) return withQuery({ name: 'match', id: Number(m[1]) });
   m = path.match(/^\/player\/(\d{17})$/);
   if (m) return withQuery({ name: 'player', steamId: m[1] });
-  m = path.match(/^\/compare\/(\d+)$/);
-  if (m) return withQuery({ name: 'compare', id: Number(m[1]) });
   m = path.match(/^\/replay\/(\d+)$/);
   if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
   if (path.startsWith('/builder')) return withQuery({ name: 'builder' });

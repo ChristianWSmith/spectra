@@ -24,7 +24,6 @@
   // (never a second bar), rendered here in its inline mode.
   import StatusChip from './lib/components/StatusChip.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
-  import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
   import {
     NAV_ACTIONS,
@@ -639,8 +638,6 @@
               <ComponentBuilder {nav} {openDocs} />
             {:else if name === 'reports'}
               <Reports {nav} {openDocs} routeId={current ? viewRoute.id || 0 : 0} />
-            {:else if name === 'compare'}
-              <CompareRounds id={current ? viewRoute.id : warmTargets.matchId} query={current ? viewRoute.query || {} : {}} {nav} />
             {/if}
           </div>
         {/if}

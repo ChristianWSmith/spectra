@@ -44,10 +44,7 @@ test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
     profileBackTarget({ back: 'match/5/scoreboard' }, '#/profiles'),
     '/match/5/scoreboard',
   );
-  assert.equal(
-    profileBackTarget({ back: 'compare/5?rounds=3,5' }, ''),
-    '/compare/5?rounds=3,5',
-  );
+  assert.equal(profileBackTarget({ back: 'match/5/rounds' }, ''), '/match/5/rounds');
 });
 
 test('without ?back= the back button goes to the players list, not the page it came from', () => {
@@ -100,7 +97,7 @@ test('sidebar active(): the player profile highlights Profiles, not Library', ()
   // L4: the match family is the MATCH tab's, never the Library hub's —
   // the Library claims only its own route, so exactly one action claims
   // each of them (the invariant pinned below).
-  for (const name of ['match', 'replay', 'compare']) {
+  for (const name of ['match', 'replay']) {
     assert.equal(active.Library(route(name)), false, `Library on ${name}`);
     assert.equal(active.Match(route(name)), true, `Match on ${name}`);
     assert.equal(active.Profiles(route(name)), false, `Profiles on ${name}`);
@@ -113,7 +110,7 @@ test('sidebar active(): the player profile highlights Profiles, not Library', ()
 // MATCH_FAMILY — THE nav-level partition behind the Match tab (L4): the
 // four route names that are the match view, and nothing else.
 test('MATCH_FAMILY holds exactly the match view routes (the nav partition)', () => {
-  assert.deepEqual([...MATCH_FAMILY].sort(), ['compare', 'match', 'replay']);
+  assert.deepEqual([...MATCH_FAMILY].sort(), ['match', 'replay']);
   const matchAction = NAV_ACTIONS.find((a) => a.label === 'Match');
   assert.ok(matchAction, 'the Match action exists');
   for (const name of MATCH_FAMILY) {
@@ -136,7 +133,7 @@ test('PROFILE_FAMILY holds exactly {profiles, player} and active() agrees', () =
   }
   // …and nothing else lights it up (the exactly-one invariant below
   // covers the other side).
-  for (const name of ['library', 'match', 'replay', 'compare', 'builder', 'reportbuilder', 'sql', 'settings']) {
+  for (const name of ['library', 'match', 'replay', 'builder', 'reportbuilder', 'sql', 'settings']) {
     assert.equal(profilesAction.active({ name }), false, `Profiles on ${name}`);
   }
   // The memory policy is declared ON the action — the helpers never
@@ -151,7 +148,6 @@ test('sidebar active(): exactly one action lights up per route', () => {
     'library',
     'match',
     'replay',
-    'compare',
     'player',
     'profiles',
     'builder',
@@ -208,7 +204,6 @@ test('isNavEnabled: Match is the only gated action — the other memory-backed o
     '#/match/5/scoreboard',
     '#/match/5/round/7',
     '#/replay/5?cat=chat&tick=100',
-    '#/compare/5?rounds=3,5',
   ]) {
     assert.equal(isNavEnabled(byLabel.Match, { lastMatchHash: h }), true, h);
   }

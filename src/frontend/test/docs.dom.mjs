@@ -208,7 +208,7 @@ const writeStub = (rel, src) => {
 };
 for (const name of [
   'Library', 'Match', 'Settings', 'SqlConsole', 'Explorer',
-  'Reports', 'ReportsBuilder', 'ComponentBuilder', 'Profiles', 'PlayerProfile', 'CompareRounds',
+  'Reports', 'ReportsBuilder', 'ComponentBuilder', 'Profiles', 'PlayerProfile',
 ]) {
   writeStub(
     `lib/views/${name}.svelte`,

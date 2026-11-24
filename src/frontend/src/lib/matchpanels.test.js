@@ -89,7 +89,6 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
     './panelhelpers.js': helperNames,
     '../../builtinhelpers.js': Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names),
     '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy', 'getProvenance', 'getEntitySummary', 'errText'],
-    '../../viewstate.svelte.js': ['comparePicks', 'setComparePicks'],
     // The shared status chip (a component, not copy): a panel shows a read's status with it.
     '../../components/StatusChip.svelte': 'default',
   };

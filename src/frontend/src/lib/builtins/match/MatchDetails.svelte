@@ -154,8 +154,9 @@
 </script>
 
 <div class="match-details">
+  <section class="md-sec">
   {#if facts}
-    <h2>{COPY.keyFacts}</h2>
+    <h2 class="md-head">{COPY.keyFacts}</h2>
     <dl class="facts">
       <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
       <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + S.match.unitHz : DASH}</dd></div>
@@ -198,9 +199,10 @@
   {:else}
     <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
   {/if}
+  </section>
 
-  <section>
-    <h2>{S.library.importDetails}</h2>
+  <section class="md-sec">
+    <h2 class="md-head">{S.library.importDetails}</h2>
     {#if provError}
       <p class="error" role="alert">
         {provError}
@@ -219,7 +221,7 @@
         <div><dt>{S.library.dtStatus}</dt><dd><StatusChip status={prov.status} /></dd></div>
       </dl>
       {#if prov.notes && prov.notes.length}
-        <div class="expl-notes">
+        <div class="expl-notes md-notes">
           {#each prov.notes as n, i (i)}
             <span class="chip expl-note-chip" title={S.library.noteChipTitle}>{n}</span>
           {/each}
@@ -231,8 +233,8 @@
     {/if}
   </section>
 
-  <section>
-    <h2>{S.library.advancedDiagnostics}</h2>
+  <section class="md-sec">
+    <h2 class="md-head">{S.library.advancedDiagnostics}</h2>
     {#if entError}
       <p class="error" role="alert">
         {entError}

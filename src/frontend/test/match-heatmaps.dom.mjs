@@ -219,7 +219,7 @@ console.log('A. the card mounts with the fixed context (matchId 7)');
   const gen = target.querySelector('.heat-generate');
   check('Generate is offered before any raster', !!gen && text(gen) === 'Generate', gen ? text(gen) : 'none');
   // The legend row is reserved (its height holds before a raster lands), but it has no content yet.
-  check('the legend row is reserved and empty before a raster exists', !!target.querySelector('.heat-legend') && target.querySelector('.heat-legend').children.length === 0);
+  check('the legend row is reserved, and says what to do before a raster exists', !!target.querySelector('.heat-legend') && target.querySelector('.heat-legend').textContent.includes('Pick a kind'));
 }
 
 console.log('B. Generate fires one heatmap read for the context match and draws its legend');

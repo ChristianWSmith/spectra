@@ -276,32 +276,30 @@ const rounds = (root) => rowsOf(root);
 // The bundled instance is the one the panel's registry import reaches.
 const vs = await import(pathToFileURL(bundle(resolve('src/lib/viewstate.svelte.js'))).href);
 const router = await import(pathToFileURL(bundle(resolve('src/lib/router.js'))).href);
-const setPicks = (matchId, compareSel) => vs.remember(vs.matchKey('selection', matchId), { compareSel });
-const getPicks = (matchId) => vs.seed(vs.matchKey('selection', matchId), { compareSel: [] }).compareSel;
 
 // --- A. the rounds: the stored values -----------------------------------------------------
 console.log('A. rounds: stored values (match 7)');
 let root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
 let rs = rounds(root);
-check('one row per round, in round order', rs.length === 14 && text(rs[0].children[2]) === '1' && text(rs[13].children[2]) === '14', String(rs.length));
+check('one row per round, in round order', rs.length === 14 && text(rs[0].children[1]) === '1' && text(rs[13].children[1]) === '14', String(rs.length));
 let r1 = tableRows(root)[0];
 check('round 1: RD, reason, duration, site and kills',
-  r1[2] === '1' && r1[4] === 'Bomb defused' && r1[5] === '1m46s' && r1[6] === 'B' && r1[9] === '3',
+  r1[1] === '1' && r1[3] === 'Bomb defused' && r1[4] === '1m46s' && r1[5] === 'B' && r1[8] === '3',
   JSON.stringify(r1));
-check('round 1: the winner is the team that played the other side in round 1 (team_Charlie)', r1[3] === 'team_Charlie', r1[3]);
-check('round 1: no MVP shows a dash', r1[7] === '—', r1[7]);
-check('round 1: first blood names the killer and the victim', r1[8] === 'Alpha killed Charlie', r1[8]);
+check('round 1: the winner is the team that played the other side in round 1 (team_Charlie)', r1[2] === 'team_Charlie', r1[2]);
+check('round 1: no MVP shows a dash', r1[6] === '—', r1[6]);
+check('round 1: first blood names the killer and the victim', r1[7] === 'Alpha killed Charlie', r1[7]);
 const r2 = tableRows(root)[1];
-check('round 2: a NULL duration shows a dash, never a zero', r2[5] === '—' && r2[6] === '—', JSON.stringify(r2));
-check('round 2: a round with no first blood shows a dash', r2[8] === '—', r2[8]);
-check('round 2: the MVP is named', r2[7] === 'Bravo', r2[7]);
-check('round 2: a zero kill count is shown as 0', r2[9] === '0', r2[9]);
+check('round 2: a NULL duration shows a dash, never a zero', r2[4] === '—' && r2[5] === '—', JSON.stringify(r2));
+check('round 2: a round with no first blood shows a dash', r2[7] === '—', r2[7]);
+check('round 2: the MVP is named', r2[6] === 'Bravo', r2[6]);
+check('round 2: a zero kill count is shown as 0', r2[8] === '0', r2[8]);
 const r13 = tableRows(root)[12];
-check('round 13: after the switch the winner is the team on the CT side (Alpha Squad)', r13[3] === 'Alpha Squad', r13[3]);
+check('round 13: after the switch the winner is the team on the CT side (Alpha Squad)', r13[2] === 'Alpha Squad', r13[2]);
 
 // --- B. the side switch -----------------------------------------------------------------------
 console.log('B. side class of the MVP after the switch');
-const mvpBravo = rowsOf(root)[1].children[7].querySelector('button');
+const mvpBravo = rowsOf(root)[1].children[6].querySelector('button');
 check('round 2: Bravo (CT final) is shown in the T colour, as he played T that round', !!mvpBravo && mvpBravo.classList.contains('side-t'), mvpBravo ? mvpBravo.className : 'no button');
 
 // --- C. the separator ----------------------------------------------------------------------------
@@ -327,16 +325,16 @@ check('a round with no end tick opens the replay at its start, with no loop',
 // --- E. the round row ---------------------------------------------------------------------------------
 console.log('E. round row');
 navCalls = [];
-click(rowsOf(root)[3].children[4]);
+click(rowsOf(root)[3].children[3]);
 await settle(4);
 // The row expands in place: no navigation, the round's detail mounts below it, and the chevron folds it.
 const open4 = () => rowsOf(root)[4] && rowsOf(root)[4].classList.contains('round-expand');
 check('a click on the row expands that round in place, with no navigation', navCalls.length === 0 && open4(), JSON.stringify(navCalls));
 check('round 4 expansion renders the kill, the economy, the side class and the chat', open4() && rowsOf(root)[4].textContent.includes('ak47') && rowsOf(root)[4].textContent.includes('gg') && rowsOf(root)[4].textContent.includes('full') && rowsOf(root)[4].textContent.includes('HS'), open4() ? rowsOf(root)[4].textContent.slice(0, 200) : 'no expansion');
 check('the expanded row carries the four detail parts', open4() && rowsOf(root)[4].querySelectorAll('h3').length === 4, open4() ? String(rowsOf(root)[4].querySelectorAll('h3').length) + ' :: ' + rowsOf(root)[4].textContent.slice(0, 160) : 'no expansion');
-click(rowsOf(root)[3].querySelector('button[aria-expanded]'));
+click(rowsOf(root)[3].children[3]);
 await settle(2);
-check('the chevron folds the round again', !open4(), String(rowsOf(root).length));
+check('a second click on the row folds the round again', !open4(), String(rowsOf(root).length));
 navCalls = [];
 click(rowsOf(root)[3].querySelector('td .comb-name-btn'));
 await settle(4);
@@ -348,43 +346,17 @@ root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: { matchId: 9, s
 const r9 = rowsOf(root);
 check('match 9: every stored row renders (2 pre-match + 13 counted, no pref)', r9.length === 15, String(r9.length));
 check('match 9: the pre-match rows carry the K and W labels in the Rd cell',
-  text(r9[0].children[2]) === 'K' && text(r9[1].children[2]) === 'W', `${text(r9[0].children[2])} / ${text(r9[1].children[2])}`);
-const winnerChip = (i) => r9[i].children[3].querySelector('.chip');
-check('match 9: round 1 (CT win, era 0) names the final-T team', text(r9[2].children[3]) === 'Charlie Crew', text(r9[2].children[3]));
+  text(r9[0].children[1]) === 'K' && text(r9[1].children[1]) === 'W', `${text(r9[0].children[1])} / ${text(r9[1].children[1])}`);
+const winnerChip = (i) => r9[i].children[2].querySelector('.chip');
+check('match 9: round 1 (CT win, era 0) names the final-T team', text(r9[2].children[2]) === 'Charlie Crew', text(r9[2].children[2]));
 const chip5r = winnerChip(6);
 check('match 9: round 5 (no winner) falls back to the neutral bare chip',
   !!chip5r && chip5r.classList.contains('none') && text(chip5r) === '—', chip5r ? chip5r.className + ' "' + text(chip5r) + '"' : 'missing');
-check('match 9: round 12 (era 0, CT win) names the final-T team', text(r9[13].children[3]) === 'Charlie Crew', text(r9[13].children[3]));
-check('match 9: round 13 (era 1, CT win) names the final-CT team', text(r9[14].children[3]) === 'Alpha Squad', text(r9[14].children[3]));
+check('match 9: round 12 (era 0, CT win) names the final-T team', text(r9[13].children[2]) === 'Charlie Crew', text(r9[13].children[2]));
+check('match 9: round 13 (era 1, CT win) names the final-CT team', text(r9[14].children[2]) === 'Alpha Squad', text(r9[14].children[2]));
 const splits9 = r9.map((tr, i) => (tr.classList.contains('split-before') ? i + 1 : 0)).filter(Boolean);
 check('match 9: the boundary rides round 13 (1-based row 15), not shifted by the pre-match rows',
   JSON.stringify(splits9) === '[15]', JSON.stringify(splits9));
-
-// --- F. the compare box ----------------------------------------------------------------------------
-console.log('F. compare picks');
-setPicks(7, [1]);
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
-let boxes = [...root.querySelectorAll('input.cmp-cb')];
-check('a pick kept in view state shows as checked', boxes[0].checked === true && boxes[1].checked === false);
-check('one pick shows no compare button', root.querySelector('.cmp-float') === null);
-check('one pick shows the count line', text(root.querySelector('.cmp-hint')) === '1 of 4 rounds selected.', text(root.querySelector('.cmp-hint')));
-boxes[1].checked = true;
-change(boxes[1]);
-await settle(4);
-check('ticking a box adds that round to this match’s picks', JSON.stringify(getPicks(7)) === '[1,2]', JSON.stringify(getPicks(7)));
-setPicks(7, [1, 2]);
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
-const floatBtn = root.querySelector('.cmp-float');
-check('two picks show the compare button', !!floatBtn && text(floatBtn) === 'Compare 2 rounds', floatBtn && text(floatBtn));
-click(floatBtn);
-await settle(4);
-check('the compare button opens the compare page with the picks, back to the tab',
-  navCalls.length === 1 && navCalls[0] === router.buildHash('/compare/7', { rounds: '1,2', back: 'match/7/rounds' }),
-  JSON.stringify(navCalls));
-setPicks(7, [1, 2, 3, 4]);
-root = await mountPanel({ source: panels.ROUNDS_SOURCE, context: MATCH, props: BACK });
-boxes = [...root.querySelectorAll('input.cmp-cb')];
-check('four picks disable every other box', boxes[4].disabled === true && boxes[0].disabled === false);
 
 // --- H. the details panel -----------------------------------------------------------------------------
 console.log('H. details: stored facts (match 7)');

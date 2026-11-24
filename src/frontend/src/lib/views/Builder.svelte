@@ -1000,16 +1000,15 @@
       <div class="toolbar">
         <span class="bld-filter-host" bind:this={filterAnchor}>
           <button
-            class="btn small"
-            class:primary={filterOpen}
+            class="input multi-trigger"
+            class:multi-open={filterOpen}
             bind:this={filterTrigger}
             aria-haspopup="true"
             aria-expanded={filterOpen}
             aria-controls={filterOpen ? 'bld-filter-pop' : null}
             title={S.builder.filtersTitle}
             onclick={() => (filterOpen = !filterOpen)}
-            ><span class="codicon codicon-filter" aria-hidden="true"></span> {S.builder.filtersLabel}
-            <span class="codicon codicon-chevron-down" aria-hidden="true"></span></button
+            ><span class="codicon codicon-filter" aria-hidden="true"></span> {S.builder.filtersLabel}</button
           >
           <Popover
             open={filterOpen}
