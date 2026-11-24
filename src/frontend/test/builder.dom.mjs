@@ -441,6 +441,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/RunningMetricsDialog.svelte'", "from './runningmetricsdialog.js'")
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
   .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
+  .replace("from '../fillheight.js'", `from '${fileURL('src/lib/fillheight.js')}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
 
@@ -579,9 +580,9 @@ let r = await mountBuilder();
       : 'no list',
   );
   check(
-    'N1: style-m3a.css pins .bld-rows to the viewport-capped scroller (100vh − 300px chrome, overflow-y auto)',
-    /\.bld-rows\s*\{[^}]*max-height:\s*calc\(100vh - 300px\)[^}]*overflow-y:\s*auto/s.test(m3aCss),
-    'no .bld-rows { max-height: calc(100vh - 300px); overflow-y: auto } rule',
+    'N1: style-m3a.css pins .bld-rows as the flexible scroller of the list (fills the panel, overflow-y auto)',
+    /\.bld-rows\s*\{[^}]*flex:\s*1 1 auto[^}]*overflow-y:\s*auto/s.test(m3aCss),
+    'no .bld-rows { flex: 1 1 auto; overflow-y: auto } rule',
   );
   // N6's IDLE leg: the left slot renders even when the expression
   // check has nothing to say — that is what keeps the right cluster
@@ -606,8 +607,8 @@ let r = await mountBuilder();
   );
 }
 check(
-  'first list call = (query "", origin "user,plugin", format "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'user,plugin', '', 0, 100]),
+  'first list call = (query "", origin "" (every box on: no origin predicate), format "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 const trig = filterTrigger(r);
@@ -628,8 +629,8 @@ check(
   `expanded=${trig?.getAttribute('aria-expanded')} boxes=${boxesOf(r).length}`,
 );
 check(
-  'defaults render with Built-in unchecked and every other Origin option checked (owner ruling)',
-  JSON.stringify(originOf(r)) === JSON.stringify([false, true, true]),
+  'defaults render with every Origin option checked (unfiltered)',
+  JSON.stringify(originOf(r)) === JSON.stringify([true, true, true]),
   JSON.stringify(originOf(r)),
 );
 check(
@@ -670,9 +671,9 @@ check(
   // Re-pinned 2026-11-18 (metrics Phase 7, W45 catalog gap): the user
   // group's header reads "Custom" — the same word the Origin box uses
   // for exactly those rows — from the strings catalog.
-  'the default view is the user,plugin partition (Custom + Plugins headers, no builtin row)',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
-    JSON.stringify(headersOf(r)) === JSON.stringify(['Custom', 'Plugins']),
+  'the default view is unfiltered (Builtins, Custom and Plugins headers, every row)',
+  JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Custom', 'Plugins']),
   JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
 );
 {
@@ -710,14 +711,17 @@ check(
 console.log('B. the Origin group narrows server-side (cursor 0) and all options off is a legal empty read');
 services.invalidate(); // same-key windows are cached — record this window fresh
 pageCalls.length = 0;
-await setBox(r, 'Built-in', true); // from the default: the user,plugin partition → the whole catalog
+await setBox(r, 'Built-in', false); // every box starts on: take Built-in off first, then back on
+await sleep(DEBOUNCE);
+const beforeOn = pageCalls.length;
+await setBox(r, 'Built-in', true); // → the whole catalog again
 await sleep(DEBOUNCE);
 check(
   'Built-in checked → (query "", origin "", scope "", denominator "", format "", cursor 0, 100) — all four rows with the Builtins header',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 0, 100]) &&
+  JSON.stringify(pageCalls[beforeOn]) === JSON.stringify(['', '', '', 0, 100]) &&
     JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
     JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Custom', 'Plugins']),
-  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  JSON.stringify(pageCalls[beforeOn]) + ' rows=' + JSON.stringify(namesOf(r)),
 );
 services.invalidate();
 pageCalls.length = 0;
@@ -1522,14 +1526,14 @@ console.log('H. the filter checks are view-local registry state (restore all ten
   r = await mountBuilder();
   await openFilters(r);
   check(
-    'resetViewState() → the next mount is back to the defaults (Built-in OFF / Custom + Plugin ON, every other option ON — Type all seven)',
+    'resetViewState() → the next mount is back to the defaults (every Origin box ON, unfiltered; Type all seven ON)',
     JSON.stringify(allBoxesOf(r)) ===
-      JSON.stringify([false, true, true, true, true, true, true, true, true, true]),
+      JSON.stringify([true, true, true, true, true, true, true, true, true, true]),
     JSON.stringify(allBoxesOf(r)),
   );
   check(
-    '…and the default view is the user,plugin partition again',
-    JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
+    '…and the default view is unfiltered again',
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(namesOf(r)),
   );
   // Hand a CLOSED panel to the untouched sections below.

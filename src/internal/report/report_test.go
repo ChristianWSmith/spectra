@@ -100,6 +100,10 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	// The import pipeline marks a match ready after its analyze stage; the sweep counts only ready matches.
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("SetMatchStatus: %v", err)
+	}
 	// Per-round stats are an analytics writer, not SaveExtracted.
 	var prs []models.PlayerRoundStat
 	for r := 1; r <= 5; r++ {

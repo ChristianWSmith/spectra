@@ -47,6 +47,7 @@ var tableNotes = map[string]string{
 	"metric_values":     "stored metric VALUES: one number per saved metric per SUBJECT — keyed by subject_key (a player's SteamID64, a team key, or '' for a match subject), match grain (match_id > 0) or career grain (match_id = 0, player subject only); a group the statement did not produce has no row",
 	"metric_deps":       "metric→metric dependency edges (which metrics each metric's expression references by name)",
 	"metric_runs":       "raw-SQL run records: one row per completed run of a metric for one scope (match, player, round), stamped with the versions it ran under; a run with zero rows has a record and no metric_values row",
+	"component_refs":    "which components and metrics each component references by name: one row per (referrer, kind, target), so a delete or rename can find its dependents",
 	"saved_queries":     "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
 	"query_history":     "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
 	"report_templates":  "user report templates authored in the Reports builder (slug id, scope, format, template body)",

@@ -1,4 +1,5 @@
 <script>
+  import { fillHeight } from '../fillheight.js';
   // The Reports builder — the template AUTHORING surface (the sibling
   // Reports view only CONSUMES templates). Two panels over the Builder's
   // layout (views/Builder.svelte's .bld-grid): a plain list of every
@@ -408,7 +409,7 @@
   {/if}
 
   <div class="rb-grid">
-    <section class="panel rb-list">
+    <section class="panel rb-list" use:fillHeight>
       <div class="row-between">
         <h2>{S.reportbuilder.templatesHeading}</h2>
         <button class="btn small" onclick={newTemplate}

@@ -1,4 +1,5 @@
 <script>
+  import { fillHeight } from '../fillheight.js';
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import { notifyPlacementsChanged } from '../warm.js';
@@ -480,7 +481,7 @@
   {/if}
 
   <div class="cb-grid">
-    <section class="panel cb-list">
+    <section class="panel cb-list" use:fillHeight>
       <div class="row-between">
         <h2>{S.componentbuilder.componentsHeading}</h2>
         <button class="btn small" onclick={newComponent}
@@ -715,9 +716,10 @@
 </div>
 
 <style>
+  /* The builders share one list column width; the list fills the view height and its rows scroll. */
   .cb-grid {
     display: grid;
-    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
   }
@@ -726,12 +728,18 @@
   .cb-preview {
     min-width: 0;
   }
+  /* The list fills the view height (the fillHeight action); its rows scroll inside it. */
+  .cb-list {
+    display: flex;
+    flex-direction: column;
+  }
   /* The list body scrolls; the filter and the list header stay put above it. */
   .cb-scroll {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: calc(100vh - 300px);
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
   }
   /* The editor sits above the preview, one column. */

@@ -948,10 +948,11 @@ label.filt-lab {
 
 .rb-grid {
   display: grid;
-  grid-template-columns: minmax(250px, 330px) 1fr;
+  grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
+
 
 .rb-right {
   display: flex;
@@ -962,6 +963,9 @@ label.filt-lab {
 
 .rb-list {
   gap: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* The origin filter row: the shared filter label (.filt-lab) and
@@ -978,6 +982,9 @@ label.filt-lab {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .rb-row {

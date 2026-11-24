@@ -1,4 +1,5 @@
 <script>
+  import { fillHeight } from '../fillheight.js';
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
@@ -162,21 +163,18 @@
     form: newForm(),
     baseline: '',
     query: '',
-    // Origin group: the owner's STANDING default — Built-in OFF, the
-    // two other origins ON — so the initial view lists every
-    // non-builtin metric (user + plugin), the same rows the group
-    // showed before it gained its third box. It narrows SERVER-side only
-    // when an option goes off (originFilter below), and all-off is legal.
-    builtin: false,
+    // Origin group: every box ON, so the first render is unfiltered (built-in,
+    // yours and plugin metrics together). A box narrows SERVER-side when it goes
+    // off (originFilter below), and all-off is legal.
+    builtin: true,
     custom: true,
     plugin: true,
     // Type group: the owner's ruling ("all six checked — auto + int +
     // float1 + float2 + percent + currency") extended by the seventh
     // Identity box (metrics Phase 7, 2026-11-18 — the key-valued
     // metrics' filter treatment; seed() merges over defaults, so a
-    // registry record written before it still starts checked) — only
-    // Built-in starts off, so the first render is unfiltered on every
-    // group but Origin.
+    // registry record written before it still starts checked). Every box
+    // starts on: the first render is unfiltered.
     formatAuto: true,
     formatInt: true,
     formatFloat1: true,
@@ -964,7 +962,7 @@
   {/if}
 
   <div class="bld-grid">
-    <section class="panel bld-list">
+    <section class="panel bld-list" use:fillHeight>
       <div class="row-between">
         <h2>{S.builder.metricsHeading}</h2>
         <div class="toolbar">

@@ -156,6 +156,10 @@ func saveCombatMatch(t *testing.T, st *store.Store, sha string, em *models.Extra
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	// The import pipeline marks a match ready after its analyze stage; the sweep counts only ready matches.
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("SetMatchStatus: %v", err)
+	}
 	return id
 }
 

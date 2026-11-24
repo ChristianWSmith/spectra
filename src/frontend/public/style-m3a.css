@@ -996,12 +996,15 @@ canvas.heat-canvas {
   max-width: 70ch;
 }
 
+/* The builders share one list column width, and the list fills the view height (see the Reports and
+   Component builders). */
 .bld-grid {
   display: grid;
-  grid-template-columns: minmax(250px, 330px) 1fr;
+  grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
+
 
 .bld-right {
   display: flex;
@@ -1012,6 +1015,9 @@ canvas.heat-canvas {
 
 .bld-list {
   gap: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* The list BODY (N1) — the Builder's one scroll region: the panel
@@ -1025,8 +1031,22 @@ canvas.heat-canvas {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: calc(100vh - 300px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* The list body is a loading shell (LoadBox) between the list and its rows: it fills the list the same way, so
+   the rows scroll inside the panel and never run past it. */
+.bld-list > .bld-list-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.bld-list > .bld-list-body > .bld-rows {
+  min-height: 0;
 }
 
 /* Filter multi-select (owner ruling: ONE control replaces the three

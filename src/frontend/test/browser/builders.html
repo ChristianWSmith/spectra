@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Builder list layout</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style-m3a.css" />
+    <link rel="stylesheet" href="/style-m3b.css" />
+  </head>
+  <body>
+    <main class="content" id="scroller" style="height: 100vh; width: 1100px">
+      <div class="view">
+        <header class="view-header" style="height: 90px"><h1>Builder</h1></header>
+        <div class="bld-grid">
+          <section class="panel bld-list" id="bld-list"><div class="load-box bld-list-body"><div class="bld-rows" id="bld-rows"></div></div></section>
+          <div class="bld-right"><section class="panel" style="height: 200px"></section></div>
+        </div>
+      </div>
+      <div class="view">
+        <header class="view-header" style="height: 90px"><h1>Reports</h1></header>
+        <div class="rb-grid">
+          <section class="panel rb-list" id="rb-list"><div class="rb-rows" id="rb-rows"></div></section>
+          <div class="rb-right"><section class="panel" style="height: 200px"></section></div>
+        </div>
+      </div>
+    </main>
+    <pre id="out"></pre>
+    <script type="module">
+      import { fillHeight } from '/src/lib/fillheight.js';
+      // The app shows one builder at a time: keep only the one this run is about.
+      const only = new URL(location.href).searchParams.get('only') || 'bld';
+      const views = document.querySelectorAll('#scroller > .view');
+      views[only === 'bld' ? 1 : 0].remove();
+      for (const id of ['bld-rows', 'rb-rows']) {
+        const host = document.getElementById(id);
+        if (!host) continue; // the other builder is not in this run
+        for (let i = 0; i < 80; i++) {
+          const row = document.createElement('div');
+          row.style.height = '40px';
+          row.textContent = 'row ' + i;
+          host.appendChild(row);
+        }
+      }
+      const bl = document.getElementById('bld-list') || document.getElementById('rb-list');
+      const rl = bl;
+      fillHeight(bl);
+      // Let the measure settle through a frame, then report against the scroller's bottom edge.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const scroller = document.getElementById('scroller');
+      const sb = scroller.getBoundingClientRect();
+      const bottom = (el) => Math.round(el.getBoundingClientRect().bottom);
+      const rows = (id) => document.getElementById(id);
+      document.getElementById('out').textContent = JSON.stringify({
+        width: Math.round(bl.getBoundingClientRect().width),
+        bottom: bottom(bl),
+        scrollerBottom: Math.round(sb.bottom),
+        height: Math.round(bl.getBoundingClientRect().height),
+        rowsScroll: rows(only === 'bld' ? 'bld-rows' : 'rb-rows').scrollHeight - rows(only === 'bld' ? 'bld-rows' : 'rb-rows').clientHeight,
+        rowsOverflow: getComputedStyle(rows(only === 'bld' ? 'bld-rows' : 'rb-rows')).overflowY,
+      });
+    </script>
+  </body>
+</html>
