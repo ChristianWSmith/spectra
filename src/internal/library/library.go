@@ -1200,6 +1200,7 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	if aerr := im.analyze(matchID); aerr != nil {
 		msg := playerJobError(models.StageAnalyze, aerr.Error())
 		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, 0, msg)
+		_ = im.st.SetMatchStatus(matchID, models.StatusFailed, msg)
 		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
 		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 		return
@@ -1214,6 +1215,13 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// The pass runs in the background, and the behind set keeps any value
 	// it has not yet recomputed out of the current state, so the job's
 	// done event never shows a stale number as fresh.
+	// Ready only now: the row reads parsing through the analyze stage, so a match whose
+	// analysis is still running (or failed) never shows as ready. The metric sweep that
+	// follows counts ready matches.
+	if err := im.st.SetMatchStatus(matchID, models.StatusReady, ""); err != nil {
+		im.failJob(jobID, matchID, models.StageAnalyze, err.Error(), false)
+		return
+	}
 	if im.afterAnalyze != nil {
 		_ = im.afterAnalyze(ctx)
 	}

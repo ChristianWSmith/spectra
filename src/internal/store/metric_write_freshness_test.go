@@ -66,6 +66,9 @@ func TestImportMarksLibraryMetricBehindByTouchedTable(t *testing.T) {
 	if err := s.SaveExtracted(newID, &models.ExtractedMatch{Events: []models.Event{{Seq: 0, Kind: "kill"}}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := s.SetMatchStatus(newID, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	if c := coverageOf(t, s, evt.ID, live); !c.Behind {
 		t.Fatalf("events metric after import = %+v, want behind", c)
 	}
@@ -92,6 +95,9 @@ func TestReprocessMarksOnlyItsOwnMatchBehind(t *testing.T) {
 	}
 	if err := s.SaveExtracted(m1, &models.ExtractedMatch{Events: []models.Event{{Seq: 0, Kind: "kill"}}}); err != nil {
 		t.Fatalf("SaveExtracted(M): %v", err)
+	}
+	if err := s.SetMatchStatus(m1, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
 	}
 	if got := rawRunVersion(t, s, m.ID, n1); got != m.Version {
 		t.Fatalf("match N run version = %d, want %d (untouched)", got, m.Version)
@@ -155,6 +161,9 @@ func TestImportLeavesUnrelatedMatchStateAlone(t *testing.T) {
 	if err := s.SaveExtracted(newID, &models.ExtractedMatch{Events: []models.Event{{Seq: 0, Kind: "kill"}}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := s.SetMatchStatus(newID, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	if after := rawRunVersion(t, s, m.ID, m1); after != before {
 		t.Fatalf("unrelated M run version %d -> %d, want unchanged", before, after)
 	}
@@ -205,6 +214,9 @@ func TestReprocessLeavesUntouchedCareerMetricFresh(t *testing.T) {
 	}
 	if err := s.SaveExtracted(m1, &models.ExtractedMatch{Events: []models.Event{{Seq: 0, Kind: "kill"}}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
+	}
+	if err := s.SetMatchStatus(m1, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
 	}
 	if err := s.RebuildCareerForMatches([]int64{m1}); err != nil {
 		t.Fatalf("RebuildCareerForMatches: %v", err)

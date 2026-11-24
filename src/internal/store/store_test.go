@@ -127,6 +127,10 @@ func saveTestMatch(t *testing.T, s *Store, path, sha string, at time.Time) int64
 	if err := s.SaveExtracted(id, testExtracted(sha, at)); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	// The analyze stage makes a match ready (the library does this after analysis).
+	if err := s.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	return id
 }
 
@@ -367,7 +371,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		m.RealRounds != 1 || m.ScoreCT != 1 || m.ScoreT != 0 ||
 		m.HalfCT != 1 || m.HalfT != 0 || m.SideSwitches != 0 || m.EntityClasses != 220 ||
 		m.EndEntityCount != 80 || m.ParserVersion != "v6.0.0-rc.1" || m.ParseMS != 42 ||
-		m.WarningsCount != 1 || m.Status != models.StatusReady || m.Error != "" {
+		m.WarningsCount != 1 || m.Status != models.StatusParsing || m.Error != "" {
 		t.Errorf("GetMatch mismatch: %+v", m)
 	}
 	if !m.ExtractedAt.Equal(at) {
@@ -384,7 +388,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	sum := sums[0]
 	if sum.ID != id || sum.Map != "De_MiRaGe" || sum.CTName != "alpha" || sum.TName != "beta" ||
 		sum.ScoreCT != 1 || sum.ScoreT != 0 || sum.RealRounds != 1 || sum.DurationS != 15.625 ||
-		sum.Size != 1234 || sum.SHA256 != sha || sum.Status != models.StatusReady {
+		sum.Size != 1234 || sum.SHA256 != sha || sum.Status != models.StatusParsing {
 		t.Errorf("MatchSummary mismatch: %+v", sum)
 	}
 
@@ -703,7 +707,7 @@ func TestSaveExtractedReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
-	if m.ScoreCT != 13 || m.Status != models.StatusReady {
+	if m.ScoreCT != 13 || m.Status != models.StatusParsing {
 		t.Errorf("header not updated on replace: %+v", m)
 	}
 }

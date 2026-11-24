@@ -35,6 +35,9 @@ func saveImportedMatch(t *testing.T, f *depsFixture, sha string) {
 	if err := f.st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := f.st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 }
 
 // TestImportLeavesFirstMatchFresh: after every metric is fresh for the first

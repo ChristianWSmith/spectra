@@ -66,6 +66,9 @@ func seedHeatmapMatchRounds(t *testing.T, events []models.Event, rounds []models
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	return st, id
 }
 

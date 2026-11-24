@@ -71,6 +71,9 @@ func seedPlatformMatch(t *testing.T, st *store.Store) int64 {
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	return id
 }
 

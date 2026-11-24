@@ -89,7 +89,7 @@ const ()
 // 0), so neither expression is ever NULL and keysetAfter's NULL arms
 // never fire for them.
 var matchListSort = map[string]string{
-	"extracted_at": "m.extracted_at",
+	"extracted_at": "COALESCE(m.extracted_at, m.imported_at)",
 	"map":          "m.map",
 	"size":         "m.size",
 	"winner_score": "MAX(m.score_ct, m.score_t)",

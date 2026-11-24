@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS matches (
 	end_entity_count INTEGER NOT NULL DEFAULT 0,
 	parser_version TEXT NOT NULL DEFAULT '',
 	extracted_at DATETIME,
+	imported_at DATETIME,
 	parse_ms INTEGER NOT NULL DEFAULT 0,
 	warnings_count INTEGER NOT NULL DEFAULT 0,
 	status TEXT NOT NULL DEFAULT 'queued',

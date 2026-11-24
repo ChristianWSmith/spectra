@@ -105,6 +105,9 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		if err := st.SaveExtracted(id, em); err != nil {
 			t.Fatalf("SaveExtracted: %v", err)
 		}
+		if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+			t.Fatalf("ready: %v", err)
+		}
 		// One counted round of per-round stats — the Sides card's rows
 		// (store.GetPlayerSideSplits). Alice plays it on `side`: match 1
 		// is the CT round (won — round 1's winner = "ct"), match 2 the T

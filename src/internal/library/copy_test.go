@@ -659,8 +659,8 @@ func TestAnalyzeFailureKeepsCopyAndMatch(t *testing.T) {
 	if !strings.Contains(job.Error, "Analysis failed") {
 		t.Errorf("job error = %q, want the analysis framing", job.Error)
 	}
-	// The match stays ready (the failure path only marks the JOB) …
-	m := waitMatchStatus(t, st, job.MatchID, models.StatusReady)
+	// The match is failed too: a row must not read ready while its analysis is missing …
+	m := waitMatchStatus(t, st, job.MatchID, models.StatusFailed)
 	// … and its copy is kept: matchSaved was already true.
 	if names := dirNames(t, copyDir); len(names) != 1 {
 		t.Errorf("managed dir holds %v, want the copy kept", names)

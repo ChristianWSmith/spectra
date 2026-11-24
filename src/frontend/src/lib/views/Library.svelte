@@ -288,6 +288,32 @@
   // purpose — it is not state.
   let jobsGen = 0;
 
+  // The job list and the first match page are read together and assigned in one tick: a job that
+  // gains its match row (the handoff) never shows its line in neither table, or in both.
+  function refreshLibrary() {
+    const jGen = ++jobsGen;
+    const lGen = ++listGen;
+    return Promise.all([
+      listJobs(),
+      listMatchesPage('', sortKey, desc, 0, PAGE_SIZE, { map: mapFilter, player: playerFilter }),
+    ])
+      .then(([nextJobs, page]) => {
+        if (jGen === jobsGen) jobs = nextJobs;
+        if (lGen !== listGen) return;
+        matches = (page && page.rows) || [];
+        hasNext = !!(page && page.hasNext);
+        applyRosters(page && page.rosters);
+        error = '';
+        listLoading = false;
+      })
+      .catch((e) => {
+        if (jGen === jobsGen) error = errText(e);
+      })
+      .finally(() => {
+        if (jGen === jobsGen) jobsLoading = false;
+      });
+  }
+
   async function refreshJobs() {
     const gen = ++jobsGen;
     try {
@@ -361,8 +387,7 @@
         if (d && d.matchId) warmMatchHeader(d.matchId, true);
       }),
       onLibraryChanged(() => {
-        refreshJobs();
-        refreshList();
+        refreshLibrary();
         // No demo-dir rescan here (owner ruling 2026-11-18): unrelated
         // library-changed events (a parse boundary, a status transition,
         // any other view's write) must never flash the import-dirs
@@ -440,6 +465,15 @@
   }
 
   // progressByMatch powers the "parsing" chip on match rows.
+  // In-flight imports (a match row whose import job is still running) are pinned above the sorted
+  // list: their sort key is not settled yet, and the pinned position is the one the pending row had.
+  const importMatchIds = $derived(
+    new Set(activeJobs.filter((j) => j.kind === 'import' && j.matchId).map((j) => j.matchId)),
+  );
+  const displayMatches = $derived([
+    ...matches.filter((m) => importMatchIds.has(m.id)),
+    ...matches.filter((m) => !importMatchIds.has(m.id)),
+  ]);
   const progressByMatch = $derived.by(() => {
     const m = new Map();
     for (const j of activeJobs) {
@@ -1102,7 +1136,7 @@
               </td>
             </tr>
           {/each}
-          {#each matches as m (m.id)}
+          {#each displayMatches as m (m.id)}
             <!-- Never-extracted presentation gate — the extracted_at
                  stamp (fmt.js neverExtracted), NEVER the status: a
                  reprocess keeps its old stamp (and values) mid-parse,
@@ -1193,8 +1227,8 @@
                 {#if m.status === 'parsing' || m.status === 'queued'}
                   <StatusChip
                     status={m.status === 'parsing' ? 'parsing' : 'queued'}
-                    progress={progressByMatch.get(m.id)?.progress ?? null}
-                    stage={progressByMatch.get(m.id)?.stage ?? ''}
+                    progress={m.status === 'parsing' ? (progressByMatch.get(m.id)?.progress ?? null) : null}
+                    stage={m.status === 'parsing' ? (progressByMatch.get(m.id)?.stage ?? '') : ''}
                     title={m.error || ''}
                   />
                 {:else if m.status === 'failed'}

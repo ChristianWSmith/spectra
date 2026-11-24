@@ -29,8 +29,8 @@ func (s *Store) GetMatchBySHA(sha string) (int64, bool, error) {
 // (status queued) and returns its id.
 func (s *Store) CreateMatchRow(path, sha string, size int64) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO matches (path, sha256, size, status) VALUES (?, ?, ?, ?)`,
-		scrub(path), scrub(sha), size, models.StatusQueued,
+		`INSERT INTO matches (path, sha256, size, status, imported_at) VALUES (?, ?, ?, ?, ?)`,
+		scrub(path), scrub(sha), size, models.StatusQueued, time.Now(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("couldn't create the match: %w", err)
@@ -288,8 +288,9 @@ const (
 // SaveExtracted persists a complete extract output for one match in a
 // single transaction: existing child rows are deleted, all children are
 // inserted (events numbered seq=0..n in slice order), and the matches
-// header is updated from em.Match with status forced to ready. Lifecycle
-// columns path/sha256/size are kept. A second call replaces the first.
+// header is updated from em.Match with status set to parsing (the analyze
+// stage makes it ready). Lifecycle columns path/sha256/size are kept, and the
+// first extracted_at stamp is kept. A second call replaces the first.
 func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -537,6 +538,11 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		if matchOwnedElsewhere[c] {
 			continue
 		}
+		if c == "extracted_at" {
+			// The first extraction stamps the row; a reprocess keeps it, so the row keeps its place.
+			set = append(set, "extracted_at = COALESCE(extracted_at, ?)")
+			continue
+		}
 		set = append(set, c+" = ?")
 	}
 	res, err := tx.Exec(
@@ -545,7 +551,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		scrub(m.ServerName), scrub(m.ClientName), scrub(m.GameDir), scrub(m.NetProto), b2i(m.IsPOV),
 		m.RealRounds, m.ScoreCT, m.ScoreT, m.HalfCT, m.HalfT, m.SideSwitches,
 		m.EntityClasses, m.EndEntityCount, scrub(m.ParserVersion), m.ExtractedAt, m.ParseMS,
-		m.WarningsCount, models.StatusReady, "", m.EncryptedMessages, matchID,
+		m.WarningsCount, models.StatusParsing, "", m.EncryptedMessages, matchID,
 	)
 	if err != nil {
 		return fmt.Errorf("saving the match data: %w", err)

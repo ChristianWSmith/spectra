@@ -444,6 +444,9 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 
 	// The stored "trade opportunities missed" count the Combat column
 	// read through GetCombatStats until W2b (the column now reads the
@@ -628,6 +631,9 @@ func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 
 	// round 2's stored classes + round label + pistol flag, read straight
 	// from the store (AnalyticsService.GetEconomy is this read verbatim).
@@ -741,6 +747,9 @@ func seedReadyMatch(t *testing.T, st *store.Store, n int) int64 {
 	}
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted(%d): %v", n, err)
+	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
 	}
 	return id
 }

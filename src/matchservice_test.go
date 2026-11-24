@@ -41,6 +41,9 @@ func newMatchServiceFixture(t *testing.T) (*MatchService, int64) {
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	return &MatchService{st: st}, id
 }
 
@@ -182,6 +185,9 @@ func TestGetBlindDurations(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
 	svc := &MatchService{st: st}
 	got, err := svc.GetBlindDurations(id)
 	if err != nil {
@@ -229,6 +235,9 @@ func TestGetDropDetails(t *testing.T) {
 			DetailJSON: `{"cat":"gun","mag":5}`}, // not a weapon_drop row
 	}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
+	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
 	}
 	svc := &MatchService{st: st}
 	got, err := svc.GetDropDetails(id)
@@ -281,6 +290,9 @@ func TestGetEventDetails(t *testing.T) {
 			DetailJSON: `{"entity":0}`},
 	}}); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
+	}
+	if err := st.SetMatchStatus(id, models.StatusReady, ""); err != nil {
+		t.Fatalf("ready: %v", err)
 	}
 	svc := &MatchService{st: st}
 

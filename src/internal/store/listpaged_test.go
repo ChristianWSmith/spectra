@@ -12,7 +12,6 @@ package store
 // below read it as the reference order.
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -246,14 +245,18 @@ func TestListMatchesPageNullExtractedAt(t *testing.T) {
 	if !sameIDs(descIDs, listOrder(t, s, "extracted_at", true)) {
 		t.Errorf("DESC paging diverged from the full list order")
 	}
-	// The 10 queued (NULL) rows sort LAST under DESC: the tail of the walk.
-	for i, id := range descIDs[15:] {
-		var extracted sql.NullTime
-		if err := s.db.QueryRow(`SELECT extracted_at FROM matches WHERE id = ?`, id).Scan(&extracted); err != nil {
-			t.Fatalf("read extracted_at: %v", err)
+	// Queued rows (never extracted) sort by their import time, so each walk is in
+	// COALESCE(extracted_at, imported_at) order in both directions.
+	keyOf := func(id int64) string {
+		var k string
+		if err := s.db.QueryRow(`SELECT COALESCE(extracted_at, imported_at) FROM matches WHERE id = ?`, id).Scan(&k); err != nil {
+			t.Fatalf("read sort key: %v", err)
 		}
-		if extracted.Valid {
-			t.Errorf("DESC tail row %d (id %d) has an extracted_at — NULL rows must sort last", i, id)
+		return k
+	}
+	for i := 1; i < len(descIDs); i++ {
+		if keyOf(descIDs[i-1]) < keyOf(descIDs[i]) {
+			t.Errorf("DESC walk out of order at %d (ids %d, %d)", i, descIDs[i-1], descIDs[i])
 		}
 	}
 
@@ -264,14 +267,9 @@ func TestListMatchesPageNullExtractedAt(t *testing.T) {
 	if !sameIDs(ascIDs, listOrder(t, s, "extracted_at", false)) {
 		t.Errorf("ASC paging diverged from the full list order")
 	}
-	// NULL first under ASC: the first 10 rows are the queued ones.
-	for i, id := range ascIDs[:10] {
-		var v any
-		if err := s.db.QueryRow(`SELECT extracted_at FROM matches WHERE id = ?`, id).Scan(&v); err != nil {
-			t.Fatalf("read extracted_at: %v", err)
-		}
-		if v != nil {
-			t.Errorf("ASC lead row %d (id %d) is not NULL — queued rows must sort first", i, id)
+	for i := 1; i < len(ascIDs); i++ {
+		if keyOf(ascIDs[i-1]) > keyOf(ascIDs[i]) {
+			t.Errorf("ASC walk out of order at %d (ids %d, %d)", i, ascIDs[i-1], ascIDs[i])
 		}
 	}
 }
@@ -311,8 +309,8 @@ func TestListMatchesPageRosters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMatchesPage: %v", err)
 	}
-	if got, want := pageIDList(page), []int64{idB, idA, idC}; !sameIDs(got, want) {
-		t.Fatalf("window ids = %v, want %v (newest first, NULL last)", got, want)
+	if got, want := pageIDList(page), []int64{idC, idB, idA}; !sameIDs(got, want) {
+		t.Fatalf("window ids = %v, want %v (newest first by import time)", got, want)
 	}
 	if _, ok := page.Rosters[idA]; ok {
 		t.Errorf("row with recorded team names carries a roster entry (%+v)", page.Rosters[idA])
