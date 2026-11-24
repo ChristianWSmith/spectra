@@ -20,7 +20,7 @@ export const metricLanguageSections = [
 
 Four things are worth knowing before anything else:
 
-- **The statement is the formula.** It is shown wherever the metric is shown, so nobody has to guess what a number means. A saved metric also carries a **doc** line, a short plain-language explanation shown in the ⓘ tooltip next to it. Leave it empty and the tooltip shows the formula itself.
+- **The statement is the formula.** It is shown wherever the metric is shown, so nobody has to guess what a number means. A saved metric also carries a written explanation of its own formula, required when you save, in the ⓘ tooltip next to it.
 - **Saving checks the statement.** The save gate reads the statement, refuses anything that is not one read-only query over the library's tables, and records which tables it reads (see [What saving checks](#save-gate)).
 - **Values are kept, not recalculated on the spot.** Once a metric has been worked out, every screen reads the kept value. When a table it reads changes, the metric is marked behind and worked out again (see [Touched tables and freshness](#freshness)).
 - **The binds set the scope.** A statement that binds \`:match_id\` gives one value per match, one that binds \`:steam_id\` gives a career value per player (see [Scope](#scope)).`,

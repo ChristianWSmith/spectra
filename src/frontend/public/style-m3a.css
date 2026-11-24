@@ -1197,15 +1197,19 @@ canvas.heat-canvas {
 
 /* FIXED rows (owner rulings — the DOM order IS the row order, so each
    row lands on its own line at every panel width instead of re-wrapping
-   as the window resizes): row 1 is the identity line — Name, Title,
-   Short name and Format side by side — then the full-width Doc line and
-   Expression. Twelve columns: Name four, Title three, Short name two,
-   Format three. minmax(0, 1fr) keeps the shrink honest at the 900px
-   minimum window width, and .bld-field and .input both carry
-   min-width: 0, so nothing overflows. */
+   as the window resizes): row 1 is the Name / Title / Short name trio,
+   row 2 is Subject / Scope alone (subject sits immediately left of
+   scope — the owner's placement), row 3 is Denominator / Format below
+   it (owner, 2026-11-18), then the full-width Doc and Expression rows.
+   Six columns: an unclassed field spans two (a third — the trio), a
+   `.half` field spans three (the select rows), `.wide` spans the lot;
+   minmax(0, 1fr) keeps the shrink honest at the 900px minimum window
+   width (a row-1 field keeps the trio's width, a select row gets a
+   comfortable half once the panel padding is paid); .bld-field and
+   .input both carry min-width: 0, so nothing overflows. */
 .bld-fields {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1214,18 +1218,10 @@ canvas.heat-canvas {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  grid-column: span 4;
-}
-
-.bld-field.bld-title {
-  grid-column: span 3;
-}
-
-.bld-field.bld-short {
   grid-column: span 2;
 }
 
-.bld-field.bld-format {
+.bld-field.half {
   grid-column: span 3;
 }
 

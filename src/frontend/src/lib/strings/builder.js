@@ -104,7 +104,7 @@ export const builder = {
   shortNameTooLong: 'Short name must be 6 characters or fewer.',
   fieldFormat: 'Format',
   fieldDoc: 'Doc (formula, required)',
-  docPlaceholder: 'Document what it counts, over what…',
+  docPlaceholder: 'Document the formula — what it counts, over what…',
   fieldExpression: 'Expression',
   exprChecking: 'checking…',
   exprValid: 'valid',

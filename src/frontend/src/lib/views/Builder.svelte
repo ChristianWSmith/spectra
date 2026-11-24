@@ -666,6 +666,10 @@
       saveError = 'Expression is required.';
       return;
     }
+    if (!form.doc.trim()) {
+      saveError = 'Doc is required for user metrics — document the formula.';
+      return;
+    }
     // The short-name cap (N3): six characters, counted as characters
     // (never UTF-16 units) — the same bound SaveMetric enforces
     // server-side, surfaced here before the round trip. The input's
@@ -1207,9 +1211,10 @@
           </div>
         {/if}
 
-        <!-- One row of the four identity fields (Name, Title, Short name,
-             Format — twelve columns in all, see style-m3a.css), then the
-             full-width Doc line and Expression. The DOM order is the row order. -->
+        <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
+             name, row 2 = Format — the grid below is a fixed
+             three columns, so the DOM order IS the row order. Doc and
+             Expression keep their full-width rows underneath. -->
         <div class="bld-fields">
           <!-- readonly, never disabled, on the text fields (owner wave):
                a built-in's contents stay selectable and copyable while
@@ -1217,7 +1222,7 @@
                a disabled input out and forbids selection, which is
                exactly what the owner ruled out. The selects take
                disabled instead: a dropdown is not a copy surface. -->
-          <div class="bld-field bld-name">
+          <div class="bld-field">
             <label class="field-label" for="bld-name">{S.builder.fieldName}</label>
             <input
               id="bld-name"
@@ -1227,7 +1232,7 @@
               readonly={builtinLoaded}
             />
           </div>
-          <div class="bld-field bld-title">
+          <div class="bld-field">
             <label class="field-label" for="bld-title">{S.builder.fieldTitle}</label>
             <input
               id="bld-title"
@@ -1237,7 +1242,7 @@
               readonly={builtinLoaded}
             />
           </div>
-          <div class="bld-field bld-short">
+          <div class="bld-field">
             <label class="field-label" for="bld-short">{S.builder.fieldShortName}</label>
             <input
               id="bld-short"
@@ -1248,7 +1253,7 @@
               readonly={builtinLoaded}
             />
           </div>
-          <div class="bld-field bld-format">
+          <div class="bld-field half">
             <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
@@ -1264,13 +1269,14 @@
           </div>
           <div class="bld-field wide">
             <label class="field-label" for="bld-doc">{S.builder.fieldDoc}</label>
-            <input
+            <textarea
               id="bld-doc"
               class="input"
+              rows="3"
               bind:value={form.doc}
               placeholder={S.builder.docPlaceholder}
               readonly={builtinLoaded}
-            />
+            ></textarea>
           </div>
           <div class="bld-field wide">
             <label class="field-label" for="bld-expr">{S.builder.fieldExpression}</label>
