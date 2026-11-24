@@ -33,6 +33,10 @@
   }
 
   let data = $state(null);
+  // Empty until the data lands: the panels mount with it and reserve their space while it loads.
+  const view = $derived(
+    data ?? { rows: [], rounds: [], players: [], names: { ct: S.match.sideCt, t: S.match.sideT }, tickRate: 64, sideSwitches: 0 },
+  );
   // The filters are seeded from the Match view's remembered copy once, at mount;
   // after that the panel owns them (setFilt writes back through onfilters).
   // svelte-ignore state_referenced_locally
@@ -107,16 +111,12 @@
 </script>
 
 <div class="view util-view">
-  {#if data}
-      <spectra.Child name="match-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
+      <spectra.Child name="match-utility-log" props={{ rows: view.rows, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches, tickRate: view.tickRate, loopSecs, back, filt, setFilt }} />
       <div class="util-summary">
-        <spectra.Child name="match-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
-        <spectra.Child name="match-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
+        <spectra.Child name="match-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches }} />
+        <spectra.Child name="match-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches }} />
       </div>
 
-  {:else}
-    <p class="muted" role="status">{S.utility.loading}</p>
-  {/if}
 </div>
 
 <style>

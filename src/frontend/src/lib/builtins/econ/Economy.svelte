@@ -41,6 +41,8 @@
   const ROSTER_SQL = SQL_ROSTER;
 
   let state = $state(null);
+  // Empty until the data lands: the panels mount with it and reserve their space while it loads.
+  const view = $derived(state ?? { rows: [], rounds: [], names: { ct: S.match.sideCt, t: S.match.sideT }, sideSwitches: 0, matchWinner: '' });
 
   async function load(matchId) {
     if (matchId == null) return null;
@@ -85,20 +87,16 @@
 </script>
 
 <div class="view econ-view">
-  {#if state}
       <div class="econ-head">
-        <span class="muted">{state.rows.length}{state.rows.length === 1 ? ' round' : ' rounds'}</span>
+        <span class="muted">{view.rows.length}{view.rows.length === 1 ? ' round' : ' rounds'}</span>
         <span class="spacer"></span>
         <span class="muted econ-head-note">{S.economy.headNote}</span>
       </div>
 
-      <spectra.Child name="match-economy-curve" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
-      <spectra.Child name="match-economy-cards" props={{ rows: state.rows, rounds: state.rounds, names: state.names, back }} />
-      <spectra.Child name="match-economy-rounds" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
+      <spectra.Child name="match-economy-curve" props={{ rows: view.rows, names: view.names, sideSwitches: view.sideSwitches, matchWinner: view.matchWinner, back }} />
+      <spectra.Child name="match-economy-cards" props={{ rows: view.rows, rounds: view.rounds, names: view.names, back }} />
+      <spectra.Child name="match-economy-rounds" props={{ rows: view.rows, rounds: view.rounds, names: view.names, sideSwitches: view.sideSwitches, back }} />
 
-  {:else}
-    <p class="muted" role="status">{S.economy.loading}</p>
-  {/if}
 </div>
 
 <style>

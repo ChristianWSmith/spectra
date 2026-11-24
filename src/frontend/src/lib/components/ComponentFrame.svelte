@@ -56,6 +56,8 @@
   // The frames above this one (null at the top of a surface).
   const parent = getContext(FRAME_KEY) || null;
   const depth = parent ? parent.depth + 1 : 0;
+  // A nested frame inside a loading frame is loading too (see busy below).
+  const parentLoading = () => (parent ? parent.loading() : false);
   // What the nested frames below this one inherit (see ChildFrame).
   // svelte-ignore state_referenced_locally
   setContext(FRAME_KEY, {
@@ -65,6 +67,8 @@
     context: () => ctx,
     // A nested frame registers here on mount and leaves on unmount.
     adopt: (delta) => untrack(() => (childCount += delta)),
+    // Whether this frame has reads in flight: its nested frames then load with it.
+    loading: () => pending > 0,
   });
 
   let el = $state(null);
@@ -89,7 +93,10 @@
   let readCount = $state(0);
   let childCount = $state(0);
   const isComposer = $derived(childCount > 0 && readCount === 0);
-  const busy = $derived(pending > 0 && !isComposer);
+  // A frame is busy while its own reads run (a composer’s children show their own), and while a
+  // parent frame is loading: then it reserves its block and shows its spinner, so the panels of a
+  // composer each take their space before their data arrives.
+  const busy = $derived((pending > 0 && !isComposer) || parentLoading());
 
   $effect(() => {
     if (!parent) return;
