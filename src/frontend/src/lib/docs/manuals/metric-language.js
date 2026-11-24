@@ -83,7 +83,7 @@ A metric's statement sees the players in the library as they are, bots included,
 
 **Tables.** The tables a statement may read are listed in [Tables you can read](#sources).
 
-**Patterns.** A statement cannot call the built-in metrics' shared SQL, and it has no macros. The built-ins are written with those when the library is set up, and each built-in shows its complete statement. To write a common pattern yourself, copy a built-in's statement and change it. See [Built-in metrics](#built-in-metrics).`,
+**Patterns.** A statement cannot call the built-in metrics' shared SQL, and it has no macros. The built-ins are written with those when the library is set up, and each built-in shows its complete statement. To write a common pattern yourself, copy a built-in's statement and change it. The statement box completes the readable tables and their columns, the binds, the bot filter and the metric references as you type. See [Built-in metrics](#built-in-metrics).`,
   },
   {
     id: 'save-gate',

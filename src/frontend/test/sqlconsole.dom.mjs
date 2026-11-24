@@ -175,6 +175,17 @@ svelteCompile(
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
 );
+// SourceEditor — the statement box. Monaco is a browser module that does not
+// load under jsdom, so the component falls back to its textarea here (the id and
+// the bound value the driver reads are the same either way).
+svelteCompile(
+  readFileSync('src/lib/components/SourceEditor.svelte', 'utf8').replace(
+    "from '../editor/monaco.js'",
+    `from '${fileURL('src/lib/editor/monaco.js')}'`,
+  ),
+  'SourceEditor.svelte',
+  join(dir, 'sourceeditor.js'),
+);
 // Popover — the export panel's anchor/dismissal component (no imports
 // of its own, so a plain compile is the whole bundle).
 svelteCompile(
@@ -196,12 +207,13 @@ svelteCompile(
 // The view: plain-ESM imports resolve from their real module locations,
 // the component imports from the local bundles.
 let sqlSrc = readFileSync('src/lib/views/SqlConsole.svelte', 'utf8');
-for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js', 'strings/index.js']) {
+for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js', 'strings/index.js', 'editor/sqlCompletions.js', 'editor/completionSources.js']) {
   sqlSrc = sqlSrc.split(`from '../${rel}'`).join(`from '${fileURL(`src/lib/${rel}`)}'`);
 }
 sqlSrc = sqlSrc.split("from '../components/StatusChip.svelte'").join("from './statuschip.js'");
 sqlSrc = sqlSrc.split("from '../components/HelpButton.svelte'").join("from './helpbutton.js'");
 sqlSrc = sqlSrc.split("from '../components/Popover.svelte'").join("from './popover.js'");
+sqlSrc = sqlSrc.split("from '../components/SourceEditor.svelte'").join("from './sourceeditor.js'");
 // The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
 writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));

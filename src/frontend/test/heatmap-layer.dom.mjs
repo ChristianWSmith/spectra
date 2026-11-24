@@ -343,9 +343,8 @@ check(
 const errBlock = /\{#if error\}([\s\S]*?)\{\/if\}/.exec(heatSrc)?.[1] || '';
 check(
   'Heatmaps error alert carries the ✕ that clears `error` in place',
-  /p class="error" role="alert"/.test(errBlock) &&
-    /onclick=\{\(\) => \(error = ''\)\}/.test(errBlock) &&
-    /codicon codicon-close/.test(errBlock),
+  /<ErrorBanner/.test(errBlock) &&
+    /ondismiss=\{\(\) => \(error = ''\)\}/.test(errBlock),
   errBlock.replace(/\s+/g, ' ').slice(0, 160),
 );
 
@@ -501,8 +500,8 @@ check(
 );
 check(
   'regionNote states the APPLIED rect — never the raw cell',
-  /regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{ x0: Math\.round\(applied\.minX\)/.test(onRegionSrc) &&
-    !/regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{ x0: Math\.round\(bbox\.minX\)/.test(onRegionSrc),
+  /regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{\s*x0: Math\.round\(applied\.minX\)/.test(onRegionSrc) &&
+    !/regionNote = S\.fill\(S\.heatmaps\.bboxLabel, \{\s*x0: Math\.round\(bbox\.minX\)/.test(onRegionSrc),
 );
 
 console.log('K. stale raster: the arrival reads the generating settings (source pin)');

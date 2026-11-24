@@ -1054,6 +1054,9 @@ export function onMetricDone(callback) {
 
 export function runQuery(sql, limit, timeoutMS) { return QueryService.Run(sql, limit || 0, timeoutMS || 0); }
 export function getSchema() { return QueryService.GetSchema(); }
+// getMetricTables: the tables a metric statement may read (the save gate's allowlist),
+// for the Builder's completions.
+export function getMetricTables() { return QueryService.MetricReadableTables(); }
 // componentQuery is a user component's query(sql) (lib/componentruntime/
 // readapi.js): the console's read-only connection with no row cap, no
 // timeout and no history entry. Deliberately NOT read-cached: a component
@@ -1123,6 +1126,9 @@ export function clearQueryHistory() { return QueryService.ClearHistory(); }
 
 // --- PlatformService (M5) ----------------------------------------------------
 
+// getReportFields: the fields a template of the scope can reference (its data's
+// names and types), for the Report builder's completions.
+export function getReportFields(scope) { return PlatformService.ReportFields(scope); }
 export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
 export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
 export function listPlugins() { return PlatformService.ListPlugins(); }

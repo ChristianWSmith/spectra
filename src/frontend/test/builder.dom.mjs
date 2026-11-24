@@ -425,9 +425,23 @@ svelteCompile(
 const { compileModule: compileRunes } = await import('svelte/compiler');
 writeFileSync(join(dir, 'loadstate.svelte.js'), compileRunes(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
+// SourceEditor — the source box. Monaco does not load under jsdom, so the
+// component falls back to its textarea here (the id and the bound value the
+// driver reads are the same either way).
+svelteCompile(
+  readFileSync('src/lib/components/SourceEditor.svelte', 'utf8').replace(
+    "from '../editor/monaco.js'",
+    `from '${fileURL('src/lib/editor/monaco.js')}'`,
+  ),
+  'SourceEditor.svelte',
+  join(dir, 'sourceeditor.js'),
+);
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`)
   .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
+  .replace("from '../components/SourceEditor.svelte'", "from './sourceeditor.js'")
+  .replace("from '../editor/sqlCompletions.js'", `from '${fileURL('src/lib/editor/sqlCompletions.js')}'`)
+  .replace("from '../editor/completionSources.js'", `from '${fileURL('src/lib/editor/completionSources.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../metricformats.js'", `from '${fileURL('src/lib/metricformats.js')}'`)

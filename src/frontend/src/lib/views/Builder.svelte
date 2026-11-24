@@ -39,7 +39,17 @@
   import RunningMetricsDialog from '../components/RunningMetricsDialog.svelte';
   import Popover from '../components/Popover.svelte';
   import HelpButton from '../components/HelpButton.svelte';
+  import SourceEditor from '../components/SourceEditor.svelte';
+  import { sqlItems, METRIC_BINDS } from '../editor/sqlCompletions.js';
+  import { metricTables, savedMetrics } from '../editor/completionSources.js';
   import { seed, remember } from '../viewstate.svelte.js';
+
+  // The expression's completions: the metric-readable tables with their columns,
+  // the reserved binds, the saved metrics a metric('…') reference may name, and the bot filter.
+  async function builderCompletions() {
+    const [tables, saved] = await Promise.all([metricTables(), savedMetrics()]);
+    return sqlItems({ tables, binds: METRIC_BINDS, metrics: saved, botFilter: true });
+  }
 
   let { nav = () => {}, openDocs = () => {} } = $props();
 
@@ -1270,14 +1280,16 @@
           </div>
           <div class="bld-field wide">
             <label class="field-label" for="bld-expr">{S.builder.fieldExpression}</label>
-            <textarea
+            <SourceEditor
               id="bld-expr"
-              class="input mono bld-expr"
-              rows="4"
-              spellcheck="false"
-              bind:value={form.expr}
+              cls="bld-expr"
+              language="sql"
+              rows={4}
+              ariaLabel={S.builder.fieldExpression}
               placeholder={EXAMPLE}
-            ></textarea>
+              bind:value={form.expr}
+              completions={builderCompletions}
+            />
             <p class="bld-hint mono">One SELECT or WITH statement over the metric-readable tables; it returns subject_key, dim and value. :match_id, :steam_id and :round are the reserved binds.</p>
           </div>
         </div>

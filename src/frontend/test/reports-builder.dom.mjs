@@ -112,12 +112,14 @@ for (const name of ['StatusChip', 'Popover']) {
   );
 }
 const matchPickerSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
+  .replace("from '../listnav.js'", `from '${fileURL('src/lib/listnav.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from './StatusChip.svelte'", "from './statuschip.js'")
   .replace("from './Popover.svelte'", "from './popover.js'")
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'));
 const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
+  .replace("from '../listnav.js'", `from '${fileURL('src/lib/listnav.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
@@ -141,8 +143,22 @@ svelteCompile(
   'LoadBox.svelte',
   join(dir, 'loadbox.js'),
 );
+// SourceEditor — the source box. Monaco does not load under jsdom, so the
+// component falls back to its textarea here (the id and the bound value the
+// driver reads are the same either way).
+svelteCompile(
+  readFileSync('src/lib/components/SourceEditor.svelte', 'utf8').replace(
+    "from '../editor/monaco.js'",
+    `from '${fileURL('src/lib/editor/monaco.js')}'`,
+  ),
+  'SourceEditor.svelte',
+  join(dir, 'sourceeditor.js'),
+);
 const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
   .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
+  .replace("from '../components/SourceEditor.svelte'", "from './sourceeditor.js'")
+  .replace("from '../editor/templateCompletions.js'", `from '${fileURL('src/lib/editor/templateCompletions.js')}'`)
+  .replace("from '../editor/completionSources.js'", `from '${fileURL('src/lib/editor/completionSources.js')}'`)
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)

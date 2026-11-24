@@ -627,7 +627,7 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 | \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
 | \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
 
-A component cannot import another module, and the save gate refuses one that tries. Everything in this list is the whole surface.`,
+A component cannot import another module, and the save gate refuses one that tries. Everything in this list is the whole surface. The source editor completes these names as you type: type \`spectra.\` for the helpers, \`spectra.ui.\` for the pieces, and \`context.\` for its fields.`,
   },
   {
     id: 'sql-console',

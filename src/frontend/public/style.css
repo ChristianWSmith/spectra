@@ -3121,3 +3121,31 @@ mark {
 .wk-pill .wk-dismiss {
   flex: 0 0 auto;
 }
+
+/* SourceEditor (components/SourceEditor.svelte): the Monaco box takes the
+   input's frame, so it sits with the textareas it replaces. */
+.source-editor {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.source-editor:hover {
+  border-color: var(--muted);
+}
+
+.source-editor:focus-within {
+  border-color: var(--focus);
+}
+
+/* The component source box's fallback textarea (components/SourceEditor.svelte). */
+.cb-source {
+  min-height: 22em;
+  width: 100%;
+  resize: vertical;
+  white-space: pre;
+  overflow: auto;
+}

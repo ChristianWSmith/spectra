@@ -1,4 +1,7 @@
 <script>
+  import SourceEditor from '../components/SourceEditor.svelte';
+  import { sqlItems } from '../editor/sqlCompletions.js';
+  import { consoleTables } from '../editor/completionSources.js';
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import {
@@ -192,19 +195,14 @@
   }
 
   function insertAtCursor(text) {
-    const el = editor;
-    if (!el) {
-      sql += text;
-      return;
-    }
-    const start = el.selectionStart ?? sql.length;
-    const end = el.selectionEnd ?? start;
-    sql = sql.slice(0, start) + text + sql.slice(end);
-    requestAnimationFrame(() => {
-      el.focus();
-      const pos = start + text.length;
-      el.setSelectionRange(pos, pos);
-    });
+    if (editor) editor.insert(text);
+    else sql += text;
+  }
+
+  // The console's completions: every table with its columns, the SQL keywords and
+  // functions, and the bot filter.
+  async function consoleCompletions() {
+    return sqlItems({ tables: await consoleTables(), binds: [], metrics: [], botFilter: true });
   }
 
   function short(s, n) {
@@ -487,20 +485,16 @@
           <h2>Statement</h2>
           <span class="muted sql-defaults">{DEFAULTS}</span>
         </div>
-        <textarea
-          class="input mono sql-editor"
-          rows="6"
-          spellcheck="false"
-          placeholder="SELECT * FROM matches LIMIT 20"
-          bind:value={sql}
+        <SourceEditor
           bind:this={editor}
-          onkeydown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-              e.preventDefault();
-              run();
-            }
-          }}
-        ></textarea>
+          bind:value={sql}
+          cls="sql-editor"
+          language="sql"
+          rows={6}
+          ariaLabel="SQL statement"
+          completions={consoleCompletions}
+          onrun={() => run()}
+        />
         <!-- The save form lives in the STATEMENT card (owner,
              2026-11-15): name/description belong with the statement they
              name, and they share the card's ONE toolbar with Export and

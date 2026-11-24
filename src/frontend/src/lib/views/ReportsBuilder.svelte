@@ -1,4 +1,7 @@
 <script>
+  import SourceEditor from '../components/SourceEditor.svelte';
+  import { templateItems } from '../editor/templateCompletions.js';
+  import { reportFields } from '../editor/completionSources.js';
   import { fillHeight } from '../fillheight.js';
   // The Reports builder — the template AUTHORING surface (the sibling
   // Reports view only CONSUMES templates). Two panels over the Builder's
@@ -353,6 +356,11 @@
     rounds = [];
   });
   const maxRound = $derived(rounds.reduce((m, r) => Math.max(m, r.number), 0));
+  // The body's completions: the template functions and keywords, and the fields of
+  // the data the form's scope renders against.
+  async function bodyCompletions() {
+    return templateItems({ fields: await reportFields(form.scope) });
+  }
 </script>
 
 {#snippet templateRow(t)}
@@ -529,13 +537,15 @@
                monospace, spellcheck off, never a hint over its grammar. -->
           <div class="rb-field wide">
             <label class="field-label" for="rb-body">{S.reportbuilder.fieldBody}</label>
-            <textarea
+            <SourceEditor
               id="rb-body"
-              class="input mono rb-body"
-              rows="10"
-              spellcheck="false"
+              cls="rb-body"
+              language="gotemplate"
+              rows={10}
+              ariaLabel={S.reportbuilder.fieldBody}
               bind:value={form.body}
-            ></textarea>
+              completions={bodyCompletions}
+            />
           </div>
         </div>
 

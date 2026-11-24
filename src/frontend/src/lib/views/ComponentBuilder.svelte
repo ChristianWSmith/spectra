@@ -1,4 +1,6 @@
 <script>
+  import SourceEditor from '../components/SourceEditor.svelte';
+  import { componentCompletions } from '../editor/helperCatalog.js';
   import { fillHeight } from '../fillheight.js';
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
@@ -576,13 +578,15 @@
            so a built-in's source stays selectable and copyable. -->
       <div class="cb-field cb-source-field">
         <label class="field-label" for="cb-source">{S.componentbuilder.fieldSource}</label>
-        <textarea
+        <SourceEditor
           id="cb-source"
-          class="input mono cb-source"
-          rows="22"
-          spellcheck="false"
+          cls="cb-source"
+          language="javascript"
+          rows={22}
+          ariaLabel={S.componentbuilder.fieldSource}
           bind:value={form.source}
-        ></textarea>
+          completions={componentCompletions}
+        />
       </div>
       <div class="cb-check">
         {#if check.status === 'pending'}
@@ -817,13 +821,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-  }
-  .cb-source {
-    min-height: 22em;
-    width: 100%;
-    resize: vertical;
-    white-space: pre;
-    overflow: auto;
   }
   .cb-actions {
     flex-wrap: wrap;
