@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"strconv"
 	"text/template"
 	"time"
 
@@ -194,28 +193,6 @@ func dashCells() MetricCells {
 	}
 }
 
-// reportCell formats one FRESH stored value for the document: the
-// format-keyed display scale (store.MetricDisplayScale — percent
-// stores a 0..1 fraction and renders 0..100) and the printf precision
-// the templates used to spell over GetScoreboard's Go-computed columns
-// (ADR %.1f, HS% %.0f, KD %.2f, KDA %.2f — exactly the seeds'
-// float1/percent/float2 tags). The default arm serves the `int` seeds
-// (A, Openings, Trades, Best streak, Enemies flashed): a whole count
-// renders plain, no rounding invented for an integer the format tag
-// already pins.
-func reportCell(v float64, format string, scale float64) string {
-	switch format {
-	case "percent":
-		return fmt.Sprintf("%.0f", v*scale)
-	case "float1":
-		return fmt.Sprintf("%.1f", v*scale)
-	case "float2":
-		return fmt.Sprintf("%.2f", v*scale)
-	default:
-		return strconv.FormatFloat(v*scale, 'f', -1, 64)
-	}
-}
-
 // metricCells resolves the report's seed names → ids and reads this
 // match's FRESH rows in ONE canonical read (design §3.6 — never a
 // recomputation), returning steamId → the formatted cells. Every roster
@@ -229,7 +206,6 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 	type resolved struct {
 		id     int64
 		format string
-		scale  float64
 		fill   func(*MetricCells, string)
 	}
 	want := make([]resolved, 0, len(reportMetricSeeds))
@@ -241,7 +217,7 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 		if err != nil {
 			return nil, err
 		}
-		want = append(want, resolved{id: def.ID, format: def.Format, scale: store.MetricDisplayScale(def.Format), fill: sc.fill})
+		want = append(want, resolved{id: def.ID, format: def.Format, fill: sc.fill})
 	}
 	if len(want) == 0 {
 		return cells, nil
@@ -269,7 +245,7 @@ func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ma
 			// NULL is no data (ruling 23): the cell stays a dash, never 0.
 			continue
 		}
-		w.fill(&c, reportCell(*v.Value, w.format, w.scale))
+		w.fill(&c, reportCell(*v.Value, w.format))
 		cells[v.SubjectKey] = c
 	}
 	return cells, nil

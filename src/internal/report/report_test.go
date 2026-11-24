@@ -426,8 +426,8 @@ func TestReportMetricReadBack(t *testing.T) {
 	insert(kdDef, kdDef.Version, "A00", 2.5)
 	insert(kdaDef, kdaDef.Version, "A00", 1.5)
 	out := render(t)
-	if !strings.Contains(out, "| 42.5 | 20 | 2.50 |") {
-		t.Errorf("match.md fresh metric cells missing \"| 42.5 | 20 | 2.50 |\":\n%s", out)
+	if !strings.Contains(out, "| 42.5 | 20% | 2.50 |") {
+		t.Errorf("match.md fresh metric cells missing \"| 42.5 | 20%% | 2.50 |\":\n%s", out)
 	}
 	if !strings.Contains(out, "| — | — | — |") {
 		t.Errorf("match.md subject without rows must keep the dash cells:\n%s", out)
@@ -462,7 +462,7 @@ func TestReportMetricReadBack(t *testing.T) {
 	}
 	insert(kdDef, kdDef.Version-1, "A00", 99)
 	out = render(t)
-	if !strings.Contains(out, "| 42.5 | 20 | — |") {
+	if !strings.Contains(out, "| 42.5 | 20% | — |") {
 		t.Errorf("match.md behind kd did not render the dash:\n%s", out)
 	}
 	if strings.Contains(out, "99.00") {
@@ -609,7 +609,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 		insert(in.d, in.d.Version, "A00", in.v)
 	}
 	out := matchDoc(t)
-	const freshRow = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20 | 2.50 | 5 | 3/4 | 9 | 1 |"
+	const freshRow = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20% | 2.50 | 5 | 3/4 | 9 | 1 |"
 	if !strings.Contains(out, freshRow) {
 		t.Errorf("match.md fresh converting cells missing %q:\n%s", freshRow, out)
 	}
@@ -636,7 +636,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	// per value).
 	hout := htmlDoc(t)
 	for _, want := range []string{
-		"<td>player0</td><td>ct</td><td>10</td><td>0</td><td>7</td><td>42.5</td><td>20</td><td>2.50</td>",
+		"<td>player0</td><td>ct</td><td>10</td><td>0</td><td>7</td><td>42.5</td><td>20%</td><td>2.50</td>",
 		"<td>3/4</td>",
 	} {
 		if !strings.Contains(hout, want) {
@@ -652,7 +652,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	}
 	insert(edDef, edDef.Version-1, "A00", 888)
 	out = matchDoc(t)
-	const pairBehind = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20 | 2.50 | 5 | 3/— | 9 | 1 |"
+	const pairBehind = "| player0 | ct | 10 | 0 | 7 | 42.5 | 20% | 2.50 | 5 | 3/— | 9 | 1 |"
 	if !strings.Contains(out, pairBehind) {
 		t.Errorf("match.md behind entry_deaths did not dash ONLY its half:\n%s", out)
 	}
@@ -675,7 +675,7 @@ func TestReportCompoundCellsComposePerHalf(t *testing.T) {
 	}
 	insert(assistsDef, assistsDef.Version-1, "A00", 999)
 	out = matchDoc(t)
-	if !strings.Contains(out, "| player0 | ct | 10 | 0 | — | 42.5 | 20 | 2.50 | 5 | 3/— | 9 | 1 |") {
+	if !strings.Contains(out, "| player0 | ct | 10 | 0 | — | 42.5 | 20% | 2.50 | 5 | 3/— | 9 | 1 |") {
 		t.Errorf("match.md behind assists did not dash ONLY the A half:\n%s", out)
 	}
 	if strings.Contains(bodyOf(out), "999") {
