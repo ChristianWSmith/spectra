@@ -1197,7 +1197,13 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// the job is marked failed (with the analytics error prefixed).
 	rep.emit(models.StageStore, 1)
 	rep.emit(models.StageAnalyze, 0)
-	if aerr := im.analyze(matchID); aerr != nil {
+	if aerr := im.analyze(ctx, matchID); aerr != nil {
+		if ctx.Err() != nil {
+			// Cancelled (or shut down) during analysis: the pass stopped at a step boundary and
+			// never stamped the rule version, so the match stays behind and a reprocess redoes it.
+			im.failJob(jobID, matchID, models.StageAnalyze, "cancelled", true)
+			return
+		}
 		msg := playerJobError(models.StageAnalyze, aerr.Error())
 		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, 0, msg)
 		_ = im.st.SetMatchStatus(matchID, models.StatusFailed, msg)
@@ -1218,6 +1224,11 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 	// Ready only now: the row reads parsing through the analyze stage, so a match whose
 	// analysis is still running (or failed) never shows as ready. The metric sweep that
 	// follows counts ready matches.
+	if ctx.Err() != nil {
+		// Cancelled after the pass landed but before the match is marked ready: honour the cancel.
+		im.failJob(jobID, matchID, models.StageAnalyze, "cancelled", true)
+		return
+	}
 	if err := im.st.SetMatchStatus(matchID, models.StatusReady, ""); err != nil {
 		im.failJob(jobID, matchID, models.StageAnalyze, err.Error(), false)
 		return
@@ -1241,14 +1252,14 @@ func (im *Importer) process(item queueItem, ctx context.Context, cancel context.
 // snapshot. Main wires ONE lock into both sides (library.Options and
 // AnalyticsService.computeLock); without that wiring the nil-option
 // private lock still serializes this importer's own Computes.
-func (im *Importer) analyze(matchID int64) error {
+func (im *Importer) analyze(ctx context.Context, matchID int64) error {
 	cfg, err := im.st.GetConfig()
 	if err != nil {
 		return err
 	}
 	im.computeLock.Lock()
 	defer im.computeLock.Unlock()
-	return analytics.Compute(im.st, matchID, analytics.ConfigFrom(cfg, 0))
+	return analytics.ComputeContext(ctx, im.st, matchID, analytics.ConfigFrom(cfg, 0))
 }
 
 // jobErrPrefixes are the package/context prefixes pipeline errors wrap

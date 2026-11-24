@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -36,8 +37,17 @@ import (
 // cfg.TickRate is filled from the match row when unset/<= 0. A match with
 // no extracted rounds is a no-op (not an error). Errors name the failing
 // stage.
+// Compute runs one pass without a cancel point (the recompute paths).
 func Compute(st *store.Store, matchID int64, cfg Config) error {
-	return compute(st, matchID, cfg, true)
+	return ComputeContext(context.Background(), st, matchID, cfg)
+}
+
+// ComputeContext is Compute with a cancel point: ctx is checked before every write step, so a
+// cancelled pass stops at a step boundary and returns ctx.Err(). Each step commits on its own, and
+// the rule stamp is written last, so a stopped pass never claims the rule version and the match stays
+// behind (retryable).
+func ComputeContext(ctx context.Context, st *store.Store, matchID int64, cfg Config) error {
+	return compute(ctx, st, matchID, cfg, true)
 }
 
 // ComputeForBatch is Compute's bulk twin: identical reads, derives,
@@ -57,13 +67,13 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 // the last member's analysis-done event) — the stamp asserts the match's
 // own rows, not the cross-match rollup.
 func ComputeForBatch(st *store.Store, matchID int64, cfg Config) error {
-	return compute(st, matchID, cfg, false)
+	return compute(context.Background(), st, matchID, cfg, false)
 }
 
 // compute is the shared body of Compute / ComputeForBatch; the
 // rebuildCareer flag is the ONE difference between them (see the two
 // wrappers' docs).
-func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) error {
+func compute(ctx context.Context, st *store.Store, matchID int64, cfg Config, rebuildCareer bool) error {
 	m, err := st.GetMatch(matchID)
 	if err != nil {
 		return fmt.Errorf("couldn't load the match: %w", err)
@@ -151,13 +161,25 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// above (same config, same inputs), so the round chips and the
 	// Economy tab's side chips can never disagree — and neither is ever
 	// re-derived at read time (AGENTS.md "Analysis-rule derived values").
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := st.ReplaceRoundClassifications(matchID, classes); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := st.ReplaceRoundSideClasses(matchID, sideClasses); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := st.ReplacePlayerRounds(matchID, prs); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := st.ReplaceKillTags(matchID, engs); err != nil {
@@ -173,6 +195,9 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		if e.Kind == KindTrade {
 			tradeKills[e.ASteam]++
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := st.ReplaceTradeKills(matchID, tradeKills); err != nil {
 		return fmt.Errorf("couldn't save the trade kills: %w", err)
@@ -196,8 +221,14 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		return fmt.Errorf("couldn't load the kill distances: %w", err)
 	}
 	opps, missed := tradeOppCounts(kills, rounds, sides, engs, players, cfg.TradeOppDistance)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := st.ReplaceTradeOpps(matchID, opps, missed); err != nil {
 		return fmt.Errorf("couldn't save the trade opportunities: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := st.ReplaceUtility(matchID, utils); err != nil {
 		return err
@@ -207,6 +238,9 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		for _, p := range players {
 			steamIDs = append(steamIDs, p.SteamID)
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := st.RebuildCareerFor(steamIDs); err != nil {
 			return fmt.Errorf("couldn't rebuild the career: %w", err)
 		}
@@ -214,6 +248,9 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	// The stamp lands last (see the RULE STAMP note): only a pass that
 	// reached here — every replace committed, and the career rebuild when
 	// this path owns it — claims the rule version.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := st.SetMatchRuleVersion(matchID, cfg.RuleVersion); err != nil {
 		return fmt.Errorf("couldn't save the analysis version: %w", err)
 	}
