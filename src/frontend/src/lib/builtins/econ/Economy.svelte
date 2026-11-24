@@ -92,9 +92,9 @@
         <span class="muted econ-head-note">{S.economy.headNote}</span>
       </div>
 
-      <spectra.Child name="builtin-economy-curve" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
-      <spectra.Child name="builtin-economy-cards" props={{ rows: state.rows, rounds: state.rounds, names: state.names, back }} />
-      <spectra.Child name="builtin-economy-rounds" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
+      <spectra.Child name="match-economy-curve" props={{ rows: state.rows, names: state.names, sideSwitches: state.sideSwitches, matchWinner: state.matchWinner, back }} />
+      <spectra.Child name="match-economy-cards" props={{ rows: state.rows, rounds: state.rounds, names: state.names, back }} />
+      <spectra.Child name="match-economy-rounds" props={{ rows: state.rows, rounds: state.rounds, names: state.names, sideSwitches: state.sideSwitches, back }} />
 
   {:else}
     <p class="muted" role="status">{S.economy.loading}</p>

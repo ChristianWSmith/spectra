@@ -21,15 +21,15 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinById, builtinShippedSource, builtinSourceDir } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource, builtinSourceDir, isBuiltinId } from './componentbuiltins.js';
 import { BUILTIN_HELPERS } from './componentruntime/compile.js';
 import { gateComponentSave } from './componentruntime/savegate.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-const ECONOMY = ['builtin-economy', 'builtin-economy-curve', 'builtin-economy-cards', 'builtin-economy-rounds'];
-const UTILITY = ['builtin-utility', 'builtin-utility-log', 'builtin-utility-damage', 'builtin-utility-blind'];
-const COMPOSERS = ['builtin-economy', 'builtin-utility'];
+const ECONOMY = ['match-economy', 'match-economy-curve', 'match-economy-cards', 'match-economy-rounds'];
+const UTILITY = ['match-utility', 'match-utility-log', 'match-utility-damage', 'match-utility-blind'];
+const COMPOSERS = ['match-economy', 'match-utility'];
 const PANELS = [...ECONOMY, ...UTILITY];
 
 // The retired keys and readers.
@@ -67,7 +67,7 @@ test('the Economy and Utility views are builtins: a composer and three or four p
   assert.equal(ECONOMY.length, 4, 'Economy: composer, curve, cards, rounds');
   assert.equal(UTILITY.length, 4, 'Utility: composer, log, damage, blind');
   for (const id of PANELS) {
-    assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} is in the builtin namespace`);
+    assert.ok(isBuiltinId(id), `${id} is in the builtin namespace`);
     assert.ok(BUILTIN_COMPONENTS.some((b) => b.id === id), `${id} is in the builtin registry`);
     assert.ok(builtinById(id), `${id} resolves`);
     assert.ok(sourceOf(id), `${id} has shipped source`);
@@ -150,16 +150,16 @@ test('no panel reads the per-round deaths column (F3); deaths are the stored met
     assert.ok(!/player_round_stats/.test(code), `${id} reads player_round_stats`);
     assert.ok(!/\.deaths\b/.test(code), `${id} reads a per-round deaths field`);
   }
-  assert.match(sourceOf('builtin-economy-rounds'), /metric\('raw_player_round_deaths'/, 'the rounds panel reads the stored round deaths');
+  assert.match(sourceOf('match-economy-rounds'), /metric\('raw_player_round_deaths'/, 'the rounds panel reads the stored round deaths');
 });
 
 test('the Economy cards read the six default statistics by their stored names', () => {
-  const cards = sourceOf('builtin-economy-cards');
+  const cards = sourceOf('match-economy-cards');
   for (const name of ['pistol_hold', 'team_force_wins', 'team_force_rounds', 'avg_equip_gap', 'lost_equip', 'team_lost_equip']) {
     assert.ok(cards.includes(`metric: '${name}'`), `cards read ${name}`);
   }
 });
 
 test('the Economy composer owns no card set: the cards panel does', () => {
-  assert.ok(!sourceOf('builtin-economy').includes('pistol_hold'), 'the composer loads rows only');
+  assert.ok(!sourceOf('match-economy').includes('pistol_hold'), 'the composer loads rows only');
 });

@@ -6,11 +6,11 @@
   let { spectra } = $props();
 </script>
 
-<spectra.Child name="builtin-profile-career" />
-<spectra.Child name="builtin-profile-trend" />
+<spectra.Child name="profile-career" />
+<spectra.Child name="profile-trend" />
 <div class="prof-splits">
-  <spectra.Child name="builtin-profile-sides" />
-  <spectra.Child name="builtin-profile-maps" />
-  <spectra.Child name="builtin-profile-weapons" />
+  <spectra.Child name="profile-sides" />
+  <spectra.Child name="profile-maps" />
+  <spectra.Child name="profile-weapons" />
 </div>
-<spectra.Child name="builtin-profile-history" />
+<spectra.Child name="profile-history" />

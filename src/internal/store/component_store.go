@@ -59,7 +59,7 @@ func scanComponent(row interface{ Scan(...any) error }) (ComponentRow, error) {
 // ListComponents returns every stored user component, name ASC
 // (case-insensitive, then exact, so the order is total).
 func (s *Store) ListComponents() ([]ComponentRow, error) {
-	rows, err := s.db.Query(`SELECT ` + componentCols + ` FROM components ORDER BY name COLLATE NOCASE ASC, name ASC`)
+	rows, err := s.db.Query(`SELECT ` + componentCols + ` FROM components WHERE origin = 'user' ORDER BY name COLLATE NOCASE ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load your components: %w", err)
 	}
@@ -80,7 +80,7 @@ func (s *Store) ListComponents() ([]ComponentRow, error) {
 
 // GetComponent reads one component by name (ErrNotFound when absent).
 func (s *Store) GetComponent(name string) (ComponentRow, error) {
-	r, err := scanComponent(s.db.QueryRow(`SELECT `+componentCols+` FROM components WHERE name = ?`, scrub(name)))
+	r, err := scanComponent(s.db.QueryRow(`SELECT `+componentCols+` FROM components WHERE name = ? AND origin = 'user'`, scrub(name)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ComponentRow{}, ErrNotFound
 	}
@@ -158,8 +158,11 @@ func (s *Store) SaveComponent(original, name, source string) (ComponentRow, erro
 			if len(refs) > 0 {
 				return ComponentRow{}, &ComponentInUseError{Name: original, Placements: refs}
 			}
+			if err := referencedByComponents(tx, original, name, "component"); err != nil {
+				return ComponentRow{}, err
+			}
 		}
-		res, err := tx.Exec(`UPDATE components SET name = ?, source = ?, updated_at = ? WHERE name = ?`, name, source, now, original)
+		res, err := tx.Exec(`UPDATE components SET name = ?, source = ?, updated_at = ? WHERE name = ? AND origin = 'user'`, name, source, now, original)
 		if err != nil {
 			if isUniqueErr(err) {
 				return ComponentRow{}, fmt.Errorf("a component named %q already exists", name)
@@ -198,7 +201,10 @@ func (s *Store) DeleteComponent(name string) error {
 	if len(refs) > 0 {
 		return &ComponentInUseError{Name: name, Placements: refs}
 	}
-	res, err := tx.Exec(`DELETE FROM components WHERE name = ?`, name)
+	if err := referencedByComponents(tx, name, "", "component"); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM components WHERE name = ? AND origin = 'user'`, name)
 	if err != nil {
 		return fmt.Errorf("couldn't delete the component: %w", err)
 	}

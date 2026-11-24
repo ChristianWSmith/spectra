@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinShippedSource, builtinSourceDir } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, builtinShippedSource, builtinSourceDir, isBuiltinId } from './componentbuiltins.js';
 import { BUILTIN_HELPERS } from './componentruntime/compile.js';
 import { gateComponentSave } from './componentruntime/savegate.js';
 
@@ -38,18 +38,18 @@ const RETIRED = [
 ];
 
 const PANELS = {
-  'builtin-match-overview': 'MatchOverview.svelte',
-  'builtin-match-rosters': 'MatchRosters.svelte',
-  'builtin-match-scoreboard': 'MatchScoreboard.svelte',
-  'builtin-match-rounds': 'MatchRounds.svelte',
-  'builtin-match-details': 'MatchDetails.svelte',
-  'builtin-match-facts': 'MatchFacts.svelte',
+  'match-overview': 'MatchOverview.svelte',
+  'match-rosters': 'MatchRosters.svelte',
+  'match-scoreboard': 'MatchScoreboard.svelte',
+  'match-rounds': 'MatchRounds.svelte',
+  'match-details': 'MatchDetails.svelte',
+  'match-details-facts': 'MatchFacts.svelte',
 };
 
 test('the Match view has its six panels, each a builtin under the builtin namespace', () => {
   assert.equal(Object.keys(PANELS).length, 6);
   for (const id of Object.keys(PANELS)) {
-    assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} is in the builtin namespace`);
+    assert.ok(isBuiltinId(id), `${id} is in the builtin namespace`);
     assert.ok(
       BUILTIN_COMPONENTS.some((b) => b.id === id),
       `${id} is in the builtin registry`,
@@ -78,7 +78,7 @@ test('every panel reads through context and mounts nothing else', () => {
     const src = builtinShippedSource(id);
     assert.match(src, /let \{[\s\S]*?\bcontext\b[\s\S]*?\} = \$props\(\);/, `${id} takes context as a prop`);
     // The facts panel reads the match services (voice, the demo copy), not a query.
-    if (id !== 'builtin-match-facts') {
+    if (id !== 'match-details-facts') {
       assert.match(src, /spectra\.metric\(|spectra\.query\(|readUnit\(spectra/, `${id} reads metrics or facts`);
     }
     assert.doesNotMatch(src, /spectra\.Child/, `${id} mounts no child`);
@@ -112,7 +112,7 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
 });
 
 test('no panel reads a retired preference (ruling 33)', () => {
-  for (const id of [...Object.keys(PANELS), 'builtin-match-tabs']) {
+  for (const id of [...Object.keys(PANELS), 'match']) {
     const src = builtinShippedSource(id);
     for (const key of RETIRED) {
       assert.ok(!src.includes(key), `${id} reads the retired key or helper ${key}`);

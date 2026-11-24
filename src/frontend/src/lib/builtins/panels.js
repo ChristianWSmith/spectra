@@ -42,52 +42,52 @@ import MatchRounds from './match/MatchRounds.svelte';
 import MatchDetails from './match/MatchDetails.svelte';
 import MatchFacts from './match/MatchFacts.svelte';
 
-export const PROFILE_VIEW_ID = 'builtin-profile-view';
-export const REPORTS_VIEW_ID = 'builtin-reports';
+export const PROFILE_VIEW_ID = 'profile';
+export const REPORTS_VIEW_ID = 'match-reports';
 
 // The Match tabs' component ids (the Match view mounts the tab components
 // directly, with its context).
-export const MATCH_TABS_ID = 'builtin-match-tabs';
-export const MATCH_HEATMAPS_ID = 'builtin-match-heatmaps';
-export const MATCH_COMBAT_ID = 'builtin-match-combat';
+export const MATCH_TABS_ID = 'match';
+export const MATCH_HEATMAPS_ID = 'match-heatmaps';
+export const MATCH_COMBAT_ID = 'match-combat';
 
 // The Economy and Utility tabs' ids (the Match view mounts the composers).
-export const ECONOMY_ID = 'builtin-economy';
-export const ECON_CURVE_ID = 'builtin-economy-curve';
-export const ECON_CARDS_ID = 'builtin-economy-cards';
-export const ECON_ROUNDS_ID = 'builtin-economy-rounds';
-export const UTILITY_ID = 'builtin-utility';
-export const UTIL_LOG_ID = 'builtin-utility-log';
-export const UTIL_DAMAGE_ID = 'builtin-utility-damage';
-export const UTIL_BLIND_ID = 'builtin-utility-blind';
+export const ECONOMY_ID = 'match-economy';
+export const ECON_CURVE_ID = 'match-economy-curve';
+export const ECON_CARDS_ID = 'match-economy-cards';
+export const ECON_ROUNDS_ID = 'match-economy-rounds';
+export const UTILITY_ID = 'match-utility';
+export const UTIL_LOG_ID = 'match-utility-log';
+export const UTIL_DAMAGE_ID = 'match-utility-damage';
+export const UTIL_BLIND_ID = 'match-utility-blind';
 
 // The Match view's six panels.
-export const MATCH_OVERVIEW_ID = 'builtin-match-overview';
-export const MATCH_ROSTERS_ID = 'builtin-match-rosters';
-export const MATCH_SCOREBOARD_ID = 'builtin-match-scoreboard';
-export const MATCH_ROUNDS_ID = 'builtin-match-rounds';
-export const MATCH_DETAILS_ID = 'builtin-match-details';
-export const MATCH_FACTS_ID = 'builtin-match-facts';
+export const MATCH_OVERVIEW_ID = 'match-overview';
+export const MATCH_ROSTERS_ID = 'match-rosters';
+export const MATCH_SCOREBOARD_ID = 'match-scoreboard';
+export const MATCH_ROUNDS_ID = 'match-rounds';
+export const MATCH_DETAILS_ID = 'match-details';
+export const MATCH_FACTS_ID = 'match-details-facts';
 
 export const BUILTIN_PANELS = Object.freeze({
   [PROFILE_VIEW_ID]: ProfileView,
-  'builtin-profile-career': CareerPanel,
-  'builtin-profile-trend': TrendPanel,
-  'builtin-profile-sides': SidesPanel,
-  'builtin-profile-maps': MapsPanel,
-  'builtin-profile-weapons': WeaponsPanel,
-  'builtin-profile-history': HistoryPanel,
+  'profile-career': CareerPanel,
+  'profile-trend': TrendPanel,
+  'profile-sides': SidesPanel,
+  'profile-maps': MapsPanel,
+  'profile-weapons': WeaponsPanel,
+  'profile-history': HistoryPanel,
   // The Match view's Reports tab (the composed report and its panels).
   [REPORTS_VIEW_ID]: ReportsView,
   // The Match view's Details tab and the standalone Explorer route.
-  'builtin-explorer-provenance': ExplorerProvenance,
-  'builtin-explorer-diagnostics': ExplorerDiagnostics,
+  'match-details-provenance': ExplorerProvenance,
+  'match-details-diagnostics': ExplorerDiagnostics,
   [MATCH_TABS_ID]: MatchTabs,
   [MATCH_HEATMAPS_ID]: MatchHeatmaps,
-  'builtin-match-heatmap': HeatmapPanel,
+  'match-heatmap': HeatmapPanel,
   [MATCH_COMBAT_ID]: MatchCombat,
-  'builtin-match-combat-kill-tags': CombatKillTags,
-  'builtin-match-combat-clutches': CombatClutches,
+  'match-combat-kill-tags': CombatKillTags,
+  'match-combat-clutches': CombatClutches,
   [ECONOMY_ID]: EconomyView,
   [ECON_CURVE_ID]: EconCurve,
   [ECON_CARDS_ID]: EconCards,

@@ -22,7 +22,7 @@ func TestComponentServiceRefusals(t *testing.T) {
 	}{
 		{"   ", "<p>x</p>", "a component needs a name"},
 		{"fine", "   ", "a component needs source"},
-		{BuiltinComponentPrefix + "mine", "<p>x</p>", "reserved for built-in components"},
+		{"match", "<p>x</p>", "already exists"},
 		{strings.Repeat("n", maxComponentName+1), "<p>x</p>", "at most 60 characters"},
 	}
 	for _, c := range cases {

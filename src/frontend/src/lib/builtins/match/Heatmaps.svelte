@@ -6,4 +6,4 @@
   let { spectra } = $props();
 </script>
 
-<spectra.Child name="builtin-match-heatmap" />
+<spectra.Child name="match-heatmap" />

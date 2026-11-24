@@ -6,8 +6,8 @@
 </script>
 
 <div class="view comb-view">
-  <spectra.Child name="builtin-match-combat-kill-tags" />
-  <spectra.Child name="builtin-match-combat-clutches" />
+  <spectra.Child name="match-combat-kill-tags" />
+  <spectra.Child name="match-combat-clutches" />
 </div>
 
 <style>

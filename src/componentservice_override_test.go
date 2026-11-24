@@ -18,26 +18,26 @@ func TestBuiltinOverrideServiceRoundTrip(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	svc := &ComponentService{st: st}
 
-	if _, err := svc.SaveBuiltinOverride("builtin-match-overview", "<p>one</p>"); err != nil {
+	if _, err := svc.SaveBuiltinOverride("match-overview", "<p>one</p>"); err != nil {
 		t.Fatalf("SaveBuiltinOverride: %v", err)
 	}
-	if _, err := svc.SaveBuiltinOverride("builtin-match-overview", "<p>two</p>"); err != nil {
+	if _, err := svc.SaveBuiltinOverride("match-overview", "<p>two</p>"); err != nil {
 		t.Fatalf("second SaveBuiltinOverride: %v", err)
 	}
 	got, err := svc.ListBuiltinOverrides()
 	if err != nil {
 		t.Fatalf("ListBuiltinOverrides: %v", err)
 	}
-	if len(got) != 1 || got[0].ID != "builtin-match-overview" || got[0].Source != "<p>two</p>" {
+	if len(got) != 1 || got[0].ID != "match-overview" || got[0].Source != "<p>two</p>" {
 		t.Fatalf("list = %+v, want one replaced override", got)
 	}
-	if err := svc.DeleteBuiltinOverride("builtin-match-overview"); err != nil {
+	if err := svc.DeleteBuiltinOverride("match-overview"); err != nil {
 		t.Fatalf("DeleteBuiltinOverride: %v", err)
 	}
 	if got, _ := svc.ListBuiltinOverrides(); len(got) != 0 {
 		t.Fatalf("after restore = %+v, want none", got)
 	}
-	if err := svc.DeleteBuiltinOverride("builtin-match-overview"); err != nil {
+	if err := svc.DeleteBuiltinOverride("match-overview"); err != nil {
 		t.Fatalf("restore with no edit: %v", err)
 	}
 }
@@ -59,7 +59,7 @@ func TestBuiltinOverrideRefusesUserNamesAndEmptySource(t *testing.T) {
 	if err := svc.DeleteBuiltinOverride("my copy"); err == nil {
 		t.Fatalf("delete of a user name succeeded, want a refusal")
 	}
-	if _, err := svc.SaveBuiltinOverride("builtin-match-overview", "  "); err == nil {
+	if _, err := svc.SaveBuiltinOverride("match-overview", "  "); err == nil {
 		t.Fatalf("empty source saved, want a refusal")
 	}
 	if _, err := svc.SaveBuiltinOverride("builtin-", "<p>x</p>"); err == nil {

@@ -1,4 +1,5 @@
 import '../../test/compile-worker-node.mjs';
+import { isBuiltinId } from './componentbuiltins.js';
 // builtinpanels.test.js — the Profile view's panels as builtin components
 // Three pins:
 //   1. the registry (builtins/panels.js) names the Profile component and its
@@ -15,7 +16,6 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILTIN_PREFIX } from './componentbuiltins.js';
 
 const LIB = fileURLToPath(new URL('.', import.meta.url));
 const PANEL_DIR = path.join(LIB, 'builtins', 'profile');
@@ -60,43 +60,43 @@ const panelFiles = readdirSync(PANEL_DIR).filter((f) => f.endsWith('.svelte') ||
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
 test('the registry names the Profile, Reports, Explorer, Match-tab, Economy and Utility components and their panels, all in the builtin namespace', () => {
-  const ids = [...registry.matchAll(/'(builtin-[a-z-]+)'/g)].map((m) => m[1]);
+  const ids = [...registry.matchAll(/'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(ids)].sort(),
     [
-      'builtin-economy',
-      'builtin-economy-cards',
-      'builtin-economy-curve',
-      'builtin-economy-rounds',
-      'builtin-explorer-diagnostics',
-      'builtin-explorer-provenance',
-      'builtin-match-combat',
-      'builtin-match-details',
-      'builtin-match-facts',
-      'builtin-match-combat-clutches',
-      'builtin-match-combat-kill-tags',
-      'builtin-match-heatmap',
-      'builtin-match-heatmaps',
-      'builtin-match-overview',
-      'builtin-match-rosters',
-      'builtin-match-rounds',
-      'builtin-match-scoreboard',
-      'builtin-match-tabs',
-      'builtin-profile-career',
-      'builtin-profile-history',
-      'builtin-profile-maps',
-      'builtin-profile-sides',
-      'builtin-profile-trend',
-      'builtin-profile-view',
-      'builtin-profile-weapons',
-      'builtin-reports',
-      'builtin-utility',
-      'builtin-utility-blind',
-      'builtin-utility-damage',
-      'builtin-utility-log',
+      'match-economy',
+      'match-economy-cards',
+      'match-economy-curve',
+      'match-economy-rounds',
+      'match-details-diagnostics',
+      'match-details-provenance',
+      'match-combat',
+      'match-details',
+      'match-details-facts',
+      'match-combat-clutches',
+      'match-combat-kill-tags',
+      'match-heatmap',
+      'match-heatmaps',
+      'match-overview',
+      'match-rosters',
+      'match-rounds',
+      'match-scoreboard',
+      'match',
+      'profile-career',
+      'profile-history',
+      'profile-maps',
+      'profile-sides',
+      'profile-trend',
+      'profile',
+      'profile-weapons',
+      'match-reports',
+      'match-utility',
+      'match-utility-blind',
+      'match-utility-damage',
+      'match-utility-log',
     ].sort(),
   );
-  for (const id of ids) assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} carries the builtin prefix`);
+  for (const id of ids) assert.ok(isBuiltinId(id), `${id} carries the builtin prefix`);
 });
 
 test('every panel component the registry imports exists', () => {

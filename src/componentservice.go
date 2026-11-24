@@ -24,12 +24,6 @@ type ComponentService struct {
 	st *store.Store
 }
 
-// BuiltinComponentPrefix is the reserved namespace of builtin component
-// ids (frontend lib/componentbuiltins.js pins every builtin id to it). A
-// user component name may not start with it, so a placement's component
-// reference is a builtin id or a user name, never ambiguous.
-const BuiltinComponentPrefix = "builtin-"
-
 // maxComponentName bounds a component's name (it is a label in lists).
 const maxComponentName = 60
 
@@ -60,9 +54,6 @@ func validComponentName(name string) (string, error) {
 	}
 	if len([]rune(name)) > maxComponentName {
 		return "", fmt.Errorf("a component name can be at most %d characters", maxComponentName)
-	}
-	if strings.HasPrefix(strings.ToLower(name), BuiltinComponentPrefix) {
-		return "", fmt.Errorf("names starting with %q are reserved for built-in components", BuiltinComponentPrefix)
 	}
 	return name, nil
 }
@@ -194,11 +185,19 @@ func (s *ComponentService) ListBuiltinOverrides() ([]BuiltinOverride, error) {
 	if err != nil {
 		return nil, err
 	}
+	names, err := s.st.BuiltinComponentNames()
+	if err != nil {
+		return nil, err
+	}
+	builtin := make(map[string]bool, len(names))
+	for _, n := range names {
+		builtin[n] = true
+	}
 	out := make([]BuiltinOverride, 0, len(rows))
 	for _, r := range rows {
 		// The table also holds the report and metric overrides (their keys
-		// are kind-prefixed, never builtin-); a component reader sees only its own.
-		if !strings.HasPrefix(r.ID, BuiltinComponentPrefix) {
+		// are kind-prefixed); a component reader sees only the builtins' own.
+		if !builtin[r.ID] {
 			continue
 		}
 		out = append(out, BuiltinOverride{ID: r.ID, Source: r.Source})
@@ -206,11 +205,15 @@ func (s *ComponentService) ListBuiltinOverrides() ([]BuiltinOverride, error) {
 	return out, nil
 }
 
-// checkBuiltinID refuses an id outside the builtin namespace: an override
-// names a builtin, never a user component.
-func checkBuiltinID(id string) (string, error) {
+// checkBuiltinID refuses an id that is not a seeded builtin component: an
+// override names a builtin, never a user component.
+func (s *ComponentService) checkBuiltinID(id string) (string, error) {
 	id = strings.TrimSpace(id)
-	if !strings.HasPrefix(id, BuiltinComponentPrefix) || len(id) == len(BuiltinComponentPrefix) {
+	ok, err := s.st.IsBuiltinComponent(id)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		return "", fmt.Errorf("only built-in components can be edited, and %q is not one", id)
 	}
 	return id, nil
@@ -220,7 +223,7 @@ func checkBuiltinID(id string) (string, error) {
 // must have passed the frontend save gate (services.js saveBuiltinOverride
 // runs it first); this method refuses an empty source.
 func (s *ComponentService) SaveBuiltinOverride(id, source string) (BuiltinOverride, error) {
-	id, err := checkBuiltinID(id)
+	id, err := s.checkBuiltinID(id)
 	if err != nil {
 		return BuiltinOverride{}, err
 	}
@@ -236,7 +239,7 @@ func (s *ComponentService) SaveBuiltinOverride(id, source string) (BuiltinOverri
 
 // DeleteBuiltinOverride restores one builtin to its shipped source.
 func (s *ComponentService) DeleteBuiltinOverride(id string) error {
-	id, err := checkBuiltinID(id)
+	id, err := s.checkBuiltinID(id)
 	if err != nil {
 		return err
 	}

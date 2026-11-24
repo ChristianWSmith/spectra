@@ -375,7 +375,11 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `npm run dev`) writes `builtins/generated/sources.js`, which holds each
   builtin's source text and id list. That file is gitignored, so never
   hand-maintain a builtin id list. `componentbuiltins.js` lists the compiled
-  registry; a builtin is named by its id, the name a view references.
+  registry. A builtin (component or metric) is a seeded row with origin
+  `builtin`, and its name is permanent: the unique constraint refuses a user
+  item of the same name, and no rename or delete touches a builtin. A rename
+  or delete that would leave a `spectra.Child` or `spectra.metric` reference
+  dangling is refused, naming the referring components.
 - **Every mounted component is a panel (contract).** The frame mounts each
   component into its own panel (`ComponentFrame` renders a `section.panel`
   around it), for builtins and user components alike. A component does not

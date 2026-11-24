@@ -24,7 +24,6 @@
 import * as S from './strings/index.js';
 import { PANEL_IDS, PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
 
-export const BUILTIN_PREFIX = 'builtin-';
 
 // The placeholder's source: Svelte 5, reading only through the read API
 // it receives (`spectra`) and its read-only `context` prop (04 §3): the

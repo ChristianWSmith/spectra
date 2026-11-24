@@ -100,7 +100,7 @@ test('the generated module is the generator output', () => {
   assert.equal(readFileSync(OUT_FILE, 'utf8'), generate(), 'run npm run build (regenerates sources.js)');
   const reg = panelRegistry(readFileSync(new URL('./builtins/panels.js', import.meta.url), 'utf8'));
   assert.equal(reg.length, 30);
-  for (const { id, file } of reg) assert.ok(file.endsWith('.svelte') && id.startsWith('builtin-'), id);
+  for (const { id, file } of reg) assert.ok(file.endsWith('.svelte') && id.length > 0, id);
 });
 
 // (c) an edited builtin that fails the save gate is refused with its line.
@@ -120,15 +120,15 @@ test('(c) an edit that fails the save gate is refused with its line', async () =
 // read as an object, a malformed props value read as none.
 test('placements: rows mount in order, hidden rows are not mounted', () => {
   const entries = placedEntries([
-    { component: 'builtin-match-rounds', props: '{"compact":true}', hidden: false },
+    { component: 'match-rounds', props: '{"compact":true}', hidden: false },
     { component: 'ghost', props: '', hidden: true },
-    { component: 'builtin-match-overview', props: 'not json', hidden: false },
+    { component: 'match-overview', props: 'not json', hidden: false },
   ]);
   assert.deepEqual(
     entries.map((e) => [e.component, e.props]),
     [
-      ['builtin-match-rounds', { compact: true }],
-      ['builtin-match-overview', {}],
+      ['match-rounds', { compact: true }],
+      ['match-overview', {}],
     ],
   );
   assert.deepEqual(placedEntries([]), []);

@@ -136,7 +136,7 @@ const overrideCalls = [];
 const overrideDeleteCalls = [];
 const setCalls = [];
 const resetCalls = [];
-const PLACEHOLDER_ID = 'builtin-explorer';
+const PLACEHOLDER_ID = 'match-overview';
 bindings.handlers.ListBuiltinOverrides = () => OVERRIDES.map((o) => ({ ...o }));
 bindings.handlers.SaveBuiltinOverride = (id, source) => {
   overrideCalls.push({ id, source });
@@ -262,13 +262,13 @@ check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.compo
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
 // The Profile view and its six panels are listed (the registry, builtins/panels.js).
 const PROFILE_BUILTINS = [
-  'builtin-profile-view',
-  'builtin-profile-career',
-  'builtin-profile-trend',
-  'builtin-profile-sides',
-  'builtin-profile-maps',
-  'builtin-profile-weapons',
-  'builtin-profile-history',
+  'profile',
+  'profile-career',
+  'profile-trend',
+  'profile-sides',
+  'profile-maps',
+  'profile-weapons',
+  'profile-history',
 ];
 for (const id of PROFILE_BUILTINS) {
   const label = id;
@@ -328,7 +328,7 @@ COMPONENTS = [];
 OVERRIDES = [];
 overrideCalls.length = 0;
 overrideDeleteCalls.length = 0;
-const CAREER_ID = 'builtin-profile-career';
+const CAREER_ID = 'profile-career';
 const careerLabel = CAREER_ID;
 await mounted();
 click(rowNamed(careerLabel, '.cb-builtins'));

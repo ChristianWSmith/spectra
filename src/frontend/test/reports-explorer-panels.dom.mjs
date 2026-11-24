@@ -103,7 +103,7 @@ function pickKills() {
 console.log('A. Reports: the template grid and the embedded tab');
 {
   viewstate.resetViewState();
-  const m = await mountComponent(panels['builtin-reports'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['match-reports'], ctx(MATCH), { embedded: true });
   await sleep(100);
   const tiles = [...m.target.querySelectorAll('.rep-tpl')];
   check('two templates from the catalog', tiles.length === 2, tiles.map(text).join(' | '));
@@ -115,7 +115,7 @@ console.log('A. Reports: the template grid and the embedded tab');
 console.log('B. Reports appendix: a picked metric counts its stored rows for the context match');
 {
   pickKills();
-  const m = await mountComponent(panels['builtin-reports'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['match-reports'], ctx(MATCH), { embedded: true });
   await sleep(150);
   const readouts = [...m.target.querySelectorAll('.rep-metric')];
   check('one readout for the picked metric', readouts.length === 1, String(readouts.length));
@@ -126,7 +126,7 @@ console.log('B. Reports appendix: a picked metric counts its stored rows for the
 console.log('C. Reports context: another match reads its own rows (none: a state chip, not a number)');
 {
   pickKills();
-  const m = await mountComponent(panels['builtin-reports'], ctx(OTHER), { embedded: true });
+  const m = await mountComponent(panels['match-reports'], ctx(OTHER), { embedded: true });
   await sleep(150);
   const readout = m.target.querySelector('.rep-metric');
   check('the other match has no stored rows: no row count', readout && !text(readout).includes('rows'), readout && text(readout));
@@ -138,8 +138,8 @@ console.log('C. Reports context: another match reads its own rows (none: a state
 console.log('D. Explorer: the import details and the entity summary');
 {
   viewstate.resetViewState();
-  const m = await mountComponent(panels['builtin-explorer-provenance'], ctx(MATCH), { embedded: true });
-  const dg = await mountComponent(panels['builtin-explorer-diagnostics'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['match-details-provenance'], ctx(MATCH), { embedded: true });
+  const dg = await mountComponent(panels['match-details-diagnostics'], ctx(MATCH), { embedded: true });
   await sleep(120);
   const facts = [...m.target.querySelectorAll('dl.facts > div')].map((d) => [text(d.querySelector('dt')), text(d.querySelector('dd'))]);
   const rate = facts.find((f) => f[0] !== '' && f[1] === '—');
@@ -155,8 +155,8 @@ console.log('E. Explorer failure isolation: a failed provenance read stays in it
   const original = bindings.PlatformService.GetProvenance;
   bindings.PlatformService.GetProvenance = () => Promise.reject(new Error('provenance down'));
   services.invalidate();
-  const m = await mountComponent(panels['builtin-explorer-provenance'], ctx(MATCH), { embedded: true });
-  const dg = await mountComponent(panels['builtin-explorer-diagnostics'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['match-details-provenance'], ctx(MATCH), { embedded: true });
+  const dg = await mountComponent(panels['match-details-diagnostics'], ctx(MATCH), { embedded: true });
   await sleep(120);
   const alerts = [...m.target.querySelectorAll('[role="alert"]')].map(text);
   check('the provenance error is shown', alerts.some((t) => t.includes('provenance down')), JSON.stringify(alerts));

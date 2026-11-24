@@ -11,12 +11,12 @@
 // An edited builtin (builtin_overrides, ruling 43) wins over its shipped
 // code wherever the builtin is mounted: the override's source is compiled
 // and mounted in place of the shipped component.
-import { BUILTIN_PREFIX, builtinById, builtinSourceDir } from '../componentbuiltins.js';
+import { builtinById, builtinSourceDir } from '../componentbuiltins.js';
 import { builtinPanelById } from '../builtins/panels.js';
 import { listComponents, listBuiltinOverrides } from '../services.js';
 
 export async function resolveComponentRef(name) {
-  if (String(name).startsWith(BUILTIN_PREFIX)) {
+  if (builtinById(name)) {
     const dir = builtinSourceDir(name);
     const overrides = (await listBuiltinOverrides()) || [];
     const hit = overrides.find((o) => o && o.id === name);

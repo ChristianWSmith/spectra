@@ -164,7 +164,7 @@ const unmounted = () => {
 
 // --- B. an edit renders wherever the builtin is mounted -----------------------
 console.log('B. an edited builtin renders wherever it is mounted');
-const OVERVIEW = 'builtin-match-overview';
+const OVERVIEW = 'match-overview';
 
 OVERRIDES = [{ id: OVERVIEW, source: EDIT_SOURCE }];
 let root = await mountHarness({ mode: 'child', name: OVERVIEW });

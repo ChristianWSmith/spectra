@@ -7,7 +7,7 @@ import (
 )
 
 // An identity metric's statement names its winner in idkey: that key is the stored
-// value_key (the overview reads it). A numeric statement has no identity column: ''.
+// value_key (the overview reads it). A numeric statement has no identity column: ”.
 func TestRawResultRowsStoresTheIdentityKey(t *testing.T) {
 	res := store.ROResult{
 		Columns: []string{"subject_key", "dim", "value", "idkey"},

@@ -96,43 +96,43 @@
      reload their data or lose their state. -->
 {#if isShown(TAB.overview)}
   <div class="tab-pane" style:display={paneDisplay(TAB.overview)}>
-    <spectra.Child name="builtin-match-overview" props={panelProps} />
-    <spectra.Child name="builtin-match-rosters" props={panelProps} />
+    <spectra.Child name="match-overview" props={panelProps} />
+    <spectra.Child name="match-rosters" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.scoreboard)}
   <div class="tab-pane" style:display={paneDisplay(TAB.scoreboard)}>
-    <spectra.Child name="builtin-match-scoreboard" props={panelProps} />
+    <spectra.Child name="match-scoreboard" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.rounds)}
   <div class="tab-pane" style:display={paneDisplay(TAB.rounds)}>
-    <spectra.Child name="builtin-match-rounds" props={roundsProps} />
+    <spectra.Child name="match-rounds" props={roundsProps} />
   </div>
 {/if}
 {#if isShown(TAB.economy)}
   <div class="tab-pane" style:display={paneDisplay(TAB.economy)}>
-    <spectra.Child name="builtin-economy" props={panelProps} />
+    <spectra.Child name="match-economy" props={panelProps} />
   </div>
 {/if}
 {#if isShown(TAB.utility)}
   <div class="tab-pane" style:display={paneDisplay(TAB.utility)}>
-    <spectra.Child name="builtin-utility" props={utilityProps} />
+    <spectra.Child name="match-utility" props={utilityProps} />
   </div>
 {/if}
 {#if isShown(TAB.heatmaps)}
   <div class="tab-pane" style:display={paneDisplay(TAB.heatmaps)}>
-    <spectra.Child name="builtin-match-heatmaps" />
+    <spectra.Child name="match-heatmaps" />
   </div>
 {/if}
 {#if isShown(TAB.combat)}
   <div class="tab-pane" style:display={paneDisplay(TAB.combat)}>
-    <spectra.Child name="builtin-match-combat" />
+    <spectra.Child name="match-combat" />
   </div>
 {/if}
 {#if isShown(TAB.reports)}
   <div class="tab-pane" style:display={paneDisplay(TAB.reports)}>
-    <spectra.Child name="builtin-reports" props={{ embedded: true }} />
+    <spectra.Child name="match-reports" props={{ embedded: true }} />
   </div>
 {/if}
 {#if isShown(TAB.details)}
@@ -143,9 +143,9 @@
        to THIS match. Gameplay-derived facts (the first blood) live on the
        Rounds tab. Map/Duration live in the match header. -->
   <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
-    <spectra.Child name="builtin-match-details" />
-    <spectra.Child name="builtin-match-facts" />
-    <spectra.Child name="builtin-explorer-provenance" />
-    <spectra.Child name="builtin-explorer-diagnostics" />
+    <spectra.Child name="match-details" />
+    <spectra.Child name="match-details-facts" />
+    <spectra.Child name="match-details-provenance" />
+    <spectra.Child name="match-details-diagnostics" />
   </div>
 {/if}

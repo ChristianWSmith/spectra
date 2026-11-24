@@ -157,7 +157,7 @@ script();
 
 console.log('A. career cards: the default set, formatted in the panel, a behind chip');
 {
-  const m = await mountComponent(panels['builtin-profile-career'], ctx(A));
+  const m = await mountComponent(panels['profile-career'], ctx(A));
   const cells = [...m.target.querySelectorAll('.stat-cell')];
   const values = cells.map((c) => text(c.children[1]));
   check('four default cards for the bound player (the defaults the catalog carries)', cells.length === 4, JSON.stringify(cells.map(text)));
@@ -171,7 +171,7 @@ console.log('A. career cards: the default set, formatted in the panel, a behind 
   m.cleanup();
 }
 {
-  const m = await mountComponent(panels['builtin-profile-career'], ctx(B));
+  const m = await mountComponent(panels['profile-career'], ctx(B));
   const values = [...m.target.querySelectorAll('.stat-cell')].map((c) => text(c.children[1]));
   check('the same panel for another player shows that player (Matches 9, ADR 80.0)', values[0] === '9' && values[2] === '80.0', JSON.stringify(values));
   check('a metric with no row for this player is the dash, never another player’s value', values[1] === '—', values[1]);
@@ -180,7 +180,7 @@ console.log('A. career cards: the default set, formatted in the panel, a behind 
 
 console.log('B. trend: the sparkline caption carries the min and max');
 {
-  const m = await mountComponent(panels['builtin-profile-trend'], ctx(A));
+  const m = await mountComponent(panels['profile-trend'], ctx(A));
   const caption = text(m.target.querySelector('.prof-spark-cap'));
   check('two dots, one per trend point', m.target.querySelectorAll('svg.prof-spark circle').length === 2);
   check('the caption names the min and the max of the metric', caption.includes('35.0') && caption.includes('40.0'), caption);
@@ -189,20 +189,20 @@ console.log('B. trend: the sparkline caption carries the min and max');
 
 console.log('C. sides, maps and weapons: stored dim rows, zero shows as 0, NULL as the dash');
 {
-  const m = await mountComponent(panels['builtin-profile-sides'], ctx(A));
+  const m = await mountComponent(panels['profile-sides'], ctx(A));
   const rows = rowsOf(m.target);
   check('CT row: rounds, win %, ADR, KAST, K/D from the stored side rows', JSON.stringify(rows[0]) === JSON.stringify(['CT', '10', '25%', '41.0', '60%', '1.25']), JSON.stringify(rows[0]));
   check('T row: a NULL K/D is the dash, never 0', rows[1] && rows[1][5] === '—', JSON.stringify(rows[1]));
   m.cleanup();
 }
 {
-  const m = await mountComponent(panels['builtin-profile-maps'], ctx(A));
+  const m = await mountComponent(panels['profile-maps'], ctx(A));
   const rows = rowsOf(m.target);
   check('maps sort by matches (de_mirage first) and show their stored cells', JSON.stringify(rows) === JSON.stringify([['de_mirage', '2', '1', '38.5'], ['de_cache', '1', '0', '0.0']]), JSON.stringify(rows));
   m.cleanup();
 }
 {
-  const m = await mountComponent(panels['builtin-profile-weapons'], ctx(A));
+  const m = await mountComponent(panels['profile-weapons'], ctx(A));
   const rows = rowsOf(m.target);
   check('weapons sort by kills; a NULL damage is the dash, the thousands group', JSON.stringify(rows) === JSON.stringify([['ak47', '30', '4,200', '12'], ['awp', '5', '—', '2']]), JSON.stringify(rows));
   m.cleanup();
@@ -210,7 +210,7 @@ console.log('C. sides, maps and weapons: stored dim rows, zero shows as 0, NULL 
 
 console.log('D. match history: K/D/A, ADR and KAST are match-bound reads');
 {
-  const m = await mountComponent(panels['builtin-profile-history'], ctx(A));
+  const m = await mountComponent(panels['profile-history'], ctx(A));
   const rows = [...m.target.querySelectorAll('tbody tr')];
   const cells = rows.map((tr) => [...tr.children].map(text));
   check('row one: K/D/A from the match reads, the missing assists is a dash', cells[0] && cells[0][5] === '17/4/2', JSON.stringify(cells[0]));
@@ -223,14 +223,14 @@ console.log('D. match history: K/D/A, ADR and KAST are match-bound reads');
 console.log('E. the context picks the player: another player gets their own rows or the honest empty text');
 {
   // B's only side row is CT (99 rounds); A's rows (10 rounds) never show.
-  const m = await mountComponent(panels['builtin-profile-sides'], ctx(B));
+  const m = await mountComponent(panels['profile-sides'], ctx(B));
   const rows = rowsOf(m.target);
   check('the same panel for player B shows B’s CT row only', JSON.stringify(rows) === JSON.stringify([['CT', '99', '—', '—', '—', '—']]), JSON.stringify(rows));
   m.cleanup();
 }
 {
   // C has no rows at all: the honest empty text.
-  const m = await mountComponent(panels['builtin-profile-sides'], ctx('76561198000000003'));
+  const m = await mountComponent(panels['profile-sides'], ctx('76561198000000003'));
   check('a player with no side rows gets the honest empty text', text(m.target).includes('No CT/T breakdown yet.'), text(m.target).slice(0, 120));
   m.cleanup();
 }

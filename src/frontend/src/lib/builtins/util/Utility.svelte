@@ -102,10 +102,10 @@
 
 <div class="view util-view">
   {#if data}
-      <spectra.Child name="builtin-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
+      <spectra.Child name="match-utility-log" props={{ rows: data.rows, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches, tickRate: data.tickRate, loopSecs, back, filt, setFilt }} />
       <div class="util-summary">
-        <spectra.Child name="builtin-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
-        <spectra.Child name="builtin-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
+        <spectra.Child name="match-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
+        <spectra.Child name="match-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: data.rounds, players: data.players, names: data.names, sideSwitches: data.sideSwitches }} />
       </div>
 
   {:else}

@@ -1,4 +1,5 @@
 import '../../test/compile-worker-node.mjs';
+import { isBuiltinId } from './componentbuiltins.js';
 // matchbuiltins.test.js — the Match view's Heatmaps and Combat tabs as builtin
 // components. Pins:
 //   1. the registry (builtins/panels.js) names the two tab components and their
@@ -18,7 +19,6 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILTIN_PREFIX } from './componentbuiltins.js';
 import { clutchKillTicks, groupKillTags } from './builtins/match/combatmodel.js';
 
 const LIB = fileURLToPath(new URL('.', import.meta.url));
@@ -63,22 +63,33 @@ const TAB_FILES = ['Heatmaps.svelte', 'HeatmapsPanel.svelte', 'Combat.svelte', '
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
 test('the registry names the Match tabs and every Match panel, in the builtin namespace', () => {
-  const ids = [...new Set([...registry.matchAll(/'(builtin-match-[a-z-]+)'/g)].map((m) => m[1]))].sort();
+  const ids = [...new Set([...registry.matchAll(/'(match[a-z0-9-]*)'/g)].map((m) => m[1]))].sort();
   assert.deepEqual(ids, [
-    'builtin-match-combat',
-    'builtin-match-combat-clutches',
-    'builtin-match-combat-kill-tags',
-    'builtin-match-details',
-    'builtin-match-facts',
-    'builtin-match-heatmap',
-    'builtin-match-heatmaps',
-    'builtin-match-overview',
-    'builtin-match-rosters',
-    'builtin-match-rounds',
-    'builtin-match-scoreboard',
-    'builtin-match-tabs',
+    'match',
+    'match-combat',
+    'match-combat-clutches',
+    'match-combat-kill-tags',
+    'match-details',
+    'match-details-diagnostics',
+    'match-details-facts',
+    'match-details-provenance',
+    'match-economy',
+    'match-economy-cards',
+    'match-economy-curve',
+    'match-economy-rounds',
+    'match-heatmap',
+    'match-heatmaps',
+    'match-overview',
+    'match-reports',
+    'match-rosters',
+    'match-rounds',
+    'match-scoreboard',
+    'match-utility',
+    'match-utility-blind',
+    'match-utility-damage',
+    'match-utility-log',
   ]);
-  for (const id of ids) assert.ok(id.startsWith(BUILTIN_PREFIX), `${id} carries the builtin prefix`);
+  for (const id of ids) assert.ok(isBuiltinId(id), `${id} carries the builtin prefix`);
   const imports = [...registry.matchAll(/from '\.\/(match\/[A-Za-z]+\.svelte)'/g)].map((m) => m[1]);
   assert.equal(imports.length, 12, 'the registry imports the tab set, the two tabs, their three panels and the six Match panels');
   for (const rel of imports) assert.ok(existsSync(path.join(LIB, 'builtins', rel)), `${rel} exists`);
@@ -108,8 +119,8 @@ test('the Match surface mounts the tabs as components, and the old views are gon
   assert.ok(match.includes("from '../builtins/match/MatchTabs.svelte'"), 'Match mounts the tab set builtin');
   // The tab set mounts its tab components by name (a built-in imports no sibling
   // file: ruling 45 — helpers only).
-  assert.ok(tabs.includes('name="builtin-match-heatmaps"'), 'the tab set mounts the Heatmaps tab component');
-  assert.ok(tabs.includes('name="builtin-match-combat"'), 'the tab set mounts the Combat tab component');
+  assert.ok(tabs.includes('name="match-heatmaps"'), 'the tab set mounts the Heatmaps tab component');
+  assert.ok(tabs.includes('name="match-combat"'), 'the tab set mounts the Combat tab component');
   assert.ok(!/from '\.\/[^']+\.svelte'/.test(tabs), 'the tab set imports no sibling component file');
   assert.ok(!/from '\.\/(Heatmaps|Combat)\.svelte'/.test(match), 'Match no longer imports the old views');
   assert.ok(!existsSync(path.join(LIB, 'views', 'Heatmaps.svelte')), 'views/Heatmaps.svelte is removed');

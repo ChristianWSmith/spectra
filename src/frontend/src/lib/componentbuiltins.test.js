@@ -6,26 +6,26 @@ import '../../test/compile-worker-node.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BUILTIN_COMPONENTS, BUILTIN_PREFIX, builtinById, builtinShippedSource, builtinSourceDir, isBuiltinId } from './componentbuiltins.js';
+import { BUILTIN_COMPONENTS, builtinById, builtinShippedSource, builtinSourceDir, isBuiltinId } from './componentbuiltins.js';
 import { gateComponentSave } from './componentruntime/savegate.js';
 import { componentbuilder } from './strings/componentbuilder.js';
 import { panelRegistry } from '../../scripts/gen-builtin-sources.mjs';
 
 const REGISTRY = panelRegistry(readFileSync(new URL('./builtins/panels.js', import.meta.url), 'utf8')).map((e) => e.id);
 const PROFILE_IDS = [
-  'builtin-profile-view',
-  'builtin-profile-career',
-  'builtin-profile-trend',
-  'builtin-profile-sides',
-  'builtin-profile-maps',
-  'builtin-profile-weapons',
-  'builtin-profile-history',
+  'profile',
+  'profile-career',
+  'profile-trend',
+  'profile-sides',
+  'profile-maps',
+  'profile-weapons',
+  'profile-history',
 ];
 
 test('every built-in id is in the reserved namespace and resolves back to itself', () => {
   assert.ok(BUILTIN_COMPONENTS.length > 0, 'the registry is not empty');
   for (const b of BUILTIN_COMPONENTS) {
-    assert.ok(b.id.startsWith(BUILTIN_PREFIX), `${b.id} carries the built-in prefix`);
+    assert.ok(isBuiltinId(b.id), `${b.id} carries the built-in prefix`);
     assert.equal(builtinById(b.id), b);
     assert.equal(isBuiltinId(b.id), true);
   }
@@ -75,4 +75,14 @@ test('every listed builtin has shipped source and a source directory', () => {
     assert.ok(shipped.trim().length > 0, `${b.id} source is not empty`);
     assert.equal(builtinSourceDir(b.id) === null, false, `${b.id} has a source directory`);
   }
+});
+
+// The store seeds every builtin name (schema.sql): the seeds and the registry must name the same
+// components, or a builtin could be refused by the store or missing from it.
+test('the seeded builtin components in schema.sql are exactly the registry ids', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const schema = readFileSync(fileURLToPath(new URL('../../../internal/store/schema.sql', import.meta.url)), 'utf8');
+  const seeded = [...schema.matchAll(/INSERT OR IGNORE INTO components \(name, source, origin, created_at, updated_at\) VALUES \('([^']+)', '', 'builtin'/g)].map((m) => m[1]);
+  assert.deepEqual([...seeded].sort(), BUILTIN_COMPONENTS.map((b) => b.id).sort());
 });

@@ -895,20 +895,54 @@ CREATE TABLE IF NOT EXISTS report_templates (
 	updated_at DATETIME NOT NULL
 );
 
--- User components and the surfaces they are placed on (Svelte 5 source stored
--- in the database; builtin components are code, never rows). `components.name`
--- is what a placement references; a placement's `component` is either a
--- builtin id or a components.name, so it carries NO foreign key: a name that
--- resolves to neither is reported by the reader, never refused by the DDL.
+-- User components and builtin components (origin 'builtin': the names of the shipped
+-- panels, seeded below), and the surfaces they are placed on. `components.name` is what a
+-- placement and a `spectra.Child` reference; a placement's `component` carries NO foreign key,
+-- so a name that resolves to nothing is reported by the reader, never refused by the DDL.
 -- Absence means the builtin: a surface with no placement rows renders its
 -- builtin. One baseline, no versioning.
 CREATE TABLE IF NOT EXISTS components (
 	id INTEGER PRIMARY KEY,
 	name TEXT NOT NULL UNIQUE,
 	source TEXT NOT NULL,
+	origin TEXT NOT NULL DEFAULT 'user',
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL
 );
+
+-- The builtin components, seeded by name: their names are permanent (composed by name, so
+-- never renamed), and the UNIQUE constraint refuses a user component of the same name. Their
+-- source is the shipped code (builtin_overrides edits it), so the row carries none.
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-career', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-trend', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-sides', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-maps', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-weapons', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-history', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-reports', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-provenance', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-diagnostics', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-heatmaps', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-heatmap', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-combat', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-combat-kill-tags', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-combat-clutches', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-economy', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-economy-curve', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-economy-cards', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-economy-rounds', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-utility', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-utility-log', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-utility-damage', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-utility-blind', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-overview', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-rosters', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-scoreboard', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-rounds', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-facts', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 CREATE TABLE IF NOT EXISTS layout_placements (
 	surface TEXT NOT NULL,

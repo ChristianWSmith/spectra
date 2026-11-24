@@ -447,7 +447,7 @@ console.log('I. composer');
 const composerSrc = `<script>
   let { spectra, context } = $props();
 </script>
-<div class="comp-root"><spectra.Child name="builtin-match-overview" props={{ back: '' }} /></div>`;
+<div class="comp-root"><spectra.Child name="match-overview" props={{ back: '' }} /></div>`;
 const heldReads = [];
 const busyComposerReads = { ...reads, componentQuery: () => new Promise((r) => heldReads.push(r)) };
 root = await mountPanel({ source: composerSrc, context: MATCH, props: {}, reads: busyComposerReads });

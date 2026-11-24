@@ -408,6 +408,7 @@ func (s *Store) GetMetricByName(name string) (models.MetricRow, error) {
 type metricsExec interface {
 	Exec(query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
 }
 
 // getMetricRow is GetMetric over an arbitrary statement surface (the
@@ -457,6 +458,16 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 	}
 	if existing.Origin != "user" && (!builtinEdit || existing.Origin != "builtin") {
 		return fmt.Errorf("the %s metric %q cannot be modified", existing.Origin, existing.Name)
+	}
+	// A built-in keeps its name: other metrics and components compose it by name.
+	if existing.Origin == "builtin" && m.Name != existing.Name {
+		return fmt.Errorf("the built-in metric %q can't be renamed", existing.Name)
+	}
+	// A rename must not leave a component using the old name dangling.
+	if m.Name != existing.Name {
+		if err := referencedByComponents(q, existing.Name, "", "metric"); err != nil {
+			return err
+		}
 	}
 	if _, err := q.Exec(
 		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, format = ?,
@@ -511,6 +522,9 @@ func (s *Store) DeleteMetric(id int64) error {
 	}
 	if existing.Origin == "builtin" {
 		return fmt.Errorf("the built-in metric %q cannot be deleted", existing.Name)
+	}
+	if err := referencedByComponents(s.db, existing.Name, "", "metric"); err != nil {
+		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM metrics WHERE id = ?`, id)
 	if err != nil {

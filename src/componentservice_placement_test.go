@@ -19,14 +19,14 @@ func TestPlacementServiceRoundTrip(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	svc := &ComponentService{st: st}
 
-	if err := svc.SetPlacements("match-view", []Placement{{Component: "builtin-example", Props: `{"k":2}`}, {Component: "ghost", Hidden: true}}); err != nil {
+	if err := svc.SetPlacements("match-view", []Placement{{Component: "match-overview", Props: `{"k":2}`}, {Component: "ghost", Hidden: true}}); err != nil {
 		t.Fatalf("SetPlacements: %v", err)
 	}
 	got, err := svc.ListPlacements("match-view")
 	if err != nil {
 		t.Fatalf("ListPlacements: %v", err)
 	}
-	if len(got) != 2 || got[0].Component != "builtin-example" || got[0].Props != `{"k":2}` || got[1].Component != "ghost" || !got[1].Hidden {
+	if len(got) != 2 || got[0].Component != "match-overview" || got[0].Props != `{"k":2}` || got[1].Component != "ghost" || !got[1].Hidden {
 		t.Fatalf("round trip = %+v", got)
 	}
 	if err := svc.SetPlacements("match-view", nil); err == nil || !strings.Contains(err.Error(), "reset") {
