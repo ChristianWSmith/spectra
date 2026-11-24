@@ -64,6 +64,28 @@ Everything else is closed to a statement, including the app's own tables (metric
 A metric's statement sees the players in the library as they are, bots included, because a metric you write is not filtered. The built-in metrics do filter bots, and they show the same rule in their SQL (see [Built-in metrics](#built-in-metrics)).`,
   },
   {
+    id: 'metric-helpers',
+    title: 'Helpers in a statement',
+    parent: 'metric-language',
+    blocks: `What a statement can refer to, in one place. The chapter above explains each part; this is the lookup.
+
+**Binds.** The engine fills these in when it runs a statement. Name them in the statement, and no other bind is accepted.
+
+| Bind | Given when the metric runs for | What the scope is |
+|---|---|---|
+| \`:match_id\` | a match | one value per match |
+| \`:steam_id\` | a player | one career value per player |
+| \`:round\` | a round of a match | one value per round; it needs \`:match_id\` as well |
+
+**Functions.** The only function a statement can call beyond SQLite's own is **\`is_bot_key(steam_id)\`**. It is \`1\` for a bot and \`0\` for a human, so \`AND NOT is_bot_key(steam_id)\` leaves bots out. A statement that does not say so keeps them, as described above.
+
+**Other metrics.** **\`metric('name')\`** reads a saved metric's stored value for the same match, player or round. See [Other metrics](#metric-references).
+
+**Tables.** The tables a statement may read are listed in [Tables you can read](#sources).
+
+**Patterns.** A statement cannot call the built-in metrics' shared SQL, and it has no macros. The built-ins are written with those when the library is set up, and each built-in shows its complete statement. To write a common pattern yourself, copy a built-in's statement and change it. See [Built-in metrics](#built-in-metrics).`,
+  },
+  {
     id: 'save-gate',
     title: 'What saving checks',
     parent: 'metric-language',
@@ -148,7 +170,7 @@ The statement a metric runs is shown as written, with the metric, so you can cop
 
 The built-in statements leave out bots. They use one shared rule for it, so a bot never appears in a roster, an aggregate or a selection. Event rows keep their bot names, because an event records what happened.
 
-Built-in metrics cannot be edited. A statement of your own does not filter bots unless it says so.
+Built-in metrics are edited in place, the same as built-in components: change the statement, and **Save** keeps the edit (see [The metric builder](#metric-builder)). A statement of your own does not filter bots unless it says so, and the way to say so is \`AND NOT is_bot_key(steam_id)\` (see [Helpers in a statement](#metric-helpers)).
 
 The built-in list grows with each release, so this chapter does not count it.`,
   },

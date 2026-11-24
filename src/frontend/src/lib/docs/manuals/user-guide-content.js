@@ -573,7 +573,61 @@ working. **Try again** redraws a component whose display failed, and the box's �
 
 **Duplicate** saves a copy of one of yours as a new component and opens it. **Delete** removes one of yours. It is the red button in the editor, or the trash button on the row. A component that a view uses can't be deleted or renamed until that view is reset; the message names the view.
 
-**Use as my view** sets the area of a view to one component. Under the editor, each of the **Match view** and the **Profile view** says what it shows now: *Shows the default*, *Shows this component*, or *Shows another component*. **Use as my view** on the **Match view** replaces the tabs below the match header with the component you have open, and on the **Profile view** it replaces the profile's panels. The header, the warnings and the round strip stay where they are. Pick a single panel, such as the scoreboard, to show only that panel there. **Reset to default** removes the choice, and the view shows its default again. A component must be saved before it can be a view.`,
+**Use as my view** sets the area of a view to one component. Under the editor, each of the **Match view** and the **Profile view** says what it shows now: *Shows the default*, *Shows this component*, or *Shows another component*. **Use as my view** on the **Match view** replaces the tabs below the match header with the component you have open, and on the **Profile view** it replaces the profile's panels. The header, the warnings and the round strip stay where they are. Pick a single panel, such as the scoreboard, to show only that panel there. **Reset to default** removes the choice, and the view shows its default again. A component must be saved before it can be a view.
+
+What a component can use, its \`spectra\` helpers and display pieces, is listed in [Component helpers](#component-helpers).`,
+  },
+  {
+    id: 'component-helpers',
+    title: 'Component helpers',
+    blocks: `**Component helpers** are what a component can use. A component you write in the Component builder may import nothing. Everything it needs arrives on the **\`spectra\`** prop, which every component receives, and on its **\`context\`** prop: the match, player and round it is mounted on, frozen, so read it but do not change it. Built-in components use these same helpers, so their source is a worked example.
+
+**Reading stored values and the library**
+
+| Helper | What it does |
+|---|---|
+| \`spectra.metric(name, binds?)\` | The stored value of one saved metric. Resolves to \`{ name, doc, state, value, valueKey, error, rows }\`. \`state\` is \`fresh\` (stored and current), \`no-data\`, \`processing\`, \`failed\` or \`behind\`. \`value\` is the number for the subject, and is \`null\` unless the state is \`fresh\`. When it is fresh, \`rows\` lists each subject as \`{ subject, dim, value, valueKey }\`. A failed read also rejects, and its error shows in the component's box. |
+| \`spectra.readMetrics(names)\` | \`spectra.metric\` for each name at once. Resolves to a Map from name to read, in the order given. A failed read is its own \`failed\` state, and the others still arrive. |
+| \`spectra.metricsByMatch(steamId, names, matchIds)\` | One player's values for several metrics across many matches, in one read. Resolves to a Map from each match id to a Map from metric name to that metric's read, the same shape as \`spectra.metric\`. |
+| \`spectra.query(sql, binds?)\` | A live, read-only statement over the library, with no freshness: it reads now. Resolves to \`{ columns, rows }\`. A failed read rejects, and its error shows in the component's box. |
+
+**Binds.** The \`binds\` argument is an object with \`match_id\`, \`steam_id\` and \`round\`, or with \`matchId\`, \`steamId\` and \`round\`. Left out, it takes the context's set. Given, it replaces that set as a whole, so a read given a steam id does not also take the context's match. Giving one bind twice, as \`matchId\` and \`match_id\`, is refused.
+
+**Players**
+
+- **\`spectra.isHuman(row)\`**: true unless the roster row is a bot. The row carries \`steamId\` or \`steam_id\`.
+- **\`spectra.listedPlayers(rows)\`**: the list with the bots taken out, in order. Use it for any list of players.
+
+**Loading and progress**
+
+- **\`spectra.track(promise)\`**: counts a load the component runs on its own as a read in flight. **\`spectra.busy\`** is true while any read or tracked load is in flight.
+- **\`spectra.whileCurrent(run)\`**: for a load started in an effect. \`run\` receives \`isCurrent()\`, and a late result is dropped once the inputs change or the component unmounts.
+- **\`spectra.liveMetrics({ onDone })\`**: a panel's metric progress and reload wiring. \`progress\`, \`frac(id)\`, \`stage(id)\` and \`chip(def)\` show the sweep. \`reload\` goes up each time a metric finishes, so an effect or a derived value that reads it fetches again. \`onDone\` runs on each finish.
+
+**Interaction**
+
+- **\`spectra.navigate(route)\`**: opens a view. The route is a hash such as \`#/match/…\`, or \`{ path, query }\`.
+- **\`spectra.guard(fn)\`**: wraps an event or async handler, so its error goes to the component's box instead of being lost.
+- **\`spectra.activateOnKey(fn, { enterOnly })\`**: makes a clickable row work from the keyboard. \`onkeydown={spectra.activateOnKey(open)}\` runs \`open\` on Enter, and on Space unless \`enterOnly\` is set.
+- **\`spectra.Child\`**: mounts another named component inside this one: \`<spectra.Child name="…" props={…} />\`. The child receives this component's context and has its own error box. Nesting has a fixed depth limit.
+
+**Display**
+
+- **\`spectra.fmtMetric(value, format)\`**: the text of a stored value, in the metric's format.
+- **\`spectra.metricPresentation(state, row, unitHasRows)\`**: maps a read onto what a cell shows, as a value, a no-data dash or a status chip. \`ui.MetricCell\` takes its result.
+- **\`spectra.dash\`**: the one dash a missing value shows.
+- **\`spectra.ui\`**: the shared display pieces, used as \`<spectra.ui.StatCard …>\`.
+
+| Piece | What it shows | Props |
+|---|---|---|
+| \`ui.ErrorBanner\` | An error line, with an optional dismiss | \`ondismiss\`, \`dismissLabel\`, children |
+| \`ui.EmptyNote\` | A muted note for an empty state | children |
+| \`ui.MetricCell\` | A metric's cell | \`pres\`, \`format\`, \`chip\`, \`words\` |
+| \`ui.WinnerCell\` | A side's name, as a chip | \`name\`, \`winner\`, \`title\` |
+| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
+| \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
+
+A component cannot import another module, and the save gate refuses one that tries. Everything in this list is the whole surface.`,
   },
   {
     id: 'sql-console',
