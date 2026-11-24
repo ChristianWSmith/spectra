@@ -21,10 +21,10 @@ func placeComponent(t *testing.T, s *Store, surface string, position int, compon
 // the list is name order (case-insensitive, then exact).
 func TestComponentCreateListGet(t *testing.T) {
 	s := openMem(t)
-	if _, err := s.SaveComponent("", "beta", "<p>b</p>"); err != nil {
+	if _, err := s.SaveComponent("", "beta", "<p>b</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save beta: %v", err)
 	}
-	if _, err := s.SaveComponent("", "Alpha", "<p>a</p>"); err != nil {
+	if _, err := s.SaveComponent("", "Alpha", "<p>a</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save Alpha: %v", err)
 	}
 	rows, err := s.ListComponents()
@@ -47,10 +47,10 @@ func TestComponentCreateListGet(t *testing.T) {
 // is refused with the user's words, and nothing is overwritten.
 func TestComponentDuplicateNameRefused(t *testing.T) {
 	s := openMem(t)
-	if _, err := s.SaveComponent("", "one", "<p>1</p>"); err != nil {
+	if _, err := s.SaveComponent("", "one", "<p>1</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	_, err := s.SaveComponent("", "one", "<p>2</p>")
+	_, err := s.SaveComponent("", "one", "<p>2</p>", ComponentRefs{})
 	if err == nil {
 		t.Fatal("duplicate create was accepted")
 	}
@@ -63,13 +63,13 @@ func TestComponentDuplicateNameRefused(t *testing.T) {
 // same name; a rename of an unplaced component moves the row.
 func TestComponentRenameAndReplace(t *testing.T) {
 	s := openMem(t)
-	if _, err := s.SaveComponent("", "one", "<p>1</p>"); err != nil {
+	if _, err := s.SaveComponent("", "one", "<p>1</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if _, err := s.SaveComponent("one", "one", "<p>edited</p>"); err != nil {
+	if _, err := s.SaveComponent("one", "one", "<p>edited</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	if _, err := s.SaveComponent("one", "uno", "<p>edited</p>"); err != nil {
+	if _, err := s.SaveComponent("one", "uno", "<p>edited</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
 	if _, err := s.GetComponent("one"); !errors.Is(err, ErrNotFound) {
@@ -85,13 +85,13 @@ func TestComponentRenameAndReplace(t *testing.T) {
 // listed, and nothing changes. An edit that keeps the name still saves.
 func TestComponentPlacedRenameAndDeleteRefused(t *testing.T) {
 	s := openMem(t)
-	if _, err := s.SaveComponent("", "mine", "<p>m</p>"); err != nil {
+	if _, err := s.SaveComponent("", "mine", "<p>m</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	placeComponent(t, s, "match-view", 0, "mine")
 	placeComponent(t, s, "reports-appendix", 0, "mine")
 
-	_, err := s.SaveComponent("mine", "renamed", "<p>m</p>")
+	_, err := s.SaveComponent("mine", "renamed", "<p>m</p>", ComponentRefs{})
 	var inUse *ComponentInUseError
 	if !errors.As(err, &inUse) || len(inUse.Placements) != 2 {
 		t.Fatalf("rename err = %v, want ComponentInUseError with 2 placements", err)
@@ -102,7 +102,7 @@ func TestComponentPlacedRenameAndDeleteRefused(t *testing.T) {
 	if _, err := s.GetComponent("mine"); err != nil {
 		t.Fatalf("refused delete removed the component: %v", err)
 	}
-	if _, err := s.SaveComponent("mine", "mine", "<p>edited</p>"); err != nil {
+	if _, err := s.SaveComponent("mine", "mine", "<p>edited</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("same-name edit while placed: %v", err)
 	}
 }
@@ -111,7 +111,7 @@ func TestComponentPlacedRenameAndDeleteRefused(t *testing.T) {
 // delete of the same name is ErrNotFound.
 func TestComponentDeleteUnplaced(t *testing.T) {
 	s := openMem(t)
-	if _, err := s.SaveComponent("", "gone", "<p>g</p>"); err != nil {
+	if _, err := s.SaveComponent("", "gone", "<p>g</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	if err := s.DeleteComponent("gone"); err != nil {

@@ -1057,7 +1057,7 @@ export function listComponents() { return ComponentService.ListComponents(); }
 export async function saveComponent(original, name, source) {
   const gate = await gateComponentSave(source);
   if (!gate.ok) throw new Error(refusalText(gate));
-  return ComponentService.SaveComponent(original || '', name || '', source);
+  return ComponentService.SaveComponent(original || '', name || '', source, gate.refs);
 }
 export function deleteComponent(name) { return ComponentService.DeleteComponent(name); }
 

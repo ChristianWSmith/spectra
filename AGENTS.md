@@ -377,9 +377,13 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   hand-maintain a builtin id list. `componentbuiltins.js` lists the compiled
   registry. A builtin (component or metric) is a seeded row with origin
   `builtin`, and its name is permanent: the unique constraint refuses a user
-  item of the same name, and no rename or delete touches a builtin. A rename
-  or delete that would leave a `spectra.Child` or `spectra.metric` reference
-  dangling is refused, naming the referring components.
+  item of the same name, and every rename or delete of a builtin is refused with
+  the same wording. A user component's references are parsed from its Svelte AST
+  by the save gate (`componentRefs`, compilecore.js) and stored in `component_refs`;
+  a reference whose name is not a string literal cannot be tracked, so the save is
+  refused. A rename or delete that would leave a reference dangling is refused,
+  naming the referring components. Builtins are curated code, so their metric
+  names may come from data (the save gate does not apply to them).
 - **Every mounted component is a panel (contract).** The frame mounts each
   component into its own panel (`ComponentFrame` renders a `section.panel`
   around it), for builtins and user components alike. A component does not

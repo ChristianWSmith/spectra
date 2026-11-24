@@ -910,6 +910,18 @@ CREATE TABLE IF NOT EXISTS components (
 	updated_at DATETIME NOT NULL
 );
 
+-- component_refs: what a user component references, as the frontend parsed it from its Svelte
+-- AST (kind 'component': a spectra.Child name; kind 'metric': a spectra.metric name). Keyed by
+-- referrer NAME (the component's current name, rewritten by its rename); no foreign key, so a
+-- rename or delete of the target is checked here, never refused by the DDL.
+CREATE TABLE IF NOT EXISTS component_refs (
+	referrer TEXT NOT NULL,
+	kind     TEXT NOT NULL CHECK (kind IN ('component', 'metric')),
+	target   TEXT NOT NULL,
+	PRIMARY KEY (referrer, kind, target)
+);
+CREATE INDEX IF NOT EXISTS idx_component_refs_target ON component_refs(kind, target);
+
 -- The builtin components, seeded by name: their names are permanent (composed by name, so
 -- never renamed), and the UNIQUE constraint refuses a user component of the same name. Their
 -- source is the shipped code (builtin_overrides edits it), so the row carries none.

@@ -610,7 +610,7 @@ async function compileSource(source, filename, builtinDir = null) {
   }
   const js = reply.js;
   try {
-    return rewriteModule(js, RUNTIME_SPECIFIERS, builtinDir);
+    return { ...rewriteModule(js, RUNTIME_SPECIFIERS, builtinDir), refs: reply.refs || { components: [], metrics: [], untracked: [] } };
   } catch (e) {
     if (e && e.unknownName) {
       const pos = specifierPosition(String(source), e.unknownSpecifier);
@@ -638,8 +638,12 @@ async function compileSource(source, filename, builtinDir = null) {
 // reason — the caller positions it).
 export async function checkComponentSource(source, filename = 'Component.svelte', builtinDir = null) {
   try {
-    await compileSource(source, filename, builtinDir);
-    return { ok: true };
+    const { refs } = await compileSource(source, filename, builtinDir);
+    // A user component's references must be trackable by name (the store guards renames and
+    // deletes with them); a builtin's are curated code, so they pass.
+    const [first] = refs.untracked;
+    if (first && !builtinDir) return { ok: false, line: first.line, column: first.column, message: first.message };
+    return { ok: true, refs };
   } catch (e) {
     if (e instanceof ComponentSourceError) {
       return { ok: false, line: e.line, column: e.column, message: e.detail };

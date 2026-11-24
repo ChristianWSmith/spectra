@@ -465,7 +465,7 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 	}
 	// A rename must not leave a component using the old name dangling.
 	if m.Name != existing.Name {
-		if err := referencedByComponents(q, existing.Name, "", "metric"); err != nil {
+		if err := refuseIfReferenced(q, "metric", existing.Name, ""); err != nil {
 			return err
 		}
 	}
@@ -521,9 +521,9 @@ func (s *Store) DeleteMetric(id int64) error {
 		return err
 	}
 	if existing.Origin == "builtin" {
-		return fmt.Errorf("the built-in metric %q cannot be deleted", existing.Name)
+		return fmt.Errorf("the built-in metric %q can't be deleted", existing.Name)
 	}
-	if err := referencedByComponents(s.db, existing.Name, "", "metric"); err != nil {
+	if err := refuseIfReferenced(s.db, "metric", existing.Name, ""); err != nil {
 		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM metrics WHERE id = ?`, id)

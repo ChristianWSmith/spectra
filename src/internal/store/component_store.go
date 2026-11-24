@@ -126,7 +126,7 @@ func placementsReferencing(q queryer, name string) ([]Placement, error) {
 // *ComponentInUseError while a placement references the old name, because
 // a placement addresses its component by name and would be left
 // dangling. The check and the write share one transaction.
-func (s *Store) SaveComponent(original, name, source string) (ComponentRow, error) {
+func (s *Store) SaveComponent(original, name, source string, refs ComponentRefs) (ComponentRow, error) {
 	name, source, original = scrub(name), scrub(source), scrub(original)
 	if strings.TrimSpace(name) == "" {
 		return ComponentRow{}, fmt.Errorf("a component needs a name")
@@ -139,6 +139,20 @@ func (s *Store) SaveComponent(original, name, source string) (ComponentRow, erro
 		return ComponentRow{}, fmt.Errorf("couldn't save the component: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if original != "" {
+		if builtin, err := isBuiltinNamed(tx, original); err != nil {
+			return ComponentRow{}, err
+		} else if builtin {
+			return ComponentRow{}, fmt.Errorf("the built-in component %q can't be renamed or changed here", original)
+		}
+	}
+	if name != original {
+		if builtin, err := isBuiltinNamed(tx, name); err != nil {
+			return ComponentRow{}, err
+		} else if builtin {
+			return ComponentRow{}, fmt.Errorf("%q is the name of a built-in component", name)
+		}
+	}
 	now := time.Now()
 	if original == "" {
 		if _, err := tx.Exec(
@@ -158,7 +172,7 @@ func (s *Store) SaveComponent(original, name, source string) (ComponentRow, erro
 			if len(refs) > 0 {
 				return ComponentRow{}, &ComponentInUseError{Name: original, Placements: refs}
 			}
-			if err := referencedByComponents(tx, original, name, "component"); err != nil {
+			if err := refuseIfReferenced(tx, "component", original, original); err != nil {
 				return ComponentRow{}, err
 			}
 		}
@@ -172,6 +186,9 @@ func (s *Store) SaveComponent(original, name, source string) (ComponentRow, erro
 		if err := affectedOrNotFound(res, "saving the component"); err != nil {
 			return ComponentRow{}, err
 		}
+	}
+	if err := replaceComponentRefs(tx, original, name, refs); err != nil {
+		return ComponentRow{}, err
 	}
 	out, err := scanComponent(tx.QueryRow(`SELECT `+componentCols+` FROM components WHERE name = ?`, name))
 	if err != nil {
@@ -194,6 +211,11 @@ func (s *Store) DeleteComponent(name string) error {
 		return fmt.Errorf("couldn't delete the component: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if builtin, err := isBuiltinNamed(tx, name); err != nil {
+		return err
+	} else if builtin {
+		return fmt.Errorf("the built-in component %q can't be deleted", name)
+	}
 	refs, err := placementsReferencing(tx, name)
 	if err != nil {
 		return err
@@ -201,8 +223,11 @@ func (s *Store) DeleteComponent(name string) error {
 	if len(refs) > 0 {
 		return &ComponentInUseError{Name: name, Placements: refs}
 	}
-	if err := referencedByComponents(tx, name, "", "component"); err != nil {
+	if err := refuseIfReferenced(tx, "component", name, name); err != nil {
 		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM component_refs WHERE referrer = ?`, name); err != nil {
+		return fmt.Errorf("couldn't delete the component: %w", err)
 	}
 	res, err := tx.Exec(`DELETE FROM components WHERE name = ? AND origin = 'user'`, name)
 	if err != nil {

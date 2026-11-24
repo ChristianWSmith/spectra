@@ -88,6 +88,7 @@ var metricReadable = map[string]bool{
 	"analysis_config":    false,
 	"metrics":            false,
 	"metric_deps":        false,
+	"component_refs":     false,
 	"voice_presence":     false,
 	"player_career":      false,
 }

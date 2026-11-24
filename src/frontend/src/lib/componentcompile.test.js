@@ -29,7 +29,7 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 test('the compiler is not requested until the first compile', async () => {
   assert.equal(compilerRequested(), false);
   const res = await checkComponentSource('<p>hi</p>');
-  assert.deepEqual(res, { ok: true });
+  assert.equal(res.ok, true);
   assert.equal(compilerRequested(), true);
 });
 
@@ -109,7 +109,7 @@ test('legacy directives and slots, which compile with a warning, are refused too
 
 test('a runes component compiles and its checked source loads', async () => {
   const src = '<script>\n  let n = $state(0);\n</script>\n<button onclick={() => n++}>{n}</button>';
-  assert.deepEqual(await checkComponentSource(src), { ok: true });
+  assert.equal((await checkComponentSource(src)).ok, true);
   const C = await loadComponent(src);
   assert.equal(typeof C, 'function');
 });
@@ -118,7 +118,7 @@ test('public svelte imports are allowed', async () => {
   const res = await checkComponentSource(
     "<script>\n  import { onMount } from 'svelte';\n  import { fade as f } from 'svelte/transition';\n  onMount(() => {});\n</script>\n<p transition:f>x</p>",
   );
-  assert.deepEqual(res, { ok: true });
+  assert.equal(res.ok, true);
 });
 
 test('rewriteModule turns every import form into a registry lookup', () => {
@@ -195,7 +195,7 @@ test('the main thread keeps running while a large compile is in the worker', asy
   } finally {
     clearInterval(timer);
   }
-  assert.deepEqual(res, { ok: true });
+  assert.equal(res.ok, true);
   assert.ok(ticks >= 3, `the event loop ticked ${ticks} times during the compile`);
 });
 
@@ -204,7 +204,7 @@ test('cancel stops the compile, reports it cancelled, and the next compile start
   const before = created.count;
   cancelCompiles();
   await assert.rejects(pending, (e) => e.name === 'CompileCancelledError');
-  assert.deepEqual(await checkComponentSource('<p>after a cancel</p>'), { ok: true });
+  assert.equal((await checkComponentSource('<p>after a cancel</p>')).ok, true);
   assert.equal(created.count, before + 1, 'the cancel terminated the worker; the next compile started one');
 });
 

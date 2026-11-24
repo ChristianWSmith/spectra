@@ -22,11 +22,11 @@ func TestComponentServiceRefusals(t *testing.T) {
 	}{
 		{"   ", "<p>x</p>", "a component needs a name"},
 		{"fine", "   ", "a component needs source"},
-		{"match", "<p>x</p>", "already exists"},
+		{"match", "<p>x</p>", "built-in component"},
 		{strings.Repeat("n", maxComponentName+1), "<p>x</p>", "at most 60 characters"},
 	}
 	for _, c := range cases {
-		if _, err := svc.SaveComponent("", c.name, c.source); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := svc.SaveComponent("", c.name, c.source, ComponentRefs{}); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("SaveComponent(%q) err = %v, want it to contain %q", c.name, err, c.want)
 		}
 	}
@@ -45,13 +45,13 @@ func TestComponentServiceRoundTrip(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	svc := &ComponentService{st: st}
 
-	if _, err := svc.SaveComponent("", "Rounds", "<p>r</p>"); err != nil {
+	if _, err := svc.SaveComponent("", "Rounds", "<p>r</p>", ComponentRefs{}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := svc.SaveComponent("", "Rounds", "<p>r2</p>"); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := svc.SaveComponent("", "Rounds", "<p>r2</p>", ComponentRefs{}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate create err = %v, want already exists", err)
 	}
-	saved, err := svc.SaveComponent("Rounds", "Rounds two", "<p>r</p>")
+	saved, err := svc.SaveComponent("Rounds", "Rounds two", "<p>r</p>", ComponentRefs{})
 	if err != nil || saved.Name != "Rounds two" {
 		t.Fatalf("rename = %+v, %v", saved, err)
 	}
@@ -61,7 +61,7 @@ func TestComponentServiceRoundTrip(t *testing.T) {
 	if err := svc.DeleteComponent("Rounds two"); err == nil || !strings.Contains(err.Error(), "no component named") {
 		t.Fatalf("second delete err = %v, want no component named", err)
 	}
-	if _, err := svc.SaveComponent("ghost", "ghost", "<p>x</p>"); err == nil || !strings.Contains(err.Error(), "no component named") {
+	if _, err := svc.SaveComponent("ghost", "ghost", "<p>x</p>", ComponentRefs{}); err == nil || !strings.Contains(err.Error(), "no component named") {
 		t.Fatalf("edit of a missing component err = %v", err)
 	}
 }

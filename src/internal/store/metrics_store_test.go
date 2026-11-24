@@ -476,7 +476,7 @@ func TestMetricCRUD(t *testing.T) {
 	if _, err := s.UpdateMetric(models.MetricRow{ID: builtinID, Name: "x", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"}); err == nil || !strings.Contains(err.Error(), "cannot be modified") {
 		t.Errorf("builtin update err = %v, want immutability error", err)
 	}
-	if err := s.DeleteMetric(builtinID); err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
+	if err := s.DeleteMetric(builtinID); err == nil || !strings.Contains(err.Error(), "can't be deleted") {
 		t.Errorf("builtin delete err = %v, want protection error", err)
 	}
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{{Name: "plug_a", Title: "A", Expr: "SELECT '' AS subject_key, '' AS dim, COUNT(*) AS value FROM events WHERE match_id = :match_id"}}); err != nil {

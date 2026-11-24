@@ -58,11 +58,18 @@ func validComponentName(name string) (string, error) {
 	return name, nil
 }
 
+// ComponentRefs is what a component's source references, as the save gate parsed it (the
+// frontend reads the Svelte AST; Go cannot). The store keeps them to guard renames and deletes.
+type ComponentRefs struct {
+	Components []string `json:"components"`
+	Metrics    []string `json:"metrics"`
+}
+
 // SaveComponent writes one user component: an empty `original` creates
 // `name`, otherwise the component named `original` is replaced (a rename
 // when `name` differs). The source must have passed the frontend compile
 // check (see the type comment); this method refuses empty source.
-func (s *ComponentService) SaveComponent(original, name, source string) (Component, error) {
+func (s *ComponentService) SaveComponent(original, name, source string, refs ComponentRefs) (Component, error) {
 	name, err := validComponentName(name)
 	if err != nil {
 		return Component{}, err
@@ -70,7 +77,7 @@ func (s *ComponentService) SaveComponent(original, name, source string) (Compone
 	if strings.TrimSpace(source) == "" {
 		return Component{}, fmt.Errorf("a component needs source")
 	}
-	row, err := s.st.SaveComponent(strings.TrimSpace(original), name, source)
+	row, err := s.st.SaveComponent(strings.TrimSpace(original), name, source, store.ComponentRefs{Components: refs.Components, Metrics: refs.Metrics})
 	if err != nil {
 		var inUse *store.ComponentInUseError
 		if errors.As(err, &inUse) {
@@ -95,6 +102,10 @@ func (s *ComponentService) DeleteComponent(name string) error {
 	var inUse *store.ComponentInUseError
 	if errors.As(err, &inUse) {
 		return fmt.Errorf("can't delete %q while it is placed on %s", inUse.Name, placementList(inUse.Placements))
+	}
+	var referenced *store.ComponentReferencedError
+	if errors.As(err, &referenced) {
+		return referenced
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("no component named %q", name)
