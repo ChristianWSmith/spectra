@@ -133,7 +133,7 @@ export function entryLoopSpan(fromTick, toTick) {
 // asTick reads a link-site tick strictly: null/undefined/"" are ABSENT
 // (never the 0 Number(null)/Number("") would coerce them to) and
 // anything non-numeric is NaN — both resolve to "no promise".
-function asTick(v) {
+export function asTick(v) {
   return v == null || v === '' ? NaN : Number(v);
 }
 
@@ -545,3 +545,9 @@ export const NAV_ACTIONS = [
     bottom: true, // sidebar: pinned gear at the rail's foot (see above)
   },
 ];
+
+// replayAt opens a match's replay at a tick, looped when asked, and returns to the
+// back route. The combat panels open their events through it.
+export function replayAt(spectra, matchId, { tick, loop, follow, back }) {
+  spectra.navigate(replayHash(matchId, {}, { tick, loop, follow: follow || undefined, back }));
+}

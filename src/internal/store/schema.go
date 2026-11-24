@@ -11,22 +11,42 @@ var schemaSQL string
 
 // schemaFragments are the shared SQL pieces the builtin metric seeds splice in
 // (one copy each: the seed expr holds the placeholder, and applySchema writes
-// the expanded text, so the stored expr is the complete formula).
+// the expanded text, so the stored expr is the complete formula). Every piece
+// lands inside a seed literal, so each is quote-doubled on the way in.
 var schemaFragments = []struct {
 	placeholder string
-	seedText    func() string
+	sql         string
 }{
-	{clutchPlaceholder, clutchSeedText},
-	{killsPlaceholder, killsSeedText},
-	{killsEKPlaceholder, killsEKSeedText},
-	{damagePlaceholder, damageSeedText},
-	{playerStatsColsPlaceholder, playerStatsColsSeedText},
-	{rollupOpenPlaceholder, rollupOpenSeedText},
-	{rollupClosePlaceholder, rollupCloseSeedText},
-	{playerStatsHumansPlaceholder, playerStatsHumansSeedText},
-	{careerHeadPlaceholder, careerHeadSeedText},
-	{playerFoldJoinPlaceholder, playerFoldJoinSeedText},
+	{clutchPlaceholder, clutchCTE},
+	{killsPlaceholder, killsCountedCTE},
+	{killsEKPlaceholder, killsCountedEKCTE},
+	{damagePlaceholder, damageCountedCTE},
+	{playerStatsColsPlaceholder, playerStatsColsSQL},
+	{rollupOpenPlaceholder, rollupOpenSQL},
+	{rollupClosePlaceholder, rollupCloseSQL},
+	{rollupMatchOpenPlaceholder, rollupMatchOpenSQL},
+	{playerStatsHumansPlaceholder, playerStatsHumansSQL},
+	{careerHeadPlaceholder, careerHeadSQL},
+	{playerFoldJoinPlaceholder, playerFoldJoinSQL},
+	{playerRoundColsPlaceholder, playerRoundColsSQL},
+	{playerRoundFoldJoinPlaceholder, playerRoundFoldJoinSQL},
+	{playerRoundRosterJoinPlaceholder, playerRoundRosterJoinSQL},
+	{sideDomainPlaceholder, sideDomainSQL},
+	{disconnectJoinPlaceholder, disconnectJoinSQL},
 }
+
+// spliceFragments replaces every fragment placeholder in a seed text with the
+// fragment's SQL, quote-doubled. applySchema and the macro expanders both splice
+// through it, so a fragment is spliced the same way wherever it appears.
+func spliceFragments(seed string) string {
+	for _, f := range schemaFragments {
+		seed = strings.ReplaceAll(seed, f.placeholder, sqlLiteral(f.sql))
+	}
+	return seed
+}
+
+// sqlLiteral is sql as it sits inside a single-quoted seed literal.
+func sqlLiteral(sql string) string { return strings.ReplaceAll(sql, "'", "''") }
 
 // applySchema runs the baseline schema (schema.sql) inside a single
 // transaction. Every statement is idempotent (CREATE ... IF NOT EXISTS,
@@ -41,11 +61,7 @@ func (s *Store) applySchema() error {
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
 	// The clutch metrics splice the shared clutch CTE in (clutch_sql.go).
-	seed := schemaSQL
-	for _, f := range schemaFragments {
-		seed = strings.ReplaceAll(seed, f.placeholder, f.seedText())
-	}
-	seed = expandSeedMacros(seed)
+	seed := expandSeedMacros(spliceFragments(schemaSQL))
 	if _, err := tx.Exec(seed); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("couldn't initialize the database: %w", err)

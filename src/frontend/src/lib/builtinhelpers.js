@@ -21,51 +21,79 @@
 // missing cell shows; fmt.js writes the same character.
 import { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
 import { isCounted } from './rounds.js';
-import { playerSideClassAt } from './teams.js';
+import { roundsByNumber } from './replay/landmarks.js';
+import { buildHash } from './router.js';
+import { playerSideClassAt, sideClassOf, pickPlayer, resolveSide } from './teams.js';
 import * as S from './strings/index.js';
-import { econColumns, econValue, lossPips } from './econ.js';
-import { entryLoopAround, entryLoopSpan, isSteam } from './nav.js';
+import { bySide, econColumns, econValue, lossPips } from './econ.js';
+import { asTick, entryLoopAround, entryLoopSpan, isSteam } from './nav.js';
 import { moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags } from './rounds.js';
 import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, winnerTeamKey } from './sideparity.js';
 import { synthTeamName, teamNames, teamStartClass } from './teams.js';
 export { econColumns, econValue, entryLoopAround, entryLoopSpan, eraOf, flipIndexes, isSteam, lossPips, moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags, sideAtRound, sideInEra, startSideFor, synthTeamName, teamKeyAt, teamNames, teamStartClass, winnerTeamKey };
-export { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
+export { bySide, pickPlayer, resolveSide, roundsByNumber, asTick, sideClassOf, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
 export const DASH = '\u2014';
-export function roundsByNumber(rounds) {
-  return new Map((rounds || []).map((r) => [r.number, r]));
-}
-
-export function pickPlayer(players, side) {
-  let best = null;
-  for (const p of players || []) {
-    if (!p || p.side !== side || !p.name) continue;
-    if (!best) {
-      best = p;
-      continue;
-    }
-    const id = p.steamId || '';
-    const bestId = best.steamId || '';
-    if (id < bestId || (id === bestId && p.name < best.name)) best = p;
-  }
-  return best;
-}
-export function resolveSide(players, steamId, name) {
-  let side = '';
-  if (steamId) {
-    const byId = (players || []).find((p) => p && p.steamId === steamId);
-    if (byId) side = byId.side || '';
-  }
-  if (!side && name) {
-    const byName = (players || []).find((p) => p && p.name === name);
-    if (byName) side = byName.side || '';
-  }
-  return side;
-}
-export function sideClassOf(side) {
-  return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
-}
 // playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
 export { playerSideClassAt };
+// Match routes: the match's route, its tab, and the rounds tab opened at a round.
+export function matchPath(matchId) {
+  return 'match/' + matchId;
+}
+export function matchTab(matchId, tab) {
+  return matchPath(matchId) + '/' + tab;
+}
+export function roundsTabHash(matchId, round) {
+  return hashOf('/match/' + matchId + '/rounds', { round });
+}
+// openReplay navigates to a match's replay with the given route extras (tick, loop,
+// follow, back); a missing or empty extra is left out of the route.
+export function openReplay(spectra, matchId, extras) {
+  spectra.navigate(hashOf('/replay/' + matchId, extras));
+}
+// openRoundsTab navigates to a match's rounds tab at a round.
+export function openRoundsTab(spectra, matchId, round) {
+  spectra.navigate(roundsTabHash(matchId, round));
+}
+// rowOf shapes one result row (an array of columns) into an object. Each spec entry is
+// [column, kind]: 'str' is the text (or '' when absent), 'count' a number (0 when
+// absent), 'num' a number (NaN when absent) and 'raw' the column as a Number.
+const ROW_KINDS = {
+  str: (v) => v || '',
+  count: (v) => Number(v) || 0,
+  num: (v) => (v == null ? NaN : Number(v)),
+  raw: (v) => Number(v),
+};
+export function rowOf(r, spec) {
+  const out = {};
+  for (const [key, [col, kind]] of Object.entries(spec)) out[key] = ROW_KINDS[kind](r[col]);
+  return out;
+}
+// groupBy collects a list into a Map from keyOf(item) to the items with that key, in
+// list order. Keys keep their first-seen order.
+export function groupBy(list, keyOf) {
+  const m = new Map();
+  for (const item of list) {
+    const k = keyOf(item);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(item);
+  }
+  return m;
+}
+// indexBy keys a list of records by one of their fields. A later record with the
+// same key replaces an earlier one, as Map does.
+export function indexBy(list, key) {
+  return new Map(list.map((d) => [d[key], d]));
+}
+// sideBySteam maps each roster steam id to its side ('' when unknown).
+export function sideBySteam(players) {
+  return new Map(players.map((p) => [p.steamId, p.side || '']));
+}
+// roundWinnerName is the team name of a round's winner side ('' when the round
+// cannot place it): the match's team name for the side that won that round.
+export function roundWinnerName(rounds, sideSwitches, roundNumber, winnerSide, names) {
+  const key = winnerTeamKey(rounds, sideSwitches, roundNumber, winnerSide);
+  return key ? names[key] : '';
+}
 // roundSideClassOf binds playerSideClassAt to a panel's match data: the returned
 // (roundNumber, steamId, name) → class reads the data as it is at each call.
 export function roundSideClassOf(getScope) {
@@ -164,27 +192,20 @@ export function buildEconRows(ecoRows, sideRows) {
   return rows;
 }
 
+// hashOf is buildHash over the query's set values: null and '' are left out.
 export function hashOf(path, query) {
-  const parts = [];
-  for (const k of Object.keys(query)) {
-    const v = query[k];
-    if (v == null || v === '') continue;
-    const val = encodeURIComponent(String(v)).replace(/%2F/g, '/').replace(/%2C/g, ',');
-    parts.push(k + '=' + val);
-  }
-  return parts.length ? path + '?' + parts.join('&') : path;
-}
-export function asTick(v) {
-  return v == null || v === '' ? NaN : Number(v);
-}
-export function replayRoute(matchId, extras) {
-  return hashOf('/replay/' + matchId, extras);
+  return buildHash(path, Object.fromEntries(Object.entries(query).filter(([, v]) => v != null && v !== '')));
 }
 
 
 // The route to a player's profile.
 export function playerRoute(steam) {
   return '/player/' + steam;
+}
+
+// Open a match's view.
+export function openMatch(spectra, matchId) {
+  spectra.navigate(matchPath(matchId));
 }
 
 // Open a player's profile (the name link on every builtin that lists players).
@@ -220,7 +241,7 @@ export function chatTag(channel, side) {
 // the side switches and the winner. The Economy composer loads it for its panels; a panel mounted alone (a
 // component preview) loads it itself. Null when there is no match to read.
 const SQL_MATCH = 'SELECT score_ct, score_t, side_switches FROM matches WHERE id = :match_id';
-const SQL_ROUNDS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
+export const SQL_ROUNDS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
 const SQL_ECON =
   'SELECT r.number, r.winner, r.equip_ct, r.equip_t, ' +
   'COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0), ' +
@@ -237,8 +258,8 @@ const SQL_ECON =
   'WHERE r.match_id = :match_id ORDER BY r.number ASC';
 const SQL_SIDES =
   'SELECT round, steam_id, side FROM round_player_sides WHERE match_id = :match_id ORDER BY round ASC, steam_id ASC';
-const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
-const SQL_ROSTER =
+export const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
+export const SQL_ROSTER =
   'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ' +
   'JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id ' +
   'WHERE ps.match_id = :match_id AND p.is_bot = 0 ' +
@@ -246,6 +267,23 @@ const SQL_ROSTER =
   'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ' +
   'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ' +
   'WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)) DESC, p.name ASC';
+
+// The shapers a match frame's reads share: the round objects of a rounds read,
+// the roster of a roster read, the team names of a teams read over that roster,
+// and one integer of a match read (side switches, by column).
+export function roundsOf(rows) {
+  return rows.map((r) => ({ number: Number(r[0]), winner: r[1] || '', startTick: Number(r[2]), endTick: Number(r[3]) }));
+}
+export function rosterOf(rows) {
+  return rows.map((r) => ({ steamId: r[0], name: r[1], side: r[2] }));
+}
+export function namesOf(teamRows, players) {
+  const clan = new Map(teamRows.map((t) => [t[0], t[1]]));
+  return teamNames({ ctName: clan.get('ct') || '', tName: clan.get('t') || '', players });
+}
+export function sideSwitchesOf(res, col = 0) {
+  return Number((res.rows[0] || [])[col]) || 0;
+}
 
 export async function loadEconomy(spectra, matchId) {
   if (matchId == null) return null;
@@ -261,11 +299,9 @@ export async function loadEconomy(spectra, matchId) {
   const scoreCT = Number(head[0]) || 0;
   const scoreT = Number(head[1]) || 0;
   const sideSwitches = Number(head[2]) || 0;
-  const rounds = roundRows.rows.map((r) => ({ number: Number(r[0]), winner: r[1] || '', startTick: Number(r[2]), endTick: Number(r[3]) }));
+  const rounds = roundsOf(roundRows.rows);
   const rows = buildEconRows(ecoRows.rows, sideRows.rows);
-  const clan = new Map(teamRows.rows.map((t) => [t[0], t[1]]));
-  const players = roster.rows.map((r) => ({ steamId: r[0], name: r[1], side: r[2] }));
-  const names = teamNames({ ctName: clan.get('ct') || '', tName: clan.get('t') || '', players });
+  const names = namesOf(teamRows.rows, rosterOf(roster.rows));
   const matchWinner = scoreCT === scoreT ? '' : scoreCT > scoreT ? 'ct' : 't';
   return { rows, rounds, names, sideSwitches, matchWinner };
 }

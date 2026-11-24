@@ -1,21 +1,11 @@
 <script>
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { teamNames } from '../../builtinhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_ROUNDS, roundsOf, rosterOf, namesOf, sideSwitchesOf } from '../../builtinhelpers.js';
   const SQL_UTIL =
     'SELECT seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y, ' +
     'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC';
-  const SQL_ROUNDS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
   const SQL_MATCH = 'SELECT tick_rate, side_switches FROM matches WHERE id = :match_id';
-  const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
-  const SQL_ROSTER =
-    'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ' +
-    'JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id ' +
-    'WHERE ps.match_id = :match_id AND p.is_bot = 0 ' +
-    'ORDER BY (SELECT COUNT(*) FROM events e WHERE e.match_id = ps.match_id AND e.kind = \'kill\' ' +
-    'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ' +
-    'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ' +
-    'WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)) DESC, p.name ASC';
 
   // Utility view: the grenades, rounds, roster and match facts, loaded once. The
   // log and the two bar charts mount with this frame's context and the same data;
@@ -78,10 +68,9 @@
       flashMsTotal: Number(r[12]) || 0,
       affected: r[13] || '',
     }));
-    const rounds = roundRows.rows.map((r) => ({ number: Number(r[0]), winner: r[1] || '', startTick: Number(r[2]), endTick: Number(r[3]) }));
-    const players = roster.rows.map((r) => ({ steamId: r[0], name: r[1], side: r[2] }));
-    const clan = new Map(teamRows.rows.map((t) => [t[0], t[1]]));
-    const names = teamNames({ ctName: clan.get('ct') || '', tName: clan.get('t') || '', players });
+    const rounds = roundsOf(roundRows.rows);
+    const players = rosterOf(roster.rows);
+    const names = namesOf(teamRows.rows, players);
     return { rows, rounds, players, names, tickRate, sideSwitches };
   }
 
@@ -102,7 +91,7 @@
   );
 </script>
 
-<div class="view util-view">
+<div class="view util-view tab-root">
       <spectra.Child name="match-utility-log" props={{ rows: view.rows, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches, tickRate: view.tickRate, loopSecs, back, filt, setFilt }} />
       <div class="util-summary">
         <spectra.Child name="match-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches }} />
@@ -111,11 +100,3 @@
 
 </div>
 
-<style>
-  /* A tab root sits in a display: contents frame, so it is a flex item of the
-     Match view's column, where the shared .view auto margins would shrink it to
-     its content. Full width, like the other tabs. */
-  .util-view {
-    margin-inline: 0;
-  }
-</style>

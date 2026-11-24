@@ -4,7 +4,8 @@
 // change first clears what was shown (the old player's numbers never linger).
 // Call it once from a component's top level.
 //
-//   const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+//   const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+//   const sweep = table.sweep;   // the live sweep: chips and the reload
 //   const defs = $derived(table.defs);
 //   const reads = $derived(table.reads);
 //   <td>{table.cellFor(name, dim)}</td>   the cell's presentation for a dim
@@ -14,15 +15,19 @@
 import { loadSplit, cell, dimValue, emptyChip } from './shared.js';
 import { whileCurrent } from '../../current.js';
 import { metricStateTitle } from '../../metricstate.js';
+import { liveMetrics } from '../../metricslive.svelte.js';
 
 export function splitTable(getInputs) {
+  // The panel's live sweep: the reload that re-reads the table, and the progress
+  // that the table's chips show.
+  const sweep = liveMetrics();
   let defs = $state(new Map());
   let reads = $state(new Map());
   let loadedFor = null;
   $effect(() =>
     whileCurrent((isCurrent) => {
-      const { spectra, steamId, seeds, errText, reload } = getInputs();
-      reload;
+      const { spectra, steamId, seeds, errText } = getInputs();
+      sweep.reload;
       const sid = steamId;
       const newPlayer = sid !== loadedFor;
       loadedFor = sid;
@@ -42,9 +47,10 @@ export function splitTable(getInputs) {
   // cellFor and rawValue read the table's current defs and reads, so a template
   // that calls them tracks the load.
   const cellFor = (name, dim) =>
-    cell(defs.get(name), reads.get(name), getInputs().progress, dimValue(defs.get(name), reads.get(name), dim));
+    cell(defs.get(name), reads.get(name), sweep.progress, dimValue(defs.get(name), reads.get(name), dim));
   const rawValue = (name, dim) => dimValue(defs.get(name), reads.get(name), dim);
   return {
+    sweep,
     get defs() {
       return defs;
     },
@@ -55,8 +61,7 @@ export function splitTable(getInputs) {
     rawValue,
     // The chip of an empty table (null when up to date), with its tooltip.
     get empty() {
-      const { progress, seeds } = getInputs();
-      const e = emptyChip(defs, reads, progress, seeds);
+      const e = emptyChip(defs, reads, sweep.progress, getInputs().seeds);
       return e && { ...e, title: metricStateTitle(e.state, e.read?.error) };
     },
   };

@@ -1,4 +1,9 @@
 <script>
+  import { plural } from '../../fmt.js';
+  import Popover from '../../components/Popover.svelte';
+  import { groupBy, openReplay, sideBySteam } from '../../builtinhelpers.js';
+  import { matchTab } from '../../builtinhelpers.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
   import * as S from '../../strings/index.js';
   import { roundSideClassOf, DASH, fmtMs, fmtZeroDash, roundClock, roundIndexLabel, roundScoreLabel, roundsByNumber, hashOf, entryLoopAround, isSteam, openPlayer } from '../../builtinhelpers.js';
 
@@ -6,9 +11,9 @@
   // row per throw. The filter state lives in the composer (filt / setFilt).
   let { spectra, context, rows = [], rounds = [], players = [], names = { ct: S.match.sideCt, t: S.match.sideT }, sideSwitches = 0, tickRate = 64, loopSecs = 5, back = '', filt, setFilt } = $props();
 
-  const origin = () => back || 'match/' + context.matchId + '/utility';
+  const origin = () => back || matchTab(context.matchId, 'utility');
   const rbn = $derived(roundsByNumber(rounds));
-  const teamBySteam = $derived(new Map(players.map((p) => [p.steamId, p.side || ''])));
+  const teamBySteam = $derived(sideBySteam(players));
   const effTick = (r) => (r.throwTick > 0 ? r.throwTick : r.tick);
 
   const kindOptions = $derived([...new Set(rows.map((r) => r.kind).filter(Boolean))].sort());
@@ -26,31 +31,11 @@
     kindOpen = false;
     kindTrigger?.focus();
   }
-  // While the popover is open: an outside pointer-down closes it, Escape closes it and returns focus.
-  $effect(() => {
-    if (!kindOpen || !kindAnchor) return;
-    const onDown = (e) => {
-      if (!kindAnchor.contains(e.target)) kindOpen = false;
-    };
-    const onKey = (e) => {
-      if (e.key === S.common.keyEscape) closeKinds();
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown, true);
-      document.removeEventListener('keydown', onKey);
-    };
-  });
 
   const filtered = $derived(rows.filter((r) => (kinds.length === 0 || kinds.includes(r.kind)) && (filt.throwerF === '' || r.thrower === filt.throwerF)));
 
   const groups = $derived.by(() => {
-    const m = new Map();
-    for (const r of filtered) {
-      if (!m.has(r.round)) m.set(r.round, []);
-      m.get(r.round).push(r);
-    }
+    const m = groupBy(filtered, (r) => r.round);
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
 
@@ -94,9 +79,9 @@
     return '(' + Math.round(x) + ', ' + Math.round(y) + ')';
   }
 
-  function openReplay(r) {
+  function replayRow(r) {
     const t = effTick(r);
-    spectra.navigate(hashOf('/replay/' + context.matchId, { tick: t, loop: entryLoopAround(t, tickRate, loopSecs), follow: r.thrower || undefined, back: origin() }));
+    openReplay(spectra, context.matchId, { tick: t, loop: entryLoopAround(t, tickRate, loopSecs), follow: r.thrower || undefined, back: origin() });
   }
 
   function openProfile(steam) {
@@ -118,7 +103,7 @@
         aria-expanded={kindOpen}
         onclick={() => (kindOpen = !kindOpen)}
       >{kindSummary}</button>
-      {#if kindOpen}
+      <Popover open={kindOpen} anchor={kindAnchor} onClose={closeKinds} onOutside={() => (kindOpen = false)}>
         <div class="util-kind-pop" role="group" aria-label={S.utility.colKind}>
           {#each kindOptions as k (k)}
             <label class="filt-check">
@@ -127,7 +112,7 @@
             </label>
           {/each}
         </div>
-      {/if}
+      </Popover>
     </span>
     <label class="util-field" for="util-thrower">
       <span class="field-label">{S.utility.colThrower}</span>
@@ -147,10 +132,10 @@
         {/each}
       </select>
     </label>
-    <span class="muted">{filtered.length}{S.utility.ofSeparator}{rows.length}{S.utility.grenadeWord}{rows.length === 1 ? '' : 's'}</span>
+    <span class="muted">{filtered.length}{S.utility.ofSeparator}{rows.length}{S.utility.grenadeWord}{plural(rows.length)}</span>
   </div>
   {#if groups.length === 0}
-    <p class="muted" role="status">{S.utility.noMatch}</p>
+    <EmptyNote>{S.utility.noMatch}</EmptyNote>
   {:else}
     <div class="util-table">
       <div class="util-cols">
@@ -170,7 +155,7 @@
             {@const name = r.throwerName || r.thrower}
             <li class="util-nade">
               <span class="util-actions">
-                <button class="btn small ghost" title={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle} aria-label={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle} onclick={() => openReplay(r)}><span class="codicon codicon-play"></span></button>
+                <button class="btn small ghost" title={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle} aria-label={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle} onclick={() => replayRow(r)}><span class="codicon codicon-play"></span></button>
               </span>
               <span class="chip util-kind {r.kind}">{r.kind}</span>
               {#if /^\d{17}$/.test(r.thrower)}

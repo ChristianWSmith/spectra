@@ -361,7 +361,9 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
   reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics`,
   `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
-  modules the builtins import), and `<spectra.Child>` to mount a named
+  modules the builtins import), `dash` (the one missing-value dash) and `ui` (the shared
+  display components: `ui.ErrorBanner`, `ui.EmptyNote`, `ui.MetricCell`, `ui.WinnerCell`,
+  `ui.StatCard`, `ui.StatusChip`), and `<spectra.Child>` to mount a named
   component inside another. A failed `metric()` or `query()` is reported
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
@@ -539,6 +541,7 @@ Canonical homes (extend these, don't fork them):
 | Stored-value cell presentation | `frontend/src/lib/metricstate.js` `metricPresentation` (value, dash or state) — THE one mapping from a read to what a cell shows, used by the profile `cell` and the match `matchPres`; drawn by `components/MetricCell.svelte` as a chip (with `sweep.chip`) or a word (`words`) |
 | Load that must not apply late | `frontend/src/lib/current.js` `whileCurrent` — the effect body for a load that depends on its inputs; `isCurrent()` gates the result. Never re-add a `let live = true` flag inline |
 | Builtin helper names | `frontend/src/lib/builtinhelpers.js` re-exports the canonical function of each name (fmt.js, rounds.js, sideparity.js, teams.js, econ.js, nav.js); it holds no second implementation. A builtin imports the names it needs from there and nothing else |
+| Listbox keyboard navigation | `frontend/src/lib/listnav.js` — THE arrow, wrap-around and Enter handling of an option list (`stepActive`, `onListKey`) and its scroll-into-view (`scrollActive`). Pickers and suggestion lists use it; never re-write the arrow handling inline |
 | Metric progress and reload wiring | `frontend/src/lib/metricslive.svelte.js` `liveMetrics()` — THE one place a panel subscribes to sweep progress and the metric-done event; components reach it through the `spectra` prop or the BUILTIN_HELPERS entry. Never re-add the subscribe pair inline |
 | Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (Progress presentation); never restate it in this file |
 | Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |

@@ -1,14 +1,14 @@
 <script>
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  import { compareAsc } from '../../sortstate.js';
   import { splitTable } from './splittable.svelte.js';
   // Weapons (builtin profile panel): kills, damage and headshots per weapon,
   // each cell one stored partitioned read for the context's player (the dim
   // is the weapon). Top rows by kills, then damage, then name.
   // Unverified before the wipe: weapon damage is a tick-join builtin (ruling 24).
   import { errText } from '../../services.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
     import { fmtInt } from '../../fmt.js';
-  import MetricCell from '../../components/MetricCell.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
+  import MetricTd from '../../components/MetricTd.svelte';
   import { dimsOf } from './shared.js';
   import * as S from '../../strings/index.js';
 
@@ -18,9 +18,9 @@
   const SEEDS = ['weapon_kills', 'weapon_damage', 'weapon_headshots'];
   const TOP = 8;
 
-  const sweep = liveMetrics();
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);
   const { cellFor, rawValue } = table;
@@ -34,7 +34,7 @@
         (a, b) =>
           (b.kills ?? -1) - (a.kills ?? -1) ||
           (b.damage ?? -1) - (a.damage ?? -1) ||
-          (a.weapon < b.weapon ? -1 : a.weapon > b.weapon ? 1 : 0),
+          compareAsc(a.weapon, b.weapon),
       )
       .slice(0, TOP),
   );
@@ -58,21 +58,11 @@
           <td class="mono">{w.weapon}</td>
           {#each SEEDS as name (name)}
             {@const p = cellFor(name, w.weapon)}
-            <td class="num" title={p.title}>
-              <MetricCell pres={p} format={(v) => fmtInt(v)} chip={sweep.chip(defs.get(name))} />
-            </td>
+            <MetricTd pres={p} format={(v) => fmtInt(v)} chip={sweep.chip(defs.get(name))} />
           {/each}
         </tr>
       {:else}
-        <tr>
-          <td colspan="4" class="muted">
-            {#if empty}
-              <StatusChip status={empty.state} title={empty.title} {...sweep.chip(empty.def)} />
-            {:else}
-              {S.profiles.noWeapons}
-            {/if}
-          </td>
-        </tr>
+        <EmptyTableRow colspan={4} empty={empty} text={S.profiles.noWeapons} chip={sweep.chip(empty?.def)} />
       {/each}
     </tbody>
   </table>

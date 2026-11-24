@@ -18,10 +18,11 @@
   // the active tab with its select, `tab` and `ontab`, which only the URL can
   // supply (see the note at `tab` below).
   import { onMount } from 'svelte';
+  import { loadLoopSecs } from '../../loopsecs.js';
   import * as S from '../../strings/index.js';
   import { MATCH_TABS, matchTabSlug } from '../../router.js';
   import { getPref } from '../../services.js';
-  import { LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
+  import { LOOP_SECS_DEFAULT } from '../../nav.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
 
   let {
@@ -57,11 +58,7 @@
   // (kind, thrower, round) are kept in the view registry under the match.
   let loopSecs = $state(LOOP_SECS_DEFAULT);
   onMount(() => {
-    getPref('loop_secs')
-      .then((v) => (loopSecs = prefLoopSecs(v)))
-      .catch(() => {
-        /* keep the default */
-      });
+    loadLoopSecs().then((v) => (loopSecs = v));
   });
   // The tab names, by key, from the canonical list (router MATCH_TABS), so the
   // markup never compares against a bare string.

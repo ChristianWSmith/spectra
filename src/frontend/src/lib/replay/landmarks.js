@@ -859,7 +859,7 @@ export function defaultFilter() {
   return { ...DEFAULT_FILTER, cats: [...DEFAULT_CATEGORIES], bbox: null };
 }
 
-function num(v) {
+export function num(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
@@ -867,7 +867,7 @@ function num(v) {
 // Round bounds keep NEGATIVE values (knife/warmup rounds are real
 // rounds) and truncate to an integer; 0 and anything unusable mean
 // "unset" — never a bound.
-function roundNum(v) {
+export function roundNum(v) {
   const n = Math.trunc(Number(v));
   return Number.isFinite(n) && n !== 0 ? n : 0;
 }

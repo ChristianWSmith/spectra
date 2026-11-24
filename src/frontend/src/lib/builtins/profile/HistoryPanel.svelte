@@ -1,6 +1,8 @@
 <script>
+  import { openMatch, indexBy } from '../../builtinhelpers.js';
+  import { DASH } from '../../builtinhelpers.js';
   import { whenCurrent } from '../../current.js';
-  import { activateOnKey } from '../../keys.js';
+  import { openRow } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Match history (builtin profile panel), most recent first. The match rows
@@ -8,14 +10,14 @@
   // history. The K/D/A, ADR and KAST cells are stored match-scope metrics read
   // for the context's player in ONE read: metricsByMatch takes the series of
   // every metric (one call) and each match's compute state (one call per row).
-  import { listMetrics, getProfile, errText } from '../../services.js';
+  import { errText } from '../../services.js';
   import { liveMetrics } from '../../metricslive.svelte.js';
   import { metricsByMatch } from '../../componentruntime/reads.js';
   import { fmt1, fmtDate, fmtInt, fmtMetric } from '../../fmt.js';
   import { teamStartClass } from '../../teams.js';
   import MetricCell from '../../components/MetricCell.svelte';
 
-  import { readCell } from './shared.js';
+  import { loadProfile, readCell } from './shared.js';
   import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -37,10 +39,10 @@
     matchReads = new Map();
     loadError = '';
     if (!sid) return;
-    spectra.track(Promise.all([listMetrics(), getProfile(sid)]))
+    loadProfile(spectra, sid)
       .then(async ([rows, profile]) => {
         if (!isCurrent()) return;
-        const catalog = new Map((rows || []).map((d) => [d.name, d]));
+        const catalog = indexBy(rows || [], 'name');
         defs = catalog;
         const rowsOut = profile ? profile.history || [] : [];
         history = rowsOut;
@@ -68,7 +70,7 @@
     return { parts, title: gap ? gap.title : '' };
   }
 
-  const halfText = (p) => (p.kind === 'value' ? fmtInt(p.value) : '—');
+  const halfText = (p) => (p.kind === 'value' ? fmtInt(p.value) : DASH);
 </script>
 
 {#if loadError}
@@ -99,11 +101,10 @@
             class="clickable"
             tabindex="0"
             title={S.fill(S.profiles.openMatchRow, { id: h.matchId })}
-            onclick={() => spectra.navigate(`/match/${h.matchId}`)}
-            onkeydown={activateOnKey(() => spectra.navigate(`/match/${h.matchId}`), { enterOnly: true })}
+            {...openRow(() => openMatch(spectra, h.matchId), { enterOnly: true })}
           >
             <td>{fmtDate(h.extractedAt)}</td>
-            <td>{h.map || '—'}</td>
+            <td>{h.map || DASH}</td>
             <td>
               <span class="chip status {h.win ? 'ok' : 'bad'}">
                 {h.win ? S.profiles.winLetter : S.profiles.lossLetter}
@@ -115,7 +116,7 @@
                    side): teamStartClass with zero switches is the no-flip form.
                    NEVER `.chip side` here: that paints the side-AT-TIME color. -->
               <span class="chip {teamStartClass(h.startSide, 0)}" title={S.profiles.startSideTitle}>
-                {(h.startSide || '—').toUpperCase()}
+                {(h.startSide || DASH).toUpperCase()}
               </span>
             </td>
             <td class="num" title={k.title}>

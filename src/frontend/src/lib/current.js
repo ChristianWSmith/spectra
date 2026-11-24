@@ -40,3 +40,25 @@ export function loadForMatch(getMatchId, load, apply, failed) {
     );
   });
 }
+
+// latestOnly is a runner for one kind of load: a result (or failure) applies only
+// while it is the newest load of that kind. Start it once per panel and call it
+// for each load; a load that a newer one has overtaken is dropped.
+//
+//   const runProv = latestOnly();
+//   runProv(getProvenance(id), (p) => (prov = p), (e) => (provError = errText(e)));
+export function latestOnly() {
+  let gen = 0;
+  return (promise, apply, fail) => {
+    const mine = ++gen;
+    const current = () => mine === gen;
+    promise.then(
+      (v) => {
+        if (current()) apply(v);
+      },
+      (e) => {
+        if (current() && fail) fail(e);
+      },
+    );
+  };
+}

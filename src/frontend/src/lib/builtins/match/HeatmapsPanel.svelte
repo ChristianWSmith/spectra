@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../../builtinhelpers.js';
   import { whenCurrent } from '../../current.js';
   import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
@@ -259,7 +260,7 @@
         : S.heatmaps.unitCount,
   );
   const maxLabel = $derived(
-    grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : '—',
+    grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : DASH,
   );
 
   const filterKey = (k, p, t, from, to, l) => `${k}|${p}|${t}|${from}|${to}|${l}`;
@@ -529,14 +530,9 @@
   }
 </script>
 
-<div class="view heat-view" style="--heat-aspect: {heatAspect}">
+<div class="view heat-view tab-root" style="--heat-aspect: {heatAspect}">
   {#if error}
-    <ErrorBanner>
-      {error}
-      <button class="btn small" aria-label={S.heatmaps.dismissError} onclick={() => (error = '')}>
-        <span class="codicon codicon-close"></span>
-      </button>
-    </ErrorBanner>
+    <ErrorBanner ondismiss={() => (error = '')} dismissLabel={S.heatmaps.dismissError}>{error}</ErrorBanner>
   {/if}
 
   {#if packNote}
@@ -726,11 +722,3 @@
   </section>
 </div>
 
-<style>
-  /* A tab root sits in a display: contents frame, so it is a flex item of the
-     Match view's column, where the shared .view auto margins would shrink it to
-     its content. Full width, like the other tabs. */
-  .heat-view {
-    margin-inline: 0;
-  }
-</style>

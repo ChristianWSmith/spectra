@@ -1,5 +1,6 @@
 <script>
-  import { whileCurrent } from '../../current.js';
+  import RetryButton from '../../components/RetryButton.svelte';
+  import { whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
@@ -48,8 +49,8 @@
   let ent = $state(null);
   let entError = $state('');
   // One generation per read: a stale reply (a match switch, a Retry) is dropped.
-  let provGen = 0;
-  let entGen = 0;
+  const runProv = latestOnly();
+  const runEnt = latestOnly();
 
   function parseFacts(r) {
     if (!r) return null;
@@ -66,31 +67,23 @@
   }
 
   function loadProv(id) {
-    const my = ++provGen;
     provError = '';
     // An async arrow turns a synchronous throw into a rejected read: a failed section
     // reports its own error and never takes the other sections down with it.
-    spectra
-      .track((async () => getProvenance(id))())
-      .then((p) => {
-        if (my === provGen) prov = p;
-      })
-      .catch((e) => {
-        if (my === provGen) provError = errText(e);
-      });
+    runProv(
+      spectra.track((async () => getProvenance(id))()),
+      (p) => (prov = p),
+      (e) => (provError = errText(e)),
+    );
   }
 
   function loadEnt(id) {
-    const my = ++entGen;
     entError = '';
-    spectra
-      .track((async () => getEntitySummary(id))())
-      .then((s) => {
-        if (my === entGen) ent = s;
-      })
-      .catch((e) => {
-        if (my === entGen) entError = errText(e);
-      });
+    runEnt(
+      spectra.track((async () => getEntitySummary(id))()),
+      (s2) => (ent = s2),
+      (e) => (entError = errText(e)),
+    );
   }
 
   $effect(() => whileCurrent((isCurrent) => {
@@ -205,16 +198,16 @@
     {#if provError}
       <ErrorBanner>
         {provError}
-        <button class="btn small" onclick={() => loadProv(context.matchId)}>{S.library.retry}</button>
+        <RetryButton onretry={() => loadProv(context.matchId)} label={S.library.retry} />
       </ErrorBanner>
     {:else if !prov}
       <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
       <dl class="facts">
-        <div><dt>{S.library.dtParserVersion}</dt><dd class="mono">{prov.parserVersion || '—'}</dd></div>
+        <div><dt>{S.library.dtParserVersion}</dt><dd class="mono">{prov.parserVersion || DASH}</dd></div>
         <div><dt>{S.library.dtImported}</dt><dd>{fmtDate(parseStamp(prov.extractedAt))}</dd></div>
         <div><dt>{S.library.dtParseTime}</dt><dd class="num">{fmtInt(prov.parseMs)}{S.library.msSuffix}</dd></div>
-        <div><dt>{S.library.dtVoiceSampleRate}</dt><dd class="num">{prov.sampleRate ? `${prov.sampleRate}${S.match.unitHz}` : '—'}</dd></div>
+        <div><dt>{S.library.dtVoiceSampleRate}</dt><dd class="num">{prov.sampleRate ? `${prov.sampleRate}${S.match.unitHz}` : DASH}</dd></div>
         <div><dt>{S.library.dtVoiceChunks}</dt><dd class="num">{fmtInt(prov.voiceChunks)}</dd></div>
         <div><dt>{S.library.dtWarnings}</dt><dd class="num">{fmtInt(prov.warnings)}</dd></div>
         <div><dt>{S.library.dtStatus}</dt><dd><StatusChip status={prov.status} /></dd></div>
@@ -237,7 +230,7 @@
     {#if entError}
       <ErrorBanner>
         {entError}
-        <button class="btn small" onclick={() => loadEnt(context.matchId)}>{S.library.retry}</button>
+        <RetryButton onretry={() => loadEnt(context.matchId)} label={S.library.retry} />
       </ErrorBanner>
     {:else if !ent}
       <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>

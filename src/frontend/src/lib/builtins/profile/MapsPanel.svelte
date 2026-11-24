@@ -1,14 +1,15 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
+  import { compareAsc } from '../../sortstate.js';
+  import { DASH } from '../../builtinhelpers.js';
+  import { openRow } from '../../keys.js';
   import { splitTable } from './splittable.svelte.js';
   // Per-map breakdown (builtin profile panel): matches, wins and ADR per map,
   // each cell one stored partitioned read for the context's player (the dim
   // is the map). A row opens the Library filtered to this player and map.
   import { errText } from '../../services.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
     import { fmt1 } from '../../fmt.js';
-  import MetricCell from '../../components/MetricCell.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
+  import MetricTd from '../../components/MetricTd.svelte';
   import { dimsOf } from './shared.js';
   import * as S from '../../strings/index.js';
 
@@ -17,9 +18,9 @@
 
   const SEEDS = ['map_matches', 'map_wins', 'map_adr'];
 
-  const sweep = liveMetrics();
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);
   const { cellFor, rawValue } = table;
@@ -29,7 +30,7 @@
   const maps = $derived(
     dimsOf(reads, SEEDS)
       .map((map) => ({ map, matches: rawValue('map_matches', map) }))
-      .sort((a, b) => (b.matches ?? -1) - (a.matches ?? -1) || (a.map < b.map ? -1 : a.map > b.map ? 1 : 0)),
+      .sort((a, b) => (b.matches ?? -1) - (a.matches ?? -1) || compareAsc(a.map, b.map)),
   );
   const empty = $derived(table.empty);
 
@@ -57,28 +58,17 @@
         <tr
           class="clickable"
           tabindex="0"
-          title={S.fill(S.profiles.openMapTitle, { map: m.map || '—' })}
-          onclick={() => openMapInLibrary(m.map)}
-          onkeydown={activateOnKey(() => openMapInLibrary(m.map))}
+          title={S.fill(S.profiles.openMapTitle, { map: m.map || DASH })}
+          {...openRow(() => openMapInLibrary(m.map))}
         >
-          <td>{m.map || '—'}</td>
+          <td>{m.map || DASH}</td>
           {#each [['map_matches', (v) => v], ['map_wins', (v) => v], ['map_adr', fmt1]] as [name, fmt] (name)}
             {@const p = cellFor(name, m.map)}
-            <td class="num" title={p.title}>
-              <MetricCell pres={p} format={(v) => fmt(v)} chip={sweep.chip(defs.get(name))} />
-            </td>
+            <MetricTd pres={p} format={(v) => fmt(v)} chip={sweep.chip(defs.get(name))} />
           {/each}
         </tr>
       {:else}
-        <tr>
-          <td colspan="4" class="muted">
-            {#if empty}
-              <StatusChip status={empty.state} title={empty.title} {...sweep.chip(empty.def)} />
-            {:else}
-              {S.profiles.noMaps}
-            {/if}
-          </td>
-        </tr>
+        <EmptyTableRow colspan={4} empty={empty} text={S.profiles.noMaps} chip={sweep.chip(empty?.def)} />
       {/each}
     </tbody>
   </table>

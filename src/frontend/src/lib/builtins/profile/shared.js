@@ -5,7 +5,7 @@
 // live sweep on a metric shows as processing (lib/metricstate.js precedence).
 import { metricStateTitle, metricPresentation } from '../../metricstate.js';
 import { readMetrics } from '../../metricreads.js';
-import { listMetrics } from '../../services.js';
+import { listMetrics, getProfile } from '../../services.js';
 
 export const NO_DATA_TITLE = 'no data for this player';
 
@@ -51,6 +51,12 @@ export function emptyChip(defs, reads, progress, names) {
 // for the context's player. A name the catalog does not carry is never read:
 // its cells show the honest dash, not an error. Each read is one metric()
 // call, so its dims come back in `rows`.
+// loadProfile reads the metric catalog and one player's profile together: the catalog
+// names the cards, the profile carries the headline numbers.
+export function loadProfile(spectra, sid) {
+  return spectra.track(Promise.all([listMetrics(), getProfile(sid)]));
+}
+
 // loadSplit reads a split table's catalog and its seed metrics for the
 // context's player: the catalog read, then loadSeeds over it. The three split
 // panels (sides, maps, weapons) load through this one chain.

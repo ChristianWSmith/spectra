@@ -346,3 +346,9 @@ export function prettyJson(s) {
     return String(s);
   }
 }
+
+// plural picks the singular or plural form of a count's word: `one` for exactly 1,
+// `many` otherwise (the empty string and "s" by default).
+export function plural(n, one = '', many = 's') {
+  return n === 1 ? one : many;
+}

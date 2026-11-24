@@ -6,7 +6,13 @@ import { metricPresentation } from '../metricstate.js';
 import { fmtMetric } from '../fmt.js';
 import { activateOnKey } from '../keys.js';
 import { whileCurrent } from '../current.js';
-  import StatusChip from './StatusChip.svelte';
+import ErrorBanner from './ErrorBanner.svelte';
+import EmptyNote from './EmptyNote.svelte';
+import MetricCell from './MetricCell.svelte';
+import WinnerCell from './WinnerCell.svelte';
+import StatCard from './StatCard.svelte';
+import StatusChip from './StatusChip.svelte';
+import { DASH } from '../builtinhelpers.js';
   // ComponentFrame — the frame every mounted component sits in
   // one failing component shows a
   // dismissible error inside its own frame and the rest of the surface
@@ -136,6 +142,10 @@ import { whileCurrent } from '../current.js';
     fmtMetric,
     activateOnKey,
     whileCurrent,
+    // The one dash a missing cell shows, and the shared display pieces (the same
+    // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.
+    dash: DASH,
+    ui: { ErrorBanner, EmptyNote, MetricCell, WinnerCell, StatCard, StatusChip },
     metric: tracked(api.metric),
     query: tracked(api.query),
     metricsByMatch: tracked(api.metricsByMatch),

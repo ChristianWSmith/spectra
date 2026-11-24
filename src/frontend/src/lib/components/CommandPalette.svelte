@@ -1,4 +1,5 @@
 <script>
+  import { stepActive } from '../listnav.js';
   // M5 command palette: Ctrl/Cmd-K overlay with fuzzy search
   // across nav actions, matches, players, saved filters, metrics and saved
   // queries. Sources are async and debounced; each section caps at 15 rows.
@@ -125,9 +126,7 @@
 
   // Keyboard nav helpers.
   function move(d) {
-    const n = flat.length;
-    if (!n) return;
-    active = (active + d + n) % n;
+    active = stepActive(flat.length, active, d);
   }
 
   function runActive() {

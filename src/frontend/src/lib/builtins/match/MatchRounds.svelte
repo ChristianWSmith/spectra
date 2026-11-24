@@ -1,9 +1,14 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
+  import { openReplay, matchPath } from '../../builtinhelpers.js';
+  import { sideSwitchesOf } from '../../builtinhelpers.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { openRow } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, SQL_MATCH_TICK_RATE, SQL_ROUND_MVP_REASON, SQL_ROUND_KILLS, SQL_ROUND_BOMBS, SQL_ROUND_ECONOMY, SQL_ROUND_SIDE_CLASSES, SQL_ROUND_CHAT, teamName, fill, roundLabel, fmtDuration, playerRoundCls, roundOf } from './panelhelpers.js';
-  import { DASH, isSteam, separatorFlags, winnerTeamKey, openPlayer, roundClock, entryLoopAround, hashOf, roundsByNumber, scoreThrough, sideAtRound, chatClock, chatTag, fmtInt } from '../../builtinhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, SQL_MATCH_TICK_RATE, SQL_ROUND_MVP_REASON, SQL_ROUND_KILLS, SQL_ROUND_BOMBS, SQL_ROUND_ECONOMY, SQL_ROUND_SIDE_CLASSES, SQL_ROUND_CHAT, fill, roundLabel, fmtDuration, roundOf } from './panelhelpers.js';
+  import WinnerCell from '../../components/WinnerCell.svelte';
+  import { DASH, isSteam, separatorFlags, roundWinnerName, openPlayer, roundClock, entryLoopAround, hashOf, roundsByNumber, scoreThrough, sideAtRound, chatClock, chatTag, fmtInt } from '../../builtinhelpers.js';
 
   const COPY = Object.freeze({
     colWatch: S.match.colWatch,
@@ -70,8 +75,8 @@
       rounds: list,
       seps: separatorFlags(list),
       roster: roster.rows,
-      switches: Number((switchRows.rows[0] || [0])[0]) || 0,
-      teams: { ct: teamName('ct', teamRows.rows, roster.rows), t: teamName('t', teamRows.rows, roster.rows) },
+      switches: sideSwitchesOf(switchRows),
+      teams: namesOf(teamRows.rows, rosterOf(roster.rows)),
     };
   }
 
@@ -177,11 +182,16 @@
     }
   }
 
-  const backTo = () => back || 'match/' + (data ? data.id : context.matchId);
+  const backTo = () => back || matchPath(data ? data.id : context.matchId);
 
+  // A player's colour in a round, from this match's roster, rounds and switches.
+  const playerRoundCls = roundSideClassOf(() => ({
+    players: data.roster.map((r) => ({ steamId: r[0], name: r[1], side: r[2] })),
+    sideSwitches: data.switches,
+    rounds: data.rounds,
+  }));
   function winnerName(d, r) {
-    const key = winnerTeamKey(d.rounds, d.switches, r.number, r.winner);
-    return key ? d.teams[key] : '';
+    return roundWinnerName(d.rounds, d.switches, r.number, r.winner, d.teams);
   }
 
   // The replay at the round's start, its span looped, back to this tab.
@@ -196,7 +206,7 @@
   // Round-detail helpers: a name's side colour in this round, the team behind a side of this
   // round, the clock of an event, and the replay entry an event links to.
   function playerCls(n, steam, name) {
-    return playerRoundCls(data, n, steam, name);
+    return playerRoundCls(n, steam, name);
   }
   function teamForSide(n, side) {
     for (const k of ['ct', 't']) {
@@ -205,7 +215,7 @@
     return side.toUpperCase();
   }
   function watchEvent(tickRate, tick, follow) {
-    spectra.navigate(hashOf('/replay/' + data.id, { tick, loop: entryLoopAround(tick, tickRate, loopSecs), follow: follow || undefined, back }));
+    openReplay(spectra, data.id, { tick, loop: entryLoopAround(tick, tickRate, loopSecs), follow: follow || undefined, back });
   }
   // The side a chat speaker held this round (team chat tags it); '' when unknown.
   function sideOfSpeaker(n, c) {
@@ -225,9 +235,9 @@
 {#snippet roundDetail(n)}
   {@const d = details[n]}
   {#if !d || d === 'loading'}
-    <p class="muted" role="status">{COPY.roundDetailLoading}</p>
+    <EmptyNote>{COPY.roundDetailLoading}</EmptyNote>
   {:else if d.failed}
-    <p class="muted" role="status">{COPY.roundDetailFailed}</p>
+    <EmptyNote>{COPY.roundDetailFailed}</EmptyNote>
   {:else}
     {@const info = data.rounds.find((x) => x.number === n)}
     {@const rbn = roundsByNumber(data.rounds)}
@@ -254,7 +264,7 @@
           <section>
             <h3>{S.match.colKills} <span class="muted">({d.kills.length})</span></h3>
             {#if d.kills.length === 0}
-              <p class="muted" role="status">{S.match.noKills}</p>
+              <EmptyNote>{S.match.noKills}</EmptyNote>
             {:else}
               <div class="table-scroll">
                 <table class="data-table">
@@ -292,7 +302,7 @@
           <section>
             <h3>{S.match.bombHeading}</h3>
             {#if d.bombs.length === 0}
-              <p class="muted" role="status">{S.match.noBombEvents}</p>
+              <EmptyNote>{S.match.noBombEvents}</EmptyNote>
             {:else}
               <div class="table-scroll">
                 <table class="data-table">
@@ -342,7 +352,7 @@
                     <td><span class="chip side {e.side}">{teamForSide(n, e.side)}</span></td>
                     <td><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}>{e.cls || 'unknown'}</span></td>
                     <td class="num">{fmtInt(e.equip)}</td>
-                    <td class="num">{e.moneyAvg != null ? fmtInt(e.moneyAvg) : DASH}</td>
+                    <td class="num">{fmtInt(e.moneyAvg)}</td>
                   </tr>
                 {:else}
                   <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
@@ -354,7 +364,7 @@
           <section>
             <h3>{S.match.roundChatHeading}</h3>
             {#if d.chat.length === 0}
-              <p class="muted" role="status">{S.match.noChat}</p>
+              <EmptyNote>{S.match.noChat}</EmptyNote>
             {:else}
               <ul class="chat-list">
                 {#each d.chat as c (c.id)}
@@ -394,29 +404,28 @@
         {#each data.rounds as r, ri (r.number)}
           <tr class="clickable" class:split-before={ri > 0 && data.seps[ri - 1]} tabindex="0"
             aria-expanded={open.includes(r.number)}
-            onclick={(e) => { if (e.target instanceof Element && e.target.closest('input, button, a')) return; toggleRound(r.number); }}
-            onkeydown={activateOnKey(() => toggleRound(r.number))}
+            {...openRow(() => toggleRound(r.number), { ignore: 'input, button, a' })}
           >
             <td>
               <button class="btn small ghost" title={fill(COPY.watchRoundTitle, { round: r.number })} aria-label={fill(COPY.watchRoundAria, { round: r.number })} onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button>
             </td>
             <td class="num">{roundLabel(r.number)}</td>
-            <td><span class="chip side {r.winner || 'none'}">{winnerName(data, r) || (r.winner ? r.winner.toUpperCase() : DASH)}</span></td>
+            <td><WinnerCell name={winnerName(data, r)} winner={r.winner} /></td>
             <td>{r.reason || DASH}</td>
             <td class="num">{fmtDuration(r.durationS)}</td>
             <td>{r.bombSite || DASH}</td>
             <td>
               {#if r.mvpName}
-                {@render playerLink(r.mvp, r.mvpName, playerRoundCls(data, r.number, r.mvp, r.mvpName))}
+                {@render playerLink(r.mvp, r.mvpName(r.number, r.mvp, r.mvpName))}
               {:else}
                 {DASH}
               {/if}
             </td>
             <td>
               {#if r.firstKillName && r.firstDeathName}
-                {@render playerLink(r.firstKillSteam, r.firstKillName, playerRoundCls(data, r.number, r.firstKillSteam, r.firstKillName))}
+                {@render playerLink(r.firstKillSteam, r.firstKillName, playerRoundCls(r.number, r.firstKillSteam, r.firstKillName))}
                 {COPY.killedVerb}
-                {@render playerLink(r.firstDeathSteam, r.firstDeathName, playerRoundCls(data, r.number, r.firstDeathSteam, r.firstDeathName))}
+                {@render playerLink(r.firstDeathSteam, r.firstDeathName, playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName))}
               {:else}
                 {DASH}
               {/if}

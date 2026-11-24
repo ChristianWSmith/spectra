@@ -1,4 +1,5 @@
 <script>
+  import { stepActive, onListKey } from '../listnav.js';
   // SuggestInput — the ONE suggestion dropdown behind every "search
   // input that offers what is actually in the library" (the canonical
   // way: Library's map facet, Library's player facet, the Profiles
@@ -130,22 +131,12 @@
       open = true;
       return;
     }
-    const from = activeIdx < 0 ? 0 : activeIdx;
-    active = (from + d + n) % n;
+    active = stepActive(n, activeIdx, d);
   }
 
   function onKey(e) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      move(1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      move(-1);
-    } else if (e.key === 'Enter' && shown && activeIdx >= 0) {
-      e.preventDefault();
-      pick(matches[activeIdx]);
-    }
     // Esc is Popover's (document-level) — see onClose.
+    onListKey(e, { move, pick: () => pick(matches[activeIdx]), canPick: () => shown && activeIdx >= 0 });
   }
 
   // Tab/shift-tab away closes; a pointer that moves focus INSIDE the

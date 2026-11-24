@@ -745,11 +745,18 @@ export function slotAliveHelmetAt(index, slot, frame) {
 // dink and a bare-head kill can share a tick — a trade — and stay two
 // cues; a duplicated dispatch collapses). Pure — unit-tested by
 // src/lib/sfx.test.js.
-export function headshotKillCues(rows, rounds) {
+// numberedRounds keys a rounds list by round number, skipping rows without a finite
+// number (the cue builders read rounds that way).
+function numberedRounds(rounds) {
   const byNumber = new Map();
   for (const r of rounds || []) {
     if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
   }
+  return byNumber;
+}
+
+export function headshotKillCues(rows, rounds) {
+  const byNumber = numberedRounds(rounds);
   const seen = new Set();
   const out = [];
   for (const row of rows || []) {
@@ -904,10 +911,7 @@ export function announcerOrder(cues) {
 // the plant/defuse cues below. Deduped by (tick, name) like every other
 // cue list. Pure — unit-tested by src/lib/sfx.test.js.
 export function roundEndCues(rows, rounds) {
-  const byNumber = new Map();
-  for (const r of rounds || []) {
-    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
-  }
+  const byNumber = numberedRounds(rounds);
   const seen = new Set();
   const out = [];
   for (const row of rows || []) {
@@ -961,10 +965,7 @@ export function bombAnnouncerCues(rows, rounds) {
     [ACTION_KINDS.plant.complete]: 'bombpl',
     [ACTION_KINDS.defuse.complete]: 'bombdef',
   };
-  const byNumber = new Map();
-  for (const r of rounds || []) {
-    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
-  }
+  const byNumber = numberedRounds(rounds);
   const seen = new Set();
   const out = [];
   for (const row of rows || []) {
@@ -1106,10 +1107,7 @@ function scorelineBefore(rounds, number) {
 // re-fire-per-crossing behaviour — loops included; only the jump path
 // consults the set.
 export function matchPointCues(rows, rounds) {
-  const byNumber = new Map();
-  for (const r of rounds || []) {
-    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
-  }
+  const byNumber = numberedRounds(rounds);
   const seen = new Set();
   const out = [];
   for (const row of rows || []) {

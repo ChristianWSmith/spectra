@@ -134,6 +134,7 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/fmt.js': {
     load: () => import('../fmt.js'),
     names: {
+      plural: 'the singular or plural word for a count',
       fmt1: 'a number to one decimal',
       fmt2: 'a number to two decimals',
       fmtInt: 'a whole number with grouping',
@@ -195,6 +196,7 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/nav.js': {
     load: () => import('../nav.js'),
     names: {
+      replayAt: 'open a match’s replay at a tick (looped when asked), back to a route',
       replayHash: 'the route to a replay at a point',
       entryLoopAround: 'the loop span around a replay entry',
       entryLoopSpanAround: 'the loop span around a replay entry, as a span',
@@ -259,13 +261,31 @@ export const BUILTIN_HELPERS = Object.freeze({
     load: () => import('../economysource.svelte.js'),
     names: { economySource: 'the economy a panel shows: its own load alone, the composer’s data when given' },
   },
+  'src/lib/builtins/match/combatpanel.svelte.js': {
+    load: () => import('../builtins/match/combatpanel.svelte.js'),
+    names: { combatPanel: 'the data layer of a Combat panel: the match’s list with its side data, the error line, the loop length and the replay a row opens' },
+  },
   'src/lib/builtins/profile/splittable.svelte.js': {
     load: () => import('../builtins/profile/splittable.svelte.js'),
     names: { splitTable: 'the data of a profile split table (sides, maps, weapons) for the player, reloaded on change' },
   },
+  'src/lib/loopsecs.js': {
+    load: () => import('../loopsecs.js'),
+    names: { loadLoopSecs: 'the user’s loop length, read once (the default when unset or unreadable)' },
+  },
+  'src/lib/sortstate.js': {
+    load: () => import('../sortstate.js'),
+    names: {
+      nextSort: 'a table’s sort state after a click on a column',
+      compareAsc: 'the ascending order of two values (-1, 0, 1)',
+    },
+  },
   'src/lib/keys.js': {
     load: () => import('../keys.js'),
-    names: { activateOnKey: 'keyboard activation of a clickable row (Enter, and Space unless enterOnly)' },
+    names: {
+      activateOnKey: 'keyboard activation of a clickable row (Enter, and Space unless enterOnly)',
+      openRow: 'a clickable row’s handlers (click and keyboard), spread onto the row',
+    },
   },
   'src/lib/current.js': {
     load: () => import('../current.js'),
@@ -273,6 +293,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       whileCurrent: 'run a load for an effect, dropping a result that is out of date',
       whenCurrent: 'a promise callback that runs only while its load is current',
       loadForMatch: 'the effect body of a panel that loads for the match and applies the result while current',
+      latestOnly: 'a runner for one kind of load: only the newest load’s result applies',
     },
   },
   'src/lib/metricreads.js': {
@@ -303,6 +324,8 @@ export const BUILTIN_HELPERS = Object.freeze({
       SQL_TEAMS: 'the team names read',
       STATE_WORD: 'the words of a metric state (calculating, failed, out of date)',
       cellText: 'one stored value as its cell text',
+      readFrameBase: 'the base reads of a match panel: roster, team rows, side switches',
+      kdaText: 'a player’s kills/deaths/assists line as cell text',
       matchPres: 'one stored value’s cell presentation (value, dash or state)',
       cellValue: 'one stored value, or null when not fresh',
       fill: 'fill a {placeholder} in catalog copy',
@@ -311,18 +334,34 @@ export const BUILTIN_HELPERS = Object.freeze({
       fmtDuration: 'a round duration as a clock',
       numOf: 'a stored value as a number (NaN when absent)',
       parseStamp: 'the stored import time, read as Go wrote it',
-      playerRoundCls: 'the colour class of a player in one round',
       readUnit: 'one metric read for this match, with its state',
       roundLabel: 'a round’s number label',
       roundOf: 'one stored round row, shaped for the panel',
       sortRows: 'the chained sort of the scoreboard',
       startClass: 'the team colour class of a side at the start',
-      teamName: 'the team display name of a side',
     },
   },
   'src/lib/builtinhelpers.js': {
     load: () => import('../builtinhelpers.js'),
     names: {
+      rowOf: 'one result row shaped into an object by a column spec',
+      indexBy: 'a list of records keyed by one of their fields',
+      bySide: 'a value of a pair, by side (ct or t)',
+      groupBy: 'a list grouped into a Map by a key function, in list order',
+      sideBySteam: 'each roster steam id to its side',
+      matchPath: 'the route of a match',
+      matchTab: 'the route of a match tab',
+      roundsTabHash: 'the route of a match’s rounds tab at a round',
+      openRoundsTab: 'open a match’s rounds tab at a round',
+      openReplay: 'open a match’s replay with its route extras (tick, loop, follow, back)',
+      openMatch: 'open a match’s view',
+      SQL_ROUNDS: 'the match rounds read',
+      roundsOf: 'the round objects of a rounds read',
+      rosterOf: 'the roster objects of a roster read',
+      namesOf: 'the team names of a teams read over a roster',
+      sideSwitchesOf: 'the side switch count of a match read',
+      sideClassOf: 'the side colour class (side-ct / side-t), or empty',
+      asTick: 'a tick read strictly: absent values are NaN, never zero',
       buildEconRows: 'the economy rows of a match from the economy query',
       loadEconomy: 'the economy of one match, read for a panel mounted alone (rows, rounds, names, side switches, winner)',
       DASH: 'the one dash a missing cell shows',
@@ -338,6 +377,8 @@ export const BUILTIN_HELPERS = Object.freeze({
       fmtMs: 'milliseconds as seconds',
       fmtZeroDash: 'a count of nothing as a dash',
       followPlayer: 'open the replay following a player',
+      SQL_ROSTER: 'the match roster read (humans only, the default order)',
+      SQL_TEAMS: 'the team names read',
       chatClock: 'a chat line’s clock, RD-prefixed in a round',
       chatTag: 'a chat line’s speaker tag ([ALL], [CT], [T])',
       hashOf: 'a route hash from a path and its query',
@@ -349,6 +390,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       openPlayer: 'open a player’s profile',
       playerSideClassAt: 'the team colour class of a player on a round',
       roundSideClassOf: 'a panel’s round colour class of a player, bound to its match data',
+      roundWinnerName: 'the team name of a round’s winner side (empty when the round cannot place it)',
       roundClock: 'a round time as a clock',
       roundEndTick: 'the end tick of a round',
       roundIndexLabel: 'a round’s number label',
@@ -384,7 +426,8 @@ export const BUILTIN_HELPERS = Object.freeze({
       emptyChip: 'the chip shown for an empty breakdown',
       readCell: 'the cell of a whole-subject read (one value per player)',
       loadSeeds: 'load the profile’s seed values (read)',
-      loadSplit: 'load a split table’s catalog and seed values for the player (read)',
+      loadSplit: 'load a breakdown’s catalog and its values for the player (read)',
+      loadProfile: 'the metric catalog and one player’s profile, read together',
     },
   },
   'src/lib/builtins/reports/shared.js': {
@@ -407,6 +450,26 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/components/MetricCell.svelte': {
     load: () => import('../components/MetricCell.svelte'),
     names: { default: 'the body of a stored-value table cell (a value, a dash, or a state as a chip or a word)' },
+  },
+  'src/lib/components/WinnerCell.svelte': {
+    load: () => import('../components/WinnerCell.svelte'),
+    names: { default: 'the winner chip of a round: the team name, or the side' },
+  },
+  'src/lib/components/RetryButton.svelte': {
+    load: () => import('../components/RetryButton.svelte'),
+    names: { default: 'the button a panel shows beside a failed read, to load it again' },
+  },
+  'src/lib/components/MetricTd.svelte': {
+    load: () => import('../components/MetricTd.svelte'),
+    names: { default: 'a numeric table cell that shows one stored value' },
+  },
+  'src/lib/components/EmptyTableRow.svelte': {
+    load: () => import('../components/EmptyTableRow.svelte'),
+    names: { default: 'the one row a table shows when it has nothing to list (a state chip, or the text)' },
+  },
+  'src/lib/components/EmptyNote.svelte': {
+    load: () => import('../components/EmptyNote.svelte'),
+    names: { default: 'the line a panel shows where there is nothing to show (its text is the children)' },
   },
   'src/lib/components/ErrorBanner.svelte': {
     load: () => import('../components/ErrorBanner.svelte'),

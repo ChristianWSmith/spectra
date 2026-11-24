@@ -1,6 +1,9 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
+  import RetryButton from '../../components/RetryButton.svelte';
+  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { openMatch, DASH } from '../../builtinhelpers.js';
+  import { openRow } from '../../keys.js';
+  import { whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Career trend (builtin profile panel): one match-scope metric across the
   // context's player's matches, as a sparkline. The picker offers every
@@ -26,7 +29,7 @@
   let trendDefs = $state([]);
   let trendText = $state('');
   // A plain counter (not state): the read's generation, so a stale result drops.
-  let trendGen = 0;
+  const runTrend = latestOnly();
 
   $effect(() => whileCurrent((isCurrent) => {
     spectra.track(listMetrics())
@@ -63,18 +66,16 @@
   function loadTrend() {
     const sid = steamId;
     const m = metric;
-    const my = ++trendGen;
     trendError = '';
     if (!sid) return;
-    getCareerTrend(sid, m)
-      .then((rows) => {
-        if (my !== trendGen) return;
+    runTrend(
+      getCareerTrend(sid, m),
+      (rows) => {
         trend = rows || [];
         trendError = '';
-      })
-      .catch((e) => {
-        if (my === trendGen) trendError = errText(e);
-      });
+      },
+      (e) => (trendError = errText(e)),
+    );
   }
 
   $effect(() => {
@@ -84,7 +85,7 @@
   // The trend serves values at display scale already (percent 0..100), so
   // percent is the one divergence from the shared fmtMetric.
   function fmtTrendValue(v, format) {
-    if (format === 'percent') return Number.isFinite(v) ? fmtPercent(v) : '—';
+    if (format === 'percent') return fmtPercent(v);
     return fmtMetric(v, format);
   }
 
@@ -152,7 +153,7 @@
   {#if trendError}
     <ErrorBanner>
       {trendError}
-      <button class="btn small" onclick={loadTrend}>{S.profiles.retry}</button>
+      <RetryButton onretry={loadTrend} label={S.profiles.retry} />
     </ErrorBanner>
   {:else if spark}
     <svg
@@ -170,8 +171,7 @@
           role="button"
           tabindex="0"
           aria-label={S.fill(S.profiles.openMatchDot, { title: d.title })}
-          onclick={() => d.matchId && spectra.navigate(`/match/${d.matchId}`)}
-          onkeydown={activateOnKey(() => d.matchId && spectra.navigate(`/match/${d.matchId}`))}
+          {...openRow(() => d.matchId && openMatch(spectra, d.matchId))}
         >
           <title>{d.title}</title>
         </circle>
@@ -182,8 +182,8 @@
       {S.profiles.sparkFootnote}
     </p>
   {:else if trend.length === 1}
-    <p class="muted" role="status">{S.profiles.onlyOneMatch}</p>
+    <EmptyNote>{S.profiles.onlyOneMatch}</EmptyNote>
   {:else}
-    <p class="muted" role="status">{S.profiles.noTrendData}</p>
+    <EmptyNote>{S.profiles.noTrendData}</EmptyNote>
   {/if}
 </div>

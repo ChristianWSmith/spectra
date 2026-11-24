@@ -1,8 +1,10 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
+  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { sideSwitchesOf } from '../../builtinhelpers.js';
+  import { openRow } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellValue, matchPres, STATE_WORD, teamName, sortRows } from './panelhelpers.js';
+  import { readFrameBase, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellValue, matchPres, STATE_WORD, sortRows } from './panelhelpers.js';
   import { fmtMetric } from '../../fmt.js';
   import MetricCell from '../../components/MetricCell.svelte';
   import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
@@ -46,16 +48,14 @@
     if (matchId == null) return null;
     const names = COLUMNS.map((c) => c.metric);
     const [roster, teamRows, switchRows, ...units] = await Promise.all([
-      spectra.query(SQL_ROSTER),
-      spectra.query(SQL_TEAMS),
-      spectra.query(SQL_SWITCHES),
+      ...readFrameBase(spectra),
       ...names.map((n) => readUnit(spectra, n)),
     ]);
     const byMetric = new Map(names.map((n, i) => [n, units[i]]));
     const rows = roster.rows.map((r) => ({ steam: r[0], name: r[1], side: r[2], score: r[3] }));
     return {
-      switches: Number((switchRows.rows[0] || [0])[0]) || 0,
-      teams: { ct: teamName('ct', teamRows.rows, roster.rows), t: teamName('t', teamRows.rows, roster.rows) },
+      switches: sideSwitchesOf(switchRows),
+      teams: namesOf(teamRows.rows, rosterOf(roster.rows)),
       rows,
       byMetric,
     };
@@ -124,10 +124,7 @@
         <tbody>
           {#each sorted as p (p.steam)}
             {@const cls = startClass(p.side, data.switches)}
-            <tr class="clickable" tabindex="0"
-              onclick={(e) => { if (e.target instanceof Element && e.target.closest('button, a')) return; follow(p.steam); }}
-              onkeydown={activateOnKey(() => follow(p.steam), { enterOnly: true })}
-            >
+            <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: 'button, a', enterOnly: true })}>
               <td class="num name-cell {cls}">
                 {#if isSteam(p.steam)}
                   <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>

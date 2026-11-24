@@ -22,7 +22,7 @@ import { sideAtRound, startSideFor } from './sideparity.js';
 // SteamID on that side (then name). Deterministic by design — callers pass
 // scoreboards the user may have re-sorted, so input order must not matter
 // (SteamID64s share a length, so string compare orders them numerically).
-function pickPlayer(players, side) {
+export function pickPlayer(players, side) {
   let best = null;
   for (const p of players || []) {
     if (!p || p.side !== side || !p.name) continue;
@@ -96,7 +96,7 @@ export function teamStartClass(finalSide, sideSwitches) {
 // color helpers below: steam id first, exact display name as the fallback
 // (round/chat rows may carry only a name). Unresolvable → '' — best
 // effort, no guessing.
-function resolveSide(players, steamId, name) {
+export function resolveSide(players, steamId, name) {
   let side = '';
   if (steamId) {
     const byId = (players || []).find((p) => p && p.steamId === steamId);
@@ -120,7 +120,7 @@ export function playerStartClass(players, sideSwitches, steamId, name) {
 // sideClassOf maps a side to the canonical SIDE color class (style.css
 // `:root .side-ct/.side-t` — the side spellings, not the team-identity
 // pair, per the "For SIDE semantics keep .ct/.t/.side-*" note there).
-function sideClassOf(side) {
+export function sideClassOf(side) {
   return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
 }
 

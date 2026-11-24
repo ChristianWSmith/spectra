@@ -1,7 +1,9 @@
 <script>
+  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { sideSwitchesOf } from '../../builtinhelpers.js';
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, teamName } from './panelhelpers.js';
+  import { readFrameBase, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, kdaText } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
@@ -14,9 +16,7 @@
   async function load(matchId) {
     if (matchId == null) return null;
     const [roster, teamRows, switchRows, kills, deaths, assists, adr] = await Promise.all([
-      spectra.query(SQL_ROSTER),
-      spectra.query(SQL_TEAMS),
-      spectra.query(SQL_SWITCHES),
+      ...readFrameBase(spectra),
       readUnit(spectra, 'kills'),
       readUnit(spectra, 'deaths'),
       readUnit(spectra, 'assists'),
@@ -26,14 +26,14 @@
     const side = (s) => rows.filter((r) => r[2] === s);
     const other = rows.filter((r) => r[2] !== 'ct' && r[2] !== 't');
     const cell = (steam) => ({
-      kda: [cellText(kills, steam, 'int'), cellText(deaths, steam, 'int'), cellText(assists, steam, 'int')].join('/'),
+      kda: kdaText(kills, deaths, assists, steam),
       adr: cellText(adr, steam, 'float1'),
     });
     const mapRow = (r) => ({ steam: r[0], name: r[1], side: r[2], ...cell(r[0]) });
     return {
-      switches: Number((switchRows.rows[0] || [0])[0]) || 0,
-      ct: { name: teamName('ct', teamRows.rows, rows), players: side('ct').map(mapRow) },
-      t: { name: teamName('t', teamRows.rows, rows), players: side('t').map(mapRow) },
+      switches: sideSwitchesOf(switchRows),
+      ct: { name: namesOf(teamRows.rows, rosterOf(rows)).ct, players: side('ct').map(mapRow) },
+      t: { name: namesOf(teamRows.rows, rosterOf(rows)).t, players: side('t').map(mapRow) },
       other: other.map(mapRow),
     };
   }

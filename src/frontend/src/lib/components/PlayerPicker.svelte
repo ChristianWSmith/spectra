@@ -1,4 +1,5 @@
 <script>
+  import { stepActive, onListKey, scrollActive } from '../listnav.js';
   // Player selector for the Reports target panel — the native <select>
   // ("rep-player") replacement, styled to MatchPicker: the trigger shows
   // the current selection, the popover lists players the way the app
@@ -190,23 +191,11 @@
   }
 
   function move(d) {
-    const n = filtered.length;
-    if (!n) return;
-    const from = activeIdx < 0 ? 0 : activeIdx;
-    active = (from + d + n) % n;
+    active = stepActive(filtered.length, activeIdx, d);
   }
 
   function onInputKey(e) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      move(1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      move(-1);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      pick(activeIdx);
-    }
+    onListKey(e, { move, pick: () => pick(activeIdx) });
   }
 
   // Close when the pointer lands outside the picker.
@@ -238,10 +227,7 @@
     open;
     filtered.length;
     if (!open) return;
-    requestAnimationFrame(() => {
-      const el = listEl && listEl.querySelector('.pp-opt.active');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
-    });
+    scrollActive(listEl, '.pp-opt.active');
   });
 </script>
 

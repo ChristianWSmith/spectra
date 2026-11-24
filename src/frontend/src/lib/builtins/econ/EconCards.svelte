@@ -1,4 +1,5 @@
 <script>
+  import { openReplay, matchTab } from '../../builtinhelpers.js';
   import { economySource } from '../../economysource.svelte.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
@@ -179,21 +180,24 @@
     if (!round) return;
     const start = roundStartTick(rounds, round);
     const end = roundEndTick(rounds, round);
-    spectra.navigate(hashOf('/replay/' + context.matchId, { tick: start, loop: entryLoopSpan(start, end), back: back || 'match/' + context.matchId + '/economy' }));
+    openReplay(spectra, context.matchId, { tick: start, loop: entryLoopSpan(start, end), back: back || matchTab(context.matchId, 'economy') });
   }
 </script>
 
 <div class="econ-summary stat-grid">
+  {#snippet badge(c)}
+    <span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span>
+  {/snippet}
   {#each cards as c (c.key)}
     {#if c.drill}
       <button class="stat-cell" title={c.title} onclick={() => drill(c.drill)}>
-        <span class="field-label">{c.label}<span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span></span>
+        <span class="field-label">{c.label}{@render badge(c)}</span>
         <span class="stat-value">{c.value}</span>
         <span class="stat-sub">{c.sub}</span>
       </button>
     {:else}
       <div class="stat-cell no-drill" title={c.title}>
-        <span class="field-label">{c.label}<span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span></span>
+        <span class="field-label">{c.label}{@render badge(c)}</span>
         <span class="stat-value">{c.value}</span>
         <span class="stat-sub">{c.sub}</span>
       </div>

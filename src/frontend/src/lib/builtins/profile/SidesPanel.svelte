@@ -1,13 +1,12 @@
 <script>
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import { splitTable } from './splittable.svelte.js';
   // CT / T breakdown (builtin profile panel): rounds, round win %, ADR, KAST %
   // and K/D per side, each cell one stored partitioned read for the context's
   // player (the dim is the side).
   import { errText } from '../../services.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
     import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
-  import MetricCell from '../../components/MetricCell.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
+  import MetricTd from '../../components/MetricTd.svelte';
     import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -15,9 +14,9 @@
 
   const SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
 
-  const sweep = liveMetrics();
 
-  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
+  const sweep = table.sweep;
   const defs = $derived(table.defs);
   const reads = $derived(table.reads);
   const { cellFor } = table;
@@ -47,21 +46,11 @@
           <td><span class="chip side {side}">{side.toUpperCase()}</span></td>
           {#each [['side_rounds', (v) => v], ['side_win_pct', fmtPercent], ['side_adr', fmt1], ['side_kast', fmtPercent], ['side_kd', fmt2]] as [name, fmt] (name)}
             {@const p = c(name)}
-            <td class="num" title={p.title}>
-              <MetricCell pres={p} format={(v) => fmt(v)} chip={sweep.chip(defs.get(name))} />
-            </td>
+            <MetricTd pres={p} format={(v) => fmt(v)} chip={sweep.chip(defs.get(name))} />
           {/each}
         </tr>
       {:else}
-        <tr>
-          <td colspan="6" class="muted">
-            {#if empty}
-              <StatusChip status={empty.state} title={empty.title} {...sweep.chip(empty.def)} />
-            {:else}
-              {S.profiles.noSides}
-            {/if}
-          </td>
-        </tr>
+        <EmptyTableRow colspan={6} empty={empty} text={S.profiles.noSides} chip={sweep.chip(empty?.def)} />
       {/each}
     </tbody>
   </table>

@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
@@ -48,11 +47,6 @@ const clutchRowsSQL = clutchCTE + ` SELECT c.round, c.size, c.steam_id, COALESCE
 // ClutchCTE is the shared clutch CTE text (no SQL quoting applied). Test
 // fixtures that spell out a clutch metric expr splice it in with this.
 func ClutchCTE() string { return clutchCTE }
-
-// clutchSeedText is the CTE as it is spliced into a schema.sql literal.
-func clutchSeedText() string {
-	return strings.ReplaceAll(clutchCTE, "'", "''")
-}
 
 // ClutchRows returns a match's 1vN clutches by round and start_tick, computed
 // from player_ticks and events over every counted round (no stored rows).

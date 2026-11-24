@@ -435,6 +435,13 @@ textarea.mono {
   margin-inline: 0;
 }
 
+/* A tab root (the .tab-root class of a tab's top-level view) sits in a display: contents
+   frame, so it is a flex item of the Match view's column, where the shared .view auto
+   margins would shrink it to its content. Full width, like the other tabs. */
+.tab-root {
+  margin-inline: 0;
+}
+
 /* Heatmaps keeps the centered presentation it had before the rule above:
    its tab content is a canvas block (controls, legend, map), not the
    full-width tables the other embedded tabs render, so ITS root restores

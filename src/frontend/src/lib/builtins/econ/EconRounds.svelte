@@ -1,8 +1,11 @@
 <script>
+  import { bySide, openReplay, matchTab, roundsTabHash, openRoundsTab} from '../../builtinhelpers.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
   import { economySource } from '../../economysource.svelte.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { DASH, fmtInt, fmtMoney, separatorFlags, roundStartTick, roundEndTick, winnerTeamKey, lossPips, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
+  import WinnerCell from '../../components/WinnerCell.svelte';
+  import { DASH, fmtInt, fmtMoney, separatorFlags, roundStartTick, roundEndTick, roundWinnerName, lossPips, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
 
   // Economy rounds: one row per counted round. Deaths are the stored round-grain
   // metric raw_player_round_deaths, read per round and summed per side; a round
@@ -18,7 +21,7 @@
 
 
   const PIP_SLOTS = [1, 2, 3, 4, 5];
-  const origin = () => back || 'match/' + context.matchId + '/economy';
+  const origin = () => back || matchTab(context.matchId, 'economy');
 
   let whyOpen = $state('');
   let deaths = $state(new Map());
@@ -65,13 +68,12 @@
   const sepFlags = $derived(separatorFlags(rows.map((r) => ({ number: r.round }))));
 
   function winnerName(r) {
-    const key = winnerTeamKey(rounds, sideSwitches, r.round, r.winner);
-    return key ? names[key] : '';
+    return roundWinnerName(rounds, sideSwitches, r.round, r.winner, names);
   }
 
   function classChip(side, r) {
-    const cls = side === 'ct' ? r.classCT : r.classT;
-    const why = side === 'ct' ? r.classWhyCT : r.classWhyT;
+    const cls = bySide(side, r.classCT, r.classT);
+    const why = bySide(side, r.classWhyCT, r.classWhyT);
     return { cls: cls || 'unknown', why: why || S.economy.noExplanation, rule: r.ruleVersion };
   }
 
@@ -80,15 +82,13 @@
     whyOpen = whyOpen === key ? '' : key;
   }
 
-  function openRound(round) {
-    spectra.navigate(hashOf('/match/' + context.matchId + '/rounds', { round }));
-  }
+  const openRound = (round) => openRoundsTab(spectra, context.matchId, round);
 
   function watchRound(round) {
     if (!round) return;
     const start = roundStartTick(rounds, round);
     const end = roundEndTick(rounds, round);
-    spectra.navigate(hashOf('/replay/' + context.matchId, { tick: start, loop: entryLoopSpan(start, end), back: origin() }));
+    openReplay(spectra, context.matchId, { tick: start, loop: entryLoopSpan(start, end), back: origin() });
   }
 
   const whyText = $derived.by(() => {
@@ -96,14 +96,14 @@
     const [rs, side] = whyOpen.split(':');
     const r = rows.find((x) => String(x.round) === rs);
     if (!r) return null;
-    return { side, why: side === 'ct' ? r.classWhyCT : r.classWhyT, rule: r.ruleVersion };
+    return { side, why: bySide(side, r.classWhyCT, r.classWhyT), rule: r.ruleVersion };
   });
 </script>
 
 <div>
   <h2>{S.economy.colRounds}</h2>
   {#if rows.length === 0}
-    <p class="muted" role="status">{S.economy.noRounds}</p>
+    <EmptyNote>{S.economy.noRounds}</EmptyNote>
   {:else}
     <div class="table-scroll">
       <table class="data-table econ-table">
@@ -132,7 +132,7 @@
                 <button class="btn small ghost econ-rd" title={S.economy.openRoundAria + r.round} onclick={() => openRound(r.round)}>{r.round}</button>
               </td>
               <td>
-                <span class="chip side {r.winner || 'none'}">{winnerName(r) || (r.winner ? r.winner.toUpperCase() : '—')}</span>
+                <WinnerCell name={winnerName(r)} winner={r.winner} />
               </td>
               <td>
                 <button class="chip econ-cls {ctc.cls}" title={ctc.why + S.economy.ruleOpen + ctc.rule + S.economy.ruleClose} aria-expanded={whyOpen === r.round + ':ct'} onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button>

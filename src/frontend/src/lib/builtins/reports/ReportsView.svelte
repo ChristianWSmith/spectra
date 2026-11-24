@@ -1,4 +1,9 @@
 <script>
+  import { indexBy, groupBy } from '../../builtinhelpers.js';
+  import RetryButton from '../../components/RetryButton.svelte';
+  import { compareAsc } from '../../sortstate.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { DASH } from '../../builtinhelpers.js';
   import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import { listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs } from '../../services.js';
@@ -86,7 +91,7 @@
     try {
       const [rows, states] = await spectra.track(Promise.all([listMetrics(), getMetricComputeState()]));
       m.metrics = rows || [];
-      m.metricStates = new Map((states || []).map((s) => [s.metricId, s]));
+      m.metricStates = indexBy(states || [], 'metricId');
       m.metricsError = '';
     } catch (e) {
       m.metricsError = errText(e);
@@ -234,7 +239,7 @@
     const mid = matchId;
     sweep.reload; // metric-done: refetch the stored rows
     const rawSel = rawOffer.filter((r) => m.rawStats.includes(r.id));
-    const defs = new Map(m.metrics.map((x) => [x.id, x]));
+    const defs = indexBy(m.metrics, 'id');
     const sel = m.stats.filter((id) => defs.has(id)).sort((a, b) => a - b);
     if (!sel.length && !rawSel.length) {
       appendix = {};
@@ -252,11 +257,7 @@
       .then(([values, refs, board]) => {
         if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
-        const byMetric = new Map();
-        for (const v of values || []) {
-          if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
-          byMetric.get(v.metricId).push(v);
-        }
+        const byMetric = groupBy(values || [], (v) => v.metricId);
         const next = {};
         for (const id of sel) {
           const def = defs.get(id);
@@ -266,7 +267,7 @@
           // dash, never a raw id).
           const subject = (def && def.subject) || 'player';
           const labelFor = (v) => {
-            if (v.valueKey) return bySteam.get(v.valueKey) || '—';
+            if (v.valueKey) return bySteam.get(v.valueKey) || DASH;
             if (subject === 'match') return S.fill(S.reports.matchNumber, { id: mid });
             if (subject === 'team') return v.subjectKey;
             return bySteam.get(v.subjectKey) || v.subjectKey;
@@ -324,7 +325,7 @@
       .sort(([a], [b]) => {
         const ra = rank.get(String(a));
         const rb = rank.get(String(b));
-        if (ra === undefined && rb === undefined) return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+        if (ra === undefined && rb === undefined) return compareAsc(String(a), String(b));
         if (ra === undefined) return 1;
         if (rb === undefined) return -1;
         return ra - rb;
@@ -397,7 +398,7 @@
   {#if m.tplError}
     <ErrorBanner>
       {m.tplError}
-      <button class="btn small" onclick={() => m.actions.loadTemplates()}>{S.reports.retry}</button>
+      <RetryButton onretry={() => m.actions.loadTemplates()} label={S.reports.retry} />
     </ErrorBanner>
   {/if}
   <div class="rep-tpl-grid">
@@ -421,14 +422,14 @@
     {:else}
       {#if !m.tplError}
         <!-- Gated on tplError: a failed template read is UNKNOWN, never "no templates". -->
-        <p class="muted" role="status">{S.reports.noTemplates}</p>
+        <EmptyNote>{S.reports.noTemplates}</EmptyNote>
       {/if}
     {/each}
   </div>
   {#if tpl}
     <div class="rep-targets">
       {#if embedded}
-        <p class="muted" role="status">{S.reports.targetThisMatch}</p>
+        <EmptyNote>{S.reports.targetThisMatch}</EmptyNote>
       {/if}
       {#if tpl.scope === 'player'}
         <div class="rep-field">
@@ -457,7 +458,7 @@
 {#if m.metricsError}
   <ErrorBanner>
     {m.metricsError}
-    <button class="btn small" onclick={() => m.actions.loadMetricsList()}>{S.reports.retry}</button>
+    <RetryButton onretry={() => m.actions.loadMetricsList()} label={S.reports.retry} />
   </ErrorBanner>
 {/if}
 
@@ -467,7 +468,7 @@
   <p class="muted">{S.reports.appendixHint}</p>
   {#if matchMetrics.length === 0 && !m.metricsError}
     <!-- A NOTE, not a gate: the recorded values are always on offer. -->
-    <p class="muted" role="status">{m.metrics.length ? S.reports.noMatchScopedStats : S.reports.noCustomStats}</p>
+    <EmptyNote>{m.metrics.length ? S.reports.noMatchScopedStats : S.reports.noCustomStats}</EmptyNote>
   {/if}
   <div class="row-between">
     <TokenSelect

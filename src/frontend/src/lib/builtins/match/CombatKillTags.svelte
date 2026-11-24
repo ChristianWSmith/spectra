@@ -1,6 +1,5 @@
 <script>
-  import { roundSideClassOf } from '../../builtinhelpers.js';
-  import { whileCurrent } from '../../current.js';
+  import { DASH } from '../../builtinhelpers.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
@@ -11,10 +10,9 @@
   // on offer). It reads the match from `context` and nothing else but the
   // loop-length pref, which stays a plain pref (ruling 33).
   import * as S from '../../strings/index.js';
-  import { getKillTags, getPref, errText } from '../../services.js';
-  import { onMount } from 'svelte';
+  import { getKillTags } from '../../services.js';
   import { roundClock } from '../../fmt.js';
-  import { replayHash, entryLoopAround, LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
+  import { entryLoopAround } from '../../nav.js';
   import { roundScoreLabel } from '../../rounds.js';
   import { roundsByNumber } from '../../replay/landmarks.js';
     import { matchRecord } from '../../viewstate.svelte.js';
@@ -22,36 +20,30 @@
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import Popover from '../../components/Popover.svelte';
-  import { loadCombatSide } from './combatdata.js';
+  import { combatPanel } from './combatpanel.svelte.js';
   import { KILL_TAG_KINDS, groupKillTags } from './combatmodel.js';
 
   let { spectra, context } = $props();
   const id = $derived(context.matchId);
 
   let killTags = $state([]);
-  let error = $state('');
-  // Final side per player and the side-switch count: the inputs for the
-  // team-identity colours on names. Round list: the per-round side colours
-  // and the row clock (roundClock: time INTO the round).
-  let players = $state([]);
-  let sideSwitches = $state(0);
-  let rounds = $state([]);
-  let tickRate = $state(64);
-
-  // Event-level loop length: the `loop_secs` pref, read ONCE at mount
-  // (prefLoopSecs coerces unset/corrupt to LOOP_SECS_DEFAULT).
-  let loopSecs = LOOP_SECS_DEFAULT;
-  onMount(() => {
-    getPref('loop_secs')
-      .then((v) => (loopSecs = prefLoopSecs(v)))
-      .catch(() => {
-        /* keep the default */
-      });
+  // The match's kill tags, with its side data (the team-identity colours on names,
+  // the per-round side colours, the row clock) and the error line.
+  const combat = combatPanel(() => spectra, () => id, {
+    read: (matchId) => getKillTags(matchId, ''),
+    apply: (list) => {
+      killTags = list;
+    },
   });
+  const error = $derived(combat.error);
+  const players = $derived(combat.players);
+  const sideSwitches = $derived(combat.sideSwitches);
+  const rounds = $derived(combat.rounds);
+  const tickRate = $derived(combat.tickRate);
+  const loopSecs = $derived(combat.loopSecs);
+  const playerRoundCls = combat.playerRoundCls;
 
   const rbn = $derived(roundsByNumber(rounds));
-
-  const playerRoundCls = roundSideClassOf(() => ({ players, sideSwitches, rounds }));
 
   // View-local filter state restores per match through the process-scoped
   // registry (viewstate.svelte.js). The record is shared with the Clutches
@@ -77,25 +69,6 @@
   let kindAnchor = $state(null);
   let kindTrigger = $state(null);
   let engRound = $state(combSeed.engRound);
-
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = id;
-    spectra.track(Promise.all([getKillTags(matchId, ''), loadCombatSide(matchId)]))
-      .then(([en, side]) => {
-        if (!isCurrent()) return;
-        killTags = en || [];
-        players = side.players;
-        sideSwitches = side.sideSwitches;
-        rounds = side.rounds;
-        tickRate = side.tickRate;
-        error = '';
-      })
-      .catch((e) => {
-        if (isCurrent()) {
-          error = errText(e);
-        }
-      });
-  }));
 
   // One row per kill (see combatdata.js groupKillTags).
   const killTagRows = $derived(groupKillTags(killTags));
@@ -148,18 +121,11 @@
 
   // Deep link into the replay at a tick, with an optional entry-only loop.
   // `follow` is the row's killer: never a filter.
-  function replay(tick, loop, follow) {
-    spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
-  }
+  const replay = combat.replay;
 </script>
 
 {#if error}
-  <ErrorBanner>
-    {error}
-    <button class="btn small" aria-label={S.combat.dismissError} onclick={() => (error = '')}>
-      <span class="codicon codicon-close"></span>
-    </button>
-  </ErrorBanner>
+  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
 {/if}
 
   <div class="comb-sec">
@@ -265,7 +231,7 @@
               <td>
                 <ProfileLink
                   steam={g.aSteam}
-                  name={g.aName || '—'}
+                  name={g.aName || DASH}
                   nav={spectra.navigate}
                   cls={playerRoundCls(g.round, g.aSteam, g.aName)}
                   title={S.fill(S.combat.openProfileName, { name: g.aName })}
@@ -275,13 +241,13 @@
               <td>
                 <ProfileLink
                   steam={g.bSteam}
-                  name={g.bName || '—'}
+                  name={g.bName || DASH}
                   nav={spectra.navigate}
                   cls={playerRoundCls(g.round, g.bSteam, g.bName)}
                   title={S.fill(S.combat.openProfileName, { name: g.bName })}
                 />
               </td>
-              <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
+              <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : DASH}</td>
             </tr>
           {:else}
             <tr>

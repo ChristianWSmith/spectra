@@ -1,4 +1,5 @@
 <script>
+  import { nextSort } from '../sortstate.js';
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import {
@@ -276,11 +277,9 @@
   }
 
   function toggleSort(key) {
-    if (sortKey === key) desc = !desc;
-    else {
-      sortKey = key;
-      desc = !!SORT_DEFAULT_DESC[key];
-    }
+    const next = nextSort({ key: sortKey, desc }, key, SORT_DEFAULT_DESC);
+    sortKey = next.key;
+    desc = next.desc;
   }
 
   // jobsGen distinguishes the current jobs snapshot from stale replies

@@ -98,7 +98,22 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
     const src = builtinShippedSource(id);
     for (const m of src.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\}|\w+)\s+from\s+'([^']+)';/gm)) {
       const [, clause, spec] = m;
-      assert.ok(spec in surfaces, `${id} imports ${spec}, which is not on the builtin surface`);
+      // A module the hand list does not name is checked against the registry: its
+      // key is its path from the frontend root, and it must list each name it is given.
+      const registryKey = path.posix.normalize(`${builtinSourceDir(id)}/${spec}`);
+      const fromRegistry = Object.hasOwn(BUILTIN_HELPERS, registryKey) ? BUILTIN_HELPERS[registryKey].names : null;
+      assert.ok(spec in surfaces || fromRegistry, `${id} imports ${spec}, which is not on the builtin surface`);
+      if (!(spec in surfaces)) {
+        if (fromRegistry.default) {
+          assert.equal(clause, spec.split('/').pop().replace('.svelte', ''), `${id} takes ${spec} under its own name`);
+          continue;
+        }
+        if (clause.startsWith('* as')) continue;
+        for (const name of clause.slice(1, -1).split(',').map((x) => x.trim()).filter(Boolean)) {
+          assert.ok(Object.hasOwn(fromRegistry, name), `${id} imports ${name} from ${spec}, which is not listed`);
+        }
+        continue;
+      }
       if (surfaces[spec] === 'default') {
         assert.equal(clause, spec.split('/').pop().replace('.svelte', ''), `${id} takes ${spec} under its own name`);
         continue;

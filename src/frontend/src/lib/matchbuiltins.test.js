@@ -106,6 +106,10 @@ test('the tabs read one preference only, loop_secs (a plain pref, ruling 33)', (
   for (const f of TAB_FILES) {
     const code = stripComments(readFileSync(path.join(MATCH_DIR, f), 'utf8'));
     for (const m of code.matchAll(/getPref\(\s*'([^']+)'/g)) names.add(m[1]);
+    // The loop length is read through loadLoopSecs (loopsecs.js), which reads loop_secs.
+    if (/loadLoopSecs\(\)/.test(code)) names.add('loop_secs');
+    // The combat panels read it through combatPanel (combatpanel.svelte.js), which reads loop_secs.
+    if (/combatPanel\(/.test(code)) names.add('loop_secs');
   }
   assert.deepEqual([...names], ['loop_secs']);
 });

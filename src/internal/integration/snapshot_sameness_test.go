@@ -136,14 +136,18 @@ func TestSnapshotMetricSameness(t *testing.T) {
 	// a changed builtin statement is what gets recomputed.
 	sameRefreshBuiltins(t, dir, dst)
 
-	// Mark every stored value behind (metric_version 0 is "never stamped"),
+	// Mark every stored value behind (bump every metric's version),
 	// then recompute them all through the sweep.
 	raw, err := sql.Open("sqlite", dst+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatalf("open copy: %v", err)
 	}
-	if _, err := raw.Exec(`UPDATE metric_values SET metric_version = 0`); err != nil {
-		t.Fatalf("mark metric_values behind: %v", err)
+	// A metric is behind when a stored row was stamped under an older metrics.version
+	// (metric_values.metric_version < metrics.version, MetricCoverage). Bumping every
+	// definition's version marks all stored values behind, so the sweep recomputes all of
+	// them; setting the stamps to 0 would leave metrics at version 0 untouched.
+	if _, err := raw.Exec(`UPDATE metrics SET version = version + 1`); err != nil {
+		t.Fatalf("mark metrics behind: %v", err)
 	}
 	_ = raw.Close()
 
@@ -151,9 +155,15 @@ func TestSnapshotMetricSameness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.Open copy: %v", err)
 	}
-	if _, err := metrics.Sweep(context.Background(), st, nil, nil); err != nil {
+	res, err := metrics.Sweep(context.Background(), st, nil, nil)
+	if err != nil {
 		_ = st.Close()
 		t.Fatalf("metrics.Sweep: %v", err)
+	}
+	// A metric that failed to compute is a difference too: its rows may be gone or
+	// stale, and the comparison below would not say which.
+	for id, reason := range res.Failed {
+		t.Errorf("metric %d failed to compute: %s", id, reason)
 	}
 	_ = st.CloseRO()
 	_ = st.Close()

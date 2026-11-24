@@ -1,4 +1,5 @@
 <script>
+  import { stepActive, onListKey } from '../listnav.js';
   // TokenSelect — the ONE type-to-search MULTI-select (the chip/token
   // input, "like in Jira"): type (or hit the arrow) to search the
   // caller's list, pick an entry and it lands INSIDE the field as a chip
@@ -121,21 +122,12 @@
       open = true;
       return;
     }
-    const from = activeIdx < 0 ? 0 : activeIdx;
-    active = (from + d + n) % n;
+    active = stepActive(n, activeIdx, d);
   }
 
   function onKey(e) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      move(1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      move(-1);
-    } else if (e.key === 'Enter' && shown && activeIdx >= 0) {
-      e.preventDefault();
-      pick(matches[activeIdx]);
-    } else if (e.key === 'Backspace' && !value && tokens.length) {
+    onListKey(e, { move, pick: () => pick(matches[activeIdx]), canPick: () => shown && activeIdx >= 0 });
+    if (e.key === 'Backspace' && !value && tokens.length) {
       // Empty field + Backspace → the last chip goes (header comment).
       e.preventDefault();
       removeLast();

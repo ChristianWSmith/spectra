@@ -1,5 +1,9 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
+  import { bySide, roundsTabHash, openRoundsTab} from '../../builtinhelpers.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { DASH } from '../../builtinhelpers.js';
+  import WinnerCell from '../../components/WinnerCell.svelte';
+  import { openRow } from '../../keys.js';
   import { economySource } from '../../economysource.svelte.js';
   import * as S from '../../strings/index.js';
   import { fmtMoney, moneyResetIndexes, flipIndexes, eraOf, sideInEra, teamKeyAt, teamStartClass, econColumns, econValue, hashOf, loadEconomy } from '../../builtinhelpers.js';
@@ -109,8 +113,8 @@
   function ranks(r) {
     if (!r.winner) return null;
     return [
-      classRank(r.winner === 'ct' ? r.classCT : r.classT),
-      classRank(r.winner === 'ct' ? r.classT : r.classCT),
+      classRank(bySide(r.winner, r.classCT, r.classT)),
+      classRank(bySide(r.winner, r.classT, r.classCT)),
     ];
   }
 
@@ -132,13 +136,11 @@
   }
 
   function cellTitle(r) {
-    const w = r.winner ? r.winner.toUpperCase() : '—';
+    const w = r.winner ? r.winner.toUpperCase() : DASH;
     return S.economy.cellRound + r.round + ' — ' + w + S.economy.cellWinsBuy + (r.classCT || 'unknown') + S.economy.cellBuySep + (r.classT || 'unknown') + ' · ' + verdict(r) + (r.pistolRound ? S.economy.cellPistol : '');
   }
 
-  function openRound(round) {
-    spectra.navigate(hashOf('/match/' + context.matchId + '/rounds', { round }));
-  }
+  const openRound = (round) => openRoundsTab(spectra, context.matchId, round);
 
   function columns(r, key) {
     return econColumns(r, key);
@@ -167,7 +169,7 @@
   </div>
 
   {#if n === 0}
-    <p class="muted" role="status">{S.economy.noRows}</p>
+    <EmptyNote>{S.economy.noRows}</EmptyNote>
   {:else}
     <div class="econ-legend" aria-label="{S.economy.curveLegendLabel}">
       <span class="econ-legend-item {clsCT}">
@@ -201,8 +203,7 @@
         {#each rows as r, i (r.round)}
           <rect class="econ-hit" x={i * (W / n)} y="0" width={W / n} height={H} role="button" tabindex="0"
             aria-label={S.economy.openRoundAria + r.round}
-            onclick={() => openRound(r.round)}
-            onkeydown={activateOnKey(() => openRound(r.round))}
+            {...openRow(() => openRound(r.round))}
           >
             <title>{S.economy.cellRound}{r.round}</title>
           </rect>
@@ -215,7 +216,7 @@
         <div class="econ-tooltip" style="left:{hoverPct}%">
           <div class="econ-tip-head">
             <strong>{S.economy.cellRound}{hoverRow.round}</strong>
-            <span class="chip side {hoverRow.winner || 'none'}">{hoverRow.winner ? hoverRow.winner.toUpperCase() : '—'}</span>
+            <WinnerCell winner={hoverRow.winner} />
             {#if hoverRow.pistolRound}
               <span class="chip econ-cls pistol">{S.economy.chipPistol}</span>
             {/if}

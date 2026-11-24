@@ -1,10 +1,11 @@
 <script>
+  import { groupBy, sideBySteam } from '../../builtinhelpers.js';
   // Utility per-round bars, one card per measure: `measure` is 'damage' (utility
   // damage) or 'blind' (blind time). One bar per team per round, its colour the
   // side that team held that round, one team striped. The card hides when the
   // filtered throws have nothing to draw.
   import * as S from '../../strings/index.js';
-  import { fmtMs, roundIndexLabel, roundsByNumber, teamStartClass, sideAtRound } from '../../builtinhelpers.js';
+  import { fmtMs, roundIndexLabel, roundsByNumber, teamStartClass, sideAtRound, sideClassOf } from '../../builtinhelpers.js';
 
   let {
     spectra,
@@ -43,7 +44,7 @@
   const barH = 90;
 
   const rbn = $derived(roundsByNumber(rounds));
-  const teamBySteam = $derived(new Map(players.map((p) => [p.steamId, p.side || ''])));
+  const teamBySteam = $derived(sideBySteam(players));
   const clsCT = $derived(teamStartClass('ct', sideSwitches));
   const clsT = $derived(teamStartClass('t', sideSwitches));
 
@@ -56,16 +57,11 @@
   }
 
   function barSide(roundNumber, finalSide) {
-    const side = sideAtRound(rounds, sideSwitches, roundNumber, finalSide);
-    return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
+    return sideClassOf(sideAtRound(rounds, sideSwitches, roundNumber, finalSide));
   }
 
   const groups = $derived.by(() => {
-    const m = new Map();
-    for (const r of rows) {
-      if (!m.has(r.round)) m.set(r.round, []);
-      m.get(r.round).push(r);
-    }
+    const m = groupBy(rows, (r) => r.round);
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
 

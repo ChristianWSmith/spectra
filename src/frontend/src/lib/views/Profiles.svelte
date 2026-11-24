@@ -1,4 +1,5 @@
 <script>
+  import { nextSort } from '../sortstate.js';
   import * as S from '../strings/index.js';
   // Profiles: the sidebar's player directory — every player in the
   // library, searchable by name, one click away from the
@@ -11,6 +12,7 @@
   // 17-digit Steam id (isSteam — bots/rows without one are inert).
   // The TABLE is sortable on every column and defaults to matches DESC
   // (owner ruling: a player seen in many matches is the common case in a
+import { plural } from '../fmt.js';
   // single-player import list, so they sit on top). The ADR AND Matches
   // columns are metric-backed: they read the stored `career_adr` /
   // `career_matches` metric rows (the canonical career read, ONE batched
@@ -281,11 +283,9 @@
   // First click on an inactive header → the column's natural direction;
   // a second click on the ACTIVE header flips it.
   function toggleSort(key) {
-    if (sortKey === key) desc = !desc;
-    else {
-      sortKey = key;
-      desc = !!SORT_DEFAULT_DESC[key];
-    }
+    const next = nextSort({ key: sortKey, desc }, key, SORT_DEFAULT_DESC);
+    sortKey = next.key;
+    desc = next.desc;
   }
 
   // Part-2 honesty: this column's value is the IMPORT date of the
@@ -321,7 +321,7 @@
       }}
     />
     <span class="muted pf-count" role="status">
-      {filtered.length} of {players.length}{S.profiles.playerSuffix}{players.length === 1 ? '' : 's'}
+      {filtered.length} of {players.length}{S.profiles.playerSuffix}{plural(players.length)}
     </span>
   </div>
 

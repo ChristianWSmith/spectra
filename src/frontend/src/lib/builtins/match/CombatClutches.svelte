@@ -1,5 +1,6 @@
 <script>
-  import { whileCurrent } from '../../current.js';
+  import EmptyNote from '../../components/EmptyNote.svelte';
+  import { DASH } from '../../builtinhelpers.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
@@ -7,36 +8,32 @@
   // OFF by default. It reads the match from `context`; the loop-length pref
   // stays a plain pref (ruling 33).
   import * as S from '../../strings/index.js';
-  import { getClutches, getPref, errText } from '../../services.js';
-  import { onMount } from 'svelte';
-  import { replayHash, entryLoopSpanAround, LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
-  import { roundSideClassOf } from '../../builtinhelpers.js';
+  import { getClutches } from '../../services.js';
+  import { entryLoopSpanAround } from '../../nav.js';
   import { matchRecord } from '../../viewstate.svelte.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import { loadCombatSide } from './combatdata.js';
+  import { combatPanel } from './combatpanel.svelte.js';
   import { clutchKillTicks } from './combatmodel.js';
 
   let { spectra, context } = $props();
   const id = $derived(context.matchId);
 
   let clutches = $state([]);
-  let error = $state('');
-  let players = $state([]);
-  let sideSwitches = $state(0);
-  let rounds = $state([]);
-  let tickRate = $state(64);
-
-  let loopSecs = LOOP_SECS_DEFAULT;
-  onMount(() => {
-    getPref('loop_secs')
-      .then((v) => (loopSecs = prefLoopSecs(v)))
-      .catch(() => {
-        /* keep the default */
-      });
+  // The match's clutches and its side data, with the error line and the loop length.
+  const combat = combatPanel(() => spectra, () => id, {
+    read: (matchId) => getClutches(matchId),
+    apply: (list) => {
+      clutches = list;
+    },
   });
-
-  const playerRoundCls = roundSideClassOf(() => ({ players, sideSwitches, rounds }));
+  const error = $derived(combat.error);
+  const players = $derived(combat.players);
+  const sideSwitches = $derived(combat.sideSwitches);
+  const rounds = $derived(combat.rounds);
+  const tickRate = $derived(combat.tickRate);
+  const loopSecs = $derived(combat.loopSecs);
+  const playerRoundCls = combat.playerRoundCls;
 
   // The outcome toggles restore per match through the same registry record
   // as the Kill tags panel (remember merges, so each writes its own fields).
@@ -56,25 +53,6 @@
   // is the empty state.
   let clutchWon = $state(combSeed.clutchWon);
   let clutchLost = $state(combSeed.clutchLost);
-
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = id;
-    spectra.track(Promise.all([getClutches(matchId), loadCombatSide(matchId)]))
-      .then(([cl, side]) => {
-        if (!isCurrent()) return;
-        clutches = cl || [];
-        players = side.players;
-        sideSwitches = side.sideSwitches;
-        rounds = side.rounds;
-        tickRate = side.tickRate;
-        error = '';
-      })
-      .catch((e) => {
-        if (isCurrent()) {
-          error = errText(e);
-        }
-      });
-  }));
 
   // The listed clutches: the outcome toggles select them. A lost 1vN is listed
   // with its outcome chip rather than dropped.
@@ -106,18 +84,11 @@
 
   // Deep link into the replay at a tick. `follow` is the clutch's solo: never a
   // filter.
-  function replay(tick, loop, follow) {
-    spectra.navigate(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
-  }
+  const replay = combat.replay;
 </script>
 
 {#if error}
-  <ErrorBanner>
-    {error}
-    <button class="btn small" aria-label={S.combat.dismissError} onclick={() => (error = '')}>
-      <span class="codicon codicon-close"></span>
-    </button>
-  </ErrorBanner>
+  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
 {/if}
 
   <div class="comb-sec">
@@ -139,9 +110,9 @@
       >{S.combat.lostToggle}</button>
     </div>
     {#if clutches.length === 0 && !error}
-      <p class="muted" role="status">{S.combat.noClutches}</p>
+      <EmptyNote>{S.combat.noClutches}</EmptyNote>
     {:else if shownClutches.length === 0}
-      <p class="muted" role="status">{clutchEmptyText}</p>
+      <EmptyNote>{clutchEmptyText}</EmptyNote>
     {:else}
       <div class="table-scroll">
         <table class="data-table">
@@ -179,7 +150,7 @@
                 <td>
                   <ProfileLink
                     steam={c.steamId}
-                    name={c.name || '—'}
+                    name={c.name || DASH}
                     nav={spectra.navigate}
                     cls={playerRoundCls(c.round, c.steamId, c.name)}
                     title={S.combat.openPlayerProfile}

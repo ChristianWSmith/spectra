@@ -1,8 +1,9 @@
 <script>
-  import { activateOnKey } from '../../keys.js';
+  import { sideSwitchesOf } from '../../builtinhelpers.js';
+  import { openRow } from '../../keys.js';
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
   import LoadBox from '../../components/LoadBox.svelte';
 
@@ -35,7 +36,7 @@
       readUnit(spectra, 'entry_kills'),
       readUnit(spectra, 'mvps'),
     ]);
-    const switches = Number((switchRows.rows[0] || [0])[0]) || 0;
+    const switches = sideSwitchesOf(switchRows);
     const who = new Map(roster.rows.map((r) => [r[0], { name: r[1], side: r[2] }]));
     const out = [];
     for (const card of CARDS) {
@@ -48,7 +49,7 @@
         if (!row || !who.has(row.valueKey)) continue;
         steam = row.valueKey;
         if (card.metric === 'top_fragger') {
-          value = [cellText(kills, steam, 'int'), cellText(deaths, steam, 'int'), cellText(assists, steam, 'int')].join('/');
+          value = kdaText(kills, deaths, assists, steam);
         } else if (card.metric === 'best_adr') {
           value = cellText(adr, steam, 'float1');
         } else if (card.metric === 'most_util') {
@@ -81,8 +82,7 @@
       {#each cards as c (c.key)}
         <LoadBox tag="div" class="stat-box" busy={spectra.busy} name="match-overview-card" key={c.key}>
         <div class="stat-cell" role="button" tabindex="0" title={c.title || undefined}
-          onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; if (c.steam) follow(c.steam); }}
-          onkeydown={activateOnKey(() => c.steam && follow(c.steam), { enterOnly: true })}
+          {...openRow(() => c.steam && follow(c.steam), { ignore: 'button', enterOnly: true })}
         >
           <span class="field-label">{c.label}</span>
           <span class="stat-value">{c.value}</span>

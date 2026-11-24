@@ -1,3 +1,4 @@
+import { plural } from './fmt.js';
 // assets.js — THE shared CS2 asset-extraction driver: the three-family
 // sequence (radar map packs → equipment icons → replay sounds), the step
 // labels the ONE progress widget (StatusChip) renders, the
@@ -90,7 +91,7 @@ export async function extractAllAssets({ dir = '', onStep = () => {} } = {}) {
       const out = await fam.run(dir);
       const n = fam.count(out);
       const errs = fam.errors(out);
-      if (n > 0) done.push(`${n} ${fam.noun}${n === 1 ? '' : 's'}`);
+      if (n > 0) done.push(`${n} ${fam.noun}${plural(n)}`);
       if (errs.length) failed.push(`${fam.failKey}: ${errs[0]}`);
       else if (n === 0) failed.push(`${fam.failKey}: nothing extracted`);
     } catch (e) {

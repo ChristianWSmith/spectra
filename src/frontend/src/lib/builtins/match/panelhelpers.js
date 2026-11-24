@@ -4,25 +4,18 @@
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
 import * as S from '../../strings/index.js';
-import { sideAtRound, resolveSide, DASH } from '../../builtinhelpers.js';
+import { sideAtRound, resolveSide, DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf } from '../../builtinhelpers.js';
+import { teamStartClass } from '../../teams.js';
 import { fmtMetric, fmtBytes, fmtDate, fmtDuration } from '../../fmt.js';
 import { readMetrics } from '../../metricreads.js';
 import { metricPresentation } from '../../metricstate.js';
+import { compareAsc } from '../../sortstate.js';
 import { errText } from '../../services.js';
 export { fmtBytes, fmtDate, fmtDuration };
 
 
-// The read-only SQL the panels run (bound from the context). Plain literals,
-// so the audit exempts them by text: SQL the panel runs is not user copy.
-export const SQL_ROSTER =
-  'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ' +
-  'JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id ' +
-  'WHERE ps.match_id = :match_id AND p.is_bot = 0 ' +
-  'ORDER BY (SELECT COUNT(*) FROM events e WHERE e.match_id = ps.match_id AND e.kind = \'kill\' ' +
-  'AND e.attacker = ps.steam_id AND e.attacker <> e.victim AND NOT EXISTS (SELECT 1 FROM round_player_sides a ' +
-  'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ' +
-  'WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)) DESC, p.name ASC';
-export const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
+// The read-only SQL the panels run is defined once, in builtinhelpers.js.
+export { SQL_ROSTER, SQL_TEAMS } from '../../builtinhelpers.js';
 // One round's detail: the round-scoped reads of the Rounds tab's expansion (the
 // :round bind is set with :match_id on every call — an explicit bind set replaces
 // the context's, so both are passed).
@@ -63,15 +56,11 @@ export const SQL_FACTS =
 
 
 // HELPERS
-const SIDE_FLIP = { ct: 't', t: 'ct' };
 
 // The team colour class: the team's START side (the side it began the
 // match on), after the match's side switches (lib/teams.js teamStartClass).
-export function startClass(side, switches) {
-  if (side !== 'ct' && side !== 't') return '';
-  const start = switches % 2 ? SIDE_FLIP[side] : side;
-  return start === 'ct' ? 'team-start-ct' : 'team-start-t';
-}
+// The team colour class of a side at the start of the match (teams.js).
+export const startClass = teamStartClass;
 
 // One stored value as its text (lib/fmt.js fmtMetric's rules).
 export const STATE_WORD = { processing: S.builtins.stateCalculating, failed: S.builtins.stateFailed, behind: S.builtins.stateOutOfDate };
@@ -92,6 +81,11 @@ export function matchPres(u, key) {
 
 // cellText is the same presentation as text, for the joined cells (kda, the
 // overview's K/D/A line).
+// kdaText is a player's K/D/A line: the three counts, each as its cell text.
+export function kdaText(kills, deaths, assists, key) {
+  return [cellText(kills, key, 'int'), cellText(deaths, key, 'int'), cellText(assists, key, 'int')].join('/');
+}
+
 export function cellText(u, key, format) {
   const p = matchPres(u, key);
   if (p.kind === 'value') return fmtMetric(p.value, format);
@@ -105,15 +99,11 @@ export function cellValue(u, key) {
 
 // The team display name of a side: the demo's clan name, else the
 // synthesized team_<player> name (lowest SteamID on the side), else CT / T.
-export function teamName(side, teamRows, roster) {
-  const hit = teamRows.find((r) => r[0] === side);
-  if (hit && hit[1]) return hit[1];
-  let best = null;
-  for (const r of roster) {
-    if (r[2] !== side || !r[1]) continue;
-    if (!best || r[0] < best[0] || (r[0] === best[0] && r[1] < best[1])) best = r;
-  }
-  return best ? 'team_' + best[1] : side.toUpperCase();
+
+// readFrameBase is the base reads of a match panel, in order: the roster, the team
+// rows and the side switches. A panel spreads it into its Promise.all.
+export function readFrameBase(spectra) {
+  return [spectra.query(SQL_ROSTER), spectra.query(SQL_TEAMS), spectra.query(SQL_SWITCHES)];
 }
 
 // The chained sort (the old Match view's rule): each stack entry is applied
@@ -133,7 +123,7 @@ export function sortRows(rows, stack, valueOf) {
       }
       let c = typeof a.v === 'string' || typeof b.v === 'string'
         ? String(a.v).localeCompare(String(b.v))
-        : a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
+        : compareAsc(a.v, b.v);
       if (entry.desc) c = -c;
       return c !== 0 ? c : a.i - b.i;
     });
@@ -146,10 +136,8 @@ export function sortRows(rows, stack, valueOf) {
 // [steamId, name, side, score]. Bots are filtered here, as the scoreboard
 // always did.
 
-// {placeholder} fill for catalog copy the panel carries (lib/strings).
-export function fill(template, args) {
-  return String(template).replace(/\{(\w+)\}/g, (whole, key) => (key in args ? String(args[key]) : whole));
-}
+// {placeholder} fill for catalog copy: the strings catalog's fill.
+export const fill = S.fill;
 
 export function roundLabel(n) {
   if (n >= 1) return String(n);
@@ -158,37 +146,30 @@ export function roundLabel(n) {
 
 // A player's colour in one round: the side they had in that round, else the
 // match's start-side colour for the player (never a guess).
-export function playerRoundCls(d, number, steam, name) {
-  const final = resolveSide(d.roster.map((r) => ({ steamId: r[0], name: r[1], side: r[2] })), steam, name);
-  const at = sideAtRound(d.rounds, d.switches, number, final) || '';
-  if (at === 'ct') return 'side-ct';
-  if (at === 't') return 'side-t';
-  return startClass(final, d.switches);
-}
 
+// The round row of a rounds read, shaped for the panel.
+const ROUND_SPEC = {
+  number: [0, 'raw'],
+  winner: [1, 'str'],
+  reason: [2, 'str'],
+  durationS: [3, 'num'],
+  bombSite: [4, 'str'],
+  mvp: [5, 'str'],
+  mvpName: [6, 'str'],
+  firstKillSteam: [7, 'str'],
+  firstKillName: [8, 'str'],
+  firstDeathSteam: [9, 'str'],
+  firstDeathName: [10, 'str'],
+  kills: [11, 'count'],
+  startTick: [12, 'num'],
+  endTick: [13, 'num'],
+};
 export function roundOf(r) {
-  return {
-    number: Number(r[0]),
-    winner: r[1] || '',
-    reason: r[2] || '',
-    durationS: r[3] == null ? NaN : Number(r[3]),
-    bombSite: r[4] || '',
-    mvp: r[5] || '',
-    mvpName: r[6] || '',
-    firstKillSteam: r[7] || '',
-    firstKillName: r[8] || '',
-    firstDeathSteam: r[9] || '',
-    firstDeathName: r[10] || '',
-    kills: Number(r[11]) || 0,
-    startTick: r[12] == null ? NaN : Number(r[12]),
-    endTick: r[13] == null ? NaN : Number(r[13]),
-  };
+  return rowOf(r, ROUND_SPEC);
 }
 
 // DETAIL_HELPERS
-export function numOf(v) {
-  return v == null || v === '' ? NaN : Number(v);
-}
+export const numOf = asTick;
 
 export function parseStamp(s) {
   const t = String(s || '').trim();

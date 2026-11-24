@@ -1,3 +1,4 @@
+import { DASH } from '../../builtinhelpers.js';
 // shared.js — the pure parts of the Reports builtin: the saved file's name,
 // the appendix's text forms (Markdown and HTML) and the escaping they need.
 // No state, no services: the component tests and the snapshot runner call
@@ -6,7 +7,7 @@
 // fmtVal: one stored value as the appendix table shows it (a dash for a
 // missing or non-finite value, never a zero: ruling 23).
 export function fmtVal(v) {
-  if (!Number.isFinite(v)) return '—';
+  if (!Number.isFinite(v)) return DASH;
   return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
@@ -50,34 +51,43 @@ export function esc(s) {
 
 // appendixMd / appendixHtml: the appendix as text. `entries` is the ordered
 // list the appendix component builds: { title, line, hasTable, rows } with
-// rows = [{ id, label, value }]. An entry without a table earns its line.
-export function appendixMd(entries) {
+// rows = [{ id, label, value }]. An entry without a table earns its line. One walk
+// (appendixWalk) writes both forms, so the two cannot drift apart.
+const MD_APPENDIX = {
+  open: '\n\n## Stats appendix\n\n',
+  heading: (t) => `### ${t}\n\n`,
+  line: (l) => `${l}\n\n`,
+  tableOpen: '| Group | Label | Value |\n|---|---|---|\n',
+  row: (r) => `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} |\n`,
+  tableClose: '\n',
+  close: '',
+};
+const HTML_APPENDIX = {
+  open: '<section class="rep-appendix-doc"><h2>Stats appendix</h2>',
+  heading: (t) => `<h3>${esc(t)}</h3>`,
+  line: (l) => `<p>${esc(l)}</p>`,
+  tableOpen: '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th></tr></thead><tbody>',
+  row: (r) => `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td></tr>`,
+  tableClose: '</tbody></table>',
+  close: '</section>',
+};
+function appendixWalk(entries, w) {
   if (!entries.length) return '';
-  let out = '\n\n## Stats appendix\n\n';
+  let out = w.open;
   for (const e of entries) {
-    out += `### ${e.title}\n\n`;
-    out += `${e.line}\n\n`;
+    out += w.heading(e.title) + w.line(e.line);
     if (!e.hasTable) continue;
-    out += '| Group | Label | Value |\n|---|---|---|\n';
-    for (const r of e.rows) out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} |\n`;
-    out += '\n';
+    out += w.tableOpen;
+    for (const r of e.rows) out += w.row(r);
+    out += w.tableClose;
   }
-  return out;
+  return out + w.close;
 }
-
+export function appendixMd(entries) {
+  return appendixWalk(entries, MD_APPENDIX);
+}
 export function appendixHtml(entries) {
-  if (!entries.length) return '';
-  let out = '<section class="rep-appendix-doc"><h2>Stats appendix</h2>';
-  for (const e of entries) {
-    out += `<h3>${esc(e.title)}</h3>`;
-    out += `<p>${esc(e.line)}</p>`;
-    if (!e.hasTable) continue;
-    out += '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th></tr></thead><tbody>';
-    for (const r of e.rows) out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td></tr>`;
-    out += '</tbody></table>';
-  }
-  out += '</section>';
-  return out;
+  return appendixWalk(entries, HTML_APPENDIX);
 }
 
 // compositeText: the rendered template body with the appendix appended. With

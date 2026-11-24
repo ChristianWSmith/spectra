@@ -11,3 +11,16 @@ export function activateOnKey(fn, { enterOnly = false } = {}) {
     fn(e);
   };
 }
+
+// openRow is a clickable row's handlers: a click opens the row, unless it came from a
+// control inside the row (matching `ignore`), and Enter (or Space, unless enterOnly)
+// opens it from the keyboard. Spread it onto the row: <tr {...openRow(open)}>.
+export function openRow(fn, { ignore = '', enterOnly = false } = {}) {
+  return {
+    onclick: (e) => {
+      if (ignore && e.target instanceof Element && e.target.closest(ignore)) return;
+      fn(e);
+    },
+    onkeydown: activateOnKey(fn, { enterOnly }),
+  };
+}

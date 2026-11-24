@@ -23,6 +23,11 @@
 // columns returns both series values for one economy row and one side.
 // A missing or non-numeric sample reads 0 (the COALESCE/`|| 0` path the
 // Go side exposes for a round with no round_economy row).
+// bySide picks a side's value from a pair: ct for the CT side, t for the T side.
+export function bySide(side, ct, t) {
+  return side === 'ct' ? ct : t;
+}
+
 export function econColumns(r, key) {
   const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
   const cash = Number(key === 'ct' ? r.moneyCT : r.moneyT) || 0;

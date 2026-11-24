@@ -7,13 +7,13 @@
   // one card each. Every value is one metric() read for the context's player.
   // Pinning is retired (owner ruling 33): this panel shows the default set and
   // reads no preference.
-  import { listMetrics, getProfile, errText } from '../../services.js';
+  import { errText } from '../../services.js';
   import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
   import { liveMetrics } from '../../metricslive.svelte.js';
   import { fmtMetric } from '../../fmt.js';
   import StatCard from '../../components/StatCard.svelte';
   import MetricCell from '../../components/MetricCell.svelte';
-  import { readCell } from './shared.js';
+  import { loadProfile, readCell } from './shared.js';
   import { readMetrics } from '../../metricreads.js';
   import * as S from '../../strings/index.js';
 
@@ -42,7 +42,7 @@
     loadedFor = sid;
     if (newPlayer) reads = new Map();
     if (!sid) return;
-    spectra.track(Promise.all([listMetrics(), getProfile(sid)]))
+    loadProfile(spectra, sid)
       .then(async ([rows, profile]) => {
         if (!isCurrent()) return;
         loadError = '';

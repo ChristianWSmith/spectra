@@ -1,4 +1,5 @@
 <script>
+  import { stepActive, onListKey, scrollActive } from '../listnav.js';
   // Compact match selector for view headers — the Explorer's native
   // <select> ("expl-match") replacement. The trigger button shows the
   // current selection; clicking it opens a popover listing matches the
@@ -89,23 +90,11 @@
   }
 
   function move(d) {
-    const n = shown.length;
-    if (!n) return;
-    const from = activeIdx < 0 ? 0 : activeIdx;
-    active = (from + d + n) % n;
+    active = stepActive(shown.length, activeIdx, d);
   }
 
   function onInputKey(e) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      move(1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      move(-1);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      pick(activeIdx);
-    }
+    onListKey(e, { move, pick: () => pick(activeIdx) });
   }
 
   // Popover owns the two dismissal listeners (outside pointerdown and
@@ -125,10 +114,7 @@
     open;
     shown.length;
     if (!open) return;
-    requestAnimationFrame(() => {
-      const el = listEl && listEl.querySelector('.mp-opt.active');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
-    });
+    scrollActive(listEl, '.mp-opt.active');
   });
 </script>
 

@@ -1,4 +1,5 @@
 <script>
+  import { num, roundNum } from '../replay/landmarks.js';
   // FilterBar — composable advanced event filter for the Replay
   // landmark feed: event categories are the feed's filter model (there is
   // no kind select here) — see lib/replay/landmarks.js CATEGORIES.
@@ -134,19 +135,6 @@
   // value too — hide AND CLEAR, never retain (a hidden-but-retained value
   // would keep invisibly filtering the list, markers and URL).
   const fields = $derived(applicableFilterFields(filter.cats));
-
-  function num(v) {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }
-
-  // Round bounds keep NEGATIVE values (a pre-reprocess match still
-  // carries negative knife/warmup round numbers) and truncate to
-  // integers; empty/0/junk = unset.
-  function roundNum(v) {
-    const n = Math.trunc(Number(v));
-    return Number.isFinite(n) && n !== 0 ? n : 0;
-  }
 
   // Coerce anything the parent hands us (route query, saved preset JSON,
   // partial objects) into a complete filter.
