@@ -182,6 +182,9 @@ svelteCompile(
   readFileSync('src/lib/components/SourceEditor.svelte', 'utf8').replace(
     "from '../editor/monaco.js'",
     `from '${fileURL('src/lib/editor/monaco.js')}'`,
+  ).replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
   ),
   'SourceEditor.svelte',
   join(dir, 'sourceeditor.js'),
@@ -288,6 +291,8 @@ const editor = document.querySelector('.sql-editor');
 const saveBar = stmtCard?.querySelector('.sql-save-bar');
 const cardToolbars = stmtCard ? [...stmtCard.querySelectorAll(':scope > .toolbar')] : [];
 const kids = stmtCard ? [...stmtCard.children] : [];
+// The editor sits in its source wrapper (the expand toggle); the card child that holds it is the editor's slot.
+const editorSlot = kids.find((k) => k.contains(editor));
 check(
   'the save bar renders exactly once, inside the Statement card',
   !!saveBar && document.querySelectorAll('.sql-save-bar').length === 1,
@@ -297,8 +302,8 @@ check(
   'the card has exactly ONE toolbar — the save bar — sitting after the textarea',
   cardToolbars.length === 1 &&
     cardToolbars[0] === saveBar &&
-    kids.indexOf(editor) >= 0 &&
-    kids.indexOf(editor) < kids.indexOf(saveBar),
+    kids.indexOf(editorSlot) >= 0 &&
+    kids.indexOf(editorSlot) < kids.indexOf(saveBar),
   cardToolbars.map((t) => t.className).join(' | '),
 );
 check(
@@ -364,6 +369,25 @@ check(
     /name is required/i.test(saveErr.textContent) && stmtCard.contains(saveErr),
   saveErr ? `${saveErr.className} ${saveErr.textContent.trim()}` : 'none',
 );
+
+console.log('C2. every source box has the expand toggle: the big-screen view takes the window, Escape or the toggle restores it');
+{
+  const wrap = document.querySelector('.sql-editor')?.closest('.source-wrap');
+  const toggle = wrap?.querySelector('.source-expand');
+  check(
+    'the statement box has an expand toggle, labelled for its state',
+    !!toggle && toggle.getAttribute('aria-label') === 'Expand editor' && toggle.getAttribute('aria-expanded') === 'false',
+  );
+  click(toggle);
+  await sleep();
+  check(
+    'the toggle expands the box (the same editor, now the big-screen wrapper)',
+    wrap?.classList.contains('expanded') && toggle.getAttribute('aria-expanded') === 'true' && toggle.getAttribute('aria-label') === 'Collapse editor',
+  );
+  wrap?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep();
+  check('Escape collapses the big-screen view', !wrap?.classList.contains('expanded'));
+}
 
 console.log('D. each history line is a row: a load body plus Remove');
 const histCard = panelByHeading('History (last 50)');

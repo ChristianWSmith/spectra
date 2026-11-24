@@ -4,7 +4,8 @@
   // same id and bound value when it cannot. The value is two-way bound; the
   // editor mirrors it, so a parent's change (a loaded statement, a reset) lands in
   // the editor and an edit lands in the parent.
-  import { untrack } from 'svelte';
+  import { untrack, tick } from 'svelte';
+  import * as S from '../strings/index.js';
   import { loadMonaco, modelUri, attachSource, detachSource } from '../editor/monaco.js';
 
   let {
@@ -25,6 +26,23 @@
   let host = $state(null);
   let area = $state(null);
   let failed = $state(false);
+  // The big-screen view: the same editor (and its text and completions) fills the window.
+  let expanded = $state(false);
+
+  async function toggleExpanded() {
+    expanded = !expanded;
+    await tick();
+    if (editor) editor.focus();
+    else area?.focus();
+  }
+
+  // Escape collapses the big-screen view, and only it: outside it the key is the editor's.
+  function onWrapKey(e) {
+    if (expanded && e.key === S.common.keyEscape) {
+      e.stopPropagation();
+      expanded = false;
+    }
+  }
 
   // The latest callbacks, read when the editor asks, so a changed prop needs no re-create.
   let ask = null;
@@ -134,25 +152,37 @@
   });
 </script>
 
-{#if failed}
-  <textarea
-    {id}
-    bind:this={area}
-    class="input mono {cls}"
-    rows={rows}
-    spellcheck="false"
-    {placeholder}
-    aria-label={ariaLabel}
-    readonly={readonly}
-    bind:value
-  ></textarea>
-{:else}
-  <div
-    {id}
-    bind:this={host}
-    class="source-editor {cls}"
-    style="height: {rows * 1.6}em"
-    role="group"
-    aria-label={ariaLabel}
-  ></div>
-{/if}
+<div class="source-wrap" class:expanded onkeydown={onWrapKey}>
+  <button
+    type="button"
+    class="btn small source-expand"
+    aria-label={expanded ? S.common.collapseEditor : S.common.expandEditor}
+    title={expanded ? S.common.collapseEditor : S.common.expandEditor}
+    aria-expanded={expanded}
+    onclick={toggleExpanded}
+  >
+    <span class="codicon codicon-{expanded ? 'screen-normal' : 'screen-full'}"></span>
+  </button>
+  {#if failed}
+    <textarea
+      {id}
+      bind:this={area}
+      class="input mono {cls}"
+      rows={rows}
+      spellcheck="false"
+      {placeholder}
+      aria-label={ariaLabel}
+      readonly={readonly}
+      bind:value
+    ></textarea>
+  {:else}
+    <div
+      {id}
+      bind:this={host}
+      class="source-editor {cls}"
+      style="height: {rows * 1.6}em"
+      role="group"
+      aria-label={ariaLabel}
+    ></div>
+  {/if}
+</div>

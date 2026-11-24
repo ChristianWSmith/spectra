@@ -6,6 +6,9 @@
 export const common = {
   // Keyboard key names the widgets compare against (not copy: the key the event reports).
   keyEscape: 'Escape',
+  // source editor: the expand toggle on every Monaco / textarea source box
+  expandEditor: 'Expand editor',
+  collapseEditor: 'Collapse editor',
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',

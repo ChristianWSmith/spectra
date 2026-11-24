@@ -3149,3 +3149,49 @@ mark {
   white-space: pre;
   overflow: auto;
 }
+
+/* The big-screen view (SourceEditor's expand toggle): the wrapper takes the
+   window while the same editor stays mounted, so its text and completions
+   carry over. Every source box has the toggle. */
+.source-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.source-expand {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  z-index: 2;
+  opacity: 0.75;
+}
+
+.source-expand:hover,
+.source-expand:focus-visible {
+  opacity: 1;
+}
+
+.source-wrap.expanded {
+  position: fixed;
+  inset: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+}
+
+.source-wrap.expanded .source-editor,
+.source-wrap.expanded textarea {
+  flex: 1;
+  height: 100% !important;
+  min-height: 0;
+  resize: none;
+}
+
+.source-wrap.expanded .source-expand {
+  top: 12px;
+  right: 20px;
+}

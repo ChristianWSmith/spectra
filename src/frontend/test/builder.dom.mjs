@@ -432,6 +432,9 @@ svelteCompile(
   readFileSync('src/lib/components/SourceEditor.svelte', 'utf8').replace(
     "from '../editor/monaco.js'",
     `from '${fileURL('src/lib/editor/monaco.js')}'`,
+  ).replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
   ),
   'SourceEditor.svelte',
   join(dir, 'sourceeditor.js'),
