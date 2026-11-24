@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as copies from './builtinhelpers.js';
 import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
-import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick } from './rounds.js';
+import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, isCounted } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';
 import { sideAtRound, winnerTeamKey, teamKeyAt, flipIndexes } from './sideparity.js';
 import { econValue, lossPips } from './econ.js';
@@ -24,14 +24,24 @@ for (let n = 1; n <= 30; n++) {
 const SWITCHES = [0, 1, 2];
 const TICK_RATES = [0, 64, 128];
 
+// The formatters are fmt.js's own functions, re-exported: a second copy would
+// be a second implementation, so identity is the pin.
+test('the formatters are the fmt.js functions, not copies', () => {
+  assert.equal(copies.fmtInt, fmtInt);
+  assert.equal(copies.fmtMoney, fmtMoney);
+  assert.equal(copies.fmtMs, fmtMs);
+  assert.equal(copies.fmtClock, fmtClock);
+  assert.equal(copies.fmtZeroDash, fmtZeroDash);
+  assert.equal(copies.roundClock, roundClock);
+  assert.equal(copies.chatClock, chatClock);
+  assert.equal(copies.isCounted, isCounted);
+});
+
 test('the number formatters match fmt.js on a grid of values', () => {
   const values = [0, 1, 0.5, 1.25, 33.333, -4.5, 1234567.8, NaN, null, undefined];
   for (const v of values) {
     assert.equal(copies.fmtInt(v), fmtInt(v), `fmtInt(${v})`);
     assert.equal(copies.fmtMoney(v), fmtMoney(v), `fmtMoney(${v})`);
-    for (const format of ['int', 'float1', 'float2', 'percent', 'currency']) {
-      assert.equal(copies.fmtStoredValue(v, format), fmtMetric(v, format), `fmtStoredValue(${v}, ${format})`);
-    }
   }
   for (const ms of [0, 1, 1499, 2500, 60000]) assert.equal(copies.fmtMs(ms), fmtMs(ms), `fmtMs(${ms})`);
   for (const s of [0, 5.4, 61, 3599, 3600, 3725.6, -1, NaN]) assert.equal(copies.fmtClock(s), fmtClock(s), `fmtClock(${s})`);
@@ -108,7 +118,7 @@ test('the side and team helpers match sideparity.js and teams.js', () => {
     { name: '', ctName: '', tName: 'Other', players: [] },
   ];
   for (const c of named) {
-    const ours = copies.teamNames(c.ctName, c.tName, c.players);
+    const ours = copies.teamNames({ ctName: c.ctName, tName: c.tName, players: c.players });
     assert.deepEqual(ours, teamNames({ ctName: c.ctName, tName: c.tName, players: c.players }), 'teamNames');
   }
 });

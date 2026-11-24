@@ -105,7 +105,6 @@ test('every panel reads through context', () => {
 });
 
 test('every import is on the curated surface (strings catalog, or a name BUILTIN_HELPERS lists)', () => {
-  const helperNames = Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names);
   for (const id of PANELS) {
     const code = stripComments(sourceOf(id));
     for (const m of code.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\})\s+from\s+'([^']+)';/gm)) {
@@ -114,9 +113,13 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
         assert.equal(clause, '* as S', `${id} takes the strings catalog whole, as S`);
         continue;
       }
-      assert.equal(spec, '../../builtinhelpers.js', `${id} imports ${spec}, which is not on the builtin surface`);
+      // The module must be a registered helper (its key is the path from the
+      // frontend root), and every name it takes must be listed for it.
+      const key = path.posix.normalize(`${builtinSourceDir(id)}/${spec}`);
+      assert.ok(Object.hasOwn(BUILTIN_HELPERS, key), `${id} imports ${spec} (${key}), which is not on the builtin surface`);
+      const helperNames = Object.keys(BUILTIN_HELPERS[key].names);
       for (const name of clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean)) {
-        assert.ok(helperNames.includes(name), `${id} imports ${name}, which BUILTIN_HELPERS does not list`);
+        assert.ok(helperNames.includes(name), `${id} imports ${name}, which BUILTIN_HELPERS does not list for ${key}`);
       }
     }
   }

@@ -107,6 +107,33 @@ export function matchKey(view, id) {
   return `match:${id}:${view}`;
 }
 
+// matchRecord — a match-scoped panel's registry record, end to end: the record
+// of (scope, the mounted match) seeds the panel's fields once at init, and when
+// the match changes without a remount the record of the new match is written
+// back into the fields. Otherwise each change of the fields is remembered.
+//   defaults()  the fields a record starts with
+//   read()      the fields to remember (read inside the effect, so tracked)
+//   write(s)    assign the fields from a record
+// Returns the record seeded at init (the fields and the key).
+export function matchRecord(scope, getMatchId, { defaults, read, write }) {
+  // The init capture reads the id, not the derived key (a derived value read at
+  // init would keep only its first value); the effect reads the derived key.
+  const firstKey = matchKey(scope, getMatchId());
+  const initial = { ...seed(firstKey, defaults()), key: firstKey };
+  const key = $derived(matchKey(scope, getMatchId()));
+  let last = firstKey;
+  $effect(() => {
+    const k = key;
+    if (k !== last) {
+      last = k;
+      write(seed(k, defaults()));
+      return;
+    }
+    remember(k, read());
+  });
+  return initial;
+}
+
 // --- Navigation arbitration (pure — no registry, no globals) ----------
 
 // scrollKey — the pure route → scroll-key derivation arbitrate() stands

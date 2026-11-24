@@ -1,4 +1,6 @@
 <script>
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
@@ -8,8 +10,8 @@
   import { getClutches, getPref, errText } from '../../services.js';
   import { onMount } from 'svelte';
   import { replayHash, entryLoopSpanAround, LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
-  import { playerSideClassAt } from '../../teams.js';
-  import { seed, remember, matchKey } from '../../viewstate.svelte.js';
+  import { roundSideClassOf } from '../../builtinhelpers.js';
+  import { matchRecord } from '../../viewstate.svelte.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import { loadCombatSide } from './combatdata.js';
@@ -34,9 +36,7 @@
       });
   });
 
-  function playerRoundCls(roundNumber, steamId, name) {
-    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
-  }
+  const playerRoundCls = roundSideClassOf(() => ({ players, sideSwitches, rounds }));
 
   // The outcome toggles restore per match through the same registry record
   // as the Kill tags panel (remember merges, so each writes its own fields).
@@ -44,32 +44,24 @@
     clutchWon: true,
     clutchLost: false,
   });
-  const combKey = $derived(matchKey('combat', id));
-  const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
-  const combSeed = combInit();
+  const combSeed = matchRecord('combat', () => id, {
+    defaults: combDefaults,
+    read: () => ({ clutchWon, clutchLost }),
+    write: (s) => {
+      clutchWon = s.clutchWon;
+      clutchLost = s.clutchLost;
+    },
+  });
   // Independent booleans (not one enum): both ON lists every clutch, both OFF
   // is the empty state.
   let clutchWon = $state(combSeed.clutchWon);
   let clutchLost = $state(combSeed.clutchLost);
-  let combLastKey = combSeed.key;
-  $effect(() => {
-    const k = combKey;
-    if (k !== combLastKey) {
-      combLastKey = k;
-      const s = seed(k, combDefaults());
-      clutchWon = s.clutchWon;
-      clutchLost = s.clutchLost;
-      return;
-    }
-    remember(k, { clutchWon, clutchLost });
-  });
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = id;
-    let live = true;
     spectra.track(Promise.all([getClutches(matchId), loadCombatSide(matchId)]))
       .then(([cl, side]) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         clutches = cl || [];
         players = side.players;
         sideSwitches = side.sideSwitches;
@@ -78,12 +70,11 @@
         error = '';
       })
       .catch((e) => {
-        if (live) {
+        if (isCurrent()) {
           error = errText(e);
         }
       });
-    return () => (live = false);
-  });
+  }));
 
   // The listed clutches: the outcome toggles select them. A lost 1vN is listed
   // with its outcome chip rather than dropped.
@@ -121,12 +112,12 @@
 </script>
 
 {#if error}
-  <p class="error" role="alert">
+  <ErrorBanner>
     {error}
     <button class="btn small" aria-label={S.combat.dismissError} onclick={() => (error = '')}>
       <span class="codicon codicon-close"></span>
     </button>
-  </p>
+  </ErrorBanner>
 {/if}
 
   <div class="comb-sec">

@@ -1,13 +1,15 @@
 <script>
+  import { splitTable } from './splittable.svelte.js';
   // Weapons (builtin profile panel): kills, damage and headshots per weapon,
   // each cell one stored partitioned read for the context's player (the dim
   // is the weapon). Top rows by kills, then damage, then name.
   // Unverified before the wipe: weapon damage is a tick-join builtin (ruling 24).
-  import { listMetrics, errText, subscribeMetricProgress, onMetricDone } from '../../services.js';
-  import { metricProgressFrac, metricProgressStage, metricStateTitle } from '../../metricstate.js';
-  import { fmtInt } from '../../fmt.js';
+  import { errText } from '../../services.js';
+  import { liveMetrics } from '../../metricslive.svelte.js';
+    import { fmtInt } from '../../fmt.js';
+  import MetricCell from '../../components/MetricCell.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
-  import { cell, dimValue, dimsOf, emptyChip, loadSeeds } from './shared.js';
+  import { dimsOf } from './shared.js';
   import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -16,39 +18,13 @@
   const SEEDS = ['weapon_kills', 'weapon_damage', 'weapon_headshots'];
   const TOP = 8;
 
-  let defs = $state(new Map());
-  let reads = $state(new Map());
-  let progress = $state(new Map());
-  let reload = $state(0);
+  const sweep = liveMetrics();
 
-  $effect(() => subscribeMetricProgress((snap) => (progress = snap)));
-  $effect(() => onMetricDone(() => (reload += 1)));
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+  const defs = $derived(table.defs);
+  const reads = $derived(table.reads);
+  const { cellFor, rawValue } = table;
 
-  // The player the shown values belong to (plain: it only gates the reset).
-  let loadedFor = null;
-  $effect(() => {
-    reload;
-    const sid = steamId;
-    const newPlayer = sid !== loadedFor;
-    loadedFor = sid;
-    let live = true;
-    if (newPlayer) defs = new Map();
-    if (newPlayer) reads = new Map();
-    if (!sid) return;
-    spectra.track(listMetrics())
-      .then((rows) => loadSeeds(spectra, SEEDS, rows || [], errText))
-      .then((loaded) => {
-        if (live) {
-          defs = loaded.defs;
-          reads = loaded.reads;
-        }
-      })
-      .catch(() => {});
-    return () => (live = false);
-  });
-
-  const cellFor = (name, dim) => cell(defs.get(name), reads.get(name), progress, dimValue(defs.get(name), reads.get(name), dim));
-  const rawValue = (name, dim) => dimValue(defs.get(name), reads.get(name), dim);
 
   // Kills desc, then damage desc, then weapon name asc; the top rows only.
   const weapons = $derived(
@@ -62,7 +38,7 @@
       )
       .slice(0, TOP),
   );
-  const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
+  const empty = $derived(table.empty);
 </script>
 
 <div>
@@ -83,13 +59,7 @@
           {#each SEEDS as name (name)}
             {@const p = cellFor(name, w.weapon)}
             <td class="num" title={p.title}>
-              {#if p.kind === 'value'}
-                {fmtInt(p.value)}
-              {:else if p.kind === 'nodata'}
-                —
-              {:else}
-                <StatusChip status={p.state} title={p.title} progress={metricProgressFrac(progress, defs.get(name)?.id)} stage={metricProgressStage(progress, defs.get(name)?.id)} />
-              {/if}
+              <MetricCell pres={p} format={(v) => fmtInt(v)} chip={sweep.chip(defs.get(name))} />
             </td>
           {/each}
         </tr>
@@ -97,7 +67,7 @@
         <tr>
           <td colspan="4" class="muted">
             {#if empty}
-              <StatusChip status={empty.state} title={metricStateTitle(empty.state, empty.read?.error)} progress={metricProgressFrac(progress, empty.def?.id)} stage={metricProgressStage(progress, empty.def?.id)} />
+              <StatusChip status={empty.state} title={empty.title} {...sweep.chip(empty.def)} />
             {:else}
               {S.profiles.noWeapons}
             {/if}

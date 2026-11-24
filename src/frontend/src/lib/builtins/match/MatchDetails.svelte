@@ -1,4 +1,6 @@
 <script>
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
   // frames, size, import time, parser, warnings, source file) and the voice and demo
@@ -91,13 +93,12 @@
       });
   }
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = context.matchId;
-    let live = true;
     // Each read lands on its own: the stored facts never wait on the match row or the voice read.
     spectra.query(SQL_FACTS).then(
       (res) => {
-        if (live) facts = parseFacts(res.rows[0]);
+        if (isCurrent()) facts = parseFacts(res.rows[0]);
       },
       (e) =>
         spectra.guard(() => {
@@ -106,7 +107,7 @@
     );
     Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
       ([m, v]) => {
-        if (live) {
+        if (isCurrent()) {
           match = m;
           voice = v;
         }
@@ -120,10 +121,7 @@
       loadProv(matchId);
       loadEnt(matchId);
     }
-    return () => {
-      live = false;
-    };
-  });
+  }));
 
   async function freeCopy() {
     if (copyBusy || !match) return;
@@ -205,10 +203,10 @@
   <section class="md-sec">
     <h2 class="md-head">{S.library.importDetails}</h2>
     {#if provError}
-      <p class="error" role="alert">
+      <ErrorBanner>
         {provError}
         <button class="btn small" onclick={() => loadProv(context.matchId)}>{S.library.retry}</button>
-      </p>
+      </ErrorBanner>
     {:else if !prov}
       <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
@@ -237,10 +235,10 @@
   <section class="md-sec">
     <h2 class="md-head">{S.library.advancedDiagnostics}</h2>
     {#if entError}
-      <p class="error" role="alert">
+      <ErrorBanner>
         {entError}
         <button class="btn small" onclick={() => loadEnt(context.matchId)}>{S.library.retry}</button>
-      </p>
+      </ErrorBanner>
     {:else if !ent}
       <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>
     {:else}

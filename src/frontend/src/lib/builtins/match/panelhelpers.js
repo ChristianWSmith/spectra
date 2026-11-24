@@ -5,6 +5,11 @@
 // missing or NULL stored value is a dash, never a zero (ruling 23).
 import * as S from '../../strings/index.js';
 import { sideAtRound, resolveSide, DASH } from '../../builtinhelpers.js';
+import { fmtMetric, fmtBytes, fmtDate, fmtDuration } from '../../fmt.js';
+import { readMetrics } from '../../metricreads.js';
+import { metricPresentation } from '../../metricstate.js';
+import { errText } from '../../services.js';
+export { fmtBytes, fmtDate, fmtDuration };
 
 
 // The read-only SQL the panels run (bound from the context). Plain literals,
@@ -69,30 +74,29 @@ export function startClass(side, switches) {
 }
 
 // One stored value as its text (lib/fmt.js fmtMetric's rules).
-export function fmtValue(v, format) {
-  if (v == null || !Number.isFinite(v)) return DASH;
-  if (format === 'percent') return Math.round(v * 1000) / 10 + '%';
-  if (format === 'float1') return (Math.round(v * 10) / 10).toFixed(1);
-  if (format === 'float2') return (Math.round(v * 100) / 100).toFixed(2);
-  if (format === 'int') return Math.round(v).toLocaleString();
-  return Number.isInteger(v) ? Math.round(v).toLocaleString() : (Math.round(v * 100) / 100).toFixed(2);
-}
-
 export const STATE_WORD = { processing: S.builtins.stateCalculating, failed: S.builtins.stateFailed, behind: S.builtins.stateOutOfDate };
 
 // A metric read for this match: its state and each player's value.
 export async function readUnit(spectra, name) {
-  const m = await spectra.metric(name);
+  const m = (await readMetrics(spectra, [name], errText)).get(name);
   const map = new Map();
   for (const r of m.rows) map.set(r.subject, r.value);
   return { state: m.state, error: m.error || '', doc: m.doc || '', map };
 }
 
-// What a stored cell shows: the value, a dash for no value, or the state.
+// matchPres is one subject's cell presentation (metricstate.js metricPresentation):
+// the value, the dash, or the state. The read carries rows only when fresh.
+export function matchPres(u, key) {
+  return metricPresentation(u.state, u.map.has(key) ? { value: u.map.get(key) } : null, false);
+}
+
+// cellText is the same presentation as text, for the joined cells (kda, the
+// overview's K/D/A line).
 export function cellText(u, key, format) {
-  if (u.state === 'no-data') return DASH;
-  if (u.state !== 'fresh') return STATE_WORD[u.state] || u.state;
-  return u.map.has(key) ? fmtValue(u.map.get(key), format) : DASH;
+  const p = matchPres(u, key);
+  if (p.kind === 'value') return fmtMetric(p.value, format);
+  if (p.kind === 'nodata') return DASH;
+  return STATE_WORD[p.state] || p.state;
 }
 
 export function cellValue(u, key) {
@@ -152,17 +156,6 @@ export function roundLabel(n) {
   return n === -2 ? S.builtins.roundLabelKnife : S.builtins.roundLabelWarmup;
 }
 
-export function fmtDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return DASH;
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return h + 'h' + String(m).padStart(2, '0') + 'm' + String(sec).padStart(2, '0') + 's';
-  if (m > 0) return m + 'm' + String(sec).padStart(2, '0') + 's';
-  return sec + 's';
-}
-
 // A player's colour in one round: the side they had in that round, else the
 // match's start-side colour for the player (never a guess).
 export function playerRoundCls(d, number, steam, name) {
@@ -197,14 +190,6 @@ export function numOf(v) {
   return v == null || v === '' ? NaN : Number(v);
 }
 
-export function fmtBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return DASH;
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + S.builtins.unitGb;
-  if (mb >= 1) return mb.toFixed(1) + S.builtins.unitMb;
-  return (bytes / 1024).toFixed(1) + S.builtins.unitKb;
-}
-
 export function parseStamp(s) {
   const t = String(s || '').trim();
   if (!t) return null;
@@ -219,7 +204,3 @@ export function parseStamp(s) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function fmtDate(d) {
-  if (!d || d.getUTCFullYear() <= 1) return DASH;
-  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}

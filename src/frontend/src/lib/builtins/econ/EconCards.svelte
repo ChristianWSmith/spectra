@@ -1,6 +1,9 @@
 <script>
+  import { economySource } from '../../economysource.svelte.js';
+  import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { DASH, fmtStoredValue, roundStartTick, roundEndTick, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
+  import { fmtMetric } from '../../fmt.js';
+  import { DASH, roundStartTick, roundEndTick, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',
@@ -69,25 +72,10 @@
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),
   // the panel loads the match's economy itself, so it shows the real data either way.
   let { spectra, context, back = '', ...given } = $props();
-  const NAMES_DEFAULT = { ct: S.match.sideCt, t: S.match.sideT };
-  const standalone = $derived(given.rows === undefined);
-  let own = $state(null);
-  $effect(() => {
-    if (!standalone) return;
-    let live = true;
-    loadEconomy(spectra, context.matchId).then(
-      (d) => {
-        if (live) own = d;
-      },
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  });
-  const rows = $derived(standalone ? (own ? own.rows : []) : (given.rows ?? []));
-  const rounds = $derived(standalone ? (own ? own.rounds : []) : (given.rounds ?? []));
-  const names = $derived(standalone ? (own ? own.names : NAMES_DEFAULT) : (given.names ?? NAMES_DEFAULT));
+  const src = economySource(() => ({ spectra, context, given }));
+  const rows = $derived(src.rows);
+  const rounds = $derived(src.rounds);
+  const names = $derived(src.names);
 
 
   const CARDS = ECON_CARDS;
@@ -96,22 +84,18 @@
 
   let reads = $state({});
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = context.matchId;
-    let live = true;
     if (matchId == null) return;
     Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
-      if (!live) return;
+      if (!isCurrent()) return;
       const out = {};
       CARDS.forEach((c, i) => {
         out[c.metric] = res[i];
       });
       reads = out;
     });
-    return () => {
-      live = false;
-    };
-  });
+  }));
 
   // The round each drill anchor names: the first decided pistol round, the first
   // force-buy round, the round with the largest winner gap, and the round with
@@ -172,7 +156,7 @@
     const by = {};
     for (const v of m.rows) by[v.subject] = v.value;
     if (!('ct' in by) || !('t' in by)) return DASH;
-    return names.ct + ' ' + fmtStoredValue(by.ct, format) + ' · ' + names.t + ' ' + fmtStoredValue(by.t, format);
+    return names.ct + ' ' + fmtMetric(by.ct, format) + ' · ' + names.t + ' ' + fmtMetric(by.t, format);
   }
 
   const cards = $derived(
@@ -181,7 +165,7 @@
       return {
         key: c.metric,
         label: c.label,
-        value: c.subject === 'team' ? teamLine(c.metric, c.format) : fmtStoredValue(matchValue(c.metric), c.format),
+        value: c.subject === 'team' ? teamLine(c.metric, c.format) : fmtMetric(matchValue(c.metric), c.format),
         sub: c.sub,
         title: c.doc,
         inferred: c.inferred,

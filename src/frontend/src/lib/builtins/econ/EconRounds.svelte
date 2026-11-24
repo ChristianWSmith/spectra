@@ -1,4 +1,6 @@
 <script>
+  import { economySource } from '../../economysource.svelte.js';
+  import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { DASH, fmtInt, fmtMoney, separatorFlags, roundStartTick, roundEndTick, winnerTeamKey, lossPips, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
 
@@ -8,26 +10,11 @@
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),
   // the panel loads the match's economy itself, so it shows the real data either way.
   let { spectra, context, back = '', ...given } = $props();
-  const NAMES_DEFAULT = { ct: S.match.sideCt, t: S.match.sideT };
-  const standalone = $derived(given.rows === undefined);
-  let own = $state(null);
-  $effect(() => {
-    if (!standalone) return;
-    let live = true;
-    loadEconomy(spectra, context.matchId).then(
-      (d) => {
-        if (live) own = d;
-      },
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  });
-  const rows = $derived(standalone ? (own ? own.rows : []) : (given.rows ?? []));
-  const rounds = $derived(standalone ? (own ? own.rounds : []) : (given.rounds ?? []));
-  const names = $derived(standalone ? (own ? own.names : NAMES_DEFAULT) : (given.names ?? NAMES_DEFAULT));
-  const sideSwitches = $derived(standalone ? (own ? own.sideSwitches : 0) : (given.sideSwitches ?? 0));
+  const src = economySource(() => ({ spectra, context, given }));
+  const rows = $derived(src.rows);
+  const rounds = $derived(src.rounds);
+  const names = $derived(src.names);
+  const sideSwitches = $derived(src.sideSwitches);
 
 
   const PIP_SLOTS = [1, 2, 3, 4, 5];
@@ -36,10 +23,9 @@
   let whyOpen = $state('');
   let deaths = $state(new Map());
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = context.matchId;
     const list = rows.map((r) => r.round);
-    let live = true;
     deaths = new Map();
     if (matchId == null || list.length === 0) return;
     Promise.all(
@@ -50,7 +36,7 @@
         ),
       ),
     ).then((pairs) => {
-      if (!live) return;
+      if (!isCurrent()) return;
       const out = new Map();
       for (const [round, m] of pairs) {
         // One stored row per player per round, its dim the side sampled: the
@@ -68,10 +54,7 @@
       }
       deaths = out;
     });
-    return () => {
-      live = false;
-    };
-  });
+  }));
 
   function deathText(round, side) {
     const by = deaths.get(round);

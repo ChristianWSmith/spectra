@@ -1,4 +1,7 @@
 <script>
+  import { roundSideClassOf } from '../../builtinhelpers.js';
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
@@ -14,8 +17,7 @@
   import { replayHash, entryLoopAround, LOOP_SECS_DEFAULT, prefLoopSecs } from '../../nav.js';
   import { roundScoreLabel } from '../../rounds.js';
   import { roundsByNumber } from '../../replay/landmarks.js';
-  import { playerSideClassAt } from '../../teams.js';
-  import { seed, remember, matchKey } from '../../viewstate.svelte.js';
+    import { matchRecord } from '../../viewstate.svelte.js';
   import { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../definitions.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
@@ -49,9 +51,7 @@
 
   const rbn = $derived(roundsByNumber(rounds));
 
-  function playerRoundCls(roundNumber, steamId, name) {
-    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
-  }
+  const playerRoundCls = roundSideClassOf(() => ({ players, sideSwitches, rounds }));
 
   // View-local filter state restores per match through the process-scoped
   // registry (viewstate.svelte.js). The record is shared with the Clutches
@@ -63,37 +63,26 @@
     // The round scope: 'all' or a round number as text. Defaults to round 1.
     engRound: '1',
   });
-  const combKey = $derived(matchKey('combat', id));
-  // Deliberate ONE-TIME init capture (Svelte's state_referenced_locally fix);
-  // the effect below owns every later key change.
-  const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
-  const combSeed = combInit();
+  const combSeed = matchRecord('combat', () => id, {
+    defaults: combDefaults,
+    read: () => ({ engKinds, engRound }),
+    write: (s) => {
+      engKinds = s.engKinds;
+      engRound = s.engRound;
+    },
+  });
   let engKinds = $state(combSeed.engKinds);
   // The kind dropdown's OPEN state is transient, like every popover.
   let kindOpen = $state(false);
   let kindAnchor = $state(null);
   let kindTrigger = $state(null);
   let engRound = $state(combSeed.engRound);
-  let combLastKey = combSeed.key;
-  $effect(() => {
-    const k = combKey;
-    if (k !== combLastKey) {
-      // Another match without a remount: apply its record and do not write.
-      combLastKey = k;
-      const s = seed(k, combDefaults());
-      engKinds = s.engKinds;
-      engRound = s.engRound;
-      return;
-    }
-    remember(k, { engKinds, engRound });
-  });
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = id;
-    let live = true;
     spectra.track(Promise.all([getKillTags(matchId, ''), loadCombatSide(matchId)]))
       .then(([en, side]) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         killTags = en || [];
         players = side.players;
         sideSwitches = side.sideSwitches;
@@ -102,12 +91,11 @@
         error = '';
       })
       .catch((e) => {
-        if (live) {
+        if (isCurrent()) {
           error = errText(e);
         }
       });
-    return () => (live = false);
-  });
+  }));
 
   // One row per kill (see combatdata.js groupKillTags).
   const killTagRows = $derived(groupKillTags(killTags));
@@ -166,12 +154,12 @@
 </script>
 
 {#if error}
-  <p class="error" role="alert">
+  <ErrorBanner>
     {error}
     <button class="btn small" aria-label={S.combat.dismissError} onclick={() => (error = '')}>
       <span class="codicon codicon-close"></span>
     </button>
-  </p>
+  </ErrorBanner>
 {/if}
 
   <div class="comb-sec">

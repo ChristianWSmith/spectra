@@ -1437,7 +1437,6 @@ const BUILTIN_NONCOPY = {
     { text: 'L', why: 'the SVG path command (line-to) of the curve line — drawing syntax, not copy' },
   ],
   'frontend/src/lib/builtinhelpers.js': [
-    { text: 'u2212$', why: 'the minus sign of a money value (the \\u2212 escape and the currency mark) — a sign, not copy' },
   ],
   'frontend/src/lib/builtins/match/panelhelpers.js': [
     { text: 'Z', why: 'the ISO 8601 UTC designator of the stored import time (date parsing), not copy' },

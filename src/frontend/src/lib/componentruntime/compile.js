@@ -189,6 +189,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       seed: 'a view’s remembered state when it opens (view-local)',
       remember: 'store a view’s state for its next open (view-local)',
       matchKey: 'the key a match’s view state is kept under',
+      matchRecord: 'a match panel’s registry record: seeded at init, followed across matches, remembered on change',
     },
   },
   'src/lib/nav.js': {
@@ -254,6 +255,37 @@ export const BUILTIN_HELPERS = Object.freeze({
     load: () => providedHelper('src/lib/workstate.svelte.js'),
     names: { runWork: 'run a piece of background work, shown in the work indicator' },
   },
+  'src/lib/economysource.svelte.js': {
+    load: () => import('../economysource.svelte.js'),
+    names: { economySource: 'the economy a panel shows: its own load alone, the composer’s data when given' },
+  },
+  'src/lib/builtins/profile/splittable.svelte.js': {
+    load: () => import('../builtins/profile/splittable.svelte.js'),
+    names: { splitTable: 'the data of a profile split table (sides, maps, weapons) for the player, reloaded on change' },
+  },
+  'src/lib/keys.js': {
+    load: () => import('../keys.js'),
+    names: { activateOnKey: 'keyboard activation of a clickable row (Enter, and Space unless enterOnly)' },
+  },
+  'src/lib/current.js': {
+    load: () => import('../current.js'),
+    names: {
+      whileCurrent: 'run a load for an effect, dropping a result that is out of date',
+      whenCurrent: 'a promise callback that runs only while its load is current',
+      loadForMatch: 'the effect body of a panel that loads for the match and applies the result while current',
+    },
+  },
+  'src/lib/metricreads.js': {
+    load: () => import('../metricreads.js'),
+    names: {
+      readMetrics: 'read several stored metrics by name, a failed read shown as its own state',
+      failedRead: 'the read a metric whose read threw is shown as',
+    },
+  },
+  'src/lib/metricslive.svelte.js': {
+    load: () => import('../metricslive.svelte.js'),
+    names: { liveMetrics: 'a panel’s metric progress and reload wiring (call once at the top level)' },
+  },
   'src/lib/builtins/match/panelhelpers.js': {
     load: () => import('../builtins/match/panelhelpers.js'),
     names: {
@@ -271,6 +303,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       SQL_TEAMS: 'the team names read',
       STATE_WORD: 'the words of a metric state (calculating, failed, out of date)',
       cellText: 'one stored value as its cell text',
+      matchPres: 'one stored value’s cell presentation (value, dash or state)',
       cellValue: 'one stored value, or null when not fresh',
       fill: 'fill a {placeholder} in catalog copy',
       fmtBytes: 'a byte count as a size',
@@ -303,7 +336,6 @@ export const BUILTIN_HELPERS = Object.freeze({
       fmtInt: 'a whole number with grouping',
       fmtMoney: 'money with its sign',
       fmtMs: 'milliseconds as seconds',
-      fmtStoredValue: 'a stored value in its metric format',
       fmtZeroDash: 'a count of nothing as a dash',
       followPlayer: 'open the replay following a player',
       chatClock: 'a chat line’s clock, RD-prefixed in a round',
@@ -316,6 +348,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       moneyResetIndexes: 'the money-reset rounds of a match',
       openPlayer: 'open a player’s profile',
       playerSideClassAt: 'the team colour class of a player on a round',
+      roundSideClassOf: 'a panel’s round colour class of a player, bound to its match data',
       roundClock: 'a round time as a clock',
       roundEndTick: 'the end tick of a round',
       roundIndexLabel: 'a round’s number label',
@@ -349,8 +382,9 @@ export const BUILTIN_HELPERS = Object.freeze({
       dimValue: 'one dimension value of a breakdown',
       dimsOf: 'the dimensions of a breakdown',
       emptyChip: 'the chip shown for an empty breakdown',
+      readCell: 'the cell of a whole-subject read (one value per player)',
       loadSeeds: 'load the profile’s seed values (read)',
-      failedRead: 'the message for a failed read',
+      loadSplit: 'load a split table’s catalog and seed values for the player (read)',
     },
   },
   'src/lib/builtins/reports/shared.js': {
@@ -369,6 +403,14 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/components/LoadBox.svelte': {
     load: () => import('../components/LoadBox.svelte'),
     names: { default: 'the loading shell (a component)' },
+  },
+  'src/lib/components/MetricCell.svelte': {
+    load: () => import('../components/MetricCell.svelte'),
+    names: { default: 'the body of a stored-value table cell (a value, a dash, or a state as a chip or a word)' },
+  },
+  'src/lib/components/ErrorBanner.svelte': {
+    load: () => import('../components/ErrorBanner.svelte'),
+    names: { default: 'the one error line a panel shows (its text is the children)' },
   },
   'src/lib/components/StatCard.svelte': {
     load: () => import('../components/StatCard.svelte'),

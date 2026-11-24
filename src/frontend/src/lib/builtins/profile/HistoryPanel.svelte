@@ -1,16 +1,21 @@
 <script>
+  import { whenCurrent } from '../../current.js';
+  import { activateOnKey } from '../../keys.js';
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Match history (builtin profile panel), most recent first. The match rows
   // (import date, map, result, score, starting side) are the player's recorded
   // history. The K/D/A, ADR and KAST cells are stored match-scope metrics read
   // for the context's player in ONE read: metricsByMatch takes the series of
   // every metric (one call) and each match's compute state (one call per row).
-  import { listMetrics, getProfile, errText, subscribeMetricProgress, onMetricDone } from '../../services.js';
+  import { listMetrics, getProfile, errText } from '../../services.js';
+  import { liveMetrics } from '../../metricslive.svelte.js';
   import { metricsByMatch } from '../../componentruntime/reads.js';
-  import { metricProgressFrac, metricProgressStage } from '../../metricstate.js';
   import { fmt1, fmtDate, fmtInt, fmtMetric } from '../../fmt.js';
   import { teamStartClass } from '../../teams.js';
-  import StatusChip from '../../components/StatusChip.svelte';
-  import { cell } from './shared.js';
+  import MetricCell from '../../components/MetricCell.svelte';
+
+  import { readCell } from './shared.js';
   import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -23,42 +28,36 @@
   let history = $state([]);
   let defs = $state(new Map());
   let matchReads = $state(new Map()); // matchId → Map(metric name → MetricRead)
-  let progress = $state(new Map());
-  let reload = $state(0);
+  const sweep = liveMetrics();
   let loadError = $state('');
 
-  $effect(() => subscribeMetricProgress((snap) => (progress = snap)));
-  $effect(() => onMetricDone(() => (reload += 1)));
-
-  $effect(() => {
-    reload;
+  $effect(() => whileCurrent((isCurrent) => {
+    sweep.reload;
     const sid = steamId;
-    let live = true;
     matchReads = new Map();
     loadError = '';
     if (!sid) return;
     spectra.track(Promise.all([listMetrics(), getProfile(sid)]))
       .then(async ([rows, profile]) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         const catalog = new Map((rows || []).map((d) => [d.name, d]));
         defs = catalog;
         const rowsOut = profile ? profile.history || [] : [];
         history = rowsOut;
         const names = METRICS.filter((n) => catalog.has(n));
         const byMatch = await metricsByMatch(sid, names, rowsOut.map((h) => h.matchId));
-        if (live) matchReads = byMatch;
+        if (isCurrent()) matchReads = byMatch;
       })
-      .catch((e) => {
-        if (live) loadError = errText(e);
-      });
-    return () => (live = false);
-  });
+      .catch(whenCurrent(isCurrent, (e) => {
+        loadError = errText(e);
+      }));
+  }));
 
   // One stored cell of a match: the metric's own presentation.
   function stored(h, name) {
     const read = matchReads.get(h.matchId)?.get(name);
     const def = defs.get(name);
-    return cell(def, read, progress, read && read.state === 'fresh' ? read.value : null);
+    return readCell(def, read, sweep.progress);
   }
 
   // The K/D/A cell: each half is its own number; the first half that is not a
@@ -73,7 +72,7 @@
 </script>
 
 {#if loadError}
-  <p class="error" role="alert">{loadError}</p>
+  <ErrorBanner>{loadError}</ErrorBanner>
 {/if}
 <div>
   <h2>{S.profiles.matchHistoryPrefix}<span class="muted">{S.profiles.mostRecentFirst}</span></h2>
@@ -101,7 +100,7 @@
             tabindex="0"
             title={S.fill(S.profiles.openMatchRow, { id: h.matchId })}
             onclick={() => spectra.navigate(`/match/${h.matchId}`)}
-            onkeydown={(e) => e.key === 'Enter' && spectra.navigate(`/match/${h.matchId}`)}
+            onkeydown={activateOnKey(() => spectra.navigate(`/match/${h.matchId}`), { enterOnly: true })}
           >
             <td>{fmtDate(h.extractedAt)}</td>
             <td>{h.map || '—'}</td>
@@ -123,10 +122,10 @@
               {halfText(k.parts[0])}/{halfText(k.parts[1])}/{halfText(k.parts[2])}
             </td>
             <td class="num" title={adr.kind === 'chip' ? adr.title : ''}>
-              {#if adr.kind === 'value'}{fmt1(adr.value)}{:else if adr.kind === 'nodata'}—{:else}<StatusChip status={adr.state} title={adr.title} progress={metricProgressFrac(progress, defs.get('adr')?.id)} stage={metricProgressStage(progress, defs.get('adr')?.id)} />{/if}
+              <MetricCell pres={adr} format={(v) => fmt1(v)} chip={sweep.chip(defs.get('adr'))} />
             </td>
             <td class="num" title={kast.kind === 'chip' ? kast.title : ''}>
-              {#if kast.kind === 'value'}{fmtMetric(kast.value, 'percent')}{:else if kast.kind === 'nodata'}—{:else}<StatusChip status={kast.state} title={kast.title} progress={metricProgressFrac(progress, defs.get('kast')?.id)} stage={metricProgressStage(progress, defs.get('kast')?.id)} />{/if}
+              <MetricCell pres={kast} format={(v) => fmtMetric(v, 'percent')} chip={sweep.chip(defs.get('kast'))} />
             </td>
           </tr>
         {:else}

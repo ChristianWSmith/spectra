@@ -1,4 +1,6 @@
 <script>
+  import { activateOnKey } from '../../keys.js';
+  import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
@@ -65,23 +67,10 @@
     return { cards: out, switches };
   }
 
-  $effect(() => {
-    const matchId = context.matchId;
-    let live = true;
-    load(matchId).then(
-      (res) => {
-        if (!live) return;
-        cards = res.cards;
-        ready = true;
-      },
-      () => {
-        // A failed read is reported into this frame by the read API.
-      },
-    );
-    return () => {
-      live = false;
-    };
-  });
+  $effect(loadForMatch(() => context.matchId, load, (res) => {
+    cards = res.cards;
+    ready = true;
+  }));
 
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
@@ -93,7 +82,7 @@
         <LoadBox tag="div" class="stat-box" busy={spectra.busy} name="match-overview-card" key={c.key}>
         <div class="stat-cell" role="button" tabindex="0" title={c.title || undefined}
           onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; if (c.steam) follow(c.steam); }}
-          onkeydown={(e) => { if (e.key === 'Enter' && c.steam) follow(c.steam); }}
+          onkeydown={activateOnKey(() => c.steam && follow(c.steam), { enterOnly: true })}
         >
           <span class="field-label">{c.label}</span>
           <span class="stat-value">{c.value}</span>

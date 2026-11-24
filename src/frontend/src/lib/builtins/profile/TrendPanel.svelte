@@ -1,4 +1,7 @@
 <script>
+  import { activateOnKey } from '../../keys.js';
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Career trend (builtin profile panel): one match-scope metric across the
   // context's player's matches, as a sparkline. The picker offers every
   // match-scope metric in the default sequence and sends the metric NAME to
@@ -25,17 +28,15 @@
   // A plain counter (not state): the read's generation, so a stale result drops.
   let trendGen = 0;
 
-  $effect(() => {
-    let live = true;
+  $effect(() => whileCurrent((isCurrent) => {
     spectra.track(listMetrics())
       .then((defs) => {
-        if (live) trendDefs = defs || [];
+        if (isCurrent()) trendDefs = defs || [];
       })
       .catch(() => {
-        if (live) trendDefs = []; // a failed catalog read offers nothing — never a guess
+        if (isCurrent()) trendDefs = []; // a failed catalog read offers nothing — never a guess
       });
-    return () => (live = false);
-  });
+  }));
 
   // The default sequence over the match scope (no order preference is read).
   const trendItems = $derived(inSequence('match', trendDefs));
@@ -149,10 +150,10 @@
     />
   </div>
   {#if trendError}
-    <p class="error" role="alert">
+    <ErrorBanner>
       {trendError}
       <button class="btn small" onclick={loadTrend}>{S.profiles.retry}</button>
-    </p>
+    </ErrorBanner>
   {:else if spark}
     <svg
       class="prof-spark"
@@ -170,9 +171,7 @@
           tabindex="0"
           aria-label={S.fill(S.profiles.openMatchDot, { title: d.title })}
           onclick={() => d.matchId && spectra.navigate(`/match/${d.matchId}`)}
-          onkeydown={(e) =>
-            (e.key === 'Enter' || e.key === ' ') &&
-            (e.preventDefault(), d.matchId && spectra.navigate(`/match/${d.matchId}`))}
+          onkeydown={activateOnKey(() => d.matchId && spectra.navigate(`/match/${d.matchId}`))}
         >
           <title>{d.title}</title>
         </circle>

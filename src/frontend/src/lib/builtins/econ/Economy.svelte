@@ -1,33 +1,14 @@
 <script>
+  import { economySource } from '../../economysource.svelte.js';
   import * as S from '../../strings/index.js';
-  import { loadEconomy } from '../../builtinhelpers.js';
   // Economy view: the rounds, the economy rows and the team names, loaded once
   // for the three panels below. Each panel mounts with this frame's context
   // (the match) and the Match view's back path.
   let { spectra, context, back = '' } = $props();
-  let state = $state(null);
-  // Empty until the data lands: the panels mount with it and reserve their space while it loads.
-  const view = $derived(state ?? { rows: [], rounds: [], names: { ct: S.match.sideCt, t: S.match.sideT }, sideSwitches: 0, matchWinner: '' });
-
-  const load = (matchId) => loadEconomy(spectra, matchId);
-
-  $effect(() => {
-    const matchId = context.matchId;
-    let live = true;
-    load(matchId).then(
-      (d) => {
-        if (live) state = d;
-      },
-      () => {
-        // A failed read is reported into this frame by the read API; the view
-        // stays up on an empty set, as before (the banner names the failure).
-        if (live) state = { rows: [], rounds: [], names: { ct: S.match.sideCt, t: S.match.sideT }, sideSwitches: 0, matchWinner: '' };
-      },
-    );
-    return () => {
-      live = false;
-    };
-  });
+  // The composer loads the match's economy once for the three panels below. An empty set
+  // shows until it lands: the panels mount with it and reserve their space while it loads.
+  const src = economySource(() => ({ spectra, context, given: {} }));
+  const view = $derived({ rows: src.rows, rounds: src.rounds, names: src.names, sideSwitches: src.sideSwitches, matchWinner: src.matchWinner });
 </script>
 
 <div class="view econ-view">

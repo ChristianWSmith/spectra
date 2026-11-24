@@ -1,54 +1,30 @@
 <script>
+  import { splitTable } from './splittable.svelte.js';
   // CT / T breakdown (builtin profile panel): rounds, round win %, ADR, KAST %
   // and K/D per side, each cell one stored partitioned read for the context's
   // player (the dim is the side).
-  import { listMetrics, errText, subscribeMetricProgress, onMetricDone } from '../../services.js';
-  import { metricProgressFrac, metricProgressStage, metricStateTitle } from '../../metricstate.js';
-  import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
+  import { errText } from '../../services.js';
+  import { liveMetrics } from '../../metricslive.svelte.js';
+    import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
+  import MetricCell from '../../components/MetricCell.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
-  import { cell, dimValue, emptyChip, loadSeeds } from './shared.js';
-  import * as S from '../../strings/index.js';
+    import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
 
   const SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
 
-  let defs = $state(new Map());
-  let reads = $state(new Map());
-  let progress = $state(new Map());
-  let reload = $state(0);
+  const sweep = liveMetrics();
 
-  $effect(() => subscribeMetricProgress((snap) => (progress = snap)));
-  $effect(() => onMetricDone(() => (reload += 1)));
-
-  // The player the shown values belong to (plain: it only gates the reset).
-  let loadedFor = null;
-  $effect(() => {
-    reload;
-    const sid = steamId;
-    const newPlayer = sid !== loadedFor;
-    loadedFor = sid;
-    let live = true;
-    if (newPlayer) defs = new Map();
-    if (newPlayer) reads = new Map();
-    if (!sid) return;
-    spectra.track(listMetrics())
-      .then((rows) => loadSeeds(spectra, SEEDS, rows || [], errText))
-      .then((loaded) => {
-        if (live) {
-          defs = loaded.defs;
-          reads = loaded.reads;
-        }
-      })
-      .catch(() => {});
-    return () => (live = false);
-  });
+  const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText, reload: sweep.reload, progress: sweep.progress }));
+  const defs = $derived(table.defs);
+  const reads = $derived(table.reads);
+  const { cellFor } = table;
 
   const hasDim = (dim) => SEEDS.some((n) => reads.get(n)?.rows?.some((r) => r.dim === dim));
   const sideRows = $derived(['ct', 't'].filter(hasDim));
-  const cellFor = (name, dim) => cell(defs.get(name), reads.get(name), progress, dimValue(defs.get(name), reads.get(name), dim));
-  const empty = $derived(emptyChip(defs, reads, progress, SEEDS));
+  const empty = $derived(table.empty);
 </script>
 
 <div class="prof-sides">
@@ -72,13 +48,7 @@
           {#each [['side_rounds', (v) => v], ['side_win_pct', fmtPercent], ['side_adr', fmt1], ['side_kast', fmtPercent], ['side_kd', fmt2]] as [name, fmt] (name)}
             {@const p = c(name)}
             <td class="num" title={p.title}>
-              {#if p.kind === 'value'}
-                {fmt(p.value)}
-              {:else if p.kind === 'nodata'}
-                —
-              {:else}
-                <StatusChip status={p.state} title={p.title} progress={metricProgressFrac(progress, defs.get(name)?.id)} stage={metricProgressStage(progress, defs.get(name)?.id)} />
-              {/if}
+              <MetricCell pres={p} format={(v) => fmt(v)} chip={sweep.chip(defs.get(name))} />
             </td>
           {/each}
         </tr>
@@ -86,7 +56,7 @@
         <tr>
           <td colspan="6" class="muted">
             {#if empty}
-              <StatusChip status={empty.state} title={metricStateTitle(empty.state, empty.read?.error)} progress={metricProgressFrac(progress, empty.def?.id)} stage={metricProgressStage(progress, empty.def?.id)} />
+              <StatusChip status={empty.state} title={empty.title} {...sweep.chip(empty.def)} />
             {:else}
               {S.profiles.noSides}
             {/if}

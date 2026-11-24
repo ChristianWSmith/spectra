@@ -159,7 +159,7 @@ func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
 //   - HumanOnly(alias) — a players row is already joined under alias
 //     (GetScoreboard's WHERE, the player facet's EXISTS,
 //     RebuildCareer's players join);
-//   - HumanOnlyBySteamID(steamExpr, matchExpr) — the read is keyed by a
+//   - HumanOnlyBySteamID(steamExpr) — the read is keyed by a
 //     steam_id expression with no joined row (player_career). matchExpr
 //     scopes the lookup to one match (the players PK prefix — required
 //     for per-row use); "" is the library-wide form (no match in scope).
@@ -173,18 +173,10 @@ func HumanOnly(alias string) string {
 // with a human SteamID64, so "a bot in ANY match" is "a bot" — which is
 // what lets a library-wide career read (no match_id available) express
 // the rule without a guess.
-func HumanOnlyBySteamID(steamIDExpr, matchExpr string) string {
-	var b strings.Builder
-	b.WriteString("NOT EXISTS (SELECT 1 FROM players p WHERE ")
-	if matchExpr != "" {
-		b.WriteString("p.match_id = ")
-		b.WriteString(matchExpr)
-		b.WriteString(" AND ")
-	}
-	b.WriteString("p.steam_id = ")
-	b.WriteString(steamIDExpr)
-	b.WriteString(" AND p.is_bot = 1)")
-	return b.String()
+func HumanOnlyBySteamID(steamIDExpr string) string {
+	// A bot's key is synthetic in every match, so the key alone decides
+	// (is_bot_key, internal/store/botkey.go).
+	return "NOT is_bot_key(" + steamIDExpr + ")"
 }
 
 // eventRowCols/eventRowFrom select typed timeline columns with player

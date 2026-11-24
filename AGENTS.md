@@ -358,7 +358,10 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   with the five states), `query(sql, binds)` (a live read-only read with no
   freshness), `context` (the mounting surface's match, steam id and round;
   binds default from it), `navigate`, `guard(fn)` for event and async work,
-  `isHuman` and `listedPlayers`, and `<spectra.Child>` to mount a named
+  `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
+  reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics`,
+  `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
+  modules the builtins import), and `<spectra.Child>` to mount a named
   component inside another. A failed `metric()` or `query()` is reported
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
@@ -532,6 +535,11 @@ Canonical homes (extend these, don't fork them):
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
 | Cross-subsystem concurrency | `internal/budget` — THE resizable work-token pool (counting: one mutex + FIFO waiter hand-off; `SetSize` clamped `[1, MachineTokens()]` — the backend of the ONE machine-level "parallel work" setting) + `MachineTokens()` = THE thread ladder (GOMAXPROCS(0), floor 1; the three former `runtime.NumCPU` copies consolidated there); every sustained heavy unit (import job / asset map job / recompute run) takes ONE token BEFORE the compute lock, never after; nil budget = unbudgeted no-op (the test seam) |
+| Shared metric SQL fragments | `internal/store/{clutch,kill,damage,player,rollup}_sql.go` + the `schemaFragments` table in `schema.go` — THE one copy of each shared piece of builtin SQL (the clutch CTE, the counted-kill CTE, the counted-damage pair, the player_stats column preamble, the per-match rollup open and close). A seed expr holds the `{{…}}` placeholder; applySchema splices the text in, so the stored expr is the complete formula. Never re-type a copy in schema.sql |
+| Stored-value cell presentation | `frontend/src/lib/metricstate.js` `metricPresentation` (value, dash or state) — THE one mapping from a read to what a cell shows, used by the profile `cell` and the match `matchPres`; drawn by `components/MetricCell.svelte` as a chip (with `sweep.chip`) or a word (`words`) |
+| Load that must not apply late | `frontend/src/lib/current.js` `whileCurrent` — the effect body for a load that depends on its inputs; `isCurrent()` gates the result. Never re-add a `let live = true` flag inline |
+| Builtin helper names | `frontend/src/lib/builtinhelpers.js` re-exports the canonical function of each name (fmt.js, rounds.js, sideparity.js, teams.js, econ.js, nav.js); it holds no second implementation. A builtin imports the names it needs from there and nothing else |
+| Metric progress and reload wiring | `frontend/src/lib/metricslive.svelte.js` `liveMetrics()` — THE one place a panel subscribes to sweep progress and the metric-done event; components reach it through the `spectra` prop or the BUILTIN_HELPERS entry. Never re-add the subscribe pair inline |
 | Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (Progress presentation); never restate it in this file |
 | Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |
 | Library-wide index coverage | `internal/store/schema.sql` — the one baseline index block; new library-wide (`steam_id`/`kind`-leading, pending-job) indexes go in the Tier-1 block with their rationale comment, never beside their table alone |

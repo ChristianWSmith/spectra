@@ -876,7 +876,7 @@ func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]mode
 		WHERE ` + metricValueFreshCond + `
 		  AND v.value IS NOT NULL
 		  AND v.subject_key = ? AND v.match_id > 0 AND mt.extracted_at IS NOT NULL
-		  AND ` + HumanOnlyBySteamID("v.subject_key", "v.match_id") + idCond + `
+		  AND ` + HumanOnlyBySteamID("v.subject_key") + idCond + `
 		ORDER BY (mt.patch_version = 0) ASC, mt.patch_version ASC,
 		         mt.extracted_at ASC, mt.id ASC, v.metric_id ASC`
 	args := append([]any{cfg.RuleVersion, scrub(steamID)}, idArgs...)

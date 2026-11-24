@@ -1,6 +1,6 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, fmtMs, fmtZeroDash, roundClock, roundIndexLabel, roundScoreLabel, roundsByNumber, playerSideClassAt, hashOf, entryLoopAround, isSteam, openPlayer } from '../../builtinhelpers.js';
+  import { roundSideClassOf, DASH, fmtMs, fmtZeroDash, roundClock, roundIndexLabel, roundScoreLabel, roundsByNumber, hashOf, entryLoopAround, isSteam, openPlayer } from '../../builtinhelpers.js';
 
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).
@@ -74,9 +74,7 @@
     setFilt({ ...filt, ...patch });
   }
 
-  function playerCls(roundNumber, steamId, name) {
-    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
-  }
+  const playerCls = roundSideClassOf(() => ({ players, sideSwitches, rounds }));
 
   function affectedCount(json) {
     if (!json) return 0;

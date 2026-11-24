@@ -1,4 +1,5 @@
 <script>
+  import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, teamName } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
@@ -37,21 +38,7 @@
     };
   }
 
-  $effect(() => {
-    const matchId = context.matchId;
-    let live = true;
-    load(matchId).then(
-      (d) => {
-        if (live) data = d;
-      },
-      () => {
-        // A failed read is reported into this frame by the read API.
-      },
-    );
-    return () => {
-      live = false;
-    };
-  });
+  $effect(loadForMatch(() => context.matchId, load, (d) => (data = d)));
 
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>

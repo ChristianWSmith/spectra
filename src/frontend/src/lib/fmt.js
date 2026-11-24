@@ -6,7 +6,7 @@ import { isCounted } from './rounds.js';
 // round is unknown or the tick precedes its start (callers fall back to
 // the match-relative clock, never a negative readout). Shared by
 // chatClock below and roundClock, so the two clocks stay one rule.
-function intoRoundSeconds(tick, round, tickRate) {
+export function intoRoundSeconds(tick, round, tickRate) {
   if (!round) return null;
   const into = tickSeconds(tick - round.startTick, tickRate);
   return into >= 0 ? into : null;

@@ -1,5 +1,11 @@
 <script>
   import { createLoadState } from '../loadstate.svelte.js';
+import { liveMetrics } from '../metricslive.svelte.js';
+import { readMetrics } from '../metricreads.js';
+import { metricPresentation } from '../metricstate.js';
+import { fmtMetric } from '../fmt.js';
+import { activateOnKey } from '../keys.js';
+import { whileCurrent } from '../current.js';
   import StatusChip from './StatusChip.svelte';
   // ComponentFrame — the frame every mounted component sits in
   // one failing component shows a
@@ -117,8 +123,19 @@
   };
   // The `spectra` value a component receives: the read API plus the
   // nested mount component, and whether a read is in flight.
+  // liveMetrics: the progress and reload wiring a panel mounts (metricslive.svelte.js).
   const spectra = Object.freeze({
     ...api,
+    liveMetrics,
+    // The shared helpers a component may use (the same modules the builtins import):
+    // readMetrics for several reads, metricPresentation for a cell's value, dash
+    // or state, fmtMetric for a stored value's text, activateOnKey for a clickable
+    // row's keyboard, whileCurrent for a load that must not apply late.
+    readMetrics,
+    metricPresentation,
+    fmtMetric,
+    activateOnKey,
+    whileCurrent,
     metric: tracked(api.metric),
     query: tracked(api.query),
     metricsByMatch: tracked(api.metricsByMatch),

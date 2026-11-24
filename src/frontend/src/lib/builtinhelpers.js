@@ -1,11 +1,13 @@
 // The helper functions the Economy and Utility builtins import. They live in
 // this one module: a compiled builtin imports the names it uses from here, and
 // componentruntime/compile.js's BUILTIN_HELPERS registry lists which names a
-// builtin may take (a user component takes none). Several are the same
-// arithmetic as lib/fmt.js, lib/teams.js and the like, written out here;
-// builtinhelpers.test.js pins them to those modules on a grid of inputs.
+// builtin may take (a user component takes none). Each name is the canonical
+// function of its module (lib/fmt.js, rounds.js, sideparity.js, teams.js,
+// econ.js, nav.js), imported and re-exported here; this module holds no second
+// implementation. The only own function is chatTag, which draws its tags from
+// the strings catalog. builtinhelpers.test.js pins the re-exports.
 //
-// Rules the copies keep (AGENTS.md "Builtin conventions"): a missing value is
+// Rules the builtins keep (AGENTS.md "Builtin conventions"): a missing value is
 // a dash, never a zero (ruling 23); a stored value is never recomputed here
 // except where the Go read it replaces does the same arithmetic on rows the
 // view has already fetched (AGENTS.md "View computation"). The loss-bonus
@@ -13,208 +15,26 @@
 // the Go functions applyLossBonuses and sideFlips (internal/store/analytics.go)
 // over the round rows the economy query returns, copied line for line.
 
-// FMT: number and clock formatting (lib/fmt.js, lib/econ.js). DASH is the one
-// dash every missing cell shows.
+// FMT: number and clock formatting. The one implementation is lib/fmt.js:
+// the names below are imported from it (the locals the module uses) and
+// re-exported (the names a builtin imports from here). DASH is the one dash a
+// missing cell shows; fmt.js writes the same character.
+import { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
+import { isCounted } from './rounds.js';
+import { playerSideClassAt } from './teams.js';
 import * as S from './strings/index.js';
+import { econColumns, econValue, lossPips } from './econ.js';
+import { entryLoopAround, entryLoopSpan, isSteam } from './nav.js';
+import { moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags } from './rounds.js';
+import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, winnerTeamKey } from './sideparity.js';
+import { synthTeamName, teamNames, teamStartClass } from './teams.js';
+export { econColumns, econValue, entryLoopAround, entryLoopSpan, eraOf, flipIndexes, isSteam, lossPips, moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags, sideAtRound, sideInEra, startSideFor, synthTeamName, teamKeyAt, teamNames, teamStartClass, winnerTeamKey };
+export { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
 export const DASH = '\u2014';
-export function round1(x) {
-  if (!Number.isFinite(x)) return 0;
-  return Math.round(x * 10) / 10;
-}
-export function fmtInt(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return Math.round(x).toLocaleString();
-}
-export function fmt1(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return round1(x).toFixed(1);
-}
-export function fmt2(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return (Math.round(x * 100) / 100).toFixed(2);
-}
-export function fmtPercentOf(x) {
-  if (!Number.isFinite(x)) return DASH;
-  return round1(x * 100) + '%';
-}
-export function fmtMoney(v) {
-  const n = Math.round(Number(v) || 0);
-  return (n < 0 ? '\u2212$' : '$') + Math.abs(n).toLocaleString();
-}
-// One stored value as its text, by its format tag (lib/fmt.js fmtMetric).
-export function fmtStoredValue(v, format) {
-  if (v == null || !Number.isFinite(v)) return DASH;
-  if (format === 'int') return fmtInt(v);
-  if (format === 'float1') return fmt1(v);
-  if (format === 'float2') return fmt2(v);
-  if (format === 'percent') return fmtPercentOf(v);
-  if (format === 'currency') return fmtMoney(v);
-  return Number.isInteger(v) ? fmtInt(v) : fmt2(v);
-}
-export function fmtMs(ms) {
-  return (ms / 1000).toFixed(1) + 's';
-}
-export function fmtClock(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return DASH;
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
-  return m + ':' + String(sec).padStart(2, '0');
-}
-// The utility tables' zero rule: a count of nothing is a dash.
-export function fmtZeroDash(value, unit) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return DASH;
-  return unit ? n + ' ' + unit : String(n);
-}
-
-export function normTickRate(tickRate) {
-  return Number(tickRate) > 0 ? Number(tickRate) : 64;
-}
-export function tickSeconds(ticks, tickRate) {
-  return ticks / normTickRate(tickRate);
-}
-export function intoRoundSeconds(tick, round, tickRate) {
-  if (!round) return null;
-  const into = tickSeconds(tick - round.startTick, tickRate);
-  return into >= 0 ? into : null;
-}
-// The round-relative clock of a tick (fmtClock of the time into the round,
-// or of the match-relative time when the round is unknown).
-export function roundClock(tick, round, tickRate) {
-  const into = intoRoundSeconds(tick, round, tickRate);
-  return fmtClock(into != null ? into : tickSeconds(tick, tickRate));
-}
-export function isCounted(r) {
-  return !!r && r.number >= 1;
-}
-// The round after which a separator falls (MR12 halftime, then the
-// regulation end and every three OT rounds: 12, 24, 27, 30, ...).
-export function separatorAfter(countedRoundNumber) {
-  const n = Number(countedRoundNumber);
-  if (!Number.isFinite(n)) return false;
-  if (n === 12) return true;
-  return n >= 24 && (n - 24) % 3 === 0;
-}
-// The money-reset indexes (0-based) strictly inside a match of `counted` rounds.
-export function moneyResetIndexes(counted) {
-  const n = Number.isFinite(counted) ? Math.trunc(counted) : 0;
-  const out = [];
-  for (let i = 1; i < n; i++) {
-    if (separatorAfter(i)) out.push(i);
-  }
-  return out;
-}
-// separatorFlags: one flag per row, true where a separator follows that row.
-// Only counted rows carry one, and the last counted row never does.
-export function separatorFlags(rows) {
-  const list = Array.isArray(rows) ? rows : [];
-  const countedTotal = list.filter(isCounted).length;
-  let seen = 0;
-  return list.map((r) => (isCounted(r) ? ++seen < countedTotal && separatorAfter(seen) : false));
-}
-// The round's display label: its number, or K / W for a legacy negative row.
-export function roundIndexLabel(r) {
-  if (r && typeof r === 'object') return roundIndexLabel(r.number);
-  if (r == null || r === '') return '';
-  const n = Number(r);
-  if (!Number.isFinite(n)) return '';
-  if (n >= 1) return String(n);
-  return n === -2 ? S.builtins.roundLabelKnife : S.builtins.roundLabelWarmup;
-}
-export function scoreThrough(rounds, roundNumber) {
-  const n = Number(roundNumber);
-  let ct = 0;
-  let t = 0;
-  for (const r of rounds || []) {
-    if (!isCounted(r) || !Number.isFinite(n) || r.number > n) continue;
-    if (r.winner === 'ct') ct++;
-    else if (r.winner === 't') t++;
-  }
-  return { ct: ct, t: t };
-}
-// The round option label every round picker shows: RD<n> | <ct>-<t>.
-export function roundScoreLabel(rounds, number) {
-  const n = number && typeof number === 'object' ? number.number : number;
-  const s = scoreThrough(rounds, n);
-  return S.builtins.roundScorePrefix + roundIndexLabel(n) + ' | ' + s.ct + '-' + s.t;
-}
-export function roundStartTick(rounds, number) {
-  const n = Number(number);
-  const r = (rounds || []).find((x) => x && x.number === n);
-  return r && Number.isFinite(r.startTick) ? r.startTick : null;
-}
-export function roundEndTick(rounds, number) {
-  const n = Number(number);
-  const r = (rounds || []).find((x) => x && x.number === n);
-  return r && Number.isFinite(r.endTick) ? r.endTick : null;
-}
 export function roundsByNumber(rounds) {
   return new Map((rounds || []).map((r) => [r.number, r]));
 }
 
-export function flipIndexes(counted, switches) {
-  const n = Number.isFinite(counted) ? Math.trunc(counted) : 0;
-  const s = Number.isFinite(switches) ? Math.trunc(switches) : 0;
-  if (n <= 0 || s <= 0) return [];
-  const flips = [];
-  for (let k = 1; k <= s; k++) {
-    const idx = k === 1 ? 12 : 27 + 3 * (k - 2);
-    if (idx > 0 && idx < n) flips.push(idx);
-  }
-  return flips;
-}
-export function eraOf(index, flips) {
-  let era = 0;
-  for (const flip of flips) {
-    if (flip <= index) era++;
-  }
-  return era;
-}
-export function sideInEra(finalSide, sideSwitches, era) {
-  if (finalSide !== 'ct' && finalSide !== 't') return null;
-  const s = Number.isFinite(sideSwitches) ? Math.trunc(sideSwitches) : 0;
-  const e = Number.isFinite(era) ? Math.trunc(era) : 0;
-  const eras = Math.max(1, s + 1);
-  const flips = Math.abs(eras - 1 - e) % 2;
-  if (flips === 0) return finalSide;
-  return finalSide === 'ct' ? 't' : 'ct';
-}
-export function startSideFor(finalSide, sideSwitches) {
-  return sideInEra(finalSide, sideSwitches, 0);
-}
-// Which team (final side) played the CT side in counted round index `index`.
-export function teamKeyAt(side, index, counted, switches) {
-  if (side !== 'ct' && side !== 't') return null;
-  const era = eraOf(index, flipIndexes(counted, switches));
-  return sideInEra('ct', switches, era) === side ? 'ct' : 't';
-}
-// The side a team (final side) held in a round, by the round's number.
-export function sideAtRound(rounds, sideSwitches, roundNumber, finalSide) {
-  if (finalSide !== 'ct' && finalSide !== 't') return null;
-  const list = Array.isArray(rounds) ? rounds : [];
-  if (!list.some((r) => r && r.number === roundNumber)) return null;
-  const s = Number.isFinite(sideSwitches) ? Math.trunc(sideSwitches) : 0;
-  const counted = list.filter(isCounted);
-  const idx = counted.findIndex((r) => r && r.number === roundNumber);
-  const flips = flipIndexes(counted.length, s);
-  const eras = Math.max(1, s + 1);
-  const era = idx < 0 ? 0 : Math.min(eras - 1, eraOf(idx, flips));
-  return sideInEra(finalSide, s, era);
-}
-// The team (final side) that won a round, from the round's winning side.
-export function winnerTeamKey(rounds, sideSwitches, roundNumber, winnerSide) {
-  if (winnerSide !== 'ct' && winnerSide !== 't') return null;
-  const ctSide = sideAtRound(rounds, sideSwitches, roundNumber, 'ct');
-  if (ctSide === null) return null;
-  return ctSide === winnerSide ? 'ct' : 't';
-}
-export function teamStartClass(finalSide, sideSwitches) {
-  const start = startSideFor(finalSide, sideSwitches);
-  return start === 'ct' ? 'team-start-ct' : start === 't' ? 'team-start-t' : '';
-}
 export function pickPlayer(players, side) {
   let best = null;
   for (const p of players || []) {
@@ -228,17 +48,6 @@ export function pickPlayer(players, side) {
     if (id < bestId || (id === bestId && p.name < best.name)) best = p;
   }
   return best;
-}
-export function synthTeamName(players, side) {
-  const p = pickPlayer(players, side);
-  return p ? 'team_' + p.name : '';
-}
-// The team display names: the demo's clan name, else team_<player>, else CT / T.
-export function teamNames(ctName, tName, players) {
-  return {
-    ct: ctName || synthTeamName(players, 'ct') || S.match.sideCt,
-    t: tName || synthTeamName(players, 't') || S.match.sideT,
-  };
 }
 export function resolveSide(players, steamId, name) {
   let side = '';
@@ -255,29 +64,17 @@ export function resolveSide(players, steamId, name) {
 export function sideClassOf(side) {
   return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
 }
-// The colour class of a player's name in one round: the side held then, or
-// the match-start colour when the round cannot place them.
-export function playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name) {
-  const finalSide = resolveSide(players, steamId, name);
-  const at = finalSide ? sideAtRound(rounds, sideSwitches, roundNumber, finalSide) || '' : '';
-  return sideClassOf(at) || teamStartClass(finalSide, sideSwitches);
+// playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
+export { playerSideClassAt };
+// roundSideClassOf binds playerSideClassAt to a panel's match data: the returned
+// (roundNumber, steamId, name) → class reads the data as it is at each call.
+export function roundSideClassOf(getScope) {
+  return (roundNumber, steamId, name) => {
+    const { players, sideSwitches, rounds } = getScope();
+    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
+  };
 }
 
-export function econColumns(r, key) {
-  const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
-  const cash = Number(key === 'ct' ? r.moneyCT : r.moneyT) || 0;
-  return { equip: equip, net: equip + cash };
-}
-export function econValue(r, key, metric) {
-  const c = econColumns(r, key);
-  return metric === 'equip' ? c.equip : c.net;
-}
-export function lossPips(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  const p = Math.round((n - 1400) / 500) + 1;
-  return Math.min(5, Math.max(0, p));
-}
 // sideFlips: per row index, whether the side-to-team mapping changed from the
 // row before (a player observed on the other side proves the switch).
 export function sideFlips(rows, exact) {
@@ -380,30 +177,10 @@ export function hashOf(path, query) {
 export function asTick(v) {
   return v == null || v === '' ? NaN : Number(v);
 }
-// The ?loop= span from one tick to another (nav.entryLoopSpan).
-export function entryLoopSpan(fromTick, toTick) {
-  const from = asTick(fromTick);
-  const to = asTick(toTick);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || from > to) return undefined;
-  return from + ',' + to;
-}
-// The ?loop= span of an event: loopSecs either side at the tick rate
-// (nav.entryLoopAround).
-export function entryLoopAround(tick, tickRate, loopSecs) {
-  const t = asTick(tick);
-  if (!Number.isFinite(t) || t < 0) return undefined;
-  const secs = Math.min(Math.max(Math.round(Number(loopSecs) || 5), 1), 60);
-  const half = Math.round(secs * normTickRate(tickRate));
-  return entryLoopSpan(Math.max(0, Math.round(t - half)), Math.round(t + half));
-}
 export function replayRoute(matchId, extras) {
   return hashOf('/replay/' + matchId, extras);
 }
 
-// The SteamID64 of a player: 17 digits. A value that is not one is not a link.
-export function isSteam(s) {
-  return /^\d{17}$/.test(s || '');
-}
 
 // The route to a player's profile.
 export function playerRoute(steam) {
@@ -437,14 +214,6 @@ export function chatTag(channel, side) {
     if (s === 't') return S.match.chatTagT;
   }
   return '';
-}
-export function chatClock(c, roundByNumber, tickRate) {
-  const r = (roundByNumber || new Map()).get(c.round);
-  if (r && isCounted(r)) {
-    const into = intoRoundSeconds(c.tick, r, tickRate);
-    if (into != null) return `RD${r.number} ${fmtClock(into)}`;
-  }
-  return fmtClock(tickSeconds(c.tick, tickRate));
 }
 
 // The economy of one match, read the way the Economy view reads it: the rounds, the economy rows, the team names,
@@ -496,7 +265,7 @@ export async function loadEconomy(spectra, matchId) {
   const rows = buildEconRows(ecoRows.rows, sideRows.rows);
   const clan = new Map(teamRows.rows.map((t) => [t[0], t[1]]));
   const players = roster.rows.map((r) => ({ steamId: r[0], name: r[1], side: r[2] }));
-  const names = teamNames(clan.get('ct') || '', clan.get('t') || '', players);
+  const names = teamNames({ ctName: clan.get('ct') || '', tName: clan.get('t') || '', players });
   const matchWinner = scoreCT === scoreT ? '' : scoreCT > scoreT ? 'ct' : 't';
   return { rows, rounds, names, sideSwitches, matchWinner };
 }

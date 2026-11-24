@@ -1,6 +1,10 @@
 <script>
+  import { activateOnKey } from '../../keys.js';
+  import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, cellValue, teamName, sortRows } from './panelhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellValue, matchPres, STATE_WORD, teamName, sortRows } from './panelhelpers.js';
+  import { fmtMetric } from '../../fmt.js';
+  import MetricCell from '../../components/MetricCell.svelte';
   import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
@@ -57,22 +61,18 @@
     };
   }
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = context.matchId;
-    let live = true;
     sortStack = [{ key: 'kills', desc: true }];
     load(matchId).then(
       (d) => {
-        if (live) data = d;
+        if (isCurrent()) data = d;
       },
       () => {
         // A failed read is reported into this frame by the read API.
       },
     );
-    return () => {
-      live = false;
-    };
-  });
+  }));
 
   // The value a row sorts on for one key: the name, the side code, the score,
   // or a stored value (the same keys the old view's chain sorted on).
@@ -126,7 +126,7 @@
             {@const cls = startClass(p.side, data.switches)}
             <tr class="clickable" tabindex="0"
               onclick={(e) => { if (e.target instanceof Element && e.target.closest('button, a')) return; follow(p.steam); }}
-              onkeydown={(e) => { if (e.key === 'Enter') follow(p.steam); }}
+              onkeydown={activateOnKey(() => follow(p.steam), { enterOnly: true })}
             >
               <td class="num name-cell {cls}">
                 {#if isSteam(p.steam)}
@@ -139,7 +139,7 @@
               <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td>
               {#each COLUMNS as c (c.metric)}
                 {@const u = data.byMetric.get(c.metric)}
-                <td class="num" title={u.error || undefined}>{cellText(u, p.steam, c.format)}</td>
+                <td class="num" title={u.error || undefined}><MetricCell pres={matchPres(u, p.steam)} format={(v) => fmtMetric(v, c.format)} words={STATE_WORD} /></td>
               {/each}
             </tr>
           {/each}

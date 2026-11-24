@@ -1170,7 +1170,7 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 	)
 	err := s.db.QueryRow(
 		`SELECT `+playerCareerCols+`
-		 FROM player_career pc WHERE pc.steam_id = ? AND `+HumanOnlyBySteamID("pc.steam_id", ""),
+		 FROM player_career pc WHERE pc.steam_id = ? AND `+HumanOnlyBySteamID("pc.steam_id"),
 		scrub(steamID),
 	).Scan(&c.SteamID, &c.Name, &c.Matches, &c.Wins, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1204,7 +1204,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 			WHERE ps.steam_id = c.steam_id)),
 		c.updated_at
 		FROM player_career c
-		WHERE ` + HumanOnlyBySteamID("c.steam_id", "")
+		WHERE ` + HumanOnlyBySteamID("c.steam_id")
 	var args []any
 	if qq := scrub(query); qq != "" {
 		q += ` AND (c.name LIKE ? OR c.steam_id LIKE ?)`

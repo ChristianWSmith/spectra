@@ -1,4 +1,7 @@
 <script>
+  import { whenCurrent } from '../../current.js';
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
   import * as S from '../../strings/index.js';
   import {
     getMatch,
@@ -139,36 +142,33 @@
 
   let navTimer = null;
 
-  $effect(() => {
-    let live = true;
+  $effect(() => whileCurrent((isCurrent) => {
     Promise.all([
       getMatch(id),
       getScoreboard(id, 'kills', true).catch(() => []),
       getRounds(id).catch(() => []),
     ])
       .then(([m, sb, rs]) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         map = (m && m.map) || '';
         players = listedPlayers(sb) || [];
         rounds = rs || [];
         matchLoaded = true;
       })
-      .catch((e) => {
-        if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
+      .catch(whenCurrent(isCurrent, (e) => {
+        error = errText(e);
+      }));
+  }));
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const m = map;
     if (!m) {
       pack = null;
       return;
     }
-    let live = true;
     packTried = false;
     loadMapPack(m).then((p) => {
-      if (live) {
+      if (isCurrent()) {
         pack = p;
         packTried = true;
         // Never keep a floor index the pack does not have — but only
@@ -184,8 +184,7 @@
         if (ls.length && layer >= ls.length) layer = 0;
       }
     });
-    return () => (live = false);
-  });
+  }));
 
   $effect(() => () => {
     if (navTimer) clearTimeout(navTimer);
@@ -532,12 +531,12 @@
 
 <div class="view heat-view" style="--heat-aspect: {heatAspect}">
   {#if error}
-    <p class="error" role="alert">
+    <ErrorBanner>
       {error}
       <button class="btn small" aria-label={S.heatmaps.dismissError} onclick={() => (error = '')}>
         <span class="codicon codicon-close"></span>
       </button>
-    </p>
+    </ErrorBanner>
   {/if}
 
   {#if packNote}

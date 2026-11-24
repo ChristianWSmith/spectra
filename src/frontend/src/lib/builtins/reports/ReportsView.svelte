@@ -1,12 +1,15 @@
 <script>
-  import { listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, subscribeMetricProgress, onMetricDone, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs } from '../../services.js';
+  import { whileCurrent } from '../../current.js';
+  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import { listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs } from '../../services.js';
   import { listedPlayers } from '../../players.js';
   import { seed, remember } from '../../viewstate.svelte.js';
   import PlayerPicker from '../../components/PlayerPicker.svelte';
   import * as S from '../../strings/index.js';
   import { findTemplate, reportFilename, targetReady, compositeText } from './shared.js';
   import { inSequence, composedSequence, rawItems, isRawId } from '../../metricorder.js';
-  import { metricPresentation, metricStateTitle, liveMetricState, metricProgressFrac, metricProgressStage } from '../../metricstate.js';
+  import { metricPresentation, metricStateTitle, liveMetricState } from '../../metricstate.js';
+  import { liveMetrics } from '../../metricslive.svelte.js';
   import { downloadText } from '../../download.js';
   import TokenSelect from '../../components/TokenSelect.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
@@ -49,8 +52,6 @@
     metrics: [],
     metricsError: '',
     metricStates: new Map(),
-    metricProgress: new Map(),
-    reload: 0,
     stats: repSeed.stats,
     rawStats: repSeed.rawStats,
     docError: '',
@@ -108,15 +109,9 @@
       });
   });
 
-  $effect(() => subscribeMetricProgress((snap) => (m.metricProgress = snap)));
   // Completion is the refetch point: metric-done replaced the stored rows, so
   // the state map and the picked set reload, and the appendix re-reads.
-  $effect(() =>
-    onMetricDone(() => {
-      m.reload += 1;
-      loadMetricsList();
-    }),
-  );
+  const sweep = liveMetrics({ onDone: () => loadMetricsList() });
 
   // The match's rounds: the round input's ceiling, and the clamp of a round
   // that the new match does not have.
@@ -148,7 +143,7 @@
   // (the match-scope seeds, fresh rows only), so a missing half is the dash.
   const STATLINE_SEEDS = ['kills', 'deaths', 'assists', 'adr', 'rounds_played'];
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const id = matchId;
     const scope = tpl && tpl.scope;
     if (!id || scope !== 'player') {
@@ -156,7 +151,6 @@
       m.seeds = new Map();
       return;
     }
-    let live = true;
     const catalog = new Map((m.metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
     const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter((d) => d && (d.scope || 'match') === 'match');
     const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
@@ -165,7 +159,7 @@
       matchDefs.length ? getMetricValuesForMatch(id, matchDefs.map((d) => d.id)) : Promise.resolve([]),
     ]))
       .then(([rows, values]) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         const sb = {};
         for (const r of listedPlayers(rows) || []) sb[r.steamId] = r;
         m.sbBySteam = sb;
@@ -178,13 +172,12 @@
         m.seeds = out;
       })
       .catch(() => {
-        if (live) {
+        if (isCurrent()) {
           m.sbBySteam = {};
           m.seeds = new Map();
         }
       });
-    return () => (live = false);
-  });
+  }));
 
   // --- the stats appendix ---
   // The Reports stats appendix (builtin, composed by ReportsView): the one
@@ -239,7 +232,7 @@
   $effect(() => {
     const gen = ++appendixGen;
     const mid = matchId;
-    m.reload; // metric-done: refetch the stored rows
+    sweep.reload; // metric-done: refetch the stored rows
     const rawSel = rawOffer.filter((r) => m.rawStats.includes(r.id));
     const defs = new Map(m.metrics.map((x) => [x.id, x]));
     const sel = m.stats.filter((id) => defs.has(id)).sort((a, b) => a - b);
@@ -308,7 +301,7 @@
     if (!a || a.loading || a.error) return null;
     if (a.raw) return { kind: 'raw', rows: a.rows || [] };
     const key = Number(id);
-    const st = liveMetricState(m.metricProgress, m.metricStates, key);
+    const st = liveMetricState(sweep.progress, m.metricStates, key);
     const row = a.rows && a.rows.length ? a.rows[0] : null;
     return metricPresentation(st, row, a.unitHasRows);
   }
@@ -399,13 +392,13 @@
   <h2>{S.reports.templateAndTarget}</h2>
   {#if m.docError}
     <!-- The one error slot for render + save (cancel stays silent). -->
-    <p class="error" role="alert">{m.docError}</p>
+    <ErrorBanner>{m.docError}</ErrorBanner>
   {/if}
   {#if m.tplError}
-    <p class="error" role="alert">
+    <ErrorBanner>
       {m.tplError}
       <button class="btn small" onclick={() => m.actions.loadTemplates()}>{S.reports.retry}</button>
-    </p>
+    </ErrorBanner>
   {/if}
   <div class="rep-tpl-grid">
     {#each m.templates as t (t.id)}
@@ -462,10 +455,10 @@
   {/if}
 </div>
 {#if m.metricsError}
-  <p class="error" role="alert">
+  <ErrorBanner>
     {m.metricsError}
     <button class="btn small" onclick={() => m.actions.loadMetricsList()}>{S.reports.retry}</button>
-  </p>
+  </ErrorBanner>
 {/if}
 
 <div>
@@ -513,8 +506,7 @@
           <StatusChip
             status={chip.state}
             title={chip.title}
-            progress={metricProgressFrac(m.metricProgress, x.id)}
-            stage={metricProgressStage(m.metricProgress, x.id)}
+            {...sweep.chip(x)}
           />
         {/if}
       {/if}

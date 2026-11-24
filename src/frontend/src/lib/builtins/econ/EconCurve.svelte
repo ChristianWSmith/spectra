@@ -1,4 +1,6 @@
 <script>
+  import { activateOnKey } from '../../keys.js';
+  import { economySource } from '../../economysource.svelte.js';
   import * as S from '../../strings/index.js';
   import { fmtMoney, moneyResetIndexes, flipIndexes, eraOf, sideInEra, teamKeyAt, teamStartClass, econColumns, econValue, hashOf, loadEconomy } from '../../builtinhelpers.js';
 
@@ -6,26 +8,11 @@
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),
   // the panel loads the match's economy itself, so it shows the real data either way.
   let { spectra, context, back = '', ...given } = $props();
-  const NAMES_DEFAULT = { ct: S.match.sideCt, t: S.match.sideT };
-  const standalone = $derived(given.rows === undefined);
-  let own = $state(null);
-  $effect(() => {
-    if (!standalone) return;
-    let live = true;
-    loadEconomy(spectra, context.matchId).then(
-      (d) => {
-        if (live) own = d;
-      },
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  });
-  const rows = $derived(standalone ? (own ? own.rows : []) : (given.rows ?? []));
-  const names = $derived(standalone ? (own ? own.names : NAMES_DEFAULT) : (given.names ?? NAMES_DEFAULT));
-  const sideSwitches = $derived(standalone ? (own ? own.sideSwitches : 0) : (given.sideSwitches ?? 0));
-  const matchWinner = $derived(standalone ? (own ? own.matchWinner : '') : (given.matchWinner ?? ''));
+  const src = economySource(() => ({ spectra, context, given }));
+  const rows = $derived(src.rows);
+  const names = $derived(src.names);
+  const sideSwitches = $derived(src.sideSwitches);
+  const matchWinner = $derived(src.matchWinner);
 
 
   const W = 1000;
@@ -215,7 +202,7 @@
           <rect class="econ-hit" x={i * (W / n)} y="0" width={W / n} height={H} role="button" tabindex="0"
             aria-label={S.economy.openRoundAria + r.round}
             onclick={() => openRound(r.round)}
-            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openRound(r.round)}
+            onkeydown={activateOnKey(() => openRound(r.round))}
           >
             <title>{S.economy.cellRound}{r.round}</title>
           </rect>

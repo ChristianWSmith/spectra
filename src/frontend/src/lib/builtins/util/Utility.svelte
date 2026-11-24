@@ -1,4 +1,5 @@
 <script>
+  import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { teamNames } from '../../builtinhelpers.js';
   const SQL_UTIL =
@@ -80,27 +81,18 @@
     const rounds = roundRows.rows.map((r) => ({ number: Number(r[0]), winner: r[1] || '', startTick: Number(r[2]), endTick: Number(r[3]) }));
     const players = roster.rows.map((r) => ({ steamId: r[0], name: r[1], side: r[2] }));
     const clan = new Map(teamRows.rows.map((t) => [t[0], t[1]]));
-    const names = teamNames(clan.get('ct') || '', clan.get('t') || '', players);
+    const names = teamNames({ ctName: clan.get('ct') || '', tName: clan.get('t') || '', players });
     return { rows, rounds, players, names, tickRate, sideSwitches };
   }
 
-  $effect(() => {
-    const matchId = context.matchId;
-    let live = true;
-    load(matchId).then(
-      (d) => {
-        if (live) data = d;
-      },
-      () => {
-        // A failed read is reported into this frame by the read API; the view
-        // stays up on an empty set, as before (the banner names the failure).
-        if (live) data = { rows: [], rounds: [], players: [], names: { ct: S.match.sideCt, t: S.match.sideT }, tickRate: 64, sideSwitches: 0 };
-      },
-    );
-    return () => {
-      live = false;
-    };
-  });
+  $effect(
+    loadForMatch(
+      () => context.matchId,
+      load,
+      (d) => (data = d),
+      () => (data = { rows: [], rounds: [], players: [], names: { ct: S.match.sideCt, t: S.match.sideT }, tickRate: 64, sideSwitches: 0 }),
+    ),
+  );
 
   // The throws the kind and thrower filters leave: what the two charts draw.
   const filtered = $derived(

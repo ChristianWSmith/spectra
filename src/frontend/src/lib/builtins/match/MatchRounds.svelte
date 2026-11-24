@@ -1,4 +1,6 @@
 <script>
+  import { activateOnKey } from '../../keys.js';
+  import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, SQL_MATCH_TICK_RATE, SQL_ROUND_MVP_REASON, SQL_ROUND_KILLS, SQL_ROUND_BOMBS, SQL_ROUND_ECONOMY, SQL_ROUND_SIDE_CLASSES, SQL_ROUND_CHAT, teamName, fill, roundLabel, fmtDuration, playerRoundCls, roundOf } from './panelhelpers.js';
   import { DASH, isSteam, separatorFlags, winnerTeamKey, openPlayer, roundClock, entryLoopAround, hashOf, roundsByNumber, scoreThrough, sideAtRound, chatClock, chatTag, fmtInt } from '../../builtinhelpers.js';
@@ -73,15 +75,14 @@
     };
   }
 
-  $effect(() => {
+  $effect(() => whileCurrent((isCurrent) => {
     const matchId = context.matchId;
-    let live = true;
     details = {};
     open = [];
     seededFor = null;
     load(matchId).then(
       (d) => {
-        if (!live) return;
+        if (!isCurrent()) return;
         data = d;
         prewarm(d);
       },
@@ -91,10 +92,7 @@
           throw e;
         })(),
     );
-    return () => {
-      live = false;
-    };
-  });
+  }));
 
   // Open the round the URL asks for, once per request (a user's own collapse stands).
   $effect(() => {
@@ -397,7 +395,7 @@
           <tr class="clickable" class:split-before={ri > 0 && data.seps[ri - 1]} tabindex="0"
             aria-expanded={open.includes(r.number)}
             onclick={(e) => { if (e.target instanceof Element && e.target.closest('input, button, a')) return; toggleRound(r.number); }}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRound(r.number); } }}
+            onkeydown={activateOnKey(() => toggleRound(r.number))}
           >
             <td>
               <button class="btn small ghost" title={fill(COPY.watchRoundTitle, { round: r.number })} aria-label={fill(COPY.watchRoundAria, { round: r.number })} onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button>
