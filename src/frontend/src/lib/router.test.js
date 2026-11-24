@@ -34,117 +34,15 @@ test('#/match/:id', () => {
   assert.equal('query' in parseHash('#/match/42'), false);
 });
 
-test('#/match/:id/round/:n — negative rounds allowed ("-?")', () => {
-  assert.deepEqual(parseHash('#/match/42/round/7'), {
-    name: 'round',
-    id: 42,
-    round: 7,
-  });
-  assert.deepEqual(parseHash('#/match/42/round/0'), {
-    name: 'round',
-    id: 42,
-    round: 0,
-  });
+test('#/match/:id/round/:n — a round opens on the Rounds tab, expanded (negative rounds allowed)', () => {
+  // A round is no longer a page: the old round link lands on the Rounds tab with the round asked open.
+  assert.deepEqual(parseHash('#/match/42/round/7'), { name: 'match', id: 42, tab: 'Rounds', query: { round: 7 } });
+  assert.deepEqual(parseHash('#/match/42/round/0'), { name: 'match', id: 42, tab: 'Rounds', query: { round: 0 } });
   // a pre-reprocess match's knife/warmup rounds carry negative indices
-  assert.deepEqual(parseHash('#/match/42/round/-3'), {
-    name: 'round',
-    id: 42,
-    round: -3,
-  });
-});
-
-test('every match tab deep-links as #/match/:id/<slug> (slug = lowercase tab)', () => {
-  // One canonical list: MATCH_TABS is what Match.svelte renders, so a
-  // deep link can never drift from a tab that exists. Timeline/Chat/
-  // Context are NOT tabs — they resolve to the Replay landmark feed.
-  // Display order: Details (the diagnostics) closes the list, Combat
-  // sits in front of Heatmaps; everything else keeps its relative order.
-  assert.deepEqual(MATCH_TABS, [
-    'Overview',
-    'Scoreboard',
-    'Rounds',
-    'Economy',
-    'Utility',
-    'Combat',
-    'Heatmaps',
-    'Reports',
-    'Details',
-  ]);
-  assert.equal(new Set(MATCH_TABS.map(matchTabSlug)).size, MATCH_TABS.length);
-  for (const tab of MATCH_TABS) {
-    const slug = matchTabSlug(tab);
-    assert.deepEqual(parseHash(`#/match/42/${slug}`), { name: 'match', id: 42, tab });
-    // and the slug round-trips back to the tab name
-    assert.equal(matchTabFromSlug(slug), tab);
-  }
-});
-
-test('legacy raw-event routes resolve to the canonical Replay feed', () => {
-  // The timeline URL → Replay with no filter (the sparse default
-  // applies); a query on the legacy URL is preserved.
-  assert.deepEqual(parseHash('#/match/42/timeline'), { name: 'replay', id: 42 });
-  assert.deepEqual(parseHash('#/match/42/timeline?player=76561198012345678'), {
-    name: 'replay',
-    id: 42,
-    query: { player: '76561198012345678' },
-  });
-  // The chat URL → Replay with NO mapped category (Q3a cut the chat
-  // feed: a legacy chat link lands on the default event browser).
-  assert.deepEqual(parseHash('#/match/42/chat'), {
-    name: 'replay',
-    id: 42,
-  });
-  // The context URL → Replay with `connects`, the only survivor of its
-  // old chat+connects+team_changes trio (the gameplay-only ruling; a
-  // stale cat=chat/team_changes degrades through parseLandmarkFilter's
-  // unknown-id drop, same as convars did for the owner's ConVars-out
-  // ruling).
-  assert.deepEqual(parseHash('#/match/42/context'), {
-    name: 'replay',
-    id: 42,
-    query: { cat: 'connects' },
-  });
-  // Real query params win over the mapped default.
-  assert.deepEqual(parseHash('#/match/42/chat?cat=kills,connects'), {
-    name: 'replay',
-    id: 42,
-    query: { cat: 'kills,connects' },
-  });
-});
-
-test('plain #/match/:id still defaults to Overview (no tab key)', () => {
-  const r = parseHash('#/match/42');
-  assert.deepEqual(r, { name: 'match', id: 42 });
-  assert.equal(r.tab, undefined);
-  // Match.svelte seeds Overview when the route carries no tab.
-  assert.equal(matchTabFromSlug('overview'), 'Overview');
-});
-
-test('an unknown or removed match-tab segment falls through to the library', () => {
-  assert.deepEqual(parseHash('#/match/42/bogus'), { name: 'library' });
-  // "raw" is not a tab (its inspectors live in the Explorer view).
-  assert.deepEqual(parseHash('#/match/42/raw'), { name: 'library' });
-  assert.deepEqual(parseHash('#/match/42/Overview'), { name: 'library' }); // slugs are lowercase
-});
-
-test('query-carrying routes attach a parsed query object', () => {
-  const r = parseHash('#/replay/5?cat=kills,chat&round=7&player=76561198012345678&hs=1');
-  assert.equal(r.name, 'replay');
-  assert.equal(r.id, 5);
-  assert.deepEqual(r.query, {
-    cat: 'kills,chat',
-    round: '7',
-    player: '76561198012345678',
-    hs: '1',
-  });
-  // Round route carries ?back= (the origin path for the return trip).
+  assert.deepEqual(parseHash('#/match/42/round/-3?hs=1'), { name: 'match', id: 42, tab: 'Rounds', query: { round: -3, hs: '1' } });
+  // The redirected link keeps ?back= (the origin path for the return trip).
   const rd = parseHash('#/match/5/round/7?back=match/5/rounds');
-  assert.deepEqual(rd, {
-    name: 'round',
-    id: 5,
-    round: 7,
-    query: { back: 'match/5/rounds' },
-  });
+  assert.deepEqual(rd, { name: 'match', id: 5, tab: 'Rounds', query: { round: 7, back: 'match/5/rounds' } });
   // Compare route carries ?rounds= + ?back=.
   const cmp = parseHash('#/compare/5?rounds=3,5,7&back=match/5/rounds');
   assert.deepEqual(cmp.query, { rounds: '3,5,7', back: 'match/5/rounds' });

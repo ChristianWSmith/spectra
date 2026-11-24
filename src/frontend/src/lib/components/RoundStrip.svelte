@@ -108,7 +108,7 @@ const cells = $derived.by(() => {
         onclick={() =>
           onselect
             ? onselect(r.number)
-            : nav(buildHash(`/match/${matchId}/round/${r.number}`, { back }))}
+            : nav(buildHash(`/match/${matchId}/rounds`, { round: r.number }))}
       >
         {label}
       </button>

@@ -96,6 +96,14 @@ const PENDING_DENYLIST = {};
 const DENYLIST_EXEMPT = {
   'frontend/src/lib/builtins/match/panelhelpers.js': [
     {
+      text: 'SELECT side, equip_value, money_sampled_sum, money_samples FROM round_economy ',
+      why: 'the Rounds tab’s round economy component query (read-only SQL, scoped to the round by :match_id and :round) — not user copy',
+    },
+    {
+      text: 'SELECT side, class, why FROM round_side_classes WHERE match_id = :match_id AND round = :round',
+      why: 'the Rounds tab’s round side-class component query (read-only SQL, scoped to the round) — not user copy',
+    },
+    {
       text: 'SELECT ps.steam_id, p.name, p.side, ps.score FROM player_stats ps ',
       why: 'the Match scoreboard panel’s component query (read-only SQL the panel runs, bound from its context) — not user copy',
     },

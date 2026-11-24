@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as copies from './builtinhelpers.js';
-import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash } from './fmt.js';
+import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';
 import { sideAtRound, winnerTeamKey, teamKeyAt, flipIndexes } from './sideparity.js';
@@ -176,4 +176,15 @@ test('sideFlips marks a boundary only when a player is seen on the other side', 
   ]);
   assert.deepEqual(copies.sideFlips(rows, exact), [false, false, true]);
   assert.deepEqual(copies.sideFlips(rows, new Map()), [false, false, false], 'no samples, no flip');
+});
+
+// The chat helpers pin to fmt.js on the cases the chat list draws: counted and knife rounds, every channel.
+test('chatTag and chatClock match lib/fmt.js', () => {
+  for (const [ch, side] of [['all', 'ct'], ['team', 'ct'], ['team', 'T'], ['team', ''], ['system', 'ct']]) {
+    assert.equal(copies.chatTag(ch, side), chatTag(ch, side));
+  }
+  const rounds = new Map([[3, { number: 3, startTick: 1000, endTick: 2000, winner: 'ct', reason: 'x' }], [-2, { number: -2, startTick: 0, endTick: 100 }]]);
+  for (const c of [{ tick: 1500, round: 3 }, { tick: 50, round: -2 }, { tick: 99, round: 7 }]) {
+    assert.equal(copies.chatClock(c, rounds, 64), chatClock(c, rounds, 64));
+  }
 });

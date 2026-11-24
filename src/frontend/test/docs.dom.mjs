@@ -207,7 +207,7 @@ const writeStub = (rel, src) => {
   compileSvelte(src, rel, sveltePath.replace(/\.svelte$/, '.js'), { runes: true });
 };
 for (const name of [
-  'Library', 'Match', 'RoundDetail', 'Settings', 'SqlConsole', 'Explorer',
+  'Library', 'Match', 'Settings', 'SqlConsole', 'Explorer',
   'Reports', 'ReportsBuilder', 'ComponentBuilder', 'Profiles', 'PlayerProfile', 'CompareRounds',
 ]) {
   writeStub(

@@ -175,7 +175,7 @@ const writeStub = (rel, src) => {
   compileSvelte(src, rel, sveltePath.replace(/\.svelte$/, '.js'), { runes: true });
 };
 for (const name of [
-  'Library', 'Match', 'RoundDetail', 'Settings', 'Builder', 'SqlConsole', 'Explorer',
+  'Library', 'Match', 'Settings', 'Builder', 'SqlConsole', 'Explorer',
   'Reports', 'ReportsBuilder', 'ComponentBuilder', 'Profiles', 'PlayerProfile', 'CompareRounds',
 ]) {
   // Per-view MOUNT counter (section F): the displaced-view overlay's

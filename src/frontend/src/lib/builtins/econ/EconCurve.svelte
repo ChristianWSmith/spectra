@@ -127,7 +127,7 @@
   }
 
   function openRound(round) {
-    spectra.navigate(hashOf('/match/' + context.matchId + '/round/' + round, { back: back || 'match/' + context.matchId + '/economy' }));
+    spectra.navigate(hashOf('/match/' + context.matchId + '/rounds', { round }));
   }
 
   function columns(r, key) {

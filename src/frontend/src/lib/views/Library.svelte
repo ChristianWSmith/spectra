@@ -394,6 +394,10 @@
         // table — it refreshes on mount, the Refresh button and match
         // deletion only.
       }),
+      // The metric sweep runs AFTER the import job has landed (afterAnalyze schedules it in the
+      // background), so the job's library-changed refresh shows the match before its metrics are
+      // computed. Its completion is the only signal that clears the row's calculating chip.
+      onEvent('spectra:metric-done', () => refreshList()),
       // Drop only reaches JS when the pointer is over an element with
       // data-file-drop-target (the drop zone below).
       onFilesDropped((data) => {
@@ -859,12 +863,19 @@
   // fallback control is invented). Enter on a button must not navigate
   // the row either (the keydown bubbles up to the <tr>), hence the
   // target check in the keydown handler.
+  // A row is actionable (its Re-parse/Delete controls) unless a job owns it.
   function isOpenable(m) {
     return m.status !== 'parsing' && m.status !== 'queued';
   }
 
+  // Only a ready match is viewable: its extraction, analysis and sidecars have all landed. A
+  // parsing, queued or failed row has no loadable Match view, so it is not a link.
+  function isViewable(m) {
+    return m.status === 'ready';
+  }
+
   function openMatch(m) {
-    if (!isOpenable(m)) return;
+    if (!isViewable(m)) return;
     nav(`/match/${m.id}`);
   }
 
@@ -1168,14 +1179,14 @@
                  it adds no user-facing copy. -->
             {@const mapIcon = mapIconURL(m.map, iconManifest)}
             <tr
-              class:clickable={isOpenable(m)}
+              class:clickable={isViewable(m)}
               onclick={() => openMatch(m)}
               onkeydown={(e) =>
                 e.key === 'Enter' && e.target === e.currentTarget && openMatch(m)}
               onmouseenter={() => {
-                if (isOpenable(m)) warmMatchHeader(m.id);
+                if (isViewable(m)) warmMatchHeader(m.id);
               }}
-              tabindex={isOpenable(m) ? 0 : undefined}
+              tabindex={isViewable(m) ? 0 : undefined}
             >
               <td class="lib-map-cell">{#if mapIcon}<img class="lib-map-icon" src={mapIcon} alt="" aria-hidden="true" />{/if}{m.map || '—'}</td>
               <td>

@@ -910,7 +910,6 @@ const EXPECTED = {
   // palette keys, why+rules tooltip, colspan-4 empty state), +2 the new
   // F2 block (round 1 → prev disabled), and F's end-pin flipped from
   // "next gone" to "next disabled".
-  'round-detail.dom.mjs': 76,
   'round-strip.dom.mjs': 47,
   // settings 74 → 49 (2026-11-15, N1+N2): the analysis-rules card is
   // save = recompute — the "Re-run analysis…" subsection, the behind

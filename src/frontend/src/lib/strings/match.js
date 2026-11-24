@@ -6,6 +6,24 @@
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const match = {
+  // The Rounds tab's per-round details (the row expands in place).
+  roundDetailShow: 'Show round details',
+  roundDetailHide: 'Hide round details',
+  roundDetailLoading: 'Loading round…',
+  roundDetailFailed: 'The round could not be read.',
+  // Kill-event flag chips (code and tooltip).
+  chatTagAll: '[ALL]', chatTagCt: '[CT]', chatTagT: '[T]',
+  flagHS: 'HS', flagHSTitle: 'headshot',
+  flagWB: 'WB', flagWBTitle: 'wallbang',
+  flagNS: 'NS', flagNSTitle: 'no scope',
+  flagSMK: 'SMK', flagSMKTitle: 'through smoke',
+  flagBLD: 'BLD', flagBLDTitle: 'attacker blind',
+  flagAFL: 'AFL', flagAFLTitle: 'assisted flash',
+  bombPlanted: 'Planted',
+  bombDefused: 'Defused',
+  bombExploded: 'Exploded',
+  watchKillFollow: 'Watch this kill — follow {name}',
+  watchBombFollow: 'Watch this bomb event — follow {name}',
   // header + meta line (watch action, patch/status, chat-key badge)
   dismissError: 'Dismiss error',
   replayReturnTitle: 'Return to the replay (resumes where you left it)',
@@ -85,7 +103,7 @@ export const match = {
   copyExternal: 'no copy — using your file',
   copyMissing: 'file not found',
 
-  // RoundDetail (views/RoundDetail.svelte — shares this area file)
+  // The Rounds tab's round detail (builtins/match/MatchRounds.svelte — shares this area file)
   backBtn: 'Back',
   watchRoundTitle: 'Watch round {round} from its start in the replay',
   watchRoundAria: 'Watch round {round}',

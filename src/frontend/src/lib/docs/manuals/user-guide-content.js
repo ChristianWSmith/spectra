@@ -211,8 +211,10 @@ open the scoreboard in the Component builder and edit it. **Restore to default**
 **Rounds** — one row per round: a ▶ that watches the round in the replay, the compare box, the
 number, winner, win reason, duration, bomb site, MVP, the first blood, and the kill count. The ▶
 opens the replay at that round's own start with the round's span looped and a return to this tab;
-clicking anywhere else in the row opens the round page. Tick the **Cmp** boxes on up to four
-rounds and a **Compare N rounds** button appears. A dash is a round fact the demo does not
+clicking anywhere else in the row, or its chevron, expands it in place to the round's details:
+the kill feed, the bomb timeline, the economy by side (per-side buy class, equipment and money) and
+the round's chat, with the scoreline and the MVP's reason in its header. Tick the **Cmp** boxes on up
+to four rounds and a **Compare N rounds** button appears. A dash is a round fact the demo does not
 record, such as a round with no bomb site. The rounds table is a component like the scoreboard:
 to change its columns or its layout, open it in the Component builder and edit it.
 
@@ -223,20 +225,12 @@ diagnostics. The stored facts (server, tickrate, frame count, file size, import 
 warning count and source file) are a component, so you can edit them in the Component
 builder. Voice presence and the managed-copy line stay as they are.
 
-# Round detail
-
-Reached from any round cell or row. The **round ribbon** (Previous / Next round around the round
-strip) sits at the top, then **Watch round** (opens the replay at that round's start) in the
-header, then the cards: **Round info** (duration, bomb site, MVP, winner, win reason and the
-resulting score), **Kills**, **Bomb**, the round's **Economy** (per-side buy class, equipment and
-money), and the **Round chat**.
-
 # Compare rounds
 
 The side-by-side page for the rounds you ticked (2–4). Each column shows the round's result and
 buy class, its **Economy** (equipment, money spent, buy classes), a **Loadout summary** (kills,
 first blood, bomb site, MVP), its **Utility** throws, and the **Event sequence**; each column
-ends with a play button (**Replay from the round start**) and **Round detail**.`,
+ends with a play button (**Replay from the round start**) and **Round details** (the round, expanded in the Rounds tab).`,
   },
   {
     id: 'match-analysis',
@@ -290,7 +284,7 @@ install required.
 # Opening it
 
 - **Watch replay** in a match header.
-- Any ▶ or watch button in the analysis views, round detail or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start. The replay's own event feed does the same in place, without leaving the replay.
+- Any ▶ or watch button in the analysis views, round details or compare view — an event-level drill loops around that event for the length set in **Settings → Replay** and often starts the camera following a specific player; a round-level one plays the round from its start. The replay's own event feed does the same in place, without leaving the replay.
 - A roster or scoreboard row click — opens the replay following that player.
 
 Leaving the replay does not stop it: it collapses into a small dock in the bottom-right corner

@@ -145,12 +145,12 @@ export function parseHash(hash) {
     return { ...route, query: { ...(route.query || {}), ...query } };
   };
 
-  // Round numbers can be negative (a pre-reprocess match's knife/warmup
-  // rows carry negative indices), so the round segment allows "-?".
-  // Checked before the generic tab segment so "round" never reads as a
-  // tab slug.
+  // A round is no longer a page: it opens on the Rounds tab, expanded in place. The old
+  // #/match/:id/round/:n link lands there with the round asked open. Round numbers can be
+  // negative (a knife or warmup row), so the segment allows "-?"; checked before the tab
+  // segment so "round" never reads as a tab slug.
   let m = path.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
-  if (m) return withQuery({ name: 'round', id: Number(m[1]), round: Number(m[2]) });
+  if (m) return withQuery({ name: 'match', id: Number(m[1]), tab: 'Rounds', query: { round: Number(m[2]) } });
 
   // Legacy raw-event tabs → the canonical Replay landmark feed with the
   // equivalent scope (checked before the tab segment: they are not tabs).

@@ -31,7 +31,6 @@ export const WARM_VIEWS = [
   'componentbuilder',
   'explorer',
   'reports',
-  'round',
   'compare',
 ];
 

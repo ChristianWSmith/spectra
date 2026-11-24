@@ -320,15 +320,6 @@ check(
   !!navStart && navStart.includes('loop=1000,9999') && !navStart.includes('loop=680,'),
   navStart || 'no navigation',
 );
-// Cross-view source pin: RoundDetail's round-level button stamps the
-// SAME helper over the SAME bounds (the equality half lives in the
-// round-detail driver for the other direction).
-const rdSrc = readFileSync('src/lib/views/RoundDetail.svelte', 'utf8');
-check(
-  'RoundDetail "Watch round" uses the same entryLoopSpan(startTick, endTick) (round-span equality)',
-  rdSrc.includes('entryLoopSpan(detail.round.startTick, detail.round.endTick)'),
-  'Watch round no longer stamps entryLoopSpan(startTick, endTick)',
-);
 
 console.log('B. the sequence ▶ follows the row ACTOR when it has one');
 const rows = [...(col?.querySelectorAll('.lm-row') || [])];

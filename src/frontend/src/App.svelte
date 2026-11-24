@@ -8,7 +8,6 @@
   loadSizes();
   import Library from './lib/views/Library.svelte';
   import Match from './lib/views/Match.svelte';
-  import RoundDetail from './lib/views/RoundDetail.svelte';
   import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
   import Builder from './lib/views/Builder.svelte';
@@ -640,8 +639,6 @@
               <ComponentBuilder {nav} {openDocs} />
             {:else if name === 'reports'}
               <Reports {nav} {openDocs} routeId={current ? viewRoute.id || 0 : 0} />
-            {:else if name === 'round'}
-              <RoundDetail id={current ? viewRoute.id : warmTargets.matchId} round={current ? viewRoute.round : 1} query={current ? viewRoute.query || {} : {}} {nav} />
             {:else if name === 'compare'}
               <CompareRounds id={current ? viewRoute.id : warmTargets.matchId} query={current ? viewRoute.query || {} : {}} {nav} />
             {/if}

@@ -81,6 +81,13 @@ export const utility = {
   colRound: "Round",
   openPrefix: "Open ",
   colKind: "Kind",
+  // Column heads of the throw log rows (the grid the rows share).
+  colPlay: "",
+  colTime: "Time",
+  colDamage: "Dmg",
+  colBlind: "Blind",
+  colAffected: "Aff.",
+  colPosition: "Position",
   ofSeparator: " of ",
   axisMax: "max ",
 

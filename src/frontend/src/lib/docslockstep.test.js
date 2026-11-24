@@ -112,7 +112,6 @@ const VIEW_SECTIONS = {
   'Reports.svelte': 'reports',
   'ReportsBuilder.svelte': 'reports-builder',
   'ComponentBuilder.svelte': 'component-builder',
-  'RoundDetail.svelte': 'understanding-a-match',
   'Settings.svelte': 'settings',
   'SqlConsole.svelte': 'sql-console',
 };

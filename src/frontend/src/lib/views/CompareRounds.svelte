@@ -215,7 +215,7 @@
   }
 
   function openRound(col) {
-    nav(buildHash(`/match/${id}/round/${col.round}`, { back: backToCompare }));
+    nav(buildHash(`/match/${id}/rounds`, { round: col.round }));
   }
 
   function utilSummary(col) {

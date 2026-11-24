@@ -630,6 +630,20 @@
   border-bottom: none;
 }
 
+/* The column heads: the row grid (.util-nade) again, so each label sits over its column. */
+.util-cols {
+  display: grid;
+  grid-template-columns: auto 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
 .util-nade:hover {
   background: var(--list-hover);
 }
@@ -698,6 +712,11 @@
   /* The row wraps onto three columns; the leading ▶ (grid-column 1 / -1)
      takes the FIRST row full-width, so the play cell still reads as the
      row's head and the data cells wrap beneath it. */
+  /* Narrow: the rows stack, so the column heads have nothing to sit over. */
+  .util-cols {
+    display: none;
+  }
+
   .util-nade {
     grid-template-columns: 74px 1fr auto;
     grid-auto-rows: auto;

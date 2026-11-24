@@ -426,3 +426,23 @@ export function followRoute(matchId, back, steam) {
 export function followPlayer(spectra, matchId, back, steam) {
   spectra.navigate(followRoute(matchId, back, steam));
 }
+
+// CHAT: a chat line's clock and speaker tag (lib/fmt.js chatClock / chatTag).
+// The round prefix is RD (RD12 0:47), and team chat tags the speaker's side.
+export function chatTag(channel, side) {
+  if (channel === 'all') return S.match.chatTagAll;
+  if (channel === 'team') {
+    const s = String(side || '').toLowerCase();
+    if (s === 'ct') return S.match.chatTagCt;
+    if (s === 't') return S.match.chatTagT;
+  }
+  return '';
+}
+export function chatClock(c, roundByNumber, tickRate) {
+  const r = (roundByNumber || new Map()).get(c.round);
+  if (r && isCounted(r)) {
+    const into = intoRoundSeconds(c.tick, r, tickRate);
+    if (into != null) return `RD${r.number} ${fmtClock(into)}`;
+  }
+  return fmtClock(tickSeconds(c.tick, tickRate));
+}

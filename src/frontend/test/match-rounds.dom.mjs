@@ -179,6 +179,15 @@ const TEAMS = { 7: [['ct', 'Alpha Squad'], ['t', '']], 8: [], 9: [['ct', 'Alpha 
 function answer(sql) {
   const m = /\b(?:match_id|id) = (\d+)/.exec(sql);
   const matchId = m ? Number(m[1]) : NaN;
+  // The round detail's reads (the expansion): a 64-tick match, no MVP reason, and no kill, bomb, economy or chat rows.
+  if (/SELECT tick_rate FROM matches/.test(sql)) return { columns: [], rows: [[64]] };
+  if (/SELECT mvp_reason FROM rounds/.test(sql)) return { columns: [], rows: [['']] };
+  // Round 4 carries one row of each detail part, so the expansion's column mapping is pinned.
+  if (/e\.round = 4 AND e\.kind = 'kill'/.test(sql)) return { columns: [], rows: [[1, 1200, '76561198000000001', 'Alpha', '76561198000000002', 'Bravo', 'ak47', 1, 0, 0, 0, 0, 0]] };
+  if (/FROM round_economy .*round = 4/.test(sql)) return { columns: [], rows: [['ct', 4200, 8000, 2, 0, 0]].map((r) => r.slice(0, 4)) };
+  if (/FROM round_side_classes .*round = 4/.test(sql)) return { columns: [], rows: [['ct', 'full', 'bought a full buy']] };
+  if (/FROM chat .*round = 4/.test(sql)) return { columns: [], rows: [[1, 1300, 4, '76561198000000001', 'Alpha', 'gg', 'all']] };
+  if (/^SELECT (e\.id|id, tick|side, equip_value|side, class)/.test(sql)) return { columns: [], rows: [] };
   if (/FROM rounds r/.test(sql)) {
     const rows = matchId === 7 ? ROUNDS_7 : matchId === 9 ? ROUNDS_9 : [];
     return { columns: [], rows: rows.map((r) => [...r]) };
@@ -317,8 +326,14 @@ console.log('E. round row');
 navCalls = [];
 click(rowsOf(root)[3].children[4]);
 await settle(4);
-check('a click on the row opens that round, back to the tab',
-  navCalls.length === 1 && navCalls[0] === '/match/7/round/4?back=match/7/rounds', JSON.stringify(navCalls));
+// The row expands in place: no navigation, the round's detail mounts below it, and the chevron folds it.
+const open4 = () => rowsOf(root)[4] && rowsOf(root)[4].classList.contains('round-expand');
+check('a click on the row expands that round in place, with no navigation', navCalls.length === 0 && open4(), JSON.stringify(navCalls));
+check('round 4 expansion renders the kill, the economy, the side class and the chat', open4() && rowsOf(root)[4].textContent.includes('ak47') && rowsOf(root)[4].textContent.includes('gg') && rowsOf(root)[4].textContent.includes('full') && rowsOf(root)[4].textContent.includes('HS'), open4() ? rowsOf(root)[4].textContent.slice(0, 200) : 'no expansion');
+check('the expanded row carries the four detail parts', open4() && rowsOf(root)[4].querySelectorAll('h3').length === 4, open4() ? String(rowsOf(root)[4].querySelectorAll('h3').length) + ' :: ' + rowsOf(root)[4].textContent.slice(0, 160) : 'no expansion');
+click(rowsOf(root)[3].querySelector('button[aria-expanded]'));
+await settle(2);
+check('the chevron folds the round again', !open4(), String(rowsOf(root).length));
 navCalls = [];
 click(rowsOf(root)[3].querySelector('td .comb-name-btn'));
 await settle(4);

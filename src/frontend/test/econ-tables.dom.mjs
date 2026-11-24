@@ -883,10 +883,8 @@ check(
   await sleep();
   const rdNav = (globalThis.__nav || []).slice();
   check(
-    'the RD cell opens the round page WITH ?back= (never the unstamped Overview fallback)',
-    rdNav.length === 1 &&
-      rdNav[0].startsWith('/match/3/round/1?') &&
-      rdNav[0].includes('back=match/3/economy'),
+    'the RD cell opens the Rounds tab with that round expanded',
+    rdNav.length === 1 && rdNav[0] === '/match/3/rounds?round=1',
     JSON.stringify(rdNav),
   );
 }
@@ -1207,10 +1205,8 @@ check(
   await sleep();
   const hitNav = (globalThis.__nav || []).slice();
   check(
-    'the curve hit-rect opens the round WITH ?back=match/3/economy (the Overview-fallback fix)',
-    hitNav.length === 1 &&
-      hitNav[0].startsWith('/match/3/round/1?') &&
-      hitNav[0].includes('back=match/3/economy'),
+    'the curve hit-rect opens the Rounds tab with that round expanded',
+    hitNav.length === 1 && hitNav[0] === '/match/3/rounds?round=1',
     JSON.stringify(hitNav),
   );
 }
@@ -1220,10 +1216,8 @@ check(
   await sleep();
   const stripNav = (globalThis.__nav || []).slice();
   check(
-    'the winner-strip button opens the round WITH the same Economy origin',
-    stripNav.length === 1 &&
-      stripNav[0].startsWith('/match/3/round/1?') &&
-      stripNav[0].includes('back=match/3/economy'),
+    'the winner-strip button opens the Rounds tab with that round expanded',
+    stripNav.length === 1 && stripNav[0] === '/match/3/rounds?round=1',
     JSON.stringify(stripNav),
   );
 }

@@ -328,10 +328,10 @@ const pipCount = (tr, cls) => tr.querySelectorAll(`.econ-loss-pip.${cls}`).lengt
 check('loss pips: round 1 CT 2 and T 2 (the 1900 bonus)', pipCount(trs[0], 'ct') === 2 && pipCount(trs[0], 't') === 2, `${pipCount(trs[0], 'ct')}/${pipCount(trs[0], 't')}`);
 check('loss pips: round 2 CT 1 (the base 1400) and T 3 (2400)', pipCount(trs[1], 'ct') === 1 && pipCount(trs[1], 't') === 3, `${pipCount(trs[1], 'ct')}/${pipCount(trs[1], 't')}`);
 check('the pistol round is marked on the strip', strip[0].classList.contains('pistol'));
-check('the round number opens the round, back to the Economy tab',
+check('the round number opens the Rounds tab with that round expanded',
   (() => {
     click(trs[2].querySelector('button.econ-rd'));
-    return navCalls.at(-1) === '/match/9/round/3?back=match/9/economy';
+    return navCalls.at(-1) === '/match/9/rounds?round=3';
   })(),
   navCalls.at(-1));
 // The watch button of a round opens the replay at its start, the round as the loop.

@@ -75,7 +75,7 @@
   }
 
   function openRound(round) {
-    spectra.navigate(hashOf('/match/' + context.matchId + '/round/' + round, { back: origin() }));
+    spectra.navigate(hashOf('/match/' + context.matchId + '/rounds', { round }));
   }
 
   function watchRound(round) {

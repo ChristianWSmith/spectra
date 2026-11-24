@@ -586,6 +586,33 @@ select {
   background: var(--editor-sel);
 }
 
+/* A native <select> draws its own OS box and arrow, so it read as another toolkit beside the
+   app's buttons. It takes the same box as .btn.small (border, fill, padding, text size) and a
+   chevron, so a select and a popover trigger sit side by side as one control family. */
+select.input {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--btn-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8a' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius);
+  padding: 1px 24px 1px 8px;
+  font-size: 0.92em;
+  cursor: pointer;
+}
+
+select.input:hover {
+  border-color: var(--muted);
+  background-color: var(--btn-hover-bg);
+}
+
+select.input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* Checkboxes: VS Code-style flat box (native controls don't take our
    borders; a pseudo-element on <input> never renders, so the check is a
    data-URI SVG painted as the checked background). */

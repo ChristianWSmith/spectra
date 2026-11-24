@@ -12,7 +12,6 @@ import { nextReplayAlive, shouldResumeOnReturn, backOrigin } from './keepalive.j
 // Route shapes exactly as parseHash produces them (router.js).
 const replay = (id) => ({ name: 'replay', id });
 const match = (id, tab) => ({ name: 'match', id, ...(tab ? { tab } : {}) });
-const round = (id, n) => ({ name: 'round', id, round: n });
 
 test('a replay route creates the instance, and refreshes its captured hash', () => {
   // First entry: nothing alive → record created with the raw hash.
@@ -35,13 +34,12 @@ test('a replay route creates the instance, and refreshes its captured hash', () 
 test('same-id match routes keep the instance and FREEZE the captured hash', () => {
   const prev = { id: 5, hash: '#/replay/5?cat=kill&back=match/5/rounds' };
 
-  // Overview, every tab route and the round route all keep the SAME
+  // Overview and every tab route keep the SAME
   // record — object identity included (the hash must not be re-captured
   // from a match hash, or the expand path would lose the replay query).
   assert.equal(nextReplayAlive(prev, match(5), '#/match/5'), prev);
   assert.equal(nextReplayAlive(prev, match(5, 'Economy'), '#/match/5/economy'), prev);
   assert.equal(nextReplayAlive(prev, match(5, 'Rounds'), '#/match/5/rounds'), prev);
-  assert.equal(nextReplayAlive(prev, round(5, 3), '#/match/5/round/3'), prev);
 });
 
 test('any other route destroys the instance (unmount cleanup runs as before)', () => {
@@ -49,7 +47,7 @@ test('any other route destroys the instance (unmount cleanup runs as before)', (
 
   // Another match id, even a match route — out of scope.
   assert.equal(nextReplayAlive(prev, match(6), '#/match/6'), null);
-  assert.equal(nextReplayAlive(prev, round(6, 1), '#/match/6/round/1'), null);
+  assert.equal(nextReplayAlive(prev, match(6, 'Rounds'), '#/match/6/rounds?round=1'), null);
   // Non-match destinations: library, compare (even SAME id), player,
   // settings and friends — none of them stay in scope.
   assert.equal(nextReplayAlive(prev, { name: 'library' }, '#/library'), null);

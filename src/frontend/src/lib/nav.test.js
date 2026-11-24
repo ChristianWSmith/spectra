@@ -100,7 +100,7 @@ test('sidebar active(): the player profile highlights Profiles, not Library', ()
   // L4: the match family is the MATCH tab's, never the Library hub's —
   // the Library claims only its own route, so exactly one action claims
   // each of them (the invariant pinned below).
-  for (const name of ['match', 'round', 'replay', 'compare']) {
+  for (const name of ['match', 'replay', 'compare']) {
     assert.equal(active.Library(route(name)), false, `Library on ${name}`);
     assert.equal(active.Match(route(name)), true, `Match on ${name}`);
     assert.equal(active.Profiles(route(name)), false, `Profiles on ${name}`);
@@ -113,7 +113,7 @@ test('sidebar active(): the player profile highlights Profiles, not Library', ()
 // MATCH_FAMILY — THE nav-level partition behind the Match tab (L4): the
 // four route names that are the match view, and nothing else.
 test('MATCH_FAMILY holds exactly the match view routes (the nav partition)', () => {
-  assert.deepEqual([...MATCH_FAMILY].sort(), ['compare', 'match', 'replay', 'round']);
+  assert.deepEqual([...MATCH_FAMILY].sort(), ['compare', 'match', 'replay']);
   const matchAction = NAV_ACTIONS.find((a) => a.label === 'Match');
   assert.ok(matchAction, 'the Match action exists');
   for (const name of MATCH_FAMILY) {
@@ -136,7 +136,7 @@ test('PROFILE_FAMILY holds exactly {profiles, player} and active() agrees', () =
   }
   // …and nothing else lights it up (the exactly-one invariant below
   // covers the other side).
-  for (const name of ['library', 'match', 'round', 'replay', 'compare', 'builder', 'reportbuilder', 'sql', 'settings']) {
+  for (const name of ['library', 'match', 'replay', 'compare', 'builder', 'reportbuilder', 'sql', 'settings']) {
     assert.equal(profilesAction.active({ name }), false, `Profiles on ${name}`);
   }
   // The memory policy is declared ON the action — the helpers never
@@ -150,7 +150,6 @@ test('sidebar active(): exactly one action lights up per route', () => {
   const routes = [
     'library',
     'match',
-    'round',
     'replay',
     'compare',
     'player',

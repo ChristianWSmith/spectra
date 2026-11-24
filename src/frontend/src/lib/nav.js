@@ -381,14 +381,13 @@ export function profileBackTarget(query) {
 }
 
 // MATCH_FAMILY — THE set of route names that are the match view: its
-// shell (#/match/:id[/<tab>]), a round page (#/match/:id/round/:n), the
-// event browser (#/replay/:id) and the round comparison (#/compare/:id).
+// shell (#/match/:id[/<tab>]), the event browser (#/replay/:id) and the round comparison (#/compare/:id).
 // It is THE nav-level partition behind the sidebar's Match action (L4):
 // Library claims `library` alone, Match claims exactly this set, so
 // exactly one action lights up per route. The same set gates the Match
 // action's target memory — active() and isNavEnabled() below share this
 // one criterion (lead ruling: they must never diverge).
-export const MATCH_FAMILY = new Set(['match', 'round', 'replay', 'compare']);
+export const MATCH_FAMILY = new Set(['match', 'replay', 'compare']);
 
 // PROFILE_FAMILY — the same partition for the Profiles action: the
 // player directory and a player's own page. The whole FAMILY is what

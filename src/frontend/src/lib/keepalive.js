@@ -44,7 +44,7 @@
 export function nextReplayAlive(prev, route, hash) {
   if (!route) return null;
   if (route.name === 'replay') return { id: route.id, hash: String(hash ?? '') };
-  if (prev && prev.id === route.id && (route.name === 'match' || route.name === 'round')) {
+  if (prev && prev.id === route.id && route.name === 'match') {
     return prev;
   }
   return null;

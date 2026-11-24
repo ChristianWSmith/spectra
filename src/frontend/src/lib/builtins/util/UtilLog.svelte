@@ -112,6 +112,16 @@
     <p class="muted" role="status">{S.utility.noMatch}</p>
   {:else}
     <div class="util-lists">
+      <div class="util-cols">
+        <span>{S.utility.colPlay}</span>
+        <span>{S.utility.colKind}</span>
+        <span>{S.utility.colThrower}</span>
+        <span>{S.utility.colTime}</span>
+        <span>{S.utility.colDamage}</span>
+        <span>{S.utility.colBlind}</span>
+        <span>{S.utility.colAffected}</span>
+        <span>{S.utility.colPosition}</span>
+      </div>
       {#each shownGroups as [round, list] (round)}
         <ul class="util-nades">
           {#each list as r, i (r.tick + ':' + i)}

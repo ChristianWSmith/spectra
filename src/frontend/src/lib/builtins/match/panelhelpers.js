@@ -18,6 +18,30 @@ export const SQL_ROSTER =
   'JOIN round_player_sides v ON v.match_id = a.match_id AND v.round = a.round AND v.steam_id = e.victim ' +
   'WHERE a.match_id = e.match_id AND a.round = e.round AND a.steam_id = e.attacker AND a.side = v.side)) DESC, p.name ASC';
 export const SQL_TEAMS = 'SELECT side, name FROM teams WHERE match_id = :match_id';
+// One round's detail: the round-scoped reads of the Rounds tab's expansion (the
+// :round bind is set with :match_id on every call — an explicit bind set replaces
+// the context's, so both are passed).
+export const SQL_MATCH_TICK_RATE = 'SELECT tick_rate FROM matches WHERE id = :match_id';
+export const SQL_ROUND_MVP_REASON = 'SELECT mvp_reason FROM rounds WHERE match_id = :match_id AND number = :round';
+export const SQL_ROUND_KILLS =
+  'SELECT e.id, e.tick, e.attacker, COALESCE(ap.name, \'\'), e.victim, COALESCE(vp.name, \'\'), e.weapon, ' +
+  'e.headshot, e.wallbang, e.noscope, e.through_smoke, e.attacker_blind, e.assisted_flash ' +
+  'FROM events e ' +
+  'LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker ' +
+  'LEFT JOIN players vp ON vp.match_id = e.match_id AND vp.steam_id = e.victim ' +
+  "WHERE e.match_id = :match_id AND e.round = :round AND e.kind = 'kill' ORDER BY e.seq";
+export const SQL_ROUND_BOMBS =
+  'SELECT e.id, e.tick, e.kind, e.attacker, COALESCE(ap.name, \'\'), e.site FROM events e ' +
+  'LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker ' +
+  'WHERE e.match_id = :match_id AND e.round = :round ' +
+  "AND e.kind IN ('bomb_plant', 'bomb_defuse', 'bomb_explode') ORDER BY e.seq";
+export const SQL_ROUND_ECONOMY =
+  'SELECT side, equip_value, money_sampled_sum, money_samples FROM round_economy ' +
+  'WHERE match_id = :match_id AND round = :round ORDER BY side';
+export const SQL_ROUND_SIDE_CLASSES = 'SELECT side, class, why FROM round_side_classes WHERE match_id = :match_id AND round = :round';
+export const SQL_ROUND_CHAT =
+  'SELECT id, tick, round, steam_id, name, text, channel FROM chat ' +
+  'WHERE match_id = :match_id AND round = :round ORDER BY tick, id';
 export const SQL_SWITCHES = 'SELECT side_switches FROM matches WHERE id = :match_id';
 export const SQL_ROUNDS =
   "SELECT r.number, r.winner, r.reason, (CAST(r.end_tick - r.start_tick AS REAL) / (SELECT m.tick_rate FROM matches m WHERE m.id = r.match_id)), r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
