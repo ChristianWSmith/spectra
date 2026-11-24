@@ -62,8 +62,7 @@ test('the Profile view and each of its panels is listed, labelled from the catal
   for (const id of PROFILE_IDS) {
     const b = builtinById(id);
     assert.ok(b, `${id} is listed`);
-    assert.equal(b.label, componentbuilder.builtinNames[id], `${id} takes its label from the catalog`);
-    assert.notEqual(b.label, id, `${id} has a human label`);
+    assert.equal(b.label, id, `${id} is named by its id`);
   }
 });
 

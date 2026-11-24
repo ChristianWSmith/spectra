@@ -36,7 +36,7 @@ export const BUILTIN_PREFIX = 'builtin-';
 const COMPILED_COMPONENTS = PANEL_IDS.map((id) =>
   Object.freeze({
     id,
-    label: S.componentbuilder.builtinNames[id] ?? id,
+    label: id,
     source: PANEL_SOURCES[id],
   }),
 );
@@ -53,7 +53,7 @@ function registryList(entries) {
 export const BUILTIN_COMPONENTS = registryList([
   Object.freeze({
     id: BUILTIN_PREFIX + 'example',
-    label: S.componentbuilder.placeholderName,
+    label: BUILTIN_PREFIX + 'example',
     placeholder: true,
     source: PLACEHOLDER_SOURCE,
   }),

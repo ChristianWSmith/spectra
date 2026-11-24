@@ -91,6 +91,11 @@
   let components = $state([]);
   let loading = $state(true);
   let listError = $state('');
+  // The list filter: a case-insensitive match on the name a view references.
+  let listQuery = $state('');
+  const listNeedle = $derived(listQuery.trim().toLowerCase());
+  const shownBuiltins = $derived(BUILTIN_COMPONENTS.filter((b) => !listNeedle || b.id.toLowerCase().includes(listNeedle)));
+  const shownComponents = $derived(components.filter((c) => !listNeedle || c.name.toLowerCase().includes(listNeedle)));
   let actionError = $state('');
   let saving = $state(false);
   // True while any compile runs (the live check, a save, a preview's load):
@@ -449,9 +454,17 @@
           {S.componentbuilder.newLabel}</button
         >
       </div>
+      <input
+        class="input"
+        type="search"
+        aria-label={S.componentbuilder.listFilterAria}
+        placeholder={S.componentbuilder.listFilterPlaceholder}
+        bind:value={listQuery}
+      />
+      <div class="cb-scroll">
       <span class="field-label">{S.componentbuilder.builtinGroup}</span>
       <div class="cb-rows cb-builtins">
-        {#each BUILTIN_COMPONENTS as b (b.id)}
+        {#each shownBuiltins as b (b.id)}
           {@render row(
             b.label,
             form.builtinId === b.id,
@@ -478,13 +491,15 @@
         {/if}
       {:else}
         <div class="cb-rows cb-yours">
-          {#each components as c (c.name)}
+          {#each shownComponents as c (c.name)}
             {@render row(c.name, form.original === c.name, [], () => editComponent(c), () => remove(c.name))}
           {/each}
         </div>
       {/if}
+      </div>
     </section>
 
+    <div class="cb-main">
     <section class="panel cb-editor">
       <div class="row-between">
         <h2>{form.original || builtin ? S.componentbuilder.editComponent : S.componentbuilder.newComponent}</h2>
@@ -651,19 +666,35 @@
         {/if}
       </div>
     </section>
+    </div>
   </div>
 </div>
 
 <style>
   .cb-grid {
     display: grid;
-    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
   }
   .cb-list,
   .cb-editor,
   .cb-preview {
+    min-width: 0;
+  }
+  /* The list body scrolls; the filter and the list header stay put above it. */
+  .cb-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+  }
+  /* The editor sits above the preview, one column. */
+  .cb-main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
     min-width: 0;
   }
   .cb-rows {

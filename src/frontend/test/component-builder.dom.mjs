@@ -255,7 +255,7 @@ check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[ro
 
 // --- B. the list ---------------------------------------------------------------
 console.log('B. the list');
-const builtinRow = rowNamed(S.componentbuilder.placeholderName, '.cb-builtins');
+const builtinRow = rowNamed('builtin-example', '.cb-builtins');
 check('the built-in example is listed in the Built-in group', !!builtinRow);
 check(
   'the built-in row carries the built-in and example chips',
@@ -275,7 +275,7 @@ const PROFILE_BUILTINS = [
   'builtin-profile-history',
 ];
 for (const id of PROFILE_BUILTINS) {
-  const label = S.componentbuilder.builtinNames[id];
+  const label = id;
   check(`the Profile list shows ${label} in the Built-in group`, !!rowNamed(label, '.cb-builtins'));
 }
 unmounted();
@@ -287,10 +287,10 @@ OVERRIDES = [];
 await mounted();
 check(
   'a built-in with no override shows no Edited chip in the list',
-  !!rowNamed(S.componentbuilder.placeholderName, '.cb-builtins') &&
-    !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+  !!rowNamed('builtin-example', '.cb-builtins') &&
+    !rowNamed('builtin-example', '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
 );
-click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
+click(rowNamed('builtin-example', '.cb-builtins'));
 await settle();
 check('the built-in name field is read-only', q('#cb-name')?.readOnly === true);
 check('the built-in source is editable', q('#cb-source')?.readOnly === false);
@@ -312,7 +312,7 @@ check(
   ovCall && ovCall.id === PLACEHOLDER_ID && ovCall.source === OK_EDIT_SOURCE,
   JSON.stringify(ovCall),
 );
-check('the built-in row shows the edited chip', rowNamed(S.componentbuilder.placeholderName, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the built-in row shows the edited chip', rowNamed('builtin-example', '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
 check('Restore to default is enabled once edited', q('.cb-restore')?.disabled === false);
 check('no user component was written by an edit', saveCalls.length === 0);
 click(q('.cb-restore'));
@@ -321,8 +321,8 @@ check('Restore to default deletes the override', overrideDeleteCalls.length === 
 check('Restore to default brings back the shipped source', q('#cb-source')?.value.includes('spectra.query') && !q('#cb-source')?.value.includes('EDITED BUILTIN'));
 check(
   'after restore the built-in row is still listed and carries no Edited chip',
-  !!rowNamed(S.componentbuilder.placeholderName, '.cb-builtins') &&
-    !rowNamed(S.componentbuilder.placeholderName, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+  !!rowNamed('builtin-example', '.cb-builtins') &&
+    !rowNamed('builtin-example', '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
 );
 unmounted();
 
@@ -333,7 +333,7 @@ OVERRIDES = [];
 overrideCalls.length = 0;
 overrideDeleteCalls.length = 0;
 const CAREER_ID = 'builtin-profile-career';
-const careerLabel = S.componentbuilder.builtinNames[CAREER_ID];
+const careerLabel = CAREER_ID;
 await mounted();
 click(rowNamed(careerLabel, '.cb-builtins'));
 await settle();
@@ -364,7 +364,7 @@ COMPONENTS = [];
 OVERRIDES = [];
 overrideCalls.length = 0;
 await mounted();
-click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
+click(rowNamed('builtin-example', '.cb-builtins'));
 await settle();
 await setText(q('#cb-source'), BROKEN_SOURCE);
 check('a refused edit names its line', alertIn('.cb-check').startsWith('Line 2:'), alertIn('.cb-check'));
@@ -378,7 +378,7 @@ COMPONENTS = [];
 OVERRIDES = [];
 PLACEMENTS = {};
 await mounted();
-click(rowNamed(S.componentbuilder.placeholderName, '.cb-builtins'));
+click(rowNamed('builtin-example', '.cb-builtins'));
 await settle();
 const useBtn = (surfaceLabel) => {
   const row = qa('.cb-view-row').find((r) => r.textContent.includes(surfaceLabel));
