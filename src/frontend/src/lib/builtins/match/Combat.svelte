@@ -9,4 +9,3 @@
   <spectra.Child name="match-combat-kill-tags" />
   <spectra.Child name="match-combat-clutches" />
 </div>
-

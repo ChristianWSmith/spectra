@@ -5,7 +5,14 @@
   // side that team held that round, one team striped. The card hides when the
   // filtered throws have nothing to draw.
   import * as S from '../../strings/index.js';
-  import { fmtMs, roundIndexLabel, roundsByNumber, teamStartClass, sideAtRound, sideClassOf } from '../../builtinhelpers.js';
+  import {
+    fmtMs,
+    roundIndexLabel,
+    roundsByNumber,
+    teamStartClass,
+    sideAtRound,
+    sideClassOf,
+  } from '../../builtinhelpers.js';
 
   let {
     spectra,
@@ -38,7 +45,8 @@
           unit: S.utility.blindSuffix,
           maxSuffix: S.utility.blindSub,
           maxTitle: S.utility.blindTotalTitle,
-        });
+        },
+  );
   const STRIPED_KEY = 't';
   const barW = 1000;
   const barH = 90;
@@ -85,7 +93,7 @@
 </script>
 
 {#if bars.any}
-  <div class="{COPY.panelClass}">
+  <div class={COPY.panelClass}>
     <h2>{COPY.heading}</h2>
     <svg class="util-bars" viewBox="0 0 {barW} {barH}" preserveAspectRatio="none" aria-label={COPY.aria}>
       <defs>
@@ -102,21 +110,50 @@
         {@const ctX = x + slot * 0.08}
         {@const tX = x + slot * 0.08 + bw + 2}
         <rect class="util-bar {barSide(p.round, 'ct')}" x={ctX} y={barH - hCt} width={bw} height={hCt}>
-          <title>{S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{' '}{valueText(p.ct)}</title>
+          <title
+            >{S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct}{' '}{valueText(
+              p.ct,
+            )}</title
+          >
         </rect>
         {#if STRIPED_KEY === 'ct'}
-          <rect class="util-bar-stripe" x={ctX} y={barH - hCt} width={bw} height={hCt} fill={'url(#' + COPY.stripeId + ')'} pointer-events="none" />
+          <rect
+            class="util-bar-stripe"
+            x={ctX}
+            y={barH - hCt}
+            width={bw}
+            height={hCt}
+            fill={'url(#' + COPY.stripeId + ')'}
+            pointer-events="none"
+          />
         {/if}
         <rect class="util-bar {barSide(p.round, 't')}" x={tX} y={barH - hT} width={bw} height={hT}>
-          <title>{S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{' '}{valueText(p.t)}</title>
+          <title
+            >{S.utility.roundPrefix}{roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t}{' '}{valueText(
+              p.t,
+            )}</title
+          >
         </rect>
         {#if STRIPED_KEY === 't'}
-          <rect class="util-bar-stripe" x={tX} y={barH - hT} width={bw} height={hT} fill={'url(#' + COPY.stripeId + ')'} pointer-events="none" />
+          <rect
+            class="util-bar-stripe"
+            x={tX}
+            y={barH - hT}
+            width={bw}
+            height={hT}
+            fill={'url(#' + COPY.stripeId + ')'}
+            pointer-events="none"
+          />
         {/if}
       {/each}
     </svg>
     <div class="util-legend">
-      <span><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span>{names.ct}{#if MEASURE === 'damage'} <span class="chip badge-computed">{S.utility.badgeComputed}</span>{:else} <span class="chip badge-inferred" title="{S.utility.titleComputedBlind}">{S.utility.badgeInferred}</span>{/if}</span>
+      <span
+        ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span>{names.ct}{#if MEASURE === 'damage'}
+          <span class="chip badge-computed">{S.utility.badgeComputed}</span>{:else}
+          <span class="chip badge-inferred" title={S.utility.titleComputedBlind}>{S.utility.badgeInferred}</span
+          >{/if}</span
+      >
       <span><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span>{names.t}</span>
       <span class="muted" title={COPY.maxTitle}>{S.utility.axisMax}{maxText}{COPY.maxSuffix}</span>
     </div>

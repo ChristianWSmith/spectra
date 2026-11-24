@@ -5,15 +5,14 @@
   // and K/D per side, each cell one stored partitioned read for the context's
   // player (the dim is the side).
   import { errText } from '../../services.js';
-    import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
+  import { fmt1, fmt2, fmtPercent } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
-    import * as S from '../../strings/index.js';
+  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
 
   const SEEDS = ['side_rounds', 'side_win_pct', 'side_adr', 'side_kast', 'side_kd'];
-
 
   const table = splitTable(() => ({ spectra, steamId, seeds: SEEDS, errText }));
   const sweep = table.sweep;
@@ -50,7 +49,7 @@
           {/each}
         </tr>
       {:else}
-        <EmptyTableRow colspan={6} empty={empty} text={S.profiles.noSides} chip={sweep.chip(empty?.def)} />
+        <EmptyTableRow colspan={6} {empty} text={S.profiles.noSides} chip={sweep.chip(empty?.def)} />
       {/each}
     </tbody>
   </table>

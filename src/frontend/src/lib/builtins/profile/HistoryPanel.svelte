@@ -33,27 +33,35 @@
   const sweep = liveMetrics();
   let loadError = $state('');
 
-  $effect(() => whileCurrent((isCurrent) => {
-    sweep.reload;
-    const sid = steamId;
-    matchReads = new Map();
-    loadError = '';
-    if (!sid) return;
-    loadProfile(spectra, sid)
-      .then(async ([rows, profile]) => {
-        if (!isCurrent()) return;
-        const catalog = indexBy(rows || [], 'name');
-        defs = catalog;
-        const rowsOut = profile ? profile.history || [] : [];
-        history = rowsOut;
-        const names = METRICS.filter((n) => catalog.has(n));
-        const byMatch = await metricsByMatch(sid, names, rowsOut.map((h) => h.matchId));
-        if (isCurrent()) matchReads = byMatch;
-      })
-      .catch(whenCurrent(isCurrent, (e) => {
-        loadError = errText(e);
-      }));
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      sweep.reload;
+      const sid = steamId;
+      matchReads = new Map();
+      loadError = '';
+      if (!sid) return;
+      loadProfile(spectra, sid)
+        .then(async ([rows, profile]) => {
+          if (!isCurrent()) return;
+          const catalog = indexBy(rows || [], 'name');
+          defs = catalog;
+          const rowsOut = profile ? profile.history || [] : [];
+          history = rowsOut;
+          const names = METRICS.filter((n) => catalog.has(n));
+          const byMatch = await metricsByMatch(
+            sid,
+            names,
+            rowsOut.map((h) => h.matchId),
+          );
+          if (isCurrent()) matchReads = byMatch;
+        })
+        .catch(
+          whenCurrent(isCurrent, (e) => {
+            loadError = errText(e);
+          }),
+        );
+    }),
+  );
 
   // One stored cell of a match: the metric's own presentation.
   function stored(h, name) {

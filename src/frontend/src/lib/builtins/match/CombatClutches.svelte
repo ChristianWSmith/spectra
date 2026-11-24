@@ -21,12 +21,16 @@
 
   let clutches = $state([]);
   // The match's clutches and its side data, with the error line and the loop length.
-  const combat = combatPanel(() => spectra, () => id, {
-    read: (matchId) => getClutches(matchId),
-    apply: (list) => {
-      clutches = list;
+  const combat = combatPanel(
+    () => spectra,
+    () => id,
+    {
+      read: (matchId) => getClutches(matchId),
+      apply: (list) => {
+        clutches = list;
+      },
     },
-  });
+  );
   const error = $derived(combat.error);
   const players = $derived(combat.players);
   const sideSwitches = $derived(combat.sideSwitches);
@@ -91,88 +95,90 @@
   <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
 {/if}
 
-  <div class="comb-sec">
-    <h2>{S.combat.clutchesHeading}</h2>
-    <!-- Outcome TOGGLES: each flips its own boolean. Local state only, never
+<div class="comb-sec">
+  <h2>{S.combat.clutchesHeading}</h2>
+  <!-- Outcome TOGGLES: each flips its own boolean. Local state only, never
          route-query state. -->
-    <div class="comb-kinds" role="group" aria-label={S.combat.filterClutchesLabel}>
-      <button
-        class="btn small comb-kind"
-        class:active={clutchWon}
-        aria-pressed={clutchWon}
-        onclick={() => (clutchWon = !clutchWon)}
-      >{S.combat.wonToggle}</button>
-      <button
-        class="btn small comb-kind"
-        class:active={clutchLost}
-        aria-pressed={clutchLost}
-        onclick={() => (clutchLost = !clutchLost)}
-      >{S.combat.lostToggle}</button>
-    </div>
-    {#if clutches.length === 0 && !error}
-      <EmptyNote>{S.combat.noClutches}</EmptyNote>
-    {:else if shownClutches.length === 0}
-      <EmptyNote>{clutchEmptyText}</EmptyNote>
-    {:else}
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
-              <th scope="col" class="num">{S.combat.thRound}</th>
-              <th scope="col">{S.combat.thSize}</th>
-              <th scope="col">{S.combat.thPlayer}</th>
-              <th scope="col">{S.combat.thOutcome}</th>
-              <th scope="col">{S.combat.thBomb}</th>
-              <th scope="col" class="num def" title={S.combat.hpTitle}>{S.combat.thHpLeft}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each shownClutches as c (c.id)}
-              <tr>
-                <td>
-                  {#if c.replayAnchorTick > 0}
-                    <!-- Row ▶ follows the CLUTCH's solo; the loop is the kill span. -->
-                    <EventPlay
-                      tick={c.replayAnchorTick}
-                      title={c.steamId
-                        ? S.fill(S.combat.watchClutchFollow, { name: c.name || c.steamId })
-                        : S.combat.watchClutch}
-                      label={c.steamId
-                        ? S.fill(S.combat.watchClutchRoundFollow, { round: c.round, name: c.name || c.steamId })
-                        : S.fill(S.combat.watchClutchRoundReplay, { round: c.round })}
-                      onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
-                    />
-                  {/if}
-                </td>
-                <td class="num">{c.round}</td>
-                <td><strong>{S.combat.clutchSize}{c.size}</strong></td>
-                <td>
-                  <ProfileLink
-                    steam={c.steamId}
-                    name={c.name || DASH}
-                    nav={spectra.navigate}
-                    cls={playerRoundCls(c.round, c.steamId, c.name)}
-                    title={S.combat.openPlayerProfile}
-                  />
-                </td>
-                <td>
-                  <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? S.combat.clutchWon : S.combat.clutchLost}</span>
-                </td>
-                <td>
-                  {#if c.bombState && c.bombState !== 'none'}
-                    <span class="chip">{S.combat.bombPrefix}{c.bombState}</span>
-                  {:else}
-                    <span class="muted">—</span>
-                  {/if}
-                </td>
-                <td class="num">{c.hpLeft}</td>
-              </tr>
-            {:else}
-              <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
+  <div class="comb-kinds" role="group" aria-label={S.combat.filterClutchesLabel}>
+    <button
+      class="btn small comb-kind"
+      class:active={clutchWon}
+      aria-pressed={clutchWon}
+      onclick={() => (clutchWon = !clutchWon)}>{S.combat.wonToggle}</button
+    >
+    <button
+      class="btn small comb-kind"
+      class:active={clutchLost}
+      aria-pressed={clutchLost}
+      onclick={() => (clutchLost = !clutchLost)}>{S.combat.lostToggle}</button
+    >
   </div>
+  {#if clutches.length === 0 && !error}
+    <EmptyNote>{S.combat.noClutches}</EmptyNote>
+  {:else if shownClutches.length === 0}
+    <EmptyNote>{clutchEmptyText}</EmptyNote>
+  {:else}
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
+            <th scope="col" class="num">{S.combat.thRound}</th>
+            <th scope="col">{S.combat.thSize}</th>
+            <th scope="col">{S.combat.thPlayer}</th>
+            <th scope="col">{S.combat.thOutcome}</th>
+            <th scope="col">{S.combat.thBomb}</th>
+            <th scope="col" class="num def" title={S.combat.hpTitle}>{S.combat.thHpLeft}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each shownClutches as c (c.id)}
+            <tr>
+              <td>
+                {#if c.replayAnchorTick > 0}
+                  <!-- Row ▶ follows the CLUTCH's solo; the loop is the kill span. -->
+                  <EventPlay
+                    tick={c.replayAnchorTick}
+                    title={c.steamId
+                      ? S.fill(S.combat.watchClutchFollow, { name: c.name || c.steamId })
+                      : S.combat.watchClutch}
+                    label={c.steamId
+                      ? S.fill(S.combat.watchClutchRoundFollow, { round: c.round, name: c.name || c.steamId })
+                      : S.fill(S.combat.watchClutchRoundReplay, { round: c.round })}
+                    onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
+                  />
+                {/if}
+              </td>
+              <td class="num">{c.round}</td>
+              <td><strong>{S.combat.clutchSize}{c.size}</strong></td>
+              <td>
+                <ProfileLink
+                  steam={c.steamId}
+                  name={c.name || DASH}
+                  nav={spectra.navigate}
+                  cls={playerRoundCls(c.round, c.steamId, c.name)}
+                  title={S.combat.openPlayerProfile}
+                />
+              </td>
+              <td>
+                <span class="chip status {c.won ? 'ok' : 'bad'}"
+                  >{c.won ? S.combat.clutchWon : S.combat.clutchLost}</span
+                >
+              </td>
+              <td>
+                {#if c.bombState && c.bombState !== 'none'}
+                  <span class="chip">{S.combat.bombPrefix}{c.bombState}</span>
+                {:else}
+                  <span class="muted">—</span>
+                {/if}
+              </td>
+              <td class="num">{c.hpLeft}</td>
+            </tr>
+          {:else}
+            <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+</div>

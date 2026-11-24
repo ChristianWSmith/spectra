@@ -24,8 +24,7 @@ export function reportFilename(tpl, { matchId, steamId, roundNo }) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'report';
-  const target =
-    tpl.scope === 'player' ? steamId : tpl.scope === 'round' ? `round-${roundNo}` : `match-${matchId}`;
+  const target = tpl.scope === 'player' ? steamId : tpl.scope === 'round' ? `round-${roundNo}` : `match-${matchId}`;
   return `${base}-${target}.${(tpl.format || 'md') === 'html' ? 'html' : 'md'}`;
 }
 
@@ -38,7 +37,9 @@ export function targetReady(tpl, { matchId, steamId, roundNo }) {
 }
 
 export function mdCell(s) {
-  return String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return String(s == null ? '' : s)
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ');
 }
 
 export function esc(s) {
@@ -66,7 +67,8 @@ const HTML_APPENDIX = {
   open: '<section class="rep-appendix-doc"><h2>Stats appendix</h2>',
   heading: (t) => `<h3>${esc(t)}</h3>`,
   line: (l) => `<p>${esc(l)}</p>`,
-  tableOpen: '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th></tr></thead><tbody>',
+  tableOpen:
+    '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th></tr></thead><tbody>',
   row: (r) => `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td></tr>`,
   tableClose: '</tbody></table>',
   close: '</section>',

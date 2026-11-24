@@ -1,11 +1,23 @@
 <script>
-  import { bySide, openReplay, matchTab, roundsTabHash, openRoundsTab} from '../../builtinhelpers.js';
+  import { bySide, openReplay, matchTab, roundsTabHash, openRoundsTab } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { economySource } from '../../economysource.svelte.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
-  import { DASH, fmtInt, fmtMoney, separatorFlags, roundStartTick, roundEndTick, roundWinnerName, lossPips, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
+  import {
+    DASH,
+    fmtInt,
+    fmtMoney,
+    separatorFlags,
+    roundStartTick,
+    roundEndTick,
+    roundWinnerName,
+    lossPips,
+    hashOf,
+    entryLoopSpan,
+    loadEconomy,
+  } from '../../builtinhelpers.js';
 
   // Economy rounds: one row per counted round. Deaths are the stored round-grain
   // metric raw_player_round_deaths, read per round and summed per side; a round
@@ -19,45 +31,46 @@
   const names = $derived(src.names);
   const sideSwitches = $derived(src.sideSwitches);
 
-
   const PIP_SLOTS = [1, 2, 3, 4, 5];
   const origin = () => back || matchTab(context.matchId, 'economy');
 
   let whyOpen = $state('');
   let deaths = $state(new Map());
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = context.matchId;
-    const list = rows.map((r) => r.round);
-    deaths = new Map();
-    if (matchId == null || list.length === 0) return;
-    Promise.all(
-      list.map((round) =>
-        spectra.metric('raw_player_round_deaths', { match_id: matchId, round }).then(
-          (m) => [round, m],
-          () => [round, null],
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const matchId = context.matchId;
+      const list = rows.map((r) => r.round);
+      deaths = new Map();
+      if (matchId == null || list.length === 0) return;
+      Promise.all(
+        list.map((round) =>
+          spectra.metric('raw_player_round_deaths', { match_id: matchId, round }).then(
+            (m) => [round, m],
+            () => [round, null],
+          ),
         ),
-      ),
-    ).then((pairs) => {
-      if (!isCurrent()) return;
-      const out = new Map();
-      for (const [round, m] of pairs) {
-        // One stored row per player per round, its dim the side sampled: the
-        // side's deaths are the sum over its players (ruling 41).
-        const by = {};
-        if (m && m.state === 'fresh') {
-          for (const v of m.rows) {
-            const side = v.dim;
-            if (side !== 'ct' && side !== 't') continue;
-            if (by[side] === undefined) by[side] = 0;
-            by[side] = v.value == null || by[side] === null ? null : by[side] + v.value;
+      ).then((pairs) => {
+        if (!isCurrent()) return;
+        const out = new Map();
+        for (const [round, m] of pairs) {
+          // One stored row per player per round, its dim the side sampled: the
+          // side's deaths are the sum over its players (ruling 41).
+          const by = {};
+          if (m && m.state === 'fresh') {
+            for (const v of m.rows) {
+              const side = v.dim;
+              if (side !== 'ct' && side !== 't') continue;
+              if (by[side] === undefined) by[side] = 0;
+              by[side] = v.value == null || by[side] === null ? null : by[side] + v.value;
+            }
           }
+          out.set(round, by);
         }
-        out.set(round, by);
-      }
-      deaths = out;
-    });
-  }));
+        deaths = out;
+      });
+    }),
+  );
 
   function deathText(round, side) {
     const by = deaths.get(round);
@@ -114,8 +127,8 @@
             <th scope="col">{S.match.colWinner}</th>
             <th scope="col">{S.economy.colCtBuy}</th>
             <th scope="col">{S.economy.colTBuy}</th>
-            <th scope="col" class="num" title="{S.economy.titleDeaths}">{S.economy.colCtDeaths}</th>
-            <th scope="col" class="num" title="{S.economy.titleDeaths}">{S.economy.colTDeaths}</th>
+            <th scope="col" class="num" title={S.economy.titleDeaths}>{S.economy.colCtDeaths}</th>
+            <th scope="col" class="num" title={S.economy.titleDeaths}>{S.economy.colTDeaths}</th>
             <th scope="col" class="num">{S.economy.colCtLoss}</th>
             <th scope="col" class="num">{S.economy.colTLoss}</th>
           </tr>
@@ -126,19 +139,38 @@
             {@const tc = classChip('t', r)}
             <tr class:split-before={ri > 0 && sepFlags[ri - 1]}>
               <td>
-                <button class="btn small ghost" title={S.economy.watchRoundPrefix + r.round + S.economy.watchRoundSuffix} aria-label={S.economy.watchRoundPrefix + r.round} onclick={() => watchRound(r.round)}><span class="codicon codicon-play"></span></button>
+                <button
+                  class="btn small ghost"
+                  title={S.economy.watchRoundPrefix + r.round + S.economy.watchRoundSuffix}
+                  aria-label={S.economy.watchRoundPrefix + r.round}
+                  onclick={() => watchRound(r.round)}><span class="codicon codicon-play"></span></button
+                >
               </td>
               <td class="num">
-                <button class="btn small ghost econ-rd" title={S.economy.openRoundAria + r.round} onclick={() => openRound(r.round)}>{r.round}</button>
+                <button
+                  class="btn small ghost econ-rd"
+                  title={S.economy.openRoundAria + r.round}
+                  onclick={() => openRound(r.round)}>{r.round}</button
+                >
               </td>
               <td>
                 <WinnerCell name={winnerName(r)} winner={r.winner} />
               </td>
               <td>
-                <button class="chip econ-cls {ctc.cls}" title={ctc.why + S.economy.ruleOpen + ctc.rule + S.economy.ruleClose} aria-expanded={whyOpen === r.round + ':ct'} onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button>
+                <button
+                  class="chip econ-cls {ctc.cls}"
+                  title={ctc.why + S.economy.ruleOpen + ctc.rule + S.economy.ruleClose}
+                  aria-expanded={whyOpen === r.round + ':ct'}
+                  onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button
+                >
               </td>
               <td>
-                <button class="chip econ-cls {tc.cls}" title={tc.why + S.economy.ruleOpen + tc.rule + S.economy.ruleClose} aria-expanded={whyOpen === r.round + ':t'} onclick={() => toggleWhy(r, 't')}>{tc.cls}</button>
+                <button
+                  class="chip econ-cls {tc.cls}"
+                  title={tc.why + S.economy.ruleOpen + tc.rule + S.economy.ruleClose}
+                  aria-expanded={whyOpen === r.round + ':t'}
+                  onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
+                >
               </td>
               <td class="num">{deathText(r.round, 'ct')}</td>
               <td class="num">{deathText(r.round, 't')}</td>
@@ -157,11 +189,17 @@
               <tr class="econ-why-row">
                 <td colspan="9">
                   <div class="econ-why">
-                    <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}">{whyText?.side === 'ct' ? ctc.cls : tc.cls}</span>
+                    <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}"
+                      >{whyText?.side === 'ct' ? ctc.cls : tc.cls}</span
+                    >
                     <span class="econ-why-text">{whyText?.why || S.economy.noExplanation}</span>
                     <span class="spacer"></span>
                     <span class="econ-why-rules mono">{S.economy.rulesPrefix}{whyText?.rule ?? r.ruleVersion}</span>
-                    <button class="btn small ghost" aria-label="{S.economy.closeExplanation}" onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button>
+                    <button
+                      class="btn small ghost"
+                      aria-label={S.economy.closeExplanation}
+                      onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button
+                    >
                   </div>
                 </td>
               </tr>

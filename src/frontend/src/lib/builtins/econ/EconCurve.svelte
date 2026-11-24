@@ -1,12 +1,24 @@
 <script>
-  import { bySide, roundsTabHash, openRoundsTab} from '../../builtinhelpers.js';
+  import { bySide, roundsTabHash, openRoundsTab } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
   import { openRow } from '../../keys.js';
   import { economySource } from '../../economysource.svelte.js';
   import * as S from '../../strings/index.js';
-  import { fmtMoney, moneyResetIndexes, flipIndexes, eraOf, sideInEra, teamKeyAt, teamStartClass, econColumns, econValue, hashOf, loadEconomy } from '../../builtinhelpers.js';
+  import {
+    fmtMoney,
+    moneyResetIndexes,
+    flipIndexes,
+    eraOf,
+    sideInEra,
+    teamKeyAt,
+    teamStartClass,
+    econColumns,
+    econValue,
+    hashOf,
+    loadEconomy,
+  } from '../../builtinhelpers.js';
 
   // Economy curve: hand-drawn SVG, one line per team, the winner strip under it.
   // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),
@@ -17,7 +29,6 @@
   const names = $derived(src.names);
   const sideSwitches = $derived(src.sideSwitches);
   const matchWinner = $derived(src.matchWinner);
-
 
   const W = 1000;
   const H = 220;
@@ -112,10 +123,7 @@
 
   function ranks(r) {
     if (!r.winner) return null;
-    return [
-      classRank(bySide(r.winner, r.classCT, r.classT)),
-      classRank(bySide(r.winner, r.classT, r.classCT)),
-    ];
+    return [classRank(bySide(r.winner, r.classCT, r.classT)), classRank(bySide(r.winner, r.classT, r.classCT))];
   }
 
   function mark(r) {
@@ -137,7 +145,19 @@
 
   function cellTitle(r) {
     const w = r.winner ? r.winner.toUpperCase() : DASH;
-    return S.economy.cellRound + r.round + ' — ' + w + S.economy.cellWinsBuy + (r.classCT || 'unknown') + S.economy.cellBuySep + (r.classT || 'unknown') + ' · ' + verdict(r) + (r.pistolRound ? S.economy.cellPistol : '');
+    return (
+      S.economy.cellRound +
+      r.round +
+      ' — ' +
+      w +
+      S.economy.cellWinsBuy +
+      (r.classCT || 'unknown') +
+      S.economy.cellBuySep +
+      (r.classT || 'unknown') +
+      ' · ' +
+      verdict(r) +
+      (r.pistolRound ? S.economy.cellPistol : '')
+    );
   }
 
   const openRound = (round) => openRoundsTab(spectra, context.matchId, round);
@@ -161,9 +181,21 @@
       {#if n > 0}
         <span class="econ-axis-note mono">0 – {fmtMoney(series.max)}</span>
       {/if}
-      <div class="econ-toggle" role="group" aria-label="{S.economy.curveMetricGroup}">
-        <button class="econ-toggle-btn" class:active={metric === 'equip'} aria-pressed={metric === 'equip'} title={EQUIP_DEF} onclick={() => (metric = 'equip')}>{S.economy.curveToggleEquip}</button>
-        <button class="econ-toggle-btn" class:active={metric === 'networth'} aria-pressed={metric === 'networth'} title={NETWORTH_DEF} onclick={() => (metric = 'networth')}>{S.economy.curveToggleNetWorth}</button>
+      <div class="econ-toggle" role="group" aria-label={S.economy.curveMetricGroup}>
+        <button
+          class="econ-toggle-btn"
+          class:active={metric === 'equip'}
+          aria-pressed={metric === 'equip'}
+          title={EQUIP_DEF}
+          onclick={() => (metric = 'equip')}>{S.economy.curveToggleEquip}</button
+        >
+        <button
+          class="econ-toggle-btn"
+          class:active={metric === 'networth'}
+          aria-pressed={metric === 'networth'}
+          title={NETWORTH_DEF}
+          onclick={() => (metric = 'networth')}>{S.economy.curveToggleNetWorth}</button
+        >
       </div>
     </div>
   </div>
@@ -171,7 +203,7 @@
   {#if n === 0}
     <EmptyNote>{S.economy.noRows}</EmptyNote>
   {:else}
-    <div class="econ-legend" aria-label="{S.economy.curveLegendLabel}">
+    <div class="econ-legend" aria-label={S.economy.curveLegendLabel}>
       <span class="econ-legend-item {clsCT}">
         <span class="econ-legend-line" class:loser={loserCT} aria-hidden="true"></span>
         {nameCT}
@@ -182,8 +214,13 @@
       </span>
     </div>
 
-    <div class="econ-chart" onmousemove={onMove} onmouseleave={() => (hover = -1)} role="img"
-      aria-label={(metric === 'equip' ? S.economy.curveAriaEquip : S.economy.curveAriaNetWorth) + S.economy.curveAriaSuffix}
+    <div
+      class="econ-chart"
+      onmousemove={onMove}
+      onmouseleave={() => (hover = -1)}
+      role="img"
+      aria-label={(metric === 'equip' ? S.economy.curveAriaEquip : S.economy.curveAriaNetWorth) +
+        S.economy.curveAriaSuffix}
     >
       <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
         {#each rows as r, i (r.round)}
@@ -201,7 +238,14 @@
           <line class="econ-guide" x1={xAt(hover)} x2={xAt(hover)} y1="0" y2={H} />
         {/if}
         {#each rows as r, i (r.round)}
-          <rect class="econ-hit" x={i * (W / n)} y="0" width={W / n} height={H} role="button" tabindex="0"
+          <rect
+            class="econ-hit"
+            x={i * (W / n)}
+            y="0"
+            width={W / n}
+            height={H}
+            role="button"
+            tabindex="0"
             aria-label={S.economy.openRoundAria + r.round}
             {...openRow(() => openRound(r.round))}
           >
@@ -239,20 +283,35 @@
       {/if}
     </div>
 
-    <div class="econ-strip" aria-label="{S.economy.stripLabel}">
+    <div class="econ-strip" aria-label={S.economy.stripLabel}>
       {#each rows as r (r.round)}
-        <button class="econ-strip-cell" class:ct={r.winner === 'ct'} class:t={r.winner === 't'} class:pistol={r.pistolRound}
-          title={cellTitle(r)} aria-label={S.economy.openRoundAria + r.round} onclick={() => openRound(r.round)}
+        <button
+          class="econ-strip-cell"
+          class:ct={r.winner === 'ct'}
+          class:t={r.winner === 't'}
+          class:pistol={r.pistolRound}
+          title={cellTitle(r)}
+          aria-label={S.economy.openRoundAria + r.round}
+          onclick={() => openRound(r.round)}
         >
           <span class="econ-strip-num">{r.round}</span>
           <span class="econ-strip-mark" class:hold={mark(r) === '✓'} class:upset={mark(r) === '✗'}
-            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else if mark(r) === '='}<span class="codicon codicon-grabber"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
+            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span
+                class="codicon codicon-error"
+              ></span>{:else if mark(r) === '='}<span class="codicon codicon-grabber"></span>{:else}<span
+                class="codicon codicon-circle-small"
+              ></span>{/if}</span
           >
         </button>
       {/each}
     </div>
     <p class="econ-strip-note muted">
-      <span class="econ-strip-swatch pistol" aria-hidden="true"></span> {S.economy.stripPistol} <span class="codicon codicon-check"></span> {S.economy.stripFavorite} <span class="codicon codicon-error"></span> {S.economy.stripUpset} <span class="codicon codicon-grabber"></span> {S.economy.stripEven} <span class="codicon codicon-circle-small"></span> {S.economy.stripNoVerdict}
+      <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
+      {S.economy.stripPistol} <span class="codicon codicon-check"></span>
+      {S.economy.stripFavorite} <span class="codicon codicon-error"></span>
+      {S.economy.stripUpset} <span class="codicon codicon-grabber"></span>
+      {S.economy.stripEven} <span class="codicon codicon-circle-small"></span>
+      {S.economy.stripNoVerdict}
     </p>
   {/if}
 </div>

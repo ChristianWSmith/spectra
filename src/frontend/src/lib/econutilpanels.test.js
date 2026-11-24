@@ -83,7 +83,7 @@ test('the view files are Svelte components under builtins/econ and builtins/util
 
 test('every child a composer mounts is a registered builtin', () => {
   for (const id of COMPOSERS) {
-    const names = [...sourceOf(id).matchAll(/spectra\.Child name="([^"]+)"/g)].map((m) => m[1]);
+    const names = [...sourceOf(id).matchAll(/spectra\.Child\s+name="([^"]+)"/g)].map((m) => m[1]);
     assert.ok(names.length >= 3, `${id} mounts its panels`);
     for (const name of names) {
       assert.ok(builtinById(name), `${id} mounts ${name}, which is not registered`);

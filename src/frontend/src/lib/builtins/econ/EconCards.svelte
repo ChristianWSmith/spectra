@@ -78,25 +78,26 @@
   const rounds = $derived(src.rounds);
   const names = $derived(src.names);
 
-
   const CARDS = ECON_CARDS;
   const BADGE_INFERRED = 'inferred';
   const BADGE_COMPUTED = 'computed';
 
   let reads = $state({});
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = context.matchId;
-    if (matchId == null) return;
-    Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
-      if (!isCurrent()) return;
-      const out = {};
-      CARDS.forEach((c, i) => {
-        out[c.metric] = res[i];
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const matchId = context.matchId;
+      if (matchId == null) return;
+      Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
+        if (!isCurrent()) return;
+        const out = {};
+        CARDS.forEach((c, i) => {
+          out[c.metric] = res[i];
+        });
+        reads = out;
       });
-      reads = out;
-    });
-  }));
+    }),
+  );
 
   // The round each drill anchor names: the first decided pistol round, the first
   // force-buy round, the round with the largest winner gap, and the round with
@@ -180,13 +181,19 @@
     if (!round) return;
     const start = roundStartTick(rounds, round);
     const end = roundEndTick(rounds, round);
-    openReplay(spectra, context.matchId, { tick: start, loop: entryLoopSpan(start, end), back: back || matchTab(context.matchId, 'economy') });
+    openReplay(spectra, context.matchId, {
+      tick: start,
+      loop: entryLoopSpan(start, end),
+      back: back || matchTab(context.matchId, 'economy'),
+    });
   }
 </script>
 
 <div class="econ-summary stat-grid">
   {#snippet badge(c)}
-    <span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span>
+    <span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}"
+      >{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span
+    >
   {/snippet}
   {#each cards as c (c.key)}
     {#if c.drill}

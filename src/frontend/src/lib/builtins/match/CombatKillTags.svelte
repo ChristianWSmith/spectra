@@ -15,7 +15,7 @@
   import { entryLoopAround } from '../../nav.js';
   import { roundScoreLabel } from '../../rounds.js';
   import { roundsByNumber } from '../../replay/landmarks.js';
-    import { matchRecord } from '../../viewstate.svelte.js';
+  import { matchRecord } from '../../viewstate.svelte.js';
   import { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../definitions.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
@@ -29,12 +29,16 @@
   let killTags = $state([]);
   // The match's kill tags, with its side data (the team-identity colours on names,
   // the per-round side colours, the row clock) and the error line.
-  const combat = combatPanel(() => spectra, () => id, {
-    read: (matchId) => getKillTags(matchId, ''),
-    apply: (list) => {
-      killTags = list;
+  const combat = combatPanel(
+    () => spectra,
+    () => id,
+    {
+      read: (matchId) => getKillTags(matchId, ''),
+      apply: (list) => {
+        killTags = list;
+      },
     },
-  });
+  );
   const error = $derived(combat.error);
   const players = $derived(combat.players);
   const sideSwitches = $derived(combat.sideSwitches);
@@ -75,9 +79,7 @@
 
   // The round <select> shows the recorded choice while it still exists in the
   // option list, else the first round with a kill, else "All rounds".
-  const engRoundOptions = $derived(
-    [...new Set(killTagRows.map((g) => g.round))].sort((a, b) => a - b),
-  );
+  const engRoundOptions = $derived([...new Set(killTagRows.map((g) => g.round))].sort((a, b) => a - b));
   const engRoundValue = $derived(
     engRound === 'all'
       ? 'all'
@@ -128,135 +130,128 @@
   <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
 {/if}
 
-  <div class="comb-sec">
-    <h2>{S.combat.killTagsHeading}</h2>
-    <div class="comb-kinds" role="group" aria-label={S.combat.filterKillTagsLabel}>
-      <span class="comb-kind-host" bind:this={kindAnchor}>
-        <span class="comb-field">
-          <span class="field-label">{S.combat.kindFilterLabel}</span>
-          <button
-            type="button"
-            class="input multi-trigger"
-            class:multi-open={kindOpen}
-            bind:this={kindTrigger}
-            aria-haspopup="true"
-            aria-expanded={kindOpen}
-            aria-controls={kindOpen ? 'comb-kind-pop' : null}
-            onclick={() => (kindOpen = !kindOpen)}
-          >
-            {kindSummary}
-          </button>
-        </span>
-        <Popover
-          open={kindOpen}
-          anchor={kindAnchor}
-          onClose={closeKinds}
-          onOutside={closeKindsOutside}
+<div class="comb-sec">
+  <h2>{S.combat.killTagsHeading}</h2>
+  <div class="comb-kinds" role="group" aria-label={S.combat.filterKillTagsLabel}>
+    <span class="comb-kind-host" bind:this={kindAnchor}>
+      <span class="comb-field">
+        <span class="field-label">{S.combat.kindFilterLabel}</span>
+        <button
+          type="button"
+          class="input multi-trigger"
+          class:multi-open={kindOpen}
+          bind:this={kindTrigger}
+          aria-haspopup="true"
+          aria-expanded={kindOpen}
+          aria-controls={kindOpen ? 'comb-kind-pop' : null}
+          onclick={() => (kindOpen = !kindOpen)}
         >
-          <div
-            class="comb-kind-pop"
-            id="comb-kind-pop"
-            role="group"
-            aria-label={S.combat.kindFilterLabel}
-          >
-            {#each KILL_TAG_KINDS as k (k)}
-              <label class="filt-check">
-                <input
-                  type="checkbox"
-                  checked={engKinds.includes(k)}
-                  onchange={() => toggleEngKind(k)}
-                />
-                {k}
-              </label>
-            {/each}
-          </div>
-        </Popover>
+          {kindSummary}
+        </button>
       </span>
-      <div class="comb-round-filter">
-        <label class="comb-field" for="comb-round-filter">
-          <span class="field-label">{S.combat.roundFilterLabel}</span>
-          <select
-            class="input"
-            id="comb-round-filter"
-            value={engRoundValue}
-            onchange={(e) => (engRound = e.currentTarget.value)}
-          >
-            <option value="all">{S.combat.allRounds}</option>
-            {#each engRoundOptions as n (n)}
-              <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-    </div>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
-            <th scope="col" class="num">{S.combat.thRound}</th>
-            <th scope="col" class="num def" title={S.combat.timeTitle}>{S.combat.thTime}</th>
-            <th scope="col">{S.combat.thKind}</th>
-            <th scope="col">{S.combat.thKiller}</th>
-            <th scope="col"><span class="sr-only">{S.combat.thVersus}</span></th>
-            <th scope="col">{S.combat.thVictim}</th>
-            <th scope="col" class="num def" title={KILL_TAG_DIST_DEF}>{S.combat.thDist}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each visibleKillTags as g (g.key)}
-            <tr>
-              <td>
-                <!-- Row ▶ follows the KILL TAG's KILLER. -->
-                <EventPlay
-                  tick={g.tick}
-                  title={g.aSteam
-                    ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam }) + S.combat.killerSuffix
-                    : S.combat.watchKillTag}
-                  label={g.aSteam
-                    ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam })
-                    : S.combat.watchKillTag}
-                  onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
-                />
-              </td>
-              <!-- The Round cell is TEXT, not a control: the row's ONE ▶ is the
-                   event/follow play above. -->
-              <td class="num">{g.round}</td>
-              <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}>{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
-              <td>
-                <!-- ONE kill, up to FOUR kind facts; each chip keeps its own
-                     perspective title, plus an sr-only combined line. -->
-                {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={KILL_TAG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">{S.combat.oneKillPrefix}{g.kinds.map((k) => KILL_TAG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
-              </td>
-              <td>
-                <ProfileLink
-                  steam={g.aSteam}
-                  name={g.aName || DASH}
-                  nav={spectra.navigate}
-                  cls={playerRoundCls(g.round, g.aSteam, g.aName)}
-                  title={S.fill(S.combat.openProfileName, { name: g.aName })}
-                />
-              </td>
-              <td class="muted">{S.combat.versus}</td>
-              <td>
-                <ProfileLink
-                  steam={g.bSteam}
-                  name={g.bName || DASH}
-                  nav={spectra.navigate}
-                  cls={playerRoundCls(g.round, g.bSteam, g.bName)}
-                  title={S.fill(S.combat.openProfileName, { name: g.bName })}
-                />
-              </td>
-              <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : DASH}</td>
-            </tr>
-          {:else}
-            <tr>
-              <td colspan="8" class="muted">
-                {error ? S.combat.killTagsUnavailable : S.combat.noKillTags}
-              </td>
-            </tr>
+      <Popover open={kindOpen} anchor={kindAnchor} onClose={closeKinds} onOutside={closeKindsOutside}>
+        <div class="comb-kind-pop" id="comb-kind-pop" role="group" aria-label={S.combat.kindFilterLabel}>
+          {#each KILL_TAG_KINDS as k (k)}
+            <label class="filt-check">
+              <input type="checkbox" checked={engKinds.includes(k)} onchange={() => toggleEngKind(k)} />
+              {k}
+            </label>
           {/each}
-        </tbody>
-      </table>
+        </div>
+      </Popover>
+    </span>
+    <div class="comb-round-filter">
+      <label class="comb-field" for="comb-round-filter">
+        <span class="field-label">{S.combat.roundFilterLabel}</span>
+        <select
+          class="input"
+          id="comb-round-filter"
+          value={engRoundValue}
+          onchange={(e) => (engRound = e.currentTarget.value)}
+        >
+          <option value="all">{S.combat.allRounds}</option>
+          {#each engRoundOptions as n (n)}
+            <option value={String(n)}>{roundScoreLabel(rounds, n)}</option>
+          {/each}
+        </select>
+      </label>
     </div>
   </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr-only">{S.combat.thReplay}</span></th>
+          <th scope="col" class="num">{S.combat.thRound}</th>
+          <th scope="col" class="num def" title={S.combat.timeTitle}>{S.combat.thTime}</th>
+          <th scope="col">{S.combat.thKind}</th>
+          <th scope="col">{S.combat.thKiller}</th>
+          <th scope="col"><span class="sr-only">{S.combat.thVersus}</span></th>
+          <th scope="col">{S.combat.thVictim}</th>
+          <th scope="col" class="num def" title={KILL_TAG_DIST_DEF}>{S.combat.thDist}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each visibleKillTags as g (g.key)}
+          <tr>
+            <td>
+              <!-- Row ▶ follows the KILL TAG's KILLER. -->
+              <EventPlay
+                tick={g.tick}
+                title={g.aSteam
+                  ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam }) + S.combat.killerSuffix
+                  : S.combat.watchKillTag}
+                label={g.aSteam
+                  ? S.fill(S.combat.watchKillFollow, { name: g.aName || g.aSteam })
+                  : S.combat.watchKillTag}
+                onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate, loopSecs), g.aSteam)}
+              />
+            </td>
+            <!-- The Round cell is TEXT, not a control: the row's ONE ▶ is the
+                   event/follow play above. -->
+            <td class="num">{g.round}</td>
+            <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}
+              >{roundClock(g.tick, rbn.get(g.round), tickRate)}</td
+            >
+            <td>
+              <!-- ONE kill, up to FOUR kind facts; each chip keeps its own
+                     perspective title, plus an sr-only combined line. -->
+              {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span
+                  class="chip comb-kind-chip {k}"
+                  title={KILL_TAG_KIND_TITLES[k] || k}>{k}</span
+                >{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only"
+                  >{S.combat.oneKillPrefix}{g.kinds.map((k) => KILL_TAG_KIND_TITLES[k] || k).join('; ')}</span
+                >{/if}
+            </td>
+            <td>
+              <ProfileLink
+                steam={g.aSteam}
+                name={g.aName || DASH}
+                nav={spectra.navigate}
+                cls={playerRoundCls(g.round, g.aSteam, g.aName)}
+                title={S.fill(S.combat.openProfileName, { name: g.aName })}
+              />
+            </td>
+            <td class="muted">{S.combat.versus}</td>
+            <td>
+              <ProfileLink
+                steam={g.bSteam}
+                name={g.bName || DASH}
+                nav={spectra.navigate}
+                cls={playerRoundCls(g.round, g.bSteam, g.bName)}
+                title={S.fill(S.combat.openProfileName, { name: g.bName })}
+              />
+            </td>
+            <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : DASH}</td>
+          </tr>
+        {:else}
+          <tr>
+            <td colspan="8" class="muted">
+              {error ? S.combat.killTagsUnavailable : S.combat.noKillTags}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+</div>

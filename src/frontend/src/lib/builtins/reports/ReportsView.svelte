@@ -6,7 +6,18 @@
   import { DASH } from '../../builtinhelpers.js';
   import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import { listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs } from '../../services.js';
+  import {
+    listReportTemplates,
+    listPlayers,
+    getRounds,
+    listMetrics,
+    getMetricComputeState,
+    errText,
+    getScoreboard,
+    getMetricValuesForMatch,
+    renderReport,
+    getPlayerRefs,
+  } from '../../services.js';
   import { listedPlayers } from '../../players.js';
   import { seed, remember } from '../../viewstate.svelte.js';
   import PlayerPicker from '../../components/PlayerPicker.svelte';
@@ -30,8 +41,8 @@
   // The selection (template, player, round, appendix stats) restores through
   // the view-state registry (viewstate.svelte.js, key 'reports'). The composed
   // document and busy/error stay transient and never restore.
-    // (getScoreboard is read by the template panel's player picker, not here.)
-    
+  // (getScoreboard is read by the template panel's player picker, not here.)
+
   let { spectra, context, embedded = false } = $props();
 
   const repSeed = seed('reports', {
@@ -70,7 +81,15 @@
   // re-reads the rounds below.
   const matchId = $derived(context.matchId || 0);
 
-  $effect(() => remember('reports', { tplId: m.tplId, steamId: m.steamId, roundNo: m.roundNo, stats: m.stats, rawStats: m.rawStats }));
+  $effect(() =>
+    remember('reports', {
+      tplId: m.tplId,
+      steamId: m.steamId,
+      roundNo: m.roundNo,
+      stats: m.stats,
+      rawStats: m.rawStats,
+    }),
+  );
 
   // The template list (mount AND tplError's Retry).
   async function loadTemplates() {
@@ -132,7 +151,6 @@
       .catch(() => (m.rounds = []));
   });
 
-
   // --- the templates and target block ---
   // The Reports template and target panel (builtin, composed by ReportsView):
   // the template grid, the target pickers (a player for a player template, a
@@ -148,41 +166,51 @@
   // (the match-scope seeds, fresh rows only), so a missing half is the dash.
   const STATLINE_SEEDS = ['kills', 'deaths', 'assists', 'adr', 'rounds_played'];
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const id = matchId;
-    const scope = tpl && tpl.scope;
-    if (!id || scope !== 'player') {
-      m.sbBySteam = {};
-      m.seeds = new Map();
-      return;
-    }
-    const catalog = new Map((m.metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
-    const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter((d) => d && (d.scope || 'match') === 'match');
-    const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
-    spectra.track(Promise.all([
-      getScoreboard(id, '', false),
-      matchDefs.length ? getMetricValuesForMatch(id, matchDefs.map((d) => d.id)) : Promise.resolve([]),
-    ]))
-      .then(([rows, values]) => {
-        if (!isCurrent()) return;
-        const sb = {};
-        for (const r of listedPlayers(rows) || []) sb[r.steamId] = r;
-        m.sbBySteam = sb;
-        const nameById = new Map(matchDefs.map((d) => [d.id, d.name]));
-        for (const v of values || []) {
-          const name = nameById.get(v.metricId);
-          const entry = name && out.get(name);
-          if (entry) entry.bySteam.set(v.subjectKey, { value: v.value, format: entry.def.format });
-        }
-        m.seeds = out;
-      })
-      .catch(() => {
-        if (isCurrent()) {
-          m.sbBySteam = {};
-          m.seeds = new Map();
-        }
-      });
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const id = matchId;
+      const scope = tpl && tpl.scope;
+      if (!id || scope !== 'player') {
+        m.sbBySteam = {};
+        m.seeds = new Map();
+        return;
+      }
+      const catalog = new Map((m.metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
+      const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter((d) => d && (d.scope || 'match') === 'match');
+      const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
+      spectra
+        .track(
+          Promise.all([
+            getScoreboard(id, '', false),
+            matchDefs.length
+              ? getMetricValuesForMatch(
+                  id,
+                  matchDefs.map((d) => d.id),
+                )
+              : Promise.resolve([]),
+          ]),
+        )
+        .then(([rows, values]) => {
+          if (!isCurrent()) return;
+          const sb = {};
+          for (const r of listedPlayers(rows) || []) sb[r.steamId] = r;
+          m.sbBySteam = sb;
+          const nameById = new Map(matchDefs.map((d) => [d.id, d.name]));
+          for (const v of values || []) {
+            const name = nameById.get(v.metricId);
+            const entry = name && out.get(name);
+            if (entry) entry.bySteam.set(v.subjectKey, { value: v.value, format: entry.def.format });
+          }
+          m.seeds = out;
+        })
+        .catch(() => {
+          if (isCurrent()) {
+            m.sbBySteam = {};
+            m.seeds = new Map();
+          }
+        });
+    }),
+  );
 
   // --- the stats appendix ---
   // The Reports stats appendix (builtin, composed by ReportsView): the one
@@ -190,7 +218,6 @@
   // line for each pick, and the save button. A picked metric reads its STORED
   // rows for the match (a saved document is a snapshot the user saves again);
   // a picked metric with no fresh row shows its state, never a number.
-
 
   // The raw offer: the recorded-value counterparts of the fixed stats (Score
   // is the one; every other recorded stat offers through the metric catalog).
@@ -214,7 +241,9 @@
   });
 
   const itemText = (x) => (x.kind === 'raw' ? x.label : x.title || x.name);
-  const picked = $derived(appendixItems.filter((it) => (isRawId(it.id) ? m.rawStats.includes(it.id) : m.stats.includes(it.id))));
+  const picked = $derived(
+    appendixItems.filter((it) => (isRawId(it.id) ? m.rawStats.includes(it.id) : m.stats.includes(it.id))),
+  );
 
   function addStat(x) {
     if (isRawId(x.id)) {
@@ -249,11 +278,14 @@
     for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
     for (const r of rawSel) pending[r.id] = { loading: true, raw: r };
     appendix = pending;
-    spectra.track(Promise.all([
-      sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
-      getPlayerRefs(mid),
-      rawSel.length ? getScoreboard(mid, '', false) : Promise.resolve(null),
-    ]))
+    spectra
+      .track(
+        Promise.all([
+          sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
+          getPlayerRefs(mid),
+          rawSel.length ? getScoreboard(mid, '', false) : Promise.resolve(null),
+        ]),
+      )
       .then(([values, refs, board]) => {
         if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
@@ -272,7 +304,11 @@
             if (subject === 'team') return v.subjectKey;
             return bySteam.get(v.subjectKey) || v.subjectKey;
           };
-          const valRows = (byMetric.get(id) || []).map((v) => ({ id: v.subjectKey, label: labelFor(v), value: v.value }));
+          const valRows = (byMetric.get(id) || []).map((v) => ({
+            id: v.subjectKey,
+            label: labelFor(v),
+            value: v.value,
+          }));
           next[id] = { loading: false, rows: valRows, metric: def, unitHasRows: valRows.length > 0 };
         }
         // Raw rows: one per roster player (bots never listed), read off the field.
@@ -342,7 +378,12 @@
     const pres = appendixPres(id);
     if (pres && pres.kind === 'value') {
       const subject = (a.metric && a.metric.subject) || 'player';
-      const unit = subject === 'match' ? S.reports.unitPerMatch : subject === 'team' ? S.reports.unitPerTeam : S.reports.unitPerPlayer;
+      const unit =
+        subject === 'match'
+          ? S.reports.unitPerMatch
+          : subject === 'team'
+            ? S.reports.unitPerTeam
+            : S.reports.unitPerPlayer;
       return S.fill(S.reports.rowsMatch, { unit, n: a.rows.length, id: matchId });
     }
     const word = pres && pres.kind === 'chip' ? pres.state : 'no-data';
@@ -386,7 +427,6 @@
   }
 
   const canSave = $derived(targetReady(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }));
-
 </script>
 
 <div>
@@ -448,7 +488,14 @@
       {#if tpl.scope === 'round'}
         <div class="rep-field">
           <label class="field-label" for="rep-round">{S.reports.roundLabel}</label>
-          <input class="input" id="rep-round" type="number" min="1" max={Math.max(1, maxRound)} bind:value={m.roundNo} />
+          <input
+            class="input"
+            id="rep-round"
+            type="number"
+            min="1"
+            max={Math.max(1, maxRound)}
+            bind:value={m.roundNo}
+          />
           <span class="muted rep-hint">1..{Math.max(1, maxRound)}</span>
         </div>
       {/if}
@@ -463,57 +510,54 @@
 {/if}
 
 <div>
-{#if tpl}
-  <h2>{S.reports.statsAppendix}</h2>
-  <p class="muted">{S.reports.appendixHint}</p>
-  {#if matchMetrics.length === 0 && !m.metricsError}
-    <!-- A NOTE, not a gate: the recorded values are always on offer. -->
-    <EmptyNote>{m.metrics.length ? S.reports.noMatchScopedStats : S.reports.noCustomStats}</EmptyNote>
-  {/if}
-  <div class="row-between">
-    <TokenSelect
-      id="rep-stats"
-      items={appendixItems}
-      text={itemText}
-      tokens={picked.map((x) => ({ id: x.id, label: itemText(x) }))}
-      placeholder={S.reports.metricHint}
-      ariaLabel={S.reports.metricAria}
-      removeAria={S.reports.removeStatAria}
-      align="start"
-      onselect={addStat}
-      onremove={removeStat}
-    />
-    <button class="btn primary" disabled={m.rendering || !canSave} onclick={render}>
-      {#if m.rendering}{S.reports.rendering}{:else}<span class="codicon codicon-save" aria-hidden="true"></span> {S.reports.generateReport}{/if}
-    </button>
-  </div>
-  {#each picked as x (x.id)}
-    <div class="rep-metric">
-      <strong>{itemText(x)}</strong>
-      {#if x.kind !== 'raw'}
-        <span class="muted mono rep-metric-expr">{x.expr}</span>
-      {/if}
-      {#if appendix[x.id] && appendix[x.id].loading}
-        <span class="muted">…</span>
-      {:else if appendix[x.id] && appendix[x.id].error}
-        <span class="error-text" title={appendix[x.id].error}>{S.reports.failedLabel}</span>
-      {:else if x.kind === 'raw'}
-        <span class="chip">{S.reports.recordedValue}</span>
-      {:else}
-        {@const chip = appendixChip(x.id)}
-        {#if chip && chip.kind === 'rows'}
-          <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
-        {:else if chip}
-          <StatusChip
-            status={chip.state}
-            title={chip.title}
-            {...sweep.chip(x)}
-          />
-        {/if}
-      {/if}
+  {#if tpl}
+    <h2>{S.reports.statsAppendix}</h2>
+    <p class="muted">{S.reports.appendixHint}</p>
+    {#if matchMetrics.length === 0 && !m.metricsError}
+      <!-- A NOTE, not a gate: the recorded values are always on offer. -->
+      <EmptyNote>{m.metrics.length ? S.reports.noMatchScopedStats : S.reports.noCustomStats}</EmptyNote>
+    {/if}
+    <div class="row-between">
+      <TokenSelect
+        id="rep-stats"
+        items={appendixItems}
+        text={itemText}
+        tokens={picked.map((x) => ({ id: x.id, label: itemText(x) }))}
+        placeholder={S.reports.metricHint}
+        ariaLabel={S.reports.metricAria}
+        removeAria={S.reports.removeStatAria}
+        align="start"
+        onselect={addStat}
+        onremove={removeStat}
+      />
+      <button class="btn primary" disabled={m.rendering || !canSave} onclick={render}>
+        {#if m.rendering}{S.reports.rendering}{:else}<span class="codicon codicon-save" aria-hidden="true"></span>
+          {S.reports.generateReport}{/if}
+      </button>
     </div>
-  {/each}
-{/if}
+    {#each picked as x (x.id)}
+      <div class="rep-metric">
+        <strong>{itemText(x)}</strong>
+        {#if x.kind !== 'raw'}
+          <span class="muted mono rep-metric-expr">{x.expr}</span>
+        {/if}
+        {#if appendix[x.id] && appendix[x.id].loading}
+          <span class="muted">…</span>
+        {:else if appendix[x.id] && appendix[x.id].error}
+          <span class="error-text" title={appendix[x.id].error}>{S.reports.failedLabel}</span>
+        {:else if x.kind === 'raw'}
+          <span class="chip">{S.reports.recordedValue}</span>
+        {:else}
+          {@const chip = appendixChip(x.id)}
+          {#if chip && chip.kind === 'rows'}
+            <span class="chip">{chip.n}{S.reports.rowsSuffix}</span>
+          {:else if chip}
+            <StatusChip status={chip.state} title={chip.title} {...sweep.chip(x)} />
+          {/if}
+        {/if}
+      </div>
+    {/each}
+  {/if}
 </div>
 
 <style>

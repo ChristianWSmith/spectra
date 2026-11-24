@@ -63,15 +63,30 @@
         value = STATE_WORD[m.state] || m.state;
       }
       const person = steam ? who.get(steam) : null;
-      out.push({ key: card.metric, label: card.label, value, steam, name: person ? person.name : '', side: person ? person.side : '', state: m.state, title: m.error || '' });
+      out.push({
+        key: card.metric,
+        label: card.label,
+        value,
+        steam,
+        name: person ? person.name : '',
+        side: person ? person.side : '',
+        state: m.state,
+        title: m.error || '',
+      });
     }
     return { cards: out, switches };
   }
 
-  $effect(loadForMatch(() => context.matchId, load, (res) => {
-    cards = res.cards;
-    ready = true;
-  }));
+  $effect(
+    loadForMatch(
+      () => context.matchId,
+      load,
+      (res) => {
+        cards = res.cards;
+        ready = true;
+      },
+    ),
+  );
 
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
@@ -81,19 +96,29 @@
     {#if ready}
       {#each cards as c (c.key)}
         <LoadBox tag="div" class="stat-box" busy={spectra.busy} name="match-overview-card" key={c.key}>
-        <div class="stat-cell" role="button" tabindex="0" title={c.title || undefined}
-          {...openRow(() => c.steam && follow(c.steam), { ignore: 'button', enterOnly: true })}
-        >
-          <span class="field-label">{c.label}</span>
-          <span class="stat-value">{c.value}</span>
-          <span class="stat-sub">
-            {#if c.steam && isSteam(c.steam)}
-              <button class="btn ghost small name-link" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, c.steam); }}>{c.name}</button>
-            {:else}
-              {c.name}
-            {/if}
-          </span>
-        </div>
+          <div
+            class="stat-cell"
+            role="button"
+            tabindex="0"
+            title={c.title || undefined}
+            {...openRow(() => c.steam && follow(c.steam), { ignore: 'button', enterOnly: true })}
+          >
+            <span class="field-label">{c.label}</span>
+            <span class="stat-value">{c.value}</span>
+            <span class="stat-sub">
+              {#if c.steam && isSteam(c.steam)}
+                <button
+                  class="btn ghost small name-link"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openPlayer(spectra, c.steam);
+                  }}>{c.name}</button
+                >
+              {:else}
+                {c.name}
+              {/if}
+            </span>
+          </div>
         </LoadBox>
       {/each}
     {:else}

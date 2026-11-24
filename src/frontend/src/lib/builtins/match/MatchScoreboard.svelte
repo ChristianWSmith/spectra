@@ -4,7 +4,18 @@
   import { openRow } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { readFrameBase, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellValue, matchPres, STATE_WORD, sortRows } from './panelhelpers.js';
+  import {
+    readFrameBase,
+    SQL_ROSTER,
+    SQL_TEAMS,
+    SQL_SWITCHES,
+    startClass,
+    readUnit,
+    cellValue,
+    matchPres,
+    STATE_WORD,
+    sortRows,
+  } from './panelhelpers.js';
   import { fmtMetric } from '../../fmt.js';
   import MetricCell from '../../components/MetricCell.svelte';
   import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
@@ -61,18 +72,20 @@
     };
   }
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = context.matchId;
-    sortStack = [{ key: 'kills', desc: true }];
-    load(matchId).then(
-      (d) => {
-        if (isCurrent()) data = d;
-      },
-      () => {
-        // A failed read is reported into this frame by the read API.
-      },
-    );
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const matchId = context.matchId;
+      sortStack = [{ key: 'kills', desc: true }];
+      load(matchId).then(
+        (d) => {
+          if (isCurrent()) data = d;
+        },
+        () => {
+          // A failed read is reported into this frame by the read API.
+        },
+      );
+    }),
+  );
 
   // The value a row sorts on for one key: the name, the side code, the score,
   // or a stored value (the same keys the old view's chain sorted on).
@@ -110,37 +123,65 @@
 
 <div class="table-scroll">
   {#if data}
-      <table class="data-table scoreboard">
-        <thead>
-          <tr>
-            <th scope="col" class="num" aria-sort={ariaSort('name')}><button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button></th>
-            <th scope="col" class="num" aria-sort={ariaSort('side')}><button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button></th>
-            <th scope="col" class="num" aria-sort={ariaSort('score')}><button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button></th>
+    <table class="data-table scoreboard">
+      <thead>
+        <tr>
+          <th scope="col" class="num" aria-sort={ariaSort('name')}
+            ><button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button></th
+          >
+          <th scope="col" class="num" aria-sort={ariaSort('side')}
+            ><button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button></th
+          >
+          <th scope="col" class="num" aria-sort={ariaSort('score')}
+            ><button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button></th
+          >
+          {#each COLUMNS as c (c.metric)}
+            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}
+              ><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th
+            >
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each sorted as p (p.steam)}
+          {@const cls = startClass(p.side, data.switches)}
+          <tr
+            class="clickable"
+            tabindex="0"
+            {...openRow(() => follow(p.steam), { ignore: 'button, a', enterOnly: true })}
+          >
+            <td class="num name-cell {cls}">
+              {#if isSteam(p.steam)}
+                <button
+                  class="btn ghost small name-link {cls}"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openPlayer(spectra, p.steam);
+                  }}>{p.name}</button
+                >
+              {:else}
+                {p.name}
+              {/if}
+            </td>
+            <td class="num"
+              ><span class="chip {cls}">{p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}</span
+              ></td
+            >
+            <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td
+            >
             {#each COLUMNS as c (c.metric)}
-              <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th>
+              {@const u = data.byMetric.get(c.metric)}
+              <td class="num" title={u.error || undefined}
+                ><MetricCell
+                  pres={matchPres(u, p.steam)}
+                  format={(v) => fmtMetric(v, c.format)}
+                  words={STATE_WORD}
+                /></td
+              >
             {/each}
           </tr>
-        </thead>
-        <tbody>
-          {#each sorted as p (p.steam)}
-            {@const cls = startClass(p.side, data.switches)}
-            <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: 'button, a', enterOnly: true })}>
-              <td class="num name-cell {cls}">
-                {#if isSteam(p.steam)}
-                  <button class="btn ghost small name-link {cls}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
-                {:else}
-                  {p.name}
-                {/if}
-              </td>
-              <td class="num"><span class="chip {cls}">{p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}</span></td>
-              <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td>
-              {#each COLUMNS as c (c.metric)}
-                {@const u = data.byMetric.get(c.metric)}
-                <td class="num" title={u.error || undefined}><MetricCell pres={matchPres(u, p.steam)} format={(v) => fmtMetric(v, c.format)} words={STATE_WORD} /></td>
-              {/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 </div>

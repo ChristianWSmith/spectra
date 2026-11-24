@@ -1,7 +1,15 @@
 <script>
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_ROUNDS, roundsOf, rosterOf, namesOf, sideSwitchesOf } from '../../builtinhelpers.js';
+  import {
+    SQL_ROSTER,
+    SQL_TEAMS,
+    SQL_ROUNDS,
+    roundsOf,
+    rosterOf,
+    namesOf,
+    sideSwitchesOf,
+  } from '../../builtinhelpers.js';
   const SQL_UTIL =
     'SELECT seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y, ' +
     'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC';
@@ -26,7 +34,14 @@
   let data = $state(null);
   // Empty until the data lands: the panels mount with it and reserve their space while it loads.
   const view = $derived(
-    data ?? { rows: [], rounds: [], players: [], names: { ct: S.match.sideCt, t: S.match.sideT }, tickRate: 64, sideSwitches: 0 },
+    data ?? {
+      rows: [],
+      rounds: [],
+      players: [],
+      names: { ct: S.match.sideCt, t: S.match.sideT },
+      tickRate: 64,
+      sideSwitches: 0,
+    },
   );
   // The filters are seeded from the Match view's remembered copy once, at mount;
   // after that the panel owns them (setFilt writes back through onfilters).
@@ -79,24 +94,68 @@
       () => context.matchId,
       load,
       (d) => (data = d),
-      () => (data = { rows: [], rounds: [], players: [], names: { ct: S.match.sideCt, t: S.match.sideT }, tickRate: 64, sideSwitches: 0 }),
+      () =>
+        (data = {
+          rows: [],
+          rounds: [],
+          players: [],
+          names: { ct: S.match.sideCt, t: S.match.sideT },
+          tickRate: 64,
+          sideSwitches: 0,
+        }),
     ),
   );
 
   // The throws the kind and thrower filters leave: what the two charts draw.
   const filtered = $derived(
     data
-      ? data.rows.filter((r) => (filt.kindF.length === 0 || filt.kindF.includes(r.kind)) && (filt.throwerF === '' || r.thrower === filt.throwerF))
+      ? data.rows.filter(
+          (r) =>
+            (filt.kindF.length === 0 || filt.kindF.includes(r.kind)) &&
+            (filt.throwerF === '' || r.thrower === filt.throwerF),
+        )
       : [],
   );
 </script>
 
 <div class="view util-view tab-root">
-      <spectra.Child name="match-utility-log" props={{ rows: view.rows, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches, tickRate: view.tickRate, loopSecs, back, filt, setFilt }} />
-      <div class="util-summary">
-        <spectra.Child name="match-utility-damage" props={{ measure: 'damage', rows: filtered, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches }} />
-        <spectra.Child name="match-utility-blind" props={{ measure: 'blind', rows: filtered, rounds: view.rounds, players: view.players, names: view.names, sideSwitches: view.sideSwitches }} />
-      </div>
-
+  <spectra.Child
+    name="match-utility-log"
+    props={{
+      rows: view.rows,
+      rounds: view.rounds,
+      players: view.players,
+      names: view.names,
+      sideSwitches: view.sideSwitches,
+      tickRate: view.tickRate,
+      loopSecs,
+      back,
+      filt,
+      setFilt,
+    }}
+  />
+  <div class="util-summary">
+    <spectra.Child
+      name="match-utility-damage"
+      props={{
+        measure: 'damage',
+        rows: filtered,
+        rounds: view.rounds,
+        players: view.players,
+        names: view.names,
+        sideSwitches: view.sideSwitches,
+      }}
+    />
+    <spectra.Child
+      name="match-utility-blind"
+      props={{
+        measure: 'blind',
+        rows: filtered,
+        rounds: view.rounds,
+        players: view.players,
+        names: view.names,
+        sideSwitches: view.sideSwitches,
+      }}
+    />
+  </div>
 </div>
-

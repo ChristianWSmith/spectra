@@ -3,7 +3,16 @@
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { readFrameBase, SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, startClass, readUnit, cellText, kdaText } from './panelhelpers.js';
+  import {
+    readFrameBase,
+    SQL_ROSTER,
+    SQL_TEAMS,
+    SQL_SWITCHES,
+    startClass,
+    readUnit,
+    cellText,
+    kdaText,
+  } from './panelhelpers.js';
   import { isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
@@ -38,57 +47,81 @@
     };
   }
 
-  $effect(loadForMatch(() => context.matchId, load, (d) => (data = d)));
+  $effect(
+    loadForMatch(
+      () => context.matchId,
+      load,
+      (d) => (data = d),
+    ),
+  );
 
   const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
 </script>
 
 <div class="roster-grid">
   {#if data}
-      {#each [data.ct, data.t] as team, ti (ti)}
-        <section class="panel">
-          <h2 class={startClass(ti === 0 ? 'ct' : 't', data.switches)}>{team.name} {S.match.rosterSuffix}</h2>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th scope="col">{S.match.colPlayer}</th>
-                <th scope="col" class="num">{S.match.rosterKdaHead}</th>
-                <th scope="col" class="num">{S.match.colAdr}</th>
+    {#each [data.ct, data.t] as team, ti (ti)}
+      <section class="panel">
+        <h2 class={startClass(ti === 0 ? 'ct' : 't', data.switches)}>{team.name} {S.match.rosterSuffix}</h2>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">{S.match.colPlayer}</th>
+              <th scope="col" class="num">{S.match.rosterKdaHead}</th>
+              <th scope="col" class="num">{S.match.colAdr}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each team.players as p (p.steam)}
+              <tr
+                class="clickable"
+                onclick={(e) => {
+                  if (e.target instanceof Element && e.target.closest('button')) return;
+                  follow(p.steam);
+                }}
+              >
+                <td class={startClass(p.side, data.switches)}>
+                  {#if isSteam(p.steam)}
+                    <button
+                      class="btn ghost small name-link {startClass(p.side, data.switches)}"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        openPlayer(spectra, p.steam);
+                      }}>{p.name}</button
+                    >
+                  {:else}
+                    {p.name}
+                  {/if}
+                </td>
+                <td class="num">{p.kda}</td>
+                <td class="num">{p.adr}</td>
               </tr>
-            </thead>
-            <tbody>
-              {#each team.players as p (p.steam)}
-                <tr class="clickable" onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; follow(p.steam); }}>
-                  <td class={startClass(p.side, data.switches)}>
-                    {#if isSteam(p.steam)}
-                      <button class="btn ghost small name-link {startClass(p.side, data.switches)}" onclick={(e) => { e.stopPropagation(); openPlayer(spectra, p.steam); }}>{p.name}</button>
-                    {:else}
-                      {p.name}
-                    {/if}
-                  </td>
-                  <td class="num">{p.kda}</td>
-                  <td class="num">{p.adr}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </section>
-      {/each}
-      {#if data.other.length > 0}
-        <section class="panel">
-          <h2>{S.match.rosterOther}</h2>
-          <table class="data-table">
-            <tbody>
-              {#each data.other as p (p.steam)}
-                <tr class="clickable" onclick={(e) => { if (e.target instanceof Element && e.target.closest('button')) return; follow(p.steam); }}>
-                  <td>{p.name}</td>
-                  <td class="num">{p.kda}</td>
-                  <td class="num">{p.adr}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </section>
-      {/if}
+            {/each}
+          </tbody>
+        </table>
+      </section>
+    {/each}
+    {#if data.other.length > 0}
+      <section class="panel">
+        <h2>{S.match.rosterOther}</h2>
+        <table class="data-table">
+          <tbody>
+            {#each data.other as p (p.steam)}
+              <tr
+                class="clickable"
+                onclick={(e) => {
+                  if (e.target instanceof Element && e.target.closest('button')) return;
+                  follow(p.steam);
+                }}
+              >
+                <td>{p.name}</td>
+                <td class="num">{p.kda}</td>
+                <td class="num">{p.adr}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </section>
+    {/if}
   {/if}
 </div>

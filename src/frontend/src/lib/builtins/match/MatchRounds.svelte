@@ -6,9 +6,40 @@
   import { openRow } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
-  import { SQL_ROSTER, SQL_TEAMS, SQL_SWITCHES, SQL_ROUNDS, SQL_MATCH_TICK_RATE, SQL_ROUND_MVP_REASON, SQL_ROUND_KILLS, SQL_ROUND_BOMBS, SQL_ROUND_ECONOMY, SQL_ROUND_SIDE_CLASSES, SQL_ROUND_CHAT, fill, roundLabel, fmtDuration, roundOf } from './panelhelpers.js';
+  import {
+    SQL_ROSTER,
+    SQL_TEAMS,
+    SQL_SWITCHES,
+    SQL_ROUNDS,
+    SQL_MATCH_TICK_RATE,
+    SQL_ROUND_MVP_REASON,
+    SQL_ROUND_KILLS,
+    SQL_ROUND_BOMBS,
+    SQL_ROUND_ECONOMY,
+    SQL_ROUND_SIDE_CLASSES,
+    SQL_ROUND_CHAT,
+    fill,
+    roundLabel,
+    fmtDuration,
+    roundOf,
+  } from './panelhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
-  import { DASH, isSteam, separatorFlags, roundWinnerName, openPlayer, roundClock, entryLoopAround, hashOf, roundsByNumber, scoreThrough, sideAtRound, chatClock, chatTag, fmtInt } from '../../builtinhelpers.js';
+  import {
+    DASH,
+    isSteam,
+    separatorFlags,
+    roundWinnerName,
+    openPlayer,
+    roundClock,
+    entryLoopAround,
+    hashOf,
+    roundsByNumber,
+    scoreThrough,
+    sideAtRound,
+    chatClock,
+    chatTag,
+    fmtInt,
+  } from '../../builtinhelpers.js';
 
   const COPY = Object.freeze({
     colWatch: S.match.colWatch,
@@ -80,24 +111,26 @@
     };
   }
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = context.matchId;
-    details = {};
-    open = [];
-    seededFor = null;
-    load(matchId).then(
-      (d) => {
-        if (!isCurrent()) return;
-        data = d;
-        prewarm(d);
-      },
-      // A failed read is reported into this frame (guard routes the error to it).
-      (e) =>
-        spectra.guard(() => {
-          throw e;
-        })(),
-    );
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const matchId = context.matchId;
+      details = {};
+      open = [];
+      seededFor = null;
+      load(matchId).then(
+        (d) => {
+          if (!isCurrent()) return;
+          data = d;
+          prewarm(d);
+        },
+        // A failed read is reported into this frame (guard routes the error to it).
+        (e) =>
+          spectra.guard(() => {
+            throw e;
+          })(),
+      );
+    }),
+  );
 
   // Open the round the URL asks for, once per request (a user's own collapse stands).
   $effect(() => {
@@ -144,7 +177,14 @@
         weapon: r[6] || '',
         flags: Object.fromEntries(FLAGS.map(([col], i) => [col, Boolean(r[7 + i])])),
       })),
-      bombs: bombs.rows.map((r) => ({ id: r[0], tick: Number(r[1]), kind: r[2], attacker: r[3] || '', attackerName: r[4] || '', site: r[5] || '' })),
+      bombs: bombs.rows.map((r) => ({
+        id: r[0],
+        tick: Number(r[1]),
+        kind: r[2],
+        attacker: r[3] || '',
+        attackerName: r[4] || '',
+        site: r[5] || '',
+      })),
       economy: econ.rows.map((r) => ({
         side: r[0],
         equip: r[1],
@@ -152,7 +192,15 @@
         cls: (classOf.get(r[0]) || {}).cls || '',
         why: (classOf.get(r[0]) || {}).why || '',
       })),
-      chat: chat.rows.map((r) => ({ id: r[0], tick: Number(r[1]), round: Number(r[2]), steamId: r[3] || '', name: r[4] || '', text: r[5] || '', channel: r[6] || '' })),
+      chat: chat.rows.map((r) => ({
+        id: r[0],
+        tick: Number(r[1]),
+        round: Number(r[2]),
+        steamId: r[3] || '',
+        name: r[4] || '',
+        text: r[5] || '',
+        channel: r[6] || '',
+      })),
     };
   }
 
@@ -215,7 +263,12 @@
     return side.toUpperCase();
   }
   function watchEvent(tickRate, tick, follow) {
-    openReplay(spectra, data.id, { tick, loop: entryLoopAround(tick, tickRate, loopSecs), follow: follow || undefined, back });
+    openReplay(spectra, data.id, {
+      tick,
+      loop: entryLoopAround(tick, tickRate, loopSecs),
+      follow: follow || undefined,
+      back,
+    });
   }
   // The side a chat speaker held this round (team chat tags it); '' when unknown.
   function sideOfSpeaker(n, c) {
@@ -226,7 +279,11 @@
 
 {#snippet playerLink(steam, name, cls)}
   {#if isSteam(steam)}
-    <button class="comb-name-btn {cls}" title={fill(COPY.openProfile, { name })} onclick={() => openPlayer(spectra, steam)}>{name || DASH}</button>
+    <button
+      class="comb-name-btn {cls}"
+      title={fill(COPY.openProfile, { name })}
+      onclick={() => openPlayer(spectra, steam)}>{name || DASH}</button
+    >
   {:else}
     <span class={cls}>{name || DASH}</span>
   {/if}
@@ -246,7 +303,8 @@
     <div class="round-detail">
       <p class="muted round-detail-meta">
         {fmtDuration(info.durationS)}
-        {S.match.siteMeta} {info.bombSite || DASH}
+        {S.match.siteMeta}
+        {info.bombSite || DASH}
         {S.match.mvpMeta}
         {#if info.mvpName}
           {@render playerLink(info.mvp, info.mvpName, playerCls(n, info.mvp, info.mvpName))}
@@ -282,14 +340,38 @@
                     {#each d.kills as k (k.id)}
                       <tr>
                         <td>
-                          <button class="btn small ghost" title={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} aria-label={k.attacker ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, k.tick, k.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
+                          <button
+                            class="btn small ghost"
+                            title={k.attacker
+                              ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker })
+                              : S.match.watchKillIdle}
+                            aria-label={k.attacker
+                              ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker })
+                              : S.match.watchKillIdle}
+                            onclick={() => watchEvent(d.tickRate, k.tick, k.attacker)}
+                            ><span class="codicon codicon-play" aria-hidden="true"></span></button
+                          >
                         </td>
                         <td class="mono" title={fill(S.match.tickTitle, { n: k.tick })}>{clock(k.tick)}</td>
-                        <td>{@render playerLink(k.attacker, k.attackerName || k.attacker, playerCls(n, k.attacker, k.attackerName))}</td>
-                        <td>{@render playerLink(k.victim, k.victimName || k.victim, playerCls(n, k.victim, k.victimName))}</td>
+                        <td
+                          >{@render playerLink(
+                            k.attacker,
+                            k.attackerName || k.attacker,
+                            playerCls(n, k.attacker, k.attackerName),
+                          )}</td
+                        >
+                        <td
+                          >{@render playerLink(
+                            k.victim,
+                            k.victimName || k.victim,
+                            playerCls(n, k.victim, k.victimName),
+                          )}</td
+                        >
                         <td class="mono">{k.weapon || DASH}</td>
                         <td>
-                          {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span class="chip flag" {title}>{code}</span>{/if}{/each}
+                          {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span class="chip flag" {title}
+                                >{code}</span
+                              >{/if}{/each}
                         </td>
                       </tr>
                     {/each}
@@ -319,11 +401,27 @@
                     {#each d.bombs as b (b.id)}
                       <tr>
                         <td>
-                          <button class="btn small ghost" title={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} aria-label={b.attacker ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker }) : S.match.watchKillIdle} onclick={() => watchEvent(d.tickRate, b.tick, b.attacker)}><span class="codicon codicon-play" aria-hidden="true"></span></button>
+                          <button
+                            class="btn small ghost"
+                            title={b.attacker
+                              ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker })
+                              : S.match.watchKillIdle}
+                            aria-label={b.attacker
+                              ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker })
+                              : S.match.watchKillIdle}
+                            onclick={() => watchEvent(d.tickRate, b.tick, b.attacker)}
+                            ><span class="codicon codicon-play" aria-hidden="true"></span></button
+                          >
                         </td>
                         <td class="mono" title={fill(S.match.tickTitle, { n: b.tick })}>{clock(b.tick)}</td>
                         <td>{BOMB_LABEL[b.kind] || b.kind}</td>
-                        <td>{@render playerLink(b.attacker, b.attackerName || b.attacker, playerCls(n, b.attacker, b.attackerName))}</td>
+                        <td
+                          >{@render playerLink(
+                            b.attacker,
+                            b.attackerName || b.attacker,
+                            playerCls(n, b.attacker, b.attackerName),
+                          )}</td
+                        >
                         <td>{b.site || DASH}</td>
                       </tr>
                     {/each}
@@ -350,7 +448,11 @@
                 {#each d.economy as e (e.side)}
                   <tr>
                     <td><span class="chip side {e.side}">{teamForSide(n, e.side)}</span></td>
-                    <td><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}>{e.cls || 'unknown'}</span></td>
+                    <td
+                      ><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}
+                        >{e.cls || 'unknown'}</span
+                      ></td
+                    >
                     <td class="num">{fmtInt(e.equip)}</td>
                     <td class="num">{fmtInt(e.moneyAvg)}</td>
                   </tr>
@@ -370,8 +472,16 @@
                 {#each d.chat as c (c.id)}
                   {@const side = sideOfSpeaker(n, c)}
                   <li>
-                    <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}>{chatClock(c, rbn, d.tickRate)}</span>
-                    <strong>{@render playerLink(c.steamId, c.name, playerCls(n, c.steamId, c.name))}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}</strong>
+                    <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}
+                      >{chatClock(c, rbn, d.tickRate)}</span
+                    >
+                    <strong
+                      >{@render playerLink(
+                        c.steamId,
+                        c.name,
+                        playerCls(n, c.steamId, c.name),
+                      )}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}</strong
+                    >
                     <span>: {c.text}</span>
                   </li>
                 {/each}
@@ -402,12 +512,20 @@
       </thead>
       <tbody>
         {#each data.rounds as r, ri (r.number)}
-          <tr class="clickable" class:split-before={ri > 0 && data.seps[ri - 1]} tabindex="0"
+          <tr
+            class="clickable"
+            class:split-before={ri > 0 && data.seps[ri - 1]}
+            tabindex="0"
             aria-expanded={open.includes(r.number)}
             {...openRow(() => toggleRound(r.number), { ignore: 'input, button, a' })}
           >
             <td>
-              <button class="btn small ghost" title={fill(COPY.watchRoundTitle, { round: r.number })} aria-label={fill(COPY.watchRoundAria, { round: r.number })} onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button>
+              <button
+                class="btn small ghost"
+                title={fill(COPY.watchRoundTitle, { round: r.number })}
+                aria-label={fill(COPY.watchRoundAria, { round: r.number })}
+                onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button
+              >
             </td>
             <td class="num">{roundLabel(r.number)}</td>
             <td><WinnerCell name={winnerName(data, r)} winner={r.winner} /></td>
@@ -423,9 +541,17 @@
             </td>
             <td>
               {#if r.firstKillName && r.firstDeathName}
-                {@render playerLink(r.firstKillSteam, r.firstKillName, playerRoundCls(r.number, r.firstKillSteam, r.firstKillName))}
+                {@render playerLink(
+                  r.firstKillSteam,
+                  r.firstKillName,
+                  playerRoundCls(r.number, r.firstKillSteam, r.firstKillName),
+                )}
                 {COPY.killedVerb}
-                {@render playerLink(r.firstDeathSteam, r.firstDeathName, playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName))}
+                {@render playerLink(
+                  r.firstDeathSteam,
+                  r.firstDeathName,
+                  playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName),
+                )}
               {:else}
                 {DASH}
               {/if}

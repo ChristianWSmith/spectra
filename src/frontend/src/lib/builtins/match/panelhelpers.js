@@ -13,7 +13,6 @@ import { compareAsc } from '../../sortstate.js';
 import { errText } from '../../services.js';
 export { fmtBytes, fmtDate, fmtDuration };
 
-
 // The read-only SQL the panels run is defined once, in builtinhelpers.js.
 export { SQL_ROSTER, SQL_TEAMS } from '../../builtinhelpers.js';
 // One round's detail: the round-scoped reads of the Rounds tab's expansion (the
@@ -22,21 +21,22 @@ export { SQL_ROSTER, SQL_TEAMS } from '../../builtinhelpers.js';
 export const SQL_MATCH_TICK_RATE = 'SELECT tick_rate FROM matches WHERE id = :match_id';
 export const SQL_ROUND_MVP_REASON = 'SELECT mvp_reason FROM rounds WHERE match_id = :match_id AND number = :round';
 export const SQL_ROUND_KILLS =
-  'SELECT e.id, e.tick, e.attacker, COALESCE(ap.name, \'\'), e.victim, COALESCE(vp.name, \'\'), e.weapon, ' +
+  "SELECT e.id, e.tick, e.attacker, COALESCE(ap.name, ''), e.victim, COALESCE(vp.name, ''), e.weapon, " +
   'e.headshot, e.wallbang, e.noscope, e.through_smoke, e.attacker_blind, e.assisted_flash ' +
   'FROM events e ' +
   'LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker ' +
   'LEFT JOIN players vp ON vp.match_id = e.match_id AND vp.steam_id = e.victim ' +
   "WHERE e.match_id = :match_id AND e.round = :round AND e.kind = 'kill' ORDER BY e.seq";
 export const SQL_ROUND_BOMBS =
-  'SELECT e.id, e.tick, e.kind, e.attacker, COALESCE(ap.name, \'\'), e.site FROM events e ' +
+  "SELECT e.id, e.tick, e.kind, e.attacker, COALESCE(ap.name, ''), e.site FROM events e " +
   'LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker ' +
   'WHERE e.match_id = :match_id AND e.round = :round ' +
   "AND e.kind IN ('bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup') ORDER BY e.seq";
 export const SQL_ROUND_ECONOMY =
   'SELECT side, equip_value, money_sampled_sum, money_samples FROM round_economy ' +
   'WHERE match_id = :match_id AND round = :round ORDER BY side';
-export const SQL_ROUND_SIDE_CLASSES = 'SELECT side, class, why FROM round_side_classes WHERE match_id = :match_id AND round = :round';
+export const SQL_ROUND_SIDE_CLASSES =
+  'SELECT side, class, why FROM round_side_classes WHERE match_id = :match_id AND round = :round';
 export const SQL_ROUND_CHAT =
   'SELECT id, tick, round, steam_id, name, text, channel FROM chat ' +
   'WHERE match_id = :match_id AND round = :round ORDER BY tick, id';
@@ -45,15 +45,14 @@ export const SQL_ROUNDS =
   "SELECT r.number, r.winner, r.reason, (CAST(r.end_tick - r.start_tick AS REAL) / (SELECT m.tick_rate FROM matches m WHERE m.id = r.match_id)), r.bomb_site, r.mvp, COALESCE(mp.name, ''), " +
   "r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''), " +
   "(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'), " +
-  "r.start_tick, r.end_tick FROM rounds r " +
+  'r.start_tick, r.end_tick FROM rounds r ' +
   "LEFT JOIN players mp ON mp.match_id = r.match_id AND r.mvp <> '' AND mp.steam_id = r.mvp " +
   "LEFT JOIN players fp ON fp.match_id = r.match_id AND r.first_kill_steam <> '' AND fp.steam_id = r.first_kill_steam " +
   "LEFT JOIN players dp ON dp.match_id = r.match_id AND r.first_death_steam <> '' AND dp.steam_id = r.first_death_steam " +
-  "WHERE r.match_id = :match_id ORDER BY r.number ASC";
+  'WHERE r.match_id = :match_id ORDER BY r.number ASC';
 export const SQL_FACTS =
   'SELECT server_name, tick_rate, frames, size, extracted_at, parser_version, path, warnings_count ' +
   'FROM matches WHERE id = :match_id';
-
 
 // HELPERS
 
@@ -63,7 +62,11 @@ export const SQL_FACTS =
 export const startClass = teamStartClass;
 
 // One stored value as its text (lib/fmt.js fmtMetric's rules).
-export const STATE_WORD = { processing: S.builtins.stateCalculating, failed: S.builtins.stateFailed, behind: S.builtins.stateOutOfDate };
+export const STATE_WORD = {
+  processing: S.builtins.stateCalculating,
+  failed: S.builtins.stateFailed,
+  behind: S.builtins.stateOutOfDate,
+};
 
 // A metric read for this match: its state and each player's value.
 export async function readUnit(spectra, name) {
@@ -121,9 +124,10 @@ export function sortRows(rows, stack, valueOf) {
         if (a.v == null && b.v == null) return a.i - b.i;
         return a.v == null ? 1 : -1;
       }
-      let c = typeof a.v === 'string' || typeof b.v === 'string'
-        ? String(a.v).localeCompare(String(b.v))
-        : compareAsc(a.v, b.v);
+      let c =
+        typeof a.v === 'string' || typeof b.v === 'string'
+          ? String(a.v).localeCompare(String(b.v))
+          : compareAsc(a.v, b.v);
       if (entry.desc) c = -c;
       return c !== 0 ? c : a.i - b.i;
     });
@@ -184,4 +188,3 @@ export function parseStamp(s) {
   const d = new Date(m[1] + 'T' + m[2] + ms + off);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-

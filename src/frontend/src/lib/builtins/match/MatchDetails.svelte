@@ -11,7 +11,14 @@
   import * as S from '../../strings/index.js';
   import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate, fill } from './panelhelpers.js';
   import { DASH, fmtInt, fmt1 } from '../../builtinhelpers.js';
-  import { getMatch, getVoicePresence, evictDemoCopy, getProvenance, getEntitySummary, errText } from '../../services.js';
+  import {
+    getMatch,
+    getVoicePresence,
+    evictDemoCopy,
+    getProvenance,
+    getEntitySummary,
+    errText,
+  } from '../../services.js';
   import StatusChip from '../../components/StatusChip.svelte';
 
   const COPY = Object.freeze({
@@ -86,35 +93,37 @@
     );
   }
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const matchId = context.matchId;
-    // Each read lands on its own: the stored facts never wait on the match row or the voice read.
-    spectra.query(SQL_FACTS).then(
-      (res) => {
-        if (isCurrent()) facts = parseFacts(res.rows[0]);
-      },
-      (e) =>
-        spectra.guard(() => {
-          throw e;
-        })(),
-    );
-    Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
-      ([m, v]) => {
-        if (isCurrent()) {
-          match = m;
-          voice = v;
-        }
-      },
-      (e) =>
-        spectra.guard(() => {
-          throw e;
-        })(),
-    );
-    if (matchId) {
-      loadProv(matchId);
-      loadEnt(matchId);
-    }
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const matchId = context.matchId;
+      // Each read lands on its own: the stored facts never wait on the match row or the voice read.
+      spectra.query(SQL_FACTS).then(
+        (res) => {
+          if (isCurrent()) facts = parseFacts(res.rows[0]);
+        },
+        (e) =>
+          spectra.guard(() => {
+            throw e;
+          })(),
+      );
+      Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
+        ([m, v]) => {
+          if (isCurrent()) {
+            match = m;
+            voice = v;
+          }
+        },
+        (e) =>
+          spectra.guard(() => {
+            throw e;
+          })(),
+      );
+      if (matchId) {
+        loadProv(matchId);
+        loadEnt(matchId);
+      }
+    }),
+  );
 
   async function freeCopy() {
     if (copyBusy || !match) return;
@@ -147,50 +156,79 @@
 
 <div class="match-details">
   <section class="md-sec">
-  {#if facts}
-    <h2 class="md-head">{COPY.keyFacts}</h2>
-    <dl class="facts">
-      <div><dt>{COPY.factServer}</dt><dd>{facts.server || DASH}</dd></div>
-      <div><dt>{COPY.factTickrate}</dt><dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + S.match.unitHz : DASH}</dd></div>
-      <div><dt>{COPY.factFrames}</dt><dd class="num">{fmtInt(facts.frames)}</dd></div>
-      <div><dt>{COPY.factSize}</dt><dd>{fmtBytes(facts.size)}</dd></div>
-      <div><dt>{COPY.factImported}</dt><dd>{fmtDate(facts.extractedAt)}</dd></div>
-      <div><dt>{COPY.factParser}</dt><dd class="mono">{facts.parser || DASH}</dd></div>
-      <div><dt>{COPY.factWarnings}</dt><dd>{Number.isFinite(facts.warnings) ? facts.warnings : DASH}</dd></div>
-      <div class="fact-wide"><dt>{COPY.factSource}</dt><dd class="mono">{facts.path || DASH}</dd></div>
-      {#if match}
-      <div>
-        <dt>{COPY.factVoice}</dt>
-        <dd>
-          {#if !voice}
-            <span class="muted">{DASH}</span>
-          {:else if voice.hasVoice}
-            <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}><span class="codicon codicon-unmute"></span> {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span>
-          {:else}
-            <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
-          {/if}
-        </dd>
-      </div>
-      <div class="fact-wide">
-        <dt>{COPY.factDemoCopy}</dt>
-        <dd>
-          {#if match.copyState === 'copied'}
-            <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
-            <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}>{copyBusy ? COPY.freeing : COPY.freeCopy}</button>
-          {:else if match.copyState === 'external'}
-            <span class="muted">{COPY.copyExternal}</span>
-          {:else if match.copyState === 'missing'}
-            <span class="muted">{COPY.copyMissing}</span>
-          {:else}
-            <span class="muted">{DASH}</span>
-          {/if}
-        </dd>
-      </div>
-      {/if}
-    </dl>
-  {:else}
-    <LoadBox tag="div" class="md-hold" busy name="match-details-summary" key=""></LoadBox>
-  {/if}
+    {#if facts}
+      <h2 class="md-head">{COPY.keyFacts}</h2>
+      <dl class="facts">
+        <div>
+          <dt>{COPY.factServer}</dt>
+          <dd>{facts.server || DASH}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factTickrate}</dt>
+          <dd>{Number.isFinite(facts.tickRate) ? fmt1(facts.tickRate) + S.match.unitHz : DASH}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factFrames}</dt>
+          <dd class="num">{fmtInt(facts.frames)}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factSize}</dt>
+          <dd>{fmtBytes(facts.size)}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factImported}</dt>
+          <dd>{fmtDate(facts.extractedAt)}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factParser}</dt>
+          <dd class="mono">{facts.parser || DASH}</dd>
+        </div>
+        <div>
+          <dt>{COPY.factWarnings}</dt>
+          <dd>{Number.isFinite(facts.warnings) ? facts.warnings : DASH}</dd>
+        </div>
+        <div class="fact-wide">
+          <dt>{COPY.factSource}</dt>
+          <dd class="mono">{facts.path || DASH}</dd>
+        </div>
+        {#if match}
+          <div>
+            <dt>{COPY.factVoice}</dt>
+            <dd>
+              {#if !voice}
+                <span class="muted">{DASH}</span>
+              {:else if voice.hasVoice}
+                <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}
+                  ><span class="codicon codicon-unmute"></span>
+                  {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span
+                >
+              {:else}
+                <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
+              {/if}
+            </dd>
+          </div>
+          <div class="fact-wide">
+            <dt>{COPY.factDemoCopy}</dt>
+            <dd>
+              {#if match.copyState === 'copied'}
+                <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
+                <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}
+                  >{copyBusy ? COPY.freeing : COPY.freeCopy}</button
+                >
+              {:else if match.copyState === 'external'}
+                <span class="muted">{COPY.copyExternal}</span>
+              {:else if match.copyState === 'missing'}
+                <span class="muted">{COPY.copyMissing}</span>
+              {:else}
+                <span class="muted">{DASH}</span>
+              {/if}
+            </dd>
+          </div>
+        {/if}
+      </dl>
+    {:else}
+      <LoadBox tag="div" class="md-hold" busy name="match-details-summary" key=""></LoadBox>
+    {/if}
   </section>
 
   <section class="md-sec">
@@ -204,13 +242,34 @@
       <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
       <dl class="facts">
-        <div><dt>{S.library.dtParserVersion}</dt><dd class="mono">{prov.parserVersion || DASH}</dd></div>
-        <div><dt>{S.library.dtImported}</dt><dd>{fmtDate(parseStamp(prov.extractedAt))}</dd></div>
-        <div><dt>{S.library.dtParseTime}</dt><dd class="num">{fmtInt(prov.parseMs)}{S.library.msSuffix}</dd></div>
-        <div><dt>{S.library.dtVoiceSampleRate}</dt><dd class="num">{prov.sampleRate ? `${prov.sampleRate}${S.match.unitHz}` : DASH}</dd></div>
-        <div><dt>{S.library.dtVoiceChunks}</dt><dd class="num">{fmtInt(prov.voiceChunks)}</dd></div>
-        <div><dt>{S.library.dtWarnings}</dt><dd class="num">{fmtInt(prov.warnings)}</dd></div>
-        <div><dt>{S.library.dtStatus}</dt><dd><StatusChip status={prov.status} /></dd></div>
+        <div>
+          <dt>{S.library.dtParserVersion}</dt>
+          <dd class="mono">{prov.parserVersion || DASH}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtImported}</dt>
+          <dd>{fmtDate(parseStamp(prov.extractedAt))}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtParseTime}</dt>
+          <dd class="num">{fmtInt(prov.parseMs)}{S.library.msSuffix}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtVoiceSampleRate}</dt>
+          <dd class="num">{prov.sampleRate ? `${prov.sampleRate}${S.match.unitHz}` : DASH}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtVoiceChunks}</dt>
+          <dd class="num">{fmtInt(prov.voiceChunks)}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtWarnings}</dt>
+          <dd class="num">{fmtInt(prov.warnings)}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtStatus}</dt>
+          <dd><StatusChip status={prov.status} /></dd>
+        </div>
       </dl>
       {#if prov.notes && prov.notes.length}
         <div class="expl-notes md-notes">
@@ -236,10 +295,22 @@
       <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>
     {:else}
       <dl class="facts">
-        <div><dt>{S.library.dtEntityTypes}</dt><dd class="num">{fmtInt(ent.entityClasses)}</dd></div>
-        <div><dt>{S.library.dtEntitiesAtEnd}</dt><dd class="num">{fmtInt(ent.endEntities)}</dd></div>
-        <div><dt>{S.library.dtGenericEventTypes}</dt><dd class="num">{fmtInt(ent.genericTypes)}</dd></div>
-        <div><dt>{S.library.dtGenericEventsTotal}</dt><dd class="num">{fmtInt(ent.genericTotal)}</dd></div>
+        <div>
+          <dt>{S.library.dtEntityTypes}</dt>
+          <dd class="num">{fmtInt(ent.entityClasses)}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtEntitiesAtEnd}</dt>
+          <dd class="num">{fmtInt(ent.endEntities)}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtGenericEventTypes}</dt>
+          <dd class="num">{fmtInt(ent.genericTypes)}</dd>
+        </div>
+        <div>
+          <dt>{S.library.dtGenericEventsTotal}</dt>
+          <dd class="num">{fmtInt(ent.genericTotal)}</dd>
+        </div>
       </dl>
     {/if}
   </section>

@@ -31,15 +31,18 @@
   // A plain counter (not state): the read's generation, so a stale result drops.
   const runTrend = latestOnly();
 
-  $effect(() => whileCurrent((isCurrent) => {
-    spectra.track(listMetrics())
-      .then((defs) => {
-        if (isCurrent()) trendDefs = defs || [];
-      })
-      .catch(() => {
-        if (isCurrent()) trendDefs = []; // a failed catalog read offers nothing — never a guess
-      });
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      spectra
+        .track(listMetrics())
+        .then((defs) => {
+          if (isCurrent()) trendDefs = defs || [];
+        })
+        .catch(() => {
+          if (isCurrent()) trendDefs = []; // a failed catalog read offers nothing — never a guess
+        });
+    }),
+  );
 
   // The default sequence over the match scope (no order preference is read).
   const trendItems = $derived(inSequence('match', trendDefs));
@@ -92,6 +95,12 @@
   // Hand-rolled sparkline: x = Seq (the trend's patch order), y = Value. Each
   // dot's tooltip carries the patch and the honest import date, read off the
   // trend point itself.
+  // The sparkline's caption: the point count, the min and max at display scale.
+  const sparkCaption = $derived(
+    spark
+      ? `${trend.length}${S.profiles.sparkMinLead}${fmtTrendValue(spark.min, trendFormat)}${S.profiles.sparkMaxLead}${fmtTrendValue(spark.max, trendFormat)}`
+      : '',
+  );
   const spark = $derived.by(() => {
     const pts = trend;
     if (pts.length < 2) return null;
@@ -123,7 +132,11 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: S.fill(S.profiles.trendImportedTitle, { patch: fmtPatch(p.patch), date: fmtDate(p.extractedAt), value: fmtTrendValue(p.value, trendFormat) }),
+        title: S.fill(S.profiles.trendImportedTitle, {
+          patch: fmtPatch(p.patch),
+          date: fmtDate(p.extractedAt),
+          value: fmtTrendValue(p.value, trendFormat),
+        }),
       })),
     };
   });
@@ -178,7 +191,7 @@
       {/each}
     </svg>
     <p class="muted prof-spark-cap">
-      {trend.length}{S.profiles.sparkMinLead}{fmtTrendValue(spark.min, trendFormat)}{S.profiles.sparkMaxLead}{fmtTrendValue(spark.max, trendFormat)}
+      {sparkCaption}
       {S.profiles.sparkFootnote}
     </p>
   {:else if trend.length === 1}

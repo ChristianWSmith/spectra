@@ -35,29 +35,33 @@
 
   // The player the shown values belong to (plain: it only gates the reset).
   let loadedFor = null;
-  $effect(() => whileCurrent((isCurrent) => {
-    sweep.reload;
-    const sid = steamId;
-    const newPlayer = sid !== loadedFor;
-    loadedFor = sid;
-    if (newPlayer) reads = new Map();
-    if (!sid) return;
-    loadProfile(spectra, sid)
-      .then(async ([rows, profile]) => {
-        if (!isCurrent()) return;
-        loadError = '';
-        defs = rows || [];
-        wins = profile ? profile.wins : null;
-        const names = composedSequence('profile', defs)
-          .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
-          .map((e) => e.name);
-        const next = await readMetrics(spectra, names, errText);
-        if (isCurrent()) reads = next;
-      })
-      .catch(whenCurrent(isCurrent, (e) => {
-        loadError = errText(e);
-      }));
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      sweep.reload;
+      const sid = steamId;
+      const newPlayer = sid !== loadedFor;
+      loadedFor = sid;
+      if (newPlayer) reads = new Map();
+      if (!sid) return;
+      loadProfile(spectra, sid)
+        .then(async ([rows, profile]) => {
+          if (!isCurrent()) return;
+          loadError = '';
+          defs = rows || [];
+          wins = profile ? profile.wins : null;
+          const names = composedSequence('profile', defs)
+            .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
+            .map((e) => e.name);
+          const next = await readMetrics(spectra, names, errText);
+          if (isCurrent()) reads = next;
+        })
+        .catch(
+          whenCurrent(isCurrent, (e) => {
+            loadError = errText(e);
+          }),
+        );
+    }),
+  );
 </script>
 
 {#if loadError}
@@ -77,7 +81,7 @@
         title={pres.title}
       >
         {#snippet valueSlot()}
-          <MetricCell pres={pres} format={(v) => fmtMetric(v, def.format)} chip={sweep.chip(def)} />
+          <MetricCell {pres} format={(v) => fmtMetric(v, def.format)} chip={sweep.chip(def)} />
         {/snippet}
       </StatCard>
     {/each}

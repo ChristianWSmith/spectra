@@ -4,18 +4,19 @@
   import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import * as S from '../../strings/index.js';
-  import {
-    getMatch,
-    getScoreboard,
-    getRounds,
-    getHeatmap,
-    errText,
-  } from '../../services.js';
+  import { getMatch, getScoreboard, getRounds, getHeatmap, errText } from '../../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
   import { AnalyticsService } from '../../../../bindings/github.com/ChristianWSmith/spectra';
-  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from '../../heatkinds.js';
+  import {
+    HEAT_CORE_KINDS,
+    HEAT_GRENADE_THROW_KINDS,
+    HEAT_GRENADE_DET_KINDS,
+    heatKindLabel,
+    heatRegionFilter,
+    heatRegionTakesBBox,
+  } from '../../heatkinds.js';
   import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../../heatramp.js';
   import { loadMapPack } from '../../components/mapxform.js';
   import HeatmapLayer from '../../components/HeatmapLayer.svelte';
@@ -143,49 +144,50 @@
 
   let navTimer = null;
 
-  $effect(() => whileCurrent((isCurrent) => {
-    Promise.all([
-      getMatch(id),
-      getScoreboard(id, 'kills', true).catch(() => []),
-      getRounds(id).catch(() => []),
-    ])
-      .then(([m, sb, rs]) => {
-        if (!isCurrent()) return;
-        map = (m && m.map) || '';
-        players = listedPlayers(sb) || [];
-        rounds = rs || [];
-        matchLoaded = true;
-      })
-      .catch(whenCurrent(isCurrent, (e) => {
-        error = errText(e);
-      }));
-  }));
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      Promise.all([getMatch(id), getScoreboard(id, 'kills', true).catch(() => []), getRounds(id).catch(() => [])])
+        .then(([m, sb, rs]) => {
+          if (!isCurrent()) return;
+          map = (m && m.map) || '';
+          players = listedPlayers(sb) || [];
+          rounds = rs || [];
+          matchLoaded = true;
+        })
+        .catch(
+          whenCurrent(isCurrent, (e) => {
+            error = errText(e);
+          }),
+        );
+    }),
+  );
 
-  $effect(() => whileCurrent((isCurrent) => {
-    const m = map;
-    if (!m) {
-      pack = null;
-      return;
-    }
-    packTried = false;
-    loadMapPack(m).then((p) => {
-      if (isCurrent()) {
-        pack = p;
-        packTried = true;
-        // Never keep a floor index the pack does not have — but only
-        // clamp OUT-OF-RANGE values (a record restored from a pack with
-        // more panels than this one — viewstate): a restored index in
-        // range is this match's own and must survive the load (the
-        // per-match re-seed already scoped it, so no cross-map carry
-        // can be sitting here — the old blanket `layer = 0` would have
-        // clobbered every restore). Index 0 stays the canonical default
-        // (layers.js "default first").
-        const ls =
-          p && p.transform && Array.isArray(p.transform.layers) ? p.transform.layers : [];
-        if (ls.length && layer >= ls.length) layer = 0;
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const m = map;
+      if (!m) {
+        pack = null;
+        return;
       }
-    });
-  }));
+      packTried = false;
+      loadMapPack(m).then((p) => {
+        if (isCurrent()) {
+          pack = p;
+          packTried = true;
+          // Never keep a floor index the pack does not have — but only
+          // clamp OUT-OF-RANGE values (a record restored from a pack with
+          // more panels than this one — viewstate): a restored index in
+          // range is this match's own and must survive the load (the
+          // per-match re-seed already scoped it, so no cross-map carry
+          // can be sitting here — the old blanket `layer = 0` would have
+          // clobbered every restore). Index 0 stays the canonical default
+          // (layers.js "default first").
+          const ls = p && p.transform && Array.isArray(p.transform.layers) ? p.transform.layers : [];
+          if (ls.length && layer >= ls.length) layer = 0;
+        }
+      });
+    }),
+  );
 
   $effect(() => () => {
     if (navTimer) clearTimeout(navTimer);
@@ -194,23 +196,16 @@
   const packNote = $derived.by(() => {
     if (!matchLoaded) return '';
     if (!map) return S.heatmaps.noMapName;
-    if (!pack)
-      return packTried
-        ? S.fill(S.heatmaps.mapNotFound, { map })
-        : S.heatmaps.loadingMapPack;
-    if (!pack.transform)
-      return S.fill(S.heatmaps.mapNoTransform, { map });
-    if (!pack.meta.radar)
-      return S.fill(S.heatmaps.mapNoRadar, { map });
+    if (!pack) return packTried ? S.fill(S.heatmaps.mapNotFound, { map }) : S.heatmaps.loadingMapPack;
+    if (!pack.transform) return S.fill(S.heatmaps.mapNoTransform, { map });
+    if (!pack.meta.radar) return S.fill(S.heatmaps.mapNoRadar, { map });
     return '';
   });
 
   // The pack's radar panels — makeTransform's ONE pack→layers reader
   // (lib/components/mapxform.js): default first, each with its world-Z
   // band (zMin/zMax) and image file. Absent = single-floor pack.
-  const layers = $derived(
-    pack && pack.transform && Array.isArray(pack.transform.layers) ? pack.transform.layers : [],
-  );
+  const layers = $derived(pack && pack.transform && Array.isArray(pack.transform.layers) ? pack.transform.layers : []);
   // The selector shows only for a genuinely multi-floor pack: a no-pack /
   // plain-grid fallback and a single-layer pack keep the previous
   // one-raster behavior byte-identical (a bundled pack that declares
@@ -259,9 +254,7 @@
         ? S.heatmaps.killsMinusDeaths
         : S.heatmaps.unitCount,
   );
-  const maxLabel = $derived(
-    grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : DASH,
-  );
+  const maxLabel = $derived(grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : DASH);
 
   const filterKey = (k, p, t, from, to, l) => `${k}|${p}|${t}|${from}|${to}|${l}`;
   let lastKey = $state(heatSeed.lastKey);
@@ -273,9 +266,7 @@
   // raster must not be drawn over the newly selected floor's image —
   // only a floor mismatch clears the overlay, every other pending
   // control keeps it visible under this banner.
-  const dirty = $derived(
-    !!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo, layer),
-  );
+  const dirty = $derived(!!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo, layer));
 
   // Combined re-seed + write-through (viewstate.svelte.js): App's {#if}
   // chain reuses this component when only the id changes (no remount),
@@ -310,7 +301,6 @@
     }
     remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey, gen });
   });
-
 
   // The heavy GetHeatmap call fires only on Generate — never on control
   // changes (heatmap generate is the expensive op).
@@ -361,9 +351,7 @@
       // fetch so EITHER path marks the heatmap source busy.
       grid = await runWork(
         'heatmap',
-        kind === 'kd'
-          ? AnalyticsService.GetHeatmapKD(id, filter)
-          : getHeatmap(id, kind, filter),
+        kind === 'kd' ? AnalyticsService.GetHeatmapKD(id, filter) : getHeatmap(id, kind, filter),
       );
       gridLayer = sel;
       lastKey = filterKey(kind, player, team, roundFrom, roundTo, sel);
@@ -377,7 +365,7 @@
     } finally {
       loading = false;
       // Progress dies with the run — the chip renders only while loading.
-      }
+    }
   }
 
   // V8e — Save the raster on screen: the composite canvas (radar +
@@ -498,8 +486,7 @@
     //                either-endpoint predicate — no invented pick.
     if (src.kind === 'kd') {
       const v = Number(value);
-      filter.cats =
-        Number.isFinite(v) && v !== 0 ? (v > 0 ? ['kills'] : ['deaths']) : ['kills', 'deaths'];
+      filter.cats = Number.isFinite(v) && v !== 0 ? (v > 0 ? ['kills'] : ['deaths']) : ['kills', 'deaths'];
     }
     // Cell ± pad = the events whose splat can reach the clicked cell
     // (the kernel is windowed to zero AT pad, so a sample a touch beyond
@@ -511,8 +498,7 @@
     // also stays unpadded — fail honest, never pad what was not a clicked
     // cell. A grid without a pad (none exist today) expands by 0 rather
     // than inventing a reach.
-    const pad =
-      source === 'cell' && grid && Number.isFinite(grid.pad) ? grid.pad : 0;
+    const pad = source === 'cell' && grid && Number.isFinite(grid.pad) ? grid.pad : 0;
     const applied = {
       minX: bbox.minX - pad,
       minY: bbox.minY - pad,
@@ -520,7 +506,12 @@
       maxY: bbox.maxY + pad,
     };
     regionChip = S.heatmaps.regionFiltered;
-    regionNote = S.fill(S.heatmaps.bboxLabel, { x0: Math.round(applied.minX), y0: Math.round(applied.minY), x1: Math.round(applied.maxX), y1: Math.round(applied.maxY) });
+    regionNote = S.fill(S.heatmaps.bboxLabel, {
+      x0: Math.round(applied.minX),
+      y0: Math.round(applied.minY),
+      x1: Math.round(applied.maxX),
+      y1: Math.round(applied.maxY),
+    });
     const target = replayHash(id, { ...filter, bbox: applied }, { back: `match/${id}/heatmaps` });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
@@ -679,16 +670,7 @@
       {/if}
     </div>
 
-    <HeatmapLayer
-      {map}
-      {pack}
-      {grid}
-      {onRegion}
-      {layer}
-      {gridLayer}
-      kind={src.kind}
-      onCanvas={onHeatCanvas}
-    />
+    <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={src.kind} onCanvas={onHeatCanvas} />
 
     <p class="heat-hint muted">
       {#if grid}
@@ -721,4 +703,3 @@
     </div>
   </section>
 </div>
-
