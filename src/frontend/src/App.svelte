@@ -15,7 +15,6 @@
   import ReportsBuilder from './lib/views/ReportsBuilder.svelte';
   import ComponentBuilder from './lib/views/ComponentBuilder.svelte';
   import SqlConsole from './lib/views/SqlConsole.svelte';
-  import Explorer from './lib/views/Explorer.svelte';
   import Reports from './lib/views/Reports.svelte';
   import Profiles from './lib/views/Profiles.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
@@ -639,8 +638,6 @@
               <ReportsBuilder {openDocs} />
             {:else if name === 'componentbuilder'}
               <ComponentBuilder {nav} {openDocs} />
-            {:else if name === 'explorer'}
-              <Explorer {nav} routeId={current ? viewRoute.id || 0 : 0} />
             {:else if name === 'reports'}
               <Reports {nav} {openDocs} routeId={current ? viewRoute.id || 0 : 0} />
             {:else if name === 'round'}

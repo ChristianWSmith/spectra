@@ -145,6 +145,7 @@
   <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
     <spectra.Child name="builtin-match-details" />
     <spectra.Child name="builtin-match-facts" />
-    <spectra.Child name="builtin-explorer" props={{ embedded: true }} />
+    <spectra.Child name="builtin-explorer-provenance" />
+    <spectra.Child name="builtin-explorer-diagnostics" />
   </div>
 {/if}

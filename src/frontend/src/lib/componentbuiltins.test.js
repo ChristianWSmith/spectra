@@ -50,7 +50,7 @@ test('every built-in source passes the save gate under its built-in rules', asyn
 test('every registry id is listed in BUILTIN_COMPONENTS exactly once', () => {
   const listed = BUILTIN_COMPONENTS.map((b) => b.id);
   assert.equal(new Set(listed).size, listed.length, 'no id is listed twice');
-  assert.equal(REGISTRY.length, 32, 'the registry declares 32 compiled builtins');
+  assert.equal(REGISTRY.length, 30, 'the registry declares 30 compiled builtins');
   for (const id of REGISTRY) {
     assert.equal(listed.filter((x) => x === id).length, 1, `${id} is listed exactly once`);
   }

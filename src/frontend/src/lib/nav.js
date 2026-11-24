@@ -468,9 +468,9 @@ function rememberedFor(action, ctx) {
 // tooltip); the palette still renders the label as text. `bottom: true`
 // partitions the list for the sidebar LAYOUT only — App.svelte pins those
 // entries at the rail's foot (Settings as a gear) while the palette
-// renders every action inline in array order. Explorer and Reports are
-// gone from the nav list (they are match-view tabs now); their standalone
-// #/explorer and #/reports routes still parse and render.
+// renders every action inline in array order. Reports is gone from the nav
+// list (it is a match-view tab now); its standalone #/reports route still
+// parses and renders.
 // `memory` marks the memory-backed actions (Match, Profiles) — see
 // resolveNavTarget/isNavEnabled above. Its VALUE is the POLICY and the
 // rest is declared data, so the helpers never branch on an action's

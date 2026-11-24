@@ -15,7 +15,6 @@ import './compile-worker-node.mjs';
 //      the entity summary render from their own reads;
 //   E. Explorer failure isolation: a failed provenance read shows its error in
 //      the provenance panel while the diagnostics panel still renders;
-//   F. Explorer embedded omits the static reference card; standalone has it.
 //
 // Run (from frontend/):  node test/reports-explorer-panels.dom.mjs
 // Then grep the log for FAIL and UNCAUGHT: the exit code is not the verdict.
@@ -135,17 +134,20 @@ console.log('C. Reports context: another match reads its own rows (none: a state
   m.cleanup();
 }
 
+
 console.log('D. Explorer: the import details and the entity summary');
 {
   viewstate.resetViewState();
-  const m = await mountComponent(panels['builtin-explorer'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['builtin-explorer-provenance'], ctx(MATCH), { embedded: true });
+  const dg = await mountComponent(panels['builtin-explorer-diagnostics'], ctx(MATCH), { embedded: true });
   await sleep(120);
   const facts = [...m.target.querySelectorAll('dl.facts > div')].map((d) => [text(d.querySelector('dt')), text(d.querySelector('dd'))]);
   const rate = facts.find((f) => f[0] !== '' && f[1] === '—');
   check('the parser version renders', facts.some((f) => f[1] === 'p-2026.11'), JSON.stringify(facts));
   check('a zero sample rate is the dash, never 0 Hz', !!rate, JSON.stringify(facts));
-  check('the entity summary renders its counts', text(m.target).includes('42') && text(m.target).includes('900'));
+  check('the entity summary renders its counts', text(dg.target).includes('42') && text(dg.target).includes('900'));
   m.cleanup();
+  dg.cleanup();
 }
 
 console.log('E. Explorer failure isolation: a failed provenance read stays in its panel');
@@ -153,26 +155,16 @@ console.log('E. Explorer failure isolation: a failed provenance read stays in it
   const original = bindings.PlatformService.GetProvenance;
   bindings.PlatformService.GetProvenance = () => Promise.reject(new Error('provenance down'));
   services.invalidate();
-  const m = await mountComponent(panels['builtin-explorer'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['builtin-explorer-provenance'], ctx(MATCH), { embedded: true });
+  const dg = await mountComponent(panels['builtin-explorer-diagnostics'], ctx(MATCH), { embedded: true });
   await sleep(120);
   const alerts = [...m.target.querySelectorAll('[role="alert"]')].map(text);
   check('the provenance error is shown', alerts.some((t) => t.includes('provenance down')), JSON.stringify(alerts));
-  check('the diagnostics panel still renders', text(m.target).includes('42'));
+  check('the diagnostics panel still renders', text(dg.target).includes('42'));
   m.cleanup();
+  dg.cleanup();
   bindings.PlatformService.GetProvenance = original;
   services.invalidate();
-}
-
-console.log('F. Explorer reference card: standalone only');
-{
-  const embedded = await mountComponent(panels['builtin-explorer'], ctx(MATCH), { embedded: true });
-  await sleep(100);
-  check('embedded: no reference card', !embedded.target.querySelector('.expl-ref'));
-  embedded.cleanup();
-  const standalone = await mountComponent(panels['builtin-explorer'], ctx(MATCH), { embedded: false });
-  await sleep(100);
-  check('standalone: the reference card renders', !!standalone.target.querySelector('.expl-ref'));
-  standalone.cleanup();
 }
 
 console.log(failures ? `FAILED: ${failures}` : 'ALL PASSED');

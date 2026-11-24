@@ -120,12 +120,10 @@ function sourcesIn(dir) {
     .map((f) => [join(dir, f), readFileSync(join(dir, f), 'utf8')]);
 }
 
-test('no Reports or Explorer panel reads a retired preference', () => {
+test('no Reports panel reads a retired preference', () => {
   const files = [
     ...sourcesIn(join(here, 'builtins', 'reports')),
-    ...sourcesIn(join(here, 'builtins', 'explorer')),
     [join(here, 'views', 'Reports.svelte'), readFileSync(join(here, 'views', 'Reports.svelte'), 'utf8')],
-    [join(here, 'views', 'Explorer.svelte'), readFileSync(join(here, 'views', 'Explorer.svelte'), 'utf8')],
   ];
   const hits = [];
   for (const [file, src] of files) {

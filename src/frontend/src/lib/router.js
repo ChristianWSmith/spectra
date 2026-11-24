@@ -43,10 +43,8 @@
 //                            (bounds, then arm), re-armed only for a
 //                            distinct range, and dropped from the URL
 //                            when the user edits a bound.
-//   #/explorer/:id           optional context id: the match Explorer's
-//                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
-//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/reportbuilder | #/componentbuilder | #/settings
+//   #/builder | #/sql | #/profiles | #/reports | #/reportbuilder | #/componentbuilder | #/settings
 //
 // Legacy raw-event routes resolve to the canonical Replay landmark feed
 // with the equivalent scope (the Timeline tab, the Match Chat tab and the
@@ -65,11 +63,9 @@
 // Canonical match-tab list (display order). Shared by Match.svelte's tab
 // bar and the route table so a deep link can never drift from the tabs
 // that exist: slug = tab.toLowerCase(). Raw/Timeline/Chat/Context are not
-// tabs — their content lives in the Explorer view and Replay's landmark
-// feed, and their legacy slugs redirect to #/replay/:id above instead of
-// parsing as tabs. Details (the Explorer diagnostics) and Reports are
-// tabs of the match view; their standalone #/explorer, #/reports routes
-// still parse below unchanged.
+// tabs — their content lives in Replay's landmark feed, and their legacy
+// slugs redirect to #/replay/:id above instead of parsing as tabs. Details
+// (the import details and diagnostics) and Reports are tabs of the match view.
 export const MATCH_TABS = [
   'Overview',
   'Scoreboard',
@@ -206,10 +202,6 @@ export function parseHash(hash) {
   if (path.startsWith('/profiles')) return withQuery({ name: 'profiles' });
   // Context ids are optional: absent → no id key (the view keeps its own
   // default), present → {id}. Prefix semantics stay startsWith.
-  if (path.startsWith('/explorer')) {
-    const ex = path.match(/^\/explorer\/(\d+)/);
-    return withQuery(ex ? { name: 'explorer', id: Number(ex[1]) } : { name: 'explorer' });
-  }
   if (path.startsWith('/reports')) {
     const rp = path.match(/^\/reports\/(\d+)/);
     return withQuery(rp ? { name: 'reports', id: Number(rp[1]) } : { name: 'reports' });

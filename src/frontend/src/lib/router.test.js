@@ -152,13 +152,6 @@ test('query-carrying routes attach a parsed query object', () => {
   assert.equal('query' in parseHash('#/replay/5?'), false);
 });
 
-test('#/explorer/:id carries an optional match context id', () => {
-  assert.deepEqual(parseHash('#/explorer/42'), { name: 'explorer', id: 42 });
-  assert.deepEqual(parseHash('#/explorer'), { name: 'explorer' });
-  assert.equal('id' in parseHash('#/explorer'), false);
-  // prefix semantics stay startsWith (no id extracted from a non-numeric tail)
-  assert.deepEqual(parseHash('#/explorer/foo'), { name: 'explorer' });
-});
 
 test('#/reports/:id carries an optional match context id', () => {
   assert.deepEqual(parseHash('#/reports/7'), { name: 'reports', id: 7 });
@@ -224,7 +217,6 @@ test('#/timeline/:id (removed deep-link shape) falls through to the library', ()
     '#/compare/9',
     '#/timeline/42',
     '#/replay/42',
-    '#/explorer/42',
     '#/reports/42',
     '#/settings',
     '#/builder',
@@ -279,7 +271,6 @@ test('prefix routes match with startsWith (extra path stays on the route)', () =
   assert.deepEqual(parseHash('#/settings/foo'), { name: 'settings' });
   assert.deepEqual(parseHash('#/builder'), { name: 'builder' });
   assert.deepEqual(parseHash('#/builder/x/y'), { name: 'builder' });
-  assert.deepEqual(parseHash('#/explorer'), { name: 'explorer' });
   assert.deepEqual(parseHash('#/reports'), { name: 'reports' });
   assert.deepEqual(parseHash('#/profiles'), { name: 'profiles' });
   assert.deepEqual(parseHash('#/sql'), { name: 'sql' });

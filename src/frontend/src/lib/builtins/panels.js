@@ -13,10 +13,8 @@ import MapsPanel from './profile/MapsPanel.svelte';
 import WeaponsPanel from './profile/WeaponsPanel.svelte';
 import HistoryPanel from './profile/HistoryPanel.svelte';
 import ReportsView from './reports/ReportsView.svelte';
-import ExplorerView from './explorer/ExplorerView.svelte';
 import ExplorerProvenance from './explorer/ExplorerProvenance.svelte';
 import ExplorerDiagnostics from './explorer/ExplorerDiagnostics.svelte';
-import ExplorerReference from './explorer/ExplorerReference.svelte';
 // The Match view's Heatmaps and Combat tabs: each tab
 // is a composition, and its panels are mounted by the tab through Child.
 import MatchHeatmaps from './match/Heatmaps.svelte';
@@ -46,7 +44,6 @@ import MatchFacts from './match/MatchFacts.svelte';
 
 export const PROFILE_VIEW_ID = 'builtin-profile-view';
 export const REPORTS_VIEW_ID = 'builtin-reports';
-export const EXPLORER_VIEW_ID = 'builtin-explorer';
 
 // The Match tabs' component ids (the Match view mounts the tab components
 // directly, with its context).
@@ -83,10 +80,8 @@ export const BUILTIN_PANELS = Object.freeze({
   // The Match view's Reports tab (the composed report and its panels).
   [REPORTS_VIEW_ID]: ReportsView,
   // The Match view's Details tab and the standalone Explorer route.
-  [EXPLORER_VIEW_ID]: ExplorerView,
   'builtin-explorer-provenance': ExplorerProvenance,
   'builtin-explorer-diagnostics': ExplorerDiagnostics,
-  'builtin-explorer-reference': ExplorerReference,
   [MATCH_TABS_ID]: MatchTabs,
   [MATCH_HEATMAPS_ID]: MatchHeatmaps,
   'builtin-match-heatmap': HeatmapPanel,

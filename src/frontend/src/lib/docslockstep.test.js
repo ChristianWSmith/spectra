@@ -104,7 +104,6 @@ const SIDEBAR_SECTIONS = {
 const VIEW_SECTIONS = {
   'Builder.svelte': 'metric-builder',
   'CompareRounds.svelte': 'understanding-a-match',
-  'Explorer.svelte': 'understanding-a-match', // the Details tab's diagnostics block
   'Library.svelte': 'library',
   'Match.svelte': 'understanding-a-match', // per-tab coverage is TAB_SECTIONS
   'PlayerProfile.svelte': 'profiles',
