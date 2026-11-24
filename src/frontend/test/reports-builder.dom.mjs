@@ -132,7 +132,17 @@ svelteCompile(helpButtonSrc, 'HelpButton.svelte', join(dir, 'helpbutton.js'));
 // The view: plain-ESM imports resolve from their real module locations
 // (services → the stubs, players/viewstate absolute), the .svelte
 // imports point at the local bundles.
+// The loading shell (the templates placeholder), compiled beside the view; its remembered sizes are the real module.
+svelteCompile(
+  readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace(
+    "from '../componentruntime/sizememory.js'",
+    `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`,
+  ),
+  'LoadBox.svelte',
+  join(dir, 'loadbox.js'),
+);
 const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
+  .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)

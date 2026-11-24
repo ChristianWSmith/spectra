@@ -844,3 +844,37 @@ test('value reads are cachedRead; GetMetricComputeState is deliberately not cach
   await Promise.all([s1, s2]);
   assert.equal(bindings.callCount('GetMetricComputeState'), 2);
 });
+
+test('stale-while-revalidate: invalidate marks an entry stale, and its next read refetches the fresh value', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.GetMatch = (id) => ({ id, version: 1 });
+  try {
+    assert.equal((await services.getMatch(55)).version, 1);
+    services.invalidate();
+    bindings.handlers.GetMatch = (id) => ({ id, version: 2 });
+    assert.equal((await services.getMatch(55)).version, 2, 'the stale entry is replaced by the fresh read');
+    assert.equal(bindings.callCount('GetMatch'), 2);
+  } finally {
+    delete bindings.handlers.GetMatch;
+  }
+});
+
+test('stale-while-revalidate: a failed refetch keeps the entry, and the next read tries again', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.GetMatch = (id) => ({ id, version: 1 });
+  try {
+    await services.getMatch(56);
+    services.invalidate();
+    bindings.handlers.GetMatch = () => {
+      throw new Error('backend down');
+    };
+    await assert.rejects(() => services.getMatch(56), /backend down/);
+    bindings.handlers.GetMatch = (id) => ({ id, version: 3 });
+    assert.equal((await services.getMatch(56)).version, 3, 'the next read retries and gets the fresh value');
+    assert.equal(bindings.callCount('GetMatch'), 3);
+  } finally {
+    delete bindings.handlers.GetMatch;
+  }
+});

@@ -1432,8 +1432,9 @@ check(
 // so these are source pins over the view; the widget itself is pinned
 // mounted in library.dom.mjs Section G.
 check(
-  'Match’s body is a LoadBox; its one inline spinner is the warnings panel',
-  (matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 1 &&
+  'Match’s body and its warnings panel are LoadBoxes; no inline spinner is left',
+  (matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 0 &&
+    /<LoadBox [^>]*name="match-warnings"/.test(matchSrc) &&
     /<LoadBox [^>]*name="view:match"/.test(matchSrc) &&
     !/role="status">Loading…<\/p>/.test(matchSrc),
   String((matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
@@ -1575,11 +1576,11 @@ console.log('Q. import-warnings render cap: bounded <li> count + honest "and {n}
     },
     { routeTab: 'Rounds' },
   );
-  const chipDetail = root.querySelector('.warnings-panel .chip-detail');
+  const warnHold = root.querySelector('.warnings-panel .warn-hold.load-busy');
   check(
-    'loading leg: the panel shows the Loading chip while the capped fetch is in flight',
-    !!chipDetail && chipDetail.textContent.includes('Loading'),
-    chipDetail ? chipDetail.textContent : 'no chip-detail inside the warnings panel',
+    'loading leg: the warnings panel is a busy shell while the capped fetch is in flight',
+    !!warnHold && warnHold.getAttribute('aria-busy') === 'true',
+    warnHold ? 'shell not busy' : 'no busy shell inside the warnings panel',
   );
 }
 

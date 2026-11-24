@@ -1,4 +1,5 @@
 <script>
+  import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
   // frames, size, import time, parser, warnings, source file) and the voice and demo
   // copy state come first; then the import details (the reproducibility facts and the
@@ -197,7 +198,7 @@
       {/if}
     </dl>
   {:else}
-    <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
+    <LoadBox tag="div" class="md-hold" busy name="match-details-summary" key=""></LoadBox>
   {/if}
   </section>
 
@@ -209,7 +210,7 @@
         <button class="btn small" onclick={() => loadProv(context.matchId)}>{S.library.retry}</button>
       </p>
     {:else if !prov}
-      <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
+      <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
       <dl class="facts">
         <div><dt>{S.library.dtParserVersion}</dt><dd class="mono">{prov.parserVersion || '—'}</dd></div>
@@ -241,7 +242,7 @@
         <button class="btn small" onclick={() => loadEnt(context.matchId)}>{S.library.retry}</button>
       </p>
     {:else if !ent}
-      <p class="muted" role="status"><StatusChip block detail={S.library.loadingDetail} /></p>
+      <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>
     {:else}
       <dl class="facts">
         <div><dt>{S.library.dtEntityTypes}</dt><dd class="num">{fmtInt(ent.entityClasses)}</dd></div>

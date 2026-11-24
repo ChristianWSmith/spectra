@@ -88,31 +88,46 @@ export function errText(e) {
 // spectra:analysis-done — completion, not submission (listener beside the
 // wrapper below).
 // Exported for the explicit cases a view knows about before refetching.
-const readCache = new Map(); // "Method:JSON(args)" -> in-flight/resolved promise
+// Stale-while-revalidate. Each entry keeps its last good value. invalidate() only marks entries stale:
+// the next read of a stale entry refetches (its result replaces the value), and a refetch that fails keeps
+// the last value for the next attempt. Nothing is emptied, so a refresh never leaves a read without data.
+const readCache = new Map(); // "Method:JSON(args)" -> { p, value, has, stale }
 const READ_CACHE_MAX = 256; // bounded: library search spawns one entry per query
 
 export function invalidate() {
-  readCache.clear();
+  for (const e of readCache.values()) e.stale = true;
 }
 
 function cachedRead(method, args, fn) {
   const key = method + ':' + JSON.stringify(args);
-  const hit = readCache.get(key);
-  if (hit) return hit;
+  const prev = readCache.get(key);
+  if (prev && !prev.stale) return prev.p;
   let p;
   try {
     p = Promise.resolve(fn());
   } catch (e) {
     p = Promise.reject(e);
   }
-  readCache.set(key, p);
+  const entry = { p, value: prev ? prev.value : undefined, has: prev ? prev.has : false, stale: false };
+  readCache.set(key, entry);
   // Bounded FIFO: drop the oldest entry (Map preserves insertion order).
   if (readCache.size > READ_CACHE_MAX) readCache.delete(readCache.keys().next().value);
-  // Failed reads are not cached - the next call retries. Attaching the
-  // handler also marks the shared promise handled for both callers.
-  p.catch(() => {
-    if (readCache.get(key) === p) readCache.delete(key);
-  });
+  // Attaching the handlers also marks the shared promise handled for both callers.
+  p.then(
+    (v) => {
+      if (readCache.get(key) === entry) {
+        entry.value = v;
+        entry.has = true;
+      }
+    },
+    () => {
+      // A failed refetch keeps the last good value (stale, so the next read tries again); with no value
+      // yet, the entry goes and the next read retries.
+      if (readCache.get(key) !== entry) return;
+      if (entry.has) entry.stale = true;
+      else readCache.delete(key);
+    },
+  );
   return p;
 }
 
@@ -786,7 +801,7 @@ export function listMetrics() {
 // join the ONE existing cache key and need no second cache — like
 // listMatchesPage, and the WHOLE cache (this entry included) flushes on
 // every spectra:* event and inside the mutating wrappers below:
-// invalidate() is readCache.clear(), so one save/delete refetches both
+// invalidate() marks the cache stale, so one save/delete refetches both
 // the paged window and listMetrics.
 export function listMetricsPage(query, originFilter, formatFilter, afterID, limit) {
   return cachedRead(

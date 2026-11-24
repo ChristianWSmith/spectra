@@ -1,4 +1,5 @@
 <script>
+  import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
   // Replay — the tactical replay AND the app's ONE canonical raw-event
   // browser per match: event discovery, filtering, inspection and
@@ -120,7 +121,6 @@
   import PayloadTree from '../components/PayloadTree.svelte';
   import Popover from '../components/Popover.svelte';
   import RoundStrip from '../components/RoundStrip.svelte';
-  import StatusChip from '../components/StatusChip.svelte';
   import TeamColumn from '../components/TeamColumn.svelte';
   import HelpButton from '../components/HelpButton.svelte';
 
@@ -3381,6 +3381,7 @@
     {/if}
 
     {#if loading}
+      <LoadBox tag="div" class="replay-hold" busy name="view:replay" key="">
       <!-- The ladder's tier-2 indication (PRODUCT.md "### Defaults"):
            the ONE progress widget (StatusChip — no second bar anywhere)
            in BLOCK mode: the centered ring/spinner over the preload's
@@ -3389,9 +3390,8 @@
            only appears over an honest denominator (positions bytes vs
            Content-Length, radar images i/N), and the stage label + count
            ride the details line. Loading is transient — never restored. -->
-      <p class="muted" role="status">
-        <StatusChip block progress={loadPct} detail={'Loading replay…' + loadDetail} />
-      </p>
+      <p class="muted load-progress" role="status">{'Loading replay…' + loadDetail}</p>
+      </LoadBox>
     {:else if noSidecar}
       <div class="panel empty">
         <p class="empty-title" role="status">{S.replay.noReplayData}</p>
@@ -4333,7 +4333,7 @@
             {#if filter.cats.length === 0}
               {S.replay.noCategoriesEnabled}
             {:else if feedLoading}
-              <StatusChip block detail="Loading events…" />
+              <LoadBox tag="div" class="lm-hold" busy name="replay-feed" key=""></LoadBox>
             {:else}
               {S.replay.noEventsMatch}
             {/if}
@@ -4346,7 +4346,7 @@
         </button>
       {/if}
       {#if feedLoading && feedRows.length > 0}
-        <p class="muted lm-hint" role="status"><StatusChip block detail="Loading…" /></p>
+        <LoadBox tag="div" class="lm-hint-hold" busy name="replay-feed-more" key=""></LoadBox>
       {/if}
       {/if}
       {#if selected}
@@ -4428,7 +4428,7 @@
               </details>
               <button class="btn small" onclick={copyDetail}>{copied ? S.replay.copied : S.replay.copyPayloads}</button>
             {:else if !detailError}
-              <p class="muted" role="status"><StatusChip block detail="Loading payloads…" /></p>
+              <LoadBox tag="div" class="payload-hold" busy name="replay-payloads" key=""></LoadBox>
             {/if}
           {:else if selected.source === 'chat'}
             <dl class="facts lm-facts">

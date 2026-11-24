@@ -10,10 +10,10 @@
   import ComponentFrame from '../components/ComponentFrame.svelte';
   import SurfaceView from '../components/SurfaceView.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
-  import StatusChip from '../components/StatusChip.svelte';
   import ProfileView from '../builtins/profile/ProfileView.svelte';
   import * as S from '../strings/index.js';
   import { seed, remember } from '../viewstate.svelte.js';
+  import LoadBox from '../components/LoadBox.svelte';
 
   // query is the route's own (?back= origin for the return trip).
   // profileBackTarget (lib/nav.js) resolves it.
@@ -132,6 +132,7 @@
       {/snippet}
     </SurfaceView>
   {:else if !profileError}
-    <p class="muted" role="status"><StatusChip block detail={S.profiles.loadingDetail} /></p>
+    <!-- No player yet: the profile's space is held and spins until one is chosen and its profile arrives. -->
+    <LoadBox tag="div" class="prof-hold" busy name="profile-view" key=""></LoadBox>
   {/if}
 </div>

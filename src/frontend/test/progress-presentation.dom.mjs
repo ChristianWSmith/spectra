@@ -47,9 +47,8 @@ console.log('A. harness-less loading lines render the canonical block widget');
 
   const sql = src('views/SqlConsole.svelte');
   check(
-    'SqlConsole: the schema-loading line is the block spinner',
-    sql.includes('<StatusChip block detail="Loading schema…" />') &&
-      !/role="status">Loading schema…<\/p>/.test(sql),
+    'SqlConsole: the schema list is a LoadBox (the shared shell draws its spinner)',
+    /<LoadBox [^>]*name="view:sql-schema"/.test(sql) && !sql.includes('Loading schema…'),
     '',
   );
 
@@ -66,23 +65,23 @@ console.log('B. Replay’s four loading sites (harness exists but never holds a 
 {
   const replay = src('views/Replay.svelte');
   check(
-    'view-column load: block mode over the preload ledger',
-    /<StatusChip block progress=\{loadPct\} detail=\{'Loading replay…' \+ loadDetail\} \/>/.test(replay),
+    'view-column load: the shell holds the body with the preload stage line visible',
+    /<LoadBox [^>]*name="view:replay"/.test(replay) && replay.includes('load-progress'),
     '',
   );
   check(
-    'feed empty-state: "Loading events…" is the block spinner',
-    replay.includes('<StatusChip block detail="Loading events…" />'),
+    'feed empty-state: the loading state of the feed is a shell',
+    /<LoadBox [^>]*name="replay-feed"/.test(replay),
     '',
   );
   check(
-    'load-more follow-up: the hint under the button is the block spinner',
-    replay.includes('<StatusChip block detail="Loading…" />'),
+    'load-more follow-up: the hint under the button is a shell',
+    /<LoadBox [^>]*name="replay-feed-more"/.test(replay),
     '',
   );
   check(
-    'detail pane: "Loading payloads…" is the block spinner',
-    replay.includes('<StatusChip block detail="Loading payloads…" />'),
+    'detail pane: the payloads loading is a shell',
+    /<LoadBox [^>]*name="replay-payloads"/.test(replay),
     '',
   );
   // The busy LOAD-MORE button keeps its label (the busy-button
@@ -111,8 +110,10 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
   // The plugin list and the analysis rules are LoadBoxes (the shell draws their spinner); the data and
   // CS2-asset lines remain block chips with their words as the details text.
   check(
-    'Settings: the two remaining bare "Loading…" lines are block chips, none left as raw <p>',
-    (sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&
+    'Settings: the data and map-pack lines are shells, none left as chips or raw <p>',
+    (sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 0 &&
+      /<LoadBox [^>]*name="settings-data"/.test(sett) &&
+      /<LoadBox [^>]*name="settings-mappacks"/.test(sett) &&
       !/role="status">Loading…<\/p>/.test(sett),
     String((sett.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
   );
@@ -181,8 +182,9 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
   // The two Loading lines moved into the Explorer builtin's panels (C5c).
   const expl = src('builtins/match/MatchDetails.svelte');
   check(
-    'Details: the three loading lines (facts, import details, diagnostics) are block chips, none left as raw <p>',
-    (expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length === 3 &&
+    'Details: the three loading lines (facts, import details, diagnostics) are shells, none left as chips or raw <p>',
+    (expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length === 0 &&
+      (expl.match(/<LoadBox [^>]*name="match-details-/g) || []).length === 3 &&
       !/role="status">Loading…<\/p>/.test(expl),
     String((expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length),
   );

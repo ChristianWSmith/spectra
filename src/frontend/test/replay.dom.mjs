@@ -935,6 +935,8 @@ for (const name of [
   // StatusChip — the loading ladder's tier-2 progress renderer (the
   // ONE progress widget; MapPackPrompt's non-job precedent).
   'StatusChip',
+  // LoadBox — the loading shell (feed, payloads and the preload stage).
+  'LoadBox',
   // HelpButton — the top bar's `?` (help-buttons wave, 2026-11-15).
   'HelpButton',
 ]) {
@@ -947,6 +949,10 @@ for (const name of [
     // catalog — resolve it from the real tree (no-op for the rest).
     "from '../strings/index.js'",
     `from '${pathToFileURL('src/lib/strings/index.js').href}'`,
+  ).replace(
+    // the loading shell reads the remembered sizes (componentruntime/sizememory.js) from the real tree
+    "from '../componentruntime/sizememory.js'",
+    `from '${pathToFileURL('src/lib/componentruntime/sizememory.js').href}'`,
   );
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }

@@ -32,6 +32,7 @@
   } from '../services.js';
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
+  import LoadBox from '../components/LoadBox.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -449,7 +450,7 @@
 
       {#if visibleTemplates.length === 0}
         {#if loading && templates.length === 0}
-          <p class="muted" role="status">Loading…</p>
+          <LoadBox tag="div" class="rb-hold" busy name="reports-templates" key=""></LoadBox>
         {:else if query.trim()}
           <!-- A search that matches nothing names the query — the only
                empty state that has one to name. -->

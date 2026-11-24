@@ -832,7 +832,7 @@
         <p class="error" role="alert">{dataError}</p>
       {/if}
     {:else if !error}
-      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+      <LoadBox tag="div" class="sett-hold" busy name="settings-data" key=""></LoadBox>
     {/if}
   </section>
 
@@ -984,7 +984,7 @@
         </div>
       </dl>
     {:else}
-      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+      <LoadBox tag="div" class="sett-hold" busy name="settings-mappacks" key=""></LoadBox>
     {/if}
     {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}

@@ -1018,13 +1018,6 @@ mark {
   }
 }
 
-/* Builtin loading (spectra.busy): while a builtin reads, its root keeps its size
-   and position. Its panels stay as empty shells, and the content inside them is
-   hidden in place (visibility, which a shell can override; opacity would compound
-   through the frames' display: contents wrappers and fade the shells too). A
-   throbber is centered on each busy panel, so a composer's spinners sit on its
-   panels, one each. A busy root with no panels of its own fades without one. Every
-   spinner is a pseudo-element of the element it sits on, so none stack. */
 /* The loading standard (components/LoadBox.svelte). A busy box holds its height and blanks its
    content: every direct child is hidden (visibility keeps the space, and the hidden subtree goes with
    it), so no stale value shows while the new one loads. The spinner sits on the innermost busy box
@@ -1036,6 +1029,11 @@ mark {
 
 .load-box.load-busy > * {
   visibility: hidden;
+}
+
+/* A stage line a loading surface keeps readable (Replay's preload stage): it stays visible under the spinner. */
+.load-box.load-busy > .load-progress {
+  visibility: visible;
 }
 
 /* A frame panel draws its card for a leaf component only. A composer (nested frames)

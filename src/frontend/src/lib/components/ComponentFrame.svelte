@@ -84,9 +84,8 @@
   // One read API per mounted frame (its failures belong to this frame).
   // svelte-ignore state_referenced_locally
   const api = createReadApi({ reads: reads || serviceReads, report, nav, context: () => ctx });
-  // Reads in flight for this frame. A builtin shows its throbber over its
-  // content while they run (spectra.busy), so a swap of data keeps the space
-  // and hides the old values until the new ones arrive.
+  // Reads in flight for this frame. While they run, the panel holds its space under its spinner
+  // (spectra.busy), and the old values stay hidden until the new ones arrive.
   const load = createLoadState();
   // Reads this frame has started, and nested frames mounted in it (the layout class reads childCount).
   let readCount = $state(0);

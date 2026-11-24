@@ -365,7 +365,7 @@
           </button>
         </div>
         {#if warnings == null}
-          <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+          <LoadBox tag="div" class="warn-hold" busy name="match-warnings" key=""></LoadBox>
         {:else if warnings.messages.length === 0}
           <p class="muted" role="status">{S.match.warningsNone}</p>
         {:else}

@@ -16,7 +16,6 @@
   import { downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
   import { seed, remember } from '../viewstate.svelte.js';
-  import StatusChip from '../components/StatusChip.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import Popover from '../components/Popover.svelte';
 
@@ -478,10 +477,6 @@
               </div>
             {/if}
           </div>
-        {:else}
-          {#if !schemaError && schemaState.pending > 0}
-            <p class="muted" role="status"><StatusChip block detail="Loading schema…" /></p>
-          {/if}
         {/each}
       </LoadBox>
     </aside>
