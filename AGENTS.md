@@ -374,10 +374,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
   `npm run dev`) writes `builtins/generated/sources.js`, which holds each
   builtin's source text and id list. That file is gitignored, so never
-  hand-maintain a builtin id list. The placeholder example is
-  `builtins/placeholder/Example.svelte`, which the generator exports as
-  `PLACEHOLDER_SOURCE`; `componentbuiltins.js` lists it with the compiled
-  registry.
+  hand-maintain a builtin id list. `componentbuiltins.js` lists the compiled
+  registry; a builtin is named by its id, the name a view references.
 - **Every mounted component is a panel (contract).** The frame mounts each
   component into its own panel (`ComponentFrame` renders a `section.panel`
   around it), for builtins and user components alike. A component does not
@@ -404,7 +402,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   change in JS to render correctly is in the wrong form and gets moved to
   `.svelte` first. Every builtin is a `.svelte` file: the Match panels
   (`builtins/match/Match*.svelte`), the Economy and Utility views
-  (`builtins/econ/`, `builtins/util/`), and the placeholder. Shared
+  (`builtins/econ/`, `builtins/util/`). Shared
   helpers are real modules that a builtin imports by relative path: the
   Economy and Utility helpers in `builtinhelpers.js`, the Match panels'
   in `builtins/match/panelhelpers.js`. Each module is registered in
@@ -424,7 +422,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   and mounted by `components/SurfaceView.svelte`). Two surfaces exist:
   `match-view`, the Match view's area below the header (the tab bar and
   everything under it), and `profile-view`, an individual player's Profile
-  view. "Use as my view" places one component on a surface. A surface
+  view. "Use as my..." (beside Save) places one component on a surface, from its popover (Match View, Profile View). A surface
   with no rows renders its builtin composition. A hidden row is kept in
   storage but not rendered. **Reset to default** (`ResetPlacements`) removes
   the replacement. The Match header, warnings, round strip and the profiles

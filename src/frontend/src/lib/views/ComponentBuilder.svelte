@@ -55,6 +55,8 @@
   import ComponentFrame from '../components/ComponentFrame.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
+  import Popover from '../components/Popover.svelte';
+
   let { nav = undefined, openDocs = () => {} } = $props();
 
   // The live check's debounce: long enough not to check on every key,
@@ -94,8 +96,38 @@
   // The list filter: a case-insensitive match on the name a view references.
   let listQuery = $state('');
   const listNeedle = $derived(listQuery.trim().toLowerCase());
-  const shownBuiltins = $derived(BUILTIN_COMPONENTS.filter((b) => !listNeedle || b.id.toLowerCase().includes(listNeedle)));
-  const shownComponents = $derived(components.filter((c) => !listNeedle || c.name.toLowerCase().includes(listNeedle)));
+  // The origin filter, as the report templates have it: built-in, custom, plugin.
+  // Components have no plugin origin yet, so that box narrows nothing.
+  let showBuiltin = $state(true);
+  let showCustom = $state(true);
+  let showPlugin = $state(true);
+  const shownBuiltins = $derived(
+    !showBuiltin ? [] : BUILTIN_COMPONENTS.filter((b) => !listNeedle || b.id.toLowerCase().includes(listNeedle)),
+  );
+  const shownComponents = $derived(
+    !showCustom ? [] : components.filter((c) => !listNeedle || c.name.toLowerCase().includes(listNeedle)),
+  );
+
+  // The views a component is placed on (the surfaces' first placement names it).
+  function placedChips(name) {
+    if (!name) return [];
+    return VIEW_SURFACES.filter((v) => placements[v.surface][0]?.component === name).map((v) => ({
+      text: v.label,
+      title: S.componentbuilder.useAsView,
+    }));
+  }
+
+  // The Use-as popover: a click on the view the component already shows gives it back to the default.
+  let viewMenuOpen = $state(false);
+  let viewWrap = $state(null);
+  function closeViewMenu() {
+    viewMenuOpen = false;
+  }
+  async function chooseView(surface) {
+    closeViewMenu();
+    if (placements[surface][0]?.component === viewTarget) await resetView(surface);
+    else await useAsView(surface);
+  }
   let actionError = $state('');
   let saving = $state(false);
   // True while any compile runs (the live check, a save, a preview's load):
@@ -461,6 +493,21 @@
         placeholder={S.componentbuilder.listFilterPlaceholder}
         bind:value={listQuery}
       />
+      <div class="cb-filters" role="group" aria-label={S.componentbuilder.originLabel}>
+        <span class="filt-lab">{S.componentbuilder.originLabel}</span>
+        <label class="filt-check"
+          ><input type="checkbox" checked={showBuiltin} onchange={(e) => (showBuiltin = e.currentTarget.checked)} />
+          {S.componentbuilder.filterBuiltIn}</label
+        >
+        <label class="filt-check"
+          ><input type="checkbox" checked={showCustom} onchange={(e) => (showCustom = e.currentTarget.checked)} />
+          {S.componentbuilder.filterCustom}</label
+        >
+        <label class="filt-check"
+          ><input type="checkbox" checked={showPlugin} onchange={(e) => (showPlugin = e.currentTarget.checked)} />
+          {S.componentbuilder.filterPlugin}</label
+        >
+      </div>
       <div class="cb-scroll">
       <span class="field-label">{S.componentbuilder.builtinGroup}</span>
       <div class="cb-rows cb-builtins">
@@ -470,9 +517,7 @@
             form.builtinId === b.id,
             [
               { text: S.componentbuilder.builtinChip },
-              ...(b.placeholder
-                ? [{ text: S.componentbuilder.placeholderChip, title: S.componentbuilder.placeholderTitle }]
-                : []),
+              ...placedChips(b.id),
               ...(Object.hasOwn(overrides, b.id)
                 ? [{ text: S.componentbuilder.editedChip, title: S.componentbuilder.editedTitle }]
                 : []),
@@ -492,7 +537,7 @@
       {:else}
         <div class="cb-rows cb-yours">
           {#each shownComponents as c (c.name)}
-            {@render row(c.name, form.original === c.name, [], () => editComponent(c), () => remove(c.name))}
+            {@render row(c.name, form.original === c.name, placedChips(c.name), () => editComponent(c), () => remove(c.name))}
           {/each}
         </div>
       {/if}
@@ -506,6 +551,9 @@
         {#if builtin}
           <span class="chip cb-readonly" title={S.componentbuilder.builtinReadOnly}>{S.componentbuilder.builtinChip}</span>
         {/if}
+        {#each placedChips(viewTarget) as c (c.text)}
+          <span class="chip">{c.text}</span>
+        {/each}
       </div>
       <div class="cb-field">
         <label class="field-label" for="cb-name">{S.componentbuilder.fieldName}</label>
@@ -549,7 +597,27 @@
       <!-- ONE actions line: the destructive control LEFT, the positive
            actions right (the other builders' layout). -->
       <div class="row-between cb-actions">
-        <span>
+        <span class="toolbar">
+          {#if viewTarget}
+            <span class="cb-use-wrap" bind:this={viewWrap}>
+              <button
+                class="btn cb-use-view"
+                onclick={() => (viewMenuOpen = !viewMenuOpen)}
+                disabled={viewBusy}
+                aria-haspopup="menu"
+                aria-expanded={viewMenuOpen}>{S.componentbuilder.useAsView}</button
+              >
+              <Popover open={viewMenuOpen} anchor={viewWrap} onClose={closeViewMenu}>
+                <div class="cb-use-pop" role="menu">
+                  {#each VIEW_SURFACES as v (v.surface)}
+                    <button class="btn small" role="menuitem" disabled={viewBusy} onclick={() => chooseView(v.surface)}
+                      >{v.label}{placements[v.surface][0]?.component === viewTarget ? ' ✓' : ''}</button
+                    >
+                  {/each}
+                </div>
+              </Popover>
+            </span>
+          {/if}
           {#if form.original}
             <button
               class="btn danger cb-delete"
@@ -599,34 +667,6 @@
         </span>
       </div>
 
-      <!-- Use as my view: one placement per surface, pointing at the open
-           component. -->
-      {#if viewTarget}
-        <div class="cb-views">
-          <span class="field-label">{S.componentbuilder.viewsHeading}</span>
-          {#each VIEW_SURFACES as v (v.surface)}
-            <div class="cb-view-row">
-              <span class="cb-view-name">{v.label}</span>
-              <span class="muted cb-view-state">{viewState(v.surface)}</span>
-              <span class="toolbar">
-                <button
-                  class="btn small cb-use-view"
-                  onclick={() => useAsView(v.surface)}
-                  disabled={viewBusy || viewState(v.surface) === S.componentbuilder.viewUsingThis}
-                  >{S.componentbuilder.useAsView}</button
-                >
-                {#if placements[v.surface].length}
-                  <button class="btn small cb-reset-view" onclick={() => resetView(v.surface)} disabled={viewBusy}
-                    >{S.componentbuilder.resetView}</button
-                  >
-                {/if}
-              </span>
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <p class="muted cb-views-note">{S.componentbuilder.viewsNeedSave}</p>
-      {/if}
     </section>
 
     <section class="panel cb-preview">
@@ -697,6 +737,23 @@
     gap: 16px;
     min-width: 0;
   }
+  .cb-use-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .cb-use-pop {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    min-width: 180px;
+  }
+  .cb-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
   .cb-rows {
     display: flex;
     flex-direction: column;
@@ -749,25 +806,6 @@
   .cb-actions {
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .cb-views {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 12px;
-  }
-  .cb-view-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-  .cb-view-name {
-    font-weight: 600;
-  }
-  .cb-view-state {
-    flex: 1;
-    min-width: 0;
   }
   .cb-context {
     display: flex;

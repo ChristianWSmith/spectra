@@ -22,7 +22,7 @@
 // Restore to default returns to.
 
 import * as S from './strings/index.js';
-import { PANEL_IDS, PANEL_SOURCES, PANEL_DIRS, PLACEHOLDER_SOURCE } from './builtins/generated/sources.js';
+import { PANEL_IDS, PANEL_SOURCES, PANEL_DIRS } from './builtins/generated/sources.js';
 
 export const BUILTIN_PREFIX = 'builtin-';
 
@@ -51,12 +51,6 @@ function registryList(entries) {
 }
 
 export const BUILTIN_COMPONENTS = registryList([
-  Object.freeze({
-    id: BUILTIN_PREFIX + 'example',
-    label: BUILTIN_PREFIX + 'example',
-    placeholder: true,
-    source: PLACEHOLDER_SOURCE,
-  }),
   // The Match view's panels. Each is mounted
   // by the Match view with its context; duplicating one gives a user copy.
   // The compiled registry: the Profile, Reports, Explorer, Match-tab, Economy
@@ -83,7 +77,6 @@ export function builtinById(id) {
 // not a built-in. The registry's own components live in src/lib.
 export function builtinSourceDir(id) {
   if (Object.hasOwn(PANEL_DIRS, id)) return PANEL_DIRS[id];
-  if (id === BUILTIN_PREFIX + 'example') return 'src/lib/builtins/placeholder';
   return builtinById(id) ? 'src/lib' : null;
 }
 

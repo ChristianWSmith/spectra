@@ -136,7 +136,7 @@ const overrideCalls = [];
 const overrideDeleteCalls = [];
 const setCalls = [];
 const resetCalls = [];
-const PLACEHOLDER_ID = 'builtin-example';
+const PLACEHOLDER_ID = 'builtin-explorer';
 bindings.handlers.ListBuiltinOverrides = () => OVERRIDES.map((o) => ({ ...o }));
 bindings.handlers.SaveBuiltinOverride = (id, source) => {
   overrideCalls.push({ id, source });
@@ -255,13 +255,9 @@ check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[ro
 
 // --- B. the list ---------------------------------------------------------------
 console.log('B. the list');
-const builtinRow = rowNamed('builtin-example', '.cb-builtins');
-check('the built-in example is listed in the Built-in group', !!builtinRow);
-check(
-  'the built-in row carries the built-in and example chips',
-  builtinRow && builtinRow.textContent.includes(S.componentbuilder.builtinChip) &&
-    builtinRow.textContent.includes(S.componentbuilder.placeholderChip),
-);
+const builtinRow = rowNamed(PLACEHOLDER_ID, '.cb-builtins');
+check('the sample built-in is listed in the Built-in group', !!builtinRow);
+check('the built-in row carries the built-in chip', builtinRow && builtinRow.textContent.includes(S.componentbuilder.builtinChip));
 check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.componentbuilder.noUserComponents));
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
 // The Profile view and its six panels are listed (the registry, builtins/panels.js).
@@ -287,10 +283,10 @@ OVERRIDES = [];
 await mounted();
 check(
   'a built-in with no override shows no Edited chip in the list',
-  !!rowNamed('builtin-example', '.cb-builtins') &&
-    !rowNamed('builtin-example', '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+  !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
 );
-click(rowNamed('builtin-example', '.cb-builtins'));
+click(rowNamed(PLACEHOLDER_ID, '.cb-builtins'));
 await settle();
 check('the built-in name field is read-only', q('#cb-name')?.readOnly === true);
 check('the built-in source is editable', q('#cb-source')?.readOnly === false);
@@ -298,7 +294,7 @@ check('Save is disabled until the built-in is edited', q('.cb-save')?.disabled =
 check('a built-in shows no Delete control', !q('.cb-delete'));
 check('a built-in offers no Duplicate (edit in place instead)', !q('.cb-duplicate'));
 check('Restore to default is disabled with no edit', q('.cb-restore')?.disabled === true);
-check('the built-in source is in the editor', q('#cb-source')?.value.includes('spectra.query'));
+check('the built-in source is in the editor', q('#cb-source')?.value.includes('<script>'));
 await setText(q('#cb-source'), OK_EDIT_SOURCE);
 await settle(10);
 check('an edit that checks out enables Save', q('.cb-save')?.disabled === false, q('.cb-check')?.textContent);
@@ -312,17 +308,17 @@ check(
   ovCall && ovCall.id === PLACEHOLDER_ID && ovCall.source === OK_EDIT_SOURCE,
   JSON.stringify(ovCall),
 );
-check('the built-in row shows the edited chip', rowNamed('builtin-example', '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the built-in row shows the edited chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
 check('Restore to default is enabled once edited', q('.cb-restore')?.disabled === false);
 check('no user component was written by an edit', saveCalls.length === 0);
 click(q('.cb-restore'));
 await settle(10);
 check('Restore to default deletes the override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === PLACEHOLDER_ID);
-check('Restore to default brings back the shipped source', q('#cb-source')?.value.includes('spectra.query') && !q('#cb-source')?.value.includes('EDITED BUILTIN'));
+check('Restore to default brings back the shipped source', q('#cb-source')?.value.includes('<script>') && !q('#cb-source')?.value.includes('EDITED BUILTIN'));
 check(
   'after restore the built-in row is still listed and carries no Edited chip',
-  !!rowNamed('builtin-example', '.cb-builtins') &&
-    !rowNamed('builtin-example', '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+  !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
 );
 unmounted();
 
@@ -364,7 +360,7 @@ COMPONENTS = [];
 OVERRIDES = [];
 overrideCalls.length = 0;
 await mounted();
-click(rowNamed('builtin-example', '.cb-builtins'));
+click(rowNamed(PLACEHOLDER_ID, '.cb-builtins'));
 await settle();
 await setText(q('#cb-source'), BROKEN_SOURCE);
 check('a refused edit names its line', alertIn('.cb-check').startsWith('Line 2:'), alertIn('.cb-check'));
@@ -378,41 +374,43 @@ COMPONENTS = [];
 OVERRIDES = [];
 PLACEMENTS = {};
 await mounted();
-click(rowNamed('builtin-example', '.cb-builtins'));
+click(rowNamed(PLACEHOLDER_ID, '.cb-builtins'));
 await settle();
-const useBtn = (surfaceLabel) => {
-  const row = qa('.cb-view-row').find((r) => r.textContent.includes(surfaceLabel));
-  return row && row.querySelector('.cb-use-view');
-};
-const stateOf = (surfaceLabel) => qa('.cb-view-row').find((r) => r.textContent.includes(surfaceLabel))?.querySelector('.cb-view-state')?.textContent.trim();
-check('the open built-in offers Use as my view for each surface', !!useBtn(S.componentbuilder.surfaceMatch) && !!useBtn(S.componentbuilder.surfaceProfile));
-check('a surface with no placement says it shows the default', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewDefault);
-const beforeSet = setCalls.length;
-click(useBtn(S.componentbuilder.surfaceMatch));
+const useAsBtn = () => q('.cb-use-view');
+const menuItems = () => qa('.cb-use-pop [role="menuitem"]');
+const itemFor = (label) => menuItems().find((b) => b.textContent.trim().startsWith(label));
+check('the open built-in offers one Use as my... button', !!useAsBtn() && useAsBtn().textContent.trim() === S.componentbuilder.useAsView);
+check('the popover is closed until the button opens it', !q('.cb-use-pop'));
+click(useAsBtn());
 await settle(10);
-check('Use as my view writes exactly one placement for the surface', setCalls.length === beforeSet + 1);
+check('the popover offers Match View and Profile View', menuItems().length === 2 && !!itemFor(S.componentbuilder.surfaceMatch) && !!itemFor(S.componentbuilder.surfaceProfile));
+const beforeSet = setCalls.length;
+click(itemFor(S.componentbuilder.surfaceMatch));
+await settle(10);
+check('choosing Match View writes exactly one placement for the match surface', setCalls.length === beforeSet + 1);
 const setCall = setCalls[setCalls.length - 1];
 check(
   'the placement points at the open component',
   setCall && setCall.surface === 'match-view' && setCall.rows.length === 1 && setCall.rows[0].component === PLACEHOLDER_ID,
   JSON.stringify(setCall),
 );
-check('the surface now shows this component', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewUsingThis, stateOf(S.componentbuilder.surfaceMatch));
-check('the profile surface is unchanged', stateOf(S.componentbuilder.surfaceProfile) === S.componentbuilder.viewDefault);
-const resetBtn = qa('.cb-view-row').find((r) => r.textContent.includes(S.componentbuilder.surfaceMatch))?.querySelector('.cb-reset-view');
-check('a placed surface offers Reset to default', !!resetBtn);
-click(resetBtn);
+check('the open component carries a Match View chip', !!q('.cb-editor .chip') && q('.cb-editor').textContent.includes(S.componentbuilder.surfaceMatch));
+check('the list row carries the same chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.surfaceMatch));
+click(useAsBtn());
 await settle(10);
-check('Reset removes the placement', resetCalls.length === 1 && resetCalls[0] === 'match-view');
-check('the surface renders its default again', stateOf(S.componentbuilder.surfaceMatch) === S.componentbuilder.viewDefault);
+check('a placed view is marked in the popover', (itemFor(S.componentbuilder.surfaceMatch)?.textContent || '').includes('✓'));
+click(itemFor(S.componentbuilder.surfaceMatch));
+await settle(10);
+check('choosing the placed view again gives it back to the default', resetCalls.length === 1 && resetCalls[0] === 'match-view');
+check('the chip goes with it', !q('.cb-editor') || !q('.cb-editor').textContent.includes(S.componentbuilder.surfaceMatch));
 unmounted();
 
-// An unsaved user component has nothing to place yet.
+// An unsaved user component has no view to place yet.
 COMPONENTS = [];
 await mounted();
 click(buttonByText(S.componentbuilder.newLabel));
 await settle();
-check('an unsaved component offers no view placement', !!q('.cb-views-note') && !q('.cb-use-view'));
+check('an unsaved component offers no Use as my... button', !q('.cb-use-view'));
 unmounted();
 
 // --- D. save gating -------------------------------------------------------------

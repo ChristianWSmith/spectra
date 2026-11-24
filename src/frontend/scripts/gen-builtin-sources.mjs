@@ -51,9 +51,6 @@ export function panelRegistry(src) {
 // escaping is ever needed.
 export function generate(root = FRONTEND) {
   const dir = join(root, 'src', 'lib', 'builtins');
-  // The placeholder example: a Svelte file the Builder shows as a sample (not a
-  // compiled panel, so it is not in the registry).
-  const placeholder = readFileSync(join(root, 'src', 'lib', 'builtins', 'placeholder', 'Example.svelte'), 'utf8');
   const reg = panelRegistry(readFileSync(join(dir, 'panels.js'), 'utf8'));
   const lines = [];
   const dirLines = [];
@@ -78,7 +75,6 @@ export function generate(root = FRONTEND) {
     'export const PANEL_SOURCES = Object.freeze({',
     ...lines,
     '});',
-    'export const PLACEHOLDER_SOURCE = ' + JSON.stringify(placeholder) + ';',
     'export const PANEL_DIRS = Object.freeze({',
     ...dirLines,
     '});',
