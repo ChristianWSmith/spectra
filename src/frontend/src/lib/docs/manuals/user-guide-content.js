@@ -388,11 +388,11 @@ their default order: there is no ordering dialog, no pinning and no hiding.
 
 The **editor** on the right has:
 
-- **Name** (the identifier other formulas reference), **Title** (display label) and an optional **Short name** for narrow columns.
+- **Name** (the identifier other formulas reference), **Title** (display label), an optional **Short name** for narrow columns and the **Format**, all on one line.
 - **Scope** is not a field you set. A metric that reads \`:steam_id\` is a career (profile) metric, one value per
 player across their matches; any other metric is a match metric. The statement decides, and the editor shows the result.
 - **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
-- **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
+- **Doc** — a one-line, plain-language explanation shown in the ⓘ next to the number. It is optional: left empty, the ⓘ shows the formula.
 - **Expression** — the statement itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
 - **Raw SQL** — every expression is one read-only SQL statement, and the save gate checks it: a write, a second statement, a table the metric may not read, or a \`metric()\` reference is refused at save, with the reason, and nothing is saved. The statement must return the columns \`subject_key\`, \`dim\` and \`value\`; any other column is kept as extra detail. A NULL \`value\` shows as a dash, never as zero. The binds decide the scope: \`:match_id\` runs once per ready match, \`:steam_id\` once per player and \`:match_id\` with \`:round\` once per round. A statement that fails shows the failed state and its reason. The metric language chapter lists the tables and the checks.
 
