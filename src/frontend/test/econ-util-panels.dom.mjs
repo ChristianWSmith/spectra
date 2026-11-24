@@ -104,7 +104,11 @@ const { mount, unmount, flushSync } = await import('svelte');
 // The Economy and Utility composers are Svelte builtins: their source is the .svelte file.
 const ECON_DIR = 'src/lib/builtins/econ';
 const UTIL_DIR = 'src/lib/builtins/util';
-const panels = { ECONOMY_SOURCE: readFileSync(resolve(ECON_DIR, 'Economy.svelte'), 'utf8') };
+const panels = {
+  ECONOMY_SOURCE: readFileSync(resolve(ECON_DIR, 'Economy.svelte'), 'utf8'),
+  // The curve alone: a component preview mounts a panel with its context only (no composer, no rows).
+  CURVE_SOURCE: readFileSync(resolve(ECON_DIR, 'EconCurve.svelte'), 'utf8'),
+};
 const upanels = { UTILITY_SOURCE: readFileSync(resolve(UTIL_DIR, 'Utility.svelte'), 'utf8') };
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
@@ -317,6 +321,19 @@ check('lost equipment: the stored currency', cardVal('Lost equipment') === '$7,5
 check('team lost equipment: both teams', cardVal('Team lost equipment') === 'Alpha Squad $3,000 · team_Charlie $4,500', cardVal('Team lost equipment'));
 check('the inferred badge is on the two lost-equipment cards only',
   [...root.querySelectorAll('.stat-cell .badge-inferred')].length === 2 && [...root.querySelectorAll('.stat-cell .badge-computed')].length === 4);
+
+// --- the curve mounted alone loads its own economy (the composer is not there to hand it rows) ---
+console.log('S. the economy curve mounted alone (a component preview)');
+{
+  const composerStrips = root.querySelectorAll('.econ-strip-cell').length;
+  const alone = await mountPanel({ source: panels.CURVE_SOURCE, context: CTX, props: {} });
+  await new Promise((r) => setTimeout(r, 80));
+  const aloneStrips = alone.querySelectorAll('.econ-strip-cell').length;
+  check('the curve shows the rounds of the match on its own (not the empty state)', aloneStrips > 0 && aloneStrips === composerStrips, aloneStrips + ' vs composer ' + composerStrips);
+  check('the empty-state line is absent when the match has rows', !alone.textContent.includes('No economy rows'));
+  // mountPanel unmounts the previous panel: the composer the sections below read is mounted again.
+  root = await mountPanel({ source: panels.ECONOMY_SOURCE, context: CTX, props: ECON_BACK });
+}
 
 // --- B. the economy curve -------------------------------------------------------------
 console.log('B. economy curve (match 9)');

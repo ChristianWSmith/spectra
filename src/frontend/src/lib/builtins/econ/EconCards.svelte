@@ -1,6 +1,6 @@
 <script>
   import * as S from '../../strings/index.js';
-  import { DASH, fmtStoredValue, roundStartTick, roundEndTick, hashOf, entryLoopSpan } from '../../builtinhelpers.js';
+  import { DASH, fmtStoredValue, roundStartTick, roundEndTick, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',
@@ -66,7 +66,29 @@
 
   // Economy summary cards: six stored statistics of the match, each read with
   // metric() under the context's match. A card that is not fresh shows a dash.
-  let { spectra, context, rows = [], rounds = [], names = { ct: S.match.sideCt, t: S.match.sideT }, back = '' } = $props();
+  // Mounted by a composer, the economy comes from it (the props below). Mounted alone (a component preview),
+  // the panel loads the match's economy itself, so it shows the real data either way.
+  let { spectra, context, back = '', ...given } = $props();
+  const NAMES_DEFAULT = { ct: S.match.sideCt, t: S.match.sideT };
+  const standalone = $derived(given.rows === undefined);
+  let own = $state(null);
+  $effect(() => {
+    if (!standalone) return;
+    let live = true;
+    loadEconomy(spectra, context.matchId).then(
+      (d) => {
+        if (live) own = d;
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  });
+  const rows = $derived(standalone ? (own ? own.rows : []) : (given.rows ?? []));
+  const rounds = $derived(standalone ? (own ? own.rounds : []) : (given.rounds ?? []));
+  const names = $derived(standalone ? (own ? own.names : NAMES_DEFAULT) : (given.names ?? NAMES_DEFAULT));
+
 
   const CARDS = ECON_CARDS;
   const BADGE_INFERRED = 'inferred';

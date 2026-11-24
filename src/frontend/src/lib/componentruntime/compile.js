@@ -291,6 +291,7 @@ export const BUILTIN_HELPERS = Object.freeze({
     load: () => import('../builtinhelpers.js'),
     names: {
       buildEconRows: 'the economy rows of a match from the economy query',
+      loadEconomy: 'the economy of one match, read for a panel mounted alone (rows, rounds, names, side switches, winner)',
       DASH: 'the one dash a missing cell shows',
       econColumns: 'one side’s equip and net value of an economy row',
       econValue: 'one economy value of an economy row, by metric',
