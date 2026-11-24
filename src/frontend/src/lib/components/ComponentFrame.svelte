@@ -35,7 +35,7 @@
   import { errText } from '../services.js';
   import { loadComponent } from '../componentruntime/compile.js';
   import { createReadApi } from '../componentruntime/readapi.js';
-  import { rememberHeight, recalledHeight } from '../componentruntime/sizememory.js';
+  import { rememberHeight, recalledHeight, onSizesLoaded } from '../componentruntime/sizememory.js';
   import { serviceReads } from '../componentruntime/reads.js';
   import { attachFrame } from '../componentruntime/eventerrors.js';
   import { FRAME_KEY, frozenContext } from '../componentruntime/frameContext.js';
@@ -140,8 +140,12 @@
   // held at the last remembered render (componentruntime/sizememory.js).
   let panelEl = $state(null);
   const frameRoot = () => (Comp ? panelEl : null);
+  // The persisted sizes land after startup: a hold that ran before then re-runs.
+  let sizesLoaded = $state(0);
+  $effect(() => onSizesLoaded(() => sizesLoaded++));
   $effect(() => {
     void Comp;
+    void sizesLoaded;
     const root = frameRoot();
     if (!root) return;
     const on = busy;

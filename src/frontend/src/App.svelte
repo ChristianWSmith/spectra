@@ -1,6 +1,11 @@
 <script>
   import { onMount } from 'svelte';
   import { AppService } from '../bindings/github.com/ChristianWSmith/spectra';
+  import { getPref, setPref } from './lib/services.js';
+  import { setSizeStore, loadSizes } from './lib/componentruntime/sizememory.js';
+  // Component heights persist as one preference (layout_sizes), read once at startup.
+  setSizeStore({ load: () => getPref('layout_sizes'), save: (v) => setPref('layout_sizes', v) });
+  loadSizes();
   import Library from './lib/views/Library.svelte';
   import Match from './lib/views/Match.svelte';
   import RoundDetail from './lib/views/RoundDetail.svelte';

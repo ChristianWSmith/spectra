@@ -387,7 +387,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   panel (`.frame-composer`): its children are the cards.
 - **The frame owns the loading state (rule).** While a component reads, the
   frame's panel gets the `builtin-busy` class and `aria-busy`, keeps its last
-  rendered height (`componentruntime/sizememory.js`, by name, for the process),
+  rendered height (`componentruntime/sizememory.js`, by name; persisted as the
+  `layout_sizes` preference and loaded at startup),
   and fades its content in place (`visibility`). A throbber is drawn in CSS
   (`public/style.css`) on each busy leaf panel, centered on it. The frame
   counts reads: `spectra.metric`, `spectra.query` and `spectra.metricsByMatch`
