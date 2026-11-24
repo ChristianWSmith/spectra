@@ -121,8 +121,8 @@ func TestGetProvenanceAndEntitySummary(t *testing.T) {
 		t.Fatalf("stamped provenance = %+v, want ruleVersion 4 (the match's stamp) + tradeWindowS 7 (the live config)", p2)
 	}
 	joined := strings.Join(p.Notes, "\n")
-	if !strings.Contains(joined, "entity schema browser descoped") {
-		t.Errorf("notes missing descoped schema note: %v", p.Notes)
+	if strings.Contains(joined, "descoped") {
+		t.Errorf("provenance notes carry the retired descoped note: %v", p.Notes)
 	}
 	if !strings.Contains(joined, "chat.decrypted stays 0") {
 		t.Errorf("notes missing chat.decrypted note: %v", p.Notes)
@@ -140,9 +140,6 @@ func TestGetProvenanceAndEntitySummary(t *testing.T) {
 	}
 	if es.GenericTypes != 2 || es.GenericTotal != 5 {
 		t.Fatalf("generic counts mismatch: %+v", es)
-	}
-	if !strings.Contains(es.Notes, "descoped") {
-		t.Fatalf("entity notes missing descoped text: %q", es.Notes)
 	}
 }
 

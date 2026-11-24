@@ -13,8 +13,6 @@ import MapsPanel from './profile/MapsPanel.svelte';
 import WeaponsPanel from './profile/WeaponsPanel.svelte';
 import HistoryPanel from './profile/HistoryPanel.svelte';
 import ReportsView from './reports/ReportsView.svelte';
-import ExplorerProvenance from './explorer/ExplorerProvenance.svelte';
-import ExplorerDiagnostics from './explorer/ExplorerDiagnostics.svelte';
 // The Match view's Heatmaps and Combat tabs: each tab
 // is a composition, and its panels are mounted by the tab through Child.
 import MatchHeatmaps from './match/Heatmaps.svelte';
@@ -40,7 +38,6 @@ import MatchRosters from './match/MatchRosters.svelte';
 import MatchScoreboard from './match/MatchScoreboard.svelte';
 import MatchRounds from './match/MatchRounds.svelte';
 import MatchDetails from './match/MatchDetails.svelte';
-import MatchFacts from './match/MatchFacts.svelte';
 
 export const PROFILE_VIEW_ID = 'profile';
 export const REPORTS_VIEW_ID = 'match-reports';
@@ -67,7 +64,6 @@ export const MATCH_ROSTERS_ID = 'match-rosters';
 export const MATCH_SCOREBOARD_ID = 'match-scoreboard';
 export const MATCH_ROUNDS_ID = 'match-rounds';
 export const MATCH_DETAILS_ID = 'match-details';
-export const MATCH_FACTS_ID = 'match-details-facts';
 
 export const BUILTIN_PANELS = Object.freeze({
   [PROFILE_VIEW_ID]: ProfileView,
@@ -79,9 +75,6 @@ export const BUILTIN_PANELS = Object.freeze({
   'profile-history': HistoryPanel,
   // The Match view's Reports tab (the composed report and its panels).
   [REPORTS_VIEW_ID]: ReportsView,
-  // The Match view's Details tab and the standalone Explorer route.
-  'match-details-provenance': ExplorerProvenance,
-  'match-details-diagnostics': ExplorerDiagnostics,
   [MATCH_TABS_ID]: MatchTabs,
   [MATCH_HEATMAPS_ID]: MatchHeatmaps,
   'match-heatmap': HeatmapPanel,
@@ -101,7 +94,6 @@ export const BUILTIN_PANELS = Object.freeze({
   [MATCH_SCOREBOARD_ID]: MatchScoreboard,
   [MATCH_ROUNDS_ID]: MatchRounds,
   [MATCH_DETAILS_ID]: MatchDetails,
-  [MATCH_FACTS_ID]: MatchFacts,
 });
 
 // builtinPanelById is the compiled component of a panel id, or null.

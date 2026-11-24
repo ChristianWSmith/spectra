@@ -537,56 +537,12 @@
           </div>
         </div>
 
-        <!-- The preview target: what the DRAFT renders against. Nothing
-             is preselected — Preview stays disabled until the user
-             picks one (never a fabricated target). -->
-        <div class="rb-target" role="group" aria-label={S.reportbuilder.targetHeading}>
-          <span class="field-label">{S.reportbuilder.targetHeading}</span>
-          <div class="rb-target-row">
-            <div class="rb-field">
-              <label class="field-label" for="rb-match">{S.reportbuilder.matchLabel}</label>
-              <MatchPicker
-                {matches}
-                value={matchId}
-                id="rb-match"
-                onselect={(mid) => (matchId = mid)}
-              />
-            </div>
-            {#if form.scope === 'player'}
-              <div class="rb-field">
-                <label class="field-label" for="rb-player">{S.reportbuilder.playerLabel}</label>
-                <PlayerPicker
-                  {players}
-                  value={steamId}
-                  id="rb-player"
-                  onselect={(sid) => (steamId = sid)}
-                />
-              </div>
-            {/if}
-            {#if form.scope === 'round'}
-              <div class="rb-field">
-                <label class="field-label" for="rb-round">{S.reportbuilder.roundLabel}</label>
-                <input
-                  class="input"
-                  id="rb-round"
-                  type="number"
-                  min="1"
-                  max={Math.max(1, maxRound)}
-                  bind:value={roundNo}
-                />
-                {#if maxRound > 0}
-                  <span class="muted rb-hint">1..{maxRound}</span>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        </div>
-
         <!-- ONE actions line: the destructive control sits LEFT, the
              positive actions (Preview, then Save) right — the
              editor-action layout the metric editor uses. -->
         <div class="row-between rb-actions">
-          <span class="rb-destructive">
+          <span class="rb-left">
+            <span class="rb-destructive">
             {#if builtinLoaded && form.edited}
               <button class="btn" onclick={restoreBuiltin} title={S.reportbuilder.restoreTitle}
                 >{S.reportbuilder.restoreDefault}</button
@@ -603,8 +559,50 @@
               >
             {/if}
           </span>
-          <span class="toolbar">
-            <span class="muted rb-note">
+            <span class="rb-targets" role="group" aria-label={S.reportbuilder.targetHeading}>
+              <span class="field-label">{S.reportbuilder.targetHeading}</span>
+              <span class="rb-target-row">
+                <div class="rb-field">
+                  <label class="field-label" for="rb-match">{S.reportbuilder.matchLabel}</label>
+                  <MatchPicker
+                    {matches}
+                    value={matchId}
+                    id="rb-match"
+                    onselect={(mid) => (matchId = mid)}
+                  />
+                </div>
+                {#if form.scope === 'player'}
+                  <div class="rb-field">
+                    <label class="field-label" for="rb-player">{S.reportbuilder.playerLabel}</label>
+                    <PlayerPicker
+                      {players}
+                      value={steamId}
+                      id="rb-player"
+                      onselect={(sid) => (steamId = sid)}
+                    />
+                  </div>
+                {/if}
+                {#if form.scope === 'round'}
+                  <div class="rb-field">
+                    <label class="field-label" for="rb-round">{S.reportbuilder.roundLabel}</label>
+                    <input
+                      class="input"
+                      id="rb-round"
+                      type="number"
+                      min="1"
+                      max={Math.max(1, maxRound)}
+                      bind:value={roundNo}
+                    />
+                    {#if maxRound > 0}
+                      <span class="muted rb-hint">1..{maxRound}</span>
+                    {/if}
+                  </div>
+                {/if}
+              </span>
+            </span>
+          </span>
+          <span class="toolbar rb-bottom">
+          <span class="muted rb-note">
               {builtinLoaded
                 ? form.edited
                   ? S.reportbuilder.builtinEditedNote

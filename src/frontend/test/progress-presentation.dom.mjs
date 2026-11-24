@@ -181,10 +181,10 @@ console.log('D. Settings + Explorer: the follow-up sites (block mode, copy prese
   );
 
   // The two Loading lines moved into the Explorer builtin's panels (C5c).
-  const expl = src('builtins/explorer/ExplorerProvenance.svelte') + src('builtins/explorer/ExplorerDiagnostics.svelte');
+  const expl = src('builtins/match/MatchDetails.svelte');
   check(
-    'Explorer: both bare "Loading…" lines are block chips, none left as raw <p>',
-    (expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length === 2 &&
+    'Details: the three loading lines (facts, import details, diagnostics) are block chips, none left as raw <p>',
+    (expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length === 3 &&
       !/role="status">Loading…<\/p>/.test(expl),
     String((expl.match(/<StatusChip block detail=\{S\.library\.loadingDetail\} \/>/g) || []).length),
   );

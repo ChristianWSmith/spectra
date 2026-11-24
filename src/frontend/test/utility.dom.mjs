@@ -378,6 +378,17 @@ check(
 // answer), so the driver switches it to "All rounds" before E…K read
 // every row.
 console.log('D. C7/W17 structure: throw log FIRST, charts follow, filters + round selector inside, first throwing round preselected');
+// The kind filter is a popover multi-select: open its trigger, check the kinds wanted, then close it.
+const setKinds = async (kinds) => {
+  const trig = $('.util-kind-host > button');
+  if (!$('.util-kind-pop')) trig.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  await sleep();
+  for (const cb of $$('.util-kind-pop input[type=checkbox]')) {
+    const want = kinds.includes(cb.parentElement.textContent.trim());
+    if (cb.checked !== want) cb.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+  await sleep();
+};
 const setSel = async (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -398,7 +409,7 @@ check(
 );
 check(
   'the kind, thrower AND round selectors moved INTO the card',
-  !!$('.util-throwlog #util-kind') && !!$('.util-throwlog #util-thrower') && !!$('.util-throwlog #util-round'),
+  !!$('.util-throwlog .util-kind-host') && !!$('.util-throwlog #util-thrower') && !!$('.util-throwlog #util-round'),
 );
 check(
   'the live count rides with them (one .util-filters, inside the card)',
@@ -656,10 +667,7 @@ check(
 // HIDES the whole blind card — no placeholder line, no chart of
 // zero-height bars — while the damage chart keeps drawing (kind=he
 // carries damage, so damageBars.any stays true).
-const kindSel = $('#util-kind');
-kindSel.value = 'he';
-kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-await sleep();
+await setKinds(['he']);
 check(
   'no blind time in the filter → the blind card hides entirely (no placeholder line) while the damage chart still draws',
   !$('.util-card-blind') &&
@@ -667,9 +675,7 @@ check(
     $$('.util-card-damage .util-bar').length > 0,
   `blind=${!!$('.util-card-blind')} damageBars=${$$('.util-card-damage .util-bar').length}`,
 );
-kindSel.value = '';
-kindSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-await sleep();
+await setKinds([]);
 check(
   'clearing the filter brings the card back (4 bars)',
   !!$('.util-card-blind') && $$('.util-card-blind .util-bar').length === 4,
@@ -765,8 +771,8 @@ check(
   ruleBody('.util-nade {') || 'no .util-nade rule',
 );
 check(
-  "the .util-nade grid LEADS with the play cell's auto track (▶ first, kind second)",
-  /grid-template-columns:\s*auto\s+74px\s+minmax\(90px,\s*1fr\)/.test(ruleBody('.util-nade {') || ''),
+  "the .util-nade grid LEADS with the fixed play track (▶ first, kind second)",
+  /grid-template-columns:\s*34px\s+74px\s+minmax\(90px,\s*1fr\)/.test(ruleBody('.util-nade {') || ''),
   ruleBody('.util-nade {') || 'no .util-nade rule',
 );
 check(

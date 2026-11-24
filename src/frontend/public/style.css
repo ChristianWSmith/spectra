@@ -221,6 +221,13 @@ select {
   font-size: 0.92em;
 }
 
+/* A monospace control keeps the face but not the smaller text size: .mono's 0.92em would
+   shrink its box below the text inputs beside it. */
+.input.mono,
+textarea.mono {
+  font-size: inherit;
+}
+
 .num,
 .data-table .num,
 .stat-value {
@@ -587,25 +594,52 @@ select {
 }
 
 /* A native <select> draws its own OS box and arrow, so it read as another toolkit beside the
-   app's buttons. It takes the same box as .btn.small (border, fill, padding, text size) and a
-   chevron, so a select and a popover trigger sit side by side as one control family. */
+   app's inputs and buttons. It takes the input's box (border, fill, padding, height) and a
+   chevron, so a select sits level with the text inputs beside it. */
 select.input {
   -webkit-appearance: none;
   appearance: none;
-  background-color: var(--btn-bg);
+  background-color: var(--input-bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8a' stroke-width='1.4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 7px center;
-  border: 1px solid var(--btn-border);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius);
-  padding: 1px 24px 1px 8px;
-  font-size: 0.92em;
+  /* The same box as a text input beside it (.input): height, padding and text size. */
+  padding: 3px 24px 3px 8px;
+  line-height: 1.2;
   cursor: pointer;
 }
 
 select.input:hover {
   border-color: var(--muted);
-  background-color: var(--btn-hover-bg);
+}
+
+/* A popover multi-select's trigger is an input's box with a select's chevron, so it sits
+   level with the selects beside it (the same height, text size and border). */
+button.multi-trigger {
+  display: inline-block;
+  min-width: 9em;
+  max-width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  background-color: var(--input-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8a' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  padding: 3px 24px 3px 8px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+button.multi-trigger:hover,
+button.multi-trigger.multi-open {
+  border-color: var(--muted);
 }
 
 select.input:focus-visible {

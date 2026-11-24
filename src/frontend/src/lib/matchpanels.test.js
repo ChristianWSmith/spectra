@@ -43,11 +43,10 @@ const PANELS = {
   'match-scoreboard': 'MatchScoreboard.svelte',
   'match-rounds': 'MatchRounds.svelte',
   'match-details': 'MatchDetails.svelte',
-  'match-details-facts': 'MatchFacts.svelte',
 };
 
-test('the Match view has its six panels, each a builtin under the builtin namespace', () => {
-  assert.equal(Object.keys(PANELS).length, 6);
+test('the Match view has its five panels, each a builtin under the builtin namespace', () => {
+  assert.equal(Object.keys(PANELS).length, 5);
   for (const id of Object.keys(PANELS)) {
     assert.ok(isBuiltinId(id), `${id} is in the builtin namespace`);
     assert.ok(
@@ -77,10 +76,7 @@ test('every panel reads through context and mounts nothing else', () => {
   for (const id of Object.keys(PANELS)) {
     const src = builtinShippedSource(id);
     assert.match(src, /let \{[\s\S]*?\bcontext\b[\s\S]*?\} = \$props\(\);/, `${id} takes context as a prop`);
-    // The facts panel reads the match services (voice, the demo copy), not a query.
-    if (id !== 'match-details-facts') {
-      assert.match(src, /spectra\.metric\(|spectra\.query\(|readUnit\(spectra/, `${id} reads metrics or facts`);
-    }
+    assert.match(src, /spectra\.metric\(|spectra\.query\(|readUnit\(spectra|getMatch\(|getProvenance\(/, `${id} reads metrics or facts`);
     assert.doesNotMatch(src, /spectra\.Child/, `${id} mounts no child`);
   }
 });
@@ -92,14 +88,20 @@ test('every import is on the curated surface (strings catalog, or a name BUILTIN
     '../../strings/index.js': null,
     './panelhelpers.js': helperNames,
     '../../builtinhelpers.js': Object.keys(BUILTIN_HELPERS['src/lib/builtinhelpers.js'].names),
-    '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy'],
+    '../../services.js': ['getMatch', 'getVoicePresence', 'evictDemoCopy', 'getProvenance', 'getEntitySummary', 'errText'],
     '../../viewstate.svelte.js': ['comparePicks', 'setComparePicks'],
+    // The shared status chip (a component, not copy): a panel shows a read's status with it.
+    '../../components/StatusChip.svelte': 'default',
   };
   for (const id of Object.keys(PANELS)) {
     const src = builtinShippedSource(id);
     for (const m of src.matchAll(/^\s*import\s+(\*\s+as\s+\w+|\{[^}]*\}|\w+)\s+from\s+'([^']+)';/gm)) {
       const [, clause, spec] = m;
       assert.ok(spec in surfaces, `${id} imports ${spec}, which is not on the builtin surface`);
+      if (surfaces[spec] === 'default') {
+        assert.equal(clause, 'StatusChip', `${id} takes the shared status chip as StatusChip`);
+        continue;
+      }
       if (surfaces[spec] === null) {
         assert.equal(clause, '* as S', `${id} takes the strings catalog whole, as S`);
         continue;

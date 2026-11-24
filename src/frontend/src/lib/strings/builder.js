@@ -20,7 +20,7 @@ export const builder = {
   // header
   heading: 'Metric builder',
   headNoteScopes:
-    ')\n        match-scoped metrics show as scoreboard columns on every match, profile-scoped ones as stat cards\n        on a player profile.',
+    'A match-scoped metric has one value per match; a profile-scoped metric has one career value per player.',
   metricLanguageHelp: 'Metric language help',
   retry: 'Retry',
 

@@ -96,6 +96,10 @@ function bundle(absPath) {
   return out;
 }
 const harnessBundle = bundle(resolve('test/match-panels.harness.svelte'));
+// The app hands its startup modules to the helper table (App.svelte): the Details panel reads the match
+// services through it, so this driver provides the bundled services module the same way.
+const runtime = await import(pathToFileURL(bundle(resolve('src/lib/componentruntime/compile.js'))).href);
+runtime.provideHelperModule('src/lib/services.js', await import(pathToFileURL(bundle(resolve('src/lib/services.js'))).href));
 
 const { mount, unmount, flushSync } = await import('svelte');
 // The Match panels are Svelte builtins: their sources are the .svelte files, and
@@ -108,7 +112,6 @@ const panels = {
   SCOREBOARD_SOURCE: readPanel('MatchScoreboard.svelte'),
   ROUNDS_SOURCE: readPanel('MatchRounds.svelte'),
   DETAILS_SOURCE: readPanel('MatchDetails.svelte'),
-  FACTS_SOURCE: readPanel('MatchFacts.svelte'),
 };
 const nav = await import(pathToFileURL(resolve('src/lib/nav.js')).href);
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
@@ -401,7 +404,7 @@ const factWant = [
   ['Source', '/demos/de_mirage.dem.zst'],
 ];
 check('the eight stored facts, in order, with the app’s formats', JSON.stringify(facts) === JSON.stringify(factWant), JSON.stringify(facts));
-check('the key facts heading', text(root.querySelector('h2')) === 'Key facts', text(root.querySelector('h2')));
+check('the key facts heading', text(root.querySelector('h2')) === 'Key facts', root.textContent.slice(0, 300));
 
 // --- I. another match's context; NULL facts ---------------------------------------------------------------
 console.log('I. context binds the match; NULL facts');

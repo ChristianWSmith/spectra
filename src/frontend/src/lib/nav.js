@@ -515,7 +515,7 @@ export const NAV_ACTIONS = [
     // button still returns to the list, profileBackTarget).
     active: (r) => PROFILE_FAMILY.has(r.name),
   },
-  { label: 'Builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
+  { label: 'Metric builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
   // The Reports builder authors report templates (its own top-level
   // route — see router.js: NOT a /reports sub-path). Single-route action,
   // so — like Builder and the SQL console — it carries NO `memory`

@@ -231,7 +231,7 @@ console.log(
 check('100 instances render their root level', nodes >= 800, String(nodes));
 
 console.log('G. original crash probe: bare {node(...)} is gone');
-const explorer = ['builtins/explorer/ExplorerProvenance.svelte', 'builtins/explorer/ExplorerDiagnostics.svelte']
+const explorer = ['builtins/match/MatchDetails.svelte']
   .map((f) => readFileSync(`src/lib/${f}`, 'utf8'))
   .join('\n');
 const tree = readFileSync('src/lib/components/PayloadTree.svelte', 'utf8');

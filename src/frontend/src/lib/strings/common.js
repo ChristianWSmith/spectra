@@ -4,6 +4,8 @@
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const common = {
+  // Keyboard key names the widgets compare against (not copy: the key the event reports).
+  keyEscape: 'Escape',
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',

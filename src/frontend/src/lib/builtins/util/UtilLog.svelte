@@ -12,8 +12,38 @@
   const effTick = (r) => (r.throwTick > 0 ? r.throwTick : r.tick);
 
   const kindOptions = $derived([...new Set(rows.map((r) => r.kind).filter(Boolean))].sort());
+  // The kinds checked in the kind multi-select ([] = every kind).
+  const kinds = $derived(Array.isArray(filt.kindF) ? filt.kindF : filt.kindF ? [filt.kindF] : []);
+  const kindSummary = $derived(kinds.length === 0 ? S.utility.allKinds : kinds.join(', '));
+  // The kind popover's open state is transient, like every popover.
+  let kindOpen = $state(false);
+  let kindAnchor = $state(null);
+  let kindTrigger = $state(null);
+  function toggleKind(k) {
+    update({ kindF: kinds.includes(k) ? kinds.filter((x) => x !== k) : [...kinds, k] });
+  }
+  function closeKinds() {
+    kindOpen = false;
+    kindTrigger?.focus();
+  }
+  // While the popover is open: an outside pointer-down closes it, Escape closes it and returns focus.
+  $effect(() => {
+    if (!kindOpen || !kindAnchor) return;
+    const onDown = (e) => {
+      if (!kindAnchor.contains(e.target)) kindOpen = false;
+    };
+    const onKey = (e) => {
+      if (e.key === S.common.keyEscape) closeKinds();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
-  const filtered = $derived(rows.filter((r) => (filt.kindF === '' || r.kind === filt.kindF) && (filt.throwerF === '' || r.thrower === filt.throwerF)));
+  const filtered = $derived(rows.filter((r) => (kinds.length === 0 || kinds.includes(r.kind)) && (filt.throwerF === '' || r.thrower === filt.throwerF)));
 
   const groups = $derived.by(() => {
     const m = new Map();
@@ -79,15 +109,28 @@
 <div class="util-throwlog">
   <h2>{S.utility.throwLogHead}</h2>
   <div class="util-filters toolbar">
-    <label class="util-field" for="util-kind">
+    <span class="util-field util-kind-host" bind:this={kindAnchor}>
       <span class="field-label">{S.utility.colKind}</span>
-      <select class="input" id="util-kind" value={filt.kindF} onchange={(e) => update({ kindF: e.currentTarget.value })}>
-        <option value="">{S.utility.allKinds}</option>
-        {#each kindOptions as k (k)}
-          <option value={k}>{k}</option>
-        {/each}
-      </select>
-    </label>
+      <button
+        type="button"
+        class="input multi-trigger"
+        class:multi-open={kindOpen}
+        bind:this={kindTrigger}
+        aria-haspopup="true"
+        aria-expanded={kindOpen}
+        onclick={() => (kindOpen = !kindOpen)}
+      >{kindSummary}</button>
+      {#if kindOpen}
+        <div class="util-kind-pop" role="group" aria-label={S.utility.colKind}>
+          {#each kindOptions as k (k)}
+            <label class="filt-check">
+              <input type="checkbox" checked={kinds.includes(k)} onchange={() => toggleKind(k)} />
+              {k}
+            </label>
+          {/each}
+        </div>
+      {/if}
+    </span>
     <label class="util-field" for="util-thrower">
       <span class="field-label">{S.utility.colThrower}</span>
       <select class="input" id="util-thrower" value={filt.throwerF} onchange={(e) => update({ throwerF: e.currentTarget.value })}>
@@ -111,7 +154,7 @@
   {#if groups.length === 0}
     <p class="muted" role="status">{S.utility.noMatch}</p>
   {:else}
-    <div class="util-lists">
+    <div class="util-table">
       <div class="util-cols">
         <span>{S.utility.colPlay}</span>
         <span>{S.utility.colKind}</span>
@@ -122,6 +165,7 @@
         <span>{S.utility.colAffected}</span>
         <span>{S.utility.colPosition}</span>
       </div>
+      <div class="util-lists">
       {#each shownGroups as [round, list] (round)}
         <ul class="util-nades">
           {#each list as r, i (r.tick + ':' + i)}
@@ -145,6 +189,7 @@
           {/each}
         </ul>
       {/each}
+      </div>
     </div>
   {/if}
 </div>

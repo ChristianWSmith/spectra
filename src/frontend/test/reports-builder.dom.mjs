@@ -469,8 +469,10 @@ console.log('F. delete is the user control — bottom-left, positives right');
   click(userRow.querySelector('.rb-row-main'));
   await sleep();
   const actions = $('.rb-actions')[0];
-  check('the actions line puts the destructive slot LEFT and Preview + Save RIGHT',
-    actions.firstElementChild.classList.contains('rb-destructive') &&
+  check('the actions line puts the left block (destructive slot, then the preview target) LEFT and Preview + Save RIGHT',
+    actions.firstElementChild.classList.contains('rb-left') &&
+      !!actions.firstElementChild.querySelector('.rb-destructive') &&
+      !!actions.firstElementChild.querySelector('.rb-targets') &&
       !!actions.lastElementChild.classList.contains('toolbar') &&
       !!actions.querySelector('.rb-destructive .codicon-trash'),
     [...actions.children].map((c) => c.className).join(' | '));
@@ -528,7 +530,7 @@ console.log('H. preview gating — never a fabricated target, the DRAFT body ren
 {
   viewstate.resetViewState();
   const p = await mountRB();
-  const previewBtn = () => $('.rb-actions .toolbar button')[0]; // Play leads Preview
+  const previewBtn = () => $('.rb-actions .toolbar > button')[0]; // Play leads Preview
   check('Preview is DISABLED on a fresh mount — no target is chosen for you',
     previewBtn().disabled === true &&
       p.textContent.includes('Pick a target to preview'),
@@ -609,14 +611,14 @@ console.log('I. viewstate round-trip through the process-scoped registry');
       !!b.querySelector('.mp-trigger-map'),
     `query=${$('.rb-list input[type="search"]')[0].value} title=${$('#rb-title')[0].value}`);
   check('the restored target keeps Preview live (nothing was fabricated in between)',
-    $('.rb-actions .toolbar button')[0].disabled === false,
-    `disabled=${$('.rb-actions .toolbar button')[0].disabled}`);
+    $('.rb-actions .toolbar > button')[0].disabled === false,
+    `disabled=${$('.rb-actions .toolbar > button')[0].disabled}`);
   viewstate.resetViewState();
   await mountRB();
   check('resetViewState() → a fresh mount starts empty with no target',
     $('.rb-list input[type="search"]')[0].value === '' &&
       $('#rb-title')[0].value === '' &&
-      $('.rb-actions .toolbar button')[0].disabled === true,
+      $('.rb-actions .toolbar > button')[0].disabled === true,
     `query=${$('.rb-list input[type="search"]')[0].value} title=${$('#rb-title')[0].value}`);
 }
 

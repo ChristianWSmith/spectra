@@ -34,6 +34,8 @@
     tab = MATCH_TABS[0],
     ontab = () => {},
     nav = () => {},
+    // The round the URL asks open on the Rounds tab (?round=N).
+    expandRound = null,
   } = $props();
 
   // The tab bar is the canonical list from the route table, so a deep
@@ -46,7 +48,6 @@
   // The first tab of the route table is the Overview, the one plain match/:id route.
   const backPath = $derived(tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`);
   const panelProps = $derived({ back: backPath });
-  const roundsProps = $derived({ back: backPath });
 
   // The Utility builtin's loop length, read once: a builtin's preference read
   // is the one plain pref the tabs share (ruling 33), and this match's filters
@@ -75,10 +76,11 @@
   });
   // The active tab mounts at once; the others mount on their first showing.
   const isShown = (t) => t === tab || !!seen[t];
+  const roundsProps = $derived({ back: backPath, loopSecs, expandRound });
   const utilityProps = $derived({
     ...panelProps,
     loopSecs,
-    filters: seed(matchKey('utility', matchId), { kindF: '', throwerF: '', roundSel: '' }),
+    filters: seed(matchKey('utility', matchId), { kindF: [], throwerF: '', roundSel: '' }),
     onfilters: (f) => remember(matchKey('utility', matchId), f),
   });
 </script>
@@ -144,8 +146,5 @@
        Rounds tab. Map/Duration live in the match header. -->
   <div class="tab-pane" style:display={paneDisplay(TAB.details)}>
     <spectra.Child name="match-details" />
-    <spectra.Child name="match-details-facts" />
-    <spectra.Child name="match-details-provenance" />
-    <spectra.Child name="match-details-diagnostics" />
   </div>
 {/if}

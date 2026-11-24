@@ -34,11 +34,9 @@
   // compares them.
   import { comparePicks, setComparePicks } from '../../viewstate.svelte.js';
   // expandRound: the round the URL asks open (?round=N), from the economy and compare links.
-  let { spectra, context, back = '', expandRound = null } = $props();
+  // loopSecs: the loop length a replay entry stamps (Settings → Replay, read by the tabs).
+  let { spectra, context, back = '', expandRound = null, loopSecs = 5 } = $props();
   const COPY = ROUNDS_COPY;
-  // The loop length a replay entry from this tab stamps (the Utility tab reads the
-  // Settings pref; this tab keeps the shared default).
-  const LOOP_SECS = 5;
   // Kill-event flags: the event column, its chip code and its tooltip.
   const FLAGS = [
     ['headshot', S.match.flagHS, S.match.flagHSTitle],
@@ -219,7 +217,7 @@
     return side.toUpperCase();
   }
   function watchEvent(tickRate, tick, follow) {
-    spectra.navigate(hashOf('/replay/' + data.id, { tick, loop: entryLoopAround(tick, tickRate, LOOP_SECS), follow: follow || undefined, back }));
+    spectra.navigate(hashOf('/replay/' + data.id, { tick, loop: entryLoopAround(tick, tickRate, loopSecs), follow: follow || undefined, back }));
   }
   const COPY_BOMB = Object.freeze({ planted: S.match.bombPlanted, defused: S.match.bombDefused, exploded: S.match.bombExploded });
   const bombLabel = (kind) => (kind === 'bomb_plant' ? COPY_BOMB.planted : kind === 'bomb_defuse' ? COPY_BOMB.defused : COPY_BOMB.exploded);

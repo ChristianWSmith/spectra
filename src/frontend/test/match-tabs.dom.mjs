@@ -254,7 +254,7 @@ check('the stored facts render as before (server, tickrate, size, parser, warnin
   JSON.stringify(facts));
 const voiceRow = facts.find((f) => f[0] === S.match.factVoice);
 check('voice: a recorded match names its players', !!voiceRow && voiceRow[1] === S.fill(S.match.voiceRecordedBadge, { n: 3 }), JSON.stringify(voiceRow));
-const copyRow = root.querySelectorAll('dl.facts')[1].lastElementChild;
+const copyRow = root.querySelectorAll('dl.facts')[0].lastElementChild;
 check('demo copy: a copied demo shows its size and the Free copy button',
   text(copyRow.querySelector('dd span')) === `${S.match.copyPrefix} 1.0 MB` && text(copyRow.querySelector('dd button')) === S.match.freeCopy,
   text(copyRow));
@@ -262,13 +262,13 @@ const freeBtn = copyRow.querySelector('dd button');
 click(freeBtn);
 await settle(8);
 check('Free copy frees match 7’s copy through the service', evicted.length === 1 && evicted[0] === 7, JSON.stringify(evicted));
-const copyAfter = root.querySelectorAll('dl.facts')[1].lastElementChild.querySelector('dd');
+const copyAfter = root.querySelectorAll('dl.facts')[0].lastElementChild.querySelector('dd');
 check('after Free copy the state line re-derives: the demo is missing', text(copyAfter) === S.match.copyMissing, text(copyAfter));
 
 root = await mountTabs({ context: { matchId: 8, steamId: null, round: null }, props: { tab: 'Details' } });
 const voice8 = [...root.querySelectorAll('dl.facts > div')].find((d) => text(d.querySelector('dt')) === S.match.factVoice);
 check('an unvoiced match shows the no-voice badge', text(voice8.querySelector('dd')) === S.match.voiceNoneBadge, text(voice8.querySelector('dd')));
-const copy8 = root.querySelectorAll('dl.facts')[1].lastElementChild.querySelector('dd');
+const copy8 = root.querySelectorAll('dl.facts')[0].lastElementChild.querySelector('dd');
 check('an external demo shows its external line, with no Free copy button',
   text(copy8) === S.match.copyExternal && !copy8.querySelector('button'), text(copy8));
 const nullFacts8 = [...root.querySelectorAll('dl.facts > div')].map((d) => text(d.querySelector('dd')));

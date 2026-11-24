@@ -610,6 +610,8 @@
 
 .util-nades {
   list-style: none;
+  margin: 0;
+  padding: 0;
   border-top: 1px solid var(--border);
 }
 
@@ -618,7 +620,7 @@
   /* ▶ · kind · thrower · clock · dmg · blind · aff · coords — the play
      cell LEADS the row (owner ruling) and the dead site column is gone
      (the extractor never wrote it) */
-  grid-template-columns: auto 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
+  grid-template-columns: 34px 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
   gap: 8px;
   align-items: center;
   padding: 5px 12px;
@@ -630,10 +632,45 @@
   border-bottom: none;
 }
 
+/* The throw log: the column heads sit directly over the rows (one flex column, no gap). */
+.util-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.util-table .util-nades + .util-nades {
+  margin-top: 10px;
+}
+
+/* The kind popover floats below its trigger, like the combat kind popover. */
+.util-kind-host {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.util-kind-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  padding: 6px 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
 /* The column heads: the row grid (.util-nade) again, so each label sits over its column. */
 .util-cols {
   display: grid;
-  grid-template-columns: auto 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
+  grid-template-columns: 34px 74px minmax(90px, 1fr) 78px 76px 74px 62px 96px;
   gap: 8px;
   align-items: center;
   padding: 0 12px 4px;
@@ -812,6 +849,8 @@
   align-items: center;
   flex-wrap: wrap;
   font-size: 0.85em;
+  /* Reserved: the row keeps its height before and after a raster lands. */
+  min-height: 1.6em;
 }
 
 .heat-legend-label {
@@ -905,6 +944,11 @@ canvas.heat-canvas {
 .heat-hint,
 .heat-stale {
   font-size: 0.86em;
+}
+
+/* Reserved row under the radar (empty until a raster lands). */
+.heat-hint {
+  min-height: 1.5em;
 }
 
 .heat-stale {
@@ -1618,4 +1662,51 @@ canvas.heat-canvas {
   .sql-side {
     max-height: 300px;
   }
+}
+
+/* The round's details, expanded under its row in the Rounds tab: an inset, framed block
+   with its own background, so it reads as the round's content rather than more rows. The
+   four parts lay out in two columns when the tab is wide enough. */
+.round-expand > td {
+  padding: 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.round-expand:hover {
+  background: none;
+}
+
+.round-detail {
+  margin: 8px 24px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.round-detail-meta {
+  margin: 0 0 10px;
+}
+
+.round-detail-score {
+  margin-left: 12px;
+}
+
+.round-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+/* The play column is a fixed width in the rows and in the column heads, and its button sits
+   centred in it: a button sized by its own content shifted every row, and the heads with it. */
+.util-nade .util-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.util-nade .util-actions .btn {
+  width: 26px;
+  padding: 1px 0;
+  justify-content: center;
 }

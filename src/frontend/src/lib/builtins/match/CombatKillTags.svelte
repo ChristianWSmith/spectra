@@ -182,8 +182,8 @@
           <span class="field-label">{S.combat.kindFilterLabel}</span>
           <button
             type="button"
-            class="btn small"
-            class:primary={kindOpen}
+            class="input multi-trigger"
+            class:multi-open={kindOpen}
             bind:this={kindTrigger}
             aria-haspopup="true"
             aria-expanded={kindOpen}
@@ -191,7 +191,6 @@
             onclick={() => (kindOpen = !kindOpen)}
           >
             {kindSummary}
-            <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
           </button>
         </span>
         <Popover

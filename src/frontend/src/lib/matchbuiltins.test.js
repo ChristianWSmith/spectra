@@ -70,9 +70,6 @@ test('the registry names the Match tabs and every Match panel, in the builtin na
     'match-combat-clutches',
     'match-combat-kill-tags',
     'match-details',
-    'match-details-diagnostics',
-    'match-details-facts',
-    'match-details-provenance',
     'match-economy',
     'match-economy-cards',
     'match-economy-curve',
@@ -91,7 +88,7 @@ test('the registry names the Match tabs and every Match panel, in the builtin na
   ]);
   for (const id of ids) assert.ok(isBuiltinId(id), `${id} carries the builtin prefix`);
   const imports = [...registry.matchAll(/from '\.\/(match\/[A-Za-z]+\.svelte)'/g)].map((m) => m[1]);
-  assert.equal(imports.length, 12, 'the registry imports the tab set, the two tabs, their three panels and the six Match panels');
+  assert.equal(imports.length, 11, 'the registry imports the tab set, the two tabs, their two panels and the five Match panels');
   for (const rel of imports) assert.ok(existsSync(path.join(LIB, 'builtins', rel)), `${rel} exists`);
 });
 

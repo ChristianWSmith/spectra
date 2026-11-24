@@ -243,6 +243,17 @@ const settle = async (rounds = 12) => {
     flushSync();
   }
 };
+// The kind filter is a popover multi-select: open its trigger, check the kinds wanted, then close it.
+async function setKindsFor(kinds) {
+  const trig = root.querySelector('.util-kind-host > button');
+  if (!root.querySelector('.util-kind-pop')) trig.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  await sleep();
+  for (const cb of root.querySelectorAll('.util-kind-pop input[type=checkbox]')) {
+    const want = kinds.includes(cb.parentElement.textContent.trim());
+    if (cb.checked !== want) cb.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+  await sleep();
+}
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 const change = (el, value) => {
   el.value = value;
@@ -394,14 +405,14 @@ check('both charts show; bars for the three rounds with damage or blind time',
 
 // --- E. the kind filter narrows the log and the damage bars ------------------------------------
 console.log('E. filters');
-change(root.querySelector('#util-kind'), 'flash');
+await setKindsFor(['flash']);
 await settle(6);
 const flashRows = [...root.querySelectorAll('.util-nade')];
 check('the flash filter keeps the two flashes (the round scope stays on All rounds), and the count', flashRows.length === 2 && text(root.querySelector('.util-filters .muted')) === '2 of 5 grenades',
   `${flashRows.length} ${text(root.querySelector('.util-filters .muted'))}`);
 check('the damage card hides when the filtered throws draw no damage', !root.querySelector('.util-card-damage'));
 check('the blind card stays: blind time is drawable under the flash filter', !!root.querySelector('.util-card-blind'));
-change(root.querySelector('#util-kind'), '');
+await setKindsFor([]);
 await settle(6);
 
 // The thrower filter.

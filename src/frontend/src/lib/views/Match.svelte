@@ -32,13 +32,14 @@
   // running instance (filter/loop/selection/playhead intact) instead of
   // minting a fresh entry hash. Null while no instance is alive → the
   // fresh-entry replayHash below, exactly as before.
-  let { id = 0, nav = () => {}, routeTab = '', expandReplay = null, openDocs = () => {} } = $props();
+  // routeRound: the round the URL asks open on the Rounds tab (?round=N, from the economy and compare links).
+  let { id = 0, nav = () => {}, routeTab = '', routeRound = null, expandReplay = null, openDocs = () => {} } = $props();
 
   // The tab set and its panels read through this context (ruling 34): the
   // match, and nothing else. The tab set reads its own data from it, so the
   // view passes nothing else but the active tab and its select.
   const panelContext = $derived({ matchId: id });
-  const tabsProps = $derived({ tab, ontab: selectTab });
+  const tabsProps = $derived({ tab, ontab: selectTab, expandRound: routeRound });
 
   // The header `?` targets the ACTIVE tab's guide section — the ONE
   // per-tab help button (Part 8's per-tab ruling): one button in the

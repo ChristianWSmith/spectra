@@ -59,7 +59,7 @@ function stripComments(src) {
 const panelFiles = readdirSync(PANEL_DIR).filter((f) => f.endsWith('.svelte') || f.endsWith('.js'));
 const registry = readFileSync(path.join(LIB, 'builtins', 'panels.js'), 'utf8');
 
-test('the registry names the Profile, Reports, Explorer, Match-tab, Economy and Utility components and their panels, all in the builtin namespace', () => {
+test('the registry names the Profile, Reports, Match-tab, Economy and Utility components and their panels, all in the builtin namespace', () => {
   const ids = [...registry.matchAll(/'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]);
   assert.deepEqual(
     [...new Set(ids)].sort(),
@@ -68,11 +68,8 @@ test('the registry names the Profile, Reports, Explorer, Match-tab, Economy and 
       'match-economy-cards',
       'match-economy-curve',
       'match-economy-rounds',
-      'match-details-diagnostics',
-      'match-details-provenance',
       'match-combat',
       'match-details',
-      'match-details-facts',
       'match-combat-clutches',
       'match-combat-kill-tags',
       'match-heatmap',

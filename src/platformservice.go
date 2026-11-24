@@ -55,11 +55,10 @@ type ProvenancePanel struct {
 // EntitySummary describes what the parser saw (schema-browser-lite; full
 // per-prop browser descoped — needs parse-time capture, see M5 status).
 type EntitySummary struct {
-	EntityClasses int    `json:"entityClasses"`
-	EndEntities   int    `json:"endEntities"`
-	GenericTypes  int    `json:"genericTypes"`
-	GenericTotal  int    `json:"genericTotal"`
-	Notes         string `json:"notes"`
+	EntityClasses int `json:"entityClasses"`
+	EndEntities   int `json:"endEntities"`
+	GenericTypes  int `json:"genericTypes"`
+	GenericTotal  int `json:"genericTotal"`
 }
 
 // PluginManifest is the spectra-plugin.json contract (M5 §2.7 v1:
@@ -178,7 +177,7 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		return ProvenancePanel{}, err
 	}
 
-	notes := []string{"entity schema browser descoped (parse-time capture)"}
+	var notes []string
 	if m.EncryptedMessages > 0 {
 		// chat.decrypted stays 0 in the DB even when demoinfocs decrypted
 		// the stream with a .dem.info key (inner messages dispatch as
@@ -234,7 +233,6 @@ func (s *PlatformService) GetEntitySummary(matchID int64) (EntitySummary, error)
 		EndEntities:   m.EndEntityCount,
 		GenericTypes:  len(hist),
 		GenericTotal:  total,
-		Notes:         "entity schema browser descoped (parse-time capture)",
 	}, nil
 }
 

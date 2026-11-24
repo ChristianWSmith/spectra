@@ -218,7 +218,8 @@ console.log('A. the card mounts with the fixed context (matchId 7)');
   check('no map name: the pack note says the overlay is unavailable', note.includes('map name unknown'), note);
   const gen = target.querySelector('.heat-generate');
   check('Generate is offered before any raster', !!gen && text(gen) === 'Generate', gen ? text(gen) : 'none');
-  check('no legend before a raster exists', !target.querySelector('.heat-legend'));
+  // The legend row is reserved (its height holds before a raster lands), but it has no content yet.
+  check('the legend row is reserved and empty before a raster exists', !!target.querySelector('.heat-legend') && target.querySelector('.heat-legend').children.length === 0);
 }
 
 console.log('B. Generate fires one heatmap read for the context match and draws its legend');

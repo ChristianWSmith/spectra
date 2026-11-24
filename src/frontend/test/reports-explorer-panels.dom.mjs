@@ -135,34 +135,30 @@ console.log('C. Reports context: another match reads its own rows (none: a state
 }
 
 
-console.log('D. Explorer: the import details and the entity summary');
+console.log('D. Details: the import details and the entity summary, one panel');
 {
   viewstate.resetViewState();
-  const m = await mountComponent(panels['match-details-provenance'], ctx(MATCH), { embedded: true });
-  const dg = await mountComponent(panels['match-details-diagnostics'], ctx(MATCH), { embedded: true });
-  await sleep(120);
+  const m = await mountComponent(panels['match-details'], ctx(MATCH), { embedded: true });
+  await sleep(400);
   const facts = [...m.target.querySelectorAll('dl.facts > div')].map((d) => [text(d.querySelector('dt')), text(d.querySelector('dd'))]);
   const rate = facts.find((f) => f[0] !== '' && f[1] === '—');
   check('the parser version renders', facts.some((f) => f[1] === 'p-2026.11'), JSON.stringify(facts));
   check('a zero sample rate is the dash, never 0 Hz', !!rate, JSON.stringify(facts));
-  check('the entity summary renders its counts', text(dg.target).includes('42') && text(dg.target).includes('900'));
+  check('the entity summary renders its counts', text(m.target).includes('42') && text(m.target).includes('900'));
   m.cleanup();
-  dg.cleanup();
 }
 
-console.log('E. Explorer failure isolation: a failed provenance read stays in its panel');
+console.log('E. Details failure isolation: a failed provenance read stays in its section');
 {
   const original = bindings.PlatformService.GetProvenance;
   bindings.PlatformService.GetProvenance = () => Promise.reject(new Error('provenance down'));
   services.invalidate();
-  const m = await mountComponent(panels['match-details-provenance'], ctx(MATCH), { embedded: true });
-  const dg = await mountComponent(panels['match-details-diagnostics'], ctx(MATCH), { embedded: true });
+  const m = await mountComponent(panels['match-details'], ctx(MATCH), { embedded: true });
   await sleep(120);
   const alerts = [...m.target.querySelectorAll('[role="alert"]')].map(text);
   check('the provenance error is shown', alerts.some((t) => t.includes('provenance down')), JSON.stringify(alerts));
-  check('the diagnostics panel still renders', text(dg.target).includes('42'));
+  check('the diagnostics section still renders', text(m.target).includes('42'));
   m.cleanup();
-  dg.cleanup();
   bindings.PlatformService.GetProvenance = original;
   services.invalidate();
 }

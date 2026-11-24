@@ -1145,28 +1145,40 @@ label.filt-lab {
   border-color: var(--accent-50);
 }
 
-/* The preview target block: separated from the template fields (it is
-   what the draft renders against, not part of the document), with the
-   pickers allowed to size themselves from their own triggers. */
-.rb-target {
-  display: flex;
+/* The preview target sits in the bottom-right group, on the same line as Preview and Save
+   (Save stays last): the pickers and the buttons align on their bottoms. */
+/* The left block carries the destructive control and the preview target, left-justified;
+   the right block carries the note, Preview and Save (Save last, bottom right). */
+.rb-left {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.rb-bottom {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.rb-targets {
+  display: inline-flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  gap: 4px;
 }
 
 .rb-target-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 .rb-target-row .rb-field {
-  flex: 0 1 300px;
-  min-width: 220px;
+  flex: 0 1 190px;
+  min-width: 150px;
 }
 
 .rb-hint {

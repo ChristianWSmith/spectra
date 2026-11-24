@@ -607,7 +607,7 @@
       {#if keptMatch != null}
         {@const onMatch = viewRoute && viewRoute.name === 'match' && viewRoute.id === keptMatch}
         <div class="kept-match" style:display={onMatch ? 'contents' : 'none'}>
-          <Match id={keptMatch} routeTab={onMatch ? viewRoute.tab || '' : ''} {nav} {openDocs} expandReplay={matchExpand} />
+          <Match id={keptMatch} routeTab={onMatch ? viewRoute.tab || '' : ''} routeRound={onMatch && viewRoute.query ? viewRoute.query.round ?? null : null} {nav} {openDocs} expandReplay={matchExpand} />
         </div>
       {/if}
       {#if keptPlayer != null}

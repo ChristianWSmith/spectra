@@ -178,7 +178,7 @@ test('isNavEnabled: Match is the only gated action — the other memory-backed o
   // Every fixed-target action is enabled whatever the memory says.
   // The Reports builder rides the same list: a single-route action with
   // no `memory` field is always enabled and always targets its own hash.
-  for (const label of ['Library', 'Builder', 'Reports builder', 'SQL console', 'Settings']) {
+  for (const label of ['Library', 'Metric builder', 'Reports builder', 'SQL console', 'Settings']) {
     assert.equal(isNavEnabled(byLabel[label], { lastMatchHash: '' }), true, `${label} empty`);
     assert.equal(isNavEnabled(byLabel[label], withHash), true, `${label} with memory`);
     assert.equal(isNavEnabled(byLabel[label], undefined), true, `${label} no ctx`);

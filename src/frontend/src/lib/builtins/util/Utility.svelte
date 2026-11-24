@@ -26,12 +26,18 @@
   const TEAMS_SQL = SQL_TEAMS;
   const ROSTER_SQL = SQL_ROSTER;
 
+  // The kinds checked in the kind multi-select: a list; [] is the no-filter default. An older
+  // record that held one kind as a string reads as a one-kind list.
+  function kindList(v) {
+    return Array.isArray(v) ? v : v ? [v] : [];
+  }
+
   let data = $state(null);
   // The filters are seeded from the Match view's remembered copy once, at mount;
   // after that the panel owns them (setFilt writes back through onfilters).
   // svelte-ignore state_referenced_locally
   let filt = $state({
-    kindF: (filters && filters.kindF) || '',
+    kindF: kindList(filters && filters.kindF),
     throwerF: (filters && filters.throwerF) || '',
     roundSel: (filters && filters.roundSel) || '',
   });
@@ -95,7 +101,7 @@
   // The throws the kind and thrower filters leave: what the two charts draw.
   const filtered = $derived(
     data
-      ? data.rows.filter((r) => (filt.kindF === '' || r.kind === filt.kindF) && (filt.throwerF === '' || r.thrower === filt.throwerF))
+      ? data.rows.filter((r) => (filt.kindF.length === 0 || filt.kindF.includes(r.kind)) && (filt.throwerF === '' || r.thrower === filt.throwerF))
       : [],
   );
 </script>

@@ -741,12 +741,22 @@
     position: relative;
     display: inline-block;
   }
+  /* The menu floats below the button (the Popover only shows or hides its children, so the
+     panel is positioned here, the same way the combat kind popover floats). */
   .cb-use-pop {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 30;
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 8px;
     min-width: 180px;
+    background: var(--widget-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   }
   .cb-filters {
     display: flex;

@@ -77,7 +77,7 @@ const NAV_SECTIONS = {
   Library: 'library',
   Match: 'understanding-a-match', // the match view's own section (L4: Match became its own sidebar tab)
   Profiles: 'profiles',
-  Builder: 'metric-builder',
+  'Metric builder': 'metric-builder',
   'Reports builder': 'reports-builder',
   'Component builder': 'component-builder',
   'SQL console': 'sql-console',

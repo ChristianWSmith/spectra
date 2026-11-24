@@ -392,7 +392,11 @@ export const BUILTIN_HELPERS = Object.freeze({
     names: { default: 'a link to a player’s profile (a component)' },
   },
   'src/lib/components/Popover.svelte': {
-    load: () => import('../components/Popover.svelte'),
+    // A driver may provide the bundled component (the source-mounting DOM harnesses do); the app imports it.
+    load: () =>
+      providedHelpers.has('src/lib/components/Popover.svelte')
+        ? Promise.resolve(providedHelpers.get('src/lib/components/Popover.svelte'))
+        : import('../components/Popover.svelte'),
     names: { default: 'a popover (a component)' },
   },
   'src/lib/components/HeatmapLayer.svelte': {

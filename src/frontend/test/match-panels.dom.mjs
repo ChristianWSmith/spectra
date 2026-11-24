@@ -118,7 +118,6 @@ const panels = {
   SCOREBOARD_SOURCE: readPanel('MatchScoreboard.svelte'),
   ROUNDS_SOURCE: readPanel('MatchRounds.svelte'),
   DETAILS_SOURCE: readPanel('MatchDetails.svelte'),
-  FACTS_SOURCE: readPanel('MatchFacts.svelte'),
 };
 const Harness = (await import(pathToFileURL(harnessBundle).href)).default;
 
@@ -426,7 +425,7 @@ check('the library-wide behind word does not reach this match: its stored values
 
 // --- G. the strings every panel shows come from the same table --------------------
 console.log('G. panel registry');
-check('the six panels are Svelte builtins in builtins/match', Object.keys(panels).length === 6 && ['MatchOverview', 'MatchRosters', 'MatchScoreboard', 'MatchRounds', 'MatchDetails', 'MatchFacts'].every((n) => existsSync(resolve(MATCH_DIR, n + '.svelte'))));
+check('the five panels are Svelte builtins in builtins/match', Object.keys(panels).length === 5 && ['MatchOverview', 'MatchRosters', 'MatchScoreboard', 'MatchRounds', 'MatchDetails'].every((n) => existsSync(resolve(MATCH_DIR, n + '.svelte'))));
 check('the Match view’s roster heading suffix is the catalog’s', S.match.rosterSuffix === 'roster');
 
 // --- H. loading: a panel whose read is in flight keeps its root and shows the throbber -----

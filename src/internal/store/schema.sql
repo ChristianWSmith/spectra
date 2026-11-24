@@ -934,8 +934,6 @@ INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) 
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-weapons', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('profile-history', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-reports', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-provenance', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-diagnostics', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-heatmaps', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-heatmap', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
@@ -955,7 +953,6 @@ INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) 
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-scoreboard', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-rounds', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-INSERT OR IGNORE INTO components (name, source, origin, created_at, updated_at) VALUES ('match-details-facts', '', 'builtin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 CREATE TABLE IF NOT EXISTS layout_placements (
 	surface TEXT NOT NULL,

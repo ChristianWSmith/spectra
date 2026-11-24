@@ -617,23 +617,10 @@ console.log('N. progress presentation outside a cell (owner ruling, source pin)'
 // toolbar AND this row onto the card together; the row's relation to the
 // toolbar — its own, beneath — is what these checks pin.)
 const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
-const progressAt = heatSrc.indexOf('<StatusChip block');
-check('toolbar + block-mode progress both present', toolbarAt >= 0 && progressAt > toolbarAt, `${toolbarAt} ${progressAt}`);
-{
-  const between = heatSrc.slice(toolbarAt, progressAt);
-  const opens = (between.match(/<div\b/g) || []).length;
-  const closes = (between.match(/<\/div>/g) || []).length;
-  check(
-    'the toolbar CLOSES before the progress display starts (own row, centered)',
-    opens > 0 && opens === closes,
-    `opens=${opens} closes=${closes}`,
-  );
-}
-check(
-  'progress display is the block-mode StatusChip with its stage + fraction',
-  /<StatusChip block progress=\{heatPct\} stage=\{heatStage\} \/>/.test(heatSrc),
-  '',
-);
+check('the toolbar is present', toolbarAt >= 0, String(toolbarAt));
+// No inline progress row: a run in flight is the frame's spinner over the whole panel (the
+// inner content is hidden under it), so the source carries no StatusChip progress at all.
+check('no inline progress display: the in-flight run is the frame spinner', !/<StatusChip block progress=/.test(heatSrc), '');
 // The busy-button exemption: the Generate button keeps its plain
 // "Generating…" label — no spinner or ring is ever rendered INSIDE it.
 check(
@@ -1008,24 +995,23 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, floating G
   // over the same offsets). The empty-state hint line is gone (V8c), so
   // the content order is toolbar, progress, legend, radar, hint.
   const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
-  const chipAt = heatSrc.indexOf('<StatusChip block');
-  const panelAt = heatSrc.indexOf('<section class="panel">');
+    const panelAt = heatSrc.indexOf('<section class="panel">');
   const panelEnd = heatSrc.indexOf('</section>', panelAt);
   const legendAt = heatSrc.indexOf('class="heat-legend"', panelAt);
   const radarAt = heatSrc.indexOf('<HeatmapLayer', panelAt);
   const hintAt = heatSrc.indexOf('class="heat-hint', panelAt);
   const emptyAt = heatSrc.indexOf('class="heat-empty', panelAt);
   check(
-    'controls moved ONTO the card: the toolbar literal and the block progress both sit INSIDE the panel',
-    panelAt > 0 && panelAt < toolbarAt && toolbarAt < chipAt && chipAt < panelEnd,
-    `${panelAt} ${toolbarAt} ${chipAt} ${panelEnd}`,
+    'controls moved ONTO the card: the toolbar literal sits INSIDE the panel',
+    panelAt > 0 && panelAt < toolbarAt && toolbarAt < panelEnd,
+    `${panelAt} ${toolbarAt} ${panelEnd}`,
   );
   check(
-    'exactly one section.panel wraps controls + content in order — toolbar, progress, legend, radar, hint',
+    'exactly one section.panel wraps controls + content in order — toolbar, legend, radar, hint',
     (heatSrc.match(/<section class="panel">/g) || []).length === 1 &&
       panelAt > 0 &&
       panelEnd > panelAt &&
-      legendAt > chipAt &&
+      legendAt > toolbarAt &&
       radarAt > legendAt &&
       hintAt > radarAt &&
       emptyAt === -1 &&

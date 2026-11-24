@@ -6,7 +6,6 @@
     getRounds,
     getHeatmap,
     errText,
-    onEvent,
   } from '../../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
@@ -16,7 +15,6 @@
   import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../../heatramp.js';
   import { loadMapPack } from '../../components/mapxform.js';
   import HeatmapLayer from '../../components/HeatmapLayer.svelte';
-  import StatusChip from '../../components/StatusChip.svelte';
   import { fmt1, fmtInt } from '../../fmt.js';
   import { isCounted, roundScoreLabel } from '../../rounds.js';
   import { downloadCanvasPNG } from '../../download.js';
@@ -313,32 +311,6 @@
     remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey, gen });
   });
 
-  // Live generate progress: the last spectra:heatmap-progress payload
-  // ({stage, done, total} — AnalyticsService's presence emitter).
-  // TRANSIENT like `loading` itself: never seeded/remembered, no URL or
-  // viewstate-registry involvement; dropped when a run starts and ends.
-  // null before the first event → StatusChip's indeterminate spinner
-  // (also what the fast event-kind rasters show — they emit no progress,
-  // which is the honest picture: no denominator, no pretend percentage).
-  let heatProgress = $state(null);
-
-  // Subscribe for the whole view lifetime (the onEvent pattern at
-  // services.js); the unsubscribe is the $effect cleanup. Generic
-  // onEvent, no new wrapper: this is the event's only subscriber.
-  $effect(() => {
-    const off = onEvent('spectra:heatmap-progress', (p) => {
-      if (p) heatProgress = p;
-    });
-    return off;
-  });
-
-  // 0 = StatusChip's indeterminate spinner (block mode); a real 0..1 =
-  // the ring with its percentage in the details line (frames read so
-  // far / total).
-  const heatPct = $derived(
-    heatProgress && heatProgress.total > 0 ? Math.min(1, heatProgress.done / heatProgress.total) : 0,
-  );
-  const heatStage = $derived(heatProgress ? heatProgress.stage : '');
 
   // The heavy GetHeatmap call fires only on Generate — never on control
   // changes (heatmap generate is the expensive op).
@@ -359,7 +331,6 @@
     // Drop any progress a previous run left behind — without this the bar
     // could open at a stale "N of N" (the asset-extraction run clears
     // mpProgress the same way).
-    heatProgress = null;
     // The fetch is FOR the layer selected right now: the band it sends and
     // the gridLayer it records must be that one index, even if the radar
     // is flipped to another floor while the call is in flight — the
@@ -406,8 +377,7 @@
     } finally {
       loading = false;
       // Progress dies with the run — the chip renders only while loading.
-      heatProgress = null;
-    }
+      }
   }
 
   // V8e — Save the raster on screen: the composite canvas (radar +
@@ -679,23 +649,13 @@
            image (see .heat-float at the card's end), visible from the
            first render so the primary action never hides behind a grid. -->
     </div>
-    <!-- The ONE progress widget (StatusChip block mode) — deliberately
-         its OWN row beneath the toolbar (now inside the card, travelling
-         with the controls): a horizontal control row cannot be
-         "centered", so the centered ring/spinner + its details text sit
-         in their own row beneath it (PRODUCT.md "### Defaults").
-         Determinate frames while the sidecar loads
-         (spectra:heatmap-progress), the raster phase and any generate
-         with no honest denominator ride progress 0 = the spinner —
-         never a pretend percentage. -->
-    {#if loading}
-      <p class="muted" role="status">
-        <StatusChip block progress={heatPct} stage={heatStage} />
-      </p>
-    {/if}
+    <!-- No progress row here: while a run is in flight the frame covers the whole panel
+         with its spinner (and hides everything but the panel shell), so an inline row would
+         only grow the panel for nothing. The legend and hint rows below hold their height
+         whether or not a raster is on screen, so the panel never resizes around a run. -->
 
-    {#if grid}
-      <div class="heat-legend">
+    <div class="heat-legend">
+      {#if grid}
         <!-- The ramp gradient is a complete background declaration built
              from lib/heatramp.js — the same stop tables the canvas
              renders — so legend and overlay cannot diverge (a bare
@@ -718,8 +678,8 @@
         <span class="muted"
           >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
         >
-      </div>
-    {/if}
+      {/if}
+    </div>
 
     <HeatmapLayer
       {map}
@@ -732,15 +692,15 @@
       onCanvas={onHeatCanvas}
     />
 
-    {#if grid}
-      <p class="heat-hint muted">
+    <p class="heat-hint muted">
+      {#if grid}
         {#if heatRegionTakesBBox(src.kind)}
           {S.heatmaps.bboxHint}
         {:else}
           {src.kind}{S.heatmaps.noRowsSuffix}
         {/if}
-      </p>
-    {/if}
+      {/if}
+    </p>
 
     <!-- W17 (owner, 2026-11-16): the floating bottom-right CLUSTER —
          Generate rides it from the first render (the card's primary
