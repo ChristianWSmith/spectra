@@ -47,6 +47,12 @@ func (s *QueryService) ComponentQuery(sql string) (models.QueryResult, error) {
 	return query.New(s.st).ComponentRead(sql), nil
 }
 
+// MetricReadableTables lists the tables a metric statement may read, for the
+// Builder's completions (the same allowlist the save gate enforces).
+func (s *QueryService) MetricReadableTables() []string {
+	return store.MetricReadableTables()
+}
+
 // GetSchema returns tables + columns with notes for the sidebar
 // (internal/query attaches the provenance notes).
 func (s *QueryService) GetSchema() ([]models.SchemaTableRow, error) {

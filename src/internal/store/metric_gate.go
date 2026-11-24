@@ -30,6 +30,19 @@ import (
 //  4. Binds are collected (see MetricStatement.Binds); the metrics gate
 //     decides which are accepted.
 
+// MetricReadableTables lists the tables a metric statement may read, sorted:
+// the readable side of metricReadable, for the Builder's completions.
+func MetricReadableTables() []string {
+	out := make([]string, 0, len(metricReadable))
+	for name, ok := range metricReadable {
+		if ok {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // metricReadable is THE metric-readable allowlist, ONE explicit classification of every schema table: readable
 // (true) or denied (false). The readable tables are the fact tables and
 // the engine-read tables: `players` (the humans-only lookup), `matches`

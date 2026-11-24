@@ -373,6 +373,12 @@ func reportTplFromPlugin(r plugin.ReportTemplate) ReportTemplate {
 
 // --- Reports -----------------------------------------------------------------
 
+// ReportFields lists the fields a template of the scope can reference, for the
+// Report builder's completions.
+func (s *PlatformService) ReportFields(scope string) []report.TemplateField {
+	return report.TemplateFields(scope)
+}
+
 // ListReportTemplates returns builtin + stored user + enabled-plugin
 // templates, in the store's canonical origin rank (builtin → user →
 // plugin — store.metricOrder's order, so every origin-partitioned list in
