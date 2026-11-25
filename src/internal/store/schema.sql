@@ -1099,7 +1099,7 @@ ORDER BY p.steam_id',
  'builtin', CURRENT_TIMESTAMP),
 -- profile-scope dogfooding set (D2/D3/D5/D6/D9/D10/D11/D12): inert
 -- until their surface converts — nothing reads a profile-scope seed yet.
-('career_adr', 'ADR', 'ADR', '{{CAREER_HEAD}}{{RATIO_STORED:total_damage:match_rounds}} AS value WHERE EXISTS (SELECT 1 FROM metric(''total_damage''))', 'float1', 'Formula: sum(total_damage) / sum(rounds recorded) — enemy damage per round pooled over the player''s career, addressed per player — pooled, never a mean of per-match ADRs.', 'builtin', CURRENT_TIMESTAMP),
+('career_adr', 'ADR', 'ADR', '{{CAREER_HEAD}}{{RATIO_STORED:total_damage:match_rounds}} AS value {{EXISTS_STORED:total_damage}}', 'float1', 'Formula: sum(total_damage) / sum(rounds recorded) — enemy damage per round pooled over the player''s career, addressed per player — pooled, never a mean of per-match ADRs.', 'builtin', CURRENT_TIMESTAMP),
 ('career_adr_sigma', 'ADR σ', 'ADR σ',
  '{{CAREER_HEAD}}(SELECT CASE WHEN COUNT(*) = COUNT(value) THEN SQRT(MAX(AVG(value * value) - AVG(value) * AVG(value), 0)) END FROM metric(''adr'')) AS value',
  'float1',
@@ -1115,19 +1115,19 @@ ORDER BY p.steam_id',
  'float1',
  'Formula: avg(utility_damage) — the player''s mean utility damage per match over their career, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
-('career_clutch_win_rate', 'Clutch win %', 'CW%', '{{CAREER_HEAD}}{{RATIO_STORED:match_clutch_wins:clutches}} AS value WHERE EXISTS (SELECT 1 FROM metric(''clutches''))', 'percent', 'Formula: sum(clutches won) / sum(clutches) — the share of the player''s career clutches won (shown as a percent), addressed per player — the profile''s win share.', 'builtin', CURRENT_TIMESTAMP),
+('career_clutch_win_rate', 'Clutch win %', 'CW%', '{{CAREER_HEAD}}{{RATIO_STORED:match_clutch_wins:clutches}} AS value {{EXISTS_STORED:clutches}}', 'percent', 'Formula: sum(clutches won) / sum(clutches) — the share of the player''s career clutches won (shown as a percent), addressed per player — the profile''s win share.', 'builtin', CURRENT_TIMESTAMP),
 ('career_hs_pct', 'HS%', 'HS%',
  '{{CAREER_HEAD}}{{RATIO_STORED:headshots:kills}} AS value',
  'percent',
  'Formula: sum(headshots) / sum(kills) — headshots as a share of the player''s career kills, addressed per player — pooled career totals, a percent.',
  'builtin', CURRENT_TIMESTAMP),
-('career_kast', 'KAST%', 'KAST%', '{{CAREER_HEAD}}{{RATIO_STORED:match_kast_flags:match_rounds}} AS value WHERE EXISTS (SELECT 1 FROM metric(''match_rounds''))', 'percent', 'Formula: sum(kast flags) / sum(rounds recorded) — the mean KAST flag over every stored round of the player''s career, addressed per player — a percent.', 'builtin', CURRENT_TIMESTAMP),
+('career_kast', 'KAST%', 'KAST%', '{{CAREER_HEAD}}{{RATIO_STORED:match_kast_flags:match_rounds}} AS value {{EXISTS_STORED:match_rounds}}', 'percent', 'Formula: sum(kast flags) / sum(rounds recorded) — the mean KAST flag over every stored round of the player''s career, addressed per player — a percent.', 'builtin', CURRENT_TIMESTAMP),
 ('career_kd', 'K/D', 'K/D',
  '{{CAREER_HEAD}}{{RATIO_STORED:kills:deaths}} AS value',
  'float2',
  'Formula: sum(kills) / sum(deaths) — kills per death pooled over the player''s career, addressed per player — no deaths → 0 (the scoreboard floors instead).',
  'builtin', CURRENT_TIMESTAMP),
-('career_trade_rate', 'Trade rate', 'Trade%', '{{CAREER_HEAD}}{{RATIO_STORED:trade_kills:match_trade_opps}} AS value WHERE EXISTS (SELECT 1 FROM metric(''trade_kills''))', 'percent', 'Formula: sum(trade_kills) / sum(trade opportunities) — trade kills ÷ trade opportunities over the career, addressed per player — a ratio; may top 100%.', 'builtin', CURRENT_TIMESTAMP),
+('career_trade_rate', 'Trade rate', 'Trade%', '{{CAREER_HEAD}}{{RATIO_STORED:trade_kills:match_trade_opps}} AS value {{EXISTS_STORED:trade_kills}}', 'percent', 'Formula: sum(trade_kills) / sum(trade opportunities) — trade kills ÷ trade opportunities over the career, addressed per player — a ratio; may top 100%.', 'builtin', CURRENT_TIMESTAMP),
 -- ---- inferred set, match scope (27 rows): per-match restatements of
 -- the stored player, round, duel, clutch, grenade and drop facts — one
 -- metric, one number; every row LIST they count stays source data.
@@ -1295,7 +1295,7 @@ fold AS (
  'Formula: count(events rows WHERE kind = ''weapon_drop'') — weapon drops recorded at this player''s deaths, addressed per player — the per-drop list stays a replay detail.',
  'builtin', CURRENT_TIMESTAMP),
 -- ---- inferred set, profile scope (1 row).
-('career_clutches', 'Clutches', '', '{{CAREER_HEAD}}{{SUM_STORED:clutches}} AS value WHERE EXISTS (SELECT 1 FROM metric(''clutches''))', 'int', 'Formula: sum(clutches) — the player''s career 1vN clutch count, addressed per player — the profile''s Clutches number; the list stays a match detail.', 'builtin', CURRENT_TIMESTAMP),
+('career_clutches', 'Clutches', '', '{{CAREER_HEAD}}{{SUM_STORED:clutches}} AS value {{EXISTS_STORED:clutches}}', 'int', 'Formula: sum(clutches) — the player''s career 1vN clutch count, addressed per player — the profile''s Clutches number; the list stays a match detail.', 'builtin', CURRENT_TIMESTAMP),
 -- ---- inferred set, T2 (10 rows): counts over the stored analysis-rule
 -- outputs — a round label and a per-side buy class are round-grain
 -- text, so a metric counts them per player and never renders them.
@@ -1359,9 +1359,9 @@ fold AS (
  'builtin', CURRENT_TIMESTAMP),
 -- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
 -- additive sum(a + b) chain is what the duel total needs.
-('career_opening_rate', 'Opening kill tags', '', '{{CAREER_HEAD}}1.0 * {{SUM_STORED:entry_kills}} / NULLIF({{SUM_STORED:entry_kills}} + {{SUM_STORED:entry_deaths}}, 0) AS value WHERE EXISTS (SELECT 1 FROM metric(''entry_kills''))', 'percent', 'Formula: sum(entry_kills) / sum(entry_kills + entry_deaths) — career opening kill tags won, shown as a percent, addressed per player (the Opening kill tags card).', 'builtin', CURRENT_TIMESTAMP),
-('career_openings', 'Openings', '', '{{CAREER_HEAD}}{{SUM_STORED:entry_kills}} + {{SUM_STORED:entry_deaths}} AS value WHERE EXISTS (SELECT 1 FROM metric(''entry_kills''))', 'int', 'Formula: sum(entry_kills + entry_deaths) — the player''s career opening kill tags: the opening kill plus the first-blood deaths it produced, addressed per player.', 'builtin', CURRENT_TIMESTAMP),
-('career_opener_wins', 'Opener wins', '', '{{CAREER_HEAD}}{{SUM_STORED:entry_kills}} AS value WHERE EXISTS (SELECT 1 FROM metric(''entry_kills''))', 'int', 'Formula: sum(entry_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening kill tags percentage.', 'builtin', CURRENT_TIMESTAMP),
+('career_opening_rate', 'Opening kill tags', '', '{{CAREER_HEAD}}1.0 * {{SUM_STORED:entry_kills}} / NULLIF({{SUM_STORED:entry_kills}} + {{SUM_STORED:entry_deaths}}, 0) AS value {{EXISTS_STORED:entry_kills}}', 'percent', 'Formula: sum(entry_kills) / sum(entry_kills + entry_deaths) — career opening kill tags won, shown as a percent, addressed per player (the Opening kill tags card).', 'builtin', CURRENT_TIMESTAMP),
+('career_openings', 'Openings', '', '{{CAREER_HEAD}}{{SUM_STORED:entry_kills}} + {{SUM_STORED:entry_deaths}} AS value {{EXISTS_STORED:entry_kills}}', 'int', 'Formula: sum(entry_kills + entry_deaths) — the player''s career opening kill tags: the opening kill plus the first-blood deaths it produced, addressed per player.', 'builtin', CURRENT_TIMESTAMP),
+('career_opener_wins', 'Opener wins', '', '{{CAREER_HEAD}}{{SUM_STORED:entry_kills}} AS value {{EXISTS_STORED:entry_kills}}', 'int', 'Formula: sum(entry_kills) — opening kills across the player''s career, addressed per player — the wins half of the Opening kill tags percentage.', 'builtin', CURRENT_TIMESTAMP),
 -- ---- addendum: the M3 combat-damage conversions (2 rows, match
 -- scope, 2026-11-17 — plan §7 M3 / §8): Damage-no-kill and Kill
 -- conversion % left the retired store.GetCombatStats SQL for the
@@ -1537,13 +1537,13 @@ fold AS (
  'int',
  'Formula: sum(assists) over the library — cross-team assists across the player''s career, addressed per player — the history row''s A column summed.',
  'builtin', CURRENT_TIMESTAMP),
-('career_mvps', 'MVPs', '', '{{CAREER_HEAD}}{{SUM_STORED:mvps}} AS value WHERE EXISTS (SELECT 1 FROM metric(''mvps''))', 'int', 'Formula: sum(mvps) — MVP awards across the player''s career, addressed per player — the scoreboard MVPs column summed.', 'builtin', CURRENT_TIMESTAMP),
+('career_mvps', 'MVPs', '', '{{CAREER_HEAD}}{{SUM_STORED:mvps}} AS value {{EXISTS_STORED:mvps}}', 'int', 'Formula: sum(mvps) — MVP awards across the player''s career, addressed per player — the scoreboard MVPs column summed.', 'builtin', CURRENT_TIMESTAMP),
 ('career_total_damage', 'Damage', '',
  '{{CAREER_HEAD}}{{SUM_STORED:total_damage}} AS value',
  'int',
  'Formula: sum(total_damage) over the library — damage dealt across the player''s career, addressed per player — the DMG column summed (career ADR divides it).',
  'builtin', CURRENT_TIMESTAMP),
-('career_matches', 'Matches played', '', '{{CAREER_HEAD}}(SELECT COUNT(*) FROM metric(''match_won'')) AS value WHERE EXISTS (SELECT 1 FROM metric(''match_won''))', 'int', 'Formula: count(matches) — matches this player appears in, addressed per player — the profile''s Matches card as a pinnable metric.', 'builtin', CURRENT_TIMESTAMP),
+('career_matches', 'Matches played', '', '{{CAREER_HEAD}}(SELECT COUNT(*) FROM metric(''match_won'')) AS value {{EXISTS_STORED:match_won}}', 'int', 'Formula: count(matches) — matches this player appears in, addressed per player — the profile''s Matches card as a pinnable metric.', 'builtin', CURRENT_TIMESTAMP),
 -- ---- addendum: the KDA conversion (w13d, 1 row, match scope) — the
 -- scoreboard's KDA column left the Go calculation for the metric
 -- system (adoption means migration: GetScoreboard's kda alias and the
