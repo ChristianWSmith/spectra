@@ -15,6 +15,8 @@
   import WinnerCell from './WinnerCell.svelte';
   import StatCard from './StatCard.svelte';
   import StatusChip from './StatusChip.svelte';
+  import MetricTd from './MetricTd.svelte';
+  import SortTh from './SortTh.svelte';
   // ComponentFrame — the frame every mounted component sits in
   // A failing component shows a dismissible error inside its own frame, and the
   // rest of the surface keeps rendering.
@@ -149,7 +151,7 @@
     // The one dash a missing cell shows, and the shared display pieces (the same
     // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.
     dash: DASH,
-    ui: { ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, RetryButton, WinnerCell, StatCard, StatusChip },
+    ui: { ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, MetricTd, RetryButton, SortTh, WinnerCell, StatCard, StatusChip },
     // Navigation and formatting the built-ins share: openMatch(id) and openPlayer(steamId) open a view
     // (through this frame's navigate); the formatters are the ones the built-ins use.
     openMatch: (matchId) => openMatch(spectra, matchId),

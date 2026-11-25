@@ -29,7 +29,7 @@ export const SPECTRA_HELPERS = [
   call('isHuman', 'row', 'True unless the roster row is a bot.'),
   call('listedPlayers', 'rows', 'The roster rows with the bots taken out, in order.'),
   call('metricPresentation', 'state, row, unitHasRows', 'Maps a read onto what a cell shows: a value, a no-data dash or a status chip.'),
-  call('fmtMetric', 'value, format', "The text of a stored value, in the metric's format."),
+  call('fmtMetric', 'value, format', "The text of a stored value in a format: int, float1, float2, percent, currency. A percent is a 0 to 1 fraction, shown as 0 to 100%. Any other format name shows an integer, or two decimals."),
   value('dash', 'string', 'The one dash a missing value shows.'),
   call('openMatch', 'matchId', 'Opens a match\'s view.'),
   call('openPlayer', 'steamId', "Opens a player's profile."),
@@ -38,7 +38,7 @@ export const SPECTRA_HELPERS = [
   call('report', 'error',"Shows a failure in the component's frame banner, which the reader can dismiss. Use it for a failed load the component has no banner of its own for."),
   call('fmtDate', 'd', 'A timestamp as a local date and time, or the dash when the match was never extracted.'),
   call('fmtDuration', 'seconds', 'A span in seconds, as a readable duration (1h02m03s over an hour), or the dash when it is unknown.'),
-  value('ui', 'object', 'The shared display pieces: spectra.ui.ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, RetryButton, WinnerCell, StatCard and StatusChip.'),
+  value('ui', 'object', 'The shared display pieces: spectra.ui.ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, MetricTd, RetryButton, SortTh, WinnerCell, StatCard and StatusChip.'),
   value('Child', 'component', 'Mounts another named component inside this one: <spectra.Child name="…" props={…} />.'),
 ];
 
@@ -50,7 +50,9 @@ export const UI_PIECES = [
   { name: 'RetryButton', detail: 'spectra.ui.RetryButton', doc: 'The button beside a failed read, to load it again. Props: onretry, label.' },
   { name: 'MetricCell', detail: 'spectra.ui.MetricCell', doc: "A metric's cell. Props: pres (from metricPresentation), format, chip, words." },
   { name: 'WinnerCell', detail: 'spectra.ui.WinnerCell', doc: "A side's name, as a chip. Props: name, winner, title." },
-  { name: 'StatCard', detail: 'spectra.ui.StatCard', doc: 'A labelled figure, with an optional sub-line. Props: label, value, sub, title; slots subSlot and valueSlot.' },
+  { name: 'StatCard', detail: 'spectra.ui.StatCard', doc: 'A labelled figure, with an optional sub-line. Props: label, labelTitle, value, sub, title; slots subSlot and valueSlot.' },
+  { name: 'MetricTd', detail: 'spectra.ui.MetricTd', doc: 'A numeric table cell (td) for one stored value. Props: pres (from metricPresentation), format, chip, words, title.' },
+  { name: 'SortTh', detail: 'spectra.ui.SortTh', doc: 'A sortable table header cell. Props: label, cls, title, active, desc, onclick. The view keeps its own sort state.' },
   { name: 'StatusChip', detail: 'spectra.ui.StatusChip', doc: 'A status chip, with optional progress. Props: status, progress, stage, block, detail, title.' },
 ];
 

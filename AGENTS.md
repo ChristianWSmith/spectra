@@ -366,7 +366,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `fmtDuration`, `openMatch(id)`, `openPlayer(steamId)`, `activateOnKey` and `whileCurrent` (the same
   modules the builtins import), `dash` (the one missing-value dash) and `ui` (the shared
   display components: `ui.ErrorBanner` (with `onretry`), `ui.EmptyNote`, `ui.EmptyTableRow`,
-  `ui.LoadBox`, `ui.MetricCell`, `ui.RetryButton`, `ui.WinnerCell`, `ui.StatCard`,
+  `ui.LoadBox`, `ui.MetricCell`, `ui.MetricTd`, `ui.RetryButton`, `ui.SortTh`, `ui.WinnerCell`, `ui.StatCard`,
   `ui.StatusChip`), and `<spectra.Child>` to mount a named
   component inside another. A failed `metric()` or `query()` is reported
   into the component's frame and also rejects. Each component renders

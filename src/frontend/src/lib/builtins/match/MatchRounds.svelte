@@ -125,10 +125,7 @@
           prewarm(d);
         },
         // A failed read is reported into this frame (guard routes the error to it).
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
     }),
   );
@@ -216,9 +213,7 @@
       },
       (e) => {
         if (data && data.id === matchId) details = { ...details, [n]: { failed: true } };
-        spectra.guard(() => {
-          throw e;
-        })();
+        spectra.report(e);
       },
     );
   }

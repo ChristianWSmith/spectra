@@ -100,10 +100,7 @@
         (res) => {
           if (isCurrent()) facts = parseFacts(res.rows[0]);
         },
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
       Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
         ([m, v]) => {
@@ -112,10 +109,7 @@
             voice = v;
           }
         },
-        (e) =>
-          spectra.guard(() => {
-            throw e;
-          })(),
+        (e) => spectra.report(e),
       );
       if (matchId) {
         loadProv(matchId);
@@ -131,9 +125,7 @@
       await evictDemoCopy(context.matchId);
       match = await getMatch(context.matchId);
     } catch (e) {
-      spectra.guard(() => {
-        throw e;
-      })();
+      spectra.report(e);
     } finally {
       copyBusy = false;
     }

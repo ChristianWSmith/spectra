@@ -41,7 +41,10 @@ export function splitTable(getInputs) {
             reads = loaded.reads;
           }
         })
-        .catch(() => {});
+        .catch((e) => {
+          // A failed read is the frame's banner (no retry here): an empty table would otherwise lie.
+          if (isCurrent()) spectra.report(e);
+        });
     }),
   );
   // cellFor and rawValue read the table's current defs and reads, so a template

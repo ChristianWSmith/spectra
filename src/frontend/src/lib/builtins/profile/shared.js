@@ -17,12 +17,12 @@ export function defaultCardDefs(defs) {
     .map((e) => e.def);
 }
 
-export const NO_DATA_TITLE = 'no data for this player';
+const NO_DATA_TITLE = 'no data for this player';
 
 // liveState: the word a cell shows for its metric. A sweep running on the
 // metric right now (the live progress feed, keyed by metric id) wins over
 // the read's own state.
-export function liveState(def, read, progress) {
+function liveState(def, read, progress) {
   if (def && progress && progress.has(def.id)) return 'processing';
   return read ? read.state : '';
 }

@@ -624,9 +624,11 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 | \`ui.EmptyTableRow\` | The one row a table shows when it has nothing to list | \`colspan\`, \`empty\`, \`text\`, \`chip\` |
 | \`ui.LoadBox\` | The loading shell: holds its height while a load runs, and shows a spinner over the content | \`busy\`, \`name\`, \`key\`, \`tag\`, children |
 | \`ui.MetricCell\` | A metric's cell | \`pres\`, \`format\`, \`chip\`, \`words\` |
+| \`ui.MetricTd\` | A numeric table cell for one stored value | \`pres\`, \`format\`, \`chip\`, \`words\`, \`title\` |
 | \`ui.RetryButton\` | The button beside a failed read, to load it again | \`onretry\`, \`label\` |
+| \`ui.SortTh\` | A sortable table header cell (the view keeps its sort state) | \`label\`, \`cls\`, \`title\`, \`active\`, \`desc\`, \`onclick\` |
 | \`ui.WinnerCell\` | A side's name, as a chip | \`name\`, \`winner\`, \`title\` |
-| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
+| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`labelTitle\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
 | \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
 
 Other helpers: \`spectra.openMatch(matchId)\` and \`spectra.openPlayer(steamId)\` open a match or a player's profile; \`spectra.fmtDate(d)\` and \`spectra.fmtDuration(seconds)\` format a timestamp and a span.

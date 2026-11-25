@@ -22,12 +22,12 @@ export const OUT_FILE = join(BUILTINS, 'generated', 'sources.js');
 
 // panelRegistry parses panels.js into [{id, file}] — the id of each
 // BUILTIN_PANELS entry and the .svelte file its component is imported from.
-// The shapes it accepts are the ones panels.js uses: `export const X = '…'`
-// id constants, `import Name from './x.svelte'`, and `KEY: Name,` entries in
+// The shapes it accepts are the ones panels.js uses: `const X = '…'` (exported or
+// not) id constants, `import Name from './x.svelte'`, and `KEY: Name,` entries in
 // the BUILTIN_PANELS object (KEY a literal or a [CONST] reference).
 export function panelRegistry(src) {
   const consts = new Map();
-  for (const m of src.matchAll(/export const (\w+) = '([^']+)';/g)) consts.set(m[1], m[2]);
+  for (const m of src.matchAll(/(?:export )?const (\w+) = '([^']+)';/g)) consts.set(m[1], m[2]);
   const imports = new Map();
   for (const m of src.matchAll(/import (\w+) from '(\.\/[^']+\.svelte)';/g)) imports.set(m[1], m[2]);
   const start = src.indexOf('export const BUILTIN_PANELS = Object.freeze({');

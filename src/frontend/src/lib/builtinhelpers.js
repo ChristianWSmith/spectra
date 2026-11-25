@@ -199,7 +199,7 @@ export function hashOf(path, query) {
 
 
 // The route to a player's profile.
-export function playerRoute(steam) {
+function playerRoute(steam) {
   return '/player/' + steam;
 }
 
@@ -215,7 +215,7 @@ export function openPlayer(spectra, steam) {
 
 // The replay route a row opens, following that player. `back` is the tab the
 // panel sits on; the replay returns there.
-export function followRoute(matchId, back, steam) {
+function followRoute(matchId, back, steam) {
   const to = back || 'match/' + matchId;
   return '/replay/' + matchId + '?back=' + encodeURIComponent(to).replace(/%2F/g, '/') + '&follow=' + steam;
 }
