@@ -154,7 +154,9 @@ func TestBuiltinsDeriveTouchedAtOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMetricByName: %v", err)
 	}
-	if !equalStrings(tr.Touched, []string{"match_trade_opps", "player_stats", "players"}) {
+	// The bot guard is the is_bot_key predicate (a function of steam_id), so the
+	// statement no longer reads the players table.
+	if !equalStrings(tr.Touched, []string{"match_trade_opps", "player_stats"}) {
 		t.Fatalf("trade_rate touched = %v", tr.Touched)
 	}
 }
