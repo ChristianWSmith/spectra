@@ -1428,7 +1428,7 @@ func storeMatchMetric(t *testing.T, st *store.Store, name string, matchIDs []int
 		t.Fatalf("GetConfig: %v", err)
 	}
 	for _, id := range matchIDs {
-		if err := RunRaw(t.Context(), st, def.ID, def.Version, cfg.RuleVersion, def.Expr, store.RawScope{MatchID: id}); err != nil {
+		if err := RunRaw(t.Context(), st, def.ID, def.Version, cfg.RuleVersion, def.RunExpr, store.RawScope{MatchID: id}); err != nil {
 			t.Fatalf("RunRaw(%s, match %d): %v", name, id, err)
 		}
 	}

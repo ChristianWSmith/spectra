@@ -9,7 +9,7 @@
   // it where it was, and a granted one shows once the refreshed row arrives.
   function change(e) {
     const input = e.currentTarget;
-    onchange(input.checked);
+    if (!disabled) onchange(input.checked);
     input.checked = checked;
   }
 </script>

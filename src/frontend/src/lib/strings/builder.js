@@ -8,9 +8,9 @@
 export const builder = {
   // list-row actions (snippet)
   toggleAria: 'Enabled: {name}',
-  toggleOnTitle: 'Enabled — computed with the library. Turn off to keep it stored without computing it.',
+  toggleOnTitle: 'Enabled and computed. Switch off to keep it stored without computing.',
   toggleOffTitle: 'Disabled — stored, not computed. Turn on to compute it again.',
-  toggleSweepLocked: 'Locked while metrics are computing. Switch it once the sweep is done.',
+  toggleSweepLocked: 'Locked while metrics are computing. Switch it when they finish.',
   toggleBlockedOff: "Can't turn off: {reason}",
   toggleBlockedOn: "Can't turn on: {reason}",
   deleteMetric: 'Delete metric',

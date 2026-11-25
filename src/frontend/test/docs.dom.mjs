@@ -130,7 +130,7 @@ for (const k of [
   'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement',
   'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
   'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
-  'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'DOMParser',
+  'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'DOMParser', 'NodeFilter',
   'localStorage',
 ]) {
   if (!(k in dom.window)) continue;
@@ -159,6 +159,7 @@ globalThis.fetch = async () => ({ ok: false, arrayBuffer: async () => new ArrayB
 const errors = [];
 process.on('uncaughtException', (e) => {
   errors.push(e);
+  process.exitCode = 1;
   console.error('UNCAUGHT: ' + (e && e.stack ? e.stack : e));
 });
 process.on('unhandledRejection', (e) => {
@@ -262,7 +263,7 @@ compileSvelte(
   localURL('dialog.js'),
 );
 compileSvelte(
-  readFileSync('src/lib/components/DocBlocks.svelte', 'utf8'),
+  readFileSync('src/lib/components/DocBlocks.svelte', 'utf8').replace("from '../docs/render.js'", `from '${libURL('docs/render.js')}'`),
   'DocBlocks.svelte',
   localURL('docblocks.js'),
 );
@@ -270,7 +271,6 @@ const docsSrc = readFileSync('src/lib/components/DocsPopup.svelte', 'utf8')
   .replace("from './Dialog.svelte'", `from '${localURL('dialog.js')}'`)
   .replace("from './DocBlocks.svelte'", `from '${localURL('docblocks.js')}'`)
   .replace("from '../docs/registry.js'", `from '${libURL('docs/registry.js')}'`)
-  .replace("from '../docs/markdown.js'", `from '${libURL('docs/markdown.js')}'`)
   .replace("from '../docs/manuals/index.js'", `from '${libURL('docs/manuals/index.js')}'`)
   .replace("import '../docs/manuals/index.js';", `import '${libURL('docs/manuals/index.js')}';`)
   .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
@@ -346,9 +346,11 @@ compileSvelte(
   writeFileSync(join(dir, 'expandable.svelte.js'), compileModule(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${libURL('strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
 }
 compileSvelte(readFileSync('src/lib/components/Chip.svelte', 'utf8'), 'Chip.svelte', localURL('chip.js'));
+compileSvelte(readFileSync('src/lib/components/ToggleSwitch.svelte', 'utf8'), 'ToggleSwitch.svelte', localURL('toggleswitch.js'));
 compileSvelte(readFileSync('src/lib/components/PreviewOverlay.svelte', 'utf8').replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`), 'PreviewOverlay.svelte', localURL('previewoverlay.js'));
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
     .replace("from '../components/Chip.svelte'", `from '${localURL('chip.js')}'`)
+  .replace("from '../components/ToggleSwitch.svelte'", `from '${localURL('toggleswitch.js')}'`)
   .replace("from '../expandable.svelte.js'", `from '${localURL('expandable.svelte.js')}'`)
   .replace("from '../components/PreviewOverlay.svelte'", `from '${localURL('previewoverlay.js')}'`)
   .replace("from '../fillheight.js'", `from '${libURL('fillheight.js')}'`)
@@ -358,6 +360,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${libURL('services.js')}'`)
   .replace("from '../metricorder.js'", `from '${libURL('metricorder.js')}'`)
   .replace("from '../metricformats.js'", `from '${libURL('metricformats.js')}'`)
+  .replace("from '../format/format.js'", `from '${libURL('format/format.js')}'`)
   .replace("from '../metricorigins.js'", `from '${libURL('metricorigins.js')}'`)
   .replace("from '../fmt.js'", `from '${libURL('fmt.js')}'`)
   .replace("from '../metricstate.js'", `from '${libURL('metricstate.js')}'`)
@@ -527,8 +530,8 @@ check(
   // 28 → 29 (C3, components): the Component builder's own section.
   // 27 → 28 (2026-11-18, metrics Phase 7): the metric-language chapter
   // gained its `partitions` section.
-  'the full TOC renders (29 section entries, the guide opens at its first section)',
-  tocItems().length === 29 && tocCurrent()?.textContent.trim() === 'Introduction',
+  'the full TOC renders (30 section entries, the guide opens at its first section)',
+  tocItems().length === 30 && tocCurrent()?.textContent.trim() === 'Introduction',
   `${tocItems().length} entries / current=${tocCurrent()?.textContent.trim()}`,
 );
 check(
@@ -858,9 +861,9 @@ check(
   tocItems().map((b) => b.textContent.trim()).join(', '),
 );
 check(
-  // 28 → 29 body sections (C3: the Component builder section).
+  // 28 → 29 body sections (C3: the Component builder section); 30 with macros.
   'the filter is TOC-only: the body still renders every section while it is active',
-  docBody().querySelectorAll('.doc-section').length === 29,
+  docBody().querySelectorAll('.doc-section').length === 30,
   docBody().querySelectorAll('.doc-section').length + ' body sections',
 );
 check(
@@ -931,8 +934,8 @@ check(
 await typeQuery('');
 check(
   // 28 → 29 entries (C3: the Component builder section).
-  'clearing the input restores the full TOC (29 entries, no empty-state line)',
-  tocItems().length === 29 && !emptyTocLine(),
+  'clearing the input restores the full TOC (30 entries, no empty-state line)',
+  tocItems().length === 30 && !emptyTocLine(),
   `${tocItems().length} entries`,
 );
 
@@ -1065,8 +1068,8 @@ click(toggleOf('Metric language'));
 await sleep();
 check(
   // 27 → 28 entries (2026-11-18, metrics Phase 7 `partitions`); 29 with the two 2026-11-24 sections.
-  'unfolding restores every entry (29) and aria-expanded back to true',
-  tocItems().length === 29 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
+  'unfolding restores every entry (30) and aria-expanded back to true',
+  tocItems().length === 30 && toggleOf('Metric language')?.getAttribute('aria-expanded') === 'true',
   `${tocItems().length} entries / aria-expanded=${toggleOf('Metric language')?.getAttribute('aria-expanded')}`,
 );
 click(tocItems().find((b) => b.textContent.trim() === 'Touched tables and freshness'));
@@ -1255,4 +1258,4 @@ check(
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
-process.exit(failures || errors.length ? 1 : 0);
+process.exitCode = failures || errors.length ? 1 : 0;

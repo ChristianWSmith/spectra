@@ -126,7 +126,7 @@ export const settings = {
   buildNoMetrics: 'No custom metrics of your own yet.',
   buildComponentsLabel: 'Components',
   buildComponentsAria: 'Components to bundle',
-  buildComponentsPlaceholder: 'Add a component',
+  buildComponentsPlaceholder: 'Search components…',
   buildNoComponents: 'No components of your own yet.',
   buildSave: 'Save plugin',
   buildSaving: 'Saving…',

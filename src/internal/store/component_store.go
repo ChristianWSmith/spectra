@@ -160,7 +160,7 @@ func (s *Store) SaveComponent(original, name, source string, refs ComponentRefs)
 	now := time.Now()
 	if original == "" {
 		if _, err := tx.Exec(
-			`INSERT INTO components (`+componentCols+`) VALUES (?, ?, ?, ?)`, name, source, now, now,
+			`INSERT INTO components (name, source, created_at, updated_at) VALUES (?, ?, ?, ?)`, name, source, now, now,
 		); err != nil {
 			if isUniqueErr(err) {
 				return ComponentRow{}, fmt.Errorf("a component named %q already exists", name)

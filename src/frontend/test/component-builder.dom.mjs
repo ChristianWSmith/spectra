@@ -162,10 +162,13 @@ bindings.handlers.ResetPlacements = (surface) => {
   return null;
 };
 
+// Already in the form the save writes (the save formats it: a blank line after </script>, a final newline).
 const OK_EDIT_SOURCE = `<script>
   let { spectra } = $props();
 </script>
-<p class="edit-ok">EDITED BUILTIN</p>`;
+
+<p class="edit-ok">EDITED BUILTIN</p>
+`;
 const OK_SOURCE = `<script>
   let { spectra } = $props();
 </script>
@@ -271,7 +274,7 @@ check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[ro
 console.log('B. the list');
 const builtinRow = rowNamed(PLACEHOLDER_ID, '.cb-builtins');
 check('the sample built-in is listed in the Built-in group', !!builtinRow);
-check('the built-in row carries the built-in chip', builtinRow && builtinRow.textContent.includes(S.componentbuilder.builtinChip));
+check('the built-in row carries the built-in chip', builtinRow && builtinRow.textContent.includes(S.common.chipBuiltin));
 check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.componentbuilder.noUserComponents));
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
 // The Profile view and its six panels are listed (the registry, builtins/panels.js).
@@ -298,7 +301,7 @@ await mounted();
 check(
   'a built-in with no override shows no Edited chip in the list',
   !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
-    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.common.chipEdited),
 );
 click(rowNamed(PLACEHOLDER_ID, '.cb-builtins'));
 await settle();
@@ -322,7 +325,7 @@ check(
   ovCall && ovCall.id === PLACEHOLDER_ID && ovCall.source === OK_EDIT_SOURCE,
   JSON.stringify(ovCall),
 );
-check('the built-in row shows the edited chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the built-in row shows the edited chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 check('Restore to default is enabled once edited', q('.cb-restore')?.disabled === false);
 check('no user component was written by an edit', saveCalls.length === 0);
 click(q('.cb-restore'));
@@ -332,7 +335,7 @@ check('Restore to default brings back the shipped source', q('#cb-source')?.valu
 check(
   'after restore the built-in row is still listed and carries no Edited chip',
   !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
-    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.common.chipEdited),
 );
 unmounted();
 
@@ -360,12 +363,12 @@ check(
   overrideCalls.length === 1 && careerOv && careerOv.id === CAREER_ID && careerOv.source === OK_EDIT_SOURCE,
   JSON.stringify(careerOv),
 );
-check('the Career row shows the edited chip', rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the Career row shows the edited chip', rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 click(q('.cb-restore'));
 await settle(10);
 check('Restore to default deletes the Career override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === CAREER_ID);
 check('Restore to default brings the Career shipped source back', q('#cb-source')?.value === careerShipped);
-check('the Career row carries no edited chip after restore', !rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the Career row carries no edited chip after restore', !rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 unmounted();
 
 // --- C2. a refused edit of a built-in ------------------------------------------

@@ -135,7 +135,8 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	rows, err := s.db.Query(
 		// The run form (run_expr), not the macro form: the gate analyzes SQL, and a macro
 		// form such as {{DAMAGE_ROUND_CTE}} is refused, which would read the metric behind.
-		`SELECT m.id, m.run_expr, m.touched, m.version,
+		// A row saved without a run form (run_expr '') is plain SQL, so its expr stands.
+		`SELECT m.id, CASE WHEN m.run_expr <> '' THEN m.run_expr ELSE m.expr END, m.touched, m.version,
 			CASE WHEN (
 				EXISTS (SELECT 1 FROM metric_values v
 					WHERE v.metric_id = m.id
@@ -189,6 +190,9 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	for _, p := range list {
 		c := p.cov
 		if !c.Enabled {
+			// A disabled metric is never behind: nothing is pending for it, and the SQL flag above is
+			// ignored for it.
+			c.Behind, c.BehindMatches, c.BehindSteams = false, nil, nil
 			out = append(out, c)
 			continue
 		}

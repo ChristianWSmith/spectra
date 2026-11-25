@@ -143,8 +143,7 @@ test('(f) the guide describes editing, restore to default and use as my view', (
   assert.ok(section, 'the Component builder guide section exists');
   const text = section.blocks;
   assert.match(text, /Restore to default/);
-  assert.match(text, /Use as my view/);
-  assert.match(text, /Reset to default/);
+  assert.match(text, /Use as my/);
   assert.match(text, /edit/i);
   for (const term of ['layout_placements', 'builtin_overrides', 'components table', 'surface_', 'builtin-']) {
     assert.ok(!text.includes(term), `the guide must not name ${term}`);

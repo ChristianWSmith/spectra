@@ -98,7 +98,7 @@ func TestImportMarksOnlyMatchPlayersBehindForProfileMetrics(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetMetricByName(%s): %v", name, err)
 		}
-		st, gerr := AnalyzeMetricSQL(m.Expr, nil)
+		st, gerr := AnalyzeMetricSQL(m.RunExpr, nil)
 		if gerr != nil {
 			t.Fatalf("%s does not pass the gate: %s", name, gerr.Message)
 		}

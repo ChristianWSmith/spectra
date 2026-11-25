@@ -491,6 +491,15 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 // written from the row; version is NOT in the INSERT (column DEFAULT 1 —
 // the counter starts at 1 and only the semantic-edit bump moves it).
 func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
+	// Every row carries its run form: the sweep executes run_expr. A row written without one
+	// (a direct store write) gets the expansion of its macro form here, as the save gate writes.
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	id, err := insertMetric(s.db, m)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -508,6 +517,13 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // service routes through; this plain overwrite stays the raw store API
 // (no-history model — no shadow rows, no versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	if err := updateMetric(s.db, m, false); err != nil {
 		return models.MetricRow{}, err
 	}
