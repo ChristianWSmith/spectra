@@ -18,7 +18,7 @@
     STATE_WORD,
     sortRows,
   } from './panelhelpers.js';
-  import { fmtMetric } from '../../fmt.js';
+  import { fmtMetric, fmtInt } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { DASH, isSteam } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
@@ -157,7 +157,7 @@
               </span>
             </td>
             <td class="num">
-              {Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}
+              {fmtInt(Number(p.score))}
             </td>
             {#each COLUMNS as c (c.metric)}
               {@const u = data.byMetric.get(c.metric)}

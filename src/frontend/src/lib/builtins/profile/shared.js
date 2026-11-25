@@ -4,7 +4,6 @@
 // dash, or a state chip. NULL is a dash, never a zero (owner ruling 23); a
 // live sweep on a metric shows as processing (lib/metricstate.js precedence).
 import { metricStateTitle, metricPresentation } from '../../metricstate.js';
-import { readMetrics } from '../../metricreads.js';
 import { listMetrics, getProfile } from '../../services.js';
 import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
 
@@ -66,18 +65,18 @@ export function loadProfile(spectra, sid) {
 // loadSplit reads a split table's catalog and its seed metrics for the
 // context's player: the catalog read, then loadSeeds over it. The three split
 // panels (sides, maps, weapons) load through this one chain.
-export function loadSplit(spectra, names, errText) {
-  return spectra.track(listMetrics()).then((rows) => loadSeeds(spectra, names, rows || [], errText));
+export function loadSplit(spectra, names) {
+  return spectra.track(listMetrics()).then((rows) => loadSeeds(spectra, names, rows || []));
 }
 
 // loadSeeds reads the named metrics of a split table (sides, maps, weapons)
 // for the context's player. A name the catalog does not carry is never read:
 // its cells show the honest dash, not an error. Each read is one metric()
 // call, so its dims come back in `rows`.
-export async function loadSeeds(spectra, names, catalog, errText) {
+export async function loadSeeds(spectra, names, catalog) {
   const defs = new Map(catalog.filter((d) => d && names.includes(d.name)).map((d) => [d.name, d]));
   const found = [...defs.keys()];
-  return { defs, reads: await readMetrics(spectra, found, errText) };
+  return { defs, reads: await spectra.readMetrics(found) };
 }
 
 // dimValue is one split cell's fresh number: the read's row for the dim,

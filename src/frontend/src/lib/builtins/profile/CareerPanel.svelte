@@ -5,13 +5,11 @@
   // one card each. Every value is one metric() read for the context's player.
   // Pinning is retired (owner ruling 33): this panel shows the default set and
   // reads no preference.
-  import { errText } from '../../services.js';
   import { liveMetrics } from '../../metricslive.svelte.js';
   import { fmtMetric } from '../../fmt.js';
   import StatCard from '../../components/StatCard.svelte';
   import MetricCell from '../../components/MetricCell.svelte';
   import { loadProfile, readCell, defaultCardDefs } from './shared.js';
-  import { readMetrics } from '../../metricreads.js';
   import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
@@ -43,7 +41,7 @@
           defs = rows || [];
           wins = profile ? profile.wins : null;
           const names = defaultCardDefs(defs).map((d) => d.name);
-          const next = await readMetrics(spectra, names, errText);
+          const next = await spectra.readMetrics(names);
           if (isCurrent()) reads = next;
         },
         (e) => spectra.report(e),

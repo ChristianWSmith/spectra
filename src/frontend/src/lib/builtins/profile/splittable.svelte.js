@@ -26,7 +26,7 @@ export function splitTable(getInputs) {
   let loadedFor = null;
   $effect(() =>
     whileCurrent((isCurrent) => {
-      const { spectra, steamId, seeds, errText } = getInputs();
+      const { spectra, steamId, seeds } = getInputs();
       sweep.reload;
       const sid = steamId;
       const newPlayer = sid !== loadedFor;
@@ -37,7 +37,7 @@ export function splitTable(getInputs) {
       // A failed read is the frame's banner (no retry here): an empty table would otherwise lie.
       loadThen(
         isCurrent,
-        loadSplit(spectra, seeds, errText),
+        loadSplit(spectra, seeds),
         (loaded) => {
           defs = loaded.defs;
           reads = loaded.reads;
