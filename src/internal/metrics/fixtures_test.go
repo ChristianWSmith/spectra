@@ -147,7 +147,7 @@ var builtinSeed = []struct {
 		// retired opening_kills column); the preview runs at library
 		// scope, so the value is the career 3i over the seed's `rounds`
 		// denominator (72 career rounds) = i/24 per player.
-		name: "entry_rate", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(entry_kills)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "entry_rate", expr: "SELECT player_stats.steam_id AS subject_key, '' AS dim, 1.0*player_stats.entry_kills / NULLIF((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id), 0) AS value FROM player_stats WHERE player_stats.match_id = :match_id AND player_stats.steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)",
 		scope: "match", format: "percent", shortName: "Entry%",
 		interpretation: "entry (first-blood) kills per round (corpus: career 3i / 72 rounds)",
 		rows:           8,
@@ -313,7 +313,7 @@ var builtinSeed = []struct {
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
 	},
 	{
-		name: "best_streak", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, MAX(best_streak) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "best_streak", expr: "SELECT player_stats.steam_id AS subject_key, '' AS dim, player_stats.best_streak AS value FROM player_stats WHERE player_stats.match_id = :match_id AND player_stats.steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)",
 		scope: "match", format: "int", shortName: "Streak",
 		interpretation: "longest streak (column absent → 0); one player_stats row per subject-match, so max == the stored value",
 		rows:           8, wantAll: 0, wantLabels: eightLabels,
@@ -647,7 +647,7 @@ var builtinSeed = []struct {
 		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantLabels: eightLabels,
 	},
 	{
-		name: "mvps", expr: "SELECT grp AS subject_key, '' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(mvps) AS v FROM player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id",
+		name: "mvps", expr: "SELECT player_stats.steam_id AS subject_key, '' AS dim, player_stats.mvps AS value FROM player_stats WHERE player_stats.match_id = :match_id AND player_stats.steam_id <> '' AND NOT is_bot_key(player_stats.steam_id)",
 		scope: "match", format: "int", shortName: "MVPs",
 		interpretation: "MVP award count (corpus: 1 per match → 3)",
 		rows:           8, wantAll: 3, wantLabels: eightLabels,
