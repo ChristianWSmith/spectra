@@ -34,3 +34,21 @@ const killsCountedAKCTE = `ak AS (SELECT * FROM k WHERE assister <> '' AND assis
 
 // killsAKPlaceholder marks the counted-assist CTE inside a schema.sql metric expr.
 const killsAKPlaceholder = "{{KILLS_AK}}"
+
+// killsCountedEKRCTE is the per-round kill count of the counted kills: one row
+// per (match, round, attacker) with the number of counted kills, as ekr. The
+// multi-kill rounds (two_k … five_k) fold it; it follows killsCountedEKCTE in a
+// metric's WITH list.
+const killsCountedEKRCTE = `ekr AS (SELECT match_id, round, attacker, COUNT(*) AS c FROM ek GROUP BY match_id, round, attacker)`
+
+// killsEKRPlaceholder marks the per-round counted-kill count inside a schema.sql metric expr.
+const killsEKRPlaceholder = "{{KILLS_EKR}}"
+
+// killsRoundCTE is the counted-kill fold of one round: the same kill rows as
+// killsCountedCTE, restricted to the round bound as :round. The round-grain
+// kill metrics (raw_round_kills, raw_round_assists, raw_round_deaths and
+// raw_round_survived) read it as their k CTE.
+const killsRoundCTE = `k AS (SELECT e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash, {{FAKE_KILL}}, sa.side AS a_side, sv.side AS v_side, ss.side AS s_side FROM events e {{DISCONNECT_JOIN}} {{SIDE_JOIN:sa:e:attacker}} {{SIDE_JOIN:sv:e:victim}} {{SIDE_JOIN:ss:e:assister}} WHERE e.match_id = :match_id AND {{LIVE_EVENT:e:kill}} AND e.round = :round)`
+
+// killsRoundPlaceholder marks the round-grain kill CTE inside a schema.sql metric expr.
+const killsRoundPlaceholder = "{{KILLS_ROUND}}"
