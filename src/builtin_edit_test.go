@@ -109,7 +109,7 @@ func TestBuiltinMetricEditMarksBehindAndRecomputesScopeOnly(t *testing.T) {
 		}
 	}
 
-	edit := strings.Replace(b.Expr, "1.0*(SUM(player_stats.trade_kills))", "3.0*(SUM(player_stats.trade_kills))", 1)
+	edit := strings.Replace(b.Expr, "1.0*ps.trade_kills", "3.0*ps.trade_kills", 1)
 	if edit == b.Expr {
 		t.Fatal("test edit did not change trade_rate's expr; update the replacement")
 	}
@@ -158,7 +158,7 @@ func TestBuiltinMetricRestoreRecomputesShipped(t *testing.T) {
 		t.Fatal("trade_rate has no stored values to compare; the fixture is wrong")
 	}
 
-	edit := strings.Replace(b.Expr, "1.0*(SUM(player_stats.trade_kills))", "3.0*(SUM(player_stats.trade_kills))", 1)
+	edit := strings.Replace(b.Expr, "1.0*ps.trade_kills", "3.0*ps.trade_kills", 1)
 	if _, err := f.svc.SaveBuiltinMetric(b.ID, edit); err != nil {
 		t.Fatalf("SaveBuiltinMetric: %v", err)
 	}
