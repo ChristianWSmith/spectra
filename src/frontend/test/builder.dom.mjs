@@ -423,6 +423,8 @@ svelteCompile(
 );
 // The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
 const { compileModule: compileRunes } = await import('svelte/compiler');
+const { compileModule: compileExpandable } = await import('svelte/compiler');
+writeFileSync(join(dir, 'expandable.svelte.js'), compileExpandable(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
 writeFileSync(join(dir, 'loadstate.svelte.js'), compileRunes(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
 // SourceEditor — the source box. Monaco does not load under jsdom, so the
@@ -459,6 +461,7 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../components/Popover.svelte'", "from './popover.js'")
   .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   .replace("from '../fillheight.js'", `from '${fileURL('src/lib/fillheight.js')}'`)
+  .replace("from '../expandable.svelte.js'", `from '${fileURL(join(dir, 'expandable.svelte.js'))}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
 

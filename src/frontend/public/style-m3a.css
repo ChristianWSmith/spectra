@@ -1013,6 +1013,27 @@ canvas.heat-canvas {
   min-width: 0;
 }
 
+/* The right column fills the content height (fillHeight). The editor keeps its
+   natural size, which the source box sets; the preview takes what is left and
+   scrolls. Below the narrow breakpoint the column is a plain stack again. */
+.bld-right > :not(.bld-preview) {
+  flex: none;
+}
+
+.bld-right > .bld-preview {
+  flex: 1 1 0;
+  min-height: 160px;
+  overflow: auto;
+}
+
+@media (max-width: 1000px) {
+  .bld-right > .bld-preview {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+}
+
 .bld-list {
   gap: 8px;
   display: flex;

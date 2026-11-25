@@ -2,6 +2,8 @@
   import SourceEditor from '../components/SourceEditor.svelte';
   import { componentCompletions } from '../editor/helperCatalog.js';
   import { fillHeight } from '../fillheight.js';
+  import { expandable } from '../expandable.svelte.js';
+  const previewPanel = expandable();
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import { notifyPlacementsChanged } from '../warm.js';
@@ -551,7 +553,7 @@
       </div>
     </section>
 
-    <div class="cb-main">
+    <div class="cb-main" use:fillHeight>
     <section class="panel cb-editor">
       <div class="row-between">
         <h2>{form.original || builtin ? S.componentbuilder.editComponent : S.componentbuilder.newComponent}</h2>
@@ -678,9 +680,21 @@
 
     </section>
 
-    <section class="panel cb-preview">
+    <section class="panel cb-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
       <div class="row-between">
         <h2>{S.componentbuilder.previewHeading}</h2>
+        <div class="toolbar">
+          <button
+            type="button"
+            class="btn small preview-expand"
+            aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+            title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+            aria-expanded={previewPanel.on}
+            onclick={previewPanel.toggle}
+        >
+            <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+        </button>
+        </div>
       </div>
       <div class="cb-context" role="group" aria-label={S.componentbuilder.contextLabel}>
         <div class="cb-field">
@@ -752,6 +766,23 @@
     flex-direction: column;
     gap: 16px;
     min-width: 0;
+  }
+  /* The main column fills the content height (fillHeight): the editor keeps its
+     natural size, the preview takes what is left and scrolls. */
+  .cb-main > :not(.cb-preview) {
+    flex: none;
+  }
+  .cb-main > .cb-preview {
+    flex: 1 1 0;
+    min-height: 160px;
+    overflow: auto;
+  }
+  @media (max-width: 1000px) {
+    .cb-main > .cb-preview {
+      flex: none;
+      min-height: 0;
+      overflow: visible;
+    }
   }
   .cb-use-wrap {
     position: relative;

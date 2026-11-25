@@ -157,6 +157,8 @@ svelteCompile(
   'SourceEditor.svelte',
   join(dir, 'sourceeditor.js'),
 );
+const { compileModule: compileExpandable } = await import('svelte/compiler');
+writeFileSync(join(dir, 'expandable.svelte.js'), compileExpandable(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
 const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
   .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
   .replace("from '../components/SourceEditor.svelte'", "from './sourceeditor.js'")
@@ -169,6 +171,7 @@ const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
   .replace("from '../components/PlayerPicker.svelte'", "from './playerpicker.js'")
   .replace("from '../components/HelpButton.svelte'", "from './helpbutton.js'")
   .replace("from '../fillheight.js'", `from '${fileURL('src/lib/fillheight.js')}'`)
+  .replace("from '../expandable.svelte.js'", `from '${fileURL(join(dir, 'expandable.svelte.js'))}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
 svelteCompile(rbSrc, 'ReportsBuilder.svelte', join(dir, 'reportsbuilder-bundle.js'));
 

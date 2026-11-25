@@ -1,5 +1,7 @@
 <script>
   import { fillHeight } from '../fillheight.js';
+  import { expandable } from '../expandable.svelte.js';
+  const previewPanel = expandable();
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
@@ -1161,7 +1163,7 @@
       </LoadBox>
     </section>
 
-    <div class="bld-right">
+    <div class="bld-right" use:fillHeight>
       <section class="panel">
         <div class="row-between">
           <h2>{form.id ? S.builder.editMetric : S.builder.newMetric}</h2>
@@ -1368,10 +1370,20 @@
         </div>
       </section>
 
-      <section class="panel bld-preview">
+      <section class="panel bld-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
         <div class="row-between">
           <h2>{S.builder.previewHeading}</h2>
           <div class="toolbar">
+            <button
+          type="button"
+          class="btn small preview-expand"
+          aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+          title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+          aria-expanded={previewPanel.on}
+          onclick={previewPanel.toggle}
+        >
+          <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+        </button>
             <!-- The preview panel's state chip sits immediately LEFT of
                  the Preview button (w19 item 23c — the owner's ruling),
                  the same cluster order as hint → Save in the

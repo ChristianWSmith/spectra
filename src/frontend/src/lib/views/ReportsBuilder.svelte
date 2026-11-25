@@ -3,6 +3,8 @@
   import { templateItems } from '../editor/templateCompletions.js';
   import { reportFields } from '../editor/completionSources.js';
   import { fillHeight } from '../fillheight.js';
+  import { expandable } from '../expandable.svelte.js';
+  const previewPanel = expandable();
   // The Reports builder — the template AUTHORING surface (the sibling
   // Reports view only CONSUMES templates). Two panels over the Builder's
   // layout (views/Builder.svelte's .bld-grid): a plain list of every
@@ -480,7 +482,7 @@
       {/if}
     </section>
 
-    <div class="rb-right">
+    <div class="rb-right" use:fillHeight>
       <section class="panel">
         <div class="row-between">
           <h2>{form.id ? S.reportbuilder.editTemplate : S.reportbuilder.newTemplate}</h2>
@@ -641,9 +643,21 @@
         </div>
       </section>
 
-      <section class="panel rb-preview">
+      <section class="panel rb-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
         <div class="row-between">
           <h2>{S.reportbuilder.previewHeading}</h2>
+          <div class="toolbar">
+            <button
+          type="button"
+          class="btn small preview-expand"
+          aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+          title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
+          aria-expanded={previewPanel.on}
+          onclick={previewPanel.toggle}
+        >
+          <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+        </button>
+          </div>
         </div>
         {#if previewError}
           <p class="error" role="alert">{previewError}</p>

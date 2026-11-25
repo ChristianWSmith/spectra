@@ -253,6 +253,19 @@ check('the header carries the help target', !!help, help && help.outerHTML);
 click(help);
 check('the help target opens the component-builder guide section', opened.join() === 'component-builder', opened.join());
 check('three panels: list, editor, preview', !!q('.cb-list') && !!q('.cb-editor') && !!q('.cb-preview'));
+// The preview's big-screen toggle: expands the panel to the window, Escape collapses it.
+{
+  const pv = q('.cb-preview');
+  const tg = pv?.querySelector('.preview-expand');
+  check('the preview has an expand toggle, labelled Expand preview', !!tg && tg.getAttribute('aria-label') === 'Expand preview');
+  click(tg);
+  await sleep();
+  check('the toggle expands the preview panel', !!pv?.classList.contains('preview-expanded') && tg?.getAttribute('aria-label') === 'Collapse preview');
+  pv?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep();
+  check('Escape collapses the expanded preview', !pv?.classList.contains('preview-expanded'));
+}
+
 check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[role="alert"]'));
 
 // --- B. the list ---------------------------------------------------------------

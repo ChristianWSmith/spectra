@@ -3195,3 +3195,23 @@ mark {
   top: 12px;
   right: 20px;
 }
+
+/* A builder's preview, expanded to the window (the expand toggle in its header,
+   Escape to collapse). It overrides the column's fill-height layout while open. */
+.panel.preview-expanded {
+  position: fixed !important;
+  inset: 24px !important;
+  z-index: 1000;
+  flex: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto !important;
+  background: var(--bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+}
+
+.preview-expand {
+  margin-left: auto;
+}

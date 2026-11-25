@@ -9,6 +9,9 @@ export const common = {
   // source editor: the expand toggle on every Monaco / textarea source box
   expandEditor: 'Expand editor',
   collapseEditor: 'Collapse editor',
+  // the big-screen toggle on a builder's preview
+  expandPreview: 'Expand preview',
+  collapsePreview: 'Collapse preview',
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',
