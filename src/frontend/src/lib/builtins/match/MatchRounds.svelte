@@ -546,7 +546,7 @@
             <td>{r.bombSite || DASH}</td>
             <td>
               {#if r.mvpName}
-                {@render playerLink(r.mvp, r.mvpName(r.number, r.mvp, r.mvpName))}
+                {@render playerLink(r.mvp, r.mvpName, playerCls(r.number, r.mvp, r.mvpName))}
               {:else}
                 {DASH}
               {/if}

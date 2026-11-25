@@ -8,7 +8,9 @@
   let { open = false, title = '', onClose = () => {}, chips = null, children } = $props();
 
   function onKey(e) {
-    if (open && e.key === S.common.keyEscape) {
+    // An open popover inside the overlay (Popover) handles its own Escape first, on the document, and
+    // marks it handled: that Escape closes the popover only, not the results behind it.
+    if (open && e.key === S.common.keyEscape && !e.defaultPrevented) {
       e.stopPropagation();
       onClose();
     }

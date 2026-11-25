@@ -33,12 +33,15 @@ export function whenCurrent(isCurrent, fn) {
 //
 //   $effect(loadForMatch(() => context.matchId, load, (d) => (data = d)));
 export function loadForMatch(getMatchId, load, apply, failed) {
-  return whileCurrent((isCurrent) => {
-    load(getMatchId()).then(
-      whenCurrent(isCurrent, apply),
-      failed ? whenCurrent(isCurrent, failed) : () => {},
-    );
-  });
+  // The effect body: returned as a function so $effect runs the load (and its
+  // reads of the match) when the effect runs, and the cleanup is whileCurrent's.
+  return () =>
+    whileCurrent((isCurrent) => {
+      load(getMatchId()).then(
+        whenCurrent(isCurrent, apply),
+        failed ? whenCurrent(isCurrent, failed) : () => {},
+      );
+    });
 }
 
 // latestOnly is a runner for one kind of load: a result (or failure) applies only
