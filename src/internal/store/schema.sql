@@ -1059,7 +1059,7 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
 -- player_round_stats rows (human roster × every counted round — bots
 -- carry no per-round rows, 2026-11-17).
 ('adr', 'ADR', 'ADR',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(total_damage)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.total_damage, 0) AS total_damage, CAST(COALESCE(f.total_damage, 0) AS REAL) / NULLIF((SELECT COUNT(*) FROM rounds r WHERE r.match_id = ps.match_id), 0) AS adr
+ 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, 1.0*(SUM(total_damage)) / NULLIF(((SELECT COUNT(*) FROM rounds WHERE match_id = player_stats.match_id)), 0) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.total_damage, 0) AS total_damage
   FROM player_stats ps
   LEFT JOIN (WITH dmg AS (
   SELECT e.match_id, e.round, e.attacker, e.victim, e.weapon, e.capped_dmg, e.detail_json,
@@ -2334,15 +2334,7 @@ agg AS (
 SELECT round, attacker AS steam_id, COUNT(*) AS n FROM ek WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
-FROM ({{PLAYER_ROUND_COLS}} COALESCE(f.kills, 0) AS kills
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{KILLS_CTE}},
-{{KILLS_EK}},
-fold AS (
-    SELECT match_id, round, attacker AS steam_id, ''kills'' AS f, COUNT(*) AS n FROM ek GROUP BY match_id, round, attacker
-  )
-  {{ROUND_FOLD_PIVOT:kills}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
@@ -2370,21 +2362,7 @@ agg AS (
 SELECT round, assister AS steam_id, COUNT(*) AS n FROM rak WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
-FROM ({{PLAYER_ROUND_COLS}} COALESCE(f.assists, 0) AS assists
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{KILLS_CTE}},
-{{KILLS_EK}},
-ak AS (
-  SELECT * FROM k WHERE assister <> '''' AND assister <> victim AND attacker <> '''' AND attacker <> victim
-    AND fake = 0 AND assisted_flash = 0
-    AND {{TEAM_FREE}}
-    AND NOT (COALESCE(s_side, '''') <> '''' AND s_side = v_side)
-),
-fold AS (
-    SELECT match_id, round, assister AS steam_id, ''assists'' AS f, COUNT(*) AS n FROM ak GROUP BY match_id, round, assister
-  )
-  {{ROUND_FOLD_PIVOT:assists}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
@@ -2411,15 +2389,7 @@ agg AS (
 SELECT round, victim AS steam_id, COUNT(*) AS n FROM dk WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
-FROM ({{PLAYER_ROUND_COLS}} COALESCE(f.deaths, 0) AS deaths
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{KILLS_CTE}},
-{{KILLS_EK}},
-fold AS (
-    SELECT match_id, round, victim AS steam_id, ''deaths'' AS f, COUNT(*) AS n FROM k WHERE victim <> '''' AND fake = 0 GROUP BY match_id, round, victim
-  )
-  {{ROUND_FOLD_PIVOT:deaths}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
@@ -2446,15 +2416,7 @@ agg AS (
 SELECT round, victim AS steam_id, COUNT(*) AS n FROM dk WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, CASE WHEN COALESCE(agg.n, 0) = 0 THEN 1 ELSE 0 END AS value
-FROM ({{PLAYER_ROUND_COLS}} CASE WHEN COALESCE(f.deaths, 0) = 0 THEN 1 ELSE 0 END AS survived
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{KILLS_CTE}},
-{{KILLS_EK}},
-fold AS (
-    SELECT match_id, round, victim AS steam_id, ''deaths'' AS f, COUNT(*) AS n FROM k WHERE victim <> '''' AND fake = 0 GROUP BY match_id, round, victim
-  )
-  {{ROUND_FOLD_PIVOT:deaths}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
@@ -2479,14 +2441,7 @@ agg AS (
 SELECT round, attacker AS steam_id, SUM(capped_dmg) AS n FROM edmg_r WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
-FROM ({{PLAYER_ROUND_COLS}} COALESCE(f.dmg, 0) AS dmg
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{DAMAGE_CTE}},
-fold AS (
-    SELECT match_id, round, attacker AS steam_id, ''dmg'' AS f, SUM(capped_dmg) AS n FROM edmg GROUP BY match_id, round, attacker
-  )
-  {{ROUND_FOLD_PIVOT:dmg}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
@@ -2511,14 +2466,7 @@ agg AS (
 SELECT round, attacker AS steam_id, SUM(CASE WHEN weapon IN (''HE Grenade'',''Flashbang'',''Smoke Grenade'',''Molotov'',''Incendiary Grenade'',''Decoy Grenade'') THEN capped_dmg ELSE 0 END) AS n FROM edmg_r WHERE round = :round GROUP BY round, steam_id
 )
 SELECT prs.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
-FROM ({{PLAYER_ROUND_COLS}} COALESCE(f.dmg, 0) AS dmg
-  FROM player_round_stats prs
-  LEFT JOIN (WITH {{DAMAGE_CTE}},
-fold AS (
-    SELECT match_id, round, attacker AS steam_id, ''dmg'' AS f, SUM(capped_dmg) AS n FROM edmg GROUP BY match_id, round, attacker
-  )
-  {{ROUND_FOLD_PIVOT:dmg}}) {{PLAYER_ROUND_FOLD_JOIN}}
-  WHERE prs.match_id = :match_id) prs
+FROM player_round_stats prs
 {{PLAYER_ROUND_ROSTER_JOIN}}
 LEFT JOIN agg ON agg.round = prs.round AND agg.steam_id = prs.steam_id
 WHERE prs.match_id = :match_id AND prs.round = :round
