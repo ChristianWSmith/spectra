@@ -1,18 +1,20 @@
 <script>
   import { createLoadState } from '../loadstate.svelte.js';
-import { liveMetrics } from '../metricslive.svelte.js';
-import { readMetrics } from '../metricreads.js';
-import { metricPresentation } from '../metricstate.js';
-import { fmtMetric } from '../fmt.js';
-import { activateOnKey } from '../keys.js';
-import { whileCurrent } from '../current.js';
-import ErrorBanner from './ErrorBanner.svelte';
-import EmptyNote from './EmptyNote.svelte';
-import MetricCell from './MetricCell.svelte';
-import WinnerCell from './WinnerCell.svelte';
-import StatCard from './StatCard.svelte';
-import StatusChip from './StatusChip.svelte';
-import { DASH } from '../builtinhelpers.js';
+  import { liveMetrics } from '../metricslive.svelte.js';
+  import { readMetrics } from '../metricreads.js';
+  import { metricPresentation } from '../metricstate.js';
+  import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
+  import { activateOnKey } from '../keys.js';
+  import { whileCurrent } from '../current.js';
+  import { DASH, openMatch, openPlayer } from '../builtinhelpers.js';
+  import ErrorBanner from './ErrorBanner.svelte';
+  import EmptyNote from './EmptyNote.svelte';
+  import EmptyTableRow from './EmptyTableRow.svelte';
+  import MetricCell from './MetricCell.svelte';
+  import RetryButton from './RetryButton.svelte';
+  import WinnerCell from './WinnerCell.svelte';
+  import StatCard from './StatCard.svelte';
+  import StatusChip from './StatusChip.svelte';
   // ComponentFrame — the frame every mounted component sits in
   // one failing component shows a
   // dismissible error inside its own frame and the rest of the surface
@@ -148,7 +150,13 @@ import { DASH } from '../builtinhelpers.js';
     // The one dash a missing cell shows, and the shared display pieces (the same
     // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.
     dash: DASH,
-    ui: { ErrorBanner, EmptyNote, MetricCell, WinnerCell, StatCard, StatusChip },
+    ui: { ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, RetryButton, WinnerCell, StatCard, StatusChip },
+    // Navigation and formatting the built-ins share: openMatch(id) and openPlayer(steamId) open a view
+    // (through this frame's navigate); the formatters are the ones the built-ins use.
+    openMatch: (matchId) => openMatch(spectra, matchId),
+    openPlayer: (steamId) => openPlayer(spectra, steamId),
+    fmtDate,
+    fmtDuration,
     metric: tracked(api.metric),
     query: tracked(api.query),
     metricsByMatch: tracked(api.metricsByMatch),

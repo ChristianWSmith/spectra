@@ -53,9 +53,9 @@ export const RUNTIME_SPECIFIERS = Object.freeze(Object.keys(RUNTIME_MODULES));
 
 // --- built-in helpers ----------------------
 // A BUILT-IN panel may import a small, curated set of app helpers. A USER
-// component may import none (the save gate refuses every import of a user
-// component, at its line). Each helper module is listed here by its path
-// from the frontend root, with the NAMES a built-in may take from it and a
+// component may import no app module (only the public runtime modules in
+// RUNTIME_MODULES above; the save gate refuses every other import, at its
+// line). Each helper module is listed here by its path from the frontend root, with the NAMES a built-in may take from it and a
 // line on what each name is for. A name not listed is refused at save
 // (checkComponentSource with a builtin directory). Adding a helper or a name
 // is a review: add it here, document it, and the coverage test in

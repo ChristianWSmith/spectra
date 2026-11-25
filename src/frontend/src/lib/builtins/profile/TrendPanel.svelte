@@ -1,5 +1,4 @@
 <script>
-  import RetryButton from '../../components/RetryButton.svelte';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { openMatch, DASH } from '../../builtinhelpers.js';
   import { openRow } from '../../keys.js';
@@ -27,7 +26,6 @@
   let trend = $state([]);
   let trendError = $state('');
   let trendDefs = $state([]);
-  let trendText = $state('');
   // A plain counter (not state): the read's generation, so a stale result drops.
   const runTrend = latestOnly();
 
@@ -59,7 +57,8 @@
     if (def) return def.title || def.name;
     return metric === 'adr' ? S.profiles.thAdr : metric;
   });
-  $effect(() => (trendText = trendLabel));
+  // The picker's text: the label of the picked metric, until the user types (a writable derived).
+  let trendText = $derived(trendLabel);
 
   // The picked metric's format tag: the trend formatter's input.
   const trendFormat = $derived(trendItems.find((d) => d.name === metric)?.format || '');
@@ -164,10 +163,7 @@
     />
   </div>
   {#if trendError}
-    <ErrorBanner>
-      {trendError}
-      <RetryButton onretry={loadTrend} label={S.profiles.retry} />
-    </ErrorBanner>
+    <ErrorBanner onretry={loadTrend} retryLabel={S.profiles.retry}>{trendError}</ErrorBanner>
   {:else if spark}
     <svg
       class="prof-spark"

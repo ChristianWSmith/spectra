@@ -1,5 +1,4 @@
 <script>
-  import RetryButton from '../../components/RetryButton.svelte';
   import { whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
@@ -237,10 +236,7 @@
   <section class="md-sec">
     <h2 class="md-head">{S.library.importDetails}</h2>
     {#if provError}
-      <ErrorBanner>
-        {provError}
-        <RetryButton onretry={() => loadProv(context.matchId)} label={S.library.retry} />
-      </ErrorBanner>
+      <ErrorBanner onretry={() => loadProv(context.matchId)} retryLabel={S.library.retry}>{provError}</ErrorBanner>
     {:else if !prov}
       <LoadBox tag="div" class="md-hold" busy name="match-details-import" key=""></LoadBox>
     {:else}
@@ -290,10 +286,7 @@
   <section class="md-sec">
     <h2 class="md-head">{S.library.advancedDiagnostics}</h2>
     {#if entError}
-      <ErrorBanner>
-        {entError}
-        <RetryButton onretry={() => loadEnt(context.matchId)} label={S.library.retry} />
-      </ErrorBanner>
+      <ErrorBanner onretry={() => loadEnt(context.matchId)} retryLabel={S.library.retry}>{entError}</ErrorBanner>
     {:else if !ent}
       <LoadBox tag="div" class="md-hold" busy name="match-details-diagnostics" key=""></LoadBox>
     {:else}

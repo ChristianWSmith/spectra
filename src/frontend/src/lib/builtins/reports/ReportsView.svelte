@@ -1,6 +1,5 @@
 <script>
   import { indexBy, groupBy } from '../../builtinhelpers.js';
-  import RetryButton from '../../components/RetryButton.svelte';
   import { compareAsc } from '../../sortstate.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
@@ -440,10 +439,7 @@
     <ErrorBanner>{m.docError}</ErrorBanner>
   {/if}
   {#if m.tplError}
-    <ErrorBanner>
-      {m.tplError}
-      <RetryButton onretry={() => m.actions.loadTemplates()} label={S.reports.retry} />
-    </ErrorBanner>
+    <ErrorBanner onretry={() => m.actions.loadTemplates()} retryLabel={S.reports.retry}>{m.tplError}</ErrorBanner>
   {/if}
   <div class="rep-tpl-grid">
     {#each m.templates as t (t.id)}
@@ -507,10 +503,7 @@
   {/if}
 </div>
 {#if m.metricsError}
-  <ErrorBanner>
-    {m.metricsError}
-    <RetryButton onretry={() => m.actions.loadMetricsList()} label={S.reports.retry} />
-  </ErrorBanner>
+  <ErrorBanner onretry={() => m.actions.loadMetricsList()} retryLabel={S.reports.retry}>{m.metricsError}</ErrorBanner>
 {/if}
 
 <div>

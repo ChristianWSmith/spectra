@@ -31,13 +31,20 @@ export const SPECTRA_HELPERS = [
   call('metricPresentation', 'state, row, unitHasRows', 'Maps a read onto what a cell shows: a value, a no-data dash or a status chip.'),
   call('fmtMetric', 'value, format', "The text of a stored value, in the metric's format."),
   value('dash', 'string', 'The one dash a missing value shows.'),
-  value('ui', 'object', 'The shared display pieces: spectra.ui.ErrorBanner, EmptyNote, MetricCell, WinnerCell, StatCard and StatusChip.'),
+  call('openMatch', 'matchId', 'Opens a match\'s view.'),
+  call('openPlayer', 'steamId', "Opens a player's profile."),
+  call('fmtDate', 'd', 'A timestamp as a local date and time, or the dash when the match was never extracted.'),
+  call('fmtDuration', 'seconds', 'A span in seconds, as a readable duration (1h02m03s over an hour), or the dash when it is unknown.'),
+  value('ui', 'object', 'The shared display pieces: spectra.ui.ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, RetryButton, WinnerCell, StatCard and StatusChip.'),
   value('Child', 'component', 'Mounts another named component inside this one: <spectra.Child name="…" props={…} />.'),
 ];
 
 export const UI_PIECES = [
-  { name: 'ErrorBanner', detail: 'spectra.ui.ErrorBanner', doc: 'An error line, with an optional dismiss. Props: ondismiss, dismissLabel; children.' },
+  { name: 'ErrorBanner', detail: 'spectra.ui.ErrorBanner', doc: 'An error line, with an optional Retry and an optional dismiss. Props: onretry, retryLabel, ondismiss, dismissLabel; children.' },
   { name: 'EmptyNote', detail: 'spectra.ui.EmptyNote', doc: 'A muted note for an empty state. Children.' },
+  { name: 'EmptyTableRow', detail: 'spectra.ui.EmptyTableRow', doc: 'The one row a table shows when it has nothing to list: a state chip, or the text. Props: colspan, empty, text, chip.' },
+  { name: 'LoadBox', detail: 'spectra.ui.LoadBox', doc: 'The loading shell: holds its height while a load runs and shows a spinner over the content. Props: busy, name, key, tag; children.' },
+  { name: 'RetryButton', detail: 'spectra.ui.RetryButton', doc: 'The button beside a failed read, to load it again. Props: onretry, label.' },
   { name: 'MetricCell', detail: 'spectra.ui.MetricCell', doc: "A metric's cell. Props: pres (from metricPresentation), format, chip, words." },
   { name: 'WinnerCell', detail: 'spectra.ui.WinnerCell', doc: "A side's name, as a chip. Props: name, winner, title." },
   { name: 'StatCard', detail: 'spectra.ui.StatCard', doc: 'A labelled figure, with an optional sub-line. Props: label, value, sub, title; slots subSlot and valueSlot.' },

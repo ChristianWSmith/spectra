@@ -617,14 +617,19 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 
 | Piece | What it shows | Props |
 |---|---|---|
-| \`ui.ErrorBanner\` | An error line, with an optional dismiss | \`ondismiss\`, \`dismissLabel\`, children |
+| \`ui.ErrorBanner\` | An error line, with an optional Retry and an optional dismiss | \`onretry\`, \`retryLabel\`, \`ondismiss\`, \`dismissLabel\`, children |
 | \`ui.EmptyNote\` | A muted note for an empty state | children |
+| \`ui.EmptyTableRow\` | The one row a table shows when it has nothing to list | \`colspan\`, \`empty\`, \`text\`, \`chip\` |
+| \`ui.LoadBox\` | The loading shell: holds its height while a load runs, and shows a spinner over the content | \`busy\`, \`name\`, \`key\`, \`tag\`, children |
 | \`ui.MetricCell\` | A metric's cell | \`pres\`, \`format\`, \`chip\`, \`words\` |
+| \`ui.RetryButton\` | The button beside a failed read, to load it again | \`onretry\`, \`label\` |
 | \`ui.WinnerCell\` | A side's name, as a chip | \`name\`, \`winner\`, \`title\` |
 | \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
 | \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
 
-A component cannot import another module, and the save gate refuses one that tries. Everything in this list is the whole surface. The source editor completes these names as you type: type \`spectra.\` for the helpers, \`spectra.ui.\` for the pieces, and \`context.\` for its fields.`,
+Other helpers: \`spectra.openMatch(matchId)\` and \`spectra.openPlayer(steamId)\` open a match or a player's profile; \`spectra.fmtDate(d)\` and \`spectra.fmtDuration(seconds)\` format a timestamp and a span.
+
+A component can import the public Svelte runtime modules (\`svelte\`, \`svelte/store\`, \`svelte/motion\`, and the rest of the public list), and nothing else: the save gate refuses any other import. Everything in this list is the whole surface. The source editor completes these names as you type: type \`spectra.\` for the helpers, \`spectra.ui.\` for the pieces, and \`context.\` for its fields.`,
   },
   {
     id: 'sql-console',

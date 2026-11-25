@@ -360,10 +360,12 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   binds default from it), `navigate`, `guard(fn)` for event and async work,
   `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
   reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics(names)`
-  (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `activateOnKey` and `whileCurrent` (the same
+  (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `fmtDate`,
+  `fmtDuration`, `openMatch(id)`, `openPlayer(steamId)`, `activateOnKey` and `whileCurrent` (the same
   modules the builtins import), `dash` (the one missing-value dash) and `ui` (the shared
-  display components: `ui.ErrorBanner`, `ui.EmptyNote`, `ui.MetricCell`, `ui.WinnerCell`,
-  `ui.StatCard`, `ui.StatusChip`), and `<spectra.Child>` to mount a named
+  display components: `ui.ErrorBanner` (with `onretry`), `ui.EmptyNote`, `ui.EmptyTableRow`,
+  `ui.LoadBox`, `ui.MetricCell`, `ui.RetryButton`, `ui.WinnerCell`, `ui.StatCard`,
+  `ui.StatusChip`), and `<spectra.Child>` to mount a named
   component inside another. A failed `metric()` or `query()` is reported
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
@@ -371,9 +373,11 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **Helper surface.** A builtin may import a curated set of app modules:
   the `BUILTIN_HELPERS` registry in `componentruntime/compile.js` lists
   each module and the names a builtin may take from it. A user component
-  may import nothing, and the save gate refuses every import from one. A
-  new helper name is a review: add it to the registry with a line on what
-  it is for.
+  may import only the public Svelte runtime modules listed in
+  `RUNTIME_MODULES` (`svelte`, `svelte/store`, `svelte/motion`, and the
+  rest of that list); the save gate refuses every other import, and every
+  app module, from one. A new helper name is a review: add it to the
+  registry with a line on what it is for.
 - **Builtin registry and generator.** Builtin panels are `.svelte` files
   under `frontend/src/lib/builtins/`, declared in `builtins/panels.js`.
   `frontend/scripts/gen-builtin-sources.mjs` (run by `npm run build` and
