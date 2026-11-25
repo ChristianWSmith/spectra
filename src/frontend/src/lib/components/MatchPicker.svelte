@@ -18,6 +18,9 @@
 
   let { matches = [], value = 0, onselect = () => {}, id = '', placeholder = 'Select match…' } = $props();
 
+  // The list's height budget: below this much room under the trigger, it opens above.
+  const POP_ROOM = 340;
+
   let open = $state(false);
   let query = $state('');
   let active = $state(0);
@@ -25,6 +28,8 @@
   let listEl = $state(null);
   let inputEl = $state(null);
   let triggerEl = $state(null);
+  // Opens above the trigger when the room below is short and the room above is more.
+  let above = $state(false);
 
   const cur = $derived(matches.find((m) => m.id === value) || null);
 
@@ -61,6 +66,11 @@
   }
 
   function openPop() {
+    const r = triggerEl?.getBoundingClientRect();
+    if (r) {
+      const below = window.innerHeight - r.bottom;
+      above = below < POP_ROOM && r.top > below;
+    }
     open = true;
     query = '';
     // Highlight the selected match when it is INSIDE the rendered cap;
@@ -143,7 +153,7 @@
   </button>
 
   <Popover open={open} anchor={root} onClose={closeOnEscape} onOutside={closeOnOutside}>
-    <div class="mp-pop">
+    <div class="mp-pop" class:up={above}>
       <input
         class="input mp-search"
         type="search"
@@ -222,6 +232,9 @@
   .mp-trigger {
     max-width: 460px;
     min-width: 0;
+    /* The picker's caret (below) is the only chevron: drop the select's static one. */
+    background-image: none;
+    padding-right: 8px;
   }
 
   .mp-trigger:hover {
@@ -251,6 +264,11 @@
   .mp-caret {
     color: var(--muted);
     font-size: 0.75em;
+  }
+
+  .mp-pop.up {
+    top: auto;
+    bottom: calc(100% + 4px);
   }
 
   .mp-pop {

@@ -1079,7 +1079,7 @@ func invalidateCareerValues(tx *sql.Tx, steamIDs []string, whole bool) error {
 		}
 		return nil
 	}
-	rows, err := tx.Query(`SELECT id, expr, touched FROM metrics WHERE id IN (
+	rows, err := tx.Query(`SELECT id, run_expr, touched FROM metrics WHERE id IN (
 		SELECT metric_id FROM metric_values WHERE match_id = 0
 		UNION SELECT metric_id FROM metric_runs WHERE match_id = 0)`)
 	if err != nil {

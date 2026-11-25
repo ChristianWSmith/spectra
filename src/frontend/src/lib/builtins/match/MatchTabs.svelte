@@ -50,7 +50,9 @@
   // The origin path the drill-downs return to (?back=…): the replay, the round
   // and compare pages resolve it to this tab (plain match/:id for Overview).
   // The first tab of the route table is the Overview, the one plain match/:id route.
-  const backPath = $derived(tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`);
+  const backPath = $derived(
+    tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`,
+  );
   const panelProps = $derived({ back: backPath });
 
   // The Utility builtin's loop length, read once: a builtin's preference read

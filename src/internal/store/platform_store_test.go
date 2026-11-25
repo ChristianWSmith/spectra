@@ -79,12 +79,13 @@ func TestMetricsTableDDLByteEqual(t *testing.T) {
 	if start < 0 {
 		t.Fatal("metrics DDL missing from schema.sql")
 	}
-	end := strings.Index(schemaSQL[start:], ");")
+	// The table closes on its own line; a ");" inside a comment is not the end.
+	end := strings.Index(schemaSQL[start:], "\n);")
 	if end < 0 {
 		t.Fatal("metrics DDL block not terminated")
 	}
 	// Through the closing ')' — metricsTableDDL carries no trailing ';'.
-	block := schemaSQL[start : start+end+1]
+	block := schemaSQL[start : start+end+2]
 	if block != metricsTableDDL {
 		t.Fatalf("metricsTableDDL drifted from schema.sql\n--- schema.sql ---\n%s\n--- metricsTableDDL ---\n%s", block, metricsTableDDL)
 	}

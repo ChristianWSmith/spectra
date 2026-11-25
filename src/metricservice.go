@@ -159,7 +159,29 @@ var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "floa
 
 // ListMetrics returns all definitions (builtin first).
 func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
-	return s.st.ListMetrics()
+	rows, err := s.st.ListMetrics()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.markToggles(rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// markToggles sets each row's DisableBlock and EnableBlock from one read of the library's
+// toggle rules, so the list can show a switch as fixed where it cannot move.
+func (s *MetricsService) markToggles(rows []models.MetricRow) error {
+	blocks, err := s.st.MetricToggleBlocks()
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		b := blocks[rows[i].ID]
+		rows[i].DisableBlock = b.DisableBlock
+		rows[i].EnableBlock = b.EnableBlock
+	}
+	return nil
 }
 
 // ListMetricsPage returns ONE keyset window of the same list ListMetrics
@@ -186,6 +208,9 @@ func (s *MetricsService) ListMetricsPage(query string, originFilter string, form
 		return nil, err
 	}
 	if err := s.markEdited(page.Rows); err != nil {
+		return nil, err
+	}
+	if err := s.markToggles(page.Rows); err != nil {
 		return nil, err
 	}
 	return page, nil
@@ -416,6 +441,9 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
 	m.Touched = gate.Touched
+	// Both forms are stored: Expr (the macro form the editor shows) and RunExpr (the expanded
+	// statement that runs). The gate read RunExpr, so it is what every read and dependency uses.
+	m.RunExpr = gate.Expanded
 	// metric() references are the statement's dependency edges. A reference
 	// that would close a cycle through this metric is refused before any
 	// write, using the same walk as the rest of the graph.
@@ -432,7 +460,7 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 	// no-op pattern). A create never bumps (the INSERT default starts
 	// the counter at 1 and a new metric has no rows — absent → behind
 	// already) but DOES schedule the sweep: its rows must be computed.
-	semantic := m.ID > 0 && m.Expr != existing.Expr
+	semantic := m.ID > 0 && m.RunExpr != existing.RunExpr
 	created := m.ID == 0
 	// ONE transaction: the metric row, its edges wholesale, and (semantic)
 	// the version bump for this metric + every transitive dependent —
@@ -605,16 +633,16 @@ func (s *MetricsService) CompileMetric(id int64, expr string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return strings.TrimSpace(full.Expr), nil
+		return strings.TrimSpace(full.RunExpr), nil
 	}
-	_, perr, err := metrics.CheckRawSave(s.st, expr)
+	gate, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return "", err
 	}
 	if perr != nil {
 		return "", exprErrorErr(perr)
 	}
-	return strings.TrimSpace(expr), nil
+	return strings.TrimSpace(gate.Expanded), nil
 }
 
 // ValidateExpr is the builder's live check: the one gate, the same one save
@@ -628,4 +656,20 @@ func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil
+}
+
+// SetMetricEnabled turns one metric on or off (the rules are store.SetMetricEnabled's). Enabling
+// schedules a sweep, since the metric may now be behind; disabling needs none.
+func (s *MetricsService) SetMetricEnabled(id int64, enabled bool) (models.MetricRow, error) {
+	if err := s.st.SetMetricEnabled(id, enabled); err != nil {
+		return models.MetricRow{}, err
+	}
+	m, err := s.st.GetMetric(id)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	if enabled {
+		s.scheduleSweep()
+	}
+	return m, nil
 }

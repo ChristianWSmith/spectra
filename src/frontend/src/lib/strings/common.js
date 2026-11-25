@@ -12,10 +12,22 @@ export const common = {
   // the big-screen toggle on a builder's preview
   expandPreview: 'Expand preview',
   collapsePreview: 'Collapse preview',
+  closePreview: 'Close preview', // the X on the full-screen preview results
+  filtersLabel: 'Filters', // a list's filter dropdown: its button's name
+  filtersTitle: 'Filter the list',
+  // The chips the builder lists and editors share (components/Chip.svelte): one spelling each.
+  chipBuiltin: 'built-in', // a shipped row (the edit stays in place)
+  chipEdited: 'edited', // a built-in whose shipped version has an edit over it
+  chipEditedTitle: 'You have edited this built-in. Its shipped version is the default.',
+  chipPlugin: 'plugin', // a row a plugin owns
+  chipPluginDisabled: 'disabled', // the owning plugin is switched off
+  chipReadOnly: 'read-only source', // a plugin row: it can be copied, not edited
+  chipViewMatch: 'match view', // a component the user placed on the match view
+  chipViewProfile: 'profile view', // a component the user placed on the profile view
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',
-  searchSections: 'Search sections', // header input: placeholder + aria-label
+  searchSections: 'Search', // header input: placeholder + aria-label
   searchPrev: 'Previous match', // match-stepper button: title + aria-label
   searchNext: 'Next match', // match-stepper button: title + aria-label
   noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter

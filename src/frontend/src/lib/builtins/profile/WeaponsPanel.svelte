@@ -27,10 +27,16 @@
   // Kills desc, then damage desc, then weapon name asc; the top rows only.
   const weapons = $derived(
     dimsOf(reads, SEEDS)
-      .map((weapon) => ({ weapon, kills: rawValue('weapon_kills', weapon), damage: rawValue('weapon_damage', weapon) }))
+      .map((weapon) => ({
+        weapon,
+        kills: rawValue('weapon_kills', weapon),
+        damage: rawValue('weapon_damage', weapon),
+      }))
       .sort(
         (a, b) =>
-          (b.kills ?? -1) - (a.kills ?? -1) || (b.damage ?? -1) - (a.damage ?? -1) || compareAsc(a.weapon, b.weapon),
+          (b.kills ?? -1) - (a.kills ?? -1) ||
+          (b.damage ?? -1) - (a.damage ?? -1) ||
+          compareAsc(a.weapon, b.weapon),
       )
       .slice(0, TOP),
   );

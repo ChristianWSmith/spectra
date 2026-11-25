@@ -29,17 +29,19 @@ screen exists to serve that loop.
 
 The bar on the left edge is the way around:
 
-- **Library** — your imported matches; every match detail view starts here.
-- **Match** — the match itself, reached from any Library row. This tab is greyed out until you open one, and then goes back to the last match you had open.
-- **Profiles** — every player in your library, and each player's career page. Clicking it again returns to the player you had open.
-- **Builder** — the metric Builder, where numbers are defined and previewed.
-- **SQL console** — read-only queries over your whole library.
-- **Settings** — at the bottom of the bar.
+- **Library**: your imported matches. Every match detail view starts here.
+- **Match**: the match itself, reached from any Library row. This tab is greyed out until you open one, and then goes back to the last match you had open.
+- **Profiles**: every player in your library, and each player's career page. Clicking it again returns to the player you had open.
+- **Metric builder**: where numbers are defined and previewed.
+- **Reports builder**: where report templates are written.
+- **Component builder**: where the pieces of a view are written.
+- **SQL console**: read-only queries over your whole library.
+- **Settings**: at the bottom of the bar.
 
 Two more things are worth knowing on day one:
 
 - **Ctrl+K opens the command palette.** Jump to any of those views, or search matches, players, saved filters, metrics and saved queries in one box.
-- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference. The view headers carry their own \`?\` too — **Replay**, **Match**, **Library**, **Reports**, **Settings** and the **SQL console** open the guide at the section that covers what you are looking at, and Match's follows the tab you are on. The contents list on the left groups every section under its chapter: a chapter that has subsections carries a chevron to fold them away, the header search narrows the list and marks the matching text in it, in the section headings and in the matching body text — press \`Enter\` for the next match, \`Shift+Enter\` for the previous one, or use the two arrow buttons beside the search box — and the list always shows the chapter and the section you are reading.
+- **This guide** opens from the Help button on the sidebar (directly above Settings) and floats over whatever you were doing — your work stays exactly where it was behind it. The \`?\` in the Metric builder's header opens the same guide straight at the **Metric language** reference. The view headers carry their own \`?\` too — **Replay**, **Match**, **Library**, **Reports**, **Settings** and the **SQL console** open the guide at the section that covers what you are looking at, and Match's follows the tab you are on. The contents list on the left shows every section in document order, and the section you last went to is highlighted. The header search marks the matching text in the section headings and the body, and never filters the list: press \`Enter\` for the next match, \`Shift+Enter\` for the previous one, or use the two arrow buttons beside the search box.
 
 Nothing in Spectra needs the network to work. The one thing it will reach out for, on its own and
 silently, is a newer version of itself (see **Getting started**); you can also ask it to check
@@ -55,8 +57,8 @@ imported, the **Import…** button, and anything currently importing.
 kinds of asset out of *your* Counter-Strike 2 installation: the official radar images (map
 backgrounds) with the map geometry that goes with them, the equipment icons, and the replay's
 sound effects. The prompt says so plainly —
-*nothing from Counter-Strike ships with the app, and nothing is uploaded; your game files are read
-locally and the extracted assets are stored in Spectra's data folder.* You get three choices:
+*Nothing from Counter-Strike ships with the app, and nothing is uploaded — your game files are read locally
+and the extracted packs are stored in Spectra's data folder on this machine.* You get three choices:
 
 - **Extract all CS2 assets** — the prompt closes right away and the extraction carries on in the background: its honest progress shows in the floating work indicator at the bottom right of every view, and that indicator's ✕ hides it without stopping anything.
 - **Choose folder…** — point Spectra at your CS2 install yourself, if it wasn't found.
@@ -75,11 +77,9 @@ after a CS2 update).
 
 **5. Learn the command palette (Ctrl+K).** One box for: the nav actions (plus *Toggle theme*),
 matches (\`de_mirage · 13–9\`), players (with match counts), saved filters (applies the filter in
-the event browser), metrics (jumps to the Builder) and saved queries (jumps to the SQL console).
+the event browser), metrics (jumps to the Metric builder) and saved queries (jumps to the SQL console).
 
-**6. Updates.** Spectra checks GitHub Releases for a newer version when it launches and offers to
-install it when one exists; it tells you when you are already up to date. **Settings → About →
-Check for Updates…** does the same on demand. Development builds never check.`,
+**6. Updates.** When Spectra launches it checks GitHub Releases for a newer version, silently, and offers to install one when it exists. **Settings → About → Check for Updates…** checks on demand, and tells you when you are already up to date. Development builds skip the check on launch; the Settings button still works.`,
   },
   {
     id: 'importing-demos',
@@ -93,7 +93,7 @@ type (expected .dem or .dem.zst)"*. There are three ways in.
 - **Drop files** anywhere on the Library panel — the whole panel is a drop target.
 - **Import dirs** — folders you nominate in **Settings → Import dirs**. The Library lists the \`.dem\` / \`.dem.zst\` files found under them in the **Demos from your import dirs** panel, each with its own one-click **Import** and a **Refresh** to rescan. Subfolders are scanned up to four levels deep; hidden folders are skipped; empty files are skipped; demos already in the library are left out. Until you customize it, the defaults are your Downloads folder and CS2's own replay folder, where the client saves downloaded matches.
 
-Your original files are **never moved, modified or deleted** — importing only reads them.
+Importing never moves, modifies or deletes your original files: importing only reads them. The one way a demo file leaves disk through Spectra is an explicit action: each file in the **Demos from your import dirs** panel offers **Delete from disk**, which asks first and removes that file.
 
 # What happens during an import
 
@@ -137,8 +137,8 @@ One row per match: **Map** (with the map's own icon in front of the name
 once the CS2 assets have been extracted), **Matchup** (the two team names, or the demo file name while the row
 is still parsing), **W Score** and **L Score** (the winner's and loser's scores — both score
 cells and the two team names are tinted with the colour of the side each team started on), **Rounds**, **Duration**, **Size**, **Imported** (when
-Spectra read the file), **Status**, and the row's actions. Every column except the matchup sorts
-by clicking its header.
+Spectra read the file), **Status**, and the row's actions. Map, W Score, L Score, Rounds, Duration, Size, Imported and
+Status sort by clicking their header; Matchup and the actions do not.
 
 A row that has never finished importing shows dashes wherever no value has ever been computed —
 never a made-up 0.
@@ -205,8 +205,9 @@ clicking a player's name opens their profile.
 **Scoreboard** — one row per human player (bots never appear here). The columns are name, team
 and score, then kills, deaths, damage, utility damage, MVPs, assists, ADR, KAST%, HS%, K/D, KDA,
 the multi-kill counts (2K to 5K), opening kills and opening deaths, trade kills and best streak.
-It opens sorted by kills, highest first. Click a header to sort by that column; click it again
-to reverse the order. A dash is a stat with no value for that player. A word such as
+It opens sorted by kills, highest first. Click a header to sort on it. A newly clicked column becomes the
+main sort, and the columns you sorted on before break its ties; clicking the main column again reverses it. The
+list starts sorted by kills, highest first. A dash is a stat with no value for that player. A word such as
 *Calculating* or *Out of date* stands in for a value that is being worked out or is stale.
 A row click opens the replay following that player, and the name cell opens their profile.
 The scoreboard always opens in this one-row-per-player layout. To get a different layout,
@@ -364,7 +365,7 @@ A player page opens with a back button (to wherever you came from), the player's
 id, and a player search box to jump to someone else. Then:
 
 - **Headline and career cards** — one block of square name/value cards, the same set in the
-  same order for every player: Matches (with its wins sub-line), Win %, ADR, ADR σ, K/D, HS %,
+  same order for every player: Matches played (with its wins sub-line), Win %, ADR, ADR σ, K/D, HS %,
   KAST %, opening kill tags, trade rate, clutches, clutch win %, average enemies flashed and average
   utility damage. Each card shows a number, a dash when there is no data for this player, or a
   state chip while a value is recomputing. The cards wrap outward from the center.
@@ -378,60 +379,66 @@ id, and a player search box to jump to someone else. Then:
   {
     id: 'metric-builder',
     title: 'The metric Builder',
-    blocks: `**Builder** (sidebar) is where numbers are defined. A **metric** is one number for one subject —
-a player ("this player's trade rate"), a match or a team — and every metric carries its own written
-formula (a value is never invented; missing data shows as a dash, never as a zero).
+    blocks: `**Metric builder** (sidebar) is where numbers are defined. A **metric** is one number for one subject: a
+player ("this player's trade rate"), a match or a team. Every metric carries its own written formula, and a
+value is never invented: missing data shows as a dash, never as a zero.
 
-The **left column** lists every metric, grouped **Builtins / Custom / Plugins**, with a search box
-and one **Filters** panel (origin and format). The list scrolls when it grows
-past the window while those controls stay put. Each row has a ▶ to preview
-it and, for metrics you created, a delete. **New** starts a fresh metric;
-**Running metrics** lists the metrics being computed right now
-and can cancel any of them (see *Cancelling a running metric*). Every list shows its metrics in
-their default order: there is no ordering dialog, no pinning and no hiding.
+The **left column** lists every metric, grouped **Builtins / Custom / Plugins**. Above the list, the search box
+and the **Filters** dropdown sit on one row; the dropdown groups **Origin** and **Type** (the metric's format).
+Each row has an on/off switch and, for metrics you created, a trash button. Preview a metric from its editor. Each row
+shows its format, its state, and a marker for built-in or plugin metrics. A switched-off metric is kept, with its
+values, but is never computed; it shows the **disabled** state. You can switch a metric off only when no enabled
+metric reads it and no component uses it, and you can switch one on only when every metric it reads is on. The switches are locked while a sweep is computing metrics. **New** starts a fresh metric, and **Running metrics** lists
+the metrics being computed right now, each with its own **Cancel** (see *Cancelling a running metric*). Metrics
+appear in their default order: there is no ordering dialog, pinning or hiding.
 
 The **editor** on the right has:
 
-- **Name** (the identifier other formulas reference), **Title** (display label) and an optional **Short name** for narrow columns.
-- **Scope** is not a field you set. A metric that reads \`:steam_id\` is a career (profile) metric, one value per
-player across their matches; any other metric is a match metric. The statement decides, and the editor shows the result.
-- **Format** — how the value is displayed (auto, integer, one/two decimals, percent, currency).
-- **Doc (formula, required)** — the plain-language explanation shown in the ⓘ next to the number; saving without it is refused.
-- **Expression** — the statement itself, checked as you type: *checking…*, *valid*, or the exact error with the byte position in your text. The verdict sits on the actions line at the bottom of the editor, to the left of the hint, **Pin** and **Save**.
-- **Raw SQL** — every expression is one read-only SQL statement, and the save gate checks it: a write, a second statement, a table the metric may not read, or a \`metric()\` reference is refused at save, with the reason, and nothing is saved. The statement must return the columns \`subject_key\`, \`dim\` and \`value\`; any other column is kept as extra detail. A NULL \`value\` shows as a dash, never as zero. The binds decide the scope: \`:match_id\` runs once per ready match, \`:steam_id\` once per player and \`:match_id\` with \`:round\` once per round. A statement that fails shows the failed state and its reason. The metric language chapter lists the tables and the checks.
+- **Name** (the identifier other formulas reference), **Title** (the display label) and an optional **Short name**, six characters at most, for narrow columns.
+- **Scope** is not a field you set. The binds in the statement decide it: a statement that reads \`:steam_id\` is a career (profile) metric, one value per player across their matches. Any other metric is a match metric. The editor shows the result.
+- **Format**: auto, integer, one or two decimals, percent, currency or identity.
+- **Doc**: the plain-language formula shown in the ⓘ next to the number. It is required; saving without it is refused.
+- **Expression**: the statement itself. The live check reads *checking…*, then *Valid*, or the error and where it is in your text.
 
-The editor heading carries the metric's state chip — *fresh*, *behind*, *failed* or *no-data* — to
-the left of the *built-in* / *read-only source* chip; while a sweep is running, the card shows the
-progress block underneath instead.
+The actions line at the bottom of the editor holds the validity indicator on the left, then **Preview**, then
+**Save metric**. For a metric you created, a trash button deletes it. For a built-in you have edited, **Restore to
+default** sits there too.
 
-**Save metric** stores it; the button reads *Saved* while nothing has changed. Saved metrics are appended to match reports in Reports. For a metric you
-created, that actions line opens with a **trash** button that deletes it; built-in and plugin
-metrics show none (neither here nor on their list row).
+The editor heading carries the metric's state chip (*fresh*, *behind*, *processing*, *failed* or *no-data*) and a chip
+that says whether it is built-in or a read-only plugin source.
 
-**Built-in metrics are edited in place.** A built-in loads with a \`built-in\` chip. Change its **Expression**
-and **Save** keeps the edit: the metric's numbers recompute with it. Its name, title and
-format stay as shipped, and an edited built-in shows an *edited* chip. **Restore to default** sits
-beside Save while the edit is in place. It discards the edit, brings the shipped expression back and
-recomputes the numbers with it. You can still preview and reference built-ins. Plugin metrics carry a
-*read-only source* chip; saving one stores a copy as your own metric.
+**Raw SQL.** Every expression is one read-only SQL statement, and the save gate checks it. A write, a second statement,
+a table a metric may not read, or a \`metric()\` reference to a metric that does not exist is refused, with the reason,
+and nothing is saved. A \`metric()\` reference to a saved metric is allowed: it makes that metric a dependency, so a
+change to it marks this one behind. The statement must return the columns \`subject_key\`, \`dim\` and \`value\`; any other
+column is kept as extra detail. A NULL \`value\` shows as a dash, never as zero. The binds decide the scope: \`:match_id\`
+runs once per ready match, \`:steam_id\` once per player, and \`:match_id\` with \`:round\` once per round. A statement can
+also use **macros**, short names for larger pieces of SQL, which are expanded when the statement is checked. The
+metric language chapter lists the tables, the checks and the macros.
 
-**Preview** is not available for a statement yet. Save the metric, and its values appear once the sweep has run it (see *Previewing* in the metric language chapter). State chips appear in place
-of numbers while a value is recomputing or has failed. Click a column header to sort the rows:
-they open with the highest **value** first, the numeric columns order by their value (never by how the
-number happens to be written), and a second click on the active header flips the direction.
+**Preview** shows the stored values of a metric you have saved and not changed since: the rows the screens read,
+highest value first, in a full-screen view that the X or Escape closes. Nothing is calculated for the preview. A
+statement you have not saved, or have changed since saving, is refused by Preview, and the live check is what you have
+until you save it. Saving a metric starts the sweep that computes its values.
 
-Under the table, **compiled SQL (provenance)** shows the statement behind those values with the
-numbers and text it used written straight into it, so you can copy it and run it as it stands —
-in the SQL console or any SQLite tool. A formula that mixes a percentile with other aggregations
-shows a second statement beside the first; that one still reads \`?\` where its values belong (they
-are not carried over), and statements like these run one at a time.
+**Save metric** stores it; the button reads *Saved* while nothing has changed.
 
-A view shows what its component shows. The Match view's scoreboard, the profile cards and the
-Reports list each show their default columns and cards in their default order. Nothing in the app
-pins, reorders or hides them: to change a view, edit its component in the Component builder, or use one of your components as the view (see *The Component builder*).
+When you open a metric, or save it, the expression is brought into the canonical layout: keywords in capitals and one
+clause per line. Macros are left exactly as you wrote them.
 
-For the formula language itself — sources, operators, scopes, references, worked examples and
-every error message — see the next section.`,
+**Built-in metrics are edited in place.** A built-in loads with a \`built-in\` chip. Change its **Expression** and **Save**
+keeps the edit: the metric's numbers recompute with it. Its name, title and format stay as shipped, and an edited
+built-in shows an *edited* chip. **Restore to default** discards the edit, brings the shipped expression back and
+recomputes the numbers with it. You can still preview and reference built-ins. Plugin metrics carry a *read-only
+source* chip; saving one stores a copy as your own metric.
+
+A view shows what its component shows. The Match view's scoreboard, the profile cards and the Reports list each show
+their default columns and cards in their default order. Nothing in the app pins, reorders or hides them: to change a
+view, edit its component in the Component builder, or use one of your components as the view (see *The Component
+builder*).
+
+For the formula language itself (sources, scopes, references, macros, worked examples and every error message), see
+the next section.`,
   },
   {
     id: 'metric-cancel',
@@ -462,7 +469,7 @@ export const guideSectionsAfterManual = [
 (where the target is that match), and the same page is reachable on its own with a match picker.
 
 **Template & target** — pick one of the templates: **Match report**, **Match report (HTML)**,
-**Player report**, **Round report** (plus any a plugin contributes); each card shows its scope
+**Player report**, **Round report**, **Career report** (plus any a plugin contributes); each card shows its scope
 and format. Then pick the target the template needs — a player, or a round number —
 and press **Save report** — beside the stats field further down this panel — to write the
 document to disk. The match is the one the tab belongs to, or the one the match picker above
@@ -488,96 +495,82 @@ template's format.`,
   {
     id: 'reports-builder',
     title: 'The Reports builder',
-    blocks: `**Reports builder** (sidebar) is where report templates are written. The templates a report
-is built from — the match, player and round documents, plus any a plugin contributes — are picked
-in **Reports**; this view authors them.
+    blocks: `**Reports builder** (sidebar) is where report templates are written. The templates a report is built from (the match,
+player and round documents, plus any a plugin contributes) are picked in **Reports**; this view writes them.
 
-The **left panel** lists every template: its title, then a **scope** chip (match, player or round),
-a **format** chip (md or html) and an **origin** chip naming where it came from — a built-in, one of
-yours, or a plugin. **New** starts a fresh template, the search box narrows the list by title, and
-the **Origin** checkboxes show or hide each group. Click a row to load it into the editor; for a
-template you created, the row carries a trash button that deletes it.
+The **left panel** lists every template: its title, then a **scope** chip (match, player or round) and a **format** chip
+(md or html). A template that is built-in or from a plugin also shows a marker naming that; one of yours shows none.
+**New** starts a fresh template. The search box matches titles, and the **Filters** dropdown, beside it, groups
+**Origin**, **Format** and **Scope**: uncheck a box to hide that kind of template. Click a row to load it into the editor;
+for a template you created, the row carries a trash button that deletes it.
 
-The **editor** has **Title**, **Scope**, **Format** and the **Template body** — the document
-itself, written with \`{{ … }}\` placeholders that fill in from the match, player or round the
-report points at, so a body can be read off a built-in and edited into your own. **Save** stores it
-as yours. **Preview target** chooses what the draft renders against — a match for every scope, plus
-a player or a round where the scope needs one — and **Preview** renders the body you are editing,
-unsaved, showing the document exactly as it would be written out. Nothing is chosen for you: the
-preview stays off until you pick a target.
+The **editor** has **Title**, **Scope**, **Format** and the **Template body**: the document itself, written with
+\`{{ … }}\` placeholders that fill in from the match, player or round the report points at. A body can be read off a
+built-in and edited into your own. **Save** stores it as yours.
 
-**Inside the braces** — every \`{{ … }}\` names one value by its path from the top of the data:
-\`{{.Match.Map}}\` is the match's map, \`{{.Detail.Round.Number}}\` a round's number. What sits at
-the top follows the template's **Scope**:
+The bottom-right corner of the editor holds the preview controls, in order: **Preview target**, **Preview**, **Save**.
+The target is a match for every scope, plus a player or a round where the scope needs one. **Preview** renders the body
+you are editing, unsaved, in a full-screen view that shows the document exactly as it would be written out, and the X or
+Escape closes it. Nothing is chosen for you: Preview stays off until you pick a target.
 
-- **match** — \`{{.Match}}\` (the match itself: map, file, score, round count, duration, tick rate,
-  import details), \`{{.CTName}}\` / \`{{.TName}}\` (the teams' display names), \`{{.Scoreboard}}\`
-  (a row per player), \`{{.Rounds}}\` (a row per round), \`{{.Economy}}\` (each round's buys:
-  equipment, money and loss bonus per side, buy class), \`{{.Clutches}}\` (round, player, size,
-  outcome, HP left), \`{{.Utility}}\` (each throw: tick, thrower, kind, damage, flash, site),
-  \`{{.Metrics}}\`, \`{{.GeneratedAt}}\` (when it rendered).
-- **player** — \`{{.Match}}\`, \`{{.SteamID}}\`, \`{{.Player}}\` (that player's own scoreboard row),
-  \`{{.Rounds}}\` (their per-round rows), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\`.
-- **round** — \`{{.Match}}\`, \`{{.GeneratedAt}}\` and \`{{.Detail}}\`: \`{{.Detail.Round}}\` (winner,
-  reason, duration, site, MVP, first kill, equipment, ticks), \`{{.Detail.Economy}}\` (a row per
-  side), \`{{.Detail.Events}}\` (tick, kind, attacker, victim, weapon, damage) and
-  \`{{.Detail.Chat}}\` (tick, name, channel, text).
+**Inside the braces.** Every \`{{ … }}\` names one value by its path from the top of the data: \`{{.Match.Map}}\` is the
+match's map, \`{{.Detail.Round.Number}}\` a round's number. What sits at the top follows the template's **Scope**:
 
-To walk a list, \`{{range .Scoreboard}} … {{end}}\` loops it and \`.\` becomes the row being
-printed (\`{{.Name}}\`, \`{{.Kills}}\`), with \`$\` still meaning the top of the data.
-\`{{.Metrics}}\` (match and player scopes) is looked up instead of looped: it carries the stat
-values the built-ins print — ADR, HS%, KD, KDA, assists, openings, trades, best streak, enemies
-flashed — under each player's \`SteamID\`, a dash where a value isn't current, fetched as
-\`{{index $.Metrics .SteamID}}\`. Number formatting (\`{{printf "%.1f" .DurationS}}\`) and value
-tests (\`{{if eq .Channel "all"}}\`) appear in the built-ins as well — and each built-in's body
-loads in the editor, so the templates are worked examples to copy from.
+- **match**: \`{{.Match}}\` (the match itself: map, file, score, round count, duration, tick rate, import details), \`{{.CTName}}\` and \`{{.TName}}\` (the teams' display names), \`{{.Scoreboard}}\` (a row per player), \`{{.Rounds}}\` (a row per round), \`{{.Economy}}\` (each round's buys: equipment, money and loss bonus per side, buy class), \`{{.Clutches}}\` (round, player, size, outcome, HP left), \`{{.Utility}}\` (each throw: tick, thrower, kind, damage, flash, site), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\` (when it rendered).
+- **player**: \`{{.Match}}\`, \`{{.SteamID}}\`, \`{{.Player}}\` (that player's own scoreboard row), \`{{.Rounds}}\` (their per-round rows), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\`.
+- **profile**: \`{{.Name}}\`, \`{{.SteamID}}\`, \`{{.Matches}}\` (the player's match history: imported time, map, win, score, start side, kills, deaths, ADR, KAST), \`{{.Metrics}}\` (the career values, by name: \`{{index .Metrics "career_adr"}}\`, a dash where a value is not current) and \`{{.GeneratedAt}}\`. A profile report covers one player across every match they played, so it needs no match.
+- **round**: \`{{.Match}}\`, \`{{.GeneratedAt}}\` and \`{{.Detail}}\`: \`{{.Detail.Round}}\` (winner, reason, duration, site, MVP, first kill, equipment, ticks), \`{{.Detail.Economy}}\` (a row per side), \`{{.Detail.Events}}\` (tick, kind, attacker, victim, weapon, damage) and \`{{.Detail.Chat}}\` (tick, name, channel, text).
 
-**Built-in templates are edited in place.** A built-in loads with a \`built-in\` chip. Change its
-**Template body**, the text and layout of the report, and **Save** keeps the edit: every report that
-uses the template shows it. Its title, scope and format stay as shipped. An edited built-in shows an
-*edited* chip, and **Restore to default** beside Save discards the edit and brings the shipped text
-back. You can still read and preview built-ins. Plugin templates carry a *read-only source* chip;
-saving one stores a copy as your own. Only your own templates can be deleted.`,
+To walk a list, \`{{range .Scoreboard}} … {{end}}\` loops it, and \`.\` becomes the row being printed (\`{{.Name}}\`, \`{{.Kills}}\`), with \`$\` still meaning the top of the data. \`{{.Metrics}}\` (match and player scopes) is looked up rather than looped: it carries the stat values the built-ins print (ADR, HS%, KD, KDA, assists, openings, trades, best streak, enemies flashed) under each player's \`SteamID\`, a dash where a value is not current, fetched as \`{{index $.Metrics .SteamID}}\`. Number formatting (\`{{printf "%.1f" .DurationS}}\`) and value tests (\`{{if eq .Channel "all"}}\`) appear in the built-ins as well, and each built-in's body loads in the editor, so the templates are worked examples to copy from.
+
+**Built-in templates are edited in place.** A built-in loads with a \`built-in\` chip. Change its **Template body** and **Save** keeps the edit: every report that uses the template shows it. Its title, scope and format stay as shipped. An edited built-in shows an *edited* chip, and **Restore to default** beside Save discards the edit and brings the shipped text back. You can still read and preview built-ins. Plugin templates carry a *read-only source* chip; saving one stores a copy as your own. Only your own templates can be deleted.`,
   },
   {
     id: 'component-builder',
     title: 'The Component builder',
-    blocks: `**Component builder** (sidebar) is where components are written. A component is a small piece
-of a view that shows figures from your matches: it reads the stored stats it asks for and shows them
-the way it is written. This view writes and checks them; **Preview** shows one running as it would
-on a match or a player you choose.
+    blocks: `**Component builder** (sidebar) is where components are written. A component is a small piece of a view that shows
+figures from your matches: it reads the stored stats it asks for and shows them the way it is written. This view writes
+and checks them; **Preview** shows one running as it would on a match or a player you choose.
 
-The **left panel** lists the components. **Built-in** comes first: the components the app's views are
-made of, and the example to copy from. Below it, **Yours** lists the components you saved. Click a row
-to open it in the editor, and **New** starts an empty one.
+The **left panel** lists the components. **Built-in** comes first: the components the app's views are made of, and the
+example to copy from. Below it, **Yours** lists the components you saved, and **Plugins** lists the components that installed plugins supply. A plugin's component is read-only: change its name and save to keep your own copy. **New** starts an empty one, and the search
+box filters by name. The **Filters** dropdown has two groups: **Origin** (built-in, custom, and one box for each installed plugin, which hides that plugin's components) and **View** (match view,
+profile view and no view). Uncheck **no view** to hide the components that no view uses, or uncheck a view to hide the
+components placed on it.
 
-**Built-in components are edited in place.** Open one, change its source, and **Save** keeps the edit: it
-replaces the shipped version wherever that component appears, and its row carries an *edited* chip.
-**Restore to default** discards the edit and brings the shipped version back. A built-in's name stays
-as it is, and it can't be deleted.
+A component that a view uses wears a **match view** or **profile view** chip, in the list and in the editor's header.
+The built-in components the app's views use by default wear theirs too, so a view that has not been changed shows its
+chip from the start. A built-in wears a **built-in** chip, and an edited built-in wears an **edited** chip.
 
-The **editor** has the **Name** and the **Source** of the component. The source is the component's
-text: what it shows and how it responds. Under the source, the check reads **Ready to save.** when the
-source is sound, or names the line that needs fixing. **Save** stays off until the check passes, and
-then it stores the component under its name. A name must be unique among yours, at most 60
-characters, and can't begin with *built-in*.
+**Built-in components are edited in place.** Open one, change its source, and **Save** keeps the edit: it replaces the
+shipped version wherever that component appears. **Restore to default** discards the edit and brings the shipped version
+back. It sits beside **Use as my…**. A built-in's name stays as it is, and it can't be deleted.
 
-**Preview** shows the component as written. **Preview with** chooses what it runs against: **A match**
-or **A player**, picked from the lists beside it. Nothing is chosen for you, so a component that reads
-a match shows its prompt until you pick one. The preview appears once the source checks out, and it
-keeps the last version that checked out while you type, so a half-finished edit never blanks it.
+The **editor** has the **Name** and the **Source** of the component. Under the source, the check reads **Valid** when the
+source is sound, or names the line that needs fixing. **Save** stays off until the check passes. A name is at most 60
+characters, must not be empty, and can't be the name of a built-in component.
 
-Checking and saving a large component can take a while. While the check or a save runs, the progress shows in the
-background-work indicator at the bottom right, and **Cancel** appears beside **Save**. **Cancel** stops it: nothing
-is saved, and the editor says it was cancelled. There is no time limit, and the rest of the screen keeps
-working while it runs.
+**Preview** sits in the bottom-right corner of the editor, and opens the component as it would run, full screen. The X or
+Escape closes it. It is available once the source checks out, and it keeps the last version that checked out while you
+type, so a half-finished edit never blanks it. **Preview with** (**Match** or **Player**) sits beside it and chooses what
+the component runs against. Nothing is chosen for you, so a component that reads a match shows its prompt until you pick
+one.
 
-When a component fails while it runs, its own box shows the error and the rest of the screen keeps
-working. **Try again** redraws a component whose display failed, and the box's ✕ dismisses the error.
+Checking runs quietly as you type. Saving and loading the preview show their progress in the background-work indicator at
+the bottom right, and **Cancel** appears beside **Save** while a save runs. **Cancel** stops it: nothing is saved, and the
+editor says it was cancelled. There is no time limit, and the rest of the screen keeps working while it runs.
 
-**Duplicate** saves a copy of one of yours as a new component and opens it. **Delete** removes one of yours. It is the red button in the editor, or the trash button on the row. A component that a view uses can't be deleted or renamed until that view is reset; the message names the view.
+When a component fails while it runs, its own box shows the error and the rest of the screen keeps working. **Try again**
+redraws a component whose display failed, and the box's ✕ dismisses the error.
 
-**Use as my view** sets the area of a view to one component. Under the editor, each of the **Match view** and the **Profile view** says what it shows now: *Shows the default*, *Shows this component*, or *Shows another component*. **Use as my view** on the **Match view** replaces the tabs below the match header with the component you have open, and on the **Profile view** it replaces the profile's panels. The header, the warnings and the round strip stay where they are. Pick a single panel, such as the scoreboard, to show only that panel there. **Reset to default** removes the choice, and the view shows its default again. A component must be saved before it can be a view.
+**Delete** removes one of yours: the red button in the editor, or the trash button on the row. A component that a view
+uses can't be deleted until that view stops using it; the message names the view.
+
+**Use as my…** sets a view to one component. The menu lists **Match View** and **Profile View**, and marks the view the
+open component already shows. Choosing a view writes it. Choosing the view the component already shows removes it, and the
+view goes back to its default. **Match View** replaces the tabs below the match header, and **Profile View** replaces the
+profile's panels. The header, the warnings and the round strip stay where they are. A component you have not saved yet
+can't be used as a view; a built-in can.
 
 What a component can use, its \`spectra\` helpers and display pieces, is listed in [Component helpers](#component-helpers).`,
   },
@@ -636,17 +629,15 @@ A component cannot import another module, and the save gate refuses one that tri
   {
     id: 'sql-console',
     title: 'SQL console',
-    blocks: `**SQL console** (sidebar) is a read-only query window over your whole library — for when you want
-the data on your own terms. It is read-only by construction: the statement runs on a separate
-read-only connection, one statement at a time, and writes and multi-statement scripts are
-rejected before they run.
+    blocks: `**SQL console** (sidebar) is a read-only query window over your whole library, for when you want the data on your own
+terms. It is read-only by construction: the statement runs on a separate read-only connection, one statement at a time,
+and writes and multi-statement scripts are rejected before they run.
 
-- **Schema** (left) — every table with its note; expand one to see its columns and types, and click a column name to insert it into your statement.
-- **Statement** — the editor; **Run** or **Ctrl/Cmd+Enter**. The stated limits are *rows cap 5,000 · timeout 5 s*. A statement carrying parameters (\`?\`, \`:name\`) is refused with *this statement has parameters — replace them with values* — the console is never given values, so put them in yourself; a metric's **compiled SQL** already has its values written in (see *The metric Builder*), so a single statement of it runs as pasted.
-- **Results** — the row grid with the query time, the row count, and a *truncated* chip when the cap was hit. The grid pages through every returned row: a footer names the rows on screen, with **Prev** / **Next** to step through them (each dimmed at its own end). Exports always carry every returned row.
-- **Export** — saves the result of the last run as **JSON** or **CSV**; the control sits in the **Statement** card, beside **Run**.
-- **Saved queries** — the queries you have saved: click one to load it, with its name and description, back into the statement, or delete one you no longer need. Its **name**, **description** and **Save** fields live in the **Statement** card — that is where the current statement gets named and saved.
-- **History (last 50)** — the statements you have run, newest first. Click a line to load it into the statement with the name and description cleared, so you can name it afresh; **Remove** drops that one line — **Clear** still drops them all.`,
+- **Schema** (left): every table with its note. Expand one to see its columns and types, and click a column name to insert it into your statement.
+- **Statement**: the editor, with the name, description and **Save** fields for keeping the statement, and **Run** (or **Ctrl/Cmd+Enter**). The stated limits are *rows cap 5,000 · timeout 5 s*. A statement with parameters (\`?\` or \`:name\`) is refused with *this statement has parameters — replace them with values*: the console is never given values, so write them into the statement yourself.
+- **Results**: **Run** opens them full screen. The view shows the query time, the row count, and a *truncated* chip when the row cap was hit. The grid pages through every returned row, with a footer that names the rows on screen and **Prev** and **Next** to step through them. **Export** saves every returned row as **JSON** or **CSV**, from this view. The X or Escape closes it. A failed run shows its error in the Statement card and opens no results.
+- **Saved queries**: the queries you have saved. Click one to load it, with its name and description, back into the statement, or delete one you no longer need.
+- **History (last 50)**: the statements you have run, newest first. Click a line to load it into the statement with the name and description cleared, so you can name it afresh. **Remove** drops that one line, and **Clear** drops them all.`,
   },
   {
     id: 'settings',
@@ -659,7 +650,7 @@ rejected before they run.
 - **Background work** — **Parallel work**: how many heavy background tasks (imports, rules re-runs, asset extraction) run at once. 1 = one at a time; the default and maximum are this machine's parallelism, and a change applies to work already queued.
 - **CS2 assets** — detects your Counter-Strike 2 install and reports what has been extracted (radar packs, equipment icons, replay sounds), with **Choose folder…** and **Extract all CS2 assets**. Safe to re-run; worth re-running after a CS2 update.
 - **Appearance** — theme (**Dark** / **Light**) and font size (small / medium / large — the whole UI scales). Both apply immediately and are remembered.
-- **Plugins** — **Build plugin…** opens a dialog where you name the plugin (its id derives from the name), pick your own metrics and report templates into it (type to search, click to add a chip — built-ins and installed plugin content stay with their source) and **Save plugin** writes the file — \`spectra-plugin.json\` by default — that you can hand to someone else. **Browse…** picks the plugin's \`spectra-plugin.json\` file (install takes that file — never a folder), and **Install from path** installs the file showing; enable, disable and remove them. They contribute metrics and report templates on the next list — no restart, and a plugin change recomputes the metric values it affects in the background right away: a re-enabled plugin's numbers refresh on their own, and a metric of yours that referenced one you removed reports the missing reference instead of keeping its old numbers. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
+- **Plugins** — **Build plugin…** opens a dialog where you name the plugin (its id derives from the name), pick your own metrics, report templates and components into it (type to search, click to add a chip — built-ins and installed plugin content stay with their source) and **Save plugin** writes the file — \`spectra-plugin.json\` by default — that you can hand to someone else. **Browse…** picks the plugin's \`spectra-plugin.json\` file (install takes that file — never a folder), and **Install from path** installs the file showing; enable, disable and remove them. They contribute metrics, report templates and components on the next list — no restart, and a plugin change recomputes the metric values it affects in the background right away: a re-enabled plugin's numbers refresh on their own, and a metric of yours that referenced one you removed reports the missing reference instead of keeping its old numbers. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
 - **Audio & voice** — a **Run audio self-test** that checks Spectra can open your audio device, and the same six volume faders the replay uses (they stay in sync). Sound effects are extracted from your local CS2 install; voice is decoded as the replay plays.
 - **Replay** — **Loop length (seconds)**: how long a loop spans around the playhead or an event (1–60, default 5). The transport's loop popover quick-range button and every event ▶ link — in the analysis views and in the replay's own event feed — arm exactly this width.
 - **Analysis rules** — the thresholds that decide Spectra's analysis: **Trade window (seconds)**, **Full-buy threshold (equip $)**, **Trade-opportunity distance (units)** and **Force threshold (equip $)**. **Save rules** stores them and, when a rule actually changed, recomputes the matches behind the new rules in the background — their numbers refresh as each match finishes, so there is no manual re-run step. Saved metrics are worked out again only where they read what the changed rule decides: a metric over facts alone (a count of kills, say) keeps its value, while a metric that reads the trade window, the trade-opportunity distance or the buy thresholds is recalculated, together with the metrics built on it.`,

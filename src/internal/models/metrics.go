@@ -21,7 +21,10 @@ type MetricRow struct {
 	Name      string `json:"name"` // UNIQUE across all origins
 	Title     string `json:"title"`
 	ShortName string `json:"shortName"` // optional; read only at width-constrained metric column headers
-	Expr      string `json:"expr"`      // one SELECT or WITH statement (raw SQL; internal/metrics raw.go)
+	Expr      string `json:"expr"`      // one SELECT or WITH statement, in its macro form (what the editor shows; raw SQL; internal/metrics raw.go)
+	// RunExpr is the expanded form of Expr: the plain SQL every run, dependency and scope read uses.
+	// Written by the save gate (metrics.CheckRawSave); internal, never marshalled.
+	RunExpr string `json:"-"`
 	// Scope is DERIVED from the expr's binds (store.ScopeOfExpr), never
 	// stored: match|profile, profile when the statement reads :steam_id.
 	Scope    string `json:"scope"`
@@ -29,6 +32,12 @@ type MetricRow struct {
 	Doc      string `json:"doc"`
 	Origin   string `json:"origin"` // builtin|user|plugin
 	PluginID string `json:"pluginId"`
+	// Enabled is false for a disabled metric: stored, never computed.
+	Enabled bool `json:"enabled"`
+	// DisableBlock and EnableBlock say why the switch cannot move (empty = it can): DisableBlock
+	// while the metric is enabled, EnableBlock while it is disabled. Derived per read, never stored.
+	DisableBlock string `json:"disableBlock,omitempty"`
+	EnableBlock  string `json:"enableBlock,omitempty"`
 	// Touched is the physical tables the metric's compiled statement reads
 	// (sorted), derived by the save gate and stored as metrics.touched.
 	// nil = not derived. Internal until freshness reads it.

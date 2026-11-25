@@ -835,6 +835,14 @@ export function deleteMetric(id) {
     return r;
   });
 }
+// setMetricEnabled turns a metric on or off (a disabled metric is stored, never computed). Enabling
+// schedules a sweep on the service side, so the state feed picks it up after this resolves.
+export function setMetricEnabled(id, enabled) {
+  return MetricsService.SetMetricEnabled(id, enabled).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 // saveBuiltinMetric / restoreBuiltinMetric: the in-place edit of a builtin
 // metric's SQL (owner ruling 44). They change the stored definition and its
 // values, so they invalidate on success like saveMetric.
@@ -989,13 +997,6 @@ export function cancelMetric(id) {
   return MetricsService.CancelMetric(id);
 }
 
-// compileMetric is the no-execution Compile (design §5): the
-// provenance SQL a clean-saved preview shows beside its stored rows,
-// without calculating a value. expr "" uses the saved definition by id.
-export function compileMetric(id, expr) {
-  return MetricsService.CompileMetric(id, expr || '');
-}
-
 // --- Metric compute progress store -----------------------------------------
 // spectra:metric-progress {metricId, stage, done, total} — the ONE feed
 // of the sweep's honest k/N (throttled 100 ms Go-side; progress-only,
@@ -1148,15 +1149,44 @@ export function choosePluginFile() { return PlatformService.ChoosePluginFile(); 
 // work — so it cannot cover the definition-list change; this
 // invalidate() closes that window. The flush is the FULL invalidate();
 // a rejected op changes nothing and does not flush.
+// A plugin's components store their source, and their references come from the save gate (which
+// runs here). An enabled plugin's components record theirs now, so a metric or component they use
+// cannot be deleted or renamed out from under them. A component whose source fails the gate records
+// none, and shows its own error where it is used.
+async function recordPluginRefs(st) {
+  const id = st && st.manifest && st.manifest.id;
+  const comps = (st && st.manifest && st.manifest.components) || [];
+  if (!id || !st.enabled || comps.length === 0) return;
+  const rows = [];
+  for (const c of comps) {
+    const gate = await gateComponentSave(c.source).catch(() => null);
+    if (gate && gate.ok) {
+      rows.push({
+        name: c.name,
+        components: (gate.refs && gate.refs.components) || [],
+        metrics: (gate.refs && gate.refs.metrics) || [],
+      });
+    }
+  }
+  await ComponentService.RecordPluginComponentRefs(id, rows);
+}
 export function installPlugin(path) {
-  return PlatformService.InstallPlugin(path).then((r) => {
-    invalidate();
+  return PlatformService.InstallPlugin(path).then(async (r) => {
+    try {
+      await recordPluginRefs(r);
+    } finally {
+      invalidate();
+    }
     return r;
   });
 }
 export function setPluginEnabled(id, enabled) {
-  return PlatformService.SetPluginEnabled(id, enabled).then((r) => {
-    invalidate();
+  return PlatformService.SetPluginEnabled(id, enabled).then(async (r) => {
+    try {
+      if (enabled) await recordPluginRefs(r);
+    } finally {
+      invalidate();
+    }
     return r;
   });
 }
@@ -1200,8 +1230,8 @@ export function renderReportDraft(scope, body, matchId, steamId, round) {
 // report templates only — the frontend never decides what goes in) and
 // returns the exact JSON text to hand to saveText. Plain call: it stores
 // nothing, so there is nothing to invalidate.
-export function buildPluginBundle(name, version, metricIDs, templateIDs) {
-  return PlatformService.BuildPluginBundle(name, version, metricIDs || [], templateIDs || []);
+export function buildPluginBundle(name, version, metricIDs, templateIDs, componentNames) {
+  return PlatformService.BuildPluginBundle(name, version, metricIDs || [], templateIDs || [], componentNames || []);
 }
 
 // --- MapPackService -----------------------------------------------------------

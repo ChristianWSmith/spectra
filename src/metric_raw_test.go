@@ -131,7 +131,7 @@ func TestRawMissingReservedColumnFails(t *testing.T) {
 func TestRawNullRoundTripsAsNull(t *testing.T) {
 	f := newSeededFixture(t)
 	m := f.save(t, models.MetricRow{Name: "raw_null", Expr: "SELECT 'a' AS subject_key, '' AS dim, NULL AS value"})
-	if err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, ruleVersionOf(t, f.st), m.Expr, store.RawScope{}); err != nil {
+	if err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, ruleVersionOf(t, f.st), m.RunExpr, store.RawScope{}); err != nil {
 		t.Fatalf("RunRaw: %v", err)
 	}
 	rows := rawStored(t, f.st, m.ID)
@@ -162,7 +162,7 @@ func TestRawMatchScopeReplacesOnlyItsMatch(t *testing.T) {
 	}
 	one, two := ids[0], ids[1]
 	for _, match := range []int64{one, two} {
-		if err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, rule, m.Expr, store.RawScope{MatchID: match}); err != nil {
+		if err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, rule, m.RunExpr, store.RawScope{MatchID: match}); err != nil {
 			t.Fatalf("RunRaw(match %d): %v", match, err)
 		}
 	}
@@ -199,7 +199,7 @@ func TestRawBindNotSuppliedFails(t *testing.T) {
 		Name: "raw_bind_run",
 		Expr: "SELECT steam_id AS subject_key, '' AS dim, 1 AS value FROM players WHERE match_id = :match_id",
 	})
-	err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, ruleVersionOf(t, f.st), m.Expr, store.RawScope{})
+	err := metrics.RunRaw(t.Context(), f.st, m.ID, m.Version, ruleVersionOf(t, f.st), m.RunExpr, store.RawScope{})
 	if err == nil || !strings.Contains(err.Error(), ":match_id") {
 		t.Fatalf("unbound run error = %v, want the unsupplied-bind refusal", err)
 	}

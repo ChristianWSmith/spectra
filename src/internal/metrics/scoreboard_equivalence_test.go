@@ -44,7 +44,7 @@ import (
 // the store — the SEED is what these tests prove, never a test-local copy.
 func seedDef(t *testing.T, st *store.Store, name string) string {
 	t.Helper()
-	res, err := st.RunReadOnly(`SELECT expr FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
+	res, err := st.RunReadOnly(`SELECT run_expr FROM metrics WHERE name = ?`, []any{name}, 1, 5000)
 	if err != nil {
 		t.Fatalf("read seed %q: %v", name, err)
 	}

@@ -129,18 +129,19 @@ func invalidateDependents(tx *sql.Tx, rootID int64, sc changeScope) error {
 	return nil
 }
 
-// dependentRow is one metric that references a name in metric_deps.
+// dependentRow is one metric that references a name in metric_deps. RunExpr is its expanded
+// statement: the form the binds and references are read from.
 type dependentRow struct {
-	ID   int64
-	Name string
-	Expr string
+	ID      int64
+	Name    string
+	RunExpr string
 }
 
 // dependentsOfName reads the metrics that reference name. It closes the cursor
 // before returning, so the caller may write in the same transaction.
 func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	rows, err := tx.Query(
-		`SELECT DISTINCT m.id, m.name, m.expr FROM metric_deps d
+		`SELECT DISTINCT m.id, m.name, m.run_expr FROM metric_deps d
 		 JOIN metrics m ON m.id = d.metric_id WHERE d.dep_name = ?`, name)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -149,7 +150,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 	var out []dependentRow
 	for rows.Next() {
 		var d dependentRow
-		if err := rows.Scan(&d.ID, &d.Name, &d.Expr); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.RunExpr); err != nil {
 			return nil, fmt.Errorf("couldn't update the dependent metrics: %w", err)
 		}
 		out = append(out, d)
@@ -163,7 +164,7 @@ func dependentsOfName(tx *sql.Tx, name string) ([]dependentRow, error) {
 // invalidateDependent applies the scoped rule to one dependent and reports
 // whether the change reached it (so its own dependents are walked).
 func invalidateDependent(tx *sql.Tx, d dependentRow, sc changeScope) (bool, error) {
-	bindsMatch, bindsSteam := bindsOf(d.Expr)
+	bindsMatch, bindsSteam := bindsOf(d.RunExpr)
 	if sc.Whole || (!bindsMatch && !bindsSteam) {
 		if _, err := tx.Exec(`UPDATE metrics SET version = version + 1 WHERE id = ?`, d.ID); err != nil {
 			return false, fmt.Errorf("couldn't update the dependent metrics: %w", err)
@@ -322,7 +323,7 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 		id         int64
 		name, expr string
 	}
-	rows, err := tx.Query(`SELECT id, name, expr, touched FROM metrics`)
+	rows, err := tx.Query(`SELECT id, name, run_expr, touched FROM metrics`)
 	if err != nil {
 		return fmt.Errorf("couldn't update the metric versions: %w", err)
 	}
@@ -344,7 +345,7 @@ func markMatchWritesBehind(tx *sql.Tx, matchID int64, tables []string, players [
 	}
 	rows.Close()
 	for _, r := range roots {
-		d := dependentRow{ID: r.id, Name: r.name, Expr: r.expr}
+		d := dependentRow{ID: r.id, Name: r.name, RunExpr: r.expr}
 		byMatch, bySteam := bindsOf(r.expr)
 		scopes := []changeScope{{Whole: true}}
 		if byMatch || bySteam {
@@ -452,7 +453,7 @@ func MetricRefSQL(name string, binds []string, ruleVersion int) string {
 // transaction; each builtin's edge set is replaced wholesale, so it is
 // idempotent.
 func deriveBuiltinDeps(tx *sql.Tx) error {
-	rows, err := tx.Query(`SELECT id, expr FROM metrics WHERE origin = 'builtin'`)
+	rows, err := tx.Query(`SELECT id, run_expr FROM metrics WHERE origin = 'builtin'`)
 	if err != nil {
 		return fmt.Errorf("couldn't derive the builtin dependencies: %w", err)
 	}

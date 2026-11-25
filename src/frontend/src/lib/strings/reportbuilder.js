@@ -22,6 +22,12 @@ export const reportbuilder = {
   filterBuiltIn: 'Built-in',
   filterCustom: 'Custom',
   filterPlugin: 'Plugin',
+  filterFormatMd: 'md',
+  filterFormatHtml: 'html',
+  filterScopeMatch: 'Match',
+  filterScopePlayer: 'Player',
+  filterScopeRound: 'Round',
+  filterScopeProfile: 'Profile',
 
   // empty states
   noTemplatesMatch: 'No templates match “{q}.”',
@@ -39,20 +45,17 @@ export const reportbuilder = {
   // thing that changes; restore to default brings the shipped text back.
   builtinEditNote: 'Your edits replace this built-in. Restore to default undoes them.',
   builtinEditedNote: 'Edited. Restore to default brings back the shipped text.',
-  builtinChip: 'built-in',
-  editedChip: 'edited',
-  editedTitle: 'You have edited this built-in. Its shipped text is the default.',
   restoreDefault: 'Restore to default',
   restoreTitle: 'Discard your edit and use the shipped text',
   pluginImmutable:
     'Plugin templates are read-only — saving one stores a copy of this template as your own.',
-  readOnlyChip: 'read-only source',
   fieldTitle: 'Title',
   titlePlaceholder: 'Name this report template…',
   fieldScope: 'Scope',
   scopeMatchOption: 'match — one match',
   scopePlayerOption: 'player — one player in a match',
   scopeRoundOption: 'round — one round of a match',
+  scopeProfileOption: 'profile — one player across all their matches',
   fieldFormat: 'Format',
   fieldBody: 'Template body',
 
@@ -67,6 +70,8 @@ export const reportbuilder = {
   preview: 'Preview',
   running: 'Rendering…',
   targetHeading: 'Preview target',
+  roundPlaceholder: 'Enter round 1..{max}', // the round box's hint, naming its counted range
+  roundPlaceholderNone: 'Enter round',
   matchLabel: 'Match',
   playerLabel: 'Player',
   roundLabel: 'Round',

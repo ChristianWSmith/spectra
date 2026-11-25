@@ -875,6 +875,7 @@ label.filt-lab {
   --input-bg: #ffffff;
   --input-border: #cecece;
   --focus: #28397f; /* focusBorder -> brand */
+  --view: #1f6fb4; /* the view marker's blue, darkened for the light surface */
   --btn-border: rgba(0, 0, 0, 0.1); /* button.border #0000001a */
   --btn-bg: #e5e5e5; /* button.secondaryBackground */
   --btn-hover-bg: #cccccc; /* button.secondaryHoverBackground */
@@ -961,16 +962,15 @@ label.filt-lab {
   min-width: 0;
 }
 
-/* The right column fills the content height (fillHeight): the editor keeps its
-   natural size, the preview takes what is left and scrolls. */
-.rb-right > :not(.rb-preview) {
-  flex: none;
-}
-
-.rb-right > .rb-preview {
-  flex: 1 1 0;
-  min-height: 160px;
-  overflow: auto;
+/* The right column fills the content height (fillHeight). The editor card takes
+   priority: three parts of the free height to the preview's one, and its body
+   fills the card (.source-wrap.fill). The preview takes what is left and scrolls. */
+/* The right column is the editor card, which takes the whole column (its body
+   fills the card). Previews open full screen (components/PreviewOverlay.svelte). */
+.rb-right > .rb-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: visible; /* popovers (the pickers' lists) float over the card */
 }
 
 .rb-right .rb-doc {
@@ -978,9 +978,8 @@ label.filt-lab {
 }
 
 @media (max-width: 1000px) {
-  .rb-right > .rb-preview {
+  .rb-right > .rb-editor {
     flex: none;
-    min-height: 0;
     overflow: visible;
   }
 }
@@ -995,12 +994,6 @@ label.filt-lab {
 /* The origin filter row: the shared filter label (.filt-lab) and
    checkbox row (.filt-check) the Builder's filter panel and Settings
    already spell — never an rb- synonym for either. */
-.rb-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: center;
-}
 
 .rb-rows {
   display: flex;
@@ -1011,64 +1004,9 @@ label.filt-lab {
   overflow-y: auto;
 }
 
-.rb-row {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-}
-
-.rb-row:hover {
-  background: var(--list-hover);
-}
-
-.rb-row.active {
-  border-color: var(--accent-45);
-  background: var(--accent-06);
-}
-
-.rb-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  align-items: flex-start;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-}
-
 .rb-row-title {
   font-size: 0.92em;
   font-weight: 600;
-}
-
-.rb-row-sub {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 0.76em;
-}
-
-.rb-row-acts {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-right: 4px;
-  opacity: 0.3;
-  transition: opacity 0.12s;
-}
-
-.rb-row:hover .rb-row-acts,
-.rb-row:focus-within .rb-row-acts {
-  opacity: 1;
 }
 
 /* The editor's field grid: Title leads at double width, Scope and
@@ -1077,6 +1015,9 @@ label.filt-lab {
 .rb-fields {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  /* The field row, then the body takes the card's rest. */
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
   gap: 10px;
 }
 
@@ -1129,18 +1070,20 @@ label.filt-lab {
 
 .rb-target-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  gap: 8px;
   align-items: flex-end;
 }
 
-.rb-target-row .rb-field {
-  flex: 0 1 190px;
-  min-width: 150px;
+/* The preview's target dropdowns sit on one line, each taking an equal share. */
+/* Each picker keeps its own width (the match picker's name is never cut off); the round box is narrow. */
+.rb-target-row > * {
+  flex: 0 0 auto;
 }
 
-.rb-hint {
-  font-size: 0.76em;
+.rb-target-row > .rb-round {
+  flex: 0 0 120px;
+  min-width: 120px;
 }
 
 /* ONE actions line: the destructive control left, Preview + Save right. */
@@ -1153,12 +1096,13 @@ label.filt-lab {
   align-items: center;
 }
 
-.rb-note {
-  font-size: 0.82em;
-}
-
-.rb-preview {
-  gap: 8px;
+/* The preview target bar on the editor card: the match, and the player or round the scope needs. */
+.rb-target-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 /* The composed draft: the document source exactly as it renders (md or

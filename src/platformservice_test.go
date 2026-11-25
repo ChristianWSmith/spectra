@@ -710,7 +710,7 @@ func TestBuildPluginBundle(t *testing.T) {
 
 	// Happy path: an empty version lands on the default, the id derives
 	// from the name, both selections are inlined, and hash stays empty.
-	out, err := svc.BuildPluginBundle("My Plugin", "", []int64{m.ID}, []string{tpl.ID})
+	out, err := svc.BuildPluginBundle("My Plugin", "", []int64{m.ID}, []string{tpl.ID}, nil)
 	if err != nil {
 		t.Fatalf("BuildPluginBundle: %v", err)
 	}
@@ -777,7 +777,7 @@ func TestBuildPluginBundle(t *testing.T) {
 		{"Fine", "", []int64{999999}, nil, "no metric with that id"},
 		{"Fine", "", []int64{firstBuiltinMetricID(t, st)}, nil, "only your own metrics"},
 	} {
-		if _, err := svc.BuildPluginBundle(bad.name, bad.version, bad.metricIDs, bad.templateIDs); err == nil {
+		if _, err := svc.BuildPluginBundle(bad.name, bad.version, bad.metricIDs, bad.templateIDs, nil); err == nil {
 			t.Errorf("BuildPluginBundle(%q, %v) succeeded, want %q", bad.name, bad.metricIDs, bad.want)
 		} else if !strings.Contains(err.Error(), bad.want) {
 			t.Errorf("BuildPluginBundle(%q) error = %q, want it to mention %q", bad.name, err, bad.want)
@@ -792,11 +792,11 @@ func TestBuildPluginBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMetric(bad expr): %v", err)
 	}
-	if _, err := svc.BuildPluginBundle("Fine", "", []int64{badRow.ID}, nil); err == nil {
+	if _, err := svc.BuildPluginBundle("Fine", "", []int64{badRow.ID}, nil, nil); err == nil {
 		t.Fatal("a bundle with an engine-invalid expression succeeded")
 	}
 	// An unknown template id is refused the same way.
-	if _, err := svc.BuildPluginBundle("Fine", "", nil, []string{"no-such-template"}); err == nil {
+	if _, err := svc.BuildPluginBundle("Fine", "", nil, []string{"no-such-template"}, nil); err == nil {
 		t.Fatal("a bundle naming no stored template succeeded")
 	}
 	// The unknown-scope gate: stored rows are CHECK-constrained to their

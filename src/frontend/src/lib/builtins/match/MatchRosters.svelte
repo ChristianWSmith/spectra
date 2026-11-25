@@ -87,8 +87,10 @@
                       onclick={(e) => {
                         e.stopPropagation();
                         openPlayer(spectra, p.steam);
-                      }}>{p.name}</button
+                      }}
                     >
+                      {p.name}
+                    </button>
                   {:else}
                     {p.name}
                   {/if}

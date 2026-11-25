@@ -78,6 +78,13 @@ type ReportTemplate struct {
 }
 
 // Manifest is the spectra-plugin.json contract.
+// ComponentDef is one component a plugin supplies: a name the rest of the app references it by, and its
+// Svelte source (checked in the frontend when it is used, not at install).
+type ComponentDef struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+}
+
 type Manifest struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -87,6 +94,7 @@ type Manifest struct {
 	Hash        string            `json:"hash,omitempty"`
 	Metrics     []MetricDef       `json:"metrics,omitempty"`
 	ReportTpls  []ReportTemplate  `json:"reportTpls,omitempty"`
+	Components  []ComponentDef    `json:"components,omitempty"`
 	Extra       map[string]string `json:"extra,omitempty"`
 }
 
@@ -138,14 +146,31 @@ func ValidateManifest(data []byte) (Manifest, error) {
 		if !slugRe.MatchString(r.ID) {
 			return Manifest{}, fmt.Errorf("plugin %q: reportTpls[%d] id %q must match %s", m.ID, i, r.ID, slugRe.String())
 		}
-		if r.Scope != "match" && r.Scope != "player" && r.Scope != "round" {
-			return Manifest{}, fmt.Errorf("plugin %q: reportTpls[%d] scope %q must be match|player|round", m.ID, i, r.Scope)
+		if r.Scope != "match" && r.Scope != "player" && r.Scope != "round" && r.Scope != "profile" {
+			return Manifest{}, fmt.Errorf("plugin %q: reportTpls[%d] scope %q must be match|player|round|profile", m.ID, i, r.Scope)
 		}
 		if r.Format != "md" && r.Format != "html" {
 			return Manifest{}, fmt.Errorf("plugin %q: reportTpls[%d] format %q must be md|html", m.ID, i, r.Format)
 		}
 		if strings.TrimSpace(r.Body) == "" {
 			return Manifest{}, fmt.Errorf("plugin %q: reportTpls[%d] has an empty body", m.ID, i)
+		}
+	}
+	seen := map[string]bool{}
+	for i, c := range m.Components {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			return Manifest{}, fmt.Errorf("plugin %q: components[%d] has no name", m.ID, i)
+		}
+		if len([]rune(name)) > 60 {
+			return Manifest{}, fmt.Errorf("plugin %q: components[%d] name %q is longer than 60 characters", m.ID, i, name)
+		}
+		if seen[name] {
+			return Manifest{}, fmt.Errorf("plugin %q: component %q is listed twice", m.ID, name)
+		}
+		seen[name] = true
+		if strings.TrimSpace(c.Source) == "" {
+			return Manifest{}, fmt.Errorf("plugin %q: component %q has an empty source", m.ID, name)
 		}
 	}
 	return m, nil

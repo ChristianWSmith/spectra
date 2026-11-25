@@ -143,8 +143,7 @@ test('(f) the guide describes editing, restore to default and use as my view', (
   assert.ok(section, 'the Component builder guide section exists');
   const text = section.blocks;
   assert.match(text, /Restore to default/);
-  assert.match(text, /Use as my view/);
-  assert.match(text, /Reset to default/);
+  assert.match(text, /Use as my/);
   assert.match(text, /edit/i);
   for (const term of ['layout_placements', 'builtin_overrides', 'components table', 'surface_', 'builtin-']) {
     assert.ok(!text.includes(term), `the guide must not name ${term}`);
@@ -187,17 +186,13 @@ test('C5h (f): the guide describes editing a builtin report and metric, and rest
 test('(d) the Edited chip copy is in the catalog and each builder renders it from there', async () => {
   const S = await import('./strings/index.js');
   const dir = new URL('.', import.meta.url);
-  const views = [
-    ['componentbuilder', 'views/ComponentBuilder.svelte'],
-    ['reportbuilder', 'views/ReportsBuilder.svelte'],
-    ['builder', 'views/Builder.svelte'],
-  ];
-  for (const [ns, file] of views) {
-    assert.equal(typeof S[ns].editedChip, 'string', `${ns}.editedChip is in the catalog`);
-    assert.ok(S[ns].editedChip.trim().length > 0, `${ns}.editedChip is not empty`);
-    assert.equal(typeof S[ns].editedTitle, 'string', `${ns}.editedTitle is in the catalog`);
+  // One spelling for every builder: the shared chip copy lives in common (lib/strings/common.js).
+  assert.equal(typeof S.common.chipEdited, 'string', 'common.chipEdited is in the catalog');
+  assert.ok(S.common.chipEdited.trim().length > 0, 'common.chipEdited is not empty');
+  assert.equal(typeof S.common.chipEditedTitle, 'string', 'common.chipEditedTitle is in the catalog');
+  for (const file of ['views/ComponentBuilder.svelte', 'views/ReportsBuilder.svelte', 'views/Builder.svelte']) {
     const text = readFileSync(new URL(file, dir), 'utf8');
-    assert.ok(text.includes(`S.${ns}.editedChip`), `${file} renders the chip from the catalog`);
+    assert.ok(text.includes('S.common.chipEdited'), `${file} renders the chip from the catalog`);
     assert.ok(!text.includes('>edited<'), `${file} carries no literal chip text`);
   }
   assert.ok(

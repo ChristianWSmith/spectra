@@ -54,14 +54,14 @@ The reserved binds are \`:match_id\`, \`:steam_id\` and \`:round\`. The engine s
     parent: 'metric-language',
     blocks: `A statement may read these tables. Every table a statement reads must be on this list. A name that is not a table of the library is refused, and so is a table the list leaves out.
 
-- **Match and roster:** \`matches\`, \`teams\`, \`players\` (the humans-only roster lookup).
-- **Match facts:** \`rounds\`, \`events\`, \`kill_tags\` (the kill tags),\`utility_events\`, \`chat\`, \`sound_events\`, \`player_ticks\`.
-- **Per-player and per-round statistics:** \`player_stats\`, \`player_round_stats\`, \`round_economy\`, \`round_player_money\`, \`round_player_sides\`, \`round_classifications\`, \`round_side_classes\`, \`clutches\`, \`match_trade_opps\`.
+- **Matches and players:** \`matches\`, \`teams\`, \`players\` (the roster, bots included).
+- **Match facts:** \`rounds\`, \`events\`, \`kill_tags\` (the kill tags), \`utility_events\`, \`chat\`, \`sound_events\`, \`player_ticks\`, \`round_player_money\`, \`encounters\`, \`encounter_windows\`, \`encounter_window_samples\`.
+- **Per-player and per-round statistics:** \`player_stats\`, \`player_round_stats\`, \`round_economy\`, \`round_player_sides\`, \`round_classifications\`, \`round_side_classes\`, \`match_trade_opps\`.
 - **The raw event payload:** \`generic_events\`. Its \`payload_json\` keys come from the game's own event schema, so a statement that reads one key can break after a parser change.
 
-Everything else is closed to a statement, including the app's own tables (metric and component definitions, reports, saved queries, plugins, the analysis rule table) and the metric store itself. Metrics reach stored values only through \`metric('name')\`, which reads a saved metric's stored value for the same match, player or round (see [Other metrics](#metric-references)).
+Everything else is closed to a statement: the app's own tables (metric and component definitions, reports, saved queries, saved filters, plugins, the analysis rule table) and the metric store itself. A metric reaches stored values only through \`metric('name')\`, which reads a saved metric's stored value for the same match, player or round (see [Other metrics](#metric-references)).
 
-A metric's statement sees the players in the library as they are, bots included, because a metric you write is not filtered. The built-in metrics do filter bots, and they show the same rule in their SQL (see [Built-in metrics](#built-in-metrics)).`,
+A statement sees the players in the library as they are, bots included, because a metric you write is not filtered. The built-in metrics do filter bots, and they show the same rule in their SQL (see [Built-in metrics](#built-in-metrics)).`,
   },
   {
     id: 'metric-helpers',
@@ -77,13 +77,13 @@ A metric's statement sees the players in the library as they are, bots included,
 | \`:steam_id\` | a player | one career value per player |
 | \`:round\` | a round of a match | one value per round; it needs \`:match_id\` as well |
 
-**Functions.** The only function a statement can call beyond SQLite's own is **\`is_bot_key(steam_id)\`**. It is \`1\` for a bot and \`0\` for a human, so \`AND NOT is_bot_key(steam_id)\` leaves bots out. A statement that does not say so keeps them, as described above.
+**Functions.** Besides SQLite's own functions, a statement may call **\`is_bot_key(steam_id)\`**, which is \`1\` for a bot and \`0\` for a human, so \`AND NOT is_bot_key(steam_id)\` leaves bots out. It may also call the JSON table functions \`json_each\` and \`json_tree\`.
 
 **Other metrics.** **\`metric('name')\`** reads a saved metric's stored value for the same match, player or round. See [Other metrics](#metric-references).
 
 **Tables.** The tables a statement may read are listed in [Tables you can read](#sources).
 
-**Patterns.** A statement cannot call the built-in metrics' shared SQL, and it has no macros. The built-ins are written with those when the library is set up, and each built-in shows its complete statement. To write a common pattern yourself, copy a built-in's statement and change it. The statement box completes the readable tables and their columns, the binds, the bot filter and the metric references as you type. See [Built-in metrics](#built-in-metrics).`,
+**Macros.** Short names for larger pieces of SQL, written in double braces. They are expanded when the statement is checked. See [Macros](#macros).`,
   },
   {
     id: 'save-gate',
@@ -156,11 +156,11 @@ The other metric must already be saved, and a metric cannot reference itself, di
     id: 'previewing',
     title: 'Previewing',
     parent: 'metric-language',
-    blocks: `Previewing a statement before you save it is not available yet. The live check under the expression box still runs the save gate on what you typed, so a statement that would be refused is marked at once, with its message.
+    blocks: `Preview, in the metric editor, shows the stored values of a metric you have saved and not changed since. It reads the rows the screens read: for a match metric, the values for the newest ready match; for a career metric, the values for every player. Nothing is calculated for the preview. If a row you expect is missing, the sweep has not run the metric yet, and the metric reads as *behind* or *processing*.
 
-To see the values a statement produces, save it. Its values appear in the list and on the screens that show metrics once the sweep has run it. A statement that fails when it runs shows the failed state, with its error text.
+A statement you have not saved, or have changed since saving, is refused by Preview with *previewing raw SQL isn't available yet; save the metric and its values appear once it has run*. Save it, and its values appear in the list and on the screens that show metrics once the sweep has run it. A statement that fails when it runs shows the failed state, with its error text.
 
-The statement a metric runs is shown as written, with the metric, so you can copy it out and run it in the SQL console.`,
+The live check under the expression box still runs the save gate on what you typed, so a statement that would be refused is marked at once, with its message. The editor shows the statement as you wrote it, macros included; the check and every run use the expanded statement (see [Macros](#macros)).`,
   },
   {
     id: 'built-in-metrics',
@@ -173,6 +173,52 @@ The built-in statements leave out bots. They use one shared rule for it, so a bo
 Built-in metrics are edited in place, the same as built-in components: change the statement, and **Save** keeps the edit (see [The metric builder](#metric-builder)). A statement of your own does not filter bots unless it says so, and the way to say so is \`AND NOT is_bot_key(steam_id)\` (see [Helpers in a statement](#metric-helpers)).
 
 The built-in list grows with each release, so this chapter does not count it.`,
+  },
+  {
+    id: 'macros',
+    title: 'Macros',
+    parent: 'metric-language',
+    blocks: `A statement may use **macros**: short names, written in double braces, that stand for a larger piece of SQL. They save you writing a common join or a common rule again, and they keep the built-in metrics consistent with each other. The editor shows the statement as you wrote it, macros included. When you check or save a statement, the macros are expanded into plain SQL, and that expanded statement is what the gate checks and what runs. A macro the engine does not know is refused with *unknown macro*, followed by the macro as written.
+
+**Shared pieces.** Place one of these where its name is. Each brings a named piece of SQL, such as a common table, a join or a list, and it is usually used inside a \`WITH\` list. The clearest way to use one is to copy a built-in metric that uses it.
+
+- \`{{KILLS_CTE}}\`, \`{{KILLS_EK}}\`, \`{{KILLS_AK}}\`, \`{{KILLS_EKR}}\`, \`{{KILLS_ROUND}}\`: the counted kills, the one kill rule every kill metric shares. The variants give the counted entry kills, the counted assists, the entry kills per round, and the round-grain kills.
+- \`{{DAMAGE_CTE}}\`, \`{{DAMAGE_ROUND_CTE}}\`: the counted damage, and the same rule restricted to a round.
+- \`{{BLIND_CTE}}\`: the blind-event rows of a match, one for each flash detonation, with its attacker and victim and their sides.
+- \`{{UTILITY_WEAPONS}}\`: the utility weapons (grenades and fire), as the list an \`IN\` test reads.
+- \`{{CLUTCH_CTE}}\`: the clutch situations.
+- \`{{DISCONNECT_JOIN}}\`: the join that marks players who disconnected.
+- \`{{CAREER_HEAD}}\`: the opening of a career statement, its \`subject_key\` and \`dim\` columns.
+- \`{{PLAYER_STATS_COLS}}\`, \`{{PLAYER_STATS_HUMANS}}\`, \`{{PLAYER_FOLD_JOIN}}\`, \`{{PLAYER_ROUND_COLS}}\`, \`{{PLAYER_ROUND_FOLD_JOIN}}\`, \`{{PLAYER_ROUND_ROSTER_JOIN}}\`: the per-player building blocks: the match's player rows with bots left out, and the joins that attach a round to its player's roster row.
+- \`{{ROLLUP_OPEN}}\`, \`{{ROLLUP_MATCH_OPEN}}\`, \`{{ROLLUP_CLOSE}}\`: the open and close of a per-match rollup.
+- \`{{SIDE_DOMAIN}}\`: the two sides as a row each, for a statement that reports a value per side.
+
+**Macros with arguments.** These take their arguments after colons, and each one's name says what it is for.
+
+| Macro | What it stands for |
+|---|---|
+| \`{{SUM_STORED:name}}\` | the career sum of one stored metric, NULL when any row it sums is NULL |
+| \`{{RATIO_STORED:num:den}}\` | the career ratio of two stored metrics' sums, NULL when the denominator is zero |
+| \`{{EXISTS_STORED:name}}\` | a career guard: the stored metric has a row for the subject |
+| \`{{SUBJECT_RATIO:num:den}}\` | the ratio of two stored metrics for each subject |
+| \`{{DIM_SUM:name}}\`, \`{{DIM_RATIO:num:den}}\` | the sum, and the ratio of two sums, of a stored metric for each \`dim\` |
+| \`{{SIDE_JOIN:alias:src:col}}\` | joins the player-side row for \`src.col\`, under the name \`alias\` |
+| \`{{HUMAN:col}}\`, \`{{HUMAN:col:key}}\` | a guard that keeps only humans, on a SteamID column |
+| \`{{ROLLUP_HUMAN_CLOSE:col}}\` | the close of a per-match rollup, with the humans-only guard on \`col\` |
+| \`{{MATCH_ROUNDS:alias}}\` | the number of rounds in the match named \`alias\` |
+| \`{{LIVE_EVENT:alias:kind}}\` | an event of one kind that is not after the match |
+| \`{{FAKE_KILL}}\` | the flag that marks a kill row as a fake kill |
+| \`{{TEAM_FREE}}\` | the rule that a kill is not a team kill |
+| \`{{FOLD_PIVOT:x}}\`, \`{{ROUND_FOLD_PIVOT:x}}\` | a per-player, or per-round, pivot of one fold column |
+| \`{{TOP_PER_MATCH:col}}\` ... \`{{TOP_PER_MATCH_CLOSE}}\` | the head and tail of a statement that keeps the top subject of each match, ranked by \`col\` |
+| \`{{CLUTCH_STAT:agg}}\` | a clutch aggregate, for humans only |
+| \`{{ROUND_LABEL_COUNT:x}}\`, \`{{SIDE_CLASS_COUNT:x}}\` | the number of counted rounds labelled \`x\`, or of side rounds classed \`x\`, for each player |
+
+The argument forms above are exact. Some macros only make sense inside the statement shape they are written for (such as
+\`{{TOP_PER_MATCH:col}}\`, which needs its closing macro), so copy a built-in that uses one rather than writing it from this table.
+
+**Error positions.** A message about the expanded statement points at a position in that expanded text, which can differ
+from the text you wrote once a macro is in it.`,
   },
   {
     id: 'worked-examples',
@@ -231,6 +277,7 @@ Scope: match. One row for the match, with an empty subject because the value bel
 | \`the statement must return the columns subject_key, dim and value (missing: …)\` | Name the three columns as the statement's result (see [Writing a statement](#writing-an-expression)). |
 | \`row N repeats subject_key "…" and dim "…"; each subject and dim may appear once per run\` | Group the statement so each subject and dim has one row. |
 | \`row N: value must be a number or NULL\` | Return a number, or \`NULL\` for no data. |
-| \`previewing raw SQL isn't available yet; save the metric and its values appear once it has run\` | Save the metric first (see [Previewing](#previewing)). |`,
+| \`previewing raw SQL isn't available yet; save the metric and its values appear once it has run\` | Save the metric first (see [Previewing](#previewing)). |
+| \`unknown macro {{NAME}}\` | The name is not one of the macros in [Macros](#macros). Check its spelling, or copy a built-in that uses it. |`,
   },
 ];

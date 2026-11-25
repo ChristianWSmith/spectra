@@ -65,6 +65,9 @@ type Gate struct {
 	Refs []store.MetricSQLRef
 	// Binds is every reserved bind the statement uses, in textual order.
 	Binds []string
+	// Expanded is the statement with its macros expanded (store.ExpandMetricMacros): the plain
+	// SQL the gate read and the one every run executes. Set by CheckRawSave.
+	Expanded string
 }
 
 // RefLookup reports whether a metric with this name exists (any origin).

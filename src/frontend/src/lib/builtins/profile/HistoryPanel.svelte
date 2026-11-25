@@ -134,7 +134,11 @@
               <MetricCell pres={adr} format={(v) => fmt1(v)} chip={sweep.chip(defs.get('adr'))} />
             </td>
             <td class="num" title={kast.kind === 'chip' ? kast.title : ''}>
-              <MetricCell pres={kast} format={(v) => fmtMetric(v, 'percent')} chip={sweep.chip(defs.get('kast'))} />
+              <MetricCell
+                pres={kast}
+                format={(v) => fmtMetric(v, 'percent')}
+                chip={sweep.chip(defs.get('kast'))}
+              />
             </td>
           </tr>
         {:else}

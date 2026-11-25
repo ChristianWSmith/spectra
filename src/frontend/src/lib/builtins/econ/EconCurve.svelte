@@ -123,7 +123,10 @@
 
   function ranks(r) {
     if (!r.winner) return null;
-    return [classRank(bySide(r.winner, r.classCT, r.classT)), classRank(bySide(r.winner, r.classT, r.classCT))];
+    return [
+      classRank(bySide(r.winner, r.classCT, r.classT)),
+      classRank(bySide(r.winner, r.classT, r.classCT)),
+    ];
   }
 
   function mark(r) {
@@ -187,15 +190,19 @@
           class:active={metric === 'equip'}
           aria-pressed={metric === 'equip'}
           title={EQUIP_DEF}
-          onclick={() => (metric = 'equip')}>{S.economy.curveToggleEquip}</button
+          onclick={() => (metric = 'equip')}
         >
+          {S.economy.curveToggleEquip}
+        </button>
         <button
           class="econ-toggle-btn"
           class:active={metric === 'networth'}
           aria-pressed={metric === 'networth'}
           title={NETWORTH_DEF}
-          onclick={() => (metric = 'networth')}>{S.economy.curveToggleNetWorth}</button
+          onclick={() => (metric = 'networth')}
         >
+          {S.economy.curveToggleNetWorth}
+        </button>
       </div>
     </div>
   </div>
@@ -295,13 +302,13 @@
           onclick={() => openRound(r.round)}
         >
           <span class="econ-strip-num">{r.round}</span>
-          <span class="econ-strip-mark" class:hold={mark(r) === '✓'} class:upset={mark(r) === '✗'}
-            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span
+          <span class="econ-strip-mark" class:hold={mark(r) === '✓'} class:upset={mark(r) === '✗'}>
+            {#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span
                 class="codicon codicon-error"
               ></span>{:else if mark(r) === '='}<span class="codicon codicon-grabber"></span>{:else}<span
                 class="codicon codicon-circle-small"
-              ></span>{/if}</span
-          >
+              ></span>{/if}
+          </span>
         </button>
       {/each}
     </div>

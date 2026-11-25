@@ -24,14 +24,19 @@ export function reportFilename(tpl, { matchId, steamId, roundNo }) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'report';
-  const target = tpl.scope === 'player' ? steamId : tpl.scope === 'round' ? `round-${roundNo}` : `match-${matchId}`;
+  const target =
+    tpl.scope === 'player' || tpl.scope === 'profile'
+      ? steamId
+      : tpl.scope === 'round'
+        ? `round-${roundNo}`
+        : `match-${matchId}`;
   return `${base}-${target}.${(tpl.format || 'md') === 'html' ? 'html' : 'md'}`;
 }
 
 // targetReady: the save button's gate — the template's target is filled in.
 export function targetReady(tpl, { matchId, steamId, roundNo }) {
   if (!tpl) return false;
-  if (tpl.scope === 'player') return !!steamId;
+  if (tpl.scope === 'player' || tpl.scope === 'profile') return !!steamId;
   if (tpl.scope === 'round') return !!matchId && roundNo >= 1;
   return !!matchId;
 }

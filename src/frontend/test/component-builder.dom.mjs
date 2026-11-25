@@ -8,7 +8,7 @@ import './compile-worker-node.mjs';
 //      "Yours" says so; a failed list read shows its error with Try again;
 //   C. a built-in is edited in place (owner ruling 43): Save stores an
 //      override by its id, a refused edit keeps Save off, Restore to default
-//      deletes the override and loads the shipped source; no Duplicate;
+//      deletes the override and loads the shipped source;
 //   C3. use as my view: one placement per surface, Reset removes it;
 //   D. save gating: a refused source shows its line and keeps Save off;
 //      the save path refuses the same source before any write happens;
@@ -162,10 +162,13 @@ bindings.handlers.ResetPlacements = (surface) => {
   return null;
 };
 
+// Already in the form the save writes (the save formats it: a blank line after </script>, a final newline).
 const OK_EDIT_SOURCE = `<script>
   let { spectra } = $props();
 </script>
-<p class="edit-ok">EDITED BUILTIN</p>`;
+
+<p class="edit-ok">EDITED BUILTIN</p>
+`;
 const OK_SOURCE = `<script>
   let { spectra } = $props();
 </script>
@@ -233,6 +236,12 @@ const q = (sel) => root.querySelector(sel);
 const qa = (sel) => [...root.querySelectorAll(sel)];
 const rowNamed = (label, group) => qa(`${group} .cb-row-main`).find((b) => b.textContent.includes(label));
 const buttonByText = (text) => qa('button').find((b) => b.textContent.trim().includes(text));
+// The Preview control sits on the editor card; activating it opens the results full screen.
+const pvBtn = () => qa('.cb-editor button').find((b) => b.textContent.trim().includes(S.componentbuilder.previewHeading));
+const openPreview = async () => {
+  click(pvBtn());
+  await settle(4);
+};
 const alertIn = (sel) => {
   const el = q(sel);
   const a = el && (el.matches('[role="alert"]') ? el : el.querySelector('[role="alert"]'));
@@ -252,18 +261,11 @@ const help = q('.view-header button[aria-label]');
 check('the header carries the help target', !!help, help && help.outerHTML);
 click(help);
 check('the help target opens the component-builder guide section', opened.join() === 'component-builder', opened.join());
-check('three panels: list, editor, preview', !!q('.cb-list') && !!q('.cb-editor') && !!q('.cb-preview'));
-// The preview's big-screen toggle: expands the panel to the window, Escape collapses it.
+check('two panels: the list and the editor card (the preview is no longer a card)', !!q('.cb-list') && !!q('.cb-editor') && !q('.cb-preview'));
+// The Preview control on the editor card opens the results full screen; the X and Escape close them.
 {
-  const pv = q('.cb-preview');
-  const tg = pv?.querySelector('.preview-expand');
-  check('the preview has an expand toggle, labelled Expand preview', !!tg && tg.getAttribute('aria-label') === 'Expand preview');
-  click(tg);
-  await sleep();
-  check('the toggle expands the preview panel', !!pv?.classList.contains('preview-expanded') && tg?.getAttribute('aria-label') === 'Collapse preview');
-  pv?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await sleep();
-  check('Escape collapses the expanded preview', !pv?.classList.contains('preview-expanded'));
+  check('no overlay until Preview is activated', !q('.preview-overlay'));
+  check('Preview is disabled until a source passes the check', !!pvBtn() && pvBtn().disabled === true);
 }
 
 check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[role="alert"]'));
@@ -272,7 +274,7 @@ check('no error alert on a clean mount', !q('.view-header + p.error') && !q('[ro
 console.log('B. the list');
 const builtinRow = rowNamed(PLACEHOLDER_ID, '.cb-builtins');
 check('the sample built-in is listed in the Built-in group', !!builtinRow);
-check('the built-in row carries the built-in chip', builtinRow && builtinRow.textContent.includes(S.componentbuilder.builtinChip));
+check('the built-in row carries the built-in chip', builtinRow && builtinRow.textContent.includes(S.common.chipBuiltin));
 check('an empty Yours list says so', q('.cb-list')?.textContent.includes(S.componentbuilder.noUserComponents));
 check('no delete control on a built-in row', !builtinRow.parentElement.querySelector('.cb-row-acts'));
 // The Profile view and its six panels are listed (the registry, builtins/panels.js).
@@ -299,7 +301,7 @@ await mounted();
 check(
   'a built-in with no override shows no Edited chip in the list',
   !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
-    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.common.chipEdited),
 );
 click(rowNamed(PLACEHOLDER_ID, '.cb-builtins'));
 await settle();
@@ -307,7 +309,7 @@ check('the built-in name field is read-only', q('#cb-name')?.readOnly === true);
 check('the built-in source is editable', q('#cb-source')?.readOnly === false);
 check('Save is disabled until the built-in is edited', q('.cb-save')?.disabled === true);
 check('a built-in shows no Delete control', !q('.cb-delete'));
-check('a built-in offers no Duplicate (edit in place instead)', !q('.cb-duplicate'));
+check('a built-in offers no copy action (edit in place instead)', !q('.cb-duplicate') && !buttonByText('Duplicate'));
 check('Restore to default is disabled with no edit', q('.cb-restore')?.disabled === true);
 check('the built-in source is in the editor', q('#cb-source')?.value.includes('<script>'));
 await setText(q('#cb-source'), OK_EDIT_SOURCE);
@@ -323,7 +325,7 @@ check(
   ovCall && ovCall.id === PLACEHOLDER_ID && ovCall.source === OK_EDIT_SOURCE,
   JSON.stringify(ovCall),
 );
-check('the built-in row shows the edited chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the built-in row shows the edited chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 check('Restore to default is enabled once edited', q('.cb-restore')?.disabled === false);
 check('no user component was written by an edit', saveCalls.length === 0);
 click(q('.cb-restore'));
@@ -333,7 +335,7 @@ check('Restore to default brings back the shipped source', q('#cb-source')?.valu
 check(
   'after restore the built-in row is still listed and carries no Edited chip',
   !!rowNamed(PLACEHOLDER_ID, '.cb-builtins') &&
-    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.editedChip),
+    !rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.common.chipEdited),
 );
 unmounted();
 
@@ -361,12 +363,12 @@ check(
   overrideCalls.length === 1 && careerOv && careerOv.id === CAREER_ID && careerOv.source === OK_EDIT_SOURCE,
   JSON.stringify(careerOv),
 );
-check('the Career row shows the edited chip', rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the Career row shows the edited chip', rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 click(q('.cb-restore'));
 await settle(10);
 check('Restore to default deletes the Career override', overrideDeleteCalls.length === 1 && overrideDeleteCalls[0] === CAREER_ID);
 check('Restore to default brings the Career shipped source back', q('#cb-source')?.value === careerShipped);
-check('the Career row carries no edited chip after restore', !rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.componentbuilder.editedChip));
+check('the Career row carries no edited chip after restore', !rowNamed(careerLabel, '.cb-builtins')?.textContent.includes(S.common.chipEdited));
 unmounted();
 
 // --- C2. a refused edit of a built-in ------------------------------------------
@@ -409,15 +411,15 @@ check(
   setCall && setCall.surface === 'match-view' && setCall.rows.length === 1 && setCall.rows[0].component === PLACEHOLDER_ID,
   JSON.stringify(setCall),
 );
-check('the open component carries a Match View chip', !!q('.cb-editor .chip') && q('.cb-editor').textContent.includes(S.componentbuilder.surfaceMatch));
-check('the list row carries the same chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.componentbuilder.surfaceMatch));
+check('the open component carries a Match View chip', !!q('.cb-editor .chip') && q('.cb-editor').textContent.includes(S.common.chipViewMatch));
+check('the list row carries the same chip', rowNamed(PLACEHOLDER_ID, '.cb-builtins').textContent.includes(S.common.chipViewMatch));
 click(useAsBtn());
 await settle(10);
 check('a placed view is marked in the popover', (itemFor(S.componentbuilder.surfaceMatch)?.textContent || '').includes('✓'));
 click(itemFor(S.componentbuilder.surfaceMatch));
 await settle(10);
 check('choosing the placed view again gives it back to the default', resetCalls.length === 1 && resetCalls[0] === 'match-view');
-check('the chip goes with it', !q('.cb-editor') || !q('.cb-editor').textContent.includes(S.componentbuilder.surfaceMatch));
+check('the chip goes with it', !q('.cb-editor') || !q('.cb-editor').textContent.includes(S.common.chipViewMatch));
 unmounted();
 
 // An unsaved user component has no view to place yet.
@@ -441,7 +443,6 @@ await setText(q('#cb-source'), BROKEN_SOURCE);
 check('a refused source names its line', alertIn('.cb-check').startsWith('Line 2:'), alertIn('.cb-check'));
 check('Save stays disabled while the source is refused', q('.cb-save')?.disabled === true);
 check('the refused Save title says why', q('.cb-save')?.title === S.componentbuilder.saveBlockedTitle, q('.cb-save')?.title);
-check('Duplicate stays disabled while the source is refused', q('.cb-duplicate')?.disabled === true);
 // The save path refuses the same source before any write.
 let refused = null;
 try {
@@ -466,8 +467,18 @@ console.log('E. preview error display');
 globalThis.__cbBoom = true;
 await setText(q('#cb-source'), RENDER_BOOM_SOURCE);
 await settle(10);
+await openPreview();
+check('Preview opens the results full screen over the view', !!q('.preview-overlay') && !!q('.preview-overlay .cb-stage'));
 check('the preview shows its failure inside its own frame', alertIn('.cb-stage').includes('preview boom'), alertIn('.cb-stage'));
 check('the editor stays usable under a failing preview', !!q('#cb-source') && q('#cb-source').readOnly === false);
+check('the X in the overlay header closes the preview', !!q('.preview-overlay .preview-close'));
+click(q('.preview-overlay .preview-close'));
+await settle(2);
+check('the X dismisses the overlay', !q('.preview-overlay'));
+await openPreview();
+dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+await settle(2);
+check('Escape dismisses the overlay too', !q('.preview-overlay'));
 globalThis.__cbBoom = false;
 unmounted();
 
@@ -539,6 +550,7 @@ COMPONENTS = [];
 await mounted();
 await setText(q('#cb-source'), CONTEXT_SOURCE);
 await settle(10);
+await openPreview();
 check('with no match chosen the preview context carries no matchId', q('.cb-stage .ctx-match')?.textContent.trim() === 'none', q('.cb-stage')?.textContent);
 click(q('#cb-match'));
 await settle(4);
@@ -586,6 +598,7 @@ check('(c) no Cancel while nothing compiles', !cancelBtn());
 // (a) a valid component compiles through the worker and mounts in the preview.
 await setText(q('#cb-source'), OK_SOURCE);
 check('(a) a valid component passes the check through the worker', q('.cb-check')?.textContent.includes(S.componentbuilder.checkOk), alertIn('.cb-check'));
+await openPreview();
 check('(a) the valid component mounts in the preview', await until(() => !!q('.cb-stage .mine-ok')));
 
 // (b) a syntax error comes back from the worker with its line; nothing is written.

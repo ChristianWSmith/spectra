@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// Parameterised seed macros for builtin metric exprs. Each expands at seed time
-// (applySchema, after the plain fragments) into the exact text it replaces, so a
-// stored expr is the complete formula. They are for builtin seeds only; user
-// metric SQL has no macros.
+// Parameterised seed macros for metric statements. Each expands into the exact text it
+// replaces: at seed time for builtins (applySchema, after the plain fragments), and at every
+// save for user statements (ExpandMetricMacros, metric_macros.go). The stored run form is
+// therefore always the complete formula.
 
 // sideJoinMacro expands `{{SIDE_JOIN:alias:src:col}}`: the player-side join of
 // a round_player_sides row for the player named by src.col, in the round and

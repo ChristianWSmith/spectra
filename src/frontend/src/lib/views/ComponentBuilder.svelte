@@ -3,7 +3,13 @@
   import { componentCompletions } from '../editor/helperCatalog.js';
   import { fillHeight } from '../fillheight.js';
   import { expandable } from '../expandable.svelte.js';
-  const previewPanel = expandable();
+  import PreviewOverlay from '../components/PreviewOverlay.svelte';
+  import Chip from '../components/Chip.svelte';
+  import { formatComponentSource } from '../format/format.js';
+  import { MATCH_TABS_ID, PROFILE_VIEW_ID } from '../builtins/panels.js';
+  const editorPanel = expandable();
+  // The preview renders full screen (PreviewOverlay) from the Preview control on the editor card.
+  let previewOpen = $state(false);
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import { notifyPlacementsChanged } from '../warm.js';
@@ -17,7 +23,7 @@
   //   * a BUILT-IN is edited in place (owner ruling 43): its source is
   //     editable, Save stores the edit as that builtin's override (wherever
   //     it is mounted), and Restore to default deletes the override and
-  //     loads the shipped source. Its name is fixed. Duplicate is for yours;
+  //     loads the shipped source. Its name is fixed;
   //   * "Use as my view" writes one placement for a surface (match-view,
   //     profile-view) that points at the open component; Reset removes it;
   //   * the live check is gateComponentSave (componentruntime/savegate.js),
@@ -73,8 +79,9 @@
 
   // `original` is the stored name the form replaces ('' = not saved yet);
   // `builtinId` is set while a built-in is loaded (read-only).
+  // `pluginOf` is set while a plugin's component is loaded: read-only, saved only as your own copy.
   function newForm() {
-    return { original: '', builtinId: '', name: '', source: '' };
+    return { original: '', builtinId: '', name: '', source: '', pluginOf: '', pluginName: '' };
   }
   function snapshot(f) {
     return JSON.stringify({ name: f.name, source: f.source });
@@ -108,19 +115,70 @@
   // Components have no plugin origin yet, so that box narrows nothing.
   let showBuiltin = $state(true);
   let showCustom = $state(true);
-  let showPlugin = $state(true);
+  // The view filter: a component on a view shows while that view's box is on; a component on
+  // no view shows while "no view" is on. Every box starts on.
+  let showMatchView = $state(true);
+  let showProfileView = $state(true);
+  let showNoView = $state(true);
+  let filterOpen = $state(false);
+  let filterAnchor = $state(null);
+  let filterTrigger = $state(null);
+  function closeFilters() {
+    filterOpen = false;
+    filterTrigger?.focus();
+  }
+  function closeFiltersOutside() {
+    filterOpen = false;
+  }
+  // The view filter (see showMatchView): the views a component shows on decide whether it lists.
+  function passesViewFilter(name) {
+    const onViews = VIEW_SURFACES.filter((v) => surfaceComponents(v.surface).includes(name));
+    if (!onViews.length) return showNoView;
+    return onViews.some((v) => (v.surface === 'match-view' ? showMatchView : showProfileView));
+  }
   const shownBuiltins = $derived(
-    !showBuiltin ? [] : BUILTIN_COMPONENTS.filter((b) => !listNeedle || b.id.toLowerCase().includes(listNeedle)),
+    !showBuiltin
+      ? []
+      : BUILTIN_COMPONENTS.filter(
+          (b) => (!listNeedle || b.id.toLowerCase().includes(listNeedle)) && passesViewFilter(b.id),
+        ),
   );
+  // Your components, and the plugins' components (origin 'plugin', grouped by the plugin that supplies them).
+  const userComponents = $derived(components.filter((c) => c.origin !== 'plugin'));
+  const pluginComponents = $derived(components.filter((c) => c.origin === 'plugin'));
+  const pluginIds = $derived([...new Set(pluginComponents.map((c) => c.pluginId))].sort());
+  // The Origin filter's per-plugin boxes: a plugin's components are hidden while its box is off.
+  let hiddenPlugins = $state({});
   const shownComponents = $derived(
-    !showCustom ? [] : components.filter((c) => !listNeedle || c.name.toLowerCase().includes(listNeedle)),
+    !showCustom
+      ? []
+      : userComponents.filter(
+          (c) => (!listNeedle || c.name.toLowerCase().includes(listNeedle)) && passesViewFilter(c.name),
+        ),
+  );
+  const shownPluginComponents = $derived(
+    pluginComponents.filter(
+      (c) =>
+        !hiddenPlugins[c.pluginId] &&
+        (!listNeedle || c.name.toLowerCase().includes(listNeedle)) &&
+        passesViewFilter(c.name),
+    ),
   );
 
-  // The views a component is placed on (the surfaces' first placement names it).
+  // The component a surface shows right now: its placed rows, or, with none placed, its shipped default
+  // (the match view's tabs, the profile view). The chip follows that, so it is there before anything is set.
+  const SURFACE_DEFAULT = { 'match-view': MATCH_TABS_ID, 'profile-view': PROFILE_VIEW_ID };
+  function surfaceComponents(surface) {
+    const rows = placements[surface];
+    return rows.length ? rows.map((p) => p.component) : [SURFACE_DEFAULT[surface]];
+  }
+
+  // The views a component shows on (see surfaceComponents).
   function placedChips(name) {
     if (!name) return [];
-    return VIEW_SURFACES.filter((v) => placements[v.surface][0]?.component === name).map((v) => ({
-      text: v.label,
+    return VIEW_SURFACES.filter((v) => surfaceComponents(v.surface).includes(name)).map((v) => ({
+      text: v.chip,
+      tone: 'view',
       title: S.componentbuilder.useAsView,
     }));
   }
@@ -152,9 +210,10 @@
   // Built-ins edited in place (builtin id → the edited source) and the two
   // surfaces' placements (surface → its entries, empty = the default).
   let overrides = $state({});
+  // label: the Use-as menu's wording; chip: the chip a placed component wears (lib/strings/common.js).
   const VIEW_SURFACES = [
-    { surface: 'match-view', label: S.componentbuilder.surfaceMatch },
-    { surface: 'profile-view', label: S.componentbuilder.surfaceProfile },
+    { surface: 'match-view', label: S.componentbuilder.surfaceMatch, chip: S.common.chipViewMatch },
+    { surface: 'profile-view', label: S.componentbuilder.surfaceProfile, chip: S.common.chipViewProfile },
   ];
   let placements = $state({ 'match-view': [], 'profile-view': [] });
   let viewBusy = $state(false);
@@ -206,9 +265,12 @@
   const builtin = $derived(form.builtinId ? builtinById(form.builtinId) : null);
   const dirty = $derived(snapshot(form) !== baseline);
 
-  function load(next) {
-    form = next;
-    baseline = snapshot(next);
+  // load opens a component in the editor, in its canonical layout. The baseline is the formatted
+  // text, so opening alone does not make the editor dirty.
+  async function load(next) {
+    const opened = { ...next, source: await formatSource(next.source) };
+    form = opened;
+    baseline = snapshot(opened);
     actionError = '';
     previewSource = null;
     check = { status: 'idle', line: 0, message: '' };
@@ -225,6 +287,11 @@
 
   function editComponent(c) {
     load({ original: c.name, builtinId: '', name: c.name, source: c.source });
+  }
+
+  // A plugin's component opens read-only: Save stores a copy under a name of your own (the name must be new).
+  function editPluginComponent(c) {
+    load({ original: '', builtinId: '', name: c.name, source: c.source, pluginOf: c.pluginId, pluginName: c.name });
   }
 
   function newComponent() {
@@ -247,7 +314,7 @@
     }
     check = { status: 'pending', line: 0, message: '' };
     const timer = setTimeout(() => {
-      gateComponentSave(src, builtinSourceDir(form.builtinId)).then(
+      gateComponentSave(src, builtinSourceDir(form.builtinId), { quiet: true }).then(
         (r) => {
           if (gen !== checkGen) return;
           if (r.ok) {
@@ -279,10 +346,21 @@
   );
   const saveTitle = $derived(check.status === 'error' ? S.componentbuilder.saveBlockedTitle : undefined);
 
+  // The canonical layout, applied when a component opens in the editor and again before it is saved.
+  // A source the formatter cannot read is kept as typed (the save gate refuses it with its line).
+  async function formatSource(src) {
+    try {
+      return await formatComponentSource(src);
+    } catch {
+      return src;
+    }
+  }
+
   async function save() {
     actionError = '';
     saving = true;
     try {
+      form.source = await formatSource(form.source);
       if (builtin) {
         // The save gate runs inside saveBuiltinOverride; a refused source
         // never reaches the write.
@@ -293,6 +371,7 @@
         const saved = await saveComponent(form.original, form.name, form.source);
         form.original = saved.name;
         form.name = saved.name;
+        form.pluginOf = ''; // a plugin's copy is yours from here on
         baseline = snapshot(form);
         await refreshList();
       }
@@ -321,8 +400,9 @@
   }
 
   // --- Use as my view ----------------------------------------------------------
-  // The open component (a built-in, or a saved yours-component) is the target.
-  const viewTarget = $derived(builtin ? builtin.id : form.original || '');
+  // The open component (a built-in, a saved yours-component, or a plugin's component, which places by its
+  // name without a copy) is the target.
+  const viewTarget = $derived(builtin ? builtin.id : form.original || form.pluginName || '');
 
   function viewState(surface) {
     const rows = placements[surface];
@@ -359,32 +439,6 @@
       actionError = errText(e);
     } finally {
       viewBusy = false;
-    }
-  }
-
-  // copyName mints "<name> copy", then "<name> copy 2", … — unique among
-  // your components and within the name limit.
-  function copyName(base) {
-    const taken = new Set(components.map((c) => c.name));
-    const cut = (s) => s.slice(0, MAX_NAME);
-    let name = cut(S.fill(S.componentbuilder.copyName, { name: base }));
-    for (let n = 2; taken.has(name); n++) name = cut(S.fill(S.componentbuilder.copyNameN, { name: base, n }));
-    return name;
-  }
-
-  // Duplicate SAVES a copy (of a built-in, or of one of yours) as a new
-  // component and opens it, so the copy exists before it is edited.
-  async function duplicate() {
-    actionError = '';
-    saving = true;
-    try {
-      const saved = await saveComponent('', copyName(form.name.trim() || form.original), form.source);
-      await refreshList();
-      editComponent(saved);
-    } catch (e) {
-      actionError = errText(e);
-    } finally {
-      saving = false;
     }
   }
 
@@ -433,6 +487,12 @@
     return { matchId: null, steamId: null, round: null };
   });
 </script>
+<!-- Escape collapses whichever card is expanded (each key handler checks its own). -->
+<svelte:window
+  onkeydown={(e) => {
+    editorPanel.key(e);
+  }}
+/>
 
 {#snippet row(label, active, chips, onopen, onremove)}
   <div class="cb-row" class:active>
@@ -441,7 +501,7 @@
       {#if chips.length}
         <span class="cb-row-sub">
           {#each chips as c (c.text)}
-            <span class="chip" title={c.title}>{c.text}</span>
+            <Chip tone={c.tone} title={c.title}>{c.text}</Chip>
           {/each}
         </span>
       {/if}
@@ -461,10 +521,8 @@
 
 <div class="view cb-view">
   <header class="view-header">
-    <div>
-      <h1>{S.componentbuilder.heading}</h1>
-      <p class="muted cb-head-note">{S.componentbuilder.headNote}</p>
-    </div>
+    <h1>{S.componentbuilder.heading}</h1>
+    <p class="muted cb-head-note">{S.componentbuilder.headNote}</p>
     <div class="spacer"></div>
     <HelpButton section="component-builder" {openDocs} />
   </header>
@@ -493,27 +551,71 @@
           {S.componentbuilder.newLabel}</button
         >
       </div>
-      <input
-        class="input"
-        type="search"
-        aria-label={S.componentbuilder.listFilterAria}
-        placeholder={S.componentbuilder.listFilterPlaceholder}
-        bind:value={listQuery}
-      />
-      <div class="cb-filters" role="group" aria-label={S.componentbuilder.originLabel}>
-        <span class="filt-lab">{S.componentbuilder.originLabel}</span>
-        <label class="filt-check"
-          ><input type="checkbox" checked={showBuiltin} onchange={(e) => (showBuiltin = e.currentTarget.checked)} />
-          {S.componentbuilder.filterBuiltIn}</label
-        >
-        <label class="filt-check"
-          ><input type="checkbox" checked={showCustom} onchange={(e) => (showCustom = e.currentTarget.checked)} />
-          {S.componentbuilder.filterCustom}</label
-        >
-        <label class="filt-check"
-          ><input type="checkbox" checked={showPlugin} onchange={(e) => (showPlugin = e.currentTarget.checked)} />
-          {S.componentbuilder.filterPlugin}</label
-        >
+      <div class="bld-search-row">
+        <input
+          class="input bld-search"
+          type="search"
+          aria-label={S.componentbuilder.listFilterAria}
+          placeholder={S.componentbuilder.listFilterPlaceholder}
+          bind:value={listQuery}
+        />
+        <span class="bld-filter-host" bind:this={filterAnchor}>
+          <button
+            type="button"
+            class="btn small bld-filter-btn"
+            class:multi-open={filterOpen}
+            bind:this={filterTrigger}
+            aria-haspopup="true"
+            aria-expanded={filterOpen}
+            aria-controls={filterOpen ? 'cb-filter-pop' : null}
+            aria-label={S.common.filtersLabel}
+            title={S.common.filtersTitle}
+            onclick={() => (filterOpen = !filterOpen)}
+          >
+            <span class="codicon codicon-filter" aria-hidden="true"></span>
+            <span class="codicon codicon-chevron-{filterOpen ? 'up' : 'down'}" aria-hidden="true"></span>
+          </button>
+          <Popover open={filterOpen} anchor={filterAnchor} onClose={closeFilters} onOutside={closeFiltersOutside}>
+            <div class="bld-filter-pop" id="cb-filter-pop" role="group" aria-label={S.common.filtersLabel}>
+              <div class="bld-filter-group" role="group" aria-label={S.componentbuilder.originLabel}>
+                <span class="filt-lab">{S.componentbuilder.originLabel}</span>
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showBuiltin} onchange={(e) => (showBuiltin = e.currentTarget.checked)} />
+                  {S.componentbuilder.filterBuiltIn}</label
+                >
+                {#each pluginIds as pid (pid)}
+                  <label class="filt-check"
+                    ><input
+                      type="checkbox"
+                      checked={!hiddenPlugins[pid]}
+                      onchange={(e) => (hiddenPlugins = { ...hiddenPlugins, [pid]: !e.currentTarget.checked })}
+                    />
+                    {S.common.chipPlugin} · {pid}</label
+                  >
+                {/each}
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showCustom} onchange={(e) => (showCustom = e.currentTarget.checked)} />
+                  {S.componentbuilder.filterCustom}</label
+                >
+              </div>
+              <div class="bld-filter-group" role="group" aria-label={S.componentbuilder.viewLabel}>
+                <span class="filt-lab">{S.componentbuilder.viewLabel}</span>
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showMatchView} onchange={(e) => (showMatchView = e.currentTarget.checked)} />
+                  {S.common.chipViewMatch}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showProfileView} onchange={(e) => (showProfileView = e.currentTarget.checked)} />
+                  {S.common.chipViewProfile}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showNoView} onchange={(e) => (showNoView = e.currentTarget.checked)} />
+                  {S.componentbuilder.filterNoView}</label
+                >
+              </div>
+            </div>
+          </Popover>
+        </span>
       </div>
       <div class="cb-scroll">
       <span class="field-label">{S.componentbuilder.builtinGroup}</span>
@@ -523,10 +625,10 @@
             b.label,
             form.builtinId === b.id,
             [
-              { text: S.componentbuilder.builtinChip },
+              { text: S.common.chipBuiltin, tone: 'accent', title: S.componentbuilder.builtinReadOnly },
               ...placedChips(b.id),
               ...(Object.hasOwn(overrides, b.id)
-                ? [{ text: S.componentbuilder.editedChip, title: S.componentbuilder.editedTitle }]
+                ? [{ text: S.common.chipEdited, title: S.common.chipEditedTitle }]
                 : []),
             ],
             () => editBuiltin(b),
@@ -536,7 +638,7 @@
       </div>
       <span class="field-label">{S.componentbuilder.yoursGroup}</span>
       <LoadBox tag="div" class="cb-yours-body" busy={listState.busy} key={listState.key} name="view:componentbuilder">
-      {#if components.length === 0}
+      {#if userComponents.length === 0}
         {#if listState.pending > 0}
           <p class="muted" role="status">{S.componentbuilder.loadingList}</p>
         {:else}
@@ -549,20 +651,50 @@
           {/each}
         </div>
       {/if}
+      {#if pluginComponents.length > 0}
+        <span class="field-label">{S.componentbuilder.pluginsGroup}</span>
+        <div class="cb-rows cb-plugins">
+          {#each shownPluginComponents as c (c.name)}
+            {@render row(
+              c.name,
+              form.pluginOf === c.pluginId && form.name === c.name,
+              [{ text: S.common.chipPlugin, tone: 'plugin', title: c.pluginId }, ...placedChips(c.name)],
+              () => editPluginComponent(c),
+              null,
+            )}
+          {/each}
+        </div>
+      {/if}
       </LoadBox>
       </div>
     </section>
 
     <div class="cb-main" use:fillHeight>
-    <section class="panel cb-editor">
+    <section class="panel cb-editor" class:editor-expanded={editorPanel.on}>
       <div class="row-between">
         <h2>{form.original || builtin ? S.componentbuilder.editComponent : S.componentbuilder.newComponent}</h2>
-        {#if builtin}
-          <span class="chip cb-readonly" title={S.componentbuilder.builtinReadOnly}>{S.componentbuilder.builtinChip}</span>
-        {/if}
-        {#each placedChips(viewTarget) as c (c.text)}
-          <span class="chip">{c.text}</span>
-        {/each}
+        <div class="toolbar">
+          {#if builtin}
+            <Chip tone="accent" title={S.componentbuilder.builtinReadOnly}>{S.common.chipBuiltin}</Chip>
+          {/if}
+          {#if form.pluginOf}
+            <Chip tone="accent" title={S.componentbuilder.pluginReadOnly}>{S.common.chipReadOnly}</Chip>
+          {/if}
+          {#each placedChips(viewTarget) as c (c.text)}
+            <Chip tone={c.tone} title={c.title}>{c.text}</Chip>
+          {/each}
+          <!-- The expand toggle belongs to the card: the whole editor takes the window. -->
+          <button
+            type="button"
+            class="btn small card-expand"
+            aria-label={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+            title={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+            aria-expanded={editorPanel.on}
+            onclick={editorPanel.toggle}
+          >
+            <span class="codicon codicon-{editorPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+          </button>
+        </div>
       </div>
       <div class="cb-field">
         <label class="field-label" for="cb-name">{S.componentbuilder.fieldName}</label>
@@ -585,6 +717,9 @@
           cls="cb-source"
           language="javascript"
           rows={22}
+          expandable={false}
+          fill
+          readonly={!!form.pluginOf}
           ariaLabel={S.componentbuilder.fieldSource}
           bind:value={form.source}
           completions={componentCompletions}
@@ -592,9 +727,9 @@
       </div>
       <div class="cb-check">
         {#if check.status === 'pending'}
-          <span class="muted" role="status">{S.componentbuilder.checking}</span>
+          <span class="validity muted" role="status">{S.componentbuilder.checking}</span>
         {:else if check.status === 'ok'}
-          <span class="muted" role="status">{S.componentbuilder.checkOk}</span>
+          <span class="validity ok" role="status"><span class="codicon codicon-check" aria-hidden="true"></span> {S.componentbuilder.checkOk}</span>
         {:else if check.status === 'error' && !checkHidden}
           <p class="error cb-check-error" role="alert">
             {checkText}
@@ -629,6 +764,15 @@
               </Popover>
             </span>
           {/if}
+          {#if builtin}
+            <button
+              class="btn cb-restore"
+              onclick={restoreDefault}
+              disabled={saving || !overridden}
+              title={S.componentbuilder.restoreTitle}
+              >{S.componentbuilder.restoreDefault}</button
+            >
+          {/if}
           {#if form.original}
             <button
               class="btn danger cb-delete"
@@ -641,25 +785,6 @@
           {/if}
         </span>
         <span class="toolbar">
-          {#if builtin}
-            <span class="muted cb-note">{S.componentbuilder.builtinReadOnly}</span>
-            <button
-              class="btn cb-restore"
-              onclick={restoreDefault}
-              disabled={saving || !overridden}
-              title={S.componentbuilder.restoreTitle}
-              >{S.componentbuilder.restoreDefault}</button
-            >
-          {:else}
-            <button
-              class="btn cb-duplicate"
-              onclick={duplicate}
-              disabled={saving || check.status !== 'ok' || !form.original}
-              title={S.componentbuilder.duplicateTitle}
-              ><span class="codicon codicon-copy" aria-hidden="true"></span>
-              {S.componentbuilder.duplicate}</button
-            >
-          {/if}
           {#if compiling}
             <button
               class="btn cb-cancel"
@@ -667,6 +792,28 @@
               title={S.componentbuilder.cancelCompileTitle}>{S.componentbuilder.cancelCompile}</button
             >
           {/if}
+          <!-- The preview target: the context Preview renders against. -->
+  <div class="cb-context" role="group" aria-label={S.componentbuilder.contextLabel}>
+    <!-- The controls name themselves: "A match" / "A player" in the select, and the picker's own "Select …" text. -->
+    <select id="cb-context" class="input" aria-label={S.componentbuilder.contextLabel} bind:value={contextKind}>
+      <option value="match">{S.componentbuilder.contextMatch}</option>
+      <option value="player">{S.componentbuilder.contextPlayer}</option>
+    </select>
+    {#if contextKind === 'match'}
+      <MatchPicker {matches} value={matchId} id="cb-match" onselect={(mid) => (matchId = mid)} />
+    {:else}
+      <PlayerPicker {players} value={steamId} id="cb-player" onselect={(sid) => (steamId = sid)} />
+    {/if}
+  </div>
+                    <button
+            class="btn"
+            onclick={() => (previewOpen = true)}
+            disabled={previewSource == null}
+            title={S.componentbuilder.previewHeading}
+          >
+            <span class="codicon codicon-play" aria-hidden="true"></span>
+            {S.componentbuilder.previewHeading}
+          </button>
           <button class="btn primary cb-save" onclick={save} disabled={saveDisabled} title={saveTitle}>
             <span class="codicon codicon-save" aria-hidden="true"></span>
             {saving
@@ -680,42 +827,7 @@
 
     </section>
 
-    <section class="panel cb-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
-      <div class="row-between">
-        <h2>{S.componentbuilder.previewHeading}</h2>
-        <div class="toolbar">
-          <button
-            type="button"
-            class="btn small preview-expand"
-            aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-            title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-            aria-expanded={previewPanel.on}
-            onclick={previewPanel.toggle}
-        >
-            <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
-        </button>
-        </div>
-      </div>
-      <div class="cb-context" role="group" aria-label={S.componentbuilder.contextLabel}>
-        <div class="cb-field">
-          <label class="field-label" for="cb-context">{S.componentbuilder.contextLabel}</label>
-          <select id="cb-context" class="input" bind:value={contextKind}>
-            <option value="match">{S.componentbuilder.contextMatch}</option>
-            <option value="player">{S.componentbuilder.contextPlayer}</option>
-          </select>
-        </div>
-        {#if contextKind === 'match'}
-          <div class="cb-field">
-            <label class="field-label" for="cb-match">{S.componentbuilder.matchLabel}</label>
-            <MatchPicker {matches} value={matchId} id="cb-match" onselect={(mid) => (matchId = mid)} />
-          </div>
-        {:else}
-          <div class="cb-field">
-            <label class="field-label" for="cb-player">{S.componentbuilder.playerLabel}</label>
-            <PlayerPicker {players} value={steamId} id="cb-player" onselect={(sid) => (steamId = sid)} />
-          </div>
-        {/if}
-      </div>
+    <PreviewOverlay open={previewOpen} title={S.componentbuilder.previewHeading} onClose={() => (previewOpen = false)}>
       <div class="cb-stage">
         {#if previewSource == null}
           <p class="muted" role="status">{S.componentbuilder.noPreviewYet}</p>
@@ -728,7 +840,7 @@
           />
         {/if}
       </div>
-    </section>
+    </PreviewOverlay>
     </div>
   </div>
 </div>
@@ -742,8 +854,7 @@
     align-items: start;
   }
   .cb-list,
-  .cb-editor,
-  .cb-preview {
+  .cb-editor {
     min-width: 0;
   }
   /* The list fills the view height (the fillHeight action); its rows scroll inside it. */
@@ -760,27 +871,27 @@
     min-height: 0;
     overflow-y: auto;
   }
-  /* The editor sits above the preview, one column. */
+  /* The editor card is the whole column; Preview opens full screen (PreviewOverlay). */
   .cb-main {
     display: flex;
     flex-direction: column;
     gap: 16px;
     min-width: 0;
   }
-  /* The main column fills the content height (fillHeight): the editor keeps its
-     natural size, the preview takes what is left and scrolls. */
-  .cb-main > :not(.cb-preview) {
-    flex: none;
+  /* The main column fills the content height (fillHeight): the editor card takes it all, and its
+     source fills the card (.source-wrap.fill). */
+  .cb-main > .cb-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: visible; /* the use-as-view menu and the pickers' lists float over the card */
   }
-  .cb-main > .cb-preview {
-    flex: 1 1 0;
-    min-height: 160px;
-    overflow: auto;
+  .cb-source-field {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   @media (max-width: 1000px) {
-    .cb-main > .cb-preview {
+    .cb-main > .cb-editor {
       flex: none;
-      min-height: 0;
       overflow: visible;
     }
   }
@@ -792,7 +903,8 @@
      panel is positioned here, the same way the combat kind popover floats). */
   .cb-use-pop {
     position: absolute;
-    top: calc(100% + 4px);
+    top: auto;
+    bottom: calc(100% + 4px);
     left: 0;
     z-index: 30;
     display: flex;
@@ -805,49 +917,15 @@
     border-radius: var(--radius);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   }
-  .cb-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-  }
   .cb-rows {
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
-  .cb-row {
-    display: flex;
-    align-items: stretch;
-    gap: 2px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .cb-row.active {
-    border-color: var(--accent);
-  }
-  .cb-row-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding: 6px 8px;
-    background: none;
-    border: 0;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
   .cb-row-title {
     overflow-wrap: anywhere;
   }
-  .cb-row-sub {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+  /* A component that is the user's current match or profile view: an accent chip in the list. */
   .cb-field {
     display: flex;
     flex-direction: column;
@@ -857,10 +935,21 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  /* The context kind and its target picker sit on one line (wrapping only when the panel is narrow). */
   .cb-context {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+  }
+  /* The context controls take only the room their text needs. */
+  .cb-context > select.input {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .cb-context > :global(.mp),
+  .cb-context > :global(.pp) {
+    flex: 0 0 auto;
   }
   .cb-stage {
     margin-top: 12px;

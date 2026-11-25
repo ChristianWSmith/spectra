@@ -92,7 +92,7 @@ func TestMetricRefBehindOrMissingReadsNull(t *testing.T) {
 	})
 	rule := ruleVersionOf(t, f.st)
 	match := readyMatchIDs(t, f.st)[0]
-	if err := metrics.RunRaw(t.Context(), f.st, x.ID, x.Version, rule, x.Expr, store.RawScope{MatchID: match}); err != nil {
+	if err := metrics.RunRaw(t.Context(), f.st, x.ID, x.Version, rule, x.RunExpr, store.RawScope{MatchID: match}); err != nil {
 		t.Fatalf("RunRaw source: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func TestMetricRefBehindOrMissingReadsNull(t *testing.T) {
 		t.Fatalf("make missing: %v", err)
 	}
 
-	if err := metrics.RunRaw(t.Context(), f.st, y.ID, y.Version, rule, y.Expr, store.RawScope{MatchID: match}); err != nil {
+	if err := metrics.RunRaw(t.Context(), f.st, y.ID, y.Version, rule, y.RunExpr, store.RawScope{MatchID: match}); err != nil {
 		t.Fatalf("RunRaw reader: %v", err)
 	}
 	seen := map[string]*float64{}

@@ -71,6 +71,9 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	title TEXT NOT NULL DEFAULT '',
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
+	-- The expanded form of expr: the plain SQL that runs. expr keeps the macro form
+	-- (what the editor shows); ExpandMetricMacros writes this at every save.
+	run_expr TEXT NOT NULL DEFAULT '',
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',
@@ -82,7 +85,9 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	touched TEXT NOT NULL DEFAULT '',
 	version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME,
-	held INTEGER NOT NULL DEFAULT 0
+	held INTEGER NOT NULL DEFAULT 0,
+	-- 0 = disabled: the row, its values and edges stay, but nothing computes it (SetMetricEnabled).
+	enabled INTEGER NOT NULL DEFAULT 1
 )`
 
 // ensureMetricsTable creates the metrics table when missing (no-op when
@@ -247,10 +252,10 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, format, doc, origin, plugin_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'plugin', ?, ?)
+		`INSERT INTO metrics (name, title, expr, run_expr, format, doc, origin, plugin_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
-			title = excluded.title, expr = excluded.expr,
+			title = excluded.title, expr = excluded.expr, run_expr = excluded.run_expr,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
 			plugin_id = excluded.plugin_id,
 			touched = ''`,
@@ -261,7 +266,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	defer stmt.Close()
 	for _, d := range defs {
 		if _, err := stmt.Exec(
-			scrub(d.Name), scrub(d.Title), scrub(d.Expr),
+			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(d.Expr),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), time.Now(),
 		); err != nil {
 			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)

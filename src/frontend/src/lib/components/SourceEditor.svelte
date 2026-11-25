@@ -21,6 +21,11 @@
     rows = 6,
     placeholder = '',
     cls = '',
+    // The big-screen toggle on this box. A builder whose card owns the expand
+    // passes false: the card expands as a whole and its editor fills it (fill).
+    expandable = true,
+    // Fill: the box takes the height its flex parent gives it, rather than `rows`.
+    fill = false,
   } = $props();
 
   let host = $state(null);
@@ -151,18 +156,21 @@
     editor?.updateOptions({ readOnly: ro });
   });
 </script>
+<svelte:window onkeydown={onWrapKey} />
 
-<div class="source-wrap" class:expanded onkeydown={onWrapKey}>
-  <button
-    type="button"
-    class="btn small source-expand"
-    aria-label={expanded ? S.common.collapseEditor : S.common.expandEditor}
-    title={expanded ? S.common.collapseEditor : S.common.expandEditor}
-    aria-expanded={expanded}
-    onclick={toggleExpanded}
-  >
-    <span class="codicon codicon-{expanded ? 'screen-normal' : 'screen-full'}"></span>
-  </button>
+<div class="source-wrap" class:expanded class:fill>
+  {#if expandable}
+    <button
+      type="button"
+      class="btn small source-expand"
+      aria-label={expanded ? S.common.collapseEditor : S.common.expandEditor}
+      title={expanded ? S.common.collapseEditor : S.common.expandEditor}
+      aria-expanded={expanded}
+      onclick={toggleExpanded}
+    >
+      <span class="codicon codicon-{expanded ? 'screen-normal' : 'screen-full'}"></span>
+    </button>
+  {/if}
   {#if failed}
     <textarea
       {id}
@@ -180,7 +188,7 @@
       {id}
       bind:this={host}
       class="source-editor {cls}"
-      style="height: {rows * 1.6}em"
+      style={fill ? undefined : `height: ${rows * 1.6}em`}
       role="group"
       aria-label={ariaLabel}
     ></div>

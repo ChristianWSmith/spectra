@@ -723,8 +723,8 @@ function legacyRefusal(reply) {
 // compileSource compiles in the worker, then rewrites on this thread; throws
 // ComponentSourceError for anything the author must fix, and
 // CompileCancelledError when the author stopped the compile.
-async function compileSource(source, filename, builtinDir = null) {
-  const reply = await compileWork(String(source), filename);
+async function compileSource(source, filename, builtinDir = null, opts = {}) {
+  const reply = await compileWork(String(source), filename, opts);
   if (reply.cancelled) throw new CompileCancelledError();
   if (!reply.ok) {
     if (reply.legacy) throw legacyRefusal(reply);
@@ -758,9 +758,9 @@ async function compileSource(source, filename, builtinDir = null) {
 // without evaluating anything. {ok: true} or {ok: false, line, column,
 // message} (line/column 1-based, 0 when unknown; message is the bare
 // reason — the caller positions it).
-export async function checkComponentSource(source, filename = 'Component.svelte', builtinDir = null) {
+export async function checkComponentSource(source, filename = 'Component.svelte', builtinDir = null, opts = {}) {
   try {
-    const { refs } = await compileSource(source, filename, builtinDir);
+    const { refs } = await compileSource(source, filename, builtinDir, opts);
     // A user component's references must be trackable by name (the store guards renames and
     // deletes with them); a builtin's are curated code, so they pass.
     const [first] = refs.untracked;

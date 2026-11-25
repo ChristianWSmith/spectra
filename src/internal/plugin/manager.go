@@ -179,6 +179,9 @@ func (m *Manager) Install(sourcePath string) (State, error) {
 	if err := m.st.CheckBuiltinMetricCollisions(metricDefs(man)); err != nil {
 		return State{}, err
 	}
+	if err := m.st.CheckPluginComponentNames(man.ID, componentDefs(man)); err != nil {
+		return State{}, err
+	}
 	if man.Hash != "" {
 		computed, err := ComputeBundleHash(sourcePath)
 		if err != nil {
@@ -219,6 +222,9 @@ func (m *Manager) Install(sourcePath string) (State, error) {
 		if err := m.st.ReplacePluginMetrics(man.ID, metricDefs(man)); err != nil {
 			return State{}, err
 		}
+		if err := m.st.ReplacePluginComponents(man.ID, componentDefs(man)); err != nil {
+			return State{}, err
+		}
 	}
 	return m.stateFor(row), nil
 }
@@ -242,8 +248,14 @@ func (m *Manager) SetEnabled(id string, enabled bool) (State, error) {
 		if err := m.st.ReplacePluginMetrics(id, metricDefs(man)); err != nil {
 			return State{}, err
 		}
+		if err := m.st.ReplacePluginComponents(id, componentDefs(man)); err != nil {
+			return State{}, err
+		}
 	} else {
 		if err := m.st.DeletePluginMetrics(id); err != nil {
+			return State{}, err
+		}
+		if err := m.st.DeletePluginComponents(id); err != nil {
 			return State{}, err
 		}
 	}
@@ -262,6 +274,9 @@ func (m *Manager) Remove(id string) error {
 		return err
 	}
 	if err := m.st.DeletePluginMetrics(id); err != nil {
+		return err
+	}
+	if err := m.st.DeletePluginComponents(id); err != nil {
 		return err
 	}
 	if err := m.st.DeletePluginRow(id); err != nil {
@@ -284,6 +299,15 @@ func metricDefs(man Manifest) []store.PluginMetricDef {
 			Name: d.Name, Title: d.Title, Expr: d.Expr,
 			Format: d.Format, Doc: d.Doc,
 		})
+	}
+	return defs
+}
+
+// componentDefs converts validated manifest components into store rows.
+func componentDefs(man Manifest) []store.PluginComponentDef {
+	defs := make([]store.PluginComponentDef, 0, len(man.Components))
+	for _, c := range man.Components {
+		defs = append(defs, store.PluginComponentDef{Name: strings.TrimSpace(c.Name), Source: c.Source})
 	}
 	return defs
 }

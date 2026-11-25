@@ -41,6 +41,7 @@ const STATE_TITLES = {
   processing: 'recomputing — this value is not final yet',
   'no-data': 'no data for this subject',
   behind: 'value not available yet — recompute pending',
+  disabled: 'disabled — stored, not computed; turn it on to compute it again',
 };
 
 // metricPresentation maps (state, the player's row, the unit's sibling

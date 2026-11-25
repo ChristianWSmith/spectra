@@ -271,13 +271,7 @@ const HINT_KEYS = {
 // prefix liveness asserted in Check D): a class-1 inline literal whose
 // rendered role is a hint rather than a label. Matched by trimmed prefix so
 // a reword of the body does not silently orphan the declaration.
-const HINT_INLINE = [
-  {
-    file: 'frontend/src/lib/views/Builder.svelte',
-    prefix: 'One SELECT or WITH statement',
-    why: 'the expression editor’s hint under the expression field — a footnote naming the statement shape (tables and the save checks live in the metric guide)',
-  },
-];
+const HINT_INLINE = [];
 
 const TIER1_MAX = 70;
 const TIER2_MAX = 200;

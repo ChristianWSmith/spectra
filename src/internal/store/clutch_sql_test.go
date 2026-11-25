@@ -54,7 +54,7 @@ func seedClutchFixture(t *testing.T, s *Store, id int64) {
 func clutchMetric(t *testing.T, s *Store, name string, id int64) map[string]float64 {
 	t.Helper()
 	var expr string
-	if err := s.db.QueryRow(`SELECT expr FROM metrics WHERE name = ?`, name).Scan(&expr); err != nil {
+	if err := s.db.QueryRow(`SELECT run_expr FROM metrics WHERE name = ?`, name).Scan(&expr); err != nil {
 		t.Fatalf("metric %s: %v", name, err)
 	}
 	rows, err := s.db.Query(expr, sql.Named("match_id", id))
@@ -109,7 +109,7 @@ func TestClutchRowsFixture(t *testing.T) {
 
 	// The clutch family (round-grain, binds :round) must agree with the rows.
 	var fam string
-	if err := s.db.QueryRow(`SELECT expr FROM metrics WHERE name = 'clutch'`).Scan(&fam); err != nil {
+	if err := s.db.QueryRow(`SELECT run_expr FROM metrics WHERE name = 'clutch'`).Scan(&fam); err != nil {
 		t.Fatalf("clutch family: %v", err)
 	}
 	famRows, err := s.db.Query(fam, sql.Named("match_id", id), sql.Named("round", 1))
@@ -209,7 +209,7 @@ func TestAliveCountRosterRule(t *testing.T) {
 	seedAliveRosterFixture(t, s, id)
 
 	var expr string
-	if err := s.db.QueryRow(`SELECT expr FROM metrics WHERE name = 'alive_count'`).Scan(&expr); err != nil {
+	if err := s.db.QueryRow(`SELECT run_expr FROM metrics WHERE name = 'alive_count'`).Scan(&expr); err != nil {
 		t.Fatalf("alive_count: %v", err)
 	}
 	want := map[int]map[string]int{
@@ -282,7 +282,7 @@ func TestClutchesTableGone(t *testing.T) {
 	if n != 0 {
 		t.Errorf("sqlite_master lists the clutches table")
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM metrics WHERE expr LIKE '%{{CLUTCH_CTE}}%'`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM metrics WHERE run_expr LIKE '%{{CLUTCH_CTE}}%'`).Scan(&n); err != nil {
 		t.Fatalf("placeholder scan: %v", err)
 	}
 	if n != 0 {

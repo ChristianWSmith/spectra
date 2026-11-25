@@ -7,10 +7,12 @@
 
 export const builder = {
   // list-row actions (snippet)
-  originPlugin: 'plugin',
-  pluginDisabled: 'disabled',
-  previewThisMetric: 'Preview this metric',
-  previewAria: 'Preview {name}',
+  toggleAria: 'Enabled: {name}',
+  toggleOnTitle: 'Enabled and computed. Switch off to keep it stored without computing.',
+  toggleOffTitle: 'Disabled — stored, not computed. Turn on to compute it again.',
+  toggleSweepLocked: 'Locked while metrics are computing. Switch it when they finish.',
+  toggleBlockedOff: "Can't turn off: {reason}",
+  toggleBlockedOn: "Can't turn on: {reason}",
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
   // Both delete sites compose these (w19 item 23): the list row's
@@ -85,14 +87,10 @@ export const builder = {
   // thing that changes; restore to default brings the shipped SQL back.
   builtinEditNote: 'Your edit replaces this built-in. Restore to default undoes it.',
   builtinEditedNote: 'Edited. Restore to default brings back the shipped expression.',
-  builtinChip: 'built-in',
-  editedChip: 'edited',
-  editedTitle: 'You have edited this built-in. Its shipped expression is the default.',
   restoreDefault: 'Restore to default',
   restoreTitle: 'Discard your edit and use the shipped expression',
   pluginImmutable:
     'Plugin metrics are immutable — saving stores a copy of this definition as your own metric.',
-  pluginReadOnlyChip: 'read-only source',
   fieldName: 'Name',
   namePlaceholder: 'Enter a metric name…',
   fieldTitle: 'Title',
@@ -107,7 +105,7 @@ export const builder = {
   docPlaceholder: 'Document the formula — what it counts, over what…',
   fieldExpression: 'Expression',
   exprChecking: 'checking…',
-  exprValid: 'valid',
+  exprValid: 'Valid',
 
   // actions row
   saving: 'Saving…',
@@ -133,7 +131,6 @@ export const builder = {
   // The Builder's behind chip: its word is the library-wide one (any match
   // behind), so the title says so. The match view reads per match instead.
   behindAnyMatch: 'behind for any match — a match needs a recompute',
-  compiledSql: 'compiled SQL (provenance)',
   noPreviewYetLead: 'Nothing previewed yet — press Preview (or',
   noPreviewYetTail: 'on a metric).',
 };

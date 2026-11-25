@@ -138,7 +138,7 @@ func TestBuiltinsDeriveTouchedAtOpen(t *testing.T) {
 			t.Errorf("builtin %s has no touched set after Open", m.Name)
 			continue
 		}
-		st, gerr := AnalyzeMetricSQL(m.Expr, nil)
+		st, gerr := AnalyzeMetricSQL(m.RunExpr, nil)
 		if gerr != nil {
 			t.Errorf("builtin %s is refused by the gate: %s", m.Name, gerr.Message)
 			continue

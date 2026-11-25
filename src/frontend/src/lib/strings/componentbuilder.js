@@ -1,6 +1,6 @@
 // strings/componentbuilder.js — the Component builder view
 // (views/ComponentBuilder.svelte): the list of built-in and yours, the
-// source editor, the live preview and its save, duplicate and delete
+// source editor, the live preview and its save, and delete
 // actions. {name} = a component name, {n} = a copy number, {line} /
 // {err} = a source refusal (components.sourceAtLine).
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
@@ -9,11 +9,10 @@ export const componentbuilder = {
   heading: 'Component builder',
   headNote: 'Write a component, check it, and preview it on a match or player.',
   listFilterAria: 'Filter components',
-  listFilterPlaceholder: 'Filter by name',
+  listFilterPlaceholder: 'Search components…',
   componentsHeading: 'Components',
   builtinGroup: 'Built-in',
   yoursGroup: 'Yours',
-  builtinChip: 'built-in',
   noUserComponents: 'None yet. Write one with New.',
   loadingList: 'Loading…',
   newLabel: 'New',
@@ -24,14 +23,12 @@ export const componentbuilder = {
   fieldSource: 'Source',
   // Live check states, shown under the source.
   checking: 'Checking…',
-  checkOk: 'Ready to save.',
+  checkOk: 'Valid',
   // Save is refused while the source has a problem.
   saveBlockedTitle: 'Fix the problem in the source to save.',
   builtinReadOnly: 'This is the built-in version. Your edits replace it wherever it appears.',
   // Editing a built-in in place (owner ruling 43): the edited source is kept
   // as the built-in's override; restore brings the shipped source back.
-  editedChip: 'edited',
-  editedTitle: 'You have edited this built-in. Its shipped version is under the edit.',
   restoreDefault: 'Restore to default',
   restoreTitle: 'Discard your edit and use the shipped version',
   // Use as my view (owner ruling 43): a surface renders the placed component.
@@ -42,17 +39,16 @@ export const componentbuilder = {
   originLabel: 'Origin',
   filterBuiltIn: 'Built-in',
   filterCustom: 'Custom',
-  filterPlugin: 'Plugin',
+  viewLabel: 'View',
+  filterNoView: 'no view',
+  pluginsGroup: 'Plugins',
+  pluginReadOnly: 'This component comes from a plugin, so it is read-only. Change the name and save to keep your own copy.',
   viewBusy: 'Working…',
   saveComponent: 'Save',
   cancelCompile: 'Cancel',
   cancelCompileTitle: 'Stop the check. Nothing is saved.',
   saving: 'Saving…',
   saved: 'Saved',
-  duplicate: 'Duplicate',
-  duplicateTitle: 'Save a copy as yours and open it',
-  copyName: '{name} copy',
-  copyNameN: '{name} copy {n}',
   deleteComponent: 'Delete',
   deleteAria: 'Delete {name}',
   retry: 'Try again',
@@ -60,8 +56,8 @@ export const componentbuilder = {
   // Preview.
   previewHeading: 'Preview',
   contextLabel: 'Preview with',
-  contextMatch: 'A match',
-  contextPlayer: 'A player',
+  contextMatch: 'Match',
+  contextPlayer: 'Player',
   matchLabel: 'Match',
   playerLabel: 'Player',
   noPreviewYet: 'The preview appears once the source checks out.',

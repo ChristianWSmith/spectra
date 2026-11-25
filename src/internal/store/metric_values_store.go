@@ -33,6 +33,8 @@ type MetricCoverage struct {
 	MetricID  int64
 	Behind    bool
 	FreshRows int
+	// Enabled is false for a disabled metric; it never reads behind and the sweep never computes it.
+	Enabled bool
 	// BehindMatches is the per-unit answer for a :match_id metric: the
 	// ready matches with no fresh run record. Behind is true when this is
 	// non-empty (or another unit is behind). Other matches keep their fresh
@@ -99,7 +101,7 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 // scope derives to profile (its expr reads :steam_id). The coverage query
 // tests membership through json_each, so the scope is never a column.
 func (s *Store) profileMetricIDsJSON() (string, error) {
-	rows, err := s.db.Query(`SELECT id, expr FROM metrics`)
+	rows, err := s.db.Query(`SELECT id, run_expr FROM metrics`)
 	if err != nil {
 		return "", err
 	}
@@ -131,7 +133,10 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 		return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id, m.expr, m.touched, m.version,
+		// The run form (run_expr), not the macro form: the gate analyzes SQL, and a macro
+		// form such as {{DAMAGE_ROUND_CTE}} is refused, which would read the metric behind.
+		// A row saved without a run form (run_expr '') is plain SQL, so its expr stands.
+		`SELECT m.id, CASE WHEN m.run_expr <> '' THEN m.run_expr ELSE m.expr END, m.touched, m.version,
 			CASE WHEN (
 				EXISTS (SELECT 1 FROM metric_values v
 					WHERE v.metric_id = m.id
@@ -147,7 +152,7 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 						  AND `+metricValueFreshCond+`))
 			) THEN 1 ELSE 0 END AS behind,
 			(SELECT COUNT(*) FROM metric_values v
-				WHERE v.metric_id = m.id AND `+metricValueFreshCond+`) AS fresh
+				WHERE v.metric_id = m.id AND `+metricValueFreshCond+`) AS fresh, m.enabled
 		FROM metrics m
 		ORDER BY `+metricOrder,
 		liveRuleVersion, profileJSON, liveRuleVersion, profileJSON, liveRuleVersion, liveRuleVersion,
@@ -165,11 +170,12 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	var list []pending
 	for rows.Next() {
 		var p pending
-		var behind int
-		if err := rows.Scan(&p.cov.MetricID, &p.expr, &p.touched, &p.version, &behind, &p.cov.FreshRows); err != nil {
+		var behind, enabled int
+		if err := rows.Scan(&p.cov.MetricID, &p.expr, &p.touched, &p.version, &behind, &p.cov.FreshRows, &enabled); err != nil {
 			return nil, fmt.Errorf("couldn't load the metric coverage: %w", err)
 		}
 		p.cov.Behind = behind != 0
+		p.cov.Enabled = enabled != 0
 		list = append(list, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -183,6 +189,13 @@ func (s *Store) MetricCoverage(liveRuleVersion int) ([]MetricCoverage, error) {
 	out := make([]MetricCoverage, 0, len(list))
 	for _, p := range list {
 		c := p.cov
+		if !c.Enabled {
+			// A disabled metric is never behind: nothing is pending for it, and the SQL flag above is
+			// ignored for it.
+			c.Behind, c.BehindMatches, c.BehindSteams = false, nil, nil
+			out = append(out, c)
+			continue
+		}
 		switch p.touched {
 		case "":
 			c.Behind = true
@@ -1127,7 +1140,7 @@ func (s *Store) ReadyRounds() ([]RawRoundKey, error) {
 // refuses keeps ” and reads behind. Rows are collected before any write:
 // the store's one connection cannot hold a cursor across an UPDATE.
 func (s *Store) backfillTouched() error {
-	rows, err := s.db.Query(`SELECT id, expr FROM metrics WHERE touched = ''`)
+	rows, err := s.db.Query(`SELECT id, run_expr FROM metrics WHERE touched = ''`)
 	if err != nil {
 		return fmt.Errorf("couldn't derive the touched tables: %w", err)
 	}

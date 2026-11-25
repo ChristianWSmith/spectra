@@ -22,7 +22,7 @@
   // dialog open, as does any error.
   import Dialog from './Dialog.svelte';
   import TokenSelect from './TokenSelect.svelte';
-  import { listMetrics, listReportTemplates, buildPluginBundle, errText } from '../services.js';
+  import { listMetrics, listReportTemplates, listComponents, buildPluginBundle, errText } from '../services.js';
   import { saveText } from '../save.js';
   import * as S from '../strings/index.js';
 
@@ -36,8 +36,10 @@
   // TokenSelect, `row` kept so a save never re-reads the catalog.
   let tplItems = $state([]);
   let metricItems = $state([]);
+  let componentItems = $state([]);
   let tplSel = $state([]); // picked template ids (render order)
   let metricSel = $state([]); // picked metric ids (render order)
+  let componentSel = $state([]); // picked component names (render order)
   let loadError = $state('');
   let error = $state('');
   let busy = $state(false);
@@ -52,6 +54,7 @@
     version = '1.0.0';
     tplSel = [];
     metricSel = [];
+    componentSel = [];
     error = '';
     loadError = '';
     load();
@@ -63,7 +66,7 @@
   // alert carries it and the empty-state notes stay hidden.
   async function load() {
     const gen = ++loadGen;
-    const [t, m] = await Promise.allSettled([listReportTemplates(), listMetrics()]);
+    const [t, m, c] = await Promise.allSettled([listReportTemplates(), listMetrics(), listComponents()]);
     if (gen !== loadGen || !open) return; // superseded by a newer open
     if (t.status === 'fulfilled') {
       tplItems = (t.value || [])
@@ -75,7 +78,12 @@
         .filter((x) => x.origin === 'user')
         .map((x) => ({ id: x.id, label: x.title || x.name, row: x }));
     }
-    const failed = [t, m].find((r) => r.status === 'rejected');
+    if (c.status === 'fulfilled') {
+      componentItems = (c.value || [])
+        .filter((x) => x.origin === 'user')
+        .map((x) => ({ id: x.name, label: x.name, row: x }));
+    }
+    const failed = [t, m, c].find((r) => r.status === 'rejected');
     loadError = failed ? errText(failed.reason) : '';
   }
 
@@ -85,6 +93,7 @@
   // so no duplicate can form.
   const tplTokens = $derived(tplItems.filter((it) => tplSel.includes(it.id)));
   const metricTokens = $derived(metricItems.filter((it) => metricSel.includes(it.id)));
+  const componentTokens = $derived(componentItems.filter((it) => componentSel.includes(it.id)));
 
   function addTpl(it) {
     if (!tplSel.includes(it.id)) tplSel = [...tplSel, it.id];
@@ -98,13 +107,19 @@
   function removeMetric(id) {
     metricSel = metricSel.filter((x) => x !== id);
   }
+  function addComponent(it) {
+    if (!componentSel.includes(it.id)) componentSel = [...componentSel, it.id];
+  }
+  function removeComponent(id) {
+    componentSel = componentSel.filter((x) => x !== id);
+  }
 
   // Save gating: a name AND at least one pick. A nameless or empty
   // bundle has nothing to share — the server would still compose it, but
   // the dialog never offers a pointless file (owner asked for the choice:
   // name + content wins over name-only).
   const canSave = $derived(
-    name.trim() !== '' && (tplSel.length > 0 || metricSel.length > 0) && !busy,
+    name.trim() !== '' && (tplSel.length > 0 || metricSel.length > 0 || componentSel.length > 0) && !busy,
   );
 
   async function save() {
@@ -112,7 +127,7 @@
     busy = true;
     error = '';
     try {
-      const text = await buildPluginBundle(name.trim(), version.trim(), metricSel, tplSel);
+      const text = await buildPluginBundle(name.trim(), version.trim(), metricSel, tplSel, componentSel);
       // The native save dialog: default spectra-plugin.json. A picked
       // location (a non-empty path) means the file was written — the
       // native dialog closing IS the confirmation, so the dialog closes
@@ -192,6 +207,22 @@
     />
     {#if !loadError && metricItems.length === 0}
       <span class="muted bp-empty" role="status">{S.settings.buildNoMetrics}</span>
+    {/if}
+  </div>
+  <div class="bp-field">
+    <label class="field-label" for="bp-components">{S.settings.buildComponentsLabel}</label>
+    <TokenSelect
+      id="bp-components"
+      items={componentItems}
+      text={itemText}
+      tokens={componentTokens}
+      placeholder={S.settings.buildComponentsPlaceholder}
+      ariaLabel={S.settings.buildComponentsAria}
+      onselect={addComponent}
+      onremove={removeComponent}
+    />
+    {#if !loadError && componentItems.length === 0}
+      <span class="muted bp-empty" role="status">{S.settings.buildNoComponents}</span>
     {/if}
   </div>
   {#if error}

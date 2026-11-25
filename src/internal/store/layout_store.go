@@ -14,7 +14,7 @@ import (
 
 // componentCols is the components column list in scan order (every column
 // except id), pinned to the DDL by TestColumnListConstsMatchSchema.
-const componentCols = `name, source, created_at, updated_at`
+const componentCols = `name, source, origin, plugin_id, created_at, updated_at`
 
 // layoutPlacementCols is the layout_placements column list in scan order,
 // pinned to the DDL by TestColumnListConstsMatchSchema.

@@ -162,7 +162,7 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 		for _, name := range edges[m.Name] {
 			if t, ok := byName[name]; ok {
 				depsOf[m.ID] = append(depsOf[m.ID], t.ID)
-			} else {
+			} else if m.Enabled {
 				dangling[m.ID] = true
 			}
 		}
@@ -182,7 +182,7 @@ func Sweep(ctx context.Context, st *store.Store, progress func(SweepProgress), m
 	for changed := true; changed; {
 		changed = false
 		for _, m := range all {
-			if work[m.ID] {
+			if work[m.ID] || !m.Enabled {
 				continue
 			}
 			for _, d := range depsOf[m.ID] {
@@ -531,7 +531,7 @@ func runUnits(mctx context.Context, st *store.Store, m models.MetricRow, units [
 		go func() {
 			defer wg.Done()
 			for sc := range next {
-				if err := RunRaw(mctx, st, m.ID, m.Version, ruleVersion, m.Expr, sc); err != nil {
+				if err := RunRaw(mctx, st, m.ID, m.Version, ruleVersion, m.RunExpr, sc); err != nil {
 					fail(err)
 				}
 			}

@@ -68,6 +68,7 @@ const (
 	MetricStateFresh      = "fresh"
 	MetricStateNoData     = "no-data"
 	MetricStateBehind     = "behind"
+	MetricStateDisabled   = "disabled"
 )
 
 // MetricProgressEvent is the payload of spectra:metric-progress — the
@@ -451,7 +452,7 @@ func (s *MetricsService) GetMetricComputeState() ([]MetricComputeState, error) {
 	defer s.mu.Unlock()
 	out := make([]MetricComputeState, 0, len(coverage))
 	for _, c := range coverage {
-		out = append(out, s.computeStateLocked(c.MetricID, s.inflight[c.MetricID], c.Behind, c.FreshRows, held[c.MetricID]))
+		out = append(out, s.computeStateLocked(c.MetricID, s.inflight[c.MetricID], c.Behind, c.FreshRows, held[c.MetricID], c.Enabled))
 	}
 	return out, nil
 }
@@ -518,7 +519,7 @@ func (s *MetricsService) GetMetricStates(scope, id string) ([]MetricComputeState
 		// this unit's current values read as processing.
 		behind := behindOf(c)
 		running := s.inflight[c.MetricID] && behind
-		out = append(out, s.computeStateLocked(c.MetricID, running, behind, fresh[c.MetricID], held[c.MetricID]))
+		out = append(out, s.computeStateLocked(c.MetricID, running, behind, fresh[c.MetricID], held[c.MetricID], c.Enabled))
 	}
 	return out, nil
 }
@@ -528,13 +529,16 @@ func (s *MetricsService) GetMetricStates(scope, id string) ([]MetricComputeState
 // behind, then fresh or no-data by the fresh-row count. running (the sweep is
 // recomputing this unit), behind and fresh are the read's own scope. The
 // caller holds s.mu.
-func (s *MetricsService) computeStateLocked(metricID int64, running, behind bool, fresh int, held bool) MetricComputeState {
+func (s *MetricsService) computeStateLocked(metricID int64, running, behind bool, fresh int, held, enabled bool) MetricComputeState {
 	state := MetricComputeState{MetricID: metricID}
 	errMsg := ""
 	if s.errs != nil {
 		errMsg = s.errs[metricID]
 	}
 	switch {
+	case !enabled:
+		// Disabled: stored, never computed, so there is no state to wait on.
+		state.State = MetricStateDisabled
 	case running:
 		// In lieu of everything (design §5): never a stale number,
 		// never bare no-data mid-flight.

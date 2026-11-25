@@ -25,8 +25,11 @@ import (
 // ComponentRow is one stored user component (every components column but
 // id; the service maps it to its own DTO).
 type ComponentRow struct {
-	Name      string
-	Source    string
+	Name   string
+	Source string
+	// Origin is 'user' (yours), 'plugin' (supplied by PluginID) or 'builtin' (shipped).
+	Origin    string
+	PluginID  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -50,16 +53,17 @@ type queryer interface {
 
 func scanComponent(row interface{ Scan(...any) error }) (ComponentRow, error) {
 	var r ComponentRow
-	if err := row.Scan(&r.Name, &r.Source, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	if err := row.Scan(&r.Name, &r.Source, &r.Origin, &r.PluginID, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		return ComponentRow{}, err
 	}
 	return r, nil
 }
 
-// ListComponents returns every stored user component, name ASC
-// (case-insensitive, then exact, so the order is total).
+// ListComponents returns every stored user and plugin component, name ASC
+// (case-insensitive, then exact, so the order is total). Builtins are not
+// listed: the frontend ships them.
 func (s *Store) ListComponents() ([]ComponentRow, error) {
-	rows, err := s.db.Query(`SELECT ` + componentCols + ` FROM components WHERE origin = 'user' ORDER BY name COLLATE NOCASE ASC, name ASC`)
+	rows, err := s.db.Query(`SELECT ` + componentCols + ` FROM components WHERE origin IN ('user', 'plugin') ORDER BY name COLLATE NOCASE ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load your components: %w", err)
 	}
@@ -80,7 +84,7 @@ func (s *Store) ListComponents() ([]ComponentRow, error) {
 
 // GetComponent reads one component by name (ErrNotFound when absent).
 func (s *Store) GetComponent(name string) (ComponentRow, error) {
-	r, err := scanComponent(s.db.QueryRow(`SELECT `+componentCols+` FROM components WHERE name = ? AND origin = 'user'`, scrub(name)))
+	r, err := scanComponent(s.db.QueryRow(`SELECT `+componentCols+` FROM components WHERE name = ? AND origin IN ('user', 'plugin')`, scrub(name)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ComponentRow{}, ErrNotFound
 	}
@@ -156,7 +160,7 @@ func (s *Store) SaveComponent(original, name, source string, refs ComponentRefs)
 	now := time.Now()
 	if original == "" {
 		if _, err := tx.Exec(
-			`INSERT INTO components (`+componentCols+`) VALUES (?, ?, ?, ?)`, name, source, now, now,
+			`INSERT INTO components (name, source, created_at, updated_at) VALUES (?, ?, ?, ?)`, name, source, now, now,
 		); err != nil {
 			if isUniqueErr(err) {
 				return ComponentRow{}, fmt.Errorf("a component named %q already exists", name)
@@ -215,6 +219,11 @@ func (s *Store) DeleteComponent(name string) error {
 		return err
 	} else if builtin {
 		return fmt.Errorf("the built-in component %q can't be deleted", name)
+	}
+	var origin, pluginID string
+	err = tx.QueryRow(`SELECT origin, plugin_id FROM components WHERE name = ?`, name).Scan(&origin, &pluginID)
+	if err == nil && origin == "plugin" {
+		return fmt.Errorf("the component %q comes from the plugin %q; remove or disable that plugin to change it", name, pluginID)
 	}
 	refs, err := placementsReferencing(tx, name)
 	if err != nil {

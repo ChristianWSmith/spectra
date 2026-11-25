@@ -31,6 +31,9 @@ const maxComponentName = 60
 type Component struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
+	// Origin is 'user' or 'plugin'; PluginID names the plugin a plugin component comes from.
+	Origin   string `json:"origin"`
+	PluginID string `json:"pluginId"`
 }
 
 // ListComponents returns every user component, name order.
@@ -41,7 +44,7 @@ func (s *ComponentService) ListComponents() ([]Component, error) {
 	}
 	out := make([]Component, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Component{Name: r.Name, Source: r.Source})
+		out = append(out, Component{Name: r.Name, Source: r.Source, Origin: r.Origin, PluginID: r.PluginID})
 	}
 	return out, nil
 }
@@ -255,4 +258,25 @@ func (s *ComponentService) DeleteBuiltinOverride(id string) error {
 		return err
 	}
 	return s.st.DeleteBuiltinOverride(id)
+}
+
+// PluginComponentRefs is the references one plugin component's source makes, as the frontend's save gate
+// read them when the plugin was installed or enabled.
+type PluginComponentRefs struct {
+	Name       string   `json:"name"`
+	Components []string `json:"components"`
+	Metrics    []string `json:"metrics"`
+}
+
+// RecordPluginComponentRefs stores the references of a plugin's components, so a metric or a component they
+// use cannot be deleted or renamed out from under them (the same check your own components get).
+func (s *ComponentService) RecordPluginComponentRefs(pluginID string, refs []PluginComponentRefs) error {
+	rows := make([]store.PluginComponentRefRow, 0, len(refs))
+	for _, r := range refs {
+		rows = append(rows, store.PluginComponentRefRow{
+			Name: r.Name,
+			Refs: store.ComponentRefs{Components: r.Components, Metrics: r.Metrics},
+		})
+	}
+	return s.st.SetPluginComponentRefs(pluginID, rows)
 }

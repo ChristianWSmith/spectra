@@ -19,8 +19,8 @@ import (
 // metricColumns is the stored metrics column list in scan order. There is
 // no scope, subject or partition column (ruling 51): scope
 // is derived from the expr's binds on scan (ScopeOfExpr).
-const metricColumns = `id, name, title, short_name, expr, format, doc, origin,
-	plugin_id, touched, version, created_at`
+const metricColumns = `id, name, title, short_name, expr, run_expr, format, doc, origin,
+	plugin_id, touched, version, created_at, enabled`
 
 // touchedColumn encodes a touched set for metrics.touched: the sorted table
 // names, comma-joined (” = not derived). Table names never contain a comma.
@@ -43,17 +43,19 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		m         models.MetricRow
 		createdAt sql.NullTime
 		touched   string
+		enabled   int
 	)
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr,
-		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt,
+		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.RunExpr,
+		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt, &enabled,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
-	m.Scope = ScopeOfExpr(m.Expr)
+	m.Scope = ScopeOfExpr(m.RunExpr)
 	m.Touched = parseTouched(touched)
 	m.CreatedAt = nullTime(createdAt)
+	m.Enabled = enabled != 0
 	return m, nil
 }
 
@@ -428,9 +430,9 @@ func getMetricRow(q metricsExec, id int64) (models.MetricRow, error) {
 // write handle, the atomic save on its transaction.
 func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 	res, err := q.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, format, doc, origin, plugin_id, touched, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr),
+		`INSERT INTO metrics (name, title, short_name, expr, run_expr, format, doc, origin, plugin_id, touched, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.RunExpr),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
 		touchedColumn(m.Touched), time.Now(),
 	)
@@ -470,9 +472,9 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 		}
 	}
 	if _, err := q.Exec(
-		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, format = ?,
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, run_expr = ?, format = ?,
 			doc = ?, plugin_id = ?, touched = ? WHERE id = ?`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr),
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.RunExpr),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), touchedColumn(m.Touched), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {
@@ -489,6 +491,15 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 // written from the row; version is NOT in the INSERT (column DEFAULT 1 —
 // the counter starts at 1 and only the semantic-edit bump moves it).
 func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
+	// Every row carries its run form: the sweep executes run_expr. A row written without one
+	// (a direct store write) gets the expansion of its macro form here, as the save gate writes.
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	id, err := insertMetric(s.db, m)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -506,6 +517,13 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // service routes through; this plain overwrite stays the raw store API
 // (no-history model — no shadow rows, no versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	if err := updateMetric(s.db, m, false); err != nil {
 		return models.MetricRow{}, err
 	}
@@ -595,6 +613,15 @@ func (s *Store) SaveBuiltinMetric(m models.MetricRow, deps []string, semanticBum
 }
 
 func (s *Store) saveMetricWithOverride(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool, ov *MetricOverrideWrite) (models.MetricRow, error) {
+	// A row always carries its run form (see CreateMetric): the change walk reads it to tell
+	// which unit a dependent is bound to, so an empty one would read as unbound.
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
@@ -621,7 +648,11 @@ func (s *Store) saveMetricWithOverride(m models.MetricRow, deps []string, rewrit
 		}
 	}
 	for _, r := range rewrites {
-		res, err := tx.Exec(`UPDATE metrics SET expr = ? WHERE id = ?`, scrub(r.Expr), r.ID)
+		run, err := ExpandMetricMacros(r.Expr)
+		if err != nil {
+			return models.MetricRow{}, fmt.Errorf("couldn't update the dependent metric: %w", err)
+		}
+		res, err := tx.Exec(`UPDATE metrics SET expr = ?, run_expr = ? WHERE id = ?`, scrub(r.Expr), scrub(run), r.ID)
 		if err != nil {
 			return models.MetricRow{}, fmt.Errorf("couldn't update the dependent metric: %w", err)
 		}

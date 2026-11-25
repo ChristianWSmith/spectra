@@ -83,10 +83,18 @@ func rawExists(st *store.Store) RefLookup {
 // (touched tables, binds and references) on success. The cycle check needs
 // the saved metric's own name, so the save path runs it separately.
 func CheckRawSave(st *store.Store, expr string) (Gate, *GateError, error) {
-	g, perr, err := GateSQL(expr, rawExists(st), allRawBinds)
+	// The macros expand first: the gate reads the statement that will run, so a macro can
+	// add nothing the gate would not check. Positions in a gate error are offsets into the
+	// expanded statement.
+	expanded, err := store.ExpandMetricMacros(expr)
+	if err != nil {
+		return Gate{}, gateErr(0, "%s", err.Error()), nil
+	}
+	g, perr, err := GateSQL(expanded, rawExists(st), allRawBinds)
 	if err != nil || perr != nil {
 		return Gate{}, perr, err
 	}
+	g.Expanded = expanded
 	if err := checkRawShape(g.Binds); err != nil {
 		return Gate{}, gateErr(0, "%s", err.Error()), nil
 	}
@@ -311,7 +319,7 @@ func rawKeyText(v any) string {
 // replaces only its own unit's rows). A gate or scope-read error means the
 // metric cannot run at all, so the caller fails it as a whole.
 func SweepUnits(st *store.Store, m models.MetricRow, ruleVersion int) ([]store.RawScope, error) {
-	g, perr, err := GateSQL(m.Expr, rawExists(st), allRawBinds)
+	g, perr, err := GateSQL(m.RunExpr, rawExists(st), allRawBinds)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +361,7 @@ func runRawMetric(ctx context.Context, st *store.Store, m models.MetricRow, rule
 		return err
 	}
 	for _, sc := range units {
-		if err := RunRaw(ctx, st, m.ID, m.Version, ruleVersion, m.Expr, sc); err != nil {
+		if err := RunRaw(ctx, st, m.ID, m.Version, ruleVersion, m.RunExpr, sc); err != nil {
 			return err
 		}
 	}
