@@ -47,7 +47,10 @@
         list.map((round) =>
           spectra.metric('raw_player_round_deaths', { match_id: matchId, round }).then(
             (m) => [round, m],
-            () => [round, null],
+            (e) => {
+              spectra.report(e);
+              return [round, null];
+            },
           ),
         ),
       ).then((pairs) => {

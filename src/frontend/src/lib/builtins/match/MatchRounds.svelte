@@ -1,5 +1,5 @@
 <script>
-  import { openReplay, matchPath } from '../../builtinhelpers.js';
+  import { openReplay, matchPath, entryLoopSpan } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
@@ -244,8 +244,7 @@
     const r = data.rounds.find((x) => x.number === n);
     const start = r && Number.isFinite(r.startTick) ? r.startTick : null;
     const end = r && Number.isFinite(r.endTick) ? r.endTick : null;
-    const loop = start != null && end != null && start >= 0 && start <= end ? start + ',' + end : undefined;
-    spectra.navigate({ path: '/replay/' + data.id, query: { tick: start, loop, back: backTo() } });
+    openReplay(spectra, data.id, { tick: start, loop: entryLoopSpan(start, end), back: backTo() });
   }
 
   // Round-detail helpers: a name's side colour in this round, the team behind a side of this
@@ -514,7 +513,7 @@
             class:split-before={ri > 0 && data.seps[ri - 1]}
             tabindex="0"
             aria-expanded={open.includes(r.number)}
-            {...openRow(() => toggleRound(r.number), { ignore: 'input, button, a' })}
+            {...openRow(() => toggleRound(r.number), { ignore: 'button, a, input' })}
           >
             <td>
               <button

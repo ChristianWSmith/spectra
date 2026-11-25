@@ -8,7 +8,6 @@
   // for the context's player in ONE read: metricsByMatch takes the series of
   // every metric (one call) and each match's compute state (one call per row).
   import { liveMetrics } from '../../metricslive.svelte.js';
-  import { metricsByMatch } from '../../componentruntime/reads.js';
   import { fmt1, fmtDate, fmtInt, fmtMetric } from '../../fmt.js';
   import { teamStartClass } from '../../teams.js';
   import MetricTd from '../../components/MetricTd.svelte';
@@ -45,11 +44,7 @@
           const rowsOut = profile ? profile.history || [] : [];
           history = rowsOut;
           const names = METRICS.filter((n) => catalog.has(n));
-          const byMatch = await metricsByMatch(
-            sid,
-            names,
-            rowsOut.map((h) => h.matchId),
-          );
+          const byMatch = await spectra.metricsByMatch(sid, names, rowsOut.map((h) => h.matchId));
           if (isCurrent()) matchReads = byMatch;
         },
         (e) => spectra.report(e),

@@ -1,6 +1,7 @@
 <script>
   import { openReplay, matchTab } from '../../builtinhelpers.js';
   import { economySource } from '../../economysource.svelte.js';
+  import StatCard from '../../components/StatCard.svelte';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { fmtMetric } from '../../fmt.js';
@@ -200,18 +201,15 @@
     </span>
   {/snippet}
   {#each cards as c (c.key)}
-    {#if c.drill}
-      <button class="stat-cell" title={c.title} onclick={() => drill(c.drill)}>
-        <span class="field-label">{c.label}{@render badge(c)}</span>
-        <span class="stat-value">{c.value}</span>
-        <span class="stat-sub">{c.sub}</span>
-      </button>
-    {:else}
-      <div class="stat-cell no-drill" title={c.title}>
-        <span class="field-label">{c.label}{@render badge(c)}</span>
-        <span class="stat-value">{c.value}</span>
-        <span class="stat-sub">{c.sub}</span>
-      </div>
-    {/if}
+    {#snippet cardBadge()}{@render badge(c)}{/snippet}
+    <StatCard
+      label={c.label}
+      value={c.value}
+      sub={c.sub}
+      title={c.title}
+      cls={c.drill ? '' : 'no-drill'}
+      badge={cardBadge}
+      onclick={c.drill ? () => drill(c.drill) : null}
+    />
   {/each}
 </div>

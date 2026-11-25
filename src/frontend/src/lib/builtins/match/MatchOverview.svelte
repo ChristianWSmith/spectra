@@ -104,7 +104,7 @@
             role="button"
             tabindex="0"
             title={c.title || undefined}
-            {...openRow(() => c.steam && follow(c.steam), { ignore: 'button', enterOnly: true })}
+            {...openRow(() => c.steam && follow(c.steam), { ignore: 'button, a, input', enterOnly: true })}
           >
             <span class="field-label">{c.label}</span>
             <span class="stat-value">{c.value}</span>

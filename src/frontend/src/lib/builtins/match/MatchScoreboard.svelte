@@ -142,7 +142,7 @@
           <tr
             class="clickable"
             tabindex="0"
-            {...openRow(() => follow(p.steam), { ignore: 'button, a', enterOnly: true })}
+            {...openRow(() => follow(p.steam), { ignore: 'button, a, input', enterOnly: true })}
           >
             <td class="num name-cell {cls}">
               {#if isSteam(p.steam)}
