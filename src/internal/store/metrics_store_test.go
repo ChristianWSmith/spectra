@@ -22,8 +22,8 @@ import (
 // CONTRACT VIOLATION and must fail this test; computed values keep only
 // their current generation (metric_values), never definitions.
 var metricColumnsContract = []string{
-	"id", "name", "title", "short_name", "expr", "format", "doc", "origin",
-	"plugin_id", "touched", "version", "created_at", "held",
+	"id", "name", "title", "short_name", "expr", "run_expr", "format", "doc", "origin",
+	"plugin_id", "touched", "version", "created_at", "held", "enabled",
 }
 
 // schemaSeededBuiltins is the schema.sql seed's per-row contract: every
@@ -386,9 +386,9 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		if m.Version != 1 {
 			t.Errorf("builtin %q version = %d, want 1 (the seed omits the column — DEFAULT 1)", m.Name, m.Version)
 		}
-		// Builtins are raw SQL: one SELECT.
-		if !strings.HasPrefix(m.Expr, "SELECT ") && !strings.HasPrefix(m.Expr, "WITH ") {
-			t.Errorf("builtin %q expr %q is not a raw SELECT or WITH", m.Name, m.Expr)
+		// Builtins run as raw SQL: the run form is one SELECT (the stored expr keeps its macros).
+		if !strings.HasPrefix(m.RunExpr, "SELECT ") && !strings.HasPrefix(m.RunExpr, "WITH ") {
+			t.Errorf("builtin %q run form %q is not a raw SELECT or WITH", m.Name, m.RunExpr)
 		}
 	}
 }

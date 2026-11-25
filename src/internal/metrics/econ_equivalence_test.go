@@ -536,7 +536,7 @@ func TestEconomyCardSeedEquivalence(t *testing.T) {
 	// equivalence pins what production computes, not a copy here.
 	seedExpr := map[string]string{}
 	res, err := st.RunReadOnly(
-		`SELECT name, expr FROM metrics WHERE origin = 'builtin' AND name IN ('pistol_hold', 'avg_equip_gap')`,
+		`SELECT name, run_expr FROM metrics WHERE origin = 'builtin' AND name IN ('pistol_hold', 'avg_equip_gap')`,
 		nil, 10, 5000,
 	)
 	if err != nil {
@@ -687,7 +687,7 @@ func TestEconomyForceLostSeedEquivalence(t *testing.T) {
 	readSeeds := func(t *testing.T, st *store.Store) map[string]string {
 		t.Helper()
 		res, err := st.RunReadOnly(
-			`SELECT name, expr FROM metrics WHERE origin = 'builtin'
+			`SELECT name, run_expr FROM metrics WHERE origin = 'builtin'
 			   AND name IN ('team_force_wins', 'team_force_rounds', 'lost_equip', 'team_lost_equip')`,
 			nil, 10, 5000,
 		)

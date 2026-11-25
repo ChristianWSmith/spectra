@@ -121,10 +121,10 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 
 func TestBuiltinsAndFind(t *testing.T) {
 	b := Builtins()
-	if len(b) != 4 {
-		t.Fatalf("Builtins() = %d templates, want 4", len(b))
+	if len(b) != 5 {
+		t.Fatalf("Builtins() = %d templates, want 5", len(b))
 	}
-	want := map[string]bool{"match.md": true, "match.html": true, "player.md": true, "round.md": true}
+	want := map[string]bool{"match.md": true, "match.html": true, "player.md": true, "round.md": true, "profile.md": true}
 	for _, tpl := range b {
 		if !want[tpl.ID] {
 			t.Fatalf("unexpected builtin %q", tpl.ID)

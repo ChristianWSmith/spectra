@@ -26,7 +26,7 @@ var profileRewrittenNames = []string{
 // metric() reference), so the write-side hook sees the builtins as roots.
 func setBuiltinTouched(t *testing.T, s *Store) {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT id, expr FROM metrics WHERE origin = 'builtin'`)
+	rows, err := s.db.Query(`SELECT id, run_expr FROM metrics WHERE origin = 'builtin'`)
 	if err != nil {
 		t.Fatalf("builtins: %v", err)
 	}

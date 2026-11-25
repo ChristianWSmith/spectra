@@ -63,7 +63,7 @@ func TestBuiltinMetricsPreview(t *testing.T) {
 	// every preview is subject-addressed by the engine (one row per
 	// player the statement produced).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, run_expr, id, version FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 200, 5000,
 	)
 	if err != nil {

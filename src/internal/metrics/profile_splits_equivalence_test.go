@@ -43,7 +43,7 @@ import (
 func seedByName(t *testing.T, st *store.Store, name string) string {
 	t.Helper()
 	res, err := st.RunReadOnly(
-		`SELECT expr FROM metrics WHERE name = ? AND origin = 'builtin'`,
+		`SELECT run_expr FROM metrics WHERE name = ? AND origin = 'builtin'`,
 		[]any{name}, 1, 5000,
 	)
 	if err != nil || len(res.Rows) != 1 {

@@ -613,6 +613,15 @@ func (s *Store) SaveBuiltinMetric(m models.MetricRow, deps []string, semanticBum
 }
 
 func (s *Store) saveMetricWithOverride(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool, ov *MetricOverrideWrite) (models.MetricRow, error) {
+	// A row always carries its run form (see CreateMetric): the change walk reads it to tell
+	// which unit a dependent is bound to, so an empty one would read as unbound.
+	if m.RunExpr == "" {
+		run, err := ExpandMetricMacros(m.Expr)
+		if err != nil {
+			return models.MetricRow{}, err
+		}
+		m.RunExpr = run
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return models.MetricRow{}, fmt.Errorf("couldn't save the metric: %w", err)
