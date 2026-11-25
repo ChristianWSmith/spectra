@@ -650,6 +650,45 @@ click(q('.cb-save'));
 const saved = await until(() => saveCalls.length === writesBeforeCancel + 1, 60000);
 check('(e) the next save starts a fresh worker and succeeds', saved && seam.created.count === createdBeforeNext + 1, `created +${seam.created.count - createdBeforeNext}`);
 
+// --- L. plugin components -----------------------------------------------------------
+// A plugin's component lists under Plugins, opens read-only, and saves only as a copy of your own
+// under a new name. Its plugin's origin box in the Filters dropdown hides it.
+console.log('L. plugin components');
+COMPONENTS = [{ name: 'Shared', source: OK_SOURCE, origin: 'plugin', pluginId: 'acme' }];
+saveCalls.length = 0;
+await mounted();
+const pluginRow = rowNamed('Shared', '.cb-plugins');
+check('a plugin component lists under Plugins', !!pluginRow);
+check('it is not listed under Yours', !rowNamed('Shared', '.cb-yours'));
+click(pluginRow);
+await settle(10);
+check('it opens read-only', q('#cb-source')?.readOnly === true, String(q('#cb-source')?.readOnly));
+check('its name is shown as the open component', q('#cb-name')?.value === 'Shared');
+await setText(q('#cb-name'), 'Shared copy');
+// The opened source checks quietly; Save enables once it reads ok.
+const copyReady = await until(() => !!q('.cb-save') && !q('.cb-save').disabled, 5000);
+check('the copy checks out and Save enables', copyReady);
+click(q('.cb-save'));
+await until(() => saveCalls.length === 1, 60000);
+await settle(10);
+check('saving under a new name writes a copy of your own, with no original', saveCalls.length === 1 && saveCalls[0].original === '' && saveCalls[0].name === 'Shared copy', JSON.stringify(saveCalls));
+check('the copy is editable', q('#cb-source')?.readOnly === false);
+check('the copy lists under Yours', !!rowNamed('Shared copy', '.cb-yours'));
+unmounted();
+
+// The Filters dropdown has one box per plugin; unticking it hides that plugin's components.
+COMPONENTS = [{ name: 'Shared', source: OK_SOURCE, origin: 'plugin', pluginId: 'acme' }];
+await mounted();
+check('the plugin component shows before the filter', !!rowNamed('Shared', '.cb-plugins'));
+click(q('.bld-filter-btn'));
+await settle(10);
+const acmeBox = qa('label.filt-check').find((l) => l.textContent.includes('acme'));
+check('the Filters dropdown has a box for the plugin', !!acmeBox);
+acmeBox?.querySelector('input').click();
+await settle(10);
+check('unticking the plugin hides its components', !rowNamed('Shared', '.cb-plugins'));
+unmounted();
+
 unwork();
 unmounted();
 
