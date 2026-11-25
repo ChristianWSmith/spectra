@@ -27,7 +27,7 @@ export const common = {
   // docs popup (DocsPopup.svelte — routed at merge, strings Stage 1 ∥ docs wave)
   closeHelp: 'Close help',
   tocLabel: 'Contents',
-  searchSections: 'Search sections', // header input: placeholder + aria-label
+  searchSections: 'Search', // header input: placeholder + aria-label
   searchPrev: 'Previous match', // match-stepper button: title + aria-label
   searchNext: 'Next match', // match-stepper button: title + aria-label
   noSectionsMatch: 'No sections match your search.', // TOC empty state under a filter
