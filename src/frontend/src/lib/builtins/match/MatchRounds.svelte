@@ -3,7 +3,7 @@
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
+  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import {
@@ -513,7 +513,7 @@
             class:split-before={ri > 0 && data.seps[ri - 1]}
             tabindex="0"
             aria-expanded={open.includes(r.number)}
-            {...openRow(() => toggleRound(r.number), { ignore: 'button, a, input' })}
+            {...openRow(() => toggleRound(r.number), { ignore: CONTROL_SELECTOR })}
           >
             <td>
               <button

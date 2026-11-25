@@ -3,7 +3,7 @@
   import { compareAsc } from '../../sortstate.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
-  import { whileCurrent } from '../../current.js';
+  import { latestOnly, whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import {
     listReportTemplates,
@@ -267,10 +267,10 @@
   // appendix: id -> { loading, rows?, error?, metric | raw, unitHasRows }. One
   // stored read for the whole picked set; a raw pick reads the scoreboard.
   let appendix = $state({});
-  let appendixGen = 0;
+  // Only the newest appendix load applies; an older one that lands late is dropped.
+  const runAppendix = latestOnly();
 
   $effect(() => {
-    const gen = ++appendixGen;
     const mid = matchId;
     sweep.reload; // metric-done: refetch the stored rows
     const rawSel = rawOffer.filter((r) => m.rawStats.includes(r.id));
@@ -284,7 +284,7 @@
     for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
     for (const r of rawSel) pending[r.id] = { loading: true, raw: r };
     appendix = pending;
-    spectra
+    const loading = spectra
       .track(
         Promise.all([
           sel.length ? getMetricValuesForMatch(mid, sel) : Promise.resolve([]),
@@ -293,7 +293,6 @@
         ]),
       )
       .then(([values, refs, board]) => {
-        if (gen !== appendixGen) return;
         const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
         const byMetric = groupBy(values || [], (v) => v.metricId);
         const next = {};
@@ -326,15 +325,18 @@
           }));
           next[r.id] = { loading: false, rows: rawRows, raw: r, unitHasRows: rawRows.length > 0 };
         }
-        appendix = next;
-      })
-      .catch((e) => {
-        if (gen !== appendixGen) return;
+        return next;
+      });
+    runAppendix(
+      loading,
+      (next) => (appendix = next),
+      (e) => {
         const next = {};
         for (const id of sel) next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
         for (const r of rawSel) next[r.id] = { loading: false, error: errText(e), raw: r };
         appendix = next;
-      });
+      },
+    );
   });
 
   // The state machine for one entry: the live progress feed wins, then value,

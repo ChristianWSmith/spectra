@@ -198,3 +198,14 @@ test('chatTag and chatClock match lib/fmt.js', () => {
     assert.equal(copies.chatClock(c, rounds, 64), chatClock(c, rounds, 64));
   }
 });
+
+test('followPlayer opens the replay of the match following the player, back to its tab', () => {
+  const nav = [];
+  const spectra = { navigate: (h) => nav.push(h) };
+  copies.followPlayer(spectra, 7, 'match/7/combat', '76561190000000001');
+  copies.followPlayer(spectra, 7, '', '76561190000000001');
+  assert.deepEqual(nav, [
+    '/replay/7?back=match/7/combat&follow=76561190000000001',
+    '/replay/7?back=match/7&follow=76561190000000001',
+  ]);
+});

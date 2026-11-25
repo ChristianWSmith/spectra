@@ -279,6 +279,7 @@ export const BUILTIN_HELPERS = Object.freeze({
     names: {
       activateOnKey: 'keyboard activation of a clickable row (Enter, and Space unless enterOnly)',
       openRow: 'a clickable row’s handlers (click and keyboard), spread onto the row',
+      CONTROL_SELECTOR: 'the selector of the controls inside a row (their clicks are not the row’s)',
     },
   },
   'src/lib/current.js': {

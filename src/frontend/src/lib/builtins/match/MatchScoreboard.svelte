@@ -3,7 +3,7 @@
   import SortTh from '../../components/SortTh.svelte';
   import { namesOf, rosterOf } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
+  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import {
@@ -78,14 +78,10 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       sortStack = [{ key: 'kills', desc: true }];
-      load(matchId).then(
-        (d) => {
-          if (isCurrent()) data = d;
-        },
-        () => {
-          // A failed read is reported into this frame by the read API.
-        },
-      );
+      // A failed read goes to the frame banner (the default sink of spectra.loadThen).
+      spectra.loadThen(isCurrent, load(matchId), (d) => {
+        data = d;
+      });
     }),
   );
 
@@ -142,7 +138,7 @@
           <tr
             class="clickable"
             tabindex="0"
-            {...openRow(() => follow(p.steam), { ignore: 'button, a, input', enterOnly: true })}
+            {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <td class="num name-cell {cls}">
               {#if isSteam(p.steam)}

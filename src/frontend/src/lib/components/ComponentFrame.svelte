@@ -103,7 +103,6 @@
   // (spectra.busy), and the old values stay hidden until the new ones arrive.
   const load = createLoadState();
   // Reads this frame has started, and nested frames mounted in it (the layout class reads childCount).
-  let readCount = $state(0);
   let childCount = $state(0);
   // The frame is busy while its own reads run, or its parent's do. Only a box that holds no boxes
   // shows it (LoadBox): a container of panels leaves the hider and spinner to the panels inside.
@@ -118,18 +117,12 @@
     parent.adopt(1);
     return () => parent.adopt(-1);
   });
-  // untrack: a read started inside an effect must not make that effect depend on
-  // the counter it moves.
   // A read belongs to the content it asks for (this frame’s context): a refresh of that content is
   // not busy, a new context is.
-  const tracked = (read) => (...args) => {
-    untrack(() => readCount++);
-    return load.track(read(...args), contentKey);
-  };
-  const trackedLoad = (promise) => {
-    untrack(() => readCount++);
-    return load.track(promise, contentKey);
-  };
+  const trackedLoad = (promise) => load.track(promise, contentKey);
+  const tracked = (read) => (...args) => trackedLoad(read(...args));
+  // The failure sink a load falls back to: the frame's own banner.
+  const frameFailure = (e) => report(e);
   // The `spectra` value a component receives: the read API plus the
   // nested mount component, and whether a read is in flight.
   // liveMetrics: the progress and reload wiring a panel mounts (metricslive.svelte.js).
@@ -149,7 +142,7 @@
     activateOnKey,
     openRow,
     latestOnly,
-    loadThen: (isCurrent, promise, apply, failed = (e) => report(e)) => loadThen(isCurrent, promise, apply, failed),
+    loadThen: (isCurrent, promise, apply, failed = frameFailure) => loadThen(isCurrent, promise, apply, failed),
     whileCurrent,
     // The one dash a missing cell shows, and the shared display pieces (the same
     // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.
@@ -166,7 +159,7 @@
     report: (e) => report(e),
     // loadForMatch(getMatchId, load, apply, failed?): the effect body of a load for the match, applied
     // only while current. A failure goes to the frame banner unless `failed` takes it.
-    loadForMatch: (getMatchId, load, apply, failed = (e) => report(e)) => loadForMatch(getMatchId, load, apply, failed),
+    loadForMatch: (getMatchId, load, apply, failed = frameFailure) => loadForMatch(getMatchId, load, apply, failed),
     fmtDate,
     fmtDuration,
     metric: tracked(api.metric),

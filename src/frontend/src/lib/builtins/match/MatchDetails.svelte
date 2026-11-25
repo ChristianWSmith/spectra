@@ -1,5 +1,5 @@
 <script>
-  import { whileCurrent, latestOnly } from '../../current.js';
+  import { loadThen, whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
@@ -96,21 +96,26 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       // Each read lands on its own: the stored facts never wait on the match row or the voice read.
-      spectra.query(SQL_FACTS).then(
+      loadThen(
+        isCurrent,
+        spectra.query(SQL_FACTS),
         (res) => {
-          if (isCurrent()) facts = parseFacts(res.rows[0]);
+          facts = parseFacts(res.rows[0]);
         },
         (e) => spectra.report(e),
       );
-      Promise.all([getMatch(matchId), getVoicePresence(matchId).catch((e) => {
-          spectra.report(e);
-          return null;
-        })]).then(
+      loadThen(
+        isCurrent,
+        Promise.all([
+          getMatch(matchId),
+          getVoicePresence(matchId).catch((e) => {
+            spectra.report(e);
+            return null;
+          }),
+        ]),
         ([m, v]) => {
-          if (isCurrent()) {
-            match = m;
-            voice = v;
-          }
+          match = m;
+          voice = v;
         },
         (e) => spectra.report(e),
       );

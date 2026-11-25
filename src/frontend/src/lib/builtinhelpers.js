@@ -213,16 +213,10 @@ export function openPlayer(spectra, steam) {
   spectra.navigate(playerRoute(steam));
 }
 
-// The replay route a row opens, following that player. `back` is the tab the
-// panel sits on; the replay returns there.
-function followRoute(matchId, back, steam) {
-  const to = back || 'match/' + matchId;
-  return '/replay/' + matchId + '?back=' + encodeURIComponent(to).replace(/%2F/g, '/') + '&follow=' + steam;
-}
-
-// Open the replay following a player.
+// Open the replay following a player. `back` is the tab the panel sits on; the replay
+// returns there (the match when it is empty).
 export function followPlayer(spectra, matchId, back, steam) {
-  spectra.navigate(followRoute(matchId, back, steam));
+  openReplay(spectra, matchId, { back: back || 'match/' + matchId, follow: steam });
 }
 
 // CHAT: a chat line's clock and speaker tag (lib/fmt.js chatClock / chatTag).

@@ -1,7 +1,6 @@
 <script>
   import { DASH } from '../../builtinhelpers.js';
-  import { whenCurrent } from '../../current.js';
-  import { whileCurrent } from '../../current.js';
+  import { loadThen, whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import * as S from '../../strings/index.js';
   import { getMatch, getScoreboard, getRounds, getHeatmap, errText } from '../../services.js';
@@ -146,21 +145,17 @@
 
   $effect(() =>
     whileCurrent((isCurrent) => {
-      Promise.all([
-        getMatch(id),
-        getScoreboard(id, 'kills', true),
-        getRounds(id),
-      ])
-        .then(([m, sb, rs]) => {
-          if (!isCurrent()) return;
+      loadThen(
+        isCurrent,
+        Promise.all([getMatch(id), getScoreboard(id, 'kills', true), getRounds(id)]),
+        ([m, sb, rs]) => {
           map = (m && m.map) || '';
           players = listedPlayers(sb) || [];
           rounds = rs || [];
           matchLoaded = true;
-        })
-        .catch(
-          whenCurrent(isCurrent, (e) => spectra.report(e)),
-        );
+        },
+        (e) => spectra.report(e),
+      );
     }),
   );
 

@@ -1,7 +1,7 @@
 <script>
   import ProfileLink from '../../components/ProfileLink.svelte';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow } from '../../keys.js';
+  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
@@ -104,7 +104,7 @@
             role="button"
             tabindex="0"
             title={c.title || undefined}
-            {...openRow(() => c.steam && follow(c.steam), { ignore: 'button, a, input', enterOnly: true })}
+            {...openRow(() => c.steam && follow(c.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <span class="field-label">{c.label}</span>
             <span class="stat-value">{c.value}</span>

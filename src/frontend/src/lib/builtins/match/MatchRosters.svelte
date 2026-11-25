@@ -1,6 +1,6 @@
 <script>
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import { openRow } from '../../keys.js';
+  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
   import { namesOf, rosterOf } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import { loadForMatch } from '../../current.js';
@@ -79,7 +79,7 @@
           </thead>
           <tbody>
             {#each team.players as p (p.steam)}
-              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: 'button, a, input', enterOnly: true })}>
+              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}>
                 <td class={startClass(p.side, data.switches)}>
                   <ProfileLink steam={p.steam} name={p.name} nav={spectra.navigate} variant="name-link" stopRow cls={startClass(p.side, data.switches)} />
                 </td>
@@ -97,7 +97,7 @@
         <table class="data-table">
           <tbody>
             {#each data.other as p (p.steam)}
-              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: 'button, a, input', enterOnly: true })}>
+              <tr class="clickable" tabindex="0" {...openRow(() => follow(p.steam), { ignore: CONTROL_SELECTOR, enterOnly: true })}>
                 <td>{p.name}</td>
                 <td class="num">{p.kda}</td>
                 <MetricTd pres={p.adr} format={(v) => fmtMetric(v, 'float1')} words={STATE_WORD} />

@@ -1,3 +1,7 @@
+// CONTROL_SELECTOR names the controls inside a row (a button, link or field). A click on one
+// of them belongs to that control, so a row's own handler ignores it.
+export const CONTROL_SELECTOR = 'button, a, input';
+
 // keys.js — keyboard activation of a clickable row. A row that opens something
 // on click also opens it from the keyboard: Enter, and Space unless `enterOnly`.
 // The default action of the key is stopped, so a focused row never scrolls.
