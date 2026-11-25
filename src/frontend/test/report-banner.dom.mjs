@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 const h = await boot('report-banner');
 const Probe = (await import(pathToFileURL(h.bundle(resolve('test/report-probe.svelte'))).href)).default;
+const LoadProbe = (await import(pathToFileURL(h.bundle(resolve('test/load-probe.svelte'))).href)).default;
 
 let failures = 0;
 const check = (name, ok, detail = '') => {
@@ -34,6 +35,14 @@ if (dismiss) {
 check('dismissing removes the banner', !target.querySelector('[role="alert"]'));
 check('dismissing keeps the body', target.textContent.includes('probe body'));
 cleanup();
+
+// spectra.loadForMatch with no failure handler: a rejected load reaches the same banner.
+const load = await h.mountComponent(LoadProbe, { matchId: 7, steamId: null, round: null });
+const loadAlert = load.target.querySelector('[role="alert"]');
+check('a failed loadForMatch shows in the frame banner', !!loadAlert && loadAlert.textContent.includes('probe match load failed'),
+  loadAlert ? loadAlert.textContent.trim() : 'no alert');
+check('the load body stays mounted', load.target.textContent.includes('load body'));
+load.cleanup();
 
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASS');
 process.exit(0);

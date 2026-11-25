@@ -5,7 +5,7 @@
   import { metricPresentation } from '../metricstate.js';
   import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
   import { activateOnKey } from '../keys.js';
-  import { whileCurrent } from '../current.js';
+  import { whileCurrent, loadForMatch } from '../current.js';
   import { DASH, openMatch, openPlayer, followPlayer } from '../builtinhelpers.js';
   import ErrorBanner from './ErrorBanner.svelte';
   import EmptyNote from './EmptyNote.svelte';
@@ -159,6 +159,9 @@
     followPlayer: (steamId, back = '') => followPlayer(spectra, ctx.matchId, back, steamId),
     // report(error): shows a failure in this frame's banner (a failed load a panel has no banner for).
     report: (e) => report(e),
+    // loadForMatch(getMatchId, load, apply, failed?): the effect body of a load for the match, applied
+    // only while current. A failure goes to the frame banner unless `failed` takes it.
+    loadForMatch: (getMatchId, load, apply, failed = (e) => report(e)) => loadForMatch(getMatchId, load, apply, failed),
     fmtDate,
     fmtDuration,
     metric: tracked(api.metric),
