@@ -28,3 +28,11 @@ const blindCTE = `bl AS (SELECT e.match_id, e.attacker, e.victim, sa.side AS a_s
 
 // blindPlaceholder marks the blind-event CTE inside a schema.sql metric expr.
 const blindPlaceholder = "{{BLIND_CTE}}"
+
+// utilityWeaponsSQL is the list of utility weapons (grenades and fire), as the
+// body of an SQL IN list. The utility-damage metrics read it through
+// utilityWeaponsPlaceholder, so the list is written once.
+const utilityWeaponsSQL = "'HE Grenade', 'Flashbang', 'Smoke Grenade', 'Molotov', 'Incendiary Grenade', 'Decoy Grenade'"
+
+// utilityWeaponsPlaceholder marks the utility-weapon list inside a schema.sql metric expr.
+const utilityWeaponsPlaceholder = "{{UTILITY_WEAPONS}}"
