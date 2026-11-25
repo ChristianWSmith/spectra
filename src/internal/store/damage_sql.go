@@ -21,3 +21,10 @@ const damageRoundCTE = `dmg AS ( SELECT e.round, e.attacker, e.victim, e.weapon,
 
 // damageRoundPlaceholder marks the round-grain counted-damage pair inside a schema.sql metric expr.
 const damageRoundPlaceholder = "{{DAMAGE_ROUND_CTE}}"
+
+// blindCTE is the blind-event rows of a match (flash detonations: attacker and
+// victim with their sides), as bl. enemies_flashed and flashed_times fold it.
+const blindCTE = `bl AS (SELECT e.match_id, e.attacker, e.victim, sa.side AS a_side, sv.side AS v_side FROM events e {{SIDE_JOIN:sa:e:attacker}} {{SIDE_JOIN:sv:e:victim}} WHERE e.match_id = :match_id AND {{LIVE_EVENT:e:blind}})`
+
+// blindPlaceholder marks the blind-event CTE inside a schema.sql metric expr.
+const blindPlaceholder = "{{BLIND_CTE}}"

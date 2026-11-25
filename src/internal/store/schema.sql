@@ -1041,7 +1041,7 @@ CREATE TABLE IF NOT EXISTS builtin_overrides (
 -- wipe gate, not before it (ruling 24).
 INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origin, created_at) VALUES
 ('trade_rate', 'Trade rate', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, 1.0*(SUM(player_stats.trade_kills)) / NULLIF((SUM(match_trade_opps.opps)), 0) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id:player_stats.steam_id}}) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, 1.0*ps.trade_kills / NULLIF(mto.opps, 0) AS value FROM player_stats ps LEFT JOIN match_trade_opps mto ON mto.match_id = ps.match_id AND mto.steam_id = ps.steam_id WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'percent',
  'Formula: sum(trade_kills) / sum(match_trade_opps.opps) — trade successes ÷ trade opportunities, addressed per player over the joined sources — a ratio, so it may top 100%.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1070,17 +1070,14 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, format, doc, origi
  'builtin', CURRENT_TIMESTAMP),
 ('hs_pct', 'HS%', 'HS%',
  'WITH {{KILLS_CTE}},
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side,'''') <> '''' AND a_side = v_side)
-),
+{{KILLS_EK}},
 agg AS (
 SELECT attacker AS steam_id, COUNT(*) AS n, SUM(headshot) AS hs FROM ek GROUP BY attacker
 )
 SELECT p.steam_id AS subject_key, '''' AS dim, CASE WHEN agg.n > 0 THEN 1.0 * agg.hs / agg.n END AS value
 FROM players p
 LEFT JOIN agg ON agg.steam_id = p.steam_id
-WHERE p.match_id = :match_id AND p.is_bot = 0
+WHERE p.match_id = :match_id AND {{HUMAN:p.steam_id}}
 ORDER BY p.steam_id',
  'percent',
  'Formula: headshot kills ÷ kills, addressed per player — a share (the percent format shows it as a percent), a dash when the player has no kills (no pool), never 0.',
@@ -1145,13 +1142,7 @@ ORDER BY p.steam_id',
  'Formula: sum(flash_assists) — assists for blinding an enemy a teammate then killed, addressed per player — the expanded player row''s Flash assists count.',
  'builtin', CURRENT_TIMESTAMP),
 ('enemies_flashed', 'Enemies flashed', '',
- 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.enemies_flashed, 0) AS value FROM player_stats ps LEFT JOIN (WITH bl AS (
-  SELECT e.match_id, e.attacker, e.victim, sa.side AS a_side, sv.side AS v_side
-  FROM events e
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  WHERE e.match_id = :match_id AND e.kind = ''blind'' AND e.post_match = 0
-),
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.enemies_flashed, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{BLIND_CTE}},
 fold AS (
     SELECT match_id, attacker AS steam_id, ''enemies_flashed'' AS f, COUNT(*) AS n FROM bl WHERE attacker <> '''' AND attacker <> victim AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side) GROUP BY match_id, attacker
   )
@@ -1234,7 +1225,7 @@ fold AS (
  'Formula: sum(trade_kills) — kills that answered a teammate''s death inside the trade window, addressed per player — the Trade column and Trade rate''s numerator.',
  'builtin', CURRENT_TIMESTAMP),
 ('missed_trades', 'Missed trades', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT player_stats.match_id AS mid, player_stats.steam_id AS grp, SUM(match_trade_opps.missed) AS v FROM player_stats LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id AND player_stats.steam_id = match_trade_opps.steam_id WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id:player_stats.steam_id}}) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, mto.missed AS value FROM player_stats ps LEFT JOIN match_trade_opps mto ON mto.match_id = ps.match_id AND mto.steam_id = ps.steam_id WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(match_trade_opps.missed) — teammate deaths nobody answered inside the window, addressed per player over the joined sources — zero opportunities still shows 0.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1499,13 +1490,7 @@ fold AS (
  'Formula: sum(rounds_played) — rounds this player appeared in, addressed per player — their own rounds, never the match''s (ADR divides by the match''s).',
  'builtin', CURRENT_TIMESTAMP),
 ('flashed_times', 'Times flashed', '',
- 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.flashed_times, 0) AS value FROM player_stats ps LEFT JOIN (WITH bl AS (
-  SELECT e.match_id, e.attacker, e.victim, sa.side AS a_side, sv.side AS v_side
-  FROM events e
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  WHERE e.match_id = :match_id AND e.kind = ''blind'' AND e.post_match = 0
-),
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.flashed_times, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{BLIND_CTE}},
 fold AS (
     SELECT match_id, victim AS steam_id, ''flashed_times'' AS f, COUNT(*) AS n FROM bl WHERE victim <> '''' GROUP BY match_id, victim
   )
@@ -1796,7 +1781,7 @@ SELECT steam_id AS steam_id, COUNT(*) AS n FROM round_player_sides WHERE match_i
 SELECT p.steam_id AS subject_key, '''' AS dim, COALESCE(agg.n, 0) AS value
 FROM players p
 LEFT JOIN agg ON agg.steam_id = p.steam_id
-WHERE p.match_id = :match_id AND p.is_bot = 0
+WHERE p.match_id = :match_id AND {{HUMAN:p.steam_id}}
 ORDER BY p.steam_id',
  'int',
  'Formula: count(round_player_sides rows) — rounds this player appears in, addressed per player — a count.',
@@ -1993,8 +1978,8 @@ FROM sd ORDER BY sd.side',
 rp AS (
   SELECT rps.side AS side, rps.steam_id AS steam_id
   FROM round_player_sides rps
-  JOIN players p ON p.match_id = rps.match_id AND p.steam_id = rps.steam_id AND p.is_bot = 0
-  WHERE rps.match_id = :match_id AND rps.round = :round
+
+  WHERE rps.match_id = :match_id AND rps.round = :round AND {{HUMAN:rps.steam_id}}
 ),
 ud AS (
   SELECT rp.side AS side, SUM(ue.damage) AS v
@@ -2013,8 +1998,8 @@ FROM sd ORDER BY sd.side',
 rp AS (
   SELECT rps.side AS side, rps.steam_id AS steam_id
   FROM round_player_sides rps
-  JOIN players p ON p.match_id = rps.match_id AND p.steam_id = rps.steam_id AND p.is_bot = 0
-  WHERE rps.match_id = :match_id AND rps.round = :round
+
+  WHERE rps.match_id = :match_id AND rps.round = :round AND {{HUMAN:rps.steam_id}}
 ),
 ud AS (
   SELECT rp.side AS side, SUM(ue.flash_ms) AS v

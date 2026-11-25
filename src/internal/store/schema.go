@@ -24,6 +24,7 @@ var schemaFragments = []struct {
 	{killsEKRPlaceholder, killsCountedEKRCTE},
 	{killsRoundPlaceholder, killsRoundCTE},
 	{damageRoundPlaceholder, damageRoundCTE},
+	{blindPlaceholder, blindCTE},
 	{damagePlaceholder, damageCountedCTE},
 	{playerStatsColsPlaceholder, playerStatsColsSQL},
 	{rollupOpenPlaceholder, rollupOpenSQL},
