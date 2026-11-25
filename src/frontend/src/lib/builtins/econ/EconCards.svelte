@@ -95,13 +95,9 @@
     whileCurrent((isCurrent) => {
       const matchId = context.matchId;
       if (matchId == null) return;
-      Promise.all(CARDS.map((c) => spectra.metric(c.metric).catch(() => null))).then((res) => {
+      spectra.readMetrics(CARDS.map((c) => c.metric)).then((res) => {
         if (!isCurrent()) return;
-        const out = {};
-        CARDS.forEach((c, i) => {
-          out[c.metric] = res[i];
-        });
-        reads = out;
+        reads = Object.fromEntries(res);
       });
     }),
   );

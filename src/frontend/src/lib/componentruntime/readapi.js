@@ -77,7 +77,7 @@ const RESERVED_BINDS = ['match_id', 'steam_id', 'round'];
 
 // contextBinds is the bind set a context implies: each set field becomes
 // its reserved bind, and unset fields are left out.
-export function contextBinds(ctx) {
+function contextBinds(ctx) {
   const out = {};
   if (!ctx) return out;
   if (ctx.matchId != null) out.match_id = Number(ctx.matchId);

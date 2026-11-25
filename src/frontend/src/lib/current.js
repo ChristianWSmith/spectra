@@ -35,7 +35,8 @@ export function whenCurrent(isCurrent, fn) {
 
 // loadForMatch is the effect body of a panel that loads for the context's match
 // and applies the result while it is still current. load(matchId) is the
-// panel's loader, apply takes its value, and failed (optional) takes its error.
+// panel's loader, apply takes its value, and failed takes its error (a failed load
+// must say where it goes: the frame's report, or the panel's own line).
 //
 //   $effect(loadForMatch(() => context.matchId, load, (d) => (data = d)));
 export function loadForMatch(getMatchId, load, apply, failed) {
@@ -45,7 +46,7 @@ export function loadForMatch(getMatchId, load, apply, failed) {
     whileCurrent((isCurrent) => {
       load(getMatchId()).then(
         whenCurrent(isCurrent, apply),
-        failed ? whenCurrent(isCurrent, failed) : () => {},
+        whenCurrent(isCurrent, failed),
       );
     });
 }

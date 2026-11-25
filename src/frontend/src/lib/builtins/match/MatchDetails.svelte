@@ -102,7 +102,10 @@
         },
         (e) => spectra.report(e),
       );
-      Promise.all([getMatch(matchId), getVoicePresence(matchId).catch(() => null)]).then(
+      Promise.all([getMatch(matchId), getVoicePresence(matchId).catch((e) => {
+          spectra.report(e);
+          return null;
+        })]).then(
         ([m, v]) => {
           if (isCurrent()) {
             match = m;

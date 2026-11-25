@@ -24,6 +24,7 @@
     roundOf,
   } from './panelhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
+  import ProfileLink from '../../components/ProfileLink.svelte';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import {
     DASH,
@@ -274,17 +275,7 @@
 </script>
 
 {#snippet playerLink(steam, name, cls)}
-  {#if isSteam(steam)}
-    <button
-      class="comb-name-btn {cls}"
-      title={fill(COPY.openProfile, { name })}
-      onclick={() => openPlayer(spectra, steam)}
-    >
-      {name || DASH}
-    </button>
-  {:else}
-    <span class={cls}>{name || DASH}</span>
-  {/if}
+  <ProfileLink {steam} {name} nav={spectra.navigate} variant="name-link" {cls} />
 {/snippet}
 
 {#snippet roundDetail(n)}

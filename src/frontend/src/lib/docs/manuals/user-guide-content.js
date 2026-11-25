@@ -612,7 +612,7 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 
 **Display**
 
-- **\`spectra.fmtMetric(value, format)\`**: the text of a stored value, in the metric's format.
+- **\`spectra.fmtMetric(value, format)\`**: the text of a stored value, in the metric's format (\`int\`, \`float1\`, \`float2\`, \`percent\`, \`currency\`). A \`percent\` is a 0 to 1 fraction. The \`identity\` format names a player: \`fmtMetric(value, \'identity\', steamId, resolveName)\`.
 - **\`spectra.metricPresentation(state, row, unitHasRows)\`**: maps a read onto what a cell shows, as a value, a no-data dash or a status chip. \`ui.MetricCell\` takes its result.
 - **\`spectra.dash\`**: the one dash a missing value shows.
 - **\`spectra.ui\`**: the shared display pieces, used as \`<spectra.ui.StatCard …>\`.
@@ -622,13 +622,13 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 | \`ui.ErrorBanner\` | An error line, with an optional Retry and an optional dismiss | \`onretry\`, \`retryLabel\`, \`ondismiss\`, \`dismissLabel\`, children |
 | \`ui.EmptyNote\` | A muted note for an empty state | children |
 | \`ui.EmptyTableRow\` | The one row a table shows when it has nothing to list | \`colspan\`, \`empty\`, \`text\`, \`chip\` |
-| \`ui.LoadBox\` | The loading shell: holds its height while a load runs, and shows a spinner over the content | \`busy\`, \`name\`, \`key\`, \`tag\`, children |
+| \`ui.LoadBox\` | The loading shell: holds its height while a load runs, and shows a spinner over the content | \`busy\`, \`name\`, \`key\`, \`tag\`, \`class\`, children |
 | \`ui.MetricCell\` | A metric's cell | \`pres\`, \`format\`, \`chip\`, \`words\` |
 | \`ui.MetricTd\` | A numeric table cell for one stored value | \`pres\`, \`format\`, \`chip\`, \`words\`, \`title\` |
 | \`ui.RetryButton\` | The button beside a failed read, to load it again | \`onretry\`, \`label\` |
-| \`ui.SortTh\` | A sortable table header cell (the view keeps its sort state) | \`label\`, \`cls\`, \`title\`, \`active\`, \`desc\`, \`onclick\` |
+| \`ui.SortTh\` | A sortable table header cell (the view keeps its sort state) | \`label\`, \`cls\`, \`title\`, \`active\`, \`desc\`, \`ariaSort\`, \`onclick\` |
 | \`ui.WinnerCell\` | A side's name, as a chip | \`name\`, \`winner\`, \`title\` |
-| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`labelTitle\`, \`value\`, \`sub\`, \`title\`, and the \`subSlot\` and \`valueSlot\` slots |
+| \`ui.StatCard\` | A labelled figure, with an optional sub-line | \`label\`, \`labelTitle\`, \`value\`, \`sub\`, \`title\`, \`cls\`, \`subCls\`, \`badge\`, \`onclick\`, and the \`subSlot\` and \`valueSlot\` slots |
 | \`ui.StatusChip\` | A status chip, with optional progress | \`status\`, \`progress\`, \`stage\`, \`block\`, \`detail\`, \`title\` |
 
 Other helpers: \`spectra.openMatch(matchId)\` and \`spectra.openPlayer(steamId)\` open a match or a player's profile; \`spectra.fmtDate(d)\` and \`spectra.fmtDuration(seconds)\` format a timestamp and a span.

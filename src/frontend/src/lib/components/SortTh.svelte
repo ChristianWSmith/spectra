@@ -22,7 +22,7 @@
   } = $props();
 </script>
 
-<th scope="col" class={cls} title={title ?? `Sort by ${label}`} aria-sort={ariaSort}>
+<th scope="col" class={cls} title={title ?? `${S.common.sortThSortByPrefix}${label}`} aria-sort={ariaSort}>
   <button class="th-sort" class:sorted={active} aria-label="{S.common.sortThSortByPrefix}{label}" {onclick}>
     {label}{#if active}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
   </button>

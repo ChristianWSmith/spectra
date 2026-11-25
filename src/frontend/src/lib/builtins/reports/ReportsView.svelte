@@ -127,8 +127,9 @@
           m.steamId = m.players[0].steamId;
         }
       })
-      .catch(() => {
-        /* the player picker stays hidden until it loads */
+      .catch((e) => {
+        // The picker stays hidden until the list loads; the failure is the frame's to show.
+        spectra.report(e);
       });
   });
 
@@ -147,7 +148,10 @@
         const max = (rs || []).reduce((x, r) => Math.max(x, r.number), 0);
         if (m.roundNo > max) m.roundNo = Math.max(1, max);
       })
-      .catch(() => (m.rounds = []));
+      .catch((e) => {
+        m.rounds = [];
+        spectra.report(e);
+      });
   });
 
   // --- the templates and target block ---
@@ -204,10 +208,11 @@
           }
           m.seeds = out;
         })
-        .catch(() => {
+        .catch((e) => {
           if (isCurrent()) {
             m.sbBySteam = {};
             m.seeds = new Map();
+            spectra.report(e);
           }
         });
     }),

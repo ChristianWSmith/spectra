@@ -90,7 +90,7 @@
   );
 
   // The value a row sorts on for one key: the name, the side code, the score,
-  // or a stored value (the same keys the old view's chain sorted on).
+  // or a stored value.
   function sortValueOf(key, p) {
     if (key === 'name') return p.name;
     if (key === 'side') return p.side;
@@ -108,8 +108,8 @@
     else sortStack = [...sortStack, { key, desc: true }];
   }
 
-  // A metric header's tooltip: its formula, as the old view showed it (the
-  // catalog's doc, else the metric name), plus the engine's error when it failed.
+  // A metric header's tooltip: its formula (the catalog's doc, else the metric
+  // name), plus the engine's error when it failed.
   function headerTitle(metric) {
     const u = data.byMetric.get(metric);
     return (u.doc || metric) + (u.error ? S.builtins.couldntCalculate + u.error : '');

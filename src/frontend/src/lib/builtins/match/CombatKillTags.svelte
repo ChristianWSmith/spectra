@@ -227,6 +227,7 @@
                 steam={g.aSteam}
                 name={g.aName || DASH}
                 nav={spectra.navigate}
+                variant="name-link"
                 cls={playerRoundCls(g.round, g.aSteam, g.aName)}
                 title={S.fill(S.combat.openProfileName, { name: g.aName })}
               />
@@ -237,6 +238,7 @@
                 steam={g.bSteam}
                 name={g.bName || DASH}
                 nav={spectra.navigate}
+                variant="name-link"
                 cls={playerRoundCls(g.round, g.bSteam, g.bName)}
                 title={S.fill(S.combat.openProfileName, { name: g.bName })}
               />

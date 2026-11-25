@@ -7,7 +7,7 @@
 //   reads.get('kills').state   // 'fresh' | 'processing' | … | 'failed'
 
 // failedRead is the read a panel holds for a metric whose read threw.
-export function failedRead(e, errText) {
+function failedRead(e, errText) {
   return { state: 'failed', error: errText(e), value: null, rows: [] };
 }
 

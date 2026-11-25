@@ -40,8 +40,9 @@
     const switches = sideSwitchesOf(switchRows);
     const who = new Map(roster.rows.map((r) => [r[0], { name: r[1], side: r[2] }]));
     const out = [];
+    const reads = await spectra.readMetrics(CARDS.map((c) => c.metric));
     for (const card of CARDS) {
-      const m = await spectra.metric(card.metric);
+      const m = reads.get(card.metric);
       if (m.state === 'no-data') continue;
       let steam = null;
       let value = '';

@@ -116,9 +116,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       getMetricComputeState: 'a metric’s compute state (read)',
       getPlayerRefs: 'player references for a report (read)',
       renderReport: 'a report rendered from stored values (read)',
-      subscribeMetricProgress: 'subscribe to metric progress (event)',
       onMetricDone: 'listen for a metric finishing (event)',
-      onEvent: 'listen for a backend event (event)',
     },
   },
   'src/lib/componentruntime/reads.js': {
@@ -162,8 +160,6 @@ export const BUILTIN_HELPERS = Object.freeze({
       metricPresentation: 'how a metric state is shown',
       metricStateTitle: 'the hover title of a metric state',
       liveMetricState: 'a metric’s live state',
-      metricProgressFrac: 'a metric computation’s progress fraction',
-      metricProgressStage: 'a metric computation’s progress stage',
     },
   },
   'src/lib/teams.js': {
@@ -201,7 +197,6 @@ export const BUILTIN_HELPERS = Object.freeze({
       entryLoopAround: 'the loop span around a replay entry',
       entryLoopSpanAround: 'the loop span around a replay entry, as a span',
       LOOP_SECS_DEFAULT: 'the default loop length in seconds',
-      prefLoopSecs: 'the loop length the user prefers',
     },
   },
   'src/lib/download.js': {
@@ -276,7 +271,6 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/sortstate.js': {
     load: () => import('../sortstate.js'),
     names: {
-      nextSort: 'a table’s sort state after a click on a column',
       compareAsc: 'the ascending order of two values (-1, 0, 1)',
     },
   },
@@ -301,7 +295,6 @@ export const BUILTIN_HELPERS = Object.freeze({
     load: () => import('../metricreads.js'),
     names: {
       readMetrics: 'read several stored metrics by name, a failed read shown as its own state',
-      failedRead: 'the read a metric whose read threw is shown as',
     },
   },
   'src/lib/metricslive.svelte.js': {

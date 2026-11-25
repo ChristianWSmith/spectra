@@ -157,6 +157,7 @@
                   steam={c.steamId}
                   name={c.name || DASH}
                   nav={spectra.navigate}
+                  variant="name-link"
                   cls={playerRoundCls(c.round, c.steamId, c.name)}
                   title={S.combat.openPlayerProfile}
                 />

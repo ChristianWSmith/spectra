@@ -36,8 +36,12 @@
         .then((defs) => {
           if (isCurrent()) trendDefs = defs || [];
         })
-        .catch(() => {
-          if (isCurrent()) trendDefs = []; // a failed catalog read offers nothing — never a guess
+        .catch((e) => {
+          // A failed catalog read offers nothing (never a guess), and the frame says why.
+          if (isCurrent()) {
+            trendDefs = [];
+            spectra.report(e);
+          }
         });
     }),
   );

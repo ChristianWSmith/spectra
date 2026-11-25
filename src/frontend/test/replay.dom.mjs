@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
 // (.replay-topbar, first child of .replay-main: the Close · Minimize ·
@@ -149,6 +150,8 @@ for (const rel of [
 ]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
+// ProfileLink's strings and builtinhelpers come in by closure (the services stub is written below).
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
 writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),

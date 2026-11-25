@@ -102,7 +102,7 @@ export function readFrameBase(spectra) {
   return [spectra.query(SQL_ROSTER), spectra.query(SQL_TEAMS), spectra.query(SQL_SWITCHES)];
 }
 
-// The chained sort (the old Match view's rule): each stack entry is applied
+// The chained sort: each stack entry is applied
 // to the sequence the earlier entries produced, so the newest key is the
 // primary and the earlier keys break its ties. Every step breaks ties on
 // the incoming index, so a key whose values are all tied moves nothing. A

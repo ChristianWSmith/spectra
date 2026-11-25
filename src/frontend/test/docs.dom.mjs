@@ -33,7 +33,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   url: 'http://localhost/',
 });
 for (const k of [
-  'window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'HTMLInputElement',
+  'window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement', 'HTMLInputElement',
   'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment', 'NodeFilter',
   'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
   'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'DOMParser',

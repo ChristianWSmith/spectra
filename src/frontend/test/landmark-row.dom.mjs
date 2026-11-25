@@ -15,6 +15,7 @@ import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { copyClosure } from './copy-closure.mjs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -94,6 +95,8 @@ writeFileSync(
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 
+// ProfileLink's strings and builtinhelpers come in by closure; services.js is the stub written below.
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
 // ProfileLink now statically imports ../services.js for its hover
 // prefetch (warmProfile) — a no-op stub here (this driver never hovers).
 writeFileSync(join(dir, 'services.js'), 'export const warmProfile = () => {};\n');
