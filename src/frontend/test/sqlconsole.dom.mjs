@@ -210,7 +210,7 @@ svelteCompile(
 // The view: plain-ESM imports resolve from their real module locations,
 // the component imports from the local bundles.
 let sqlSrc = readFileSync('src/lib/views/SqlConsole.svelte', 'utf8');
-for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js', 'strings/index.js', 'editor/sqlCompletions.js', 'editor/completionSources.js']) {
+for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js', 'strings/index.js', 'editor/sqlCompletions.js', 'editor/completionSources.js', 'fillheight.js']) {
   sqlSrc = sqlSrc.split(`from '../${rel}'`).join(`from '${fileURL(`src/lib/${rel}`)}'`);
 }
 sqlSrc = sqlSrc.split("from '../components/StatusChip.svelte'").join("from './statuschip.js'");

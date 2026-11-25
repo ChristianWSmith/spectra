@@ -1803,3 +1803,81 @@ canvas.heat-canvas {
   gap: 6px;
   margin-top: 10px;
 }
+
+/* The console fills the content height (fillHeight). The left pane is the schema
+   list and scrolls inside itself. On the right the statement keeps its natural
+   size (the editor takes priority); the results and the saved/history row share
+   what is left, each scrolling inside its own box. */
+.sql-side {
+  max-height: none;
+}
+
+.sql-main > :first-child {
+  flex: none;
+}
+
+.sql-main > .sql-results-panel,
+.sql-main > .sql-lower {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.sql-results-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+.sql-results-panel .sql-results {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+
+.sql-lower {
+  min-height: 240px;
+}
+
+.sql-lower > section {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sql-lower .sql-hist-list {
+  max-height: none;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+@media (max-width: 1000px) {
+  .sql-main > * {
+    flex: none;
+    min-height: 0;
+  }
+
+  .sql-results-panel {
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .sql-results-panel .sql-results {
+    flex: none;
+    max-height: 44vh;
+  }
+
+  .sql-lower {
+    min-height: 0;
+  }
+
+  .sql-lower > section {
+    flex: none;
+    overflow: visible;
+  }
+
+  .sql-lower .sql-hist-list {
+    max-height: 260px;
+    flex: none;
+  }
+}

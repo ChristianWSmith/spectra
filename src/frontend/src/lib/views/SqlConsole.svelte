@@ -1,4 +1,5 @@
 <script>
+  import { fillHeight } from '../fillheight.js';
   import SourceEditor from '../components/SourceEditor.svelte';
   import { sqlItems } from '../editor/sqlCompletions.js';
   import { consoleTables } from '../editor/completionSources.js';
@@ -428,7 +429,7 @@
   </header>
 
   <div class="sql-grid">
-    <aside class="panel sql-side">
+    <aside class="panel sql-side" use:fillHeight>
       <div class="row-between">
         <h2>Schema</h2>
         <span class="chip" title="The console opens a separate connection: mode=ro + query_only, single statement only — multi-statement and writes are rejected before execution."
@@ -479,7 +480,7 @@
       </LoadBox>
     </aside>
 
-    <div class="sql-main">
+    <div class="sql-main" use:fillHeight>
       <section class="panel">
         <div class="row-between">
           <h2>Statement</h2>
