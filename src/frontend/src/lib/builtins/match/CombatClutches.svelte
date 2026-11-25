@@ -1,7 +1,7 @@
 <script>
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
@@ -91,9 +91,6 @@
   const replay = combat.replay;
 </script>
 
-{#if error}
-  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
-{/if}
 
 <div class="comb-sec">
   <h2>{S.combat.clutchesHeading}</h2>
@@ -179,7 +176,7 @@
               <td class="num">{c.hpLeft}</td>
             </tr>
           {:else}
-            <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
+            <EmptyTableRow colspan={7} text={clutchEmptyText} />
           {/each}
         </tbody>
       </table>

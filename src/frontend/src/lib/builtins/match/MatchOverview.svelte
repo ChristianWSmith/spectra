@@ -85,6 +85,7 @@
         cards = res.cards;
         ready = true;
       },
+      (e) => spectra.report(e),
     ),
   );
 

@@ -24,6 +24,7 @@
     roundOf,
   } from './panelhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import {
     DASH,
     isSteam,
@@ -467,7 +468,7 @@
                     <td class="num">{fmtInt(e.moneyAvg)}</td>
                   </tr>
                 {:else}
-                  <tr><td colspan="4" class="muted">{S.match.noEconomySamples}</td></tr>
+                  <EmptyTableRow colspan={4} text={S.match.noEconomySamples} />
                 {/each}
               </tbody>
             </table>

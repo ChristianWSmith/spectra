@@ -1,5 +1,11 @@
 // current.js — the load an effect starts, dropped when it is out of date.
 //
+// FAILURE CONVENTION (built-ins and authors alike): a failed READ is shown in the
+// component's frame banner, through spectra.report(error). A panel keeps its own
+// banner only where it offers a retry (the Retry button is the reason it exists).
+// Failed ACTIONS (save, generate) keep their own dismissable line, because they are
+// not loads. The error reaches the frame either way; the rule is which line shows it.
+//
 // An effect that loads for its inputs must not apply a late result after the
 // inputs have changed or the owner has unmounted. whileCurrent is that guard:
 //

@@ -605,6 +605,7 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 
 - **\`spectra.navigate(route)\`**: opens a view. The route is a hash such as \`#/match/…\`, or \`{ path, query }\`.
 - **\`spectra.guard(fn)\`**: wraps an event or async handler, so its error goes to the component's box instead of being lost.
+- **\`spectra.report(error)\`**: shows a failed load in the component's box, which the reader can dismiss. Use it for a failed read the component has no retry for.
 - **\`spectra.activateOnKey(fn, { enterOnly })\`**: makes a clickable row work from the keyboard. \`onkeydown={spectra.activateOnKey(open)}\` runs \`open\` on Enter, and on Space unless \`enterOnly\` is set.
 - **\`spectra.Child\`**: mounts another named component inside this one: \`<spectra.Child name="…" props={…} />\`. The child receives this component's context and has its own error box. Nesting has a fixed depth limit.
 

@@ -5,7 +5,6 @@
 // Audit: node --test src/lib/strings-audit.test.js   (from frontend/)
 
 export const combat = {
-  dismissError: 'Dismiss error',
   loadingDetail: 'Loading combat data…',
   metricErrorLead: 'Metric-backed stats unavailable: ',
   dismissMetricError: 'Dismiss metric stats error',

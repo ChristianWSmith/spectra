@@ -1,6 +1,6 @@
 <script>
   import { DASH } from '../../builtinhelpers.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
+  import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
   // metres, ONE row per KILL (the kill's kind facts share the row, both chips
@@ -126,9 +126,6 @@
   const replay = combat.replay;
 </script>
 
-{#if error}
-  <ErrorBanner ondismiss={combat.dismiss} dismissLabel={S.combat.dismissError}>{error}</ErrorBanner>
-{/if}
 
 <div class="comb-sec">
   <h2>{S.combat.killTagsHeading}</h2>
@@ -247,11 +244,7 @@
             <td class="num" title={KILL_TAG_DIST_DEF}>{g.distance ? Math.round(g.distance) : DASH}</td>
           </tr>
         {:else}
-          <tr>
-            <td colspan="8" class="muted">
-              {error ? S.combat.killTagsUnavailable : S.combat.noKillTags}
-            </td>
-          </tr>
+          <EmptyTableRow colspan={8} text={error ? S.combat.killTagsUnavailable : S.combat.noKillTags} />
         {/each}
       </tbody>
     </table>

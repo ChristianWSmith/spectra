@@ -52,6 +52,7 @@
       () => context.matchId,
       load,
       (d) => (data = d),
+      (e) => spectra.report(e),
     ),
   );
 

@@ -45,7 +45,10 @@ export function combatPanel(getSpectra, getMatchId, { read, apply }) {
           error = '';
         })
         .catch((e) => {
-          if (isCurrent()) error = errText(e);
+          if (!isCurrent()) return;
+          // A read failure is the frame's banner (no retry here): the error stays for the empty line.
+          error = errText(e);
+          getSpectra().report(e);
         });
     }),
   );

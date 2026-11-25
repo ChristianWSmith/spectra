@@ -357,7 +357,8 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   (`componentruntime/readapi.js`): `metric(name, binds)` (stored values
   with the five states), `query(sql, binds)` (a live read-only read with no
   freshness), `context` (the mounting surface's match, steam id and round;
-  binds default from it), `navigate`, `guard(fn)` for event and async work,
+  binds default from it), `navigate`, `guard(fn)` for event and async work, `report(error)`
+  for a failed load's frame banner (the failure convention is in `lib/current.js`),
   `isHuman` and `listedPlayers`, `liveMetrics()` (a panel's metric progress and
   reload wiring, `lib/metricslive.svelte.js`), the shared helpers `readMetrics(names)`
   (bound to the frame's read API and error text), `metricPresentation`, `fmtMetric`, `fmtDate`,

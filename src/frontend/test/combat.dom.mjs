@@ -211,7 +211,13 @@ for (const name of ['CombatKillTags', 'CombatClutches']) {
 const harnessSrc = `<script>
   import KillTags from './builtins/match/CombatKillTags.js';
   import Clutches from './builtins/match/CombatClutches.js';
-  const spectra = { navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)), track: (p) => p, busy: false };
+  const spectra = {
+    navigate: (h) => (globalThis.__nav = (globalThis.__nav || []).concat(h)),
+    track: (p) => p,
+    busy: false,
+    // The frame's banner: a failed read is reported here, not shown in the panel.
+    report: (e) => (globalThis.__reported = (globalThis.__reported || []).concat(e && e.message ? e.message : String(e))),
+  };
 </script>
 <KillTags {spectra} context={{ matchId: 3 }} />
 <Clutches {spectra} context={{ matchId: 3 }} />`;
@@ -930,24 +936,26 @@ console.log('K. cold start: the tab is busy until its data lands (throbber, no p
 }
 
 // ---------------------------------------------------------------------------
-// Section L: the load failure is dismissible IN PLACE (PRODUCT.md "Every
-// error indication is dismissible") and is never paired with a rendered
-// Combat stats section — the ✕ lives inside p.error[role="alert"] and
-// clears `error`, leaving the view (and its two panels) mounted.
-console.log('L. failed load: the error is dismissible in place, the retired section never renders beside it');
+// Section L: a failed read is the FRAME's banner (ruling C): each panel reports
+// its failure through spectra.report and draws no alert of its own, and the
+// retired Combat stats section never renders beside it. The frame's ✕ belongs to
+// the frame (component-frame.dom.mjs); here the panels must leave it intact.
+console.log('L. failed load: each panel reports to the frame, draws no alert of its own, the retired section never renders');
 {
   globalThis.__combatError = 'combat backend down';
+  globalThis.__reported = [];
+  const navBefore = (globalThis.__nav || []).length;
   const rootL = await render(base);
   const errP = rootL.querySelector('p.error[role="alert"]');
   check(
-    'failure renders the alert with its message',
-    !!errP && errP.textContent.includes('combat backend down'),
-    errP ? errP.textContent.trim() : 'no p.error',
+    'the panels draw no alert of their own',
+    !errP,
+    errP ? errP.textContent.trim() : '',
   );
   check(
-    'the ✕ rides INSIDE the alert (btn small + codicon-close)',
-    !!errP?.querySelector('button.btn.small .codicon-close'),
-    errP ? errP.innerHTML.slice(0, 160) : '',
+    'each panel reports its failed read to the frame',
+    globalThis.__reported.length === 2 && globalThis.__reported.every((m) => m === 'combat backend down'),
+    JSON.stringify(globalThis.__reported),
   );
   // The retired section's honesty gate inverted in place: there is no
   // empty-state claim to gate any more — the section itself never
@@ -960,19 +968,9 @@ console.log('L. failed load: the error is dismissible in place, the retired sect
   );
   const panelsBefore = rootL.querySelectorAll('.comb-sec').length;
   check('the two panels render around the failure', panelsBefore === 2, String(panelsBefore));
-  // A dead backend fails each panel's own load, so one alert surfaces per panel, each dismissible in place.
-  const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
-    'the failure surfaces as one dismissible alert per panel',
-    alerts.length === 2 && alerts.every((a) => a.textContent.includes('combat backend down')),
-    alerts.map((p) => p.textContent.trim().slice(0, 60)).join(' | '),
-  );
-  click(errP.querySelector('button.btn.small'));
-  await sleep();
-  check(
-    '✕ clears only its own panel\'s alert — the other stays, panels still mounted, nothing navigated',
-    rootL.querySelectorAll('p.error[role="alert"]').length === 1 &&
-      rootL.querySelectorAll('.comb-sec').length === panelsBefore,
+    'the panels stay mounted and navigate nowhere on failure',
+    rootL.querySelectorAll('.comb-sec').length === panelsBefore && (globalThis.__nav || []).length === navBefore,
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
   globalThis.__combatError = 0;

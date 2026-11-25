@@ -17,7 +17,7 @@
     sortRows,
   } from './panelhelpers.js';
   import { fmtMetric } from '../../fmt.js';
-  import MetricCell from '../../components/MetricCell.svelte';
+  import MetricTd from '../../components/MetricTd.svelte';
   import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
@@ -175,13 +175,12 @@
             </td>
             {#each COLUMNS as c (c.metric)}
               {@const u = data.byMetric.get(c.metric)}
-              <td class="num" title={u.error || undefined}>
-                <MetricCell
-                  pres={matchPres(u, p.steam)}
-                  format={(v) => fmtMetric(v, c.format)}
-                  words={STATE_WORD}
-                />
-              </td>
+              <MetricTd
+                pres={matchPres(u, p.steam)}
+                format={(v) => fmtMetric(v, c.format)}
+                words={STATE_WORD}
+                title={u.error}
+              />
             {/each}
           </tr>
         {/each}

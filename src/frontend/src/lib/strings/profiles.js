@@ -29,7 +29,6 @@ export const profiles = {
   // two statTitle tooltips with their raw-card branches (every card is a
   // metric tile now: its `labelTitle` carries the seed's own doc).
   h1Player: 'Player',
-  careerErrorLead: 'Profile metrics unavailable: ',
   trendHeading: 'Trend',
   // The trend card's metric picker (the shared SuggestInput): the one
   // place a metric NAME is chosen for the sparkline.

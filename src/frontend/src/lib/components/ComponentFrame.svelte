@@ -157,6 +157,8 @@
     // followPlayer(steamId, back?): the replay of the context's match, following this player. `back`
     // is the route the replay returns to; without it the replay returns to the match.
     followPlayer: (steamId, back = '') => followPlayer(spectra, ctx.matchId, back, steamId),
+    // report(error): shows a failure in this frame's banner (a failed load a panel has no banner for).
+    report: (e) => report(e),
     fmtDate,
     fmtDuration,
     metric: tracked(api.metric),

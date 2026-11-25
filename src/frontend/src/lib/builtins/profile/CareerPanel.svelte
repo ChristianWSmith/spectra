@@ -1,6 +1,5 @@
 <script>
   import { whenCurrent, whileCurrent } from '../../current.js';
-  import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Career headline cards (builtin profile panel). The profile-scope metrics
   // of the default selection (DEFAULT_CARDS.profile, in the default sequence),
   // one card each. Every value is one metric() read for the context's player.
@@ -21,7 +20,6 @@
   let defs = $state([]);
   let wins = $state(null);
   let reads = $state(new Map());
-  let loadError = $state('');
   const sweep = liveMetrics();
 
   // The cards: the default profile selection, in the default sequence.
@@ -40,7 +38,6 @@
       loadProfile(spectra, sid)
         .then(async ([rows, profile]) => {
           if (!isCurrent()) return;
-          loadError = '';
           defs = rows || [];
           wins = profile ? profile.wins : null;
           const names = defaultCardDefs(defs).map((d) => d.name);
@@ -49,16 +46,13 @@
         })
         .catch(
           whenCurrent(isCurrent, (e) => {
-            loadError = errText(e);
+            spectra.report(e);
           }),
         );
     }),
   );
 </script>
 
-{#if loadError}
-  <ErrorBanner>{S.profiles.careerErrorLead}{loadError}</ErrorBanner>
-{/if}
 <div class="prof-career">
   <div class="stat-grid prof-stats">
     {#each cardDefs as def (def.id)}

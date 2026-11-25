@@ -94,15 +94,17 @@
       () => context.matchId,
       load,
       (d) => (data = d),
-      () =>
-        (data = {
+      (e) => {
+        spectra.report(e);
+        data = {
           rows: [],
           rounds: [],
           players: [],
           names: { ct: S.match.sideCt, t: S.match.sideT },
           tickRate: 64,
           sideSwitches: 0,
-        }),
+        };
+      },
     ),
   );
 
