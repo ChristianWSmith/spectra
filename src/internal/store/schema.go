@@ -20,6 +20,7 @@ var schemaFragments = []struct {
 	{clutchPlaceholder, clutchCTE},
 	{killsPlaceholder, killsCountedCTE},
 	{killsEKPlaceholder, killsCountedEKCTE},
+	{killsAKPlaceholder, killsCountedAKCTE},
 	{damagePlaceholder, damageCountedCTE},
 	{playerStatsColsPlaceholder, playerStatsColsSQL},
 	{rollupOpenPlaceholder, rollupOpenSQL},

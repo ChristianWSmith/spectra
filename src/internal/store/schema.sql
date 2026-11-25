@@ -1210,63 +1210,12 @@ fold AS (
 -- the stored player, round, duel, clutch, grenade and drop facts — one
 -- metric, one number; every row LIST they count stays source data.
 ('assists', 'Assists', 'A',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(assists) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.assists, 0) AS assists
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-ak AS (
-  SELECT * FROM k WHERE assister <> '''' AND assister <> victim AND attacker <> '''' AND attacker <> victim AND fake = 0 AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side) AND NOT (COALESCE(s_side, '''') <> '''' AND s_side = v_side)
-),
-fold AS (
-    SELECT match_id, assister AS steam_id, ''assists'' AS f, COUNT(*) AS n FROM ak WHERE assisted_flash = 0 GROUP BY match_id, assister
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''assists'' THEN n END) AS assists FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.assists, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}}, {{KILLS_AK}} SELECT match_id, assister AS steam_id, COUNT(*) AS assists FROM ak WHERE assisted_flash = 0 GROUP BY match_id, assister) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(assists) — cross-team assists this player earned (not flash assists), addressed per player — the scoreboard''s A column.',
  'builtin', CURRENT_TIMESTAMP),
 ('flash_assists', 'Flash assists', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(flash_assists) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.assists, 0) AS assists, COALESCE(f.flash_assists, 0) AS flash_assists
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-ak AS (
-  SELECT * FROM k WHERE assister <> '''' AND assister <> victim AND attacker <> '''' AND attacker <> victim AND fake = 0 AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side) AND NOT (COALESCE(s_side, '''') <> '''' AND s_side = v_side)
-),
-fold AS (
-    SELECT match_id, assister AS steam_id, ''assists'' AS f, COUNT(*) AS n FROM ak WHERE assisted_flash = 0 GROUP BY match_id, assister
-    UNION ALL SELECT match_id, assister AS steam_id, ''flash_assists'' AS f, COUNT(*) AS n FROM ak WHERE assisted_flash = 1 GROUP BY match_id, assister
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''assists'' THEN n END) AS assists, SUM(CASE WHEN f = ''flash_assists'' THEN n END) AS flash_assists FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.flash_assists, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}}, {{KILLS_AK}} SELECT match_id, assister AS steam_id, COUNT(*) AS flash_assists FROM ak WHERE assisted_flash = 1 GROUP BY match_id, assister) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(flash_assists) — assists for blinding an enemy a teammate then killed, addressed per player — the expanded player row''s Flash assists count.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1289,56 +1238,12 @@ fold AS (
  'Formula: sum(enemies_flashed) — enemies blinded by this player''s flashes (each counted once), addressed per player — the Enemies flashed count in the expanded player row.',
  'builtin', CURRENT_TIMESTAMP),
 ('entry_kills', 'Opening kills', 'Open K',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_kills) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.kills, 0) AS kills
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, attacker AS steam_id, ''kills'' AS f, COUNT(*) AS n FROM ek GROUP BY match_id, attacker
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''kills'' THEN n END) AS kills FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, ps.entry_kills AS value FROM player_stats ps WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(entry_kills) — round-opening first-blood kills, addressed per player — the scoreboard''s Open K column (same recording as opening kills).',
  'builtin', CURRENT_TIMESTAMP),
 ('entry_deaths', 'Opening deaths', 'Open D',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(entry_deaths) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.deaths, 0) AS deaths
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, victim AS steam_id, ''deaths'' AS f, COUNT(*) AS n FROM k WHERE victim <> '''' AND fake = 0 GROUP BY match_id, victim
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''deaths'' THEN n END) AS deaths FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, ps.entry_deaths AS value FROM player_stats ps WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(entry_deaths) — round-opening first-blood victims, addressed per player — the scoreboard''s Open D column, beside Open K.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1506,29 +1411,7 @@ fold AS (
  'Formula: sum(traded) — rounds where this player''s own death was answered inside the trade window: the KAST T component, addressed per player.',
  'builtin', CURRENT_TIMESTAMP),
 ('trade_kills', 'Trade kills', 'Trade',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(trade_kills) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.kills, 0) AS kills
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, attacker AS steam_id, ''kills'' AS f, COUNT(*) AS n FROM ek GROUP BY match_id, attacker
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''kills'' THEN n END) AS kills FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, ps.trade_kills AS value FROM player_stats ps WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(trade_kills) — kills that answered a teammate''s death inside the trade window, addressed per player — the Trade column and Trade rate''s numerator.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1710,56 +1593,12 @@ fold AS (
 -- canonical. All int, no denominator: the rounds
 -- denominator machinery owns ADR/Entry%, never a raw count.
 ('kills', 'Kills', 'K',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(kills) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.kills, 0) AS kills
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, attacker AS steam_id, ''kills'' AS f, COUNT(*) AS n FROM ek GROUP BY match_id, attacker
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''kills'' THEN n END) AS kills FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.kills, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}}, {{KILLS_EK}} SELECT match_id, attacker AS steam_id, COUNT(*) AS kills FROM ek GROUP BY match_id, attacker) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(kills) — kills this player earned, addressed per player — the scoreboard''s K column.',
  'builtin', CURRENT_TIMESTAMP),
 ('deaths', 'Deaths', 'D',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(deaths) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.deaths, 0) AS deaths
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, victim AS steam_id, ''deaths'' AS f, COUNT(*) AS n FROM k WHERE victim <> '''' AND fake = 0 GROUP BY match_id, victim
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''deaths'' THEN n END) AS deaths FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.deaths, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}} SELECT match_id, victim AS steam_id, COUNT(*) AS deaths FROM k WHERE victim <> '''' AND fake = 0 GROUP BY match_id, victim) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(deaths) — deaths this player suffered, addressed per player — the scoreboard''s D column.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1815,29 +1654,7 @@ fold AS (
  'Formula: sum(utility_damage) — the scoreboard''s raw Util total, addressed per player — all utility damage this player dealt (Util damage (paired) counts only in-window grenade hits).',
  'builtin', CURRENT_TIMESTAMP),
 ('headshots', 'Headshots', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(headshots) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.headshots, 0) AS headshots
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, attacker AS steam_id, ''headshots'' AS f, SUM(headshot) AS n FROM ek GROUP BY match_id, attacker
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''headshots'' THEN n END) AS headshots FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.headshots, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}}, {{KILLS_EK}} SELECT match_id, attacker AS steam_id, SUM(headshot) AS headshots FROM ek GROUP BY match_id, attacker) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(headshots) — kills that landed as headshots, addressed per player — the raw count behind HS%.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1870,29 +1687,7 @@ fold AS (
  'Formula: sum(teamkills) — teammates this player killed, addressed per player — the raw team-kill count.',
  'builtin', CURRENT_TIMESTAMP),
 ('suicides', 'Suicides', '',
- 'SELECT grp AS subject_key, '''' AS dim, v AS value FROM (SELECT match_id AS mid, steam_id AS grp, SUM(suicides) AS v FROM (SELECT ps.match_id, ps.steam_id, ps.side, ps.name, ps.mvps, ps.score, ps.entry_kills, ps.entry_deaths, ps.trade_kills, ps.best_streak, ps.team, ps.won, ps.map, COALESCE(f.suicides, 0) AS suicides
-  FROM player_stats ps
-  LEFT JOIN (WITH k AS (
-  SELECT e.match_id, e.round, e.attacker, e.victim, e.assister, e.weapon, e.headshot, e.assisted_flash,
-         (e.victim <> '''' AND e.attacker = e.victim AND e.weapon = ''World'' AND dc.attacker IS NOT NULL) AS fake,
-         sa.side AS a_side, sv.side AS v_side, ss.side AS s_side
-  FROM events e
-  LEFT JOIN (SELECT DISTINCT match_id, attacker, tick FROM events WHERE match_id = :match_id AND kind = ''player_disconnect'') dc
-    ON dc.match_id = e.match_id AND dc.attacker = e.victim AND dc.tick = e.tick
-  LEFT JOIN round_player_sides sa ON sa.match_id = e.match_id AND sa.round = e.round AND sa.steam_id = e.attacker
-  LEFT JOIN round_player_sides sv ON sv.match_id = e.match_id AND sv.round = e.round AND sv.steam_id = e.victim
-  LEFT JOIN round_player_sides ss ON ss.match_id = e.match_id AND ss.round = e.round AND ss.steam_id = e.assister
-  WHERE e.match_id = :match_id AND e.kind = ''kill'' AND e.post_match = 0
-),
-ek AS (
-  SELECT * FROM k WHERE attacker <> '''' AND attacker <> victim AND fake = 0
-    AND NOT (COALESCE(a_side, '''') <> '''' AND a_side = v_side)
-),
-fold AS (
-    SELECT match_id, victim AS steam_id, ''suicides'' AS f, COUNT(*) AS n FROM k WHERE victim <> '''' AND attacker = victim AND fake = 0 GROUP BY match_id, victim
-  )
-  SELECT match_id, steam_id, SUM(CASE WHEN f = ''suicides'' THEN n END) AS suicides FROM fold GROUP BY match_id, steam_id) f ON f.match_id = ps.match_id AND f.steam_id = ps.steam_id
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (steam_id <> '''' AND NOT EXISTS (SELECT 1 FROM players p WHERE p.match_id = player_stats.match_id AND p.steam_id = player_stats.steam_id AND p.is_bot = 1)) GROUP BY mid, grp ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT ps.steam_id AS subject_key, '''' AS dim, COALESCE(f.suicides, 0) AS value FROM player_stats ps LEFT JOIN (WITH {{KILLS_CTE}} SELECT match_id, victim AS steam_id, COUNT(*) AS suicides FROM k WHERE victim <> '''' AND attacker = victim AND fake = 0 GROUP BY match_id, victim) {{PLAYER_FOLD_JOIN}} WHERE ps.match_id = :match_id AND {{HUMAN:ps.steam_id}}',
  'int',
  'Formula: sum(suicides) — deaths to their own hand, addressed per player — the raw suicide count.',
  'builtin', CURRENT_TIMESTAMP),

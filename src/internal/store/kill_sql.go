@@ -23,3 +23,14 @@ const killsCountedEKCTE = `ek AS (SELECT * FROM k WHERE attacker <> '' AND attac
 
 // killsEKPlaceholder marks the counted-kill rule inside a schema.sql metric expr.
 const killsEKPlaceholder = "{{KILLS_EK}}"
+
+// killsCountedAKCTE is the counted-assist rule: the k rows that credit an
+// assist. A kill credits its assister unless the assister is the killer or the
+// victim, the kill is not self or team, not fake, and the assister is not on the
+// victim's side. It follows killsCountedCTE in a metric's WITH list, as ak; the
+// flash flag stays a metric's own filter (assisted_flash = 0 or = 1). Shared by
+// the assist metrics, so the rule is written once.
+const killsCountedAKCTE = `ak AS (SELECT * FROM k WHERE assister <> '' AND assister <> victim AND attacker <> '' AND attacker <> victim AND fake = 0 AND {{TEAM_FREE}} AND NOT (COALESCE(s_side, '') <> '' AND s_side = v_side))`
+
+// killsAKPlaceholder marks the counted-assist CTE inside a schema.sql metric expr.
+const killsAKPlaceholder = "{{KILLS_AK}}"
