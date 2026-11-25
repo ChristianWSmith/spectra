@@ -1,14 +1,11 @@
-# Frontend unit tests — the mechanical pin for the user-facing-text
-# criterion (frontend/src/lib/strings-audit.test.js). CI never ran
-# node --test: the build workflow only runs `make vet`/`make test` (Go), and
-# frontend deps are installed inside the build AFTER the test step, so the
-# audit cannot ride along there (design §4.4). This is the lint.yml analogue
-# for the frontend: fast, push + PR, no Wails/GTK deps needed.
+# Frontend tests: the node unit suite (src/frontend/src/lib/*.test.js and the componentruntime and
+# editor suites) and every jsdom DOM harness (src/frontend/test/*.dom.mjs). Both run without a Wails
+# backend: services.js is redirected to test/stubs/ by the tests that load it, and the builtin sources
+# are generated here, as the build does. The real-browser harnesses (test/browser/*.browser.mjs) need
+# a Chromium binary and are run locally, not here.
 #
-# Scope is the audit test for now (it runs green on a fresh checkout — no
-# generated bindings required). Widening to `node --test src/lib/*.test.js`
-# is a separate decision: download/input tests import services.js and need
-# the generated frontend/bindings/ tree, which only a build produces.
+# A DOM harness can print FAIL or UNCAUGHT and still exit 0 (its uncaught-error handler keeps the process
+# alive), so a harness fails the job on either a non-zero exit or a FAIL/UNCAUGHT line in its output.
 name: Frontend Tests
 
 on:
@@ -18,8 +15,11 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  strings-audit:
+  frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -33,8 +33,30 @@ jobs:
 
       - name: Install frontend deps
         run: npm ci
-        working-directory: src/frontend
 
-      - name: Strings audit (user-facing-text denylist)
-        run: node --test src/lib/strings-audit.test.js
-        working-directory: src/frontend
+      - name: Generate builtin sources
+        run: node scripts/gen-builtin-sources.mjs
+
+      - name: Unit tests
+        run: node --test src/lib/*.test.js src/lib/componentruntime/*.test.js src/lib/editor/*.test.js
+
+      - name: DOM harnesses
+        shell: bash
+        run: |
+          set -u
+          failed=0
+          for f in test/*.dom.mjs; do
+            out=$(mktemp)
+            if ! timeout 300 node "$f" > "$out" 2>&1; then
+              echo "::error file=src/frontend/$f::exited non-zero"
+              failed=1
+            fi
+            if grep -E '  FAIL|UNCAUGHT' "$out" > /dev/null; then
+              echo "::error file=src/frontend/$f::reported a failure"
+              grep -E '  FAIL|UNCAUGHT' "$out" | head -20
+              failed=1
+            fi
+            echo "== $f"; tail -n 3 "$out"
+            rm -f "$out"
+          done
+          exit $failed

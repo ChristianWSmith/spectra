@@ -6,11 +6,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
+import { installBindingStubs } from '../../test/install-binding-stubs.mjs';
 
 // download.js → save.js → services.js → the generated bindings, which node
 // imports as a directory (see esm-dir-hook.mjs).
-installEsmDirHook();
+installBindingStubs();
 const { extFromName } = await import('./download.js');
 
 test('extFromName takes the trailing extension', () => {
