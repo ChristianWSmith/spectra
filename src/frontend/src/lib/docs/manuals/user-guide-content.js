@@ -385,8 +385,10 @@ value is never invented: missing data shows as a dash, never as a zero.
 
 The **left column** lists every metric, grouped **Builtins / Custom / Plugins**. Above the list, the search box
 and the **Filters** dropdown sit on one row; the dropdown groups **Origin** and **Type** (the metric's format).
-Each row has a ▶ to preview it and, for metrics you created, a trash button. Each row shows its format, its
-state, and a marker for built-in or plugin metrics. **New** starts a fresh metric, and **Running metrics** lists
+Each row has an on/off switch and, for metrics you created, a trash button. Preview a metric from its editor. Each row
+shows its format, its state, and a marker for built-in or plugin metrics. A switched-off metric is kept, with its
+values, but is never computed; it shows the **disabled** state. You can switch a metric off only when no enabled
+metric reads it and no component uses it, and you can switch one on only when every metric it reads is on. The switches are locked while a sweep is computing metrics. **New** starts a fresh metric, and **Running metrics** lists
 the metrics being computed right now, each with its own **Cancel** (see *Cancelling a running metric*). Metrics
 appear in their default order: there is no ordering dialog, pinning or hiding.
 
@@ -467,7 +469,7 @@ export const guideSectionsAfterManual = [
 (where the target is that match), and the same page is reachable on its own with a match picker.
 
 **Template & target** — pick one of the templates: **Match report**, **Match report (HTML)**,
-**Player report**, **Round report** (plus any a plugin contributes); each card shows its scope
+**Player report**, **Round report**, **Career report** (plus any a plugin contributes); each card shows its scope
 and format. Then pick the target the template needs — a player, or a round number —
 and press **Save report** — beside the stats field further down this panel — to write the
 document to disk. The match is the one the tab belongs to, or the one the match picker above
@@ -516,6 +518,7 @@ match's map, \`{{.Detail.Round.Number}}\` a round's number. What sits at the top
 
 - **match**: \`{{.Match}}\` (the match itself: map, file, score, round count, duration, tick rate, import details), \`{{.CTName}}\` and \`{{.TName}}\` (the teams' display names), \`{{.Scoreboard}}\` (a row per player), \`{{.Rounds}}\` (a row per round), \`{{.Economy}}\` (each round's buys: equipment, money and loss bonus per side, buy class), \`{{.Clutches}}\` (round, player, size, outcome, HP left), \`{{.Utility}}\` (each throw: tick, thrower, kind, damage, flash, site), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\` (when it rendered).
 - **player**: \`{{.Match}}\`, \`{{.SteamID}}\`, \`{{.Player}}\` (that player's own scoreboard row), \`{{.Rounds}}\` (their per-round rows), \`{{.Metrics}}\`, \`{{.GeneratedAt}}\`.
+- **profile**: \`{{.Name}}\`, \`{{.SteamID}}\`, \`{{.Matches}}\` (the player's match history: imported time, map, win, score, start side, kills, deaths, ADR, KAST), \`{{.Metrics}}\` (the career values, by name: \`{{index .Metrics "career_adr"}}\`, a dash where a value is not current) and \`{{.GeneratedAt}}\`. A profile report covers one player across every match they played, so it needs no match.
 - **round**: \`{{.Match}}\`, \`{{.GeneratedAt}}\` and \`{{.Detail}}\`: \`{{.Detail.Round}}\` (winner, reason, duration, site, MVP, first kill, equipment, ticks), \`{{.Detail.Economy}}\` (a row per side), \`{{.Detail.Events}}\` (tick, kind, attacker, victim, weapon, damage) and \`{{.Detail.Chat}}\` (tick, name, channel, text).
 
 To walk a list, \`{{range .Scoreboard}} … {{end}}\` loops it, and \`.\` becomes the row being printed (\`{{.Name}}\`, \`{{.Kills}}\`), with \`$\` still meaning the top of the data. \`{{.Metrics}}\` (match and player scopes) is looked up rather than looped: it carries the stat values the built-ins print (ADR, HS%, KD, KDA, assists, openings, trades, best streak, enemies flashed) under each player's \`SteamID\`, a dash where a value is not current, fetched as \`{{index $.Metrics .SteamID}}\`. Number formatting (\`{{printf "%.1f" .DurationS}}\`) and value tests (\`{{if eq .Channel "all"}}\`) appear in the built-ins as well, and each built-in's body loads in the editor, so the templates are worked examples to copy from.
@@ -530,8 +533,8 @@ figures from your matches: it reads the stored stats it asks for and shows them 
 and checks them; **Preview** shows one running as it would on a match or a player you choose.
 
 The **left panel** lists the components. **Built-in** comes first: the components the app's views are made of, and the
-example to copy from. Below it, **Yours** lists the components you saved. **New** starts an empty one, and the search
-box filters by name. The **Filters** dropdown has two groups: **Origin** (built-in and custom) and **View** (match view,
+example to copy from. Below it, **Yours** lists the components you saved, and **Plugins** lists the components that installed plugins supply. A plugin's component is read-only: change its name and save to keep your own copy. **New** starts an empty one, and the search
+box filters by name. The **Filters** dropdown has two groups: **Origin** (built-in, custom, and one box for each installed plugin, which hides that plugin's components) and **View** (match view,
 profile view and no view). Uncheck **no view** to hide the components that no view uses, or uncheck a view to hide the
 components placed on it.
 
@@ -647,7 +650,7 @@ and writes and multi-statement scripts are rejected before they run.
 - **Background work** — **Parallel work**: how many heavy background tasks (imports, rules re-runs, asset extraction) run at once. 1 = one at a time; the default and maximum are this machine's parallelism, and a change applies to work already queued.
 - **CS2 assets** — detects your Counter-Strike 2 install and reports what has been extracted (radar packs, equipment icons, replay sounds), with **Choose folder…** and **Extract all CS2 assets**. Safe to re-run; worth re-running after a CS2 update.
 - **Appearance** — theme (**Dark** / **Light**) and font size (small / medium / large — the whole UI scales). Both apply immediately and are remembered.
-- **Plugins** — **Build plugin…** opens a dialog where you name the plugin (its id derives from the name), pick your own metrics and report templates into it (type to search, click to add a chip — built-ins and installed plugin content stay with their source) and **Save plugin** writes the file — \`spectra-plugin.json\` by default — that you can hand to someone else. **Browse…** picks the plugin's \`spectra-plugin.json\` file (install takes that file — never a folder), and **Install from path** installs the file showing; enable, disable and remove them. They contribute metrics and report templates on the next list — no restart, and a plugin change recomputes the metric values it affects in the background right away: a re-enabled plugin's numbers refresh on their own, and a metric of yours that referenced one you removed reports the missing reference instead of keeping its old numbers. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
+- **Plugins** — **Build plugin…** opens a dialog where you name the plugin (its id derives from the name), pick your own metrics, report templates and components into it (type to search, click to add a chip — built-ins and installed plugin content stay with their source) and **Save plugin** writes the file — \`spectra-plugin.json\` by default — that you can hand to someone else. **Browse…** picks the plugin's \`spectra-plugin.json\` file (install takes that file — never a folder), and **Install from path** installs the file showing; enable, disable and remove them. They contribute metrics, report templates and components on the next list — no restart, and a plugin change recomputes the metric values it affects in the background right away: a re-enabled plugin's numbers refresh on their own, and a metric of yours that referenced one you removed reports the missing reference instead of keeping its old numbers. The panel's own warning stands: install only bundles you built or got from someone you trust; there is no auto-update.
 - **Audio & voice** — a **Run audio self-test** that checks Spectra can open your audio device, and the same six volume faders the replay uses (they stay in sync). Sound effects are extracted from your local CS2 install; voice is decoded as the replay plays.
 - **Replay** — **Loop length (seconds)**: how long a loop spans around the playhead or an event (1–60, default 5). The transport's loop popover quick-range button and every event ▶ link — in the analysis views and in the replay's own event feed — arm exactly this width.
 - **Analysis rules** — the thresholds that decide Spectra's analysis: **Trade window (seconds)**, **Full-buy threshold (equip $)**, **Trade-opportunity distance (units)** and **Force threshold (equip $)**. **Save rules** stores them and, when a rule actually changed, recomputes the matches behind the new rules in the background — their numbers refresh as each match finishes, so there is no manual re-run step. Saved metrics are worked out again only where they read what the changed rule decides: a metric over facts alone (a count of kills, say) keeps its value, while a metric that reads the trade window, the trade-opportunity distance or the buy thresholds is recalculated, together with the metrics built on it.`,

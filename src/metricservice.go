@@ -159,7 +159,29 @@ var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "floa
 
 // ListMetrics returns all definitions (builtin first).
 func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
-	return s.st.ListMetrics()
+	rows, err := s.st.ListMetrics()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.markToggles(rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// markToggles sets each row's DisableBlock and EnableBlock from one read of the library's
+// toggle rules, so the list can show a switch as fixed where it cannot move.
+func (s *MetricsService) markToggles(rows []models.MetricRow) error {
+	blocks, err := s.st.MetricToggleBlocks()
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		b := blocks[rows[i].ID]
+		rows[i].DisableBlock = b.DisableBlock
+		rows[i].EnableBlock = b.EnableBlock
+	}
+	return nil
 }
 
 // ListMetricsPage returns ONE keyset window of the same list ListMetrics
@@ -186,6 +208,9 @@ func (s *MetricsService) ListMetricsPage(query string, originFilter string, form
 		return nil, err
 	}
 	if err := s.markEdited(page.Rows); err != nil {
+		return nil, err
+	}
+	if err := s.markToggles(page.Rows); err != nil {
 		return nil, err
 	}
 	return page, nil
@@ -631,4 +656,20 @@ func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil
+}
+
+// SetMetricEnabled turns one metric on or off (the rules are store.SetMetricEnabled's). Enabling
+// schedules a sweep, since the metric may now be behind; disabling needs none.
+func (s *MetricsService) SetMetricEnabled(id int64, enabled bool) (models.MetricRow, error) {
+	if err := s.st.SetMetricEnabled(id, enabled); err != nil {
+		return models.MetricRow{}, err
+	}
+	m, err := s.st.GetMetric(id)
+	if err != nil {
+		return models.MetricRow{}, err
+	}
+	if enabled {
+		s.scheduleSweep()
+	}
+	return m, nil
 }

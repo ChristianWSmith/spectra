@@ -27,6 +27,7 @@ export const reportbuilder = {
   filterScopeMatch: 'Match',
   filterScopePlayer: 'Player',
   filterScopeRound: 'Round',
+  filterScopeProfile: 'Profile',
 
   // empty states
   noTemplatesMatch: 'No templates match “{q}.”',
@@ -54,6 +55,7 @@ export const reportbuilder = {
   scopeMatchOption: 'match — one match',
   scopePlayerOption: 'player — one player in a match',
   scopeRoundOption: 'round — one round of a match',
+  scopeProfileOption: 'profile — one player across all their matches',
   fieldFormat: 'Format',
   fieldBody: 'Template body',
 

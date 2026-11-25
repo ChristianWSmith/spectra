@@ -79,8 +79,9 @@
 
   // `original` is the stored name the form replaces ('' = not saved yet);
   // `builtinId` is set while a built-in is loaded (read-only).
+  // `pluginOf` is set while a plugin's component is loaded: read-only, saved only as your own copy.
   function newForm() {
-    return { original: '', builtinId: '', name: '', source: '' };
+    return { original: '', builtinId: '', name: '', source: '', pluginOf: '', pluginName: '' };
   }
   function snapshot(f) {
     return JSON.stringify({ name: f.name, source: f.source });
@@ -142,12 +143,26 @@
           (b) => (!listNeedle || b.id.toLowerCase().includes(listNeedle)) && passesViewFilter(b.id),
         ),
   );
+  // Your components, and the plugins' components (origin 'plugin', grouped by the plugin that supplies them).
+  const userComponents = $derived(components.filter((c) => c.origin !== 'plugin'));
+  const pluginComponents = $derived(components.filter((c) => c.origin === 'plugin'));
+  const pluginIds = $derived([...new Set(pluginComponents.map((c) => c.pluginId))].sort());
+  // The Origin filter's per-plugin boxes: a plugin's components are hidden while its box is off.
+  let hiddenPlugins = $state({});
   const shownComponents = $derived(
     !showCustom
       ? []
-      : components.filter(
+      : userComponents.filter(
           (c) => (!listNeedle || c.name.toLowerCase().includes(listNeedle)) && passesViewFilter(c.name),
         ),
+  );
+  const shownPluginComponents = $derived(
+    pluginComponents.filter(
+      (c) =>
+        !hiddenPlugins[c.pluginId] &&
+        (!listNeedle || c.name.toLowerCase().includes(listNeedle)) &&
+        passesViewFilter(c.name),
+    ),
   );
 
   // The component a surface shows right now: its placed rows, or, with none placed, its shipped default
@@ -274,6 +289,11 @@
     load({ original: c.name, builtinId: '', name: c.name, source: c.source });
   }
 
+  // A plugin's component opens read-only: Save stores a copy under a name of your own (the name must be new).
+  function editPluginComponent(c) {
+    load({ original: '', builtinId: '', name: c.name, source: c.source, pluginOf: c.pluginId, pluginName: c.name });
+  }
+
   function newComponent() {
     load(newForm());
   }
@@ -351,6 +371,7 @@
         const saved = await saveComponent(form.original, form.name, form.source);
         form.original = saved.name;
         form.name = saved.name;
+        form.pluginOf = ''; // a plugin's copy is yours from here on
         baseline = snapshot(form);
         await refreshList();
       }
@@ -379,8 +400,9 @@
   }
 
   // --- Use as my view ----------------------------------------------------------
-  // The open component (a built-in, or a saved yours-component) is the target.
-  const viewTarget = $derived(builtin ? builtin.id : form.original || '');
+  // The open component (a built-in, a saved yours-component, or a plugin's component, which places by its
+  // name without a copy) is the target.
+  const viewTarget = $derived(builtin ? builtin.id : form.original || form.pluginName || '');
 
   function viewState(surface) {
     const rows = placements[surface];
@@ -561,6 +583,16 @@
                   ><input type="checkbox" checked={showBuiltin} onchange={(e) => (showBuiltin = e.currentTarget.checked)} />
                   {S.componentbuilder.filterBuiltIn}</label
                 >
+                {#each pluginIds as pid (pid)}
+                  <label class="filt-check"
+                    ><input
+                      type="checkbox"
+                      checked={!hiddenPlugins[pid]}
+                      onchange={(e) => (hiddenPlugins = { ...hiddenPlugins, [pid]: !e.currentTarget.checked })}
+                    />
+                    {S.common.chipPlugin} · {pid}</label
+                  >
+                {/each}
                 <label class="filt-check"
                   ><input type="checkbox" checked={showCustom} onchange={(e) => (showCustom = e.currentTarget.checked)} />
                   {S.componentbuilder.filterCustom}</label
@@ -606,7 +638,7 @@
       </div>
       <span class="field-label">{S.componentbuilder.yoursGroup}</span>
       <LoadBox tag="div" class="cb-yours-body" busy={listState.busy} key={listState.key} name="view:componentbuilder">
-      {#if components.length === 0}
+      {#if userComponents.length === 0}
         {#if listState.pending > 0}
           <p class="muted" role="status">{S.componentbuilder.loadingList}</p>
         {:else}
@@ -616,6 +648,20 @@
         <div class="cb-rows cb-yours">
           {#each shownComponents as c (c.name)}
             {@render row(c.name, form.original === c.name, placedChips(c.name), () => editComponent(c), () => remove(c.name))}
+          {/each}
+        </div>
+      {/if}
+      {#if pluginComponents.length > 0}
+        <span class="field-label">{S.componentbuilder.pluginsGroup}</span>
+        <div class="cb-rows cb-plugins">
+          {#each shownPluginComponents as c (c.name)}
+            {@render row(
+              c.name,
+              form.pluginOf === c.pluginId && form.name === c.name,
+              [{ text: S.common.chipPlugin, tone: 'plugin', title: c.pluginId }, ...placedChips(c.name)],
+              () => editPluginComponent(c),
+              null,
+            )}
           {/each}
         </div>
       {/if}
@@ -630,6 +676,9 @@
         <div class="toolbar">
           {#if builtin}
             <Chip tone="accent" title={S.componentbuilder.builtinReadOnly}>{S.common.chipBuiltin}</Chip>
+          {/if}
+          {#if form.pluginOf}
+            <Chip tone="accent" title={S.componentbuilder.pluginReadOnly}>{S.common.chipReadOnly}</Chip>
           {/if}
           {#each placedChips(viewTarget) as c (c.text)}
             <Chip tone={c.tone} title={c.title}>{c.text}</Chip>
@@ -670,6 +719,7 @@
           rows={22}
           expandable={false}
           fill
+          readonly={!!form.pluginOf}
           ariaLabel={S.componentbuilder.fieldSource}
           bind:value={form.source}
           completions={componentCompletions}

@@ -74,6 +74,7 @@ const LABELS = {
   fresh: 'fresh',
   'no-data': 'no-data',
   behind: 'behind',
+  disabled: 'disabled',
   // A ready match whose metric values are still being computed.
   calculating: 'calculating',
 };
@@ -94,6 +95,7 @@ const PALETTE = {
   fresh: 'ok',
   'no-data': 'idle',
   behind: 'idle',
+  disabled: 'idle',
   calculating: 'busy',
 };
 

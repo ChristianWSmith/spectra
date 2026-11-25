@@ -41,6 +41,8 @@ export const componentbuilder = {
   filterCustom: 'Custom',
   viewLabel: 'View',
   filterNoView: 'no view',
+  pluginsGroup: 'Plugins',
+  pluginReadOnly: 'This component comes from a plugin, so it is read-only. Change the name and save to keep your own copy.',
   viewBusy: 'Working…',
   saveComponent: 'Save',
   cancelCompile: 'Cancel',

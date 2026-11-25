@@ -7,8 +7,12 @@
 
 export const builder = {
   // list-row actions (snippet)
-  previewThisMetric: 'Preview this metric',
-  previewAria: 'Preview {name}',
+  toggleAria: 'Enabled: {name}',
+  toggleOnTitle: 'Enabled — computed with the library. Turn off to keep it stored without computing it.',
+  toggleOffTitle: 'Disabled — stored, not computed. Turn on to compute it again.',
+  toggleSweepLocked: 'Locked while metrics are computing. Switch it once the sweep is done.',
+  toggleBlockedOff: "Can't turn off: {reason}",
+  toggleBlockedOn: "Can't turn on: {reason}",
   deleteMetric: 'Delete metric',
   deleteAria: 'Delete {name}',
   // Both delete sites compose these (w19 item 23): the list row's

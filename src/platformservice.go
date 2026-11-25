@@ -66,7 +66,8 @@ type EntitySummary struct {
 // Metrics are models.MetricRow with loader-assigned id/origin/pluginId
 // (id stays 0 here — manifest rows are pre-persistence).
 type PluginManifest struct {
-	ID          string             `json:"id"` // slug, unique
+	Components  []PluginComponent  `json:"components,omitempty"` // origin=plugin rows, from the bundle
+	ID          string             `json:"id"`                   // slug, unique
 	Name        string             `json:"name"`
 	Version     string             `json:"version"`
 	Author      string             `json:"author,omitempty"`
@@ -75,6 +76,12 @@ type PluginManifest struct {
 	Metrics     []models.MetricRow `json:"metrics,omitempty"` // origin=plugin filled by loader
 	ReportTpls  []ReportTemplate   `json:"reportTpls,omitempty"`
 	Extra       map[string]string  `json:"extra,omitempty"`
+}
+
+// PluginComponent is one component a plugin supplies: its name and its Svelte source.
+type PluginComponent struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
 }
 
 // PluginState is one installed plugin (registry row + manifest).
@@ -348,6 +355,9 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 		ID: m.ID, Name: m.Name, Version: m.Version, Author: m.Author,
 		Description: m.Description, Hash: m.Hash, Extra: m.Extra,
 	}
+	for _, c := range m.Components {
+		out.Components = append(out.Components, PluginComponent{Name: c.Name, Source: c.Source})
+	}
 	for _, d := range m.Metrics {
 		out.Metrics = append(out.Metrics, models.MetricRow{
 			Name: d.Name, Title: d.Title, Expr: d.Expr,
@@ -464,10 +474,10 @@ func (s *PlatformService) RenderReportDraft(scope, body string, matchID int64, s
 // prefix, no implementation nouns).
 func validateReportScope(scope string) error {
 	switch scope {
-	case "match", "player", "round":
+	case "match", "player", "round", "profile":
 		return nil
 	}
-	return fmt.Errorf("a report template's scope must be match, player or round")
+	return fmt.Errorf("a report template's scope must be match, player, round or profile")
 }
 
 func validateReportFormat(format string) error {
@@ -818,6 +828,12 @@ func renderTemplateDoc(st *store.Store, tpl report.Template, matchID int64, stea
 			return "", err
 		}
 		return report.Render(tpl.ID, tpl.Body, data)
+	case "profile":
+		data, err := report.BuildProfileData(st, steamID)
+		if err != nil {
+			return "", err
+		}
+		return report.Render(tpl.ID, tpl.Body, data)
 	default:
 		return "", fmt.Errorf("template %q has an unknown scope %q", tpl.ID, tpl.Scope)
 	}
@@ -839,7 +855,7 @@ func renderTemplateDoc(st *store.Store, tpl report.Template, matchID int64, stea
 // through errText. version defaults to 1.0.0. hash stays EMPTY on purpose:
 // a single file hashes to its own bytes, so a pin it carried could never
 // match ComputeBundleHash and every install would fail on a mismatch.
-func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []int64, templateIDs []string) (string, error) {
+func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []int64, templateIDs []string, componentNames []string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("a plugin needs a name")
@@ -913,6 +929,28 @@ func (s *PlatformService) BuildPluginBundle(name, version string, metricIDs []in
 		if !found {
 			return "", fmt.Errorf("no report template with that id")
 		}
+	}
+
+	seenComps := map[string]bool{}
+	for _, cn := range componentNames {
+		cn = strings.TrimSpace(cn)
+		if cn == "" || seenComps[cn] {
+			continue
+		}
+		seenComps[cn] = true
+		row, err := s.st.GetComponent(cn)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return "", fmt.Errorf("no component named %q in your library", cn)
+			}
+			return "", fmt.Errorf("couldn't load the components: %w", err)
+		}
+		// Only your own components go in: a plugin's component belongs to the plugin that supplies it,
+		// and a built-in ships with the app.
+		if row.Origin != "user" {
+			return "", fmt.Errorf("only your own components can go into a plugin (built-in and plugin components stay with their source)")
+		}
+		man.Components = append(man.Components, plugin.ComponentDef{Name: row.Name, Source: row.Source})
 	}
 
 	// The metrics engine's full grammar check — the same pass

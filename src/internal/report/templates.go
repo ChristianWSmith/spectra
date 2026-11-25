@@ -19,6 +19,7 @@ var builtinMeta = map[string]struct {
 	"match.html": {"Match report (HTML)", "match", "html"},
 	"player.md":  {"Player report", "player", "md"},
 	"round.md":   {"Round report", "round", "md"},
+	"profile.md": {"Career report", "profile", "md"},
 }
 
 var builtins []Template

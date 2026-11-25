@@ -15,6 +15,7 @@
     getMetric,
     saveMetric,
     deleteMetric,
+    setMetricEnabled,
     saveBuiltinMetric,
     restoreBuiltinMetric,
     previewMetric,
@@ -44,6 +45,7 @@
   import HelpButton from '../components/HelpButton.svelte';
   import SourceEditor from '../components/SourceEditor.svelte';
   import PreviewOverlay from '../components/PreviewOverlay.svelte';
+  import ToggleSwitch from '../components/ToggleSwitch.svelte';
   import Chip from '../components/Chip.svelte';
   import { formatMetricSql } from '../format/format.js';
   import { sqlItems, METRIC_BINDS } from '../editor/sqlCompletions.js';
@@ -606,6 +608,41 @@
     saveError = '';
   }
 
+  // Turns a metric on or off. The service refuses what cannot change (its
+  // message lands in the save-error line); a success refreshes the list so
+  // the state chip and the row follow the new flag.
+  async function toggleMetric(m, on) {
+    if (sweepRunning) return;
+    saveError = '';
+    try {
+      await setMetricEnabled(m.id, on);
+      // The chip's state is read from the compute state, which only a mount or a finished compute
+      // refreshes, so a toggle reloads it here: disabled shows at once, and a metric switched on
+      // shows its own state once the sweep it schedules starts it.
+      loadComputeState();
+      await refreshList(appliedQuery, appliedFilter, appliedFormat);
+    } catch (e) {
+      saveError = errText(e);
+    }
+  }
+
+  // Why a row's switch cannot move (empty = it can): the server's reason for the direction the
+  // switch would go. A fixed switch shows that reason as its title.
+  function toggleBlockOf(m) {
+    return m.enabled ? m.disableBlock || '' : m.enableBlock || '';
+  }
+  // A sweep holds the switches still: the progress feed has an entry for each metric the sweep is
+  // computing, and it clears when the sweep is done.
+  const sweepRunning = $derived(metricProgress.size > 0);
+  function toggleTitleOf(m) {
+    if (sweepRunning) return S.builder.toggleSweepLocked;
+    const blocked = toggleBlockOf(m);
+    if (blocked) {
+      return S.fill(m.enabled ? S.builder.toggleBlockedOff : S.builder.toggleBlockedOn, { reason: blocked });
+    }
+    return m.enabled ? S.builder.toggleOnTitle : S.builder.toggleOffTitle;
+  }
+
   async function removeMetric(m) {
     saveError = '';
     try {
@@ -866,14 +903,6 @@
   // definition); a built-in previews off its STORED id and leaves the
   // form exactly as it was (preview is not edit), so a builtin still
   // previews while the form stays untouched.
-  function previewRow(m) {
-    if (m.origin === 'builtin') {
-      runPreview(m);
-      return;
-    }
-    editMetric(m);
-    runPreview();
-  }
 </script>
 <!-- Escape collapses whichever card is expanded (each key handler checks its own). -->
 <svelte:window
@@ -934,16 +963,17 @@
   <div class="bld-row" class:active={form.id === m.id}>
     <!-- Every stored row loads into the editor: a user row edits, a
          plugin row forks, a BUILT-IN loads read-only (Save disabled —
-         owner wave, so the user can read how it is written). Preview
-         stays live on every row; delete stays user-only. -->
+         owner wave, so the user can read how it is written). The switch
+         turns any row on or off; delete stays user-only. -->
     <button class="bld-row-main" onclick={() => editMetric(m)}>{@render rowMain(m)}</button>
     <span class="bld-row-acts">
-      <button
-        class="btn small ghost"
-        title={S.builder.previewThisMetric}
-        aria-label={S.fill(S.builder.previewAria, { name: m.name })}
-        onclick={() => previewRow(m)}><span class="codicon codicon-play"></span></button
-      >
+      <ToggleSwitch
+        checked={m.enabled}
+        disabled={sweepRunning || toggleBlockOf(m) !== ''}
+        label={S.fill(S.builder.toggleAria, { name: m.name })}
+        title={toggleTitleOf(m)}
+        onchange={(on) => toggleMetric(m, on)}
+      />
       <!-- Delete is the user-row control: built-ins are guarded
            server-side (SaveMetric/DeleteMetric) and plugins are the
            loader's territory, so neither ever shows one. The trash

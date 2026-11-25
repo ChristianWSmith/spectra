@@ -20,7 +20,7 @@ import (
 // no scope, subject or partition column (ruling 51): scope
 // is derived from the expr's binds on scan (ScopeOfExpr).
 const metricColumns = `id, name, title, short_name, expr, run_expr, format, doc, origin,
-	plugin_id, touched, version, created_at`
+	plugin_id, touched, version, created_at, enabled`
 
 // touchedColumn encodes a touched set for metrics.touched: the sorted table
 // names, comma-joined (” = not derived). Table names never contain a comma.
@@ -43,10 +43,11 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		m         models.MetricRow
 		createdAt sql.NullTime
 		touched   string
+		enabled   int
 	)
 	err := row.Scan(
 		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.RunExpr,
-		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt,
+		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt, &enabled,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -54,6 +55,7 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 	m.Scope = ScopeOfExpr(m.RunExpr)
 	m.Touched = parseTouched(touched)
 	m.CreatedAt = nullTime(createdAt)
+	m.Enabled = enabled != 0
 	return m, nil
 }
 

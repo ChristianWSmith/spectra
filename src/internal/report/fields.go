@@ -28,6 +28,8 @@ func TemplateFields(scope string) []TemplateField {
 		data = PlayerReport{}
 	case "round":
 		data = RoundReport{}
+	case "profile":
+		data = ProfileReport{}
 	default:
 		return nil
 	}

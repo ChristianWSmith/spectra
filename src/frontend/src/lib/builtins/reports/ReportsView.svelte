@@ -412,14 +412,16 @@
       const text = await renderReport(
         m.tplId,
         matchId,
-        tpl && tpl.scope === 'player' ? m.steamId : '',
+        tpl && (tpl.scope === 'player' || tpl.scope === 'profile') ? m.steamId : '',
         tpl && tpl.scope === 'round' ? m.roundNo : 0,
       );
       const html = (tpl.format || 'md') === 'html';
+      // The stats appendix is a per-match table; a career document carries none.
+      const body = tpl.scope === 'profile' ? text || '' : compositeText(text || '', exportEntries, tpl.format);
       await downloadText(
         reportFilename(tpl, { matchId, steamId: m.steamId, roundNo: m.roundNo }),
         html ? 'text/html' : 'text/markdown',
-        compositeText(text || '', exportEntries, tpl.format),
+        body,
       );
     } catch (e) {
       m.docError = errText(e);
@@ -473,7 +475,7 @@
       {#if embedded}
         <EmptyNote>{S.reports.targetThisMatch}</EmptyNote>
       {/if}
-      {#if tpl.scope === 'player'}
+      {#if tpl.scope === 'player' || tpl.scope === 'profile'}
         <div class="rep-field">
           <label class="field-label" for="rep-player">{S.reports.playerLabel}</label>
           <PlayerPicker

@@ -84,6 +84,7 @@
     showMatch: true,
     showPlayer: true,
     showRound: true,
+    showProfile: true,
     // The preview target is NEVER chosen for you (the owner's rule): it
     // starts empty and Preview stays disabled until the user picks one.
     matchId: 0,
@@ -101,6 +102,7 @@
   let showMatch = $state(rbSeed.showMatch);
   let showPlayer = $state(rbSeed.showPlayer);
   let showRound = $state(rbSeed.showRound);
+  let showProfile = $state(rbSeed.showProfile);
   // The filter dropdown (the metric builder's): open state and the popover's anchor and trigger.
   let filterOpen = $state(false);
   let filterAnchor = $state(null);
@@ -128,6 +130,7 @@
       showMatch,
       showPlayer,
       showRound,
+      showProfile,
       matchId,
       steamId,
       roundNo,
@@ -187,6 +190,7 @@
       if (sc === 'match' && !showMatch) return false;
       if (sc === 'player' && !showPlayer) return false;
       if (sc === 'round' && !showRound) return false;
+      if (sc === 'profile' && !showProfile) return false;
       if (q && !String(t.title || '').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -301,6 +305,7 @@
   // match for every scope, plus a player / a round where the scope
   // addresses one).
   const targetReady = $derived.by(() => {
+    if (form.scope === 'profile') return steamId !== '';
     if (!(matchId > 0)) return false;
     if (form.scope === 'player') return steamId !== '';
     if (form.scope === 'round') return roundNo >= 1;
@@ -538,6 +543,10 @@
                   ><input type="checkbox" checked={showRound} onchange={(e) => (showRound = e.currentTarget.checked)} />
                   {S.reportbuilder.filterScopeRound}</label
                 >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showProfile} onchange={(e) => (showProfile = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterScopeProfile}</label
+                >
               </div>
             </div>
           </Popover>
@@ -619,6 +628,7 @@
               <option value="match">{S.reportbuilder.scopeMatchOption}</option>
               <option value="player">{S.reportbuilder.scopePlayerOption}</option>
               <option value="round">{S.reportbuilder.scopeRoundOption}</option>
+              <option value="profile">{S.reportbuilder.scopeProfileOption}</option>
             </select>
           </div>
           <div class="rb-field">
@@ -676,13 +686,15 @@
       <span class="rb-target-row">
         <!-- The controls name themselves: the match picker says "Select match…", the player
              picker "Select player…", and the round box carries its label and range. -->
-        <MatchPicker
-          {matches}
-          value={matchId}
-          id="rb-match"
-          onselect={(mid) => (matchId = mid)}
-        />
-        {#if form.scope === 'player'}
+        {#if form.scope !== 'profile'}
+          <MatchPicker
+            {matches}
+            value={matchId}
+            id="rb-match"
+            onselect={(mid) => (matchId = mid)}
+          />
+        {/if}
+        {#if form.scope === 'player' || form.scope === 'profile'}
           <PlayerPicker
             {players}
             value={steamId}

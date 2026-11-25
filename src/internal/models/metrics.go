@@ -32,6 +32,12 @@ type MetricRow struct {
 	Doc      string `json:"doc"`
 	Origin   string `json:"origin"` // builtin|user|plugin
 	PluginID string `json:"pluginId"`
+	// Enabled is false for a disabled metric: stored, never computed.
+	Enabled bool `json:"enabled"`
+	// DisableBlock and EnableBlock say why the switch cannot move (empty = it can): DisableBlock
+	// while the metric is enabled, EnableBlock while it is disabled. Derived per read, never stored.
+	DisableBlock string `json:"disableBlock,omitempty"`
+	EnableBlock  string `json:"enableBlock,omitempty"`
 	// Touched is the physical tables the metric's compiled statement reads
 	// (sorted), derived by the save gate and stored as metrics.touched.
 	// nil = not derived. Internal until freshness reads it.
