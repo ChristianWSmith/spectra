@@ -34,9 +34,17 @@ const ids = Object.keys(h.panels);
 const contextFor = (id) =>
   id.startsWith('profile') ? { matchId: null, steamId: ALPHA, round: null } : { matchId: MATCH_ID, steamId: null, round: null };
 
-// normalise: the frame's markup with inter-tag whitespace removed, so formatting noise
-// never changes a snapshot.
-const normalise = (el) => el.innerHTML.replace(/>\s+</g, '><').trim() + '\n';
+// normalise: the frame's markup without the noise that is not rendered behaviour:
+//   - Svelte's empty anchor comments (<!---->), which mark template positions and
+//     move when a template is restructured but change nothing on screen;
+//   - inter-tag whitespace, and the spacing inside class attributes.
+// Text, attributes, element order and every real node stay in the snapshot.
+const normalise = (el) =>
+  el.innerHTML
+    .replace(/<!---->/g, '')
+    .replace(/>\s+</g, '><')
+    .replace(/class="([^"]*)"/g, (_, c) => `class="${c.split(/\s+/).filter(Boolean).join(' ')}"`)
+    .trim() + '\n';
 
 async function render(id) {
   const { target, cleanup } = await h.mountComponent(h.panels[id], contextFor(id), {}, reads);
