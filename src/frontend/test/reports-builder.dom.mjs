@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for the Reports builder (views/ReportsBuilder.svelte) —
 // the template AUTHORING surface: the list with its origin surfacing,
 // the editor's read-only/fork/delete rules, the create flow, the
@@ -94,12 +95,31 @@ const services = await import(pathToFileURL('src/lib/services.js').href);
 
 const fileURL = (p) => pathToFileURL(p).href;
 const svelteCompile = (src, filename, out) => {
-  const code = compile(src, { filename, generate: 'client' }).js.code;
+  // Every compiled file sits beside its closure copies: a src/lib module (../x.js) is the sibling copy.
+  const code = compile(src.replace(/from '\.\.\//g, "from './"), { filename, generate: 'client' }).js.code;
   writeFileSync(out, code);
   return out;
 };
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'reports-builder');
+// The modules the view reaches are copied by closure (test/copy-closure.mjs); the rewrites below
+// name the copies beside this bundle.
+copyClosure({
+  dir,
+  entries: [
+  'views/ReportsBuilder.svelte',
+  'components/MatchPicker.svelte',
+  'components/PlayerPicker.svelte',
+  'components/HelpButton.svelte',
+  'components/LoadBox.svelte',
+  'components/SourceEditor.svelte',
+  'components/PreviewOverlay.svelte',
+  'components/Chip.svelte',
+  'editor/templateCompletions.js',
+  'components/Dialog.svelte',
+  'listnav.js',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
 // Leaf components (StatusChip, Popover) → local bundles; the pickers
@@ -184,7 +204,7 @@ const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
   .replace("from '../fillheight.js'", `from '${fileURL('src/lib/fillheight.js')}'`)
   .replace("from '../expandable.svelte.js'", `from '${fileURL(join(dir, 'expandable.svelte.js'))}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(rbSrc, 'ReportsBuilder.svelte', join(dir, 'reportsbuilder-bundle.js'));
+svelteCompile(rbSrc.replace(/from '\.\.\/components\/(\w+)\.svelte'/g, "from './components/$1.js'").replace(/from '\.\.\//g, "from './"), 'ReportsBuilder.svelte', join(dir, 'reportsbuilder-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(join(dir, 'reportsbuilder-bundle.js')).href);
@@ -366,7 +386,10 @@ console.log('B. the list renders every template with its origin chip, in the ser
 
 console.log('C. the origin group and the title search narrow the list (client-side)');
 {
-  const boxes = $('.rb-filters input[type="checkbox"]');
+  // The filters live in a popover (efa1cdd): open it, then the Origin group is its first group.
+  click(r.querySelector('.codicon-filter').closest('button'));
+  await sleep(60);
+  const boxes = [...r.querySelectorAll('.bld-filter-pop .bld-filter-group')[0].querySelectorAll('input[type="checkbox"]')];
   check('the Origin group starts UNFILTERED — all three boxes checked',
     boxes.length === 3 && boxes.every((b) => b.checked), `${boxes.length} boxes`);
   const search = $('.rb-list input[type="search"]')[0];
@@ -409,8 +432,9 @@ console.log('D. the editor form — field order and vocabularies');
     JSON.stringify(labels) === JSON.stringify(['Title', 'Scope', 'Format', 'Template body']),
     JSON.stringify(labels));
   const scope = $('#rb-scope')[0];
-  check('the Scope select offers exactly match / player / round in that order',
-    [...scope.options].map((o) => o.value).join(',') === 'match,player,round',
+  // Profile is a report scope too (a5626de: the career document for one player).
+  check('the Scope select offers match / player / round / profile in that order',
+    [...scope.options].map((o) => o.value).join(',') === 'match,player,round,profile',
     [...scope.options].map((o) => o.value).join(','));
   const format = $('#rb-format')[0];
   check('the Format select offers exactly md / html',

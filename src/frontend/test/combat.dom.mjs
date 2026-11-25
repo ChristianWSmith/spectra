@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for Combat: the Kill tags card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
@@ -101,13 +102,28 @@ const svelteCompile = (src, filename, out) => {
 // sideparity) — the same copy the landmark-row / stat-card drivers do.
 // viewstate.svelte.js is Combat's view-state registry (match-scoped
 // seed/remember — see its header; plain JS, copied raw).
-for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js']) {
-  writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
-}
-writeFileSync(
-  join(dir, 'replay', 'landmarks.js'),
-  readFileSync('src/lib/replay/landmarks.js', 'utf8'),
-);
+// The modules the panels reach are copied by closure (test/copy-closure.mjs): a panel's new
+// import is copied with no edit here. services.js is written below as the scripted stub, so it
+// overwrites the copy of the real module the closure makes.
+copyClosure({
+  dir,
+  entries: [
+    'rounds.js',
+    'sideparity.js',
+    'router.js',
+    'nav.js',
+    'teams.js',
+    'definitions.js',
+    'fmt.js',
+    'players.js',
+    'viewstate.svelte.js',
+    'replay/landmarks.js',
+    'builtinhelpers.js',
+    'builtins/match/combatdata.js',
+    'builtins/match/combatmodel.js',
+    'builtins/match/combatpanel.svelte.js',
+  ],
+});
 
 // The view's data source is scripted, never a live Wails backend: the
 // driver sets globalThis.__combatData before each mount.
@@ -180,9 +196,6 @@ for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {
 // imports resolve to the copies above. Only the .svelte component imports
 // and the strings catalog are rewritten; combatdata.js is plain ESM.
 mkdirSync(join(dir, 'builtins', 'match'), { recursive: true });
-for (const rel of ['combatdata.js', 'combatmodel.js']) {
-  writeFileSync(join(dir, 'builtins', 'match', rel), readFileSync(join('src/lib/builtins/match', rel), 'utf8'));
-}
 const panelSrc = (name) =>
   readFileSync(`src/lib/builtins/match/${name}.svelte`, 'utf8')
     .replace(/from '\.\.\/\.\.\/components\/(\w+)\.svelte'/g, "from '../../components/$1.js'")

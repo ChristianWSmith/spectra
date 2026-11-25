@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for MatchPicker: open/close, filtering, keyboard nav,
 // selection, click-outside — and section H's render cap (a 250-match
 // library renders the first 200 rows plus the "type more to narrow" hint;
@@ -74,6 +75,17 @@ process.on('unhandledRejection', (e) => {
 });
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'match-picker');
+// The modules the components reach are copied by closure (test/copy-closure.mjs). The harness's own
+// compiles below overwrite the entries it customizes, so its rewrites still win.
+copyClosure({
+  dir,
+  entries: [
+  'components/MatchPicker.svelte',
+  'components/Popover.svelte',
+  'components/StatusChip.svelte',
+  'listnav.js',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
 const svelteCompile = (src, filename, out) => {
@@ -104,7 +116,8 @@ const mpSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
   .replace("import Popover from './Popover.svelte';", "import Popover from './popover.js';")
   // plumbing (Strings Stage 3): the picker imports the strings catalog.
   .replace("from '../strings/index.js'", `from '${pathToFileURL('src/lib/strings/index.js').href}'`);
-svelteCompile(mpSrc, 'MatchPicker.svelte', join(dir, 'matchpicker-bundle.js'));
+// The bundle sits at the cache root, so a top-level module (../listnav.js) is its sibling copy.
+svelteCompile(mpSrc.replace(/from '\.\.\/([\w.-]+\.js)'/g, "from './$1'"), 'MatchPicker.svelte', join(dir, 'matchpicker-bundle.js'));
 
 // Harness.
 const harnessSrc = readFileSync('test/match-picker.harness.svelte', 'utf8');

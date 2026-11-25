@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for MapPackPrompt: the presence-driven launch prompt —
 // gate logic (any asset family missing → open, all present → closed),
 // the not-found variant, "Not now" persisting NOTHING across remounts,
@@ -74,6 +75,16 @@ process.on('unhandledRejection', (e) => {
 });
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'map-pack-prompt');
+// The modules the components reach are copied by closure (test/copy-closure.mjs). The harness's own
+// compiles below overwrite the entries it customizes, so its rewrites still win.
+copyClosure({
+  dir,
+  entries: [
+  'components/MapPackPrompt.svelte',
+  'components/Dialog.svelte',
+  'assets.js',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
 // The services stub: every function MapPackPrompt (and lib/assets.js)

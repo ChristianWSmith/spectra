@@ -11,16 +11,20 @@ import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js'
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile, compileModule } from 'svelte/compiler';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { copyClosure } from './copy-closure.mjs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // svelte resolves to its SERVER build without the browser condition.
+const stub = (name) => pathToFileURL(join('test', 'stubs', name)).href;
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === 'svelte' || specifier.startsWith('svelte/')) {
       return nextResolve(specifier, { ...context, conditions: ['browser', ...(context.conditions || [])] });
     }
+    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
     return nextResolve(specifier, context);
   },
 });
@@ -58,69 +62,35 @@ process.on('unhandledRejection', (e) => {
 dom.virtualConsole?.on?.('jsdomError', (e) => escaped.push('jsdom: ' + e.message));
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'component-frame');
-for (const sub of ['components', 'componentruntime', 'strings']) mkdirSync(join(dir, sub), { recursive: true });
-const copy = (rel) => writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
-for (const f of readdirSync('src/lib/strings')) copy(join('strings', f));
-for (const rel of ['router.js', 'players.js', 'metricstate.js', 'componentbuiltins.js', 'builtinhelpers.js']) copy(rel);
-for (const rel of ['readapi.js', 'eventerrors.js', 'frameContext.js', 'resolve.js', 'sizememory.js']) copy(join('componentruntime', rel));
-// compile.js is copied, but the compile client it reaches stays the real
-// module: the node compile worker seam (test/compile-worker-node.mjs) is
-// installed on that instance, so the copy imports it by absolute URL.
+mkdirSync(dir, { recursive: true });
+// The frame and everything it reaches are copied by closure (test/copy-closure.mjs), so a new
+// import in the app is copied with no edit here. Three modules stay stubs: the compile client is
+// re-exported from the real module (one compile seam, test/compile-worker-node.mjs), the panel
+// registry is empty (this driver mounts no shipped panel), and the read services are a recorder
+// (the driver passes its own reads).
 const compileClientUrl = pathToFileURL(join(process.cwd(), 'src/lib/componentruntime/compileclient.js')).href;
-writeFileSync(
-  join(dir, 'componentruntime', 'compile.js'),
-  readFileSync('src/lib/componentruntime/compile.js', 'utf8').replace("from './compileclient.js'", `from '${compileClientUrl}'`),
-);
-// The service layer stays out: errText is the real one-liner, and the
-// frame's default reads are a recorder (the driver passes its own).
-writeFileSync(
-  join(dir, 'services.js'),
-  `export function errText(e) { if (e == null) return 'unknown error'; if (typeof e === 'string') return e; return e.message || String(e); }\nexport async function listComponents() { return []; }\nexport async function listBuiltinOverrides() { return []; }\n`,
-);
-writeFileSync(join(dir, 'componentruntime', 'reads.js'), 'export const serviceReads = {};\n');
-// ChildFrame resolves builtin panels through the panel registry. This driver
-// has no panels (it tests the source path), so the registry is an empty stub.
-mkdirSync(join(dir, 'builtins'), { recursive: true });
-writeFileSync(join(dir, 'builtins', 'panels.js'), 'export function builtinPanelById() { return null; }\n');
-// componentbuiltins.js reads the build's generated panel sources (text only).
-mkdirSync(join(dir, 'builtins', 'generated'), { recursive: true });
-copy(join('builtins', 'generated', 'sources.js'));
-
+copyClosure({
+  dir,
+  entries: [
+    'components/ComponentFrame.svelte',
+    'components/ChildFrame.svelte',
+    'componentruntime/compile.js',
+    'componentruntime/resolve.js',
+    'componentruntime/readapi.js',
+    'componentruntime/eventerrors.js',
+    'componentruntime/frameContext.js',
+    'componentruntime/sizememory.js',
+    'componentbuiltins.js',
+  ],
+  skip: new Map([
+    ['componentruntime/compileclient.js', `export * from '${compileClientUrl}';\n`],
+    ['componentruntime/reads.js', 'export const serviceReads = {};\n'],
+    ['builtins/panels.js', 'export function builtinPanelById() { return null; }\n'],
+  ]),
+});
 const svelteCompile = (src, filename, out) =>
-  // Runes-only, as the app compiles builtins (svelte.config.js) and user
-  // components (componentruntime/compile.js).
+  // Runes-only, as the app compiles builtins and user components.
   writeFileSync(out, compile(src, { filename, generate: 'client', css: 'injected', runes: true }).js.code);
-// The frame and its child frame import each other: each .svelte's import of
-// the other is pointed at its compiled output in the cache dir.
-// The frames show their loading state with StatusChip (the centered spinner).
-svelteCompile(
-  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
-  'StatusChip.svelte',
-  join(dir, 'components', 'StatusChip.js'),
-);
-// The shared load state is a runes module: compiled as a module, beside the frame's copy.
-writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
-svelteCompile(
-  readFileSync('src/lib/components/LoadBox.svelte', 'utf8'),
-  'LoadBox.svelte',
-  join(dir, 'components', 'LoadBox.js'),
-);
-svelteCompile(
-  readFileSync('src/lib/components/ComponentFrame.svelte', 'utf8')
-    .replace("from './ChildFrame.svelte'", "from './ChildFrame.js'")
-    .replace("from './StatusChip.svelte'", "from './StatusChip.js'")
-    .replace("from './LoadBox.svelte'", "from './LoadBox.js'"),
-  'ComponentFrame.svelte',
-  join(dir, 'components', 'ComponentFrame.js'),
-);
-svelteCompile(
-  readFileSync('src/lib/components/ChildFrame.svelte', 'utf8')
-    .replace("from './ComponentFrame.svelte'", "from './ComponentFrame.js'")
-    .replace("from './StatusChip.svelte'", "from './StatusChip.js'")
-    .replace("from './LoadBox.svelte'", "from './LoadBox.js'"),
-  'ChildFrame.svelte',
-  join(dir, 'components', 'ChildFrame.js'),
-);
 svelteCompile(readFileSync('test/component-frame.harness.svelte', 'utf8'), 'harness.svelte', join(dir, 'harness.js'));
 // A builtin: app source the bundler compiles (here: the driver), reading
 // a metric through the read API it receives.

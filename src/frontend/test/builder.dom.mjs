@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for the metrics Builder's list UX (owner wave A: the
 // built-in editor load + the origin/format filter groups + the
 // denominator chip; the filter UI is now ONE multi-select; the Type
@@ -338,6 +339,25 @@ bindings.handlers.GetMetricComputeState = () => {
 };
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'builder');
+// The modules the components reach are copied by closure (test/copy-closure.mjs). The harness's own
+// compiles below overwrite the entries it customizes, so its rewrites still win.
+copyClosure({
+  dir,
+  entries: [
+  'views/Builder.svelte',
+  'components/Dialog.svelte',
+  'components/SourceEditor.svelte',
+  'components/RunningMetricsDialog.svelte',
+  'components/PreviewOverlay.svelte',
+  'components/SortTh.svelte',
+  'components/Chip.svelte',
+  'components/Popover.svelte',
+  'components/ProfileLink.svelte',
+  'components/StatusChip.svelte',
+  'components/HelpButton.svelte',
+  'components/LoadBox.svelte',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
 const svelteCompile = (src, filename, out) => {
@@ -469,7 +489,15 @@ const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../fillheight.js'", `from '${fileURL('src/lib/fillheight.js')}'`)
   .replace("from '../expandable.svelte.js'", `from '${fileURL(join(dir, 'expandable.svelte.js'))}'`)
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
+// The components and modules the hand rewrites above do not name are the closure's copies beside
+// this bundle: a component is its compiled copy, and a src/lib module is the sibling copy.
+svelteCompile(
+  bldSrc
+    .replace(/from '\.\.\/components\/(\w+)\.svelte'/g, "from './components/$1.js'")
+    .replace(/from '\.\.\//g, "from './"),
+  'Builder.svelte',
+  join(dir, 'builder-bundle.js'),
+);
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(join(dir, 'builder-bundle.js')).href);
@@ -874,9 +902,11 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
     !!bRow && !bRow.querySelector('[aria-label="Delete trade_rate"]'),
     bRow ? bRow.innerHTML.slice(0, 200) : 'no row',
   );
+  // A row's own control is the enable switch (a5626de replaced the row's preview button with it).
+  // A built-in previews from the editor once it is loaded, as section E pins.
   check(
-    'the builtin row keeps preview',
-    !!bRow && !!bRow.querySelector('[aria-label="Preview trade_rate"]'),
+    'the builtin row has its enable switch, and no row preview button',
+    !!bRow && !!bRow.querySelector('[aria-label="Enabled: trade_rate"]') && !bRow.querySelector('[aria-label="Preview trade_rate"]'),
   );
   check(
     'a user row still HAS a delete control',
@@ -1206,8 +1236,10 @@ console.log('E. the builtin PREVIEWS from its STORED rows — a saved read never
 previewCalls.length = 0;
 storedCalls.length = 0;
 {
-  const bRow = rowNamed(r, 'trade_rate');
-  click(bRow.querySelector('[aria-label="Preview trade_rate"]'));
+  // The built-in loads read-only into the editor; its Preview button previews the stored rows.
+  click(rowNamed(r, 'trade_rate').querySelector('button.bld-row-main'));
+  await sleep(60);
+  click([...r.querySelectorAll('.toolbar button')].find((b) => b.textContent.trim() === 'Preview'));
   await sleep(120);
   check(
     'the saved preview read the stored rows for the newest ready match',
@@ -1257,10 +1289,11 @@ storedCalls.length = 0;
       chip && btn ? `chip=${chip.className}` : `chip=${!!chip} btn=${!!btn}`,
     );
   }
+  // The preview comes from the loaded built-in: the form stays as loaded (read-only, nothing edited).
   check(
-    'previewing a builtin still does NOT load the form',
-    heading(r) === 'New metric' && r.querySelector('#bld-name')?.value === '',
-    `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value}`,
+    'previewing a builtin leaves its loaded form untouched (read-only, the stored name)',
+    heading(r) === 'Edit metric' && r.querySelector('#bld-name')?.value === 'trade_rate' && r.querySelector('#bld-name')?.readOnly === true,
+    `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value} readOnly=${r.querySelector('#bld-name')?.readOnly}`,
   );
   // The fresh state chip on the list item (the state vocabulary's
   // fifth word — the others are pinned in section I).

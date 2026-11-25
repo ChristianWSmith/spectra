@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for the Settings view — the analysis-rules card's save
 // flow (save = recompute, the metrics-save precedent), the surfaces
 // this wave removed, and (w20) the icon-button wave + the plugin row
@@ -281,10 +282,28 @@ bindings.handlers.RecomputeAll = () => ({ submitted: 3, skipped: 1, total: 4 });
 
 // --- Compile Settings + its components ---------------------------------
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'settings');
+// The modules the view reaches are copied by closure (test/copy-closure.mjs); the rewrites below
+// name the copies beside this bundle.
+copyClosure({
+  dir,
+  entries: [
+  'views/Settings.svelte',
+  'components/ConfirmDialog.svelte',
+  'components/Dialog.svelte',
+  'components/HelpButton.svelte',
+  'components/LoadBox.svelte',
+  'components/PluginBuildDialog.svelte',
+  'components/Popover.svelte',
+  'components/StatusChip.svelte',
+  'components/TokenSelect.svelte',
+  'listnav.js',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
 const svelteCompile = (src, filename, out) => {
-  const code = compile(src, { filename, generate: 'client' }).js.code;
+  // Every compiled file sits beside its closure copies: a src/lib module (../x.js) is the sibling copy.
+  const code = compile(src.replace(/from '\.\.\//g, "from './"), { filename, generate: 'client' }).js.code;
   writeFileSync(out, code);
   return out;
 };
@@ -362,7 +381,7 @@ settSrc = rewrite(settSrc, '../components/PluginBuildDialog.svelte', './plugindi
 writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
 settSrc = settSrc.replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`).replace("from '../components/LoadBox.svelte'", "from './loadbox.js'");
-svelteCompile(settSrc, 'Settings.svelte', join(dir, 'settings-bundle.js'));
+svelteCompile(settSrc.replace(/from '\.\.\/components\/(\w+)\.svelte'/g, "from './components/$1.js'").replace(/from '\.\.\//g, "from './"), 'Settings.svelte', join(dir, 'settings-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(join(dir, 'settings-bundle.js')).href);

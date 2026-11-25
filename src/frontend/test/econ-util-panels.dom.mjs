@@ -26,7 +26,7 @@ import { JSDOM } from 'jsdom';
 import { compile, compileModule } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installEsmDirHook } from './esm-dir-hook.mjs';
 
 installEsmDirHook();
@@ -40,6 +40,24 @@ registerHooks({
     if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
     if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
     return nextResolve(specifier, context);
+  },
+  // A built-in reaches its curated helpers by dynamic import (compile.js BUILTIN_HELPERS),
+  // which loads the real files in node. A rune module (*.svelte.js) and a .svelte file
+  // must be compiled first, as the bundler compiles them: economysource.svelte.js is one.
+  load(url, context, nextLoad) {
+    // Only app sources under src/: the harness's own bundle cache holds compiled output
+    // with these suffixes, and that output must not be compiled again.
+    const filename = url.startsWith('file:') ? fileURLToPath(url) : '';
+    const inSrc = filename.startsWith(resolve('src') + '/');
+    if (inSrc && url.endsWith('.svelte.js')) {
+      const source = compileModule(readFileSync(filename, 'utf8'), { filename, generate: 'client' }).js.code;
+      return { format: 'module', source, shortCircuit: true };
+    }
+    if (inSrc && url.endsWith('.svelte')) {
+      const source = compile(readFileSync(filename, 'utf8'), { filename, generate: 'client', css: 'injected', runes: true }).js.code;
+      return { format: 'module', source, shortCircuit: true };
+    }
+    return nextLoad(url, context);
   },
 });
 

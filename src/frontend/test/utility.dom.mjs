@@ -48,6 +48,22 @@ registerHooks({
     if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
     return nextResolve(specifier, context);
   },
+  // A built-in reaches its curated helpers by dynamic import (compile.js BUILTIN_HELPERS),
+  // which loads the real files in node: a rune module (*.svelte.js) and a .svelte file must
+  // be compiled first, as the bundler compiles them. Only app sources under src/.
+  load(url, context, nextLoad) {
+    const filename = url.startsWith('file:') ? new URL(url).pathname : '';
+    const inSrc = filename.startsWith(process.cwd() + '/src/');
+    if (inSrc && url.endsWith('.svelte.js')) {
+      const source = compileModule(readFileSync(filename, 'utf8'), { filename, generate: 'client' }).js.code;
+      return { format: 'module', source, shortCircuit: true };
+    }
+    if (inSrc && url.endsWith('.svelte')) {
+      const source = compile(readFileSync(filename, 'utf8'), { filename, generate: 'client', css: 'injected', runes: true }).js.code;
+      return { format: 'module', source, shortCircuit: true };
+    }
+    return nextLoad(url, context);
+  },
 });
 
 const { JSDOM } = await import('jsdom');

@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for the Heatmaps tab's card, mounted with a FIXED context
 // { matchId: 7 } the way the Heatmaps builtin mounts it. The services are
 // scripted (no Wails backend): the match, the roster, the rounds and the
@@ -81,6 +82,16 @@ process.on('unhandledRejection', (e) => {
 });
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'match-heatmaps');
+// The modules the components reach are copied by closure (test/copy-closure.mjs). The harness's own
+// compiles below overwrite the entries it customizes, so its rewrites still win.
+copyClosure({
+  dir,
+  entries: [
+  'builtins/match/HeatmapsPanel.svelte',
+  'components/HeatmapLayer.svelte',
+  'components/StatusChip.svelte',
+  ],
+});
 mkdirSync(join(dir, 'builtins', 'match'), { recursive: true });
 mkdirSync(join(dir, 'components'), { recursive: true });
 mkdirSync(join(dir, 'replay'), { recursive: true });

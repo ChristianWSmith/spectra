@@ -318,18 +318,19 @@ check(
     !!saveBar.querySelector('input[aria-label="Query description"]') &&
     [...saveBar.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Save'),
 );
-// The right cluster: the Export host first, Run LAST (rightmost), with
-// the keyboard shortcut living on Run's tooltip — the old .sql-hint
-// span is gone with the second toolbar.
+// The right cluster ends with Run (rightmost), with the keyboard shortcut on Run's tooltip. Export
+// moved with the results (SqlConsole: "Export moves with the results"), so its host is not in the
+// cluster: it is the .sql-pop-host in the results header.
 const rightCluster = saveBar?.querySelector('.sql-actions-right');
 const runBtn = rightCluster?.querySelector('button.primary');
-const exportBtn = rightCluster?.querySelector('button[aria-haspopup="true"]');
+// The Export trigger lives in the results overlay (PreviewOverlay), which a run opens: it is read in I.
+let exportBtn = null;
 check(
-  'the right cluster parks Export then Run (Run rightmost) with the shortcut on Run’s title',
+  'the right cluster ends with Run (rightmost) with the shortcut on Run’s title; Export is not in it',
   !!rightCluster &&
-    !!rightCluster.firstElementChild?.classList.contains('sql-pop-host') &&
     !!runBtn &&
     rightCluster.lastElementChild === runBtn &&
+    !rightCluster.querySelector('.sql-pop-host') &&
     /Ctrl\/Cmd\+Enter/.test(runBtn.getAttribute('title') || ''),
   rightCluster ? [...rightCluster.children].map((c) => c.className).join(' | ') : 'no cluster',
 );
@@ -346,13 +347,8 @@ check(
   runBtn ? `${runBtn.firstElementChild?.className} :: ${JSON.stringify(runBtn.textContent)}` : 'no Run button',
 );
 check(
-  'the Export trigger is the canonical popover host (aria trio, disabled until a result exists)',
-  !!exportBtn &&
-    exportBtn.disabled &&
-    exportBtn.getAttribute('aria-expanded') === 'false' &&
-    !exportBtn.hasAttribute('aria-controls') &&
-    (exportBtn.getAttribute('title') || '').length > 0,
-  exportBtn ? `disabled=${exportBtn.disabled} expanded=${exportBtn.getAttribute('aria-expanded')}` : 'no trigger',
+  'no Export control before a run: it lives with the results overlay that a run opens',
+  !document.querySelector('.sql-pop-host button[aria-haspopup="true"]'),
 );
 check('no .sql-hint shortcut span anywhere (the shortcut is Run’s title)', !document.querySelector('.sql-hint'));
 const savedCard = panelByHeading('Saved queries');
@@ -612,14 +608,23 @@ console.log('I. the Export control is ONE popover offering JSON then CSV (the ca
 bindings.handlers.Run = runFixture;
 click(runBtn);
 await sleep(80);
-check('the Export trigger arms once a result exists', !!exportBtn && !exportBtn.disabled, String(exportBtn?.disabled));
+exportBtn = document.querySelector('.sql-pop-host button[aria-haspopup="true"]');
+check(
+  'the Export trigger is the canonical popover host (aria trio, armed by the result)',
+  !!exportBtn &&
+    !exportBtn.disabled &&
+    exportBtn.getAttribute('aria-expanded') === 'false' &&
+    !exportBtn.hasAttribute('aria-controls') &&
+    (exportBtn.getAttribute('title') || '').length > 0,
+  exportBtn ? `disabled=${exportBtn.disabled} expanded=${exportBtn.getAttribute('aria-expanded')}` : 'no trigger',
+);
 click(exportBtn);
 await sleep();
 const pop = document.getElementById('sql-export-pop');
 check(
   'the panel opens under its host as the JSON-then-CSV stack',
   !!pop && pop.classList.contains('sql-pop') &&
-    pop.closest('.sql-pop-host') === rightCluster.firstElementChild &&
+    pop.closest('.sql-pop-host') === exportBtn.closest('.sql-pop-host') &&
     [...pop.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' → ') === 'JSON → CSV',
   pop ? [...pop.querySelectorAll('button')].map((b) => b.textContent.trim()).join(',') : 'no panel',
 );
@@ -629,7 +634,8 @@ check(
     exportBtn.getAttribute('aria-controls') === 'sql-export-pop',
   `expanded=${exportBtn.getAttribute('aria-expanded')} controls=${exportBtn.getAttribute('aria-controls')}`,
 );
-document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+// A browser key event is cancelable: Popover's Escape marks it handled, and the overlay behind it stays.
+document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 await sleep();
 check(
   'Escape closes the panel and returns focus to the trigger',

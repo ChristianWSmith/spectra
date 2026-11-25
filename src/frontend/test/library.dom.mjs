@@ -1,4 +1,5 @@
 import './compile-worker-node.mjs';
+import { copyClosure } from './copy-closure.mjs';
 // jsdom driver for the Library view's search controls: the deep-link
 // preset (#/library?map=&player=) seeds the facet inputs AND the first
 // list fetch, typing re-arms the debounced fetch with the two facets
@@ -272,10 +273,26 @@ bindings.handlers.ListMatchesPage = (q, sk, d, after, limit, f) =>
   pageOf(rowsForFacet(f), after, limit);
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'library');
+// The modules the components reach are copied by closure (test/copy-closure.mjs). The harness's own
+// compiles below overwrite the entries it customizes, so its rewrites still win.
+copyClosure({
+  dir,
+  entries: [
+  'views/Library.svelte',
+  'listnav.js',
+  'components/ConfirmDialog.svelte',
+  'components/HelpButton.svelte',
+  'components/LoadBox.svelte',
+  'components/SuggestInput.svelte',
+  'sortstate.js',
+  ],
+});
 mkdirSync(dir, { recursive: true });
 
+// Every compiled component lands in this cache dir beside its closure copies, so its
+// import of a src/lib module ('../x.js') is the sibling copy ('./x.js').
 const svelteCompile = (src, filename, out) => {
-  const code = compile(src, { filename, generate: 'client' }).js.code;
+  const code = compile(src.replace(/from '\.\.\//g, "from './"), { filename, generate: 'client' }).js.code;
   writeFileSync(out, code);
   return out;
 };
@@ -362,7 +379,8 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   // plumbing (Strings Stage 3): the view imports the strings catalog —
   // resolve it from the real tree, like every other ../ module above.
   .replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`);
-svelteCompile(libSrc, 'Library.svelte', join(dir, 'library-bundle.js'));
+// The bundle sits at the cache root, so a top-level module (../sortstate.js) is its sibling copy.
+svelteCompile(libSrc.replace(/from '\.\.\/([\w.-]+\.js)'/g, "from './$1'"), 'Library.svelte', join(dir, 'library-bundle.js'));
 
 // Harness: the Library with the profile → library deep-link query. nav
 // records every target on globalThis.__nav so the checks below can tell
