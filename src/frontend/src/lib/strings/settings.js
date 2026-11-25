@@ -59,7 +59,7 @@ export const settings = {
 
   // CS2 assets panel
   cs2AssetsNote:
-    'Radar images, equipment icons and replay sounds are all read from your\n      own Counter-Strike 2 installation on this machine — nothing is\n      uploaded, and no Valve assets ship with the app.',
+    'Radar images, map geometry, icons and replay sounds are all\n      read from your own Counter-Strike 2 installation on this machine —\n      nothing is uploaded, and no Valve assets ship with the app.',
   factCs2Install: 'CS2 install',
   notFound: 'not found',
   manualChip: 'manual',

@@ -52,8 +52,9 @@ from Settings.`,
 imported, the **Import…** button, and anything currently importing.
 
 **2. Extract the game assets the first time.** On a fresh install Spectra offers to read three
-asset families out of *your* Counter-Strike 2 installation: the official radar images (map
-backgrounds), the equipment icons, and the replay's sound effects. The prompt says so plainly —
+kinds of asset out of *your* Counter-Strike 2 installation: the official radar images (map
+backgrounds) with the map geometry that goes with them, the equipment icons, and the replay's
+sound effects. The prompt says so plainly —
 *nothing from Counter-Strike ships with the app, and nothing is uploaded; your game files are read
 locally and the extracted assets are stored in Spectra's data folder.* You get three choices:
 
@@ -61,7 +62,10 @@ locally and the extracted assets are stored in Spectra's data folder.* You get t
 - **Choose folder…** — point Spectra at your CS2 install yourself, if it wasn't found.
 - **Not now** — dismiss for this launch. The prompt returns on the next launch as long as any of the three families is still missing; extracting them is what ends the loop for good.
 
-Without radar images, maps render as a plain grid — everything else still works. You can re-run
+Without radar images, maps render as a plain grid — everything else still works. Without the map
+geometry, a demo still imports completely: its stats, rounds, economy and replay are all there. What
+is missing is the **encounter windows**, the sight-line analysis of who could see whom. Those are
+skipped, and the match's warnings say so; extract the map geometry and re-import the match to get them. You can re-run
 extraction any time from **Settings → CS2 assets** (it is safe to run again, and worth re-running
 after a CS2 update).
 
