@@ -175,12 +175,16 @@
 
   $effect(() => (el ? attachFrame(el, report) : undefined));
 
-  // A new source (or component) is a new mount: earlier failures go.
+  // A new source (or component) is a new mount: earlier failures go. The first run is the
+  // mount itself, which a child may already have reported into (spectra.report in its own
+  // mount effect runs first), so the first run keeps the banner.
+  let sourceArmed = false;
   $effect(() => {
     const src = source;
     void component;
     dismissed = false;
-    routed = '';
+    if (sourceArmed) routed = '';
+    sourceArmed = true;
     loaded = null;
     loadError = '';
     if (src == null) return;
