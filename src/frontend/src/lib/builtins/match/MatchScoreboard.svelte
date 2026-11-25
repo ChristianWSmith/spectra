@@ -20,7 +20,7 @@
   } from './panelhelpers.js';
   import { fmtMetric } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
-  import { DASH, isSteam, followPlayer } from '../../builtinhelpers.js';
+  import { DASH, isSteam } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
     ['deaths', S.match.scoreD, 'int'],
@@ -115,7 +115,7 @@
     return (u.doc || metric) + (u.error ? S.builtins.couldntCalculate + u.error : '');
   }
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 
   function ariaSort(key) {
     if (sortKey !== key) return 'none';

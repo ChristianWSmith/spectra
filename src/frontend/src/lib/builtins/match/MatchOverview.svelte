@@ -5,7 +5,7 @@
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
-  import { isSteam, followPlayer } from '../../builtinhelpers.js';
+  import { isSteam } from '../../builtinhelpers.js';
   import LoadBox from '../../components/LoadBox.svelte';
 
   // Match overview cards: the five identity metrics of the match, one card
@@ -90,7 +90,7 @@
     ),
   );
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 </script>
 
 <section class="match-overview">

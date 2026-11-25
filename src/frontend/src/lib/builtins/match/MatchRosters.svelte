@@ -17,7 +17,7 @@
   } from './panelhelpers.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { fmtMetric } from '../../fmt.js';
-  import { isSteam, followPlayer } from '../../builtinhelpers.js';
+  import { isSteam } from '../../builtinhelpers.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
   // default order (kills, then name). The "Other" table appears only when a
@@ -60,7 +60,7 @@
     ),
   );
 
-  const follow = (steam) => followPlayer(spectra, context.matchId, back, steam);
+  const follow = (steam) => spectra.followPlayer(steam, back);
 </script>
 
 <div class="roster-grid">
