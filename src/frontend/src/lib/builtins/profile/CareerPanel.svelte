@@ -1,5 +1,5 @@
 <script>
-  import { whenCurrent, whileCurrent } from '../../current.js';
+  import { loadThen, whileCurrent } from '../../current.js';
   // Career headline cards (builtin profile panel). The profile-scope metrics
   // of the default selection (DEFAULT_CARDS.profile, in the default sequence),
   // one card each. Every value is one metric() read for the context's player.
@@ -35,20 +35,19 @@
       loadedFor = sid;
       if (newPlayer) reads = new Map();
       if (!sid) return;
-      loadProfile(spectra, sid)
-        .then(async ([rows, profile]) => {
+      loadThen(
+        isCurrent,
+        loadProfile(spectra, sid),
+        async ([rows, profile]) => {
           if (!isCurrent()) return;
           defs = rows || [];
           wins = profile ? profile.wins : null;
           const names = defaultCardDefs(defs).map((d) => d.name);
           const next = await readMetrics(spectra, names, errText);
           if (isCurrent()) reads = next;
-        })
-        .catch(
-          whenCurrent(isCurrent, (e) => {
-            spectra.report(e);
-          }),
-        );
+        },
+        (e) => spectra.report(e),
+      );
     }),
   );
 </script>

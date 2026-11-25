@@ -294,6 +294,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       whenCurrent: 'a promise callback that runs only while its load is current',
       loadForMatch: 'the effect body of a panel that loads for the match and applies the result while current',
       latestOnly: 'a runner for one kind of load: only the newest load’s result applies',
+      loadThen: 'a panel load: the result applies while current, a failure goes to the frame (or its own handler)',
     },
   },
   'src/lib/metricreads.js': {
@@ -459,6 +460,10 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/components/RetryButton.svelte': {
     load: () => import('../components/RetryButton.svelte'),
     names: { default: 'the button a panel shows beside a failed read, to load it again' },
+  },
+  'src/lib/components/SortTh.svelte': {
+    load: () => import('../components/SortTh.svelte'),
+    names: { default: 'a sortable table header cell (the view keeps its own sort state)' },
   },
   'src/lib/components/MetricTd.svelte': {
     load: () => import('../components/MetricTd.svelte'),

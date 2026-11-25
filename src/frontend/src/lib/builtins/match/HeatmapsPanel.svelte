@@ -148,8 +148,8 @@
     whileCurrent((isCurrent) => {
       Promise.all([
         getMatch(id),
-        getScoreboard(id, 'kills', true).catch(() => []),
-        getRounds(id).catch(() => []),
+        getScoreboard(id, 'kills', true),
+        getRounds(id),
       ])
         .then(([m, sb, rs]) => {
           if (!isCurrent()) return;
@@ -159,9 +159,7 @@
           matchLoaded = true;
         })
         .catch(
-          whenCurrent(isCurrent, (e) => {
-            error = errText(e);
-          }),
+          whenCurrent(isCurrent, (e) => spectra.report(e)),
         );
     }),
   );

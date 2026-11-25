@@ -1,6 +1,6 @@
 <script>
   import { openMatch, indexBy, DASH } from '../../builtinhelpers.js';
-  import { whenCurrent, whileCurrent } from '../../current.js';
+  import { loadThen, whileCurrent } from '../../current.js';
   import { openRow } from '../../keys.js';
   // Match history (builtin profile panel), most recent first. The match rows
   // (import date, map, result, score, starting side) are the player's recorded
@@ -35,8 +35,10 @@
       const sid = steamId;
       matchReads = new Map();
       if (!sid) return;
-      loadProfile(spectra, sid)
-        .then(async ([rows, profile]) => {
+      loadThen(
+        isCurrent,
+        loadProfile(spectra, sid),
+        async ([rows, profile]) => {
           if (!isCurrent()) return;
           const catalog = indexBy(rows || [], 'name');
           defs = catalog;
@@ -49,10 +51,9 @@
             rowsOut.map((h) => h.matchId),
           );
           if (isCurrent()) matchReads = byMatch;
-        })
-        .catch(
-          whenCurrent(isCurrent, (e) => spectra.report(e)),
-        );
+        },
+        (e) => spectra.report(e),
+      );
     }),
   );
 

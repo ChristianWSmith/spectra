@@ -60,7 +60,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
 });
 for (const k of [
   'window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement', 'HTMLSelectElement',
-  'HTMLTextAreaElement', 'HTMLButtonElement', 'SVGElement', 'Element', 'Node', 'Text', 'Comment',
+  'HTMLTextAreaElement', 'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement', 'SVGElement', 'Element', 'Node', 'Text', 'Comment',
   'DocumentFragment', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
   'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'localStorage',
 ]) {
@@ -356,7 +356,8 @@ check('only the newest key carries a sort mark', sortedMarks.length === 1 && tex
 console.log('D3. header formula tooltips');
 root = await mountPanel({ source: panels.SCOREBOARD_SOURCE, context: MATCH, props: BACK });
 const ths = [...root.querySelectorAll('thead th')];
-check('Name, Team and Score carry no formula tooltip', ths.slice(0, 3).every((th) => !th.title), ths.slice(0, 3).map((th) => th.title).join('|'));
+// The sort headers say what a click does (SortTh's default); a metric header adds the formula.
+check('Name, Team and Score say what a click does, and carry no formula', ths.slice(0, 3).every((th) => th.title.startsWith('Sort by ')), ths.slice(0, 3).map((th) => th.title).join('|'));
 const metricThs = ths.slice(3);
 check('every metric header has its formula as its tooltip',
   metricThs.length === 19 && metricThs.every((th) => /^Formula of [a-z_]+$/.test(th.title)),

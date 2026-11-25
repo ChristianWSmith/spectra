@@ -50,6 +50,13 @@ export function loadForMatch(getMatchId, load, apply, failed) {
     });
 }
 
+// loadThen is the shape a panel load shares: the result applies while the load is
+// still current, and a failure goes to failed (also only while current). The
+// effect that starts it is a whileCurrent, which hands it isCurrent.
+export function loadThen(isCurrent, promise, apply, failed) {
+  return promise.then(whenCurrent(isCurrent, apply)).catch(whenCurrent(isCurrent, failed));
+}
+
 // latestOnly is a runner for one kind of load: a result (or failure) applies only
 // while it is the newest load of that kind. Start it once per panel and call it
 // for each load; a load that a newer one has overtaken is dropped.

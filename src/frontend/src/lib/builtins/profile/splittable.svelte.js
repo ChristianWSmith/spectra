@@ -13,7 +13,7 @@
 //   table.empty                            the chip of an empty table, with its title (null when up to date)
 
 import { loadSplit, cell, dimValue, emptyChip } from './shared.js';
-import { whileCurrent } from '../../current.js';
+import { loadThen, whileCurrent } from '../../current.js';
 import { metricStateTitle } from '../../metricstate.js';
 import { liveMetrics } from '../../metricslive.svelte.js';
 
@@ -34,17 +34,16 @@ export function splitTable(getInputs) {
       if (newPlayer) defs = new Map();
       if (newPlayer) reads = new Map();
       if (!sid) return;
-      loadSplit(spectra, seeds, errText)
-        .then((loaded) => {
-          if (isCurrent()) {
-            defs = loaded.defs;
-            reads = loaded.reads;
-          }
-        })
-        .catch((e) => {
-          // A failed read is the frame's banner (no retry here): an empty table would otherwise lie.
-          if (isCurrent()) spectra.report(e);
-        });
+      // A failed read is the frame's banner (no retry here): an empty table would otherwise lie.
+      loadThen(
+        isCurrent,
+        loadSplit(spectra, seeds, errText),
+        (loaded) => {
+          defs = loaded.defs;
+          reads = loaded.reads;
+        },
+        (e) => spectra.report(e),
+      );
     }),
   );
   // cellFor and rawValue read the table's current defs and reads, so a template

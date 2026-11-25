@@ -1,4 +1,6 @@
 <script>
+  import ProfileLink from '../../components/ProfileLink.svelte';
+  import SortTh from '../../components/SortTh.svelte';
   import { namesOf, rosterOf } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import { openRow } from '../../keys.js';
@@ -18,7 +20,7 @@
   } from './panelhelpers.js';
   import { fmtMetric } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
-  import { DASH, isSteam, openPlayer, followPlayer } from '../../builtinhelpers.js';
+  import { DASH, isSteam, followPlayer } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [
     ['kills', S.match.scoreK, 'int'],
     ['deaths', S.match.scoreD, 'int'],
@@ -126,19 +128,11 @@
     <table class="data-table scoreboard">
       <thead>
         <tr>
-          <th scope="col" class="num" aria-sort={ariaSort('name')}>
-            <button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button>
-          </th>
-          <th scope="col" class="num" aria-sort={ariaSort('side')}>
-            <button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button>
-          </th>
-          <th scope="col" class="num" aria-sort={ariaSort('score')}>
-            <button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button>
-          </th>
+          <SortTh label={S.match.colName} cls="num" ariaSort={ariaSort('name')} active={sortKey === 'name'} desc={sortDesc} onclick={() => toggleSort('name')} />
+          <SortTh label={S.match.colTeam} cls="num" ariaSort={ariaSort('side')} active={sortKey === 'side'} desc={sortDesc} onclick={() => toggleSort('side')} />
+          <SortTh label={S.match.colScore} cls="num" ariaSort={ariaSort('score')} active={sortKey === 'score'} desc={sortDesc} onclick={() => toggleSort('score')} />
           {#each COLUMNS as c (c.metric)}
-            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}>
-              <button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button>
-            </th>
+            <SortTh label={c.label} cls="num" title={headerTitle(c.metric)} ariaSort={ariaSort(c.metric)} active={sortKey === c.metric} desc={sortDesc} onclick={() => toggleSort(c.metric)} />
           {/each}
         </tr>
       </thead>
@@ -152,15 +146,7 @@
           >
             <td class="num name-cell {cls}">
               {#if isSteam(p.steam)}
-                <button
-                  class="btn ghost small name-link {cls}"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    openPlayer(spectra, p.steam);
-                  }}
-                >
-                  {p.name}
-                </button>
+                <ProfileLink steam={p.steam} name={p.name} nav={spectra.navigate} variant="name-link" stopRow cls={cls} />
               {:else}
                 {p.name}
               {/if}

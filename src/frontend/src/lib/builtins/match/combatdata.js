@@ -7,18 +7,15 @@ import { getScoreboard, getMatch, getRounds } from '../../services.js';
 import { listedPlayers } from '../../players.js';
 import { DEFAULT_TICK_RATE } from './combatmodel.js';
 
-// loadCombatSide reads the side inputs both panels need. Each read falls back
-// on its own, as the view did: a failed roster or round list is an empty one.
+// loadCombatSide reads the side inputs both panels need. A failed read rejects: the
+// panel shows it through the frame. A silent empty roster or side-switch count would
+// colour teams wrongly, so nothing here defaults a failure.
 export async function loadCombatSide(matchId) {
-  const [sb, m, rd] = await Promise.all([
-    getScoreboard(matchId, 'kills', true).catch(() => []),
-    getMatch(matchId).catch(() => null),
-    getRounds(matchId).catch(() => []),
-  ]);
+  const [sb, m, rd] = await Promise.all([getScoreboard(matchId, 'kills', true), getMatch(matchId), getRounds(matchId)]);
   return {
     players: listedPlayers(sb) || [],
     rounds: rd || [],
-    sideSwitches: (m && m.sideSwitches) || 0,
-    tickRate: m && m.tickRate > 0 ? m.tickRate : DEFAULT_TICK_RATE,
+    sideSwitches: m.sideSwitches || 0,
+    tickRate: m.tickRate > 0 ? m.tickRate : DEFAULT_TICK_RATE,
   };
 }

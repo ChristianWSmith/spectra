@@ -4,8 +4,8 @@
   import { readMetrics } from '../metricreads.js';
   import { metricPresentation } from '../metricstate.js';
   import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
-  import { activateOnKey } from '../keys.js';
-  import { whileCurrent, loadForMatch } from '../current.js';
+  import { activateOnKey, openRow } from '../keys.js';
+  import { whileCurrent, loadForMatch, loadThen, latestOnly } from '../current.js';
   import { DASH, openMatch, openPlayer, followPlayer } from '../builtinhelpers.js';
   import ErrorBanner from './ErrorBanner.svelte';
   import EmptyNote from './EmptyNote.svelte';
@@ -147,6 +147,9 @@
     metricPresentation,
     fmtMetric,
     activateOnKey,
+    openRow,
+    latestOnly,
+    loadThen: (isCurrent, promise, apply, failed = (e) => report(e)) => loadThen(isCurrent, promise, apply, failed),
     whileCurrent,
     // The one dash a missing cell shows, and the shared display pieces (the same
     // components the builtins use): <spectra.ui.ErrorBanner>…</spectra.ui.ErrorBanner>.

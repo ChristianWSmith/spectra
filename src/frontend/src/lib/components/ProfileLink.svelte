@@ -18,15 +18,22 @@
   // failures; see services.js.
   import { warmProfile } from '../services.js';
 
-  let { steam = '', name = '', nav = () => {}, title = '', cls = '' } = $props();
+  // `variant` picks the button's look: the default is the Combat / Replay link (comb-name-btn);
+  // 'name-link' is the match panels’ link (a ghost button). `stopRow` keeps the click from
+  // reaching the row it sits in (a row that also opens something).
+  let { steam = '', name = '', nav = () => {}, title = '', cls = '', variant = 'comb', stopRow = false } = $props();
+  const buttonClass = $derived(variant === 'name-link' ? 'btn ghost small name-link' : 'comb-name-btn');
 </script>
 
 {#if isSteam(steam)}
   <button
-    class="comb-name-btn {cls}"
+    class="{buttonClass} {cls}"
     title={title || `Open ${name} profile`}
     onmouseenter={() => warmProfile(steam)}
-    onclick={() => openProfile(nav, steam)}>{name || '—'}</button
+    onclick={(e) => {
+      if (stopRow) e.stopPropagation();
+      openProfile(nav, steam);
+    }}>{name || '—'}</button
   >
 {:else}
   <span class={cls}>{name || '—'}</span>
