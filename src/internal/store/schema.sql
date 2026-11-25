@@ -1614,7 +1614,7 @@ fold AS (
     SELECT match_id, attacker AS steam_id, ''kills'' AS f, COUNT(*) AS n FROM ek GROUP BY match_id, attacker
   )
   {{FOLD_PIVOT:kills}}) {{PLAYER_FOLD_JOIN}}
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (NOT is_bot_key(player_stats.steam_id) AND steam_id <> ''''){{TOP_PER_MATCH_CLOSE}}',
+  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id}}){{TOP_PER_MATCH_CLOSE}}',
  'identity',
  'Formula: argmax(kills) — the player with the most kills in the match, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1626,7 +1626,7 @@ fold AS (
     SELECT match_id, attacker AS steam_id, ''total_damage'' AS f, SUM(capped_dmg) AS n FROM edmg GROUP BY match_id, attacker
   )
   {{FOLD_PIVOT:total_damage}}) {{PLAYER_FOLD_JOIN}}
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (NOT is_bot_key(player_stats.steam_id) AND steam_id <> ''''){{TOP_PER_MATCH_CLOSE}}',
+  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id}}){{TOP_PER_MATCH_CLOSE}}',
  'identity',
  'Formula: argmax(adr) — the match''s highest-ADR player, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
@@ -1638,17 +1638,17 @@ fold AS (
     SELECT match_id, attacker AS steam_id, ''utility_damage'' AS f, SUM(CASE WHEN weapon IN (''HE Grenade'', ''Flashbang'', ''Smoke Grenade'', ''Molotov'', ''Incendiary Grenade'', ''Decoy Grenade'') THEN capped_dmg ELSE 0 END) AS n FROM edmg GROUP BY match_id, attacker
   )
   {{FOLD_PIVOT:utility_damage}}) {{PLAYER_FOLD_JOIN}}
-  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND (NOT is_bot_key(player_stats.steam_id) AND steam_id <> ''''){{TOP_PER_MATCH_CLOSE}}',
+  WHERE ps.match_id = :match_id) player_stats WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id}}){{TOP_PER_MATCH_CLOSE}}',
  'identity',
  'Formula: argmax(utility_damage) — the match''s leading utility-damage player, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('entry_opens', 'Entry opens', '',
- 'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, entry_kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY entry_kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT is_bot_key(player_stats.steam_id) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, entry_kills AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY entry_kills DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id}})) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'identity',
  'Formula: argmax(entry_kills) — the player with the most round-opening first bloods, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP),
 ('most_mvps', 'Most MVPs', '',
- 'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, mvps AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY mvps DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND (NOT is_bot_key(player_stats.steam_id) AND steam_id <> '''')) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
+ 'SELECT '''' AS subject_key, '''' AS dim, v AS value, idkey AS idkey FROM (SELECT mid, grp, idkey, v FROM (SELECT match_id AS mid, match_id AS grp, steam_id AS idkey, mvps AS v, ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY mvps DESC, steam_id ASC) AS rn FROM player_stats WHERE player_stats.match_id = :match_id AND ({{HUMAN:player_stats.steam_id}})) WHERE rn = 1 ORDER BY mid, grp) WHERE mid = :match_id',
  'identity',
  'Formula: argmax(mvps) — the match''s MVP-award leader, addressed per match (no partition) — an empty pool shows a dash.',
  'builtin', CURRENT_TIMESTAMP);
