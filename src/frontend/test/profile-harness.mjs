@@ -97,10 +97,10 @@ export async function boot(cacheName = 'profile-panels') {
   // mountComponent mounts one builtin (a panel or the Profile component) in a
   // ComponentFrame, with the given fixed context. It returns the target and an
   // unmount function.
-  async function mountComponent(component, context, props = {}) {
+  async function mountComponent(component, context, props = {}, reads = undefined) {
     const target = document.createElement('div');
     document.body.appendChild(target);
-    const instance = mount(ComponentFrame, { target, props: { component, context, props, nav: () => {} } });
+    const instance = mount(ComponentFrame, { target, props: { component, context, props, nav: () => {}, reads } });
     await settle();
     return {
       target,
