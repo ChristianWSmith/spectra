@@ -53,9 +53,7 @@ export const MetricsService = {
   GetMetricSeries: rec('GetMetricSeries'),
   GetMetricComputeState: rec('GetMetricComputeState'),
   GetMetricStates: rec('GetMetricStates'),
-  // The no-execution Compile (provenance for a clean-saved preview) +
-  // the one-definition read the scope-routed pin resolves through.
-  CompileMetric: rec('CompileMetric'),
+  // The one-definition read the scope-routed pin resolves through.
   GetMetric: rec('GetMetric'),
 };
 // The SQL console's service: the three mount-time reads (schema, history,

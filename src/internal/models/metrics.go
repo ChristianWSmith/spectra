@@ -21,7 +21,10 @@ type MetricRow struct {
 	Name      string `json:"name"` // UNIQUE across all origins
 	Title     string `json:"title"`
 	ShortName string `json:"shortName"` // optional; read only at width-constrained metric column headers
-	Expr      string `json:"expr"`      // one SELECT or WITH statement (raw SQL; internal/metrics raw.go)
+	Expr      string `json:"expr"`      // one SELECT or WITH statement, in its macro form (what the editor shows; raw SQL; internal/metrics raw.go)
+	// RunExpr is the expanded form of Expr: the plain SQL every run, dependency and scope read uses.
+	// Written by the save gate (metrics.CheckRawSave); internal, never marshalled.
+	RunExpr string `json:"-"`
 	// Scope is DERIVED from the expr's binds (store.ScopeOfExpr), never
 	// stored: match|profile, profile when the statement reads :steam_id.
 	Scope    string `json:"scope"`

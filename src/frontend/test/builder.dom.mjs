@@ -319,11 +319,6 @@ bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
   }
   return rows;
 };
-const compileCalls = [];
-bindings.handlers.CompileMetric = (id, expr) => {
-  compileCalls.push([id, expr]);
-  return 'select 1';
-};
 bindings.handlers.ListMatches = () => [{ id: 9, status: 'ready', map: 'de_cache' }];
 bindings.handlers.ListPlayers = () => [{ steamId: '76561198000000001', name: 'alice' }];
 bindings.handlers.GetMetric = (id) => METRICS.find((m) => m.id === id) || null;
@@ -441,7 +436,18 @@ svelteCompile(
   'SourceEditor.svelte',
   join(dir, 'sourceeditor.js'),
 );
+svelteCompile(
+  readFileSync('src/lib/components/PreviewOverlay.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'PreviewOverlay.svelte',
+  join(dir, 'previewoverlay.js'),
+);
+svelteCompile(readFileSync('src/lib/components/Chip.svelte', 'utf8'), 'Chip.svelte', join(dir, 'chip.js'));
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
+  .replace("from '../components/Chip.svelte'", "from './chip.js'")
+  .replace("from '../components/PreviewOverlay.svelte'", "from './previewoverlay.js'")
   .replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`)
   .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
   .replace("from '../components/SourceEditor.svelte'", "from './sourceeditor.js'")
@@ -569,9 +575,9 @@ const chipsOf = (r, name) =>
     c.textContent.trim(),
   );
 // The editor card's Save button and its read-only chip (the one
-// bld-readonly in the view — the form header's).
+// accent chip in the view — the form header's).
 const saveButton = (r) => r.querySelector('.bld-actions .btn.primary');
-const formChip = (r) => r.querySelector('.bld-readonly');
+const formChip = (r) => r.querySelector('.bld-right > section.panel > .row-between .chip.accent');
 
 viewstate.resetViewState();
 
@@ -594,7 +600,7 @@ let r = await mountBuilder();
       !rowsWrap.contains(list.querySelector('h2')) &&
       !rowsWrap.contains(list.querySelector('input[type="search"]')) &&
       !rowsWrap.contains(filterTrigger(r)) &&
-      !!list.querySelector(':scope > .toolbar .bld-filter-host'),
+      !!list.querySelector(':scope > .bld-search-row .bld-filter-host'),
     list
       ? `wrap=${!!rowsWrap} groups=${rowsWrap ? rowsWrap.querySelectorAll('.bld-group').length : 0}`
       : 'no list',
@@ -1007,7 +1013,7 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
     // the ORDER, not just the presence.
     const head = r.querySelector('.bld-right > section.panel > .row-between');
     const status = head?.querySelector('.chip.status');
-    const ro = head?.querySelector('.bld-readonly');
+    const ro = head?.querySelector('.chip.accent');
     check(
       'the state chip renders in the editor header, before the built-in chip',
       !!head &&
@@ -1021,11 +1027,8 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
     );
   }
   check(
-    // N6: the hint keeps its .bld-actions .bld-note home — it moved
-    // from AFTER the buttons to the front of the right cluster, so the
-    // check's NAME says cluster now (the selector is unchanged).
-    'the note in the actions cluster repeats the same reason',
-    (r.querySelector('.bld-actions .bld-note')?.textContent || '').includes(REASON),
+    'the editor card has no bottom note: the actions line holds only the validity indicator, Preview and Save',
+    !r.querySelector('.bld-actions .bld-note'),
     r.querySelector('.bld-actions .bld-note')?.textContent?.replace(/\s+/g, ' ').trim(),
   );
 
@@ -1068,7 +1071,7 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
   );
   check(
     'after the save the built-in shows the edited chip, Save is clean again, and Restore to default appears',
-    !!chip() && heading(r) === 'Edit metric' && [...r.querySelectorAll('.bld-readonly ~ .chip, .bld-actions .chip')].some((c) => c.textContent.trim() === 'edited') &&
+    !!chip() && heading(r) === 'Edit metric' && [...r.querySelectorAll('.chip.accent ~ .chip, .bld-actions .chip')].some((c) => c.textContent.trim() === 'edited') &&
       saveBtn().disabled &&
       [...r.querySelectorAll('.bld-actions button')].some((b) => b.textContent.trim() === 'Restore to default'),
     `disabled=${saveBtn()?.disabled}`,
@@ -1202,7 +1205,6 @@ console.log('D. a built-in row loads with its expression editable (owner ruling 
 console.log('E. the builtin PREVIEWS from its STORED rows — a saved read never calculates');
 previewCalls.length = 0;
 storedCalls.length = 0;
-compileCalls.length = 0;
 {
   const bRow = rowNamed(r, 'trade_rate');
   click(bRow.querySelector('[aria-label="Preview trade_rate"]'));
@@ -1218,22 +1220,22 @@ compileCalls.length = 0;
     JSON.stringify(previewCalls),
   );
   check(
-    'the provenance SQL came from the no-execution compile of that same match',
-    JSON.stringify(compileCalls[0]) === JSON.stringify([1, '']),
-    JSON.stringify(compileCalls[0]),
+    'a saved preview shows no compiled-SQL block: metrics are raw SQL, so there is nothing to compile',
+    !r.querySelector('.preview-overlay details.bld-sql'),
+    '',
   );
   check(
     'the preview table renders',
-    !!r.querySelector('.bld-preview table.data-table tbody tr'),
-    r.querySelector('.bld-preview')?.textContent.replace(/\s+/g, ' ').slice(0, 160),
+    !!r.querySelector('.preview-overlay table.data-table tbody tr'),
+    r.querySelector('.preview-overlay')?.textContent.replace(/\s+/g, ' ').slice(0, 160),
   );
-  const valueCell = r.querySelector('.bld-preview table.data-table tbody tr td.num')?.textContent;
+  const valueCell = r.querySelector('.preview-overlay table.data-table tbody tr td.num')?.textContent;
   check(
     "the value formats from the BUILTIN's stored format (percent), not the empty form",
     valueCell === '90%',
     String(valueCell),
   );
-  const previewText = r.querySelector('.bld-preview')?.textContent || '';
+  const previewText = r.querySelector('.preview-overlay')?.textContent || '';
   check(
     'the panel names the unit the stored rows came from (match stated)',
     previewText.includes('newest ready match #9') && previewText.includes('de_cache'),
@@ -1241,24 +1243,18 @@ compileCalls.length = 0;
   );
   check(
     'the saved preview shows the STATE indicator and no timing chip (it timed nothing)',
-    !!r.querySelector('.bld-preview .toolbar .chip.status') &&
-      ![...r.querySelectorAll('.bld-preview .toolbar .chip')].some((c) => /ms$/.test(c.textContent.trim())),
-    r.querySelector('.bld-preview .toolbar')?.textContent.replace(/\s+/g, ' '),
+    !!r.querySelector('.preview-overlay .toolbar .chip.status') &&
+      ![...r.querySelectorAll('.preview-overlay .toolbar .chip')].some((c) => /ms$/.test(c.textContent.trim())),
+    r.querySelector('.preview-overlay .toolbar')?.textContent.replace(/\s+/g, ' '),
   );
   {
-    // w19 23c: the preview panel's state chip sits immediately LEFT of
-    // the Preview button (position only — the chip itself is unchanged,
-    // and the button's own finder above still resolves it).
-    const chip = r.querySelector('.bld-preview .toolbar .chip.status');
-    const btn = [...r.querySelectorAll('.bld-preview .toolbar button')].find((b) =>
-      b.textContent.includes('Preview'),
-    );
+    // The state chip sits in the overlay's header; the Preview control is on the editor card's actions line.
+    const chip = r.querySelector('.preview-overlay .toolbar .chip.status');
+    const btn = [...r.querySelectorAll('.bld-actions button')].find((b) => b.textContent.includes('Preview'));
     check(
-      'the preview panel state chip sits immediately left of the Preview button',
-      !!chip && !!btn && btn.previousElementSibling === chip,
-      chip && btn
-        ? `prev=${btn.previousElementSibling?.className} chip=${chip.className}`
-        : `chip=${!!chip} btn=${!!btn}`,
+      'the state chip is in the overlay header; the Preview control is on the editor card, beside Save',
+      !!chip && !!btn && !!chip.closest('.row-between') && !!btn.closest('.bld-actions') && !!btn.nextElementSibling,
+      chip && btn ? `chip=${chip.className}` : `chip=${!!chip} btn=${!!btn}`,
     );
   }
   check(
@@ -1284,9 +1280,9 @@ compileCalls.length = 0;
   // a name with two ids so a text sort is observable too. The preview
   // carries no N column (a value has no sample size), so Value is the
   // numeric column and its active default is highest first.
-  const pRows = () => [...r.querySelectorAll('.bld-preview table.data-table tbody tr')];
+  const pRows = () => [...r.querySelectorAll('.preview-overlay table.data-table tbody tr')];
   const pCol = (i) => pRows().map((row) => row.querySelectorAll('td')[i]?.textContent);
-  const pTh = () => [...r.querySelectorAll('.bld-preview table.data-table thead th button')];
+  const pTh = () => [...r.querySelectorAll('.preview-overlay table.data-table thead th button')];
 
   check(
     'preview rows default to value descending — highest value first (owner ruling)',
@@ -1337,8 +1333,8 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   await sleep(500); // the 400 ms expression check lands on its scripted "valid"
   check(
     'the live expression check resolves valid for the loaded row',
-    !!r.querySelector('.bld-expr-state.ok'),
-    r.querySelector('.bld-expr-state')?.textContent ?? 'no state line',
+    !!r.querySelector('.validity.ok'),
+    r.querySelector('.validity')?.textContent ?? 'no state line',
   );
 
   // --- N6: ONE actions line (the lead's W1/T1 pattern) ----------------------
@@ -1363,8 +1359,8 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   );
   check(
     'N6: the validity indicator lives in its own slot — nothing renders under the Expression textarea',
-    !!aKids[1]?.querySelector('.bld-expr-state.ok') && !r.querySelector('.bld-fields .bld-expr-state'),
-    r.querySelector('.bld-fields .bld-expr-state') ? 'still under the textarea' : 'moved',
+    !!aKids[1]?.querySelector('.validity.ok') && !r.querySelector('.bld-fields .validity'),
+    r.querySelector('.bld-fields .validity') ? 'still under the textarea' : 'moved',
   );
   check(
     // w19 item 23: DOM order — the destructive action precedes Save
@@ -1386,9 +1382,9 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   {
     const cluster = aKids[2] ? [...aKids[2].children] : [];
     check(
-      'N6: the cluster runs hint → Save, no divider and no separator',
+      'N6: the cluster runs Preview → Save, no divider and no separator',
       cluster.length === 2 &&
-        cluster[0].classList.contains('bld-note') &&
+        cluster[0].textContent.includes('Preview') &&
         cluster[1].classList.contains('btn') &&
         cluster[1].classList.contains('primary') &&
         !!cluster[1].querySelector('.codicon-save') &&
@@ -1565,7 +1561,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   const chipOf = (name) => rowNamed(r, name)?.querySelector('.bld-row-sub .chip.status');
   const editorPanel = () => r.querySelector('.bld-right > section.panel');
   const previewBtn = () =>
-    [...r.querySelectorAll('.bld-preview .toolbar button')].find((b) =>
+    [...r.querySelectorAll('.bld-actions button')].find((b) =>
       b.textContent.includes('Preview'),
     );
 
@@ -1671,8 +1667,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   // rows (no PreviewMetric); dirty draft → on-demand calculation.
   storedCalls.length = 0;
   previewCalls.length = 0;
-  compileCalls.length = 0;
-  click(previewBtn());
+    click(previewBtn());
   await sleep(120);
   check(
     'clean-saved form preview reads stored rows (PreviewMetric untouched)',
@@ -1693,10 +1688,10 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
   check(
     'the ad-hoc preview keeps its timing chip (it genuinely computed)',
-    [...r.querySelectorAll('.bld-preview .toolbar .chip')].some((c) =>
+    [...r.querySelectorAll('.preview-overlay .toolbar .chip')].some((c) =>
       /ms$/.test(c.textContent.trim()),
     ),
-    r.querySelector('.bld-preview .toolbar')?.textContent.replace(/\s+/g, ' '),
+    r.querySelector('.preview-overlay .toolbar')?.textContent.replace(/\s+/g, ' '),
   );
 
   // The no-version pin on this surface: no stamp, version number or
@@ -1709,7 +1704,7 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
     if (leakRe.test(tip)) leaks.push(`title: ${tip}`);
     if (leakRe.test(chip.textContent || '')) leaks.push(`text: ${chip.textContent.trim()}`);
   }
-  for (const w of r.querySelectorAll('.bld-preview .toolbar .chip')) {
+  for (const w of r.querySelectorAll('.preview-overlay .toolbar .chip')) {
     if (leakRe.test(w.textContent || '')) leaks.push(`toolbar: ${w.textContent.trim()}`);
   }
   check(
@@ -1759,8 +1754,8 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
         JSON.stringify(headersOf(r)),
     );
     check(
-      'the identity row wears the identity format chip',
-      JSON.stringify(chipsOf(r, 'top_fragger')) === JSON.stringify(['identity']),
+      'the identity row wears the identity format chip and the built-in marker',
+      JSON.stringify(chipsOf(r, 'top_fragger')) === JSON.stringify(['identity', 'built-in']),
       JSON.stringify(chipsOf(r, 'top_fragger')),
     );
     const idChip = rowNamed(r, 'top_fragger')?.querySelector('.bld-row-sub .chip.status');
@@ -1786,6 +1781,45 @@ console.log('K. the Type group offers Identity: an identity metric is selectable
     if (i >= 0) METRICS.splice(i, 1);
     services.invalidate();
   }
+}
+
+console.log('M. the editor card owns the expand toggle; Format sits left of Doc on one row');
+{
+  const card = r.querySelector('.bld-editor');
+  const tg = card?.querySelector('.card-expand');
+  check(
+    'the editor card carries the expand toggle, and the expression box has none',
+    !!tg && !card.querySelector('#bld-expr')?.closest('.source-wrap')?.querySelector('.source-expand'),
+  );
+  click(tg);
+  await sleep();
+  check('the toggle expands the whole editor card', !!card?.classList.contains('editor-expanded'));
+  card?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep();
+  check('Escape collapses the expanded editor card', !card?.classList.contains('editor-expanded'));
+  const fmtField = r.querySelector('#bld-format')?.closest('.bld-field');
+  const docField = r.querySelector('#bld-doc')?.closest('.bld-field');
+  check(
+    'Format is the field just before Doc, and Doc is the wide one beside it',
+    !!fmtField && fmtField === docField?.previousElementSibling && docField.classList.contains('doc') && !fmtField.classList.contains('doc'),
+  );
+}
+
+console.log('N. the preview opens full screen from the editor card; the X and Escape dismiss it');
+{
+  const pb = () => [...r.querySelectorAll('.bld-actions button')].find((b) => b.textContent.includes('Preview'));
+  check('no overlay before Preview is activated', !r.querySelector('.preview-overlay'));
+  click(pb());
+  await sleep();
+  check('Preview opens the results overlay', !!r.querySelector('.preview-overlay'));
+  click(r.querySelector('.preview-overlay .preview-close'));
+  await sleep();
+  check('the X dismisses the overlay', !r.querySelector('.preview-overlay'));
+  click(pb());
+  await sleep();
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep();
+  check('Escape dismisses the overlay', !r.querySelector('.preview-overlay'));
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

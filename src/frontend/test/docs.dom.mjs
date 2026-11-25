@@ -340,7 +340,17 @@ compileSvelte(
   join(dir, 'sourceeditor.js'),
   { runes: true },
 );
+// The expand state and the full-screen preview the Builder imports, compiled beside it.
+{
+  const { compileModule } = await import('svelte/compiler');
+  writeFileSync(join(dir, 'expandable.svelte.js'), compileModule(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${libURL('strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
+}
+compileSvelte(readFileSync('src/lib/components/Chip.svelte', 'utf8'), 'Chip.svelte', localURL('chip.js'));
+compileSvelte(readFileSync('src/lib/components/PreviewOverlay.svelte', 'utf8').replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`), 'PreviewOverlay.svelte', localURL('previewoverlay.js'));
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
+    .replace("from '../components/Chip.svelte'", `from '${localURL('chip.js')}'`)
+  .replace("from '../expandable.svelte.js'", `from '${localURL('expandable.svelte.js')}'`)
+  .replace("from '../components/PreviewOverlay.svelte'", `from '${localURL('previewoverlay.js')}'`)
   .replace("from '../fillheight.js'", `from '${libURL('fillheight.js')}'`)
   .replace("from '../components/SourceEditor.svelte'", `from '${localURL('sourceeditor.js')}'`)
   .replace("from '../editor/sqlCompletions.js'", `from '${libURL('editor/sqlCompletions.js')}'`)
@@ -389,7 +399,6 @@ bindings.handlers.GetMetricComputeState = () => [];
 bindings.handlers.ListMatches = () => [];
 bindings.handlers.ListPlayers = () => [];
 bindings.handlers.GetMetric = () => null;
-bindings.handlers.CompileMetric = () => 'select 1';
 
 // --- Mount ------------------------------------------------------------------
 const { mount } = await import('svelte');

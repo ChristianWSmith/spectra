@@ -126,19 +126,19 @@
     <table class="data-table scoreboard">
       <thead>
         <tr>
-          <th scope="col" class="num" aria-sort={ariaSort('name')}
-            ><button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button></th
-          >
-          <th scope="col" class="num" aria-sort={ariaSort('side')}
-            ><button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button></th
-          >
-          <th scope="col" class="num" aria-sort={ariaSort('score')}
-            ><button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button></th
-          >
+          <th scope="col" class="num" aria-sort={ariaSort('name')}>
+            <button class="th-sort" onclick={() => toggleSort('name')}>{S.match.colName}</button>
+          </th>
+          <th scope="col" class="num" aria-sort={ariaSort('side')}>
+            <button class="th-sort" onclick={() => toggleSort('side')}>{S.match.colTeam}</button>
+          </th>
+          <th scope="col" class="num" aria-sort={ariaSort('score')}>
+            <button class="th-sort" onclick={() => toggleSort('score')}>{S.match.colScore}</button>
+          </th>
           {#each COLUMNS as c (c.metric)}
-            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}
-              ><button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button></th
-            >
+            <th scope="col" class="num" title={headerTitle(c.metric)} aria-sort={ariaSort(c.metric)}>
+              <button class="th-sort" onclick={() => toggleSort(c.metric)}>{c.label}</button>
+            </th>
           {/each}
         </tr>
       </thead>
@@ -157,27 +157,31 @@
                   onclick={(e) => {
                     e.stopPropagation();
                     openPlayer(spectra, p.steam);
-                  }}>{p.name}</button
+                  }}
                 >
+                  {p.name}
+                </button>
               {:else}
                 {p.name}
               {/if}
             </td>
-            <td class="num"
-              ><span class="chip {cls}">{p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}</span
-              ></td
-            >
-            <td class="num">{Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}</td
-            >
+            <td class="num">
+              <span class="chip {cls}">
+                {p.side === 'ct' ? data.teams.ct : p.side === 't' ? data.teams.t : DASH}
+              </span>
+            </td>
+            <td class="num">
+              {Number.isFinite(Number(p.score)) ? Math.round(Number(p.score)).toLocaleString() : DASH}
+            </td>
             {#each COLUMNS as c (c.metric)}
               {@const u = data.byMetric.get(c.metric)}
-              <td class="num" title={u.error || undefined}
-                ><MetricCell
+              <td class="num" title={u.error || undefined}>
+                <MetricCell
                   pres={matchPres(u, p.steam)}
                   format={(v) => fmtMetric(v, c.format)}
                   words={STATE_WORD}
-                /></td
-              >
+                />
+              </td>
             {/each}
           </tr>
         {/each}

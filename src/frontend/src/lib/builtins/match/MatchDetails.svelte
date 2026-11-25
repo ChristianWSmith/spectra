@@ -198,10 +198,13 @@
               {#if !voice}
                 <span class="muted">{DASH}</span>
               {:else if voice.hasVoice}
-                <span class="chip voice-badge busy" title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}
-                  ><span class="codicon codicon-unmute"></span>
-                  {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}</span
+                <span
+                  class="chip voice-badge busy"
+                  title={fill(COPY.voiceRecordedTitle, { n: voice.playerCount })}
                 >
+                  <span class="codicon codicon-unmute"></span>
+                  {fill(COPY.voiceRecordedBadge, { n: voice.playerCount })}
+                </span>
               {:else}
                 <span class="chip voice-badge idle" title={COPY.voiceNoneTitle}>{COPY.voiceNoneBadge}</span>
               {/if}
@@ -212,9 +215,9 @@
             <dd>
               {#if match.copyState === 'copied'}
                 <span>{COPY.copyPrefix} {fmtBytes(match.size)}</span>
-                <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}
-                  >{copyBusy ? COPY.freeing : COPY.freeCopy}</button
-                >
+                <button class="btn small" disabled={copyBusy} title={COPY.freeCopyTitle} onclick={freeCopy}>
+                  {copyBusy ? COPY.freeing : COPY.freeCopy}
+                </button>
               {:else if match.copyState === 'external'}
                 <span class="muted">{COPY.copyExternal}</span>
               {:else if match.copyState === 'missing'}

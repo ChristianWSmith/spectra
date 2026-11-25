@@ -176,7 +176,9 @@
         return;
       }
       const catalog = new Map((m.metrics || []).filter((d) => d && d.name).map((d) => [d.name, d]));
-      const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter((d) => d && (d.scope || 'match') === 'match');
+      const matchDefs = STATLINE_SEEDS.map((n) => catalog.get(n)).filter(
+        (d) => d && (d.scope || 'match') === 'match',
+      );
       const out = new Map(matchDefs.map((d) => [d.name, { def: d, bySteam: new Map() }]));
       spectra
         .track(
@@ -531,7 +533,8 @@
         onremove={removeStat}
       />
       <button class="btn primary" disabled={m.rendering || !canSave} onclick={render}>
-        {#if m.rendering}{S.reports.rendering}{:else}<span class="codicon codicon-save" aria-hidden="true"></span>
+        {#if m.rendering}{S.reports.rendering}{:else}<span class="codicon codicon-save" aria-hidden="true"
+          ></span>
           {S.reports.generateReport}{/if}
       </button>
     </div>

@@ -416,6 +416,9 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
 	m.Touched = gate.Touched
+	// Both forms are stored: Expr (the macro form the editor shows) and RunExpr (the expanded
+	// statement that runs). The gate read RunExpr, so it is what every read and dependency uses.
+	m.RunExpr = gate.Expanded
 	// metric() references are the statement's dependency edges. A reference
 	// that would close a cycle through this metric is refused before any
 	// write, using the same walk as the rest of the graph.
@@ -432,7 +435,7 @@ func (s *MetricsService) saveMetric(m models.MetricRow, ov *store.MetricOverride
 	// no-op pattern). A create never bumps (the INSERT default starts
 	// the counter at 1 and a new metric has no rows — absent → behind
 	// already) but DOES schedule the sweep: its rows must be computed.
-	semantic := m.ID > 0 && m.Expr != existing.Expr
+	semantic := m.ID > 0 && m.RunExpr != existing.RunExpr
 	created := m.ID == 0
 	// ONE transaction: the metric row, its edges wholesale, and (semantic)
 	// the version bump for this metric + every transitive dependent —
@@ -605,16 +608,16 @@ func (s *MetricsService) CompileMetric(id int64, expr string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return strings.TrimSpace(full.Expr), nil
+		return strings.TrimSpace(full.RunExpr), nil
 	}
-	_, perr, err := metrics.CheckRawSave(s.st, expr)
+	gate, perr, err := metrics.CheckRawSave(s.st, expr)
 	if err != nil {
 		return "", err
 	}
 	if perr != nil {
 		return "", exprErrorErr(perr)
 	}
-	return strings.TrimSpace(expr), nil
+	return strings.TrimSpace(gate.Expanded), nil
 }
 
 // ValidateExpr is the builder's live check: the one gate, the same one save

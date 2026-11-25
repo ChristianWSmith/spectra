@@ -282,8 +282,10 @@
     <button
       class="comb-name-btn {cls}"
       title={fill(COPY.openProfile, { name })}
-      onclick={() => openPlayer(spectra, steam)}>{name || DASH}</button
+      onclick={() => openPlayer(spectra, steam)}
     >
+      {name || DASH}
+    </button>
   {:else}
     <span class={cls}>{name || DASH}</span>
   {/if}
@@ -349,29 +351,33 @@
                               ? fill(S.match.watchKillFollow, { name: k.attackerName || k.attacker })
                               : S.match.watchKillIdle}
                             onclick={() => watchEvent(d.tickRate, k.tick, k.attacker)}
-                            ><span class="codicon codicon-play" aria-hidden="true"></span></button
                           >
+                            <span class="codicon codicon-play" aria-hidden="true"></span>
+                          </button>
                         </td>
                         <td class="mono" title={fill(S.match.tickTitle, { n: k.tick })}>{clock(k.tick)}</td>
-                        <td
-                          >{@render playerLink(
+                        <td>
+                          {@render playerLink(
                             k.attacker,
                             k.attackerName || k.attacker,
                             playerCls(n, k.attacker, k.attackerName),
-                          )}</td
-                        >
-                        <td
-                          >{@render playerLink(
+                          )}
+                        </td>
+                        <td>
+                          {@render playerLink(
                             k.victim,
                             k.victimName || k.victim,
                             playerCls(n, k.victim, k.victimName),
-                          )}</td
-                        >
+                          )}
+                        </td>
                         <td class="mono">{k.weapon || DASH}</td>
                         <td>
-                          {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span class="chip flag" {title}
-                                >{code}</span
-                              >{/if}{/each}
+                          {#each FLAGS as [col, code, title] (code)}{#if k.flags[col]}<span
+                                class="chip flag"
+                                {title}
+                              >
+                                {code}
+                              </span>{/if}{/each}
                         </td>
                       </tr>
                     {/each}
@@ -410,18 +416,19 @@
                               ? fill(S.match.watchBombFollow, { name: b.attackerName || b.attacker })
                               : S.match.watchKillIdle}
                             onclick={() => watchEvent(d.tickRate, b.tick, b.attacker)}
-                            ><span class="codicon codicon-play" aria-hidden="true"></span></button
                           >
+                            <span class="codicon codicon-play" aria-hidden="true"></span>
+                          </button>
                         </td>
                         <td class="mono" title={fill(S.match.tickTitle, { n: b.tick })}>{clock(b.tick)}</td>
                         <td>{BOMB_LABEL[b.kind] || b.kind}</td>
-                        <td
-                          >{@render playerLink(
+                        <td>
+                          {@render playerLink(
                             b.attacker,
                             b.attackerName || b.attacker,
                             playerCls(n, b.attacker, b.attackerName),
-                          )}</td
-                        >
+                          )}
+                        </td>
                         <td>{b.site || DASH}</td>
                       </tr>
                     {/each}
@@ -448,11 +455,14 @@
                 {#each d.economy as e (e.side)}
                   <tr>
                     <td><span class="chip side {e.side}">{teamForSide(n, e.side)}</span></td>
-                    <td
-                      ><span class="chip cmp-class {e.cls || 'unknown'}" title={e.why || S.economy.noExplanation}
-                        >{e.cls || 'unknown'}</span
-                      ></td
-                    >
+                    <td>
+                      <span
+                        class="chip cmp-class {e.cls || 'unknown'}"
+                        title={e.why || S.economy.noExplanation}
+                      >
+                        {e.cls || 'unknown'}
+                      </span>
+                    </td>
                     <td class="num">{fmtInt(e.equip)}</td>
                     <td class="num">{fmtInt(e.moneyAvg)}</td>
                   </tr>
@@ -472,16 +482,16 @@
                 {#each d.chat as c (c.id)}
                   {@const side = sideOfSpeaker(n, c)}
                   <li>
-                    <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}
-                      >{chatClock(c, rbn, d.tickRate)}</span
-                    >
-                    <strong
-                      >{@render playerLink(
+                    <span class="mono muted" title={fill(S.match.tickTitle, { n: c.tick })}>
+                      {chatClock(c, rbn, d.tickRate)}
+                    </span>
+                    <strong>
+                      {@render playerLink(
                         c.steamId,
                         c.name,
                         playerCls(n, c.steamId, c.name),
-                      )}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}</strong
-                    >
+                      )}{#if chatTag(c.channel, side)}{' '}{chatTag(c.channel, side)}{/if}
+                    </strong>
                     <span>: {c.text}</span>
                   </li>
                 {/each}
@@ -524,8 +534,10 @@
                 class="btn small ghost"
                 title={fill(COPY.watchRoundTitle, { round: r.number })}
                 aria-label={fill(COPY.watchRoundAria, { round: r.number })}
-                onclick={() => watchRound(r.number)}><span class="codicon codicon-play"></span></button
+                onclick={() => watchRound(r.number)}
               >
+                <span class="codicon codicon-play"></span>
+              </button>
             </td>
             <td class="num">{roundLabel(r.number)}</td>
             <td><WinnerCell name={winnerName(data, r)} winner={r.winner} /></td>

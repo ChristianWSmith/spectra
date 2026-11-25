@@ -531,7 +531,7 @@ func runUnits(mctx context.Context, st *store.Store, m models.MetricRow, units [
 		go func() {
 			defer wg.Done()
 			for sc := range next {
-				if err := RunRaw(mctx, st, m.ID, m.Version, ruleVersion, m.Expr, sc); err != nil {
+				if err := RunRaw(mctx, st, m.ID, m.Version, ruleVersion, m.RunExpr, sc); err != nil {
 					fail(err)
 				}
 			}

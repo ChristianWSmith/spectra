@@ -48,6 +48,8 @@
   --accent-40: rgba(251, 172, 24, 0.4);
   --accent-12: rgba(251, 172, 24, 0.12); /* fixed step, unlike --accent-tint */
   --accent-06: rgba(251, 172, 24, 0.06);
+  /* A component placed on a view (the match or profile view): a blue marker, distinct from the amber accent. */
+  --view: #5aa9e6;
   /* Lists (list.* — neutral hover per Dark Modern, indigo selection) */
   --list-hover: #2a2d2e; /* list.hoverBackground */
   --list-hover-strong: #343e5f;
@@ -491,6 +493,11 @@ textarea.mono {
   flex-wrap: wrap;
 }
 
+/* The header's subtitle rides the title's line (the profile header's pattern): no block margin. */
+.view-header > p {
+  margin: 0;
+}
+
 .view-header h1 {
   font-size: 1.35rem;
   font-weight: 600;
@@ -814,6 +821,80 @@ mark {
   padding: 0 1px;
 }
 
+/* --- The builder lists' rows (metric, report, component) ------------------------------------
+   One look for all three lists: a quiet hover, and the open row gets an accent outline with a tint.
+   The per-view prefixes (bld-, rb-, cb-) name the rows; the look is spelled here once. */
+.bld-row,
+.rb-row,
+.cb-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.bld-row:hover,
+.rb-row:hover,
+.cb-row:hover {
+  background: var(--list-hover);
+}
+
+.bld-row.active,
+.rb-row.active,
+.cb-row.active {
+  border-color: var(--accent-45);
+  background: var(--accent-06);
+}
+
+.bld-row-main,
+.rb-row-main,
+.cb-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+}
+
+.bld-row-sub,
+.rb-row-sub,
+.cb-row-sub {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.76em;
+}
+
+.bld-row-acts,
+.rb-row-acts,
+.cb-row-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  opacity: 0.3;
+  transition: opacity 0.12s;
+}
+
+.bld-row:hover .bld-row-acts,
+.bld-row:focus-within .bld-row-acts,
+.rb-row:hover .rb-row-acts,
+.rb-row:focus-within .rb-row-acts,
+.cb-row:hover .cb-row-acts,
+.cb-row:focus-within .cb-row-acts {
+  opacity: 1;
+}
+
 /* --- Chips ----------------------------------------------------------------- */
 
 .chip {
@@ -854,6 +935,23 @@ mark {
 .chip.busy {
   color: var(--accent);
   border-color: var(--accent-50);
+}
+
+/* The builder chips (components/Chip.svelte): accent is a marker, view a placement, plugin a
+   dashed outline. The disabled tone is .chip.bad above. */
+.chip.accent {
+  color: var(--accent);
+  border-color: var(--accent-50);
+}
+
+.chip.view {
+  color: var(--view);
+  border-color: var(--view);
+  background: color-mix(in srgb, var(--view) 10%, transparent);
+}
+
+.chip.plugin {
+  border-style: dashed;
 }
 
 /* Side chips: color AND border follow the --ct/--t tokens (color-mix),
@@ -3152,7 +3250,7 @@ mark {
 
 /* The big-screen view (SourceEditor's expand toggle): the wrapper takes the
    window while the same editor stays mounted, so its text and completions
-   carry over. Every source box has the toggle. */
+   carry over. A source box whose card owns the toggle passes expandable={false}. */
 .source-wrap {
   position: relative;
   min-width: 0;
@@ -3196,8 +3294,60 @@ mark {
   right: 20px;
 }
 
-/* A builder's preview, expanded to the window (the expand toggle in its header,
-   Escape to collapse). It overrides the column's fill-height layout while open. */
+/* Fill: the box takes the height its flex parent gives it (an editor card that
+   grows to the column's height, or the whole window when the card is expanded).
+   Its inline rows height is the floor, so a card with no definite height (the
+   narrow stack) keeps the editor at its rows size. */
+.source-wrap.fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-wrap.fill > .source-editor,
+.source-wrap.fill > textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Monaco's surface is out of flow: the host's size comes from the layout alone, and the
+   surface (which Monaco sizes to the host) can never hold a card open after a shrink. */
+.source-wrap.fill > .source-editor {
+  position: relative;
+}
+
+.source-wrap.fill > .source-editor > .monaco-editor {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* A builder's preview results, shown full screen over the view (components/PreviewOverlay.svelte):
+   the X in its header (and Escape) closes it. Its body scrolls. */
+.panel.preview-overlay {
+  position: fixed;
+  inset: 24px;
+  z-index: 1000;
+  background: var(--bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.preview-overlay-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A builder's card, expanded to the window: its editor (or preview) and the
+   expand toggle in its header; Escape collapses it. It overrides the column's
+   fill-height layout while open. */
 .panel.preview-expanded {
   position: fixed !important;
   inset: 24px !important;
@@ -3212,6 +3362,22 @@ mark {
   border-radius: var(--radius);
 }
 
-.preview-expand {
+/* An expanded editor card keeps its popovers unclipped (its content fits the window). */
+.panel.editor-expanded {
+  position: fixed !important;
+  inset: 24px !important;
+  z-index: 1000;
+  flex: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: var(--bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+}
+
+.preview-expand,
+.card-expand {
   margin-left: auto;
 }

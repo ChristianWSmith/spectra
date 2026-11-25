@@ -143,15 +143,19 @@
                   class="btn small ghost"
                   title={S.economy.watchRoundPrefix + r.round + S.economy.watchRoundSuffix}
                   aria-label={S.economy.watchRoundPrefix + r.round}
-                  onclick={() => watchRound(r.round)}><span class="codicon codicon-play"></span></button
+                  onclick={() => watchRound(r.round)}
                 >
+                  <span class="codicon codicon-play"></span>
+                </button>
               </td>
               <td class="num">
                 <button
                   class="btn small ghost econ-rd"
                   title={S.economy.openRoundAria + r.round}
-                  onclick={() => openRound(r.round)}>{r.round}</button
+                  onclick={() => openRound(r.round)}
                 >
+                  {r.round}
+                </button>
               </td>
               <td>
                 <WinnerCell name={winnerName(r)} winner={r.winner} />
@@ -161,16 +165,20 @@
                   class="chip econ-cls {ctc.cls}"
                   title={ctc.why + S.economy.ruleOpen + ctc.rule + S.economy.ruleClose}
                   aria-expanded={whyOpen === r.round + ':ct'}
-                  onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button
+                  onclick={() => toggleWhy(r, 'ct')}
                 >
+                  {ctc.cls}
+                </button>
               </td>
               <td>
                 <button
                   class="chip econ-cls {tc.cls}"
                   title={tc.why + S.economy.ruleOpen + tc.rule + S.economy.ruleClose}
                   aria-expanded={whyOpen === r.round + ':t'}
-                  onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
+                  onclick={() => toggleWhy(r, 't')}
                 >
+                  {tc.cls}
+                </button>
               </td>
               <td class="num">{deathText(r.round, 'ct')}</td>
               <td class="num">{deathText(r.round, 't')}</td>
@@ -189,17 +197,21 @@
               <tr class="econ-why-row">
                 <td colspan="9">
                   <div class="econ-why">
-                    <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}"
-                      >{whyText?.side === 'ct' ? ctc.cls : tc.cls}</span
-                    >
+                    <span class="chip econ-cls {whyText?.side === 'ct' ? ctc.cls : tc.cls}">
+                      {whyText?.side === 'ct' ? ctc.cls : tc.cls}
+                    </span>
                     <span class="econ-why-text">{whyText?.why || S.economy.noExplanation}</span>
                     <span class="spacer"></span>
-                    <span class="econ-why-rules mono">{S.economy.rulesPrefix}{whyText?.rule ?? r.ruleVersion}</span>
+                    <span class="econ-why-rules mono">
+                      {S.economy.rulesPrefix}{whyText?.rule ?? r.ruleVersion}
+                    </span>
                     <button
                       class="btn small ghost"
                       aria-label={S.economy.closeExplanation}
-                      onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button
+                      onclick={() => (whyOpen = '')}
                     >
+                      <span class="codicon codicon-close"></span>
+                    </button>
                   </div>
                 </td>
               </tr>

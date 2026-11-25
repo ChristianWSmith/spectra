@@ -1,10 +1,15 @@
 <script>
   import SourceEditor from '../components/SourceEditor.svelte';
+  import PreviewOverlay from '../components/PreviewOverlay.svelte';
+  import Chip from '../components/Chip.svelte';
+  import Popover from '../components/Popover.svelte';
   import { templateItems } from '../editor/templateCompletions.js';
   import { reportFields } from '../editor/completionSources.js';
   import { fillHeight } from '../fillheight.js';
   import { expandable } from '../expandable.svelte.js';
-  const previewPanel = expandable();
+  const editorPanel = expandable();
+  // The preview renders full screen (PreviewOverlay) from the Preview control on the editor card.
+  let previewOpen = $state(false);
   // The Reports builder — the template AUTHORING surface (the sibling
   // Reports view only CONSUMES templates). Two panels over the Builder's
   // layout (views/Builder.svelte's .bld-grid): a plain list of every
@@ -73,6 +78,12 @@
     showBuiltin: true,
     showYours: true,
     showPlugin: true,
+    // The format and scope filters start with every box on, like the origin group.
+    showMd: true,
+    showHtml: true,
+    showMatch: true,
+    showPlayer: true,
+    showRound: true,
     // The preview target is NEVER chosen for you (the owner's rule): it
     // starts empty and Preview stays disabled until the user picks one.
     matchId: 0,
@@ -85,6 +96,22 @@
   let showBuiltin = $state(rbSeed.showBuiltin);
   let showYours = $state(rbSeed.showYours);
   let showPlugin = $state(rbSeed.showPlugin);
+  let showMd = $state(rbSeed.showMd);
+  let showHtml = $state(rbSeed.showHtml);
+  let showMatch = $state(rbSeed.showMatch);
+  let showPlayer = $state(rbSeed.showPlayer);
+  let showRound = $state(rbSeed.showRound);
+  // The filter dropdown (the metric builder's): open state and the popover's anchor and trigger.
+  let filterOpen = $state(false);
+  let filterAnchor = $state(null);
+  let filterTrigger = $state(null);
+  function closeFilters() {
+    filterOpen = false;
+    filterTrigger?.focus();
+  }
+  function closeFiltersOutside() {
+    filterOpen = false;
+  }
   let matchId = $state(rbSeed.matchId);
   let steamId = $state(rbSeed.steamId);
   let roundNo = $state(rbSeed.roundNo);
@@ -96,6 +123,11 @@
       showBuiltin,
       showYours,
       showPlugin,
+      showMd,
+      showHtml,
+      showMatch,
+      showPlayer,
+      showRound,
       matchId,
       steamId,
       roundNo,
@@ -142,7 +174,7 @@
   });
 
   // visibleTemplates — the whole catalog narrowed in render (see the
-  // header note): origin group + a title search, both client-side.
+  // header note): the origin, format and scope filters + a title search, all client-side.
   const visibleTemplates = $derived.by(() => {
     const q = query.trim().toLowerCase();
     return templates.filter((t) => {
@@ -150,6 +182,11 @@
       if (o === 'builtin' && !showBuiltin) return false;
       if (o === 'user' && !showYours) return false;
       if (o === 'plugin' && !showPlugin) return false;
+      if (t.format === 'html' ? !showHtml : !showMd) return false;
+      const sc = t.scope;
+      if (sc === 'match' && !showMatch) return false;
+      if (sc === 'player' && !showPlayer) return false;
+      if (sc === 'round' && !showRound) return false;
       if (q && !String(t.title || '').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -290,6 +327,7 @@
 
   async function runPreview() {
     const gen = previewGen;
+    previewOpen = true;
     previewError = '';
     previewBusy = true;
     try {
@@ -364,6 +402,12 @@
     return templateItems({ fields: await reportFields(form.scope) });
   }
 </script>
+<!-- Escape collapses whichever card is expanded (each key handler checks its own). -->
+<svelte:window
+  onkeydown={(e) => {
+    editorPanel.key(e);
+  }}
+/>
 
 {#snippet templateRow(t)}
   <div class="rb-row" class:active={form.id === t.id}>
@@ -374,13 +418,16 @@
     <button class="rb-row-main" onclick={() => editTemplate(t)}>
       <span class="rb-row-title">{t.title}</span>
       <span class="rb-row-sub">
-        <span class="chip">{t.scope}</span>
-        <span class="chip">{t.format}</span>
-        <!-- The origin chip carries the row's own origin word — the
-             same spelling the Reports template cards show. -->
-        <span class="chip">{t.origin || 'builtin'}</span>
+        <Chip>{t.scope}</Chip>
+        <Chip>{t.format}</Chip>
+        <!-- The origin marker: a built-in and a plugin row say so; a user's own row carries none. -->
+        {#if t.origin === 'builtin'}
+          <Chip tone="accent">{S.common.chipBuiltin}</Chip>
+        {:else if t.origin === 'plugin'}
+          <Chip tone="plugin">{S.common.chipPlugin}</Chip>
+        {/if}
         {#if t.edited}
-          <span class="chip" title={S.reportbuilder.editedTitle}>{S.reportbuilder.editedChip}</span>
+          <Chip title={S.common.chipEditedTitle}>{S.common.chipEdited}</Chip>
         {/if}
       </span>
     </button>
@@ -400,10 +447,8 @@
 
 <div class="view rb-view">
   <header class="view-header">
-    <div>
-      <h1>{S.reportbuilder.heading}</h1>
-      <p class="muted rb-head-note">{S.reportbuilder.headNote}</p>
-    </div>
+    <h1>{S.reportbuilder.heading}</h1>
+    <p class="muted rb-head-note">{S.reportbuilder.headNote}</p>
     <div class="spacer"></div>
     <HelpButton section="reports-builder" {openDocs} />
   </header>
@@ -427,36 +472,76 @@
           {S.reportbuilder.newLabel}</button
         >
       </div>
-      <input
-        class="input"
-        type="search"
-        aria-label={S.reportbuilder.searchAria}
-        placeholder={S.reportbuilder.searchPlaceholder}
-        bind:value={query}
-      />
-      <div class="rb-filters" role="group" aria-label={S.reportbuilder.originLabel}>
-        <span class="filt-lab">{S.reportbuilder.originLabel}</span>
-        <label class="filt-check"
-          ><input
-            type="checkbox"
-            checked={showBuiltin}
-            onchange={(e) => (showBuiltin = e.currentTarget.checked)}
-          /> {S.reportbuilder.filterBuiltIn}</label
-        >
-        <label class="filt-check"
-          ><input
-            type="checkbox"
-            checked={showYours}
-            onchange={(e) => (showYours = e.currentTarget.checked)}
-          /> {S.reportbuilder.filterCustom}</label
-        >
-        <label class="filt-check"
-          ><input
-            type="checkbox"
-            checked={showPlugin}
-            onchange={(e) => (showPlugin = e.currentTarget.checked)}
-          /> {S.reportbuilder.filterPlugin}</label
-        >
+      <div class="bld-search-row">
+        <input
+          class="input bld-search"
+          type="search"
+          aria-label={S.reportbuilder.searchAria}
+          placeholder={S.reportbuilder.searchPlaceholder}
+          bind:value={query}
+        />
+        <span class="bld-filter-host" bind:this={filterAnchor}>
+          <button
+            type="button"
+            class="btn small bld-filter-btn"
+            class:multi-open={filterOpen}
+            bind:this={filterTrigger}
+            aria-haspopup="true"
+            aria-expanded={filterOpen}
+            aria-controls={filterOpen ? 'rb-filter-pop' : null}
+            aria-label={S.common.filtersLabel}
+            title={S.common.filtersTitle}
+            onclick={() => (filterOpen = !filterOpen)}
+          >
+            <span class="codicon codicon-filter" aria-hidden="true"></span>
+            <span class="codicon codicon-chevron-{filterOpen ? 'up' : 'down'}" aria-hidden="true"></span>
+          </button>
+          <Popover open={filterOpen} anchor={filterAnchor} onClose={closeFilters} onOutside={closeFiltersOutside}>
+            <div class="bld-filter-pop" id="rb-filter-pop" role="group" aria-label={S.common.filtersLabel}>
+              <div class="bld-filter-group" role="group" aria-label={S.reportbuilder.originLabel}>
+                <span class="filt-lab">{S.reportbuilder.originLabel}</span>
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showBuiltin} onchange={(e) => (showBuiltin = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterBuiltIn}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showYours} onchange={(e) => (showYours = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterCustom}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showPlugin} onchange={(e) => (showPlugin = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterPlugin}</label
+                >
+              </div>
+              <div class="bld-filter-group" role="group" aria-label={S.reportbuilder.fieldFormat}>
+                <span class="filt-lab">{S.reportbuilder.fieldFormat}</span>
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showMd} onchange={(e) => (showMd = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterFormatMd}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showHtml} onchange={(e) => (showHtml = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterFormatHtml}</label
+                >
+              </div>
+              <div class="bld-filter-group" role="group" aria-label={S.reportbuilder.fieldScope}>
+                <span class="filt-lab">{S.reportbuilder.fieldScope}</span>
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showMatch} onchange={(e) => (showMatch = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterScopeMatch}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showPlayer} onchange={(e) => (showPlayer = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterScopePlayer}</label
+                >
+                <label class="filt-check"
+                  ><input type="checkbox" checked={showRound} onchange={(e) => (showRound = e.currentTarget.checked)} />
+                  {S.reportbuilder.filterScopeRound}</label
+                >
+              </div>
+            </div>
+          </Popover>
+        </span>
       </div>
 
       {#if visibleTemplates.length === 0}
@@ -483,25 +568,34 @@
     </section>
 
     <div class="rb-right" use:fillHeight>
-      <section class="panel">
+      <section class="panel rb-editor" class:editor-expanded={editorPanel.on}>
         <div class="row-between">
           <h2>{form.id ? S.reportbuilder.editTemplate : S.reportbuilder.newTemplate}</h2>
+          <div class="toolbar">
           {#if builtinLoaded}
             <!-- A built-in edits in place (owner ruling 44): the chip names
                  it in the user's words, and an edit shows beside it. -->
-            <span class="chip rb-readonly" title={S.reportbuilder.builtinEditNote}
-              >{S.reportbuilder.builtinChip}</span
-            >
+            <Chip tone="accent" title={S.reportbuilder.builtinEditNote}>{S.common.chipBuiltin}</Chip>
             {#if form.edited}
-              <span class="chip" title={S.reportbuilder.editedTitle}>{S.reportbuilder.editedChip}</span>
+              <Chip title={S.common.chipEditedTitle}>{S.common.chipEdited}</Chip>
             {/if}
           {:else if readOnly}
             <!-- Plugin rows: immutable through Save — saving stores a
                  copy of this template as your own. -->
-            <span class="chip rb-readonly" title={S.reportbuilder.pluginImmutable}
-              >{S.reportbuilder.readOnlyChip}</span
-            >
+            <Chip tone="accent" title={S.reportbuilder.pluginImmutable}>{S.common.chipReadOnly}</Chip>
           {/if}
+          <!-- The expand toggle belongs to the card: the whole editor takes the window. -->
+          <button
+            type="button"
+            class="btn small card-expand"
+            aria-label={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+            title={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+            aria-expanded={editorPanel.on}
+            onclick={editorPanel.toggle}
+          >
+            <span class="codicon codicon-{editorPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+          </button>
+          </div>
         </div>
 
         <!-- readonly, never disabled, on the text fields — a read-only
@@ -544,6 +638,8 @@
               cls="rb-body"
               language="gotemplate"
               rows={10}
+              expandable={false}
+              fill
               ariaLabel={S.reportbuilder.fieldBody}
               bind:value={form.body}
               completions={bodyCompletions}
@@ -551,9 +647,9 @@
           </div>
         </div>
 
-        <!-- ONE actions line: the destructive control sits LEFT, the
-             positive actions (Preview, then Save) right — the
-             editor-action layout the metric editor uses. -->
+        <!-- ONE actions line: the destructive control sits LEFT, Save
+             right. The preview's target and its Preview button live in
+             the preview card — they only drive the preview. -->
         <div class="row-between rb-actions">
           <span class="rb-left">
             <span class="rb-destructive">
@@ -573,56 +669,41 @@
               >
             {/if}
           </span>
-            <span class="rb-targets" role="group" aria-label={S.reportbuilder.targetHeading}>
-              <span class="field-label">{S.reportbuilder.targetHeading}</span>
-              <span class="rb-target-row">
-                <div class="rb-field">
-                  <label class="field-label" for="rb-match">{S.reportbuilder.matchLabel}</label>
-                  <MatchPicker
-                    {matches}
-                    value={matchId}
-                    id="rb-match"
-                    onselect={(mid) => (matchId = mid)}
-                  />
-                </div>
-                {#if form.scope === 'player'}
-                  <div class="rb-field">
-                    <label class="field-label" for="rb-player">{S.reportbuilder.playerLabel}</label>
-                    <PlayerPicker
-                      {players}
-                      value={steamId}
-                      id="rb-player"
-                      onselect={(sid) => (steamId = sid)}
-                    />
-                  </div>
-                {/if}
-                {#if form.scope === 'round'}
-                  <div class="rb-field">
-                    <label class="field-label" for="rb-round">{S.reportbuilder.roundLabel}</label>
-                    <input
-                      class="input"
-                      id="rb-round"
-                      type="number"
-                      min="1"
-                      max={Math.max(1, maxRound)}
-                      bind:value={roundNo}
-                    />
-                    {#if maxRound > 0}
-                      <span class="muted rb-hint">1..{maxRound}</span>
-                    {/if}
-                  </div>
-                {/if}
-              </span>
-            </span>
           </span>
           <span class="toolbar rb-bottom">
-          <span class="muted rb-note">
-              {builtinLoaded
-                ? form.edited
-                  ? S.reportbuilder.builtinEditedNote
-                  : S.reportbuilder.builtinEditNote
-                : S.reportbuilder.saveNoteDefault}
-            </span>
+            <!-- The preview target: the match, and the player or round the scope needs. -->
+    <span class="rb-targets" role="group" aria-label={S.reportbuilder.targetHeading}>
+      <span class="rb-target-row">
+        <!-- The controls name themselves: the match picker says "Select match…", the player
+             picker "Select player…", and the round box carries its label and range. -->
+        <MatchPicker
+          {matches}
+          value={matchId}
+          id="rb-match"
+          onselect={(mid) => (matchId = mid)}
+        />
+        {#if form.scope === 'player'}
+          <PlayerPicker
+            {players}
+            value={steamId}
+            id="rb-player"
+            onselect={(sid) => (steamId = sid)}
+          />
+        {/if}
+        {#if form.scope === 'round'}
+          <input
+            class="input rb-round"
+            id="rb-round"
+            type="number"
+            min="1"
+            max={Math.max(1, maxRound)}
+            aria-label={S.reportbuilder.roundLabel}
+            placeholder={maxRound > 0 ? S.fill(S.reportbuilder.roundPlaceholder, { max: maxRound }) : S.reportbuilder.roundPlaceholderNone}
+            bind:value={roundNo}
+          />
+        {/if}
+      </span>
+    </span>
             <button class="btn" onclick={runPreview} disabled={previewDisabled}
               ><span class="codicon codicon-play" aria-hidden="true"></span>
               {previewBusy ? S.reportbuilder.running : S.reportbuilder.preview}</button
@@ -643,34 +724,19 @@
         </div>
       </section>
 
-      <section class="panel rb-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
-        <div class="row-between">
-          <h2>{S.reportbuilder.previewHeading}</h2>
-          <div class="toolbar">
-            <button
-          type="button"
-          class="btn small preview-expand"
-          aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-          title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-          aria-expanded={previewPanel.on}
-          onclick={previewPanel.toggle}
-        >
-          <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
-        </button>
-          </div>
-        </div>
-        {#if previewError}
-          <p class="error" role="alert">{previewError}</p>
-        {:else if preview !== null}
-          <!-- The composed document exactly as it renders — md or html
-               source, the same bytes Save + Reports would write. -->
-          <pre class="mono rb-doc">{preview}</pre>
-        {:else if !targetReady}
-          <p class="muted" role="status">{S.reportbuilder.targetNeeded}</p>
-        {:else}
-          <p class="muted" role="status">{S.reportbuilder.noPreviewYet}</p>
-        {/if}
-      </section>
+      <PreviewOverlay open={previewOpen} title={S.reportbuilder.previewHeading} onClose={() => (previewOpen = false)}>
+      {#if previewError}
+        <p class="error" role="alert">{previewError}</p>
+      {:else if preview !== null}
+        <!-- The composed document exactly as it renders — md or html
+             source, the same bytes Save + Reports would write. -->
+        <pre class="mono rb-doc">{preview}</pre>
+      {:else if !targetReady}
+        <p class="muted" role="status">{S.reportbuilder.targetNeeded}</p>
+      {:else}
+        <p class="muted" role="status">{S.reportbuilder.noPreviewYet}</p>
+      {/if}
+      </PreviewOverlay>
     </div>
   </div>
 </div>

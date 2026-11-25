@@ -247,10 +247,10 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("couldn't save the plugin's metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, format, doc, origin, plugin_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'plugin', ?, ?)
+		`INSERT INTO metrics (name, title, expr, run_expr, format, doc, origin, plugin_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
-			title = excluded.title, expr = excluded.expr,
+			title = excluded.title, expr = excluded.expr, run_expr = excluded.run_expr,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
 			plugin_id = excluded.plugin_id,
 			touched = ''`,
@@ -261,7 +261,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	defer stmt.Close()
 	for _, d := range defs {
 		if _, err := stmt.Exec(
-			scrub(d.Name), scrub(d.Title), scrub(d.Expr),
+			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(d.Expr),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), time.Now(),
 		); err != nil {
 			return fmt.Errorf("couldn't save the plugin's metrics: %w", err)

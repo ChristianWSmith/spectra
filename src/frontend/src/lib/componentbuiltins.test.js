@@ -35,8 +35,8 @@ test('every built-in id is in the reserved namespace and resolves back to itself
 
 // A built-in is checked under the built-in rules (its curated helper imports,
 // ruling 45): the gate gets its source directory. A user copy of a panel that
-// imports a helper would be refused at save, which is why no Duplicate is
-// offered for a builtin (ruling 43).
+// imports a helper would be refused at save, which is why a built-in is only
+// ever edited in place (ruling 43).
 test('every built-in source passes the save gate under its built-in rules', async () => {
   for (const b of BUILTIN_COMPONENTS) {
     const gate = await gateComponentSave(b.source, builtinSourceDir(b.id));

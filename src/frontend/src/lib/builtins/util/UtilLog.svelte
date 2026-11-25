@@ -60,7 +60,9 @@
 
   const filtered = $derived(
     rows.filter(
-      (r) => (kinds.length === 0 || kinds.includes(r.kind)) && (filt.throwerF === '' || r.thrower === filt.throwerF),
+      (r) =>
+        (kinds.length === 0 || kinds.includes(r.kind)) &&
+        (filt.throwerF === '' || r.thrower === filt.throwerF),
     ),
   );
 
@@ -138,8 +140,10 @@
         bind:this={kindTrigger}
         aria-haspopup="true"
         aria-expanded={kindOpen}
-        onclick={() => (kindOpen = !kindOpen)}>{kindSummary}</button
+        onclick={() => (kindOpen = !kindOpen)}
       >
+        {kindSummary}
+      </button>
       <Popover open={kindOpen} anchor={kindAnchor} onClose={closeKinds} onOutside={() => (kindOpen = false)}>
         <div class="util-kind-pop" role="group" aria-label={S.utility.colKind}>
           {#each kindOptions as k (k)}
@@ -179,9 +183,9 @@
         {/each}
       </select>
     </label>
-    <span class="muted"
-      >{filtered.length}{S.utility.ofSeparator}{rows.length}{S.utility.grenadeWord}{plural(rows.length)}</span
-    >
+    <span class="muted">
+      {filtered.length}{S.utility.ofSeparator}{rows.length}{S.utility.grenadeWord}{plural(rows.length)}
+    </span>
   </div>
   {#if groups.length === 0}
     <EmptyNote>{S.utility.noMatch}</EmptyNote>
@@ -208,18 +212,24 @@
                     class="btn small ghost"
                     title={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle}
                     aria-label={r.thrower ? S.utility.watchThrowFollow + name : S.utility.watchThrowTitle}
-                    onclick={() => replayRow(r)}><span class="codicon codicon-play"></span></button
+                    onclick={() => replayRow(r)}
                   >
+                    <span class="codicon codicon-play"></span>
+                  </button>
                 </span>
                 <span class="chip util-kind {r.kind}">{r.kind}</span>
                 {#if /^\d{17}$/.test(r.thrower)}
                   <button
                     class="comb-name-btn util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
                     title={S.utility.openPrefix + name + S.utility.profileSuffix}
-                    onclick={() => openProfile(r.thrower)}>{name || DASH}</button
+                    onclick={() => openProfile(r.thrower)}
                   >
+                    {name || DASH}
+                  </button>
                 {:else}
-                  <span class="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}">{name || DASH}</span>
+                  <span class="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}">
+                    {name || DASH}
+                  </span>
                 {/if}
                 <span
                   class="mono muted util-tick"
@@ -227,17 +237,18 @@
                     effTick(r) +
                     S.utility.timeIntoRound +
                     roundIndexLabel(rbn.get(r.round) ?? r.round)}
-                  >{roundClock(effTick(r), rbn.get(r.round), tickRate)}</span
                 >
-                <span class="util-num" title={S.utility.titleDamageDealt}
-                  >{fmtZeroDash(r.damage, S.utility.unitDamage)}</span
-                >
-                <span class="util-num muted" title={S.utility.titleTotalBlind}
-                  >{r.flashMsTotal > 0 ? fmtMs(r.flashMsTotal) : DASH}</span
-                >
-                <span class="util-num muted" title={S.utility.titleAffected}
-                  >{fmtZeroDash(affectedCount(r.affected), S.utility.unitAffected)}</span
-                >
+                  {roundClock(effTick(r), rbn.get(r.round), tickRate)}
+                </span>
+                <span class="util-num" title={S.utility.titleDamageDealt}>
+                  {fmtZeroDash(r.damage, S.utility.unitDamage)}
+                </span>
+                <span class="util-num muted" title={S.utility.titleTotalBlind}>
+                  {r.flashMsTotal > 0 ? fmtMs(r.flashMsTotal) : DASH}
+                </span>
+                <span class="util-num muted" title={S.utility.titleAffected}>
+                  {fmtZeroDash(affectedCount(r.affected), S.utility.unitAffected)}
+                </span>
                 <span class="util-coord muted mono" title={S.utility.titleCoords}>{coordCell(r)}</span>
               </li>
             {/each}

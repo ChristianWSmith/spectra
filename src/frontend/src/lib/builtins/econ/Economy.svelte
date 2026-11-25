@@ -27,9 +27,18 @@
 
   <spectra.Child
     name="match-economy-curve"
-    props={{ rows: view.rows, names: view.names, sideSwitches: view.sideSwitches, matchWinner: view.matchWinner, back }}
+    props={{
+      rows: view.rows,
+      names: view.names,
+      sideSwitches: view.sideSwitches,
+      matchWinner: view.matchWinner,
+      back,
+    }}
   />
-  <spectra.Child name="match-economy-cards" props={{ rows: view.rows, rounds: view.rounds, names: view.names, back }} />
+  <spectra.Child
+    name="match-economy-cards"
+    props={{ rows: view.rows, rounds: view.rounds, names: view.names, back }}
+  />
   <spectra.Child
     name="match-economy-rounds"
     props={{ rows: view.rows, rounds: view.rounds, names: view.names, sideSwitches: view.sideSwitches, back }}

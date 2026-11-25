@@ -146,7 +146,11 @@
 
   $effect(() =>
     whileCurrent((isCurrent) => {
-      Promise.all([getMatch(id), getScoreboard(id, 'kills', true).catch(() => []), getRounds(id).catch(() => [])])
+      Promise.all([
+        getMatch(id),
+        getScoreboard(id, 'kills', true).catch(() => []),
+        getRounds(id).catch(() => []),
+      ])
         .then(([m, sb, rs]) => {
           if (!isCurrent()) return;
           map = (m && m.map) || '';
@@ -205,7 +209,9 @@
   // The pack's radar panels — makeTransform's ONE pack→layers reader
   // (lib/components/mapxform.js): default first, each with its world-Z
   // band (zMin/zMax) and image file. Absent = single-floor pack.
-  const layers = $derived(pack && pack.transform && Array.isArray(pack.transform.layers) ? pack.transform.layers : []);
+  const layers = $derived(
+    pack && pack.transform && Array.isArray(pack.transform.layers) ? pack.transform.layers : [],
+  );
   // The selector shows only for a genuinely multi-floor pack: a no-pack /
   // plain-grid fallback and a single-layer pack keep the previous
   // one-raster behavior byte-identical (a bundled pack that declares
@@ -653,7 +659,8 @@
              stops' alpha so its 0 end reads as "no signal". -->
         {#if unitKind === 'kd'}
           <span class="mono heat-legend-label heat-legend-neg">−{maxLabel}</span>
-          <span class="heat-ramp signed" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
+          <span class="heat-ramp signed" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}
+          ></span>
           <span class="mono heat-legend-label heat-legend-pos">+{maxLabel}</span>
         {:else}
           <span class="mono heat-legend-label">0</span>
@@ -661,16 +668,25 @@
           <span class="mono heat-legend-label">{maxLabel}</span>
         {/if}
         <span class="chip heat-unit">{unit}</span>
-        <span class="muted"
-          >{fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}</span
-        >
+        <span class="muted">
+          {fmtInt(grid.samples)}{S.heatmaps.plottedSuffix}{grid.w}×{grid.h}{S.heatmaps.gridSuffix}
+        </span>
       {:else}
         <!-- Before the first run the reserved row says what to do, so the panel is not blank. -->
         <span class="muted">{S.heatmaps.generatePrompt}</span>
       {/if}
     </div>
 
-    <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={src.kind} onCanvas={onHeatCanvas} />
+    <HeatmapLayer
+      {map}
+      {pack}
+      {grid}
+      {onRegion}
+      {layer}
+      {gridLayer}
+      kind={src.kind}
+      onCanvas={onHeatCanvas}
+    />
 
     <p class="heat-hint muted">
       {#if grid}
@@ -692,9 +708,10 @@
          so the legend/radar/hint rows never shift either way. -->
     <div class="heat-float">
       {#if grid && heatCanvas}
-        <button class="btn heat-save" onclick={saveRaster}
-          ><span class="codicon codicon-save" aria-hidden="true"></span> {S.heatmaps.saveImage}</button
-        >
+        <button class="btn heat-save" onclick={saveRaster}>
+          <span class="codicon codicon-save" aria-hidden="true"></span>
+          {S.heatmaps.saveImage}
+        </button>
       {/if}
       <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
         <span class="codicon codicon-play" aria-hidden="true"></span>

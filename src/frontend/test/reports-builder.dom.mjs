@@ -15,7 +15,7 @@ import './compile-worker-node.mjs';
 //      chip's title, no delete anywhere) and plugin rows fork on save
 //      (payload id "") — the metric editor's rule;
 //   F. delete is the user-row control, bottom-LEFT in the actions line
-//      while Preview + Save stay right;
+//      while Save stays right (Preview lives in the preview card);
 //   G. create flow: New → an empty editor → Save sends id "" and the
 //      minted row lands in the list, active;
 //   H. preview gating: disabled with no target (never fabricated),
@@ -159,7 +159,18 @@ svelteCompile(
 );
 const { compileModule: compileExpandable } = await import('svelte/compiler');
 writeFileSync(join(dir, 'expandable.svelte.js'), compileExpandable(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
+svelteCompile(
+  readFileSync('src/lib/components/PreviewOverlay.svelte', 'utf8').replace(
+    "from '../strings/index.js'",
+    `from '${fileURL('src/lib/strings/index.js')}'`,
+  ),
+  'PreviewOverlay.svelte',
+  join(dir, 'previewoverlay.js'),
+);
+svelteCompile(readFileSync('src/lib/components/Chip.svelte', 'utf8'), 'Chip.svelte', join(dir, 'chip.js'));
 const rbSrc = readFileSync('src/lib/views/ReportsBuilder.svelte', 'utf8')
+  .replace("from '../components/Chip.svelte'", "from './chip.js'")
+  .replace("from '../components/PreviewOverlay.svelte'", "from './previewoverlay.js'")
   .replace("from '../components/LoadBox.svelte'", "from './loadbox.js'")
   .replace("from '../components/SourceEditor.svelte'", "from './sourceeditor.js'")
   .replace("from '../editor/templateCompletions.js'", `from '${fileURL('src/lib/editor/templateCompletions.js')}'`)
@@ -322,8 +333,8 @@ console.log('A. mount shape — header + help target over the two-panel grid');
     JSON.stringify((globalThis.__docs || []).slice(docs0)));
   check('ONE .rb-grid holds the list panel and a right column of editor + preview',
     !!r.querySelector('.rb-grid > .panel.rb-list') &&
-      !!r.querySelector('.rb-grid > .rb-right > section.panel:not(.rb-preview)') &&
-      !!r.querySelector('.rb-grid > .rb-right > section.panel.rb-preview'),
+      !!r.querySelector('.rb-grid > .rb-right > section.panel.rb-editor') &&
+      !r.querySelector('.rb-preview'),
     r.querySelector('.rb-grid') ? 'shaped' : 'no .rb-grid');
 }
 
@@ -336,15 +347,15 @@ console.log('B. the list renders every template with its origin chip, in the ser
     rows.map((x) => x.querySelector('.rb-row-title').textContent.trim()).join('|') ===
       'Match report|Match report (HTML)|My summary|Plugin report',
     rows.map((x) => x.querySelector('.rb-row-title').textContent.trim()).join('|'));
-  check('every row carries scope, format AND origin chips',
+  check('every row carries its scope and format chips; a built-in or plugin row adds its origin marker, a user row none',
     rows.every((x) => {
       const chips = [...x.querySelectorAll('.rb-row-sub .chip')].map((c) => c.textContent.trim());
-      return chips.length === 3;
+      return chips.length >= 2 && chips.slice(0, 2).every((t) => t !== '');
     }),
     rows.map((x) => [...x.querySelectorAll('.rb-row-sub .chip')].map((c) => c.textContent.trim()).join('/')).join(' | '));
-  const origins = rows.map((x) => x.querySelectorAll('.rb-row-sub .chip')[2].textContent.trim());
-  check('the origin chips read builtin / user / plugin — the row’s own origin word',
-    JSON.stringify(origins) === JSON.stringify(['builtin', 'builtin', 'user', 'plugin']),
+  const origins = rows.map((x) => x.querySelectorAll('.rb-row-sub .chip')[2]?.textContent.trim() ?? '');
+  check('the origin markers read built-in / plugin; a user row carries none',
+    JSON.stringify(origins) === JSON.stringify(['built-in', 'built-in', '', 'plugin']),
     JSON.stringify(origins));
   const withTrash = rows.filter((x) => x.querySelector('.rb-row-acts .codicon-trash'));
   check('only the user row carries a trash button (built-ins and plugins never do)',
@@ -412,7 +423,7 @@ console.log('D. the editor form — field order and vocabularies');
     `${body.className} / placeholder=${body.getAttribute('placeholder')}`);
   check('the editor starts on the New template card with an empty user form',
     r.querySelector('.rb-right h2')?.textContent.trim() === 'New template' &&
-      $('#rb-title')[0].value === '' && !r.querySelector('.rb-readonly'),
+      $('#rb-title')[0].value === '' && !r.querySelector('.rb-editor .row-between .chip.accent'),
     r.querySelector('.rb-right h2')?.textContent.trim());
 }
 
@@ -424,10 +435,10 @@ console.log('E. built-ins edit in place (owner ruling 44); plugin rows fork on s
   // The editor's own chips (the list rows carry their own edited marks).
   const hasChip = (text) => [...r.querySelectorAll('.rb-right .chip')].some((c) => c.textContent.trim() === text);
   check('the built-in loads with its built-in chip, unedited, and Save disabled while clean',
-    r.querySelector('.rb-readonly')?.textContent.trim() === 'built-in' &&
+    r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim() === 'built-in' &&
       !hasChip('edited') &&
       $('.rb-actions button.primary')[0].disabled === true,
-    `${r.querySelector('.rb-readonly')?.textContent.trim()} / disabled=${$('.rb-actions button.primary')[0].disabled}`);
+    `${r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim()} / disabled=${$('.rb-actions button.primary')[0].disabled}`);
   check('its text is editable; its title, scope and format stay as shipped (readonly / disabled)',
     $('#rb-body')[0].readOnly === false && $('#rb-title')[0].readOnly === true &&
       $('#rb-scope')[0].disabled === true && $('#rb-format')[0].disabled === true,
@@ -475,10 +486,10 @@ console.log('E. built-ins edit in place (owner ruling 44); plugin rows fork on s
   click($('.rb-row')[3].querySelector('.rb-row-main'));
   await sleep();
   check('the plugin row wears the read-only source chip and keeps Save live (it forks)',
-    r.querySelector('.rb-readonly')?.textContent.trim() === 'read-only source' &&
-      r.querySelector('.rb-readonly').getAttribute('title')?.startsWith('Plugin templates are read-only') &&
+    r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim() === 'read-only source' &&
+      r.querySelector('.rb-editor .row-between .chip.accent').getAttribute('title')?.startsWith('Plugin templates are read-only') &&
       $('.rb-actions button.primary')[0].disabled === false,
-    `${r.querySelector('.rb-readonly')?.textContent.trim()} / disabled=${$('.rb-actions button.primary')[0].disabled}`);
+    `${r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim()} / disabled=${$('.rb-actions button.primary')[0].disabled}`);
   const before = savedPayloads.length;
   click($('.rb-actions button.primary')[0]);
   await sleep(80);
@@ -487,9 +498,9 @@ console.log('E. built-ins edit in place (owner ruling 44); plugin rows fork on s
     !!payload && payload.id === '' && payload.origin === 'user',
     JSON.stringify(payload));
   check('the fork lands as your own row — the read-only chip is gone and the editor holds it',
-    !!payload && r.querySelector('.rb-readonly') === null &&
+    !!payload && r.querySelector('.rb-editor .row-between .chip.accent') === null &&
       $('.rb-row.active').length === 1,
-    `chip=${r.querySelector('.rb-readonly')?.textContent.trim()} active=${$('.rb-row.active').length}`);
+    `chip=${r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim()} active=${$('.rb-row.active').length}`);
 }
 
 console.log('F. delete is the user control — bottom-left, positives right');
@@ -502,19 +513,22 @@ console.log('F. delete is the user control — bottom-left, positives right');
   click(userRow.querySelector('.rb-row-main'));
   await sleep();
   const actions = $('.rb-actions')[0];
-  check('the actions line puts the left block (destructive slot, then the preview target) LEFT and Preview + Save RIGHT',
+  check('the actions line: the destructive slot LEFT; the preview target, Preview and Save RIGHT, in that order',
     actions.firstElementChild.classList.contains('rb-left') &&
       !!actions.firstElementChild.querySelector('.rb-destructive') &&
-      !!actions.firstElementChild.querySelector('.rb-targets') &&
       !!actions.lastElementChild.classList.contains('toolbar') &&
-      !!actions.querySelector('.rb-destructive .codicon-trash'),
+      !!actions.querySelector('.rb-destructive .codicon-trash') &&
+      !!actions.querySelector('.rb-bottom .rb-targets') &&
+      !!actions.querySelector('.rb-bottom > button') &&
+      !r.querySelector('.rb-target-bar') &&
+      (() => { const kids = [...actions.querySelector('.rb-bottom').children]; const ix = (f) => kids.findIndex(f); return ix((c) => c.classList.contains('rb-targets')) < ix((c) => c.classList.contains('primary') === false && c.tagName === 'BUTTON') && ix((c) => c.classList.contains('primary')) === kids.length - 1; })(),
     [...actions.children].map((c) => c.className).join(' | '));
   check('the editor delete names the row it deletes',
     actions.querySelector('.rb-destructive button').getAttribute('aria-label') === 'Delete My summary',
     actions.querySelector('.rb-destructive button').getAttribute('aria-label'));
   check('the user row offers NO read-only chip',
-    r.querySelector('.rb-readonly') === null,
-    r.querySelector('.rb-readonly')?.textContent.trim());
+    r.querySelector('.rb-editor .row-between .chip.accent') === null,
+    r.querySelector('.rb-editor .row-between .chip.accent')?.textContent.trim());
   const before = deletedIds.length;
   click(actions.querySelector('.rb-destructive button'));
   await sleep(120);
@@ -533,7 +547,7 @@ console.log('G. create flow — New, the fields, Save sends id "" and the row la
   await sleep();
   check('New resets the editor to an empty user form with no chip and no delete',
     r.querySelector('.rb-right h2')?.textContent.trim() === 'New template' &&
-      $('#rb-title')[0].value === '' && !r.querySelector('.rb-readonly') &&
+      $('#rb-title')[0].value === '' && !r.querySelector('.rb-editor .row-between .chip.accent') &&
       $('.rb-actions .codicon-trash').length === 0,
     `${r.querySelector('.rb-right h2')?.textContent.trim()} trash=${$('.rb-actions .codicon-trash').length}`);
   await setInput($('#rb-title')[0], 'Round recap');
@@ -563,10 +577,9 @@ console.log('H. preview gating — never a fabricated target, the DRAFT body ren
 {
   viewstate.resetViewState();
   const p = await mountRB();
-  const previewBtn = () => $('.rb-actions .toolbar > button')[0]; // Play leads Preview
+  const previewBtn = () => $('.rb-bottom > button')[0]; // Play leads Preview
   check('Preview is DISABLED on a fresh mount — no target is chosen for you',
-    previewBtn().disabled === true &&
-      p.textContent.includes('Pick a target to preview'),
+    previewBtn().disabled === true,
     `disabled=${previewBtn().disabled}`);
   check('the preview button leads with the PLAY codicon',
     previewBtn().firstElementChild.classList.contains('codicon-play'),
@@ -617,9 +630,9 @@ console.log('H. preview gating — never a fabricated target, the DRAFT body ren
     `disabled=${previewBtn().disabled} trigger=${$('.pp-trigger')[0].textContent.trim()}`);
   // Round scope: the round field states the counted range.
   await setSelect($('#rb-scope')[0], 'round');
-  check('round scope adds a round field stating the counted range (1..3)',
-    !!$('#rb-round')[0] && p.querySelector('.rb-hint')?.textContent.trim() === '1..3',
-    p.querySelector('.rb-hint')?.textContent.trim());
+  check('round scope adds a round field whose placeholder states the counted range (Enter round 1..3)',
+    !!$('#rb-round')[0] && $('#rb-round')[0].placeholder === 'Enter round 1..3' && !p.querySelector('.rb-hint'),
+    $('#rb-round')[0]?.placeholder);
 }
 
 console.log('I. viewstate round-trip through the process-scoped registry');
@@ -644,15 +657,29 @@ console.log('I. viewstate round-trip through the process-scoped registry');
       !!b.querySelector('.mp-trigger-map'),
     `query=${$('.rb-list input[type="search"]')[0].value} title=${$('#rb-title')[0].value}`);
   check('the restored target keeps Preview live (nothing was fabricated in between)',
-    $('.rb-actions .toolbar > button')[0].disabled === false,
-    `disabled=${$('.rb-actions .toolbar > button')[0].disabled}`);
+    $('.rb-bottom > button')[0].disabled === false,
+    `disabled=${$('.rb-bottom > button')[0].disabled}`);
   viewstate.resetViewState();
   await mountRB();
   check('resetViewState() → a fresh mount starts empty with no target',
     $('.rb-list input[type="search"]')[0].value === '' &&
       $('#rb-title')[0].value === '' &&
-      $('.rb-actions .toolbar > button')[0].disabled === true,
+      $('.rb-bottom > button')[0].disabled === true,
     `query=${$('.rb-list input[type="search"]')[0].value} title=${$('#rb-title')[0].value}`);
+}
+
+console.log('J. the editor card owns the expand toggle; the body box has none');
+{
+  const card = root.querySelector('.rb-editor');
+  const tg = card?.querySelector('.card-expand');
+  check('the editor card carries the expand toggle, and the body box has none',
+    !!tg && !card.querySelector('#rb-body')?.closest('.source-wrap')?.querySelector('.source-expand'));
+  click(tg);
+  await sleep();
+  check('the toggle expands the whole editor card', !!card?.classList.contains('editor-expanded'));
+  card?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep();
+  check('Escape collapses the expanded editor card', !card?.classList.contains('editor-expanded'));
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

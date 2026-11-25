@@ -989,13 +989,6 @@ export function cancelMetric(id) {
   return MetricsService.CancelMetric(id);
 }
 
-// compileMetric is the no-execution Compile (design §5): the
-// provenance SQL a clean-saved preview shows beside its stored rows,
-// without calculating a value. expr "" uses the saved definition by id.
-export function compileMetric(id, expr) {
-  return MetricsService.CompileMetric(id, expr || '');
-}
-
 // --- Metric compute progress store -----------------------------------------
 // spectra:metric-progress {metricId, stage, done, total} — the ONE feed
 // of the sweep's honest k/N (throttled 100 ms Go-side; progress-only,

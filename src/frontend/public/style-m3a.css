@@ -993,7 +993,7 @@ canvas.heat-canvas {
 
 .bld-head-note {
   font-size: 0.86em;
-  max-width: 70ch;
+  white-space: nowrap;
 }
 
 /* The builders share one list column width, and the list fills the view height (see the Reports and
@@ -1013,23 +1013,17 @@ canvas.heat-canvas {
   min-width: 0;
 }
 
-/* The right column fills the content height (fillHeight). The editor keeps its
-   natural size, which the source box sets; the preview takes what is left and
-   scrolls. Below the narrow breakpoint the column is a plain stack again. */
-.bld-right > :not(.bld-preview) {
-  flex: none;
-}
-
-.bld-right > .bld-preview {
-  flex: 1 1 0;
-  min-height: 160px;
-  overflow: auto;
+/* The right column fills the content height (fillHeight): the editor card is the whole column, and its
+   expression box grows to fill the card. Previews open full screen (components/PreviewOverlay.svelte). */
+.bld-right > .bld-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: visible; /* popovers (the pickers' lists) float over the card */
 }
 
 @media (max-width: 1000px) {
-  .bld-right > .bld-preview {
+  .bld-right > .bld-editor {
     flex: none;
-    min-height: 0;
     overflow: visible;
   }
 }
@@ -1117,39 +1111,6 @@ canvas.heat-canvas {
   margin-top: 6px;
 }
 
-.bld-row {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-}
-
-.bld-row:hover {
-  background: var(--list-hover);
-}
-
-.bld-row.active {
-  border-color: var(--accent-45);
-  background: var(--accent-06);
-}
-
-.bld-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  align-items: flex-start;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--text);
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-}
-
 .bld-row-title {
   font-size: 0.92em;
   font-weight: 600;
@@ -1166,28 +1127,6 @@ canvas.heat-canvas {
 .bld-row-title .mono {
   font-weight: 400;
   opacity: 0.75;
-}
-
-.bld-row-sub {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 0.76em;
-}
-
-.bld-row-acts {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-right: 4px;
-  opacity: 0.3;
-  transition: opacity 0.12s;
-}
-
-.bld-row:hover .bld-row-acts,
-.bld-row:focus-within .bld-row-acts {
-  opacity: 1;
 }
 
 .bld-pin-on {
@@ -1219,11 +1158,10 @@ canvas.heat-canvas {
 /* FIXED rows (owner rulings — the DOM order IS the row order, so each
    row lands on its own line at every panel width instead of re-wrapping
    as the window resizes): row 1 is the Name / Title / Short name trio,
-   row 2 is Subject / Scope alone (subject sits immediately left of
-   scope — the owner's placement), row 3 is Denominator / Format below
-   it (owner, 2026-11-18), then the full-width Doc and Expression rows.
-   Six columns: an unclassed field spans two (a third — the trio), a
-   `.half` field spans three (the select rows), `.wide` spans the lot;
+   row 2 is Format (small, left) beside Doc (`.doc`, the rest of the
+   row), then the full-width Expression row, which takes the card's rest
+   of the height. Six columns: an unclassed field spans two (a third —
+   the trio), `.doc` spans four, `.wide` spans the lot;
    minmax(0, 1fr) keeps the shrink honest at the 900px minimum window
    width (a row-1 field keeps the trio's width, a select row gets a
    comfortable half once the panel padding is paid); .bld-field and
@@ -1231,6 +1169,9 @@ canvas.heat-canvas {
 .bld-fields {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* Name row, Format + Doc row, then the expression takes the card's rest. */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  flex: 1 1 auto;
   gap: 10px;
 }
 
@@ -1242,8 +1183,8 @@ canvas.heat-canvas {
   grid-column: span 2;
 }
 
-.bld-field.half {
-  grid-column: span 3;
+.bld-field.doc {
+  grid-column: span 4;
 }
 
 .bld-field.wide {
@@ -1263,16 +1204,37 @@ canvas.heat-canvas {
   overflow-wrap: anywhere;
 }
 
-.bld-expr-state {
+/* The one validity indicator (the metric editor's expression check, the component editor's
+   source check): checking, valid, or the failure's line. */
+.validity {
   font-size: 0.85em;
 }
 
-.bld-expr-state.ok {
+.validity.ok {
   color: var(--success);
 }
 
-.bld-expr-state.bad {
+.validity.bad {
   color: var(--danger);
+}
+
+/* The list's search box and its filter dropdown share one row: the search takes the width. */
+.bld-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bld-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bld-filter-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* w19 23d — a LONG validation error must not push the right-side
@@ -1315,29 +1277,6 @@ canvas.heat-canvas {
   color: var(--muted);
 }
 
-.bld-sql summary {
-  cursor: pointer;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  padding: 4px 0;
-}
-
-.bld-sql summary:hover {
-  color: var(--text);
-}
-
-.bld-sql pre {
-  padding: 8px 10px;
-  font-size: 0.8em;
-  background: var(--inset);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow-x: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 
 /* --- SQL console (sql-) --------------------------------------------------- */
 
@@ -1812,24 +1751,20 @@ canvas.heat-canvas {
   max-height: none;
 }
 
+/* The main column fills the content height (fillHeight). The Statement card takes three parts to the
+   saved/history panels' one, and its source box fills the card. */
 .sql-main > :first-child {
-  flex: none;
-}
-
-.sql-main > .sql-results-panel,
-.sql-main > .sql-lower {
-  flex: 1 1 0;
+  flex: 3 1 0;
   min-height: 0;
 }
 
-.sql-results-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 180px;
-  overflow: hidden;
+.sql-main > .sql-lower {
+  flex: 1 1 0;
+  min-height: 240px;
 }
 
-.sql-results-panel .sql-results {
+/* The results grid inside the full-screen results view: it takes the view's height and scrolls. */
+.preview-overlay .sql-results {
   flex: 1 1 0;
   min-height: 0;
   max-height: none;
@@ -1855,16 +1790,6 @@ canvas.heat-canvas {
   .sql-main > * {
     flex: none;
     min-height: 0;
-  }
-
-  .sql-results-panel {
-    min-height: 0;
-    overflow: visible;
-  }
-
-  .sql-results-panel .sql-results {
-    flex: none;
-    max-height: 44vh;
   }
 
   .sql-lower {

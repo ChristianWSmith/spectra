@@ -1,7 +1,9 @@
 <script>
   import { fillHeight } from '../fillheight.js';
   import { expandable } from '../expandable.svelte.js';
-  const previewPanel = expandable();
+  const editorPanel = expandable();
+  // The preview results open full screen (PreviewOverlay) from the Preview control on the editor card.
+  let previewOpen = $state(false);
   import { createLoadState } from '../loadstate.svelte.js';
   import LoadBox from '../components/LoadBox.svelte';
   import * as S from '../strings/index.js';
@@ -16,7 +18,6 @@
     saveBuiltinMetric,
     restoreBuiltinMetric,
     previewMetric,
-    compileMetric,
     getMetricValuesForMatch,
     getMetricValuesForPlayer,
     getMetricComputeState,
@@ -42,6 +43,9 @@
   import Popover from '../components/Popover.svelte';
   import HelpButton from '../components/HelpButton.svelte';
   import SourceEditor from '../components/SourceEditor.svelte';
+  import PreviewOverlay from '../components/PreviewOverlay.svelte';
+  import Chip from '../components/Chip.svelte';
+  import { formatMetricSql } from '../format/format.js';
   import { sqlItems, METRIC_BINDS } from '../editor/sqlCompletions.js';
   import { metricTables, savedMetrics } from '../editor/completionSources.js';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -584,7 +588,7 @@
       name: m.name,
       title: m.title || '',
       shortName: m.shortName || '',
-      expr: m.expr,
+      expr: formatExpr(m.expr),
       scope: m.scope || 'match',
       format: m.format || '',
       doc: m.doc || '',
@@ -620,12 +624,23 @@
   // A built-in's Save stores its edited SQL as the override (owner ruling 44).
   // The save gate is the same live check the user save uses; the service
   // refuses anything else. Name, doc and addressing are not part of the edit.
+  // The canonical layout, applied when an expression opens in the editor and again before it is saved.
+  // An expression the formatter cannot read is kept as typed (the server reports its error when it is saved).
+  function formatExpr(expr) {
+    try {
+      return formatMetricSql(expr);
+    } catch {
+      return expr;
+    }
+  }
+
   async function saveBuiltin() {
     saveError = '';
     if (exprCheck.state === 'error') {
       saveError = `Fix the expression error first: ${exprCheck.msg}`;
       return;
     }
+    form.expr = formatExpr(form.expr);
     saving = true;
     try {
       const edit = await saveBuiltinMetric(form.id, form.expr);
@@ -668,6 +683,7 @@
       saveError = 'Expression is required.';
       return;
     }
+    form.expr = formatExpr(form.expr);
     if (!form.doc.trim()) {
       saveError = 'Doc is required for user metrics — document the formula.';
       return;
@@ -737,6 +753,7 @@
   // on-demand calculation through PreviewMetric (timing included — it
   // genuinely computed) under the draft's own statement.
   async function runPreview(target) {
+    previewOpen = true;
     previewError = '';
     const id = target ? target.id : form.id;
     const expr = target ? '' : form.expr;
@@ -767,7 +784,6 @@
         preview = {
           rows: (pv && pv.rows) || [],
           format: spec.format,
-          sql: (pv && pv.sql) || '',
           ms: pv ? pv.ms : 0,
           truncated: pv ? !!pv.truncated : false,
         };
@@ -801,25 +817,19 @@
   }
 
   // storedPreview is the SAVED-form read: rows from the canonical read
-  // (never calculated) plus the no-execution Compile of the SAME
-  // addressing for the provenance block.
+  // (never calculated). Metrics are raw SQL, so there is no compile step to show.
   async function storedPreview(id, scope, format) {
     if (scope === 'profile') {
-      const [values, names, sql] = await Promise.all([
-        getMetricValuesForPlayer('', [id]),
-        playerNameMap(),
-        compileMetric(id, ''),
-      ]);
-      return { rows: toPreviewRows(values, names), format, sql, scope };
+      const [values, names] = await Promise.all([getMetricValuesForPlayer('', [id]), playerNameMap()]);
+      return { rows: toPreviewRows(values, names), format, scope };
     }
     const match = await newestReadyMatch();
-    const sql = await compileMetric(id, '');
-    if (!match) return { rows: [], format, sql, scope, match: null };
+    if (!match) return { rows: [], format, scope, match: null };
     const [values, names] = await Promise.all([
       getMetricValuesForMatch(match.id, [id]),
       playerNameMap(),
     ]);
-    return { rows: toPreviewRows(values, names), format, sql, scope, match };
+    return { rows: toPreviewRows(values, names), format, scope, match };
   }
 
   // toPreviewRows shapes stored rows exactly like a preview's (group =
@@ -865,6 +875,12 @@
     runPreview();
   }
 </script>
+<!-- Escape collapses whichever card is expanded (each key handler checks its own). -->
+<svelte:window
+  onkeydown={(e) => {
+    editorPanel.key(e);
+  }}
+/>
 
 {#snippet rowMain(m)}
   <!-- Line 1 = the display title, the raw metric name, then the doc
@@ -883,7 +899,7 @@
     {/if}
   </span>
   <span class="bld-row-sub">
-    <span class="chip">{m.format || 'raw'}</span>
+    <Chip>{m.format || 'raw'}</Chip>
     <!-- The compute-state surface (design §4/§5): EVERY list item wears
          its state chip through StatusChip — processing quantifies with
          the live k/N feed, failed carries the engine error as its
@@ -897,17 +913,19 @@
         stage={metricProgressStage(metricProgress, m.id)}
       />
     {/if}
-    {#if m.origin === 'plugin'}
-      <span class="chip bld-plugin">{S.builder.originPlugin}</span>
+    {#if m.origin === 'builtin'}
+      <Chip tone="accent">{S.common.chipBuiltin}</Chip>
+    {:else if m.origin === 'plugin'}
+      <Chip tone="plugin">{S.common.chipPlugin}</Chip>
       {#if disabledPlugins.has(m.pluginId)}
-        <span class="chip bld-disabled">{S.builder.pluginDisabled}</span>
+        <Chip tone="bad">{S.common.chipPluginDisabled}</Chip>
       {/if}
     {/if}
     <!-- An edited built-in wears the Edited chip in the list too (owner
          ruling 50): the service sets Edited only on a builtin whose
          override is in place, and the chip goes when it is restored. -->
     {#if m.edited}
-      <span class="chip" title={S.builder.editedTitle}>{S.builder.editedChip}</span>
+      <Chip title={S.common.chipEditedTitle}>{S.common.chipEdited}</Chip>
     {/if}
   </span>
 {/snippet}
@@ -945,12 +963,10 @@
 
 <div class="view bld-view">
   <header class="view-header">
-    <div>
-      <h1>{S.builder.heading}</h1>
-      <p class="muted bld-head-note">
-        {S.builder.headNoteScopes}
-      </p>
-    </div>
+    <h1>{S.builder.heading}</h1>
+    <p class="muted bld-head-note">
+      {S.builder.headNoteScopes}
+    </p>
     <!-- Metric-language help: the shared header `?` (HelpButton.svelte
          — the ONE spelling of this idiom) opened AT the metric-language
          section (openDocs prop — no navigation, the Builder stays
@@ -989,15 +1005,6 @@
           >
         </div>
       </div>
-      <!-- Server-side search: the debounced query reaches the store
-           (LIKE over name/title) and restarts the window at cursor 0. -->
-      <input
-        class="input"
-        type="search"
-        aria-label={S.builder.searchAria}
-        placeholder={S.builder.searchPlaceholder}
-        bind:value={query}
-      />
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
@@ -1009,19 +1016,31 @@
            panel). Dismissal is the canonical Popover's (Escape /
            outside pointerdown); focus returns to the trigger on Escape
            only. -->
-      <div class="toolbar">
+      <div class="bld-search-row">
+        <!-- Server-side search: the debounced query reaches the store
+             (LIKE over name/title) and restarts the window at cursor 0. -->
+        <input
+    class="input bld-search"
+        type="search"
+        aria-label={S.builder.searchAria}
+        placeholder={S.builder.searchPlaceholder}
+        bind:value={query}
+      />
         <span class="bld-filter-host" bind:this={filterAnchor}>
           <button
-            class="input multi-trigger"
+            class="btn small bld-filter-btn"
             class:multi-open={filterOpen}
             bind:this={filterTrigger}
             aria-haspopup="true"
             aria-expanded={filterOpen}
             aria-controls={filterOpen ? 'bld-filter-pop' : null}
+            aria-label={S.builder.filtersLabel}
             title={S.builder.filtersTitle}
             onclick={() => (filterOpen = !filterOpen)}
-            ><span class="codicon codicon-filter" aria-hidden="true"></span> {S.builder.filtersLabel}</button
           >
+            <span class="codicon codicon-filter" aria-hidden="true"></span>
+            <span class="codicon codicon-chevron-{filterOpen ? 'up' : 'down'}" aria-hidden="true"></span>
+          </button>
           <Popover
             open={filterOpen}
             anchor={filterAnchor}
@@ -1164,7 +1183,7 @@
     </section>
 
     <div class="bld-right" use:fillHeight>
-      <section class="panel">
+      <section class="panel bld-editor" class:editor-expanded={editorPanel.on}>
         <div class="row-between">
           <h2>{form.id ? S.builder.editMetric : S.builder.newMetric}</h2>
           <!-- The header's right slot holds the compact state chip FIRST
@@ -1183,17 +1202,27 @@
             {#if builtinLoaded}
               <!-- A built-in edits in place (owner ruling 44): the chip names
                    it in the user's words, and an edit shows beside it. -->
-              <span class="chip bld-readonly" title={S.builder.builtinEditNote}
-                >{S.builder.builtinChip}</span>
+              <Chip tone="accent" title={S.builder.builtinEditNote}>{S.common.chipBuiltin}</Chip>
               {#if form.edited}
-                <span class="chip" title={S.builder.editedTitle}>{S.builder.editedChip}</span>
+                <Chip title={S.common.chipEditedTitle}>{S.common.chipEdited}</Chip>
               {/if}
             {:else if readOnly}
               <!-- Plugin rows: immutable through Save — saving stores a
                    copy of this definition as your own metric. -->
-              <span class="chip bld-readonly" title={S.builder.pluginImmutable}
-                >{S.builder.pluginReadOnlyChip}</span>
+              <Chip tone="accent" title={S.builder.pluginImmutable}>{S.common.chipReadOnly}</Chip>
             {/if}
+            <!-- The expand toggle belongs to the card: the whole editor
+                 (fields and expression) takes the window, not just the source. -->
+            <button
+              type="button"
+              class="btn small card-expand"
+              aria-label={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+              title={editorPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+              aria-expanded={editorPanel.on}
+              onclick={editorPanel.toggle}
+            >
+              <span class="codicon codicon-{editorPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+            </button>
           </div>
         </div>
 
@@ -1214,9 +1243,10 @@
         {/if}
 
         <!-- Two fixed rows (owner wave): row 1 = Name / Title / Short
-             name, row 2 = Format — the grid below is a fixed
-             three columns, so the DOM order IS the row order. Doc and
-             Expression keep their full-width rows underneath. -->
+             name, row 2 = Format (small, left) beside Doc (the rest of
+             the row) — the grid below is six columns, so the DOM order
+             IS the row order. Expression takes the full-width row under
+             them and the rest of the card's height. -->
         <div class="bld-fields">
           <!-- readonly, never disabled, on the text fields (owner wave):
                a built-in's contents stay selectable and copyable while
@@ -1255,7 +1285,7 @@
               readonly={builtinLoaded}
             />
           </div>
-          <div class="bld-field half">
+          <div class="bld-field">
             <label class="field-label" for="bld-format">{S.builder.fieldFormat}</label>
             <!-- The vocabulary renders from THE canonical list
                  (lib/metricformats.js — same order and tokens as the
@@ -1269,7 +1299,7 @@
               {/each}
             </select>
           </div>
-          <div class="bld-field wide">
+          <div class="bld-field doc">
             <label class="field-label" for="bld-doc">{S.builder.fieldDoc}</label>
             <textarea
               id="bld-doc"
@@ -1287,12 +1317,13 @@
               cls="bld-expr"
               language="sql"
               rows={4}
+              expandable={false}
+              fill
               ariaLabel={S.builder.fieldExpression}
               placeholder={EXAMPLE}
               bind:value={form.expr}
               completions={builderCompletions}
             />
-            <p class="bld-hint mono">One SELECT or WITH statement over the metric-readable tables; it returns subject_key, dim and value. :match_id, :steam_id and :round are the reserved binds.</p>
           </div>
         </div>
 
@@ -1333,27 +1364,22 @@
           {/if}
           <span class="bld-valid">
             {#if exprCheck.state === 'pending'}
-              <span class="bld-expr-state muted">{S.builder.exprChecking}</span>
+              <span class="validity muted">{S.builder.exprChecking}</span>
             {:else if exprCheck.state === 'valid'}
-              <span class="bld-expr-state ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</span>
+              <span class="validity ok"><span class="codicon codicon-check"></span> {S.builder.exprValid}</span>
             {:else if exprCheck.state === 'error'}
               <!-- w19 23d: the full line rides the title — the slot
                    ellipsizes a long error in place. -->
-              <span class="bld-expr-state bad" title={exprErrorText}>
+              <span class="validity bad" title={exprErrorText}>
                 <span class="codicon codicon-error"></span> {exprErrorText}
               </span>
             {/if}
           </span>
           <span class="toolbar">
-            <span class="muted bld-note">
-              <!-- The disabled Save's reason, in the user's words (the
-                   button carries the same string as its tooltip). -->
-              {builtinLoaded
-                ? form.edited
-                  ? S.builder.builtinEditedNote
-                  : S.builder.builtinEditNote
-                : S.builder.saveNoteDefault}
-            </span>
+            <button class="btn" onclick={() => runPreview()} disabled={previewBusy}>
+              <span class="codicon codicon-play"></span>
+              {previewBusy ? S.builder.running : S.builder.preview}
+            </button>
             <button
               class="btn primary"
               onclick={save}
@@ -1370,134 +1396,104 @@
         </div>
       </section>
 
-      <section class="panel bld-preview" class:preview-expanded={previewPanel.on} onkeydown={previewPanel.key}>
-        <div class="row-between">
-          <h2>{S.builder.previewHeading}</h2>
-          <div class="toolbar">
-            <button
-          type="button"
-          class="btn small preview-expand"
-          aria-label={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-          title={previewPanel.on ? S.common.collapsePreview : S.common.expandPreview}
-          aria-expanded={previewPanel.on}
-          onclick={previewPanel.toggle}
-        >
-          <span class="codicon codicon-{previewPanel.on ? 'screen-normal' : 'screen-full'}"></span>
-        </button>
-            <!-- The preview panel's state chip sits immediately LEFT of
-                 the Preview button (w19 item 23c — the owner's ruling),
-                 the same cluster order as hint → Save in the
-                 editor's actions line. Position only: the chip's markup
-                 and wording are untouched, and the ms/truncated chips
-                 keep their slots after the button. -->
-            {#if preview && !previewAdhoc && previewKey}
-              <StatusChip
-                status={stateOf(previewKey.id)}
-                title={chipTitleOf(previewKey.id)}
-                progress={metricProgressFrac(metricProgress, previewKey.id)}
-                stage={metricProgressStage(metricProgress, previewKey.id)}
-              />
-            {/if}
-            <button class="btn primary" onclick={() => runPreview()} disabled={previewBusy}>
-              <span class="codicon codicon-play"></span>
-              {previewBusy ? S.builder.running : S.builder.preview}
-            </button>
-            <!-- Timing is provenance ONLY for an ad-hoc run (it genuinely
-                 computed — design §5). A clean-saved preview shows the
-                 STATE instead: it read stored rows and timed nothing. -->
-            {#if preview && previewAdhoc && preview.ms != null}
-              <span class="chip">{preview.ms} ms</span>
-            {/if}
-            {#if preview && preview.truncated}
-              <span class="chip">{S.builder.previewTruncated}</span>
-            {/if}
-          </div>
-        </div>
-
-        {#if previewError}
-          <p class="error" role="alert">{previewError}</p>
-        {:else if preview}
-          {#if !previewAdhoc}
-            <!-- Which unit the stored rows came from (design §5: the
-                 match is stated in the panel; profile reads every
-                 player's career rows). -->
-            <p class="muted bld-note">
-              {S.builder.storedValuesLabel}
-              {#if preview.scope === 'profile'}
-                {S.builder.storedProfileScope}
-              {:else if preview.match}
-                {S.builder.storedMatchScope}{preview.match.id}{preview.match.map
-                  ? ` (${preview.match.map})`
-                  : ''}
-              {:else}
-                {S.builder.storedNoMatch}
-              {/if}
-            </p>
+      <PreviewOverlay open={previewOpen} title={S.builder.previewHeading} onClose={() => (previewOpen = false)}>
+        {#snippet chips()}
+          {#if preview && !previewAdhoc && previewKey}
+          <StatusChip
+            status={stateOf(previewKey.id)}
+            title={chipTitleOf(previewKey.id)}
+            progress={metricProgressFrac(metricProgress, previewKey.id)}
+            stage={metricProgressStage(metricProgress, previewKey.id)}
+          />
           {/if}
-          {#if preview.rows.length === 0}
-            <p class="muted" role="status">
-              {previewAdhoc ? S.builder.noGroups : S.builder.noStoredValues}
-            </p>
+          <!-- Timing is provenance ONLY for an ad-hoc run (it genuinely
+             computed — design §5). A clean-saved preview shows the
+             STATE instead: it read stored rows and timed nothing. -->
+          {#if preview && previewAdhoc && preview.ms != null}
+          <Chip>{preview.ms} ms</Chip>
+          {/if}
+          {#if preview && preview.truncated}
+          <Chip>{S.builder.previewTruncated}</Chip>
+          {/if}
+        {/snippet}
+    {#if previewError}
+      <p class="error" role="alert">{previewError}</p>
+    {:else if preview}
+      {#if !previewAdhoc}
+        <!-- Which unit the stored rows came from (design §5: the
+             match is stated in the panel; profile reads every
+             player's career rows). -->
+        <p class="muted bld-note">
+          {S.builder.storedValuesLabel}
+          {#if preview.scope === 'profile'}
+            {S.builder.storedProfileScope}
+          {:else if preview.match}
+            {S.builder.storedMatchScope}{preview.match.id}{preview.match.map
+              ? ` (${preview.match.map})`
+              : ''}
           {:else}
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <SortTh
-                      label={S.builder.colGroup}
-                      active={previewSortKey === 'group'}
-                      desc={previewSortDesc}
-                      onclick={() => togglePreviewSort('group')}
-                    />
-                    <SortTh
-                      label={S.builder.colLabel}
-                      active={previewSortKey === 'label'}
-                      desc={previewSortDesc}
-                      onclick={() => togglePreviewSort('label')}
-                    />
-                    <SortTh
-                      label={S.builder.colValue}
-                      cls="num"
-                      active={previewSortKey === 'value'}
-                      desc={previewSortDesc}
-                      onclick={() => togglePreviewSort('value')}
-                    />
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each sortedPreviewRows as r, i (i)}
-                    <tr
-                      class:bld-missing={r.value == null}
-                      class:bld-egroup={!r.group}
-                      title={r.value == null ? S.builder.noDataBehind : ''}
-                    >
-                      <td class="mono">{r.group || '—'}</td>
-                      <td>
-                        <!-- A player grouping carries the Steam id in r.group
-                             (ProfileLink's own isSteam guard makes that a
-                             link); every other grouping — side, weapon, … —
-                             stays plain text. -->
-                        <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
-                      </td>
-                      <td class="num">{fmtMetric(r.value, previewFormat, r.valueKey, () => r.label)}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
+            {S.builder.storedNoMatch}
           {/if}
-          <!-- Provenance copy: the statement as written. A raw statement is
-               its own display SQL and runs as it reads. -->
-          <details class="bld-sql">
-            <summary>{S.builder.compiledSql}</summary>
-            <pre class="mono">{preview.sql}</pre>
-          </details>
-        {:else}
-          <p class="muted" role="status">
-            {S.builder.noPreviewYetLead} <span class="codicon codicon-play"></span> {S.builder.noPreviewYetTail}
-          </p>
-        {/if}
-      </section>
+        </p>
+      {/if}
+      {#if preview.rows.length === 0}
+        <p class="muted" role="status">
+          {previewAdhoc ? S.builder.noGroups : S.builder.noStoredValues}
+        </p>
+      {:else}
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <SortTh
+                  label={S.builder.colGroup}
+                  active={previewSortKey === 'group'}
+                  desc={previewSortDesc}
+                  onclick={() => togglePreviewSort('group')}
+                />
+                <SortTh
+                  label={S.builder.colLabel}
+                  active={previewSortKey === 'label'}
+                  desc={previewSortDesc}
+                  onclick={() => togglePreviewSort('label')}
+                />
+                <SortTh
+                  label={S.builder.colValue}
+                  cls="num"
+                  active={previewSortKey === 'value'}
+                  desc={previewSortDesc}
+                  onclick={() => togglePreviewSort('value')}
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {#each sortedPreviewRows as r, i (i)}
+                <tr
+                  class:bld-missing={r.value == null}
+                  class:bld-egroup={!r.group}
+                  title={r.value == null ? S.builder.noDataBehind : ''}
+                >
+                  <td class="mono">{r.group || '—'}</td>
+                  <td>
+                    <!-- A player grouping carries the Steam id in r.group
+                         (ProfileLink's own isSteam guard makes that a
+                         link); every other grouping — side, weapon, … —
+                         stays plain text. -->
+                    <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
+                  </td>
+                  <td class="num">{fmtMetric(r.value, previewFormat, r.valueKey, () => r.label)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    {:else}
+      <p class="muted" role="status">
+        {S.builder.noPreviewYetLead} <span class="codicon codicon-play"></span> {S.builder.noPreviewYetTail}
+      </p>
+    {/if}
+      </PreviewOverlay>
     </div>
   </div>
 

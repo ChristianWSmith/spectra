@@ -829,6 +829,9 @@ CREATE TABLE IF NOT EXISTS metrics (
 	title TEXT NOT NULL DEFAULT '',
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
+	-- The expanded form of expr: the plain SQL that runs. expr keeps the macro form
+	-- (what the editor shows); ExpandMetricMacros writes this at every save.
+	run_expr TEXT NOT NULL DEFAULT '',
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',

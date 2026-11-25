@@ -1,8 +1,7 @@
 // The builtin component registry: every component shipped with the app,
 // as Svelte source. A builtin is edited in place
 // (ruling 43): the Component builder loads it, and Save stores an override of
-// that builtin. Duplicate-to-edit is cancelled for builtins, so the builder
-// offers no Duplicate for one; Duplicate is for the user's own components.
+// that builtin. A built-in is edited in place; there is no copy action.
 //
 // Ids live in a reserved namespace: every id starts with BUILTIN_PREFIX
 // (the Go twin is componentservice.go BuiltinComponentPrefix, which
@@ -51,7 +50,7 @@ function registryList(entries) {
 
 export const BUILTIN_COMPONENTS = registryList([
   // The Match view's panels. Each is mounted
-  // by the Match view with its context; duplicating one gives a user copy.
+  // by the Match view with its context.
   // The compiled registry: the Profile, Reports, Explorer, Match-tab, Economy
   // and Utility components and their panels (builtins/panels.js).
   ...COMPILED_COMPONENTS,

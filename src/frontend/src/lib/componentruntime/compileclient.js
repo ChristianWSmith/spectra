@@ -113,8 +113,10 @@ function ensureWorker() {
 }
 
 // compileWork posts one compile and resolves its reply, or {cancelled: true}
-// when cancelCompiles stopped it. Tracked as background work.
-export function compileWork(source, filename) {
+// when cancelCompiles stopped it. Tracked as background work, unless quiet:
+// the builder's live check runs on every keystroke, so it does not raise the
+// work indicator (a save still does).
+export function compileWork(source, filename, { quiet = false } = {}) {
   requested = true;
   const w = ensureWorker();
   const id = nextId++;
@@ -124,7 +126,7 @@ export function compileWork(source, filename) {
   shared().active++;
   notify();
   w.postMessage({ id, source: String(source), filename });
-  return track(done);
+  return quiet ? done : track(done);
 }
 
 // cancelCompiles stops every compile in flight: the worker is terminated and

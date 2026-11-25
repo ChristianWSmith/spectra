@@ -99,7 +99,7 @@ var metricValueFreshCond = `v.metric_version >= m.version AND (v.rule_version >=
 // scope derives to profile (its expr reads :steam_id). The coverage query
 // tests membership through json_each, so the scope is never a column.
 func (s *Store) profileMetricIDsJSON() (string, error) {
-	rows, err := s.db.Query(`SELECT id, expr FROM metrics`)
+	rows, err := s.db.Query(`SELECT id, run_expr FROM metrics`)
 	if err != nil {
 		return "", err
 	}
@@ -1127,7 +1127,7 @@ func (s *Store) ReadyRounds() ([]RawRoundKey, error) {
 // refuses keeps ” and reads behind. Rows are collected before any write:
 // the store's one connection cannot hold a cursor across an UPDATE.
 func (s *Store) backfillTouched() error {
-	rows, err := s.db.Query(`SELECT id, expr FROM metrics WHERE touched = ''`)
+	rows, err := s.db.Query(`SELECT id, run_expr FROM metrics WHERE touched = ''`)
 	if err != nil {
 		return fmt.Errorf("couldn't derive the touched tables: %w", err)
 	}

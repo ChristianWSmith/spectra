@@ -1,6 +1,13 @@
 <script>
   import { fillHeight } from '../fillheight.js';
+  import * as S from '../strings/index.js';
   import SourceEditor from '../components/SourceEditor.svelte';
+  import { expandable } from '../expandable.svelte.js';
+  import PreviewOverlay from '../components/PreviewOverlay.svelte';
+  // The Statement card expands to the window (the toggle in its header).
+  const statementPanel = expandable();
+  // The run's results open full screen (PreviewOverlay) when a run returns rows.
+  let resultsOpen = $state(false);
   import { sqlItems } from '../editor/sqlCompletions.js';
   import { consoleTables } from '../editor/completionSources.js';
   import { createLoadState } from '../loadstate.svelte.js';
@@ -176,13 +183,16 @@
       if (r && r.err) {
         result = null;
         runError = r.err;
+        resultsOpen = false;
       } else {
         result = r;
         runError = '';
+        resultsOpen = true;
       }
     } catch (e) {
       result = null;
       runError = errText(e);
+      resultsOpen = false;
     } finally {
       clearTimeout(timer);
       running = false;
@@ -408,13 +418,17 @@
     );
   }
 </script>
+<!-- Escape collapses whichever card is expanded (each key handler checks its own). -->
+<svelte:window
+  onkeydown={(e) => {
+    statementPanel.key(e);
+  }}
+/>
 
 <div class="view sql-view">
   <header class="view-header">
-    <div>
-      <h1>SQL console</h1>
-      <p class="muted sql-head-note">{DEFAULTS} · read-only</p>
-    </div>
+    <h1>SQL console</h1>
+    <p class="muted sql-head-note">{DEFAULTS} · read-only</p>
     <!-- The header's own Run button was removed (N8, 2026-11-14): it was
          redundant with the editor card's Run below. The spacer stays —
          it still right-aligns the slow chip. -->
@@ -481,10 +495,21 @@
     </aside>
 
     <div class="sql-main" use:fillHeight>
-      <section class="panel">
+      <section class="panel" class:editor-expanded={statementPanel.on}>
         <div class="row-between">
           <h2>Statement</h2>
-          <span class="muted sql-defaults">{DEFAULTS}</span>
+          <div class="toolbar">
+            <button
+              type="button"
+              class="btn small card-expand"
+              aria-label={statementPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+              title={statementPanel.on ? S.common.collapseEditor : S.common.expandEditor}
+              aria-expanded={statementPanel.on}
+              onclick={statementPanel.toggle}
+            >
+              <span class="codicon codicon-{statementPanel.on ? 'screen-normal' : 'screen-full'}"></span>
+            </button>
+          </div>
         </div>
         <SourceEditor
           bind:this={editor}
@@ -495,6 +520,8 @@
           ariaLabel="SQL statement"
           completions={consoleCompletions}
           onrun={() => run()}
+          expandable={false}
+          fill
         />
         <!-- The save form lives in the STATEMENT card (owner,
              2026-11-15): name/description belong with the statement they
@@ -525,47 +552,6 @@
                  as the canonical Popover (Replay's speed / Builder's
                  filters): the host span is the anchor, the trigger
                  carries the aria trio, Escape returns focus to it. -->
-            <span class="sql-pop-host" bind:this={exportAnchor}>
-              <button
-                class="btn"
-                bind:this={exportTrigger}
-                disabled={!result}
-                aria-haspopup="true"
-                aria-expanded={exportOpen}
-                aria-controls={exportOpen ? 'sql-export-pop' : null}
-                title="Export every returned row as JSON or CSV"
-                onclick={() => (exportOpen = !exportOpen)}
-                >Export <span class="codicon codicon-chevron-down"></span></button
-              >
-              <Popover
-                open={exportOpen}
-                anchor={exportAnchor}
-                onClose={closeExport}
-                onOutside={closeExportOutside}
-              >
-                <div
-                  class="sql-pop"
-                  id="sql-export-pop"
-                  role="group"
-                  aria-label="Export format"
-                >
-                  <button
-                    class="btn small"
-                    onclick={() => {
-                      closeExport();
-                      exportJSON();
-                    }}>JSON</button
-                  >
-                  <button
-                    class="btn small"
-                    onclick={() => {
-                      closeExport();
-                      exportCSV();
-                    }}>CSV</button
-                  >
-                </div>
-              </Popover>
-            </span>
             <button
               class="btn primary"
               title="Ctrl/Cmd+Enter runs the statement."
@@ -589,9 +575,9 @@
         {/if}
       </section>
 
-      <section class="panel sql-results-panel">
-        <div class="row-between">
-          <h2>Results</h2>
+      <!-- The run's results: Run opens them full screen (PreviewOverlay); the X or Escape closes them. -->
+      <PreviewOverlay open={resultsOpen} title="Results" onClose={() => (resultsOpen = false)}>
+        {#snippet chips()}
           {#if result}
             <div class="sql-chips">
               <span class="chip">{result.ms} ms</span>
@@ -603,59 +589,101 @@
               {/if}
             </div>
           {/if}
-        </div>
-        {#if result}
-          {#if result.rows.length === 0}
-            <p class="muted" role="status">0 rows.</p>
-          {:else}
-            <div class="table-scroll sql-results">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    {#each result.columns as c (c)}
-                      <th scope="col" title={c}>{c}</th>
-                    {/each}
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each pageRows as row, ri ((resultPage - 1) * RESULT_PAGE + ri)}
-                    <tr>
-                      {#each row as v, ci (ci)}
-                        <td class={cellClass(v)} title={cellTitle(v)}>{cellText(v)}</td>
-                      {/each}
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+          <!-- Export moves with the results: it exports what is on screen here. -->
+        <span class="sql-pop-host" bind:this={exportAnchor}>
+          <button
+            class="btn"
+            bind:this={exportTrigger}
+            disabled={!result}
+            aria-haspopup="true"
+            aria-expanded={exportOpen}
+            aria-controls={exportOpen ? 'sql-export-pop' : null}
+            title="Export every returned row as JSON or CSV"
+            onclick={() => (exportOpen = !exportOpen)}
+            >Export <span class="codicon codicon-chevron-down"></span></button
+          >
+          <Popover
+            open={exportOpen}
+            anchor={exportAnchor}
+            onClose={closeExport}
+            onOutside={closeExportOutside}
+          >
+            <div
+              class="sql-pop"
+              id="sql-export-pop"
+              role="group"
+              aria-label="Export format"
+            >
+              <button
+                class="btn small"
+                onclick={() => {
+                  closeExport();
+                  exportJSON();
+                }}>JSON</button
+              >
+              <button
+                class="btn small"
+                onclick={() => {
+                  closeExport();
+                  exportCSV();
+                }}>CSV</button
+              >
             </div>
-            <!-- Pager footer — hidden while one page holds every row: the
-                 range is ABSOLUTE over the returned rows (the muted left
-                 slot), Prev/Next park right and each disables at its own
-                 end. -->
-            {#if pageCount > 1}
-              <div class="row-between">
-                <span class="muted" role="status"
-                  >Rows {pageStart}–{pageEnd} of {result.rows.length}</span
-                >
-                <span class="toolbar">
-                  <button
-                    class="btn small"
-                    disabled={resultPage <= 1}
-                    onclick={() => (resultPage -= 1)}>Prev</button
-                  >
-                  <button
-                    class="btn small"
-                    disabled={resultPage >= pageCount}
-                    onclick={() => (resultPage += 1)}>Next</button
-                  >
-                </span>
-              </div>
-            {/if}
-          {/if}
-        {:else if !running && !runError}
-          <p class="muted" role="status">Run a statement to see rows here.</p>
+          </Popover>
+        </span>
+        {/snippet}
+      {#if result}
+        {#if result.rows.length === 0}
+        <p class="muted" role="status">0 rows.</p>
+      {:else}
+        <div class="table-scroll sql-results">
+          <table class="data-table">
+            <thead>
+              <tr>
+                {#each result.columns as c (c)}
+                  <th scope="col" title={c}>{c}</th>
+                {/each}
+              </tr>
+            </thead>
+            <tbody>
+              {#each pageRows as row, ri ((resultPage - 1) * RESULT_PAGE + ri)}
+                <tr>
+                  {#each row as v, ci (ci)}
+                    <td class={cellClass(v)} title={cellTitle(v)}>{cellText(v)}</td>
+                  {/each}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <!-- Pager footer — hidden while one page holds every row: the
+             range is ABSOLUTE over the returned rows (the muted left
+             slot), Prev/Next park right and each disables at its own
+             end. -->
+        {#if pageCount > 1}
+          <div class="row-between">
+            <span class="muted" role="status"
+              >Rows {pageStart}–{pageEnd} of {result.rows.length}</span
+            >
+            <span class="toolbar">
+              <button
+                class="btn small"
+                disabled={resultPage <= 1}
+                onclick={() => (resultPage -= 1)}>Prev</button
+              >
+              <button
+                class="btn small"
+                disabled={resultPage >= pageCount}
+                onclick={() => (resultPage += 1)}>Next</button
+              >
+            </span>
+          </div>
         {/if}
-      </section>
+      {/if}
+    {:else if !running && !runError}
+      <p class="muted" role="status">Run a statement to see rows here.</p>
+    {/if}
+      </PreviewOverlay>
 
       <!-- Saved queries above history: one column, never side by side — a
            long history row can only scroll inside its own list, so it can

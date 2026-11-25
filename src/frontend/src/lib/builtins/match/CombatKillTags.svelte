@@ -210,18 +210,20 @@
             <!-- The Round cell is TEXT, not a control: the row's ONE ▶ is the
                    event/follow play above. -->
             <td class="num">{g.round}</td>
-            <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}
-              >{roundClock(g.tick, rbn.get(g.round), tickRate)}</td
-            >
+            <td class="num mono" title={S.fill(S.combat.tickTitle, { tick: g.tick })}>
+              {roundClock(g.tick, rbn.get(g.round), tickRate)}
+            </td>
             <td>
               <!-- ONE kill, up to FOUR kind facts; each chip keeps its own
                      perspective title, plus an sr-only combined line. -->
               {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span
                   class="chip comb-kind-chip {k}"
-                  title={KILL_TAG_KIND_TITLES[k] || k}>{k}</span
-                >{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only"
-                  >{S.combat.oneKillPrefix}{g.kinds.map((k) => KILL_TAG_KIND_TITLES[k] || k).join('; ')}</span
-                >{/if}
+                  title={KILL_TAG_KIND_TITLES[k] || k}
+                >
+                  {k}
+                </span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">
+                  {S.combat.oneKillPrefix}{g.kinds.map((k) => KILL_TAG_KIND_TITLES[k] || k).join('; ')}
+                </span>{/if}
             </td>
             <td>
               <ProfileLink

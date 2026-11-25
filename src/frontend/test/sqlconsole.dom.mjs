@@ -216,10 +216,16 @@ for (const rel of ['services.js', 'download.js', 'csv.js', 'viewstate.svelte.js'
 sqlSrc = sqlSrc.split("from '../components/StatusChip.svelte'").join("from './statuschip.js'");
 sqlSrc = sqlSrc.split("from '../components/HelpButton.svelte'").join("from './helpbutton.js'");
 sqlSrc = sqlSrc.split("from '../components/Popover.svelte'").join("from './popover.js'");
+// The full-screen results (PreviewOverlay), compiled beside the view.
+svelteCompile(readFileSync('src/lib/components/PreviewOverlay.svelte', 'utf8').replace("from '../strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`), 'PreviewOverlay.svelte', join(dir, 'previewoverlay.js'));
+sqlSrc = sqlSrc.split("from '../components/PreviewOverlay.svelte'").join("from './previewoverlay.js'");
 sqlSrc = sqlSrc.split("from '../components/SourceEditor.svelte'").join("from './sourceeditor.js'");
 // The load state (a runes module) and the shell (a component) the view imports, compiled beside it.
 writeFileSync(join(dir, 'loadstate.svelte.js'), compileModule(readFileSync('src/lib/loadstate.svelte.js', 'utf8'), { filename: 'loadstate.svelte.js', generate: 'client' }).js.code);
 svelteCompile(readFileSync('src/lib/components/LoadBox.svelte', 'utf8').replace("from '../componentruntime/sizememory.js'", `from '${fileURL('src/lib/componentruntime/sizememory.js')}'`), 'LoadBox.svelte', join(dir, 'loadbox.js'));
+// The expand state the cards share (a runes module), compiled beside the view.
+writeFileSync(join(dir, 'expandable.svelte.js'), compileModule(readFileSync('src/lib/expandable.svelte.js', 'utf8').replace("from './strings/index.js'", `from '${fileURL('src/lib/strings/index.js')}'`), { filename: 'expandable.svelte.js', generate: 'client' }).js.code);
+sqlSrc = sqlSrc.replace("from '../expandable.svelte.js'", `from '${fileURL(join(dir, 'expandable.svelte.js'))}'`);
 sqlSrc = sqlSrc.replace("from '../loadstate.svelte.js'", `from '${fileURL(join(dir, 'loadstate.svelte.js'))}'`).replace("from '../components/LoadBox.svelte'", "from './loadbox.js'");
 svelteCompile(sqlSrc, 'SqlConsole.svelte', join(dir, 'sqlconsole-bundle.js'));
 
@@ -370,23 +376,26 @@ check(
   saveErr ? `${saveErr.className} ${saveErr.textContent.trim()}` : 'none',
 );
 
-console.log('C2. every source box has the expand toggle: the big-screen view takes the window, Escape or the toggle restores it');
+console.log('C2. the Statement card expands to the window from its top-right toggle; Escape restores it');
 {
-  const wrap = document.querySelector('.sql-editor')?.closest('.source-wrap');
-  const toggle = wrap?.querySelector('.source-expand');
+  const stmt = document.querySelector('.sql-editor')?.closest('section.panel');
+  const toggle = stmt?.querySelector(':scope > .row-between .card-expand');
   check(
-    'the statement box has an expand toggle, labelled for its state',
+    'the statement card has its toggle in the header, labelled for its state',
     !!toggle && toggle.getAttribute('aria-label') === 'Expand editor' && toggle.getAttribute('aria-expanded') === 'false',
   );
+  check('the statement box carries no toggle of its own', !document.querySelector('.sql-editor')?.closest('.source-wrap')?.querySelector('.source-expand'));
   click(toggle);
   await sleep();
   check(
-    'the toggle expands the box (the same editor, now the big-screen wrapper)',
-    wrap?.classList.contains('expanded') && toggle.getAttribute('aria-expanded') === 'true' && toggle.getAttribute('aria-label') === 'Collapse editor',
+    'the toggle expands the whole statement card',
+    stmt?.classList.contains('editor-expanded') && toggle.getAttribute('aria-expanded') === 'true' && toggle.getAttribute('aria-label') === 'Collapse editor',
   );
-  wrap?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  stmt?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await sleep();
-  check('Escape collapses the big-screen view', !wrap?.classList.contains('expanded'));
+  check('Escape collapses the expanded statement card', !stmt?.classList.contains('editor-expanded'));
+
+  check('the Results card is gone from the page; Run opens the results full screen instead', !document.querySelector('.sql-results-panel') && !document.querySelector('.preview-overlay'));
 }
 
 console.log('D. each history line is a row: a load body plus Remove');
@@ -527,11 +536,12 @@ console.log('H. the results grid pages its rows — one page at a time, every ro
 bindings.resetCalls();
 click(runBtn);
 await sleep(80);
-const resultPanel = panelByHeading('Results');
+const resultPanel = document.querySelector('.preview-overlay');
+check('Run opens the results full screen (PreviewOverlay titled Results)', !!resultPanel && resultPanel.querySelector('h2')?.textContent.trim() === 'Results');
 const gridRows = () => [...resultPanel.querySelectorAll('tbody tr')];
 // The card has TWO .row-between children: the heading/chips header and
 // the pager footer — the footer is the LAST one.
-const footerRows = () => [...resultPanel.querySelectorAll(':scope > .row-between')];
+const footerRows = () => [...resultPanel.querySelectorAll('.row-between')];
 const pager = () => footerRows()[footerRows().length - 1];
 const pagerText = () => pager()?.querySelector('.muted')?.textContent.replace(/\s+/g, ' ').trim();
 const pagerBtn = (label) =>
@@ -591,6 +601,10 @@ check(
   footerRows().length === 1 && gridRows().length === 3,
   `${footerRows().length} .row-between, ${gridRows().length} rows`,
 );
+
+click(document.querySelector('.preview-overlay .preview-close'));
+await sleep();
+check('the X closes the results overlay', !document.querySelector('.preview-overlay'));
 
 console.log('I. the Export control is ONE popover offering JSON then CSV (the canonical idiom)');
 // Back on the 25-row result: H's last run left the single-page fixture,

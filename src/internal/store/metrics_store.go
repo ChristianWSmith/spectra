@@ -19,7 +19,7 @@ import (
 // metricColumns is the stored metrics column list in scan order. There is
 // no scope, subject or partition column (ruling 51): scope
 // is derived from the expr's binds on scan (ScopeOfExpr).
-const metricColumns = `id, name, title, short_name, expr, format, doc, origin,
+const metricColumns = `id, name, title, short_name, expr, run_expr, format, doc, origin,
 	plugin_id, touched, version, created_at`
 
 // touchedColumn encodes a touched set for metrics.touched: the sorted table
@@ -45,13 +45,13 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		touched   string
 	)
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr,
+		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.RunExpr,
 		&m.Format, &m.Doc, &m.Origin, &m.PluginID, &touched, &m.Version, &createdAt,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
 	}
-	m.Scope = ScopeOfExpr(m.Expr)
+	m.Scope = ScopeOfExpr(m.RunExpr)
 	m.Touched = parseTouched(touched)
 	m.CreatedAt = nullTime(createdAt)
 	return m, nil
@@ -428,9 +428,9 @@ func getMetricRow(q metricsExec, id int64) (models.MetricRow, error) {
 // write handle, the atomic save on its transaction.
 func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 	res, err := q.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, format, doc, origin, plugin_id, touched, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr),
+		`INSERT INTO metrics (name, title, short_name, expr, run_expr, format, doc, origin, plugin_id, touched, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.RunExpr),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
 		touchedColumn(m.Touched), time.Now(),
 	)
@@ -470,9 +470,9 @@ func updateMetric(q metricsExec, m models.MetricRow, builtinEdit bool) error {
 		}
 	}
 	if _, err := q.Exec(
-		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, format = ?,
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, run_expr = ?, format = ?,
 			doc = ?, plugin_id = ?, touched = ? WHERE id = ?`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr),
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.RunExpr),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), touchedColumn(m.Touched), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {
@@ -621,7 +621,11 @@ func (s *Store) saveMetricWithOverride(m models.MetricRow, deps []string, rewrit
 		}
 	}
 	for _, r := range rewrites {
-		res, err := tx.Exec(`UPDATE metrics SET expr = ? WHERE id = ?`, scrub(r.Expr), r.ID)
+		run, err := ExpandMetricMacros(r.Expr)
+		if err != nil {
+			return models.MetricRow{}, fmt.Errorf("couldn't update the dependent metric: %w", err)
+		}
+		res, err := tx.Exec(`UPDATE metrics SET expr = ?, run_expr = ? WHERE id = ?`, scrub(r.Expr), scrub(run), r.ID)
 		if err != nil {
 			return models.MetricRow{}, fmt.Errorf("couldn't update the dependent metric: %w", err)
 		}

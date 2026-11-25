@@ -104,14 +104,18 @@
       class="btn small comb-kind"
       class:active={clutchWon}
       aria-pressed={clutchWon}
-      onclick={() => (clutchWon = !clutchWon)}>{S.combat.wonToggle}</button
+      onclick={() => (clutchWon = !clutchWon)}
     >
+      {S.combat.wonToggle}
+    </button>
     <button
       class="btn small comb-kind"
       class:active={clutchLost}
       aria-pressed={clutchLost}
-      onclick={() => (clutchLost = !clutchLost)}>{S.combat.lostToggle}</button
+      onclick={() => (clutchLost = !clutchLost)}
     >
+      {S.combat.lostToggle}
+    </button>
   </div>
   {#if clutches.length === 0 && !error}
     <EmptyNote>{S.combat.noClutches}</EmptyNote>
@@ -161,9 +165,9 @@
                 />
               </td>
               <td>
-                <span class="chip status {c.won ? 'ok' : 'bad'}"
-                  >{c.won ? S.combat.clutchWon : S.combat.clutchLost}</span
-                >
+                <span class="chip status {c.won ? 'ok' : 'bad'}">
+                  {c.won ? S.combat.clutchWon : S.combat.clutchLost}
+                </span>
               </td>
               <td>
                 {#if c.bombState && c.bombState !== 'none'}

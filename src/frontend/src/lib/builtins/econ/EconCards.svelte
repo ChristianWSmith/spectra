@@ -4,7 +4,14 @@
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import { fmtMetric } from '../../fmt.js';
-  import { DASH, roundStartTick, roundEndTick, hashOf, entryLoopSpan, loadEconomy } from '../../builtinhelpers.js';
+  import {
+    DASH,
+    roundStartTick,
+    roundEndTick,
+    hashOf,
+    entryLoopSpan,
+    loadEconomy,
+  } from '../../builtinhelpers.js';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',
@@ -167,7 +174,8 @@
       return {
         key: c.metric,
         label: c.label,
-        value: c.subject === 'team' ? teamLine(c.metric, c.format) : fmtMetric(matchValue(c.metric), c.format),
+        value:
+          c.subject === 'team' ? teamLine(c.metric, c.format) : fmtMetric(matchValue(c.metric), c.format),
         sub: c.sub,
         title: c.doc,
         inferred: c.inferred,
@@ -191,9 +199,9 @@
 
 <div class="econ-summary stat-grid">
   {#snippet badge(c)}
-    <span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}"
-      >{c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}</span
-    >
+    <span class="chip {c.inferred ? 'badge-inferred' : 'badge-computed'}">
+      {c.inferred ? BADGE_INFERRED : BADGE_COMPUTED}
+    </span>
   {/snippet}
   {#each cards as c (c.key)}
     {#if c.drill}

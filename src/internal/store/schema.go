@@ -2,6 +2,7 @@ package store
 
 import (
 	_ "embed"
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -66,9 +67,14 @@ func (s *Store) applySchema() error {
 	if err != nil {
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
-	// The clutch metrics splice the shared clutch CTE in (clutch_sql.go).
-	seed := expandSeedMacros(spliceFragments(schemaSQL))
-	if _, err := tx.Exec(seed); err != nil {
+	// The seed keeps its metric statements in macro form (expr), the form the editor shows. Every
+	// macro sits inside a metric statement, so nothing else in the seed needs expanding.
+	if _, err := tx.Exec(schemaSQL); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("couldn't initialize the database: %w", err)
+	}
+	// Each builtin's run form is its expanded macro form (the same expansion a user statement gets).
+	if err := fillRunExprs(tx); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("couldn't initialize the database: %w", err)
 	}
@@ -78,6 +84,42 @@ func (s *Store) applySchema() error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("couldn't initialize the database: %w", err)
+	}
+	return nil
+}
+
+// fillRunExprs writes run_expr for every metric row that has none yet: the expansion of its macro
+// form. Rows are read before any write (the store's one connection cannot hold a cursor across an UPDATE).
+func fillRunExprs(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id, expr FROM metrics WHERE run_expr = ''`)
+	if err != nil {
+		return err
+	}
+	type todo struct {
+		id   int64
+		expr string
+	}
+	var all []todo
+	for rows.Next() {
+		var t todo
+		if err := rows.Scan(&t.id, &t.expr); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, t := range all {
+		run, err := ExpandMetricMacros(t.expr)
+		if err != nil {
+			return fmt.Errorf("metric %d: %w", t.id, err)
+		}
+		if _, err := tx.Exec(`UPDATE metrics SET run_expr = ? WHERE id = ?`, run, t.id); err != nil {
+			return err
+		}
 	}
 	return nil
 }

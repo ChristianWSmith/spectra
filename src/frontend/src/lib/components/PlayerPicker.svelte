@@ -33,6 +33,9 @@
   // in its title instead of the raw column behind it.
   let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '' } = $props();
 
+  // The list's height budget: below this much room under the trigger, it opens above.
+  const POP_ROOM = 340;
+
   let open = $state(false);
   let query = $state('');
   let active = $state(0);
@@ -40,6 +43,8 @@
   let listEl = $state(null);
   let inputEl = $state(null);
   let triggerEl = $state(null);
+  // Opens above the trigger when the room below is short and the room above is more.
+  let above = $state(false);
 
   const cur = $derived(players.find((p) => p.steamId === value) || null);
   const curRow = $derived(stats[value] || null);
@@ -164,6 +169,11 @@
   );
 
   function openPop() {
+    const r = triggerEl?.getBoundingClientRect();
+    if (r) {
+      const below = window.innerHeight - r.bottom;
+      above = below < POP_ROOM && r.top > below;
+    }
     open = true;
     query = '';
     const at = filtered.findIndex((p) => p.steamId === value);
@@ -256,7 +266,7 @@
   </button>
 
   {#if open}
-    <div class="pp-pop">
+    <div class="pp-pop" class:up={above}>
       <input
         class="input pp-search"
         type="search"
@@ -350,6 +360,9 @@
   .pp-trigger {
     max-width: 460px;
     min-width: 0;
+    /* The picker's caret (below) is the only chevron: drop the select's static one. */
+    background-image: none;
+    padding-right: 8px;
   }
 
   .pp-trigger:hover {
@@ -378,6 +391,11 @@
   .pp-caret {
     color: var(--muted);
     font-size: 0.75em;
+  }
+
+  .pp-pop.up {
+    top: auto;
+    bottom: calc(100% + 4px);
   }
 
   .pp-pop {
