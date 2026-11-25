@@ -5,9 +5,9 @@
   // chip's progress and stage props.
   import MetricCell from './MetricCell.svelte';
 
-  let { pres, format, chip = {}, words = null } = $props();
+  let { pres, format, chip = {} } = $props();
 </script>
 
 <td class="num" title={pres.title}>
-  <MetricCell {pres} {format} {chip} {words} />
+  <MetricCell {pres} {format} {chip} />
 </td>

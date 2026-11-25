@@ -229,12 +229,6 @@ export function fmtZeroDash(value, unit = '') {
   return unit ? `${n} ${unit}` : String(n);
 }
 
-// fmtTickSeconds renders ticks as a seconds string ("12.3s").
-export function fmtTickSeconds(ticks, tickRate) {
-  if (!Number.isFinite(ticks)) return '—';
-  return `${tickSeconds(ticks, tickRate).toFixed(1)}s`;
-}
-
 // fmtBytes renders byte counts as MB (GB above 1024 MB).
 export function fmtBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';

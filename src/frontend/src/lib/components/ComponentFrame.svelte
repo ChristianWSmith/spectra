@@ -6,7 +6,7 @@
   import { fmtMetric, fmtDate, fmtDuration } from '../fmt.js';
   import { activateOnKey } from '../keys.js';
   import { whileCurrent } from '../current.js';
-  import { DASH, openMatch, openPlayer } from '../builtinhelpers.js';
+  import { DASH, openMatch, openPlayer, followPlayer } from '../builtinhelpers.js';
   import ErrorBanner from './ErrorBanner.svelte';
   import EmptyNote from './EmptyNote.svelte';
   import EmptyTableRow from './EmptyTableRow.svelte';
@@ -16,9 +16,8 @@
   import StatCard from './StatCard.svelte';
   import StatusChip from './StatusChip.svelte';
   // ComponentFrame — the frame every mounted component sits in
-  // one failing component shows a
-  // dismissible error inside its own frame and the rest of the surface
-  // keeps rendering.
+  // A failing component shows a dismissible error inside its own frame, and the
+  // rest of the surface keeps rendering.
   //
   // What reaches the frame:
   //   render / $effect errors   <svelte:boundary> → the failed snippet
@@ -155,6 +154,9 @@
     // (through this frame's navigate); the formatters are the ones the built-ins use.
     openMatch: (matchId) => openMatch(spectra, matchId),
     openPlayer: (steamId) => openPlayer(spectra, steamId),
+    // followPlayer(steamId, back?): the replay of the context's match, following this player. `back`
+    // is the route the replay returns to; without it the replay returns to the match.
+    followPlayer: (steamId, back = '') => followPlayer(spectra, ctx.matchId, back, steamId),
     fmtDate,
     fmtDuration,
     metric: tracked(api.metric),

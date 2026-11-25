@@ -33,6 +33,7 @@ export const SPECTRA_HELPERS = [
   value('dash', 'string', 'The one dash a missing value shows.'),
   call('openMatch', 'matchId', 'Opens a match\'s view.'),
   call('openPlayer', 'steamId', "Opens a player's profile."),
+  call('followPlayer', 'steamId, back?', "Opens the replay of the component's match, following this player. back is the route the replay returns to; the match when omitted."),
   call('fmtDate', 'd', 'A timestamp as a local date and time, or the dash when the match was never extracted.'),
   call('fmtDuration', 'seconds', 'A span in seconds, as a readable duration (1h02m03s over an hour), or the dash when it is unknown.'),
   value('ui', 'object', 'The shared display pieces: spectra.ui.ErrorBanner, EmptyNote, EmptyTableRow, LoadBox, MetricCell, RetryButton, WinnerCell, StatCard and StatusChip.'),

@@ -1,9 +1,7 @@
 <script>
-  import { openMatch, indexBy } from '../../builtinhelpers.js';
-  import { DASH } from '../../builtinhelpers.js';
-  import { whenCurrent } from '../../current.js';
+  import { openMatch, indexBy, DASH } from '../../builtinhelpers.js';
+  import { whenCurrent, whileCurrent } from '../../current.js';
   import { openRow } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   // Match history (builtin profile panel), most recent first. The match rows
   // (import date, map, result, score, starting side) are the player's recorded

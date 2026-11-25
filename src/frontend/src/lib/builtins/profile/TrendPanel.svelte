@@ -1,6 +1,6 @@
 <script>
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { openMatch, DASH } from '../../builtinhelpers.js';
+  import { openMatch } from '../../builtinhelpers.js';
   import { openRow } from '../../keys.js';
   import { whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
@@ -45,29 +45,29 @@
   // The default sequence over the match scope (no order preference is read).
   const trendItems = $derived(inSequence('match', trendDefs));
 
-  // A selection the loaded catalog no longer carries falls back to the
-  // default, but only from a non-default selection.
-  $effect(() => {
-    if (trendDefs.length === 0) return;
-    if (metric !== 'adr' && !trendItems.some((d) => d.name === metric)) metric = 'adr';
-  });
+  // The metric the panel shows and loads: the pick, or the default when the loaded
+  // catalog no longer carries a non-default pick. `metric` keeps the user's pick, so
+  // a fallback is never saved over it.
+  const activeMetric = $derived(
+    trendDefs.length > 0 && metric !== 'adr' && !trendItems.some((d) => d.name === metric) ? 'adr' : metric,
+  );
 
   const trendLabel = $derived.by(() => {
-    const def = trendItems.find((d) => d.name === metric);
+    const def = trendItems.find((d) => d.name === activeMetric);
     if (def) return def.title || def.name;
-    return metric === 'adr' ? S.profiles.thAdr : metric;
+    return activeMetric === 'adr' ? S.profiles.thAdr : activeMetric;
   });
   // The picker's text: the label of the picked metric, until the user types (a writable derived).
   let trendText = $derived(trendLabel);
 
   // The picked metric's format tag: the trend formatter's input.
-  const trendFormat = $derived(trendItems.find((d) => d.name === metric)?.format || '');
+  const trendFormat = $derived(trendItems.find((d) => d.name === activeMetric)?.format || '');
 
   // The trend read: mount, metric switch and Retry. The error clears only
   // when the read lands, so "No trend data" never stands in for a failed read.
   function loadTrend() {
     const sid = steamId;
-    const m = metric;
+    const m = activeMetric;
     trendError = '';
     if (!sid) return;
     runTrend(
@@ -94,12 +94,6 @@
   // Hand-rolled sparkline: x = Seq (the trend's patch order), y = Value. Each
   // dot's tooltip carries the patch and the honest import date, read off the
   // trend point itself.
-  // The sparkline's caption: the point count, the min and max at display scale.
-  const sparkCaption = $derived(
-    spark
-      ? `${trend.length}${S.profiles.sparkMinLead}${fmtTrendValue(spark.min, trendFormat)}${S.profiles.sparkMaxLead}${fmtTrendValue(spark.max, trendFormat)}`
-      : '',
-  );
   const spark = $derived.by(() => {
     const pts = trend;
     if (pts.length < 2) return null;
@@ -139,6 +133,12 @@
       })),
     };
   });
+  // The sparkline's caption: the point count, the min and max at display scale.
+  const sparkCaption = $derived(
+    spark
+      ? `${trend.length}${S.profiles.sparkMinLead}${fmtTrendValue(spark.min, trendFormat)}${S.profiles.sparkMaxLead}${fmtTrendValue(spark.max, trendFormat)}`
+      : '',
+  );
 </script>
 
 <div>

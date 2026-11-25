@@ -428,6 +428,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       loadSeeds: 'load the profile’s seed values (read)',
       loadSplit: 'load a breakdown’s catalog and its values for the player (read)',
       loadProfile: 'the metric catalog and one player’s profile, read together',
+      defaultCardDefs: 'the profile-scope definitions of the default career cards',
     },
   },
   'src/lib/builtins/reports/shared.js': {

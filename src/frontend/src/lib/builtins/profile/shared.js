@@ -6,6 +6,16 @@
 import { metricStateTitle, metricPresentation } from '../../metricstate.js';
 import { readMetrics } from '../../metricreads.js';
 import { listMetrics, getProfile } from '../../services.js';
+import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
+
+// defaultCardDefs: the profile-scope metric definitions of the default selection
+// (DEFAULT_CARDS.profile), in the default sequence. The Career cards and their
+// read both take their names from it, so they cannot disagree.
+export function defaultCardDefs(defs) {
+  return composedSequence('profile', defs)
+    .filter((e) => e.kind === 'metric' && DEFAULT_CARDS.profile.includes(e.name))
+    .map((e) => e.def);
+}
 
 export const NO_DATA_TITLE = 'no data for this player';
 
@@ -47,10 +57,6 @@ export function emptyChip(defs, reads, progress, names) {
   return null;
 }
 
-// loadSeeds reads the named metrics of a split table (sides, maps, weapons)
-// for the context's player. A name the catalog does not carry is never read:
-// its cells show the honest dash, not an error. Each read is one metric()
-// call, so its dims come back in `rows`.
 // loadProfile reads the metric catalog and one player's profile together: the catalog
 // names the cards, the profile carries the headline numbers.
 export function loadProfile(spectra, sid) {
@@ -64,6 +70,10 @@ export function loadSplit(spectra, names, errText) {
   return spectra.track(listMetrics()).then((rows) => loadSeeds(spectra, names, rows || [], errText));
 }
 
+// loadSeeds reads the named metrics of a split table (sides, maps, weapons)
+// for the context's player. A name the catalog does not carry is never read:
+// its cells show the honest dash, not an error. Each read is one metric()
+// call, so its dims come back in `rows`.
 export async function loadSeeds(spectra, names, catalog, errText) {
   const defs = new Map(catalog.filter((d) => d && names.includes(d.name)).map((d) => [d.name, d]));
   const found = [...defs.keys()];
