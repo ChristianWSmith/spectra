@@ -20,11 +20,18 @@ export function activateOnKey(fn, { enterOnly = false } = {}) {
 // control inside the row (matching `ignore`), and Enter (or Space, unless enterOnly)
 // opens it from the keyboard. Spread it onto the row: <tr {...openRow(open)}>.
 export function openRow(fn, { ignore = '', enterOnly = false } = {}) {
+  // A key or click on a control inside the row belongs to that control (Enter on a name
+  // button opens the profile, not the row), so both handlers check the same selector.
+  const fromControl = (e) => !!ignore && e.target instanceof Element && !!e.target.closest(ignore);
+  const activate = activateOnKey(fn, { enterOnly });
   return {
     onclick: (e) => {
-      if (ignore && e.target instanceof Element && e.target.closest(ignore)) return;
+      if (fromControl(e)) return;
       fn(e);
     },
-    onkeydown: activateOnKey(fn, { enterOnly }),
+    onkeydown: (e) => {
+      if (fromControl(e)) return;
+      activate(e);
+    },
   };
 }

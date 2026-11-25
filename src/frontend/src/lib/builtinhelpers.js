@@ -26,7 +26,7 @@ import { buildHash } from './router.js';
 import { playerSideClassAt, sideClassOf, pickPlayer, resolveSide } from './teams.js';
 import * as S from './strings/index.js';
 import { bySide, econColumns, econValue, lossPips } from './econ.js';
-import { asTick, entryLoopAround, entryLoopSpan, isSteam } from './nav.js';
+import { asTick, entryLoopAround, entryLoopSpan, isSteam, openProfile } from './nav.js';
 import { moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags } from './rounds.js';
 import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, winnerTeamKey } from './sideparity.js';
 import { synthTeamName, teamNames, teamStartClass } from './teams.js';
@@ -198,11 +198,6 @@ export function hashOf(path, query) {
 }
 
 
-// The route to a player's profile.
-function playerRoute(steam) {
-  return '/player/' + steam;
-}
-
 // Open a match's view.
 export function openMatch(spectra, matchId) {
   spectra.navigate(matchPath(matchId));
@@ -210,7 +205,7 @@ export function openMatch(spectra, matchId) {
 
 // Open a player's profile (the name link on every builtin that lists players).
 export function openPlayer(spectra, steam) {
-  spectra.navigate(playerRoute(steam));
+  openProfile((route) => spectra.navigate(route), steam);
 }
 
 // Open the replay following a player. `back` is the tab the panel sits on; the replay

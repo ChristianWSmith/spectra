@@ -89,6 +89,7 @@
     weaponName as weaponNameOf,
   } from '../replay/playercard.js';
   import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
+  import { openRow, CONTROL_SELECTOR } from '../keys.js';
 
   let {
     player = {},
@@ -208,17 +209,7 @@
   // activation. Enter/Space mirror the click; they are redundant with
   // the Replay view's own follow controls (F, 1-9/0, the follow
   // popover) — never a second source of follow state.
-  function onCardClick(e) {
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    onFollow();
-  }
-
-  function onCardKey(e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    e.preventDefault();
-    onFollow();
-  }
+  const cardRow = openRow(() => onFollow(), { ignore: CONTROL_SELECTOR });
 </script>
 
 <div
@@ -232,8 +223,7 @@
   title={hasState ? undefined : S.common.playerCardNoStateTitle}
   role="button"
   tabindex="0"
-  onclick={onCardClick}
-  onkeydown={onCardKey}
+  {...cardRow}
 >
   <div class="pc-head">
     <span class="pc-name" title={name}>{name}</span>
