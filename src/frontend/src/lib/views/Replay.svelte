@@ -3346,7 +3346,6 @@
             teamAbove={teamNames ? teamNames.ct : ''}
             teamBelow={teamNames ? teamNames.t : ''}
             {sideSwitches}
-            back={backPath}
             {nav}
             onselect={onRibbonRound}
           />

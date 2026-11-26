@@ -387,7 +387,6 @@
       teamAbove={teams.ct}
       teamBelow={teams.t}
       sideSwitches={match.sideSwitches || 0}
-      back={backPath()}
       {nav}
     />
 

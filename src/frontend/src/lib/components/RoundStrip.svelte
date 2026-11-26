@@ -35,7 +35,6 @@ let {
   teamAbove = '',
   teamBelow = '',
   sideSwitches = 0,
-  back = '',
   nav = () => {},
   // Optional IN-PLACE round picker (Replay's round ribbon): when set, a
   // cell click calls onselect(r.number) instead of navigating to the

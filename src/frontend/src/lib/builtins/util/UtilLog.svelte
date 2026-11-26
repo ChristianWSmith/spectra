@@ -26,7 +26,6 @@
     rows = [],
     rounds = [],
     players = [],
-    names = { ct: S.match.sideCt, t: S.match.sideT },
     sideSwitches = 0,
     tickRate = 64,
     loopSecs = 5,
