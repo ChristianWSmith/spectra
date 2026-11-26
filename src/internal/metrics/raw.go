@@ -146,12 +146,6 @@ func Validate(expr string) *GateError {
 	return nil
 }
 
-// RawScopeOf reports the scope a raw statement's binds select, which is the
-// metric's stored scope: profile when it reads :steam_id, match otherwise.
-func RawScopeOf(binds []string) string {
-	return store.ScopeOfBinds(binds)
-}
-
 // RawScopes enumerates the runs a raw statement needs for one sweep, from
 // the engine's own fact tables: one library-wide run when no bind is used,
 // one per ready match for :match_id, one per human player for :steam_id,

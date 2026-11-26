@@ -484,11 +484,6 @@ label.filt-lab {
    voice controls into the transport.) */
 
 /* --- Timeline detail: Hear ±10s ------------------------------------------- */
-.btn.hear-btn {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 /* --- Settings: audio self-test -------------------------------------------- */
 .sett-audio-ok {
   color: var(--success);
@@ -609,10 +604,6 @@ label.filt-lab {
   border-color: var(--accent-45);
 }
 
-.expl-ent-note {
-  font-size: 0.86em;
-}
-
 .expl-kv {
   padding: 6px 10px;
   font-size: 0.85em;
@@ -695,23 +686,8 @@ label.filt-lab {
   font-size: 0.8em;
 }
 
-.expl-ref-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 0.88em;
-}
-
 /* Bullet is a codicon dot (the house list pattern from .warning-list in
    style.css) — never a raw · typed into the stylesheet. */
-.expl-ref-list li::before {
-  content: '\eb8a' ' ';
-  font-family: 'codicon';
-  font-weight: normal;
-  color: var(--accent);
-}
-
 /* --- Reports (rep-) --------------------------------------------------------- */
 
 .rep-tpl-grid {
@@ -1037,11 +1013,6 @@ label.filt-lab {
   font-size: 0.9em;
   line-height: 1.5;
   resize: vertical;
-}
-
-.rb-readonly {
-  color: var(--accent);
-  border-color: var(--accent-50);
 }
 
 /* The preview target sits in the bottom-right group, on the same line as Preview and Save

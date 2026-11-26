@@ -73,7 +73,6 @@ const PRESENTATION_STATE = { value: 'fresh', nodata: 'no-data' };
 // The context names (04 §3) and the reserved bind names they stand for
 // (03-QUERIES §5). A bind object may use either spelling of one bind.
 const CONTEXT_TO_BIND = { matchId: 'match_id', steamId: 'steam_id', round: 'round' };
-const RESERVED_BINDS = ['match_id', 'steam_id', 'round'];
 
 // contextBinds is the bind set a context implies: each set field becomes
 // its reserved bind, and unset fields are left out.

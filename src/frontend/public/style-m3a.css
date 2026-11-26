@@ -985,10 +985,6 @@ canvas.heat-canvas {
   white-space: nowrap;
 }
 
-.m5-cell {
-  font-variant-numeric: tabular-nums;
-}
-
 /* --- Metric builder (bld-) ------------------------------------------------ */
 
 .bld-head-note {
@@ -1129,24 +1125,6 @@ canvas.heat-canvas {
   opacity: 0.75;
 }
 
-.bld-pin-on {
-  color: var(--accent);
-}
-
-.bld-plugin {
-  border-style: dashed;
-}
-
-.bld-disabled {
-  color: var(--danger);
-  border-color: rgba(224, 91, 91, 0.5);
-}
-
-.bld-readonly {
-  color: var(--accent);
-  border-color: var(--accent-50);
-}
-
 /* The editor card's compute-progress block (stored-metrics design §4):
    spacing only — the StatusChip block form (centered ring/spinner + the
    honest k/N underneath) styles itself; outside a table cell, per
@@ -1196,12 +1174,6 @@ canvas.heat-canvas {
   font-size: 0.9em;
   line-height: 1.5;
   resize: vertical;
-}
-
-.bld-hint {
-  font-size: 0.74em;
-  color: var(--muted);
-  overflow-wrap: anywhere;
 }
 
 /* The one validity indicator (the metric editor's expression check, the component editor's
@@ -1379,10 +1351,6 @@ canvas.heat-canvas {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-}
-
-.sql-defaults {
-  font-size: 0.78em;
 }
 
 /* VS Code terminal look: #1f1f1f bg, #cccccc fg, #264f78 selection. */

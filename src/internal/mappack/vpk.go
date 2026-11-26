@@ -241,6 +241,3 @@ func readCString(r *bufio.Reader) (string, error) {
 		b = append(b, c)
 	}
 }
-
-// sortStrings sorts in place (thin alias to keep call sites short).
-func sortStrings(s []string) { sort.Strings(s) }

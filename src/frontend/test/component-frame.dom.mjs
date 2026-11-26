@@ -10,7 +10,7 @@ import { subscribeCompiles } from '../src/lib/componentruntime/compileclient.js'
 // Run (from frontend/):  node test/component-frame.dom.mjs
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import { compile, compileModule } from 'svelte/compiler';
+import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { copyClosure } from './copy-closure.mjs';
 import { join } from 'node:path';

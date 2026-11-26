@@ -16,9 +16,6 @@ import (
 //go:embed testdata/seed.sql
 var seedSQL string
 
-// SeedSQL returns the committed synthetic corpus as SQL text.
-func SeedSQL() string { return seedSQL }
-
 // LoadSeed executes the synthetic corpus into db (one driver script run).
 // The store schema must already be applied (store.Open) and db must be
 // able to write — loaders open a second short-lived connection next to the

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -265,13 +266,13 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sortStrings(out)
+	sort.Strings(out)
 	return out
 }
 
 func sortedStrings(s []string) []string {
 	out := append([]string{}, s...)
-	sortStrings(out)
+	sort.Strings(out)
 	return out
 }
 

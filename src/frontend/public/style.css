@@ -1870,26 +1870,10 @@ mark {
   background: var(--list-hover);
 }
 
-.scoreboard.transposed > thead > tr > th.sb-player {
-  text-transform: none;
-  letter-spacing: normal;
-  font-weight: 600;
-  color: inherit;
-}
-
 /* The transposed player header's name BLOCK (W3a): the name holds the
    line and the team chip drops beneath it instead of riding inline after
    the name. One wrapper covers BOTH name shapes (the profile button and
    the bare name), so the rule keys on the wrapper alone. */
-.scoreboard.transposed > thead > tr > th.sb-player .sb-name {
-  display: block;
-}
-
-.scoreboard .sb-transpose {
-  margin-left: 6px;
-  vertical-align: middle;
-}
-
 /* Rounds / chat */
 
 .chat-list {
@@ -1935,13 +1919,6 @@ mark {
 
 /* --- Round detail ---------------------------------------------------------- */
 
-.round-grid {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 16px;
-  align-items: start;
-}
-
 .round-side {
   display: flex;
   flex-direction: column;
@@ -1954,14 +1931,6 @@ mark {
    rule above (see its note): as a flex ITEM the strip only needs its row
    to distribute centered — justify-content centers each wrapped line too
    (flex-wrap: wrap on narrow windows), so no narrow-width hugging. */
-.round-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 /* --- Replay (M2) ------------------------------------------------------------ */
 
 /* The view is a ROW: the main column (its FIRST line is the top bar —
@@ -2609,11 +2578,6 @@ mark {
   accent-color: var(--accent);
 }
 
-.lm-hint {
-  margin: 0;
-  font-size: 0.8em;
-}
-
 /* Filter dropdown panel — everything the ONE Filters toggle governs:
    the category multi-select, the scope bar and the saved-preset row.
    Shown/hidden as a unit (Replay's filtersOpen). */
@@ -3060,8 +3024,7 @@ mark {
     min-height: 300px;
   }
 
-  .roster-grid,
-  .round-grid {
+  .roster-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -3377,7 +3340,6 @@ mark {
   border-radius: var(--radius);
 }
 
-.preview-expand,
 .card-expand {
   margin-left: auto;
 }

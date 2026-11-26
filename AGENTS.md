@@ -39,6 +39,7 @@ make test           # go test -short ./...   (CI's test command)
 make lint           # golangci-lint via go tool; version lives in go.mod
 make fmt            # gofmt -w .
 make vet            # go vet ./...
+make deadscan      # report-only dead-code scan: Go, frontend JS/Svelte, CSS (never edits)
 make package        # platform release payload (binary on Linux/Windows — `package` is `build` there; see Makefile)
 make artifact       # produce the release asset the updater downloads for this OS
 make artifact-name  # print that asset's name (CI uses it for the artifact name)
@@ -216,6 +217,16 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 - **Formatting/lint:** golangci-lint (`.golangci.yml`) + `go vet`; no other
   style tooling. Keep `make lint` green. `build/` is excluded from lint —
   it is stock/regenerated Wails scaffolding, not application code.
+- **Dead-code scan (`make deadscan`, report-only):** run it before closing
+  any cleanup or refactor, and whenever a removed feature may have left
+  helpers behind. It covers Go (`src/cmd/deadscan`), frontend JS and Svelte
+  (imports, reachability, unused declarations) and CSS selectors
+  (`src/frontend/scripts/deadscan.mjs`). It never edits and never fails, so
+  every line is a candidate to verify by hand. Before deleting a flagged
+  symbol, check the roadmap, the owning file's last commit, the Wails
+  bindings (a service method can be called only from JS), and any in-flight
+  agent worktrees under `.claude/worktrees/`. Oracles and test seams marked
+  as such in comments are intentional and stay.
 - **Tests:** `-short` must skip anything network-bound (`testing.Short()`).
 - **No session leakage** (owner, 2026-11-17): committed file and test
   names describe the DOMAIN they cover, never the ad-hoc wave/session/

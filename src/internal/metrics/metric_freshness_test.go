@@ -9,7 +9,7 @@ import (
 )
 
 // TestRawScopesReadFreshAfterOneSweep: raw metrics saved the way a user
-// saves them (CheckRawSave's touched set, RawScopeOf's scope) are fresh after
+// saves them (CheckRawSave's touched set, ScopeOfBinds's scope) are fresh after
 // one sweep in every scope shape: library-wide (including a statement that
 // returns no rows), :steam_id, :match_id and :match_id with :round. A
 // library-wide metric is not behind after its own run,

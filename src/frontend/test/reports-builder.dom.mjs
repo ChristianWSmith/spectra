@@ -308,8 +308,6 @@ bindings.handlers.RenderReportDraft = (scope, body, matchId, steamId, round) => 
   draftCalls.push({ scope, body, matchId, steamId, round });
   return `DRAFT ${scope} ${body} ${matchId} ${steamId} ${round}`;
 };
-const callArgs = (method) =>
-  bindings.calls.filter((c) => c.method === method).map((c) => c.args);
 
 let root = null;
 let inst = null;

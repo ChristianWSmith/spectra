@@ -32,11 +32,6 @@ import (
 var errStatementParams = errors.New("this statement has parameters — replace them with values")
 
 const (
-	// DefaultLimit / DefaultTimeoutMS are the console defaults (bounded by
-	// the timeout, default 5 s). Re-exported from the store so
-	// the numbers have one owner.
-	DefaultLimit     = store.DefaultRowLimit
-	DefaultTimeoutMS = store.DefaultTimeoutMS
 	// HistoryDefault is the history list page size when callers pass a
 	// non-positive limit.
 	HistoryDefault = 50
@@ -58,9 +53,8 @@ func New(st *store.Store) *Session { return &Session{st: st} }
 // The result is models.QueryResult (row-major
 // JSON scalars + timing + truncation + an Err string instead of a rejected
 // call, so history can record failures too). Defaults are the store's
-// (limit ≤0 → DefaultLimit = store.DefaultRowLimit, timeoutMS ≤0 →
-// DefaultTimeoutMS): RunReadOnly owns the normalization, this session only
-// re-exports the numbers so they have one owner.
+// (limit ≤0 → store.DefaultRowLimit, timeoutMS ≤0 → store.DefaultTimeoutMS):
+// RunReadOnly owns the normalization.
 func (s *Session) Run(sqlText string, limit, timeoutMS int) models.QueryResult {
 	// Parameters first: this session supplies no values, so a statement
 	// carrying markers is refused HERE (clear, user-facing) instead of

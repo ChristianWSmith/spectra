@@ -492,14 +492,6 @@ func containsID(ids []int64, id int64) bool {
 // order.
 var unitWorkers = runtime.GOMAXPROCS(0)
 
-// SetUnitWorkers sets how many of one metric's units run at once, returning the
-// previous value. 1 is the sequential sweep; the default is GOMAXPROCS.
-func SetUnitWorkers(n int) int {
-	prev := unitWorkers
-	unitWorkers = n
-	return prev
-}
-
 // runUnits runs one metric's stale units with up to unitWorkers in flight. The
 // first unit error stops the launch of further units; units already running
 // finish, so each unit is still one atomic run. It returns that first error.

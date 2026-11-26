@@ -145,14 +145,3 @@ func RenderGeometryDir() string {
 	}
 	return dir
 }
-
-// WorldColDir returns the world-collision cache root
-// ($XDG_DATA_HOME/spectra/worldcol): one <map>.worldcol per supported map,
-// written by the in-app CS2 extractor and never committed (Valve IP stays local).
-func WorldColDir() string {
-	dir := filepath.Join(xdg.DataHome, appName, "worldcol")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return dir
-	}
-	return dir
-}

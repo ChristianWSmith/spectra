@@ -242,8 +242,8 @@ func bumpRuleAffectedMetrics(tx *sql.Tx, tables []string) error {
 
 // ScopeOfBinds is a metric's scope, derived from the reserved binds its
 // statement uses (03-QUERIES.md §5, ruling 51): profile (career)
-// when it reads :steam_id, match otherwise. It is the one definition;
-// metrics.RawScopeOf delegates here. Nothing stores a scope.
+// when it reads :steam_id, match otherwise. It is the one definition.
+// Nothing stores a scope.
 func ScopeOfBinds(binds []string) string {
 	for _, b := range binds {
 		if b == ":steam_id" {

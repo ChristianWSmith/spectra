@@ -21,7 +21,7 @@ registerHooks({
   },
 });
 const copies = await import('./builtinhelpers.js');
-import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
+import { fmtMs, fmtClock, fmtMoney, fmtInt, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, isCounted } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';
 import { sideAtRound, winnerTeamKey, teamKeyAt, flipIndexes } from './sideparity.js';

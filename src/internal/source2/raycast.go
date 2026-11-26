@@ -9,54 +9,6 @@ import "math"
 // Segment is a line from A to B for visibility queries.
 type Segment struct{ A, B Vec3 }
 
-// Blocked reports whether any triangle of the mesh is hit by the segment,
-// excluding the endpoints (t in (eps, 1-eps)). It walks the kd-tree.
-func (m *Mesh) Blocked(seg Segment) bool {
-	if len(m.Nodes) == 0 {
-		return m.bruteBlocked(seg)
-	}
-	var stack [128]uint32
-	sp := 0
-	stack[sp] = 0
-	sp++
-	for sp > 0 {
-		sp--
-		idx := stack[sp]
-		n := &m.Nodes[idx]
-		if !segHitsBox(seg, n.Min, n.Max) {
-			continue
-		}
-		if n.Type == 3 {
-			for k := uint32(0); k < n.ChildOffset; k++ {
-				t := m.Triangles[n.TriangleOffset+k]
-				if segHitsTri(seg, m.Vertices[t[0]], m.Vertices[t[1]], m.Vertices[t[2]]) {
-					return true
-				}
-			}
-			continue
-		}
-		// Push the second child, then the first, so the first is popped next.
-		stack[sp] = idx + n.ChildOffset
-		sp++
-		stack[sp] = idx + 1
-		sp++
-	}
-	return false
-}
-
-// bruteBlocked tests every triangle; used to validate the tree.
-func (m *Mesh) bruteBlocked(seg Segment) bool {
-	for _, t := range m.Triangles {
-		if segHitsTri(seg, m.Vertices[t[0]], m.Vertices[t[1]], m.Vertices[t[2]]) {
-			return true
-		}
-	}
-	return false
-}
-
-// BruteBlocked is the reference query over all triangles.
-func (m *Mesh) BruteBlocked(seg Segment) bool { return m.bruteBlocked(seg) }
-
 const segEps = 1e-6
 
 func segHitsBox(seg Segment, mn, mx Vec3) bool {

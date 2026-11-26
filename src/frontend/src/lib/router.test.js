@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseHash, buildHash, MATCH_TABS, matchTabSlug, matchTabFromSlug } from './router.js';
+import { parseHash, buildHash } from './router.js';
 
 test('empty/absent hash defaults to the library', () => {
   assert.deepEqual(parseHash(''), { name: 'library' });

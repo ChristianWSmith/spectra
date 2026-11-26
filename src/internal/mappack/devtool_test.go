@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -721,7 +722,7 @@ func TestDevToolRealInstall(t *testing.T) {
 	for name := range tbl {
 		names = append(names, name)
 	}
-	sortStrings(names)
+	sort.Strings(names)
 	for i := 0; i < len(names); i += 500 {
 		hits := resolveSoundEvent(tbl, soundEventHash(names[i]))
 		found := false

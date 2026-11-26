@@ -32,7 +32,7 @@
 
   let { nav = () => {}, openDocs = () => {} } = $props();
 
-  // Server defaults echoed in the header (query.DefaultLimit / DefaultTimeoutMS).
+  // Server defaults echoed in the header (store.DefaultRowLimit / DefaultTimeoutMS).
   const DEFAULTS = 'rows cap 5,000 · timeout 5 s';
   // Results page size: the grid renders ONE page of returned rows at a
   // time and the footer walks every row (there is no render cap and no

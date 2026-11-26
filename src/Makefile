@@ -7,7 +7,7 @@ WAILS_VERSION := $(shell go list -m -f '{{.Version}}' github.com/wailsapp/wails/
 # The stock Taskfiles shell out to `wails3`, so the CLI must be on PATH.
 export PATH := $(GOPATH_BIN):$(PATH)
 
-.PHONY: build run dev build-assets test lint fmt vet linux-deps deps package artifact artifact-name cs2find clean deep-clean
+.PHONY: build run dev build-assets test lint fmt vet deadscan linux-deps deps package artifact artifact-name cs2find clean deep-clean
 
 # deps ensures the developer toolchain the build needs: the pinned wails3
 # CLI (auto-installed into GOPATH/bin) and Node.js 22+ (checked — install
@@ -55,6 +55,13 @@ test: | frontend/dist
 
 lint: | frontend/dist
 	go tool golangci-lint run ./...
+
+# deadscan — report-only dead-code scan over Go (cmd/deadscan), the frontend
+# JS/Svelte and the CSS (frontend/scripts/deadscan.mjs). Never edits or fails:
+# every line is a candidate to verify by hand (see the script headers).
+deadscan:
+	go run ./cmd/deadscan -js frontend/src,frontend/test
+	cd frontend && node scripts/deadscan.mjs
 
 fmt:
 	gofmt -w .
