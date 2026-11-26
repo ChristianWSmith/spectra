@@ -95,7 +95,7 @@
             class="clickable"
             tabindex="0"
             title={S.fill(S.profiles.openMatchRow, { id: h.matchId })}
-            {...openRow(() => openMatch(spectra, h.matchId), { enterOnly: true })}
+            {...openRow(() => openMatch(spectra, h.matchId))}
           >
             <td>{fmtDate(h.extractedAt)}</td>
             <td>{h.map || DASH}</td>

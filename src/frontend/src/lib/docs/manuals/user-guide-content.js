@@ -601,12 +601,16 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 - **\`spectra.whileCurrent(run)\`**: for a load started in an effect. \`run\` receives \`isCurrent()\`, and a late result is dropped once the inputs change or the component unmounts.
 - **\`spectra.liveMetrics({ onDone })\`**: a panel's metric progress and reload wiring. \`progress\`, \`frac(id)\`, \`stage(id)\` and \`chip(def)\` show the sweep. \`reload\` goes up each time a metric finishes, so an effect or a derived value that reads it fetches again. \`onDone\` runs on each finish.
 
+- **\`spectra.loadThen(isCurrent, promise, apply, failed?)\`**: a panel load. \`apply\` takes the result while \`isCurrent()\` still holds, and a failure goes to \`failed\` (the frame banner when it is left out).
+- **\`spectra.latestOnly()\`**: a runner for one kind of load. Create it once, then call \`run(promise, apply, fail?)\` for each load: only the newest result applies, so a slow earlier load cannot overwrite a later one.
+
 **Interaction**
 
+- **\`spectra.openRow(open, { ignore, enterOnly })\`**: spread onto a clickable row (\`<tr {...spectra.openRow(open)}>\`). A click, or Enter (and Space unless \`enterOnly\`), runs \`open\`. \`ignore\` is a selector for controls inside the row that must keep their own clicks and keys.
 - **\`spectra.navigate(route)\`**: opens a view. The route is a hash such as \`#/match/…\`, or \`{ path, query }\`.
 - **\`spectra.guard(fn)\`**: wraps an event or async handler, so its error goes to the component's box instead of being lost.
 - **\`spectra.report(error)\`**: shows a failed load in the component's box, which the reader can dismiss. Use it for a failed read the component has no retry for.
-- **\`spectra.loadForMatch(getMatchId, load, apply)\`**: the effect body of a load for the component's match: \`$effect(spectra.loadForMatch(() => context.matchId, load, apply))\`. \`apply\` takes the value while the load is still current, and a failure goes to the frame banner, unless \`failed\` takes it.
+- **\`spectra.loadForMatch(getMatchId, load, apply, failed?)\`**: the effect body of a load for the component's match: \`$effect(spectra.loadForMatch(() => context.matchId, load, apply))\`. \`apply\` takes the value while the load is still current, and a failure goes to the frame banner, unless \`failed\` takes it.
 - **\`spectra.activateOnKey(fn, { enterOnly })\`**: makes a clickable row work from the keyboard. \`onkeydown={spectra.activateOnKey(open)}\` runs \`open\` on Enter, and on Space unless \`enterOnly\` is set.
 - **\`spectra.Child\`**: mounts another named component inside this one: \`<spectra.Child name="…" props={…} />\`. The child receives this component's context and has its own error box. Nesting has a fixed depth limit.
 

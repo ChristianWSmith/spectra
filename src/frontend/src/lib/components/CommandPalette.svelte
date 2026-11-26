@@ -11,6 +11,7 @@
     listSavedQueries,
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
+  import { openProfile } from '../nav.js';
   import { fmtDate } from '../fmt.js';
   import { NAV_ACTIONS, replayHash, isNavEnabled, resolveNavTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
@@ -272,7 +273,7 @@
       rows.map((p) => ({
         label: p.name || p.steamId,
         sub: `${p.matches} matches · last seen ${p.lastSeen || '—'}`,
-        run: () => nav(`/player/${p.steamId}`),
+        run: () => openProfile(nav, p.steamId),
       })),
     );
   }

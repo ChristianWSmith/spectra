@@ -141,7 +141,11 @@
     fmtMetric,
     activateOnKey,
     openRow,
-    latestOnly,
+    // latestOnly(): a runner for one kind of load; a failure goes to the frame banner unless fail takes it.
+    latestOnly: () => {
+      const run = latestOnly();
+      return (promise, apply, fail = frameFailure) => run(promise, apply, fail);
+    },
     loadThen: (isCurrent, promise, apply, failed = frameFailure) => loadThen(isCurrent, promise, apply, failed),
     whileCurrent,
     // The one dash a missing cell shows, and the shared display pieces (the same
