@@ -86,8 +86,7 @@ const svelteCompile = (src, filename, out) => {
 copyClosure({
   dir,
   entries: ['components/ProfileLink.svelte', 'keys.js'],
-  skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]),
-});
+  });
 // StatCard carries no imports of its own — the ProfileLink comes in
 // through the harness's subSlot snippet.
 svelteCompile(

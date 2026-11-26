@@ -1,11 +1,9 @@
 <script>
-  import { plural } from '../../fmt.js';
   import Popover from '../../components/Popover.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import { groupBy, openReplay, sideBySteam } from '../../builtinhelpers.js';
+  import { groupBy, openReplay, sideBySteam, plural, S } from '../../builtinhelpers.js';
   import { matchTab } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import * as S from '../../strings/index.js';
   import {
   roundSideClassOf,
   DASH,

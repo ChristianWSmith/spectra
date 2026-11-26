@@ -1,34 +1,14 @@
 <script>
-  import { DASH, matchTab, openReplay } from '../../builtinhelpers.js';
-  import { loadThen, whileCurrent } from '../../current.js';
+  import { DASH, matchTab, openReplay, loadThen, whileCurrent, S, getMatch, getScoreboard, getRounds, getHeatmap, errText, getHeatmapKD, HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox, HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss, loadMapPack, fmt1, fmtInt, isCounted, roundScoreLabel, downloadCanvasPNG, listedPlayers, seed, remember, matchKey, runWork } from '../../builtinhelpers.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import * as S from '../../strings/index.js';
-  import { getMatch, getScoreboard, getRounds, getHeatmap, errText } from '../../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
-  import { AnalyticsService } from '../../../../bindings/github.com/ChristianWSmith/spectra';
-  import {
-    HEAT_CORE_KINDS,
-    HEAT_GRENADE_THROW_KINDS,
-    HEAT_GRENADE_DET_KINDS,
-    heatKindLabel,
-    heatRegionFilter,
-    heatRegionTakesBBox,
-  } from '../../heatkinds.js';
-  import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../../heatramp.js';
-  import { loadMapPack } from '../../components/mapxform.js';
   import HeatmapLayer from '../../components/HeatmapLayer.svelte';
-  import { fmt1, fmtInt } from '../../fmt.js';
-  import { isCounted, roundScoreLabel } from '../../rounds.js';
-  import { downloadCanvasPNG } from '../../download.js';
-  import { listedPlayers } from '../../players.js';
-  import { seed, remember, matchKey } from '../../viewstate.svelte.js';
   // The ONE background-work wrapper (lib/workstate.svelte.js): generate
   // is heavy work the floating indicator shows — wrapping the call site
   // covers BOTH binding paths (GetHeatmap below and GetHeatmapKD) in one
   // spot, since services.getHeatmap is only ever this non-kd path.
-  import { runWork } from '../../workstate.svelte.js';
 
   // The heatmap card. It
   // reads its match from the read-only `context` the Heatmaps builtin passes
@@ -349,7 +329,7 @@
       // fetch so EITHER path marks the heatmap source busy.
       grid = await runWork(
         'heatmap',
-        kind === 'kd' ? AnalyticsService.GetHeatmapKD(id, filter) : getHeatmap(id, kind, filter),
+        kind === 'kd' ? getHeatmapKD(id, filter) : getHeatmap(id, kind, filter),
       );
       gridLayer = sel;
       lastKey = filterKey(kind, player, team, roundFrom, roundTo, sel);

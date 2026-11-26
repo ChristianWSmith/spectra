@@ -1,9 +1,6 @@
 <script>
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
-  import { loadForMatch } from '../../current.js';
-  import * as S from '../../strings/index.js';
+  import { sideSwitchesOf, openRow, CONTROL_SELECTOR, loadForMatch, S } from '../../builtinhelpers.js';
   import { SQL_ROSTER, SQL_SWITCHES, STATE_WORD, readUnit, cellText, kdaText } from './panelhelpers.js';
   import { isSteam } from '../../builtinhelpers.js';
   import LoadBox from '../../components/LoadBox.svelte';

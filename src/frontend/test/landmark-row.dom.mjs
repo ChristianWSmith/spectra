@@ -96,10 +96,9 @@ writeFileSync(
 );
 
 // ProfileLink's strings and builtinhelpers come in by closure; services.js is the stub written below.
-copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js', 'keys.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js', 'keys.js'] });
 // ProfileLink now statically imports ../services.js for its hover
 // prefetch (warmProfile) — a no-op stub here (this driver never hovers).
-writeFileSync(join(dir, 'services.js'), 'export const warmProfile = () => {};\n');
 
 // ProfileLink → components/ProfileLink.js (its ../nav.js resolves to the
 // copy above); LandmarkRow's component import is rewritten to the bundle.

@@ -1,5 +1,4 @@
 <script>
-  import { loadThen, whileCurrent, latestOnly } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import LoadBox from '../../components/LoadBox.svelte';
   // Match details: one panel with the match's facts. The key facts (server, tickrate,
@@ -7,17 +6,8 @@
   // copy state come first; then the import details (the reproducibility facts and the
   // encrypted-message note) and the advanced diagnostics (the entity summary). A NULL or
   // missing stored value shows a dash. Every read is through this frame's context.
-  import * as S from '../../strings/index.js';
   import { SQL_FACTS, numOf, fmtBytes, parseStamp, fmtDate, fill } from './panelhelpers.js';
-  import { DASH, fmtInt, fmt1 } from '../../builtinhelpers.js';
-  import {
-    getMatch,
-    getVoicePresence,
-    evictDemoCopy,
-    getProvenance,
-    getEntitySummary,
-    errText,
-  } from '../../services.js';
+  import { DASH, fmtInt, fmt1, loadThen, whileCurrent, latestOnly, S, getMatch, getVoicePresence, evictDemoCopy, getProvenance, getEntitySummary, errText } from '../../builtinhelpers.js';
   import StatusChip from '../../components/StatusChip.svelte';
 
   const COPY = Object.freeze({

@@ -327,8 +327,8 @@ check(
   '',
 );
 check(
-  'roundScoreLabel is imported from the canonical lib/rounds.js home',
-  /import \{ isCounted, roundScoreLabel \} from '\.\.\/\.\.\/rounds\.js'/.test(heatSrc),
+  'roundScoreLabel comes through builtinhelpers.js (the one module a built-in takes its helpers from)',
+  /import \{[^}]*\broundScoreLabel\b[^}]*\} from '\.\.\/\.\.\/builtinhelpers\.js'/.test(heatSrc),
   '',
 );
 
@@ -1097,7 +1097,7 @@ console.log('P. Heatmaps view: floor <select>, controls+content card, floating G
   );
   check(
     'Save path: downloadCanvasPNG (THE canonical download) over the bridged canvas, dated heatmap-<map>-<date>.png name',
-    /import \{ downloadCanvasPNG \} from '\.\.\/\.\.\/download\.js'/.test(heatSrc) &&
+    /import \{[^}]*\bdownloadCanvasPNG\b[^}]*\} from '\.\.\/\.\.\/builtinhelpers\.js'/.test(heatSrc) &&
       /await downloadCanvasPNG\(heatCanvas, heatRasterName\(\)\)/.test(heatSrc) &&
       /`heatmap-\$\{map \|\| 'map'\}-\$\{stamp\}\.png`/.test(heatSrc),
     '',

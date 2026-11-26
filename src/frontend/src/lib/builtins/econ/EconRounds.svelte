@@ -1,9 +1,6 @@
 <script>
-  import { bySide, openReplay, matchTab, openRoundsTab } from '../../builtinhelpers.js';
+  import { bySide, openReplay, matchTab, openRoundsTab, economySource, whileCurrent, S } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { economySource } from '../../economysource.svelte.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
   import {
   DASH,

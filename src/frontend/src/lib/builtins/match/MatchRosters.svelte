@@ -1,10 +1,7 @@
 <script>
   import ProfileLink from '../../components/ProfileLink.svelte';
-  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
-  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, loadForMatch, S, fmtMetric } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { loadForMatch } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
   readFrameBase,
   startClass,
@@ -14,7 +11,6 @@
   STATE_WORD,
 } from './panelhelpers.js';
   import MetricTd from '../../components/MetricTd.svelte';
-  import { fmtMetric } from '../../fmt.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
   // default order (kills, then name). The "Other" table appears only when a

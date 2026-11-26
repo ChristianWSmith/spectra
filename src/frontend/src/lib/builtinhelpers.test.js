@@ -6,7 +6,21 @@
 // Run: node --test src/lib/builtinhelpers.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as copies from './builtinhelpers.js';
+import { registerHooks } from 'node:module';
+import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
+
+// builtinhelpers re-exports services.js, which loads the generated bindings directory: the stub
+// stands in for it (as services-cache.test.js does), and the directory resolves through the hook.
+installEsmDirHook();
+const stub = (name) => new URL(`../../test/stubs/${name}`, import.meta.url).href;
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+});
+const copies = await import('./builtinhelpers.js');
 import { fmtMs, fmtClock, fmtMoney, fmtInt, fmtMetric, roundClock, fmtZeroDash, chatClock, chatTag } from './fmt.js';
 import { roundIndexLabel, roundScoreLabel, separatorFlags, moneyResetIndexes, roundStartTick, roundEndTick, isCounted } from './rounds.js';
 import { teamNames, playerSideClassAt, teamStartClass } from './teams.js';

@@ -1,5 +1,5 @@
 <script>
-  import { DASH } from '../../builtinhelpers.js';
+  import { DASH, S, getKillTags, roundClock, entryLoopAround, roundScoreLabel, roundsByNumber, matchRecord, KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../builtinhelpers.js';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Kill tags. The duels of
   // the match: round → time into round → killer vs victim → distance in
@@ -9,14 +9,6 @@
   // round <select> narrows the same list (round 1 by default, "All rounds"
   // on offer). It reads the match from `context` and nothing else but the
   // loop-length pref, which stays a plain pref (ruling 33).
-  import * as S from '../../strings/index.js';
-  import { getKillTags } from '../../services.js';
-  import { roundClock } from '../../fmt.js';
-  import { entryLoopAround } from '../../nav.js';
-  import { roundScoreLabel } from '../../rounds.js';
-  import { roundsByNumber } from '../../replay/landmarks.js';
-  import { matchRecord } from '../../viewstate.svelte.js';
-  import { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from '../../definitions.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import Popover from '../../components/Popover.svelte';

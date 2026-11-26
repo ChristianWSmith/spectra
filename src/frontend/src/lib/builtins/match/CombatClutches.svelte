@@ -1,16 +1,12 @@
 <script>
   import EmptyNote from '../../components/EmptyNote.svelte';
-  import { DASH } from '../../builtinhelpers.js';
+  import { DASH, S, getClutches, entryLoopSpanAround, matchRecord } from '../../builtinhelpers.js';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   // Combat · Clutches. The detected 1vN
   // situations of the match (size, player, outcome, bomb state, HP left).
   // The won / lost toggles select which outcomes are listed: won ON and lost
   // OFF by default. It reads the match from `context`; the loop-length pref
   // stays a plain pref (ruling 33).
-  import * as S from '../../strings/index.js';
-  import { getClutches } from '../../services.js';
-  import { entryLoopSpanAround } from '../../nav.js';
-  import { matchRecord } from '../../viewstate.svelte.js';
   import EventPlay from '../../components/EventPlay.svelte';
   import ProfileLink from '../../components/ProfileLink.svelte';
   import { combatPanel } from './combatpanel.svelte.js';

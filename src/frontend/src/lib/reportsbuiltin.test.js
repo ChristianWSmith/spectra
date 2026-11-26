@@ -5,17 +5,21 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  fmtVal,
-  findTemplate,
-  reportFilename,
-  targetReady,
-  mdCell,
-  esc,
-  appendixMd,
-  appendixHtml,
-  compositeText,
-} from './builtins/reports/shared.js';
+import { registerHooks } from 'node:module';
+import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
+
+// reports/shared.js reads its helpers through builtinhelpers.js, which re-exports services.js: the
+// bindings directory is stood in for (as services-cache.test.js does) and resolved through the hook.
+installEsmDirHook();
+const stub = (name) => new URL(`../../test/stubs/${name}`, import.meta.url).href;
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+});
+const { fmtVal, findTemplate, reportFilename, targetReady, mdCell, esc, appendixMd, appendixHtml, compositeText } = await import('./builtins/reports/shared.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
 

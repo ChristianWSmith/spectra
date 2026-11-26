@@ -96,7 +96,7 @@ for (const f of ['rounds.js', 'sideparity.js', 'teams.js', 'router.js']) {
   writeFileSync(join(dir, f), readFileSync(join('src/lib', f), 'utf8'));
 }
 // RoundStrip reaches builtinhelpers.js (DASH) and its closure; services.js is the scripted stub.
-copyClosure({ dir, entries: ['builtinhelpers.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
+copyClosure({ dir, entries: ['builtinhelpers.js'] });
 
 // RoundStrip → rewrite its ../ imports to the local copies; the strings
 // catalog resolves from the real tree (Strings Stage 3 plumbing).

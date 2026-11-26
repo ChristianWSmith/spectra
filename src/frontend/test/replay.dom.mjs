@@ -1,5 +1,5 @@
 import './compile-worker-node.mjs';
-import { copyClosure } from './copy-closure.mjs';
+import { copyClosure, fillServiceStub } from './copy-closure.mjs';
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
 // (.replay-topbar, first child of .replay-main: the Close · Minimize ·
@@ -151,7 +151,7 @@ for (const rel of [
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 // ProfileLink's strings and builtinhelpers come in by closure (the services stub is written below).
-copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js', 'keys.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js', 'keys.js'] });
 writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
@@ -270,7 +270,7 @@ export const iconURL = (name, manifest) =>
 // and the engine/renderer/input are inert objects.
 writeFileSync(
   join(dir, 'services.js'),
-  `const META = {
+  fillServiceStub(`const META = {
     hasSidecar: true,
     tickRate: 64,
     frames: 10,
@@ -546,7 +546,7 @@ export const subscribeJobProgress = (cb) => {
   return () => {};
 };
 export const warmProfile = () => {};
-`,
+`, readFileSync('src/lib/services.js', 'utf8')),
 );
 
 writeFileSync(

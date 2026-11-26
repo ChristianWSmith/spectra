@@ -1,11 +1,8 @@
 <script>
-  import { openReplay, matchPath, entryLoopSpan } from '../../builtinhelpers.js';
+  import { openReplay, matchPath, entryLoopSpan, openRow, CONTROL_SELECTOR, whileCurrent, S } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { roundSideClassOf, namesOf, rosterOf } from '../../builtinhelpers.js';
-  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
     SQL_ROSTER,
     SQL_TEAMS,

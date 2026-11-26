@@ -132,7 +132,8 @@ function serviceNames() {
       if (statSync(p).isDirectory()) walk(p);
       else if (/\.(js|svelte)$/.test(f) && !p.includes('/generated/')) {
         const s = readFileSync(p, 'utf8');
-        for (const m of s.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*services\.js'/g)) {
+        // re-exports too: builtinhelpers.js re-exports the services a built-in takes
+        for (const m of s.matchAll(/(?:import|export)\s*\{([^}]*)\}\s*from\s*'[^']*services\.js'/g)) {
           m[1].split(',').forEach((x) => {
             x = x.trim().split(/\s+as\s+/)[0].trim();
             if (x) names.add(x);

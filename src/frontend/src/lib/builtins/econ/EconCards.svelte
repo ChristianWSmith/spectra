@@ -1,10 +1,6 @@
 <script>
-  import { openReplay, matchTab } from '../../builtinhelpers.js';
-  import { economySource } from '../../economysource.svelte.js';
+  import { openReplay, matchTab, economySource, whileCurrent, S, fmtMetric } from '../../builtinhelpers.js';
   import StatCard from '../../components/StatCard.svelte';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
-  import { fmtMetric } from '../../fmt.js';
   import {
   DASH,
   roundStartTick,

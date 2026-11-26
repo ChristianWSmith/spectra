@@ -1,14 +1,5 @@
 <script>
-  import { loadForMatch } from '../../current.js';
-  import * as S from '../../strings/index.js';
-  import {
-  SQL_ROSTER,
-  SQL_TEAMS,
-  SQL_ROUND_SPANS,
-  roundsOf,
-  rosterOf,
-  namesOf,
-} from '../../builtinhelpers.js';
+  import { SQL_ROSTER, SQL_TEAMS, SQL_ROUND_SPANS, roundsOf, rosterOf, namesOf, loadForMatch, S } from '../../builtinhelpers.js';
   const SQL_UTIL =
     'SELECT seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y, ' +
     'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC';

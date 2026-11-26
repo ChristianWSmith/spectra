@@ -1,11 +1,8 @@
 <script>
   import ProfileLink from '../../components/ProfileLink.svelte';
   import SortTh from '../../components/SortTh.svelte';
-  import { namesOf, rosterOf } from '../../builtinhelpers.js';
+  import { namesOf, rosterOf, openRow, CONTROL_SELECTOR, whileCurrent, S, fmtMetric, fmtInt } from '../../builtinhelpers.js';
   import { sideSwitchesOf } from '../../builtinhelpers.js';
-  import { openRow, CONTROL_SELECTOR } from '../../keys.js';
-  import { whileCurrent } from '../../current.js';
-  import * as S from '../../strings/index.js';
   import {
   readFrameBase,
   startClass,
@@ -15,7 +12,6 @@
   STATE_WORD,
   sortRows,
 } from './panelhelpers.js';
-  import { fmtMetric, fmtInt } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { DASH, isSteam } from '../../builtinhelpers.js';
   const SCOREBOARD_COLUMNS = [

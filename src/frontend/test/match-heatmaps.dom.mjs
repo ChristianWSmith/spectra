@@ -1,5 +1,5 @@
 import './compile-worker-node.mjs';
-import { copyClosure } from './copy-closure.mjs';
+import { copyClosure, fillServiceStub } from './copy-closure.mjs';
 // jsdom driver for the Heatmaps tab's card, mounted with a FIXED context
 // { matchId: 7 } the way the Heatmaps builtin mounts it. The services are
 // scripted (no Wails backend): the match, the roster, the rounds and the
@@ -127,21 +127,23 @@ for (const name of ['HeatmapLayer', 'StatusChip']) {
 // and match read is recorded in globalThis.__calls.
 writeFileSync(
   join(dir, 'services.js'),
-  `const d = () => globalThis.__heat || {};
+  fillServiceStub(`const d = () => globalThis.__heat || {};
 globalThis.__calls = globalThis.__calls || [];
 const rec = (name, args) => globalThis.__calls.push({ name, args });
 export const getMatch = (id) => { rec('getMatch', [id]); return Promise.resolve(d().match || null); };
 export const getScoreboard = (id) => { rec('getScoreboard', [id]); return Promise.resolve(d().scoreboard || []); };
 export const getRounds = (id) => { rec('getRounds', [id]); return Promise.resolve(d().rounds || []); };
 export const getHeatmap = (id, kind, filter) => { rec('getHeatmap', [id, kind, filter]); return Promise.resolve(d().grid); };
+export const getHeatmapKD = (id, filter) => { rec('getHeatmapKD', [id, filter]); return Promise.resolve(d().grid); };
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const onEvent = () => () => {};
 export const subscribeJobProgress = () => () => {};
 export const subscribeMetricProgress = () => () => {};
+export const onMetricDone = () => () => {};
 export const saveFile = async () => '';
 export const writeFile = async () => {};
 export const saveExport = async () => '';
-`,
+`, readFileSync('src/lib/services.js', 'utf8')),
 );
 
 // The panel itself, compiled from the real source with its imports rewritten.

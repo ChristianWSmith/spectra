@@ -22,6 +22,33 @@ const SRC = 'src/lib';
 const IMPORT = /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\1/g;
 
 // The copy's own path for a src-relative module: .svelte becomes .js.
+// serviceStub: an ESM module with the same named exports as services.js, each a no-op read.
+function serviceStub(src) {
+  const names = new Set();
+  for (const m of src.matchAll(/^export (?:async )?(function|const|let) (\w+)/gm)) names.add(m[2] + ':' + m[1]);
+  for (const m of src.matchAll(/^export \{([^}]*)\}/gm)) for (const p of m[1].split(',')) { const n = p.trim().split(/\s+as\s+/).pop(); if (n) names.add(n + ':const'); }
+  const out = [];
+  for (const entry of names) {
+    const [n, kind] = entry.split(':');
+    // errText is a synchronous pure helper (the frame renders its result), not a read.
+    if (n === 'errText') out.push("export function errText(e) { return e == null ? '' : String((e && e.message) || e); }");
+    else out.push(kind === 'function' ? `export function ${n}() { return Promise.resolve(null); }` : `export const ${n} = null;`);
+  }
+  return out.join('\n') + '\n';
+}
+
+// fillServiceStub completes a driver's scripted services.js: every real export the script does not
+// declare is added as a no-op, so a module that imports a name the script never scripted still links.
+export function fillServiceStub(scripted, realSrc) {
+  // Any declaration of a name counts (exported or not): a second one would not link.
+  const declared = new Set([...scripted.matchAll(/^\s*(?:export )?(?:async )?(?:function|const|let) (\w+)/gm)].map((m) => m[1]));
+  const missing = serviceStub(realSrc).split('\n').filter((line) => {
+    const m = line.match(/^export (?:function|const) (\w+)/);
+    return m && !declared.has(m[1]);
+  });
+  return scripted + '\n' + missing.join('\n') + '\n';
+}
+
 const outRel = (rel) => (rel.endsWith('.svelte') ? rel.slice(0, -'.svelte'.length) + '.js' : rel);
 
 export function copyClosure({ dir, entries, skip = new Map() }) {
@@ -39,6 +66,12 @@ export function copyClosure({ dir, entries, skip = new Map() }) {
     }
     const abs = join(SRC, rel);
     if (!existsSync(abs)) throw new Error(`copyClosure: ${abs} does not exist`);
+    // services.js reaches the Wails bindings, which a node driver cannot load. Unless a driver
+    // scripts it, the copy is a stub with the real export names: every function answers with null.
+    if (rel === 'services.js') {
+      writeFileSync(dest, serviceStub(readFileSync(abs, 'utf8')));
+      continue;
+    }
     const text = readFileSync(abs, 'utf8');
     // Walk the relative imports (only those that stay under src/lib). The generated builtin
     // sources hold panel code as TEXT (JSON strings), so they are copied, never walked.

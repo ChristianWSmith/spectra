@@ -1,31 +1,10 @@
 <script>
-  import { indexBy, groupBy } from '../../builtinhelpers.js';
-  import { compareAsc } from '../../sortstate.js';
+  import { indexBy, groupBy, compareAsc, latestOnly, whileCurrent, listReportTemplates, listPlayers, getRounds, listMetrics, getMetricComputeState, errText, getScoreboard, getMetricValuesForMatch, renderReport, getPlayerRefs, listedPlayers, seed, remember, S, inSequence, composedSequence, rawItems, isRawId, metricPresentation, metricStateTitle, liveMetricState, liveMetrics, downloadText } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
-  import { latestOnly, whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
-  import {
-    listReportTemplates,
-    listPlayers,
-    getRounds,
-    listMetrics,
-    getMetricComputeState,
-    errText,
-    getScoreboard,
-    getMetricValuesForMatch,
-    renderReport,
-    getPlayerRefs,
-  } from '../../services.js';
-  import { listedPlayers } from '../../players.js';
-  import { seed, remember } from '../../viewstate.svelte.js';
   import PlayerPicker from '../../components/PlayerPicker.svelte';
-  import * as S from '../../strings/index.js';
   import { findTemplate, reportFilename, targetReady, compositeText } from './shared.js';
-  import { inSequence, composedSequence, rawItems, isRawId } from '../../metricorder.js';
-  import { metricPresentation, metricStateTitle, liveMetricState } from '../../metricstate.js';
-  import { liveMetrics } from '../../metricslive.svelte.js';
-  import { downloadText } from '../../download.js';
   import TokenSelect from '../../components/TokenSelect.svelte';
   import StatusChip from '../../components/StatusChip.svelte';
 

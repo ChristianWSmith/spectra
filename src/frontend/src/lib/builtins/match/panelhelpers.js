@@ -3,12 +3,7 @@
 // registry lists which names a panel may take. Formatting follows lib/fmt.js,
 // lib/teams.js and lib/rounds.js (the rules the panels always showed); a
 // missing or NULL stored value is a dash, never a zero (ruling 23).
-import * as S from '../../strings/index.js';
-import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf } from '../../builtinhelpers.js';
-import { teamStartClass } from '../../teams.js';
-import { fmtMetric, fmtBytes, fmtDate, fmtDuration } from '../../fmt.js';
-import { metricPresentation } from '../../metricstate.js';
-import { compareAsc } from '../../sortstate.js';
+  import { DASH, SQL_ROSTER, SQL_TEAMS, asTick, rowOf, S, teamStartClass, fmtMetric, fmtBytes, fmtDate, fmtDuration, metricPresentation, compareAsc } from '../../builtinhelpers.js';
 export { fmtBytes, fmtDate, fmtDuration };
 
 // The read-only SQL the panels run is defined once, in builtinhelpers.js.

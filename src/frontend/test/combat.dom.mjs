@@ -1,5 +1,5 @@
 import './compile-worker-node.mjs';
-import { copyClosure } from './copy-closure.mjs';
+import { copyClosure, fillServiceStub } from './copy-closure.mjs';
 // jsdom driver for Combat: the Kill tags card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
@@ -129,7 +129,7 @@ copyClosure({
 // driver sets globalThis.__combatData before each mount.
 writeFileSync(
   join(dir, 'services.js'),
-  `const d = () => globalThis.__combatData || {};
+  fillServiceStub(`const d = () => globalThis.__combatData || {};
 // __combatDelay (section K) holds every read back so the cold-start
 // loading gate is observable; unset/0 keeps the plain resolve.
 // __combatError (section L) makes every read REJECT — the load-failure
@@ -165,7 +165,7 @@ export const onMetricDone = () => { hit('onMetricDone'); return () => {}; };
 export const getPref = () => Promise.resolve(undefined);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
-`,
+`, readFileSync('src/lib/services.js', 'utf8')),
 );
 
 for (const name of ['EventPlay', 'ProfileLink', 'StatusChip', 'Popover']) {

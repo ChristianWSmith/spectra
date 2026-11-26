@@ -4,7 +4,7 @@
 // builtin may take (a user component takes none). Each name is the canonical
 // function of its module (lib/fmt.js, rounds.js, sideparity.js, teams.js,
 // econ.js, nav.js), imported and re-exported here; this module holds no second
-// implementation. chatTag is fmt.js's, re-exported above. builtinhelpers.test.js pins
+// implementation. chatTag comes from fmt.js and is re-exported above. builtinhelpers.test.js pins
 // the re-exports.
 //
 // Rules the builtins keep (AGENTS.md "Builtin conventions"): a missing value is
@@ -290,3 +290,26 @@ export async function loadEconomy(spectra, matchId) {
   const matchWinner = scoreCT === scoreT ? '' : scoreCT > scoreT ? 'ct' : 't';
   return { rows, rounds, names, sideSwitches, matchWinner };
 }
+
+// Re-exports for the built-ins: a built-in takes every app helper it uses from this module.
+export { compareAsc } from './sortstate.js';
+export { latestOnly, loadForMatch, loadThen, whileCurrent } from './current.js';
+export { errText, evictDemoCopy, getHeatmapKD, getCareerTrend, getClutches, getEntitySummary, getHeatmap, getKillTags, getMatch, getMetricComputeState, getMetricValuesForMatch, getPlayerRefs, getProfile, getProvenance, getRounds, getScoreboard, getVoicePresence, listMetrics, listPlayers, listReportTemplates, renderReport } from './services.js';
+export { listedPlayers } from './players.js';
+export { matchKey, matchRecord, remember, seed } from './viewstate.svelte.js';
+export { DEFAULT_CARDS, composedSequence, inSequence, isRawId, rawItems } from './metricorder.js';
+export { liveMetricState, metricPresentation, metricStateTitle } from './metricstate.js';
+export { liveMetrics } from './metricslive.svelte.js';
+export { downloadCanvasPNG, downloadText } from './download.js';
+export { economySource } from './economysource.svelte.js';
+export { fmtBytes, fmtDate, fmtDuration, fmtMetric, fmtPatch, fmtPercent, plural } from './fmt.js';
+export { CONTROL_SELECTOR, openRow } from './keys.js';
+export { HEAT_CORE_KINDS, HEAT_GRENADE_DET_KINDS, HEAT_GRENADE_THROW_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from './heatkinds.js';
+export { DEATH_STOPS, HEAT_STOPS, rampCss, signedRampCss } from './heatramp.js';
+export { loadMapPack } from './components/mapxform.js';
+export { runWork } from './workstate.svelte.js';
+export { loadLoopSecs } from './loopsecs.js';
+export { LOOP_SECS_DEFAULT, entryLoopSpanAround } from './nav.js';
+export { KILL_TAG_DIST_DEF, KILL_TAG_KIND_TITLES } from './definitions.js';
+export { MATCH_TABS, matchTabSlug } from './router.js';
+export { S };

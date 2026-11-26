@@ -1,3 +1,4 @@
+  import { loadThen, whileCurrent, metricStateTitle, liveMetrics } from '../../builtinhelpers.js';
 // splittable.svelte.js — the data of a profile split table (sides, maps,
 // weapons): the catalog and the seed metrics' reads for the context's player.
 // The table reloads when the player changes or a metric finishes, and a player
@@ -13,9 +14,6 @@
 //   table.empty                            the chip of an empty table, with its title (null when up to date)
 
 import { loadSplit, cell, dimValue, emptyChip } from './shared.js';
-import { loadThen, whileCurrent } from '../../current.js';
-import { metricStateTitle } from '../../metricstate.js';
-import { liveMetrics } from '../../metricslive.svelte.js';
 
 export function splitTable(getInputs) {
   // The panel's live sweep: the reload that re-reads the table, and the progress

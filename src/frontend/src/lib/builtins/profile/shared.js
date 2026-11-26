@@ -1,11 +1,9 @@
+  import { metricStateTitle, metricPresentation, listMetrics, getProfile, DEFAULT_CARDS, composedSequence } from '../../builtinhelpers.js';
 // shared.js — the presentation rules the Profile panels share. A panel reads
 // its values through `spectra.metric()` (a MetricRead: state, value, rows),
 // and this module maps one read onto what a cell shows: a value, the honest
 // dash, or a state chip. NULL is a dash, never a zero (owner ruling 23); a
 // live sweep on a metric shows as processing (lib/metricstate.js precedence).
-import { metricStateTitle, metricPresentation } from '../../metricstate.js';
-import { listMetrics, getProfile } from '../../services.js';
-import { DEFAULT_CARDS, composedSequence } from '../../metricorder.js';
 
 // defaultCardDefs: the profile-scope metric definitions of the default selection
 // (DEFAULT_CARDS.profile), in the default sequence. The Career cards and their

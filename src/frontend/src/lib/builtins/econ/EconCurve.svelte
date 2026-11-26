@@ -1,11 +1,8 @@
 <script>
-  import { bySide, openRoundsTab } from '../../builtinhelpers.js';
+  import { bySide, openRoundsTab, openRow, economySource, S } from '../../builtinhelpers.js';
   import EmptyNote from '../../components/EmptyNote.svelte';
   import { DASH } from '../../builtinhelpers.js';
   import WinnerCell from '../../components/WinnerCell.svelte';
-  import { openRow } from '../../keys.js';
-  import { economySource } from '../../economysource.svelte.js';
-  import * as S from '../../strings/index.js';
   import {
   fmtMoney,
   moneyResetIndexes,

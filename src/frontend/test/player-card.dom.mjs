@@ -122,7 +122,7 @@ const svelteCompile = (src, filename, out, opts = {}) =>
 // land in the document — the outline-geometry checks below read the real
 // rules the browser would apply.
 // PlayerCard imports the strings catalog and builtinhelpers (DASH): both come in by closure.
-copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js'], skip: new Map([['services.js', 'export const warmProfile = () => {};\n']]) });
+copyClosure({ dir, entries: ['strings/index.js', 'builtinhelpers.js'] });
 for (const rel of ['rounds.js', 'fmt.js', 'players.js', 'sideparity.js', 'teams.js', 'keys.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
