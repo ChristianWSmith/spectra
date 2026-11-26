@@ -108,6 +108,7 @@
   // The list's first read is busy; a refresh replaces the rows in place (no spinner over them).
   const listState = createLoadState();
   let listError = $state('');
+  let pickerError = $state('');
   // The list filter: a case-insensitive match on the name a view references.
   let listQuery = $state('');
   const listNeedle = $derived(listQuery.trim().toLowerCase());
@@ -527,6 +528,12 @@
     <HelpButton section="component-builder" {openDocs} />
   </header>
 
+  {#if pickerError}
+    <p class="error" role="alert">
+      {pickerError}
+      <button class="btn small ghost" aria-label={S.common.dismissErrorLine} title={S.common.dismissErrorLine} onclick={() => (pickerError = '')}><span class="codicon codicon-close" aria-hidden="true"></span></button>
+    </p>
+  {/if}
   {#if listError}
     <p class="error" role="alert">
       {listError}
@@ -802,7 +809,13 @@
     {#if contextKind === 'match'}
       <MatchPicker {matches} value={matchId} id="cb-match" onselect={(mid) => (matchId = mid)} />
     {:else}
-      <PlayerPicker {players} value={steamId} id="cb-player" onselect={(sid) => (steamId = sid)} />
+      <PlayerPicker
+        {players}
+        value={steamId}
+        id="cb-player"
+        onselect={(sid) => (steamId = sid)}
+        onerror={(e) => (pickerError = errText(e))}
+      />
     {/if}
   </div>
                     <button

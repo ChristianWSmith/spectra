@@ -215,6 +215,7 @@ export const common = {
   roundStripLabel: 'Round progression', // the strip's aria-label
 
   // sortable table header (SortTh.svelte — label + direction caret)
+  dismissErrorLine: 'Dismiss error', // the ✕ of a view's own error line
   sortThSortByPrefix: 'Sort by ', // the sort button's aria-label, before the column label
 
   // suggestion dropdown (SuggestInput.svelte — the one suggest panel)

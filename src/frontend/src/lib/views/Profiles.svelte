@@ -309,6 +309,7 @@ import { plural } from '../fmt.js';
 
   <div class="toolbar pf-toolbar">
     <SuggestInput
+      onerror={(e) => (adrError = errText(e))}
       id="pf-search"
       wrapClass="pf-search"
       ariaLabel="Search players"

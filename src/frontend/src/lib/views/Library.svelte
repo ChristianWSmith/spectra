@@ -994,6 +994,7 @@
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-map">{S.library.mapLabel}</label>
         <SuggestInput
+            onerror={(e) => (error = errText(e))}
           id="lib-filter-map"
           inputClass="lib-filter"
           placeholder={S.library.mapPlaceholder}
@@ -1006,6 +1007,7 @@
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-player">{S.library.playerLabel}</label>
         <SuggestInput
+            onerror={(e) => (error = errText(e))}
           id="lib-filter-player"
           inputClass="lib-filter"
           kind="player"
