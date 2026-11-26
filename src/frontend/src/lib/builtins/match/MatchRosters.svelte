@@ -6,19 +6,15 @@
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import {
-    readFrameBase,
-    SQL_ROSTER,
-    SQL_TEAMS,
-    SQL_SWITCHES,
-    startClass,
-    readUnit,
-    kdaText,
-    matchPres,
-    STATE_WORD,
-  } from './panelhelpers.js';
+  readFrameBase,
+  startClass,
+  readUnit,
+  kdaText,
+  matchPres,
+  STATE_WORD,
+} from './panelhelpers.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { fmtMetric } from '../../fmt.js';
-  import { isSteam } from '../../builtinhelpers.js';
 
   // Match rosters: each side's players with K/D/A and ADR. Players sit in the
   // default order (kills, then name). The "Other" table appears only when a

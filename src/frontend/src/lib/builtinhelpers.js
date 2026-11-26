@@ -230,7 +230,7 @@ export function chatTag(channel, side) {
 // the side switches and the winner. The Economy composer loads it for its panels; a panel mounted alone (a
 // component preview) loads it itself. Null when there is no match to read.
 const SQL_MATCH = 'SELECT score_ct, score_t, side_switches FROM matches WHERE id = :match_id';
-export const SQL_ROUNDS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
+export const SQL_ROUND_SPANS = 'SELECT number, winner, start_tick, end_tick FROM rounds WHERE match_id = :match_id ORDER BY number';
 const SQL_ECON =
   'SELECT r.number, r.winner, r.equip_ct, r.equip_t, ' +
   'COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0), ' +
@@ -278,7 +278,7 @@ export async function loadEconomy(spectra, matchId) {
   if (matchId == null) return null;
   const [m, roundRows, ecoRows, sideRows, teamRows, roster] = await Promise.all([
     spectra.query(SQL_MATCH),
-    spectra.query(SQL_ROUNDS),
+    spectra.query(SQL_ROUND_SPANS),
     spectra.query(SQL_ECON),
     spectra.query(SQL_SIDES),
     spectra.query(SQL_TEAMS),

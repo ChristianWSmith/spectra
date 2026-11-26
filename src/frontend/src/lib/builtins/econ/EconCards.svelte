@@ -6,13 +6,11 @@
   import * as S from '../../strings/index.js';
   import { fmtMetric } from '../../fmt.js';
   import {
-    DASH,
-    roundStartTick,
-    roundEndTick,
-    hashOf,
-    entryLoopSpan,
-    loadEconomy,
-  } from '../../builtinhelpers.js';
+  DASH,
+  roundStartTick,
+  roundEndTick,
+  entryLoopSpan,
+} from '../../builtinhelpers.js';
   const ECON_CARDS = [
     {
       metric: 'pistol_hold',

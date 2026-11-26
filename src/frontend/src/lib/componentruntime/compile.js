@@ -192,7 +192,6 @@ export const BUILTIN_HELPERS = Object.freeze({
   'src/lib/nav.js': {
     load: () => import('../nav.js'),
     names: {
-      replayAt: 'open a match’s replay at a tick (looped when asked), back to a route',
       replayHash: 'the route to a replay at a point',
       entryLoopAround: 'the loop span around a replay entry',
       entryLoopSpanAround: 'the loop span around a replay entry, as a span',
@@ -350,7 +349,7 @@ export const BUILTIN_HELPERS = Object.freeze({
       openRoundsTab: 'open a match’s rounds tab at a round',
       openReplay: 'open a match’s replay with its route extras (tick, loop, follow, back)',
       openMatch: 'open a match’s view',
-      SQL_ROUNDS: 'the match rounds read',
+      SQL_ROUND_SPANS: 'the match rounds read (number, winner and span of each round)',
       roundsOf: 'the round objects of a rounds read',
       rosterOf: 'the roster objects of a roster read',
       namesOf: 'the team names of a teams read over a roster',

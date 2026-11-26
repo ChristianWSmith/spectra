@@ -7,19 +7,16 @@
   import EmptyNote from '../../components/EmptyNote.svelte';
   import * as S from '../../strings/index.js';
   import {
-    roundSideClassOf,
-    DASH,
-    fmtMs,
-    fmtZeroDash,
-    roundClock,
-    roundIndexLabel,
-    roundScoreLabel,
-    roundsByNumber,
-    hashOf,
-    entryLoopAround,
-    isSteam,
-    openPlayer,
-  } from '../../builtinhelpers.js';
+  roundSideClassOf,
+  DASH,
+  fmtMs,
+  fmtZeroDash,
+  roundClock,
+  roundIndexLabel,
+  roundScoreLabel,
+  roundsByNumber,
+  entryLoopAround,
+} from '../../builtinhelpers.js';
 
   // Utility throw log: the kind, thrower and round filters, the count, and one
   // row per throw. The filter state lives in the composer (filt / setFilt).

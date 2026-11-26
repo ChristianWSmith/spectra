@@ -2,14 +2,13 @@
   import { loadForMatch } from '../../current.js';
   import * as S from '../../strings/index.js';
   import {
-    SQL_ROSTER,
-    SQL_TEAMS,
-    SQL_ROUNDS,
-    roundsOf,
-    rosterOf,
-    namesOf,
-    sideSwitchesOf,
-  } from '../../builtinhelpers.js';
+  SQL_ROSTER,
+  SQL_TEAMS,
+  SQL_ROUND_SPANS,
+  roundsOf,
+  rosterOf,
+  namesOf,
+} from '../../builtinhelpers.js';
   const SQL_UTIL =
     'SELECT seq, tick, throw_tick, round, thrower, thrower_name, kind, throw_x, throw_y, det_x, det_y, ' +
     'damage, flash_ms, affected, site, trajectory_ref FROM utility_events WHERE match_id = :match_id ORDER BY seq ASC';
@@ -20,7 +19,7 @@
   // the charts get the rows the filters leave.
   let { spectra, context, back = '', loopSecs = 5, filters = null, onfilters = null } = $props();
   const UTIL_SQL = SQL_UTIL;
-  const ROUNDS_SQL = SQL_ROUNDS;
+  const ROUNDS_SQL = SQL_ROUND_SPANS;
   const MATCH_SQL = SQL_MATCH;
   const TEAMS_SQL = SQL_TEAMS;
   const ROSTER_SQL = SQL_ROSTER;

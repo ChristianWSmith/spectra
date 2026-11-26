@@ -21,7 +21,6 @@
   import { loadLoopSecs } from '../../loopsecs.js';
   import * as S from '../../strings/index.js';
   import { MATCH_TABS, matchTabSlug } from '../../router.js';
-  import { getPref } from '../../services.js';
   import { LOOP_SECS_DEFAULT } from '../../nav.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
 

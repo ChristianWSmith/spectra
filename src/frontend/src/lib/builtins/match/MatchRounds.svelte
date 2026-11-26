@@ -27,21 +27,18 @@
   import ProfileLink from '../../components/ProfileLink.svelte';
   import EmptyTableRow from '../../components/EmptyTableRow.svelte';
   import {
-    DASH,
-    isSteam,
-    separatorFlags,
-    roundWinnerName,
-    openPlayer,
-    roundClock,
-    entryLoopAround,
-    hashOf,
-    roundsByNumber,
-    scoreThrough,
-    sideAtRound,
-    chatClock,
-    chatTag,
-    fmtInt,
-  } from '../../builtinhelpers.js';
+  DASH,
+  separatorFlags,
+  roundWinnerName,
+  roundClock,
+  entryLoopAround,
+  roundsByNumber,
+  scoreThrough,
+  sideAtRound,
+  chatClock,
+  chatTag,
+  fmtInt,
+} from '../../builtinhelpers.js';
 
   const COPY = Object.freeze({
     colWatch: S.match.colWatch,

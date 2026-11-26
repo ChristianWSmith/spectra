@@ -1,4 +1,5 @@
 <script>
+  import { activateOnKey, CONTROL_SELECTOR } from '../keys.js';
   // Stat card cell — the anatomy shared by Match's top stats, the player
   // profile grid and the economy summary: label (with an optional badge
   // slot), value, sub. The view owns the data, the tooltip and whether
@@ -39,7 +40,7 @@
   // which `closest` would also match) keeps the cell's drill.
   function insideLink(e) {
     const cell = e.currentTarget;
-    const hit = e.target instanceof Element ? e.target.closest('button, a, input') : null;
+    const hit = e.target instanceof Element ? e.target.closest(CONTROL_SELECTOR) : null;
     return !!hit && hit !== cell;
   }
 
@@ -49,9 +50,8 @@
   }
 
   function onCellKey(e) {
-    if ((e.key !== 'Enter' && e.key !== ' ') || insideLink(e)) return;
-    e.preventDefault();
-    onclick(e);
+    if (insideLink(e)) return;
+    activateOnKey(onclick)(e);
   }
 </script>
 

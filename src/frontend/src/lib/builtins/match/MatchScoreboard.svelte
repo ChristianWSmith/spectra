@@ -7,17 +7,14 @@
   import { whileCurrent } from '../../current.js';
   import * as S from '../../strings/index.js';
   import {
-    readFrameBase,
-    SQL_ROSTER,
-    SQL_TEAMS,
-    SQL_SWITCHES,
-    startClass,
-    readUnit,
-    cellValue,
-    matchPres,
-    STATE_WORD,
-    sortRows,
-  } from './panelhelpers.js';
+  readFrameBase,
+  startClass,
+  readUnit,
+  cellValue,
+  matchPres,
+  STATE_WORD,
+  sortRows,
+} from './panelhelpers.js';
   import { fmtMetric, fmtInt } from '../../fmt.js';
   import MetricTd from '../../components/MetricTd.svelte';
   import { DASH, isSteam } from '../../builtinhelpers.js';

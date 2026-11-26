@@ -10,7 +10,6 @@
   import StatCard from '../../components/StatCard.svelte';
   import MetricCell from '../../components/MetricCell.svelte';
   import { loadProfile, readCell, defaultCardDefs } from './shared.js';
-  import * as S from '../../strings/index.js';
 
   let { spectra, context } = $props();
   const steamId = $derived(context.steamId);
