@@ -52,6 +52,7 @@
   let copyBusy = $state(false);
   let prov = $state(null);
   let provError = $state('');
+  let copyError = $state('');
   let ent = $state(null);
   let entError = $state('');
   // One generation per read: a stale reply (a match switch, a Retry) is dropped.
@@ -129,11 +130,12 @@
   async function freeCopy() {
     if (copyBusy || !match) return;
     copyBusy = true;
+    copyError = '';
     try {
       await evictDemoCopy(context.matchId);
       match = await getMatch(context.matchId);
     } catch (e) {
-      spectra.report(e);
+      copyError = errText(e);
     } finally {
       copyBusy = false;
     }
@@ -235,6 +237,9 @@
 
   <section class="md-sec">
     <h2 class="md-head">{S.library.importDetails}</h2>
+    {#if copyError}
+      <ErrorBanner ondismiss={() => (copyError = '')} dismissLabel={S.match.dismissError}>{copyError}</ErrorBanner>
+    {/if}
     {#if provError}
       <ErrorBanner onretry={() => loadProv(context.matchId)} retryLabel={S.library.retry}>{provError}</ErrorBanner>
     {:else if !prov}

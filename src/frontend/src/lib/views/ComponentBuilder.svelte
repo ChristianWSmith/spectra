@@ -463,8 +463,9 @@
         const ready = (rows || []).filter((r) => r.status === 'ready' || r.status === '');
         matches = ready.length ? ready : rows || [];
       })
-      .catch(() => {
+      .catch((e) => {
         matches = [];
+        pickerError = errText(e);
       });
   });
 
@@ -476,8 +477,9 @@
         players = listedPlayers(rows) || [];
         if (players.length && !players.some((p) => p.steamId === steamId)) steamId = '';
       })
-      .catch(() => {
+      .catch((e) => {
         players = [];
+        pickerError = errText(e);
       });
   });
 

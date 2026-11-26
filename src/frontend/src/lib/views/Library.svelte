@@ -344,12 +344,16 @@
       .then((names) => {
         if (live) mapNames = names || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) error = errText(e);
+      });
     listPlayers('')
       .then((rows) => {
         if (live) libPlayers = listedPlayers(rows) || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) error = errText(e);
+      });
     const offs = [
       subscribeJobProgress((snap) => (jobProgress = snap)),
       // Scan progress (spectra:scan-progress): the import-dir panel's ONE

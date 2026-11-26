@@ -38,6 +38,7 @@ import { plural } from '../fmt.js';
   import { fmtMetric } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
+  import { openRow } from '../keys.js';
   import SortTh from '../components/SortTh.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -383,10 +384,7 @@ import { plural } from '../fmt.js';
               <tr
                 class:clickable={isSteam(p.steamId)}
                 title={isSteam(p.steamId) ? `Open ${p.name || p.steamId}’s profile` : p.steamId}
-                onclick={isSteam(p.steamId) ? () => openProfile(nav, p.steamId) : undefined}
-                onkeydown={isSteam(p.steamId)
-                  ? (e) => e.key === 'Enter' && openProfile(nav, p.steamId)
-                  : undefined}
+                {...(isSteam(p.steamId) ? openRow(() => openProfile(nav, p.steamId)) : {})}
                 tabindex={isSteam(p.steamId) ? 0 : undefined}
               >
                 <td>

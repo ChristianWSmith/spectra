@@ -51,7 +51,8 @@ export function roundsTabHash(matchId, round) {
 // openReplay navigates to a match's replay with the given route extras (tick, loop,
 // follow, back); a missing or empty extra is left out of the route.
 export function openReplay(spectra, matchId, { filter, ...extras } = {}) {
-  spectra.navigate(filter ? replayHash(matchId, filter, extras) : hashOf('/replay/' + matchId, extras));
+  const kept = Object.fromEntries(Object.entries(extras).filter(([, v]) => v != null && v !== ''));
+  spectra.navigate(filter ? replayHash(matchId, filter, kept) : hashOf('/replay/' + matchId, kept));
 }
 // openRoundsTab navigates to a match's rounds tab at a round.
 export function openRoundsTab(spectra, matchId, round) {
