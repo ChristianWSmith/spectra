@@ -209,3 +209,18 @@ test('followPlayer opens the replay of the match following the player, back to i
     '/replay/7?back=match/7&follow=76561190000000001',
   ]);
 });
+
+// Navigation targets are routes the router reads: a slashless hash lands on the Library.
+test('openMatch and openRoundsTab navigate to routes the router reads', async () => {
+  const { parseHash } = await import('./router.js');
+  const nav = [];
+  const spectra = { navigate: (h) => nav.push(h) };
+  copies.openMatch(spectra, 7);
+  copies.openRoundsTab(spectra, 7, 3);
+  const [matchRoute, roundsRoute] = nav.map((h) => parseHash('#' + h));
+  assert.equal(matchRoute.name, 'match');
+  assert.equal(matchRoute.id, 7);
+  assert.equal(roundsRoute.name, 'match');
+  assert.equal(roundsRoute.tab, 'Rounds');
+  assert.equal(roundsRoute.query.round, '3');
+});

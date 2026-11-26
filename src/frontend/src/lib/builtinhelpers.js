@@ -4,8 +4,8 @@
 // builtin may take (a user component takes none). Each name is the canonical
 // function of its module (lib/fmt.js, rounds.js, sideparity.js, teams.js,
 // econ.js, nav.js), imported and re-exported here; this module holds no second
-// implementation. The only own function is chatTag, which draws its tags from
-// the strings catalog. builtinhelpers.test.js pins the re-exports.
+// implementation. chatTag is fmt.js's, re-exported above. builtinhelpers.test.js pins
+// the re-exports.
 //
 // Rules the builtins keep (AGENTS.md "Builtin conventions"): a missing value is
 // a dash, never a zero (ruling 23); a stored value is never recomputed here
@@ -36,6 +36,9 @@ export { DASH, chatTag } from './fmt.js';
 // playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
 export { playerSideClassAt };
 // Match routes: the match's route, its tab, and the rounds tab opened at a round.
+// matchPath and matchTab are the BACK form: a route without its leading slash, as a
+// back= query value carries it (the router reads a slashed hash). A navigation target
+// adds the slash itself: spectra.navigate('/' + matchPath(id)).
 export function matchPath(matchId) {
   return 'match/' + matchId;
 }
@@ -43,7 +46,7 @@ export function matchTab(matchId, tab) {
   return matchPath(matchId) + '/' + tab;
 }
 export function roundsTabHash(matchId, round) {
-  return hashOf('/match/' + matchId + '/rounds', { round });
+  return hashOf('/' + matchTab(matchId, 'rounds'), { round });
 }
 // openReplay navigates to a match's replay with the given route extras (tick, loop,
 // follow, back); a missing or empty extra is left out of the route.
@@ -200,7 +203,7 @@ export function hashOf(path, query) {
 
 // Open a match's view.
 export function openMatch(spectra, matchId) {
-  spectra.navigate(matchPath(matchId));
+  spectra.navigate('/' + matchPath(matchId));
 }
 
 // Open a player's profile (the name link on every builtin that lists players).
@@ -211,7 +214,7 @@ export function openPlayer(spectra, steam) {
 // Open the replay following a player. `back` is the tab the panel sits on; the replay
 // returns there (the match when it is empty).
 export function followPlayer(spectra, matchId, back, steam) {
-  openReplay(spectra, matchId, { back: back || 'match/' + matchId, follow: steam });
+  openReplay(spectra, matchId, { back: back || matchPath(matchId), follow: steam });
 }
 
 // CHAT: a chat line's clock and speaker tag (lib/fmt.js chatClock / chatTag).

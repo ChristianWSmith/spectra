@@ -40,7 +40,9 @@
       .then((rows) => {
         if (live) players = listedPlayers(rows) || [];
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (live) suggestError = errText(e);
+      });
     return () => (live = false);
   });
 

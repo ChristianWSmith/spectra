@@ -361,8 +361,9 @@
         const ready = (rows || []).filter((r) => r.status === 'ready' || r.status === '');
         matches = ready.length ? ready : rows || [];
       })
-      .catch(() => {
+      .catch((e) => {
         matches = [];
+        pickerError = errText(e);
       });
   });
 
@@ -376,8 +377,9 @@
         players = listedPlayers(rows) || [];
         if (players.length && !players.some((p) => p.steamId === steamId)) steamId = '';
       })
-      .catch(() => {
+      .catch((e) => {
         players = [];
+        pickerError = errText(e);
       });
   });
 
@@ -394,8 +396,9 @@
           const maxRound = (rs || []).reduce((m, r) => Math.max(m, r.number), 0);
           if (roundNo > maxRound) roundNo = Math.max(1, maxRound);
         })
-        .catch(() => {
+        .catch((e) => {
           rounds = [];
+          pickerError = errText(e);
         });
       return;
     }
