@@ -372,9 +372,14 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   into the component's frame and also rejects. Each component renders
   inside its own error boundary. There is no sandbox: components run in the
   webview with the app's bindings.
-- **Helper surface.** A builtin may import a curated set of app modules:
-  the `BUILTIN_HELPERS` registry in `componentruntime/compile.js` lists
-  each module and the names a builtin may take from it. A user component
+- **Helper surface.** A builtin imports only three things: Svelte components
+  (`components/*.svelte`, and its own `.svelte` files), `builtinhelpers.js`, and the
+  builtins’ own modules under `builtins/` (`panelhelpers.js`, `shared.js`, the combat
+  modules). `builtinhelpers.js` is the one gateway to the app: it re-exports every app
+  helper a builtin takes (strings as `S`, `fmt`, `current`, `services`, `keys`, `nav`, the
+  heatmap and economy helpers). The `BUILTIN_HELPERS` registry in
+  `componentruntime/compile.js` lists the names a builtin may take from each module
+  (the gate checks it). A user component
   may import only the public Svelte runtime modules listed in
   `RUNTIME_MODULES` (`svelte`, `svelte/store`, `svelte/motion`, and the
   rest of that list); the save gate refuses every other import, and every
@@ -422,11 +427,11 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `.svelte` first. Every builtin is a `.svelte` file: the Match panels
   (`builtins/match/Match*.svelte`), the Economy and Utility views
   (`builtins/econ/`, `builtins/util/`). Shared
-  helpers are real modules that a builtin imports by relative path: the
-  Economy and Utility helpers in `builtinhelpers.js`, the Match panels'
-  in `builtins/match/panelhelpers.js`. Each module is registered in
-  `BUILTIN_HELPERS` (`componentruntime/compile.js`) with the names a
-  builtin may take.
+  helpers are real modules: the app helpers a builtin takes come through
+  `builtinhelpers.js`, and a builtin’s own helpers (the Match panels'
+  `builtins/match/panelhelpers.js`, the profile `shared.js`) are imported by relative
+  path. The names a builtin may take from `builtinhelpers.js` are registered in
+  `BUILTIN_HELPERS` (`componentruntime/compile.js`).
 - **Builtin edits are in place, with restore.** A builtin component,
   metric or report is edited in place. Save stores one row per edited
   builtin in `builtin_overrides` (keys `builtin-…`, `metric:<name>`,
