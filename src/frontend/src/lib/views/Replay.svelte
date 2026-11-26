@@ -490,6 +490,8 @@
   let feedLoading = $state(false);
   let feedSettled = $state(false);
   let feedError = $state('');
+  // A failed read of the filter's weapon list (FilterBar): its own line, cleared by its ✕.
+  let filterError = $state('');
   let gen = 0; // feed generation — drops stale async results
 
   let feedF = null; // the filter the loaded feed belongs to (load-more)
@@ -4266,7 +4268,25 @@
           </span>
 
 
-          <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
+          <FilterBar
+            {id}
+            filter={filter}
+            onchange={onBarFilter}
+            showReset={false}
+            onerror={(e) => (filterError = errText(e))}
+          />
+          {#if filterError}
+            <p class="error" role="alert">
+              {filterError}
+              <button
+                class="btn small ghost"
+                aria-label={S.replay.dismissLabel}
+                title={S.replay.dismissLabel}
+                onclick={() => (filterError = '')}
+                ><span class="codicon codicon-close" aria-hidden="true"></span></button
+              >
+            </p>
+          {/if}
 
           <!-- Saved-preset row — TWO lines by construction (the owner's
                screenshot: "Saved fi" truncated on a 90px floor with Reset
