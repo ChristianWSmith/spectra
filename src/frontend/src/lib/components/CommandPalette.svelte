@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../builtinhelpers.js';
   import { stepActive } from '../listnav.js';
   // M5 command palette: Ctrl/Cmd-K overlay with fuzzy search
   // across nav actions, matches, players, saved filters, metrics and saved
@@ -272,7 +273,7 @@
       q,
       rows.map((p) => ({
         label: p.name || p.steamId,
-        sub: `${p.matches} matches · last seen ${p.lastSeen || '—'}`,
+        sub: `${p.matches} matches · last seen ${p.lastSeen || DASH}`,
         run: () => openProfile(nav, p.steamId),
       })),
     );

@@ -21,6 +21,7 @@
 // every 3 OT rounds after that (27, 30, 33, …) — and only while another
 // counted round follows, so a match ending on a boundary cell gets no
 // dangling marker (the gating lives in ../rounds.js separatorFlags).
+  import { DASH } from '../builtinhelpers.js';
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { roundIndexLabel, separatorFlags } from '../rounds.js';
@@ -102,7 +103,7 @@ const cells = $derived.by(() => {
         class:current={current === r.number}
         class:point-up={r.winner !== '' && r.winner === aboveSide}
         class:point-down={r.winner !== '' && r.winner !== aboveSide}
-        title={`${kind} — ${r.winner ? r.winner.toUpperCase() : '—'}${r.reason ? ' · ' + r.reason : ''}`}
+        title={`${kind} — ${r.winner ? r.winner.toUpperCase() : DASH}${r.reason ? ' · ' + r.reason : ''}`}
         aria-label={kind}
         aria-current={current === r.number ? 'true' : undefined}
         onclick={() =>

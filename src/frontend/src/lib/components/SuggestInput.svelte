@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../builtinhelpers.js';
   import { stepActive, onListKey } from '../listnav.js';
   // SuggestInput — the ONE suggestion dropdown behind every "search
   // input that offers what is actually in the library" (the canonical
@@ -107,7 +108,7 @@
   });
   function adrText(item) {
     const row = adrRows.get(item.steamId);
-    return row ? fmt1(row.value) : '—';
+    return row ? fmt1(row.value) : DASH;
   }
 
   // Nothing to show → the panel (and its dismissal listeners) are gone;
