@@ -607,6 +607,7 @@ What a component can use, its \`spectra\` helpers and display pieces, is listed 
 **Interaction**
 
 - **\`spectra.openRow(open, { ignore, enterOnly })\`**: spread onto a clickable row (\`<tr {...spectra.openRow(open)}>\`). A click, or Enter (and Space unless \`enterOnly\`), runs \`open\`. \`ignore\` is a selector for controls inside the row that must keep their own clicks and keys.
+- **\`spectra.followPlayer(steamId, back?)\`**: opens the replay of the component's match, following this player. \`back\` is the route the replay returns to; the match when it is left out.
 - **\`spectra.navigate(route)\`**: opens a view. The route is a hash such as \`#/match/…\`, or \`{ path, query }\`.
 - **\`spectra.guard(fn)\`**: wraps an event or async handler, so its error goes to the component's box instead of being lost.
 - **\`spectra.report(error)\`**: shows a failed load in the component's box, which the reader can dismiss. Use it for a failed read the component has no retry for.
