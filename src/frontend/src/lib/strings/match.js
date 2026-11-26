@@ -7,8 +7,6 @@
 
 export const match = {
   // The Rounds tab's per-round details (the row expands in place).
-  roundDetailShow: 'Show round details',
-  roundDetailHide: 'Hide round details',
   roundDetailLoading: 'Loading round…',
   roundDetailFailed: 'The round could not be read.',
   // Kill-event flag chips (code and tooltip).

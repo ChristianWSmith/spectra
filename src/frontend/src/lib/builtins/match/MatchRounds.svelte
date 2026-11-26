@@ -51,12 +51,9 @@
     colKills: S.match.colKills,
     watchRoundTitle: S.match.watchRoundTitle,
     watchRoundAria: S.match.watchRoundAria,
-    openProfile: S.match.openProfile,
     killedVerb: S.match.killedVerb,
     roundDetailLoading: S.match.roundDetailLoading,
     roundDetailFailed: S.match.roundDetailFailed,
-    roundDetailShow: S.match.roundDetailShow,
-    roundDetailHide: S.match.roundDetailHide,
   });
 
   // Match rounds: one row per round, in round order. The ▶ watches the round in the replay
