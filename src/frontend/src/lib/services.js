@@ -150,10 +150,6 @@ export function getVersion() {
   return AppService.GetVersion();
 }
 
-export function saveWindowSize(w, h) {
-  return AppService.SaveWindowSize(w, h);
-}
-
 // Immediate update check (Settings → About → Check for Updates). Unlike the
 // silent startup check this always reports an outcome — the framework's
 // update window opens even when already up to date.
@@ -425,10 +421,6 @@ export function getMatchSummary(id) {
 // the JS twin is lib/teams.js).
 export function getTeamNames(id) {
   return cachedRead('GetTeamNames', [id], () => MatchService.GetTeamNames(id));
-}
-
-export function getRoundDetail(id, round) {
-  return MatchService.GetRoundDetail(id, round);
 }
 
 // The round bounds (roundFrom/roundTo) are an inclusive, PARTIAL range
@@ -1328,4 +1320,3 @@ export function saveExport(urlPath, defaultName, extensions) {
 
 export function getPref(key) { return KVStoreService.Get(key); }
 export function setPref(key, value) { return KVStoreService.Set(key, value); }
-export function deletePref(key) { return KVStoreService.Delete(key); }

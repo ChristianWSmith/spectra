@@ -1100,7 +1100,8 @@ test('Check D — length tiers: common copy ≤70, hints ≤200 (owner, 2026-11-
   assert.ok(titleHintKeys.size > 100, `title derivation found only ${titleHintKeys.size} keys — the scan is broken`);
   assert.ok(inline.length > 100, `extracted only ${inline.length} inline literals — the scan is broken`);
   assert.ok(seed.docs.length >= 50, `extracted only ${seed.docs.length} seed docs — the schema.sql extractor is broken`);
-  assert.ok(defs.length >= 20, `extracted only ${defs.length} definitions.js strings — the scan is broken`);
+  // 15, not 20: six unread definitions were removed from definitions.js; 17 remain.
+  assert.ok(defs.length >= 15, `extracted only ${defs.length} definitions.js strings — the scan is broken`);
   assert.ok(goErrs.length > 400, `extracted only ${goErrs.length} Go error literals — the scan is broken`);
 
   // Declaration liveness — `why` mandatory, nothing stale (the ledger

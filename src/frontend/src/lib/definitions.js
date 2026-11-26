@@ -64,12 +64,6 @@ function lowerFirst(s) {
 
 // --- Tooltips whose concept has a glossary entry (derived, not copied) ------
 
-export const KAST_DEF = `KAST% — ${lowerFirst(glossaryText('KAST%'))}`;
-
-export const DMG_CONV_DEF = `Damage conversion — ${lowerFirst(glossaryText('Damage conversion'))}`;
-
-export const TRADE_OPP_MISSED_DEF = `Trade opportunities missed — ${lowerFirst(glossaryText('Trade opportunities missed (inferred)'))}`;
-
 // Economy tab (chart metric titles / table column headers). Verified:
 // equipment value is the game's freeze-time-end per-player equipment
 // summed per side (internal/extract/handlers.go →
@@ -98,9 +92,6 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // detector (internal/analytics/analytics.go defers the entry kind).
 // Percent scale: 0..100 — the metric stores a 0..1 fraction and the
 // column renders it ×100 (fmtPercent).
-export const ENTRY_DEF =
-  'Entry rate — entry kills ÷ the match’s rounds, as a percent (0–100): the share of the match’s rounds where this player drew first blood.';
-
 // Trade% (Combat scoreboard column) — the `trade_rate_deaths` metric's
 // tooltip: 100 × player_stats.trade_kills / the player's
 // OWN deaths (a trade kill answers a teammate's death inside the trade
@@ -111,15 +102,9 @@ export const ENTRY_DEF =
 // denominator (trade opportunities, not own deaths — see the
 // career_trade_rate metric's doc); the two are deliberately no longer
 // the same card.
-export const TRADE_DEF =
-  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the deaths are this player’s own, so it’s a ratio, not a share — it can top 100%.';
-
 // Untraded deaths (Combat): kill tag rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer
 // inside the trade window (internal/analytics/kill tags.go).
-export const UNTRADED_DEF =
-  'Untraded deaths — deaths with no teammate kill inside the trade window afterwards.';
-
 // Kill tag distance (Combat's kill tag deep-dive "Dist (m)" column).
 // The value is the game's own player_death `distance` field (demoinfocs
 // events.Kill.Distance → stored events.distance → kill tags.distance),
