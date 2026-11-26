@@ -5,11 +5,10 @@
   // slot), value, sub. The view owns the data, the tooltip and whether
   // the cell drills anywhere: an `onclick` renders the cell as a button,
   // otherwise it stays a plain div.
-  // `subCls` is an additive pass-through for the sub line (Match's top
-  // stats pass the team-identity color); default '' and the other call
-  // sites are unchanged.
+  // `subCls` is an additive pass-through for the sub line (a view may pass a
+  // team-identity color); default '' leaves the sub line unchanged.
   // `subSlot` is an optional snippet rendered INSTEAD of the `sub`
-  // string — Match's top stats pass the player's ProfileLink there, so
+  // string — a view may pass a player's ProfileLink there, so
   // the name text itself opens the profile while the rest of the cell
   // keeps its own drill. A click (or Enter) inside the sub line belongs
   // to that link and never fires the cell's onclick.

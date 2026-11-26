@@ -331,6 +331,7 @@
       loading,
       (next) => (appendix = next),
       (e) => {
+        spectra.report(e);
         const next = {};
         for (const id of sel) next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
         for (const r of rawSel) next[r.id] = { loading: false, error: errText(e), raw: r };
@@ -485,6 +486,7 @@
             players={m.players}
             stats={m.sbBySteam}
             seeds={m.seeds}
+            onerror={(e) => spectra.report(e)}
             states={m.metricStates}
             value={m.steamId}
             id="rep-player"

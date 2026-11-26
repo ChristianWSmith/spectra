@@ -31,7 +31,8 @@
   // states: metricId → {state, error} — the compute-state read Reports
   // already holds, so a half with no fresh row renders the state word
   // in its title instead of the raw column behind it.
-  let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '' } = $props();
+  // onerror (optional) receives a failed career read; the picker keeps its empty stats.
+  let { players = [], stats = {}, seeds = new Map(), states = new Map(), value = '', onselect = () => {}, id = '', onerror = () => {} } = $props();
 
   // The list's height budget: below this much room under the trigger, it opens above.
   const POP_ROOM = 340;
@@ -70,8 +71,11 @@
       .then((m) => {
         if (live) career = m;
       })
-      .catch(() => {
-        if (live) career = new Map();
+      .catch((e) => {
+        if (live) {
+          career = new Map();
+          onerror(e);
+        }
       });
     return () => (live = false);
   });

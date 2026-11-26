@@ -152,6 +152,7 @@
          offered through the one suggestion dropdown. -->
     <SuggestInput
       id="prof-trend"
+      onerror={(e) => spectra.report(e)}
       wrapClass="prof-trend-pick"
       kind="text"
       items={trendItems}

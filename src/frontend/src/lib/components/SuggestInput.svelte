@@ -33,6 +33,7 @@
 
   let {
     id = '',
+    onerror = () => {},
     placeholder = '',
     ariaLabel = '',
     inputClass = '',
@@ -96,8 +97,11 @@
       .then((rows) => {
         if (live) adrRows = rows;
       })
-      .catch(() => {
-        if (live) adrRows = new Map();
+      .catch((e) => {
+        if (live) {
+          adrRows = new Map();
+          onerror(e);
+        }
       });
     return () => (live = false);
   });
