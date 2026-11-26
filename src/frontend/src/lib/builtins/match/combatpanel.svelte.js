@@ -63,9 +63,6 @@ export function combatPanel(getSpectra, getMatchId, { read, apply }) {
     get error() {
       return error;
     },
-    dismiss() {
-      error = '';
-    },
     get players() {
       return players;
     },

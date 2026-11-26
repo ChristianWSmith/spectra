@@ -822,7 +822,3 @@ export function loadComponent(source, filename = 'Component.svelte', builtinDir 
   return promise;
 }
 
-// resetComponentCache empties the compiled-module cache (tests).
-export function resetComponentCache() {
-  cache.clear();
-}

@@ -139,20 +139,24 @@
 
   // The match's rounds: the round input's ceiling, and the clamp of a round
   // that the new match does not have.
-  $effect(() => {
-    const id = matchId;
-    if (!id) return;
-    getRounds(id)
-      .then((rs) => {
-        m.rounds = rs || [];
-        const max = (rs || []).reduce((x, r) => Math.max(x, r.number), 0);
-        if (m.roundNo > max) m.roundNo = Math.max(1, max);
-      })
-      .catch((e) => {
-        m.rounds = [];
-        spectra.report(e);
-      });
-  });
+  $effect(() =>
+    whileCurrent((isCurrent) => {
+      const id = matchId;
+      if (!id) return;
+      getRounds(id)
+        .then((rs) => {
+          if (!isCurrent()) return;
+          m.rounds = rs || [];
+          const max = (rs || []).reduce((x, r) => Math.max(x, r.number), 0);
+          if (m.roundNo > max) m.roundNo = Math.max(1, max);
+        })
+        .catch((e) => {
+          if (!isCurrent()) return;
+          m.rounds = [];
+          spectra.report(e);
+        });
+    }),
+  );
 
   // --- the templates and target block ---
   // The Reports template and target panel (builtin, composed by ReportsView):

@@ -34,6 +34,7 @@ export const combat = {
   oneKillPrefix: 'One kill — ',
   openProfileName: 'Open profile — {name}',
   killTagsUnavailable: 'Kill tags unavailable.',
+  clutchesUnavailable: 'Clutches unavailable.',
   noKillTags: 'No kill tags match this filter.',
   clutchesHeading: 'Clutches',
   filterClutchesLabel: 'Filter clutches by outcome',

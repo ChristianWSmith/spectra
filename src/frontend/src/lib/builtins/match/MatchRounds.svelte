@@ -507,7 +507,7 @@
             class:split-before={ri > 0 && data.seps[ri - 1]}
             tabindex="0"
             aria-expanded={open.includes(r.number)}
-            {...openRow(() => toggleRound(r.number), { ignore: CONTROL_SELECTOR })}
+            {...openRow(() => toggleRound(r.number), { ignore: CONTROL_SELECTOR, enterOnly: true })}
           >
             <td>
               <button

@@ -114,7 +114,9 @@
       {S.combat.lostToggle}
     </button>
   </div>
-  {#if clutches.length === 0 && !error}
+  {#if clutches.length === 0 && error}
+    <EmptyNote>{S.combat.clutchesUnavailable}</EmptyNote>
+  {:else if clutches.length === 0}
     <EmptyNote>{S.combat.noClutches}</EmptyNote>
   {:else if shownClutches.length === 0}
     <EmptyNote>{clutchEmptyText}</EmptyNote>

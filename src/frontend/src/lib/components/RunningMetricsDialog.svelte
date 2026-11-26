@@ -14,16 +14,18 @@
   const POLL_MS = 1000;
 
   let running = $state([]);
-  let error = $state('');
+  let error = $state(''); // the cancel's failure (an action): its own dismissable line
+  let pollError = $state(''); // the list read: cleared when the list lands
   let cancellingId = $state(0); // the one cancel in flight (0 = none)
 
   function load() {
     return listRunningMetrics()
       .then((rows) => {
         running = rows || [];
+        pollError = '';
       })
       .catch((e) => {
-        error = errText(e) || S.builder.runningLoadError;
+        pollError = errText(e) || S.builder.runningLoadError;
       });
   }
 
@@ -62,7 +64,7 @@
     </p>
   {/if}
   {#if running.length === 0}
-    <p class="muted rm-none">{S.builder.runningNone}</p>
+    <p class="muted rm-none">{pollError || S.builder.runningNone}</p>
   {:else}
     <ul class="rm-list">
       {#each running as row (row.metricId)}
