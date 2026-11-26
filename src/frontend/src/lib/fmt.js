@@ -1,5 +1,6 @@
 // Formatting helpers for the M1 views. Pure functions — no services.
 import { isCounted } from './rounds.js';
+import * as S from './strings/index.js';
 
 // THE missing-value dash: the one glyph a missing value shows.
 export const DASH = '\u2014';
@@ -52,11 +53,11 @@ export function chatClock(c, roundByNumber, tickRate) {
 // that link the name compose <ProfileLink> + chatTag + ': ' + text, so
 // the link survives and the line reads identically).
 export function chatTag(channel, side) {
-  if (channel === 'all') return '[ALL]';
+  if (channel === 'all') return S.match.chatTagAll;
   if (channel === 'team') {
     const s = String(side || '').toLowerCase();
-    if (s === 'ct') return '[CT]';
-    if (s === 't') return '[T]';
+    if (s === 'ct') return S.match.chatTagCt;
+    if (s === 't') return S.match.chatTagT;
   }
   return '';
 }

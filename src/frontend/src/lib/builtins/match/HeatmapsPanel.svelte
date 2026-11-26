@@ -1,5 +1,5 @@
 <script>
-  import { DASH, matchTab } from '../../builtinhelpers.js';
+  import { DASH, matchTab, openReplay } from '../../builtinhelpers.js';
   import { loadThen, whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import * as S from '../../strings/index.js';
@@ -22,7 +22,6 @@
   import { fmt1, fmtInt } from '../../fmt.js';
   import { isCounted, roundScoreLabel } from '../../rounds.js';
   import { downloadCanvasPNG } from '../../download.js';
-  import { replayHash } from '../../nav.js';
   import { listedPlayers } from '../../players.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
   // The ONE background-work wrapper (lib/workstate.svelte.js): generate
@@ -511,11 +510,10 @@
       x1: Math.round(applied.maxX),
       y1: Math.round(applied.maxY),
     });
-    const target = replayHash(id, { ...filter, bbox: applied }, { back: matchTab(id, 'heatmaps') });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
-      spectra.navigate(target);
+      openReplay(spectra, id, { filter: { ...filter, bbox: applied }, back: matchTab(id, 'heatmaps') });
     }, 400);
   }
 </script>

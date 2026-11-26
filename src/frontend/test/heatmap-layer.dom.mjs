@@ -481,8 +481,8 @@ check(
   'bbox-less kinds return BEFORE replayHash (no navigation)',
   onRegionSrc.includes('!carries') &&
     onRegionSrc.indexOf('return;') >= 0 &&
-    onRegionSrc.indexOf('return;') < onRegionSrc.indexOf('replayHash('),
-  `return@${onRegionSrc.indexOf('return;')} replayHash@${onRegionSrc.indexOf('replayHash(')}`,
+    onRegionSrc.indexOf('return;') < onRegionSrc.indexOf('openReplay('),
+  `return@${onRegionSrc.indexOf('return;')} openReplay@${onRegionSrc.indexOf('openReplay(')}`,
 );
 check(
   'the cell bbox expands by grid.pad on all four sides — ONLY for a cell emission',

@@ -102,7 +102,7 @@
   // those links select the LINK, never the row (target guard, the same
   // pattern Match's scoreboard rows use).
   // The row's click and Enter/Space (openRow); a control inside the row keeps its own.
-  const mainRow = openRow(() => onselect(row), { ignore: CONTROL_SELECTOR });
+  const mainRow = openRow(() => onselect(row), { ignore: CONTROL_SELECTOR, enterOnly: true });
 
   function seek(e) {
     e.stopPropagation();

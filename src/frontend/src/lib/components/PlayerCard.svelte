@@ -210,7 +210,7 @@
   // activation. Enter/Space mirror the click; they are redundant with
   // the Replay view's own follow controls (F, 1-9/0, the follow
   // popover) — never a second source of follow state.
-  const cardRow = openRow(() => onFollow(), { ignore: CONTROL_SELECTOR });
+  const cardRow = openRow(() => onFollow(), { ignore: CONTROL_SELECTOR, enterOnly: true });
 </script>
 
 <div

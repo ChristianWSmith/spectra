@@ -19,20 +19,20 @@
 // the names below are imported from it (the locals the module uses) and
 // re-exported (the names a builtin imports from here). DASH is the one dash a
 // missing cell shows; fmt.js writes the same character.
-import { round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
+import { chatTag, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock } from './fmt.js';
 import { isCounted } from './rounds.js';
 import { roundsByNumber } from './replay/landmarks.js';
 import { buildHash } from './router.js';
 import { playerSideClassAt, sideClassOf, pickPlayer, resolveSide } from './teams.js';
 import * as S from './strings/index.js';
 import { bySide, econColumns, econValue, lossPips } from './econ.js';
-import { asTick, entryLoopAround, entryLoopSpan, isSteam, openProfile } from './nav.js';
+import { asTick, entryLoopAround, entryLoopSpan, isSteam, openProfile, replayHash } from './nav.js';
 import { moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags } from './rounds.js';
 import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, winnerTeamKey } from './sideparity.js';
 import { synthTeamName, teamNames, teamStartClass } from './teams.js';
 export { econColumns, econValue, entryLoopAround, entryLoopSpan, eraOf, flipIndexes, isSteam, lossPips, moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags, sideAtRound, sideInEra, startSideFor, synthTeamName, teamKeyAt, teamNames, teamStartClass, winnerTeamKey };
 export { bySide, pickPlayer, resolveSide, roundsByNumber, asTick, sideClassOf, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
-export { DASH } from './fmt.js';
+export { DASH, chatTag } from './fmt.js';
 // playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
 export { playerSideClassAt };
 // Match routes: the match's route, its tab, and the rounds tab opened at a round.
@@ -47,8 +47,8 @@ export function roundsTabHash(matchId, round) {
 }
 // openReplay navigates to a match's replay with the given route extras (tick, loop,
 // follow, back); a missing or empty extra is left out of the route.
-export function openReplay(spectra, matchId, extras) {
-  spectra.navigate(hashOf('/replay/' + matchId, extras));
+export function openReplay(spectra, matchId, { filter, ...extras } = {}) {
+  spectra.navigate(filter ? replayHash(matchId, filter, extras) : hashOf('/replay/' + matchId, extras));
 }
 // openRoundsTab navigates to a match's rounds tab at a round.
 export function openRoundsTab(spectra, matchId, round) {
@@ -216,15 +216,7 @@ export function followPlayer(spectra, matchId, back, steam) {
 
 // CHAT: a chat line's clock and speaker tag (lib/fmt.js chatClock / chatTag).
 // The round prefix is RD (RD12 0:47), and team chat tags the speaker's side.
-export function chatTag(channel, side) {
-  if (channel === 'all') return S.match.chatTagAll;
-  if (channel === 'team') {
-    const s = String(side || '').toLowerCase();
-    if (s === 'ct') return S.match.chatTagCt;
-    if (s === 't') return S.match.chatTagT;
-  }
-  return '';
-}
+
 
 // The economy of one match, read the way the Economy view reads it: the rounds, the economy rows, the team names,
 // the side switches and the winner. The Economy composer loads it for its panels; a panel mounted alone (a

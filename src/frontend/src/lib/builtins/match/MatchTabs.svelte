@@ -21,6 +21,7 @@
   import { loadLoopSecs } from '../../loopsecs.js';
   import * as S from '../../strings/index.js';
   import { MATCH_TABS, matchTabSlug } from '../../router.js';
+  import { matchPath, matchTab } from '../../builtinhelpers.js';
   import { LOOP_SECS_DEFAULT } from '../../nav.js';
   import { seed, remember, matchKey } from '../../viewstate.svelte.js';
 
@@ -50,7 +51,7 @@
   // and compare pages resolve it to this tab (plain match/:id for Overview).
   // The first tab of the route table is the Overview, the one plain match/:id route.
   const backPath = $derived(
-    tab === MATCH_TABS[0] ? `match/${matchId}` : `match/${matchId}/${matchTabSlug(tab)}`,
+    tab === MATCH_TABS[0] ? matchPath(matchId) : matchTab(matchId, matchTabSlug(tab)),
   );
   const panelProps = $derived({ back: backPath });
 
