@@ -14,7 +14,7 @@ import { onMount } from 'svelte';
 import { errText } from '../../services.js';
 import { loadLoopSecs } from '../../loopsecs.js';
 import { LOOP_SECS_DEFAULT } from '../../nav.js';
-import { roundSideClassOf, openReplay } from '../../builtinhelpers.js';
+import { roundSideClassOf, openReplay, matchTab } from '../../builtinhelpers.js';
 import { whileCurrent } from '../../current.js';
 import { loadCombatSide } from './combatdata.js';
 
@@ -56,7 +56,7 @@ export function combatPanel(getSpectra, getMatchId, { read, apply }) {
   // Deep link into the replay at a tick, back to this panel's tab.
   function replay(tick, loop, follow) {
     const matchId = getMatchId();
-    openReplay(getSpectra(), matchId, { tick, loop, follow, back: `match/${matchId}/combat` });
+    openReplay(getSpectra(), matchId, { tick, loop, follow, back: matchTab(matchId, 'combat') });
   }
 
   return {

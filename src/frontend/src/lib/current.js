@@ -44,10 +44,9 @@ export function loadForMatch(getMatchId, load, apply, failed) {
   // reads of the match) when the effect runs, and the cleanup is whileCurrent's.
   return () =>
     whileCurrent((isCurrent) => {
-      load(getMatchId()).then(
-        whenCurrent(isCurrent, apply),
-        whenCurrent(isCurrent, failed),
-      );
+      load(getMatchId())
+        .then(whenCurrent(isCurrent, apply))
+        .catch(whenCurrent(isCurrent, failed));
     });
 }
 
@@ -69,13 +68,12 @@ export function latestOnly() {
   return (promise, apply, fail) => {
     const mine = ++gen;
     const current = () => mine === gen;
-    promise.then(
-      (v) => {
+    promise
+      .then((v) => {
         if (current()) apply(v);
-      },
-      (e) => {
+      })
+      .catch((e) => {
         if (current() && fail) fail(e);
-      },
-    );
+      });
   };
 }

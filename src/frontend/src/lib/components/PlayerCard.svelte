@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../fmt.js';
   // PlayerCard — ONE player's live card beside the replay render area:
   // name (+ the voice live dot), HP + bar with the armor/helmet chip at
   // the row's right edge, the equipped weapon (icon + mag/reserve ammo —
@@ -112,7 +113,7 @@
 
   // Display name: roster name, else the steam id (a nameless row still
   // identifies its player), else the honest placeholder.
-  const name = $derived(player?.name || player?.steamId || '—');
+  const name = $derived(player?.name || player?.steamId || DASH);
   const hasState = $derived(state != null);
   const isDead = $derived(!!dead || alive === false);
 
@@ -122,7 +123,7 @@
   const armor = $derived(state ? state.armor : null);
   const chip = $derived(armorChip(state));
   const weapon = $derived(weaponNameOf(state));
-  const ammo = $derived(weapon ? ammoText(state) : '—');
+  const ammo = $derived(weapon ? ammoText(state) : DASH);
   const money = $derived(moneyText(state));
   const util = $derived(utilityOf(state ? state.inventory : null));
   // The bomb is checked INDEPENDENTLY of utilityOf (which deliberately
@@ -162,7 +163,7 @@
   // between modes.
   const held = $derived(heldItemOf(state));
   const main = $derived(held ? mainOf(state) : null);
-  const mainAmmo = $derived(held ? mainAmmoText(state) : '—');
+  const mainAmmo = $derived(held ? mainAmmoText(state) : DASH);
   const heldIconSrc = $derived(held ? iconSrc(held) : null);
   const mainIconSrc = $derived(main ? iconSrc(main) : null);
 
@@ -252,7 +253,7 @@
   </div>
 
   <div class="pc-hp-row">
-    <span class="pc-num pc-hp" class:pc-unknown={band === 'unknown'} title={hpTitle}>{hp ?? '—'}</span>
+    <span class="pc-num pc-hp" class:pc-unknown={band === 'unknown'} title={hpTitle}>{hp ?? DASH}</span>
     <span class="pc-bar" class:pc-unknown={band === 'unknown'} aria-hidden="true">
       {#if pct != null}<span class="pc-bar-fill pc-fill-{band}" style="width: {pct}%"></span>{/if}
     </span>
@@ -265,7 +266,7 @@
       {:else}
         <span class="pc-fallback">{chip.text}</span>
       {/if}
-      <span class="pc-num pc-armor-val">{armor ?? '—'}</span>
+      <span class="pc-num pc-armor-val">{armor ?? DASH}</span>
     </span>
   </div>
 

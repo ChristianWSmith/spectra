@@ -1,5 +1,5 @@
 <script>
-  import { DASH } from '../../builtinhelpers.js';
+  import { DASH, matchTab } from '../../builtinhelpers.js';
   import { loadThen, whileCurrent } from '../../current.js';
   import ErrorBanner from '../../components/ErrorBanner.svelte';
   import * as S from '../../strings/index.js';
@@ -511,7 +511,7 @@
       x1: Math.round(applied.maxX),
       y1: Math.round(applied.maxY),
     });
-    const target = replayHash(id, { ...filter, bbox: applied }, { back: `match/${id}/heatmaps` });
+    const target = replayHash(id, { ...filter, bbox: applied }, { back: matchTab(id, 'heatmaps') });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;

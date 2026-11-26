@@ -32,7 +32,7 @@ import { eraOf, flipIndexes, sideAtRound, sideInEra, startSideFor, teamKeyAt, wi
 import { synthTeamName, teamNames, teamStartClass } from './teams.js';
 export { econColumns, econValue, entryLoopAround, entryLoopSpan, eraOf, flipIndexes, isSteam, lossPips, moneyResetIndexes, roundEndTick, roundIndexLabel, roundScoreLabel, roundStartTick, scoreThrough, separatorAfter, separatorFlags, sideAtRound, sideInEra, startSideFor, synthTeamName, teamKeyAt, teamNames, teamStartClass, winnerTeamKey };
 export { bySide, pickPlayer, resolveSide, roundsByNumber, asTick, sideClassOf, round1, fmtInt, fmt1, fmt2, fmtMoney, fmtMs, fmtClock, fmtZeroDash, tickSeconds, normTickRate, roundClock, chatClock, isCounted };
-export const DASH = '\u2014';
+export { DASH } from './fmt.js';
 // playerSideClassAt is teams.js's (the one implementation); a builtin imports it from here.
 export { playerSideClassAt };
 // Match routes: the match's route, its tab, and the rounds tab opened at a round.

@@ -373,7 +373,7 @@ const fileURL = (p) => pathToFileURL(p).href;
 // nav.js + services.js → local bundle with both pinned to the SAME
 // absolute URLs the view links (one module instance each).
 svelteCompile(
-  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
+  readFileSync('src/lib/components/StatusChip.svelte', 'utf8').replace("from '../fmt.js'", "from './fmt.js'"),
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
 );

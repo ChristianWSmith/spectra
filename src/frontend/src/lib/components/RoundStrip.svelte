@@ -21,11 +21,10 @@
 // every 3 OT rounds after that (27, 30, 33, …) — and only while another
 // counted round follows, so a match ending on a boundary cell gets no
 // dangling marker (the gating lives in ../rounds.js separatorFlags).
-  import { DASH } from '../builtinhelpers.js';
+  import { DASH, roundsTabHash } from '../builtinhelpers.js';
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { roundIndexLabel, separatorFlags } from '../rounds.js';
-import { buildHash } from '../router.js';
 import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
 let {
@@ -108,7 +107,7 @@ const cells = $derived.by(() => {
         onclick={() =>
           onselect
             ? onselect(r.number)
-            : nav(buildHash(`/match/${matchId}/rounds`, { round: r.number }))}
+            : nav(roundsTabHash(matchId, r.number))}
       >
         {label}
       </button>

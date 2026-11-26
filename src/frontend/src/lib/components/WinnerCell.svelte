@@ -1,4 +1,5 @@
 <script>
+  import { DASH } from '../fmt.js';
   // Winner cell — the shared "who won this round" chip for the match
   // details tables (Match's Rounds tab, Economy's buy-types table). The
   // markup is the EXISTING side chip (`.chip.side {winner}` — already
@@ -21,5 +22,5 @@
 </script>
 
 <span class="chip side {winner || 'none'}" {title}>
-  {name || (winner ? winner.toUpperCase() : '—')}
+  {name || (winner ? winner.toUpperCase() : DASH)}
 </span>

@@ -101,7 +101,7 @@ writeFileSync(join(dir, 'rounds.js'), readFileSync('src/lib/rounds.js', 'utf8'))
 
 // StatusChip (no imports) → local bundle.
 svelteCompile(
-  readFileSync('src/lib/components/StatusChip.svelte', 'utf8'),
+  readFileSync('src/lib/components/StatusChip.svelte', 'utf8').replace("from '../fmt.js'", "from './fmt.js'"),
   'StatusChip.svelte',
   join(dir, 'statuschip.js'),
 );

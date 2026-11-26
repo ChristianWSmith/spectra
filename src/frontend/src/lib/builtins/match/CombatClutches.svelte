@@ -173,7 +173,7 @@
                 {#if c.bombState && c.bombState !== 'none'}
                   <span class="chip">{S.combat.bombPrefix}{c.bombState}</span>
                 {:else}
-                  <span class="muted">—</span>
+                  <span class="muted">{DASH}</span>
                 {/if}
               </td>
               <td class="num">{c.hpLeft}</td>
